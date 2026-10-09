@@ -148,7 +148,7 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 		const truncatedNote = match.inputTypeDefinitionTruncated
 			? '; use entity detail for the full definition'
 			: ''
-		return `${mainLine}\n   ${formatMarkdownInlineCode(`${accessor}(args)`)} — ${formatMarkdownInlineCode(match.inputTypeDefinition)}${truncatedNote}`
+		return `${mainLine}\n   ${formatMarkdownInlineCode(`${accessor}(params)`)} — ${formatMarkdownInlineCode(match.inputTypeDefinition)}${truncatedNote}`
 	}
 	if (match.type === 'guide') {
 		const entityRef = buildEntityRef(match.id, 'guide')

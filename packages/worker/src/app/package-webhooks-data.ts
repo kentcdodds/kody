@@ -36,6 +36,7 @@ function toPackageWebhookListItem(
 		rateLimitPerMinute: webhook.rateLimitPerMinute,
 		verification: webhook.verification,
 		replay: webhook.replay,
+		challenge: webhook.challenge,
 		minted: webhook.minted,
 		handle: webhook.handle,
 		urlHost: webhook.urlHost,

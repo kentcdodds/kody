@@ -1,6 +1,6 @@
 import { checkRateLimit, releaseRateLimit } from '#app/rate-limit.ts'
 import { type PlanName } from '#universal/plans.ts'
-import { getUserPlan } from '#worker/entitlements/service.ts'
+import { getCachedUserPlan } from '#worker/entitlements/service.ts'
 import { SearchRateLimitError } from '#worker/search-rate-limit-error.ts'
 
 export {
@@ -59,15 +59,19 @@ export function searchDailyRateLimitKey(userId: string) {
  * (embeddings / Jev). No-ops when `userId` is null (nothing to attribute).
  * If the daily window rejects after burst was consumed, the burst slot is
  * refunded so a day-cap trip does not also spend the minute budget.
+ * Returns the plan the ceilings were resolved against (`free` without a
+ * user) so callers do not look it up again.
  */
 export async function consumeSearchRateLimit(input: {
 	db: D1Database
 	userId: string | null
 	email: string | null | undefined
-}): Promise<void> {
-	if (!input.userId) return
+}): Promise<PlanName> {
+	if (!input.userId) return 'free'
 
-	const plan = await getUserPlan(input.db, {
+	// Abuse ceilings are plan-limit resolution: the shared 60s plan cache
+	// applies, so a search does not pay a users read before its writes.
+	const plan = await getCachedUserPlan(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
@@ -95,4 +99,5 @@ export async function consumeSearchRateLimit(input: {
 			plan,
 		})
 	}
+	return plan
 }

@@ -28,15 +28,20 @@ const files = {
 }
 
 test('package files views normalize paths and distinguish root, directories, files, and misses', () => {
-	expect(normalizePackageFilesPath(null)).toBe('')
-	expect(normalizePackageFilesPath('')).toBe('')
-	expect(normalizePackageFilesPath('/')).toBe('')
-	expect(normalizePackageFilesPath('src/index.ts')).toBe('src/index.ts')
-	expect(normalizePackageFilesPath('/src/lib/util.ts/')).toBe('src/lib/util.ts')
-	expect(normalizePackageFilesPath('src/%2E%2E/secrets')).toBe(null)
-	expect(normalizePackageFilesPath('../package.json')).toBe(null)
-	expect(normalizePackageFilesPath('src\\index.ts')).toBe(null)
-	expect(normalizePackageFilesPath('src/%2Findex.ts')).toBe('src/index.ts')
+	const paths: Array<[string | null, string | null]> = [
+		[null, ''],
+		['', ''],
+		['/', ''],
+		['src/index.ts', 'src/index.ts'],
+		['/src/lib/util.ts/', 'src/lib/util.ts'],
+		['src/%2E%2E/secrets', null],
+		['../package.json', null],
+		['src\\index.ts', null],
+		['src/%2Findex.ts', 'src/index.ts'],
+	]
+	expect(
+		paths.map(([path]) => [path, normalizePackageFilesPath(path)]),
+	).toEqual(paths)
 
 	const root = buildPackageFilesView({ files, selectedPath: '' })
 	expect(root).toMatchObject({
@@ -109,15 +114,17 @@ test('package files views normalize paths and distinguish root, directories, fil
 		language: 'xml',
 	})
 
-	expect(buildPackageFilesView({ files, selectedPath: 'missing' })).toBeNull()
+	for (const selectedPath of [
+		'missing',
+		'constructor',
+		'toString',
+		'__proto__',
+	]) {
+		expect(buildPackageFilesView({ files, selectedPath })).toBeNull()
+	}
 	expect(buildPackageFilesView({ files: {}, selectedPath: '' })?.kind).toBe(
 		'directory',
 	)
-	expect(
-		buildPackageFilesView({ files, selectedPath: 'constructor' }),
-	).toBeNull()
-	expect(buildPackageFilesView({ files, selectedPath: 'toString' })).toBeNull()
-	expect(buildPackageFilesView({ files, selectedPath: '__proto__' })).toBeNull()
 	expect(
 		buildPackageFilesView({
 			files: { constructor: 'export {}\n' },
@@ -141,105 +148,79 @@ test('package files views normalize paths and distinguish root, directories, fil
 test('files hrefs use the default-branch fallback and avoid reserved kody ids', () => {
 	expect(isReservedPackageFilesKodyId('packages')).toBe(true)
 	expect(isReservedPackageFilesKodyId('devin')).toBe(false)
-	expect(
+	const listing = (kodyId: string) => ({
+		listingId: 'listing-1',
+		ownerUsername: 'kentcdodds',
+		kodyId,
+	})
+	expect([
 		getCommunityPackageFilesHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'devin',
+			...listing('devin'),
 			relativePath: 'src/index.ts',
 		}),
-	).toBe('/@kentcdodds/devin/tree/main/src/index.ts')
-	expect(
+		getCommunityPackageFilesHref({ ...listing('devin'), ref: 'HEAD' }),
+		getCommunityPackageFilesHref({ ...listing('devin'), ref: 'release' }),
 		getCommunityPackageFilesHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'devin',
-			ref: 'HEAD',
-		}),
-	).toBe('/@kentcdodds/devin/tree/main')
-	expect(
-		getCommunityPackageFilesHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'devin',
-			ref: 'release',
-		}),
-	).toBe('/@kentcdodds/devin/tree/release')
-	expect(
-		getCommunityPackageFilesHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'packages',
+			...listing('packages'),
 			relativePath: 'src/index.ts',
 		}),
-	).toBe('/community/listing-1/files/src/index.ts')
-	expect(getAccountPackageFilesHref({ packageId: 'pkg-1' })).toBe(
-		'/account/packages/pkg-1/files',
-	)
-	expect(
-		getPackageTreeHref({
-			username: 'kentcdodds',
-			kodyId: 'friction-log',
-		}),
-	).toBe('/@kentcdodds/friction-log/tree/main')
-	expect(
+		getAccountPackageFilesHref({ packageId: 'pkg-1' }),
+		getPackageTreeHref({ username: 'kentcdodds', kodyId: 'friction-log' }),
 		getPackageTreeHref({
 			username: 'kentcdodds',
 			kodyId: 'grok-bot',
 			listingId: 'listing-1',
 			ref: 'develop',
 		}),
-	).toBe('/@kentcdodds/grok-bot/tree/develop')
-	expect(
 		getPackageTreeHref({
 			username: 'kentcdodds',
 			kodyId: 'packages',
 			listingId: 'listing-1',
 			ref: 'develop',
 		}),
-	).toBe('/community/listing-1/files')
-	expect(
-		getPackageSettingsHref({
-			username: 'kentcdodds',
-			kodyId: 'friction-log',
-		}),
-	).toBe('/@kentcdodds/friction-log/settings')
-	expect(
+		getPackageSettingsHref({ username: 'kentcdodds', kodyId: 'friction-log' }),
 		joinPackageFilesPath('/@kentcdodds/devin/tree/main', 'src/index.ts'),
-	).toBe('/@kentcdodds/devin/tree/main/src/index.ts')
-	expect(
 		buildPackageFilesApiHref(
 			'/profiles/kentcdodds/packages/devin/files.json',
 			'src/index.ts',
 		),
-	).toBe('/profiles/kentcdodds/packages/devin/files.json?path=src%2Findex.ts')
-	expect(
 		getCommunityPackageRawHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'devin',
+			...listing('devin'),
 			relativePath: 'docs/logo.png',
 		}),
-	).toBe('/@kentcdodds/devin/raw/main/docs/logo.png')
-	expect(
 		getCommunityPackageRawHref({
-			listingId: 'listing-1',
-			ownerUsername: 'kentcdodds',
-			kodyId: 'packages',
+			...listing('packages'),
 			relativePath: 'docs/logo.png',
 		}),
-	).toBe('/community/listing-1/raw/docs/logo.png')
+	]).toEqual([
+		'/@kentcdodds/devin/tree/main/src/index.ts',
+		'/@kentcdodds/devin/tree/main',
+		'/@kentcdodds/devin/tree/release',
+		'/community/listing-1/files/src/index.ts',
+		'/account/packages/pkg-1/files',
+		'/@kentcdodds/friction-log/tree/main',
+		'/@kentcdodds/grok-bot/tree/develop',
+		'/community/listing-1/files',
+		'/@kentcdodds/friction-log/settings',
+		'/@kentcdodds/devin/tree/main/src/index.ts',
+		'/profiles/kentcdodds/packages/devin/files.json?path=src%2Findex.ts',
+		'/@kentcdodds/devin/raw/main/docs/logo.png',
+		'/community/listing-1/raw/docs/logo.png',
+	])
 
-	expect(getPackageRepoChromeKey('/@kentcdodds/grok-bot')).toBe(
+	expect(
+		[
+			'/@kentcdodds/grok-bot',
+			'/@kentcdodds/grok-bot/tree/main',
+			'/@kentcdodds/grok-bot/settings',
+			'/@kentcdodds',
+		].map(getPackageRepoChromeKey),
+	).toEqual([
 		'kentcdodds/grok-bot',
-	)
-	expect(getPackageRepoChromeKey('/@kentcdodds/grok-bot/tree/main')).toBe(
 		'kentcdodds/grok-bot',
-	)
-	expect(getPackageRepoChromeKey('/@kentcdodds/grok-bot/settings')).toBe(
 		'kentcdodds/grok-bot',
-	)
-	expect(getPackageRepoChromeKey('/@kentcdodds')).toBe(null)
+		null,
+	])
 	expect(
 		isSamePackageRepoChromeHref(
 			'/@kentcdodds/grok-bot',

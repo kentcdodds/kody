@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	type OAuthGrantHelpers,
@@ -22,6 +23,7 @@ import {
 	type StripeSubscription,
 } from '#worker/billing/stripe-client.ts'
 import { auditDatabaseFromEnv, logAuditEvent } from '#worker/audit-log.ts'
+import { isKodySubscription } from '#worker/billing/billing-config.ts'
 import { purgeStripePlanRefreshForUser } from '#worker/billing/stripe-plan-refresh-client.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { purgeJobManagerForUser } from '#worker/jobs/manager-client.ts'
@@ -35,6 +37,8 @@ import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { packageRealtimeSessionRpc } from '#worker/package-runtime/realtime-session.ts'
 import { clearRunRecords } from '#worker/run-records/service.ts'
+import { cancelActiveWorkflowRunsForUser } from '#worker/package-runtime/package-workflows.ts'
+import { mcpOAuthRefreshFamilyUserKvPrefixes } from '#worker/oauth-refresh-family.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -82,6 +86,8 @@ import {
 	buildPublishedSourceSnapshotKvKey,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { deleteAllPackageRetrieverCacheEntriesForUser } from '#worker/package-retrievers/manifest-cache.ts'
+import { deleteAllPackageSkillsIndexEntriesForUser } from '#worker/package-registry/skills-index-cache.ts'
+import { deletePackageSubscriptionTopicCacheForUser } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { buildCommunitySnapshotKvKey } from '#worker/community/snapshot.ts'
 import {
 	communityIconKvListingPrefixes,
@@ -817,12 +823,14 @@ async function appendEarlierAccountDeletionRefunds(input: {
 }
 
 /**
- * Refunds unused time on, then cancels, every subscription that can still
- * bill (see `stripeSubscriptionStatusesCanceledOnAccountDeletion`) and throws
- * {@link AccountDeletionBillingError} when any refund fails or any
- * subscription is still billable afterwards. Runs before any destructive
- * cleanup so a Stripe outage retains the account instead of leaving a paying
- * customer with no account, no portal access, and no refund.
+ * Refunds unused time on, then cancels, every **Kody** subscription that can
+ * still bill (see `stripeSubscriptionStatusesCanceledOnAccountDeletion` and
+ * {@link isKodySubscription}) and throws {@link AccountDeletionBillingError}
+ * when any refund fails or any Kody subscription is still billable afterwards.
+ * Non-Kody subscriptions on the shared Stripe account are left untouched.
+ * Runs before any destructive cleanup so a Stripe outage retains the account
+ * instead of leaving a paying customer with no account, no portal access, and
+ * no refund.
  *
  * Only `active` and `trialing` subscriptions are refunded, and the refund is
  * issued before the cancel so the invoice line's service period is still
@@ -853,7 +861,13 @@ async function cancelActiveStripeSubscriptions(input: {
 			`Stripe subscriptions could not be listed: ${getErrorMessage(error)}`,
 		])
 	}
-	const billable = subscriptions.filter(isStripeSubscriptionBillable)
+	// Shared Stripe account: only cancel Kody subscriptions. Never touch
+	// other products on the same customer (for example GratiText Premium).
+	const billable = subscriptions.filter(
+		(subscription) =>
+			isStripeSubscriptionBillable(subscription) &&
+			isKodySubscription(input.env, subscription),
+	)
 	const refunds: Array<AccountDeletionStripeRefund> = []
 
 	const nowSeconds = Math.floor(Date.now() / 1000)
@@ -904,7 +918,11 @@ async function cancelActiveStripeSubscriptions(input: {
 		try {
 			stillBillable = (
 				await listSubscriptions(input.env, input.customerId)
-			).filter(isStripeSubscriptionBillable)
+			).filter(
+				(subscription) =>
+					isStripeSubscriptionBillable(subscription) &&
+					isKodySubscription(input.env, subscription),
+			)
 		} catch (error) {
 			throw new AccountDeletionBillingError([
 				...failures,
@@ -973,6 +991,25 @@ async function clearStorageRunners(input: {
 		}
 	}
 	return cleared
+}
+
+async function cancelActiveWorkflowRuns(input: {
+	env: Env
+	userId: string
+	warnings: Array<string>
+}): Promise<boolean> {
+	try {
+		await cancelActiveWorkflowRunsForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+		return true
+	} catch (error) {
+		input.warnings.push(
+			`Workflow run cancellation failed: ${getErrorMessage(error)}`,
+		)
+		return false
+	}
 }
 
 async function clearRunLog(input: {
@@ -1367,16 +1404,37 @@ async function deleteRetrieverCache(input: {
 	userId: string
 	warnings: Array<string>
 }) {
+	let deleted = 0
 	try {
-		return await deleteAllPackageRetrieverCacheEntriesForUser({
+		deleted = await deleteAllPackageRetrieverCacheEntriesForUser({
 			env: input.env,
 			userId: input.userId,
 		})
 	} catch (error) {
 		const message = getErrorMessage(error)
 		input.warnings.push(`Package retriever KV cleanup failed: ${message}`)
-		return 0
 	}
+	try {
+		deleted += await deleteAllPackageSkillsIndexEntriesForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(`Package skills index KV cleanup failed: ${message}`)
+	}
+	try {
+		await deletePackageSubscriptionTopicCacheForUser({
+			env: input.env,
+			userId: input.userId,
+		})
+	} catch (error) {
+		const message = getErrorMessage(error)
+		input.warnings.push(
+			`Package subscription topic map KV cleanup failed: ${message}`,
+		)
+	}
+	return deleted
 }
 
 async function deleteUserScopedRowsAndUser(input: {
@@ -1425,6 +1483,7 @@ async function deleteUserScopedRowsAndUser(input: {
 		}
 	}
 	deletedRowCounts.users = results.at(-1)?.meta.changes ?? 0
+	invalidatePackageAppOwnerCache({ stableUserId: input.mcpUserId })
 	return { deletedRowCounts, updatedRowCounts }
 }
 
@@ -1535,6 +1594,19 @@ export async function deleteUserAccount(input: {
 		}
 	}
 
+	// Stop running package workflows before purging the storage their steps
+	// write to. On failure, stop with the deletion fence held and nothing
+	// purged: RunLog is the only index of the user's workflow instances, so a
+	// retry needs it to find and terminate them.
+	const workflowRunsCancelled = await cancelActiveWorkflowRuns({
+		env: input.env,
+		userId: input.mcpUserId,
+		warnings,
+	})
+	if (!workflowRunsCancelled) {
+		throw new AccountDeletionCleanupError(warnings, result)
+	}
+
 	result.deletedVectors = await deleteVectorsByIds({
 		env: input.env,
 		ids: inventory.vectorIds,
@@ -1623,6 +1695,8 @@ export async function deleteUserAccount(input: {
 				// deleted separately; purge the orphaned revert trees here rather
 				// than waiting on the 90-day TTL.
 				`package-codemod-revert:${input.mcpUserId}:`,
+				// Encrypted copies of the user's MCP OAuth tokens.
+				...mcpOAuthRefreshFamilyUserKvPrefixes(input.mcpUserId),
 			],
 			warnings,
 		})
@@ -1799,9 +1873,8 @@ export async function deleteUserAccount(input: {
 		throw new AccountDeletionCleanupError(warnings, result)
 	}
 
-	// The D1 user row is gone, so a later signup with the same email is a new
-	// account. Drop the UserMeter tombstone `purge()` restored; leaving it
-	// would fence every write (including `/mcp`) for that hashed stable id.
+	// The D1 user row is gone. Drop the UserMeter tombstone `purge()` restored
+	// so the purged object keeps no state for this stable id.
 	try {
 		await clearUserMeterDeletionTombstone({
 			env: input.env,

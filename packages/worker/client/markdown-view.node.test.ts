@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import {
 	MarkdownView,
@@ -206,166 +206,130 @@ test('first-party render options keep authored heading levels and drop the ugc r
 	expect(thirdParty).toContain('rel="noopener noreferrer nofollow ugc"')
 })
 
-test('first-party headingIds emit unique kebab-case heading ids', async () => {
-	const html = await renderToString(
-		jsx('div', {
-			children: renderMarkdownNodes(
-				[
-					'## Josh Tomaino',
-					'',
-					'## Josh Tomaino',
-					'',
-					'## Jett Hays',
-					'',
-					'## Gabriel Alegría',
-				].join('\n'),
-				{ headingOffset: 0, headingIds: true },
-			),
-		}),
-	)
-	expect(html).toContain('<h2 id="josh-tomaino" aria-label="Josh Tomaino">')
-	expect(html).toContain('href="#josh-tomaino"')
-	expect(html).toContain('data-heading-permalink=""')
-	expect(html).toContain('aria-label="Link to this section"')
-	expect(html).toContain('data-heading-anchor=""')
-	expect(html).toContain('data-heading-text=""')
-	expect(html).toContain('<span data-heading-text="">Josh Tomaino</span>')
-	const joshPermalink = html.match(
-		/<a href="#josh-tomaino"[^>]*>[\s\S]*?<\/a>/,
-	)?.[0]
-	expect(joshPermalink).toBeDefined()
-	expect(joshPermalink).toContain('aria-label="Link to this section"')
-	expect(joshPermalink).not.toContain('aria-label="Josh Tomaino"')
-	expect(html).toContain('<h2 id="josh-tomaino-2" aria-label="Josh Tomaino">')
-	expect(html).toContain('href="#josh-tomaino-2"')
-	expect(html).toContain('<h2 id="jett-hays" aria-label="Jett Hays">')
-	expect(html).toContain(
-		'<h2 id="gabriel-alegria" aria-label="Gabriel Alegría">',
-	)
-})
+test('first-party headingIds emit unique ids, token-derived accessible names, and sibling permalinks', async () => {
+	const renderWithIds = (markdown: string) =>
+		renderToString(
+			jsx('div', {
+				children: renderMarkdownNodes(markdown, {
+					headingOffset: 0,
+					headingIds: true,
+				}),
+			}),
+		)
+	const permalinkFor = (html: string, id: string) =>
+		html.match(new RegExp(`<a href="#${id}"[^>]*>[\\s\\S]*?</a>`))?.[0]
 
-test('heading permalinks stay beside inline heading links instead of wrapping them', async () => {
-	const html = await renderToString(
-		jsx('div', {
-			children: renderMarkdownNodes(
-				'## Read [the guide](https://example.com/guide)',
-				{ headingOffset: 0, headingIds: true },
-			),
-		}),
+	const html = await renderWithIds(
+		[
+			'## Josh Tomaino',
+			'',
+			'## Josh Tomaino',
+			'',
+			'## Jett Hays',
+			'',
+			'## Gabriel Alegría',
+			'',
+			'## **Install** `CLI`',
+			'',
+			'## Read [the guide](https://example.com/guide(nested)/path)',
+			'',
+			'## Heading with ![logo](https://img.example/logo.png) icon',
+		].join('\n'),
 	)
-	expect(html).toContain(
-		'id="read-the-guide-https-example.com-guide" aria-label="Read the guide"',
+	for (const part of [
+		'<h2 id="josh-tomaino" aria-label="Josh Tomaino">',
+		'href="#josh-tomaino"',
+		'data-heading-permalink=""',
+		'data-heading-anchor=""',
+		'<span data-heading-text="">Josh Tomaino</span>',
+		'<h2 id="josh-tomaino-2" aria-label="Josh Tomaino">',
+		'href="#josh-tomaino-2"',
+		'<h2 id="jett-hays" aria-label="Jett Hays">',
+		'<h2 id="gabriel-alegria" aria-label="Gabriel Alegría">',
+		// Accessible names come from parsed inline tokens, not markdown source.
+		'aria-label="Install CLI"',
+		'aria-label="Read the guide"',
+		'aria-label="Heading with logo icon"',
+	]) {
+		expect(html).toContain(part)
+	}
+	expect(html).not.toContain('aria-label="**Install**')
+	expect(html).not.toContain('aria-label="Read [the guide]')
+	expect(html).not.toContain('aria-label="Heading with ![logo]')
+	for (const [id, name] of [
+		['josh-tomaino', 'Josh Tomaino'],
+		['install-cli', 'Install CLI'],
+	] as const) {
+		const permalink = permalinkFor(html, id)
+		expect(permalink).toContain('aria-label="Link to this section"')
+		expect(permalink).not.toContain(`aria-label="${name}"`)
+	}
+
+	// Permalinks stay beside inline heading links instead of wrapping them.
+	const linkedId = 'read-the-guide-https-example.com-guide'
+	const linked = await renderWithIds(
+		'## Read [the guide](https://example.com/guide)',
 	)
-	expect(html).toContain('href="#read-the-guide-https-example.com-guide"')
-	expect(html).toContain('href="https://example.com/guide"')
-	const permalink = html.match(
-		/<a href="#read-the-guide-https-example.com-guide"[^>]*>[\s\S]*?<\/a>/,
-	)?.[0]
-	expect(permalink).toBeDefined()
+	expect(linked).toContain(`id="${linkedId}" aria-label="Read the guide"`)
+	expect(linked).toContain(`href="#${linkedId}"`)
+	expect(linked).toContain('href="https://example.com/guide"')
+	const permalink = permalinkFor(linked, linkedId)
 	expect(permalink).toContain('aria-label="Link to this section"')
 	expect(permalink).not.toContain('aria-label="Read the guide"')
 	expect(permalink?.match(/<a /g)).toHaveLength(1)
 })
 
-test('heading accessible names come from parsed inline tokens, not markdown source', async () => {
-	const html = await renderToString(
-		jsx('div', {
-			children: renderMarkdownNodes(
-				[
-					'## **Install** `CLI`',
-					'',
-					'## Read [the guide](https://example.com/guide(nested)/path)',
-					'',
-					'## Heading with ![logo](https://img.example/logo.png) icon',
-				].join('\n'),
-				{ headingOffset: 0, headingIds: true },
-			),
-		}),
-	)
-	expect(html).toContain('aria-label="Install CLI"')
-	expect(html).not.toContain('aria-label="**Install**')
-	expect(html).toContain('aria-label="Read the guide"')
-	expect(html).not.toContain('aria-label="Read [the guide]')
-	expect(html).toContain('aria-label="Heading with logo icon"')
-	expect(html).not.toContain('aria-label="Heading with ![logo]')
-	const formattedPermalink = html.match(
-		/<a href="#install-cli"[^>]*>[\s\S]*?<\/a>/,
-	)?.[0]
-	expect(formattedPermalink).toContain('aria-label="Link to this section"')
-	expect(formattedPermalink).not.toContain('aria-label="Install CLI"')
-})
-
 test('getSafeMarkdownLinkHref allowlists protocols and blocks user-scope paths', () => {
-	expect(getSafeMarkdownLinkHref('https://example.com/a')).toBe(
-		'https://example.com/a',
-	)
-	expect(getSafeMarkdownLinkHref('http://example.com')).toBe(
-		'http://example.com/',
-	)
-	expect(getSafeMarkdownLinkHref('mailto:kody@example.com')).toBe(
-		'mailto:kody@example.com',
-	)
-	expect(getSafeMarkdownLinkHref('javascript:alert(1)')).toBe(null)
-	expect(getSafeMarkdownLinkHref('vbscript:x')).toBe(null)
-	expect(getSafeMarkdownLinkHref('data:text/html,hi')).toBe(null)
-	expect(getSafeMarkdownLinkHref('/relative/path')).toBe(null)
-	expect(getSafeMarkdownLinkHref('relative/path')).toBe(null)
-	expect(getSafeMarkdownLinkHref('//protocol-relative.example')).toBe(null)
+	const allowed: Array<[string, string]> = [
+		['https://example.com/a', 'https://example.com/a'],
+		['http://example.com', 'http://example.com/'],
+		['mailto:kody@example.com', 'mailto:kody@example.com'],
+		// Benign encoded paths that decode to non-user-scope stay allowed.
+		['https://example.com/a%20b', 'https://example.com/a%20b'],
+		// Paths that merely contain (not start with) a `packages` segment stay
+		// allowed — only the mount shape is refused.
+		[
+			'https://github.com/orgs/example/packages',
+			'https://github.com/orgs/example/packages',
+		],
+	]
 	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev/@user/packages/app'),
-	).toBe(null)
-	expect(getSafeMarkdownLinkHref('https://other.example/@user/anything')).toBe(
-		null,
-	)
-	// Repeated slashes collapse in worker routing (`split('/').filter(Boolean)`),
-	// so `//@user` must be refused too.
+		allowed.map(([href]) => [href, getSafeMarkdownLinkHref(href)]),
+	).toEqual(allowed)
+
+	const refused = [
+		'javascript:alert(1)',
+		'vbscript:x',
+		'data:text/html,hi',
+		'/relative/path',
+		'relative/path',
+		'//protocol-relative.example',
+		'https://heykody.dev/@user/packages/app',
+		'https://other.example/@user/anything',
+		// Repeated slashes collapse in worker routing
+		// (`split('/').filter(Boolean)`), so `//@user` must be refused too.
+		'https://heykody.dev//@user/packages/app',
+		'https://heykody.dev///@user/packages/app',
+		// Percent-encoded (and nested-encoded) user scopes must be refused:
+		// URL.pathname does not decode, but the server does.
+		'https://heykody.dev/%40user/packages/app',
+		'https://heykody.dev/%2540user/packages/app',
+		'https://heykody.dev/%25252540user/packages/app',
+		'https://heykody.dev/%2F@user/x',
+		// Undecodable paths fail closed.
+		'https://heykody.dev/%E0%A4%A',
+		// The per-user package-app subdomain mounts apps at `/packages/...`, so
+		// that path shape is refused on every host too (this module cannot know
+		// the deployment's package-app domain; same trade-off as the `/@` rule).
+		'https://mallory.kodyapps.dev/packages/tracker',
+		'https://mallory.kodyapps.dev/packages/tracker/app',
+		'https://other.example/packages/x',
+		'https://other.example//packages/x',
+		'https://other.example/%70ackages/x',
+	]
 	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev//@user/packages/app'),
-	).toBe(null)
-	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev///@user/packages/app'),
-	).toBe(null)
-	// Percent-encoded (and nested-encoded) user scopes must be refused:
-	// URL.pathname does not decode, but the server does.
-	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev/%40user/packages/app'),
-	).toBe(null)
-	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev/%2540user/packages/app'),
-	).toBe(null)
-	expect(
-		getSafeMarkdownLinkHref('https://heykody.dev/%25252540user/packages/app'),
-	).toBe(null)
-	expect(getSafeMarkdownLinkHref('https://heykody.dev/%2F@user/x')).toBe(null)
-	// Undecodable paths fail closed.
-	expect(getSafeMarkdownLinkHref('https://heykody.dev/%E0%A4%A')).toBe(null)
-	// Benign encoded paths that decode to non-user-scope stay allowed.
-	expect(getSafeMarkdownLinkHref('https://example.com/a%20b')).toBe(
-		'https://example.com/a%20b',
-	)
-	// The per-user package-app subdomain mounts apps at `/packages/...`, so
-	// that path shape is refused on every host too (this module cannot know
-	// the deployment's package-app domain; same trade-off as the `/@` rule).
-	expect(
-		getSafeMarkdownLinkHref('https://mallory.kodyapps.dev/packages/tracker'),
-	).toBe(null)
-	expect(
-		getSafeMarkdownLinkHref(
-			'https://mallory.kodyapps.dev/packages/tracker/app',
-		),
-	).toBe(null)
-	expect(getSafeMarkdownLinkHref('https://other.example/packages/x')).toBe(null)
-	expect(getSafeMarkdownLinkHref('https://other.example//packages/x')).toBe(
-		null,
-	)
-	expect(getSafeMarkdownLinkHref('https://other.example/%70ackages/x')).toBe(
-		null,
-	)
-	// Paths that merely contain (not start with) a `packages` segment stay
-	// allowed — only the mount shape is refused.
-	expect(
-		getSafeMarkdownLinkHref('https://github.com/orgs/example/packages'),
-	).toBe('https://github.com/orgs/example/packages')
+		refused.filter((href) => getSafeMarkdownLinkHref(href) !== null),
+	).toEqual([])
 })
 
 test('first-party guides render tip callouts and details; untrusted markdown stays escaped', async () => {
@@ -417,6 +381,44 @@ test('first-party guides render tip callouts and details; untrusted markdown sta
 	expect(untrusted).not.toContain('<details')
 	expect(untrusted).toContain('&lt;details')
 	expect(untrusted).toContain('&lt;summary')
+})
+
+test('first-party watch blocks render a lite youtube player; untrusted markdown stays a quote', async () => {
+	const markdown = [
+		'> [!WATCH] https://youtu.be/_EJTrJFLa3g',
+		'> Watch: Make your agent safe and autonomous',
+		'',
+		'> [!WATCH] https://example.com/watch?v=_EJTrJFLa3g',
+		'> Watch: Not YouTube',
+	].join('\n')
+
+	const firstParty = await renderToString(
+		jsx('div', {
+			children: renderMarkdownNodes(markdown, {
+				linkPolicy: 'first-party',
+				headingOffset: 0,
+				linkRel: 'noopener noreferrer',
+			}),
+		}),
+	)
+	expect(firstParty).toContain('data-doc-youtube')
+	expect(firstParty).toContain('data-testid="doc-youtube-play"')
+	expect(firstParty).toContain('/youtube-thumb/_EJTrJFLa3g')
+	expect(firstParty).toContain('Play Make your agent safe and autonomous')
+	expect(firstParty).toContain(
+		'href="https://www.youtube.com/watch?v=_EJTrJFLa3g"',
+	)
+	expect(firstParty).toContain('Watch: Make your agent safe and autonomous')
+	expect(firstParty).not.toContain('youtube-nocookie.com')
+	expect(firstParty).not.toContain('[!WATCH] https://youtu.be/_EJTrJFLa3g')
+	expect(firstParty).toContain('<blockquote>')
+	expect(firstParty).toContain('Not YouTube')
+
+	const untrusted = await renderMarkdown(markdown)
+	expect(untrusted).not.toContain('data-doc-youtube')
+	expect(untrusted).not.toContain('youtube-nocookie.com')
+	expect(untrusted).toContain('[!WATCH]')
+	expect(untrusted).toContain('<blockquote>')
 })
 
 test('markdown tables keep last-column nowrap only when every last cell is a short label', async () => {

@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -13,6 +13,7 @@ import {
 import { createDoubleCheck } from '#client/double-check.ts'
 import { writeClipboardText } from '#client/clipboard.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
 	AccountManagementMessage,
 	AccountManagementShell,
@@ -380,8 +381,13 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 										</button>
 									</div>
 								</label>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Client secret</span>
+								<div mix={css(fieldCss)}>
+									<label
+										for="mcp-oauth-created-client-secret"
+										mix={css(fieldLabelCss)}
+									>
+										Client secret
+									</label>
 									<div
 										mix={css({
 											display: 'flex',
@@ -390,17 +396,22 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 											flexWrap: 'wrap',
 										})}
 									>
-										<input
-											data-field-ring
-											type="password"
-											value={createdClient.clientSecret}
-											readOnly
-											{...passwordManagerIgnoreProps}
+										<div
 											mix={css({
-												...accountInputCss,
 												flex: '1 1 16rem',
+												minWidth: 0,
 											})}
-										/>
+										>
+											<PasswordRevealInput
+												id="mcp-oauth-created-client-secret"
+												data-field-ring
+												value={createdClient.clientSecret}
+												readOnly
+												{...passwordManagerIgnoreProps}
+												revealNoun="client secret"
+												mix={css(accountInputCss)}
+											/>
+										</div>
 										<button
 											type="button"
 											mix={[
@@ -416,7 +427,7 @@ export function AccountMcpOauthClientsRoute(handle: Handle) {
 											Copy
 										</button>
 									</div>
-								</label>
+								</div>
 							</section>
 						) : null}
 

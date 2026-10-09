@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -13,29 +14,24 @@ vi.mock('#worker/email/outbound.ts', () => ({
 
 const { emailSendCapability } = await import('./email-send.ts')
 
-function createUsersDb(emailVerifiedAt: string | null) {
-	return {
-		prepare: () => ({
-			bind: () => ({
-				first: async () => ({ email_verified_at: emailVerifiedAt }),
-			}),
-		}),
-	} as unknown as D1Database
-}
-
-function createContext(options: { emailVerifiedAt?: string | null } = {}) {
+function createContext() {
 	return {
 		env: {
-			APP_DB: createUsersDb(
-				options.emailVerifiedAt === undefined
-					? '2026-01-01T00:00:00.000Z'
-					: options.emailVerifiedAt,
-			),
-		} as Env,
+			APP_DB: {
+				prepare: () => ({
+					bind: () => ({
+						first: async () => ({
+							email_verified_at: '2026-01-01T00:00:00.000Z',
+						}),
+					}),
+				}),
+			},
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User Example',
 			},
@@ -132,65 +128,27 @@ test('emailSend forwards optional attachments and rejects invalid attachment sha
 		}),
 	)
 
-	const missingFilename = await emailSendCapability
-		.handler(
-			{
-				subject: 'Hello',
-				text: 'Body',
-				attachments: [
-					{
-						content_type: 'text/plain',
-						content_base64: 'aGVsbG8=',
-					},
-				],
-			},
-			createContext(),
-		)
-		.catch((error: unknown) => error)
-	expect(missingFilename).toBeInstanceOf(McpCallerError)
-	expect(missingFilename).toMatchObject({
-		message: expect.stringContaining(
+	const invalidAttachmentLists = [
+		[{ content_type: 'text/plain', content_base64: 'aGVsbG8=' }],
+		[],
+		Array.from({ length: 11 }, (_, index) => ({
+			filename: `file-${index}.txt`,
+			content_type: 'text/plain',
+			content_base64: 'aGVsbG8=',
+		})),
+	]
+	for (const attachments of invalidAttachmentLists) {
+		const error = await emailSendCapability
+			.handler(
+				{ subject: 'Hello', text: 'Body', attachments } as never,
+				createContext(),
+			)
+			.catch((caught: unknown) => caught)
+		expect(error).toBeInstanceOf(McpCallerError)
+		expect((error as Error).message).toContain(
 			'Invalid input for capability "emailSend"',
-		),
-	})
-
-	const emptyList = await emailSendCapability
-		.handler(
-			{
-				subject: 'Hello',
-				text: 'Body',
-				attachments: [],
-			},
-			createContext(),
 		)
-		.catch((error: unknown) => error)
-	expect(emptyList).toBeInstanceOf(McpCallerError)
-	expect(emptyList).toMatchObject({
-		message: expect.stringContaining(
-			'Invalid input for capability "emailSend"',
-		),
-	})
-
-	const tooMany = await emailSendCapability
-		.handler(
-			{
-				subject: 'Hello',
-				text: 'Body',
-				attachments: Array.from({ length: 11 }, (_, index) => ({
-					filename: `file-${index}.txt`,
-					content_type: 'text/plain',
-					content_base64: 'aGVsbG8=',
-				})),
-			},
-			createContext(),
-		)
-		.catch((error: unknown) => error)
-	expect(tooMany).toBeInstanceOf(McpCallerError)
-	expect(tooMany).toMatchObject({
-		message: expect.stringContaining(
-			'Invalid input for capability "emailSend"',
-		),
-	})
+	}
 
 	expect(mocks.sendOutboundEmail).toHaveBeenCalledTimes(2)
 })

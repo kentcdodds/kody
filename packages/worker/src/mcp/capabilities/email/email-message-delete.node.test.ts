@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -35,9 +36,10 @@ function createEnv(options: { emailVerifiedAt?: string | null } = {}) {
 
 function createUserContext(userId = 'user-1') {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			displayName: 'User Example',
 		},
@@ -51,6 +53,7 @@ test('emailMessageDelete requires a signed-in, verified owner and deletes that m
 			{
 				env: createEnv(),
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},

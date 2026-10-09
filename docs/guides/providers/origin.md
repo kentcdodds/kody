@@ -72,7 +72,7 @@ repos Origin mirrors _out_ to GitHub are in scope.
 Save the PKCS#8 PEM through the account secrets page — never paste it into chat:
 
 ```text
-https://kody.codes/account/secrets/new?name=originAppPrivateKey&description=Origin%20App%20Ed25519%20PKCS%238%20private%20key&allowedHosts=api.cursor.com&scope=user
+https://kody.codes/connect/secret-set?name=originAppPrivateKey&description=Origin%20App%20Ed25519%20PKCS%238%20private%20key&allowedHosts=api.cursor.com&scope=user
 ```
 
 Approve `api.cursor.com` on that page. The name `originAppPrivateKey` is what

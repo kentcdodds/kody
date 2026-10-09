@@ -1,80 +1,95 @@
 /**
- * Monthly unique-worker-day and Durable Object rows-read overage math and
- * who-to-bill policy. List rates and includes live on
- * {@link computeOverageRatesUsd} / {@link resolvePlanLimits}.
+ * Monthly worker-compute and Durable Object rows-read include math and
+ * the credits guidance shown next to those meters. Includes live on
+ * {@link resolvePlanLimits}; debit rates on `credits.ts`.
  *
- * This module does not talk to Stripe. Execute and Durable Object duration
- * are not meters here. Legacy Standard/Pro stays
- * {@link computeMeteringPolicy.legacyMonthlyMeters} (`no_cut_no_bill`).
+ * Nobody is invoiced for usage above an include. Purchasable Pro goes
+ * include → credits → free-tier limits: a funded wallet is debited for it
+ * (`billing/credit-debits.ts`) and an empty wallet falls back to Free
+ * rate/compute caps via {@link resolvePlanLimits}. Accounts without a wallet
+ * are not charged, bounded by their hard rate caps.
  *
- * Public-ladder accounts are the billed audience. Unpaid Free is a
- * soft-block (upgrade prompt), never a Stripe charge that would fail.
- * Changing the audience later is {@link computeOverageBillingPolicy} plus
- * the `compute-overage-charging` flag — not a rewrite of include math.
+ * Customer surfaces name these meters “Worker compute” and “Rows read”
+ * (never Cloudflare “unique worker day” / UWD jargon). Both meters that
+ * debit credits are customer-visible — never debit an invisible meter.
  */
 import {
-	computeMeteringPolicy,
-	computeOverageRatesUsd,
+	creditDebitCostMicroUsd,
+	creditDebitRates,
+	type CreditDebitMeter,
+} from './credits.ts'
+import {
+	creditsUnlockedResources,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type PlanName,
 	resolvePlanLimits,
 } from './plans.ts'
 
-const centsPerUsd = 100
-const durableObjectRowsPerMillion = 1_000_000
+/**
+ * Where to add credits (or switch to Pro first): the Credits section of the
+ * usage page. `/account/credits` redirects here for old links.
+ */
+export const accountCreditsPath = '/account/usage#credits'
 
 /**
- * Decided billed audience is `public` (Free, Standard, Pro, and max on
- * the public ladder). `everyone` remains a later switch; it still cannot
- * invoice legacy while `chargeLegacy` is false.
+ * Credits state for one monthly meter:
+ * - `within_include` — at or under the include.
+ * - `debiting_credits` — above the include; the funded wallet pays.
+ * - `add_credits` — above the include on Pro with an empty wallet: UI nudge
+ *   to top up; enforcement uses Free rate/compute caps (ADR 0065).
+ * - `switch_to_pro` — above the include on Free or retired Standard/Pro
+ *   (no wallet; not charged).
+ * - `not_charged` — above the include on an operator plan (`max`).
  */
-const computeOverageBillAudiences = ['public', 'everyone'] as const
+const computeIncludeCreditsStatuses = [
+	'within_include',
+	'debiting_credits',
+	'add_credits',
+	'switch_to_pro',
+	'not_charged',
+] as const
 
-export type ComputeOverageBillAudience =
-	(typeof computeOverageBillAudiences)[number]
+export type ComputeIncludeCreditsStatus =
+	(typeof computeIncludeCreditsStatuses)[number]
 
-export const computeOverageBillingPolicy = {
-	audience: 'public',
-	/**
-	 * Locked to `no_cut_no_bill`. Do not set true without Felix/Kent.
-	 */
-	chargeLegacy: false,
-} as const satisfies {
-	audience: ComputeOverageBillAudience
-	chargeLegacy: boolean
-}
-
-export type ComputeOverageDisposition =
-	| 'invoice'
-	| 'soft_block'
-	| 'dry_run'
-	| 'skip_legacy'
-	| 'skip_zero'
-	| 'skip_below_minimum'
-	| 'skip_audience'
-
-/** Stripe's USD charge minimum. Below this, `payInvoice` always fails. */
-const stripeUsdMinimumChargeCents = 50
-
-export const computeOverageWarningResources = [
+const computeOverageWarningResources = [
 	'unique_worker_days',
 	'durable_object_rows_read',
-] as const
+] as const satisfies ReadonlyArray<CreditDebitMeter>
 
 export type ComputeOverageWarningResource =
 	(typeof computeOverageWarningResources)[number]
 
+/**
+ * Monthly meters on `/account/usage`, `usageGet`, credits rates, and
+ * customer entitlement-warning emails. Pricing comparison tables still omit
+ * these (execute + hard caps lead); debit surfaces must show both so
+ * credits never move on an invisible meter.
+ */
+export const customerFacingComputeOverageMeters = [
+	'unique_worker_days',
+	'durable_object_rows_read',
+] as const satisfies ReadonlyArray<ComputeOverageWarningResource>
+
+export function isCustomerFacingComputeMeter(
+	resource: string,
+): resource is (typeof customerFacingComputeOverageMeters)[number] {
+	return (customerFacingComputeOverageMeters as ReadonlyArray<string>).includes(
+		resource,
+	)
+}
+
 export const computeOverageWarningResourceLabels = {
-	unique_worker_days: 'Unique worker days',
-	durable_object_rows_read: 'Durable Object rows read',
+	unique_worker_days: 'Worker compute',
+	durable_object_rows_read: 'Rows read',
 } as const satisfies Record<ComputeOverageWarningResource, string>
 
-/**
- * Factual mechanic line for hot unique-worker-day entitlement/limit
- * payloads. Meter name plus what a unique worker day is — not a playbook.
- */
-export const uniqueWorkerDayMechanic =
-	'Meter unique_worker_days: one unique Dynamic Worker isolate (worker id) per UTC day.'
+/** Unit nouns for counts ("350 worker-compute days", "5,000,000,000 rows read"). */
+export const computeOverageUnitLabels = {
+	unique_worker_days: 'worker-compute days',
+	durable_object_rows_read: 'rows read',
+} as const satisfies Record<ComputeOverageWarningResource, string>
 
 export type ComputeOverageResourceVisibility = {
 	group: 'monthly'
@@ -85,26 +100,24 @@ export type ComputeOverageResourceVisibility = {
 
 /**
  * Plain-language copy for account usage UI, `usageGet`, warning emails,
- * and compute-include denials. Keep factual and terse; update when
- * overage policy changes. Not a hard entitlement — see
- * {@link computeMeteringPolicy} / {@link resolveComputeOverageDisposition}.
+ * and compute-include denials. Keep factual and terse. Avoid Cloudflare
+ * “unique worker day” / UWD jargon on customer surfaces.
  */
 export const computeOverageResourceVisibility = {
 	unique_worker_days: {
 		group: 'monthly',
 		kind: 'counter',
 		whatCounts:
-			'Counts distinct Cloudflare Dynamic Worker isolates (worker id + code) that run on a given UTC day, rolled up for the month. Reusing the same warm isolate typically does not add another day.',
+			'Counts each distinct worker used for your account once per UTC day, rolled up for the month. Reusing the same worker on the same UTC day does not add another unit.',
 		howToReduce:
-			'Keep package code stable so isolates stay warm. For ad hoc execute, reuse the same module graph and vary args via params. Consolidate one-off execute runs into saved packages or jobs.',
+			'Keep package code stable so the same worker stays warm. For ad hoc execute, reuse the same module graph and vary args via params. Consolidate one-off execute runs into saved packages or jobs.',
 	},
 	durable_object_rows_read: {
 		group: 'monthly',
 		kind: 'counter',
 		whatCounts:
 			'SQLite rows read by your Durable Object package storage this UTC month.',
-		howToReduce:
-			'Read less from package storage, cache repeated queries, or upgrade your plan.',
+		howToReduce: 'Read less from package storage, cache repeated queries.',
 	},
 } as const satisfies Record<
 	ComputeOverageWarningResource,
@@ -116,21 +129,11 @@ export type MonthlyComputeOverage = {
 	includedDurableObjectRowsRead: number
 	billableUniqueWorkerDays: number
 	billableDurableObjectRowsRead: number
-	uniqueWorkerDayUsd: number
-	durableObjectRowsReadUsd: number
-	uniqueWorkerDayCents: number
-	durableObjectRowsReadCents: number
-	totalCents: number
-	legacyUnbilled: boolean
-}
-
-export type ComputeOverageDispositionInput = {
-	plan: PlanName
-	ladder: EntitlementLadder
-	overage: MonthlyComputeOverage
-	hasStripeCustomer: boolean
-	chargingEnabled: boolean
-	policy?: typeof computeOverageBillingPolicy
+	/**
+	 * Cumulative credits cost of this month's usage above the include at
+	 * the debit rates. Only debited from a funded wallet.
+	 */
+	creditsCostMicroUsd: number
 }
 
 function nonNegativeInteger(value: number): number {
@@ -138,49 +141,15 @@ function nonNegativeInteger(value: number): number {
 	return Math.trunc(value)
 }
 
-function usdToCents(usd: number): number {
-	if (!Number.isFinite(usd) || usd <= 0) return 0
-	return Math.round(usd * centsPerUsd)
-}
-
-function isLegacyUnbilled(plan: PlanName, ladder: EntitlementLadder): boolean {
-	return (
-		ladder === 'legacy' &&
-		(plan === 'standard' || plan === 'pro') &&
-		computeMeteringPolicy.legacyMonthlyMeters === 'no_cut_no_bill'
-	)
-}
-
-function matchesBillAudience(input: {
-	plan: PlanName
-	ladder: EntitlementLadder
-	audience: ComputeOverageBillAudience
-}): boolean {
-	switch (input.audience) {
-		case 'public':
-			return input.ladder === 'public'
-		case 'everyone':
-			return true
-		default: {
-			const exhaustive: never = input.audience
-			throw new Error(
-				`Unknown compute overage bill audience: ${String(exhaustive)}`,
-			)
-		}
-	}
-}
-
-/**
- * Included-then-overage amounts for one UTC month. Always computes the
- * display math, including for legacy (which stays unbilled).
- */
+/** Include-then-credits amounts for one UTC month. */
 export function computeMonthlyOverage(input: {
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
 	uniqueWorkerDays: number
 	durableObjectRowsRead: number
 }): MonthlyComputeOverage {
-	const limits = resolvePlanLimits(input.plan, input.ladder)
+	const limits = resolvePlanLimits(input.plan, input.ladder, input.creditWallet)
 	const uniqueWorkerDays = nonNegativeInteger(input.uniqueWorkerDays)
 	const durableObjectRowsRead = nonNegativeInteger(input.durableObjectRowsRead)
 	const includedUniqueWorkerDays = limits.maxUniqueWorkerDaysPerMonth
@@ -193,24 +162,67 @@ export function computeMonthlyOverage(input: {
 		0,
 		durableObjectRowsRead - includedDurableObjectRowsRead,
 	)
-	const uniqueWorkerDayUsd =
-		billableUniqueWorkerDays * computeOverageRatesUsd.uniqueWorkerDay
-	const durableObjectRowsReadUsd =
-		(billableDurableObjectRowsRead / durableObjectRowsPerMillion) *
-		computeOverageRatesUsd.durableObjectRowsReadPerMillion
 	return {
 		includedUniqueWorkerDays,
 		includedDurableObjectRowsRead,
 		billableUniqueWorkerDays,
 		billableDurableObjectRowsRead,
-		uniqueWorkerDayUsd,
-		durableObjectRowsReadUsd,
-		uniqueWorkerDayCents: usdToCents(uniqueWorkerDayUsd),
-		durableObjectRowsReadCents: usdToCents(durableObjectRowsReadUsd),
-		totalCents:
-			usdToCents(uniqueWorkerDayUsd) + usdToCents(durableObjectRowsReadUsd),
-		legacyUnbilled: isLegacyUnbilled(input.plan, input.ladder),
+		creditsCostMicroUsd:
+			creditDebitCostMicroUsd('unique_worker_days', billableUniqueWorkerDays) +
+			creditDebitCostMicroUsd(
+				'durable_object_rows_read',
+				billableDurableObjectRowsRead,
+			),
 	}
+}
+
+/**
+ * Monthly overage for debits and forgiveness progress. Wallet-eligible Pro
+ * always uses the subscription include (350 UWD / 5B rows), not empty-wallet
+ * Free enforcement caps from {@link resolvePlanLimits}.
+ */
+export function computeMonthlyOverageForDebit(input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	uniqueWorkerDays: number
+	durableObjectRowsRead: number
+}): MonthlyComputeOverage {
+	const walletEligiblePro =
+		input.plan === 'pro' && input.creditWallet !== 'none'
+	return computeMonthlyOverage(
+		walletEligiblePro
+			? {
+					plan: 'pro',
+					ladder: input.ladder,
+					creditWallet: 'funded',
+					uniqueWorkerDays: input.uniqueWorkerDays,
+					durableObjectRowsRead: input.durableObjectRowsRead,
+				}
+			: input,
+	)
+}
+
+export type PastIncludeStop = {
+	resource: ComputeOverageWarningResource
+	limit: number
+	current: number
+}
+
+/**
+ * Former include → credits → stop gate (0051). ADR 0065 replaced the hard
+ * stop with Free rate/compute fallback via {@link resolvePlanLimits}, so
+ * this always returns `null`. Kept for stable imports and informational
+ * callers.
+ */
+export function resolvePastIncludeStop(_input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	uniqueWorkerDays: number
+	durableObjectRowsRead: number
+}): PastIncludeStop | null {
+	return null
 }
 
 export function computeOverageIncludePercent(
@@ -222,92 +234,78 @@ export function computeOverageIncludePercent(
 	return current / include
 }
 
-/**
- * Decide whether this month's overage becomes a Stripe invoice, a Free
- * soft-block (upgrade prompt, no charge), a dry-run while the flag is
- * off, or a skip. Legacy never returns `invoice`.
- */
-export function resolveComputeOverageDisposition(
-	input: ComputeOverageDispositionInput,
-): ComputeOverageDisposition {
-	const policy = input.policy ?? computeOverageBillingPolicy
-	if (input.overage.totalCents <= 0) return 'skip_zero'
-	if (input.overage.legacyUnbilled && !policy.chargeLegacy) {
-		return 'skip_legacy'
-	}
-	if (
-		!matchesBillAudience({
-			plan: input.plan,
-			ladder: input.ladder,
-			audience: policy.audience,
-		})
-	) {
-		return 'skip_audience'
-	}
-	if (input.plan === 'free' && !input.hasStripeCustomer) {
-		return 'soft_block'
-	}
-	if (!input.chargingEnabled) return 'dry_run'
-	if (!input.hasStripeCustomer) return 'dry_run'
-	if (input.overage.totalCents < stripeUsdMinimumChargeCents) {
-		return 'skip_below_minimum'
-	}
-	return 'invoice'
-}
-
-/**
- * Actionable reduction + billing next step for one monthly compute meter.
- * Disposition is optional: omit it for the generic under-include prompt.
- */
-export function buildComputeOverageHowToReduce(
-	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
-): string {
-	const base = computeOverageResourceVisibility[resource].howToReduce
-	const billing = computeOverageBillingGuidance(resource, disposition)
-	return billing ? `${base} ${billing}` : base
-}
-
-function computeOverageBillingGuidance(
-	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
-): string {
-	const uniqueWorkerDayRate = `$${computeOverageRatesUsd.uniqueWorkerDay}`
-	const rowsReadRate = `$${computeOverageRatesUsd.durableObjectRowsReadPerMillion} per million`
-	switch (disposition) {
-		case 'soft_block':
-			return 'Upgrade your plan or add a payment method at /account/billing. Free accounts without a payment method are asked to upgrade instead of being charged for overage.'
-		case 'invoice':
-			return resource === 'unique_worker_days'
-				? `Usage above this month's include is billed at ${uniqueWorkerDayRate} per unique worker day after the UTC month closes.`
-				: `Usage above this month's include is billed at ${rowsReadRate} rows read after the UTC month closes.`
-		case 'skip_legacy':
-			return 'Legacy Standard and Pro are not billed for this overage. Changing plan moves you onto public rates.'
-		case 'dry_run':
-			return 'Overage is being recorded but is not billed while charging is paused.'
-		case 'skip_below_minimum':
-			return resource === 'unique_worker_days'
-				? `Public-ladder overage is billed at ${uniqueWorkerDayRate} per unique worker day when a payment method is on file. Amounts below Stripe's $0.50 minimum are not invoiced.`
-				: `Public-ladder overage is billed at ${rowsReadRate} rows read when a payment method is on file. Amounts below Stripe's $0.50 minimum are not invoiced.`
-		case 'skip_zero':
-		case 'skip_audience':
-		case undefined:
-		case null:
-			return resource === 'unique_worker_days'
-				? `Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage at ${uniqueWorkerDayRate} per unique worker day.`
-				: 'Upgrade your plan for a higher include, or add a payment method to continue on public-ladder overage.'
+export function resolveComputeIncludeCreditsStatus(input: {
+	plan: PlanName
+	creditWallet: CreditWalletState
+	pastInclude: boolean
+}): ComputeIncludeCreditsStatus {
+	if (!input.pastInclude) return 'within_include'
+	switch (input.creditWallet) {
+		case 'funded':
+			return 'debiting_credits'
+		case 'empty':
+			return 'add_credits'
+		case 'none':
+			return input.plan === 'max' ? 'not_charged' : 'switch_to_pro'
 		default: {
-			const exhaustive: never = disposition
-			throw new Error(
-				`Unknown compute overage disposition: ${String(exhaustive)}`,
-			)
+			const exhaustive: never = input.creditWallet
+			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
 		}
 	}
 }
 
-/** Previous UTC `YYYY-MM` for a clock instant. */
-export function previousUtcMonthKey(now: Date): string {
-	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-		.toISOString()
-		.slice(0, 'YYYY-MM'.length)
+/**
+ * Reduction advice plus the credits next step for one monthly meter.
+ * Every non-operator account points at {@link accountCreditsPath}; Free and
+ * retired plans land there on the switch-to-Pro prompt.
+ */
+export function buildComputeOverageHowToReduce(
+	resource: ComputeOverageWarningResource,
+	plan: PlanName,
+	creditWallet: CreditWalletState,
+): string {
+	const base = computeOverageResourceVisibility[resource].howToReduce
+	const guidance = buildComputeOverageCreditsGuidance(
+		resource,
+		plan,
+		creditWallet,
+	)
+	return guidance ? `${base} ${guidance}` : base
+}
+
+/** The credits next step alone (empty for operator `max`). */
+export function buildComputeOverageCreditsGuidance(
+	resource: ComputeOverageWarningResource,
+	plan: PlanName,
+	creditWallet: CreditWalletState,
+): string {
+	const rate = creditDebitRates[resource].label
+	switch (creditWallet) {
+		case 'funded':
+			return `Usage past the include is charged from your credits at ${rate}. When credits run out, rate and compute limits match Free until you top up.`
+		case 'empty':
+			return `With no credits left, rate and compute limits match Free until you top up. Add credits at ${accountCreditsPath} to restore Pro rates; past-include usage is charged at ${rate} after you top up.`
+		case 'none':
+			if (plan === 'max') return ''
+			return plan === 'free'
+				? 'On Free this is informational: it never charges you or stops runs. Execute caps are your limit.'
+				: `Usage above the include is not charged on your plan. Switch to Pro at ${accountCreditsPath} to add credits.`
+		default: {
+			const exhaustive: never = creditWallet
+			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Credits only help rate/compute limits a funded wallet raises and the
+ * monthly compute meters it pays for; stock, email, storage, and
+ * concurrency warnings get no credits link (purchasable Pro stock is on
+ * the subscription base table).
+ */
+export function warningOffersCredits(resource: string): boolean {
+	return (
+		(creditsUnlockedResources as ReadonlyArray<string>).includes(resource) ||
+		(computeOverageWarningResources as ReadonlyArray<string>).includes(resource)
+	)
 }

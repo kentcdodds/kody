@@ -76,24 +76,23 @@ async function requestDelete(body: unknown) {
 	return createHandler().handler(new RequestContext(request) as never)
 }
 
+function signInOauthOnlyUser() {
+	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
+	mocks.findOne.mockResolvedValue({
+		id: 7,
+		password_hash: 'oauth_created_no_usable_password',
+	})
+}
+
 beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
 test('account deletion requires GOODBYE KODY, password when one exists, and emits user.deleted', async () => {
-	const handlerUserMissing = createHandler()
 	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValueOnce(null)
-	const unauthenticated = await handlerUserMissing.handler(
-		new RequestContext(
-			new Request('https://example.com/account/delete', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					confirmation: accountDeletionConfirmationPhrase,
-				}),
-			}),
-		) as never,
-	)
+	const unauthenticated = await requestDelete({
+		confirmation: accountDeletionConfirmationPhrase,
+	})
 	expect(unauthenticated.status).toBe(401)
 
 	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
@@ -107,25 +106,18 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 		warnings: [],
 	})
 
-	const missingConfirmation = await requestDelete({ password: 'secret' })
-	expect(missingConfirmation.status).toBe(400)
-
-	const wrongPhrase = await requestDelete({
-		confirmation: 'goodbye kody',
-		password: 'secret',
-	})
-	expect(wrongPhrase.status).toBe(400)
-
-	const missingPassword = await requestDelete({
-		confirmation: accountDeletionConfirmationPhrase,
-	})
-	expect(missingPassword.status).toBe(400)
-
-	const wrongPassword = await requestDelete({
-		confirmation: accountDeletionConfirmationPhrase,
-		password: 'nope',
-	})
-	expect(wrongPassword.status).toBe(401)
+	const rejections = [
+		[{ password: 'secret' }, 400],
+		[{ confirmation: 'goodbye kody', password: 'secret' }, 400],
+		[{ confirmation: accountDeletionConfirmationPhrase }, 400],
+		[
+			{ confirmation: accountDeletionConfirmationPhrase, password: 'nope' },
+			401,
+		],
+	] as const
+	for (const [body, status] of rejections) {
+		expect([body, (await requestDelete(body)).status]).toEqual([body, status])
+	}
 	expect(mocks.deleteUserAccount).not.toHaveBeenCalled()
 
 	mocks.verifyPassword.mockResolvedValue(true)
@@ -177,13 +169,7 @@ test('account deletion requires GOODBYE KODY, password when one exists, and emit
 })
 
 test('a Stripe cancellation failure keeps the session and tells the user the subscription was not canceled', async () => {
-	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
-	mocks.findOne.mockResolvedValue({
-		id: 7,
-		password_hash: 'oauth_created_no_usable_password',
-	})
-	mocks.deleteUserAccount.mockClear()
-	mocks.scheduleUserDeletedEvent.mockClear()
+	signInOauthOnlyUser()
 	mocks.deleteUserAccount.mockRejectedValueOnce(
 		new AccountDeletionBillingError([
 			'Stripe subscription sub_1 could not be canceled: HTTP 503',
@@ -210,12 +196,7 @@ test('a Stripe cancellation failure keeps the session and tells the user the sub
 })
 
 test('a successful deletion reports issued refunds as display amounts', async () => {
-	mocks.readAuthenticatedAppUserForDeletion.mockResolvedValue(signedInUser)
-	mocks.findOne.mockResolvedValue({
-		id: 7,
-		password_hash: 'oauth_created_no_usable_password',
-	})
-	mocks.deleteUserAccount.mockClear()
+	signInOauthOnlyUser()
 	mocks.deleteUserAccount.mockResolvedValueOnce({
 		deletedRowCounts: { users: 1 },
 		warnings: [],

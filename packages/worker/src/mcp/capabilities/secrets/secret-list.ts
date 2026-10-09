@@ -12,8 +12,9 @@ export const secretListCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretList',
+		orgPermission: 'secret:use',
 		description:
-			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, allowed packages, and package_id for package-scoped secrets — never plaintext values. Explicit listing includes caller-owned package-scoped metadata from execute (no package runtime); using a package secret still requires package context. From a package runtime, self-authored and adopted packages see user secrets they can already read; unadopted community forks see only explicitly granted user secrets. Listing a secret does not approve a host: outbound `fetch` still resolves `{{secret:name}}` (optionally `{{secret:name|scope=user}}`) only for approved hosts. Use `kody.secretList({ scope })` inside execute-time code for the same metadata. Use `/account/secrets/new` for user-provided API key, token, and credential entry or rotation.',
+			'List available secret references for the signed-in user. Results include metadata such as names, descriptions, allowed hosts, allowed packages, and package_id for package-scoped secrets — never plaintext values. Explicit listing includes caller-owned package-scoped metadata from execute (no package runtime); using a package secret still requires package context. From a package runtime, self-authored and adopted packages see user secrets they can already read; unadopted community forks see only explicitly granted user secrets. Listing a secret does not approve a host: outbound `fetch` still resolves `{{secret:name}}` (optionally `{{secret:name|scope=user}}`) only for approved hosts. Use `kody.secretList({ scope })` inside execute-time code for the same metadata. Use `/connect/secret-set` for user-provided API key, token, and credential entry or rotation.',
 		keywords: ['secret', 'list', 'discovery', 'metadata', 'credentials'],
 		readOnly: true,
 		idempotent: true,

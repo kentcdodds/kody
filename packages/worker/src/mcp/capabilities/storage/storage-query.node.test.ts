@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -24,9 +25,10 @@ const { storageQueryCapability } = await import('./storage-query.ts')
 
 function createCallerContext() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'User',
 		},
@@ -35,10 +37,11 @@ function createCallerContext() {
 
 function createPackageCallerContext(packageId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		executionOrigin: 'background',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'User',
 		},
@@ -71,6 +74,32 @@ test('storageQuery wraps Durable Object SQL caller mistakes and rethrows platfor
 		(error: unknown) =>
 			error instanceof McpCallerError &&
 			error.message === 'no such table: articles: SQLITE_ERROR',
+	)
+
+	// Extended Cloudflare suffix form (KODY-8P): "SQLITE_CONSTRAINT (extended: …)"
+	mockModule.sqlQuery.mockRejectedValueOnce(
+		new Error(
+			'FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)',
+		),
+	)
+
+	await expect(
+		storageQueryCapability.handler(
+			{
+				storage_id: 'storage-1',
+				query: 'INSERT INTO probe_t (parent_id) VALUES (99)',
+				writable: true,
+			},
+			{
+				env: {} as Env,
+				callerContext: createCallerContext(),
+			} as never,
+		),
+	).rejects.toSatisfy(
+		(error: unknown) =>
+			error instanceof McpCallerError &&
+			error.message ===
+				'FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)',
 	)
 
 	const platformError = new Error(

@@ -62,36 +62,30 @@ function createService(db: D1Database) {
 
 test('listJobIdsForUser returns the user’s live and archived job ids from the jobs D1 only', async () => {
 	const { sqlite, db } = createJobsDb()
-	insertJob(sqlite, { id: 'job-1', userId: 'user-aaa' })
-	insertJob(sqlite, { id: 'job-2', userId: 'user-aaa' })
-	insertJob(sqlite, { id: 'job-3', userId: 'user-bbb' })
+	for (const [id, userId] of [
+		['job-1', 'user-aaa'],
+		['job-2', 'user-aaa'],
+		['job-3', 'user-bbb'],
+	] as const) {
+		insertJob(sqlite, { id, userId })
+	}
 	// A job that was deleted by retention and archived keeps its id here so a
 	// leftover vector can still be swept; a still-live job that is also
 	// archived must not be listed twice.
-	insertArchivedArtifact(sqlite, {
-		id: 'aja-1',
-		jobId: 'job-archived',
-		userId: 'user-aaa',
-	})
-	insertArchivedArtifact(sqlite, {
-		id: 'aja-2',
-		jobId: 'job-2',
-		userId: 'user-aaa',
-	})
-	insertArchivedArtifact(sqlite, {
-		id: 'aja-3',
-		jobId: 'job-other-archived',
-		userId: 'user-bbb',
-	})
+	for (const [id, jobId, userId] of [
+		['aja-1', 'job-archived', 'user-aaa'],
+		['aja-2', 'job-2', 'user-aaa'],
+		['aja-3', 'job-other-archived', 'user-bbb'],
+	] as const) {
+		insertArchivedArtifact(sqlite, { id, jobId, userId })
+	}
 
 	const service = createService(db)
-	await expect(
-		service.listJobIdsForUser({ userId: 'user-aaa' }),
-	).resolves.toEqual(['job-1', 'job-2', 'job-archived'])
-	await expect(
-		service.listJobIdsForUser({ userId: 'user-bbb' }),
-	).resolves.toEqual(['job-3', 'job-other-archived'])
-	await expect(
-		service.listJobIdsForUser({ userId: 'user-none' }),
-	).resolves.toEqual([])
+	for (const [userId, jobIds] of [
+		['user-aaa', ['job-1', 'job-2', 'job-archived']],
+		['user-bbb', ['job-3', 'job-other-archived']],
+		['user-none', []],
+	] as const) {
+		await expect(service.listJobIdsForUser({ userId })).resolves.toEqual(jobIds)
+	}
 })

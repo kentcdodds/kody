@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_DETAIL_TARGET } from '#universal/community-frame-constants.ts'
@@ -268,7 +268,7 @@ export async function communityDetailRouteLoader(
 ): Promise<RouteLoaderResult> {
 	const ref = getPackageDetailApiRef(url.pathname)
 	if (!ref) {
-		throw new Error('Community listing not found.')
+		throw new Error('Catalog entry not found.')
 	}
 
 	const frameSrc = buildCommunityDetailFrameSrc(`${url.pathname}${url.search}`)
@@ -307,7 +307,7 @@ export async function communityDetailRouteLoader(
 	}
 	if (getPackageSettingsPageRef(url.pathname)) {
 		if (!payload.viewerIsOwner || !payload.ownerPackage) {
-			throw new Error('Community listing not found.')
+			throw new Error('Catalog entry not found.')
 		}
 	}
 

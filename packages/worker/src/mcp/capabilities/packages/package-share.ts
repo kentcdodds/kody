@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -100,6 +101,7 @@ export const packageShareInviteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareInvite',
+		orgPermission: 'package:manage_access',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Invite a person by username or email to use one of your saved packages. They must accept before the package is attached. Guests can read source and invoke; they cannot publish or write. Both accounts must be on a paid plan.',
@@ -157,6 +159,7 @@ export const packageShareAcceptCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareAccept',
+		orgPermission: 'package:create',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Accept a pending package share invitation. Default trust_level is pin (safer): use and import fail closed if the owner publishes ahead until you approve the diff. follow auto-accepts future publishes.',
@@ -209,6 +212,7 @@ export const packageShareRevokeCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareRevoke',
+		orgPermission: 'package:manage_access',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Revoke a package share grant you own. New invokes and imports fail immediately. In-flight worker isolates may finish.',
@@ -247,6 +251,7 @@ export const packageShareLeaveCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareLeave',
+		orgPermission: 'package:delete',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Leave a package that was shared with you. Your own packages keep existing imports, but the next call into the left package fails.',
@@ -285,6 +290,7 @@ export const packageShareListCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareList',
+		orgPermission: 'package:read',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'List package share grants: outbound (what you shared), inbound (shared with you, including pending email invites), or by one owned package.',
@@ -363,6 +369,7 @@ export const packageShareInspectCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareInspect',
+		orgPermission: 'package:read',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Inspect one package share grant you own or that is addressed to you, including pin-ahead state and the approve-changes path.',
@@ -388,7 +395,7 @@ export const packageShareInspectCapability = defineDomainCapability(
 				})
 				if (
 					!grant ||
-					(grant.ownerUserId !== user.userId &&
+					(grant.ownerUserId !== personalOrgId(user.userId) &&
 						!grantIsAddressedToGuest(
 							grant,
 							user.userId,
@@ -418,6 +425,7 @@ export const packageShareAcknowledgeUpdateCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageShareAcknowledgeUpdate',
+		orgPermission: 'package:write',
 		featureFlag: packageShareGrantsFlagKey,
 		description:
 			'Approve one reviewed published commit of a pin-trust shared package after inspecting the accepted-to-current diff. Pin approval requires published_commit. Optionally switch to follow.',

@@ -22,13 +22,26 @@ the grant is the security boundary.
 1. **Stamp (bundler).** Modules that originate from a saved package rewrite
    `kody:runtime` to `.__kody_virtual__/package-runtime/<hex(packageId)>.js`.
    That module closes `packageStorage` and `packageSecrets` over the declaring
-   package UUID. Ad hoc execute entry code is unstamped. See
-   `createPackageRuntimeModuleSource` and `rewriteKodyImports`.
+   package UUID. Ad hoc execute entry code is unstamped and rewrites to
+   `.__kody_virtual__/public-runtime.js`. Both re-export an explicit allowlist
+   of public `kody:runtime` names. The shared runtime's stamp helpers
+   (`__kodyCreatePackageBoundSecrets`, `__kodyMeterStaticPackageExport`, …)
+   enter secret authority for any id, so they stay bundler-internal: an import
+   specifier (or a manifest / wrangler path value) that targets
+   `.__kody_virtual__/` fails the build, and computed `import()` of those paths
+   throws. Comments and strings that only name the directory build fine. See
+   `createPackageRuntimeModuleSource`, `createPublicRuntimeModuleSource`, and
+   `rewriteKodyImports`.
 2. **Grant (host).** `collectPackageStorageGrantIds` in
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
    - the run's `packageContext.packageId` (when the run _is_ a package)
-   - each static dependency `packageId` where `platformOwned !== true`
+   - each static dependency `packageId` where `platformOwned !== true`,
+     including `transitive: true` entries: packages that a dependency's export
+     statically imports from files reachable from that export
+     (`resolveKodyDependenciesForEntryPoint` in `module-graph-workspace.ts`).
+     Execute that imports only A still grants B when A's export imports B.
+     Static-call metering, popularity, and republish staleness stay direct-only.
    - dynamic-import artifact ids installed during hydration
 3. **Enforce.** `createPackageStorageKodyTools` rejects any sandbox-supplied
    `packageId` outside that set. Secret mounts (`packageSecrets`) do not take an
@@ -53,8 +66,7 @@ stamp-aligned secret authority.
 
 `packageContext` on a static import from execute stays `null`. Code that needs
 the ambient run (hosted URL, app paths) must run as that package: inbound
-webhooks for external clients, or a job / subscription / app surface. Authors do
-not get a `packages.invoke` composition helper (0037).
+webhooks for external clients, or a job / subscription / app surface.
 
 Issue `#1691` is user-scope `{{secret}}` placeholders resolved at the fetch
 gateway for the calling user. The gateway authorizes those placeholders as the
@@ -121,7 +133,7 @@ sequenceDiagram
 	Bucket-->>Host: same A bucket as the import path
 	Host->>Mounts: packageSecrets.get alias
 	Note over Mounts: stamp and run are both A
-	Mounts-->>Host: A's kody.secretMounts
+	Mounts-->>Host: opaque {{secret:…}} ref (never plaintext)
 	Host->>Gateway: fetch with user secret placeholder
 	Note over Gateway: storageContext.packageId is A
 	Gateway-->>Host: allowed_packages must include A
@@ -157,11 +169,11 @@ A's grants and mounts.
 
 Literal `import("kody:@...")` is a teaching error: known names are static
 imports. Computed `import(specifier)` for `kody:@` names loads caller-owned /
-forked modules. The hydrator rebuilds caller-owned `importable-module` artifacts
-(`resolveCurrentDynamicPackageArtifact` in `module-graph-hydration.ts`). A
-quarantined runtime helper still facades some computed loads
-([#1750](https://github.com/kentcdodds/kody/issues/1750)); authors and agents do
-not call that helper.
+forked modules through a host library-load bridge
+(`resolveCurrentDynamicPackageArtifact` / nested evaluate with the caller's
+`packageContext` and callee stamp grants). Authors compose with static `kody:@`
+imports, `import(specifier)`, or workflows; `packages` stays `null`
+([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 
 If the specifier is a **caller-owned** package and `import()` means “library
 load in this isolate,” storage, context, and secrets match static import: A's

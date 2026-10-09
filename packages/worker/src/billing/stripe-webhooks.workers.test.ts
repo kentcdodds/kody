@@ -1,14 +1,19 @@
 import { env } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
-import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts'
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
+import { readCreditWallet } from './credit-wallet.ts'
+import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const webhookSecret = 'whsec_test_workers_secret'
 const now = new Date('2026-07-25T12:00:00.000Z')
+const processFailed = {
+	status: 500,
+	body: { ok: false, error: 'Failed to process Stripe webhook event.' },
+}
 
 function jsonResponse(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -17,22 +22,16 @@ function jsonResponse(body: unknown, status = 200) {
 	})
 }
 
-function createWebhookEnv(
-	overrides: {
-		STRIPE_SECRET_KEY?: string
-		STRIPE_WEBHOOK_SECRET?: string
-		STRIPE_PRO_PRICE_ID?: string
-		STRIPE_API_BASE_URL?: string
-	} = {},
-): Env {
+function createWebhookEnv(overrides: Partial<Env> = {}): Env {
+	const testProPriceId: string = 'price_pro'
 	return {
 		...env,
 		STRIPE_SECRET_KEY: 'sk_test_secret',
 		STRIPE_WEBHOOK_SECRET: webhookSecret,
-		STRIPE_PRO_PRICE_ID: 'price_pro',
+		STRIPE_PRO_PRICE_ID: testProPriceId,
 		STRIPE_API_BASE_URL: 'https://stripe.mock',
 		...overrides,
-	}
+	} as Env
 }
 
 async function seedUser(input: {
@@ -40,8 +39,8 @@ async function seedUser(input: {
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 }) {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	await ensureCreditWalletTestSchema(env.APP_DB)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,
@@ -66,93 +65,156 @@ async function seedUser(input: {
 	if (!row) throw new Error(`Failed to seed user ${input.email}`)
 	return {
 		id: row.id,
-		email: input.email,
 		stableUserId,
 		linkReference: await createBillingLinkReference(env, stableUserId),
 	}
 }
 
-async function readUserBilling(userId: number) {
+type SeededUser = Awaited<ReturnType<typeof seedUser>>
+
+async function seedReferral(
+	referrer: SeededUser,
+	referee: SeededUser,
+	createdAt: string,
+	held?: { invoiceId: string; periodEndAt: string },
+) {
+	await env.APP_DB.prepare(
+		`INSERT INTO referrals (
+			referrer_stable_user_id, referee_stable_user_id, created_at, status,
+			held_invoice_id, held_period_end_at
+		) VALUES (?, ?, ?, 'pending', ?, ?)`,
+	)
+		.bind(
+			referrer.stableUserId,
+			referee.stableUserId,
+			createdAt,
+			held?.invoiceId ?? null,
+			held?.periodEndAt ?? null,
+		)
+		.run()
+}
+
+function readReferral<T>(referee: SeededUser, columns: string) {
+	return env.APP_DB.prepare(
+		`SELECT ${columns} FROM referrals WHERE referee_stable_user_id = ?`,
+	)
+		.bind(referee.stableUserId)
+		.first<T>()
+}
+
+function readUserBilling(userId: number) {
 	return env.APP_DB.prepare(
 		`SELECT stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
 		 FROM users WHERE id = ?`,
 	)
 		.bind(userId)
-		.first<{
-			stripe_customer_id: string | null
-			stripe_plan: string | null
-			stripe_plan_refreshed_at: string | null
-		}>()
+		.first()
 }
 
-async function readWebhookEvent(eventId: string) {
+function readWebhookEvent(eventId: string) {
 	return env.APP_DB.prepare(
 		`SELECT event_id, event_type FROM stripe_webhook_events WHERE event_id = ?`,
 	)
 		.bind(eventId)
-		.first<{ event_id: string; event_type: string }>()
+		.first()
+}
+
+function subscriptionList(id: string, status: string, item = {}) {
+	return {
+		data: [
+			{
+				id,
+				status,
+				cancel_at: null,
+				items: { data: [{ price: { id: 'price_pro' }, ...item }] },
+			},
+		],
+	}
+}
+
+function stubFetch(handler: (url: string) => Response | Promise<Response>) {
+	const fetchStub = vi.fn(async (request: RequestInfo | URL) =>
+		handler(String(request)),
+	)
+	vi.stubGlobal('fetch', fetchStub)
+	return Object.assign(fetchStub, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
 }
 
 function stubStripeFetch(input: {
 	checkout?: unknown
-	subscriptions?: unknown
+	subscriptions: unknown
 }) {
-	const fetchStub = vi.fn(async (request: RequestInfo | URL) => {
-		const url = String(request)
+	return stubFetch((url) => {
 		if (url.includes('/v1/checkout/sessions/')) {
-			return jsonResponse(
-				input.checkout ?? {
-					id: 'cs_test',
-					customer: 'cus_linked',
-					client_reference_id: null,
-				},
-			)
+			return jsonResponse(input.checkout)
 		}
 		if (url.includes('/v1/subscriptions')) {
-			return jsonResponse(
-				input.subscriptions ?? {
-					data: [
-						{
-							id: 'sub_1',
-							status: 'active',
-							cancel_at: null,
-							items: {
-								data: [{ price: { id: 'price_pro' } }],
-							},
-						},
-					],
-				},
-			)
+			return jsonResponse(input.subscriptions)
 		}
 		return jsonResponse({ error: 'unexpected stripe path' }, 500)
 	})
-	vi.stubGlobal('fetch', fetchStub)
-	return fetchStub
 }
 
-async function signedWebhookRequest(input: {
-	event: Record<string, unknown>
-	secret?: string
-}) {
-	const rawBody = JSON.stringify(input.event)
+const stripeDown = () =>
+	stubFetch(() => jsonResponse({ error: 'stripe down' }, 500))
+
+const noFetch = (reason: string) =>
+	stubFetch(() => {
+		throw new Error(`fetch should not run for ${reason}`)
+	})
+
+async function deliver(event: Record<string, unknown>, secret = webhookSecret) {
+	const rawBody = JSON.stringify(event)
 	const signature = await buildStripeWebhookSignatureHeader({
-		secret: input.secret ?? webhookSecret,
+		secret,
 		rawBody,
 		timestamp: Math.floor(now.valueOf() / 1000),
 	})
-	return new Request('https://test.kody.dev/webhooks/stripe', {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-			'stripe-signature': signature,
-		},
-		body: rawBody,
+	return handleStripeWebhookRequest({
+		env: createWebhookEnv(),
+		request: new Request('https://test.kody.dev/webhooks/stripe', {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				'stripe-signature': signature,
+			},
+			body: rawBody,
+		}),
+		now,
 	})
+}
+
+function invoicePaid(
+	id: string,
+	created: number,
+	invoice: {
+		id: string
+		customer: string
+		subscription: string
+		amount_paid: number
+		billing_reason?: string
+	},
+) {
+	return {
+		id,
+		type: 'invoice.paid',
+		created,
+		data: {
+			object: {
+				object: 'invoice',
+				status: 'paid',
+				billing_reason: 'subscription_create',
+				...invoice,
+			},
+		},
+	}
 }
 
 test('stripe webhook verifies signature, links checkout, refreshes subscription, and is idempotent', async () => {
 	// Guard: returns 503 when webhook secret is not configured.
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	const unconfigured = await handleStripeWebhookRequest({
 		env: createWebhookEnv({ STRIPE_WEBHOOK_SECRET: '' }),
 		request: new Request('https://test.kody.dev/webhooks/stripe', {
@@ -167,77 +229,51 @@ test('stripe webhook verifies signature, links checkout, refreshes subscription,
 	// Main journey: checkout completion, subscription update, unknown event, bad signature.
 	const email = `wh-checkout-${crypto.randomUUID()}@example.com`
 	const user = await seedUser({ email })
-	stubStripeFetch({
-		checkout: {
-			id: 'cs_webhook',
-			customer: 'cus_webhook',
-			client_reference_id: user.linkReference,
-		},
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_webhook',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
-	})
-
+	const checkoutSession = {
+		id: 'cs_webhook',
+		customer: 'cus_webhook',
+		client_reference_id: user.linkReference,
+	}
 	const checkoutEvent = {
 		id: `evt_checkout_${crypto.randomUUID()}`,
 		type: 'checkout.session.completed',
 		data: {
 			object: {
-				id: 'cs_webhook',
-				customer: 'cus_webhook',
-				client_reference_id: user.linkReference,
+				...checkoutSession,
 				customer_email: email,
 				metadata: { kody_stable_user_id: user.stableUserId },
 			},
 		},
 	}
-
-	const first = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: checkoutEvent }),
-		now,
-	})
-	expect(first).toEqual({ status: 200, body: { ok: true } })
-	expect(await readUserBilling(user.id)).toEqual({
+	const linkedPro = {
 		stripe_customer_id: 'cus_webhook',
 		stripe_plan: 'pro',
 		stripe_plan_refreshed_at: now.toISOString(),
-	})
-	expect(await readWebhookEvent(checkoutEvent.id)).toEqual({
-		event_id: checkoutEvent.id,
-		event_type: 'checkout.session.completed',
-	})
+	}
+	{
+		using _fetch = stubStripeFetch({
+			checkout: checkoutSession,
+			subscriptions: subscriptionList('sub_webhook', 'active'),
+		})
+		expect(await deliver(checkoutEvent)).toEqual({
+			status: 200,
+			body: { ok: true },
+		})
+		expect(await readUserBilling(user.id)).toEqual(linkedPro)
+		expect(await readWebhookEvent(checkoutEvent.id)).toEqual({
+			event_id: checkoutEvent.id,
+			event_type: 'checkout.session.completed',
+		})
+		expect(await deliver(checkoutEvent)).toEqual({
+			status: 200,
+			body: { ok: true, duplicate: true },
+		})
+	}
 
-	const duplicate = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: checkoutEvent }),
-		now,
+	using _fetch = stubStripeFetch({
+		subscriptions: subscriptionList('sub_webhook', 'past_due'),
 	})
-	expect(duplicate).toEqual({
-		status: 200,
-		body: { ok: true, duplicate: true },
-	})
-
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_webhook',
-					status: 'past_due',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
-	})
-	const updatedEvent = {
+	const updated = await deliver({
 		id: `evt_sub_${crypto.randomUUID()}`,
 		type: 'customer.subscription.updated',
 		data: {
@@ -247,52 +283,35 @@ test('stripe webhook verifies signature, links checkout, refreshes subscription,
 				status: 'past_due',
 			},
 		},
-	}
-	const updated = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: updatedEvent }),
-		now,
 	})
 	expect(updated).toEqual({ status: 200, body: { ok: true } })
 	// past_due keeps paid entitlements through Stripe's dunning window.
-	expect(await readUserBilling(user.id)).toMatchObject({
-		stripe_customer_id: 'cus_webhook',
-		stripe_plan: 'pro',
-		stripe_plan_refreshed_at: now.toISOString(),
-	})
+	expect(await readUserBilling(user.id)).toEqual(linkedPro)
 
 	const unknownEvent = {
 		id: `evt_unknown_${crypto.randomUUID()}`,
 		type: 'radar.early_fraud_warning.created',
 		data: { object: { id: 'issfr_1' } },
 	}
-	const unknown = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: unknownEvent }),
-		now,
+	expect(await deliver(unknownEvent)).toEqual({
+		status: 200,
+		body: { ok: true },
 	})
-	expect(unknown).toEqual({ status: 200, body: { ok: true } })
 	expect(await readWebhookEvent(unknownEvent.id)).toEqual({
 		event_id: unknownEvent.id,
 		event_type: 'radar.early_fraud_warning.created',
 	})
 
-	const badSig = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({
-			event: {
-				id: `evt_bad_${crypto.randomUUID()}`,
-				type: 'checkout.session.completed',
-				data: { object: { id: 'cs_x' } },
-			},
-			secret: 'whsec_wrong_secret',
-		}),
-		now,
-	})
+	const badSig = await deliver(
+		{
+			id: `evt_bad_${crypto.randomUUID()}`,
+			type: 'checkout.session.completed',
+			data: { object: { id: 'cs_x' } },
+		},
+		'whsec_wrong_secret',
+	)
 	expect(badSig.status).toBe(400)
 	expect(badSig.body.ok).toBe(false)
-
-	vi.unstubAllGlobals()
 })
 
 test('stripe webhook process failure returns 500 without recording the event', async () => {
@@ -300,9 +319,8 @@ test('stripe webhook process failure returns 500 without recording the event', a
 		'stripe_api_error',
 		'stripe_webhook_process_failed',
 	])
-	const email = `wh-fail-${crypto.randomUUID()}@example.com`
 	const user = await seedUser({
-		email,
+		email: `wh-fail-${crypto.randomUUID()}@example.com`,
 		stripeCustomerId: 'cus_fail_retry',
 	})
 	const eventId = `evt_fail_${crypto.randomUUID()}`
@@ -310,47 +328,23 @@ test('stripe webhook process failure returns 500 without recording the event', a
 		id: eventId,
 		type: 'customer.subscription.updated',
 		data: {
-			object: {
-				id: 'sub_fail',
-				customer: 'cus_fail_retry',
-				status: 'active',
-			},
+			object: { id: 'sub_fail', customer: 'cus_fail_retry', status: 'active' },
 		},
 	}
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async () => jsonResponse({ error: 'stripe down' }, 500)),
-	)
-
-	const result = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event }),
-		now,
-	})
-	expect(result.status).toBe(500)
-	expect(result.body.ok).toBe(false)
-	expect(await readWebhookEvent(eventId)).toBeNull()
+	{
+		using _fetch = stripeDown()
+		const result = await deliver(event)
+		expect(result.status).toBe(500)
+		expect(result.body.ok).toBe(false)
+		expect(await readWebhookEvent(eventId)).toBeNull()
+	}
 
 	// A later delivery must still be able to process after the failed attempt
 	// (no stuck claim that would ack duplicates with 200).
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_fail',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
+	using _fetch = stubStripeFetch({
+		subscriptions: subscriptionList('sub_fail', 'active'),
 	})
-	const retry = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event }),
-		now,
-	})
-	expect(retry).toEqual({ status: 200, body: { ok: true } })
+	expect(await deliver(event)).toEqual({ status: 200, body: { ok: true } })
 	expect(await readWebhookEvent(eventId)).toEqual({
 		event_id: eventId,
 		event_type: 'customer.subscription.updated',
@@ -359,8 +353,6 @@ test('stripe webhook process failure returns 500 without recording the event', a
 		stripe_customer_id: 'cus_fail_retry',
 		stripe_plan: 'pro',
 	})
-
-	vi.unstubAllGlobals()
 })
 
 test('invoice.paid rewards both parties once and ignores $0 trial invoices', async () => {
@@ -371,164 +363,79 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 		email: 'referee-invoice-paid@example.com',
 		stripeCustomerId: 'cus_referral_invoice_paid',
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO referrals (
-			referrer_stable_user_id, referee_stable_user_id, created_at, status
-		) VALUES (?, ?, ?, 'pending')`,
-	)
-		.bind(
-			referrer.stableUserId,
-			referee.stableUserId,
-			new Date('2026-09-07T00:00:00.000Z').toISOString(),
-		)
-		.run()
-
-	vi.stubGlobal('fetch', async () => {
-		throw new Error('fetch should not run for invoice.paid')
+	await seedReferral(referrer, referee, '2026-09-07T00:00:00.000Z')
+	using _fetch = noFetch('invoice.paid')
+	const refereeInvoice = (id: string, amount_paid: number) => ({
+		id,
+		customer: 'cus_referral_invoice_paid',
+		subscription: 'sub_referral',
+		amount_paid,
 	})
+	const rewardState = () => readReferral(referee, 'status, reward_invoice_id')
 
-	const trialEvent = {
-		id: 'evt_invoice_trial',
-		type: 'invoice.paid',
-		created: 1_778_000_000,
-		data: {
-			object: {
-				id: 'in_trial',
-				object: 'invoice',
-				customer: 'cus_referral_invoice_paid',
-				subscription: 'sub_referral',
-				status: 'paid',
-				amount_paid: 0,
-				billing_reason: 'subscription_create',
-			},
-		},
-	}
-	const trial = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: trialEvent }),
-		now,
-	})
-	expect(trial).toEqual({ status: 200, body: { ok: true } })
 	expect(
-		await env.APP_DB.prepare(
-			'SELECT status FROM referrals WHERE referee_stable_user_id = ?',
-		)
-			.bind(referee.stableUserId)
-			.first<{ status: string }>(),
-	).toEqual({ status: 'pending' })
+		await deliver(
+			invoicePaid(
+				'evt_invoice_trial',
+				1_778_000_000,
+				refereeInvoice('in_trial', 0),
+			),
+		),
+	).toEqual({ status: 200, body: { ok: true } })
+	expect(await rewardState()).toEqual({
+		status: 'pending',
+		reward_invoice_id: null,
+	})
 
-	const paidEvent = {
-		id: 'evt_invoice_paid',
-		type: 'invoice.paid',
-		created: 1_778_000_100,
-		data: {
-			object: {
-				id: 'in_paid',
-				object: 'invoice',
-				customer: 'cus_referral_invoice_paid',
-				subscription: 'sub_referral',
-				status: 'paid',
-				amount_paid: 2000,
-				billing_reason: 'subscription_create',
-			},
-		},
-	}
-	const paid = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({ event: paidEvent }),
-		now,
-	})
-	expect(paid).toEqual({ status: 200, body: { ok: true } })
 	expect(
-		await env.APP_DB.prepare(
-			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
-		)
-			.bind(referee.stableUserId)
-			.first<{ status: string; reward_invoice_id: string | null }>(),
-	).toEqual({
-		status: 'rewarded',
-		reward_invoice_id: 'in_paid',
-	})
-	const afterFirst = await env.APP_DB.prepare(
+		await deliver(
+			invoicePaid(
+				'evt_invoice_paid',
+				1_778_000_100,
+				refereeInvoice('in_paid', 2000),
+			),
+		),
+	).toEqual({ status: 200, body: { ok: true } })
+	const rewarded = { status: 'rewarded', reward_invoice_id: 'in_paid' }
+	expect(await rewardState()).toEqual(rewarded)
+	const expiries = await env.APP_DB.prepare(
 		`SELECT referral_standard_credit_expires_at FROM users WHERE id IN (?, ?)`,
 	)
 		.bind(referrer.id, referee.id)
-		.all<{ referral_standard_credit_expires_at: string }>()
-	expect(afterFirst.results).toHaveLength(2)
+		.all()
+	expect(expiries.results).toEqual([
+		{ referral_standard_credit_expires_at: '2026-08-24T12:00:00.000Z' },
+		{ referral_standard_credit_expires_at: '2026-08-24T12:00:00.000Z' },
+	])
+
 	expect(
-		afterFirst.results.every(
-			(row) =>
-				row.referral_standard_credit_expires_at === '2026-08-24T12:00:00.000Z',
+		await deliver(
+			invoicePaid(
+				'evt_invoice_paid_replay',
+				1_778_000_100,
+				refereeInvoice('in_paid_later', 2000),
+			),
 		),
-	).toBe(true)
-
-	const replay = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({
-			event: {
-				...paidEvent,
-				id: 'evt_invoice_paid_replay',
-				data: {
-					object: {
-						...paidEvent.data.object,
-						id: 'in_paid_later',
-					},
-				},
-			},
-		}),
-		now,
-	})
-	expect(replay).toEqual({ status: 200, body: { ok: true } })
-	expect(
-		await env.APP_DB.prepare(
-			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
-		)
-			.bind(referee.stableUserId)
-			.first<{ status: string; reward_invoice_id: string | null }>(),
-	).toEqual({
-		status: 'rewarded',
-		reward_invoice_id: 'in_paid',
-	})
-
-	vi.unstubAllGlobals()
+	).toEqual({ status: 200, body: { ok: true } })
+	expect(await rewardState()).toEqual(rewarded)
 })
 
 test('invoice.paid returns 500 when a qualifying invoice has no linked user', async () => {
-	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureCreditWalletTestSchema(env.APP_DB)
 	silenceExpectedConsoleErrors([
 		'stripe_webhook_process_failed',
 		'stripe_webhook_invoice_paid_user_not_linked',
 	])
-	vi.stubGlobal('fetch', async () => {
-		throw new Error('fetch should not run for an unlinked invoice.paid')
-	})
-	const result = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({
-			event: {
-				id: 'evt_invoice_unlinked',
-				type: 'invoice.paid',
-				created: 1_778_000_200,
-				data: {
-					object: {
-						id: 'in_unlinked',
-						object: 'invoice',
-						customer: 'cus_not_linked_yet',
-						subscription: 'sub_unlinked',
-						status: 'paid',
-						amount_paid: 1200,
-						billing_reason: 'subscription_create',
-					},
-				},
-			},
+	using _fetch = noFetch('an unlinked invoice.paid')
+	const result = await deliver(
+		invoicePaid('evt_invoice_unlinked', 1_778_000_200, {
+			id: 'in_unlinked',
+			customer: 'cus_not_linked_yet',
+			subscription: 'sub_unlinked',
+			amount_paid: 1200,
 		}),
-		now,
-	})
-	expect(result).toEqual({
-		status: 500,
-		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
-	})
-	vi.unstubAllGlobals()
+	)
+	expect(result).toEqual(processFailed)
 })
 
 test('invoice.paid returns 500 when the referrer paid period cannot be loaded', async () => {
@@ -545,54 +452,23 @@ test('invoice.paid returns 500 when the referrer paid period cannot be loaded', 
 		email: 'referee-period-fail@example.com',
 		stripeCustomerId: 'cus_referee_period_fail',
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO referrals (
-			referrer_stable_user_id, referee_stable_user_id, created_at, status
-		) VALUES (?, ?, ?, 'pending')`,
-	)
-		.bind(referrer.stableUserId, referee.stableUserId, now.toISOString())
-		.run()
-	vi.stubGlobal(
-		'fetch',
-		vi.fn(async () => jsonResponse({ error: 'stripe down' }, 500)),
-	)
+	await seedReferral(referrer, referee, now.toISOString())
+	using _fetch = stripeDown()
 
-	const result = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({
-			event: {
-				id: 'evt_invoice_referrer_period_fail',
-				type: 'invoice.paid',
-				created: 1_778_000_300,
-				data: {
-					object: {
-						id: 'in_referrer_period_fail',
-						object: 'invoice',
-						customer: 'cus_referee_period_fail',
-						subscription: 'sub_referrer_period_fail',
-						status: 'paid',
-						amount_paid: 2000,
-						billing_reason: 'subscription_create',
-					},
-				},
-			},
+	const result = await deliver(
+		invoicePaid('evt_invoice_referrer_period_fail', 1_778_000_300, {
+			id: 'in_referrer_period_fail',
+			customer: 'cus_referee_period_fail',
+			subscription: 'sub_referrer_period_fail',
+			amount_paid: 2000,
 		}),
-		now,
-	})
-	expect(result).toEqual({
-		status: 500,
-		body: { ok: false, error: 'Failed to process Stripe webhook event.' },
-	})
+	)
+	expect(result).toEqual(processFailed)
 	expect(await readWebhookEvent('evt_invoice_referrer_period_fail')).toBeNull()
-	expect(
-		await env.APP_DB.prepare(
-			'SELECT status, credits_granted_at FROM referrals WHERE referee_stable_user_id = ?',
-		)
-			.bind(referee.stableUserId)
-			.first<{ status: string; credits_granted_at: string | null }>(),
-	).toEqual({ status: 'pending', credits_granted_at: null })
-
-	vi.unstubAllGlobals()
+	expect(await readReferral(referee, 'status, credits_granted_at')).toEqual({
+		status: 'pending',
+		credits_granted_at: null,
+	})
 })
 
 test('invoice.paid for a referrer retries held outgoing referrals', async () => {
@@ -605,72 +481,76 @@ test('invoice.paid for a referrer retries held outgoing referrals', async () => 
 		email: 'referee-held-retry@example.com',
 		stripeCustomerId: 'cus_referee_held_retry',
 	})
-	await env.APP_DB.prepare(
-		`INSERT INTO referrals (
-			referrer_stable_user_id, referee_stable_user_id, created_at, status,
-			held_invoice_id, held_period_end_at
-		) VALUES (?, ?, ?, 'pending', 'in_held_retry', ?)`,
-	)
-		.bind(
-			referrer.stableUserId,
-			referee.stableUserId,
-			now.toISOString(),
-			'2026-08-01T00:00:00.000Z',
-		)
-		.run()
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_referrer_held_retry',
-					status: 'active',
-					cancel_at: null,
-					items: {
-						data: [
-							{
-								price: { id: 'price_pro' },
-								current_period_end: 1_781_568_000,
-							},
-						],
-					},
-				},
-			],
-		},
+	await seedReferral(referrer, referee, now.toISOString(), {
+		invoiceId: 'in_held_retry',
+		periodEndAt: '2026-08-01T00:00:00.000Z',
+	})
+	using _fetch = stubStripeFetch({
+		subscriptions: subscriptionList('sub_referrer_held_retry', 'active', {
+			current_period_end: 1_781_568_000,
+		}),
 	})
 
-	const result = await handleStripeWebhookRequest({
-		env: createWebhookEnv(),
-		request: await signedWebhookRequest({
-			event: {
-				id: 'evt_referrer_held_retry',
-				type: 'invoice.paid',
-				created: 1_778_000_400,
-				data: {
-					object: {
-						id: 'in_referrer_own',
-						object: 'invoice',
-						customer: 'cus_referrer_held_retry',
-						subscription: 'sub_referrer_held_retry',
-						status: 'paid',
-						amount_paid: 2000,
-						billing_reason: 'subscription_cycle',
-					},
-				},
-			},
+	const result = await deliver(
+		invoicePaid('evt_referrer_held_retry', 1_778_000_400, {
+			id: 'in_referrer_own',
+			customer: 'cus_referrer_held_retry',
+			subscription: 'sub_referrer_held_retry',
+			amount_paid: 2000,
+			billing_reason: 'subscription_cycle',
 		}),
-		now,
-	})
+	)
 	expect(result).toEqual({ status: 200, body: { ok: true } })
-	expect(
-		await env.APP_DB.prepare(
-			'SELECT status, reward_invoice_id FROM referrals WHERE referee_stable_user_id = ?',
-		)
-			.bind(referee.stableUserId)
-			.first<{ status: string; reward_invoice_id: string | null }>(),
-	).toEqual({
+	expect(await readReferral(referee, 'status, reward_invoice_id')).toEqual({
 		status: 'rewarded',
 		reward_invoice_id: 'in_held_retry',
 	})
+})
 
-	vi.unstubAllGlobals()
+test('checkout.session.completed for a credit top-up credits the wallet once and never links a subscription', async () => {
+	await ensureCreditWalletTestSchema(env.APP_DB)
+	const user = await seedUser({
+		email: `wh-credits-${crypto.randomUUID()}@example.com`,
+		stripeCustomerId: `cus_${crypto.randomUUID().slice(0, 8)}`,
+		stripePlan: 'pro',
+	})
+	const sessionId = `cs_credit_${crypto.randomUUID().slice(0, 8)}`
+	const session = {
+		id: sessionId,
+		customer: 'cus_any',
+		client_reference_id: user.linkReference,
+		metadata: {
+			kody_credit_top_up: '1',
+			kody_stable_user_id: user.stableUserId,
+		},
+	}
+	using fetchStub = stubFetch((url) =>
+		url.includes(`/v1/checkout/sessions/${sessionId}`)
+			? jsonResponse({
+					...session,
+					mode: 'payment',
+					status: 'complete',
+					payment_status: 'paid',
+					amount_total: 2_500,
+					currency: 'usd',
+					payment_intent: { id: 'pi_credit', payment_method: 'pm_card' },
+				})
+			: jsonResponse({ error: 'unexpected stripe path' }, 500),
+	)
+	for (const eventId of ['evt_credit_1', 'evt_credit_2']) {
+		const result = await deliver({
+			id: eventId,
+			type: 'checkout.session.completed',
+			data: { object: session },
+		})
+		expect(result.status).toBe(200)
+	}
+	const wallet = await readCreditWallet(env.APP_DB, user.stableUserId)
+	expect(wallet.balanceMicroUsd).toBe(25_000_000)
+	expect(wallet.autoRefillPaymentMethodId).toBe('pm_card')
+	expect(
+		fetchStub.mock.calls.some(([request]) =>
+			String(request).includes('/v1/subscriptions'),
+		),
+	).toBe(false)
 })

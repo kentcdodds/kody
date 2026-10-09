@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {

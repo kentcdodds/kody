@@ -136,3 +136,8 @@ If you are an agent working in this repo:
 - Avoid proposing a large static MCP tool catalog as the default direction.
 - Keep interoperability with MCP hosts in mind, especially around compact tool
   surfaces and clear server instructions.
+- Platform capabilities must stay **vendor-agnostic**. Do not add service-named
+  types, handlers, or forks (`strava-hub`, `meta-hub`, `fooProviderVerify`, …)
+  in platform schema or code. Express provider differences as knobs on a generic
+  primitive (params/options + documented presets). See
+  [0054](./decisions/0054-no-vendor-specific-platform-logic.md).

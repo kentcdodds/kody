@@ -14,6 +14,9 @@ workflow records.
 - `wrangler.jsonc` — the committed base config (script name `kody-jobs`).
   Deployable configs are written by
   [`tools/ci/jobs-worker-resources.ts`](../../tools/ci/jobs-worker-resources.ts).
+  Local `npm run dev` writes a gitignored `wrangler-local-dev.generated.json`
+  that pins the registered name to `kody-jobs` so origin `JOBS` resolves under
+  `--env production`.
 - Build check: `npm run jobs:build` (part of `npm run validate`).
 - Deploys/previews: see `.github/workflows/deploy.yml` and `preview.yml`.
 - Production Durable Object and `JOBS_DB` ownership: see the

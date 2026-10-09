@@ -25,7 +25,9 @@ import { cleanupRepoSessionBranches } from '#worker/repo/repo-session-cleanup.ts
 import { backfillStorageBucketEstimates } from '#worker/storage-buckets/estimate-backfill.ts'
 import { refreshAdminInsightsRunLogSnapshot } from '#worker/admin/insights-runlog-snapshot.ts'
 import { aggregateUsageRollups } from '#worker/usage/aggregate-rollups.ts'
-import { runComputeOverageBilling } from '#worker/billing/compute-overage-invoices.ts'
+import { aggregateCreditAttributionDaily } from '#worker/usage/credit-attribution.ts'
+import { runDurableObjectDurationAttribution } from '#worker/usage/durable-object-duration-attribution.ts'
+import { runCreditDebits } from '#worker/billing/credit-debits.ts'
 
 export {
 	isScheduledLaneName,
@@ -70,10 +72,6 @@ export async function runScheduledLane(input: {
 				env: input.env,
 				now: input.scheduledAt,
 			})
-		case 'repo_session_index_backfill':
-			// Inactive no-op; name stays in the union so in-flight queue
-			// messages parse without failing lane dispatch.
-			return
 		case 'reconcile_inbound_deliveries':
 			return sweepStaleInboundDeliveries({
 				env: input.env,
@@ -113,6 +111,11 @@ export async function runScheduledLane(input: {
 			return pruneJobRetention({ env: input.env, now: input.scheduledAt })
 		case 'usage_aggregation': {
 			const result = await aggregateUsageRollups(input.env, input.scheduledAt)
+			try {
+				await aggregateCreditAttributionDaily(input.env, input.scheduledAt)
+			} catch (error) {
+				console.warn('credit-attribution-aggregation-failed', error)
+			}
 			let fleetPackageErrorRate: Awaited<
 				ReturnType<typeof refreshFleetPackageErrorRateAndMaybeAlert>
 			>
@@ -141,10 +144,24 @@ export async function runScheduledLane(input: {
 				console.warn('admin-insights-run-log-snapshot-lane-failed', error)
 				runLogSnapshot = { status: 'failed' }
 			}
-			return { ...result, fleetPackageErrorRate, runLogSnapshot }
+			// Credits debit only right after a successful recompute, so they
+			// never read rollups older than this hour.
+			let creditDebits:
+				| Awaited<ReturnType<typeof runCreditDebits>>
+				| { status: 'failed' }
+			try {
+				creditDebits = await runCreditDebits({
+					env: input.env,
+					now: input.scheduledAt,
+				})
+			} catch (error) {
+				console.warn('credit-debits-lane-failed', error)
+				creditDebits = { status: 'failed' }
+			}
+			return { ...result, fleetPackageErrorRate, runLogSnapshot, creditDebits }
 		}
-		case 'compute_overage_billing':
-			return runComputeOverageBilling({
+		case 'durable_object_duration_attribution':
+			return runDurableObjectDurationAttribution({
 				env: input.env,
 				now: input.scheduledAt,
 			})

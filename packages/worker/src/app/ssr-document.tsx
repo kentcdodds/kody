@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { HMR } from '#app/hmr.ts'
 import { AppRoot, type AppRootProps } from '#client/app-root.tsx'
 import {
@@ -9,9 +9,14 @@ import {
 } from '#app/client-build-id.ts'
 import {
 	CANONICAL_ORIGIN_META_NAME,
+	DEFAULT_DOCUMENT_TITLE,
 	DOCUMENT_HEAD_ATTR,
 	type ResolvedDocumentHead,
 } from '#universal/document-head.ts'
+import {
+	passwordManagerPageIgnoreProps,
+	pathnameFromAppUrl,
+} from '#universal/password-manager-page-ignore.ts'
 import { getScrollRestorationInlineScript } from '#universal/router-scroll-restoration.ts'
 import { heroBaseImage } from '#universal/landing-images.ts'
 import {
@@ -165,6 +170,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 		handle.props.stylesheetHref ?? buildStylesheetHref('dev')
 	const scrollRestorationInlineScript = getScrollRestorationInlineScript()
 	const preloadHeroImage = isHomeDocumentUrl(handle.props.url)
+	const passwordManagerPageIgnore = passwordManagerPageIgnoreProps(
+		pathnameFromAppUrl(handle.props.url),
+	)
 
 	return () => (
 		<html lang="en">
@@ -236,7 +244,9 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					/>
 				) : null}
 				<title>
-					{handle.props.documentHead?.title ?? handle.props.title ?? 'kody'}
+					{handle.props.documentHead?.title ??
+						handle.props.title ??
+						DEFAULT_DOCUMENT_TITLE}
 				</title>
 				{handle.props.documentHead ? (
 					<ManagedDocumentHead head={handle.props.documentHead} />
@@ -278,7 +288,7 @@ export function SsrDocument(handle: Handle<SsrDocumentProps>) {
 					<link rel="stylesheet" href={stylesheetHref} />
 				)}
 			</head>
-			<body>
+			<body {...passwordManagerPageIgnore}>
 				<HMR />
 				<div id="root">
 					<AppRoot

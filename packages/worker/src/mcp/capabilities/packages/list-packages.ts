@@ -1,13 +1,21 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	packageScopeInputDescription,
 	resolvePackageOwnerContext,
 } from '#worker/package-registry/package-owner.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { listSavedPackagesWithCommunityProvenanceByUserId } from '#worker/package-registry/repo.ts'
+import {
+	canSeeResource,
+	computeEffectivePermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 import {
 	packageSummaryWithCommunityProvenanceSchema,
 	toPackageSummaryWithCommunityProvenance,
@@ -17,6 +25,7 @@ export const listPackagesCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageList',
+		orgPermission: 'package:read',
 		description:
 			'List saved packages for the signed-in user, including community-fork source listing provenance, so agents can discover the scoped package.json name (or package_id when the name is not known) for later execution, editing, or UI opening.',
 		keywords: ['package', 'list', 'saved packages'],
@@ -49,8 +58,15 @@ export const listPackagesCapability = defineDomainCapability(
 					},
 				),
 			})
+			const access = await computeEffectivePermissions({
+				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
+			})
+			const visible = packages.filter((pkg) =>
+				canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+			)
 			return {
-				packages: packages.map(toPackageSummaryWithCommunityProvenance),
+				packages: visible.map(toPackageSummaryWithCommunityProvenance),
 			}
 		},
 	},

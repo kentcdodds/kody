@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -15,9 +16,10 @@ function createPackageCallerContext(input: {
 	packageId: string
 }) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
-			userId: input.userId,
+			userId: personIdFromStored(input.userId),
 			email: 'worker@example.com',
 			displayName: 'Worker',
 		},

@@ -13,6 +13,7 @@ export const emailMessageGetCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailMessageGet',
+		orgPermission: 'email:read',
 		description:
 			'Get one stored email message, including parsed bodies, headers, attachment metadata, and processing state.',
 		keywords: ['email', 'message', 'get', 'headers', 'attachments'],

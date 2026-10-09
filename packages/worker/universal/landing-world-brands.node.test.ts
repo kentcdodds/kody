@@ -10,7 +10,9 @@ const iconDirectory = join(
 	'../public/images/icons',
 )
 
-const agentHostIcons = new Set(walkthroughHostCatalog.map((host) => host.icon))
+const agentHostIcons = new Set<string>(
+	walkthroughHostCatalog.map((host) => host.icon),
+)
 
 test('homepage invite chips are services with existing public icon SVGs', () => {
 	expect(landingWorldBrands.length).toBeGreaterThan(0)

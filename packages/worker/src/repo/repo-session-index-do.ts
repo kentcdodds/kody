@@ -614,6 +614,7 @@ export const RepoSessionIndex = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	RepoSessionIndexBase,
 )
+export type RepoSessionIndex = InstanceType<typeof RepoSessionIndex>
 
 export type RepoSessionIndexRpc = {
 	getRecoveryBookmark: (input: {

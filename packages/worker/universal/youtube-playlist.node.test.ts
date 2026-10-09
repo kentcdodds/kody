@@ -53,128 +53,75 @@ test('YouTube Data API playlistItems stay in playlist order and skip private row
 	).toContain('pageToken=next-page')
 })
 
-test('Innertube browse JSON keeps lockup order and ignores sidebar-only junk', () => {
-	const parsed = parseYoutubePlaylistBrowseJson({
-		contents: {
-			twoColumnBrowseResultsRenderer: {
-				tabs: [
-					{
-						tabRenderer: {
-							content: {
-								sectionListRenderer: {
-									contents: [
-										{
-											itemSectionRenderer: {
-												contents: [
-													{
-														lockupViewModel: {
-															contentId: first.videoId,
-															contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
-															metadata: {
-																lockupMetadataViewModel: {
-																	title: { content: first.title },
-																},
-															},
-														},
-													},
-													{
-														lockupViewModel: {
-															contentId: second.videoId,
-															contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
-															metadata: {
-																lockupMetadataViewModel: {
-																	title: { content: second.title },
-																},
-															},
-														},
-													},
-													{
-														continuationItemViewModel: {
-															continuationCommand: { token: 'page-2' },
-														},
-													},
-												],
-											},
-										},
-									],
-								},
+function lockup(video: { videoId: string; title: string }) {
+	return {
+		lockupViewModel: {
+			contentId: video.videoId,
+			contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
+			metadata: {
+				lockupMetadataViewModel: { title: { content: video.title } },
+			},
+		},
+	}
+}
+
+function browseJson(items: Array<unknown>, columnExtras: object = {}) {
+	return {
+		twoColumnBrowseResultsRenderer: {
+			tabs: [
+				{
+					tabRenderer: {
+						content: {
+							sectionListRenderer: {
+								contents: [{ itemSectionRenderer: { contents: items } }],
 							},
 						},
 					},
-				],
-			},
+				},
+			],
+			...columnExtras,
 		},
+	}
+}
+
+test('Innertube browse JSON keeps lockup order, reads playlistVideoRenderer rows, and ignores sidebar-only junk', () => {
+	const parsed = parseYoutubePlaylistBrowseJson({
+		contents: browseJson([
+			lockup(first),
+			lockup(second),
+			{
+				continuationItemViewModel: { continuationCommand: { token: 'page-2' } },
+			},
+		]),
 	})
 	expect(parsed.videos).toEqual([first, second])
 	expect(parsed.continuation).toBe('page-2')
-})
 
-test('Innertube browse JSON also reads playlistVideoRenderer rows', () => {
-	const parsed = parseYoutubePlaylistBrowseJson({
-		contents: {
-			playlistVideoRenderer: {
-				videoId: first.videoId,
-				title: { runs: [{ text: first.title }] },
-			},
-		},
-	})
-	expect(parsed.videos).toEqual([first])
-})
-
-test('Innertube browse JSON ignores sidebar lockups outside the playlist column', () => {
-	const sidebarLockup = {
-		lockupViewModel: {
-			contentId: second.videoId,
-			contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
-			metadata: {
-				lockupMetadataViewModel: {
-					title: { content: second.title },
+	expect(
+		parseYoutubePlaylistBrowseJson({
+			contents: {
+				playlistVideoRenderer: {
+					videoId: first.videoId,
+					title: { runs: [{ text: first.title }] },
 				},
 			},
-		},
+		}).videos,
+	).toEqual([first])
+
+	const sidebarLockup = {
+		...lockup(second),
 		continuationItemViewModel: {
 			continuationCommand: { token: 'sidebar-token' },
 		},
 	}
-	const parsed = parseYoutubePlaylistBrowseJson({
+	const withSidebar = parseYoutubePlaylistBrowseJson({
 		contents: {
-			twoColumnBrowseResultsRenderer: {
-				tabs: [
-					{
-						tabRenderer: {
-							content: {
-								sectionListRenderer: {
-									contents: [
-										{
-											itemSectionRenderer: {
-												contents: [
-													{
-														lockupViewModel: {
-															contentId: first.videoId,
-															contentType: 'LOCKUP_CONTENT_TYPE_VIDEO',
-															metadata: {
-																lockupMetadataViewModel: {
-																	title: { content: first.title },
-																},
-															},
-														},
-													},
-												],
-											},
-										},
-									],
-								},
-							},
-						},
-					},
-				],
-				secondaryContents: sidebarLockup,
-			},
+			...browseJson([lockup(first)], { secondaryContents: sidebarLockup }),
 			secondaryContents: sidebarLockup,
 		},
 	})
-	expect(parsed.videos).toEqual([first])
-	expect(parsed.continuation).toBeNull()
+	expect(withSidebar.videos).toEqual([first])
+	expect(withSidebar.continuation).toBeNull()
 })
 
 test('uniqueLandingHeroVideos drops duplicates and invalid rows', () => {

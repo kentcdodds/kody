@@ -1,8 +1,9 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, type ExecFileSyncOptions } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { chmod, mkdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { checkInstalledLockfile } from './check-installed-lockfile.ts'
 import {
 	createDefaultEnsureDevDeps,
 	ensureDev,
@@ -29,19 +30,38 @@ import {
 	isProductionKodyOrigin,
 } from './control-kody/package-create.ts'
 import {
+	executeAppMcp,
+	formatMcpCallReport,
+	readJsonObjectFile,
+	searchAppMcp,
+} from './control-kody/mcp-call.ts'
+import {
 	formatLocalAppDbRemediation,
 	isLocalAppOrigin,
 	withLocalAppDbRemediation,
 } from './control-kody/local-app-db.ts'
+import {
+	defaultBrowsePath,
+	defaultBrowseVideoDir,
+	formatBrowseReport,
+	normalizeBrowsePath,
+	openBrowseSession,
+} from './control-kody/browse.ts'
+import {
+	defaultPlaywrightBrowsersJsonPath,
+	inspectPlaywrightBrowsers,
+	type PlaywrightBrowserCheck,
+} from './control-kody/playwright-browsers.ts'
 import {
 	defaultDumpFile,
 	formatContainsFailure,
 	missingContainsNeedles,
 } from './control-kody/request-proof.ts'
 import {
-	cookieHeaderForOrigin,
 	formatCookieFile,
+	sessionForOrigin,
 	shouldRefreshSession,
+	type AppSessionOAuth,
 } from './control-kody/session-cookie.ts'
 import {
 	cookieHeaderFromSetCookie,
@@ -56,6 +76,8 @@ import {
 export const localSeedEmail = 'jane@example.com'
 export const localSeedPassword = 'ilikecode'
 export const localAdminEmail = 'kody@example.com'
+export const controlKodyUserAgent =
+	'Mozilla/5.0 (compatible; KodyControlKody/1.0; +https://github.com/kentcdodds/kody)'
 
 const usageLines = [
 	'Usage: node tools/control-kody.ts <command> [options]',
@@ -63,26 +85,59 @@ const usageLines = [
 	'Drive and verify the Kody app without throwaway scripts.',
 	'',
 	'Commands:',
-	'  doctor          Check Node, Playwright, hooks, /health, and local APP_DB',
+	'  doctor          Check Node, Playwright browser revision, hooks, installed deps, /health, and local APP_DB',
 	'  dev             Start or reuse the local origin (npm run dev:ensure)',
 	'  login           POST /auth and write a session cookie',
 	'  request         Authenticated HTTP as the current session',
-	'  preview         PR preview smoke (wraps preview:manual-test)',
+	'  preview         PR preview smoke (forwards flags to preview:manual-test)',
+	'  browse          Open headed Chromium already signed in (reuse seed cookie)',
 	'  health          GET /health and optionally assert commitSha',
 	'  map             List or print a Feature Map entry; --check for drift',
 	'  package-create  Create a stub saved package via MCP (preview data)',
+	'  execute         Run an MCP execute module as the seed user',
+	'  search          Run MCP search as the seed user',
 	'',
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
-	'  --cookie-file <p>    Session Cookie header file',
+	'  --cookie-file <p>    Session file: cookie + MCP OAuth client/token (origin + --email)',
+	"  --email <addr>       Session identity; does not reuse another user's cookie",
 	'  --dump               Write the raw response body to .tmp/control-kody-body',
 	'  --contains <text>    Fail unless the response body includes this text',
+	'  --path <path>        browse target path (default: /account)',
+	'  --record             browse: record Playwright video under .tmp/control-kody-browse',
+	'  --headless           browse: launch Chromium headless (default is headed)',
+	'  --close-after <ms>   browse: close after N ms (scripted smoke / tests)',
 	'  --package-name <s>   Required for package-create (leaf or @scope/leaf)',
 	'  --kody-id <slug>     Alias for --package-name',
 	'  --description <t>    Optional package-create stub description',
 	'  --head-ahead         package-create: push one unpublished commit',
+	'  --code-file <p>      Required for execute (ESM module with default export)',
+	'  --params-file <p>    Optional JSON object passed to execute',
+	'  --query <text>       search query',
+	'  --domain <id>        Optional search domain',
+	'  --entity <ref>       Optional search entity ref',
+	'  --limit <n>          Optional search result limit',
 	'  --help               Print this help',
+	'',
+	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
+	'A `--` separator is optional. Example: preview --pr 42 --check /account',
+	"--request specs take request's --dump/--contains at the end, e.g.",
+	"  preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'",
+	'',
+	'browse reuses the seed cookie from login/preview and injects it into',
+	'Playwright Chromium (same addCookies pattern as e2e/playwright-utils.ts).',
+	'Prefer MCP/API/control-kody execute for proof; browse only when UI is under',
+	'test. Example: browse --origin <preview> --path /@user/pkg --record',
+	'',
+	'request spec is METHOD /path [status] [json-body]. Separate arguments',
+	'are joined, so POST /path 400 \'{"action":"add"}\' sends the body.',
+	'request fetches GET/HEAD first and only POSTs /auth when the response is',
+	'401 or login HTML. Public pages such as /pricing do not need a session.',
+	'Mutating methods log in first when no cookie exists. --email keys the',
+	'stored cookie; a leftover session for a different user is not reused.',
+	'--skip-login sends the request without authenticating, even when another',
+	"user's cookie is stored for the same origin.",
 	'',
 	'Docs: docs/contributing/control-kody.md',
 ]
@@ -93,9 +148,12 @@ export type ControlKodyCommand =
 	| 'login'
 	| 'request'
 	| 'preview'
+	| 'browse'
 	| 'health'
 	| 'map'
 	| 'package-create'
+	| 'execute'
+	| 'search'
 	| 'help'
 
 export type ControlKodyOptions = {
@@ -116,9 +174,19 @@ export type ControlKodyOptions = {
 	dumpFile: string
 	contains: Array<string>
 	previewArgv: Array<string>
+	path: string
+	record: boolean
+	headed: boolean
+	closeAfterMs: number | null
 	kodyId: string | null
 	description: string | null
 	headAhead: boolean
+	codeFile: string | null
+	paramsFile: string | null
+	query: string | null
+	domain: string | null
+	entity: string | null
+	limit: number | null
 }
 
 export class ControlKodyError extends Error {
@@ -171,9 +239,19 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		dumpFile: defaultDumpFile(),
 		contains: [],
 		previewArgv: [],
+		path: defaultBrowsePath,
+		record: false,
+		headed: true,
+		closeAfterMs: null,
 		kodyId: null,
 		description: null,
 		headAhead: false,
+		codeFile: null,
+		paramsFile: null,
+		query: null,
+		domain: null,
+		entity: null,
+		limit: null,
 	}
 
 	const [command, ...rest] = argv
@@ -194,9 +272,12 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		'login',
 		'request',
 		'preview',
+		'browse',
 		'health',
 		'map',
 		'package-create',
+		'execute',
+		'search',
 		'help',
 	]
 	if (!commands.includes(command as ControlKodyCommand)) {
@@ -208,10 +289,10 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 
 	if (options.command === 'preview') {
 		const separator = rest.indexOf('--')
-		options.previewArgv = separator === -1 ? rest : rest.slice(separator + 1)
 		if (separator === -1) {
-			parseSharedFlags(rest, options)
+			options.previewArgv = rest
 		} else {
+			options.previewArgv = rest.slice(separator + 1)
 			parseSharedFlags(rest.slice(0, separator), options)
 		}
 		return options
@@ -221,9 +302,7 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		const positional: Array<string> = []
 		parseSharedFlags(rest, options, positional)
 		if (positional.length > 0) {
-			const spec = [positional[0], positional[1], positional[2]]
-				.filter((part): part is string => Boolean(part))
-				.join(' ')
+			const spec = positional.join(' ')
 			const parsed = parseSessionRequest(spec)
 			if (options.body) {
 				parsed.body = JSON.parse(options.body)
@@ -237,6 +316,15 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		const positional: Array<string> = []
 		parseSharedFlags(rest, options, positional)
 		options.featureId = positional[0] ?? null
+		return options
+	}
+
+	if (options.command === 'browse') {
+		const positional: Array<string> = []
+		parseSharedFlags(rest, options, positional)
+		if (positional[0]) {
+			options.path = normalizeBrowsePath(positional[0])
+		}
 		return options
 	}
 
@@ -328,6 +416,70 @@ function parseSharedFlags(
 				options.headAhead = true
 				break
 			}
+			case '--code-file': {
+				options.codeFile = requireValue(argv[index + 1], '--code-file')
+				index += 1
+				break
+			}
+			case '--params-file': {
+				options.paramsFile = requireValue(argv[index + 1], '--params-file')
+				index += 1
+				break
+			}
+			case '--query': {
+				options.query = requireValue(argv[index + 1], '--query')
+				index += 1
+				break
+			}
+			case '--domain': {
+				options.domain = requireValue(argv[index + 1], '--domain')
+				index += 1
+				break
+			}
+			case '--entity': {
+				options.entity = requireValue(argv[index + 1], '--entity')
+				index += 1
+				break
+			}
+			case '--limit': {
+				const raw = requireValue(argv[index + 1], '--limit')
+				if (!/^[1-9]\d*$/.test(raw)) {
+					throw new ControlKodyError('--limit must be a positive integer')
+				}
+				const parsed = Number(raw)
+				if (!Number.isSafeInteger(parsed) || parsed < 1) {
+					throw new ControlKodyError('--limit must be a positive integer')
+				}
+				options.limit = parsed
+				index += 1
+				break
+			}
+			case '--path': {
+				options.path = normalizeBrowsePath(
+					requireValue(argv[index + 1], '--path'),
+				)
+				index += 1
+				break
+			}
+			case '--record': {
+				options.record = true
+				break
+			}
+			case '--headless': {
+				options.headed = false
+				break
+			}
+			case '--close-after': {
+				const raw = requireValue(argv[index + 1], '--close-after')
+				if (!/^(0|[1-9]\d*)$/.test(raw)) {
+					throw new ControlKodyError(
+						'--close-after must be a non-negative integer (ms)',
+					)
+				}
+				options.closeAfterMs = Number(raw)
+				index += 1
+				break
+			}
 			default: {
 				if (arg.startsWith('-')) {
 					throw new ControlKodyError(`Unknown flag ${arg}`)
@@ -367,38 +519,15 @@ export type DoctorDeps = {
 	nodeVersion: string
 	homeDir: string
 	hooksPath: string | null
-	playwrightMarkerExists: (homeDir: string) => boolean
+	inspectPlaywright: (homeDir: string) => PlaywrightBrowserCheck
+	inspectInstalledLockfile?: () =>
+		| { ok: boolean; detail: string }
+		| Promise<{ ok: boolean; detail: string }>
 	probeHealth: (origin: string) => Promise<boolean>
 	ports: ReadonlyArray<number>
 	origin: string | null
 	persistRoot: string
 	probeLocalLogin?: (origin: string) => Promise<LocalLoginProbe>
-}
-
-export function playwrightBrowsersInstalled(homeDir: string) {
-	const root = path.join(homeDir, '.cache', 'ms-playwright')
-	if (!existsSync(root)) return false
-	try {
-		const entries = readdirSync(root, { withFileTypes: true })
-		const installed = new Set(
-			entries
-				.filter(
-					(entry) =>
-						entry.isDirectory() &&
-						existsSync(path.join(root, entry.name, 'INSTALLATION_COMPLETE')),
-				)
-				.map((entry) => entry.name),
-		)
-		const hasChromium = [...installed].some((name) =>
-			name.startsWith('chromium-'),
-		)
-		const hasHeadlessShell = [...installed].some((name) =>
-			name.startsWith('chromium_headless_shell-'),
-		)
-		return hasChromium && hasHeadlessShell
-	} catch {
-		return false
-	}
 }
 
 export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
@@ -413,13 +542,11 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
 			: `Node ${deps.nodeVersion} is below 26. Prepend nvm's Node 26 bin to PATH. See docs/contributing/cloud-agents.md.`,
 	})
 
-	const playwrightOk = deps.playwrightMarkerExists(deps.homeDir)
+	const playwright = deps.inspectPlaywright(deps.homeDir)
 	checks.push({
 		name: 'playwright',
-		ok: playwrightOk,
-		detail: playwrightOk
-			? 'Playwright INSTALLATION_COMPLETE marker present'
-			: 'Playwright browsers missing. Do not run playwright install on this VM; unzip per docs/contributing/cloud-agents.md.',
+		ok: playwright.ok,
+		detail: playwright.detail,
 	})
 
 	const hooksOk = Boolean(deps.hooksPath && deps.hooksPath.length > 0)
@@ -429,6 +556,24 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
 		detail: hooksOk
 			? `core.hooksPath=${deps.hooksPath}`
 			: 'git core.hooksPath is empty. Run npm run hooks:ensure.',
+	})
+
+	const inspectInstalledLockfile =
+		deps.inspectInstalledLockfile ?? checkInstalledLockfile
+	let installedLockfile: { ok: boolean; detail: string }
+	try {
+		installedLockfile = await inspectInstalledLockfile()
+	} catch (error) {
+		const detail = error instanceof Error ? error.message : String(error)
+		installedLockfile = {
+			ok: false,
+			detail: `Could not inspect package-lock.json: ${detail}. Check that the file is readable and valid JSON.`,
+		}
+	}
+	checks.push({
+		name: 'deps',
+		ok: installedLockfile.ok,
+		detail: installedLockfile.detail,
 	})
 
 	const origin =
@@ -555,7 +700,10 @@ export async function loginToOrigin(input: {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const response = await fetchImpl(`${input.origin}/auth`, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			'User-Agent': controlKodyUserAgent,
+		},
 		body: JSON.stringify({
 			email: input.email,
 			password: input.password,
@@ -604,6 +752,7 @@ export async function requestAsSession(input: {
 	const fetchImpl = input.fetchImpl ?? fetch
 	const headers: Record<string, string> = {
 		Accept: 'application/json, text/html',
+		'User-Agent': controlKodyUserAgent,
 	}
 	if (input.cookieHeader) headers.Cookie = input.cookieHeader
 	if (input.spec.body !== null) headers['Content-Type'] = 'application/json'
@@ -638,7 +787,11 @@ export function isGitAncestor(
 	ancestor: string,
 	descendant: string,
 	options: {
-		execFile?: typeof execFileSync
+		execFile?: (
+			file: string,
+			args: ReadonlyArray<string>,
+			options: ExecFileSyncOptions,
+		) => unknown
 		cwd?: string
 	} = {},
 ) {
@@ -661,7 +814,9 @@ export async function readHealth(input: {
 	isAncestor?: (ancestor: string, descendant: string) => boolean
 }) {
 	const fetchImpl = input.fetchImpl ?? fetch
-	const response = await fetchImpl(healthUrlForOrigin(input.origin))
+	const response = await fetchImpl(healthUrlForOrigin(input.origin), {
+		headers: { 'User-Agent': controlKodyUserAgent },
+	})
 	let body: unknown = null
 	try {
 		body = await response.json()
@@ -695,20 +850,38 @@ export async function readHealth(input: {
 	}
 }
 
-export function readCookieFile(cookieFile: string, origin: string) {
+export function readCookieFile(
+	cookieFile: string,
+	origin: string,
+	email?: string | null,
+) {
+	return readSessionFile(cookieFile, origin, email)?.cookieHeader ?? null
+}
+
+export function readSessionFile(
+	cookieFile: string,
+	origin: string,
+	email?: string | null,
+) {
 	if (!existsSync(cookieFile)) return null
-	return cookieHeaderForOrigin(readFileSync(cookieFile, 'utf8'), origin)
+	return sessionForOrigin(readFileSync(cookieFile, 'utf8'), origin, email)
 }
 
 export async function writeCookieFile(
 	cookieFile: string,
 	cookieHeader: string,
 	origin: string,
+	email?: string | null,
+	oauth?: AppSessionOAuth | null,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
-	await writeFile(cookieFile, formatCookieFile(origin, cookieHeader), {
-		mode: 0o600,
-	})
+	await writeFile(
+		cookieFile,
+		formatCookieFile(origin, cookieHeader, email, oauth),
+		{
+			mode: 0o600,
+		},
+	)
 	await chmod(cookieFile, 0o600)
 }
 
@@ -738,7 +911,12 @@ async function loginAndStoreCookie(
 		else console.error(detail)
 		return { ok: false }
 	}
-	await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
+	await writeCookieFile(
+		options.cookieFile,
+		session.cookieHeader,
+		origin,
+		options.email ?? defaults.email,
+	)
 	return { ok: true, cookieHeader: session.cookieHeader }
 }
 
@@ -780,7 +958,12 @@ export function defaultDoctorDeps(origin: string | null = null): DoctorDeps {
 		nodeVersion: process.version,
 		homeDir: homedir(),
 		hooksPath: readGitHooksPath(),
-		playwrightMarkerExists: playwrightBrowsersInstalled,
+		inspectPlaywright: (homeDir) =>
+			inspectPlaywrightBrowsers({
+				homeDir,
+				browsersJsonPath: defaultPlaywrightBrowsersJsonPath(repoRootFromHere()),
+			}),
+		inspectInstalledLockfile: () => checkInstalledLockfile(),
 		probeHealth: (value) => isWorkerHealthOk(value),
 		ports: workerPortRange(),
 		origin,
@@ -855,7 +1038,12 @@ async function runCommand(options: ControlKodyOptions) {
 				? session.detail
 				: withLocalAppDbRemediation(origin, session, localAppDbSeedEmails())
 			if (session.cookieHeader) {
-				await writeCookieFile(options.cookieFile, session.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					session.cookieHeader,
+					origin,
+					options.email ?? defaults.email,
+				)
 			}
 			if (options.json) {
 				printJson({ ...session, detail, cookieFile: options.cookieFile })
@@ -868,12 +1056,22 @@ async function runCommand(options: ControlKodyOptions) {
 		case 'request': {
 			if (!options.request) {
 				throw new ControlKodyError(
-					'request needs METHOD /path [status]. Example: request GET /account/waiting.json',
+					'request needs METHOD /path [status] [json-body]. Example: request GET /account/waiting.json',
 				)
 			}
 			const origin = await resolveOrigin(options)
-			let cookieHeader = readCookieFile(options.cookieFile, origin)
-			if (!options.skipLogin && !cookieHeader) {
+			const requestedEmail = options.email
+			let cookieHeader = readCookieFile(
+				options.cookieFile,
+				origin,
+				requestedEmail,
+			)
+			const method = options.request.method.toUpperCase()
+			if (
+				!options.skipLogin &&
+				!cookieHeader &&
+				(Boolean(requestedEmail) || (method !== 'GET' && method !== 'HEAD'))
+			) {
 				const loggedIn = await loginAndStoreCookie(origin, options)
 				if (!loggedIn.ok) return 1
 				cookieHeader = loggedIn.cookieHeader
@@ -937,7 +1135,82 @@ async function runCommand(options: ControlKodyOptions) {
 		}
 		case 'preview': {
 			const result = await runPreviewManualTest(options.previewArgv)
+			const session = result.result?.session
+			if (result.exitCode === 0 && session?.cookieHeader && session.origin) {
+				const email =
+					result.result?.login.email ??
+					credentialsForOrigin(session.origin).email
+				await writeCookieFile(
+					options.cookieFile,
+					session.cookieHeader,
+					session.origin,
+					email,
+				)
+				if (!options.json) {
+					console.log(`cookie-file ${options.cookieFile}`)
+				}
+			}
 			return result.exitCode
+		}
+		case 'browse': {
+			const origin = await resolveOrigin(options)
+			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			let cookieHeader = readCookieFile(options.cookieFile, origin, email)
+			if (!cookieHeader) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+			}
+			if (!cookieHeader) {
+				throw new ControlKodyError(
+					'browse needs a session cookie. Run control-kody login or preview first.',
+				)
+			}
+			// Refresh expired sessions the same way request does, before opening
+			// a headed browser that would otherwise land on /login.
+			const probe = await requestAsSession({
+				origin,
+				spec: {
+					method: 'GET',
+					path: '/account',
+					expectedStatus: null,
+					body: null,
+					dump: false,
+					contains: [],
+				},
+				cookieHeader,
+			})
+			if (
+				shouldRefreshSession({
+					skipLogin: false,
+					status: probe.status,
+					path: '/account',
+					rawBody: probe.rawBody,
+					method: 'GET',
+				})
+			) {
+				const loggedIn = await loginAndStoreCookie(origin, options)
+				if (!loggedIn.ok) return 1
+				cookieHeader = loggedIn.cookieHeader
+			}
+			if (!cookieHeader) {
+				throw new ControlKodyError(
+					'browse needs a session cookie. Run control-kody login or preview first.',
+				)
+			}
+			const report = await openBrowseSession({
+				origin,
+				path: options.path,
+				cookieHeader,
+				headed: options.headed,
+				record: options.record,
+				videoDir: options.record ? defaultBrowseVideoDir : undefined,
+				closeAfterMs: options.closeAfterMs,
+			})
+			if (options.json) printJson({ ...report, cookieFile: options.cookieFile })
+			else console.log(formatBrowseReport(report))
+			return 0
 		}
 		case 'health': {
 			const origin = await resolveOrigin(options)
@@ -968,23 +1241,132 @@ async function runCommand(options: ControlKodyOptions) {
 				)
 			}
 			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
 			const report = await createPreviewPackage({
 				origin,
-				email: options.email ?? defaults.email,
+				email,
 				password: options.password ?? defaults.password,
 				kodyId: options.kodyId,
 				description: options.description,
 				headAhead: options.headAhead,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
 			})
 			if (report.cookieHeader) {
-				await writeCookieFile(options.cookieFile, report.cookieHeader, origin)
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					email,
+					report.oauth,
+				)
 			}
 			if (options.json) {
-				const { cookieHeader: _cookieHeader, ...publicReport } = report
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
 				printJson({ ...publicReport, cookieFile: options.cookieFile })
 			} else {
 				console.log(formatPackageCreateReport(report))
 				console.log(`cookie-file ${options.cookieFile}`)
+			}
+			return 0
+		}
+		case 'execute': {
+			if (!options.codeFile) {
+				throw new ControlKodyError(
+					'execute requires --code-file <path-to-esm-module>',
+				)
+			}
+			const origin = await resolveOrigin(options)
+			if (isProductionKodyOrigin(origin)) {
+				throw new ControlKodyError(
+					'execute refuses to run against https://kody.codes',
+				)
+			}
+			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
+			const params = options.paramsFile
+				? await readJsonObjectFile(options.paramsFile)
+				: undefined
+			const report = await executeAppMcp({
+				origin,
+				email,
+				password: options.password ?? defaults.password,
+				code: readFileSync(options.codeFile, 'utf8'),
+				params,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
+			})
+			if (report.cookieHeader) {
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					email,
+					report.oauth,
+				)
+			}
+			if (options.json) {
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
+				printJson({ ...publicReport, cookieFile: options.cookieFile })
+			} else {
+				console.log(formatMcpCallReport(report))
+			}
+			return 0
+		}
+		case 'search': {
+			if (!options.query && !options.entity && !options.domain) {
+				throw new ControlKodyError(
+					'search requires --query, --entity, or --domain',
+				)
+			}
+			const origin = await resolveOrigin(options)
+			if (isProductionKodyOrigin(origin)) {
+				throw new ControlKodyError(
+					'search refuses to run against https://kody.codes',
+				)
+			}
+			const defaults = credentialsForOrigin(origin)
+			const email = options.email ?? defaults.email
+			const session = readSessionFile(options.cookieFile, origin, email)
+			const report = await searchAppMcp({
+				origin,
+				email,
+				password: options.password ?? defaults.password,
+				query: options.query ?? undefined,
+				domain: options.domain ?? undefined,
+				entity: options.entity ?? undefined,
+				limit: options.limit ?? undefined,
+				cookieHeader: session?.cookieHeader ?? undefined,
+				oauth: session?.oauth ?? undefined,
+			})
+			if (report.cookieHeader) {
+				await writeCookieFile(
+					options.cookieFile,
+					report.cookieHeader,
+					origin,
+					email,
+					report.oauth,
+				)
+			}
+			if (options.json) {
+				const {
+					cookieHeader: _cookieHeader,
+					oauth: _oauth,
+					...publicReport
+				} = report
+				printJson({ ...publicReport, cookieFile: options.cookieFile })
+			} else {
+				console.log(formatMcpCallReport(report))
 			}
 			return 0
 		}
@@ -1031,7 +1413,7 @@ async function runCommand(options: ControlKodyOptions) {
 	}
 }
 
-export { usageLines, runCommand }
+export { runCommand }
 
 if (isExecutedDirectly(import.meta.url)) {
 	void runCommand(parseControlArgs(process.argv.slice(2)))

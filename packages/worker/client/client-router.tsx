@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isOnboardingPagePath } from '#universal/onboarding-process.ts'
@@ -8,6 +8,7 @@ import { isProfilePackageFilterOnlyHrefChange } from '#universal/profile-search.
 import { clearOnboardingPayloadCache } from '#client/routes/onboarding-payload.ts'
 import { applyDocumentHead } from './document-head.ts'
 import { installFileDropNavigationGuard } from './file-drop-navigation.ts'
+import { syncPasswordManagerPageIgnore } from './password-manager-page-ignore.ts'
 import {
 	abortIntentPrefetch,
 	prefetchEachRouteOnRender,
@@ -207,12 +208,15 @@ export function shouldUseViewTransition(input: {
 
 function swapDom(onSwapped?: () => void) {
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
+	// `<body>` is outside `#root`, so SPA navigations must add or remove
+	// 1Password's page ignore as the route changes.
+	syncPasswordManagerPageIgnore(window.location.pathname)
 	// First SPA swap onward: suppresses the [data-rise] page-open
 	// choreography (public/styles.css) — the view transition is the
 	// entrance for SPA navigations.
 	document.documentElement.setAttribute('data-spa-nav', '')
 	routerEvents.dispatchEvent(new Event('navigate'))
-	// Subscribers only enqueue handle.update(); the remix/ui scheduler
+	// Subscribers only enqueue handle.update(); the remix/component scheduler
 	// flushes in a microtask. Resolve one microtask later so the DOM has
 	// actually swapped before the transition captures the new state.
 	return new Promise<void>((resolve) =>
@@ -1107,6 +1111,7 @@ function ensureRouter() {
 	routerInitialized = true
 	ensureCurrentScrollRestorationKey()
 	lastNotifiedDocumentPath = getCurrentDocumentPath()
+	syncPasswordManagerPageIgnore(window.location.pathname)
 	window.addEventListener('popstate', handlePopState)
 	document.addEventListener('click', handleDocumentClick)
 	document.addEventListener('submit', handleDocumentSubmit)

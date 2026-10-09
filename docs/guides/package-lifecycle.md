@@ -14,6 +14,14 @@ Use this guide to decide whether to reuse existing behavior, explore with
 `execute`, or create durable repo-backed package code. Use it before scheduling
 new package behavior.
 
+Also watch:
+
+- [Build a Software Pipeline: Help your agent help you](https://www.youtube.com/watch?v=WjogtbCssZc),
+  with the written app guide in [Package apps](./package-apps.md).
+- [Share and fork community packages — then adapt them with your agent](https://www.youtube.com/watch?v=vZecfnLjEXA)
+  for the public-package path.
+- [Kody enables awesome triage-to-production workflows](https://www.youtube.com/watch?v=aySqbxQo9lM).
+
 ## Choose the smallest durable surface
 
 ### Invoke an existing package or capability
@@ -101,11 +109,12 @@ Use `guide: "package_authoring"` for package shape, required `README.md` +
 `AGENTS.md`, README `## Intent`, per-export JSDoc (search Purpose), visibility
 guidance (personal-details hygiene before going public), and the secret-using
 package approval checklist (`pending_secret_package_approvals` is non-null only
-for unadopted community-forked packages; prefer `communityForkAdopt` after
-review, or bulk approval URLs when present). Use `guide: "package_apps"` when
-authoring or debugging a hosted package app, community fork of an app, or
-session handoff. Use `guide: "platform_efficiency"` for the unique Dynamic
-Worker day cost model (stated once; not copied into package docs).
+for unadopted community-forked packages; prefer the `communityForkAdopt` website
+adoption link after review, or bulk approval URLs when present). Use
+`guide: "package_apps"` when authoring or debugging a hosted package app,
+community fork of an app, or session handoff. Use `guide: "platform_efficiency"`
+for the unique Dynamic Worker day cost model (stated once; not copied into
+package docs).
 
 When the OAuth token is coarser than the intended export — Gmail can send
 whenever it can create a draft — publish a thin package that only performs the
@@ -218,8 +227,13 @@ export default async function main() {
 For exports that send messages, write remote records, charge accounts, or make
 other external mutations, prefer a package-specific `dryRun` input. Implement it
 so the export performs validation and returns a preview while skipping the
-mutation. `dryRun` is a package contract, not an automatic Kody runtime flag;
-test the dry-run path first.
+mutation. Include intent-critical mode fields in that preview (reply vs new
+post, send vs draft, and similar) so confirmation is about what will happen, not
+only that validation passed. Validate live and dry-run inputs at the **export**
+entrypoint with the same strict contract — see
+[Runtime input checking](./package-authoring.md#runtime-input-checking) (exposed
+exports only; internal helpers can rely on TypeScript). `dryRun` is a package
+contract, not an automatic Kody runtime flag; test the dry-run path first.
 
 Immediately before any live external mutation, obtain explicit user confirmation
 that identifies the target and scope of the mutation. Do not infer confirmation

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import {
 	AppLoaderDataProvider,
 	hrefMatchesSsrUrl,
@@ -73,6 +73,10 @@ test('consuming route loader data schedules a corrective re-render exactly once'
 			emailVerified: true,
 			username: 'kody',
 			displayName: 'Kody',
+			bio: null,
+			avatarUrl: null,
+			profileVisibility: 'public',
+			formerEmails: [],
 		},
 	})
 	const { handle, queuedTasks, getUpdateCount } = createStubHandle()

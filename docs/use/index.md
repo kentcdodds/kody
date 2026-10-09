@@ -6,12 +6,14 @@ automations than rent them.
 Kody gives your AI assistant secure, reusable access to your services and lets
 it run durable Worker-native automations while your computer is offline.
 
-These docs are for people who connect their assistant to Kody over MCP. Setup
-and repository development live elsewhere
-([contributing docs](../contributing/index.md)). The in-app Get started page
-(`/onboarding`) connects a host, gives that agent access, then proves the same
-home works from a second agent. People with a Kody account can also
-[join the Discord](https://kody.codes/discord).
+These docs are for people who connect their assistant to Kody over MCP. The
+served catalog is [`docs/guides`](../guides/README.md)
+(`curl -fsS https://kody.codes/docs/search-and-execute.md`). This folder is the
+field reference ([README](./README.md)). Setup and repository development live
+elsewhere ([contributing docs](../contributing/index.md)). The in-app Get
+started page (`/onboarding`) connects a host, gives that agent access, then
+proves the same home works from a second agent. People with a Kody account can
+also [join the Discord](https://kody.codes/discord).
 
 Read in order for a full tour, or jump to a topic.
 
@@ -27,14 +29,20 @@ reference detail those docs link into.
 
 - [What is Kody?](../guides/what-is-kody.md) — the introduction: what Kody is
   and is not, what you cannot get elsewhere, the building blocks
-- [Search and execute](../guides/search-and-execute.md) — the two MCP tools:
-  find the right thing, then run it
+- [Search and execute](../guides/search-and-execute.md) — search finds the right
+  thing, then execute runs it
 - [Connect your agent](../guides/connect-your-agent.md) — the three-step Get
   started flow for people
-- [Shared memory](../guides/memory.md), [Secrets](../guides/secrets.md),
+- [Shared memory](../guides/memory.md),
+  [Where agent guidance lives](../guides/agent-guidance.md),
+  [Secrets](../guides/secrets.md),
   [Custom secret providers](../guides/secret-providers.md), and
   [Jobs, workflows, and webhooks](../guides/triggers.md) — concept docs for the
   primitives every connected agent shares
+- [Local CLI execute](../guides/local-execute.md) — `kody login` +
+  `@kodycodes/cli execute --local` when Node ≥22
+- [Open API](../guides/open-api.md) — HTTPS api.kody.codes and MCP `api`
+  (including scoped tokens for CI / headless)
 - [Flake Hunter](../guides/flake-hunter.md),
   [Sentry Issues](../guides/sentry-issues.md),
   [Agent inbox](../guides/agent-inbox.md), and
@@ -69,6 +77,11 @@ reference detail those docs link into.
 - [Packages](./packages.md)
 - [Share a package](../guides/package-sharing.md) — invite another paid account
   to use a package (accept required; pin or follow)
+- [Ship Agent Skills in a package](../guides/package-skills.md) — put
+  `skills/<name>/SKILL.md` in a package; MCP serving is behind
+  `mcp-skills-extension`
+- [MCP Events from packages](../guides/mcp-events.md) — opt a `kody.emits` topic
+  into ChatGPT (and other webhook MCP clients) behind `mcp-events-extension`
 - [Runtime and efficiency](../guides/platform-efficiency.md) — unique Dynamic
   Worker days by surface, and how the acting user plus a stable module graph
   reuse one isolate per UTC day
@@ -91,7 +104,9 @@ reference detail those docs link into.
 - [Package app fetch](./package-app-fetch.md) — platform-marked real-surface
   `app_fetch` smoke tests after publish
 - [Synthetic event dispatch](./synthetic-event-dispatch.md) — interactive MCP
-  post-publish smoke test for one subscription handler
+  post-publish smoke test for one subscription handler; webhook sibling is
+  `webhookSyntheticDispatch` on
+  [Inbound webhooks](./webhooks.md#synthetic-smoke-test)
 - [Waiting](./waiting.md) — current-state items only you can clear
   (`/account/waiting` and `waitingSummary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,

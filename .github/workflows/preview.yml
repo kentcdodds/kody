@@ -68,6 +68,10 @@ jobs:
     steps:
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          # Full history so rename-aware d1_migrations rewrite can recover the
+          # pre-renumber SQL blob for sha256 matching (#2776 / Devin).
+          fetch-depth: 0
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6
@@ -206,6 +210,19 @@ jobs:
           CLOUDFLARE_ENV: preview
           WRANGLER_CONFIG: ${{ steps.resources.outputs.wrangler_config }}
         run: |
+          # Rename-aware bookkeeping: if this PR renumbered a migration that
+          # preview D1 already applied under the old name, rewrite the ledger
+          # row when the SQL sha256 still matches (#2776). Never runs in prod.
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding APP_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/worker/migrations
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding AUDIT_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/worker/audit-migrations
           node ./wrangler-env.ts d1 migrations apply APP_DB --remote --config "$WRANGLER_CONFIG"
           node ./wrangler-env.ts d1 migrations apply AUDIT_DB --remote --config "$WRANGLER_CONFIG"
 
@@ -256,9 +273,11 @@ jobs:
                 ;;
               CLOUDFLARE)
                 secret_env_key="CLOUDFLARE_API_TOKEN"
-                # The Cloudflare stand-in serves whole repo trees by commit;
-                # the real API does not, so only mock-backed runtimes opt in.
-                echo "CLOUDFLARE_API_SOURCE_SNAPSHOTS=true" >> "$OVERRIDES_FILE"
+                # Do not set CLOUDFLARE_API_SOURCE_SNAPSHOTS: preview package
+                # source restorability uses per-PR BUNDLE_ARTIFACTS_KV (same as
+                # production), not the mock whole-tree endpoint. Artifacts
+                # create/token/fork hit the real Artifacts API via the native
+                # ARTIFACTS binding + CLOUDFLARE_ARTIFACTS_API_TOKEN.
                 ;;
               *)
                 secret_env_key="${service_key}_API_KEY"
@@ -303,15 +322,16 @@ jobs:
       # workers are new scripts, so the generated config creates the
       # JobManager class fresh instead of running the production script
       # transfer.
-      - name: 🧱 Ensure preview jobs worker resources (D1)
+      - name: 🧱 Ensure preview jobs worker resources (own JOBS_DB)
         id: jobs_resources
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+          JOBS_D1_NAME: ${{ steps.resources.outputs.jobs_d1_database_name }}
         run: |
           set -euo pipefail
-          node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name "${APP_WORKER_NAME}-jobs" --host-worker-name "$APP_WORKER_NAME" --out-config packages/jobs-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
+          node tools/ci/jobs-worker-resources.ts ensure --env preview --worker-name "${APP_WORKER_NAME}-jobs" --host-worker-name "$APP_WORKER_NAME" --jobs-d1-name "$JOBS_D1_NAME" --out-config packages/jobs-worker/wrangler-preview.generated.json | tee -a "$GITHUB_OUTPUT"
 
       - name: 🗄️ Apply D1 Migrations (preview jobs)
         env:
@@ -321,6 +341,11 @@ jobs:
           WRANGLER_CONFIG:
             ${{ steps.jobs_resources.outputs.jobs_wrangler_config }}
         run: |
+          node tools/ci/rewrite-renamed-preview-migrations.ts \
+            --remote \
+            --binding JOBS_DB \
+            --config "$WRANGLER_CONFIG" \
+            --migrations-dir packages/jobs-worker/migrations
           node ./wrangler-env.ts d1 migrations apply JOBS_DB --remote --config "$WRANGLER_CONFIG"
 
       - name: ☁️ Deploy preview highlight worker
@@ -460,6 +485,30 @@ jobs:
           set -euo pipefail
           node ./wrangler-env.ts deploy --config "$WRANGLER_CONFIG" --name "${APP_WORKER_NAME}-jobs" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}"
 
+      # The API edge binds the app worker's KodyApi entrypoint, so it deploys
+      # after the app worker exists.
+      - name: ☁️ Deploy preview API worker
+        id: deploy_api
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ENV: preview
+          DEPLOY_COMMIT_SHA: ${{ github.sha }}
+          APP_WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          API_WORKER_NAME="${APP_WORKER_NAME}-api"
+          API_CONFIG="packages/api-worker/wrangler-preview.generated.json"
+          node tools/ci/api-worker-config.ts --worker-name "$API_WORKER_NAME" --app-worker-name "$APP_WORKER_NAME" --out-config "$API_CONFIG"
+          echo "worker_name=$API_WORKER_NAME" >> "$GITHUB_OUTPUT"
+
+          node ./wrangler-env.ts deploy --config "$API_CONFIG" --env preview --name "$API_WORKER_NAME" --var "APP_COMMIT_SHA:${DEPLOY_COMMIT_SHA}" 2>&1 | tee deploy-api.log
+
+          API_URL="$(node -e 'const fs = require("node:fs"); const text = fs.readFileSync(process.argv[1], "utf8").replace(/\u001b\[[0-9;]*m/g, ""); const worker = process.argv[2]; const escaped = worker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); const workerUrlRegex = new RegExp(`https://(?:[a-zA-Z0-9-]+\\.)?${escaped}\\.[a-zA-Z0-9._-]+\\.workers\\.dev`, "g"); const matches = text.match(workerUrlRegex); process.stdout.write(matches?.at(-1) ?? "")' deploy-api.log "$API_WORKER_NAME")"
+          if [ -n "$API_URL" ]; then
+            echo "url=$API_URL" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: 🔐 Sync preview app Worker secrets (bulk)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -503,17 +552,28 @@ jobs:
           echo "::add-mask::$PREVIEW_COOKIE_SECRET"
           extra_args+=(--set "COOKIE_SECRET=$PREVIEW_COOKIE_SECRET")
 
+          # Origin-only maintenance secret for this deploy's builtin
+          # capability reindex into the preview's own Vectorize index, fresh
+          # per deploy.
+          PREVIEW_REINDEX_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$PREVIEW_REINDEX_SECRET"
+          printf '%s' "$PREVIEW_REINDEX_SECRET" > "$RUNNER_TEMP/capability-reindex-secret"
+          app_extra_args=("${extra_args[@]}" --set "CAPABILITY_REINDEX_SECRET=$PREVIEW_REINDEX_SECRET")
+
           # Intentionally omit KIT_API_KEY so preview/E2E do not write to
           # production Kit.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --include-empty "${extra_args[@]}"
+          # CLOUDFLARE_ARTIFACTS_API_TOKEN carries the real deploy token so
+          # Artifacts createToken/fork REST hits api.cloudflare.com while
+          # CLOUDFLARE_API_TOKEN stays the per-PR mock credential for email.
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$APP_WORKER_NAME" --config "$WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional YOUTUBE_DATA_API_KEY --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${app_extra_args[@]}"
           # The runtime worker intentionally reuses the same dotenv-based sync
           # here (unlike production, which uses a strict runtime-lane
           # allowlist): the preview values are .env.example placeholders plus
           # per-PR mock-endpoint overrides — capability execution on the
           # runtime worker needs the mock endpoints, and no production secret
           # is present in either file.
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$RUNTIME_WORKER_NAME" --config "$RUNTIME_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
-          node tools/ci/sync-worker-secrets.ts --env "" --name "$PLATFORM_WORKER_NAME" --config "$PLATFORM_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$RUNTIME_WORKER_NAME" --config "$RUNTIME_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$PLATFORM_WORKER_NAME" --config "$PLATFORM_WRANGLER_CONFIG" --from-dotenv "$ENV_FILE" --from-dotenv "$OVERRIDES_FILE" --set-from-env-optional AI_GATEWAY_ID --set-from-env-optional SENTRY_DSN --set-from-env-optional CLOUDFLARE_ARTIFACTS_API_TOKEN=CLOUDFLARE_API_TOKEN --include-empty "${extra_args[@]}"
 
       - name: 📤 Upload Worker source maps to Sentry
         env:
@@ -581,6 +641,22 @@ jobs:
             cat health.json >&2
           fi
           exit 1
+
+      # Each preview owns its Vectorize index, so builtin capability vectors are
+      # written here. --force because APP_DB embed fingerprints can outlive the
+      # index (an existing preview's first deploy onto its own index, or a
+      # deploy that failed between ensure and this step) and would skip the
+      # upserts. The secret was synced after the app deploy and takes a few
+      # seconds to reach the edge, hence --auth-retry-seconds.
+      - name: 🧭 Reindex builtin capability vectors (preview Vectorize)
+        shell: bash
+        env:
+          PREVIEW_URL: ${{ steps.deploy_preview.outputs.url }}
+        run: |
+          set -euo pipefail
+          CAPABILITY_REINDEX_SECRET="$(cat "$RUNNER_TEMP/capability-reindex-secret")"
+          export CAPABILITY_REINDEX_SECRET
+          node tools/ci/reindex-capabilities.ts --url "$PREVIEW_URL" --phases capabilities --force --auth-retry-seconds 90
 
       - name: 🩺 Healthcheck platform worker (preview)
         shell: bash
@@ -666,6 +742,40 @@ jobs:
           fi
           exit 1
 
+      - name: 🩺 Healthcheck API worker (preview)
+        shell: bash
+        env:
+          API_URL: ${{ steps.deploy_api.outputs.url }}
+          EXPECTED_COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_URL:-}" ]; then
+            echo "Missing API worker preview URL output; cannot run healthcheck." >&2
+            exit 1
+          fi
+
+          attempts=30
+          delay_seconds=3
+
+          for i in $(seq 1 "$attempts"); do
+            echo "Attempt $i/$attempts"
+            if curl --fail --silent --show-error --max-time 10 \
+              --header "Accept: application/json" \
+              "${API_URL%/}/health" > api-health.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('api-health.json','utf8')); const expected = process.env.EXPECTED_COMMIT_SHA; if (json?.ok !== true || json?.commit !== expected) { console.error('api-healthcheck-unexpected-response', { expected, json }); process.exit(1); } console.log('api-healthcheck-ok', json);" && \
+              curl --fail --silent --show-error --max-time 20 \
+                --header "Accept: application/json" \
+                "${API_URL%/}/openapi.json" > api-openapi.json && \
+              node -e "const fs = require('node:fs'); const json = JSON.parse(fs.readFileSync('api-openapi.json','utf8')); if (!json?.openapi?.startsWith('3.') || !json?.paths?.['/v1/capability-proxy/session']) { console.error('api-openapi-unexpected-response', Object.keys(json ?? {})); process.exit(1); } console.log('api-openapi-ok', json.openapi, Object.keys(json.paths).length, 'paths');"; then
+              exit 0
+            fi
+            sleep "$delay_seconds"
+          done
+
+          echo "API worker healthcheck failed after ${attempts} attempts: $API_URL" >&2
+          exit 1
+
       - name: 🧾 Write preview link summary
         if: steps.deploy_preview.outputs.url != ''
         env:
@@ -677,8 +787,14 @@ jobs:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
+          API_WORKER_NAME: ${{ steps.deploy_api.outputs.worker_name }}
+          API_URL: ${{ steps.deploy_api.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
+          JOBS_D1_DATABASE_NAME:
+            ${{ steps.resources.outputs.jobs_d1_database_name }}
+          VECTORIZE_INDEX_NAME:
+            ${{ steps.resources.outputs.vectorize_index_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
         run: |
           {
@@ -693,11 +809,20 @@ jobs:
             if [ -n "${RUNTIME_URL:-}" ]; then
               printf 'Runtime worker: `%s` (%s)\n' "$RUNTIME_WORKER_NAME" "$RUNTIME_URL"
             fi
+            if [ -n "${API_URL:-}" ]; then
+              printf 'API worker: `%s` (%s)\n' "$API_WORKER_NAME" "$API_URL"
+            fi
             if [ -n "${PREVIEW_VERSION_URL:-}" ]; then
               printf 'Version preview: %s\n' "$PREVIEW_VERSION_URL"
             fi
             if [ -n "${D1_DATABASE_NAME:-}" ]; then
               printf 'D1: `%s`\n' "$D1_DATABASE_NAME"
+            fi
+            if [ -n "${JOBS_D1_DATABASE_NAME:-}" ]; then
+              printf 'Jobs D1: `%s`\n' "$JOBS_D1_DATABASE_NAME"
+            fi
+            if [ -n "${VECTORIZE_INDEX_NAME:-}" ]; then
+              printf 'Vectorize: `%s`\n' "$VECTORIZE_INDEX_NAME"
             fi
             if [ -n "${OAUTH_KV_TITLE:-}" ]; then
               printf 'KV: `%s`\n' "$OAUTH_KV_TITLE"
@@ -723,15 +848,19 @@ jobs:
           PLATFORM_URL: ${{ steps.deploy_platform.outputs.url }}
           RUNTIME_WORKER_NAME: ${{ steps.deploy_runtime.outputs.worker_name }}
           RUNTIME_URL: ${{ steps.deploy_runtime.outputs.url }}
+          API_WORKER_NAME: ${{ steps.deploy_api.outputs.worker_name }}
+          API_URL: ${{ steps.deploy_api.outputs.url }}
           MOCK_SUMMARY: ${{ steps.deploy_mocks.outputs.mock_comment_summary }}
           D1_DATABASE_NAME: ${{ steps.resources.outputs.d1_database_name }}
           OAUTH_KV_TITLE: ${{ steps.resources.outputs.oauth_kv_title }}
         with:
           script: |
             const marker = "<!-- kody-preview-url -->";
+            const previewUrl = process.env.PREVIEW_URL;
+            const loginDeepLink = `${previewUrl}/login?redirectTo=${encodeURIComponent("/account")}`;
             const bodyLines = [
               marker,
-              `🔎 Preview deployed: ${process.env.PREVIEW_URL}`,
+              `🔎 Preview deployed: ${previewUrl}`,
               "",
               `Worker: \`${process.env.WORKER_NAME}\``,
             ];
@@ -745,6 +874,11 @@ jobs:
                 `Runtime worker: \`${process.env.RUNTIME_WORKER_NAME}\` (${process.env.RUNTIME_URL.trim()})`,
               );
             }
+            if (process.env.API_URL?.trim()) {
+              bodyLines.push(
+                `API worker: \`${process.env.API_WORKER_NAME}\` (${process.env.API_URL.trim()})`,
+              );
+            }
             if (process.env.PREVIEW_VERSION_URL?.trim()) {
               bodyLines.push(
                 `Version preview: ${process.env.PREVIEW_VERSION_URL.trim()}`,
@@ -756,6 +890,21 @@ jobs:
             if (process.env.OAUTH_KV_TITLE?.trim()) {
               bodyLines.push(`KV: \`${process.env.OAUTH_KV_TITLE.trim()}\``);
             }
+            bodyLines.push(
+              "",
+              "### Seed login (public preview fixture)",
+              "",
+              "- Email: `me@kentcdodds.com`",
+              "- Password: `ilikecode`",
+              "- Username: `user-me`",
+              "",
+              "Prefer MCP/API/`control-kody` execute for proof. Browser only when UI is under test.",
+              "",
+              `- Deep link (UI login still needed): [Sign in → /account](${loginDeepLink}) — change \`redirectTo\` to the path under test (for example \`/@user-me/your-pkg\`).`,
+              `- Already signed in (reuse CLI cookie): \`npm run control-kody -- browse --origin ${previewUrl} --path /account\``,
+              "",
+              "Do **not** post session cookies or tokens in PR comments.",
+            );
             if (process.env.MOCK_SUMMARY?.trim()) {
               bodyLines.push("");
               bodyLines.push("Mocks:");
@@ -864,7 +1013,7 @@ jobs:
 
           echo "worker_name=$APP_WORKER_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: 🧹 Delete preview Workers and resources (D1 + KV + R2)
+      - name: 🧹 Delete preview Workers and resources (D1 + KV + R2 + Vectorize)
         if: always()
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

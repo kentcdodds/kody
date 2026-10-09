@@ -7,8 +7,8 @@ summary:
   interactive MCP with packageSubscriptionDispatch; follow metadata-first email,
   run.error.recorded activity notifiers, integration.auth.failed /
   integration.auth.succeeded reconnect notifiers, mcp.server.disconnected /
-  mcp.server.reconnected connection episodes, and repo / package lifecycle
-  topics.
+  mcp.server.reconnected connection episodes, community.fork.upstream_updated
+  fork notifiers, and repo / package lifecycle topics.
 category: platform
 ---
 
@@ -17,6 +17,9 @@ category: platform
 Use package subscriptions when a saved package should react to Kody-owned event
 topics. The saved package remains the top-level entity; subscriptions are nested
 manifest metadata and package runtime handlers.
+
+Watch:
+[Kody subscriptions: email and Discord events wake your agents](https://www.youtube.com/watch?v=8I6kYYiaqis).
 
 ## Manifest shape
 
@@ -68,6 +71,14 @@ subscriptions:
 The result lists scoped package `name`, `package_id`, topic, handler,
 description, and filters. Use this before debugging event dispatch, building
 fan-out, or deciding whether a package already subscribes to a topic.
+
+Host wake paths (email, Discord-driven package events, webhooks that fan out via
+subscriptions, integrations, and the other subscription discovery helpers) read
+a per-user KV cache of the computed topic→package map rather than loading every
+saved package manifest. The manifest remains the only source of truth; publish
+and unpublish refresh the cache. Prefer that pattern (normalized source +
+computed cache, invalidate on the write that changes the source, no TTL) over a
+denormalized topic-index table.
 
 ## Synthetic dispatch
 
@@ -145,7 +156,8 @@ the event. There is no cross-user delivery.
 
 Declare topics in `package.json#kody.emits`. Topics must use the scoped form
 `@{username}/topic.name` with a lower-dot-case body, and the scope must match
-the emitting package's npm scope:
+the emitting package's npm scope. Set `"mcp": true` on a topic to also expose it
+over [MCP Events](./mcp-events.md) (flag-gated; nothing is exposed by default):
 
 ```json
 {
@@ -180,8 +192,8 @@ search/detail projections so subscribers can discover payload shapes.
 
 ### Emitting
 
-Emit from any package runtime context (exports, subscription handlers,
-package-owned jobs, apps, retrievers) with the `events` helper:
+`events` is bound only in package jobs, subscription handlers, and package apps.
+Emit from those runtimes (including package modules they load):
 
 ```ts
 import { events } from 'kody:runtime'
@@ -201,8 +213,8 @@ Rules:
 - Payloads are capped at 64 KiB (canonical JSON). Store large data with
   `packageStorage()` and emit a reference instead.
 - `events.dispatch` is unavailable in ad hoc `execute` runs — topics belong to
-  packages, so emit from package code (or statically import a package export
-  that dispatches).
+  packages. Statically importing a package export from `execute` does not bind
+  `events`.
 
 ### Delivery semantics
 
@@ -380,13 +392,16 @@ agent, or otherwise react when something in the user's account fails.
 ## `integration.auth.failed`
 
 When host-side OAuth token refresh fails with reconnectable caller state —
-missing refresh token, provider HTTP 4xx / `invalid_grant`, missing secrets,
-host-approval gaps, or invalid connection config — Kody dispatches
-`integration.auth.failed` to packages saved by that same user that declare the
-topic. Every classified attempt emits. The platform does not coalesce repeats;
-notifier packages decide how often to ping, typically by pairing this topic with
-`integration.auth.succeeded` and storing last-known health in package storage.
-Provider HTTP 5xx and missing connections do not emit.
+missing refresh token on a sign-in that expires, provider HTTP 4xx /
+`invalid_grant`, missing secrets, host-approval gaps, or invalid connection
+config — Kody dispatches `integration.auth.failed` to packages saved by that
+same user that declare the topic. Every classified attempt emits. The platform
+does not coalesce repeats; notifier packages decide how often to ping, typically
+by pairing this topic with `integration.auth.succeeded` and storing last-known
+health in package storage. Provider HTTP 5xx and missing connections do not
+emit. Neither does a non-expiring grant (no refresh token and no access-token
+expiry at connect): refresh returns `refreshed: false` and emits neither auth
+topic.
 
 Delivery is best-effort after the refresh caller error is classified — there is
 no Queue / DLQ for this topic. Failures during subscriber discovery or
@@ -611,6 +626,66 @@ Account-level Artifacts create/delete events map to `repo.created` and
 (`default_branch`, `description`, Cloudflare `cloudflare_repo_id`). Same-user
 fan-out and Queue delivery match `repo.pushed`. Unmatched deletes (D1 row
 already gone) are acknowledged without retry.
+
+## `community.fork.upstream_updated`
+
+When a public package you forked is republished with a new pinned commit, Kody
+dispatches `community.fork.upstream_updated` to packages saved by **your**
+account that declare the topic. There is one event per fork of that listing
+(forking the same listing twice produces two events). Republishes that keep the
+same pinned commit do not emit, and forks already at the new pinned commit are
+skipped. Watching a public package without forking it is not supported.
+
+Delivery is durable: `communityPublish` enqueues the republish on the
+`kody-community-listing-published-dispatch` Queue (with DLQ). Enqueue failures
+are logged and never fail the publish. The consumer reads the forks and your
+subscribed packages when it runs. Subscriber discovery and pre-handler
+infrastructure failures retry. Idempotency keys include the event id, fork id,
+and subscriber package id, so Queue redelivery replays stored results instead of
+re-running handlers.
+
+Handlers receive a metadata-only payload:
+
+```ts
+type CommunityForkUpstreamUpdatedEvent = {
+	event: 'community.fork.upstream_updated'
+	event_id: string
+	listing: {
+		id: string
+		name: string
+		kody_id: string
+		public_url: string
+	}
+	publisher: {
+		username: string | null
+	}
+	fork: {
+		id: string
+		package_id: string
+		kody_id: string
+		origin_commit: string
+		forked_at: string
+	}
+	previous: { pinned_commit: string; package_version: string | null }
+	current: { pinned_commit: string; package_version: string | null }
+	published_at: string
+}
+```
+
+`fork.package_id` and `fork.kody_id` identify your forked package (it may still
+be an inert fork with no live saved package). `fork.origin_commit` is the
+listing commit your fork last absorbed. `previous` and `current` are the
+listing's pinned commit and author-supplied `package.json#version` before and
+after the republish. `listing` and `publisher` are read when the event is
+delivered, so if the listing republished again before delivery they describe the
+newer release; key rebase logic on `current.pinned_commit`. The event omits
+listing source and the publisher's account identifiers. Read upstream files from
+`listing.public_url` or the community capabilities. When your changes are
+ported, publish with `repoPublishSession` and `absorbed_upstream_commit` (see
+[Community packages](../use/community-packages.md)).
+
+Use this topic for packages that auto-rebase a fork, open a review session, or
+post a Discord ping when an upstream package changes.
 
 ## `package.codemod.applied`
 

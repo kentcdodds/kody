@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { type ExecuteResult } from '@cloudflare/codemode'
+import { buildExecuteAttributionMetadata } from '#mcp/execute-invoke.ts'
 import {
 	defaultExecutionResponseLimitBytes,
 	getExecutionErrorDetails,
@@ -8,6 +9,7 @@ import {
 import { entitlementStructuredContent } from '#mcp/entitlement-metadata.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
+import { getInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -57,6 +59,7 @@ export const executeCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'execute',
+		orgPermission: 'org:execute',
 		description:
 			'Run `execute({ code, params })`: one ephemeral ESM module whose default export receives `params`. Example: `export default async function main(params) { return await kody.emailSend(params) }`. Same user and module graph reuse one isolate for the UTC day when varying args stay in `params`. Use this inside package and execute runtimes when reusable code needs the same module execution surface as the public MCP execute tool.',
 		keywords: ['execute', 'kody', 'module', 'sandbox', 'runtime', 'params'],
@@ -92,7 +95,7 @@ export const executeCapability = defineDomainCapability(
 				.max(runRecordMaxIdempotencyKeyLength)
 				.optional()
 				.describe(
-					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, persist the run eagerly with a bounded result snapshot and replay finished/in-progress outcomes instead of re-executing. Key-less execute stays on-failure-only.`,
+					`Optional caller-supplied idempotency key (max ${runRecordMaxIdempotencyKeyLength} chars). When set, replay a finished or in-progress run with the same key instead of starting another sandbox. Omit it for ordinary calls; those runs are still kept in Activity.`,
 				),
 		}),
 		outputSchema: executeOutputSchema,
@@ -158,6 +161,10 @@ export const executeCapability = defineDomainCapability(
 			}
 
 			let claimedRunHandle: RunRecordHandle | null = null
+			const executeRunMetadata = {
+				conversationId,
+				...buildExecuteAttributionMetadata({ entry: 'code' }),
+			}
 			if (idempotencyKey && userId) {
 				const claim = await claimRunRecord({
 					env: ctx.env,
@@ -167,7 +174,7 @@ export const executeCapability = defineDomainCapability(
 						name: null,
 						storageId: existingStorageId,
 						idempotencyKey,
-						metadata: { conversationId },
+						metadata: executeRunMetadata,
 					},
 				})
 				if (!claim) {
@@ -221,7 +228,7 @@ export const executeCapability = defineDomainCapability(
 				serverTiming?: Array<{ name: string; durationMs: number }>
 			}
 			try {
-				result = await runModuleWithRegistry(
+				const execution = runModuleWithRegistry(
 					ctx.env,
 					callerContext,
 					args.code,
@@ -230,15 +237,23 @@ export const executeCapability = defineDomainCapability(
 						runRecordHandle: claimedRunHandle,
 						waitUntil: ctx.waitUntil,
 						reportProgress: ctx.reportProgress,
+						signal: getInboundRequestSignal(),
 						runRecord: {
 							surface: 'execute',
 							name: null,
 							storageId: existingStorageId,
 							idempotencyKey,
-							metadata: { conversationId },
+							metadata: executeRunMetadata,
 						},
 					},
 				)
+				ctx.waitUntil?.(
+					execution.then(
+						() => undefined,
+						() => undefined,
+					),
+				)
+				result = await execution
 			} catch (cause) {
 				if (claimedRunHandle) {
 					const current = await getRunRecord({

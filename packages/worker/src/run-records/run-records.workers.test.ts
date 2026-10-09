@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
@@ -14,7 +15,6 @@ import {
 	claimPackageInvocationRecord,
 	bulkUpdateRunErrorTriage,
 	claimRunRecord,
-	clearRunRecords,
 	finishPackageInvocationRecord,
 	finishRunRecord,
 	getRunRecord,
@@ -23,7 +23,6 @@ import {
 	listRunRecords,
 	recordRunRecord,
 	runLogRpc,
-	snapshotRunRecordResult,
 	summarizeRunRecords,
 	updateRunErrorTriage,
 } from './service.ts'
@@ -38,9 +37,27 @@ import {
 	runRecordStaleRunningTtlMsJob,
 	runRecordStaleRunningTtlMsShortLived,
 	type RunRecordContext,
+	type RunRecordFilter,
 	type RunRecordHandle,
 	type RunSurface,
 } from './types.ts'
+
+type SeedRun = {
+	id: string
+	status: 'running' | 'success' | 'error'
+	startedAt: string
+	finishedAt?: string | null
+	name?: string | null
+	surface?: string
+	jobId?: string | null
+	errorName?: string | null
+	errorMessage?: string | null
+	errorTriage?: 'ignored' | 'resolved' | null
+	idempotencyKey?: string | null
+}
+
+const dayMs = 24 * 60 * 60 * 1000
+const iso = (ms: number) => new Date(ms).toISOString()
 
 function uniqueUserId(label: string) {
 	return `run-records-${label}-${crypto.randomUUID()}`
@@ -54,14 +71,52 @@ function baseContext(overrides?: Partial<RunRecordContext>): RunRecordContext {
 	}
 }
 
+function runLogStub(userId: string) {
+	const namespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	return namespace.get(namespace.idFromName(userId))
+}
+
+function handleFor(
+	userId: string,
+	id: string,
+	context?: Partial<RunRecordContext>,
+	startedAtMs: number = Date.now(),
+): RunRecordHandle {
+	return {
+		id,
+		userId,
+		startedAt: iso(startedAtMs),
+		persistence: 'eager',
+		context: baseContext(context),
+	}
+}
+
+function finishOk(
+	userId: string,
+	id: string,
+	context?: Partial<RunRecordContext>,
+	startedAtMs?: number,
+) {
+	return finishRunRecord({
+		env,
+		handle: handleFor(userId, id, context, startedAtMs),
+		status: 'success',
+	})
+}
+
+const getRun = (userId: string, runId: string) =>
+	getRunRecord({ env, userId, runId })
+
+const listRuns = (userId: string, filter?: RunRecordFilter, limit?: number) =>
+	listRunRecords({ env, userId, filter, limit })
+
 async function drainWaitUntil(pending: Array<Promise<unknown>>) {
 	await Promise.all(pending)
 	pending.length = 0
 }
 
 async function armRetentionOnNextFinish(userId: string, runCount?: number) {
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (instance: RunLog) => {
+	await runInDurableObject(runLogStub(userId), async (instance: RunLog) => {
 		expect(instance).toBeInstanceOf(RunLog)
 		seedRunLogMeta(instance, {
 			finishesSinceRetention: runRecordRetentionEveryNFinishes - 1,
@@ -70,52 +125,83 @@ async function armRetentionOnNextFinish(userId: string, runCount?: number) {
 	})
 }
 
-function insertRunRow(
-	state: DurableObjectState,
-	input: {
-		id: string
-		status: 'running' | 'success' | 'error'
-		startedAt: string
-		finishedAt?: string | null
-		name?: string | null
-		surface?: string
-		jobId?: string | null
-		errorName?: string | null
-		errorMessage?: string | null
-		errorTriage?: 'ignored' | 'resolved' | null
-		idempotencyKey?: string | null
-	},
-) {
+function insertRunRow(state: DurableObjectState, input: SeedRun) {
 	const finishedAt = input.finishedAt ?? null
 	state.storage.sql.exec(
 		`INSERT INTO runs (
-			id, surface, status, name, package_id, package_kody_id, source_id,
-			published_commit, storage_id, job_id, workflow_id, invocation_id,
-			session_id, idempotency_key, parent_run_id, started_at, finished_at,
-			duration_ms, error_name, error_message, metadata_json, created_at,
-			updated_at
-		) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL,
-			NULL, NULL, NULL, ?, NULL, ?, ?, ?, NULL, NULL, '{}', ?, ?)`,
+			id, surface, status, name, job_id, idempotency_key, started_at,
+			finished_at, duration_ms, error_name, error_message, error_triage,
+			metadata_json, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)`,
 		input.id,
 		input.surface ?? 'job',
 		input.status,
 		input.name ?? null,
+		input.jobId ?? null,
 		input.idempotencyKey ?? null,
 		input.startedAt,
 		finishedAt,
 		finishedAt == null ? null : 1,
-		input.startedAt,
-		finishedAt ?? input.startedAt,
-	)
-	state.storage.sql.exec(
-		`UPDATE runs
-		SET job_id = ?, error_name = ?, error_message = ?, error_triage = ?
-		WHERE id = ?`,
-		input.jobId ?? null,
 		input.errorName ?? null,
 		input.errorMessage ?? null,
 		input.errorTriage ?? null,
-		input.id,
+		input.startedAt,
+		finishedAt ?? input.startedAt,
+	)
+}
+
+async function seedRuns(userId: string, rows: Array<SeedRun>) {
+	await runInDurableObject(
+		runLogStub(userId),
+		async (instance: RunLog, state) => {
+			expect(instance).toBeInstanceOf(RunLog)
+			for (const row of rows) insertRunRow(state, row)
+		},
+	)
+}
+
+/** `count` finished rows `${prefix}-${index}` started `stepMs` apart. */
+function finishedRows(
+	prefix: string,
+	count: number,
+	startMs: number,
+	row: Omit<SeedRun, 'id' | 'startedAt'>,
+	stepMs = 1,
+): Array<SeedRun> {
+	return Array.from({ length: count }, (_, index) => {
+		const startedAt = iso(startMs + index * stepMs)
+		return {
+			id: `${prefix}-${index}`,
+			startedAt,
+			finishedAt: startedAt,
+			...row,
+		}
+	})
+}
+
+function sqlOne<T extends Record<string, SqlStorageValue>>(
+	userId: string,
+	query: string,
+) {
+	return runInDurableObject(
+		runLogStub(userId),
+		async (_instance: RunLog, state) => state.storage.sql.exec<T>(query).one(),
+	)
+}
+
+async function countRuns(userId: string, where = '1 = 1') {
+	return (
+		await sqlOne<{ n: number }>(
+			userId,
+			`SELECT COUNT(*) AS n FROM runs WHERE ${where}`,
+		)
+	).n
+}
+
+function getAlarm(userId: string) {
+	return runInDurableObject(
+		runLogStub(userId),
+		async (_instance: RunLog, state) => state.storage.getAlarm(),
 	)
 }
 
@@ -134,41 +220,34 @@ test('write surfaces journey', async () => {
 	expect(handle).not.toBeNull()
 	await drainWaitUntil(pending)
 	await finishRunRecord({ env, handle, status: 'success', logs: ['done'] })
-	const page = await listRunRecords({ env, userId })
-	expect(page.runs).toHaveLength(1)
-	expect(page.runs[0]?.status).toBe('success')
-	expect(page.runs[0]?.surface).toBe('job')
-	expect(page.runs[0]?.jobId).toBe('job-1')
-	expect(page.runs[0]?.logCount).toBe(1)
+	expect((await listRuns(userId)).runs).toEqual([
+		expect.objectContaining({
+			status: 'success',
+			surface: 'job',
+			jobId: 'job-1',
+			logCount: 1,
+		}),
+	])
 
 	// --- finish-only upsert when startRun never landed ---
 	const userId2 = uniqueUserId('finish-only')
-	const orphanHandle: RunRecordHandle = {
-		id: crypto.randomUUID(),
-		userId: userId2,
-		startedAt: new Date().toISOString(),
-		persistence: 'eager',
-		context: baseContext({
-			surface: 'workflow',
-			workflowId: 'wf-1',
-			name: 'solo-finish',
-		}),
-	}
+	const orphanHandle = handleFor(userId2, crypto.randomUUID(), {
+		surface: 'workflow',
+		workflowId: 'wf-1',
+		name: 'solo-finish',
+	})
 	await finishRunRecord({
 		env,
 		handle: orphanHandle,
 		status: 'success',
 		logs: [{ level: 'info', message: 'finished without start' }],
 	})
-	const orphanDetail = await getRunRecord({
-		env,
-		userId: userId2,
-		runId: orphanHandle.id,
+	const orphanDetail = await getRun(userId2, orphanHandle.id)
+	expect(orphanDetail?.run).toMatchObject({
+		status: 'success',
+		surface: 'workflow',
+		workflowId: 'wf-1',
 	})
-	expect(orphanDetail).not.toBeNull()
-	expect(orphanDetail?.run.status).toBe('success')
-	expect(orphanDetail?.run.surface).toBe('workflow')
-	expect(orphanDetail?.run.workflowId).toBe('wf-1')
 	expect(orphanDetail?.logs).toEqual([
 		{
 			runId: orphanHandle.id,
@@ -188,26 +267,20 @@ test('write surfaces journey', async () => {
 		status: 'success',
 		logs: ['delivered'],
 	})
-	expect(shotHandle).not.toBeNull()
-	const shotDetail = await getRunRecord({
-		env,
-		userId: userId3,
-		runId: shotHandle!.id,
+	const shotDetail = await getRun(userId3, shotHandle!.id)
+	expect(shotDetail?.run).toMatchObject({
+		status: 'success',
+		surface: 'webhook',
+		name: 'hook-a',
 	})
-	expect(shotDetail?.run.status).toBe('success')
-	expect(shotDetail?.run.surface).toBe('webhook')
-	expect(shotDetail?.run.name).toBe('hook-a')
 	expect(shotDetail?.logs).toHaveLength(1)
 
 	// --- finishRunRecord returns synchronously when waitUntil is provided ---
 	const userId4 = uniqueUserId('finish-wait-until')
-	const waitHandle: RunRecordHandle = {
-		id: crypto.randomUUID(),
-		userId: userId4,
-		startedAt: new Date().toISOString(),
-		persistence: 'eager',
-		context: baseContext({ surface: 'export', name: 'bg-finish' }),
-	}
+	const waitHandle = handleFor(userId4, crypto.randomUUID(), {
+		surface: 'export',
+		name: 'bg-finish',
+	})
 	const waitPending: Array<Promise<unknown>> = []
 	const finishReturn = finishRunRecord({
 		env,
@@ -221,31 +294,53 @@ test('write surfaces journey', async () => {
 	await expect(finishReturn).resolves.toBe(true)
 	expect(waitPending).toHaveLength(1)
 	await drainWaitUntil(waitPending)
-	const waitDetail = await getRunRecord({
-		env,
-		userId: userId4,
-		runId: waitHandle.id,
-	})
-	expect(waitDetail?.run.status).toBe('success')
+	expect((await getRun(userId4, waitHandle.id))?.run.status).toBe('success')
 
-	// --- execute surface: on-failure policy (no persist on success, one row on error) ---
+	// --- execute is eager (success and error persist); key-less export stays on-failure ---
 	const userId5 = uniqueUserId('execute-policy')
 	const successHandle = beginRunRecord({
 		env,
 		userId: userId5,
 		context: baseContext({ surface: 'execute', name: 'ok' }),
 	})
-	expect(successHandle?.persistence).toBe('on-failure')
+	expect(successHandle?.persistence).toBe('eager')
 	await finishRunRecord({
 		env,
 		handle: successHandle,
 		status: 'success',
+		result: { ok: true },
+		logs: ['persisted'],
+	})
+	const successDetail = await getRun(userId5, successHandle!.id)
+	expect(successDetail?.run).toMatchObject({
+		status: 'success',
+		surface: 'execute',
+		name: 'ok',
+		idempotencyKey: null,
+	})
+	expect(successDetail?.logs.map((entry) => entry.message)).toEqual([
+		'persisted',
+	])
+	expect(successDetail?.run.metadata['result']).toEqual({ ok: true })
+
+	const leanExport = beginRunRecord({
+		env,
+		userId: userId5,
+		context: baseContext({ surface: 'export', name: 'lean-ok' }),
+	})
+	expect(leanExport?.persistence).toBe('on-failure')
+	await finishRunRecord({
+		env,
+		handle: leanExport,
+		status: 'success',
+		result: { ignored: true },
 		logs: ['should not persist'],
 	})
-	expect(await listRunRecords({ env, userId: userId5 })).toEqual({
+	expect(await listRuns(userId5, { surface: 'export' })).toEqual({
 		runs: [],
 		nextCursor: null,
 	})
+
 	const errorHandle = beginRunRecord({
 		env,
 		userId: userId5,
@@ -258,12 +353,17 @@ test('write surfaces journey', async () => {
 		error: new Error('execute failed'),
 		logs: ['error log'],
 	})
-	const execPage = await listRunRecords({ env, userId: userId5 })
-	expect(execPage.runs).toHaveLength(1)
-	expect(execPage.runs[0]?.status).toBe('error')
-	expect(execPage.runs[0]?.errorName).toBe('Error')
-	expect(execPage.runs[0]?.errorMessage).toBe('execute failed')
-	expect(execPage.runs[0]?.surface).toBe('execute')
+	const execPage = await listRuns(userId5, { surface: 'execute' })
+	expect(execPage.runs).toHaveLength(2)
+	expect(execPage.runs.find((run) => run.id === errorHandle!.id)).toMatchObject(
+		{
+			status: 'error',
+			errorName: 'Error',
+			errorMessage: 'execute failed',
+			surface: 'execute',
+		},
+	)
+	expect(execPage.runs.map((run) => run.id)).toContain(successHandle!.id)
 })
 
 test('logs round-trip in sequence order and keep only the newest 200', async () => {
@@ -276,159 +376,104 @@ test('logs round-trip in sequence order and keep only the newest 200', async () 
 	expect(handle).not.toBeNull()
 	const totalLogs = runRecordMaxLogEntriesPerRun + 50
 	const logs = Array.from({ length: totalLogs }, (_, index) => `log-${index}`)
-	await finishRunRecord({
-		env,
-		handle,
-		status: 'success',
-		logs,
-	})
-	const detail = await getRunRecord({
-		env,
-		userId,
-		runId: handle!.id,
-	})
-	expect(detail).not.toBeNull()
+	await finishRunRecord({ env, handle, status: 'success', logs })
+	const detail = await getRun(userId, handle!.id)
 	expect(detail?.logs).toHaveLength(runRecordMaxLogEntriesPerRun)
-	expect(detail?.logs[0]?.sequence).toBe(0)
-	expect(detail?.logs[0]?.message).toBe('log-50')
-	expect(detail?.logs.at(-1)?.sequence).toBe(runRecordMaxLogEntriesPerRun - 1)
-	expect(detail?.logs.at(-1)?.message).toBe(`log-${totalLogs - 1}`)
-	expect(detail?.run.logCount).toBe(runRecordMaxLogEntriesPerRun)
-
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (_instance: RunLog, state) => {
-		expect(
-			state.storage.sql
-				.exec<{ log_count: number }>(
-					`SELECT log_count FROM runs WHERE id = ?`,
-					handle!.id,
-				)
-				.one(),
-		).toEqual({ log_count: runRecordMaxLogEntriesPerRun })
+	expect(detail?.logs[0]).toMatchObject({ sequence: 0, message: 'log-50' })
+	expect(detail?.logs.at(-1)).toMatchObject({
+		sequence: runRecordMaxLogEntriesPerRun - 1,
+		message: `log-${totalLogs - 1}`,
 	})
+	expect(detail?.run.logCount).toBe(runRecordMaxLogEntriesPerRun)
+	expect(
+		await sqlOne(
+			userId,
+			`SELECT log_count FROM runs WHERE id = '${handle!.id}'`,
+		),
+	).toEqual({ log_count: runRecordMaxLogEntriesPerRun })
 })
 
 test('listRunRecords filters by surface/status/jobId/name and paginates with cursors', async () => {
 	const userId = uniqueUserId('list-filter')
 	const startedAtBase = Date.now() - 60_000
 	for (let index = 0; index < 5; index += 1) {
-		const handle: RunRecordHandle = {
-			id: `run-${index}`,
-			userId,
-			startedAt: new Date(startedAtBase + index * 1000).toISOString(),
-			persistence: 'eager',
-			context: baseContext({
-				surface: index % 2 === 0 ? 'job' : 'export',
-				jobId: index < 3 ? 'job-shared' : 'job-other',
-				name: index < 2 ? 'shared-name' : `run-${index}`,
-			}),
-		}
 		await finishRunRecord({
 			env,
-			handle,
+			handle: handleFor(
+				userId,
+				`run-${index}`,
+				{
+					surface: index % 2 === 0 ? 'job' : 'export',
+					jobId: index < 3 ? 'job-shared' : 'job-other',
+					name: index < 2 ? 'shared-name' : `run-${index}`,
+				},
+				startedAtBase + index * 1000,
+			),
 			status: index === 1 ? 'error' : 'success',
 			error: index === 1 ? new Error('fail') : undefined,
 		})
 	}
 
-	const jobs = await listRunRecords({
-		env,
-		userId,
-		filter: { surface: 'job' },
-	})
-	expect(jobs.runs.map((run) => run.id)).toEqual(['run-4', 'run-2', 'run-0'])
+	const cases: Array<[RunRecordFilter, Array<string>]> = [
+		[{ surface: 'job' }, ['run-4', 'run-2', 'run-0']],
+		[{ status: 'error' }, ['run-1']],
+		[{ jobId: 'job-shared' }, ['run-2', 'run-1', 'run-0']],
+		[{ name: 'shared-name' }, ['run-1', 'run-0']],
+	]
+	const listed: typeof cases = []
+	for (const [filter] of cases) {
+		const page = await listRuns(userId, filter)
+		listed.push([filter, page.runs.map((run) => run.id)])
+	}
+	expect(listed).toEqual(cases)
 
-	const errors = await listRunRecords({
-		env,
-		userId,
-		filter: { status: 'error' },
-	})
-	expect(errors.runs.map((run) => run.id)).toEqual(['run-1'])
-
-	const sharedJob = await listRunRecords({
-		env,
-		userId,
-		filter: { jobId: 'job-shared' },
-	})
-	expect(sharedJob.runs.map((run) => run.id)).toEqual([
-		'run-2',
-		'run-1',
-		'run-0',
-	])
-
-	const byName = await listRunRecords({
-		env,
-		userId,
-		filter: { name: 'shared-name' },
-	})
-	expect(byName.runs.map((run) => run.id)).toEqual(['run-1', 'run-0'])
-
-	const page1 = await listRunRecords({
-		env,
-		userId,
-		limit: 2,
-	})
-	expect(page1.runs.map((run) => run.id)).toEqual(['run-4', 'run-3'])
-	expect(page1.nextCursor).toBeTruthy()
-
-	const page2 = await listRunRecords({
-		env,
-		userId,
-		limit: 2,
-		cursor: page1.nextCursor,
-	})
-	expect(page2.runs.map((run) => run.id)).toEqual(['run-2', 'run-1'])
-	expect(page2.nextCursor).toBeTruthy()
-
-	const page3 = await listRunRecords({
-		env,
-		userId,
-		limit: 2,
-		cursor: page2.nextCursor,
-	})
-	expect(page3.runs.map((run) => run.id)).toEqual(['run-0'])
-	expect(page3.nextCursor).toBeNull()
+	const pages: Array<Array<string>> = []
+	let cursor: string | null = null
+	do {
+		const page = await listRunRecords({ env, userId, limit: 2, cursor })
+		pages.push(page.runs.map((run) => run.id))
+		cursor = page.nextCursor
+	} while (cursor)
+	expect(pages).toEqual([['run-4', 'run-3'], ['run-2', 'run-1'], ['run-0']])
+	expect(cursor).toBeNull()
 })
 
 test('summarizeRunRecords returns totals and per-surface error counts', async () => {
 	const userId = uniqueUserId('summarize')
 	const startedAtBase = Date.now() - 60_000
-	const cases: Array<{
-		surface: RunRecordContext['surface']
-		status: 'success' | 'error'
-	}> = [
-		{ surface: 'job', status: 'success' },
-		{ surface: 'job', status: 'error' },
-		{ surface: 'job', status: 'error' },
-		{ surface: 'export', status: 'success' },
-		{ surface: 'export', status: 'error' },
+	const cases: Array<[RunSurface, 'success' | 'error']> = [
+		['job', 'success'],
+		['job', 'error'],
+		['job', 'error'],
+		['export', 'success'],
+		['export', 'error'],
 	]
-	for (const [index, entry] of cases.entries()) {
-		const handle: RunRecordHandle = {
-			id: crypto.randomUUID(),
-			userId,
-			startedAt: new Date(startedAtBase + index * 1000).toISOString(),
-			persistence: 'eager',
-			context: baseContext({ surface: entry.surface, name: `s-${index}` }),
-		}
+	for (const [index, [surface, status]] of cases.entries()) {
 		await finishRunRecord({
 			env,
-			handle,
-			status: entry.status,
-			error: entry.status === 'error' ? new Error('x') : undefined,
+			handle: handleFor(
+				userId,
+				crypto.randomUUID(),
+				{ surface, name: `s-${index}` },
+				startedAtBase + index * 1000,
+			),
+			status,
+			error: status === 'error' ? new Error('x') : undefined,
 		})
 	}
 
 	const summary = await summarizeRunRecords({
 		env,
 		userId,
-		since: new Date(startedAtBase - 1_000).toISOString(),
+		since: iso(startedAtBase - 1_000),
 	})
-	expect(summary.total).toBe(5)
-	expect(summary.errors).toBe(3)
-	expect(summary.ignored).toBe(0)
-	expect(summary.resolved).toBe(0)
-	expect(summary.running).toBe(0)
+	expect(summary).toMatchObject({
+		total: 5,
+		errors: 3,
+		ignored: 0,
+		resolved: 0,
+		running: 0,
+	})
 	expect(summary.bySurface).toEqual(
 		expect.arrayContaining([
 			{ surface: 'export', total: 2, errors: 1 },
@@ -440,52 +485,27 @@ test('summarizeRunRecords returns totals and per-surface error counts', async ()
 test('later job success soft-resolves prior open errors for only that job', async () => {
 	const userId = uniqueUserId('auto-resolve-job')
 	const baseMs = Date.now() - 60_000
-	const finish = async (input: {
-		id: string
-		jobId: string
-		status: 'success' | 'error'
-		error?: Error
-		offset: number
-	}) => {
-		await finishRunRecord({
+	const finish = (
+		id: string,
+		jobId: string,
+		offset: number,
+		errorMessage?: string,
+	) =>
+		finishRunRecord({
 			env,
-			handle: {
-				id: input.id,
+			handle: handleFor(
 				userId,
-				startedAt: new Date(baseMs + input.offset).toISOString(),
-				persistence: 'eager',
-				context: baseContext({
-					surface: 'job',
-					jobId: input.jobId,
-					name: 'recurring-job',
-				}),
-			},
-			status: input.status,
-			error: input.error,
+				id,
+				{ surface: 'job', jobId, name: 'recurring-job' },
+				baseMs + offset,
+			),
+			status: errorMessage ? 'error' : 'success',
+			error: errorMessage ? new Error(errorMessage) : undefined,
 		})
-	}
 
-	await finish({
-		id: 'same-job-open',
-		jobId: 'job-a',
-		status: 'error',
-		error: new Error('first failure'),
-		offset: 0,
-	})
-	await finish({
-		id: 'same-job-ignored',
-		jobId: 'job-a',
-		status: 'error',
-		error: new Error('known noise'),
-		offset: 1,
-	})
-	await finish({
-		id: 'other-job-open',
-		jobId: 'job-b',
-		status: 'error',
-		error: new Error('still broken'),
-		offset: 2,
-	})
+	await finish('same-job-open', 'job-a', 0, 'first failure')
+	await finish('same-job-ignored', 'job-a', 1, 'known noise')
+	await finish('other-job-open', 'job-b', 2, 'still broken')
 	const ignored = await updateRunErrorTriage({
 		env,
 		userId,
@@ -495,19 +515,9 @@ test('later job success soft-resolves prior open errors for only that job', asyn
 	})
 	expect(ignored.ok).toBe(true)
 
-	await finish({
-		id: 'same-job-success',
-		jobId: 'job-a',
-		status: 'success',
-		offset: 3,
-	})
+	await finish('same-job-success', 'job-a', 3)
 
-	const all = await listRunRecords({
-		env,
-		userId,
-		filter: { errorTriage: 'all' },
-		limit: 10,
-	})
+	const all = await listRuns(userId, { errorTriage: 'all' }, 10)
 	const byId = new Map(all.runs.map((run) => [run.id, run]))
 	expect(byId.get('same-job-open')).toMatchObject({
 		status: 'error',
@@ -529,8 +539,7 @@ test('later job success soft-resolves prior open errors for only that job', asyn
 		status: 'success',
 		errorTriage: null,
 	})
-	const summary = await summarizeRunRecords({ env, userId })
-	expect(summary).toMatchObject({
+	expect(await summarizeRunRecords({ env, userId })).toMatchObject({
 		total: 4,
 		errors: 1,
 		ignored: 1,
@@ -539,38 +548,36 @@ test('later job success soft-resolves prior open errors for only that job', asyn
 })
 
 test('bulk triage honors the public limit of 100 across write paths', async () => {
-	const runScenario = async (limit: number) => {
+	for (const limit of [25, 100]) {
 		const userId = uniqueUserId(`bulk-triage-${limit}`)
 		const jobId = `exact-job-${limit}`
-		const runIds = Array.from(
-			{ length: limit },
-			(_, index) => `bulk-${limit}-${index}`,
+		const rows = finishedRows(
+			`bulk-${limit}`,
+			limit,
+			Date.now(),
+			{
+				status: 'error',
+				jobId,
+				errorName: 'Error',
+				errorMessage: 'reproducible failure',
+			},
+			-1,
 		)
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			for (let index = 0; index < limit; index += 1) {
-				const startedAt = new Date(Date.now() - index).toISOString()
-				insertRunRow(state, {
-					id: `bulk-${limit}-${index}`,
-					status: 'error',
-					startedAt,
-					finishedAt: startedAt,
-					jobId,
-					errorName: 'Error',
-					errorMessage: 'reproducible failure',
-				})
-			}
-		})
+		const runIds = rows.map((row) => row.id)
+		await seedRuns(userId, rows)
+		const bulk = (
+			input: Omit<
+				Parameters<typeof bulkUpdateRunErrorTriage>[0],
+				'env' | 'userId' | 'limit'
+			>,
+		) => bulkUpdateRunErrorTriage({ env, userId, limit, ...input })
+		const all = { updatedCount: limit, hasMore: false }
 
 		await expect(
-			bulkUpdateRunErrorTriage({
-				env,
-				userId,
+			bulk({
 				filter: { jobId },
 				errorTriage: 'resolved',
 				triageNote: 'production cleanup',
-				limit,
 				dryRun: true,
 			}),
 		).resolves.toMatchObject({
@@ -579,104 +586,66 @@ test('bulk triage honors the public limit of 100 across write paths', async () =
 			hasMore: false,
 		})
 		await expect(
-			bulkUpdateRunErrorTriage({
-				env,
-				userId,
+			bulk({
 				filter: { jobId },
 				errorTriage: 'resolved',
 				triageNote: 'production cleanup',
-				limit,
 				dryRun: false,
 			}),
-		).resolves.toMatchObject({
-			updatedCount: limit,
-			hasMore: false,
-		})
+		).resolves.toMatchObject(all)
 
-		const resolved = await listRunRecords({
-			env,
+		const resolved = await listRuns(
 			userId,
-			filter: { jobId, errorTriage: 'resolved' },
+			{ jobId, errorTriage: 'resolved' },
 			limit,
-		})
+		)
 		expect(resolved.runs).toHaveLength(limit)
 		expect(resolved.runs.every((run) => run.errorTriage === 'resolved')).toBe(
 			true,
 		)
 
 		await expect(
-			bulkUpdateRunErrorTriage({
-				env,
-				userId,
-				filter: { jobId, errorTriage: 'resolved' },
-				errorTriage: null,
-				limit,
-			}),
-		).resolves.toMatchObject({
-			updatedCount: limit,
-			hasMore: false,
-		})
-
+			bulk({ filter: { jobId, errorTriage: 'resolved' }, errorTriage: null }),
+		).resolves.toMatchObject(all)
 		await expect(
-			bulkUpdateRunErrorTriage({
-				env,
-				userId,
-				runIds,
-				errorTriage: 'ignored',
-				limit,
-			}),
-		).resolves.toMatchObject({
-			updatedCount: limit,
-			hasMore: false,
-		})
-		await expect(
-			bulkUpdateRunErrorTriage({
-				env,
-				userId,
-				runIds,
-				errorTriage: null,
-				limit,
-			}),
-		).resolves.toMatchObject({
-			updatedCount: limit,
-			hasMore: false,
-		})
+			bulk({ runIds, errorTriage: 'ignored' }),
+		).resolves.toMatchObject(all)
+		await expect(bulk({ runIds, errorTriage: null })).resolves.toMatchObject(
+			all,
+		)
 
-		const reopened = await listRunRecords({
-			env,
+		const reopened = await listRuns(
 			userId,
-			filter: { jobId, errorTriage: 'open' },
+			{ jobId, errorTriage: 'open' },
 			limit,
-		})
+		)
 		expect(reopened.runs).toHaveLength(limit)
 		expect(reopened.runs.every((run) => run.errorTriage === null)).toBe(true)
 	}
-
-	await runScenario(25)
-	await runScenario(100)
 })
 
 test('bulk triage rolls back earlier chunks when a later chunk fails', async () => {
 	const userId = uniqueUserId('bulk-triage-atomic')
 	const jobId = 'atomic-job'
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		const baseMs = Date.now()
-		for (let index = 0; index < 100; index += 1) {
-			const startedAt = new Date(baseMs - index).toISOString()
-			insertRunRow(state, {
-				id: `atomic-${index}`,
+	const stub = runLogStub(userId)
+	await seedRuns(
+		userId,
+		finishedRows(
+			'atomic',
+			100,
+			Date.now(),
+			{
 				status: 'error',
-				startedAt,
-				finishedAt: startedAt,
 				jobId,
 				errorName: 'Error',
 				errorMessage: 'atomic failure fixture',
-			})
-		}
-		// Resolve chunks contain 94 ids. This sentinel is selected into the
-		// second chunk so the first UPDATE has already executed when it aborts.
+			},
+			-1,
+		),
+	)
+	// Resolve chunks contain 94 ids. This sentinel is selected into the
+	// second chunk so the first UPDATE has already executed when it aborts.
+	await runInDurableObject(stub, async (_instance: RunLog, state) => {
 		state.storage.sql.exec(
 			`CREATE TRIGGER reject_atomic_sentinel
 			BEFORE UPDATE OF error_triage ON runs
@@ -705,373 +674,225 @@ test('bulk triage rolls back earlier chunks when a later chunk fails', async () 
 		),
 	).rejects.toThrow(/forced second chunk failure/)
 
-	const triagedCount = await runInDurableObject(
-		stub,
-		async (_instance: RunLog, state) =>
-			state.storage.sql
-				.exec<{ count: number }>(
-					`SELECT COUNT(*) AS count FROM runs
-					WHERE error_triage IS NOT NULL`,
-				)
-				.one().count,
-	)
-	expect(triagedCount).toBe(0)
+	expect(await countRuns(userId, 'error_triage IS NOT NULL')).toBe(0)
 })
 
 test('cap and stale retention journey', async () => {
 	// --- handled duplicate errors are deleted before successes and open errors ---
 	{
 		const userId = uniqueUserId('retention-priority')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const baseMs = Date.now() - 3_600_000
 		const triagedErrorCount = runRecordMaxRunsPerUser - 20
 		const successCount = 20
 		const openErrorCount = 10
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			for (let index = 0; index < triagedErrorCount; index += 1) {
-				const startedAt = new Date(baseMs + index).toISOString()
-				insertRunRow(state, {
-					id: `duplicate-error-${index}`,
-					status: 'error',
-					startedAt,
-					finishedAt: startedAt,
-					errorMessage: 'same recurring failure',
-					errorTriage: 'resolved',
-				})
-			}
-			for (let index = 0; index < successCount; index += 1) {
-				const startedAt = new Date(
-					baseMs + triagedErrorCount + index,
-				).toISOString()
-				insertRunRow(state, {
-					id: `success-${index}`,
-					status: 'success',
-					startedAt,
-					finishedAt: startedAt,
-				})
-			}
-			for (let index = 0; index < openErrorCount; index += 1) {
-				const startedAt = new Date(
-					baseMs + triagedErrorCount + successCount + index,
-				).toISOString()
-				insertRunRow(state, {
-					id: `open-error-${index}`,
-					status: 'error',
-					startedAt,
-					finishedAt: startedAt,
-					errorMessage: 'still broken',
-				})
-			}
-		})
 		const seeded = triagedErrorCount + successCount + openErrorCount
+		await seedRuns(userId, [
+			...finishedRows('duplicate-error', triagedErrorCount, baseMs, {
+				status: 'error',
+				errorMessage: 'same recurring failure',
+				errorTriage: 'resolved',
+			}),
+			...finishedRows('success', successCount, baseMs + triagedErrorCount, {
+				status: 'success',
+			}),
+			...finishedRows(
+				'open-error',
+				openErrorCount,
+				baseMs + triagedErrorCount + successCount,
+				{ status: 'error', errorMessage: 'still broken' },
+			),
+		])
 		await armRetentionOnNextFinish(userId, seeded)
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'retention-trigger',
-				userId,
-				startedAt: new Date(baseMs + seeded + 20).toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'trigger' }),
-			},
-			status: 'success',
+		await finishOk(
+			userId,
+			'retention-trigger',
+			{ name: 'trigger' },
+			baseMs + seeded + 20,
+		)
+		const summary = await runLogRpc({ env, userId }).summarize({
+			since: '1970-01-01T00:00:00.000Z',
 		})
-		const rpc = runLogRpc({ env, userId })
-		const summary = await rpc.summarize({ since: '1970-01-01T00:00:00.000Z' })
 		expect(summary.total).toBe(runRecordMaxRunsPerUser)
 		expect(summary.errors).toBe(openErrorCount)
-		const retainedCounts = await runInDurableObject(
-			stub,
-			async (_instance: RunLog, state) =>
-				state.storage.sql
-					.exec<{
-						successes: number
-						triaged_errors: number
-						open_errors: number
-					}>(
-						`SELECT
-							SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successes,
-							SUM(CASE WHEN status = 'error' AND error_triage IS NOT NULL THEN 1 ELSE 0 END) AS triaged_errors,
-							SUM(CASE WHEN status = 'error' AND error_triage IS NULL THEN 1 ELSE 0 END) AS open_errors
-						FROM runs`,
-					)
-					.one(),
-		)
-		expect(retainedCounts).toEqual({
+		expect(
+			await sqlOne(
+				userId,
+				`SELECT
+					SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successes,
+					SUM(CASE WHEN status = 'error' AND error_triage IS NOT NULL THEN 1 ELSE 0 END) AS triaged_errors,
+					SUM(CASE WHEN status = 'error' AND error_triage IS NULL THEN 1 ELSE 0 END) AS open_errors
+				FROM runs`,
+			),
+		).toEqual({
 			successes: successCount + 1,
 			triaged_errors:
 				runRecordMaxRunsPerUser - successCount - openErrorCount - 1,
 			open_errors: openErrorCount,
 		})
-		expect(
-			await runInDurableObject(
-				stub,
-				async (_instance: RunLog, state) =>
-					state.storage.sql
-						.exec<{ n: number }>(
-							`SELECT COUNT(*) AS n FROM runs WHERE id = 'duplicate-error-0'`,
-						)
-						.one().n,
-			),
-		).toBe(0)
+		expect(await countRuns(userId, `id = 'duplicate-error-0'`)).toBe(0)
 	}
 
 	// --- cap eviction never deletes in-flight running rows ---
 	{
 		const userId = uniqueUserId('cap-protect-running')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const baseMs = Date.now() - 3_600_000
 		// Fewer successes than the eventual excess so the old success→running→error
 		// order would delete the in-flight row after successes are exhausted.
 		const successCount = 2
 		const errorCount = runRecordMaxRunsPerUser
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			for (let index = 0; index < successCount; index += 1) {
-				const startedAt = new Date(baseMs + index).toISOString()
-				insertRunRow(state, {
-					id: `success-${index}`,
-					status: 'success',
-					startedAt,
-					finishedAt: startedAt,
-				})
-			}
-			insertRunRow(state, {
+		const seeded = successCount + 1 + errorCount
+		await seedRuns(userId, [
+			...finishedRows('success', successCount, baseMs, { status: 'success' }),
+			{
 				id: 'still-running',
 				status: 'running',
-				startedAt: new Date(baseMs + successCount).toISOString(),
-				finishedAt: null,
-			})
-			for (let index = 0; index < errorCount; index += 1) {
-				const startedAt = new Date(
-					baseMs + successCount + 1 + index,
-				).toISOString()
-				insertRunRow(state, {
-					id: `error-${index}`,
-					status: 'error',
-					startedAt,
-					finishedAt: startedAt,
-				})
-			}
-		})
-		const seeded = successCount + 1 + errorCount
-		await armRetentionOnNextFinish(userId, seeded)
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'cap-running-trigger',
-				userId,
-				startedAt: new Date(baseMs + seeded + 10).toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'cap-running-trigger' }),
+				startedAt: iso(baseMs + successCount),
 			},
-			status: 'success',
-		})
-		expect(
-			(await getRunRecord({ env, userId, runId: 'still-running' }))?.run.status,
-		).toBe('running')
-		const counts = await runInDurableObject(
-			stub,
-			async (_instance: RunLog, state) => ({
-				successes: state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE status = 'success'`,
-					)
-					.one().n,
-				errors: state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE status = 'error'`,
-					)
-					.one().n,
-				running: state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE status = 'running'`,
-					)
-					.one().n,
-				success0: state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE id = 'success-0'`,
-					)
-					.one().n,
-				error0: state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE id = 'error-0'`,
-					)
-					.one().n,
+			...finishedRows('error', errorCount, baseMs + successCount + 1, {
+				status: 'error',
 			}),
+		])
+		await armRetentionOnNextFinish(userId, seeded)
+		await finishOk(
+			userId,
+			'cap-running-trigger',
+			{ name: 'cap-running-trigger' },
+			baseMs + seeded + 10,
 		)
+		expect((await getRun(userId, 'still-running'))?.run.status).toBe('running')
 		// Excess was 4: 3 successes (2 seeded + trigger) then 1 oldest error.
 		// The in-flight row is skipped entirely.
-		expect(counts.success0).toBe(0)
-		expect(counts.successes).toBe(0)
-		expect(counts.running).toBe(1)
-		expect(counts.error0).toBe(0)
-		expect(counts.errors).toBe(errorCount - 1)
+		expect(
+			await sqlOne(
+				userId,
+				`SELECT
+					SUM(status = 'success') AS successes,
+					SUM(status = 'error') AS errors,
+					SUM(status = 'running') AS running,
+					SUM(id = 'success-0') AS success0,
+					SUM(id = 'error-0') AS error0
+				FROM runs`,
+			),
+		).toEqual({
+			successes: 0,
+			errors: errorCount - 1,
+			running: 1,
+			success0: 0,
+			error0: 0,
+		})
 	}
 
 	// --- stale running rows reconciled to interrupted errors; fresh running preserved ---
 	{
 		const userId = uniqueUserId('stale-running')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMsJob - 60_000,
-		).toISOString()
-		const freshStartedAt = new Date().toISOString()
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
+		await seedRuns(userId, [
+			{
 				id: 'stale-running',
 				status: 'running',
-				startedAt: staleStartedAt,
-				finishedAt: null,
-			})
-			insertRunRow(state, {
-				id: 'fresh-running',
-				status: 'running',
-				startedAt: freshStartedAt,
-				finishedAt: null,
-			})
-		})
-		await armRetentionOnNextFinish(userId, 2)
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'stale-trigger',
-				userId,
-				startedAt: new Date().toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'stale-trigger' }),
+				startedAt: iso(Date.now() - runRecordStaleRunningTtlMsJob - 60_000),
 			},
-			status: 'success',
+			{ id: 'fresh-running', status: 'running', startedAt: iso(Date.now()) },
+		])
+		await armRetentionOnNextFinish(userId, 2)
+		await finishOk(userId, 'stale-trigger', { name: 'stale-trigger' })
+		const stale = await getRun(userId, 'stale-running')
+		expect(stale?.run).toMatchObject({
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+			errorMessage:
+				'The platform interrupted this run before completion; outcome unknown.',
+			errorTriage: null,
 		})
-		const stale = await getRunRecord({ env, userId, runId: 'stale-running' })
-		expect(stale?.run.status).toBe('error')
-		expect(stale?.run.errorName).toBe(runRecordPlatformInterruptedErrorName)
-		expect(stale?.run.errorMessage).toBe(
-			'The platform interrupted this run before completion; outcome unknown.',
-		)
-		expect(stale?.run.errorTriage).toBeNull()
 		expect(stale?.run.finishedAt).toBeTruthy()
-		const fresh = await getRunRecord({ env, userId, runId: 'fresh-running' })
-		expect(fresh?.run.status).toBe('running')
-		expect(fresh?.run.finishedAt).toBeNull()
+		expect((await getRun(userId, 'fresh-running'))?.run).toMatchObject({
+			status: 'running',
+			finishedAt: null,
+		})
 	}
 
 	// --- execute-surface stale rows heal on read within minutes, not 24h ---
 	{
 		const userId = uniqueUserId('stale-execute-heal')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
-		).toISOString()
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
+		await seedRuns(userId, [
+			{
 				id: 'stale-execute',
 				status: 'running',
-				startedAt: staleStartedAt,
-				finishedAt: null,
+				startedAt: iso(
+					Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+				),
 				surface: 'execute',
-			})
+			},
+		])
+		expect((await getRun(userId, 'stale-execute'))?.run).toMatchObject({
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+			surface: 'execute',
 		})
-		const healed = await getRunRecord({
-			env,
-			userId,
-			runId: 'stale-execute',
-		})
-		expect(healed?.run.status).toBe('error')
-		expect(healed?.run.errorName).toBe(runRecordPlatformInterruptedErrorName)
-		expect(healed?.run.surface).toBe('execute')
 	}
 
 	// --- idempotent scheduled/queued runs retain auto-ignored interrupt history ---
 	{
 		const userId = uniqueUserId('idempotent-platform-interrupt')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		const staleJobStartedAt = new Date(
+		const staleJobStartedAt = iso(
 			Date.now() - runRecordStaleRunningTtlMsJob - 1_000,
-		).toISOString()
-		const staleSubscriptionStartedAt = new Date(
+		)
+		const staleShortStartedAt = iso(
 			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
-		).toISOString()
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
+		)
+		const scheduledKey = 'scheduled-job:job-1:2026-08-21T00:00:00.000Z'
+		await seedRuns(userId, [
+			{
 				id: 'stale-scheduled-job',
 				status: 'running',
 				startedAt: staleJobStartedAt,
 				surface: 'job',
-				idempotencyKey: 'scheduled-job:job-1:2026-08-21T00:00:00.000Z',
-			})
-			insertRunRow(state, {
+				idempotencyKey: scheduledKey,
+			},
+			{
 				id: 'stale-subscription-delivery',
 				status: 'running',
-				startedAt: staleSubscriptionStartedAt,
+				startedAt: staleShortStartedAt,
 				surface: 'subscription',
 				idempotencyKey: 'delivery-123',
-			})
-			insertRunRow(state, {
+			},
+			{
 				id: 'stale-keyed-export',
 				status: 'running',
-				startedAt: staleSubscriptionStartedAt,
+				startedAt: staleShortStartedAt,
 				surface: 'export',
 				idempotencyKey: 'youtube:websub:video-1:2026-08-25T13:41:52.301Z',
-			})
-		})
-
-		const page = await listRunRecords({
-			env,
-			userId,
-			filter: { errorTriage: 'all' },
-		})
-		expect(page.runs).toHaveLength(3)
-		for (const run of page.runs) {
-			expect(run).toMatchObject({
-				status: 'error',
-				errorName: runRecordPlatformInterruptedErrorName,
-				errorTriage: 'ignored',
-				triagedBy: 'system:platform-interrupt',
-			})
+			},
+		])
+		const autoIgnored = {
+			status: 'error',
+			errorName: runRecordPlatformInterruptedErrorName,
+			errorTriage: 'ignored',
+			triagedBy: 'system:platform-interrupt',
 		}
-		const summary = await summarizeRunRecords({
-			env,
-			userId,
-			since: new Date(0).toISOString(),
-		})
-		expect(summary).toMatchObject({
-			errors: 0,
-			ignored: 3,
-			running: 0,
-		})
-		const ignoredPage = await listRunRecords({
-			env,
-			userId,
-			filter: { errorTriage: 'ignored' },
-		})
-		expect(ignoredPage.runs).toHaveLength(3)
+
+		const page = await listRuns(userId, { errorTriage: 'all' })
+		expect(page.runs).toEqual(
+			Array.from({ length: 3 }, () => expect.objectContaining(autoIgnored)),
+		)
+		expect(
+			await summarizeRunRecords({ env, userId, since: iso(0) }),
+		).toMatchObject({ errors: 0, ignored: 3, running: 0 })
+		expect(
+			(await listRuns(userId, { errorTriage: 'ignored' })).runs,
+		).toHaveLength(3)
 
 		await finishRunRecord({
 			env,
-			handle: {
-				id: 'stale-scheduled-job',
+			handle: handleFor(
 				userId,
-				startedAt: staleJobStartedAt,
-				persistence: 'eager',
-				context: baseContext({
-					surface: 'job',
-					idempotencyKey: 'scheduled-job:job-1:2026-08-21T00:00:00.000Z',
-				}),
-			},
+				'stale-scheduled-job',
+				{ surface: 'job', idempotencyKey: scheduledKey },
+				Date.parse(staleJobStartedAt),
+			),
 			status: 'error',
 			error: new Error('package failed after the delayed finish arrived'),
 		})
-		const lateError = await getRunRecord({
-			env,
-			userId,
-			runId: 'stale-scheduled-job',
-		})
-		expect(lateError?.run).toMatchObject({
+		expect((await getRun(userId, 'stale-scheduled-job'))?.run).toMatchObject({
 			status: 'error',
 			errorName: 'Error',
 			errorMessage: 'package failed after the delayed finish arrived',
@@ -1080,62 +901,31 @@ test('cap and stale retention journey', async () => {
 			triagedAt: null,
 			triagedBy: null,
 		})
-		expect(
-			(
-				await getRunRecord({
-					env,
-					userId,
-					runId: 'stale-subscription-delivery',
-				})
-			)?.run,
-		).toMatchObject({
-			errorName: runRecordPlatformInterruptedErrorName,
-			errorTriage: 'ignored',
-		})
-		expect(
-			(
-				await getRunRecord({
-					env,
-					userId,
-					runId: 'stale-keyed-export',
-				})
-			)?.run,
-		).toMatchObject({
-			errorName: runRecordPlatformInterruptedErrorName,
-			errorTriage: 'ignored',
-		})
+		for (const runId of ['stale-subscription-delivery', 'stale-keyed-export']) {
+			expect((await getRun(userId, runId))?.run).toMatchObject(autoIgnored)
+		}
 	}
 
 	// --- a real late finish replaces reconciled platform interrupt ---
 	{
 		const userId = uniqueUserId('late-finish-after-interrupted')
-		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
-		).toISOString()
-		const handle = {
-			id: 'late-finish-after-interrupted',
+		const staleStartedAtMs =
+			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000
+		const handle = handleFor(
 			userId,
-			startedAt: staleStartedAt,
-			persistence: 'eager' as const,
-			context: baseContext({ surface: 'export', name: './slow-export' }),
-		}
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
+			'late-finish-after-interrupted',
+			{ surface: 'export', name: './slow-export' },
+			staleStartedAtMs,
+		)
+		await seedRuns(userId, [
+			{
 				id: handle.id,
 				status: 'running',
-				startedAt: staleStartedAt,
-				finishedAt: null,
+				startedAt: handle.startedAt,
 				surface: 'export',
-			})
-		})
-		const interrupted = await getRunRecord({
-			env,
-			userId,
-			runId: handle.id,
-		})
-		expect(interrupted?.run.errorName).toBe(
+			},
+		])
+		expect((await getRun(userId, handle.id))?.run.errorName).toBe(
 			runRecordPlatformInterruptedErrorName,
 		)
 
@@ -1145,285 +935,157 @@ test('cap and stale retention journey', async () => {
 			status: 'success',
 			result: { completed: true },
 		})
-		const completed = await getRunRecord({
-			env,
-			userId,
-			runId: handle.id,
-		})
-		expect(completed?.run.status).toBe('success')
-		expect(completed?.run.errorName).toBeNull()
-		expect(completed?.run.metadata).toMatchObject({
-			result: { completed: true },
+		const completed = await getRun(userId, handle.id)
+		expect(completed?.run).toMatchObject({
+			status: 'success',
+			errorName: null,
+			metadata: { result: { completed: true } },
 		})
 	}
 
 	// --- stale rows become cap-evictable after reconcile ---
 	{
 		const userId = uniqueUserId('stale-cap-evict')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
 		const baseMs = Date.now() - 3_600_000
-		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMsJob - 60_000,
-		).toISOString()
+		const staleStartedAtMs = Date.now() - runRecordStaleRunningTtlMsJob - 60_000
 		const successCount = 2
 		const errorCount = runRecordMaxRunsPerUser - 2
 		const staleCount = 5
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			for (let index = 0; index < successCount; index += 1) {
-				const startedAt = new Date(baseMs + index).toISOString()
-				insertRunRow(state, {
-					id: `success-${index}`,
-					status: 'success',
-					startedAt,
-					finishedAt: startedAt,
-				})
-			}
-			for (let index = 0; index < staleCount; index += 1) {
-				insertRunRow(state, {
-					id: `stale-${index}`,
-					status: 'running',
-					startedAt: new Date(Date.parse(staleStartedAt) + index).toISOString(),
-					finishedAt: null,
-				})
-			}
-			for (let index = 0; index < errorCount; index += 1) {
-				const startedAt = new Date(baseMs + 10_000 + index).toISOString()
-				insertRunRow(state, {
-					id: `error-${index}`,
-					status: 'error',
-					startedAt,
-					finishedAt: startedAt,
-				})
-			}
-		})
 		const seeded = successCount + staleCount + errorCount
+		await seedRuns(userId, [
+			...finishedRows('success', successCount, baseMs, { status: 'success' }),
+			...finishedRows('stale', staleCount, staleStartedAtMs, {
+				status: 'running',
+				finishedAt: null,
+			}),
+			...finishedRows('error', errorCount, baseMs + 10_000, {
+				status: 'error',
+			}),
+		])
 		await armRetentionOnNextFinish(userId, seeded)
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'stale-cap-trigger',
-				userId,
-				startedAt: new Date(baseMs + seeded + 10).toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'stale-cap-trigger' }),
-			},
-			status: 'success',
-		})
+		await finishOk(
+			userId,
+			'stale-cap-trigger',
+			{ name: 'stale-cap-trigger' },
+			baseMs + seeded + 10,
+		)
 		// Reconcile demotes stale running → Interrupted errors (oldest started_at),
 		// then cap eviction drains successes and those demoted errors before newer
 		// seeded errors.
-		expect(await getRunRecord({ env, userId, runId: 'stale-0' })).toBeNull()
-		const remainingRunning = await runInDurableObject(
-			stub,
-			async (_instance: RunLog, state) =>
-				state.storage.sql
-					.exec<{ n: number }>(
-						`SELECT COUNT(*) AS n FROM runs WHERE status = 'running'`,
-					)
-					.one().n,
-		)
-		expect(remainingRunning).toBe(0)
+		expect(await getRun(userId, 'stale-0')).toBeNull()
+		expect(await countRuns(userId, `status = 'running'`)).toBe(0)
 	}
 
 	// --- amortized retention enforces the age cap ---
 	{
 		const userId = uniqueUserId('age-retention')
-		const oldStartedAt = new Date(
-			Date.now() - (runRecordRetentionDays + 2) * 24 * 60 * 60 * 1000,
-		).toISOString()
-		const recentStartedAt = new Date(Date.now() - 60_000).toISOString()
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
-				id: 'old-success',
+		await seedRuns(userId, [
+			...finishedRows(
+				'old-success',
+				1,
+				Date.now() - (runRecordRetentionDays + 2) * dayMs,
+				{ status: 'success' },
+			),
+			...finishedRows('recent-success', 1, Date.now() - 60_000, {
 				status: 'success',
-				startedAt: oldStartedAt,
-				finishedAt: oldStartedAt,
-			})
-			insertRunRow(state, {
-				id: 'recent-success',
-				status: 'success',
-				startedAt: recentStartedAt,
-				finishedAt: recentStartedAt,
-			})
-		})
+			}),
+		])
 		await armRetentionOnNextFinish(userId, 2)
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'age-trigger',
-				userId,
-				startedAt: new Date().toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'age-trigger' }),
-			},
-			status: 'success',
-		})
-		const ids = (await listRunRecords({ env, userId })).runs.map(
-			(run) => run.id,
-		)
-		expect(ids).toContain('recent-success')
+		await finishOk(userId, 'age-trigger', { name: 'age-trigger' })
+		const ids = (await listRuns(userId)).runs.map((run) => run.id)
+		expect(ids).toContain('recent-success-0')
 		expect(ids).toContain('age-trigger')
-		expect(ids).not.toContain('old-success')
+		expect(ids).not.toContain('old-success-0')
 	}
 })
 
 test('alarm lifecycle: fresh arm, self-termination when idle, re-arm after idle, and age-prune', async () => {
 	const userId = uniqueUserId('alarm-lifecycle')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	const startedAtMs = Date.now()
+	const expiredStartedAt = iso(
+		Date.now() - (runRecordRetentionDays + 3) * dayMs,
+	)
+	const expireAndFireAlarm = (runId: string) =>
+		runInDurableObject(stub, async (instance: RunLog, state) => {
+			state.storage.sql.exec(
+				`UPDATE runs SET started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`,
+				expiredStartedAt,
+				expiredStartedAt,
+				expiredStartedAt,
+				runId,
+			)
+			seedRunLogMeta(instance, { finishesSinceRetention: 0 })
+			await state.storage.deleteAlarm()
+			await instance.alarm()
+		})
 
 	// Fresh finish arms a far-future retention alarm at the row's age deadline.
-	await finishRunRecord({
-		env,
-		handle: {
-			id: 'first-run',
-			userId,
-			startedAt: new Date(startedAtMs).toISOString(),
-			persistence: 'eager',
-			context: baseContext({ surface: 'job', name: 'fresh' }),
-		},
-		status: 'success',
-	})
-	const initialAlarm = await runInDurableObject(
-		stub,
-		async (_instance: RunLog, state) => state.storage.getAlarm(),
-	)
+	await finishOk(userId, 'first-run', { name: 'fresh' }, startedAtMs)
+	const initialAlarm = await getAlarm(userId)
 	expect(initialAlarm).toBeTypeOf('number')
 	// One-shot at the row's age deadline — not an immediate/hourly wake.
 	expect(initialAlarm).toBeGreaterThan(
-		startedAtMs + runRecordRetentionDays * 24 * 60 * 60 * 1000 - 5_000,
+		startedAtMs + runRecordRetentionDays * dayMs - 5_000,
 	)
 
 	// Age the row past the retention cutoff and fire the alarm directly;
 	// with nothing left to keep, the alarm self-terminates (no re-arm).
-	const expiredStartedAt = new Date(
-		Date.now() - (runRecordRetentionDays + 3) * 24 * 60 * 60 * 1000,
-	).toISOString()
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		state.storage.sql.exec(
-			`UPDATE runs SET started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`,
-			expiredStartedAt,
-			expiredStartedAt,
-			expiredStartedAt,
-			'first-run',
-		)
-		seedRunLogMeta(instance, { finishesSinceRetention: 0 })
-		await state.storage.deleteAlarm()
-		await instance.alarm()
-	})
-	const idleState = await runInDurableObject(
-		stub,
-		async (_instance: RunLog, state) => ({
-			alarmAt: await state.storage.getAlarm(),
-			remaining: state.storage.sql
-				.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
-				.one().n,
-		}),
-	)
-	expect(idleState.remaining).toBe(0)
-	expect(idleState.alarmAt).toBeNull()
+	await expireAndFireAlarm('first-run')
+	expect(await countRuns(userId)).toBe(0)
+	expect(await getAlarm(userId)).toBeNull()
 
 	// Write after idle re-arms the alarm for the new row.
 	const runId = 'post-idle-run'
-	await finishRunRecord({
-		env,
-		handle: {
-			id: runId,
-			userId,
-			startedAt: new Date().toISOString(),
-			persistence: 'eager',
-			context: baseContext({ surface: 'job', name: 'post-idle' }),
-		},
-		status: 'success',
-	})
-	const reArmedAlarm = await runInDurableObject(
-		stub,
-		async (_instance: RunLog, state) => state.storage.getAlarm(),
-	)
-	expect(reArmedAlarm).toBeTypeOf('number')
+	await finishOk(userId, runId, { name: 'post-idle' })
+	expect(await getAlarm(userId)).toBeTypeOf('number')
 
 	// Age the post-idle run past the cutoff without bumping the amortized finish
 	// counter; alarm fires, prunes it, then self-terminates again.
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		state.storage.sql.exec(
-			`UPDATE runs SET started_at = ?, finished_at = ?, updated_at = ? WHERE id = ?`,
-			expiredStartedAt,
-			expiredStartedAt,
-			expiredStartedAt,
-			runId,
-		)
-		seedRunLogMeta(instance, { finishesSinceRetention: 0 })
-		await state.storage.deleteAlarm()
-		await instance.alarm()
-	})
-	expect(await getRunRecord({ env, userId, runId })).toBeNull()
-	expect(
-		await runInDurableObject(stub, async (_instance: RunLog, state) =>
-			state.storage.getAlarm(),
-		),
-	).toBeNull()
+	await expireAndFireAlarm(runId)
+	expect(await getRun(userId, runId)).toBeNull()
+	expect(await getAlarm(userId)).toBeNull()
 })
 
 test('empty over-cap retention backs off; summarize memos; list does not reconcile', async () => {
 	// Over-cap with only in-flight rows: an empty pass must not re-arm at 1s.
 	{
 		const userId = uniqueUserId('over-cap-backoff')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		const startedAt = new Date().toISOString()
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
-				id: 'only-running',
-				status: 'running',
-				startedAt,
-				finishedAt: null,
-				surface: 'job',
-			})
-			seedRunLogMeta(instance, {
-				runCount: runRecordMaxRunsPerUser + 1,
-				finishesSinceRetention: 0,
-			})
-			const beforeFirst = Date.now()
-			await instance.alarm()
-			const firstAlarm = await state.storage.getAlarm()
-			expect(firstAlarm).toBeTypeOf('number')
-			expect(firstAlarm).toBeGreaterThanOrEqual(
-				beforeFirst + runRecordRetentionEmptyBackoffMinMs - 100,
-			)
-			expect(firstAlarm).toBeLessThan(
-				beforeFirst + runRecordRetentionEmptyBackoffMinMs + 2_000,
-			)
-			expect(
-				state.storage.sql
-					.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
-					.one().n,
-			).toBe(1)
+		await seedRuns(userId, [
+			{ id: 'only-running', status: 'running', startedAt: iso(Date.now()) },
+		])
+		await runInDurableObject(
+			runLogStub(userId),
+			async (instance: RunLog, state) => {
+				seedRunLogMeta(instance, {
+					runCount: runRecordMaxRunsPerUser + 1,
+					finishesSinceRetention: 0,
+				})
+				const beforeFirst = Date.now()
+				await instance.alarm()
+				const firstAlarm = await state.storage.getAlarm()
+				expect(firstAlarm).toBeTypeOf('number')
+				expect(firstAlarm).toBeGreaterThanOrEqual(
+					beforeFirst + runRecordRetentionEmptyBackoffMinMs - 100,
+				)
+				expect(firstAlarm).toBeLessThan(
+					beforeFirst + runRecordRetentionEmptyBackoffMinMs + 2_000,
+				)
+				expect(
+					state.storage.sql
+						.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs`)
+						.one().n,
+				).toBe(1)
 
-			const beforeSecond = Date.now()
-			await instance.alarm()
-			const secondAlarm = await state.storage.getAlarm()
-			expect(secondAlarm).toBeGreaterThanOrEqual(
-				beforeSecond + runRecordRetentionEmptyBackoffMinMs * 2 - 100,
-			)
-		})
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'now-evictable',
-				userId,
-				startedAt: new Date().toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'now-evictable' }),
+				const beforeSecond = Date.now()
+				await instance.alarm()
+				expect(await state.storage.getAlarm()).toBeGreaterThanOrEqual(
+					beforeSecond + runRecordRetentionEmptyBackoffMinMs * 2 - 100,
+				)
 			},
-			status: 'success',
-		})
-		const pulledIn = await runInDurableObject(
-			stub,
-			async (_instance: RunLog, state) => state.storage.getAlarm(),
 		)
+		await finishOk(userId, 'now-evictable', { name: 'now-evictable' })
+		const pulledIn = await getAlarm(userId)
 		expect(pulledIn).toBeTypeOf('number')
 		expect(pulledIn).toBeLessThan(Date.now() + 5_000)
 	}
@@ -1433,94 +1095,61 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 		const userId = uniqueUserId('hot-path-reads')
 		const startedAtBase = Date.now() - 60_000
 		for (const index of [0, 1, 2]) {
-			await finishRunRecord({
-				env,
-				handle: {
-					id: `hot-${String(index)}`,
-					userId,
-					startedAt: new Date(startedAtBase + index * 1000).toISOString(),
-					persistence: 'eager',
-					context: baseContext({
-						surface: 'job',
-						name: `hot-${String(index)}`,
-					}),
-				},
-				status: 'success',
-			})
+			await finishOk(
+				userId,
+				`hot-${index}`,
+				{ name: `hot-${index}` },
+				startedAtBase + index * 1000,
+			)
 		}
-		const since = new Date(startedAtBase - 1_000).toISOString()
-		const first = await summarizeRunRecords({ env, userId, since })
-		expect(first.total).toBe(3)
-		const afterFirst = await getSqlBillingStats({ env, userId })
-		const summarizeAfterFirst = afterFirst.ops.find(
-			(op) => op.op === 'summarize',
-		)
+		const since = iso(startedAtBase - 1_000)
+		const summarizeOp = async () =>
+			(await getSqlBillingStats({ env, userId })).ops.find(
+				(op) => op.op === 'summarize',
+			)
+		expect((await summarizeRunRecords({ env, userId, since })).total).toBe(3)
+		const summarizeAfterFirst = await summarizeOp()
 		expect(summarizeAfterFirst?.calls).toBe(1)
 		for (let index = 0; index < 4; index += 1) {
-			const again = await summarizeRunRecords({ env, userId, since })
-			expect(again.total).toBe(3)
+			expect((await summarizeRunRecords({ env, userId, since })).total).toBe(3)
 		}
-		const afterMemo = await getSqlBillingStats({ env, userId })
-		const summarizeAfterMemo = afterMemo.ops.find((op) => op.op === 'summarize')
+		const summarizeAfterMemo = await summarizeOp()
 		expect(summarizeAfterMemo?.calls).toBe(1)
 		expect(summarizeAfterMemo?.rowsRead).toBe(summarizeAfterFirst?.rowsRead)
 
 		for (let index = 0; index < 5; index += 1) {
-			await listRunRecords({ env, userId })
+			await listRuns(userId)
 		}
 		const afterLists = await getSqlBillingStats({ env, userId })
 		expect(afterLists.ops.some((op) => op.op === 'reconcileStaleRunning')).toBe(
 			false,
 		)
 
-		await finishRunRecord({
-			env,
-			handle: {
-				id: 'hot-3',
-				userId,
-				startedAt: new Date(startedAtBase + 3_000).toISOString(),
-				persistence: 'eager',
-				context: baseContext({ surface: 'job', name: 'hot-3' }),
-			},
-			status: 'success',
-		})
-		const afterWrite = await summarizeRunRecords({ env, userId, since })
-		expect(afterWrite.total).toBe(4)
-		const afterInvalidate = await getSqlBillingStats({ env, userId })
-		expect(afterInvalidate.ops.find((op) => op.op === 'summarize')?.calls).toBe(
-			2,
-		)
+		await finishOk(userId, 'hot-3', { name: 'hot-3' }, startedAtBase + 3_000)
+		expect((await summarizeRunRecords({ env, userId, since })).total).toBe(4)
+		expect((await summarizeOp())?.calls).toBe(2)
 	}
 
 	{
 		const userId = uniqueUserId('list-page-heal')
-		const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
-		const staleStartedAt = new Date(
-			Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
-		).toISOString()
-		await runInDurableObject(stub, async (instance: RunLog, state) => {
-			expect(instance).toBeInstanceOf(RunLog)
-			insertRunRow(state, {
+		await seedRuns(userId, [
+			{
 				id: 'stale-on-page',
 				status: 'running',
-				startedAt: staleStartedAt,
-				finishedAt: null,
+				startedAt: iso(
+					Date.now() - runRecordStaleRunningTtlMsShortLived - 1_000,
+				),
 				surface: 'execute',
-			})
-		})
-		const runningPage = await listRunRecords({
-			env,
-			userId,
-			filter: { status: 'running' },
-		})
-		expect(runningPage.runs).toHaveLength(0)
-		const page = await listRunRecords({ env, userId })
-		expect(page.runs).toHaveLength(1)
-		expect(page.runs[0]).toMatchObject({
-			id: 'stale-on-page',
-			status: 'error',
-			errorName: runRecordPlatformInterruptedErrorName,
-		})
+			},
+		])
+		expect((await listRuns(userId, { status: 'running' })).runs).toHaveLength(0)
+		expect((await listRuns(userId)).runs).toEqual([
+			expect.objectContaining({
+				id: 'stale-on-page',
+				status: 'error',
+				errorName: runRecordPlatformInterruptedErrorName,
+			}),
+		])
 		const stats = await getSqlBillingStats({ env, userId })
 		expect(stats.ops.some((op) => op.op === 'reconcileStaleRunning')).toBe(
 			false,
@@ -1552,13 +1181,11 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 				source: null,
 				topic: null,
 			},
-			staleBefore: new Date(0).toISOString(),
+			staleBefore: iso(0),
 		})
-		expect(claimed.outcome).toBe('claimed')
 		if (claimed.outcome !== 'claimed') throw new Error('expected claim')
-		const since = new Date(0).toISOString()
-		const whileRunning = await summarizeRunRecords({ env, userId, since })
-		expect(whileRunning.running).toBe(1)
+		const since = iso(0)
+		expect((await summarizeRunRecords({ env, userId, since })).running).toBe(1)
 		const finished = await finishPackageInvocationRecord({
 			env,
 			userId,
@@ -1570,8 +1197,7 @@ test('empty over-cap retention backs off; summarize memos; list does not reconci
 			status: 'success',
 		})
 		expect(finished.ledgerUpdated).toBe(true)
-		const afterFinish = await summarizeRunRecords({ env, userId, since })
-		expect(afterFinish).toMatchObject({
+		expect(await summarizeRunRecords({ env, userId, since })).toMatchObject({
 			total: 1,
 			running: 0,
 		})
@@ -1592,115 +1218,63 @@ test('run recording degrades to a warning instead of failing the observed run', 
 	// Finish still lands even when begin was refused; activation now lives in
 	// the RunLog DO (not D1), so a successful finish does not emit an
 	// activation warning here.
-	await finishRunRecord({
-		env,
-		handle: {
-			id: crypto.randomUUID(),
-			userId,
-			startedAt: new Date().toISOString(),
-			persistence: 'eager',
-			context: baseContext({
-				surface: 'subscription',
-				name: 'email.message.received',
-				packageId: 'package-1',
-			}),
-		},
-		status: 'success',
+	await finishOk(userId, crypto.randomUUID(), {
+		surface: 'subscription',
+		name: 'email.message.received',
+		packageId: 'package-1',
 	})
 
 	expect(consoleWarn.mock.calls.map(([message]) => message)).toEqual([
 		'run-record-begin-failed',
 	])
-	const page = await listRunRecords({ env, userId })
-	expect(page.runs).toHaveLength(1)
-	expect(page.runs[0]?.status).toBe('success')
+	expect((await listRuns(userId)).runs).toEqual([
+		expect.objectContaining({ status: 'success' }),
+	])
 })
 
 test('run_log_meta counters reuse the in-isolate cache across repeated reads', async () => {
 	const userId = uniqueUserId('meta-cache')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
+	const metaValues = () =>
+		sqlOne<{ runCount: number; finishes: number }>(
+			userId,
+			`SELECT
+				MAX(CASE WHEN key = 'run_count' THEN value END) AS runCount,
+				MAX(CASE WHEN key = 'finishes_since_retention' THEN value END) AS finishes
+			FROM run_log_meta`,
+		)
+	const startRunning = async (name: string) => {
+		const pending: Array<Promise<unknown>> = []
+		beginRunRecord({
+			env,
+			userId,
+			context: baseContext({ name }),
+			waitUntil: (promise) => {
+				pending.push(promise)
+			},
+		})
+		await drainWaitUntil(pending)
+	}
 
 	// Two finishes → run_count memo should be 2 after the second write path.
 	for (const label of ['a', 'b'] as const) {
-		const handle = beginRunRecord({
-			env,
-			userId,
-			context: baseContext({ surface: 'job', name: `meta-${label}` }),
-		})
-		await finishRunRecord({ env, handle, status: 'success' })
+		await finishOk(userId, crypto.randomUUID(), { name: `meta-${label}` })
 	}
+	expect((await metaValues()).runCount).toBe(2)
 
-	await runInDurableObject(stub, async (instance: RunLog, state) => {
-		expect(instance).toBeInstanceOf(RunLog)
-		const before = state.storage.sql
-			.exec<{ value: number }>(
-				`SELECT value FROM run_log_meta WHERE key = 'run_count' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(before?.value)).toBe(2)
-
-		// Corrupt storage under the memo. The next adjust must use the cached
-		// 2 (+1 → 3), not the corrupted SQL value.
+	// Corrupt storage under the memo. The next adjust must use the cached
+	// 2 (+1 → 3), not the corrupted SQL value.
+	await runInDurableObject(stub, async (_instance: RunLog, state) => {
 		state.storage.sql.exec(
 			`UPDATE run_log_meta SET value = 999999 WHERE key = 'run_count'`,
 		)
+	})
+	await startRunning('meta-c')
+	expect((await metaValues()).runCount).toBe(3)
 
-		await instance.startRun({
-			run: {
-				id: 'meta-cache-third',
-				surface: 'job',
-				status: 'running',
-				name: 'meta-c',
-				packageId: null,
-				kodyId: null,
-				sourceId: null,
-				publishedCommit: null,
-				storageId: null,
-				jobId: null,
-				workflowId: null,
-				invocationId: null,
-				sessionId: null,
-				idempotencyKey: null,
-				parentRunId: null,
-				startedAt: new Date().toISOString(),
-				finishedAt: null,
-				durationMs: null,
-				errorName: null,
-				errorMessage: null,
-				metadataJson: '{}',
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-			},
-		})
-
-		const after = state.storage.sql
-			.exec<{ value: number }>(
-				`SELECT value FROM run_log_meta WHERE key = 'run_count' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(after?.value)).toBe(3)
-
+	await runInDurableObject(stub, async (instance: RunLog) => {
 		// Seeds go through setMeta so the memo and SQL stay aligned.
 		seedRunLogMeta(instance, { runCount: 10, finishesSinceRetention: 4 })
-		expect(
-			Number(
-				state.storage.sql
-					.exec<{ value: number }>(
-						`SELECT value FROM run_log_meta WHERE key = 'run_count' LIMIT 1`,
-					)
-					.toArray()[0]?.value,
-			),
-		).toBe(10)
-		expect(
-			Number(
-				state.storage.sql
-					.exec<{ value: number }>(
-						`SELECT value FROM run_log_meta WHERE key = 'finishes_since_retention' LIMIT 1`,
-					)
-					.toArray()[0]?.value,
-			),
-		).toBe(4)
-
 		// Rolled-back setMeta must not leave the memo ahead of SQL.
 		const metaTx = instance as unknown as {
 			transactionSyncWithMetaCache: <T>(fn: () => T) => T
@@ -1712,78 +1286,11 @@ test('run_log_meta counters reuse the in-isolate cache across repeated reads', a
 				throw new Error('force-rollback')
 			}),
 		).toThrow('force-rollback')
-		expect(
-			Number(
-				state.storage.sql
-					.exec<{ value: number }>(
-						`SELECT value FROM run_log_meta WHERE key = 'run_count' LIMIT 1`,
-					)
-					.toArray()[0]?.value,
-			),
-		).toBe(10)
+	})
+	expect(await metaValues()).toEqual({ runCount: 10, finishes: 4 })
 
-		await instance.startRun({
-			run: {
-				id: 'meta-cache-after-rollback',
-				surface: 'job',
-				status: 'running',
-				name: 'meta-rollback',
-				packageId: null,
-				kodyId: null,
-				sourceId: null,
-				publishedCommit: null,
-				storageId: null,
-				jobId: null,
-				workflowId: null,
-				invocationId: null,
-				sessionId: null,
-				idempotencyKey: null,
-				parentRunId: null,
-				startedAt: new Date().toISOString(),
-				finishedAt: null,
-				durationMs: null,
-				errorName: null,
-				errorMessage: null,
-				metadataJson: '{}',
-				createdAt: new Date().toISOString(),
-				updatedAt: new Date().toISOString(),
-			},
-		})
-		expect(
-			Number(
-				state.storage.sql
-					.exec<{ value: number }>(
-						`SELECT value FROM run_log_meta WHERE key = 'run_count' LIMIT 1`,
-					)
-					.toArray()[0]?.value,
-			),
-		).toBe(11)
-	})
-})
-
-test('clearRunRecords empties the Durable Object', async () => {
-	const userId = uniqueUserId('clear')
-	const handle = beginRunRecord({
-		env,
-		userId,
-		context: baseContext({
-			surface: 'retriever',
-			storageId: 'storage-1',
-		}),
-	})
-	await finishRunRecord({
-		env,
-		handle,
-		status: 'success',
-		logs: ['keep me'],
-	})
-	expect((await listRunRecords({ env, userId })).runs).toHaveLength(1)
-	await clearRunRecords({ env, userId })
-	expect(await listRunRecords({ env, userId })).toEqual({
-		runs: [],
-		nextCursor: null,
-	})
-	expect(await getRunRecord({ env, userId, runId: handle!.id })).toBeNull()
+	await startRunning('meta-rollback')
+	expect((await metaValues()).runCount).toBe(11)
 })
 
 test(
@@ -1793,9 +1300,10 @@ test(
 		silenceIncidentalRuntimeWarnings()
 		const userId = uniqueUserId('sandbox-fail-logs')
 		const callerContext = createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: 'sandbox-fail-logs@example.com',
 				displayName: 'Sandbox Fail Logs',
 			},
@@ -1823,10 +1331,7 @@ test(
 			undefined,
 			{
 				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'execute',
-					name: 'failing-console-logs',
-				},
+				runRecord: { surface: 'execute', name: 'failing-console-logs' },
 			},
 		)
 		expect(result.error).toBe('sandbox boom')
@@ -1836,21 +1341,18 @@ test(
 			'[error] captured error',
 		])
 
-		const page = await listRunRecords({
-			env,
-			userId,
-			filter: { surface: 'execute', name: 'failing-console-logs' },
+		const page = await listRuns(userId, {
+			surface: 'execute',
+			name: 'failing-console-logs',
 		})
-		expect(page.runs).toHaveLength(1)
-		expect(page.runs[0]?.status).toBe('error')
-		expect(page.runs[0]?.errorMessage).toBe('sandbox boom')
+		expect(page.runs).toEqual([
+			expect.objectContaining({
+				status: 'error',
+				errorMessage: 'sandbox boom',
+			}),
+		])
 
-		const detail = await getRunRecord({
-			env,
-			userId,
-			runId: page.runs[0]!.id,
-		})
-		expect(detail).not.toBeNull()
+		const detail = await getRun(userId, page.runs[0]!.id)
 		// The sandbox flattens console output to strings with a level marker;
 		// persistence recovers the structured level so readers can filter and
 		// colour by it rather than pattern-matching message text.
@@ -1865,29 +1367,22 @@ test(
 test('keyed execute claims eagerly, retains bounded result, and replays without a second claim', async () => {
 	const userId = uniqueUserId('keyed-execute')
 	const key = `execute-key-${crypto.randomUUID()}`
-	const first = await claimRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'execute',
-			name: null,
-			idempotencyKey: key,
-			metadata: { conversationId: 'conv-keyed' },
-		},
+	const claimExecute = (
+		context: Omit<RunRecordContext, 'surface' | 'idempotencyKey'> = {},
+	) =>
+		claimRunRecord({
+			env,
+			userId,
+			context: { surface: 'execute', idempotencyKey: key, ...context },
+		})
+	const first = await claimExecute({
+		name: null,
+		metadata: { conversationId: 'conv-keyed' },
 	})
-	expect(first?.claimed).toBe(true)
 	if (!first || !first.claimed) throw new Error('expected claim')
 	expect(first.handle.persistence).toBe('eager')
 
-	const whileRunning = await claimRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'execute',
-			idempotencyKey: key,
-		},
-	})
-	expect(whileRunning).toEqual({
+	expect(await claimExecute()).toEqual({
 		claimed: false,
 		run: expect.objectContaining({
 			id: first.handle.id,
@@ -1911,142 +1406,74 @@ test('keyed execute claims eagerly, retains bounded result, and replays without 
 		idempotencyKey: key,
 		surface: 'execute',
 	})
-	expect(byKey?.id).toBe(first.handle.id)
-	expect(byKey?.status).toBe('success')
+	expect(byKey).toMatchObject({ id: first.handle.id, status: 'success' })
 	expect(byKey?.metadata['result']).toEqual(
 		expect.objectContaining({
 			__truncated__: true,
-			preview: expect.any(String),
+			preview: expect.stringContaining('... [truncated]'),
 		}),
 	)
 
-	const replay = await claimRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'execute',
-			idempotencyKey: key,
-		},
-	})
-	expect(replay).toEqual({
+	expect(await claimExecute()).toEqual({
 		claimed: false,
-		run: expect.objectContaining({
-			id: first.handle.id,
-			status: 'success',
-		}),
+		run: expect.objectContaining({ id: first.handle.id, status: 'success' }),
 	})
 
-	// Key-less execute success still does not persist.
+	// Key-less execute success is retained the same way, without a replay key.
 	const keyless = beginRunRecord({
 		env,
 		userId,
 		context: { surface: 'execute', name: 'keyless-ok' },
 	})
-	expect(keyless?.persistence).toBe('on-failure')
+	expect(keyless?.persistence).toBe('eager')
 	await finishRunRecord({
 		env,
 		handle: keyless,
 		status: 'success',
-		result: { ignored: true },
+		result: { kept: true },
 	})
-	const page = await listRunRecords({
-		env,
-		userId,
-		filter: { surface: 'execute' },
+	const page = await listRuns(userId, { surface: 'execute' })
+	expect(page.runs.map((run) => run.id)).toEqual([keyless!.id, first.handle.id])
+	const keylessDetail = await getRun(userId, keyless!.id)
+	expect(keylessDetail?.run).toMatchObject({
+		status: 'success',
+		idempotencyKey: null,
 	})
-	expect(page.runs.map((run) => run.id)).toEqual([first.handle.id])
+	expect(keylessDetail?.run.metadata['result']).toEqual({ kept: true })
 })
 
 test('idempotency lookup is surface-scoped and abandon releases running claims', async () => {
 	const userId = uniqueUserId('surface-key')
 	const sharedKey = `shared-key-${crypto.randomUUID()}`
+	const lookup = (surface: RunSurface) =>
+		getRunRecordByIdempotencyKey({
+			env,
+			userId,
+			idempotencyKey: sharedKey,
+			surface,
+		})
 	await recordRunRecord({
 		env,
 		userId,
-		context: {
-			surface: 'workflow',
-			name: 'wf',
-			idempotencyKey: sharedKey,
-		},
+		context: { surface: 'workflow', name: 'wf', idempotencyKey: sharedKey },
 		status: 'success',
 		result: { from: 'workflow' },
 	})
 	const executeClaim = await claimRunRecord({
 		env,
 		userId,
-		context: {
-			surface: 'execute',
-			idempotencyKey: sharedKey,
-		},
+		context: { surface: 'execute', idempotencyKey: sharedKey },
 	})
-	expect(executeClaim?.claimed).toBe(true)
 	if (!executeClaim || !executeClaim.claimed) throw new Error('expected claim')
 
-	const executeLookup = await getRunRecordByIdempotencyKey({
-		env,
-		userId,
-		idempotencyKey: sharedKey,
+	expect(await lookup('execute')).toMatchObject({
+		id: executeClaim.handle.id,
 		surface: 'execute',
 	})
-	expect(executeLookup?.id).toBe(executeClaim.handle.id)
-	expect(executeLookup?.surface).toBe('execute')
 
 	await abandonRunRecord({ env, handle: executeClaim.handle })
-	expect(
-		await getRunRecordByIdempotencyKey({
-			env,
-			userId,
-			idempotencyKey: sharedKey,
-			surface: 'execute',
-		}),
-	).toBeNull()
-	const workflowStillThere = await getRunRecordByIdempotencyKey({
-		env,
-		userId,
-		idempotencyKey: sharedKey,
-		surface: 'workflow',
-	})
-	expect(workflowStillThere?.metadata['result']).toEqual({ from: 'workflow' })
-})
-
-test('snapshotRunRecordResult keeps small values and marks oversized ones', () => {
-	expect(snapshotRunRecordResult({ ok: true, agentId: 'abc' })).toEqual({
-		ok: true,
-		agentId: 'abc',
-	})
-	const huge = 'y'.repeat(runRecordMaxResultSnapshotBytes + 100)
-	expect(snapshotRunRecordResult({ payload: huge })).toEqual({
-		__truncated__: true,
-		preview: expect.stringContaining('... [truncated]'),
-	})
-})
-
-test('webhook/export finish retains metadata.result for runGet', async () => {
-	const userId = uniqueUserId('result-snapshot')
-	const handle = await recordRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'webhook',
-			name: 'sentry',
-			metadata: {
-				endpointId: 'ep-1',
-				httpStatus: 202,
-				outcome: 'delivered',
-			},
-		},
-		status: 'success',
-		result: { skipped: 'other-project' },
-	})
-	expect(handle).not.toBeNull()
-	const detail = await getRunRecord({
-		env,
-		userId,
-		runId: handle!.id,
-	})
-	expect(detail?.run.metadata).toMatchObject({
-		endpointId: 'ep-1',
-		outcome: 'delivered',
-		result: { skipped: 'other-project' },
+	expect(await lookup('execute')).toBeNull()
+	expect((await lookup('workflow'))?.metadata['result']).toEqual({
+		from: 'workflow',
 	})
 })

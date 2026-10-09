@@ -1,9 +1,15 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { adminUserListItemFieldNames } from './admin-users.ts'
+import { type AdminUsersMutationData } from '#universal/loader-data.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
+import type * as UsersData from '#worker/admin/users-data.ts'
+import * as AdminUserCreation from '#worker/identity/admin-user-creation.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -20,10 +26,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 }))
 
 vi.mock('#worker/identity/admin-user-creation.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import('#worker/identity/admin-user-creation.ts')
-		>()
+	const actual = await importOriginal<typeof AdminUserCreation>()
 	return {
 		...actual,
 		adminCreateUserWithPasswordSetup: (...args: Array<unknown>) =>
@@ -37,8 +40,7 @@ vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 }))
 
 vi.mock('#worker/admin/users-data.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/admin/users-data.ts')>()
+	const actual = await importOriginal<typeof UsersData>()
 	return {
 		...actual,
 		loadAdminUsersData: (
@@ -64,12 +66,10 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 
 type UserRow = {
 	id: number
-	stable_user_id?: string
 	username: string
 	email: string
 	email_verified_at?: string | null
-	plan?: string | null
-	entitlement_ladder?: string | null
+	plan?: string
 	stripe_plan?: string | null
 	stripe_customer_id?: string | null
 	suspended_at?: string | null
@@ -78,13 +78,11 @@ type UserRow = {
 	email_verification_delivery_at?: string | null
 	email_verification_delivery_detail?: string | null
 	email_verification_delivery_class?: string | null
-	account_type?: 'person' | 'platform' | null
-	deleting_at?: string | null
+	second_agent_standard_gift_expires_at?: string | null
+	referral_standard_credit_expires_at?: string | null
 	created_at: string
 	updated_at: string
 }
-
-type UserRoleRow = { user_id: number; role_name: RoleName }
 
 function stableUserId(id: number) {
 	return id.toString(16).padStart(64, '0')
@@ -114,383 +112,130 @@ function createAdminActor(roles: Array<RoleName>) {
 
 function createAdminTestEnv(input: {
 	users: Array<UserRow>
-	userRoles: Array<UserRoleRow>
+	userRoles: Array<[number, RoleName]>
 }) {
-	const users = new Map(
-		input.users.map((user) => [
-			user.id,
-			{
-				...user,
-				stable_user_id: user.stable_user_id ?? stableUserId(user.id),
-				// Normal fixtures default to free; unknown/null stay
-				// explicit so the dedicated stored-plan coercion test can warn.
-				plan: user.plan === undefined ? 'free' : user.plan,
-				stripe_plan: user.stripe_plan ?? null,
-				stripe_customer_id: user.stripe_customer_id ?? null,
-				suspended_at: user.suspended_at ?? null,
-				email_outbound_paused_at: user.email_outbound_paused_at ?? null,
-				email_verification_delivery_status:
-					user.email_verification_delivery_status ?? null,
-				email_verification_delivery_at:
-					user.email_verification_delivery_at ?? null,
-				email_verification_delivery_detail:
-					user.email_verification_delivery_detail ?? null,
-				email_verification_delivery_class:
-					user.email_verification_delivery_class ?? null,
-				account_type: user.account_type ?? 'person',
-				deleting_at: user.deleting_at ?? null,
-			},
-		]),
-	)
-	const userRoles = input.userRoles.map((row) => ({ ...row }))
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	for (const user of input.users) {
+		const row = {
+			password_hash: 'test-password-hash',
+			stable_user_id: stableUserId(user.id),
+			...user,
+		}
+		const columns = Object.keys(row)
+		sqlite
+			.prepare(
+				`INSERT INTO users (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+			)
+			.run(...Object.values(row))
+	}
+	for (const [userId, role] of input.userRoles) {
+		sqlite
+			.prepare(
+				`INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name = ?`,
+			)
+			.run(userId, role)
+	}
+	return { COOKIE_SECRET: 'secret', APP_DB: createD1FromSqlite(sqlite) }
+}
+const { createAdminUsersApiHandler } = await import('./admin-users.ts')
 
+function makeUser(
+	id: number,
+	username: string,
+	overrides: Partial<UserRow> = {},
+): UserRow {
 	return {
-		COOKIE_SECRET: 'secret',
-		APP_DB: {
-			prepare(query: string) {
-				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				// Mirrors buildAdminUserListWhereClause: optional username/email
-				// LIKE, optional role membership, optional stalled-verification
-				// cutoff, shared by the page query and its COUNT.
-				function applyListFilters(params: Array<unknown>) {
-					let rows = Array.from(users.values()).sort((a, b) => a.id - b.id)
-					let paramIndex = 0
-					if (normalizedQuery.includes('username like ?')) {
-						const pattern = String(params[paramIndex])
-						paramIndex += 2
-						const needle = pattern
-							.slice(1, -1)
-							.replace(/\\(.)/g, '$1')
-							.toLowerCase()
-						rows = rows.filter(
-							(row) =>
-								row.username.toLowerCase().includes(needle) ||
-								row.email.toLowerCase().includes(needle),
-						)
-					}
-					if (normalizedQuery.includes('where r.name = ?')) {
-						const roleName = String(params[paramIndex])
-						paramIndex += 1
-						rows = rows.filter((row) =>
-							userRoles.some(
-								(role) =>
-									role.user_id === row.id && role.role_name === roleName,
-							),
-						)
-					}
-					if (
-						normalizedQuery.includes(
-							"email_verification_delivery_status = 'accepted'",
-						)
-					) {
-						const cutoff = String(params[paramIndex])
-						paramIndex += 1
-						rows = rows.filter(
-							(row) =>
-								!row.email_verified_at &&
-								!row.deleting_at &&
-								(row.account_type ?? 'person') === 'person' &&
-								row.email_verification_delivery_status === 'accepted' &&
-								row.email_verification_delivery_at != null &&
-								row.email_verification_delivery_at <= cutoff,
-						)
-					}
-					return { rows, paramIndex }
-				}
-				const execute = {
-					async all<T>() {
-						if (
-							normalizedQuery.includes('select count(*) as total from users')
-						) {
-							return {
-								results: [{ total: users.size }] as Array<T>,
-								meta: { changes: 0 },
-							}
-						}
-						return { results: [] as Array<T>, meta: { changes: 0 } }
-					},
-					async first<T>() {
-						if (
-							normalizedQuery.includes('select count(*) as total from users')
-						) {
-							return { total: users.size } as T
-						}
-						return null
-					},
-					async run() {
-						return { meta: { changes: 0 } }
-					},
-				}
-				return {
-					...execute,
-					bind(...params: Array<unknown>) {
-						return {
-							async all<T>() {
-								if (
-									normalizedQuery.startsWith(
-										'select id, stable_user_id, username, email',
-									)
-								) {
-									const { rows, paramIndex } = applyListFilters(params)
-									const pageSize = Number(params[paramIndex])
-									const offset = Number(params[paramIndex + 1])
-									const results = rows.slice(offset, offset + pageSize)
-									return { results: results as Array<T>, meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('where ur.user_id in')) {
-									const userIds = params.map((value) => Number(value))
-									return {
-										results: userRoles
-											.filter((row) => userIds.includes(row.user_id))
-											.map((row) => ({
-												user_id: row.user_id,
-												role_name: row.role_name,
-											})) as Array<T>,
-										meta: { changes: 0 },
-									}
-								}
-								return { results: [] as Array<T>, meta: { changes: 0 } }
-							},
-							async first<T>() {
-								if (normalizedQuery.includes('select 1 as found from users')) {
-									const { rows, paramIndex } = applyListFilters(params)
-									const stableUserId = String(params[paramIndex] ?? '')
-									return (
-										rows.some((row) => row.stable_user_id === stableUserId)
-											? { found: 1 }
-											: null
-									) as T
-								}
-								if (
-									normalizedQuery.includes(
-										'select deleting_at from users where stable_user_id',
-									)
-								) {
-									const user = Array.from(users.values()).find(
-										(row) => row.stable_user_id === params[0],
-									)
-									return (
-										user ? { deleting_at: user.deleting_at ?? null } : null
-									) as T
-								}
-								if (
-									normalizedQuery.includes(
-										'count(distinct ur.user_id) as count',
-									)
-								) {
-									const roleName = String(params[0])
-									const count = new Set(
-										userRoles
-											.filter((row) => row.role_name === roleName)
-											.map((row) => row.user_id),
-									).size
-									return { count } as T
-								}
-								if (
-									normalizedQuery.startsWith(
-										'select count(*) as total from users',
-									)
-								) {
-									const { rows } = applyListFilters(params)
-									return { total: rows.length } as T
-								}
-								if (
-									normalizedQuery.startsWith(
-										'select id, stable_user_id, username, email',
-									) &&
-									normalizedQuery.includes('from users where stable_user_id =')
-								) {
-									const user = Array.from(users.values()).find(
-										(row) => row.stable_user_id === params[0],
-									)
-									return user ? ({ ...user } as T) : null
-								}
-								return null
-							},
-							async run() {
-								if (
-									normalizedQuery.includes('insert or ignore into user_roles')
-								) {
-									const userId = Number(params[0])
-									const roleName = String(params[1]) as RoleName
-									if (
-										!userRoles.some(
-											(row) =>
-												row.user_id === userId && row.role_name === roleName,
-										)
-									) {
-										userRoles.push({ user_id: userId, role_name: roleName })
-									}
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes('delete from user_roles') &&
-									normalizedQuery.includes('count(distinct ur.user_id)')
-								) {
-									// Atomic admin removal: only deletes while another admin
-									// remains, mirroring removeAdminRolePreservingLastAdmin.
-									const userId = Number(params[0])
-									const adminCount = new Set(
-										userRoles
-											.filter((row) => row.role_name === 'admin')
-											.map((row) => row.user_id),
-									).size
-									const index = userRoles.findIndex(
-										(row) =>
-											row.user_id === userId && row.role_name === 'admin',
-									)
-									if (adminCount > 1 && index >= 0) {
-										userRoles.splice(index, 1)
-										return { meta: { changes: 1 } }
-									}
-									return { meta: { changes: 0 } }
-								}
-								if (normalizedQuery.includes('delete from user_roles')) {
-									const userId = Number(params[0])
-									const roleName = String(params[1]) as RoleName
-									const index = userRoles.findIndex(
-										(row) =>
-											row.user_id === userId && row.role_name === roleName,
-									)
-									if (index >= 0) userRoles.splice(index, 1)
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set plan = ?, entitlement_ladder = ?, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[3]))
-									if (!user) return { meta: { changes: 0 } }
-									user.plan = params[0] === null ? null : String(params[0])
-									user.entitlement_ladder = String(params[1])
-									user.updated_at = String(params[2])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set suspended_at = ?, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user) return { meta: { changes: 0 } }
-									user.suspended_at =
-										params[0] === null ? null : String(params[0])
-									user.updated_at = String(params[1])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_outbound_paused_at = null, updated_at = ? where id =',
-									)
-								) {
-									const user = users.get(Number(params[1]))
-									if (!user) return { meta: { changes: 0 } }
-									user.email_outbound_paused_at = null
-									user.updated_at = String(params[0])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_verified_at = coalesce(email_verified_at, ?)',
-									)
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user || user.deleting_at) {
-										return { meta: { changes: 0 } }
-									}
-									user.email_verified_at =
-										user.email_verified_at ?? String(params[0])
-									user.updated_at = String(params[1])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'update users set email_verification_delivery_status = null',
-									)
-								) {
-									const user = users.get(Number(params[1]))
-									if (!user) return { meta: { changes: 0 } }
-									user.email_verification_delivery_status = null
-									user.email_verification_delivery_at = null
-									user.email_verification_delivery_detail = null
-									user.email_verification_delivery_class = null
-									user.updated_at = String(params[0])
-									return { meta: { changes: 1 } }
-								}
-								if (
-									normalizedQuery.includes(
-										'insert into "email_verifications"',
-									) ||
-									normalizedQuery.includes('insert into email_verifications')
-								) {
-									const user = users.get(Number(params[2]))
-									if (!user || user.deleting_at) {
-										return { meta: { changes: 0, last_row_id: 0 } }
-									}
-									return { meta: { changes: 1, last_row_id: 1 } }
-								}
-								if (
-									normalizedQuery.includes('delete from email_verifications')
-								) {
-									return { meta: { changes: 1 } }
-								}
-								return { meta: { changes: 0 } }
-							},
-						}
-					},
-				}
-			},
-		} as unknown as D1Database,
+		id,
+		username,
+		email: `${username}@example.com`,
+		created_at: '2026-01-01 00:00:00',
+		updated_at: '2026-01-02 00:00:00',
+		...overrides,
 	}
 }
 
-const { createAdminUsersApiHandler } = await import('./admin-users.ts')
+function setupAdminUsers(
+	users: Array<UserRow>,
+	userRoles: Array<[number, RoleName]>,
+	actorRoles: Array<RoleName> = ['admin'],
+) {
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(actorRoles),
+	)
+	const env = createAdminTestEnv({ users, userRoles })
+	const { handler } = createAdminUsersApiHandler(env as unknown as Env)
+	const send = (search: string, body?: Record<string, unknown>) => {
+		const href = `https://example.com/admin/users.json${search}`
+		return handler({
+			request: new Request(
+				href,
+				body
+					? {
+							method: 'POST',
+							headers: {
+								Accept: 'application/json',
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify(body),
+						}
+					: { headers: { Accept: 'application/json' } },
+			),
+			params: {},
+			url: new URL(href),
+		} as never)
+	}
+	return {
+		env,
+		get: (search = '') => send(search),
+		post: (body: Record<string, unknown>, search = '') => send(search, body),
+		list: async (search: string) => {
+			const response = await send(search)
+			expect(response.status).toBe(200)
+			return (await response.json()) as AdminUsersMutationData
+		},
+	}
+}
+
+const stableIds = (payload: { users: Array<{ stableUserId: string }> }) =>
+	payload.users.map((user) => user.stableUserId)
+
+function expectAdminAudit(action: string, reason?: string) {
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			category: 'admin',
+			action,
+			result: 'success',
+			...(reason === undefined ? {} : { reason }),
+		}),
+	)
+}
 
 test('admin users list payload exposes only account metadata fields', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'admin-user',
+	const { get } = setupAdminUsers(
+		[
+			makeUser(1, 'admin-user', {
 				email: 'admin@example.com',
 				email_verified_at: '2026-01-01T00:00:00.000Z',
 				plan: 'pro',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-02 00:00:00',
-			},
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
+			}),
+			makeUser(2, 'member', {
 				email_verified_at: null,
 				plan: 'free',
 				stripe_plan: 'standard',
 				stripe_customer_id: 'cus_member',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
+			}),
 		],
-		userRoles: [
-			{ user_id: 1, role_name: 'admin' },
-			{ user_id: 2, role_name: 'user' },
+		[
+			[1, 'admin'],
+			[2, 'user'],
 		],
-	})
+	)
 
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			headers: { Accept: 'application/json' },
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
+	const response = await get()
 
 	expect(response.status).toBe(200)
-	const payload = await response.json()
+	const payload = (await response.json()) as AdminUsersMutationData
 	expect(Object.keys(payload).sort()).toEqual(
 		[
 			'availablePlans',
@@ -518,6 +263,11 @@ test('admin users list payload exposes only account metadata fields', async () =
 			manualPlan: 'pro',
 			stripePlan: null,
 			effectivePlan: 'pro',
+			secondAgentGiftExpiresAt: null,
+			referralCreditExpiresAt: null,
+			overlayExpiresAt: null,
+			isProOverlay: false,
+			overlayType: null,
 			stripeCustomerLinked: false,
 		}),
 		expect.objectContaining({
@@ -528,298 +278,164 @@ test('admin users list payload exposes only account metadata fields', async () =
 			manualPlan: 'free',
 			stripePlan: 'standard',
 			effectivePlan: 'standard',
+			secondAgentGiftExpiresAt: null,
+			referralCreditExpiresAt: null,
+			overlayExpiresAt: null,
+			isProOverlay: false,
+			overlayType: null,
 			stripeCustomerLinked: true,
 		}),
 	])
 })
 
-test('admin users selected param resolves outside the current page and filter', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'admin-user',
-				email: 'admin@example.com',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-02 00:00:00',
-			},
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-			{
-				id: 3,
-				username: 'another-member',
-				email: 'another@example.com',
-				created_at: '2026-01-05 00:00:00',
-				updated_at: '2026-01-06 00:00:00',
-			},
-		],
-		userRoles: [
-			{ user_id: 1, role_name: 'admin' },
-			{ user_id: 2, role_name: 'user' },
-			{ user_id: 3, role_name: 'user' },
-		],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const listUsers = async (search: string) => {
-		const response = await handler.handler({
-			request: new Request(`https://example.com/admin/users.json${search}`, {
-				headers: { Accept: 'application/json' },
+test('admin users list exposes temporary Pro gift overlay fields for Package filters', async () => {
+	const giftExpiresAt = '2099-01-10T00:00:00.000Z'
+	const referralExpiresAt = '2099-01-20T00:00:00.000Z'
+	const { list } = setupAdminUsers(
+		[
+			makeUser(1, 'admin-user', { email: 'admin@example.com' }),
+			makeUser(2, 'continuumpraxis', {
+				email: 'continuum@example.com',
+				plan: 'free',
+				second_agent_standard_gift_expires_at: giftExpiresAt,
+				referral_standard_credit_expires_at: referralExpiresAt,
 			}),
-			params: {},
-			url: new URL(`https://example.com/admin/users.json${search}`),
-		} as never)
-		expect(response.status).toBe(200)
-		return response.json()
-	}
+		],
+		[
+			[1, 'admin'],
+			[2, 'user'],
+		],
+	)
+
+	const payload = await list('')
+	expect(payload.users).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				username: 'continuumpraxis',
+				plan: 'free',
+				effectivePlan: 'pro',
+				secondAgentGiftExpiresAt: giftExpiresAt,
+				referralCreditExpiresAt: referralExpiresAt,
+				overlayExpiresAt: referralExpiresAt,
+				isProOverlay: true,
+				overlayType: 'referral_credit',
+			}),
+		]),
+	)
+})
+
+test('admin users list applies selected, q, role, and pagination filters', async () => {
+	const { list } = setupAdminUsers(
+		[
+			makeUser(1, 'admin-user', { email: 'admin@example.com' }),
+			makeUser(2, 'searchable-member', { email: 'member@example.com' }),
+			makeUser(3, 'another-member', { email: 'searchable@example.com' }),
+		],
+		[
+			[1, 'admin'],
+			[2, 'user'],
+			[3, 'user'],
+		],
+	)
 
 	// Selected user on a later page is still returned for the detail pane.
-	const paged = await listUsers(
-		`?pageSize=1&page=1&selected=${stableUserId(3)}`,
-	)
-	expect(
-		paged.users.map((user: { stableUserId: string }) => user.stableUserId),
-	).toEqual([stableUserId(1)])
+	const paged = await list(`?pageSize=1&page=1&selected=${stableUserId(3)}`)
+	expect(stableIds(paged)).toEqual([stableUserId(1)])
 	expect(paged.selectedUser).toEqual(
 		expect.objectContaining({
 			stableUserId: stableUserId(3),
 			username: 'another-member',
-			email: 'another@example.com',
+			email: 'searchable@example.com',
 		}),
 	)
 
 	// Selected user excluded by the active role filter is still returned.
-	const filtered = await listUsers(`?role=admin&selected=${stableUserId(2)}`)
-	expect(
-		filtered.users.map((user: { stableUserId: string }) => user.stableUserId),
-	).toEqual([stableUserId(1)])
+	const filtered = await list(`?role=admin&selected=${stableUserId(2)}`)
+	expect(stableIds(filtered)).toEqual([stableUserId(1)])
 	expect(filtered.selectedUser).toEqual(
 		expect.objectContaining({
 			stableUserId: stableUserId(2),
-			username: 'member',
+			username: 'searchable-member',
 		}),
 	)
 
-	const missing = await listUsers(`?selected=${stableUserId(99)}`)
-	expect(missing.selectedUser).toBeNull()
+	expect((await list(`?selected=${stableUserId(99)}`)).selectedUser).toBeNull()
+	expect((await list('?selected=123')).selectedUser).toBeNull()
 
-	const invalid = await listUsers('?selected=123')
-	expect(invalid.selectedUser).toBeNull()
-})
-
-test('admin users list applies q and role filters to the slice and total', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'admin-user',
-				email: 'admin@example.com',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-02 00:00:00',
-			},
-			{
-				id: 2,
-				username: 'searchable-member',
-				email: 'member@example.com',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-			{
-				id: 3,
-				username: 'another-member',
-				email: 'searchable@example.com',
-				created_at: '2026-01-05 00:00:00',
-				updated_at: '2026-01-06 00:00:00',
-			},
-		],
-		userRoles: [
-			{ user_id: 1, role_name: 'admin' },
-			{ user_id: 2, role_name: 'user' },
-			{ user_id: 3, role_name: 'user' },
-		],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const listUsers = async (search: string) => {
-		const response = await handler.handler({
-			request: new Request(`https://example.com/admin/users.json${search}`, {
-				headers: { Accept: 'application/json' },
-			}),
-			params: {},
-			url: new URL(`https://example.com/admin/users.json${search}`),
-		} as never)
-		expect(response.status).toBe(200)
-		return response.json()
+	// q matches username or email; total reflects the filtered set. Unknown
+	// role values are ignored rather than filtering everything out, and
+	// filters compose with pagination.
+	const cases: Array<[string, number, Array<number>]> = [
+		['?q=searchable', 2, [2, 3]],
+		['?role=admin', 1, [1]],
+		['?q=searchable&role=admin', 0, []],
+		['?role=not-a-role', 3, [1, 2, 3]],
+		['?q=searchable&pageSize=1&page=2', 2, [3]],
+	]
+	for (const [search, total, ids] of cases) {
+		const payload = await list(search)
+		expect([search, payload.total, stableIds(payload)]).toEqual([
+			search,
+			total,
+			ids.map(stableUserId),
+		])
 	}
-
-	// q matches username or email; total reflects the filtered set.
-	const searchPayload = await listUsers('?q=searchable')
-	expect(searchPayload.total).toBe(2)
-	expect(
-		searchPayload.users.map(
-			(user: { stableUserId: string }) => user.stableUserId,
-		),
-	).toEqual([stableUserId(2), stableUserId(3)])
-
-	const rolePayload = await listUsers('?role=admin')
-	expect(rolePayload.total).toBe(1)
-	expect(
-		rolePayload.users.map(
-			(user: { stableUserId: string }) => user.stableUserId,
-		),
-	).toEqual([stableUserId(1)])
-
-	const combinedPayload = await listUsers('?q=searchable&role=admin')
-	expect(combinedPayload.total).toBe(0)
-	expect(combinedPayload.users).toEqual([])
-
-	// Unknown role values are ignored rather than filtering everything out.
-	const unknownRolePayload = await listUsers('?role=not-a-role')
-	expect(unknownRolePayload.total).toBe(3)
-
-	// Filters and pagination compose.
-	const pagedPayload = await listUsers('?q=searchable&pageSize=1&page=2')
-	expect(pagedPayload.total).toBe(2)
-	expect(
-		pagedPayload.users.map(
-			(user: { stableUserId: string }) => user.stableUserId,
-		),
-	).toEqual([stableUserId(3)])
 })
 
 test('admin users list applies verification=stalled to the slice and total', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'stalled-raul',
-				email: 'a.kodycodes@raulg.dev',
+	const staleAt = '2020-01-01T00:00:00.000Z'
+	const { list } = setupAdminUsers(
+		[
+			makeUser(1, 'stalled-raul', {
 				email_verified_at: null,
 				email_verification_delivery_status: 'accepted',
-				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
-				created_at: '2020-01-01 00:00:00',
-				updated_at: '2020-01-01 00:00:00',
-			},
-			{
-				id: 2,
-				username: 'fresh-accepted',
-				email: 'fresh@example.com',
+				email_verification_delivery_at: staleAt,
+			}),
+			makeUser(2, 'fresh-accepted', {
 				email_verified_at: null,
 				email_verification_delivery_status: 'accepted',
 				email_verification_delivery_at: new Date().toISOString(),
-				created_at: '2026-09-01 00:00:00',
-				updated_at: '2026-09-01 00:00:00',
-			},
-			{
-				id: 3,
-				username: 'bounced',
-				email: 'bounced@example.com',
+			}),
+			makeUser(3, 'bounced', {
 				email_verified_at: null,
 				email_verification_delivery_status: 'bounced',
-				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
-				created_at: '2020-01-01 00:00:00',
-				updated_at: '2020-01-01 00:00:00',
-			},
-			{
-				id: 4,
-				username: 'already-verified',
-				email: 'verified@example.com',
+				email_verification_delivery_at: staleAt,
+			}),
+			makeUser(4, 'already-verified', {
 				email_verified_at: '2026-01-01T00:00:00.000Z',
 				email_verification_delivery_status: 'accepted',
-				email_verification_delivery_at: '2020-01-01T00:00:00.000Z',
-				created_at: '2020-01-01 00:00:00',
-				updated_at: '2026-01-01 00:00:00',
-			},
+				email_verification_delivery_at: staleAt,
+			}),
 		],
-		userRoles: [
-			{ user_id: 1, role_name: 'user' },
-			{ user_id: 2, role_name: 'user' },
-			{ user_id: 3, role_name: 'user' },
-			{ user_id: 4, role_name: 'user' },
+		[
+			[1, 'user'],
+			[2, 'user'],
+			[3, 'user'],
+			[4, 'user'],
 		],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request(
-			'https://example.com/admin/users.json?verification=stalled',
-			{ headers: { Accept: 'application/json' } },
-		),
-		params: {},
-		url: new URL('https://example.com/admin/users.json?verification=stalled'),
-	} as never)
-	expect(response.status).toBe(200)
-	const payload = await response.json()
+	)
+
+	const payload = await list('?verification=stalled')
 	expect(payload.total).toBe(1)
 	expect(
 		payload.users.map((user: { username: string }) => user.username),
 	).toEqual(['stalled-raul'])
 
-	const unknown = await handler.handler({
-		request: new Request(
-			'https://example.com/admin/users.json?verification=not-a-filter',
-			{ headers: { Accept: 'application/json' } },
-		),
-		params: {},
-		url: new URL(
-			'https://example.com/admin/users.json?verification=not-a-filter',
-		),
-	} as never)
-	expect(unknown.status).toBe(200)
-	const unknownPayload = await unknown.json()
-	expect(unknownPayload.total).toBe(4)
+	expect((await list('?verification=not-a-filter')).total).toBe(4)
 })
 
 test('assign role action updates user roles and logs audit event', async () => {
-	logAuditEventSpy.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
+	const { post } = setupAdminUsers([makeUser(2, 'member')], [[2, 'user']])
+
+	const response = await post({
+		action: 'assign_role',
+		stableUserId: stableUserId(2),
+		role: 'admin',
 	})
 
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'assign_role',
-				stableUserId: stableUserId(2),
-				role: 'admin',
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-
 	expect(response.status).toBe(200)
-	const payload = await response.json()
-	expect(payload.users[0].roles).toContain('admin')
+	const payload = (await response.json()) as AdminUsersMutationData
+	expect(payload.users[0]?.roles).toContain('admin')
 	// Mutations return the updated target so the client can patch it into
 	// an infinite-scroll window without resetting to the first page.
 	expect(payload.updatedUser).toEqual(
@@ -833,183 +449,73 @@ test('assign role action updates user roles and logs audit event', async () => {
 	)
 })
 
-test('remove role rejects removing the last admin account', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'solo-admin',
-				email: 'admin@example.com',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-02 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 1, role_name: 'admin' }],
+test('remove role rejects the last admin and removes admin when another admin remains', async () => {
+	const removeAdmin = (id: number) => ({
+		action: 'remove_role',
+		stableUserId: stableUserId(id),
+		role: 'admin',
 	})
+	const solo = setupAdminUsers([makeUser(1, 'solo-admin')], [[1, 'admin']])
+	expect((await solo.post(removeAdmin(1))).status).toBe(409)
 
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'remove_role',
-				stableUserId: stableUserId(1),
-				role: 'admin',
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-
-	expect(response.status).toBe(409)
-})
-
-test('remove role removes admin when another admin remains', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
+	const { post } = setupAdminUsers(
+		[makeUser(1, 'first-admin'), makeUser(2, 'second-admin')],
+		[
+			[1, 'admin'],
+			[2, 'admin'],
+			[2, 'user'],
+		],
 	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				username: 'first-admin',
-				email: 'admin@example.com',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-02 00:00:00',
-			},
-			{
-				id: 2,
-				username: 'second-admin',
-				email: 'second@example.com',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [
-			{ user_id: 1, role_name: 'admin' },
-			{ user_id: 2, role_name: 'admin' },
-			{ user_id: 2, role_name: 'user' },
-		],
-	})
-
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'remove_role',
-				stableUserId: stableUserId(2),
-				role: 'admin',
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
+	const response = await post(removeAdmin(2))
 
 	expect(response.status).toBe(200)
-	const payload = await response.json()
+	const payload = (await response.json()) as AdminUsersMutationData
 	const secondAdmin = payload.users.find(
-		(user: { stableUserId: string }) => user.stableUserId === stableUserId(2),
+		(user) => user.stableUserId === stableUserId(2),
 	)
+	if (!secondAdmin) throw new Error('Expected second admin in payload')
 	expect(secondAdmin.roles).not.toContain('admin')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'remove_role',
-			result: 'success',
-		}),
-	)
+	expectAdminAudit('remove_role')
 })
 
 test('update plan action sets, maps null to free, validates, and scopes plan changes', async () => {
-	logAuditEventSpy.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
+	const { post } = setupAdminUsers(
+		[makeUser(2, 'member', { plan: 'max' })],
+		[[2, 'user']],
 	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
-				plan: 'max',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const postUpdatePlan = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: new Request('https://example.com/admin/users.json', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(body),
-			}),
-			params: {},
-			url: new URL('https://example.com/admin/users.json'),
-		} as never)
+	const target = stableUserId(2)
 
-	const setPlanResponse = await postUpdatePlan({
+	const setPlanResponse = await post({
 		action: 'update_plan',
-		stableUserId: stableUserId(2),
+		stableUserId: target,
 		plan: 'pro',
 	})
 	expect(setPlanResponse.status).toBe(200)
-	expect((await setPlanResponse.json()).users[0].plan).toBe('pro')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'update_plan',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)};plan=pro`,
-		}),
-	)
+	expect(
+		((await setPlanResponse.json()) as AdminUsersMutationData).users[0]?.plan,
+	).toBe('pro')
+	expectAdminAudit('update_plan', `target_stable_user_id=${target};plan=pro`)
 
-	const clearPlanResponse = await postUpdatePlan({
+	const clearPlanResponse = await post({
 		action: 'update_plan',
-		stableUserId: stableUserId(2),
+		stableUserId: target,
 		plan: null,
 	})
 	expect(clearPlanResponse.status).toBe(200)
-	expect((await clearPlanResponse.json()).users[0].plan).toBe('free')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'update_plan',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)};plan=free`,
-		}),
-	)
+	expect(
+		((await clearPlanResponse.json()) as AdminUsersMutationData).users[0]?.plan,
+	).toBe('free')
+	expectAdminAudit('update_plan', `target_stable_user_id=${target};plan=free`)
 
 	for (const body of [
-		{
-			action: 'update_plan',
-			stableUserId: stableUserId(2),
-			plan: 'enterprise',
-		},
-		{ action: 'update_plan', stableUserId: stableUserId(2) },
+		{ action: 'update_plan', stableUserId: target, plan: 'enterprise' },
+		{ action: 'update_plan', stableUserId: target },
 		{ action: 'update_plan', stableUserId: 2, plan: 'pro' },
 	]) {
-		expect((await postUpdatePlan(body)).status).toBe(400)
+		expect((await post(body)).status).toBe(400)
 	}
 
-	const missingUserResponse = await postUpdatePlan({
+	const missingUserResponse = await post({
 		action: 'update_plan',
 		stableUserId: stableUserId(42),
 		plan: 'pro',
@@ -1018,234 +524,98 @@ test('update plan action sets, maps null to free, validates, and scopes plan cha
 })
 
 test('suspend, unsuspend, and resume email actions update flags and log audit events', async () => {
-	logAuditEventSpy.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
+	const { post } = setupAdminUsers(
+		[
+			makeUser(2, 'member', {
 				email_outbound_paused_at: '2026-07-20T00:00:00.000Z',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const postAction = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: new Request('https://example.com/admin/users.json', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(body),
 			}),
-			params: {},
-			url: new URL('https://example.com/admin/users.json'),
-		} as never)
+		],
+		[[2, 'user']],
+	)
+	const targetReason = `target_stable_user_id=${stableUserId(2)}`
+	const act = (action: string, id = 2) =>
+		post({ action, stableUserId: stableUserId(id) })
 
-	const suspendResponse = await postAction({
-		action: 'suspend_user',
-		stableUserId: stableUserId(2),
-	})
+	const suspendResponse = await act('suspend_user')
 	expect(suspendResponse.status).toBe(200)
-	const suspended = await suspendResponse.json()
-	expect(suspended.users[0].suspended_at).toBeTruthy()
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'suspend_user',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)}`,
-		}),
-	)
+	expect(
+		((await suspendResponse.json()) as AdminUsersMutationData).users[0]
+			?.suspended_at,
+	).toBeTruthy()
+	expectAdminAudit('suspend_user', targetReason)
 
-	const unsuspendResponse = await postAction({
-		action: 'unsuspend_user',
-		stableUserId: stableUserId(2),
-	})
+	const unsuspendResponse = await act('unsuspend_user')
 	expect(unsuspendResponse.status).toBe(200)
-	expect((await unsuspendResponse.json()).users[0].suspended_at).toBeNull()
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'unsuspend_user',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)}`,
-		}),
-	)
+	expect(
+		((await unsuspendResponse.json()) as AdminUsersMutationData).users[0]
+			?.suspended_at,
+	).toBeNull()
+	expectAdminAudit('unsuspend_user', targetReason)
 
-	const resumeResponse = await postAction({
-		action: 'resume_email_outbound',
-		stableUserId: stableUserId(2),
-	})
+	const resumeResponse = await act('resume_email_outbound')
 	expect(resumeResponse.status).toBe(200)
 	expect(
-		(await resumeResponse.json()).users[0].email_outbound_paused_at,
+		((await resumeResponse.json()) as AdminUsersMutationData).users[0]
+			?.email_outbound_paused_at,
 	).toBeNull()
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'resume_email_outbound',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)}`,
-		}),
-	)
+	expectAdminAudit('resume_email_outbound', targetReason)
+
+	expect((await act('suspend_user', 42)).status).toBe(404)
 
 	// Admins cannot suspend their own account (actor id is 1).
-	const selfSuspendEnv = createAdminTestEnv({
-		users: [
-			{
-				id: 1,
-				stable_user_id: stableUserId(1),
-				username: 'admin-user',
-				email: 'admin@example.com',
-				created_at: '2026-01-01 00:00:00',
-				updated_at: '2026-01-01 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 1, role_name: 'admin' }],
-	})
-	const selfHandler = createAdminUsersApiHandler(
-		selfSuspendEnv as unknown as Env,
+	const self = setupAdminUsers(
+		[makeUser(1, 'admin-user', { email: 'admin@example.com' })],
+		[[1, 'admin']],
 	)
-	const selfResponse = await selfHandler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				action: 'suspend_user',
-				stableUserId: stableUserId(1),
-			}),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
+	const selfResponse = await self.post({
+		action: 'suspend_user',
+		stableUserId: stableUserId(1),
+	})
 	expect(selfResponse.status).toBe(400)
-
-	expect(
-		(
-			await postAction({
-				action: 'suspend_user',
-				stableUserId: stableUserId(42),
-			})
-		).status,
-	).toBe(404)
 })
 
 test('admin users API returns 403 without read:user:any permission', async () => {
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['user']),
-	)
-	const env = createAdminTestEnv({ users: [], userRoles: [] })
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const response = await handler.handler({
-		request: new Request('https://example.com/admin/users.json', {
-			headers: { Accept: 'application/json' },
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/users.json'),
-	} as never)
-	expect(response.status).toBe(403)
+	const { get } = setupAdminUsers([], [], ['user'])
+	expect((await get()).status).toBe(403)
 })
 
 test('mark email verified and mint verify url actions update the account and log audit events', async () => {
-	logAuditEventSpy.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 2,
-				username: 'member',
-				email: 'member@example.com',
+	const { post } = setupAdminUsers(
+		[
+			makeUser(2, 'member', {
 				email_verified_at: null,
 				email_verification_delivery_status: 'bounced',
 				email_verification_delivery_class: 'sender_block',
 				email_verification_delivery_detail:
 					'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-				created_at: '2026-01-03 00:00:00',
-				updated_at: '2026-01-04 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 2, role_name: 'user' }],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	const postAction = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: new Request('https://example.com/admin/users.json', {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(body),
 			}),
-			params: {},
-			url: new URL('https://example.com/admin/users.json'),
-		} as never)
+		],
+		[[2, 'user']],
+	)
+	const targetReason = `target_stable_user_id=${stableUserId(2)}`
+	const act = (action: string) =>
+		post({ action, stableUserId: stableUserId(2) })
 
-	const mintResponse = await postAction({
-		action: 'mint_verify_url',
-		stableUserId: stableUserId(2),
-	})
+	const mintResponse = await act('mint_verify_url')
 	expect(mintResponse.status).toBe(200)
-	const minted = await mintResponse.json()
+	const minted = (await mintResponse.json()) as AdminUsersMutationData
 	expect(minted.verifyUrl).toMatch(
 		/^https:\/\/example.com\/verify-email\?token=/,
 	)
-	expect(minted.users[0].email_verified).toBe(false)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'mint_verify_url',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)}`,
-		}),
-	)
+	expect(minted.users[0]?.email_verified).toBe(false)
+	expectAdminAudit('mint_verify_url', targetReason)
 
-	const verifyResponse = await postAction({
-		action: 'mark_email_verified',
-		stableUserId: stableUserId(2),
-	})
+	const verifyResponse = await act('mark_email_verified')
 	expect(verifyResponse.status).toBe(200)
-	const verified = await verifyResponse.json()
-	expect(verified.users[0].email_verified).toBe(true)
-	expect(verified.users[0].email_verification_delivery).toBeNull()
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'mark_email_verified',
-			result: 'success',
-			reason: `target_stable_user_id=${stableUserId(2)}`,
-		}),
-	)
+	const verified = (await verifyResponse.json()) as AdminUsersMutationData
+	expect(verified.users[0]?.email_verified).toBe(true)
+	expect(verified.users[0]?.email_verification_delivery).toBeNull()
+	expectAdminAudit('mark_email_verified', targetReason)
 
-	const alreadyVerified = await postAction({
-		action: 'mint_verify_url',
-		stableUserId: stableUserId(2),
-	})
-	expect(alreadyVerified.status).toBe(400)
+	expect((await act('mint_verify_url')).status).toBe(400)
 })
 
 test('create_user action returns setup link, logs audit, maps duplicate email to 409, and keeps the setup link when list refresh fails', async () => {
-	const { AdminCreateUserError } =
-		await import('#worker/identity/admin-user-creation.ts')
-	logAuditEventSpy.mockClear()
-	mockModule.scheduleUserCreatedEvent.mockClear()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
 	const createdUser = {
 		userId: 9,
 		stableUserId: stableUserId(9),
@@ -1254,52 +624,33 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 		setupLink: 'https://example.com/reset-password?token=setup',
 		setupTokenExpiresAt: 1_800_000_000_000,
 	}
-	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
-	const env = createAdminTestEnv({
-		users: [
-			{
-				id: 9,
-				username: 'new-user',
-				email: 'new-user@example.com',
+	const { env, post } = setupAdminUsers(
+		[
+			makeUser(9, 'new-user', {
 				email_verified_at: '2026-09-10T00:00:00.000Z',
 				plan: 'free',
-				created_at: '2026-09-10 00:00:00',
-				updated_at: '2026-09-10 00:00:00',
-			},
-		],
-		userRoles: [{ user_id: 9, role_name: 'user' }],
-	})
-	const handler = createAdminUsersApiHandler(env as unknown as Env)
-	async function postCreateUser(body: Record<string, unknown>, search = '') {
-		const href = `https://example.com/admin/users.json${search}`
-		return handler.handler({
-			request: new Request(href, {
-				method: 'POST',
-				headers: {
-					Accept: 'application/json',
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(body),
 			}),
-			params: {},
-			url: new URL(href),
-		} as never)
-	}
-
-	const created = await postCreateUser({
+		],
+		[[9, 'user']],
+	)
+	const createBody = {
 		action: 'create_user',
 		email: 'new-user@example.com',
 		username: 'new-user',
-	})
-	expect(created.status).toBe(200)
-	const createdPayload = await created.json()
-	expect(createdPayload.createdUser).toEqual({
+	}
+	const createdUserPayload = {
 		stableUserId: createdUser.stableUserId,
 		email: createdUser.email,
 		username: createdUser.username,
 		setupLink: createdUser.setupLink,
 		setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
-	})
+	}
+
+	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
+	const created = await post(createBody)
+	expect(created.status).toBe(200)
+	const createdPayload = (await created.json()) as AdminUsersMutationData
+	expect(createdPayload.createdUser).toEqual(createdUserPayload)
 	expect(createdPayload.updatedUser).toEqual(
 		expect.objectContaining({
 			stableUserId: createdUser.stableUserId,
@@ -1312,55 +663,24 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	])
 	expect(createdPayload.createdUserInFilteredList).toBe(true)
 
-	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
-	const roleFiltered = await postCreateUser(
-		{
-			action: 'create_user',
-			email: 'new-user@example.com',
-			username: 'new-user',
-		},
-		'?role=admin',
-	)
-	expect(roleFiltered.status).toBe(200)
-	expect((await roleFiltered.json()).createdUserInFilteredList).toBe(false)
-
-	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
-	const searchFiltered = await postCreateUser(
-		{
-			action: 'create_user',
-			email: 'new-user@example.com',
-			username: 'new-user',
-		},
-		'?q=nobody-matches',
-	)
-	expect(searchFiltered.status).toBe(200)
-	expect((await searchFiltered.json()).createdUserInFilteredList).toBe(false)
-
-	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
-	const searchMatch = await postCreateUser(
-		{
-			action: 'create_user',
-			email: 'new-user@example.com',
-			username: 'new-user',
-		},
-		'?q=new-user',
-	)
-	expect(searchMatch.status).toBe(200)
-	expect((await searchMatch.json()).createdUserInFilteredList).toBe(true)
-
-	mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(createdUser)
-	const verificationFiltered = await postCreateUser(
-		{
-			action: 'create_user',
-			email: 'new-user@example.com',
-			username: 'new-user',
-		},
-		'?verification=stalled',
-	)
-	expect(verificationFiltered.status).toBe(200)
-	expect((await verificationFiltered.json()).createdUserInFilteredList).toBe(
-		false,
-	)
+	const filterCases: Array<[string, boolean]> = [
+		['?role=admin', false],
+		['?q=nobody-matches', false],
+		['?q=new-user', true],
+		['?verification=stalled', false],
+	]
+	for (const [search, inList] of filterCases) {
+		mockModule.adminCreateUserWithPasswordSetup.mockResolvedValueOnce(
+			createdUser,
+		)
+		const response = await post(createBody, search)
+		expect(response.status).toBe(200)
+		const payload = (await response.json()) as AdminUsersMutationData
+		expect([search, payload.createdUserInFilteredList]).toEqual([
+			search,
+			inList,
+		])
+	}
 	expect(mockModule.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env,
 		user: {
@@ -1370,18 +690,15 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 		},
 		source: 'admin',
 	})
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'admin',
-			action: 'create_user',
-			result: 'success',
-		}),
-	)
+	expectAdminAudit('create_user')
 
 	mockModule.adminCreateUserWithPasswordSetup.mockRejectedValueOnce(
-		new AdminCreateUserError('email_exists', 'That email is already in use.'),
+		new AdminUserCreation.AdminCreateUserError(
+			'email_exists',
+			'That email is already in use.',
+		),
 	)
-	const duplicate = await postCreateUser({
+	const duplicate = await post({
 		action: 'create_user',
 		email: 'new-user@example.com',
 	})
@@ -1398,22 +715,17 @@ test('create_user action returns setup link, logs audit, maps duplicate email to
 	}
 	consoleWarn.mockImplementation(() => {})
 	try {
-		const refreshFailed = await postCreateUser({
+		const refreshFailed = await post({
 			action: 'create_user',
 			email: 'refresh-fail@example.com',
 			username: 'refresh-fail',
 		})
 		expect(refreshFailed.status).toBe(200)
-		const refreshFailedPayload = await refreshFailed.json()
+		const refreshFailedPayload =
+			(await refreshFailed.json()) as AdminUsersMutationData
 		expect(refreshFailedPayload.ok).toBe(true)
 		expect(refreshFailedPayload.listRefreshFailed).toBe(true)
-		expect(refreshFailedPayload.createdUser).toEqual({
-			stableUserId: createdUser.stableUserId,
-			email: createdUser.email,
-			username: createdUser.username,
-			setupLink: createdUser.setupLink,
-			setupTokenExpiresAt: createdUser.setupTokenExpiresAt,
-		})
+		expect(refreshFailedPayload.createdUser).toEqual(createdUserPayload)
 		expect(refreshFailedPayload.updatedUser).toEqual(
 			expect.objectContaining({
 				stableUserId: createdUser.stableUserId,

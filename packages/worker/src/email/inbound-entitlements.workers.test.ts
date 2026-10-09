@@ -9,7 +9,6 @@ import {
 } from '#universal/plans.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { UserMeter } from '#worker/entitlements/user-meter-do.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
@@ -20,10 +19,14 @@ import { stubFor } from './mailbox-test-helpers.ts'
 import { maxDetailedEmailRejectionEventsPerDay } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-async function seedAccount(username: string, plan: PlanName) {
+const appBaseUrl = 'https://kody.example.com'
+
+async function seedAccount(label: string, plan: PlanName) {
+	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
 	const email = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan
@@ -31,19 +34,10 @@ async function seedAccount(username: string, plan: PlanName) {
 	)
 		.bind(username, email, new Date().toISOString(), userId, plan)
 		.run()
-	return {
-		address: `${username}@inbox.kody.example.com`,
-		email,
-		userId,
-	}
+	return { address: `${username}@inbox.kody.example.com`, userId }
 }
 
-async function seedFreeAccount(username: string) {
-	return (await seedAccount(username, 'free')).userId
-}
-
-function messageFor(username: string) {
-	const address = `${username}@inbox.kody.example.com`
+function messageFor(address: string) {
 	return createForwardableEmailMessage({
 		from: 'sender@example.net',
 		to: address,
@@ -151,35 +145,50 @@ function captureD1Sql(db: D1Database) {
 	}
 }
 
-test('inbound receive quota rejects through Mailbox without a USER D1 graph write', async () => {
+test('daily receive caps reject through the Mailbox audit path, bounding detail but not the aggregate', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const username = `quota-${crypto.randomUUID().slice(0, 8)}`
-	const userId = await seedFreeAccount(username)
-	const limit = planLimits.free.maxEmailReceivesPerDay
-	if (limit === null) throw new Error('Expected a free receive limit.')
-	await seedReceiveCount(userId, limit)
-
-	const message = messageFor(username)
-	await handleInboundEmail(message, {
-		...env,
-		APP_BASE_URL: 'https://kody.example.com',
-	})
-	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	const mailbox = mailboxRpc({ env, userId })
-	expect(await mailbox.listMessages({ limit: 10 })).toMatchObject({
-		messages: [],
-	})
-	const rejection = (await mailbox.listDeliveryEvents({ limit: 10 })).find(
-		(event) =>
-			event.eventType === 'rejected' &&
-			!event.detailJson.includes('"aggregate":true'),
-	)
-	expect(rejection).toBeDefined()
-	expect(JSON.parse(rejection!.detailJson)).toMatchObject({
-		reason: `Daily receive cap ${limit} reached.`,
-		phase: 'entitlement',
-	})
+	const freeLimit = planLimits.free.maxEmailReceivesPerDay
+	if (freeLimit === null) throw new Error('Expected a free receive limit.')
+	const plans = [
+		{
+			plan: 'free',
+			limit: freeLimit,
+			attempts: maxDetailedEmailRejectionEventsPerDay + 3,
+		},
+		{
+			plan: 'max',
+			limit: maxPlanEmailLimits.email_receives_per_day,
+			attempts: 1,
+		},
+	] as const
+	for (const { plan, limit, attempts } of plans) {
+		const account = await seedAccount(`quota-${plan}`, plan)
+		await seedReceiveCount(account.userId, limit)
+		for (let index = 0; index < attempts; index += 1) {
+			const message = messageFor(account.address)
+			await handleInboundEmail(message, { ...env, APP_BASE_URL: appBaseUrl })
+			expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+		}
+		expect(
+			await mailboxRpc({ env, userId: account.userId }).listMessages({
+				limit: 10,
+			}),
+		).toMatchObject({ messages: [] })
+		const rejections = await readRejections(account.userId)
+		expect(rejections.detailed).toHaveLength(
+			Math.min(attempts, maxDetailedEmailRejectionEventsPerDay),
+		)
+		expect(rejections.detailed[0]).toMatchObject({
+			reason: `Daily receive cap ${limit} reached.`,
+			phase: 'entitlement',
+		})
+		expect(rejections.aggregate).toMatchObject({
+			aggregate: true,
+			count: attempts,
+			last_phase: 'entitlement',
+		})
+	}
 
 	const legacyTables = await env.APP_DB.prepare(
 		`SELECT name FROM sqlite_schema
@@ -188,61 +197,62 @@ test('inbound receive quota rejects through Mailbox without a USER D1 graph writ
 		)`,
 	).all()
 	expect(legacyTables.results).toEqual([])
-}, 30_000)
+}, 60_000)
 
 test('free-plan Mailbox count, storage, and size limits reject before charge while under-quota stores', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
 	const captured = captureD1Sql(env.APP_DB)
-	const inboundEnv = {
-		...env,
-		APP_DB: captured.db,
-		APP_BASE_URL: 'https://kody.example.com',
+	const inboundEnv = { ...env, APP_DB: captured.db, APP_BASE_URL: appBaseUrl }
+
+	const overLimits: Array<{
+		label: string
+		phase: string
+		prepare: (userId: string, message: ForwardableEmailMessage) => Promise<void>
+	}> = [
+		{
+			label: 'count-cap',
+			phase: 'entitlement',
+			prepare: (userId) =>
+				seedStoredMailboxMessages(
+					userId,
+					planLimits.free.maxStoredEmailMessages,
+				),
+		},
+		{
+			label: 'storage-cap',
+			phase: 'entitlement',
+			prepare: async (userId) => {
+				await userMeterRpc({ env, userId }).setStorageBytes({
+					bytes: planLimits.free.maxStorageBytes,
+					updatedAt: new Date().toISOString(),
+				})
+			},
+		},
+		{
+			label: 'size-cap',
+			phase: 'size',
+			prepare: async (_userId, message) => {
+				Object.defineProperty(message, 'rawSize', {
+					value: maxSurvivableInboundRawBytes + 1,
+				})
+			},
+		},
+	]
+	for (const { label, phase, prepare } of overLimits) {
+		const account = await seedAccount(label, 'free')
+		const message = messageFor(account.address)
+		await prepare(account.userId, message)
+		await handleInboundEmail(message, inboundEnv)
+		expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
+		expect(await readReceiveCount(account.userId)).toBe(0)
+		expect((await readRejections(account.userId)).detailed[0]).toMatchObject({
+			phase,
+		})
 	}
 
-	const countUsername = `count-cap-${crypto.randomUUID().slice(0, 8)}`
-	const countAccount = await seedAccount(countUsername, 'free')
-	await seedStoredMailboxMessages(
-		countAccount.userId,
-		planLimits.free.maxStoredEmailMessages,
-	)
-	const countMessage = messageFor(countUsername)
-	await handleInboundEmail(countMessage, inboundEnv)
-	expect(countMessage.rejectedReason).toBe('Recipient mailbox is over quota.')
-	expect(await readReceiveCount(countAccount.userId)).toBe(0)
-	expect((await readRejections(countAccount.userId)).detailed[0]).toMatchObject(
-		{
-			phase: 'entitlement',
-		},
-	)
-
-	const storageUsername = `storage-cap-${crypto.randomUUID().slice(0, 8)}`
-	const storageAccount = await seedAccount(storageUsername, 'free')
-	await userMeterRpc({ env, userId: storageAccount.userId }).setStorageBytes({
-		bytes: planLimits.free.maxStorageBytes,
-		updatedAt: new Date().toISOString(),
-	})
-	const storageMessage = messageFor(storageUsername)
-	await handleInboundEmail(storageMessage, inboundEnv)
-	expect(storageMessage.rejectedReason).toBe('Recipient mailbox is over quota.')
-	expect(await readReceiveCount(storageAccount.userId)).toBe(0)
-
-	const sizeUsername = `size-cap-${crypto.randomUUID().slice(0, 8)}`
-	const sizeAccount = await seedAccount(sizeUsername, 'free')
-	const sizeMessage = messageFor(sizeUsername)
-	Object.defineProperty(sizeMessage, 'rawSize', {
-		value: maxSurvivableInboundRawBytes + 1,
-	})
-	await handleInboundEmail(sizeMessage, inboundEnv)
-	expect(sizeMessage.rejectedReason).toBe('Recipient mailbox is over quota.')
-	expect(await readReceiveCount(sizeAccount.userId)).toBe(0)
-	expect((await readRejections(sizeAccount.userId)).detailed[0]).toMatchObject({
-		phase: 'size',
-	})
-
-	const acceptedUsername = `under-cap-${crypto.randomUUID().slice(0, 8)}`
-	const acceptedAccount = await seedAccount(acceptedUsername, 'free')
-	const accepted = messageFor(acceptedUsername)
+	const acceptedAccount = await seedAccount('under-cap', 'free')
+	const accepted = messageFor(acceptedAccount.address)
 	await handleInboundEmail(accepted, inboundEnv)
 	expect(accepted.rejectedReason).toBeNull()
 	expect(
@@ -258,60 +268,11 @@ test('free-plan Mailbox count, storage, and size limits reject before charge whi
 	)
 }, 60_000)
 
-test('max-plan receive backstop rejects through the Mailbox audit path', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const username = `max-backstop-${crypto.randomUUID().slice(0, 8)}`
-	const account = await seedAccount(username, 'max')
-	await seedReceiveCount(
-		account.userId,
-		maxPlanEmailLimits.email_receives_per_day,
-	)
-	const message = messageFor(username)
-	await handleInboundEmail(message, {
-		...env,
-		APP_BASE_URL: 'https://kody.example.com',
-	})
-	expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	expect((await readRejections(account.userId)).detailed[0]).toMatchObject({
-		phase: 'entitlement',
-	})
-})
-
-test('Mailbox rejection audit bounds detail while preserving the aggregate count', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const username = `rejection-bound-${crypto.randomUUID().slice(0, 8)}`
-	const account = await seedAccount(username, 'free')
-	await seedReceiveCount(account.userId, planLimits.free.maxEmailReceivesPerDay)
-	const attempts = maxDetailedEmailRejectionEventsPerDay + 3
-	for (let index = 0; index < attempts; index += 1) {
-		const message = messageFor(username)
-		await handleInboundEmail(message, {
-			...env,
-			APP_BASE_URL: 'https://kody.example.com',
-		})
-		expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
-	}
-	const rejections = await readRejections(account.userId)
-	expect(rejections.detailed).toHaveLength(
-		maxDetailedEmailRejectionEventsPerDay,
-	)
-	expect(rejections.aggregate).toMatchObject({
-		aggregate: true,
-		count: attempts,
-		last_phase: 'entitlement',
-	})
-}, 60_000)
-
 test('UserMeter inbound claim and consume roll back together on claim insert failure', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const account = await seedAccount(
-		`meter-atomic-${crypto.randomUUID().slice(0, 8)}`,
-		'free',
-	)
+	const account = await seedAccount('meter-atomic', 'free')
 	// Use "today" so read()'s default wall-clock retention sweep does not
-	// delete the seeded counter (7-day window).
+	// delete the seeded counter (14-day window).
 	const now = new Date()
 	const day = utcDayKey(now)
 	const updatedAt = now.toISOString()

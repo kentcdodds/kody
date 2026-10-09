@@ -55,7 +55,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 
 		await page.getByLabel('Username').fill(username)
 		await page.getByLabel('Email').fill(email)
-		await page.getByLabel('Password').fill(password)
+		await page.getByLabel('Password', { exact: true }).fill(password)
 		await page.getByRole('button', { name: 'Create account' }).click()
 
 		await expect(page).toHaveURL(
@@ -93,10 +93,10 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		const mcpBeforeVerify = await postUnauthenticatedMcpInitialize(origin)
 		expect(mcpBeforeVerify.status).toBe(401)
 		expect(mcpBeforeVerify.headers.get('www-authenticate') ?? '').toMatch(
-			/resource_metadata="[^"]*\/.well-known\/oauth-protected-resource"/,
+			/resource_metadata="[^"]*\/.well-known\/oauth-protected-resource\/mcp"/,
 		)
 
-		let verificationEmail: MockEmailMessage | null = null
+		let verificationEmail = null as MockEmailMessage | null
 		await expect
 			.poll(
 				async () => {
@@ -180,7 +180,7 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			/^Bearer\s+/,
 		)
 		expect(mcpAfterVerify.headers.get('www-authenticate') ?? '').toContain(
-			`${origin}/.well-known/oauth-protected-resource`,
+			`${origin}/.well-known/oauth-protected-resource/mcp`,
 		)
 	} finally {
 		deleteUserInE2eDatabase(email)

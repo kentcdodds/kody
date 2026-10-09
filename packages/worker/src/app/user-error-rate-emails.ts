@@ -2,7 +2,7 @@ import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildUserErrorRateEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import { kodyIssueTriageListingPath } from '#universal/community-links.ts'
+import { routes } from '#universal/routes.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
@@ -130,14 +130,14 @@ async function sendOneUserErrorRateEmail(input: {
 		'/account/activity',
 		input.emailConfig.appBaseUrl,
 	).toString()
-	const triagePackageUrl = new URL(
-		kodyIssueTriageListingPath,
+	const supportUrl = new URL(
+		routes.support.href(),
 		input.emailConfig.appBaseUrl,
 	).toString()
 	const email = buildUserErrorRateEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
 		activityUrl,
-		triagePackageUrl,
+		supportUrl,
 		errorCount: input.user.error_count,
 		eventCount: input.user.event_count,
 	})

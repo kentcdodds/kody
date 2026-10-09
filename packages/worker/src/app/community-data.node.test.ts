@@ -1,11 +1,14 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	emptyCommunityCategoryCounts,
 	type CommunityCategoryCounts,
 } from '#universal/community-categories.ts'
+import type * as forkListingRelation from '#worker/community/fork-listing-relation.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import { onboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
-import { resetDataCacheForTests } from './data-cache.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
+import { invalidateCommunityPublicCache } from './data-cache.ts'
 import {
 	loadCommunityDetailData,
 	loadCommunityIndexData,
@@ -26,72 +29,61 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	resolveCachedArtifactSourceHead: vi.fn(),
-	listSavedPackagesByKodyIds: vi.fn(),
+	listSavedPackagesBySlugs: vi.fn(),
 	listSavedPackagesByIds: vi.fn(),
 	getMcpUserPackageScope: vi.fn(),
 	getUserSocialRowByUsername: vi.fn(),
-	resolveListingPinAncestry: vi.fn(async () => null),
+	resolveListingPinAncestry: vi.fn<
+		typeof forkListingRelation.resolveListingPinAncestry
+	>(async () => null),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: mockModule.readAuthenticatedAppUser,
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
-	listCommunityIndexOverview: (...args: Array<unknown>) =>
-		mockModule.listCommunityIndexOverview(...args),
-	getCommunityCategoryCounts: (...args: Array<unknown>) =>
-		mockModule.getCommunityCategoryCounts(...args),
-	listCommunityListingsWithAggregates: (...args: Array<unknown>) =>
-		mockModule.listCommunityListingsWithAggregates(...args),
-	searchCommunityListings: (...args: Array<unknown>) =>
-		mockModule.searchCommunityListings(...args),
-	listFeaturedCommunityListingsWithAggregates: (...args: Array<unknown>) =>
-		mockModule.listFeaturedCommunityListingsWithAggregates(...args),
-	getCommunityListingWithAggregates: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingWithAggregates(...args),
-	getCommunityListingsByIds: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingsByIds(...args),
+	listCommunityIndexOverview: mockModule.listCommunityIndexOverview,
+	getCommunityCategoryCounts: mockModule.getCommunityCategoryCounts,
+	listCommunityListingsWithAggregates:
+		mockModule.listCommunityListingsWithAggregates,
+	searchCommunityListings: mockModule.searchCommunityListings,
+	listFeaturedCommunityListingsWithAggregates:
+		mockModule.listFeaturedCommunityListingsWithAggregates,
+	getCommunityListingWithAggregates:
+		mockModule.getCommunityListingWithAggregates,
+	getCommunityListingsByIds: mockModule.getCommunityListingsByIds,
 }))
 
 vi.mock('#worker/community/repo.ts', () => ({
-	getCommunityListingById: (...args: Array<unknown>) =>
-		mockModule.getCommunityListingById(...args),
-	listCommunityForksByListingIdsAndUser: (...args: Array<unknown>) =>
-		mockModule.listCommunityForksByListingIdsAndUser(...args),
+	getCommunityListingById: mockModule.getCommunityListingById,
+	listCommunityForksByListingIdsAndUser:
+		mockModule.listCommunityForksByListingIdsAndUser,
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: mockModule.getEntitySourceById,
 }))
 
 vi.mock('#worker/repo/artifact-head-cache.ts', () => ({
-	resolveCachedArtifactSourceHead: (...args: Array<unknown>) =>
-		mockModule.resolveCachedArtifactSourceHead(...args),
+	resolveCachedArtifactSourceHead: mockModule.resolveCachedArtifactSourceHead,
 }))
 
 vi.mock('#worker/community/profile-repo.ts', () => ({
-	getUserSocialRowByUsername: (...args: Array<unknown>) =>
-		mockModule.getUserSocialRowByUsername(...args),
+	getUserSocialRowByUsername: mockModule.getUserSocialRowByUsername,
 }))
 
 vi.mock('#worker/community/fork-listing-relation.ts', () => ({
-	resolveListingPinAncestry: (...args: Array<unknown>) =>
-		mockModule.resolveListingPinAncestry(...args),
+	resolveListingPinAncestry: mockModule.resolveListingPinAncestry,
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByKodyIds: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByKodyIds(...args),
-	listSavedPackagesByIds: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByIds(...args),
+	listSavedPackagesBySlugs: mockModule.listSavedPackagesBySlugs,
+	listSavedPackagesByIds: mockModule.listSavedPackagesByIds,
 }))
 
 vi.mock('#worker/package-registry/user-scope.ts', () => ({
-	getMcpUserPackageScope: (...args: Array<unknown>) =>
-		mockModule.getMcpUserPackageScope(...args),
+	getMcpUserPackageScope: mockModule.getMcpUserPackageScope,
 }))
 
 const sampleListing = {
@@ -124,6 +116,24 @@ const sampleListing = {
 	forkCount: 1,
 } satisfies CommunityListingWithAggregates
 
+const viewerGithubPackage = {
+	id: 'pkg-github',
+	kodyId: 'github',
+	name: '@burhan/github',
+	sourceId: 'src-github',
+}
+
+function viewerFork(overrides: Record<string, unknown> = {}) {
+	return {
+		listingId: 'listing-github',
+		targetKodyId: 'github',
+		forkedPackageId: 'pkg-github',
+		forkedSourceId: 'src-github',
+		createdAt: '2026-08-01T00:00:00.000Z',
+		...overrides,
+	}
+}
+
 function categoryCounts(
 	overrides: Partial<CommunityCategoryCounts> = {},
 ): CommunityCategoryCounts {
@@ -133,13 +143,7 @@ function categoryCounts(
 function sampleOverview(listing = sampleListing) {
 	return {
 		listings: [listing],
-		groups: [
-			{
-				category: listing.category,
-				listings: [listing],
-				total: 1,
-			},
-		],
+		groups: [{ category: listing.category, listings: [listing], total: 1 }],
 		categoryCounts: categoryCounts({ [listing.category]: 1 }),
 	}
 }
@@ -147,31 +151,40 @@ function sampleOverview(listing = sampleListing) {
 function signedInUser() {
 	return {
 		mcpUser: { userId: 'viewer-1', username: 'burhan' },
+		request: sessionRequestContext('viewer-1', 'burhan'),
 		roles: [],
 	}
 }
 
-test('community index overlays matching kody_id installs for signed-in viewers', async () => {
-	resetDataCacheForTests()
-	mockModule.listSavedPackagesByKodyIds.mockReset()
+const request = (path: string) => new Request(`https://example.com${path}`)
+
+test('community index overlays fork installs and ignores same-leaf packages without a fork', async () => {
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
-		{
-			id: 'pkg-github',
-			kodyId: 'github',
-			name: '@burhan/github',
-			sourceId: 'src-github',
-		},
-	])
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([viewerGithubPackage])
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 
-	const data = await loadCommunityIndexData(
+	const sameLeafOnly = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community'),
+		request('/community'),
 	)
+	expect(sameLeafOnly.listings).toHaveLength(1)
+	expect(sameLeafOnly.listings[0]?.viewerInstall).toBeUndefined()
+
+	invalidateCommunityPublicCache()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
+	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
+	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
+	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
+		viewerFork(),
+	])
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([viewerGithubPackage])
+	mockModule.listSavedPackagesByIds.mockResolvedValue([])
+
+	const data = await loadCommunityIndexData({} as Env, request('/community'))
 	expect(data.listings).toHaveLength(1)
 	expect(data.listings[0]?.viewerInstall).toEqual(
 		expect.objectContaining({
@@ -180,7 +193,7 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 			packageId: 'pkg-github',
 		}),
 	)
-	expect(mockModule.listSavedPackagesByKodyIds).toHaveBeenCalledWith(
+	expect(mockModule.listSavedPackagesBySlugs).toHaveBeenCalledWith(
 		undefined,
 		expect.objectContaining({ userId: 'viewer-1' }),
 	)
@@ -190,31 +203,49 @@ test('community index overlays matching kody_id installs for signed-in viewers',
 	)
 })
 
+test('community index resolves the viewer while listings are still loading', async () => {
+	invalidateCommunityPublicCache()
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
+	let releaseOverview!: () => void
+	const overviewGate = new Promise<void>((resolve) => {
+		releaseOverview = resolve
+	})
+	mockModule.listCommunityIndexOverview.mockImplementation(async () => {
+		await overviewGate
+		return sampleOverview()
+	})
+
+	const loading = loadCommunityIndexData(
+		{} as Env,
+		request('/community?viewer-overlap'),
+	)
+	await vi.waitFor(() => {
+		expect(mockModule.readAuthenticatedAppUser).toHaveBeenCalledTimes(1)
+	})
+	releaseOverview()
+	expect((await loading).listings).toHaveLength(1)
+})
+
 test('onboarding MCP chooser listings load official packages by pinned id', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	const pinnedIds = onboardingFeaturedMcpServers
 		.map((server) => server.listingId)
 		.filter((id) => id.length > 0)
-	const visibleListing = {
-		...sampleListing,
+	const visible = {
 		id: onboardingFeaturedMcpServers[0].listingId,
 		kodyId: 'notion-mcp',
 		name: '@kody/notion-mcp',
 	}
-	mockModule.getCommunityListingsByIds.mockResolvedValue([visibleListing])
+	mockModule.getCommunityListingsByIds.mockResolvedValue([
+		{ ...sampleListing, ...visible },
+	])
 
 	const listings = await loadOnboardingMcpChooserListings(
 		{} as Env,
-		new Request('https://example.com/onboarding'),
+		request('/onboarding'),
 	)
-	expect(listings).toEqual([
-		expect.objectContaining({
-			id: onboardingFeaturedMcpServers[0].listingId,
-			kodyId: 'notion-mcp',
-			name: '@kody/notion-mcp',
-		}),
-	])
+	expect(listings).toEqual([expect.objectContaining(visible)])
 	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledTimes(1)
 	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledWith(
 		undefined,
@@ -224,34 +255,28 @@ test('onboarding MCP chooser listings load official packages by pinned id', asyn
 
 	const cached = await loadOnboardingMcpChooserListings(
 		{} as Env,
-		new Request('https://example.com/onboarding'),
+		request('/onboarding'),
 	)
 	expect(cached).toEqual(listings)
 	expect(mockModule.getCommunityListingsByIds).toHaveBeenCalledTimes(1)
 })
 
 test('onboarding featured listings overlay inert forks as adaptation_required', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listFeaturedCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
 	])
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
-		{
-			listingId: 'listing-github',
-			targetKodyId: 'github',
-			forkedPackageId: 'pkg-inert',
-			forkedSourceId: 'src-inert',
-			createdAt: '2026-08-01T00:00:00.000Z',
-		},
+		viewerFork({ forkedPackageId: 'pkg-inert', forkedSourceId: 'src-inert' }),
 	])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([])
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 
 	const listings = await loadOnboardingFeaturedListings(
 		{} as Env,
-		new Request('https://example.com/onboarding'),
+		request('/onboarding'),
 	)
 	expect(listings).toHaveLength(1)
 	expect(listings[0]?.viewerInstall).toEqual(
@@ -264,7 +289,7 @@ test('onboarding featured listings overlay inert forks as adaptation_required', 
 })
 
 test('community detail overlays viewerInstall for forked listings and omits it when not forked', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
 	mockModule.getEntitySourceById.mockResolvedValue(null)
@@ -274,41 +299,21 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 	})
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
-
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(signedInUser())
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
-	const notForked = await loadCommunityDetailData(
-		{} as Env,
-		new Request('https://example.com/community/listing-github'),
-		'listing-github',
-	)
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([])
+	const loadDetail = (path: string) =>
+		loadCommunityDetailData({} as Env, request(path), 'listing-github')
+
+	const notForked = await loadDetail('/community/listing-github')
 	expect(notForked?.viewerInstall).toBeNull()
 
-	resetDataCacheForTests()
-	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
+	invalidateCommunityPublicCache()
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
-		{
-			listingId: 'listing-github',
-			targetKodyId: 'github',
-			forkedPackageId: 'pkg-github',
-			forkedSourceId: 'src-github',
-			createdAt: '2026-08-01T00:00:00.000Z',
-		},
+		viewerFork(),
 	])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
-		{
-			id: 'pkg-github',
-			kodyId: 'github',
-			name: '@burhan/github',
-			sourceId: 'src-github',
-		},
-	])
-	const forked = await loadCommunityDetailData(
-		{} as Env,
-		new Request('https://example.com/community/listing-github-forked'),
-		'listing-github',
-	)
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([viewerGithubPackage])
+	const forked = await loadDetail('/community/listing-github-forked')
 	expect(forked?.viewerInstall).toEqual(
 		expect.objectContaining({
 			status: 'installed',
@@ -316,38 +321,21 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 			packageId: 'pkg-github',
 		}),
 	)
-	expect(forked?.listing.viewerInstall?.status).toBe('installed')
+	const forkedListing = forked?.listing
+	if (!forkedListing) throw new Error('Expected forked listing detail')
+	expect(forkedListing.viewerInstall?.status).toBe('installed')
 	expect(forked?.viewerInstall?.listingAhead).toBe(false)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
 		...sampleListing,
 		pinnedCommit: 'commit-new',
 	})
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
-		{
-			listingId: 'listing-github',
-			targetKodyId: 'github',
-			forkedPackageId: 'pkg-github',
-			forkedSourceId: 'src-github',
-			createdAt: '2026-08-01T00:00:00.000Z',
-			originCommit: 'abc1234567890',
-		},
-	])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([
-		{
-			id: 'pkg-github',
-			kodyId: 'github',
-			name: '@burhan/github',
-			sourceId: 'src-github',
-		},
+		viewerFork({ originCommit: 'abc1234567890' }),
 	])
 	mockModule.resolveListingPinAncestry.mockResolvedValueOnce(false)
-	const outdated = await loadCommunityDetailData(
-		{} as Env,
-		new Request('https://example.com/community/listing-github-ahead'),
-		'listing-github',
-	)
+	const outdated = await loadDetail('/community/listing-github-ahead')
 	expect(outdated?.viewerInstall).toEqual(
 		expect.objectContaining({
 			status: 'installed',
@@ -355,32 +343,18 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 			forkAhead: false,
 		}),
 	)
-	expect(typeof outdated?.viewerInstall?.listingAheadPrompt).toBe('string')
-	expect(
-		outdated?.viewerInstall?.listingAheadPrompt?.length ?? 0,
-	).toBeGreaterThan(0)
+	expect(outdated?.viewerInstall?.listingAheadPrompt).toMatch(/\S/)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue({
 		...sampleListing,
 		pinnedCommit: 'commit-pin',
 	})
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([
-		{
-			listingId: 'listing-github',
-			targetKodyId: 'github',
-			forkedPackageId: 'pkg-github',
-			forkedSourceId: 'src-github',
-			createdAt: '2026-08-01T00:00:00.000Z',
-			originCommit: 'commit-tip',
-		},
+		viewerFork({ originCommit: 'commit-tip' }),
 	])
 	mockModule.resolveListingPinAncestry.mockResolvedValueOnce(true)
-	const forkAhead = await loadCommunityDetailData(
-		{} as Env,
-		new Request('https://example.com/community/listing-github-fork-ahead'),
-		'listing-github',
-	)
+	const forkAhead = await loadDetail('/community/listing-github-fork-ahead')
 	expect(forkAhead?.viewerInstall).toEqual(
 		expect.objectContaining({
 			status: 'installed',
@@ -400,7 +374,7 @@ test('community detail overlays viewerInstall for forked listings and omits it w
 })
 
 test('sourceAhead compares HEAD to the runtime pin, not the community catalog snapshot', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.getCommunityListingWithAggregates.mockResolvedValue(sampleListing)
 	mockModule.getCommunityListingById.mockResolvedValue(sampleListing)
@@ -409,7 +383,7 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 		stable_user_id: 'owner-mcp-id',
 	})
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue([])
-	mockModule.listSavedPackagesByKodyIds.mockResolvedValue([])
+	mockModule.listSavedPackagesBySlugs.mockResolvedValue([])
 	mockModule.listSavedPackagesByIds.mockResolvedValue([])
 	mockModule.getMcpUserPackageScope.mockResolvedValue('viewer')
 	const runtimePin = 'cccccccccccccccccccccccccccccccccccccccc'
@@ -425,35 +399,35 @@ test('sourceAhead compares HEAD to the runtime pin, not the community catalog sn
 
 	const published = await loadCommunityDetailData(
 		{} as Env,
-		new Request('https://example.com/community/listing-github-published'),
+		request('/community/listing-github-published'),
 		'listing-github',
 	)
-	expect(published?.listing.sourceAhead).toBeUndefined()
-	expect(published?.listing.headCommit).toBeUndefined()
-	expect(published?.listing.pinnedCommit).toBe(sampleListing.pinnedCommit)
-	expect(published?.listing.pinnedCommit).not.toBe(runtimePin)
+	const publishedListing = published?.listing
+	if (!publishedListing) throw new Error('Expected published listing detail')
+	expect(publishedListing.sourceAhead).toBeUndefined()
+	expect(publishedListing.headCommit).toBeUndefined()
+	expect(publishedListing.pinnedCommit).toBe(sampleListing.pinnedCommit)
+	expect(publishedListing.pinnedCommit).not.toBe(runtimePin)
 
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.resolveCachedArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: unpublishedHead,
 	})
 	const aheadOfRuntime = await loadCommunityDetailData(
 		{} as Env,
-		new Request('https://example.com/community/listing-github-runtime-ahead'),
+		request('/community/listing-github-runtime-ahead'),
 		'listing-github',
 	)
-	expect(aheadOfRuntime?.listing.sourceAhead).toBe(true)
-	expect(aheadOfRuntime?.listing.headCommit).toBe(unpublishedHead)
+	const aheadListing = aheadOfRuntime?.listing
+	if (!aheadListing) throw new Error('Expected runtime-ahead listing detail')
+	expect(aheadListing.sourceAhead).toBe(true)
+	expect(aheadListing.headCommit).toBe(unpublishedHead)
 })
 
 test('community index is memoized per request and forwards newest sort to loaders', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	mockModule.listCommunityIndexOverview.mockReset()
-	mockModule.listCommunityListingsWithAggregates.mockReset()
-	mockModule.searchCommunityListings.mockReset()
-	mockModule.getCommunityCategoryCounts.mockReset()
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 	mockModule.listCommunityListingsWithAggregates.mockResolvedValue([
 		sampleListing,
@@ -463,23 +437,24 @@ test('community index is memoized per request and forwards newest sort to loader
 		categoryCounts({ integrations: 12, examples: 3 }),
 	)
 
-	const request = new Request('https://example.com/community')
-	const first = loadCommunityIndexData({} as Env, request)
-	const second = loadCommunityIndexData({} as Env, request)
+	const sameRequest = request('/community')
+	const first = loadCommunityIndexData({} as Env, sameRequest)
+	const second = loadCommunityIndexData({} as Env, sameRequest)
 	expect(second).toBe(first)
-	expect((await first).listings).toHaveLength(1)
-	expect((await first).category).toBeNull()
-	expect((await first).groups?.[0]?.category).toBe('integrations')
-	expect((await first).categoryCounts.integrations).toBe(1)
-	expect((await first).categoryCounts.utilities).toBe(0)
-	expect(await second).toBe(await first)
+	const firstData = await first
+	expect(firstData.listings).toHaveLength(1)
+	expect(firstData.category).toBeNull()
+	expect(firstData.groups?.[0]?.category).toBe('integrations')
+	expect(firstData.categoryCounts.integrations).toBe(1)
+	expect(firstData.categoryCounts.utilities).toBe(0)
+	expect(await second).toBe(firstData)
 	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledTimes(1)
-	expect((await first).sort).toBe('best')
+	expect(firstData.sort).toBe('best')
 
 	mockModule.listCommunityIndexOverview.mockClear()
 	const newestBrowse = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community?sort=newest'),
+		request('/community?sort=newest'),
 	)
 	expect(newestBrowse.sort).toBe('newest')
 	expect(mockModule.listCommunityIndexOverview).toHaveBeenCalledWith({
@@ -489,12 +464,14 @@ test('community index is memoized per request and forwards newest sort to loader
 
 	const newestSearch = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community?q=github&sort=newest'),
+		request('/community?q=github&sort=newest'),
 	)
-	expect(newestSearch.sort).toBe('newest')
-	expect(newestSearch.query).toBe('github')
-	expect(newestSearch.category).toBeNull()
-	expect(newestSearch.groups).toBeNull()
+	expect(newestSearch).toMatchObject({
+		sort: 'newest',
+		query: 'github',
+		category: null,
+		groups: null,
+	})
 	expect(newestSearch.categoryCounts.examples).toBe(3)
 	expect(mockModule.searchCommunityListings).toHaveBeenCalledWith({
 		env: {},
@@ -510,7 +487,7 @@ test('community index is memoized per request and forwards newest sort to loader
 	mockModule.listCommunityListingsWithAggregates.mockClear()
 	const integrationsBrowse = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community?category=integrations'),
+		request('/community?category=integrations'),
 	)
 	expect(integrationsBrowse.category).toBe('integrations')
 	expect(integrationsBrowse.groups).toBeNull()
@@ -525,33 +502,29 @@ test('community index is memoized per request and forwards newest sort to loader
 })
 
 test('community index omits viewerInstall for anonymous viewers and auth failures', async () => {
-	resetDataCacheForTests()
-	mockModule.listSavedPackagesByKodyIds.mockReset()
+	invalidateCommunityPublicCache()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
 	mockModule.listCommunityIndexOverview.mockResolvedValue(sampleOverview())
 
 	const anonymous = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community'),
+		request('/community'),
 	)
 	expect(anonymous.listings[0]?.viewerInstall).toBeUndefined()
-	expect(mockModule.listSavedPackagesByKodyIds).not.toHaveBeenCalled()
+	expect(mockModule.listSavedPackagesBySlugs).not.toHaveBeenCalled()
 
-	mockModule.listSavedPackagesByKodyIds.mockReset()
 	mockModule.readAuthenticatedAppUser.mockRejectedValue(
 		new Error('Missing COOKIE_SECRET for session signing.'),
 	)
-	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-
+	consoleError.mockImplementation(() => {})
 	const failedAuth = await loadCommunityIndexData(
 		{} as Env,
-		new Request('https://example.com/community'),
+		request('/community'),
 	)
 	expect(failedAuth.ok).toBe(true)
 	expect(failedAuth.listings).toHaveLength(1)
 	expect(failedAuth.listings[0]?.id).toBe('listing-github')
 	expect(failedAuth.listings[0]?.viewerInstall).toBeUndefined()
-	expect(mockModule.listSavedPackagesByKodyIds).not.toHaveBeenCalled()
+	expect(mockModule.listSavedPackagesBySlugs).not.toHaveBeenCalled()
 	expect(consoleError).toHaveBeenCalled()
-	consoleError.mockRestore()
 })

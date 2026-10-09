@@ -8,6 +8,7 @@ import {
 	jevSearchNecessityMediumPoolMax,
 	jevSearchNecessitySmallPoolMax,
 	jevSearchNecessityTightScoreGap,
+	jevSearchScoreBudgetMs,
 	jevSearchScoreQuestionBatchSize,
 	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
@@ -26,16 +27,12 @@ function makeCandidate(
 	return {
 		match: {
 			type: 'capability',
-			id: overrides.id,
-			entityRef: `capability:${overrides.id}`,
+			name: overrides.id,
 			title: overrides.title,
 			description: `${overrides.title} description`,
 			domain: 'meta',
-			usage: 'example',
 		},
 		type: 'capability',
-		id: overrides.id,
-		title: overrides.title,
 		searchFields: [overrides.title],
 		scoreComponents: {
 			base: 1,
@@ -90,6 +87,16 @@ function scoreAnswersForQuestions(
 	)
 }
 
+type ScoreBody = { questions: Record<string, unknown> }
+
+function scoreRun(
+	scoreForKey: (key: string) => { score: number; confidence: number },
+) {
+	return vi.fn(async (_model: string, body: ScoreBody, _options?: unknown) => ({
+		answers: scoreAnswersForQuestions(body.questions, scoreForKey),
+	}))
+}
+
 function jevRunBody(run: ReturnType<typeof vi.fn>, callIndex: number) {
 	return run.mock.calls[callIndex]?.[1] as {
 		questions: Record<string, unknown>
@@ -111,6 +118,38 @@ function makeIntent(query: string, confidence: number): SearchIntent {
 	}
 }
 
+const pair = [
+	makeCandidate({ id: 'a', title: 'A' }),
+	makeCandidate({ id: 'b', title: 'B' }),
+]
+const gatewayOptions = {
+	gateway: { id: 'kody' },
+	signal: expect.any(AbortSignal),
+}
+const packagesQuery = {
+	query: 'packages',
+	intent: makeIntent('packages', 0.7),
+}
+const idsOf = (result: { candidates: Array<SearchCandidate> }) =>
+	result.candidates.map((candidate) => candidate.id)
+
+function rerank(
+	run: unknown,
+	overrides: Partial<Parameters<typeof rerankSearchCandidatesWithJev>[0]> = {},
+) {
+	return rerankSearchCandidatesWithJev({
+		env: { AI: { run }, AI_GATEWAY_ID: 'kody' } as unknown as Env,
+		query: 'send email',
+		intent: makeIntent('send email', 0.9),
+		candidates: makeNecessityRunPool(pair),
+		limit: 2,
+		offline: false,
+		enabled: true,
+		planEligible: true,
+		...overrides,
+	})
+}
+
 test('resolveJevSearchRecallLimit widens only when requested', () => {
 	expect(resolveJevSearchRecallLimit({ limit: 15, widerRecall: false })).toBe(
 		15,
@@ -120,94 +159,68 @@ test('resolveJevSearchRecallLimit widens only when requested', () => {
 })
 
 test('selectJevKeptCandidates uses high bar, secondary floor with cluster, or empty', () => {
-	const stub = (id: string, score: number) => ({
-		candidate: makeCandidate({ id, title: id }),
-		score,
-		confidence: 0.9,
+	const select = (scores: Array<[string, number]>) => {
+		const { kept, keepPath } = selectJevKeptCandidates(
+			scores.map(([id, score]) => ({
+				candidate: makeCandidate({ id, title: id }),
+				score,
+				confidence: 0.9,
+			})),
+		)
+		return { keepPath, kept: kept.map((entry) => entry.candidate.id) }
+	}
+
+	expect(
+		select([
+			['strong', 1.5],
+			['also-high', 1.7],
+			['weak', 0.5],
+		]),
+	).toEqual({ keepPath: 'kept-high', kept: ['strong', 'also-high'] })
+	expect(
+		select([
+			['mid-top', 1.2],
+			['mid-near', 1.0],
+			['mid-tail', 0.75],
+			['noise', 0.2],
+		]),
+	).toEqual({
+		keepPath: 'kept-lowered',
+		kept: ['mid-top', 'mid-near', 'mid-tail'],
 	})
-
 	expect(
-		selectJevKeptCandidates([
-			stub('strong', 1.5),
-			stub('also-high', 1.7),
-			stub('weak', 0.5),
-		]).keepPath,
-	).toBe('kept-high')
+		select([
+			['weak', 0.65],
+			['weaker', 0.1],
+		]),
+	).toEqual({ keepPath: 'empty', kept: [] })
 	expect(
-		selectJevKeptCandidates([
-			stub('strong', 1.5),
-			stub('also-high', 1.7),
-			stub('weak', 0.5),
-		]).kept.map((entry) => entry.candidate.id),
-	).toEqual(['strong', 'also-high'])
-
-	const mid = selectJevKeptCandidates([
-		stub('mid-top', 1.2),
-		stub('mid-near', 1.0),
-		stub('mid-tail', 0.75),
-		stub('noise', 0.2),
-	])
-	expect(mid.keepPath).toBe('kept-lowered')
-	expect(mid.kept.map((entry) => entry.candidate.id)).toEqual([
-		'mid-top',
-		'mid-near',
-		'mid-tail',
-	])
-	expect(mid.kept.some((entry) => entry.candidate.id === 'noise')).toBe(false)
-
-	expect(
-		selectJevKeptCandidates([stub('weak', 0.65), stub('weaker', 0.1)]),
-	).toEqual({ kept: [], keepPath: 'empty' })
-
-	const clustered = selectJevKeptCandidates([
-		stub('mid-top', 1.4),
-		stub('near', 0.91),
-		stub('outside-cluster', 0.85),
-	])
-	expect(clustered.keepPath).toBe('kept-lowered')
-	expect(clustered.kept.map((entry) => entry.candidate.id)).toEqual([
-		'mid-top',
-		'near',
-	])
+		select([
+			['mid-top', 1.4],
+			['near', 0.91],
+			['outside-cluster', 0.85],
+		]),
+	).toEqual({ keepPath: 'kept-lowered', kept: ['mid-top', 'near'] })
 })
 
-test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back', async () => {
-	const pair = [
-		makeCandidate({ id: 'a', title: 'A' }),
-		makeCandidate({ id: 'b', title: 'B' }),
-	]
-	const ranked = [
-		makeCandidate({ id: 'noise', title: 'Noise' }),
-		makeCandidate({ id: 'email', title: 'Email' }),
-		makeCandidate({ id: 'weak', title: 'Weak' }),
-	]
-	const intent = makeIntent('send email', 0.9)
-
-	const offline = await rerankSearchCandidatesWithJev({
+test('rerankSearchCandidatesWithJev skips offline or flag-off and applies Score order', async () => {
+	const unusedRun = vi.fn()
+	const offline = await rerank(unusedRun, {
 		env: {} as Env,
-		query: 'send email',
-		intent,
 		candidates: pair,
 		limit: 1,
 		offline: true,
-		enabled: true,
-		planEligible: true,
 	})
 	expect(offline.outcome).toBe('skipped-offline')
 	expect(offline.candidates).toEqual([pair[0]])
 	expect(offline.aiCallCount).toBe(0)
 	expect(offline.usage).toEqual({ inputTokens: null, outputTokens: null })
 
-	const unusedRun = vi.fn()
-	const flagOff = await rerankSearchCandidatesWithJev({
+	const flagOff = await rerank(unusedRun, {
 		env: { AI: { run: unusedRun } } as unknown as Env,
-		query: 'send email',
-		intent,
 		candidates: pair,
 		limit: 1,
-		offline: false,
 		enabled: false,
-		planEligible: true,
 	})
 	expect(flagOff.outcome).toBe('skipped-flag-off')
 	expect(flagOff.candidates).toEqual([pair[0]])
@@ -216,15 +229,11 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 	expect(flagOff.usage).toBeUndefined()
 	expect(unusedRun).not.toHaveBeenCalled()
 
-	const applyRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => ({
-			answers: scoreAnswersForQuestions(body.questions, (key) => {
-				if (key === 'c1') return { score: 2.7, confidence: 0.95 }
-				if (key === 'c0') return { score: 0.2, confidence: 0.9 }
-				return { score: jevSearchMinKeepScore - 0.2, confidence: 0.8 }
-			}),
-		}),
-	)
+	const applyRun = scoreRun((key) => {
+		if (key === 'c1') return { score: 2.7, confidence: 0.95 }
+		if (key === 'c0') return { score: 0.2, confidence: 0.9 }
+		return { score: jevSearchMinKeepScore - 0.2, confidence: 0.8 }
+	})
 	const exportHit = makeCandidate({
 		id: 'home-controls#./bond-area-shades',
 		title: '@kody/home-controls setBondAreaShades',
@@ -243,60 +252,41 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 			actionMatches: [],
 		},
 	})
-	const appliedPool = makeNecessityRunPool([...ranked, exportHit])
-	const applied = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: applyRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: appliedPool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
+	const appliedPool = makeNecessityRunPool([
+		...['noise', 'email', 'weak'].map((id) =>
+			makeCandidate({ id, title: id[0]!.toUpperCase() + id.slice(1) }),
+		),
+		exportHit,
+	])
+	const applied = await rerank(applyRun, { candidates: appliedPool })
+	expect(applied).toMatchObject({
+		outcome: 'applied',
+		keepPath: 'kept-high',
+		usage: { inputTokens: null, outputTokens: null },
+		droppedCount: appliedPool.length - 1,
+		top1Type: 'capability',
 	})
-	expect(applied.outcome).toBe('applied')
-	expect(applied.keepPath).toBe('kept-high')
 	expect(applied.errorReason).toBeUndefined()
 	expect(applied.aiCallCount).toBeGreaterThan(0)
-	expect(applied.usage).toEqual({ inputTokens: null, outputTokens: null })
-	expect(applied.candidates.map((candidate) => candidate.id)).toEqual(['email'])
-	expect(applied.droppedCount).toBe(appliedPool.length - 1)
-	expect(applied.top1Type).toBe('capability')
-	expect(applyRun).toHaveBeenCalled()
+	expect(idsOf(applied)).toEqual(['email'])
 	expect(applyRun.mock.calls[0]?.[0]).toBe('typesafe/jev')
-	expect(applyRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	expect(applyRun.mock.calls[0]?.[2]).toEqual(gatewayOptions)
+	const capabilityState = (index: number, id: string, title: string) => ({
+		index,
+		type: 'capability',
+		id,
+		title,
+		summary: `${title} description`,
+		domain: 'meta',
+	})
 	expect(applyRun.mock.calls[0]?.[1]).toEqual(
 		expect.objectContaining({
 			state: expect.objectContaining({
 				query: 'send email',
 				candidates: expect.arrayContaining([
-					{
-						index: 0,
-						type: 'capability',
-						id: 'noise',
-						title: 'Noise',
-						summary: 'Noise description',
-						domain: 'meta',
-					},
-					{
-						index: 1,
-						type: 'capability',
-						id: 'email',
-						title: 'Email',
-						summary: 'Email description',
-						domain: 'meta',
-					},
-					{
-						index: 2,
-						type: 'capability',
-						id: 'weak',
-						title: 'Weak',
-						summary: 'Weak description',
-						domain: 'meta',
-					},
+					capabilityState(0, 'noise', 'Noise'),
+					capabilityState(1, 'email', 'Email'),
+					capabilityState(2, 'weak', 'Weak'),
 					{
 						index: 3,
 						type: 'package',
@@ -310,259 +300,139 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 		}),
 	)
 
-	const emptyAfterDropRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => ({
-			answers: scoreAnswersForQuestions(body.questions, () => ({
-				score: jevSearchMinKeepScore - 1,
-				confidence: 0.9,
-			})),
-		}),
+	const emptyAfterDrop = await rerank(
+		scoreRun(() => ({ score: jevSearchMinKeepScore - 1, confidence: 0.9 })),
 	)
-	const emptyAfterDrop = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: emptyAfterDropRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
+	expect(emptyAfterDrop).toMatchObject({
+		outcome: 'fallback-empty-after-drop',
+		keepPath: 'empty',
+		candidates: [],
+		candidatesAfter: 0,
+		droppedCount: emptyAfterDrop.candidatesBefore,
 	})
-	expect(emptyAfterDrop.outcome).toBe('fallback-empty-after-drop')
-	expect(emptyAfterDrop.keepPath).toBe('empty')
-	expect(emptyAfterDrop.candidates).toEqual([])
-	expect(emptyAfterDrop.candidatesAfter).toBe(0)
-	expect(emptyAfterDrop.droppedCount).toBe(emptyAfterDrop.candidatesBefore)
 
-	const midTierRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => ({
-			answers: scoreAnswersForQuestions(body.questions, (key) => {
-				if (key === 'c0') return { score: 1.2, confidence: 0.9 }
-				if (key === 'c1') return { score: 1.05, confidence: 0.85 }
-				return { score: 0.2, confidence: 0.8 }
-			}),
+	const midTier = await rerank(
+		scoreRun((key) => {
+			if (key === 'c0') return { score: 1.2, confidence: 0.9 }
+			if (key === 'c1') return { score: 1.05, confidence: 0.85 }
+			return { score: 0.2, confidence: 0.8 }
 		}),
+		{ limit: 5 },
 	)
-	const midTierPool = makeNecessityRunPool(pair)
-	const midTier = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: midTierRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: midTierPool,
-		limit: 5,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
 	expect(midTier.outcome).toBe('applied')
 	expect(midTier.keepPath).toBe('kept-lowered')
-	expect(midTier.candidates.map((candidate) => candidate.id)).toEqual([
-		'a',
-		'b',
-	])
-	expect(
-		midTier.candidates.every(
-			(candidate) => candidate.id === 'a' || candidate.id === 'b',
-		),
-	).toBe(true)
+	expect(idsOf(midTier)).toEqual(['a', 'b'])
+})
 
+test('rerankSearchCandidatesWithJev falls back to hybrid order with a bounded error reason', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const missingGatewayRun = vi.fn()
-	const missingGateway = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: missingGatewayRun } } as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
-	expect(missingGateway.outcome).toBe('fallback-error')
-	expect(missingGateway.errorReason).toBe(
-		'ai-gateway-required-for-typesafe-jev',
-	)
-	expect(missingGateway.model).toBe(jevSearchModel)
-	expect(missingGateway.aiCallCount).toBe(0)
-	expect(missingGateway.usage).toEqual({
-		inputTokens: null,
-		outputTokens: null,
-	})
-	expect(missingGateway.candidates.map((candidate) => candidate.id)).toEqual([
-		'a',
-		'b',
-	])
-	expect(missingGatewayRun).not.toHaveBeenCalled()
-
-	const blankGatewayRun = vi.fn()
-	const blankGateway = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: blankGatewayRun },
-			AI_GATEWAY_ID: '   ',
-		} as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
-	expect(blankGateway.outcome).toBe('fallback-error')
-	expect(blankGateway.errorReason).toBe('ai-gateway-required-for-typesafe-jev')
-	expect(blankGatewayRun).not.toHaveBeenCalled()
-
-	const failingRun = vi.fn(async () => {
-		throw new Error(
-			'Insufficient balance; add money to your gateway or use BYOK',
-		)
-	})
-	const fallbackError = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: failingRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
-	expect(fallbackError.outcome).toBe('fallback-error')
-	expect(fallbackError.errorReason).toBe(
-		'Insufficient balance; add money to your gateway or use BYOK',
-	)
-	expect(fallbackError.candidates.map((candidate) => candidate.id)).toEqual([
-		'a',
-		'b',
-	])
-	expect(failingRun).toHaveBeenCalled()
-	expect(failingRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
+	const incompletePool = makeNecessityRunPool(pair)
+	const throwing = (message: string) =>
+		vi.fn(async () => {
+			throw new Error(message)
+		})
+	const balanceMessage =
+		'Insufficient balance; add money to your gateway or use BYOK'
+	const cases = [
+		{
+			name: 'missing gateway',
+			run: vi.fn(),
+			env: (run: unknown) => ({ AI: { run } }),
+			errorReason: 'ai-gateway-required-for-typesafe-jev',
+			calls: 0,
+		},
+		{
+			name: 'blank gateway',
+			run: vi.fn(),
+			env: (run: unknown) => ({ AI: { run }, AI_GATEWAY_ID: '   ' }),
+			errorReason: 'ai-gateway-required-for-typesafe-jev',
+			calls: 0,
+		},
+		{
+			name: 'provider error message',
+			run: throwing(balanceMessage),
+			errorReason: balanceMessage,
+		},
+		{
+			name: 'blank error message',
+			run: throwing('   '),
+			errorReason: 'unknown-jev-error',
+		},
+		{
+			name: 'incomplete answers',
+			run: vi.fn(async () => ({
+				answers: { c0: { type: 'score', score: 2.4 } },
+			})),
+			errorReason: `incomplete-score-answers expected=${String(incompletePool.length)} received=0 keys=answers result.answers=missing answerKeys=c0`,
+		},
+	]
+	for (const { run, env, errorReason, calls } of cases) {
+		const result = await rerank(run, {
+			...packagesQuery,
+			candidates: incompletePool,
+			...(env ? { env: env(run) as unknown as Env } : {}),
+		})
+		expect(result).toMatchObject({
+			outcome: 'fallback-error',
+			errorReason,
+			model: jevSearchModel,
+		})
+		expect(idsOf(result)).toEqual(['a', 'b'])
+		if (calls === 0) {
+			expect(result.aiCallCount).toBe(0)
+			expect(result.usage).toEqual({ inputTokens: null, outputTokens: null })
+			expect(run).not.toHaveBeenCalled()
+		} else {
+			expect(run.mock.calls[0]?.[2]).toEqual(gatewayOptions)
+		}
+	}
 	expect(consoleWarn).toHaveBeenCalled()
 
-	const longMessage = `Gateway authentication is required to use unified billing. ${'x'.repeat(300)}`
-	const longErrorRun = vi.fn(async () => {
-		throw new Error(longMessage)
-	})
-	const longError = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: longErrorRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
+	const longError = await rerank(
+		throwing(
+			`Gateway authentication is required to use unified billing. ${'x'.repeat(300)}`,
+		),
+		packagesQuery,
+	)
 	expect(longError.outcome).toBe('fallback-error')
-	expect(longError.errorReason).toBeDefined()
 	expect(longError.errorReason?.length).toBeLessThanOrEqual(240)
 	expect(longError.errorReason?.endsWith('...')).toBe(true)
-	expect(longErrorRun).toHaveBeenCalled()
+})
 
-	const blankMessageRun = vi.fn(async () => {
-		throw new Error('   ')
-	})
-	const blankMessage = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: blankMessageRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: makeNecessityRunPool(pair),
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
-	expect(blankMessage.outcome).toBe('fallback-error')
-	expect(blankMessage.errorReason).toBe('unknown-jev-error')
-	expect(blankMessageRun).toHaveBeenCalled()
-
-	const incompletePool = makeNecessityRunPool(pair)
-	const incompleteRun = vi.fn(async () => ({
-		answers: {
-			c0: { type: 'score', score: 2.4 },
-		},
-	}))
-	const incompleteAnswers = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: incompleteRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'packages',
-		intent: makeIntent('packages', 0.7),
-		candidates: incompletePool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
-	expect(incompleteAnswers.outcome).toBe('fallback-error')
-	expect(incompleteAnswers.errorReason).toBe(
-		`incomplete-score-answers expected=${String(incompletePool.length)} received=0 keys=answers result.answers=missing answerKeys=c0`,
-	)
-	expect(incompleteRun).toHaveBeenCalled()
-
+test('rerankSearchCandidatesWithJev batches Score questions, sums usage, and fails on a partial batch', async () => {
 	const widePool = makeCandidates(jevSearchScoreQuestionBatchSize + 4)
 	const bestWideId = widePool[widePool.length - 1]!.id
-	const multiBatchRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => {
-			const keys = Object.keys(body.questions)
-			return {
-				answers: scoreAnswersForQuestions(body.questions, (key) => {
-					if (key === `c${String(widePool.length - 1)}`) {
-						return { score: 2.8, confidence: 0.96 }
-					}
-					return { score: 0.3, confidence: 0.9 }
-				}),
-				usage: keys.includes('c0')
-					? { prompt_tokens: 40, completion_tokens: 12 }
-					: { input_tokens: 18, output_tokens: 7 },
-			}
-		},
+	const firstBatchKeys = Array.from(
+		{ length: jevSearchScoreQuestionBatchSize },
+		(_, index) => `c${String(index)}`,
 	)
-	const multiBatch = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: multiBatchRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: widePool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
+	const multiBatchRun = vi.fn(
+		async (_model: string, body: ScoreBody, _options?: unknown) => ({
+			answers: scoreAnswersForQuestions(body.questions, (key) =>
+				key === `c${String(widePool.length - 1)}`
+					? { score: 2.8, confidence: 0.96 }
+					: { score: 0.3, confidence: 0.9 },
+			),
+			usage: Object.keys(body.questions).includes('c0')
+				? { prompt_tokens: 40, completion_tokens: 12 }
+				: { input_tokens: 18, output_tokens: 7 },
+		}),
+	)
+	const multiBatch = await rerank(multiBatchRun, { candidates: widePool })
+	expect(multiBatch).toMatchObject({
+		outcome: 'applied',
+		model: jevSearchModel,
+		aiCallCount: 2,
+		usage: { inputTokens: 58, outputTokens: 19 },
 	})
-	expect(multiBatch.outcome).toBe('applied')
 	expect(multiBatch.errorReason).toBeUndefined()
-	expect(multiBatch.model).toBe(jevSearchModel)
-	expect(multiBatch.aiCallCount).toBe(2)
-	expect(multiBatch.usage).toEqual({ inputTokens: 58, outputTokens: 19 })
-	expect(multiBatch.candidates.map((candidate) => candidate.id)).toEqual([
-		bestWideId,
+	expect(idsOf(multiBatch)).toEqual([bestWideId])
+	expect(multiBatchRun.mock.calls.map((call) => call[2])).toEqual([
+		gatewayOptions,
+		gatewayOptions,
 	])
-	expect(multiBatchRun).toHaveBeenCalledTimes(2)
-	expect(multiBatchRun.mock.calls[0]?.[2]).toEqual({ gateway: { id: 'kody' } })
-	expect(multiBatchRun.mock.calls[1]?.[2]).toEqual({ gateway: { id: 'kody' } })
 	expect(Object.keys(jevRunBody(multiBatchRun, 0).questions)).toEqual(
-		Array.from(
-			{ length: jevSearchScoreQuestionBatchSize },
-			(_, index) => `c${String(index)}`,
-		),
+		firstBatchKeys,
 	)
 	expect(Object.keys(jevRunBody(multiBatchRun, 1).questions)).toEqual(
 		Array.from(
@@ -570,57 +440,107 @@ test('rerankSearchCandidatesWithJev skips, applies Score order, and falls back',
 			(_, index) => `c${String(jevSearchScoreQuestionBatchSize + index)}`,
 		),
 	)
-	expect(jevRunBody(multiBatchRun, 0).state.candidates).toHaveLength(
-		widePool.length,
-	)
-	expect(jevRunBody(multiBatchRun, 1).state.candidates).toHaveLength(
-		widePool.length,
-	)
+	for (const callIndex of [0, 1]) {
+		expect(jevRunBody(multiBatchRun, callIndex).state.candidates).toHaveLength(
+			widePool.length,
+		)
+	}
 
 	const partialBatchRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => {
-			const keys = Object.keys(body.questions)
-			if (!keys.includes('c0')) {
-				return { answers: {} }
-			}
-			return {
-				answers: scoreAnswersForQuestions(body.questions, () => ({
-					score: 2.1,
-					confidence: 0.9,
-				})),
-			}
+		async (_model: string, body: ScoreBody, _options?: unknown) =>
+			Object.keys(body.questions).includes('c0')
+				? {
+						answers: scoreAnswersForQuestions(body.questions, () => ({
+							score: 2.1,
+							confidence: 0.9,
+						})),
+					}
+				: { answers: {} },
+	)
+	const partialBatch = await rerank(partialBatchRun, { candidates: widePool })
+	expect(partialBatch).toMatchObject({
+		outcome: 'fallback-error',
+		model: jevSearchModel,
+		aiCallCount: 2,
+		errorReason: `incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)} keys=answers result.answers=missing answerKeys=${firstBatchKeys.join(',')}`,
+	})
+	expect(idsOf(partialBatch)).toEqual([widePool[0]!.id, widePool[1]!.id])
+	expect(partialBatchRun.mock.calls.map((call) => call[2])).toEqual([
+		gatewayOptions,
+		gatewayOptions,
+	])
+})
+
+test('rerankSearchCandidatesWithJev aborts Score batches past the budget and keeps hybrid order', async () => {
+	vi.useFakeTimers()
+	try {
+		const signals: Array<AbortSignal> = []
+		const hangingRun = vi.fn(
+			(_model: string, _body: unknown, options: { signal: AbortSignal }) => {
+				signals.push(options.signal)
+				return new Promise((_, reject) => {
+					options.signal.addEventListener('abort', () => {
+						reject(options.signal.reason)
+					})
+				})
+			},
+		)
+		const pool = makeNecessityRunPool()
+		const pending = rerank(hangingRun, { candidates: pool })
+		await vi.advanceTimersByTimeAsync(jevSearchScoreBudgetMs - 1)
+		expect(signals.every((signal) => !signal.aborted)).toBe(true)
+		await vi.advanceTimersByTimeAsync(1)
+		const result = await pending
+
+		expect(result.outcome).toBe('fallback-timeout')
+		expect(result.errorReason).toBeUndefined()
+		expect(result.model).toBe(jevSearchModel)
+		expect(result.aiCallCount).toBe(3)
+		expect(idsOf(result)).toEqual([pool[0]!.id, pool[1]!.id])
+		expect(signals.length).toBeGreaterThan(0)
+		expect(signals.every((signal) => signal.aborted)).toBe(true)
+	} finally {
+		vi.useRealTimers()
+	}
+})
+
+test('rerankSearchCandidatesWithJev aborts in-flight Score batches when the caller search deadline aborts', async () => {
+	const signals: Array<AbortSignal> = []
+	const hangingRun = vi.fn(
+		(_model: string, _body: unknown, options: { signal: AbortSignal }) => {
+			signals.push(options.signal)
+			return new Promise(() => {})
 		},
 	)
-	const partialBatch = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: partialBatchRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: widePool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
+	const caller = new AbortController()
+	const pending = rerank(hangingRun, {
+		candidates: makeNecessityRunPool(),
+		limit: 1,
+		signal: caller.signal,
 	})
-	expect(partialBatch.outcome).toBe('fallback-error')
-	expect(partialBatch.model).toBe(jevSearchModel)
-	expect(partialBatch.aiCallCount).toBe(2)
-	expect(partialBatch.errorReason).toBe(
-		`incomplete-score-answers expected=${String(widePool.length)} received=${String(jevSearchScoreQuestionBatchSize)} keys=answers result.answers=missing answerKeys=${Array.from({ length: jevSearchScoreQuestionBatchSize }, (_, index) => `c${String(index)}`).join(',')}`,
-	)
-	expect(partialBatch.candidates.map((candidate) => candidate.id)).toEqual([
-		widePool[0]!.id,
-		widePool[1]!.id,
-	])
-	expect(partialBatchRun).toHaveBeenCalledTimes(2)
-	expect(partialBatchRun.mock.calls[0]?.[2]).toEqual({
-		gateway: { id: 'kody' },
-	})
-	expect(partialBatchRun.mock.calls[1]?.[2]).toEqual({
-		gateway: { id: 'kody' },
-	})
+	await Promise.resolve()
+	caller.abort(new Error('search-deadline'))
+	const result = await pending
+	expect(result.outcome).toBe('fallback-timeout')
+	expect(signals.length).toBeGreaterThan(0)
+	expect(signals.every((signal) => signal.aborted)).toBe(true)
+})
+
+test('rerankSearchCandidatesWithJev times out even when the AI binding ignores abort', async () => {
+	vi.useFakeTimers()
+	try {
+		const pool = makeNecessityRunPool()
+		const pending = rerank(
+			vi.fn(() => new Promise(() => {})),
+			{ candidates: pool, limit: 1, scoreBudgetMs: 50 },
+		)
+		await vi.advanceTimersByTimeAsync(50)
+		const result = await pending
+		expect(result.outcome).toBe('fallback-timeout')
+		expect(idsOf(result)).toEqual([pool[0]!.id])
+	} finally {
+		vi.useRealTimers()
+	}
 })
 
 test('normalizeJevRunResponse unwraps gateway envelopes and docs Score payloads', () => {
@@ -628,161 +548,102 @@ test('normalizeJevRunResponse unwraps gateway envelopes and docs Score payloads'
 		type: 'score' as const,
 		score: 1.04,
 		confidence: 0.94,
-		legend: {
-			'0': 'Calm',
-			'1': 'Frustrated',
-			'2': 'Very angry',
-		},
-		probabilities: {
-			'0': 0,
-			'1': 0.96,
-			'2': 0.04,
-		},
+		legend: { '0': 'Calm', '1': 'Frustrated', '2': 'Very angry' },
+		probabilities: { '0': 0, '1': 0.96, '2': 0.04 },
 	}
+	const answers = { frustration: docsScoreAnswer }
 	const docsUsage = { input_tokens: 426, output_tokens: 73 }
-	const unwrapped = normalizeJevRunResponse({
-		model: 'jev-1.13.0',
-		answers: { frustration: docsScoreAnswer },
-		usage: docsUsage,
-	})
-	expect(unwrapped.rawTopLevelKeys).toEqual(['model', 'answers', 'usage'])
-	expect(unwrapped.resultAnswers).toBe('missing')
-	expect(unwrapped.payload.answers).toEqual({ frustration: docsScoreAnswer })
-	expect(unwrapped.payload.usage).toEqual(docsUsage)
+	const docsBody = { model: 'jev-1.13.0', answers, usage: docsUsage }
 
-	const wrapped = normalizeJevRunResponse({
-		success: true,
-		errors: [],
-		messages: [],
-		result: {
-			model: 'jev-1.13.0',
-			answers: { frustration: docsScoreAnswer },
-			usage: docsUsage,
-		},
+	expect(normalizeJevRunResponse(docsBody)).toMatchObject({
+		rawTopLevelKeys: ['model', 'answers', 'usage'],
+		resultAnswers: 'missing',
+		payload: { answers, usage: docsUsage },
 	})
-	expect(wrapped.rawTopLevelKeys).toEqual([
-		'success',
-		'errors',
-		'messages',
-		'result',
-	])
-	expect(wrapped.resultAnswers).toBe('object')
-	expect(wrapped.payload.answers).toEqual({ frustration: docsScoreAnswer })
-	expect(wrapped.payload.usage).toEqual(docsUsage)
-
+	expect(
+		normalizeJevRunResponse({
+			success: true,
+			errors: [],
+			messages: [],
+			result: docsBody,
+		}),
+	).toMatchObject({
+		rawTopLevelKeys: ['success', 'errors', 'messages', 'result'],
+		resultAnswers: 'object',
+		payload: { answers, usage: docsUsage },
+	})
 	const nestedResponseUsage = { input_tokens: 40, output_tokens: 8 }
-	const nestedResponse = normalizeJevRunResponse({
-		success: true,
-		result: {
-			response: JSON.stringify({
-				answers: { frustration: docsScoreAnswer },
-			}),
-			usage: nestedResponseUsage,
-		},
+	expect(
+		normalizeJevRunResponse({
+			success: true,
+			result: {
+				response: JSON.stringify({ answers }),
+				usage: nestedResponseUsage,
+			},
+		}),
+	).toMatchObject({
+		resultAnswers: 'missing',
+		payload: { answers, usage: nestedResponseUsage },
 	})
-	expect(nestedResponse.resultAnswers).toBe('missing')
-	expect(nestedResponse.payload.answers).toEqual({
-		frustration: docsScoreAnswer,
-	})
-	expect(nestedResponse.payload.usage).toEqual(nestedResponseUsage)
 })
 
 test('rerankSearchCandidatesWithJev applies wrapped gateway Score answers and samples missing-answer keys', async () => {
-	const pair = [
-		makeCandidate({ id: 'a', title: 'A' }),
-		makeCandidate({ id: 'b', title: 'B' }),
-	]
-	const intent = makeIntent('send email', 0.9)
 	const wrappedPool = makeNecessityRunPool(pair)
 	const wrappedBatches = Math.ceil(
 		wrappedPool.length / jevSearchScoreQuestionBatchSize,
 	)
 
-	const wrappedRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => ({
-			success: true,
-			errors: [],
-			messages: [],
-			result: {
-				model: 'jev-1.13.0',
-				answers: scoreAnswersForQuestions(body.questions, (key) => {
-					if (key === 'c1') return { score: 2.7, confidence: 0.95 }
-					return { score: 0.2, confidence: 0.9 }
-				}),
-				usage: { input_tokens: 426, output_tokens: 73 },
-			},
-		}),
-	)
-	const wrapped = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: wrappedRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: wrappedPool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
+	const wrappedRun = vi.fn(async (_model: string, body: ScoreBody) => ({
+		success: true,
+		errors: [],
+		messages: [],
+		result: {
+			model: 'jev-1.13.0',
+			answers: scoreAnswersForQuestions(body.questions, (key) =>
+				key === 'c1'
+					? { score: 2.7, confidence: 0.95 }
+					: { score: 0.2, confidence: 0.9 },
+			),
+			usage: { input_tokens: 426, output_tokens: 73 },
+		},
+	}))
+	const wrapped = await rerank(wrappedRun, { candidates: wrappedPool })
 	expect(wrapped.outcome).toBe('applied')
 	expect(wrapped.errorReason).toBeUndefined()
-	expect(wrapped.candidates.map((candidate) => candidate.id)).toEqual(['b'])
+	expect(idsOf(wrapped)).toEqual(['b'])
 	expect(wrapped.usage).toEqual({
 		inputTokens: 426 * wrappedBatches,
 		outputTokens: 73 * wrappedBatches,
 	})
 	expect(wrappedRun).toHaveBeenCalledTimes(wrappedBatches)
 
-	const unwrappedRun = vi.fn(
-		async (_model: string, body: { questions: Record<string, unknown> }) => ({
+	const unwrapped = await rerank(
+		vi.fn(async (_model: string, body: ScoreBody) => ({
 			model: 'jev-1.13.0',
-			answers: scoreAnswersForQuestions(body.questions, (key) => {
-				if (key === 'c0') return { score: 2.8, confidence: 0.91 }
-				return { score: 0.4, confidence: 0.88 }
-			}),
+			answers: scoreAnswersForQuestions(body.questions, (key) =>
+				key === 'c0'
+					? { score: 2.8, confidence: 0.91 }
+					: { score: 0.4, confidence: 0.88 },
+			),
 			usage: { input_tokens: 190, output_tokens: 0 },
-		}),
+		})),
+		{ candidates: wrappedPool },
 	)
-	const unwrapped = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: unwrappedRun },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: wrappedPool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
 	expect(unwrapped.outcome).toBe('applied')
-	expect(unwrapped.candidates.map((candidate) => candidate.id)).toEqual(['a'])
+	expect(idsOf(unwrapped)).toEqual(['a'])
 	expect(unwrapped.usage).toEqual({
 		inputTokens: 190 * wrappedBatches,
 		outputTokens: 0,
 	})
 
-	const envelopeWithoutAnswers = vi.fn(async () => ({
-		success: true,
-		errors: [],
-		result: { model: 'jev-1.13.0' },
-	}))
-	const missingAnswers = await rerankSearchCandidatesWithJev({
-		env: {
-			AI: { run: envelopeWithoutAnswers },
-			AI_GATEWAY_ID: 'kody',
-		} as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: wrappedPool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
+	const missingAnswers = await rerank(
+		vi.fn(async () => ({
+			success: true,
+			errors: [],
+			result: { model: 'jev-1.13.0' },
+		})),
+		{ candidates: wrappedPool },
+	)
 	expect(missingAnswers.outcome).toBe('fallback-error')
 	expect(missingAnswers.errorReason).toBe(
 		`incomplete-score-answers expected=${String(wrappedPool.length)} received=0 keys=success,errors,result result.answers=missing answerKeys=none`,
@@ -794,34 +655,21 @@ test('rerankSearchCandidatesWithJev applies wrapped gateway Score answers and sa
 })
 
 test('rerankSearchCandidatesWithJev skips free plan and clear small pools', async () => {
-	const intent = makeIntent('send email', 0.9)
 	const unusedRun = vi.fn()
-	const smallPool = makeCandidates(jevSearchNecessitySmallPoolMax)
-	const freePlan = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: unusedRun } } as unknown as Env,
-		query: 'send email',
-		intent,
+	const skipEnv = { env: { AI: { run: unusedRun } } as unknown as Env }
+
+	const freePlan = await rerank(unusedRun, {
+		...skipEnv,
 		candidates: makeNecessityRunPool(),
-		limit: 2,
-		offline: false,
-		enabled: true,
 		planEligible: false,
 	})
 	expect(freePlan.outcome).toBe('skipped-plan')
-	expect(unusedRun).not.toHaveBeenCalled()
 
-	const small = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: unusedRun } } as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: smallPool,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
+	const small = await rerank(unusedRun, {
+		...skipEnv,
+		candidates: makeCandidates(jevSearchNecessitySmallPoolMax),
 	})
 	expect(small.outcome).toBe('skipped-small-pool')
-	expect(unusedRun).not.toHaveBeenCalled()
 
 	const clearWinner = makeCandidates(jevSearchNecessityMediumPoolMax).map(
 		(candidate, index) => ({
@@ -836,16 +684,7 @@ test('rerankSearchCandidatesWithJev skips free plan and clear small pools', asyn
 		run: false,
 		outcome: 'skipped-clear-winner',
 	})
-	const clear = await rerankSearchCandidatesWithJev({
-		env: { AI: { run: unusedRun } } as unknown as Env,
-		query: 'send email',
-		intent,
-		candidates: clearWinner,
-		limit: 2,
-		offline: false,
-		enabled: true,
-		planEligible: true,
-	})
+	const clear = await rerank(unusedRun, { ...skipEnv, candidates: clearWinner })
 	expect(clear.outcome).toBe('skipped-clear-winner')
 	expect(unusedRun).not.toHaveBeenCalled()
 

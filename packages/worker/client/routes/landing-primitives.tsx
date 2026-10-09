@@ -1,4 +1,4 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle, ref } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import {

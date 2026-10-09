@@ -15,6 +15,7 @@ export const repoApplyPatchCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoApplyPatch',
+		orgPermission: 'package:write',
 		description: [
 			'Apply a unified-diff patch to the active repo session workspace.',
 			fileLevelApiNote,

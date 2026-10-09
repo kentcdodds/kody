@@ -8,8 +8,11 @@ import { refreshSavedPackageProjection } from '#worker/package-registry/service.
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { resolveArtifactSourceHead } from '#worker/repo/artifacts.ts'
-import { runRepoChecks, type RepoCheckRunResult } from '#worker/repo/checks.ts'
-import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
+import {
+	createSnapshotFilesWorkspace,
+	runRepoChecks,
+	type RepoCheckRunResult,
+} from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import {
 	createPackageCodemodRun,
@@ -119,20 +122,6 @@ function resolveStepLimit(mode: PackageCodemodRunMode, limit?: number) {
 		Math.max(limit ?? heavyDefaultStepLimit, 1),
 		heavyMaxStepLimit,
 	)
-}
-
-function createSnapshotFilesWorkspace(files: Record<string, string>) {
-	return {
-		async readFile(path: string) {
-			return files[normalizeRepoWorkspacePath(path)] ?? null
-		},
-		async glob(_pattern: string) {
-			return Object.keys(files).map((path) => ({
-				path,
-				type: 'file' as const,
-			}))
-		},
-	}
 }
 
 function normalizeFailureMessage(message: string) {
@@ -788,6 +777,10 @@ async function processPackageForMode(input: {
 					destructiveOverwriteConfirmed: true,
 					promotePublished: !isSavedPackageLocked(input.savedPackage.lockedAt),
 					commitMessage: `codemod(${input.codemod.id}): ${input.codemod.description}`,
+					// Align with runChecksOnFiles preflight (requirePackageDocs:
+					// false) so legacy packages without README/AGENTS can publish
+					// approved transforms. Other publish checks still run.
+					requirePackageDocs: false,
 				})
 				if (afterCommit == null) {
 					return emptyItemResult({
@@ -1033,6 +1026,8 @@ async function processRevertStep(input: {
 											savedPackage.lockedAt,
 										),
 										commitMessage: `revert codemod(${input.codemod.id})`,
+										// Same docs exemption as apply and preflight.
+										requirePackageDocs: false,
 									})
 									if (afterCommit == null) {
 										result = emptyItemResult({

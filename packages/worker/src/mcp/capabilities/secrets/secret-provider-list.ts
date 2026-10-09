@@ -3,14 +3,13 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { secretProvidersFlagKey } from '#mcp/secrets/secret-providers/flag.ts'
 import { listBoundSecretProviders } from '#mcp/secrets/secret-providers/service.ts'
 
 export const secretProviderListCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderList',
-		featureFlag: secretProvidersFlagKey,
+		orgPermission: 'secret:use',
 		description:
 			'List account-bound external secret providers (provider id, bound package, door-key secret name, non-secret config). Never returns credential values or vault items. Search does not crawl vaults.',
 		keywords: ['secret', 'provider', '1password', 'binding', 'list'],

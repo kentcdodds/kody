@@ -1,5 +1,7 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
 	desiredKitTagKeys,
 	kitFactsFromUserRow,
@@ -7,6 +9,8 @@ import {
 	maybeSyncKitSubscriber,
 	syncExistingKitSubscriber,
 } from '#worker/kit/subscriber-sync.ts'
+
+const kitApi = 'https://api.kit.com/v4'
 
 const tagCatalog = [
 	{ id: 11, name: kitLifecycleTagNames.signedUp },
@@ -17,49 +21,68 @@ const tagCatalog = [
 	{ id: 16, name: kitLifecycleTagNames.pro },
 ]
 
-function kitFetchImpl(input: {
+type KitCall = {
+	url: string
+	method: string
+	body: unknown
+	apiKey: string | null
+}
+
+type RecordedHttpRequest = {
+	url: string
+	method: string
+	headers: { get(name: string): string | null }
+	clone(): { json(): Promise<unknown> }
+}
+
+async function recordKitCall(
+	request: RecordedHttpRequest,
+	calls: Array<KitCall>,
+) {
+	calls.push({
+		url: request.url,
+		method: request.method,
+		body:
+			request.method === 'GET' || request.method === 'DELETE'
+				? null
+				: await request.clone().json(),
+		apiKey: request.headers.get('X-Kit-Api-Key'),
+	})
+}
+
+function kitHandlers(input: {
 	subscriberId?: number | null
-	calls?: Array<{ url: string; method: string; body: unknown }>
+	calls: Array<KitCall>
 }) {
-	const calls = input.calls ?? []
-	const fetchImpl = async (request: RequestInfo | URL, init?: RequestInit) => {
-		const url = String(request)
-		const method = init?.method ?? 'GET'
-		const body = init?.body ? JSON.parse(String(init.body)) : null
-		calls.push({ url, method, body })
-		if (url.includes('/subscribers?email_address=')) {
-			if (input.subscriberId == null) {
-				return Response.json({ subscribers: [] })
-			}
-			return Response.json({
-				subscribers: [
-					{ id: input.subscriberId, email_address: 'ada@example.com' },
-				],
+	return [
+		http.get(`${kitApi}/subscribers`, async ({ request }) => {
+			await recordKitCall(request, input.calls)
+			return HttpResponse.json({
+				subscribers:
+					input.subscriberId == null
+						? []
+						: [{ id: input.subscriberId, email_address: 'ada@example.com' }],
 			})
-		}
-		if (url.endsWith('/tags') || url.includes('/tags?')) {
-			return Response.json({ tags: tagCatalog })
-		}
-		if (
-			url.includes('/tags/') &&
-			url.includes('/subscribers') &&
-			method === 'POST'
-		) {
-			return Response.json(
+		}),
+		http.get(`${kitApi}/tags`, async ({ request }) => {
+			await recordKitCall(request, input.calls)
+			return HttpResponse.json({ tags: tagCatalog })
+		}),
+		http.post(`${kitApi}/tags/:tagId/subscribers`, async ({ request }) => {
+			await recordKitCall(request, input.calls)
+			return HttpResponse.json(
 				{ subscriber: { id: input.subscriberId } },
 				{ status: 201 },
 			)
-		}
-		if (
-			url.includes('/subscribers/') &&
-			url.includes('/tags/') &&
-			method === 'DELETE'
-		) {
-			return new Response(null, { status: 204 })
-		}
-		throw new Error(`Unexpected Kit call: ${method} ${url}`)
-	}
-	return { calls, fetchImpl: fetchImpl as typeof fetch }
+		}),
+		http.delete(
+			`${kitApi}/subscribers/:subscriberId/tags/:tagId`,
+			async ({ request }) => {
+				await recordKitCall(request, input.calls)
+				return new HttpResponse(null, { status: 204 })
+			},
+		),
+	]
 }
 
 test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on cancel', async () => {
@@ -88,7 +111,8 @@ test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on can
 		paidPlan: null,
 	})
 
-	const { calls, fetchImpl } = kitFetchImpl({ subscriberId: 9 })
+	const calls: Array<KitCall> = []
+	using _server = createMswNodeServer(kitHandlers({ subscriberId: 9, calls }))
 	expect(
 		await syncExistingKitSubscriber({
 			apiKey: 'key',
@@ -100,74 +124,72 @@ test('syncExistingKitSubscriber adds lifecycle tags and removes paid tags on can
 				activated: false,
 				paidPlan: null,
 			},
-			fetchImpl,
 		}),
 	).toEqual({ synced: true, subscriberId: 9 })
-	const added = calls.filter(
-		(call) => call.method === 'POST' && call.url.includes('/tags/'),
-	)
-	expect(added.map((call) => call.url)).toEqual([
-		'https://api.kit.com/v4/tags/11/subscribers',
-		'https://api.kit.com/v4/tags/12/subscribers',
-	])
-	const removed = calls.filter((call) => call.method === 'DELETE')
-	expect(removed.map((call) => call.url)).toEqual([
-		'https://api.kit.com/v4/subscribers/9/tags/15',
-		'https://api.kit.com/v4/subscribers/9/tags/16',
+	expect(calls.every((call) => call.apiKey === 'key')).toBe(true)
+	const urls = (method: string) =>
+		calls.filter((call) => call.method === method).map((call) => call.url)
+	expect(urls('POST')).toEqual([
+		`${kitApi}/tags/11/subscribers`,
+		`${kitApi}/tags/12/subscribers`,
 	])
 	expect(
-		calls.some((call) => call.url === 'https://api.kit.com/v4/subscribers'),
-	).toBe(false)
+		calls.filter((call) => call.method === 'POST').map((call) => call.body),
+	).toEqual([
+		{ email_address: 'ada@example.com' },
+		{ email_address: 'ada@example.com' },
+	])
+	expect(urls('DELETE')).toEqual([
+		`${kitApi}/subscribers/9/tags/15`,
+		`${kitApi}/subscribers/9/tags/16`,
+	])
+	expect(calls.some((call) => call.url === `${kitApi}/subscribers`)).toBe(false)
 })
 
 test('syncExistingKitSubscriber skips missing subscribers and never creates them', async () => {
-	const { calls, fetchImpl } = kitFetchImpl({ subscriberId: null })
+	const calls: Array<KitCall> = []
+	using _server = createMswNodeServer(
+		kitHandlers({ subscriberId: null, calls }),
+	)
 	expect(
 		await syncExistingKitSubscriber({
 			apiKey: 'key',
 			email: 'new@example.com',
 			facts: kitFactsFromUserRow({}),
-			fetchImpl,
 		}),
 	).toEqual({ synced: false, reason: 'not_found' })
 	expect(calls).toHaveLength(1)
 	expect(calls[0]?.url).toContain('/subscribers?email_address=')
+	expect(calls[0]?.apiKey).toBe('key')
 	expect(calls.some((call) => call.method === 'POST')).toBe(false)
 })
 
 test('maybeSyncKitSubscriber no-ops without Kit config and swallows failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const idleFetch = vi.fn()
-	await maybeSyncKitSubscriber({
-		env: {},
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: idleFetch,
-	})
-	expect(idleFetch).not.toHaveBeenCalled()
-
-	await maybeSyncKitSubscriber({
-		env: { KIT_API_KEY: 'key', KIT_SIGNED_UP_TAG_ID: 'nope' },
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: idleFetch,
-	})
-	expect(idleFetch).not.toHaveBeenCalled()
+	type KitEnv = Parameters<typeof maybeSyncKitSubscriber>[0]['env']
+	const sync = (env: Partial<KitEnv>) =>
+		maybeSyncKitSubscriber({
+			env: env as KitEnv,
+			email: 'ada@example.com',
+			facts: kitFactsFromUserRow({}),
+		})
+	using msw = createMswNodeServer()
+	await sync({})
+	await sync({ KIT_API_KEY: 'key', KIT_SIGNED_UP_TAG_ID: 'nope' })
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Skipping Kit subscriber sync: KIT_SIGNED_UP_TAG_ID is invalid.',
 	)
 
 	consoleWarn.mockClear()
-	const failingFetch = vi.fn(async () =>
-		Response.json({ errors: ['boom'] }, { status: 500 }),
+	const failingCalls: Array<string> = []
+	msw.use(
+		http.get(`${kitApi}/subscribers`, ({ request }) => {
+			failingCalls.push(request.url)
+			return HttpResponse.json({ errors: ['boom'] }, { status: 500 })
+		}),
 	)
-	await maybeSyncKitSubscriber({
-		env: { KIT_API_KEY: 'key' },
-		email: 'ada@example.com',
-		facts: kitFactsFromUserRow({}),
-		fetchImpl: failingFetch as typeof fetch,
-	})
-	expect(failingFetch).toHaveBeenCalled()
+	await sync({ KIT_API_KEY: 'key' })
+	expect(failingCalls.length).toBeGreaterThan(0)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'Failed to sync Kit subscriber:',
 		expect.any(Error),

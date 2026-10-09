@@ -13,10 +13,8 @@ each change into a durable improvement, not a one-off fix.
 
 ## Keep `AGENTS.md` small and navigable
 
-- Use `AGENTS.md` as a map, not an encyclopedia.
-- Put detailed guidance in focused docs under `docs/contributing`.
-- When behavior changes, update the closest source-of-truth doc in the same PR.
-- If knowledge is only in chat threads or memory, assume it will be lost.
+See [Keep agent context lean](../principles/lean-agent-context.md). If knowledge
+is only in chat threads or memory, assume it will be lost.
 
 ## The continuous improvement loop
 

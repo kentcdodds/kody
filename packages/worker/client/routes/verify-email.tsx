@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import {
 	cardCss,

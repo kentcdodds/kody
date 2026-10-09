@@ -3,7 +3,7 @@
 ## Secrets
 
 Credential setup uses **saved secrets**, **`/connect/oauth`** for OAuth,
-**`/account/secrets/new`** for API keys and PATs, or execution-time persistence
+**`/connect/secret-set`** for API keys and PATs, or execution-time persistence
 when a token already exists inside trusted code.
 
 Use **search** first to discover saved secret references or integrations before
@@ -28,6 +28,15 @@ read a secret locked only to A — including by passing A's id to
 carries that authority. Access rules are covered in
 [Package approval](#package-approval).
 
+`packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
+`{{secret:…}}` placeholder** after mount and grant checks succeed — never
+decrypted plaintext. Put that string in a secret-aware `fetch` header/URL/body,
+or pass it to `secretHeaders.basic` / `kody.secretJwtSign` (both accept saved
+secret names **or** opaque refs). Only platform use sites resolve it. Package
+and execute JavaScript never receive plaintext from `get`. A secret-aware
+`fetch` may send the value to an **approved** host; that host's response is not
+redacted for echoed credentials — treat response bodies as untrusted.
+
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
 secret values. Do not use it for OAuth access or refresh tokens —
@@ -39,7 +48,7 @@ only change description or expiry may omit **`value`**. Package runtimes cannot
 change expiry on a user secret.
 
 The account create/edit form has the same optional expiry field. Agents
-prefilling **`/account/secrets/new`** can set **`expiresAt`** as a query
+prefilling **`/connect/secret-set`** can set **`expiresAt`** as a query
 parameter so the human pastes the token without typing the date. See
 [Account secret setup](../guides/account-secret-setup.md).
 
@@ -61,16 +70,15 @@ External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 canonicalize to the same grant/cache key. The item's websites are the host
 allowlist; empty websites refuse the fetch. Ad hoc execute does not need a
 package grant; saved packages do (`secretProviderLock` returns the Allow URL).
-Revoke a grant on `/account/secret-providers`. Shared packages use the owner's
-provider binding. Search does not crawl vaults. Bind providers on
-`/account/secret-providers`. The whole provider surface is behind the
-`secret-providers` flag (off by default; signed-in users can turn it on from
-[Custom secret providers](../guides/secret-providers.md)).
+Bind and revoke on `/account/secret-providers`. Shared packages use the owner's
+provider binding. Search does not crawl vaults. See
+[Custom secret providers](../guides/secret-providers.md).
 
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
-the outbound fetch header. This example uses a placeholder API host and generic
-client credential secret names:
+the outbound fetch header. `usernameSecret` / `passwordSecret` accept a saved
+secret name **or** an opaque `{{secret:…}}` ref from `packageSecrets.get`. This
+example uses a placeholder API host and generic client credential secret names:
 
 ```ts
 import { secretHeaders } from 'kody:runtime'
@@ -105,7 +113,8 @@ algorithm. It never returns key material.
 
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. Pass the saved secret as
-**`private_key_secret_name`** (the signing-key secret: PKCS#8 PEM for asymmetric
+**`private_key_secret_name`** — a saved secret name **or** an opaque
+`{{secret:…}}` ref from `packageSecrets.get` (PKCS#8 PEM for asymmetric
 algorithms, HMAC key material for HS*). For service-account JSON secrets, pass
 **`private_key_json_field: "private_key"`** to sign with that field. Supported
 algorithms:
@@ -163,20 +172,20 @@ fetch even when package read/use is automatic.
 
 User-scoped secrets are available automatically for **reading and using**
 (mounts, fetch placeholders, named capability lookups including `secretList`) to
-packages the user authored themselves and adopted community forks
-(`communityForkAdopt` from an interactive MCP agent after a real source review;
-package runtimes cannot adopt). Unadopted community-forked packages need
-explicit **package** approval (`allowed_packages`) before those read/use paths.
-Approval is checked against the **stamped** package — the module that originated
-the call — not the importing run. Dependents statically import the owning
-export; they do not need their own grant for secrets locked to that owner.
-Updating or deleting a user secret from package code (`secretSet`,
-`secretDelete`) always needs the grant on the stamp package, including for
-self-authored and adopted packages. Only the account owner can add a package to
-that grant on `/account/secrets/user/:name` or `/account/secrets/approve`.
-**`secretLock`** returns an approval URL for the owner to click (one-click
-Allow, same spirit as `/connect/secrets`); it does not change
-`allowed_packages`. Send the link and wait. Removing a grant is also
+packages the user authored themselves and adopted community forks. Only the
+account owner can adopt, on the package settings page after a real source
+review; `communityForkAdopt` returns that link and agents cannot adopt.
+Unadopted community-forked packages need explicit **package** approval
+(`allowed_packages`) before those read/use paths. Approval is checked against
+the **stamped** package — the module that originated the call — not the
+importing run. Dependents statically import the owning export; they do not need
+their own grant for secrets locked to that owner. Updating or deleting a user
+secret from package code (`secretSet`, `secretDelete`) always needs the grant on
+the stamp package, including for self-authored and adopted packages. Only the
+account owner can add a package to that grant on `/account/secrets/user/:name`
+or `/account/secrets/approve`. **`secretLock`** returns an approval URL for the
+owner to click (one-click Allow, same spirit as `/connect/secrets`); it does not
+change `allowed_packages`. Send the link and wait. Removing a grant is also
 website-only. `secretSet` cannot change `allowed_packages`. Official OAuth token
 rotation (`createAuthenticatedFetch` 401 retry via `integrationTokenRefresh`)
 persists host-side and does not need that write grant.
@@ -191,9 +200,9 @@ When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like
 `/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
 every pending secret and approves them in one click. A single-secret link grants
-one package on one secret. For community forks, reviewing the source and calling
-`communityForkAdopt` from an interactive MCP agent is an alternative to sending
-those approval links. Package runtimes cannot adopt.
+one package on one secret. For community forks, reviewing the source and sending
+the owner the `communityForkAdopt` adoption link is an alternative to sending
+those approval links. Agents and package runtimes cannot adopt.
 
 ## Package config vs package storage
 
@@ -211,4 +220,5 @@ knobs belong in `packageStorage()`. Versioned config belongs in a repo.
 Credentials belong in secrets. OAuth client ids belong in integrations. OAuth
 access and refresh tokens, and a user-registered app's client secret, live on
 the integration — they do not appear in the Secrets list. PATs, API keys, and
-webhook HMAC secrets stay in the secret store.
+provider-issued webhook HMAC secrets live in the secret store. GitHub-style
+package-owned HMAC lives on the webhook URL record, not in the Secrets list.

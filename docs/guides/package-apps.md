@@ -32,6 +32,12 @@ browser module and static files under `/_assets`. `kody:runtime` exposes
 Open a heading with `search({ entity: "guide:package_apps#remix-recipe" })` (or
 another slug below) when you need one recipe.
 
+> [!WATCH] https://www.youtube.com/watch?v=WjogtbCssZc Watch: Build a Software
+> Pipeline: Help your agent help you
+
+Also watch:
+[Kody Video: hold to record, tap Go to share](https://www.youtube.com/watch?v=RbApj1C067w).
+
 ## After an integration smoke test
 
 Once `integration_bootstrap` proves the integration works — or integration and
@@ -142,13 +148,13 @@ full stream.
 
 ## Remix recipe
 
-**Example A.** Remix is a worked example, not a host mode. The platform supplies
-`remix/<subpath>` at the version Kody's own UI ships (no npm install, no version
-to pick) as an optional convenience. The host treats the entry as a fetch
-handler: esbuild defaults, mount-stripped URLs. The recipe below adds the
-boilerplate Remix needs under that contract — `tsconfig` JSX, per-file
-`@jsxImportSource`, a remount wrapper, named islands with an explicit
-`kody:app#Name` id, and a browser registry.
+**Example A.** Remix is a worked example, not a host mode. Declare `remix` (and
+`@remix-run/ui` if you import primitives) in `package.json#dependencies` like
+any other npm package — the platform does not vendor or inject frameworks. The
+host treats the entry as a fetch handler: esbuild defaults, mount-stripped URLs.
+The recipe below adds the boilerplate Remix needs under that contract —
+`tsconfig` JSX, per-file `@jsxImportSource`, a remount wrapper, named islands
+with an explicit `kody:app#Name` id, and a browser registry.
 
 Kody's runtime is available as named exports from `kody:runtime`, and as the
 `KodyRuntime` request-context key so controllers can `context.get(KodyRuntime)`
@@ -156,17 +162,13 @@ for `packageStorage()`, `packageSecrets`, `kody`, `createAuthenticatedFetch`,
 `workflows`, and `packageContext` (`appBasePath`, `hostedUrl`, `assetBasePath`,
 `clientModuleUrl`) without wiring a middleware.
 
-**Do not depend on `@remix-run/*` or npm `remix`.** The platform supplies every
-`remix/<subpath>` import at the version Kody's origin ships (`3.0.0-rc.2`);
-publish **rejects** any `@remix-run/*` entry in `package.json#dependencies`, and
-a `remix` entry there is ignored. No `esm.sh`, no vendored browser build in
-`public/`, no `client.externals` / import map for Remix: `remix/ui` is inlined
-into the browser module from the platform copy. Put `remix` in `devDependencies`
-only, for editor types. A kit or recipe that installs `@remix-run/ui` from npm
-or maps it through an import map is describing the
-[island pattern](#migrating-an-island-app); see
-[What the platform supplies](#what-the-platform-supplies) for the surface and
-version rules.
+Import Remix as `remix/<subpath>` from the copy publish installs from your
+`dependencies`. Same for `@remix-run/ui/<primitive>` when you use those
+primitives. No `esm.sh`, no platform-mounted `node_modules/remix`, no
+`client.externals` / import map required for Remix — esbuild inlines what your
+package brought. Put matching pins in `devDependencies` only when you want
+editor types without changing the runtime install set. See
+[Host contract](#host-contract) for what the platform actually provides.
 
 The layout below is what `create-package-app` scaffolds. Keep it: routes and
 router at the root of `app/`, controllers, middleware, data, and UI in their own
@@ -175,16 +177,16 @@ folders, the browser entry under `app/assets/`, static files in `public/`. The
 
 ### Recipe
 
-`package.json` — `remix` goes in `devDependencies` for local types only: publish
-installs `package.json#dependencies` and nothing else, so a types-only `remix`
-dev dependency is inert and the bundle uses the platform copy. There is no
-runtime field: the default export is the app.
+`package.json` — declare `remix` in `dependencies` so publish installs it into
+the package snapshot. There is no runtime field: the default export is the app.
+When the app imports a `@remix-run/ui/<primitive>` module, add
+`"@remix-run/ui": "0.12.1"` to `dependencies` too.
 
 ```json
 {
 	"name": "@you/notes",
 	"exports": { ".": "./src/index.ts" },
-	"devDependencies": { "remix": "3.0.0-rc.2" },
+	"dependencies": { "remix": "3.0.0" },
 	"kody": {
 		"id": "notes",
 		"description": "Notes with a hosted Remix app",
@@ -222,7 +224,7 @@ onto the esbuild bundle (no graph sniff). The editor reads the same file.
 {
 	"compilerOptions": {
 		"jsx": "react-jsx",
-		"jsxImportSource": "remix/ui",
+		"jsxImportSource": "remix/component",
 		"allowImportingTsExtensions": true,
 		"module": "esnext",
 		"moduleResolution": "bundler",
@@ -314,15 +316,15 @@ export async function addNote(context: RequestContext, text: string) {
 
 `app/controllers/notes.tsx` — a `form()` route: GET renders, POST validates with
 `remix/data-schema`, persists, and redirects inside the mount. JSX needs no
-pragma: the bundle compiles against `remix/ui`. `context.get(FormData)` uses the
-**global `FormData` constructor** as the context key — that is the key the
-`formData()` middleware stores the parsed body under.
+pragma: the bundle compiles against `remix/component`. `context.get(FormData)`
+uses the **global `FormData` constructor** as the context key — that is the key
+the `formData()` middleware stores the parsed body under.
 `remix/middleware/form-data` exports only `formData` and `FormDataParseError`;
 an `import { FormData } from 'remix/middleware/form-data'` has no matching
 export and fails publish.
 
 ```tsx
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 import type { Controller } from 'remix/router'
 import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
@@ -368,7 +370,7 @@ export default {
 comes from the same key.
 
 ```tsx
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 import type { BuildAction } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
@@ -392,16 +394,16 @@ export default {
 } satisfies BuildAction<'ANY', typeof routes.home>
 ```
 
-`app/ui/render.tsx` — SSR through `remix/ui/server`. The document renders the
-platform module URL from `packageContext.clientModuleUrl`; no
+`app/ui/render.tsx` — SSR through `remix/component/server`. The document renders
+the platform module URL from `packageContext.clientModuleUrl`; no
 `resolveClientEntry` is needed (see [Hydration](#hydration)).
 
 ```tsx
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
-import type { Handle, RemixNode } from 'remix/ui'
-import { renderToStream } from 'remix/ui/server'
+import type { Handle, RemixNode } from 'remix/component'
+import { renderToStream } from 'remix/component/server'
 import { createHtmlResponse } from 'remix/response/html'
 
 function Document(
@@ -457,8 +459,8 @@ the browser bundle. Use a **named** function and an explicit id
 not pin it or keep export names.
 
 ```tsx
-/** @jsxImportSource remix/ui */
-import { clientEntry, on, type Handle } from 'remix/ui'
+/** @jsxImportSource remix/component */
+import { clientEntry, on, type Handle } from 'remix/component'
 
 export const Counter = clientEntry(
 	'kody:app#Counter',
@@ -483,7 +485,7 @@ export const Counter = clientEntry(
 resolves islands by export name from a registry instead of importing a URL.
 
 ```ts
-import { run } from 'remix/ui'
+import { run } from 'remix/component'
 import { Counter } from '../ui/counter.tsx'
 
 const clientEntries: Record<string, unknown> = { Counter }
@@ -565,7 +567,7 @@ that:
   `imports server-only modules that cannot run in the browser (<file>: "kody:runtime")`
   naming the offending module, and the message points at the fix (pass hrefs as
   props). Keep islands in their own files under `app/ui/` that import only
-  `remix/ui` and other islands.
+  `remix/component` and other islands.
 - `<Frame>` and `handle.frame.reload()` work with Remix's default frame
   resolver; frame sources are mount-prefixed hrefs like every other URL.
 
@@ -578,48 +580,34 @@ mode. A leftover field on a published snapshot is ignored.
 
 The host uses esbuild's JSX defaults unless the root `tsconfig.json` sets
 `compilerOptions.jsx` / `jsxImportSource`. A Remix recipe sets
-`"jsx": "react-jsx"` and `"jsxImportSource": "remix/ui"` there (and can repeat a
-`@jsxImportSource remix/ui` pragma per file). A handler that only borrows
-`remix/headers` or `remix/html-template` needs neither.
+`"jsx": "react-jsx"` and `"jsxImportSource": "remix/component"` there (and can
+repeat a `@jsxImportSource remix/component` pragma per file). A handler that
+only borrows `remix/headers` or `remix/html-template` needs neither.
 
-### What the platform supplies
+### Host contract
 
-Import Remix as `remix/<subpath>`; the version is the platform's and matches
-Kody's own UI. The Workers-safe surface is available: `router`, `routes`,
-`route-pattern/*`, `headers/*`, `response/*`, `html-template`, `ui`, `ui/*`
-(primitives, `animation`, `server`, `jsx-runtime`), `data-schema/*`,
-`data-table` (core, `operators`, `sql-helpers`, `migrations`), `cookie`,
-`session`, `session-storage/cookie` and `/memory`, `middleware/*` (`form-data`,
-`method-override`, `session`, `async-context`, `auth`, `compression`, `cors`,
-`cop`, `csrf`, `logger`), `auth`, `form-data-parser`, `multipart-parser`,
-`file-storage` and `/memory`, `fetch-proxy`, `mime`, `lazy-file`, `tar-parser`,
-`spa`, `multiple-import-maps-polyfill`, `assert`. Subpaths that need a Node
-process, a filesystem, a TCP database driver, or a dev server (`assets`, `cli`,
-`fs`, `node-fetch-server`, `session-storage/fs`, `file-storage/fs`,
-`data-table/sqlite`, `middleware/static`, `middleware/render`, `test`, the HMR
-family) are not, and fail publish as an unresolved bare import that names the
-specifier. Durable data is `packageStorage()`; there is no D1 driver in the
-isolate.
+The platform does **not** supply Remix, TanStack, Preact, or any other framework
+to package bundles
+([decision 0057](../contributing/decisions/0057-no-framework-platform-affordance.md)).
+Declare frameworks in `package.json#dependencies` and import them ordinarily;
+unresolved bare imports fail publish with the bundler's usual error. Bundling
+refuses to mount `node_modules/` paths that are absent from the package
+snapshot.
 
-`package.json#dependencies` must not list `@remix-run/*` packages — publish
-rejects them, because a second copy from npm would not share the platform copy's
-component runtime. A `remix` entry there is inert; put it in `devDependencies`
-for editor types. Publish reads `dependencies` only (the runtime bundler
-installs with `dev: false`, and the repo dependency check lists `dependencies`
-only), so a types-only `remix` dev dependency never reaches the bundle and the
-runtime always uses the platform copy.
+What the host does provide: mount-stripped URLs, `kody:runtime` / `KodyRuntime`,
+optional `kody.app.client` / `kody.app.assets`, and `packageStorage()`. JSX
+comes from the package `tsconfig.json` when set (`compilerOptions.jsx` /
+`jsxImportSource`) — that mapping is framework-agnostic (Remix recipes use
+`remix/component`; Preact or others set their own).
 
-**Version pin.** There is exactly one Remix version per platform deploy: the
-origin's `remix@3.0.0-rc.2`. A package never selects it. When the platform
-upgrades Remix, a **republish** picks the new version up for both the server
-bundle and the browser module; artifacts already published keep the Remix they
-were built with until then (they are sticky, not rebuilt behind your back). A
-`devDependencies` pin is for editor types only; keep it on the platform version
-so the types match what publish compiles. Older kit pins such as
-`@remix-run/ui@0.9.0` are obsolete — `remix/ui` comes from the platform.
+A Remix recipe that needs Workers-safe `remix/<subpath>` modules installs
+`remix` (and `@remix-run/ui` when using primitives) like any other dependency.
+Subpaths that need a Node process, filesystem, TCP driver, or dev server still
+fail as unresolved bare imports when those packages do not export a Workers-safe
+build. Durable data is `packageStorage()`; there is no D1 driver in the isolate.
 
-Local development: `npm i -D remix@3.0.0-rc.2` and a `tsconfig.json` with
-`"jsx": "react-jsx"`, `"jsxImportSource": "remix/ui"`, and
+Local development: `npm i remix@3.0.0` (runtime) and a `tsconfig.json` with
+`"jsx": "react-jsx"`, `"jsxImportSource": "remix/component"`, and
 `"allowImportingTsExtensions": true` gives editors the same types the bundle
 compiles against. `kody:runtime` types come from the repo's generated
 declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
@@ -636,9 +624,9 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   for links, `redirect()`, `<form action>`, `<Frame src>`, and fetch targets. A
   root-relative literal such as `/about` or `/api/notes` leaves the mount and
   404s on the host.
-- **TSX compiles against `remix/ui` only when you set it.** Put
-  `"jsxImportSource": "remix/ui"` in `tsconfig.json` and a
-  `@jsxImportSource remix/ui` pragma on each TSX file. No React, no
+- **TSX compiles against `remix/component` only when you set it.** Put
+  `"jsxImportSource": "remix/component"` in `tsconfig.json` and a
+  `@jsxImportSource remix/component` pragma on each TSX file. No React, no
   `jsx-runtime` dependency.
 - **Islands are named functions listed in the browser registry.** The server id
   is the explicit `kody:app#Name` string, and `run({ loadModule })` resolves by
@@ -677,30 +665,30 @@ declaration (`KodyRuntime`, `packageContext`, `packageStorage`, …).
   that imports `kody:runtime`). Keep that module server-side and pass the hrefs
   it needs to the island as props.
 - **Publish fails with `unresolved bare package imports … "remix/assets"`** — a
-  Node-only subpath. Serve files from `kody.app.assets` instead.
-- **Publish fails with
-  `package.json#dependencies must not list "@remix-run/…"`** — import
-  `remix/<subpath>` and delete the entry (and any import map that pointed at
-  it).
-- **Browser console `Failed to resolve module specifier "remix/ui"`** — the
-  bundle left it external because `client.externals` lists `remix/ui` or
-  `@remix-run/ui`. Remove the external and the import-map entry; the platform
-  inlines it.
+  Node-only subpath, or `remix` is missing from `package.json#dependencies` so
+  publish never installed it. Declare `remix` in `dependencies` and serve files
+  from `kody.app.assets` instead of `remix/assets`.
+- **Browser console `Failed to resolve module specifier "remix/component"`** —
+  the bundle left it external because `client.externals` lists `remix/component`
+  or `@remix-run/ui`, or the package snapshot has no `node_modules/remix`.
+  Remove the external and import-map entry; put `remix` in `dependencies` so
+  publish installs it and esbuild inlines the package copy.
 - **JSX compiled to `React.createElement`** — missing
-  `"jsxImportSource": "remix/ui"` in `tsconfig.json` and no
-  `@jsxImportSource remix/ui` pragma. The host does not sniff the graph.
+  `"jsxImportSource": "remix/component"` in `tsconfig.json` and no
+  `@jsxImportSource remix/component` pragma. The host does not sniff the graph.
 
 ## Migrating an island app
 
 An app built on the island pattern — `src/app.ts` rendering an HTML string,
-`kody.app.client` with `externals: ["@remix-run/ui"]`, an import map pointing at
-`esm.sh` or a vendored build in `public/`, and a hand-written Navigation API
-router in the client — moves to a Remix router in one publish:
+`kody.app.client` with an npm Remix UI build listed in `externals`, an import
+map pointing at `esm.sh` or a vendored build in `public/`, and a hand-written
+Navigation API router in the client — moves to a Remix router in one publish:
 
-1. **Dependencies.** Delete `@remix-run/*` from `dependencies` (publish rejects
-   them), drop the `client.externals` entry and the `<script type="importmap">`
-   for Remix, and remove the vendored `public/vendor/remix-ui.js` (or the
-   `esm.sh` URL). Add `"remix": "3.0.0-rc.2"` to `devDependencies` for types.
+1. **Dependencies.** Drop the `client.externals` entry and the
+   `<script type="importmap">` for Remix, and remove the vendored
+   `public/vendor/remix-ui.js` (or the `esm.sh` URL). Put `"remix": "3.0.0"` in
+   `dependencies` so publish installs it (and `"@remix-run/ui": "0.12.1"` if the
+   app imports primitives).
 2. **Manifest.** Point `entry` at `./app/router.ts` and `client` at
    `./app/assets/entry.ts`. `assets` stays `./public`. Do not set
    `kody.app.runtime`.
@@ -758,7 +746,7 @@ ids.
 
 ```text
 package.json            entry ./app/router.ts, client ./app/assets/entry.ts, assets ./public
-tsconfig.json           jsx react-jsx, jsxImportSource remix/ui
+tsconfig.json           jsx react-jsx, jsxImportSource remix/component
 app/routes.ts           route(packageContext?.appBasePath ?? '', …)
 app/router.ts           createRouter + remount wrapper, default export { fetch }
 app/controllers/        one file or folder per route area
@@ -772,18 +760,18 @@ src/index.ts            package export (unchanged)
 ```
 
 - The **starter** a kit scaffolds is the Remix recipe above. A kit **demo** may
-  emit a fetch handler for a script-only page; it does not set a runtime field,
-  and it does not install `@remix-run/*`.
-- Kits must not add `@remix-run/*` to `dependencies`, `remix/ui` or
-  `@remix-run/ui` to `client.externals`, or an import map for Remix; the
-  `client.externals` + import map pair is valid for other browser packages.
+  emit a fetch handler for a script-only page; it does not set a runtime field.
+- Kits that emit the Remix recipe put `remix` (and `@remix-run/ui` if used) in
+  `dependencies`. Do not add `remix/component` or `@remix-run/ui` to
+  `client.externals` or an import map for Remix; that pair is valid for other
+  browser packages.
 - `data-app-base` on `<html>` and `__version.json` are the two runtime discovery
   points kits may rely on; `data-client-module` is optional because the document
   already renders `clientModuleUrl`.
 - `kody:runtime` types (`KodyRuntime`, `packageContext`) come from the
-  platform's generated declaration, so a kit ships only `remix` in
-  `devDependencies` and the `tsconfig.json` from
-  [What the platform supplies](#what-the-platform-supplies).
+  platform's generated declaration. A Remix kit declares `remix` in
+  `dependencies` (runtime) and may mirror pins in `devDependencies` for editors;
+  see [Host contract](#host-contract).
 - Common kit pieces map onto the layout without platform help: a **toast** or
   **double-check confirm** is a named `clientEntry` island fed by props; an
   **update check** is an island (or the service worker) that polls
@@ -919,10 +907,11 @@ console.log('theme', config.theme)
 
 `public/styles.css` (optional `assets` directory, served as-is).
 
-`remix/ui` and the other `remix/…` subpaths are inlined from the platform copy,
-so a Remix client needs no import map. Using another browser package from the
-client? Either add it to `package.json#dependencies` to inline it, or switch
-`client` to the object form and pair it with an import map — see
+`remix/component` and the other `remix/…` subpaths resolve from the `remix`
+dependency your package declared (publish installs it into the snapshot), so a
+Remix client needs no import map. Using another browser package from the client?
+Either add it to `package.json#dependencies` to inline it, or switch `client` to
+the object form and pair it with an import map — see
 [Import maps and externals](#import-maps-and-externals) for the copy-paste pair.
 
 ### Two graphs, not one

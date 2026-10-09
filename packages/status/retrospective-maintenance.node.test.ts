@@ -54,66 +54,45 @@ function incidentView(
 
 test('retrospective maintenance path authenticates and writes only resolved incidents', async () => {
 	expect(
-		parseIncidentRetrospectivePath('/__maintenance/incidents/10/retrospective'),
-	).toBe(10)
-	expect(
-		parseIncidentRetrospectivePath('/__maintenance/incidents/0/retrospective'),
-	).toBe(null)
-	expect(
-		parseIncidentRetrospectivePath('/__maintenance/status-incidents'),
-	).toBe(null)
+		[
+			'/__maintenance/incidents/10/retrospective',
+			'/__maintenance/incidents/0/retrospective',
+			'/__maintenance/status-incidents',
+		].map(parseIncidentRetrospectivePath),
+	).toEqual([10, null, null])
 	expect(unknownStatusMaintenanceResponse().status).toBe(404)
 
-	const getResponse = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({ method: 'GET' }),
-		incidentId: 10,
-		secret: 'shared-secret',
-		setRetrospective: async () => {
-			throw new Error('should not write')
-		},
-	})
-	expect(getResponse.status).toBe(405)
-
-	const unset = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({}),
-		incidentId: 10,
-		secret: '  ',
-		setRetrospective: async () => {
-			throw new Error('should not write')
-		},
-	})
-	expect(unset.status).toBe(503)
-
-	const unauthorized = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({ authorization: 'Bearer wrong' }),
-		incidentId: 10,
-		secret: 'shared-secret',
-		setRetrospective: async () => {
-			throw new Error('should not write')
-		},
-	})
-	expect(unauthorized.status).toBe(401)
-
-	const missingBearer = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({ authorization: null }),
-		incidentId: 10,
-		secret: 'shared-secret',
-		setRetrospective: async () => {
-			throw new Error('should not write')
-		},
-	})
-	expect(missingBearer.status).toBe(401)
-
-	const invalidBody = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({ body: { whatHappened: 'only' } }),
-		incidentId: 10,
-		secret: 'shared-secret',
-		setRetrospective: async () => {
-			throw new Error('should not write')
-		},
-	})
-	expect(invalidBody.status).toBe(400)
-	expect(await invalidBody.json()).toMatchObject({ ok: false })
+	const rejected: Array<[Request, string, number]> = [
+		[retrospectiveRequest({ method: 'GET' }), 'shared-secret', 405],
+		[retrospectiveRequest({}), '  ', 503],
+		[
+			retrospectiveRequest({ authorization: 'Bearer wrong' }),
+			'shared-secret',
+			401,
+		],
+		[retrospectiveRequest({ authorization: null }), 'shared-secret', 401],
+		[
+			retrospectiveRequest({ body: { whatHappened: 'only' } }),
+			'shared-secret',
+			400,
+		],
+	]
+	const responses = await Promise.all(
+		rejected.map(([request, secret]) =>
+			handleIncidentRetrospectiveRequest({
+				request,
+				incidentId: 10,
+				secret,
+				setRetrospective: async () => {
+					throw new Error('should not write')
+				},
+			}),
+		),
+	)
+	expect(responses.map((response) => response.status)).toEqual(
+		rejected.map(([, , status]) => status),
+	)
+	expect(await responses.at(-1)!.json()).toMatchObject({ ok: false })
 
 	const publishedAt = Date.parse('2026-09-02T22:20:00.000Z')
 	let written: IncidentRetrospective | null = null
@@ -129,10 +108,7 @@ test('retrospective maintenance path authenticates and writes only resolved inci
 		},
 	})
 	expect(ok.status).toBe(200)
-	const okBody = (await ok.json()) as {
-		ok: boolean
-		incident: IncidentView
-	}
+	const okBody = (await ok.json()) as { ok: boolean; incident: IncidentView }
 	expect(okBody.ok).toBe(true)
 	expect(okBody.incident.retrospective?.publishedAt).toBe(
 		'2026-09-02T22:20:00.000Z',
@@ -147,19 +123,16 @@ test('retrospective maintenance path authenticates and writes only resolved inci
 		publishedAt: '2026-09-02T22:20:00.000Z',
 	})
 
-	const notFound = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({}),
-		incidentId: 99,
-		secret: 'shared-secret',
-		setRetrospective: async () => ({ ok: false, error: 'not-found' }),
-	})
-	expect(notFound.status).toBe(404)
-
-	const openIncident = await handleIncidentRetrospectiveRequest({
-		request: retrospectiveRequest({}),
-		incidentId: 11,
-		secret: 'shared-secret',
-		setRetrospective: async () => ({ ok: false, error: 'not-resolved' }),
-	})
-	expect(openIncident.status).toBe(409)
+	for (const [incidentId, error, status] of [
+		[99, 'not-found', 404],
+		[11, 'not-resolved', 409],
+	] as const) {
+		const response = await handleIncidentRetrospectiveRequest({
+			request: retrospectiveRequest({}),
+			incidentId,
+			secret: 'shared-secret',
+			setRetrospective: async () => ({ ok: false, error }),
+		})
+		expect(response.status).toBe(status)
+	}
 })

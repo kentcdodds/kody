@@ -106,7 +106,9 @@ Execute responses include Server-Timing-style phase entries under
 **`timing.serverTiming`** (public tool) or top-level **`serverTiming`**
 (`meta.execute`): each entry is `{ name, durationMs }`.
 
-- `bundle` — module-graph preparation and bundling.
+- `bundle` — module-graph preparation and bundling. Ad-hoc execute begins the
+  run record before this phase and caps it at ~90s so a hung dual heavy-export
+  graph finishes as a recorded error instead of a silent MCP client abort.
 - `hydrate` — refreshing nested runtime modules, including compatibility
   placeholders retained in already-published bundle snapshots.
 - `provider-assembly` — capability registry, runtime helper, and provider wiring
@@ -158,11 +160,12 @@ workflows.
 
 ### Recovering from MCP client timeouts
 
-A timeout means Kody stopped observing the sandbox. Kody cooperatively aborts
-nested package work where the execution model allows it, but already-started
-remote work and side effects may still complete. Do not blindly retry a
-timed-out side-effecting call: key-less successful execute calls are not written
-to Activity, so the timeout can leave you unsure whether the effect happened.
+A timeout means the MCP client stopped waiting. Kody aborts that inbound
+request's sandbox, including a keyed package invocation nested under it, and
+finishes the run as `errorName=client_disconnected` with a log line. The attempt
+does not stay `running` until platform reconciliation. Already-started remote
+side effects may still complete. Do not blindly retry a timed-out side-effecting
+call. Check **Recent runs** or `runList` before starting another sandbox.
 
 Pass an optional **`idempotencyKey`** (string, max 256 characters) when the call
 must be recoverable:
@@ -176,15 +179,21 @@ must be recoverable:
   sandbox).
 - Retrying while the first attempt is still running returns
   **`inProgress: true`** with the **`runId`** (no duplicate start).
+- A caller disconnect finishes the run as **`errorName=client_disconnected`**.
+  Retrying the same key replays that error. Use a new idempotency key to run the
+  work again.
 - If a keyed run is stranded as `running` (for example the Worker isolate reset
   before the terminal write), Kody reconciles it to an error with
   **`errorName=platform_interrupted`** after a few minutes (platform weather;
-  outcome unknown — not a user-authored package failure). Polling **`runGet`**
+  outcome unknown — not a user-authored package failure). Keyed package
+  invocations write `package invocation started: …` onto the running row before
+  sandbox work, so that reconciled row is not an empty log. Polling **`runGet`**
   or retrying the same key then returns that terminal outcome instead of
   `inProgress` forever.
 
-Omit the key for ordinary short calls; key-less execute stays on-failure-only so
-Activity is not flooded with successful one-offs.
+Omit the key for ordinary short calls. Those runs are still listed in Activity
+when they finish. Pass a key when a retry must return the retained result
+instead of running again.
 
 To read field shapes while coding, use **search** with
 **`entity: "capability:{name}"`** for builtin capability type definitions, or
@@ -313,9 +322,7 @@ When a call is denied by a plan limit or a daily quota, the existing error
 message and `isError: true` stay the same. Structured content also includes a
 focused **`entitlement`** object with known fields only (resource, current plan,
 limit, current usage, upgrade hint). Daily quota denials add compact `used` and
-`remaining`. Unique-worker-day include denials add a short `mechanic` line
-(meter name and what a unique worker day is). Ordinary successful execute
-results omit `entitlement`.
+`remaining`. Ordinary successful execute results omit `entitlement`.
 
 Dynamic Worker identity for an execute run follows the acting user and that
 module graph. The same user and graph reuse one isolate for the UTC day when
@@ -341,11 +348,9 @@ Users can read or replace their own MCP server instruction overlay with
 This overlay is appended after Kody's built-in server instructions for that
 user. Prefer **memories** for durable facts and preferences; use the overlay
 only for rare always-on session policy — not for maintaining a package
-inventory. When agents have used saved packages via MCP `execute`, Kody may
-include a short “often used packages” hint automatically; discover others with
-**`search`**. Pass an empty string to clear the overlay. Changes apply to new
-MCP sessions, so reconnect the MCP client if the host caches server
-instructions.
+inventory. Discover packages and other capabilities with **`search`**. Pass an
+empty string to clear the overlay. Changes apply to new MCP sessions, so
+reconnect the MCP client if the host caches server instructions.
 
 Some MCP clients keep only the first 2048 characters of server instructions.
 **`metaGetMcpServerInstructions`** and **`metaSetMcpServerInstructions`** report

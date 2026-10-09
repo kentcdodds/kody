@@ -128,6 +128,9 @@ export async function finalizePublishedEntitySource(
 			packageId: input.source.entity_id,
 			sourceId: input.source.id,
 			rebuildArtifacts: input.rebuildPackageArtifacts ?? true,
+			// Always pass the published file set so skills indexing runs even
+			// when artifact rebuild is deferred (`rebuildArtifacts: false`).
+			sourceFiles: input.files,
 		})
 	} catch (projectionError) {
 		try {

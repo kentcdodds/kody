@@ -15,6 +15,7 @@ export const repoRestoreCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoRestore',
+		orgPermission: 'package:write',
 		description: [
 			'Restore one or more workspace files to their content at a commit (default: the session base commit).',
 			fileLevelApiNote,

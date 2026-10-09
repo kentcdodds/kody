@@ -14,6 +14,7 @@ export const chartColor = {
 	lime: '#84cc16',
 	fuchsia: '#d946ef',
 	teal: '#14b8a6',
+	orange: '#f97316',
 } as const
 
 export const chartGridStroke =

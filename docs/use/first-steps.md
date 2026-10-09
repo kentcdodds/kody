@@ -21,6 +21,10 @@ guides load with `search({ entity: "guide:{id}" })` — not execute.
 - **Pass `memoryContext`** when durable user memory may matter. Kody uses it to
   surface a small set of relevant long-term memories as compact subject and
   summary one-liners. `search` also retrieves from the query string.
+- **Put varying capability args in execute `params`**, not string literals
+  inside `code` (e.g. after `import { kody } from 'kody:runtime'`,
+  `export default async function main(params) { return await kody.emailSend(params) }`).
+  Same user and module graph reuse one isolate for the UTC day.
 - **Think in packages for reusable saved code.** Packages expose exports,
   declare package-owned jobs, and can optionally expose an app/UI surface.
   Recurring schedules belong on a package under `kody.jobs`. Deferred one-shot
@@ -42,7 +46,7 @@ guides load with `search({ entity: "guide:{id}" })` — not execute.
 - **Ask for natural-language goals**, for example: “Search Kody for GitHub pull
   request automation” or “Find a saved package for Cloudflare DNS helpers.”
 - **Credentials use connect flows.** Use saved secrets, `/connect/oauth`,
-  `/account/secrets/new`, or the flows described in
+  `/connect/secret-set`, or the flows described in
   [Secrets and host approval](./secrets-and-values.md). Per-provider connect
   guides are available: `search({ entity: "guide:provider_<name>" })` (for
   example `provider_github`) or browse

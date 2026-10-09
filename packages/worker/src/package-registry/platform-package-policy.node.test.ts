@@ -42,6 +42,7 @@ async function seedPackage(
 		search_text: null,
 		source_id: `source-${id}`,
 		has_app: 0,
+		has_skills: 0,
 		hidden: 0,
 		is_private: 0,
 	})
@@ -70,9 +71,7 @@ test('findPersonPackagePlatformReference names the official package and ignores 
 		findPersonPackagePlatformReference({
 			db,
 			manifestDependencies: { '@alice/helper': '*' },
-			sourceFiles: {
-				'index.ts': `import helper from 'kody:@alice/helper'\n`,
-			},
+			sourceFiles: { 'index.ts': `import helper from 'kody:@alice/helper'\n` },
 		}),
 	).resolves.toBeNull()
 	await expect(
@@ -84,16 +83,10 @@ test('findPersonPackagePlatformReference names the official package and ignores 
 		}),
 	).resolves.toBe('@kody/notion')
 	await expect(
-		throwIfPersonPackagePlatformReference({
-			db,
-			packageName: '@alice/helper',
-		}),
+		throwIfPersonPackagePlatformReference({ db, packageName: '@alice/helper' }),
 	).resolves.toBeUndefined()
 	await expect(
-		throwIfPersonPackagePlatformReference({
-			db,
-			packageName: '@kody/notion',
-		}),
+		throwIfPersonPackagePlatformReference({ db, packageName: '@kody/notion' }),
 	).rejects.toThrow(personPackagePlatformDependencyMessage)
 })
 
@@ -143,38 +136,31 @@ test('already-published person artifacts with platformOwned deps fail closed; pl
 		name: '@kody/github',
 		kodyId: 'github',
 	})
-	const platformOwned = [{ platformOwned: true }]
+	const assertMayRun = (
+		userId: string,
+		packageId: string,
+		platformOwned: boolean,
+	) =>
+		assertPersonOwnedPackageMayNotRunPlatformDependencies({
+			db,
+			userId,
+			packageId,
+			dependencies: [{ platformOwned }],
+		})
 
 	await expect(
-		assertPersonOwnedPackageMayNotRunPlatformDependencies({
-			db,
-			userId: 'person-alice',
-			packageId: personPackageId,
-			dependencies: platformOwned,
-		}),
+		assertMayRun('person-alice', personPackageId, true),
 	).rejects.toThrow(personPackagePlatformDependencyMessage)
-	await expect(
-		assertPersonOwnedPackageMayNotRunPlatformDependencies({
-			db,
-			userId: platformUserId,
-			packageId: platformPackageId,
-			dependencies: platformOwned,
-		}),
-	).resolves.toBeUndefined()
-	await expect(
-		assertPersonOwnedPackageMayNotRunPlatformDependencies({
-			db,
-			userId: 'person-alice',
-			packageId: personPackageId,
-			dependencies: [{ platformOwned: false }],
-		}),
-	).resolves.toBeUndefined()
-	await expect(
-		assertPersonOwnedPackageMayNotRunPlatformDependencies({
-			db,
-			userId: 'person-alice',
-			packageId: platformPackageId,
-			dependencies: platformOwned,
-		}),
-	).resolves.toBeUndefined()
+	const allowed: Array<
+		[userId: string, packageId: string, platformOwned: boolean]
+	> = [
+		[platformUserId, platformPackageId, true],
+		['person-alice', personPackageId, false],
+		['person-alice', platformPackageId, true],
+	]
+	for (const [userId, packageId, platformOwned] of allowed) {
+		await expect(
+			assertMayRun(userId, packageId, platformOwned),
+		).resolves.toBeUndefined()
+	}
 })

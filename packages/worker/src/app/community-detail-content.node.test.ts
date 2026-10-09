@@ -28,35 +28,72 @@ const sampleListing = {
 	forkCount: 1,
 } satisfies PublicCommunityListing
 
-const detailBase = {
-	listing: sampleListing,
-	username: 'kentcdodds',
-	kodyId: 'github-triage',
-	description: sampleListing.description,
-	isPrivate: false,
-	ownerProfilePublic: true,
-	viewerIsOwner: false,
-	returnTo: '/@kentcdodds/github-triage',
-} as const
+type RenderInput = Parameters<typeof renderCommunityDetailContentHtml>[0]
+type ViewerInstall = NonNullable<PublicCommunityListing['viewerInstall']>
+
+/** Signed-in, non-owner view of the sample listing unless overridden. */
+function render(overrides: Partial<RenderInput> = {}) {
+	return renderCommunityDetailContentHtml({
+		listing: sampleListing,
+		username: 'kentcdodds',
+		kodyId: 'github-triage',
+		description: sampleListing.description,
+		isPrivate: false,
+		ownerProfilePublic: true,
+		viewerIsOwner: false,
+		returnTo: '/@kentcdodds/github-triage',
+		loggedIn: true,
+		...overrides,
+	})
+}
+
+const agentPrompt =
+	'Call packageGet for @me/github-triage and adapt it to my needs.'
+
+function withInstall(install: Partial<ViewerInstall>) {
+	return {
+		...sampleListing,
+		viewerInstall: {
+			status: 'installed',
+			targetName: '@me/github-triage',
+			agentPrompt,
+			packageId: 'pkg-1',
+			listingAhead: false,
+			listingAheadPrompt: null,
+			forkAhead: false,
+			listingDiffHref: null,
+			...install,
+		} satisfies ViewerInstall,
+	}
+}
+
+function expectMarkers(
+	html: string,
+	present: Array<string>,
+	absent: Array<string> = [],
+) {
+	expect(present.filter((marker) => !html.includes(marker))).toEqual([])
+	expect(absent.filter((marker) => html.includes(marker))).toEqual([])
+}
+
+const testId = (id: string) => `data-testid="${id}"`
 
 test('community detail head covers install, installed, and listing-ahead badges', async () => {
-	const installHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		loggedIn: true,
-	})
-	expect(installHtml).toContain('data-testid="package-title-actions"')
-	expect(installHtml).toContain('data-testid="community-detail-install"')
-	expect(installHtml).toContain('data-community-install')
-	expect(installHtml).toContain('data-package-title-status="verify"')
-	expect(installHtml).toContain('data-icon="git-fork"')
-	expect(installHtml).toContain('data-official="false"')
-	expect(installHtml).toContain('data-trusted="false"')
-	expect(
-		installHtml.indexOf('data-testid="package-title-actions"'),
-	).toBeLessThan(installHtml.indexOf('data-testid="package-repo-nav"'))
+	const installHtml = await render()
+	expectMarkers(installHtml, [
+		testId('package-title-actions'),
+		testId('community-detail-install'),
+		'data-community-install',
+		'data-package-title-status="verify"',
+		'data-icon="git-fork"',
+		'data-official="false"',
+		'data-trusted="false"',
+	])
+	expect(installHtml.indexOf(testId('package-title-actions'))).toBeLessThan(
+		installHtml.indexOf(testId('package-repo-nav')),
+	)
 
-	const officialHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
+	const officialHtml = await render({
 		listing: {
 			...sampleListing,
 			name: '@kody/notion-mcp',
@@ -66,71 +103,41 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		username: 'kody',
 		kodyId: 'notion-mcp',
 		returnTo: '/@kody/notion-mcp',
-		loggedIn: true,
 	})
-	expect(officialHtml).toContain('data-official="true"')
-	expect(officialHtml).toContain('data-package-title-status="fork"')
-	expect(officialHtml).toContain('data-icon="git-fork"')
+	expectMarkers(officialHtml, [
+		'data-official="true"',
+		'data-package-title-status="fork"',
+		'data-icon="git-fork"',
+	])
 
-	const agentPrompt =
-		'Call packageGet for @me/github-triage and adapt it to my needs.'
-	const installedHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'installed',
-				targetName: '@me/github-triage',
-				agentPrompt,
-				packageId: 'pkg-1',
-				listingAhead: false,
-				listingAheadPrompt: null,
-				forkAhead: false,
-				listingDiffHref: null,
-			},
-		},
-		loggedIn: true,
-	})
-	expect(installedHtml).toContain('data-package-title-status="open"')
-	expect(installedHtml).toContain('data-icon="arrow-up-right"')
-	expect(installedHtml).toContain('href="/@me/github-triage"')
-	expect(installedHtml).not.toContain('data-copy-prompt')
-	expect(installedHtml).not.toContain(agentPrompt)
-	expect(installedHtml).not.toContain('data-testid="community-detail-install"')
-
-	const adaptHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'adaptation_required',
-				targetName: '@me/github-triage',
-				agentPrompt,
-				packageId: null,
-				listingAhead: false,
-				listingAheadPrompt: null,
-				forkAhead: false,
-				listingDiffHref: null,
-			},
-		},
-		loggedIn: true,
-	})
-	expect(adaptHtml).toContain('data-package-title-status="open"')
-	expect(adaptHtml).toContain('data-testid="package-title-copy-setup"')
-	expect(adaptHtml).toContain('data-icon="clipboard"')
-	expect(adaptHtml).toContain(agentPrompt)
-
-	const sourceAheadHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			sourceAhead: true,
-		},
-		loggedIn: true,
-	})
-	expect(sourceAheadHtml).toContain(
-		'data-testid="community-detail-source-ahead-badge"',
+	expectMarkers(
+		await render({ listing: withInstall({}) }),
+		[
+			'data-package-title-status="open"',
+			'data-icon="arrow-up-right"',
+			'href="/@me/github-triage"',
+		],
+		['data-copy-prompt', agentPrompt, testId('community-detail-install')],
 	)
+
+	expectMarkers(
+		await render({
+			listing: withInstall({
+				status: 'adaptation_required',
+				packageId: null,
+			}),
+		}),
+		[
+			'data-package-title-status="open"',
+			testId('package-title-copy-setup'),
+			'data-icon="clipboard"',
+			agentPrompt,
+		],
+	)
+
+	const sourceAheadHtml = await render({
+		listing: { ...sampleListing, sourceAhead: true },
+	})
 	expect(sourceAheadHtml).toMatch(
 		/<span[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
@@ -138,15 +145,13 @@ test('community detail head covers install, installed, and listing-ahead badges'
 
 	const ownerAheadHref =
 		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
-	const ownerAheadHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
+	const ownerAheadHtml = await render({
 		listing: {
 			...sampleListing,
 			sourceAhead: true,
 			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		},
 		viewerIsOwner: true,
-		loggedIn: true,
 		publishCompareHref: ownerAheadHref,
 	})
 	expect(ownerAheadHtml).toContain(`href="${ownerAheadHref}"`)
@@ -154,268 +159,218 @@ test('community detail head covers install, installed, and listing-ahead badges'
 		/<a[^>]*data-testid="community-detail-source-ahead-badge"/,
 	)
 
-	const ownInstalledHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'installed',
-				targetName: '@kentcdodds/github-triage',
-				agentPrompt,
-				packageId: 'pkg-1',
-				listingAhead: false,
-				listingAheadPrompt: null,
-				forkAhead: false,
-				listingDiffHref: null,
-			},
-		},
-		viewerIsOwner: true,
-		loggedIn: true,
-	})
-	expect(ownInstalledHtml).not.toContain('data-testid="package-title-actions"')
-	expect(ownInstalledHtml).not.toContain(
-		'data-testid="community-detail-install"',
+	expectMarkers(
+		await render({
+			listing: withInstall({ targetName: '@kentcdodds/github-triage' }),
+			viewerIsOwner: true,
+		}),
+		[],
+		[
+			testId('package-title-actions'),
+			testId('community-detail-install'),
+			'data-copy-prompt',
+		],
 	)
-	expect(ownInstalledHtml).not.toContain('data-copy-prompt')
 
 	const aheadPrompt =
 		'Compare the current listing snapshot, keep local customizations, then publish with repoPublishSession and absorbed_upstream_commit.'
-	const aheadHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'installed',
-				targetName: '@me/github-triage',
-				agentPrompt: 'Finish setup for @me/github-triage.',
-				packageId: 'pkg-1',
+	const finishSetup = 'Finish setup for @me/github-triage.'
+	expectMarkers(
+		await render({
+			listing: withInstall({
+				agentPrompt: finishSetup,
 				listingAhead: true,
 				listingAheadPrompt: aheadPrompt,
-				forkAhead: false,
 				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-new',
-			},
-		},
-		returnTo: '/community',
-		loggedIn: true,
-	})
-	expect(aheadHtml).toContain('data-package-title-status="outdated"')
-	expect(aheadHtml).toContain('data-icon="link-break"')
-	expect(aheadHtml).toContain('data-fork-outdated-copy')
-	expect(aheadHtml).toContain('data-copy-prompt')
-	expect(aheadHtml).toContain(aheadPrompt)
-	expect(aheadHtml).not.toContain('data-testid="community-detail-install"')
-	expect(aheadHtml).toContain(
-		'href="/@kentcdodds/github-triage/tree/commit-new"',
+			}),
+			returnTo: '/community',
+		}),
+		[
+			'data-package-title-status="outdated"',
+			'data-icon="link-break"',
+			'data-fork-outdated-copy',
+			'data-copy-prompt',
+			aheadPrompt,
+			'href="/@kentcdodds/github-triage/tree/commit-new"',
+		],
+		[testId('community-detail-install')],
 	)
 
-	const forkAheadHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: {
-			...sampleListing,
-			viewerInstall: {
-				status: 'installed',
-				targetName: '@me/github-triage',
-				agentPrompt: 'Finish setup for @me/github-triage.',
-				packageId: 'pkg-1',
-				listingAhead: false,
-				listingAheadPrompt: null,
+	expectMarkers(
+		await render({
+			listing: withInstall({
+				agentPrompt: finishSetup,
 				forkAhead: true,
 				listingDiffHref: '/@kentcdodds/github-triage/tree/commit-pin',
-			},
-		},
-		returnTo: '/community',
-		loggedIn: true,
-	})
-	expect(forkAheadHtml).toContain(
-		'data-testid="community-detail-listing-fork-ahead-badge"',
+			}),
+			returnTo: '/community',
+		}),
+		[
+			testId('community-detail-listing-fork-ahead-badge'),
+			'Fork ahead',
+			'href="/@kentcdodds/github-triage/tree/commit-pin"',
+		],
+		['data-copy-prompt', 'data-fork-outdated-copy'],
 	)
-	expect(forkAheadHtml).toContain('Fork ahead')
-	expect(forkAheadHtml).toContain(
-		'href="/@kentcdodds/github-triage/tree/commit-pin"',
-	)
-	expect(forkAheadHtml).not.toContain('data-copy-prompt')
-	expect(forkAheadHtml).not.toContain('data-fork-outdated-copy')
 })
 
 test('package chrome is shared for public listings and private owner packages', async () => {
-	const publicHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		loggedIn: false,
-	})
-	expect(publicHtml).toContain('data-testid="package-repo-chrome"')
-	expect(publicHtml).toContain('data-testid="community-listing-icon-detail"')
+	const publicHtml = await render({ loggedIn: false })
 	expect(
-		publicHtml.indexOf('data-testid="community-listing-icon-detail"'),
+		publicHtml.indexOf(testId('community-listing-icon-detail')),
 	).toBeLessThan(publicHtml.indexOf('<h1'))
-	const titleNameAt = publicHtml.indexOf('data-testid="package-title-name"')
+	const titleNameAt = publicHtml.indexOf(testId('package-title-name'))
 	const leafNameAt = publicHtml.indexOf('>github-triage<', titleNameAt)
 	const titleActionsAt = publicHtml.indexOf(
-		'data-testid="package-title-actions"',
+		testId('package-title-actions'),
 		titleNameAt,
 	)
 	expect(titleNameAt).toBeGreaterThan(-1)
 	expect(leafNameAt).toBeGreaterThan(titleNameAt)
 	expect(titleActionsAt).toBeGreaterThan(leafNameAt)
 	expect(titleActionsAt).toBeLessThan(publicHtml.indexOf('</h1>', titleNameAt))
-	expect(publicHtml).toContain('data-testid="package-repo-nav-repo"')
-	expect(publicHtml).toContain('data-testid="package-repo-nav-files"')
-	expect(publicHtml).not.toContain('data-testid="package-repo-nav-settings"')
-	expect(publicHtml).not.toContain('data-testid="package-visibility-badge"')
-	expect(publicHtml).not.toContain('data-signifier="unpublished"')
-	expect(publicHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
-	expect(publicHtml).toContain('data-testid="community-detail-forks"')
-	expect(publicHtml).toContain('data-testid="community-detail-version"')
-	expect(publicHtml).toContain('← Public packages')
+	expectMarkers(
+		publicHtml,
+		[
+			testId('package-repo-chrome'),
+			testId('community-listing-icon-detail'),
+			testId('package-repo-nav-repo'),
+			testId('package-repo-nav-files'),
+			'href="/@kentcdodds/github-triage/tree/main"',
+			testId('community-detail-forks'),
+			testId('community-detail-version'),
+			'← Public packages',
+		],
+		[
+			testId('package-repo-nav-settings'),
+			testId('package-visibility-badge'),
+			'data-signifier="unpublished"',
+		],
+	)
 
-	const noVersionHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: { ...sampleListing, version: null },
-		loggedIn: false,
-	})
-	expect(noVersionHtml).not.toContain('data-testid="community-detail-version"')
+	expect(
+		await render({
+			listing: { ...sampleListing, version: null },
+			loggedIn: false,
+		}),
+	).not.toContain(testId('community-detail-version'))
 
-	const ownerHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		viewerIsOwner: true,
-		loggedIn: true,
-	})
-	expect(ownerHtml).toContain('data-testid="package-repo-nav-settings"')
-	expect(ownerHtml).toContain('data-testid="package-repo-nav-repo"')
-	expect(ownerHtml).toContain('data-testid="package-repo-nav-files"')
-	expect(ownerHtml).toContain('href="/@kentcdodds/github-triage/settings"')
-	expect(ownerHtml).toContain('href="/@kentcdodds"')
-	expect(ownerHtml).toContain('← @kentcdodds')
+	expectMarkers(await render({ viewerIsOwner: true }), [
+		testId('package-repo-nav-settings'),
+		testId('package-repo-nav-repo'),
+		testId('package-repo-nav-files'),
+		'href="/@kentcdodds/github-triage/settings"',
+		'href="/@kentcdodds"',
+		'← @kentcdodds',
+	])
 
-	const privateHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
+	const privateHtml = await render({
 		listing: null,
 		isPrivate: true,
 		viewerIsOwner: true,
-		loggedIn: true,
 		description: 'Local notes.',
 	})
-	expect(privateHtml).toContain('data-testid="package-repo-chrome"')
-	expect(privateHtml).toContain('data-visibility="private"')
-	expect(privateHtml).toContain('data-signifier="private"')
-	expect(privateHtml).toContain('data-icon="lock"')
-	const privateNameAt = privateHtml.indexOf('data-testid="package-title-name"')
+	const privateNameAt = privateHtml.indexOf(testId('package-title-name'))
 	expect(privateNameAt).toBeGreaterThan(-1)
 	expect(
 		privateHtml.indexOf('data-signifier="private"', privateNameAt),
 	).toBeGreaterThan(privateNameAt)
-	expect(privateHtml).toContain('title="Private"')
-	expect(privateHtml).not.toContain('data-signifier="unpublished"')
+	expectMarkers(
+		privateHtml,
+		[
+			testId('package-repo-chrome'),
+			'data-visibility="private"',
+			'data-icon="lock"',
+			'title="Private"',
+			testId('package-repo-nav-settings'),
+			'href="/@kentcdodds/github-triage/tree/main"',
+			'Local notes.',
+		],
+		[
+			'data-signifier="unpublished"',
+			testId('community-detail-forks'),
+			testId('community-listing-category'),
+		],
+	)
 	expect(privateHtml).not.toMatch(/>Private</)
 	expect(privateHtml).not.toMatch(/>Not published</)
-	expect(privateHtml).toContain('data-testid="package-repo-nav-settings"')
-	expect(privateHtml).toContain('href="/@kentcdodds/github-triage/tree/main"')
-	expect(privateHtml).not.toContain('data-testid="community-detail-forks"')
-	expect(privateHtml).not.toContain('data-testid="community-listing-category"')
-	expect(privateHtml).toContain('Local notes.')
 
-	const publicUnpublishedHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
+	const publicUnpublishedHtml = await render({
 		listing: null,
 		isPrivate: false,
 		viewerIsOwner: true,
-		loggedIn: true,
 		description: 'Public but unlisted.',
 	})
-	expect(publicUnpublishedHtml).toContain('data-signifier="unpublished"')
-	expect(publicUnpublishedHtml).toContain('data-icon="file"')
-	expect(publicUnpublishedHtml).toContain('title="Not published"')
-	expect(publicUnpublishedHtml).not.toContain('data-signifier="private"')
+	expectMarkers(
+		publicUnpublishedHtml,
+		[
+			'data-signifier="unpublished"',
+			'data-icon="file"',
+			'title="Not published"',
+		],
+		['data-signifier="private"'],
+	)
 	expect(publicUnpublishedHtml).not.toMatch(/>Not published</)
-})
 
-test('package Files tab uses the listing default branch instead of main', async () => {
-	const html = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: { ...sampleListing, defaultBranch: 'develop' },
-		loggedIn: false,
-	})
-	expect(html).toContain('href="/@kentcdodds/github-triage/tree/develop"')
-	expect(html).not.toContain('href="/@kentcdodds/github-triage/tree/main"')
+	// The Files tab follows the listing default branch instead of main.
+	expectMarkers(
+		await render({
+			listing: { ...sampleListing, defaultBranch: 'develop' },
+			loggedIn: false,
+		}),
+		['href="/@kentcdodds/github-triage/tree/develop"'],
+		['href="/@kentcdodds/github-triage/tree/main"'],
+	)
 })
 
 test('open package app link shows for owner and accepted share, and hides without an app or access', async () => {
-	const ownerHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
+	const privateApp = {
 		listing: null,
 		isPrivate: true,
-		viewerIsOwner: true,
-		loggedIn: true,
 		hasApp: true,
-	})
-	expect(ownerHtml).toContain('data-testid="open-package-app"')
-	expect(ownerHtml).toContain('href="/@kentcdodds/packages/github-triage"')
-	expect(ownerHtml).toContain('data-rmx-document')
-	expect(ownerHtml).toContain('data-icon="share"')
-
-	const sharedHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: null,
-		isPrivate: true,
-		viewerIsOwner: false,
-		loggedIn: true,
-		hasApp: true,
-		shareGrant: shareGrantFixture('accepted'),
-	})
-	expect(sharedHtml).toContain('data-testid="open-package-app"')
-	expect(sharedHtml).toContain('href="/@kentcdodds/packages/github-triage"')
-
-	const noAppHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: null,
-		isPrivate: true,
-		viewerIsOwner: true,
-		loggedIn: true,
-		hasApp: false,
-	})
-	expect(noAppHtml).not.toContain('data-testid="open-package-app"')
-	expect(noAppHtml).toContain('data-testid="package-repo-nav-files"')
-
-	const noAccessHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		loggedIn: true,
-		hasApp: true,
-	})
-	expect(noAccessHtml).not.toContain('data-testid="open-package-app"')
-
-	const pendingHtml = await renderCommunityDetailContentHtml({
-		...detailBase,
-		listing: null,
-		isPrivate: true,
-		loggedIn: true,
-		hasApp: true,
-		shareGrant: shareGrantFixture('pending'),
-	})
-	expect(pendingHtml).not.toContain('data-testid="open-package-app"')
-	expect(pendingHtml).toContain('data-signifier="private"')
-	expect(pendingHtml).toContain('data-icon="lock"')
-	expect(pendingHtml).not.toContain('data-signifier="unpublished"')
-	expect(pendingHtml).toContain(
-		'data-testid="package-share-accept-frame-banner"',
+	} as const
+	const openApp = testId('open-package-app')
+	const appHref = 'href="/@kentcdodds/packages/github-triage"'
+	expectMarkers(await render({ ...privateApp, viewerIsOwner: true }), [
+		openApp,
+		appHref,
+		'data-rmx-document',
+		'data-icon="share"',
+	])
+	expectMarkers(
+		await render({ ...privateApp, shareGrant: shareGrantFixture('accepted') }),
+		[openApp, appHref],
+	)
+	expectMarkers(
+		await render({ ...privateApp, viewerIsOwner: true, hasApp: false }),
+		[testId('package-repo-nav-files')],
+		[openApp],
+	)
+	expect(await render({ hasApp: true })).not.toContain(openApp)
+	expectMarkers(
+		await render({ ...privateApp, shareGrant: shareGrantFixture('pending') }),
+		[
+			'data-signifier="private"',
+			'data-icon="lock"',
+			testId('package-share-accept-frame-banner'),
+		],
+		[openApp, 'data-signifier="unpublished"'],
 	)
 })
 
 test('buildSourceAheadPublishHref names the HEAD commit when present', () => {
+	const input = { username: 'kentcdodds', kodyId: 'github-triage' }
 	expect(
 		buildSourceAheadPublishHref({
-			username: 'kentcdodds',
-			kodyId: 'github-triage',
+			...input,
 			headCommit: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 		}),
 	).toBe(
 		'/@kentcdodds/github-triage/approve-publish?commit=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
 	)
-	expect(
-		buildSourceAheadPublishHref({
-			username: 'kentcdodds',
-			kodyId: 'github-triage',
-			headCommit: null,
-		}),
-	).toBe('/@kentcdodds/github-triage/approve-publish')
+	expect(buildSourceAheadPublishHref({ ...input, headCommit: null })).toBe(
+		'/@kentcdodds/github-triage/approve-publish',
+	)
 })
 
 function shareGrantFixture(

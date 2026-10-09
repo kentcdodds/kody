@@ -1,4 +1,4 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { routes } from '#universal/routes.ts'
@@ -7,6 +7,7 @@ import {
 	type AccountPackagesLoaderData,
 } from '#universal/loader-data.ts'
 import { AccountPackageOwnerDetails } from '#client/routes/account-package-owner-details.tsx'
+import { PackageCreditAttributionPanel } from '#client/routes/account-usage-where-it-went.tsx'
 import { colors, transitions, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -82,6 +83,11 @@ export function renderOwnerPackageSection(props: OwnerPackageSectionProps) {
 				<p mix={css(errorTextCss)} role="alert">
 					{props.ownerDetailsMessage}
 				</p>
+			) : null}
+			{props.ownerPackage.creditAttribution ? (
+				<PackageCreditAttributionPanel
+					row={props.ownerPackage.creditAttribution}
+				/>
 			) : null}
 			<AccountPackageOwnerDetails
 				ownerUsername={props.ownerUsername}

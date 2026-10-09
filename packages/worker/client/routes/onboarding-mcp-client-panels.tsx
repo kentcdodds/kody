@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import {
 	buildClaudeCodeAddCommand,
 	buildClaudeCodeMcpJson,
@@ -14,10 +14,13 @@ import {
 	buildOpenClawMcpJson,
 	buildOpenCodeMcpAddCommand,
 	buildOpenCodeMcpJson,
+	buildMuseSettingsJson,
 	buildVsCodeInstallUrl,
 	buildVsCodeMcpJson,
 	chatGptDeveloperModeGuideUrl,
 	claudeDesktopToolHint,
+	cueSiteUrl,
+	dotsIntroUrl,
 	grokBotInstallUrl,
 	grokConnectorsUrl,
 	isDefaultKodyMcpUrl,
@@ -27,7 +30,11 @@ import {
 	kodyCursorMarketplaceUrl,
 	type McpClientKind,
 	type OnboardingAgentSurface,
+	museMcpGuideUrl,
+	museMcpLoginCommand,
 	openClawMcpLoginCommand,
+	openMuseGuideUrl,
+	wajoSiteUrl,
 } from '#client/routes/onboarding-mcp-clients.ts'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
 import {
@@ -371,6 +378,114 @@ export function renderPanelContent(
 				</>
 			)
 		}
+		case 'muse': {
+			const museSettingsJson = buildMuseSettingsJson(mcpServerUrl)
+			return (
+				<>
+					<p>
+						Add Kody to Muse Code via <code>~/.config/muse/settings.json</code>,
+						then sign in with <code>muse mcp login</code> (
+						<a href={museMcpGuideUrl} target="_blank" rel="noreferrer">
+							Muse MCP docs
+						</a>
+						).
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="~/.config/muse/settings.json"
+						value={museSettingsJson}
+						copyLabel="Copy JSON"
+						variant="pill"
+						lang="json"
+					/>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="muse mcp login"
+						value={museMcpLoginCommand}
+						copyLabel="Copy command"
+						variant="pill"
+						lang="sh"
+					/>
+					<p>
+						After OAuth succeeds, headless Muse may ask you to paste a localhost
+						URL into the Muse chat.
+					</p>
+				</>
+			)
+		}
+		case 'wajo':
+			return (
+				<>
+					<p>
+						Wajo (Fo) connects ChatGPT and Claude through Wajo sign-in. Paste
+						the MCP URL where Wajo asks for a custom MCP server (
+						<a href={wajoSiteUrl} target="_blank" rel="noreferrer">
+							wajo.ai
+						</a>
+						).
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
+		case 'cue':
+			return (
+				<>
+					<p>
+						Cue is a personal AI agent host (
+						<a href={cueSiteUrl} target="_blank" rel="noreferrer">
+							cue.im
+						</a>
+						). When Cue exposes a custom MCP connector, paste this URL and
+						complete OAuth.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
+		case 'openmuse':
+			return (
+				<>
+					<p>
+						OpenMuse (CopilotKit) does not ship a Kody connector — wire Kody
+						into the harness behind your OpenMuse fork. See the{' '}
+						<a href={openMuseGuideUrl}>OpenMuse and Kody</a> guide.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
+		case 'dots':
+			return (
+				<>
+					<p>
+						Dots is OpenAI&apos;s personal agent (
+						<a href={dotsIntroUrl} target="_blank" rel="noreferrer">
+							introducing Dots
+						</a>
+						). When Dots exposes a custom MCP connector, paste this URL and
+						complete OAuth.
+					</p>
+					<ConnectCopyCard
+						highlights={highlights}
+						label="MCP URL"
+						value={mcpServerUrl}
+						copyLabel="Copy MCP URL"
+					/>
+				</>
+			)
 		case 'copilot': {
 			const vsCodeJson = buildVsCodeMcpJson(mcpServerUrl)
 			const installUrl = buildVsCodeInstallUrl(mcpServerUrl)
@@ -543,6 +658,37 @@ export function renderPanelWarning(
 				<ClientWarning>
 					OpenClaw&apos;s browser app works from a phone. You can also run the
 					CLI later on a computer.
+				</ClientWarning>
+			) : null
+		case 'muse':
+			return (
+				<ClientWarning>
+					{surface === 'mobile'
+						? "Muse Code is for a computer. Change selection and pick a host with a mobile app, or run these steps later on a computer. Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."
+						: "Do not paste npx @kodycodes/cli install into Muse chat — that runs in Muse's Linux VM and cannot configure Muse."}
+				</ClientWarning>
+			)
+		case 'wajo':
+		case 'cue':
+			return surface === 'mobile' ? (
+				<ClientWarning>
+					Setup is easiest on a computer. Change selection and pick a host with
+					a mobile app, or run these steps later on a computer.
+				</ClientWarning>
+			) : null
+		case 'openmuse':
+			return (
+				<ClientWarning>
+					{surface === 'mobile'
+						? 'OpenMuse is self-hosted. Wire Kody into your OpenMuse fork on a computer (see the OpenMuse and Kody guide), then use the phone or web app.'
+						: 'OpenMuse is distinct from Muse Code. Wire Kody into your OpenMuse fork or AG-UI harness — there is no one-click connector yet.'}
+				</ClientWarning>
+			)
+		case 'dots':
+			return surface === 'mobile' ? (
+				<ClientWarning>
+					Dots setup may need a computer. Change selection and pick a host with
+					a mobile app, or run these steps later on a computer.
 				</ClientWarning>
 			) : null
 		case 'cursor-cloud':

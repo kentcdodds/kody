@@ -90,12 +90,12 @@ test('filters Cloudflare incidents to products kody runs on', () => {
 			],
 		},
 	])
-	expect(filtered.map((incident) => incident.id)).toEqual([
-		'inc-r2',
-		'inc-workers',
+	expect(
+		filtered.map(({ id, affectedComponents }) => [id, affectedComponents]),
+	).toEqual([
+		['inc-r2', ['R2']],
+		['inc-workers', ['Workers']],
 	])
-	expect(filtered[0]?.affectedComponents).toEqual(['R2'])
-	expect(filtered[1]?.affectedComponents).toEqual(['Workers'])
 	expect(
 		parseProviderIncidentsPayload({ incidents: [streamIncident] }),
 	).toEqual([])
@@ -103,49 +103,35 @@ test('filters Cloudflare incidents to products kody runs on', () => {
 
 test('provider incident fetch fails soft on timeout, http errors, and bad JSON', async () => {
 	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+	const fetchWith = (response: () => Promise<Response>, timeoutMs?: number) =>
+		fetchRelevantProviderIncidents({ timeoutMs, fetcher: response })
 	try {
-		const timedOut = await fetchRelevantProviderIncidents({
-			timeoutMs: 5,
-			fetcher: async () =>
-				await new Promise(() => {
-					/* never resolves */
-				}),
-		})
+		const timedOut = await fetchWith(() => new Promise(() => {}), 5)
 		expect(timedOut.ok).toBe(false)
 		expect(timedOut.incidents).toEqual([])
-
-		const httpError = await fetchRelevantProviderIncidents({
-			fetcher: async () => new Response('nope', { status: 503 }),
-		})
-		expect(httpError).toEqual({
-			ok: false,
-			incidents: [],
-			error: 'HTTP 503',
-		})
-
-		const badJson = await fetchRelevantProviderIncidents({
-			fetcher: async () =>
+		await expect(
+			fetchWith(async () => new Response('nope', { status: 503 })),
+		).resolves.toEqual({ ok: false, incidents: [], error: 'HTTP 503' })
+		const badJson = await fetchWith(
+			async () =>
 				new Response('not-json', {
-					status: 200,
 					headers: { 'Content-Type': 'application/json' },
 				}),
-		})
+		)
 		expect(badJson.ok).toBe(false)
+		await expect(
+			fetchWith(async () =>
+				Response.json({ incidents: [streamIncident, popIncident] }),
+			),
+		).resolves.toEqual({ ok: true, incidents: [] })
 
-		const okEmpty = await fetchRelevantProviderIncidents({
-			fetcher: async () =>
-				Response.json({
-					incidents: [streamIncident, popIncident],
-				}),
-		})
-		expect(okEmpty).toEqual({ ok: true, incidents: [] })
-
-		const okRelevant = await fetchRelevantProviderIncidents({
-			fetcher: async () => Response.json({ incidents: [r2Incident] }),
-		})
+		const okRelevant = await fetchWith(async () =>
+			Response.json({ incidents: [r2Incident] }),
+		)
 		expect(okRelevant.ok).toBe(true)
-		expect(okRelevant.incidents).toHaveLength(1)
-		expect(okRelevant.incidents[0]?.name).toBe('R2 Availability Issues')
+		expect(okRelevant.incidents.map((incident) => incident.name)).toEqual([
+			'R2 Availability Issues',
+		])
 		expect(consoleWarn).toHaveBeenCalled()
 	} finally {
 		consoleWarn.mockRestore()
@@ -190,23 +176,19 @@ test('provider incident cache parses within TTL and rejects stale or corrupt ent
 })
 
 test('provider shortlinks are restricted to Cloudflare Statuspage HTTPS hosts', () => {
-	expect(sanitizeProviderIncidentShortlink('https://stspg.io/r2')).toBe(
-		'https://stspg.io/r2',
-	)
-	expect(sanitizeProviderIncidentShortlink('javascript:alert(1)')).toBe(
-		cloudflareStatusPageUrl,
-	)
-	expect(sanitizeProviderIncidentShortlink('https://evil.example/phish')).toBe(
-		cloudflareStatusPageUrl,
-	)
-
-	const filtered = filterRelevantProviderIncidents([
-		{
-			...r2Incident,
-			shortlink: 'javascript:alert(1)',
-		},
-	])
-	expect(filtered[0]?.shortlink).toBe(cloudflareStatusPageUrl)
+	const cases = [
+		['https://stspg.io/r2', 'https://stspg.io/r2'],
+		['javascript:alert(1)', cloudflareStatusPageUrl],
+		['https://evil.example/phish', cloudflareStatusPageUrl],
+	]
+	expect(
+		cases.map(([shortlink]) => sanitizeProviderIncidentShortlink(shortlink!)),
+	).toEqual(cases.map(([, expected]) => expected))
+	expect(
+		filterRelevantProviderIncidents([
+			{ ...r2Incident, shortlink: 'javascript:alert(1)' },
+		])[0]?.shortlink,
+	).toBe(cloudflareStatusPageUrl)
 })
 
 test('outage email annotation names active Cloudflare incidents', () => {

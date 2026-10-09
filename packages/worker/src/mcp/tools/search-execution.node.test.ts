@@ -3,6 +3,8 @@ import {
 	createExecuteExecutor,
 	runWithDynamicWorkerEvaluationBudget,
 } from '#mcp/executor.ts'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
+import * as SearchRateLimit from '#worker/search-rate-limit.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	deterministicEmbedding,
@@ -43,22 +45,56 @@ const mockModule = vi.hoisted(() => {
 			},
 		}
 	}
-	return {
-		createEmptySearchUnifiedResult,
-		resolvePublicUsername: vi.fn(async () => 'user'),
-		resolvePackageIdentitySearch: vi.fn(async () => ({ recognized: false })),
-		loadSearchRowsAndRegistry: vi.fn(async () => ({
+	function emptySearchRows() {
+		return {
 			packageRows: [],
 			userSecretRows: [],
 			userValueRows: [],
 			userIntegrationRows: [],
 			warnings: [],
 			registry: { capabilitySpecs: {} },
+		}
+	}
+	function memoryResult(retrievalQuery = 'skills') {
+		return {
+			memories: [],
+			retrieverResults: [],
+			retrieverWarnings: [],
+			suppressedCount: 0,
+			retrievalQuery,
+		}
+	}
+	return {
+		createEmptySearchUnifiedResult,
+		emptySearchRows,
+		memoryResult,
+		resolvePublicUsername: vi.fn(async (..._args: Array<unknown>) => 'user'),
+		resolvePackageIdentitySearch: vi.fn(async (..._args: Array<unknown>) => ({
+			recognized: false,
 		})),
-		searchUnified: vi.fn(async () => createEmptySearchUnifiedResult()),
-		loadRelevantMemoriesForTool: vi.fn(),
-		runPackageRetrievers: vi.fn(),
-		consumeSearchRateLimit: vi.fn(async () => undefined),
+		loadSearchRowsAndRegistry: vi.fn(async (..._args: Array<unknown>) =>
+			emptySearchRows(),
+		),
+		searchUnified: vi.fn(async (..._args: Array<unknown>) =>
+			createEmptySearchUnifiedResult(),
+		),
+		loadRelevantMemoriesForTool: vi.fn(async (..._args: Array<unknown>) =>
+			memoryResult(),
+		),
+		runPackageRetrievers: vi.fn(async (..._args: Array<unknown>) => ({
+			results: [],
+			warnings: [],
+		})),
+		consumeSearchRateLimit: vi.fn(async (..._args: Array<unknown>) => 'free'),
+		getUserPlan: vi.fn(async (..._args: Array<unknown>) => 'free'),
+	}
+})
+
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementsService>()
+	return {
+		...actual,
+		getUserPlan: (...args: Array<unknown>) => mockModule.getUserPlan(...args),
 	}
 })
 
@@ -97,8 +133,7 @@ vi.mock('#worker/package-retrievers/service.ts', () => ({
 }))
 
 vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
+	const actual = await importOriginal<typeof SearchRateLimit>()
 	return {
 		...actual,
 		consumeSearchRateLimit: (...args: Array<unknown>) =>
@@ -107,6 +142,57 @@ vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
 })
 
 const { executeSearchList } = await import('./search-execution.ts')
+
+type EmbedInput = {
+	embedText?: (text: string) => Promise<Array<number>>
+	query: string
+	memoryContext?: { query?: string }
+}
+
+function search(
+	env: Env,
+	overrides: Partial<Parameters<typeof executeSearchList>[0]> = {},
+) {
+	return executeSearchList({
+		env,
+		callerContext: {
+			baseUrl: 'https://example.com',
+			user: {
+				userId: 'user-1',
+				email: 'user@example.com',
+				displayName: 'User',
+				username: 'user',
+			},
+		} as never,
+		conversationId: 'conv-search',
+		query: 'skills',
+		limit: 15,
+		userId: 'user-1',
+		includeHiddenPackages: false,
+		...overrides,
+	})
+}
+
+function aiEnv(run: (...args: Array<unknown>) => Promise<unknown>) {
+	return {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: { run },
+		CAPABILITY_VECTOR_INDEX: {
+			async query() {
+				return { matches: [] }
+			},
+		},
+		APP_DB: {},
+	} as unknown as Env
+}
+
+function gate() {
+	let release = () => {}
+	const promise = new Promise<void>((resolve) => {
+		release = resolve
+	})
+	return { promise, release }
+}
 
 type BudgetState = {
 	started: number
@@ -141,22 +227,20 @@ function createBlockingLoader(state: BudgetState) {
 	} as unknown as Env['LOADER']
 }
 
-function createExecutorTestExports() {
-	return {
-		KodyFetchGateway: ({ props }: { props: unknown }) => ({ props }),
-	} as never
-}
-
 async function runThreeBlockingEvaluations(env: Env) {
 	return await runWithDynamicWorkerEvaluationBudget(async () => {
 		await Promise.all(
 			Array.from({ length: 3 }, async (_, index) => {
 				return await createExecuteExecutor({
 					env,
-					exports: createExecutorTestExports(),
+					exports: {
+						KodyFetchGateway: ({ props }: { props: unknown }) => ({ props }),
+					} as never,
 					gatewayProps: {
 						baseUrl: 'https://example.com',
 						userId: 'user-1',
+						email: null,
+						request: null,
 						storageContext: null,
 					},
 				}).execute(`async () => ${index}`, [{ name: 'kody', fns: {} }])
@@ -179,37 +263,14 @@ test('executeSearchList shares one dynamic-worker budget across memory and searc
 
 	mockModule.loadRelevantMemoriesForTool.mockImplementation(async () => {
 		await runThreeBlockingEvaluations(env)
-		return {
-			memories: [],
-			retrieverResults: [],
-			retrieverWarnings: [],
-			suppressedCount: 0,
-			retrievalQuery: 'skills',
-		}
+		return mockModule.memoryResult()
 	})
 	mockModule.runPackageRetrievers.mockImplementation(async () => {
 		await runThreeBlockingEvaluations(env)
 		return { results: [], warnings: [] }
 	})
 
-	const searchPromise = executeSearchList({
-		env,
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-				username: 'user',
-			},
-		} as never,
-		conversationId: 'conv-search-budget',
-		query: 'skills',
-		memoryQuery: 'skills',
-		limit: 15,
-		userId: 'user-1',
-		includeHiddenPackages: false,
-	})
+	const searchPromise = search(env, { memoryQuery: 'skills' })
 
 	await expect.poll(() => state.started).toBe(4)
 	expect(state.active).toBe(4)
@@ -242,160 +303,48 @@ test('executeSearchList shares one dynamic-worker budget across memory and searc
 
 test('executeSearchList embeds each distinct text once and starts the query embedding before rows resolve', async () => {
 	const embedTexts: Array<string> = []
-	let releaseRows: () => void = () => {}
-	const rowsGate = new Promise<void>((resolve) => {
-		releaseRows = resolve
-	})
-	mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => {
-		await rowsGate
-		return {
-			packageRows: [],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-			warnings: [],
-			registry: { capabilitySpecs: {} },
-		}
+	const rows = gate()
+	mockModule.loadSearchRowsAndRegistry.mockImplementationOnce(async () => {
+		await rows.promise
+		return mockModule.emptySearchRows()
 	})
 	mockModule.loadRelevantMemoriesForTool.mockImplementation(
-		async (input: { embedText?: (text: string) => Promise<Array<number>> }) => {
-			await input.embedText?.('skills')
-			return {
-				memories: [],
-				retrieverResults: [],
-				retrieverWarnings: [],
-				suppressedCount: 0,
-				retrievalQuery: 'skills',
-			}
+		async (...args: Array<unknown>) => {
+			const input = args[0] as EmbedInput
+			const text = input.memoryContext?.query ?? 'skills'
+			await input.embedText?.(text)
+			return mockModule.memoryResult(text)
 		},
 	)
 	mockModule.searchUnified.mockImplementation(
-		async (input: { embedText?: (text: string) => Promise<Array<number>> }) => {
+		async (...args: Array<unknown>) => {
+			const input = args[0] as EmbedInput
 			await input.embedText?.('skills')
 			return mockModule.createEmptySearchUnifiedResult()
 		},
 	)
-	mockModule.runPackageRetrievers.mockResolvedValue({
-		results: [],
-		warnings: [],
+	const env = aiEnv(async (...args) => {
+		const input = args[1] as { text?: unknown }
+		const batch = Array.isArray(input.text)
+			? input.text.map(String)
+			: [String(input.text ?? '')]
+		embedTexts.push(...batch)
+		return {
+			data: batch.map((text) => deterministicEmbedding(text)),
+			shape: [batch.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+		}
 	})
 
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		AI: {
-			async run(...args: Array<unknown>) {
-				const input = args[1] as { text?: unknown }
-				const batch = Array.isArray(input.text)
-					? input.text.map(String)
-					: [String(input.text ?? '')]
-				embedTexts.push(...batch)
-				return {
-					data: batch.map((text) => deterministicEmbedding(text)),
-					shape: [batch.length, CAPABILITY_EMBEDDING_DIMENSIONS],
-				}
-			},
-		},
-		CAPABILITY_VECTOR_INDEX: {
-			async query() {
-				return { matches: [] }
-			},
-		},
-		APP_DB: {},
-	} as unknown as Env
-
-	const searchPromise = executeSearchList({
-		env,
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-				username: 'user',
-			},
-		} as never,
-		conversationId: 'conv-embed-once',
-		query: 'skills',
-		memoryQuery: 'skills',
-		limit: 15,
-		userId: 'user-1',
-		includeHiddenPackages: false,
-	})
-
+	const searchPromise = search(env, { memoryQuery: 'skills' })
 	await expect.poll(() => embedTexts).toEqual(['skills'])
-	releaseRows()
+	rows.release()
 	await searchPromise
 	expect(embedTexts).toEqual(['skills'])
 
 	embedTexts.length = 0
-	mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => ({
-		packageRows: [],
-		userSecretRows: [],
-		userValueRows: [],
-		userIntegrationRows: [],
-		warnings: [],
-		registry: { capabilitySpecs: {} },
-	}))
-	mockModule.loadRelevantMemoriesForTool.mockImplementation(
-		async (input: {
-			embedText?: (text: string) => Promise<Array<number>>
-			memoryContext?: { query?: string }
-		}) => {
-			await input.embedText?.(input.memoryContext?.query ?? 'draft an email')
-			return {
-				memories: [],
-				retrieverResults: [],
-				retrieverWarnings: [],
-				suppressedCount: 0,
-				retrievalQuery: 'draft an email',
-			}
-		},
-	)
-
-	await executeSearchList({
-		env,
-		callerContext: {
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'User',
-				username: 'user',
-			},
-		} as never,
-		conversationId: 'conv-embed-distinct',
-		query: 'skills',
-		memoryContext: { query: 'draft an email' },
-		limit: 15,
-		userId: 'user-1',
-		includeHiddenPackages: false,
-	})
-
+	await search(env, { memoryContext: { query: 'draft an email' } })
 	expect([...embedTexts].sort()).toEqual(['draft an email', 'skills'])
 })
-
-function emptySearchRows() {
-	return {
-		packageRows: [],
-		userSecretRows: [],
-		userValueRows: [],
-		userIntegrationRows: [],
-		warnings: [],
-		registry: { capabilitySpecs: {} },
-	}
-}
-
-function signedInSearchCaller() {
-	return {
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'User',
-			username: 'user',
-		},
-	} as never
-}
 
 test('executeSearchList does not leak an unhandled rejection when the ranking embedding fails during row load', async () => {
 	const unhandled: Array<unknown> = []
@@ -404,72 +353,30 @@ test('executeSearchList does not leak an unhandled rejection when the ranking em
 	}
 	process.on('unhandledRejection', onUnhandled)
 	try {
-		let releaseRows = () => {}
-		const rowsGate = new Promise<void>((resolve) => {
-			releaseRows = resolve
-		})
-		let resolveEmbedStarted = () => {}
-		const embedStarted = new Promise<void>((resolve) => {
-			resolveEmbedStarted = resolve
-		})
-		const embeddingError = new Error('Workers AI unavailable')
+		const rows = gate()
+		const embedStarted = gate()
 		mockModule.loadSearchRowsAndRegistry.mockImplementation(async () => {
-			await rowsGate
-			return emptySearchRows()
-		})
-		mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
-			memories: [],
-			retrieverResults: [],
-			retrieverWarnings: [],
-			suppressedCount: 0,
-			retrievalQuery: 'skills',
+			await rows.promise
+			return mockModule.emptySearchRows()
 		})
 		mockModule.searchUnified.mockImplementation(
-			async (input: {
-				embedText?: (text: string) => Promise<Array<number>>
-				query: string
-			}) => {
+			async (...args: Array<unknown>) => {
+				const input = args[0] as EmbedInput
 				await input.embedText?.(input.query)
 				return mockModule.createEmptySearchUnifiedResult()
 			},
 		)
-		mockModule.runPackageRetrievers.mockResolvedValue({
-			results: [],
-			warnings: [],
+		const env = aiEnv(async () => {
+			embedStarted.release()
+			throw new Error('Workers AI unavailable')
 		})
 
-		const env = {
-			SENTRY_ENVIRONMENT: 'production',
-			AI: {
-				async run() {
-					resolveEmbedStarted()
-					throw embeddingError
-				},
-			},
-			CAPABILITY_VECTOR_INDEX: {
-				async query() {
-					return { matches: [] }
-				},
-			},
-			APP_DB: {},
-		} as unknown as Env
-
-		const searchPromise = executeSearchList({
-			env,
-			callerContext: signedInSearchCaller(),
-			conversationId: 'conv-embed-reject',
-			query: 'skills',
-			memoryQuery: 'skills',
-			limit: 15,
-			userId: 'user-1',
-			includeHiddenPackages: false,
-		})
-
-		await embedStarted
+		const searchPromise = search(env, { memoryQuery: 'skills' })
+		await embedStarted.promise
 		await Promise.resolve()
 		await Promise.resolve()
 		expect(unhandled).toEqual([])
-		releaseRows()
+		rows.release()
 		await expect(searchPromise).rejects.toThrow('Workers AI unavailable')
 		await Promise.resolve()
 		await Promise.resolve()
@@ -480,111 +387,57 @@ test('executeSearchList does not leak an unhandled rejection when the ranking em
 })
 
 test('executeSearchList does not prefetch an embedding for domain-overview or index queries', async () => {
-	let aiRunCount = 0
-	mockModule.loadSearchRowsAndRegistry.mockResolvedValue(emptySearchRows())
-	mockModule.loadRelevantMemoriesForTool.mockResolvedValue({
-		memories: [],
-		retrieverResults: [],
-		retrieverWarnings: [],
-		suppressedCount: 0,
-		retrievalQuery: 'what can kody do',
+	const run = vi.fn(async () => {
+		throw new Error('Workers AI should not run for overview search')
 	})
-	mockModule.searchUnified.mockImplementation(async () =>
-		mockModule.createEmptySearchUnifiedResult(),
+	const env = aiEnv(run)
+	await search(env, { query: 'what can kody do' })
+	await search(env, { query: '' })
+	expect(run).not.toHaveBeenCalled()
+})
+
+test('executeSearchList reads the Jev plan fresh while the rate limit runs', async () => {
+	const rateLimit = gate()
+	mockModule.consumeSearchRateLimit.mockImplementationOnce(async () => {
+		await rateLimit.promise
+		return 'free'
+	})
+	mockModule.getUserPlan.mockResolvedValueOnce('pro')
+	const env = { APP_DB: {}, WRANGLER_IS_LOCAL_DEV: 'true' } as unknown as Env
+	const searching = search(env)
+	await vi.waitFor(() => {
+		expect(mockModule.getUserPlan).toHaveBeenCalledTimes(1)
+	})
+	rateLimit.release()
+	await searching
+	expect(mockModule.searchUnified).toHaveBeenCalledWith(
+		expect.objectContaining({ jevRerankPlanEligible: true }),
 	)
-	mockModule.runPackageRetrievers.mockResolvedValue({
-		results: [],
-		warnings: [],
-	})
 
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		AI: {
-			async run() {
-				aiRunCount += 1
-				throw new Error('Workers AI should not run for overview search')
-			},
-		},
-		CAPABILITY_VECTOR_INDEX: {
-			async query() {
-				return { matches: [] }
-			},
-		},
-		APP_DB: {},
-	} as unknown as Env
-
-	await executeSearchList({
-		env,
-		callerContext: signedInSearchCaller(),
-		conversationId: 'conv-embed-overview',
-		query: 'what can kody do',
-		limit: 15,
-		userId: 'user-1',
-		includeHiddenPackages: false,
-	})
-	expect(aiRunCount).toBe(0)
-
-	await executeSearchList({
-		env,
-		callerContext: signedInSearchCaller(),
-		conversationId: 'conv-embed-index',
-		query: '',
-		limit: 15,
-		userId: 'user-1',
-		includeHiddenPackages: false,
-	})
-	expect(aiRunCount).toBe(0)
+	mockModule.searchUnified.mockClear()
+	mockModule.getUserPlan.mockRejectedValueOnce(new Error('d1 blip'))
+	await search(env, { conversationId: 'conv-search-plan-blip' })
+	expect(mockModule.searchUnified).toHaveBeenCalledTimes(1)
+	expect(mockModule.searchUnified).not.toHaveBeenCalledWith(
+		expect.objectContaining({ jevRerankPlanEligible: true }),
+	)
 })
 
 test('executeSearchList fails closed before ranking when the abuse rate limit rejects', async () => {
-	const { SearchRateLimitError } = await import('#worker/search-rate-limit.ts')
-	mockModule.consumeSearchRateLimit.mockReset()
 	mockModule.consumeSearchRateLimit.mockRejectedValueOnce(
-		new SearchRateLimitError({
+		new SearchRateLimit.SearchRateLimitError({
 			window: 'burst',
 			retryAfterSeconds: 60,
 			limit: 80,
 			plan: 'free',
 		}),
 	)
-	mockModule.searchUnified.mockClear()
+	const embed = vi.fn(async () => ({
+		data: [deterministicEmbedding('should-not-embed')],
+		shape: [1, CAPABILITY_EMBEDDING_DIMENSIONS],
+	}))
 
-	const env = {
-		AI: {
-			async run() {
-				return {
-					data: [deterministicEmbedding('should-not-embed')],
-					shape: [1, CAPABILITY_EMBEDDING_DIMENSIONS],
-				}
-			},
-		},
-		CAPABILITY_VECTOR_INDEX: {
-			async query() {
-				return { matches: [] }
-			},
-		},
-		APP_DB: {},
-	} as unknown as Env
-
-	await expect(
-		executeSearchList({
-			env,
-			callerContext: {
-				baseUrl: 'https://example.com',
-				user: {
-					userId: 'user-1',
-					email: 'user@example.com',
-					displayName: 'User',
-					username: 'user',
-				},
-			} as never,
-			conversationId: 'conv-search-rate-limit',
-			query: 'skills',
-			limit: 15,
-			userId: 'user-1',
-			includeHiddenPackages: false,
-		}),
-	).rejects.toMatchObject({
+	await expect(search(aiEnv(embed))).rejects.toMatchObject({
 		code: 'rate_limited',
 		window: 'burst',
 	})

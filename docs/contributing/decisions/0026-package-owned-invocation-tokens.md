@@ -1,6 +1,6 @@
 # 0026: Package-owned invocation tokens
 
-- **Status:** accepted
+- **Status:** superseded by [0048](./0048-webhooks-replace-invocation-tokens.md)
 - **Date:** 2026-08-19
 
 ## Context
@@ -31,8 +31,10 @@ restrictions _within_ that package. Source allowlists were dropped in
 rotated, and revoked from the package details page.
 
 Cross-package HTTP clients call one package (an orchestrator or a discovery
-package) and use `packages.invoke` inside Kody, or they speak MCP. They do not
-hold a wildcard bearer.
+package) and compose inside Kody with a static `kody:@` import or
+`import(specifier)` ([0037](./0037-no-author-packages-invoke.md)), or they speak
+MCP. They do not hold a wildcard bearer. First-party external HTTP is inbound
+webhooks ([0048](./0048-webhooks-replace-invocation-tokens.md)).
 
 ## Consequences
 
@@ -48,5 +50,13 @@ other unmapped rows. A row that lists packages in both legacy arrays is treated
 as multi-package and exploded from the union. Rewrite `*` rows to a concrete
 owned package (typically `raycast`) before 0017 runs. Do not apply 0017 on
 production until the new worker is deployed: older workers still read the grant
-columns. Cross-package HTTP launchers call the `raycast` package's `invoke`
-export, which uses `packages.invoke` internally.
+columns. Cross-package HTTP launchers call a named orchestrator export over the
+package's HTTP surface; composition inside Kody uses static imports or
+`import(specifier)` ([0037](./0037-no-author-packages-invoke.md)).
+
+## LATER-NOTE (2026-10-08)
+
+The HTTP invocation-token mechanism was fully removed. Webhooks are the only
+external HTTP knock ([0048](./0048-webhooks-replace-invocation-tokens.md)).
+Token rows were purged (`0084`) and `package_invocation_tokens` was dropped
+(`0085`).

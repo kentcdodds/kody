@@ -22,9 +22,10 @@ export type FeatureFlagMetricCohort = {
 /**
  * On/off cohort comparison for a flag's declared success metric, computed
  * from recorded exposures joined with usage events over the current UTC
- * month to date. `overrideUsers` (hand-picked, selection-biased) and
- * `mixedUsers` (saw both values inside the window) are excluded from the
- * cohorts and reported separately.
+ * month to date. Users with any `override`-sourced exposure are excluded
+ * from on/off (selection bias) and aggregated into `override`. Users who
+ * saw both fair values inside the window are counted as `mixedUsers` and
+ * excluded from on/off (month-level usage cannot be split at the switch).
  */
 export type AdminFeatureFlagMetricReadout =
 	| { status: 'unavailable'; reason: string }
@@ -34,6 +35,8 @@ export type AdminFeatureFlagMetricReadout =
 			windowEnd: string
 			on: FeatureFlagMetricCohort
 			off: FeatureFlagMetricCohort
+			/** Usage for override-sourced users (excluded from on/off). */
+			override: FeatureFlagMetricCohort
 			overrideUsers: number
 			mixedUsers: number
 	  }

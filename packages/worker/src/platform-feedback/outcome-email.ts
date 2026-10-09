@@ -1,7 +1,6 @@
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildPlatformFeedbackOutcomeEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import {
 	platformFeedbackOutcomeStatuses,
 	type PlatformFeedbackOutcomeStatus,
@@ -45,7 +44,7 @@ async function readSubmitterMailTarget(input: {
 	db: D1Database
 	stableUserId: string
 }): Promise<SubmitterMailTarget | null> {
-	const stableUserId = normalizeStableUserId(input.stableUserId)
+	const stableUserId = input.stableUserId.trim()
 	if (!stableUserId) return null
 	const row = await input.db
 		.prepare(

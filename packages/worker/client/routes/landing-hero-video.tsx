@@ -1,4 +1,4 @@
-import { ref, type Handle } from 'remix/ui'
+import { ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { YouTubeLightPlayer } from '#client/youtube-light-player.tsx'
 import {

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { collectPackageStorageGrantIds } from '#mcp/run-kody-registry.ts'
@@ -49,10 +50,38 @@ async function seedPackage(
 		search_text: null,
 		source_id: `source-${id}`,
 		has_app: 0,
+		has_skills: 0,
 		hidden: input.hidden ? 1 : 0,
 		is_private: input.isPrivate ? 1 : 0,
 	})
 	return id
+}
+
+function resolve(
+	db: D1Database,
+	userId: string,
+	specifier: string,
+	extra: Partial<Parameters<typeof resolveSavedPackageImport>[0]> = {},
+) {
+	return resolveSavedPackageImport({ db, userId, specifier, ...extra })
+}
+
+const ownerUserId = 'aa'.repeat(32)
+const guestUserId = 'bb'.repeat(32)
+
+async function seedOwnerAndGuest(db: D1Database) {
+	for (const [username, stableUserId] of [
+		['alice', ownerUserId],
+		['jesse', guestUserId],
+	]) {
+		await db
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+				VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
+			)
+			.bind(username, `${username}@example.com`, stableUserId, 'standard')
+			.run()
+	}
 }
 
 test('resolveSavedPackageImport resolves platform scopes, prefers caller copies, and rejects hidden or foreign packages', async () => {
@@ -69,53 +98,36 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 	})
 
 	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@kody/github/issues',
-		}),
+		resolve(db, 'caller-user', 'kody:@kody/github/issues'),
 	).resolves.toBeNull()
-	const platformResolved = await resolveSavedPackageImport({
+	const platformResolved = await resolve(
 		db,
-		userId: 'caller-user',
-		specifier: 'kody:@kody/github/issues',
-		allowPlatformScopes: true,
-	})
+		'caller-user',
+		'kody:@kody/github/issues',
+		{ allowPlatformScopes: true },
+	)
 	expect(platformResolved).toMatchObject({
 		sourceOwnerUserId: platformUserId,
 		platformScope: 'kody',
 	})
 	expect(platformResolved?.row.id).toBe(platformPackageId)
-	const personResolved = await resolveSavedPackageImport({
+	const personResolved = await resolve(
 		db,
-		userId: 'caller-user',
-		specifier: 'kody:@kentcdodds/github',
-	})
+		'caller-user',
+		'kody:@kentcdodds/github',
+	)
 	expect(personResolved).toMatchObject({
 		sourceOwnerUserId: 'caller-user',
 		platformScope: null,
 	})
 	expect(personResolved?.row.id).toBe(personPackageId)
 
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@kody/github',
-			allowPlatformScopes: false,
-		}),
-	).resolves.toBeNull()
-
 	const ownCopyId = await seedPackage(db, {
 		userId: 'copy-user',
 		name: '@kody/github',
 		kodyId: 'github',
 	})
-	const callerResolved = await resolveSavedPackageImport({
-		db,
-		userId: 'copy-user',
-		specifier: 'kody:@kody/github',
-	})
+	const callerResolved = await resolve(db, 'copy-user', 'kody:@kody/github')
 	expect(callerResolved).toMatchObject({
 		sourceOwnerUserId: 'copy-user',
 		platformScope: null,
@@ -139,29 +151,16 @@ test('resolveSavedPackageImport resolves platform scopes, prefers caller copies,
 		name: '@someoneelse/tools',
 		kodyId: 'tools',
 	})
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@kody/wip-package',
-			allowPlatformScopes: true,
-		}),
-	).resolves.toBeNull()
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@kody/internal-package',
-			allowPlatformScopes: true,
-		}),
-	).resolves.toBeNull()
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: 'caller-user',
-			specifier: 'kody:@someoneelse/tools',
-		}),
-	).resolves.toBeNull()
+	for (const [specifier, allowPlatformScopes] of [
+		['kody:@kody/github', false],
+		['kody:@kody/wip-package', true],
+		['kody:@kody/internal-package', true],
+		['kody:@someoneelse/tools', undefined],
+	] as const) {
+		await expect(
+			resolve(db, 'caller-user', specifier, { allowPlatformScopes }),
+		).resolves.toBeNull()
+	}
 })
 
 test('platform-owned dependencies are excluded from packageStorage grants', () => {
@@ -193,28 +192,14 @@ test('platform-owned dependencies are excluded from packageStorage grants', () =
 
 test('resolveSavedPackageImport resolves accepted share grants and not pending ones', async () => {
 	const { db } = await createHarness()
-	const ownerUserId = 'aa'.repeat(32)
-	const guestUserId = 'bb'.repeat(32)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
-		)
-		.bind('alice', 'alice@example.com', ownerUserId, 'standard')
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
-		)
-		.bind('jesse', 'jesse@example.com', guestUserId, 'standard')
-		.run()
+	await seedOwnerAndGuest(db)
 	const packageId = await seedPackage(db, {
 		userId: ownerUserId,
 		name: '@alice/shared-notes',
 		kodyId: 'shared-notes',
 		isPrivate: true,
 	})
+	const now = new Date().toISOString()
 	await insertEntitySource(db, {
 		id: `source-${packageId}`,
 		user_id: ownerUserId,
@@ -227,45 +212,35 @@ test('resolveSavedPackageImport resolves accepted share grants and not pending o
 		source_root: '/',
 		last_external_check_at: null,
 		external_check_until: null,
-		created_at: new Date().toISOString(),
-		updated_at: new Date().toISOString(),
+		created_at: now,
+		updated_at: now,
 	})
-	const owner = {
-		userId: ownerUserId,
-		email: 'alice@example.com',
-		displayName: 'Alice',
-		username: 'alice',
-	}
-	const guest = {
-		userId: guestUserId,
-		email: 'jesse@example.com',
-		displayName: 'Jesse',
-		username: 'jesse',
-	}
 	await invitePackageShare({
 		db,
-		owner,
+		owner: {
+			userId: personIdFromStored(ownerUserId),
+			email: 'alice@example.com',
+			displayName: 'Alice',
+			username: 'alice',
+		},
 		packageId,
 		invitee: { username: 'jesse' },
 	})
-	await expect(
-		resolveSavedPackageImport({
-			db,
-			userId: guestUserId,
-			specifier: 'kody:@alice/shared-notes/notes',
-		}),
-	).resolves.toBeNull()
+	const resolveShared = () =>
+		resolve(db, guestUserId, 'kody:@alice/shared-notes/notes')
+	await expect(resolveShared()).resolves.toBeNull()
 	await acceptPackageShare({
 		db,
-		guest,
+		guest: {
+			userId: personIdFromStored(guestUserId),
+			email: 'jesse@example.com',
+			displayName: 'Jesse',
+			username: 'jesse',
+		},
 		packageId,
 		trustLevel: 'follow',
 	})
-	const resolved = await resolveSavedPackageImport({
-		db,
-		userId: guestUserId,
-		specifier: 'kody:@alice/shared-notes/notes',
-	})
+	const resolved = await resolveShared()
 	expect(resolved).toMatchObject({
 		sourceOwnerUserId: ownerUserId,
 		shareOwned: true,
@@ -276,42 +251,25 @@ test('resolveSavedPackageImport resolves accepted share grants and not pending o
 
 test('nested shared imports prefer the owner package over the guest name collision', async () => {
 	const { db } = await createHarness()
-	const ownerUserId = 'aa'.repeat(32)
-	const guestUserId = 'bb'.repeat(32)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
-		)
-		.bind('alice', 'alice@example.com', ownerUserId, 'standard')
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			VALUES (?, ?, 'x', CURRENT_TIMESTAMP, ?, ?)`,
-		)
-		.bind('jesse', 'jesse@example.com', guestUserId, 'standard')
-		.run()
-	const ownerHelperId = await seedPackage(db, {
-		userId: ownerUserId,
-		name: '@alice/helper',
-		kodyId: 'helper',
-		isPrivate: true,
-	})
-	const guestHelperId = await seedPackage(db, {
-		userId: guestUserId,
-		name: '@alice/helper',
-		kodyId: 'helper',
-		isPrivate: true,
-	})
-	const resolved = await resolveSavedPackageImport({
-		db,
-		userId: guestUserId,
-		specifier: 'kody:@alice/helper',
+	await seedOwnerAndGuest(db)
+	const [ownerHelperId] = [
+		await seedPackage(db, {
+			userId: ownerUserId,
+			name: '@alice/helper',
+			kodyId: 'helper',
+			isPrivate: true,
+		}),
+		await seedPackage(db, {
+			userId: guestUserId,
+			name: '@alice/helper',
+			kodyId: 'helper',
+			isPrivate: true,
+		}),
+	]
+	const resolved = await resolve(db, guestUserId, 'kody:@alice/helper', {
 		nestedShareOwnerUserId: ownerUserId,
 	})
 	expect(resolved?.row.id).toBe(ownerHelperId)
 	expect(resolved?.shareOwned).toBe(true)
 	expect(resolved?.storageOwnerUserId).toBe(ownerUserId)
-	expect(guestHelperId).not.toBe(ownerHelperId)
 })

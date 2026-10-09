@@ -1,4 +1,6 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceByIdForUser: vi.fn(),
@@ -43,16 +45,15 @@ function resetMocks() {
 function createContext(userId = 'user-1') {
 	return {
 		env: { APP_DB: {} } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: `${userId}@example.com`,
 				displayName: userId,
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 

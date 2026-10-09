@@ -56,6 +56,9 @@ SSR (fail loud in dev).
 
 - Constant: `REMIX_FRAME_TARGET_HEADER` (`x-remix-target`) in
   `frame-constants.ts`.
+- The client also sends `x-remix-frame: true` on every frame fetch
+  (`REMIX_FRAME_HEADER`), matching Remix's default resolver. The server keys
+  only on `x-remix-target` / `__frame` and does not branch on `x-remix-frame`.
 - Client `entry.tsx` `resolveFrame(src, options)` sets the header to
   `options.target` (the frame `name`) when fetching `src`, and `frameFetchUrl`
   adds `__frame=<name>` so the request misses the document cache. Non-GET frame
@@ -65,6 +68,9 @@ SSR (fail loud in dev).
   into that frame (a document would nest another shell). Document
   soft-navigations reload the top frame through the same resolver with no
   `target`; a full document is the page and is rendered.
+- Kody keeps its own resolver because Remix's default does not add the `__frame`
+  cache key, `cache: 'no-store'`, prefetch reuse, network retry, or
+  full-document rejection for named frames.
 - Server `handleFrameRequest` reads the header, then `__frame`, and selects the
   registered frame. The visible page URL is unchanged: `src` on `<Frame>` stays
   the route `href()`.

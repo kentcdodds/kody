@@ -4,7 +4,7 @@ import {
 	utf8ToBase64Url,
 } from '@kody-internal/shared/base64.ts'
 import { remainingCookieMaxAgeSeconds } from '#app/package-app-session.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * Cross-site auth handoff for hosted package apps.
@@ -57,7 +57,7 @@ function isStoredHandoffPayload(value: unknown): value is StoredHandoffPayload {
 	const record = value as Record<string, unknown>
 	return (
 		record.v === 2 &&
-		isStableUserId(record.stableUserId) &&
+		parsePersonId(record.stableUserId) !== null &&
 		typeof record.usr === 'string' &&
 		record.usr.length > 0 &&
 		typeof record.pkg === 'string' &&

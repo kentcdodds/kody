@@ -18,125 +18,82 @@ const hourMs = executeHealthSyntheticCooldownMs
 const recentMs = executeHealthRecentMs
 const minuteMs = executeHealthOrganicFreshMs
 const start = Date.parse('2026-09-07T17:00:00.000Z')
+const iso = (ms: number) => new Date(ms).toISOString()
 
 function ticks(count: number, stepMs = minuteMs) {
 	return Array.from({ length: count }, (_, index) => start + index * stepMs)
 }
 
-test('fresh organic success suppresses the synthetic and stale organic triggers once', () => {
-	expect(
-		decideExecuteHealthProbe({
-			now: start + 15_000,
-			lastSuccessAt: start,
-			lastSyntheticAttemptAt: null,
-		}),
-	).toBe('skip')
-	expect(
-		decideExecuteHealthProbe({
-			now: start + minuteMs,
-			lastSuccessAt: start,
-			lastSyntheticAttemptAt: null,
-		}),
-	).toBe('run')
+type ViewInput = Parameters<typeof deriveExecuteHealthView>[0]
+const view = (now: number, overrides: Partial<ViewInput> = {}) =>
+	deriveExecuteHealthView({
+		now,
+		lastSuccessAt: null,
+		lastSyntheticAttemptAt: null,
+		lastSyntheticSuccessAt: null,
+		lastSyntheticError: null,
+		syntheticConfigured: true,
+		...overrides,
+	})
+const idleTick = {
+	lastSuccessAt: null,
+	lastSyntheticAttemptAt: null,
+	lastSyntheticSuccessAt: null,
+	lastSyntheticError: null,
+	syntheticConfigured: true,
+}
+
+test('synthetic probe runs on stale organic, once per hourly cooldown after success or failure, and never twice concurrently', () => {
+	const claimed = claimExecuteHealthSynthetic({
+		now: start,
+		lastSuccessAt: null,
+		lastSyntheticAttemptAt: null,
+	})
+	expect(claimed).toEqual({ run: true, lastSyntheticAttemptAt: start })
+	const concurrent = claimExecuteHealthSynthetic({
+		now: start,
+		lastSuccessAt: null,
+		lastSyntheticAttemptAt: claimed.lastSyntheticAttemptAt,
+	})
+	expect(concurrent).toEqual({ run: false, lastSyntheticAttemptAt: start })
 	expect(
 		claimExecuteHealthSynthetic({
 			now: start + minuteMs,
 			lastSuccessAt: start,
 			lastSyntheticAttemptAt: null,
 		}),
-	).toEqual({
-		run: true,
-		lastSyntheticAttemptAt: start + minuteMs,
-	})
-})
+	).toEqual({ run: true, lastSyntheticAttemptAt: start + minuteMs })
 
-test('no traffic across many minute ticks stays at most once per hour, and success and failure both obey cooldown', () => {
+	// [now, lastSuccessAt, lastSyntheticAttemptAt, decision]
+	const cases = [
+		// Fresh organic suppresses; stale organic triggers.
+		[start + 15_000, start, null, 'skip'],
+		[start + minuteMs, start, null, 'run'],
+		// After a synthetic success or failure, the cooldown holds for an hour.
+		[start + minuteMs, start, start, 'skip'],
+		[start + 30_000, null, start, 'skip'],
+		[start + hourMs - 1, null, start, 'skip'],
+		[start + hourMs, null, start, 'run'],
+	] as const
 	expect(
-		countExecuteHealthSynthetics({
-			ticks: ticks(59),
-			lastSuccessAt: null,
-		}),
-	).toBe(1)
-	expect(
-		countExecuteHealthSynthetics({
-			ticks: ticks(180),
-			lastSuccessAt: null,
-		}),
-	).toBe(3)
-	expect(
-		countExecuteHealthSynthetics({
-			ticks: ticks(61),
-			lastSuccessAt: null,
-		}),
-	).toBe(2)
+		cases.map(([now, lastSuccessAt, lastSyntheticAttemptAt]) =>
+			decideExecuteHealthProbe({ now, lastSuccessAt, lastSyntheticAttemptAt }),
+		),
+	).toEqual(cases.map(([, , , decision]) => decision))
 
-	const afterSuccess = claimExecuteHealthSynthetic({
-		now: start,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: null,
-	})
-	expect(afterSuccess.run).toBe(true)
+	// No traffic across many minute ticks stays at most once per hour.
 	expect(
-		decideExecuteHealthProbe({
-			now: start + minuteMs,
-			lastSuccessAt: start,
-			lastSyntheticAttemptAt: afterSuccess.lastSyntheticAttemptAt,
-		}),
-	).toBe('skip')
-	expect(
-		decideExecuteHealthProbe({
-			now: start + 30_000,
-			lastSuccessAt: null,
-			lastSyntheticAttemptAt: afterSuccess.lastSyntheticAttemptAt,
-		}),
-	).toBe('skip')
-
-	const afterFailure = claimExecuteHealthSynthetic({
-		now: start,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: null,
-	})
-	expect(
-		decideExecuteHealthProbe({
-			now: start + hourMs - 1,
-			lastSuccessAt: null,
-			lastSyntheticAttemptAt: afterFailure.lastSyntheticAttemptAt,
-		}),
-	).toBe('skip')
-	expect(
-		decideExecuteHealthProbe({
-			now: start + hourMs,
-			lastSuccessAt: null,
-			lastSyntheticAttemptAt: afterFailure.lastSyntheticAttemptAt,
-		}),
-	).toBe('run')
-})
-
-test('concurrent ticks cannot duplicate a synthetic', () => {
-	const first = claimExecuteHealthSynthetic({
-		now: start,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: null,
-	})
-	const second = claimExecuteHealthSynthetic({
-		now: start,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: first.lastSyntheticAttemptAt,
-	})
-	expect(first.run).toBe(true)
-	expect(second.run).toBe(false)
-	expect(second.lastSyntheticAttemptAt).toBe(start)
+		[59, 180, 61].map((count) =>
+			countExecuteHealthSynthetics({
+				ticks: ticks(count),
+				lastSuccessAt: null,
+			}),
+		),
+	).toEqual([1, 3, 2])
 })
 
 test('stale or missing telemetry is unknown, not an outage or a fresh healthy signal', () => {
-	const missing = deriveExecuteHealthView({
-		now: start,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
-	})
+	const missing = view(start)
 	expect(missing.status).toBe('unknown')
 	expect(missing.source).toBeNull()
 	expect(missing.lastVerifiedAt).toBeNull()
@@ -144,72 +101,27 @@ test('stale or missing telemetry is unknown, not an outage or a fresh healthy si
 	expect(missing.detail).toMatch(/not an outage/i)
 	expect(missing.detail).not.toMatch(/operational|down|outage confirmed/i)
 
-	const stale = deriveExecuteHealthView({
-		now: start + recentMs,
-		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
+	const stale = view(start + recentMs, { lastSuccessAt: start })
+	expect(stale).toMatchObject({
+		status: 'unknown',
+		source: 'organic',
+		lastVerifiedAt: iso(start),
+		freshnessMs: recentMs,
 	})
-	expect(stale.status).toBe('unknown')
-	expect(stale.source).toBe('organic')
-	expect(stale.lastVerifiedAt).toBe(new Date(start).toISOString())
-	expect(stale.freshnessMs).toBe(recentMs)
 	expect(stale.detail).toMatch(/not recently exercised/i)
-})
 
-test('minutes-old organic success stays recent even when synthetic is unconfigured', () => {
-	const aFewMinutesOld = deriveExecuteHealthView({
-		now: start + 173_132,
-		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: false,
-	})
-	expect(aFewMinutesOld.status).toBe('recent')
-	expect(aFewMinutesOld.source).toBe('organic')
-	expect(aFewMinutesOld.lastVerifiedAt).toBe(new Date(start).toISOString())
-	expect(aFewMinutesOld.freshnessMs).toBe(173_132)
-	expect(aFewMinutesOld.detail).toMatch(/organic/i)
-	expect(aFewMinutesOld.detail).toMatch(/2m ago/)
-	expect(aFewMinutesOld.detail).not.toMatch(/not recently exercised/i)
-	expect(aFewMinutesOld.detail).not.toMatch(/not configured/i)
-
-	const almostHourOld = deriveExecuteHealthView({
-		now: start + recentMs - 1,
-		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: false,
-	})
-	expect(almostHourOld.status).toBe('recent')
-	expect(almostHourOld.source).toBe('organic')
-	expect(almostHourOld.detail).toMatch(/organic/i)
-})
-
-test('caller failures are not automatically a global outage, and one organic success does not hide other incidents', () => {
-	const failedSynthetic = deriveExecuteHealthView({
-		now: start + minuteMs,
-		lastSuccessAt: null,
+	const failedSynthetic = view(start + minuteMs, {
 		lastSyntheticAttemptAt: start,
-		lastSyntheticSuccessAt: null,
 		lastSyntheticError: 'MCP execute returned isError',
-		syntheticConfigured: true,
 	})
 	expect(failedSynthetic.status).toBe('unknown')
 	expect(failedSynthetic.detail).toMatch(/not an outage/i)
 	expect(failedSynthetic.detail).toMatch(/caller-code errors/i)
 
-	const staleOrganicAfterFailedSynthetic = deriveExecuteHealthView({
-		now: start + recentMs,
+	const staleOrganicAfterFailedSynthetic = view(start + recentMs, {
 		lastSuccessAt: start,
 		lastSyntheticAttemptAt: start + minuteMs,
-		lastSyntheticSuccessAt: null,
 		lastSyntheticError: 'HTTP 500',
-		syntheticConfigured: true,
 	})
 	expect(staleOrganicAfterFailedSynthetic.status).toBe('unknown')
 	expect(staleOrganicAfterFailedSynthetic.source).toBe('organic')
@@ -219,128 +131,117 @@ test('caller failures are not automatically a global outage, and one organic suc
 	expect(staleOrganicAfterFailedSynthetic.detail).not.toMatch(
 		/last synthetic attempt failed/i,
 	)
+})
 
-	const organic = deriveExecuteHealthView({
-		now: start + 5_000,
+test('organic success within the hour is recent, even when synthetic is unconfigured', () => {
+	const aFewMinutesOld = view(start + 173_132, {
 		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
+		syntheticConfigured: false,
 	})
-	expect(organic.status).toBe('recent')
-	expect(organic.source).toBe('organic')
-	expect(organic.lastVerifiedAt).toBe(new Date(start).toISOString())
-	expect(organic.detail).toMatch(/organic/i)
+	expect(aFewMinutesOld).toMatchObject({
+		status: 'recent',
+		source: 'organic',
+		lastVerifiedAt: iso(start),
+		freshnessMs: 173_132,
+	})
+	expect(aFewMinutesOld.detail).toMatch(/organic/i)
+	expect(aFewMinutesOld.detail).toMatch(/2m ago/)
+	expect(aFewMinutesOld.detail).not.toMatch(/not recently exercised/i)
+	expect(aFewMinutesOld.detail).not.toMatch(/not configured/i)
+
+	for (const organic of [
+		view(start + recentMs - 1, {
+			lastSuccessAt: start,
+			syntheticConfigured: false,
+		}),
+		view(start + 5_000, { lastSuccessAt: start }),
+	]) {
+		expect(organic).toMatchObject({
+			status: 'recent',
+			source: 'organic',
+			lastVerifiedAt: iso(start),
+		})
+		expect(organic.detail).toMatch(/organic/i)
+	}
 })
 
 test('stale incoming last-success does not rewind a newer stored timestamp', () => {
-	expect(mergeExecuteLastSuccess(start, start + 10_000)).toBe(start + 10_000)
-	expect(mergeExecuteLastSuccess(start + 10_000, start)).toBe(start + 10_000)
-	expect(mergeExecuteLastSuccess(null, start)).toBe(start)
-	expect(mergeExecuteLastSuccess(start, null)).toBe(start)
-	expect(mergeExecuteLastSuccess(null, null)).toBeNull()
+	const cases = [
+		[start, start + 10_000, start + 10_000],
+		[start + 10_000, start, start + 10_000],
+		[null, start, start],
+		[start, null, start],
+		[null, null, null],
+	] as const
+	expect(cases.map(([a, b]) => mergeExecuteLastSuccess(a, b))).toEqual(
+		cases.map(([, , merged]) => merged),
+	)
 })
 
 test('synthetic success plus heartbeat echo stays synthetic; later organic is organic', () => {
-	const syntheticAt = start
 	const heartbeatEchoAt = start + 2_000
-	const echoed = deriveExecuteHealthView({
-		now: start + 5_000,
+	const synthetic = {
 		lastSuccessAt: heartbeatEchoAt,
 		lastSyntheticAttemptAt: start,
-		lastSyntheticSuccessAt: syntheticAt,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
-	})
-	expect(echoed.status).toBe('recent')
-	expect(echoed.source).toBe('synthetic')
-	expect(echoed.lastVerifiedAt).toBe(new Date(heartbeatEchoAt).toISOString())
-	expect(echoed.detail).toMatch(/hourly authenticated MCP execute probe/i)
+		lastSyntheticSuccessAt: start,
+	}
+	for (const now of [start + 5_000, start + 30 * minuteMs]) {
+		const echoed = view(now, synthetic)
+		expect(echoed).toMatchObject({
+			status: 'recent',
+			source: 'synthetic',
+			lastVerifiedAt: iso(heartbeatEchoAt),
+		})
+		expect(echoed.detail).toMatch(/hourly authenticated MCP execute probe/i)
+	}
 
-	const laterOrganic = deriveExecuteHealthView({
-		now: start + 3 * minuteMs,
-		lastSuccessAt: start + 2 * minuteMs,
-		lastSyntheticAttemptAt: start,
-		lastSyntheticSuccessAt: syntheticAt,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
+	expect(
+		view(start + 3 * minuteMs, {
+			...synthetic,
+			lastSuccessAt: start + 2 * minuteMs,
+		}),
+	).toMatchObject({
+		source: 'organic',
+		status: 'recent',
+		lastVerifiedAt: iso(start + 2 * minuteMs),
 	})
-	expect(laterOrganic.source).toBe('organic')
-	expect(laterOrganic.status).toBe('recent')
-	expect(laterOrganic.lastVerifiedAt).toBe(
-		new Date(start + 2 * minuteMs).toISOString(),
-	)
-
-	const syntheticStillRecent = deriveExecuteHealthView({
-		now: start + 30 * minuteMs,
-		lastSuccessAt: heartbeatEchoAt,
-		lastSyntheticAttemptAt: start,
-		lastSyntheticSuccessAt: syntheticAt,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
-	})
-	expect(syntheticStillRecent.status).toBe('recent')
-	expect(syntheticStillRecent.source).toBe('synthetic')
-	expect(syntheticStillRecent.detail).toMatch(
-		/hourly authenticated MCP execute probe/i,
-	)
 })
 
-test('unconfigured fallback does not claim the hourly budget or hide the not-configured copy', async () => {
+test('ticks: unconfigured fallback skips without claiming budget; public reads never run; claimed ticks record failures', async () => {
 	let runs = 0
+	const runSynthetic = async () => {
+		runs += 1
+		return { ok: false, error: 'timeout' }
+	}
 	const skipped = await applyExecuteHealthTick({
+		...idleTick,
 		now: start + minuteMs,
-		lastSuccessAt: null,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
 		syntheticConfigured: false,
-		runSynthetic: async () => {
-			runs += 1
-			return { ok: false, error: 'not-configured' }
-		},
+		runSynthetic,
 	})
 	expect(runs).toBe(0)
 	expect(skipped.lastSyntheticAttemptAt).toBeNull()
 	expect(skipped.lastSyntheticError).toBeNull()
+	const unconfigured = view(start + minuteMs, skipped)
+	expect(unconfigured.status).toBe('unknown')
+	expect(unconfigured.detail).toMatch(/not configured/i)
+	expect(unconfigured.detail).not.toMatch(/last synthetic attempt failed/i)
 
-	const view = deriveExecuteHealthView({
-		now: start + minuteMs,
-		...skipped,
-	})
-	expect(view.status).toBe('unknown')
-	expect(view.detail).toMatch(/not configured/i)
-	expect(view.detail).not.toMatch(/last synthetic attempt failed/i)
-})
-
-test('public reads do not run a synthetic; only a claimed tick can', async () => {
-	const runSynthetic = async () => {
-		throw new Error('public status GET must not run a paid execute')
-	}
-	const skipped = await applyExecuteHealthTick({
+	const publicRead = await applyExecuteHealthTick({
+		...idleTick,
 		now: start + 15_000,
 		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
-		runSynthetic,
+		runSynthetic: async () => {
+			throw new Error('public status GET must not run a paid execute')
+		},
 	})
-	expect(skipped.lastSyntheticAttemptAt).toBeNull()
+	expect(publicRead.lastSyntheticAttemptAt).toBeNull()
 
-	let runs = 0
 	const ran = await applyExecuteHealthTick({
+		...idleTick,
 		now: start + minuteMs,
 		lastSuccessAt: start,
-		lastSyntheticAttemptAt: null,
-		lastSyntheticSuccessAt: null,
-		lastSyntheticError: null,
-		syntheticConfigured: true,
-		runSynthetic: async () => {
-			runs += 1
-			return { ok: false, error: 'timeout' }
-		},
+		runSynthetic,
 	})
 	expect(runs).toBe(1)
 	expect(ran.lastSyntheticAttemptAt).toBe(start + minuteMs)
@@ -353,10 +254,7 @@ test('stale stored cron snapshot refreshes from live origin evidence and stays o
 	const live = start + 105_000
 	const now = start + 121_000
 	expect(
-		shouldRefreshExecuteLastSuccess({
-			now,
-			storedLastSuccessAt: stored,
-		}),
+		shouldRefreshExecuteLastSuccess({ now, storedLastSuccessAt: stored }),
 	).toBe(true)
 
 	let fetches = 0
@@ -369,103 +267,87 @@ test('stale stored cron snapshot refreshes from live origin evidence and stays o
 		},
 	})
 	expect(fetches).toBe(1)
-	expect(resolved.persist).toBe(true)
-	expect(resolved.lastSuccessAt).toBe(live)
+	expect(resolved).toEqual({ persist: true, lastSuccessAt: live })
 
-	const view = deriveExecuteHealthView({
-		now,
+	const refreshed = view(now, {
 		lastSuccessAt: resolved.lastSuccessAt,
 		lastSyntheticAttemptAt: stored,
-		lastSyntheticSuccessAt: null,
 		lastSyntheticError: 'HTTP 500',
-		syntheticConfigured: true,
 	})
-	expect(view.status).toBe('recent')
-	expect(view.source).toBe('organic')
-	expect(view.lastVerifiedAt).toBe(new Date(live).toISOString())
-	expect(view.detail).toMatch(/organic/i)
-	expect(view.detail).not.toMatch(/last synthetic attempt failed/i)
+	expect(refreshed).toMatchObject({
+		status: 'recent',
+		source: 'organic',
+		lastVerifiedAt: iso(live),
+	})
+	expect(refreshed.detail).toMatch(/organic/i)
+	expect(refreshed.detail).not.toMatch(/last synthetic attempt failed/i)
 
 	let skippedFetches = 0
-	const freshStored = await resolvePublicExecuteLastSuccess({
-		now: start + 15_000,
-		storedLastSuccessAt: start,
-		fetchLive: async () => {
-			skippedFetches += 1
-			return start + 10_000
-		},
-	})
+	expect(
+		await resolvePublicExecuteLastSuccess({
+			now: start + 15_000,
+			storedLastSuccessAt: start,
+			fetchLive: async () => {
+				skippedFetches += 1
+				return start + 10_000
+			},
+		}),
+	).toEqual({ persist: false, lastSuccessAt: start })
 	expect(skippedFetches).toBe(0)
-	expect(freshStored.persist).toBe(false)
-	expect(freshStored.lastSuccessAt).toBe(start)
 
-	const originDown = await resolvePublicExecuteLastSuccess({
-		now,
-		storedLastSuccessAt: stored,
-		fetchLive: async () => null,
-	})
-	expect(originDown.persist).toBe(false)
-	expect(originDown.lastSuccessAt).toBe(stored)
+	expect(
+		await resolvePublicExecuteLastSuccess({
+			now,
+			storedLastSuccessAt: stored,
+			fetchLive: async () => null,
+		}),
+	).toEqual({ persist: false, lastSuccessAt: stored })
 
-	let concurrentStored = stored
-	const newerDuringFetch = start + 120_000
-	const raced = await resolvePublicExecuteLastSuccess({
-		now,
-		storedLastSuccessAt: stored,
-		fetchLive: async () => {
-			concurrentStored = newerDuringFetch
-			return live
-		},
-		readStoredAfterFetch: () => concurrentStored,
-	})
-	expect(raced.lastSuccessAt).toBe(newerDuringFetch)
-	expect(raced.persist).toBe(false)
-
-	let olderConcurrentStored = stored
-	const olderDuringFetch = start + 80_000
-	const liveWinsRace = await resolvePublicExecuteLastSuccess({
-		now,
-		storedLastSuccessAt: stored,
-		fetchLive: async () => {
-			olderConcurrentStored = olderDuringFetch
-			return live
-		},
-		readStoredAfterFetch: () => olderConcurrentStored,
-	})
-	expect(liveWinsRace.lastSuccessAt).toBe(live)
-	expect(liveWinsRace.persist).toBe(true)
+	// A concurrent writer that stored something newer during the fetch wins;
+	// an older concurrent write loses to live evidence.
+	for (const [duringFetch, expected] of [
+		[start + 120_000, { persist: false, lastSuccessAt: start + 120_000 }],
+		[start + 80_000, { persist: true, lastSuccessAt: live }],
+	] as const) {
+		let concurrentStored = stored
+		expect(
+			await resolvePublicExecuteLastSuccess({
+				now,
+				storedLastSuccessAt: stored,
+				fetchLive: async () => {
+					concurrentStored = duringFetch
+					return live
+				},
+				readStoredAfterFetch: () => concurrentStored,
+			}),
+		).toEqual(expected)
+	}
 })
 
 test('synthetic maintenance errors keep origin reason instead of collapsing to HTTP status', () => {
-	expect(
-		readExecuteHealthSyntheticResult({
-			status: 500,
-			body: {
+	const initializeFailed =
+		'Authenticated MCP execute probe initialize failed: HTTP 401'
+	const cases = [
+		[
+			500,
+			{
 				ok: false,
 				reason: 'not-configured',
-				error: 'Execute health canary is not configured',
+				error: 'canary is not configured',
 			},
-		}),
-	).toEqual({ ok: false, error: 'not-configured' })
+			{ ok: false, error: 'not-configured' },
+		],
+		[
+			500,
+			{ ok: false, error: initializeFailed },
+			{ ok: false, error: initializeFailed },
+		],
+		[200, { ok: true }, { ok: true, error: null }],
+		[502, null, { ok: false, error: 'HTTP 502' }],
+	] as const
 	expect(
-		readExecuteHealthSyntheticResult({
-			status: 500,
-			body: {
-				ok: false,
-				error: 'Authenticated MCP execute probe initialize failed: HTTP 401',
-			},
-		}),
-	).toEqual({
-		ok: false,
-		error: 'Authenticated MCP execute probe initialize failed: HTTP 401',
-	})
-	expect(
-		readExecuteHealthSyntheticResult({
-			status: 200,
-			body: { ok: true },
-		}),
-	).toEqual({ ok: true, error: null })
-	expect(readExecuteHealthSyntheticResult({ status: 502, body: null })).toEqual(
-		{ ok: false, error: 'HTTP 502' },
-	)
+		cases.map(([status, body]) =>
+			readExecuteHealthSyntheticResult({ status, body }),
+		),
+	).toEqual(cases.map(([, , expected]) => expected))
 })

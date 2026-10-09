@@ -2,11 +2,22 @@ import { DurableObject } from 'cloudflare:workers'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import {
+	accountSuspendedErrorCode,
+	isAccountSuspendedError,
+} from '#worker/account/account-suspension.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { getEntitySourceById } from '#worker/repo/entity-sources.ts'
 import { loadPackageSourceBySourceId } from '#worker/package-registry/source.ts'
 import { packageRealtimeSessionDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
+import {
+	computeOverageLimitErrorCode,
+	isComputeOverageLimitError,
+} from '#worker/entitlements/errors.ts'
 import { buildPackageAppWorker } from './package-app.ts'
+import { isWebSocketUpgradeRequest } from '#worker/package-runtime/websocket-upgrade.ts'
+
+const includeUsedUpCloseReason = 'include-used-up'
 
 const sessionStateStorageKey = 'package-realtime-state'
 const sessionTagPrefix = 'session:'
@@ -195,6 +206,11 @@ function toPlainHeaders(headers: Headers) {
 	return Object.fromEntries(headers.entries())
 }
 
+// workerd sends a `fetch` carrying `Upgrade: websocket` as a WebSocket
+// handshake and drops the request body, so the connect payload travels in a
+// header instead.
+const packageRealtimeConnectHeaderName = 'X-Kody-Realtime-Connect'
+
 function serializeOutboundMessage(value: unknown) {
 	if (typeof value === 'string') {
 		return value
@@ -325,6 +341,7 @@ async function resolvePackageAppWorkerBuildInput(input: {
 			storageId: input.binding.packageId,
 		},
 		repoContext: null,
+		source: { kind: 'package-app' },
 	})
 	return {
 		baseUrl: input.binding.baseUrl,
@@ -405,13 +422,7 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 	}
 
 	private async purgeSessionState() {
-		for (const socket of this.ctx.getWebSockets()) {
-			try {
-				socket.close(1000, 'account-deleted')
-			} catch {
-				// Ignore sockets that are already closing.
-			}
-		}
+		this.closeAllSockets(1000, 'account-deleted')
 		this.stateSnapshot = createInitialState()
 		this.cachedAppWorkerKey = null
 		this.cachedAppWorkerKeyLookup = null
@@ -596,6 +607,10 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		binding: PackageRealtimeBindingState
 		payload: PackageRealtimeHookInput
 	}) {
+		// The build input (including its caller identity) outlives a single
+		// event, so re-check suspension per hook; the resolver's short cache
+		// keeps this off the D1 hot path.
+		await resolveBackgroundMcpUser(this.env.APP_DB, input.binding.userId)
 		const appWorker = await this.getPackageAppWorker(input.binding)
 		const entrypoint = appWorker.stub.getEntrypoint(
 			appWorker.entrypointName,
@@ -712,6 +727,27 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		} catch (error) {
 			delete this.stateSnapshot.sessions[sessionId]
 			await this.persistState()
+			if (isAccountSuspendedError(error)) {
+				this.closeAllSockets(1008, 'account-suspended')
+				return Response.json(
+					{ ok: false, error: { code: error.code, message: error.message } },
+					{ status: 403 },
+				)
+			}
+			if (isComputeOverageLimitError(error)) {
+				this.closeAllSockets(1008, includeUsedUpCloseReason)
+				return Response.json(
+					{
+						ok: false,
+						error: {
+							code: computeOverageLimitErrorCode,
+							message: error.message,
+							details: error.details,
+						},
+					},
+					{ status: 429 },
+				)
+			}
 			try {
 				server.close(1011, 'connect hook failed')
 			} catch {
@@ -727,9 +763,18 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 
 	async fetch(request: Request): Promise<Response> {
 		const url = new URL(request.url)
-		if (request.headers.get('Upgrade') === 'websocket') {
-			const body = (await request.json()) as PackageRealtimeConnectPayload
-			return await this.handleConnectRequest(body)
+		if (isWebSocketUpgradeRequest(request)) {
+			const payload = request.headers.get(packageRealtimeConnectHeaderName)
+			if (!payload) {
+				return new Response('Missing realtime connect payload.', {
+					status: 400,
+				})
+			}
+			return await this.handleConnectRequest(
+				JSON.parse(
+					decodeURIComponent(payload),
+				) as PackageRealtimeConnectPayload,
+			)
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/sessions')) {
@@ -746,12 +791,24 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (request.method === 'POST' && url.pathname.endsWith('/emit')) {
 			const body = (await request.json()) as PackageRealtimeEmitPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					delivered: false,
+					reason: accountSuspendedErrorCode,
+				} satisfies PackageRealtimeEmitResult)
+			}
 			return Response.json(await this.emitToSession(body.sessionId, body.data))
 		}
 
 		if (request.method === 'POST' && url.pathname.endsWith('/broadcast')) {
 			const body = (await request.json()) as PackageRealtimeBroadcastPayload
 			await this.initializeBinding(body.binding)
+			if (await this.closeSocketsIfOwnerSuspended(body.binding)) {
+				return Response.json({
+					deliveredCount: 0,
+					sessionIds: [],
+				} satisfies PackageRealtimeBroadcastResult)
+			}
 			return Response.json(
 				await this.broadcast({
 					facet: body.facet,
@@ -831,16 +888,51 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		if (!session || !binding) return
 		session.lastSeenAt = new Date().toISOString()
 		await this.persistState()
-		const actions = await this.resolveRealtimeHookResult({
-			binding,
-			payload: {
-				event: 'message',
-				facet: session.facet,
-				session: createSessionRecord(session),
-				message: decodeInboundMessage(message),
-			},
-		})
+		let actions: Array<PackageRealtimeAction>
+		try {
+			actions = await this.resolveRealtimeHookResult({
+				binding,
+				payload: {
+					event: 'message',
+					facet: session.facet,
+					session: createSessionRecord(session),
+					message: decodeInboundMessage(message),
+				},
+			})
+		} catch (error) {
+			if (isComputeOverageLimitError(error)) {
+				this.closeAllSockets(1008, includeUsedUpCloseReason)
+				return
+			}
+			if (!isAccountSuspendedError(error)) throw error
+			this.closeAllSockets(1008, 'account-suspended')
+			return
+		}
 		await this.applyHookActions(sessionId, actions)
+	}
+
+	private async closeSocketsIfOwnerSuspended(
+		binding: PackageRealtimeBindingState,
+	) {
+		const suspended = await resolveBackgroundMcpUser(
+			this.env.APP_DB,
+			binding.userId,
+		).then(
+			() => false,
+			(error: unknown) => isAccountSuspendedError(error),
+		)
+		if (suspended) this.closeAllSockets(1008, 'account-suspended')
+		return suspended
+	}
+
+	private closeAllSockets(code: number, reason: string) {
+		for (const socket of this.ctx.getWebSockets()) {
+			try {
+				socket.close(code, reason)
+			} catch {
+				// Ignore sockets that are already closing.
+			}
+		}
 	}
 
 	private async handleDisconnect(
@@ -858,21 +950,29 @@ export class PackageRealtimeSession extends DurableObject<Env> {
 		delete this.stateSnapshot.sessions[sessionId]
 		await this.persistState()
 		if (!session || !binding) return
-		const actions = await this.resolveRealtimeHookResult({
-			binding,
-			payload: {
-				event: 'disconnect',
-				facet: session.facet,
-				session: createSessionRecord(session),
-				close,
-			},
-		})
+		let actions: Array<PackageRealtimeAction>
+		try {
+			actions = await this.resolveRealtimeHookResult({
+				binding,
+				payload: {
+					event: 'disconnect',
+					facet: session.facet,
+					session: createSessionRecord(session),
+					close,
+				},
+			})
+		} catch (error) {
+			if (isAccountSuspendedError(error) || isComputeOverageLimitError(error)) {
+				return
+			}
+			throw error
+		}
 		await this.applyHookActions(sessionId, actions, session)
 	}
 }
 
 type PackageRealtimeSessionRpc = {
-	fetch: (request: Request) => Promise<Response>
+	fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
 function getPackageRealtimeNamespace(env: Env) {
@@ -915,21 +1015,24 @@ export function packageRealtimeSessionRpc(input: {
 	const stub = getPackageRealtimeStub(input)
 	return {
 		async connect(request: Request, facet?: string | null) {
-			const forwardedRequest = new Request(request.url, {
-				method: 'POST',
-				headers: request.headers,
-				body: JSON.stringify({
-					binding,
-					facet,
-					request: {
-						url: request.url,
-						method: request.method,
-						headers: toPlainHeaders(request.headers),
-					},
-				} satisfies PackageRealtimeConnectPayload),
+			const payload: PackageRealtimeConnectPayload = {
+				binding,
+				facet,
+				request: {
+					url: request.url,
+					method: request.method,
+					headers: toPlainHeaders(request.headers),
+				},
+			}
+			// Plain-object headers survive Sentry's Fetcher instrumentation merge.
+			return await stub.fetch(request.url, {
+				headers: {
+					Upgrade: 'websocket',
+					[packageRealtimeConnectHeaderName]: encodeURIComponent(
+						JSON.stringify(payload),
+					),
+				},
 			})
-			forwardedRequest.headers.set('Upgrade', 'websocket')
-			return await stub.fetch(forwardedRequest)
 		},
 		async emit(
 			sessionId: string,

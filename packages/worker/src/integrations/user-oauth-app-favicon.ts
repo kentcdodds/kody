@@ -183,14 +183,12 @@ async function fetchHttpsPublic(input: {
 	accept: string
 	maxBytes: number
 	as: 'text' | 'bytes'
-	fetchImpl?: typeof fetch
 }): Promise<{ url: URL; text?: string; bytes?: Uint8Array } | null> {
 	let url = assertHttpsPublicUrl(input.url)
-	const fetchImpl = input.fetchImpl ?? fetch
 	let response: Response
 	try {
 		for (let hop = 0; ; hop += 1) {
-			response = await fetchImpl(url.toString(), {
+			response = await fetch(url.toString(), {
 				headers: { Accept: input.accept },
 				redirect: 'manual',
 				signal: AbortSignal.timeout(fetchTimeoutMs),
@@ -225,14 +223,12 @@ async function fetchHttpsPublic(input: {
 
 export async function fetchFaviconBytes(input: {
 	origin: URL
-	fetchImpl?: typeof fetch
 }): Promise<Uint8Array | null> {
 	const page = await fetchHttpsPublic({
 		url: input.origin.href,
 		accept: 'text/html,application/xhtml+xml,*/*',
 		maxBytes: maxHtmlBytes,
 		as: 'text',
-		fetchImpl: input.fetchImpl,
 	})
 	const candidates = page?.text
 		? parseHtmlIconCandidates(page.text, page.url)
@@ -252,7 +248,6 @@ export async function fetchFaviconBytes(input: {
 			accept: 'image/png,image/webp,image/jpeg,image/svg+xml,image/x-icon,*/*',
 			maxBytes: maxFaviconSourceBytes,
 			as: 'bytes',
-			fetchImpl: input.fetchImpl,
 		})
 		if (!fetched?.bytes) continue
 		const sourceBytes =
@@ -285,7 +280,6 @@ export async function fillUserOauthAppFavicon(input: {
 	env: Pick<Env, 'COMMUNITY_ASSETS' | 'IMAGES'>
 	userId: string
 	slug: string
-	fetchImpl?: typeof fetch
 }): Promise<UserOauthApp | null> {
 	const app = await getOauthAppBySlug({
 		db: input.db,
@@ -301,7 +295,6 @@ export async function fillUserOauthAppFavicon(input: {
 	if (!resolved) return app
 	const bytes = await fetchFaviconBytes({
 		origin: resolved.origin,
-		fetchImpl: input.fetchImpl,
 	})
 	if (!bytes) return app
 	try {

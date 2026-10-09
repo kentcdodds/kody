@@ -23,8 +23,9 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaSetMcpServerInstructions',
+		orgPermission: 'org:write',
 		description:
-			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Prefer memories for durable facts and preferences; use this overlay only for rare always-on session policy—not package inventory (popular packages are hinted automatically when available). Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions. Reports assembled_chars and a warning when some clients would truncate the overlay.',
+			'Replace or clear the signed-in user’s custom MCP server instructions overlay (appended to built-in server instructions for new MCP connections). Put guidance at the right layer: see search({ entity: "guide:agent_guidance" }) (Where agent guidance lives / /docs/agent-guidance). Prefer memories for durable facts and preferences; use this overlay only for rare always-on session policy—not package inventory, export gotchas, or package docs. Pass an empty string to clear. Changes apply to new MCP sessions—reconnect the client if the host caches server instructions. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [
 			'instructions',
 			'server',
@@ -33,6 +34,8 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 			'memory',
 			'mcp',
 			'prompt',
+			'agent guidance',
+			'progressive disclosure',
 		],
 		readOnly: false,
 		idempotent: true,
@@ -60,9 +63,7 @@ export const metaSetMcpServerInstructionsCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user.userId,
 			)
-			const assembly = await describeUserMcpServerInstructionOverlay({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
+			const assembly = describeUserMcpServerInstructionOverlay({
 				overlay: stored,
 			})
 			return {

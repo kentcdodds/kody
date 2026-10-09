@@ -65,6 +65,30 @@ test('fork/listing relation is synced, ahead, or proven outdated', () => {
 	).toBe(false)
 
 	expect(
+		classifyForkListingRelation({
+			originCommit: 'commit-old',
+			listingPinnedCommit: null,
+		}),
+	).toBe(null)
+	expect(
+		classifyForkListingRelation({
+			originCommit: null,
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe(null)
+	expect(
+		classifyForkListingRelation({
+			originCommit: '',
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe(null)
+	expect(
+		classifyForkListingRelation({
+			originCommit: '   ',
+			listingPinnedCommit: 'commit-new',
+		}),
+	).toBe(null)
+	expect(
 		isCommunityListingAhead({
 			originCommit: 'commit-old',
 			listingPinnedCommit: null,

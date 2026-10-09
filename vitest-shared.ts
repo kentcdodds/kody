@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { config as loadDotEnv } from 'dotenv'
-import { type UserConfig } from 'vitest/config'
+import { type ViteUserConfig } from 'vitest/config'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
 import { suppressThirdPartySourcemapWarnings } from './tools/vite-suppress-sourcemap-warnings.ts'
 
@@ -53,27 +53,24 @@ export const sharedProjectConfig = {
 		target: 'es2023',
 		jsx: {
 			runtime: 'automatic',
-			importSource: 'remix/ui',
+			importSource: 'remix/component',
 		},
 	},
 	test: {
 		testTimeout,
 		hookTimeout: testTimeout,
 		// `validate` runs this suite concurrently with Playwright and two
-		// Wrangler servers on 4-core CI runners; leave a core free so their
-		// startup is not starved by test workers.
+		// Wrangler servers on 4-core machines; leave a core free so their
+		// startup is not starved by test workers. Workers-unit may lower this
+		// further under `KODY_VALIDATE_LOAD` (see vitest.workers.config.ts).
 		maxWorkers: process.env.CI ? 3 : undefined,
 		clearMocks: true,
 		mockReset: true,
 		setupFiles: [
 			resolve(rootDir, 'packages/worker/src/test-support/console-spies.ts'),
-			resolve(
-				rootDir,
-				'packages/worker/src/test-support/invoke-contract-cache-reset.ts',
-			),
 		],
 		// msw's cookie store probes `typeof localStorage`, which trips Node's
 		// experimental localStorage warning in every fork that loads it.
 		execArgv: ['--disable-warning=ExperimentalWarning'],
 	},
-} satisfies UserConfig
+} satisfies ViteUserConfig

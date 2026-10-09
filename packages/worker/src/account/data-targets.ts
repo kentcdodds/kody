@@ -125,12 +125,6 @@ export const accountOperatorOwnedD1Surfaces = [
 		reason:
 			'Platform-owned storage-bucket inventory cursor across RepoSessionIndex owners (one singleton row). Not user data; account deletion does not touch it.',
 	},
-	{
-		table: 'site_banners',
-		surface: 'site_banners',
-		reason:
-			'Operator-owned site announcement banners (global config like feature flags; no user_id). Per-user dismissals remain user-scoped and covered by their own target.',
-	},
 ] as const
 
 /** Targets that account export should skip (deletion still covers them). */
@@ -188,14 +182,54 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * cascades are disabled. Tables with no `user_id` column (e.g. global mock
  * tables) are not represented.
  */
+
+/**
+ * Tables still present in D1 after their product surface is gone. Rows may be
+ * purged while DROP TABLE waits for a later deploy. Deletion/export do not
+ * inventory these leftovers. Empty when nothing is mid-drop.
+ */
+export const accountUserDataPendingDropTables = [] as const
+
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
-	{ kind: 'user_id', table: 'package_invocation_tokens' },
+	{ kind: 'user_id', table: 'api_tokens' },
+	{ kind: 'user_id', table: 'connection_profiles' },
+	{ kind: 'user_id', table: 'mcp_event_subscriptions' },
+	{ kind: 'user_id', table: 'cli_credential_bootstrap_codes' },
 	{ kind: 'user_id', table: 'user_storage_buckets' },
 	{ kind: 'user_id', table: 'usage_rollups' },
+	{
+		kind: 'user_columns',
+		table: 'usage_rollups',
+		columns: ['actor_user_id'],
+	},
+	{ kind: 'user_id', table: 'usage_attribution_daily' },
+	{
+		kind: 'user_columns',
+		table: 'usage_attribution_daily',
+		columns: ['actor_user_id'],
+	},
+	{ kind: 'user_id', table: 'durable_object_duration_daily' },
+	{
+		kind: 'user_columns',
+		table: 'durable_object_duration_daily',
+		columns: ['actor_user_id'],
+	},
+	{ kind: 'user_id', table: 'access_cache' },
 	{ kind: 'user_id', table: 'user_usage_campaigns' },
 	{ kind: 'user_id', table: 'user_usage_campaign_sends' },
 	{ kind: 'user_id', table: 'user_tips_email_opt_outs' },
-	{ kind: 'user_id', table: 'compute_overage_invoices' },
+	{ kind: 'user_id', table: 'credit_debit_progress' },
+	// Grants the deleted admin made stay on recipients' ledgers for audit;
+	// only the granter id is anonymized.
+	{
+		kind: 'replace_user_column',
+		table: 'credit_ledger_entries',
+		matchColumn: 'granted_by_user_id',
+		setColumn: 'granted_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'credit_ledger_entries' },
+	{ kind: 'user_id', table: 'credit_wallets' },
 	{
 		kind: 'user_columns',
 		table: 'referrals',
@@ -269,8 +303,22 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	// user_integrations before user_oauth_apps. Ciphertext columns are redacted
 	// on export.
 	{ kind: 'user_id', table: 'user_integrations' },
+	{
+		kind: 'replace_user_column',
+		table: 'user_integrations',
+		matchColumn: 'connected_by_user_id',
+		setColumn: 'connected_by_user_id',
+		value: 'deleted-user',
+	},
 	{ kind: 'user_id', table: 'user_oauth_apps' },
 	{ kind: 'user_id', table: 'mcp_server_settings' },
+	{
+		kind: 'replace_user_column',
+		table: 'mcp_server_settings',
+		matchColumn: 'connected_by_user_id',
+		setColumn: 'connected_by_user_id',
+		value: 'deleted-user',
+	},
 	// Job rows (`jobs`, `archived_job_artifacts`) live in the jobs worker's
 	// database (ADR 0016); account deletion reaches them through the JOBS
 	// service binding's purgeUser and export through listArchivedJobArtifacts /
@@ -346,6 +394,15 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'email_sender_identities' },
 	{ kind: 'user_id', table: 'email_sender_rules' },
 	{ kind: 'user_id', table: 'webhook_endpoints' },
+	{
+		kind: 'replace_user_column',
+		table: 'webhook_endpoints',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'webhook_apply_destination_pending' },
+	{ kind: 'user_id', table: 'webhook_apply_destination_grants' },
 	{
 		kind: 'user_columns',
 		table: 'platform_feedback',
@@ -461,11 +518,12 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_listings',
 		columns: ['owner_user_id'],
 	},
-	// Retired usernames and `kody.id`s exist only to keep canonical package URLs
-	// resolving after a rename. They die with the account: once the packages are
-	// gone there is nothing left to redirect to.
+	// Retired usernames and package slugs exist only to keep canonical package
+	// URLs resolving after a rename. They die with the account: once the
+	// packages are gone there is nothing left to redirect to.
 	{ kind: 'user_id', table: 'username_redirects' },
 	{ kind: 'user_id', table: 'package_kody_id_redirects' },
+	{ kind: 'user_id', table: 'package_slug_redirects' },
 	// password_resets.user_id is an INTEGER FK to users.id (predates the
 	// stable mcp string user id), so it must be handled with the database
 	// integer id rather than the mcp user id.
@@ -480,11 +538,61 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'db_user_id', table: 'passkeys' },
 	{ kind: 'db_user_id', table: 'user_mcp_oauth_clients' },
 	{ kind: 'db_user_id', table: 'oauth_connections' },
+	{ kind: 'user_id', table: 'handles' },
+	{ kind: 'user_id', table: 'org_memberships' },
+	{
+		kind: 'replace_user_column',
+		table: 'org_memberships',
+		matchColumn: 'invited_by_user_id',
+		setColumn: 'invited_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'org_user_budgets' },
+	{
+		kind: 'replace_user_column',
+		table: 'org_user_budgets',
+		matchColumn: 'set_by_user_id',
+		setColumn: 'set_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'orgs',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'grants',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{
+		kind: 'user_columns',
+		table: 'invites',
+		columns: ['invited_by_user_id', 'accepted_by_user_id'],
+	},
+	{
+		kind: 'replace_user_column',
+		table: 'teams',
+		matchColumn: 'created_by_user_id',
+		setColumn: 'created_by_user_id',
+		value: 'deleted-user',
+	},
+	{ kind: 'user_id', table: 'team_members' },
+	{
+		kind: 'replace_user_column',
+		table: 'team_members',
+		matchColumn: 'added_by_user_id',
+		setColumn: 'added_by_user_id',
+		value: 'deleted-user',
+	},
 	// Feature-flag overrides use the integer users.id FK (with ON DELETE
 	// CASCADE), but account deletion still issues an explicit DELETE so the
 	// cascade stays self-contained when FK enforcement is disabled.
 	{ kind: 'db_user_id', table: 'feature_flag_user_overrides' },
-	{ kind: 'db_user_id', table: 'site_banner_dismissals' },
 	// Two-factor verification rows are keyed by `target` = stringified db user
 	// id rather than a user_id column, so they need the dedicated kind.
 	{ kind: 'db_user_target', table: 'verifications' },
@@ -772,8 +880,10 @@ export function buildUserScopedDeleteOrUpdateSql(
 export const accountExportRedactedColumnsByTable: Readonly<
 	Record<string, ReadonlyArray<string>>
 > = {
+	api_tokens: ['token_hash'],
+	cli_credential_bootstrap_codes: ['code_hash'],
 	email_verifications: ['token_hash'],
-	package_invocation_tokens: ['token_hash'],
+	mcp_event_subscriptions: ['secret_encrypted', 'previous_secret_encrypted'],
 	password_resets: ['token_hash'],
 	pending_email_changes: ['token_hash'],
 	pending_email_claim_releases: ['token_hash'],
@@ -787,8 +897,11 @@ export const accountExportRedactedColumnsByTable: Readonly<
 	webhook_endpoints: [
 		'url_secret_hash',
 		'url_secret_encrypted',
+		'hmac_secret_encrypted',
 		'previous_url_secret_hash',
 	],
+	webhook_apply_destination_pending: ['destination_json'],
+	webhook_apply_destination_grants: ['destination_json'],
 }
 
 // Cross-user export rows can include another user's stable id. Keep the
@@ -797,6 +910,9 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	Record<string, ReadonlyArray<string>>
 > = {
 	community_activity_events: ['actor_user_id'],
+	durable_object_duration_daily: ['actor_user_id'],
+	usage_attribution_daily: ['actor_user_id'],
+	usage_rollups: ['actor_user_id'],
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
@@ -805,6 +921,16 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 		'grantee_user_id',
 		'created_by_user_id',
 	],
+	grants: ['created_by_user_id'],
+	invites: ['invited_by_user_id', 'accepted_by_user_id'],
+	org_memberships: ['invited_by_user_id'],
+	org_user_budgets: ['set_by_user_id'],
+	orgs: ['created_by_user_id'],
+	teams: ['created_by_user_id'],
+	team_members: ['added_by_user_id'],
+	mcp_server_settings: ['connected_by_user_id'],
+	user_integrations: ['connected_by_user_id'],
+	webhook_endpoints: ['created_by_user_id'],
 	package_share_grants: ['owner_user_id', 'grantee_user_id'],
 	referrals: ['referrer_stable_user_id', 'referee_stable_user_id'],
 }

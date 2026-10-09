@@ -19,6 +19,7 @@ export const emailAttachmentGetCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailAttachmentGet',
+		orgPermission: 'email:read',
 		description:
 			'Get one stored email attachment by id, returning metadata plus the attachment bytes as base64.',
 		keywords: ['email', 'attachment', 'get', 'download'],

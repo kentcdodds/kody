@@ -1,7 +1,15 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
+import {
+	currentSwitcherSlug,
+	orgRoleLabel,
+	orgSlugFromPathname,
+	orgSwitcherEntries,
+	switchOrgPath,
+	type OrganizationSummary,
+} from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	colors,
@@ -26,6 +34,9 @@ export type SiteHeaderProps = {
 	showDemoIndicator: boolean
 	loginHref: string
 	currentPathname: string
+	organizations?: Array<OrganizationSummary>
+	inviteCount?: number
+	lastUsedOrganization?: string | null
 }
 
 /**
@@ -53,6 +64,7 @@ function ariaCurrent(currentPathname: string, href: string) {
 
 /** One id: the invoker points at the panel with `popovertarget`. */
 const menuPanelId = 'site-menu'
+const orgSwitcherPanelId = 'org-switcher'
 
 /**
  * Dismiss an open popover panel on client-side navigation. Older browsers
@@ -66,6 +78,155 @@ export function dismissOpenPopoverPanel(panel: Element | null) {
 	}
 }
 
+function organizationsForHeader(input: {
+	organizations: Array<OrganizationSummary>
+	username: string
+	displayName: string
+}) {
+	if (input.organizations.length > 0) return input.organizations
+	if (!input.username) return []
+	return [
+		{
+			slug: input.username,
+			displayName: input.displayName || null,
+			role: 'owner' as const,
+			personal: true,
+		},
+	]
+}
+
+function OrgSwitcher(
+	handle: Handle<{
+		organizations: Array<OrganizationSummary>
+		inviteCount: number
+		lastUsedOrganization: string | null
+		username: string
+		displayName: string
+		avatarUrl: string | null
+		currentPathname: string
+		menu?: boolean
+	}>,
+) {
+	let open = false
+
+	function onToggle(event: { newState?: string }) {
+		const next = event.newState === 'open'
+		if (next === open) return
+		open = next
+		handle.update()
+	}
+
+	return () => {
+		const organizations = organizationsForHeader({
+			organizations: handle.props.organizations,
+			username: handle.props.username,
+			displayName: handle.props.displayName,
+		})
+		if (organizations.length === 0) return null
+		const entries = orgSwitcherEntries(organizations, handle.props.inviteCount)
+		const currentSlug = currentSwitcherSlug({
+			pathname: handle.props.currentPathname,
+			organizations,
+			lastUsedSlug: handle.props.lastUsedOrganization,
+		})
+		const pathSlug = orgSlugFromPathname(handle.props.currentPathname)
+		const current = organizations.find((org) => org.slug === currentSlug)
+		const label = current ? `@${current.slug}` : 'Organizations'
+		const links = entries.map((entry) => {
+			if (entry.kind === 'create') {
+				return {
+					key: 'create',
+					href: routes.accountOrganizationsNew.href(),
+					label: 'Create org',
+					detail: null as string | null,
+					current: false,
+				}
+			}
+			if (entry.kind === 'invites') {
+				const countLabel =
+					entry.count > 0 ? `Invites (${entry.count})` : 'Invites'
+				return {
+					key: 'invites',
+					href: routes.accountInvites.href(),
+					label: countLabel,
+					detail: null,
+					current:
+						handle.props.currentPathname === routes.accountInvites.href(),
+				}
+			}
+			const role = entry.showRole ? orgRoleLabel(entry.org.role) : null
+			// Non-personal org resource pages stay gated until storage follows
+			// request.org.id (#3073), so switching into those orgs lands on
+			// `/@slug` instead of a not-found section URL.
+			const href = entry.org.personal
+				? switchOrgPath(handle.props.currentPathname, entry.org.slug)
+				: `/@${entry.org.slug}`
+			return {
+				key: entry.org.slug,
+				href,
+				label: `@${entry.org.slug}`,
+				detail: role,
+				current: entry.org.slug === pathSlug,
+			}
+		})
+
+		if (handle.props.menu) {
+			return (
+				<div data-testid="org-switcher-menu" mix={css(menuGroupCss)}>
+					{links.map((link) => (
+						<a
+							key={link.key}
+							href={link.href}
+							aria-current={link.current ? 'page' : undefined}
+						>
+							{link.label}
+							{link.detail ? ` · ${link.detail}` : ''}
+						</a>
+					))}
+				</div>
+			)
+		}
+
+		return (
+			<div mix={css(orgSwitcherCss)}>
+				<button
+					type="button"
+					popovertarget={orgSwitcherPanelId}
+					aria-label={`Organization ${label}`}
+					aria-expanded={open ? 'true' : 'false'}
+					data-testid="org-switcher"
+					mix={css(orgSwitcherButtonCss)}
+				>
+					<UserAvatar
+						displayName={current?.displayName || current?.slug || label}
+						avatarUrl={current?.personal ? handle.props.avatarUrl : null}
+						size={24}
+						variant="well"
+					/>
+					<span>{label}</span>
+				</button>
+				<div
+					id={orgSwitcherPanelId}
+					popover
+					mix={[css(orgSwitcherPanelCss), on('toggle', onToggle)]}
+				>
+					{links.map((link) => (
+						<a
+							key={link.key}
+							href={link.href}
+							aria-current={link.current ? 'page' : undefined}
+							data-testid={`org-switcher-${link.key}`}
+						>
+							<span>{link.label}</span>
+							{link.detail ? <span>{link.detail}</span> : null}
+						</a>
+					))}
+				</div>
+			</div>
+		)
+	}
+}
+
 export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 	let menuOpen = false
 
@@ -74,6 +235,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 		// nothing would otherwise dismiss the panel.
 		listenToRouterNavigation(handle, () => {
 			dismissOpenPopoverPanel(document.getElementById(menuPanelId))
+			dismissOpenPopoverPanel(document.getElementById(orgSwitcherPanelId))
 		})
 	}
 
@@ -130,6 +292,17 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 					<div mix={css(navActionsCss)}>
 						{handle.props.loggedIn ? (
 							<>
+								<OrgSwitcher
+									organizations={handle.props.organizations ?? []}
+									inviteCount={handle.props.inviteCount ?? 0}
+									lastUsedOrganization={
+										handle.props.lastUsedOrganization ?? null
+									}
+									username={handle.props.username}
+									displayName={handle.props.displayName}
+									avatarUrl={handle.props.avatarUrl}
+									currentPathname={handle.props.currentPathname}
+								/>
 								<a
 									href={routes.account.href()}
 									aria-current={ariaCurrent(
@@ -236,6 +409,18 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 											{handle.props.username}
 										</a>
 									) : null}
+									<OrgSwitcher
+										organizations={handle.props.organizations ?? []}
+										inviteCount={handle.props.inviteCount ?? 0}
+										lastUsedOrganization={
+											handle.props.lastUsedOrganization ?? null
+										}
+										username={handle.props.username}
+										displayName={handle.props.displayName}
+										avatarUrl={handle.props.avatarUrl}
+										currentPathname={handle.props.currentPathname}
+										menu
+									/>
 									<a
 										href={routes.account.href()}
 										aria-current={ariaCurrent(
@@ -500,6 +685,63 @@ const navUserAvatarCss = {
 
 const menuProfileLinkCss = {
 	gap: '0.65rem',
+}
+
+const orgSwitcherCss = {
+	position: 'relative' as const,
+}
+
+const orgSwitcherButtonCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.45rem',
+	minHeight: '44px',
+	padding: '0.2rem 0.55rem 0.2rem 0.2rem',
+	borderRadius: '999px',
+	border: `1.5px solid ${colors.border}`,
+	background: 'transparent',
+	color: colors.text,
+	fontWeight: 550,
+	fontSize: '0.95rem',
+	cursor: 'pointer',
+	'&:hover': { borderColor: colors.textMuted },
+}
+
+const orgSwitcherPanelCss = {
+	position: 'fixed' as const,
+	inset: 'auto' as const,
+	top: '4.15rem',
+	right: pageGutter,
+	left: 'auto',
+	width: 'min(18rem, calc(100vw - 2rem))',
+	margin: 0,
+	padding: '0.4rem',
+	border: `1.5px solid ${colors.border}`,
+	borderRadius: '16px',
+	backgroundColor: colors.surface,
+	boxShadow: shadows.md,
+	color: colors.text,
+	'& a': {
+		display: 'flex',
+		alignItems: 'center',
+		justifyContent: 'space-between',
+		gap: '0.75rem',
+		minHeight: '40px',
+		padding: '0 0.7rem',
+		borderRadius: '10px',
+		color: colors.text,
+		textDecoration: 'none',
+		fontWeight: 550,
+	},
+	'& a[aria-current="page"]': {
+		backgroundColor: colors.primarySoft,
+		color: colors.primaryText,
+	},
+	'& a span:last-child': {
+		color: colors.textMuted,
+		fontWeight: 500,
+		fontSize: '0.85rem',
+	},
 }
 
 const demoIndicatorCss = {

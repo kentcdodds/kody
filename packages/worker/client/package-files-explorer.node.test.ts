@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { PackageFilesExplorer } from '#client/package-files-explorer.tsx'
 import { type PackageFilesLoaderData } from '#universal/loader-data.ts'
 

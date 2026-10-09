@@ -90,73 +90,60 @@ async function insertJob(input: {
 		.run()
 }
 
+function claim(userId: string, jobId: string, now: Date, claimToken: string) {
+	return claimJobRow({ db: env.APP_DB, userId, jobId, now, claimToken })
+}
+
+async function dueIds(userId: string, nowIso: string) {
+	return (await listDueJobRows(env.APP_DB, userId, nowIso)).map((row) => row.id)
+}
+
 test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first', async () => {
 	await ensureJobsSchema()
 	const userId = 'user-due-limit'
 	const nowIso = '2026-04-20T12:00:00.000Z'
+	const dueAt = '2026-04-20T00:00:00.000Z'
 	const backlogSize = maxDueJobsPerAlarm + 5
+	const dueId = (index: number) => `due-${String(index).padStart(3, '0')}`
 	for (let index = 0; index < backlogSize; index += 1) {
 		await insertJob({
-			id: `due-${String(index).padStart(3, '0')}`,
+			id: dueId(index),
 			userId,
-			nextRunAt: new Date(
-				Date.parse('2026-04-20T00:00:00.000Z') + index * 60_000,
-			).toISOString(),
+			nextRunAt: new Date(Date.parse(dueAt) + index * 60_000).toISOString(),
 		})
 	}
 	// Rows that must never be picked up: other user, disabled, kill-switched,
-	// and not-yet-due jobs.
-	await insertJob({
-		id: 'other-user',
-		userId: 'user-other',
-		nextRunAt: '2026-04-20T00:00:00.000Z',
-	})
-	await insertJob({
-		id: 'disabled',
-		userId,
-		nextRunAt: '2026-04-20T00:00:00.000Z',
-		enabled: false,
-	})
-	await insertJob({
-		id: 'kill-switched',
-		userId,
-		nextRunAt: '2026-04-20T00:00:00.000Z',
-		killSwitchEnabled: true,
-	})
-	await insertJob({
-		id: 'expired',
-		userId,
-		nextRunAt: '2026-04-20T00:00:00.000Z',
-		expiresAt: '2026-04-19T23:00:00.000Z',
-	})
-	await insertJob({
-		id: 'future',
-		userId,
-		nextRunAt: '2026-04-21T00:00:00.000Z',
-	})
+	// expired, and not-yet-due jobs.
+	for (const job of [
+		{ id: 'other-user', userId: 'user-other', nextRunAt: dueAt },
+		{ id: 'disabled', userId, nextRunAt: dueAt, enabled: false },
+		{ id: 'kill-switched', userId, nextRunAt: dueAt, killSwitchEnabled: true },
+		{
+			id: 'expired',
+			userId,
+			nextRunAt: dueAt,
+			expiresAt: '2026-04-19T23:00:00.000Z',
+		},
+		{ id: 'future', userId, nextRunAt: '2026-04-21T00:00:00.000Z' },
+	]) {
+		await insertJob(job)
+	}
 
-	const firstBatch = await listDueJobRows(env.APP_DB, userId, nowIso)
-	expect(firstBatch).toHaveLength(maxDueJobsPerAlarm)
-	expect(firstBatch.map((row) => row.id)).toEqual(
-		Array.from(
-			{ length: maxDueJobsPerAlarm },
-			(_, index) => `due-${String(index).padStart(3, '0')}`,
-		),
+	const firstBatch = await dueIds(userId, nowIso)
+	expect(firstBatch).toEqual(
+		Array.from({ length: maxDueJobsPerAlarm }, (_, index) => dueId(index)),
 	)
 
 	// Once the first batch has been rescheduled out of the due window, the next
 	// alarm invocation picks up the remainder of the backlog.
-	for (const row of firstBatch) {
+	for (const id of firstBatch) {
 		await env.APP_DB.prepare(`UPDATE jobs SET next_run_at = ? WHERE id = ?`)
-			.bind('2026-04-22T00:00:00.000Z', row.id)
+			.bind('2026-04-22T00:00:00.000Z', id)
 			.run()
 	}
-	const secondBatch = await listDueJobRows(env.APP_DB, userId, nowIso)
-	expect(secondBatch.map((row) => row.id)).toEqual(
-		Array.from(
-			{ length: backlogSize - maxDueJobsPerAlarm },
-			(_, index) =>
-				`due-${String(maxDueJobsPerAlarm + index).padStart(3, '0')}`,
+	expect(await dueIds(userId, nowIso)).toEqual(
+		Array.from({ length: backlogSize - maxDueJobsPerAlarm }, (_, index) =>
+			dueId(maxDueJobsPerAlarm + index),
 		),
 	)
 })
@@ -164,29 +151,14 @@ test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first'
 test('conditional job claims exclude overlap and reclaim only after lease expiry', async () => {
 	await ensureJobsSchema()
 	const userId = 'user-claim'
+	const jobId = 'claimed-job'
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
 	const now = new Date(scheduledFor)
-	await insertJob({
-		id: 'claimed-job',
-		userId,
-		nextRunAt: scheduledFor,
-	})
+	await insertJob({ id: jobId, userId, nextRunAt: scheduledFor })
 
 	const [first, overlap] = await Promise.all([
-		claimJobRow({
-			db: env.APP_DB,
-			userId,
-			jobId: 'claimed-job',
-			now,
-			claimToken: 'claim-first',
-		}),
-		claimJobRow({
-			db: env.APP_DB,
-			userId,
-			jobId: 'claimed-job',
-			now,
-			claimToken: 'claim-overlap',
-		}),
+		claim(userId, jobId, now, 'claim-first'),
+		claim(userId, jobId, now, 'claim-overlap'),
 	])
 	const winner = first ?? overlap
 	expect(winner).not.toBeNull()
@@ -197,8 +169,7 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 	)
 
 	expect(
-		await listDueJobRows(
-			env.APP_DB,
+		await dueIds(
 			userId,
 			new Date(now.valueOf() + jobExecutionLeaseMs - 1).toISOString(),
 		),
@@ -210,13 +181,12 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 	)
 	expect(nextWhileLeased?.schedulerWakeAt).toBe(winner?.lease_expires_at)
 
-	const reclaimed = await claimJobRow({
-		db: env.APP_DB,
+	const reclaimed = await claim(
 		userId,
-		jobId: 'claimed-job',
-		now: new Date(now.valueOf() + jobExecutionLeaseMs),
-		claimToken: 'claim-reclaimed',
-	})
+		jobId,
+		new Date(now.valueOf() + jobExecutionLeaseMs),
+		'claim-reclaimed',
+	)
 	expect(reclaimed?.claim_token).toBe('claim-reclaimed')
 	expect(reclaimed?.claimed_scheduled_for).toBe(scheduledFor)
 
@@ -225,29 +195,25 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 		await retryClaimedJobRow({
 			db: env.APP_DB,
 			userId,
-			jobId: 'claimed-job',
+			jobId,
 			claimToken: 'claim-reclaimed',
 			nextRunAt: retryAt,
 		}),
 	).toBe(true)
-	const retryRow = await getNextRunnableJobRow(
-		env.APP_DB,
-		userId,
-		new Date('2026-04-20T12:10:00.000Z').toISOString(),
-	)
-	expect(retryRow).toMatchObject({
+	expect(
+		await getNextRunnableJobRow(env.APP_DB, userId, '2026-04-20T12:10:00.000Z'),
+	).toMatchObject({
 		claim_token: null,
 		retry_scheduled_for: scheduledFor,
 		retry_count: 1,
 		schedulerWakeAt: retryAt,
 	})
-	const retriedOccurrence = await claimJobRow({
-		db: env.APP_DB,
+	const retriedOccurrence = await claim(
 		userId,
-		jobId: 'claimed-job',
-		now: new Date(retryAt),
-		claimToken: 'claim-retry',
-	})
+		jobId,
+		new Date(retryAt),
+		'claim-retry',
+	)
 	expect(retriedOccurrence?.claimed_scheduled_for).toBe(scheduledFor)
 	expect(retriedOccurrence?.retry_count).toBe(1)
 })
@@ -255,13 +221,12 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 test('job writes retain D1 run anchors and default RunLog-owned fields', async () => {
 	await ensureJobsSchema()
 	const userId = 'user-run-anchors'
-	await insertJob({
-		id: 'run-anchors',
-		userId,
-		nextRunAt: '2026-04-20T12:00:00.000Z',
-	})
-	const row = await getJobRowById(env.APP_DB, userId, 'run-anchors')
+	const jobId = 'run-anchors'
+	const scheduledFor = '2026-04-20T12:00:00.000Z'
+	await insertJob({ id: jobId, userId, nextRunAt: scheduledFor })
+	const row = await getJobRowById(env.APP_DB, userId, jobId)
 	if (!row) throw new Error('Expected job row.')
+	const runLogDefaults = { runCount: 0, successCount: 0, errorCount: 0 }
 
 	const finishedAt = '2026-04-20T12:05:00.000Z'
 	expect(
@@ -283,16 +248,14 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 		}),
 	).toBe(true)
 
-	const updated = await getJobRowById(env.APP_DB, userId, 'run-anchors')
+	const updated = await getJobRowById(env.APP_DB, userId, jobId)
 	expect(updated).toMatchObject({
 		last_run_at: finishedAt,
 		last_run_status: 'success',
 		record: {
 			lastRunAt: finishedAt,
 			lastRunStatus: 'success',
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
+			...runLogDefaults,
 		},
 	})
 	expect(updated).not.toHaveProperty('last_run_error')
@@ -300,14 +263,12 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 	expect(updated?.record.lastRunError).toBeUndefined()
 	expect(updated?.record.lastDurationMs).toBeUndefined()
 
-	const scheduledFor = '2026-04-20T12:00:00.000Z'
-	const claimed = await claimJobRow({
-		db: env.APP_DB,
+	const claimed = await claim(
 		userId,
-		jobId: 'run-anchors',
-		now: new Date('2026-04-20T12:10:00.000Z'),
-		claimToken: 'claim-run-anchors',
-	})
+		jobId,
+		new Date('2026-04-20T12:10:00.000Z'),
+		'claim-run-anchors',
+	)
 	if (!claimed) throw new Error('Expected job claim.')
 	const refreshedCallerContextJson = JSON.stringify({
 		user: { userId, email: 'refreshed@example.com' },
@@ -338,7 +299,7 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 			scheduledFor,
 		}),
 	).toBe(true)
-	expect(await getJobRowById(env.APP_DB, userId, 'run-anchors')).toMatchObject({
+	expect(await getJobRowById(env.APP_DB, userId, jobId)).toMatchObject({
 		last_run_at: finalizedAt,
 		last_run_status: 'error',
 		last_completed_scheduled_for: scheduledFor,
@@ -350,9 +311,7 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 			lastRunStatus: 'error',
 			lastRunError: undefined,
 			lastDurationMs: undefined,
-			runCount: 0,
-			successCount: 0,
-			errorCount: 0,
+			...runLogDefaults,
 		},
 	})
 })
@@ -361,28 +320,20 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 	await ensureJobsSchema()
 	const userId = 'user-fencing'
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
-	await insertJob({
-		id: 'cancelled-claim',
+	await insertJob({ id: 'cancelled-claim', userId, nextRunAt: scheduledFor })
+	const claimed = await claim(
 		userId,
-		nextRunAt: scheduledFor,
-	})
-	const claimed = await claimJobRow({
-		db: env.APP_DB,
-		userId,
-		jobId: 'cancelled-claim',
-		now: new Date(scheduledFor),
-		claimToken: 'stale-token',
-	})
+		'cancelled-claim',
+		new Date(scheduledFor),
+		'stale-token',
+	)
 	if (!claimed) throw new Error('Expected job claim.')
 
 	expect(
 		await updateJobRow({
 			db: env.APP_DB,
 			userId,
-			job: {
-				...claimed.record,
-				name: 'Edited while claimed',
-			},
+			job: { ...claimed.record, name: 'Edited while claimed' },
 			callerContextJson: claimed.callerContextJson,
 		}),
 	).toBe(true)
@@ -405,73 +356,55 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 		}),
 	).toBe(false)
 
-	await insertJob({
-		id: 'already-completed',
-		userId,
-		nextRunAt: scheduledFor,
-	})
+	await insertJob({ id: 'already-completed', userId, nextRunAt: scheduledFor })
 	await env.APP_DB.prepare(
 		`UPDATE jobs SET last_completed_scheduled_for = ? WHERE id = ? AND user_id = ?`,
 	)
 		.bind(scheduledFor, 'already-completed', userId)
 		.run()
-	const due = await listDueJobRows(env.APP_DB, userId, scheduledFor)
-	expect(due.map((row) => row.id)).not.toContain('already-completed')
+	expect(await dueIds(userId, scheduledFor)).not.toContain('already-completed')
 	expect(
-		await claimJobRow({
-			db: env.APP_DB,
+		await claim(
 			userId,
-			jobId: 'already-completed',
-			now: new Date(scheduledFor),
-			claimToken: 'must-not-claim',
-		}),
+			'already-completed',
+			new Date(scheduledFor),
+			'must-not-claim',
+		),
 	).toBeNull()
 })
 
-test('expired jobs are skipped by due/claim/next-runnable and disableExpired flips enabled', async () => {
+test('expired jobs are skipped by due/claim/next-runnable, wake the scheduler at expires_at, and disableExpired flips enabled', async () => {
 	await ensureJobsSchema()
 	const userId = 'user-expires'
 	const nowIso = '2026-04-20T12:00:00.000Z'
+	const dueAt = '2026-04-20T11:00:00.000Z'
 	await insertJob({
 		id: 'still-valid',
 		userId,
-		nextRunAt: '2026-04-20T11:00:00.000Z',
+		nextRunAt: dueAt,
 		expiresAt: '2026-04-20T13:00:00.000Z',
 	})
 	await insertJob({
 		id: 'already-expired',
 		userId,
-		nextRunAt: '2026-04-20T11:00:00.000Z',
+		nextRunAt: dueAt,
 		expiresAt: '2026-04-20T11:30:00.000Z',
 	})
-	await insertJob({
-		id: 'no-expiry',
-		userId,
-		nextRunAt: '2026-04-20T11:00:00.000Z',
-	})
+	await insertJob({ id: 'no-expiry', userId, nextRunAt: dueAt })
 
-	const due = await listDueJobRows(env.APP_DB, userId, nowIso)
-	expect(due.map((row) => row.id).sort()).toEqual(['no-expiry', 'still-valid'])
-
+	expect((await dueIds(userId, nowIso)).sort()).toEqual([
+		'no-expiry',
+		'still-valid',
+	])
 	expect(
-		await claimJobRow({
-			db: env.APP_DB,
-			userId,
-			jobId: 'already-expired',
-			now: new Date(nowIso),
-			claimToken: 'should-fail',
-		}),
+		await claim(userId, 'already-expired', new Date(nowIso), 'should-fail'),
 	).toBeNull()
-
-	const next = await getNextRunnableJobRow(env.APP_DB, userId, nowIso)
-	expect(next?.id).toBe('no-expiry')
+	expect((await getNextRunnableJobRow(env.APP_DB, userId, nowIso))?.id).toBe(
+		'no-expiry',
+	)
 
 	expect(
-		await disableExpiredJobRowsForUser({
-			db: env.APP_DB,
-			userId,
-			nowIso,
-		}),
+		await disableExpiredJobRowsForUser({ db: env.APP_DB, userId, nowIso }),
 	).toBe(1)
 	const disabled = await getJobRowById(env.APP_DB, userId, 'already-expired')
 	expect(disabled).toMatchObject({
@@ -479,23 +412,17 @@ test('expired jobs are skipped by due/claim/next-runnable and disableExpired fli
 		expires_at: '2026-04-20T11:30:00.000Z',
 	})
 	expect(disabled?.record.expiresAt).toBe('2026-04-20T11:30:00.000Z')
-})
 
-test('getNextRunnableJobRow wakes at expires_at when it is earlier than next_run_at', async () => {
-	await ensureJobsSchema()
-	const userId = 'user-expires-wake'
+	const wakeUserId = 'user-expires-wake'
 	await insertJob({
 		id: 'expires-before-run',
-		userId,
+		userId: wakeUserId,
 		nextRunAt: '2026-04-21T12:00:00.000Z',
 		expiresAt: '2026-04-20T18:00:00.000Z',
 	})
-	const next = await getNextRunnableJobRow(
-		env.APP_DB,
-		userId,
-		'2026-04-20T12:00:00.000Z',
-	)
-	expect(next).toMatchObject({
+	expect(
+		await getNextRunnableJobRow(env.APP_DB, wakeUserId, nowIso),
+	).toMatchObject({
 		id: 'expires-before-run',
 		schedulerWakeAt: '2026-04-20T18:00:00.000Z',
 	})

@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { isUserCodeError } from '#worker/user-code-error.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import {
@@ -7,7 +8,11 @@ import {
 	createWorkspaceStateBackend,
 } from '@cloudflare/shell'
 import { applyPatch, formatPatch, parsePatch } from 'diff'
-import { createGit } from '@cloudflare/shell/git'
+import {
+	splitUnifiedDiffSections,
+	resolveUnifiedDiffFileNames,
+	stripUnifiedDiffPath,
+} from './unified-diff-paths.ts'
 import {
 	deleteRepoSession,
 	getRepoSessionById,
@@ -18,11 +23,13 @@ import {
 	type ArtifactBootstrapAccess,
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
+	listArtifactServerRefs,
 	resolveArtifactSourceHead,
 	resolveExistingArtifactSourceRepo,
 	resolveArtifactSourceRepo,
 } from './artifacts.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import { bytesToSnapshotString } from '#universal/package-file-media.ts'
 import {
 	getEntitySourceById,
 	markEntitySourcePendingExternalReconcile,
@@ -41,6 +48,7 @@ import {
 	persistPublishedPackageArtifactTarget,
 	type PublishedPackageArtifactBuildTarget,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { type PreparedKodyGraphCache } from '#worker/package-runtime/module-graph.ts'
 import {
 	hasPublishedRuntimeArtifacts,
 	loadPublishedSourceManifestSnapshot,
@@ -61,6 +69,7 @@ import {
 	runPackageTypecheckLanguageService,
 	runRepoChecks,
 	runRepoSourceWalkChecks,
+	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
 import {
@@ -140,9 +149,13 @@ import {
 	wrapArtifactsGitHttpError,
 } from './artifacts-git-retry.ts'
 import {
+	buildRepoDiffTooLargeMessage,
 	buildRepoLargeFileMessage,
+	isRepoDiffTooLargeMessage,
 	maxRepoSourceFileBytes,
+	maxRepoSourceFileDiffLines,
 	measureRepoSourceFileBytes,
+	measureRepoSourceFileLines,
 } from './large-file-policy.ts'
 import {
 	deleteStorageBucketInventory,
@@ -171,6 +184,7 @@ type CachedRepoSessionState = {
 }
 
 type RawGitPushInput = Parameters<IsomorphicGit['git']['push']>[0]
+type CreateGit = typeof import('@cloudflare/shell/git').createGit
 
 function nowIso() {
 	return new Date().toISOString()
@@ -221,6 +235,13 @@ function buildSessionBranchName(sessionId: string) {
 	const readable = compactArtifactsRepoSuffix(sessionId).slice(0, 32)
 	const unique = crypto.randomUUID().replaceAll('-', '')
 	return `sessions/${readable}-${unique}`
+}
+
+function isSessionBranchRef(ref: string) {
+	const branch = ref.startsWith('refs/heads/')
+		? ref.slice('refs/heads/'.length)
+		: ref
+	return branch.startsWith('sessions/')
 }
 
 function buildPublishedSessionExpiresAt(now: Date = new Date()) {
@@ -298,7 +319,15 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	readonly state = createWorkspaceStateBackend(this.workspace)
 
-	readonly git = createGit(this.fileSystem, repoSessionWorkspacePrefix)
+	private gitApi: ReturnType<CreateGit> | null = null
+
+	private async ensureGit() {
+		if (!this.gitApi) {
+			const { createGit: createShellGit } = await loadIsomorphicGit()
+			this.gitApi = createShellGit(this.fileSystem, repoSessionWorkspacePrefix)
+		}
+		return this.gitApi
+	}
 
 	private initializedSessionId: string | null = null
 
@@ -325,7 +354,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 					recursive: true,
 				})
-				await this.git.clone({
+				await (
+					await this.ensureGit()
+				).clone({
 					dir: repoSessionWorkspacePrefix,
 					...(input.branch
 						? {
@@ -515,7 +546,9 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async ensureRemote(input: { name: string; url: string }) {
-		const existing = await this.git.remote({
+		const existing = await (
+			await this.ensureGit()
+		).remote({
 			dir: repoSessionWorkspacePrefix,
 			list: true,
 		})
@@ -525,12 +558,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			return
 		}
 		if (current) {
-			await this.git.remote({
+			await (
+				await this.ensureGit()
+			).remote({
 				dir: repoSessionWorkspacePrefix,
 				remove: input.name,
 			})
 		}
-		await this.git.remote({
+		await (
+			await this.ensureGit()
+		).remote({
 			dir: repoSessionWorkspacePrefix,
 			add: {
 				name: input.name,
@@ -562,7 +599,9 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async hasExpectedOriginRemote(expectedUrl: string) {
 		try {
-			const remotes = await this.git.remote({
+			const remotes = await (
+				await this.ensureGit()
+			).remote({
 				dir: repoSessionWorkspacePrefix,
 				list: true,
 			})
@@ -602,28 +641,50 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async getHeadCommit() {
-		const log = await this.git.log({
+		const log = await (
+			await this.ensureGit()
+		).log({
 			dir: repoSessionWorkspacePrefix,
 			depth: 1,
 		})
 		return log[0]?.oid ?? null
 	}
 
-	private async commitIfDirty(message: string) {
-		const statusEntries = await this.git.status({
+	private async commitIfDirty(
+		message: string,
+		options?: { replaceHistory?: boolean },
+	) {
+		const replaceHistory = options?.replaceHistory === true
+		const statusEntries = await (
+			await this.ensureGit()
+		).status({
 			dir: repoSessionWorkspacePrefix,
 		})
 		const hasChanges = statusEntries.some(
 			(entry) => entry.status !== 'unmodified',
 		)
-		if (!hasChanges) {
+		if (!hasChanges && !replaceHistory) {
 			return this.getHeadCommit()
 		}
-		await this.git.add({
+		await (
+			await this.ensureGit()
+		).add({
 			dir: repoSessionWorkspacePrefix,
 			filepath: '.',
 		})
-		const commit = await this.git.commit({
+		if (replaceHistory) {
+			const { git } = await loadIsomorphicGit()
+			return await git.commit({
+				fs: this.rawGitFileSystem,
+				dir: repoSessionWorkspacePrefix,
+				message,
+				author: sessionCommitAuthor,
+				parent: [],
+			})
+		}
+		const commit = await (
+			await this.ensureGit()
+		).commit({
 			dir: repoSessionWorkspacePrefix,
 			message,
 			author: sessionCommitAuthor,
@@ -686,6 +747,59 @@ class RepoSessionBase extends DurableObject<Env> {
 		})
 	}
 
+	/**
+	 * After a confirmed history-replace promote, drop every advertised
+	 * `sessions/*` ref on this source repo so leftover source-sync (and other
+	 * session) branches cannot keep prior objects reachable. Concurrent
+	 * sessions are already stranded across the orphan root. Restorable KV
+	 * backups are untouched.
+	 */
+	private async deleteAdvertisedSessionBranches(input: {
+		sessionBranch: string
+		remote: string
+		token: string
+	}) {
+		const branches = new Set<string>([input.sessionBranch])
+		try {
+			const refs = await listArtifactServerRefs({
+				remote: input.remote,
+				token: input.token,
+				prefix: 'refs/heads/sessions/',
+			})
+			for (const entry of refs) {
+				if (!isSessionBranchRef(entry.ref)) continue
+				const branch = entry.ref.startsWith('refs/heads/')
+					? entry.ref.slice('refs/heads/'.length)
+					: entry.ref
+				branches.add(branch)
+			}
+		} catch (error) {
+			console.warn(
+				JSON.stringify({
+					message: 'history-replace session ref list failed',
+					sessionBranch: input.sessionBranch,
+					error: getErrorMessage(error),
+				}),
+			)
+		}
+		for (const branch of branches) {
+			try {
+				await this.deleteRemoteBranch({
+					branch,
+					token: input.token,
+				})
+			} catch (error) {
+				console.warn(
+					JSON.stringify({
+						message: 'history-replace session branch delete failed',
+						branch,
+						error: getErrorMessage(error),
+					}),
+				)
+			}
+		}
+	}
+
 	private async listWorkspaceFileEntries(
 		root = repoSessionWorkspacePrefix,
 	): Promise<Array<{ path: string }>> {
@@ -701,17 +815,32 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async collectWorkspaceFiles(
 		root = repoSessionWorkspacePrefix,
 	): Promise<Record<string, string>> {
+		const snapshot = await this.collectWorkspacePublishSnapshot(root)
+		return snapshot.files
+	}
+
+	/**
+	 * One workspace walk that yields both the relative-path file map and the
+	 * tree hash used for checks_outdated. Publish reuses this instead of
+	 * globbing and re-reading every file three times.
+	 */
+	private async collectWorkspacePublishSnapshot(
+		root = repoSessionWorkspacePrefix,
+	): Promise<{ files: Record<string, string>; treeHash: string }> {
 		const entries = await this.listWorkspaceFileEntries(root)
 		const rootPrefix = `${root.replace(/\/+$/, '')}/`
 		const files: Record<string, string> = {}
+		const chunks: Array<string> = []
 		for (const entry of entries) {
-			const content = await this.workspace.readFile(entry.path)
+			// Raw bytes — UTF-8 `readFile` replaces invalid sequences with
+			// U+FFFD (PNG `0x89` → `0xFD`), which then poisons `/_assets`.
+			const bytes = await this.workspace.readFileBytes(entry.path)
 			// Treat an unreadable file as a hard failure so the caller aborts
 			// and triggers rollback instead of persisting a KV snapshot that
 			// is silently missing files. A null read here usually means the
 			// file was unlinked between glob and read, which means the tree
 			// we are about to publish is not the tree we scanned.
-			if (content == null) {
+			if (bytes == null) {
 				throw new Error(
 					`Failed to read repo session file "${entry.path}" while collecting workspace snapshot.`,
 				)
@@ -719,17 +848,30 @@ class RepoSessionBase extends DurableObject<Env> {
 			const relativePath = entry.path.startsWith(rootPrefix)
 				? entry.path.slice(rootPrefix.length)
 				: entry.path
+			const content = bytesToSnapshotString(bytes, relativePath)
 			files[relativePath] = content
+			chunks.push(`${entry.path}\n${content}\n`)
 		}
-		return files
+		const data = new TextEncoder().encode(chunks.join(''))
+		const digest = await crypto.subtle.digest('SHA-256', data)
+		const treeHash = [...new Uint8Array(digest)]
+			.map((byte) => byte.toString(16).padStart(2, '0'))
+			.join('')
+		return { files, treeHash }
 	}
 
 	private async computeTreeHash(root = repoSessionWorkspacePrefix) {
 		const entries = await this.listWorkspaceFileEntries(root)
+		const rootPrefix = `${root.replace(/\/+$/, '')}/`
 		const chunks: Array<string> = []
 		for (const entry of entries) {
-			const content = await this.workspace.readFile(entry.path)
-			chunks.push(`${entry.path}\n${content ?? ''}\n`)
+			const bytes = await this.workspace.readFileBytes(entry.path)
+			const relativePath = entry.path.startsWith(rootPrefix)
+				? entry.path.slice(rootPrefix.length)
+				: entry.path
+			const content =
+				bytes == null ? '' : bytesToSnapshotString(bytes, relativePath)
+			chunks.push(`${entry.path}\n${content}\n`)
 		}
 		const data = new TextEncoder().encode(chunks.join(''))
 		const digest = await crypto.subtle.digest('SHA-256', data)
@@ -1165,29 +1307,92 @@ class RepoSessionBase extends DurableObject<Env> {
 				}),
 				async (path) => (await this.workspace.readFile(path)) ?? null,
 			)
+			// Track prior contents the same way `@cloudflare/shell`
+			// `applyTextEdits` does: each changed edit diffs previous → next,
+			// and a write earlier in the batch updates previous for later
+			// same-path edits. Gate both sides against the shell line ceiling
+			// before applyEditPlan so agents never see raw EFBIG.
+			const previousContentByPath = new Map<string, string>()
 			for (const plannedEdit of plan.edits) {
-				if (!plannedEdit.changed) continue
-				const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
-				if (byteLength > maxRepoSourceFileBytes) {
-					throw new Error(
-						buildRepoLargeFileMessage({
-							path: toExternalRepoPath(
-								plannedEdit.path,
-								repoSessionWorkspacePrefix,
-							),
-							byteLength,
-						}),
-					)
+				const externalPath = toExternalRepoPath(
+					plannedEdit.path,
+					repoSessionWorkspacePrefix,
+				)
+				const previousContent = previousContentByPath.has(plannedEdit.path)
+					? (previousContentByPath.get(plannedEdit.path) ?? '')
+					: ((await this.workspace.readFile(plannedEdit.path)) ?? '')
+				if (plannedEdit.changed) {
+					const previousLineCount = measureRepoSourceFileLines(previousContent)
+					const nextLineCount = measureRepoSourceFileLines(plannedEdit.content)
+					if (
+						previousLineCount > maxRepoSourceFileDiffLines ||
+						nextLineCount > maxRepoSourceFileDiffLines
+					) {
+						throw new Error(
+							buildRepoDiffTooLargeMessage({
+								path: externalPath,
+								lineCount: Math.max(previousLineCount, nextLineCount),
+							}),
+						)
+					}
+					const byteLength = measureRepoSourceFileBytes(plannedEdit.content)
+					if (byteLength > maxRepoSourceFileBytes) {
+						throw new Error(
+							buildRepoLargeFileMessage({
+								path: externalPath,
+								byteLength,
+							}),
+						)
+					}
 				}
+				previousContentByPath.set(plannedEdit.path, plannedEdit.content)
 			}
-			const result = await this.state.applyEditPlan(plan, {
-				dryRun: input.dryRun,
-				rollbackOnError: input.rollbackOnError,
-			})
+			let appliedPlan: {
+				dryRun: boolean
+				totalChanged: number
+				edits: Array<{
+					path: string
+					changed: boolean
+					content: string
+					diff: string
+				}>
+			}
+			try {
+				appliedPlan = await this.state.applyEditPlan(plan, {
+					dryRun: input.dryRun,
+					rollbackOnError: input.rollbackOnError,
+				})
+			} catch (error) {
+				// Defense in depth: remap any shell EFBIG that slipped past
+				// preflight (or arrived wrapped in StateBatchOperationError).
+				const message = error instanceof Error ? error.message : String(error)
+				if (isRepoDiffTooLargeMessage(message) && message.includes('EFBIG')) {
+					const oversized = plan.edits.find((edit) => {
+						if (!edit.changed) return false
+						return (
+							measureRepoSourceFileLines(edit.content) >
+							maxRepoSourceFileDiffLines
+						)
+					})
+					const path = oversized
+						? toExternalRepoPath(oversized.path, repoSessionWorkspacePrefix)
+						: toExternalRepoPath(
+								plan.edits.find((edit) => edit.changed)?.path ??
+									plan.edits[0]?.path ??
+									'file',
+								repoSessionWorkspacePrefix,
+							)
+					const lineCount = oversized
+						? measureRepoSourceFileLines(oversized.content)
+						: maxRepoSourceFileDiffLines + 1
+					throw new Error(buildRepoDiffTooLargeMessage({ path, lineCount }))
+				}
+				throw error
+			}
 			contentResult = {
-				dryRun: result.dryRun,
-				totalChanged: result.totalChanged,
-				edits: result.edits.map((edit) => ({
+				dryRun: appliedPlan.dryRun,
+				totalChanged: appliedPlan.totalChanged,
+				edits: appliedPlan.edits.map((edit) => ({
 					path: toExternalRepoPath(edit.path, repoSessionWorkspacePrefix),
 					changed: edit.changed,
 					content: edit.content,
@@ -1300,16 +1505,22 @@ class RepoSessionBase extends DurableObject<Env> {
 				branch: sourceBranch,
 				resetBeforeFirstAttempt: true,
 			})
-			await this.git.checkout({
+			await (
+				await this.ensureGit()
+			).checkout({
 				dir: repoSessionWorkspacePrefix,
 				ref: baseCommit,
 				force: true,
 			})
-			await this.git.checkout({
+			await (
+				await this.ensureGit()
+			).checkout({
 				dir: repoSessionWorkspacePrefix,
 				branch: sessionBranch,
 			})
-			await this.git.push({
+			await (
+				await this.ensureGit()
+			).push({
 				dir: repoSessionWorkspacePrefix,
 				remote: 'origin',
 				ref: sessionBranch,
@@ -1404,6 +1615,23 @@ class RepoSessionBase extends DurableObject<Env> {
 		userId: string
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
+		/**
+		 * Forwarded to `runRepoChecks`. Community forks may also set
+		 * `runPublishChecks: false` so install can persist an inert source
+		 * before its own checks choose live vs adaptation. Default matches
+		 * `publishFromExternalRef` (docs required) when checks run.
+		 */
+		requirePackageDocs?: boolean
+		/**
+		 * When false, skip the throwing publish-check gate. Community install
+		 * persists first and evaluates checks separately.
+		 */
+		runPublishChecks?: boolean
+		/**
+		 * Forwarded to `runRepoChecks` so bootstrap rejects a wrong
+		 * `package.json#name` scope before advancing published_commit.
+		 */
+		expectedPackageScope?: string
 		edits: Array<{
 			kind: 'write' | 'replace' | 'writeJson'
 			path: string
@@ -1499,7 +1727,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				await this.workspace.mkdir(repoSessionWorkspacePrefix, {
 					recursive: true,
 				})
-				await this.git.init({
+				await (
+					await this.ensureGit()
+				).init({
 					dir: repoSessionWorkspacePrefix,
 					defaultBranch: targetBranch,
 				})
@@ -1533,6 +1763,39 @@ class RepoSessionBase extends DurableObject<Env> {
 				return commit
 			},
 		)
+		if (source.entity_kind === 'package' && input.runPublishChecks !== false) {
+			await pushServerTiming(
+				serverTiming,
+				'bootstrap-repo-checks',
+				async () => {
+					const manifestPath = resolveRepoWorkspacePath(
+						source.manifest_path,
+						repoSessionWorkspacePrefix,
+					)
+					const sourceRoot = resolveRepoWorkspacePath(
+						source.source_root || repoSessionWorkspacePrefix,
+						repoSessionWorkspacePrefix,
+					)
+					const checks = await runRepoChecks({
+						workspace: this.workspace,
+						manifestPath,
+						sourceRoot,
+						env: this.env,
+						baseUrl: source.source_root,
+						userId: input.userId,
+						...(input.expectedPackageScope !== undefined
+							? { expectedPackageScope: input.expectedPackageScope }
+							: {}),
+						...(input.requirePackageDocs === false
+							? { requirePackageDocs: false }
+							: {}),
+					})
+					if (!checks.ok) {
+						throw new Error(formatFailedRepoCheckMessages(checks.results))
+					}
+				},
+			)
+		}
 		const snapshotFiles = await pushServerTiming(
 			serverTiming,
 			'bootstrap-workspace-snapshot',
@@ -1543,8 +1806,8 @@ class RepoSessionBase extends DurableObject<Env> {
 				`Source "${source.id}" first-publish from dest HEAD produced an empty workspace snapshot.`,
 			)
 		}
-		await pushServerTiming(serverTiming, 'bootstrap-git-push', () =>
-			this.git.push({
+		await pushServerTiming(serverTiming, 'bootstrap-git-push', async () =>
+			(await this.ensureGit()).push({
 				dir: repoSessionWorkspacePrefix,
 				remote: 'source',
 				ref: targetBranch,
@@ -1863,8 +2126,14 @@ class RepoSessionBase extends DurableObject<Env> {
 	}
 
 	private async applyUnifiedDiff(input: { patch: string; dryRun?: boolean }) {
-		const patches = parsePatch(input.patch)
-		if (patches.length === 0) {
+		const parsedSections = splitUnifiedDiffSections(input.patch).flatMap(
+			(section) =>
+				parsePatch(section.text).map((patch) => ({
+					patch,
+					header: section.header,
+				})),
+		)
+		if (parsedSections.length === 0) {
 			throw new Error('git apply patch did not contain any file changes.')
 		}
 		const edits: Array<{
@@ -1886,15 +2155,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			isRename: boolean
 			nextContent: string
 		}> = []
-		for (const patch of patches) {
-			const oldPath =
-				patch.oldFileName && patch.oldFileName !== '/dev/null'
-					? patch.oldFileName.replace(/^[ab]\//, '')
-					: null
-			const newPath =
-				patch.newFileName && patch.newFileName !== '/dev/null'
-					? patch.newFileName.replace(/^[ab]\//, '')
-					: null
+		for (const { patch, header } of parsedSections) {
+			const resolvedNames = resolveUnifiedDiffFileNames(patch, header)
+			// Keep formatPatch / isDelete aligned with the names we actually used.
+			patch.oldFileName = resolvedNames.oldFileName
+			patch.newFileName = resolvedNames.newFileName
+			const oldPath = stripUnifiedDiffPath(resolvedNames.oldFileName)
+			const newPath = stripUnifiedDiffPath(resolvedNames.newFileName)
 			const targetPath = newPath ?? oldPath
 			const sourcePath = oldPath ?? newPath
 			if (!targetPath || !sourcePath) {
@@ -1928,7 +2195,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					}),
 				)
 			}
-			const isDelete = patch.newFileName === '/dev/null'
+			const isDelete = resolvedNames.newFileName === '/dev/null'
 			const isRename = Boolean(oldPath && newPath && oldPath !== newPath)
 			if (isDelete) {
 				stagedContents.set(workspacePath, null)
@@ -1998,12 +2265,12 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async sessionStatus(input: { sessionId: string; userId: string }) {
 		await this.getSessionState(input.sessionId, input.userId)
-		return this.git.status({ dir: repoSessionWorkspacePrefix })
+		return (await this.ensureGit()).status({ dir: repoSessionWorkspacePrefix })
 	}
 
 	async sessionDiff(input: { sessionId: string; userId: string }) {
 		await this.getSessionState(input.sessionId, input.userId)
-		return this.git.diff({ dir: repoSessionWorkspacePrefix })
+		return (await this.ensureGit()).diff({ dir: repoSessionWorkspacePrefix })
 	}
 
 	async sessionLog(input: {
@@ -2012,7 +2279,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		depth?: number
 	}) {
 		await this.getSessionState(input.sessionId, input.userId)
-		return this.git.log({
+		return (await this.ensureGit()).log({
 			dir: repoSessionWorkspacePrefix,
 			depth: input.depth,
 		})
@@ -2030,11 +2297,15 @@ class RepoSessionBase extends DurableObject<Env> {
 		if (!input.message.trim()) {
 			throw new Error('Commit message cannot be empty.')
 		}
-		await this.git.add({
+		await (
+			await this.ensureGit()
+		).add({
 			dir: repoSessionWorkspacePrefix,
 			filepath: '.',
 		})
-		const commit = await this.git.commit({
+		const commit = await (
+			await this.ensureGit()
+		).commit({
 			dir: repoSessionWorkspacePrefix,
 			message: input.message,
 			author: sessionCommitAuthor,
@@ -2169,6 +2440,11 @@ class RepoSessionBase extends DurableObject<Env> {
 		sessionId: string
 		userId: string
 		expectedPackageScope?: string
+		/**
+		 * Forwarded to `runRepoChecks`. Codemod / community lanes may pass
+		 * `false`; authoring publish defaults to requiring docs.
+		 */
+		requirePackageDocs?: boolean
 	}): Promise<RepoSessionCheckRun> {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
@@ -2192,6 +2468,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			// Honor an explicit scope even on a still-plain repo: promote
 			// runs package checks before flipping entity_kind.
 			expectedPackageScope: input.expectedPackageScope,
+			...(input.requirePackageDocs === false
+				? { requirePackageDocs: false }
+				: {}),
 		})
 		const { sourceFiles: _sourceFiles, ...publicResult } = result
 		const runId = crypto.randomUUID()
@@ -2231,6 +2510,50 @@ class RepoSessionBase extends DurableObject<Env> {
 		)
 		await this.touchRepoSession(sessionRow)
 		return this.readCheckStatus()
+	}
+
+	/**
+	 * Stamp an ok check-status for the current workspace tree without running
+	 * validators. Trusted opt-out for community inert-fork persist
+	 * (`runPublishChecks: false`): publishSession can then proceed without
+	 * `force`, so the destructive-overwrite gate stays intact. Do not use this
+	 * to weaken `publishFromExternalRef` / packageSave (those keep real checks).
+	 */
+	async acceptCurrentTreeForPublish(input: {
+		sessionId: string
+		userId: string
+	}): Promise<RepoSessionCheckStatus> {
+		const { sessionRow } = await this.getSessionState(
+			input.sessionId,
+			input.userId,
+		)
+		const runId = crypto.randomUUID()
+		const treeHash = await this.computeTreeHash()
+		const checkedAt = nowIso()
+		const status: RepoSessionCheckStatus = {
+			runId,
+			treeHash,
+			checkedAt,
+			ok: true,
+			results: [
+				{
+					kind: 'manifest',
+					ok: true,
+					message:
+						'Publish checks accepted without running validators (trusted opt-out).',
+				},
+			],
+		}
+		await updateRepoSession(this.env, {
+			id: input.sessionId,
+			userId: sessionRow.user_id,
+			lastCheckRunId: runId,
+			lastCheckTreeHash: treeHash,
+			lastCheckpointAt: checkedAt,
+		})
+		await this.writeCheckStatus(status)
+		this.refreshStoredEstimate(input.sessionId, sessionRow.user_id)
+		return status
 	}
 
 	/**
@@ -2369,6 +2692,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const results: Array<IsolatedArtifactRebuildTargetResult> = []
 		const remaining: Array<PublishedPackageArtifactBuildTarget> = []
+		const snapshotCache = new Map()
 		for (const target of input.targets) {
 			const alreadyBuilt =
 				!input.force &&
@@ -2378,6 +2702,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceId: input.sourceId,
 					publishedCommit: input.publishedCommit,
 					target,
+					snapshotCache,
 				}))
 			if (alreadyBuilt) {
 				results.push({
@@ -2428,6 +2753,7 @@ class RepoSessionBase extends DurableObject<Env> {
 				results.push(...failTargets(remaining, message))
 				return { ok: false, message, results }
 			}
+			const prepareCache: PreparedKodyGraphCache = new Map()
 			for (const target of remaining) {
 				try {
 					const kvKey =
@@ -2439,6 +2765,7 @@ class RepoSessionBase extends DurableObject<Env> {
 							target,
 							baseUrl: input.baseUrl,
 							sourceFiles,
+							prepareCache,
 						})
 					results.push({
 						ok: true,
@@ -2450,6 +2777,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					results.push({
 						ok: false,
 						message: getErrorMessage(error),
+						...(isUserCodeError(error) ? { callerFailure: true } : {}),
 						target,
 					})
 				}
@@ -2534,6 +2862,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		target: PublishedPackageArtifactBuildTarget
 		baseUrl?: string
 		sourceFiles: Record<string, string>
+		prepareCache?: PreparedKodyGraphCache
 	}) {
 		const sourceAtPublishedCommit = {
 			...input.source,
@@ -2545,6 +2874,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			buildKodyModuleBundle,
 			buildKodyImportableModuleBundle,
 		} = await import('#worker/package-runtime/module-graph.ts')
+		const prepareCache = input.prepareCache ?? new Map()
 		return await persistPublishedPackageArtifactTarget({
 			env: this.env,
 			userId: input.userId,
@@ -2560,6 +2890,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
 					cacheKey: null,
+					prepareCache,
 				}),
 			buildAppClientBundle: async ({ entryPoint }) =>
 				await buildKodyAppClientBundle({
@@ -2574,6 +2905,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceFiles: input.sourceFiles,
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
+					prepareCache,
 				}),
 			buildImportableModuleBundle: async ({ entryPoint }) =>
 				await buildKodyImportableModuleBundle({
@@ -2583,6 +2915,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					sourceFiles: input.sourceFiles,
 					entryPoint,
 					rootPackageId: input.savedPackage.id,
+					prepareCache,
 				}),
 		})
 	}
@@ -2596,7 +2929,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			input.userId,
 		)
 		const sessionBranch = sessionRow.session_branch
-		const pullResult = await this.git.pull({
+		const pullResult = await (
+			await this.ensureGit()
+		).pull({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionRow.source_branch,
@@ -2606,7 +2941,9 @@ class RepoSessionBase extends DurableObject<Env> {
 		const headCommit = await this.getHeadCommit()
 		// Session branches are ephemeral workspace state; pull/merge can rewrite
 		// history, so force-push the session ref (never the source branch).
-		await this.git.push({
+		await (
+			await this.ensureGit()
+		).push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
@@ -2679,7 +3016,9 @@ class RepoSessionBase extends DurableObject<Env> {
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionRow.id}`,
 			)) ?? (await this.getHeadCommit())
-		await this.git.push({
+		await (
+			await this.ensureGit()
+		).push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
@@ -2777,7 +3116,8 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const sessionBranch = sessionRow.session_branch
 		const checkStatus = await this.readCheckStatus()
-		const currentTreeHash = await this.computeTreeHash()
+		const workspaceSnapshot = await this.collectWorkspacePublishSnapshot()
+		const currentTreeHash = workspaceSnapshot.treeHash
 		if (
 			(!input.force && !checkStatus.runId) ||
 			(!input.force && !checkStatus.ok) ||
@@ -2803,6 +3143,11 @@ class RepoSessionBase extends DurableObject<Env> {
 					'The source repo has moved since this session opened. Rebase the session before publishing.',
 			}
 		}
+		const replaceHistory =
+			input.force === true &&
+			input.destructiveOverwriteConfirmed === true &&
+			input.promotePublished !== false &&
+			source.entity_kind === 'package'
 		if (input.force === true && source.entity_kind === 'package') {
 			await assertPackageSourceOverwriteAllowed({
 				env: this.env,
@@ -2813,8 +3158,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			})
 		}
 		if (source.entity_kind === 'package') {
-			const workspaceFiles = await this.collectWorkspaceFiles()
-			const afterContent = workspaceFiles[source.manifest_path]
+			const afterContent = workspaceSnapshot.files[source.manifest_path]
 			if (typeof afterContent !== 'string') {
 				throw new Error(`Manifest "${source.manifest_path}" was not found.`)
 			}
@@ -2835,13 +3179,16 @@ class RepoSessionBase extends DurableObject<Env> {
 			(await this.commitIfDirty(
 				input.commitMessage?.trim() ||
 					`Publish repo session ${input.sessionId}`,
+				replaceHistory ? { replaceHistory: true } : undefined,
 			)) ?? (await this.getHeadCommit())
 		await this.readManifestFromWorkspace(
 			source.manifest_path,
 			source.entity_kind,
 			input.expectedPackageScope,
 		)
-		await this.git.push({
+		await (
+			await this.ensureGit()
+		).push({
 			dir: repoSessionWorkspacePrefix,
 			remote: 'origin',
 			ref: sessionBranch,
@@ -2870,7 +3217,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			}
 			throw error
 		}
-		const snapshotFiles = await this.collectWorkspaceFiles()
+		// Commit/push do not rewrite workspace file bytes, so reuse the
+		// snapshot collected once above for the published source KV write.
+		const snapshotFiles = workspaceSnapshot.files
 		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
 		if (input.promotePublished === false) {
 			return {
@@ -2913,6 +3262,13 @@ class RepoSessionBase extends DurableObject<Env> {
 			rebuildPackageArtifacts: input.rebuildPackageArtifacts ?? true,
 			allowLockedPublish: input.allowLockedPublish,
 		})
+		if (replaceHistory) {
+			await this.deleteAdvertisedSessionBranches({
+				sessionBranch,
+				remote: sessionAccess.remote,
+				token: sessionAccess.token,
+			})
+		}
 		await this.attachSourcePublishGitNote({
 			source,
 			commitOid: publishedCommit,
@@ -3029,6 +3385,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 		const runId = crypto.randomUUID()
 		const publishDir = publishClone.dir || externalPublishWorkspaceDir
+		// Always collect a binary-safe snapshot before publish. Do not skip this
+		// based on the pre-clone D1 row: a concurrent snapshot-failure revert can
+		// clear published_commit so publishFromExternalRef still finalizes, and
+		// falling back to UTF-8 checks.sourceFiles would corrupt PNG magic.
+		// Checks still walk the workspace via UTF-8 readFile for validation only.
+		const snapshotFiles = await publishClone.collectFiles()
 		const publishResult = await publishExternalRefSource({
 			env: this.env,
 			sourceId: source.id,
@@ -3043,6 +3405,7 @@ class RepoSessionBase extends DurableObject<Env> {
 			allowForce: input.allowForce,
 			destructiveOverwriteConfirmed: input.destructiveOverwriteConfirmed,
 			workspace: publishClone.workspace,
+			files: snapshotFiles,
 			baseUrl: input.baseUrl ?? source.source_root,
 			manifestPath: resolveRepoWorkspacePath(source.manifest_path, publishDir),
 			sourceRoot: resolveRepoWorkspacePath(
@@ -3068,7 +3431,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					publishResult.published_commit &&
 					hasPublishedRuntimeArtifacts(this.env)
 				) {
-					const files = await publishClone.collectFiles()
+					const files = snapshotFiles
 					if (typeof files[source.manifest_path] === 'string') {
 						const existingSnapshot = await loadPublishedSourceSnapshot({
 							env: this.env,

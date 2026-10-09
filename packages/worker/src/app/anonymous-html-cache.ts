@@ -1,8 +1,9 @@
 /**
- * Shared Cache-Control for anonymous marketing HTML. Session pages and any
- * response that sets a cookie stay `no-store`. The origin Worker stores
- * cookie-less GET responses in `caches.default` keyed on canonical origin +
- * pathname + search plus a `__accept=html` marker; markdown-preferring
+ * Shared Cache-Control for anonymous marketing HTML, auth entry pages, and the
+ * viewer-independent `/llms.txt` / `/docs/llms.txt` plain-text indexes. Session
+ * pages and any response that sets a cookie stay `no-store`. The origin Worker
+ * stores cookie-less GET responses in `caches.default` keyed on canonical
+ * origin + pathname + search plus a `__accept=html` marker; markdown-preferring
  * `Accept` values (`prefersMarkdown`) bypass the store. Frame fetches
  * (`x-remix-target` or the `__frame` query param) bypass it too: those caches
  * key on the URL, and returning the document nests another site shell inside
@@ -13,9 +14,15 @@
 import { createMatcher } from 'remix/route-pattern/match'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
 import { routes } from '#universal/routes.ts'
-import { requestHasSiteBannerDismissCookie } from '#universal/site-banner-cookie.ts'
 
 export const sessionCookieName = 'kody_session'
+
+/**
+ * Retired site-banner dismiss cookie. The feature is gone; browsers may still
+ * send this HttpOnly cookie for years. Clear it when present so clients stop
+ * shipping up to ~1.6 KB of dead UUIDs on every request.
+ */
+export const retiredSiteBannerDismissCookieName = 'kody_site_banner_dismiss'
 
 export const anonymousHtmlCacheControl =
 	'public, max-age=60, stale-while-revalidate=300'
@@ -32,11 +39,20 @@ const cacheableAnonymousExactPaths = new Set([
 	'/',
 	'/pricing',
 	'/faq',
+	'/case-studies',
 	'/blog',
 	'/community',
 	'/onboarding',
 	'/docs',
 	'/docs/connect',
+	// Viewer-independent docs indexes (plain text, same Cache API path).
+	'/llms.txt',
+	'/docs/llms.txt',
+	// Anonymous auth shells: Turnstile site key + OAuth provider list are
+	// deployment config. Session cookies, Set-Cookie, and banner-dismiss
+	// cookies still force no-store via resolveAppPageCacheControl.
+	'/login',
+	'/signup',
 ])
 
 // Public package surfaces: home, tree, and the listing-uuid shapes they
@@ -52,6 +68,8 @@ const cacheableAnonymousRouteMatchers = [
 const matcherOrigin = 'https://kody.local'
 
 export function isVisibilityGatedAnonymousPath(pathname: string) {
+	// Read-only smart HTTP clone URLs must never enter the HTML edge cache.
+	if (pathname.includes('.git/') || pathname.endsWith('.git')) return false
 	const url = new URL(pathname, matcherOrigin)
 	return cacheableAnonymousRouteMatchers.some(
 		(matcher) => matcher.match(url) !== null,
@@ -71,6 +89,22 @@ export function isCacheableAnonymousPath(pathname: string) {
 export function requestHasSessionCookie(request: Request): boolean {
 	const cookie = request.headers.get('Cookie') ?? ''
 	return /(?:^|;\s*)kody_session=/.test(cookie)
+}
+
+export function requestHasRetiredSiteBannerDismissCookie(
+	request: Request,
+): boolean {
+	const cookie = request.headers.get('Cookie') ?? ''
+	return new RegExp(`(?:^|;\\s*)${retiredSiteBannerDismissCookieName}=`).test(
+		cookie,
+	)
+}
+
+export function clearRetiredSiteBannerDismissCookie(input: {
+	secure: boolean
+}): string {
+	const secure = input.secure ? '; Secure' : ''
+	return `${retiredSiteBannerDismissCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly${secure}`
 }
 
 export function resolveAppPageCacheControl(input: {
@@ -100,9 +134,6 @@ export function resolveAppPageCacheControl(input: {
 		return { cacheControl: 'no-store' }
 	}
 	if (requestHasSessionCookie(input.request)) {
-		return { cacheControl: 'no-store' }
-	}
-	if (requestHasSiteBannerDismissCookie(input.request)) {
 		return { cacheControl: 'no-store' }
 	}
 	// Frame reloads share the page URL. Caching that response stores the

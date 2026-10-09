@@ -62,10 +62,6 @@ const secretSetManyInputSchema = z
 		}
 	})
 
-const secretSetManyCapabilityInputJsonSchema = z.toJSONSchema(
-	secretSetManyInputSchema,
-) as Record<string, unknown>
-
 const secretSetManyOutputSchema = z.object({
 	ok: z.literal(true),
 	assertOnly: z.boolean(),
@@ -76,6 +72,7 @@ export const secretSetManyCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretSetMany',
+		orgPermission: 'secret:write',
 		description:
 			'Assert authorization for, and optionally atomically persist, multiple secret references for the signed-in user (API keys, PATs, HMAC secrets). Use assertOnly before a multi-write that must not partially succeed. Do not use this for OAuth access or refresh tokens — `/connect/oauth` and `createAuthenticatedFetch` / `integrationTokenRefresh` persist those on the connection. Host use is authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: [
@@ -91,10 +88,10 @@ export const secretSetManyCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: secretSetManyCapabilityInputJsonSchema,
+		// Zod (not z.toJSONSchema): wrapper parse_input → McpCallerError (KODY-8T).
+		inputSchema: secretSetManyInputSchema,
 		outputSchema: secretSetManyOutputSchema,
-		async handler(args, ctx: CapabilityContext) {
-			const parsed = secretSetManyInputSchema.parse(args)
+		async handler(parsed, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const { storageContext } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,

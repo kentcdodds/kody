@@ -14,6 +14,7 @@ export const repoCreateCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoCreate',
+		orgPermission: 'package:create',
 		description:
 			'Create a plain Artifacts-backed repo for the signed-in user. Plain repos are live-at-HEAD (no publish step). Use repoGetGitRemote for the git lane or repoOpenSession for MCP file editing.',
 		keywords: ['repo', 'create', 'plain', 'artifacts', 'storage'],

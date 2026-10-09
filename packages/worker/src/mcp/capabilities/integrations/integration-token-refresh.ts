@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	IntegrationTokenRefreshCallerError,
 	refreshIntegrationTokens,
@@ -18,7 +19,9 @@ const inputSchema = z.object({
 
 const outputSchema = z.object({
 	ok: z.literal(true),
-	refreshedAt: z.string(),
+	refreshed: z.boolean(),
+	skippedReason: z.enum(['refresh_not_applicable']).nullable(),
+	refreshedAt: z.string().nullable(),
 	refreshTokenRotated: z.boolean(),
 })
 
@@ -26,8 +29,9 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
 		name: 'integrationTokenRefresh',
+		orgPermission: 'integration:use',
 		description:
-			'Refresh the OAuth access token for a saved integration host-side and persist the new tokens on the connection. Returns metadata only — token values never appear in the output. createAuthenticatedFetch refreshes through this path for every integration; it is the only refresh path for platform (built-in) integrations, whose shared client secret stays server-side.',
+			'Refresh the OAuth access token for a saved integration host-side and persist the new tokens on the connection. Connections whose provider issued neither a refresh token nor an access-token expiry at connect (for example GitHub OAuth Apps with token expiration off) are skipped with refreshed: false instead of failing. Returns metadata only — token values never appear in the output. createAuthenticatedFetch refreshes through this path for every integration; it is the only refresh path for platform (built-in) integrations, whose shared client secret stays server-side.',
 		keywords: [
 			'integration',
 			'oauth',
@@ -47,6 +51,9 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			const { authorityPackageId } = resolveCallerSecretAuthority({
+				storageContext: ctx.callerContext.storageContext,
+			})
 			try {
 				const result = await refreshIntegrationTokens({
 					env: ctx.env,
@@ -54,11 +61,13 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 					userEmail: user.email,
 					name: args.name,
 					baseUrl: ctx.callerContext.baseUrl,
-					packageId: ctx.callerContext.storageContext?.packageId ?? null,
+					packageId: authorityPackageId,
 					waitUntil: ctx.waitUntil,
 				})
 				return {
 					ok: true as const,
+					refreshed: result.refreshed,
+					skippedReason: result.refreshed ? null : result.skippedReason,
 					refreshedAt: result.refreshedAt,
 					refreshTokenRotated: result.refreshTokenRotated,
 				}

@@ -14,6 +14,21 @@ import {
 } from '#worker/email/service.ts'
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
+import {
+	budgetLimitErrorCode,
+	computeOverageLimitErrorCode,
+	entitlementLimitErrorCode,
+	isBudgetLimitError,
+	isComputeOverageLimitError,
+	isEntitlementLimitError,
+} from '#worker/entitlements/errors.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
+import {
+	automationInvocationsPerDayResource,
+	shouldConsumeAutomationInvocationEntitlement,
+} from './automation-invocation-entitlement.ts'
 import {
 	buildPackageInvocationStorageId,
 	createRepoContext,
@@ -41,12 +56,18 @@ import {
  * One saved-package module execution, uncoupled from durability:
  *
  * - `completed`: the sandbox ran and the export succeeded.
- * - `failed`: the sandbox ran and errored, the module/export was missing, or
- *   an unexpected error interrupted the run. Keyed callers persist this as a
+ * - `failed`: the sandbox ran and errored, the module/export was missing, the
+ *   owning account is suspended (403 `account_suspended`; the keyed path
+ *   checks this before claiming, so it only lands here mid-invocation), or an
+ *   unexpected error interrupted the run. Keyed callers persist this as a
  *   terminal ledger state.
  * - `artifact-unavailable`: artifact preparation failed transiently before
  *   any sandbox work started. Nothing executed, so keyed callers release
  *   their claim and key-less callers can simply retry.
+ * - `pre-execution-denied`: a gate before sandbox work rejected the invoke
+ *   (today: daily automation quota). Same release semantics as
+ *   `artifact-unavailable` so a keyed retry can succeed after the UTC day
+ *   rolls or the limit rises; do not terminal-store the 429 under the key.
  *
  * `logs` / `result` / `error` carry what the registry would otherwise feed
  * its own run-record finish, for keyed callers that own the run record via
@@ -66,6 +87,7 @@ export type SavedPackageModuleRunOutcome =
 			error: unknown
 	  }
 	| { kind: 'artifact-unavailable'; response: PackageInvocationResponse }
+	| { kind: 'pre-execution-denied'; response: PackageInvocationResponse }
 
 export type SavedPackageModuleRunInput = {
 	env: Env
@@ -90,7 +112,7 @@ export type SavedPackageModuleRunInput = {
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
-	 * Artifact already prepared by a `packages.invoke` check phase moments
+	 * Artifact already prepared by a host invoke check phase moments
 	 * earlier; skips a second manifest + artifact load.
 	 */
 	preloadedModuleArtifact?: Awaited<
@@ -120,6 +142,10 @@ export async function runSavedPackageModuleOnce(
 ): Promise<SavedPackageModuleRunOutcome> {
 	let executionStarted = false
 	try {
+		const user = await resolveBackgroundMcpUser(
+			input.env.APP_DB,
+			input.actor.orgId,
+		)
 		const { artifact, source: sourceRow } =
 			input.preloadedModuleArtifact ??
 			(await ensureModuleArtifact({
@@ -127,7 +153,7 @@ export async function runSavedPackageModuleOnce(
 				baseUrl: input.baseUrl,
 				savedPackage: input.savedPackage,
 				selector: input.moduleSelector,
-				userId: input.actor.userId,
+				userId: input.actor.orgId,
 			}))
 		const repoSource =
 			artifact.packageContext?.sourceId == null ||
@@ -135,15 +161,70 @@ export async function runSavedPackageModuleOnce(
 				? sourceRow
 				: await getEntitySourceByIdForUser(input.env.APP_DB, {
 						id: artifact.packageContext.sourceId,
-						userId: input.actor.userId,
+						userId: input.actor.orgId,
 					})
+		if (
+			shouldConsumeAutomationInvocationEntitlement({
+				actorTokenId: input.actor.sourceId,
+				runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
+			})
+		) {
+			// Sibling daily automation quota before sandbox work so over-limit
+			// webhooks / package-export / subscription / workflow invokes cost
+			// nothing. Failed attempts still count. Distinct from MCP
+			// execute_calls_per_day and scheduled job_runs_per_day.
+			try {
+				const orgRecord = await getOrgById(input.env.APP_DB, input.actor.orgId)
+				const orgSlug = orgRecord?.slug?.trim() || user.username?.trim() || null
+				const automationSource =
+					input.actor.request.kind === 'schedule'
+						? 'schedule'
+						: input.actor.request.kind === 'webhook'
+							? 'webhook'
+							: input.actor.request.kind === 'inbound-email'
+								? 'email'
+								: 'event'
+				await consumeDailyEntitlement({
+					db: input.env.APP_DB,
+					env: input.env,
+					userId: input.actor.orgId,
+					email: user.email,
+					resource: automationInvocationsPerDayResource,
+					orgBudget: {
+						orgId: input.actor.orgId,
+						orgSlug,
+						automationSource,
+						actorUserId: null,
+					},
+				})
+			} catch (error) {
+				if (
+					isEntitlementLimitError(error) ||
+					isComputeOverageLimitError(error) ||
+					isBudgetLimitError(error)
+				) {
+					return {
+						kind: 'pre-execution-denied',
+						response: buildJsonErrorResponse({
+							status: 429,
+							code: isEntitlementLimitError(error)
+								? entitlementLimitErrorCode
+								: isBudgetLimitError(error)
+									? budgetLimitErrorCode
+									: computeOverageLimitErrorCode,
+							message: error.message,
+							idempotencyKey: input.idempotencyKey ?? undefined,
+							details: error.details,
+						}),
+					}
+				}
+				throw error
+			}
+		}
 		const callerContext = createMcpCallerContext({
 			baseUrl: input.baseUrl,
 			executionOrigin: 'background',
-			user: await resolveBackgroundMcpUser(
-				input.env.APP_DB,
-				input.actor.userId,
-			),
+			user,
 			storageContext: {
 				sessionId: null,
 				appId: input.savedPackage.id,
@@ -151,6 +232,7 @@ export async function runSavedPackageModuleOnce(
 				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 			},
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
+			source: input.actor.request,
 		})
 		const runtimeSurface = resolveInvocationRuntimeSurface({
 			selector: input.moduleSelector,
@@ -167,7 +249,8 @@ export async function runSavedPackageModuleOnce(
 			// not know the published commit yet; enrich it for the terminal write.
 			externalHandle.context = {
 				...externalHandle.context,
-				publishedCommit: repoSource?.published_commit ?? null,
+				publishedCommit:
+					artifact.publishedCommit ?? repoSource?.published_commit ?? null,
 			}
 		}
 		const runRecord: RunRecordContext | null = externalHandle
@@ -178,7 +261,8 @@ export async function runSavedPackageModuleOnce(
 						packageId: input.savedPackage.id,
 						kodyId: input.savedPackage.kodyId,
 						sourceId: input.savedPackage.sourceId,
-						publishedCommit: repoSource?.published_commit ?? null,
+						publishedCommit:
+							artifact.publishedCommit ?? repoSource?.published_commit ?? null,
 						surface: runtimeSurface,
 						name: resolveInvocationRuntimeName({
 							surface: runtimeSurface,
@@ -227,7 +311,7 @@ export async function runSavedPackageModuleOnce(
 						const loaded = await getEmailMessageWithAttachmentsById({
 							env: input.env,
 							db: input.env.APP_DB,
-							userId: input.actor.userId,
+							userId: input.actor.orgId,
 							messageId,
 						})
 						if (!loaded) {
@@ -280,7 +364,7 @@ export async function runSavedPackageModuleOnce(
 							env: input.env,
 							db: input.env.APP_DB,
 							blobs: input.env.EMAIL_BLOBS,
-							userId: input.actor.userId,
+							userId: input.actor.orgId,
 							attachmentId,
 						})
 						if (!attachment) {
@@ -288,7 +372,7 @@ export async function runSavedPackageModuleOnce(
 						}
 						const message = await getInternalEmailMessageById({
 							env: input.env,
-							ownerId: input.actor.userId,
+							ownerId: input.actor.orgId,
 							messageId: attachment.messageId,
 						})
 						if (!message) {
@@ -318,17 +402,6 @@ export async function runSavedPackageModuleOnce(
 					},
 				},
 				packageContext,
-				packageInvokeTools: input.toolFactories.createPackageRuntimeInvokeTools(
-					{
-						env: input.env,
-						baseUrl: input.baseUrl,
-						callerContext,
-						packageContext,
-						parentRunRecord: runRecord,
-						packageInvokeDepth: input.runtimeInvokeDepth ?? 0,
-						waitUntil: input.waitUntil,
-					},
-				),
 				packageEventTools: input.toolFactories.createPackageEventTools({
 					env: input.env,
 					baseUrl: input.baseUrl,
@@ -377,6 +450,19 @@ export async function runSavedPackageModuleOnce(
 			result: persistedArtifacts.result,
 		}
 	} catch (error) {
+		if (isAccountSuspendedError(error)) {
+			return {
+				kind: 'failed',
+				response: buildJsonErrorResponse({
+					status: 403,
+					code: error.code,
+					message: error.message,
+					idempotencyKey: input.idempotencyKey ?? undefined,
+				}),
+				logs: [],
+				error,
+			}
+		}
 		if (
 			!executionStarted &&
 			!isMissingPackageModuleError(error) &&

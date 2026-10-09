@@ -4,6 +4,10 @@ import { prefetchRequestFeatureFlagsForHtmlPage } from '#app/request-feature-fla
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
+import { loadOrgBindingForPerson } from '#worker/orgs/repo.ts'
+import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
 export type AuthenticatedAppUser = {
 	sessionUserId: string
@@ -17,6 +21,8 @@ export type AuthenticatedAppUser = {
 	permissions: Array<PermissionString>
 	mcpUser: McpUserContext
 	artifactOwnerIds: Array<string>
+	/** Who is acting, in which org, through this session. */
+	request: RequestContext
 }
 
 export type ReadAuthenticatedAppUserOptions = {
@@ -37,6 +43,15 @@ async function readAuthenticatedAppUserInternal(
 	// session, so every consumer of this helper fails closed.
 	if (resolved.user.accountSuspended) return null
 
+	const resolution = await loadRequestOrgResolution(
+		request,
+		env,
+		resolved.user.mcpUser.userId,
+	)
+	const orgBinding =
+		resolution === 'personal' || resolution === 'denied'
+			? await loadOrgBindingForPerson(env.APP_DB, resolved.user.mcpUser.userId)
+			: resolution
 	const user = {
 		sessionUserId: resolved.sessionUserId,
 		userId: resolved.user.userId,
@@ -49,6 +64,11 @@ async function readAuthenticatedAppUserInternal(
 		permissions: resolved.user.permissions,
 		artifactOwnerIds: resolved.user.artifactOwnerIds,
 		mcpUser: resolved.user.mcpUser,
+		request: deriveRequestContext({
+			user: resolved.user.mcpUser,
+			source: { kind: 'session' },
+			orgBinding,
+		}),
 	} satisfies AuthenticatedAppUser
 	if (prefetchFeatureFlags) {
 		prefetchRequestFeatureFlagsForHtmlPage(request, env, {

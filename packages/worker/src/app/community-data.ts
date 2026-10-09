@@ -44,10 +44,10 @@ import { resolveListingPinAncestry } from '#worker/community/fork-listing-relati
 import { resolveViewerListingInstalls } from '#worker/community/viewer-install.ts'
 import {
 	listSavedPackagesByIds,
-	listSavedPackagesByKodyIds,
+	listSavedPackagesBySlugs,
 } from '#worker/package-registry/repo.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 
 const defaultCommunityListLimit = 50
 const onboardingFeaturedListingLimit = 12
@@ -118,6 +118,7 @@ async function loadCommunityIndexDataUncached(
 		category,
 		overview,
 	})
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	const cached = await loadWithCommunityCache(
 		env,
 		request,
@@ -165,7 +166,7 @@ async function loadCommunityIndexDataUncached(
 		},
 	)
 
-	const user = await readOptionalAuthenticatedViewer(request, env)
+	const user = await viewerPromise
 	const visibleListings = overview
 		? (cached.groups ?? []).flatMap((group) => group.listings)
 		: cached.listings
@@ -205,6 +206,7 @@ export async function loadOnboardingFeaturedListings(
 	const cacheKey = buildCommunityFeaturedCacheKey(
 		onboardingFeaturedListingLimit,
 	)
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	try {
 		const listings = await loadWithCommunityCache(
 			env,
@@ -218,7 +220,7 @@ export async function loadOnboardingFeaturedListings(
 				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
-		const user = await readOptionalAuthenticatedViewer(request, env)
+		const user = await viewerPromise
 		return overlayViewerInstallsOnListings({
 			env,
 			user,
@@ -241,6 +243,7 @@ export async function loadOnboardingMcpChooserListings(
 	request: Request,
 ): Promise<Array<OnboardingFeaturedListing>> {
 	const listingIds = listOnboardingFeaturedMcpListingIds()
+	const viewerPromise = readOptionalAuthenticatedViewer(request, env)
 	try {
 		const listings = await loadWithCommunityCache(
 			env,
@@ -253,7 +256,7 @@ export async function loadOnboardingMcpChooserListings(
 				return rows.map(toOnboardingFeaturedListing)
 			},
 		)
-		const user = await readOptionalAuthenticatedViewer(request, env)
+		const user = await viewerPromise
 		return overlayViewerInstallsOnListings({
 			env,
 			user,
@@ -393,8 +396,10 @@ async function loadCommunityDetailDataUncached(
 		readOptionalAuthenticatedAppUser(request, env),
 	])
 	const ownerProfilePublic = ownerRow?.profile_visibility === 'public'
-	const ownerUserId = ownerRow ? resolveUserStableId(ownerRow) : null
-	const viewerUserId = user?.mcpUser.userId ?? null
+	const ownerUserId = ownerRow
+		? ownerIdFromStored(ownerRow.stable_user_id)
+		: null
+	const viewerUserId = user?.request.org.id ?? null
 	const viewerIsOwner =
 		viewerUserId != null && ownerUserId != null && viewerUserId === ownerUserId
 	const viewerInstalls = await loadViewerListingInstalls({
@@ -508,16 +513,16 @@ async function loadViewerListingInstalls(input: {
 	}
 	try {
 		const listingIds = input.listings.map((listing) => listing.id)
-		const kodyIds = input.listings.map((listing) => listing.kodyId)
+		const slugs = input.listings.map((listing) => listing.kodyId)
 		const [packageScope, forks, savedByKody] = await Promise.all([
 			getMcpUserPackageScope(input.env.APP_DB, input.user),
 			listCommunityForksByListingIdsAndUser(input.env.APP_DB, {
 				listingIds,
 				userId: input.user.userId,
 			}),
-			listSavedPackagesByKodyIds(input.env.APP_DB, {
+			listSavedPackagesBySlugs(input.env.APP_DB, {
 				userId: input.user.userId,
-				kodyIds,
+				slugs,
 			}),
 		])
 		const missingPackageIds = [

@@ -5,6 +5,7 @@ import {
 	packageAppWildcardRoutePattern,
 	parseJsonc,
 	readPackageAppZoneName,
+	setArtifactsNamespaceOnWranglerEnv,
 } from './resource-utils.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 
@@ -191,16 +192,24 @@ function copyResourceIdentifiers(input: {
 		runtimeEnv.vars && typeof runtimeEnv.vars === 'object'
 			? (runtimeEnv.vars as JsonRecord)
 			: {}
-	runtimeEnv.vars = { ...mainVars, ...runtimeVars }
+	const mergedVars: JsonRecord = { ...mainVars, ...runtimeVars }
+	runtimeEnv.vars = mergedVars
 	// GitHub deploy overlays (`PACKAGE_APP_LEGACY_*`) land on the main
 	// Worker's generated config. Runtime committed vars then overwrite the
 	// merge, which would discard a non-empty overlay and publish zone routes
 	// for the committed list only. Prefer the main Worker's already-overlaid
 	// values for those keys so dual-serve hosts stay in lockstep.
 	applyMainWorkerPackageAppOverlayVars({
-		mergedVars: runtimeEnv.vars,
+		mergedVars,
 		mainVars,
 	})
+
+	// Same as platform: prefer the origin-generated per-PR Artifacts namespace
+	// over the committed preview template value.
+	const artifactsNamespace = mainVars.ARTIFACTS_NAMESPACE
+	if (typeof artifactsNamespace === 'string' && artifactsNamespace.length > 0) {
+		setArtifactsNamespaceOnWranglerEnv(runtimeEnv, artifactsNamespace)
+	}
 }
 
 const packageAppOverlayVarNames = [

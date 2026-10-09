@@ -1,9 +1,8 @@
 import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
-import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { EntitlementLimitError } from './errors.ts'
 import { planLimits } from '#universal/plans.ts'
@@ -17,11 +16,14 @@ import { ensureEntitlementTestSchema } from './test-schema.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 import { UserMeter, userMeterMirrorUpdatedAtToken } from './user-meter-do.ts'
 import { withPatchedDbPrepare } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+
+type DailyResource = Parameters<typeof consumeDailyEntitlement>[0]['resource']
 
 async function seedFreeUser(emailPrefix: string) {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	const email = `${emailPrefix}-${crypto.randomUUID()}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await seedAccount({
 		db: env.APP_DB,
 		email,
@@ -29,80 +31,118 @@ async function seedFreeUser(emailPrefix: string) {
 		plan: 'free',
 		stableUserId: userId,
 	})
-	return { email, userId }
-}
-
-async function waitFor(
-	predicate: () => boolean,
-	timeoutMs = 5_000,
-	label = 'condition',
-) {
-	await vi
-		.waitFor(
-			() => {
-				expect(predicate()).toBe(true)
-			},
-			{ timeout: timeoutMs, interval: 1 },
-		)
-		.catch(() => {
-			throw new Error(`Timed out waiting for ${label}.`)
+	const meter = userMeterRpc({ env, userId })
+	const consume = (resource: DailyResource, now: Date) =>
+		consumeDailyEntitlement({
+			db: env.APP_DB,
+			env,
+			userId,
+			email,
+			resource,
+			now,
 		})
+	const readDaily = (resource: DailyResource, now: Date) =>
+		meter.read({ resource, day: utcDayKey(now), now: now.toISOString() })
+	return { email, userId, meter, consume, readDaily }
 }
 
-function accountWriteLeaseColumnNames(state: DurableObjectState) {
-	return state.storage.sql
-		.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
-		.toArray()
-		.map((row) => String(row.name))
-}
-
-test('fresh UserMeter schema v12 creates write-lease, unique worker-day, and inbound last-used tables', async () => {
-	const user = await seedFreeUser('meter-schema-v12-fresh')
-	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+function meterStub(userId: string) {
+	return env.USER_METER.get(
+		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
 	)
-	await runInDurableObject(stub, async (instance: UserMeter, state) => {
-		expect(instance).toBeInstanceOf(UserMeter)
-		const version = state.storage.sql
-			.exec<{ value: number }>(
-				`SELECT value FROM user_meter_meta
-				WHERE key = 'schema_version' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(version?.value)).toBe(12)
-		expect(accountWriteLeaseColumnNames(state)).toEqual([
-			'token',
-			'holder',
-			'acquired_at',
-			'pending_repair_id',
-		])
-		expect(
-			state.storage.sql
-				.exec<{ name: string }>(
-					`SELECT name FROM sqlite_master
-					WHERE type = 'table' AND name = 'dynamic_worker_days'`,
-				)
-				.toArray(),
-		).toEqual([{ name: 'dynamic_worker_days' }])
-		expect(
-			state.storage.sql
-				.exec<{ name: string }>(
-					`SELECT name FROM sqlite_master
-					WHERE type = 'table' AND name = 'inbound_mcp_connection_last_used'`,
-				)
-				.toArray(),
-		).toEqual([{ name: 'inbound_mcp_connection_last_used' }])
+}
+
+function countDailyCounterPrepares() {
+	const counter = { calls: 0 }
+	const patch = withPatchedDbPrepare(
+		env.APP_DB,
+		(originalPrepare) =>
+			((query: string) => {
+				if (query.includes('entitlement_daily_counters')) counter.calls += 1
+				return originalPrepare(query)
+			}) as D1Database['prepare'],
+	)
+	return Object.assign(counter, {
+		[Symbol.dispose]: () => patch[Symbol.dispose](),
 	})
-}, 30_000)
+}
 
-test('warm UserMeter schema v7 upgrades to v12 and preserves leases', async () => {
-	const user = await seedFreeUser('meter-schema-v7-upgrade')
-	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+function catchError<T>(promise: Promise<T>) {
+	return promise.then(
+		(value) => value,
+		(error: unknown) => error,
 	)
-	await runInDurableObject(stub, async (instance: UserMeter, state) => {
-		await state.storage.deleteAll()
-		state.storage.sql.exec(`
+}
+
+function emptyExport(deletingAt: string | null = null) {
+	return {
+		counters: [],
+		storageBytesState: null,
+		deletionState: { deletingAt, activeWriteLeaseCount: 0, writeLeases: [] },
+		inboundConnectionLastUsed: [],
+		nextStartAfter: null,
+		truncated: false,
+	}
+}
+
+function sqliteNames(state: DurableObjectState, where: string) {
+	return state.storage.sql
+		.exec<{ name: string }>(`SELECT name FROM sqlite_master WHERE ${where}`)
+		.toArray()
+		.map((row) => row.name)
+}
+
+function expectSchemaV13(state: DurableObjectState) {
+	const version = state.storage.sql
+		.exec<{ value: number }>(
+			`SELECT value FROM user_meter_meta WHERE key = 'schema_version' LIMIT 1`,
+		)
+		.toArray()[0]
+	expect(Number(version?.value)).toBe(13)
+	expect(
+		state.storage.sql
+			.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
+			.toArray()
+			.map((row) => String(row.name)),
+	).toEqual(['token', 'holder', 'acquired_at', 'pending_repair_id'])
+	expect(
+		sqliteNames(
+			state,
+			`type = 'table' AND name IN ('dynamic_worker_days', 'inbound_mcp_connection_last_used') ORDER BY name`,
+		),
+	).toEqual(['dynamic_worker_days', 'inbound_mcp_connection_last_used'])
+}
+
+/**
+ * A stable recent instant for daily-counter tests: yesterday at 15:00 UTC.
+ * The UserMeter DO purges daily counters older than its retention window
+ * (`userMeterDailyCounterRetentionDays`) against the real clock, so a
+ * hardcoded date silently ages out and flips cold-consume reads back to
+ * `needs_bootstrap`.
+ */
+function recentDailyCounterNow(): Date {
+	const now = new Date()
+	return new Date(
+		Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 15),
+	)
+}
+
+test('fresh UserMeter schema is v12 and warm v7 upgrades to v12 preserving leases', async () => {
+	const fresh = await seedFreeUser('meter-schema-v12-fresh')
+	await runInDurableObject(
+		meterStub(fresh.userId),
+		async (instance: UserMeter, state) => {
+			expect(instance).toBeInstanceOf(UserMeter)
+			expectSchemaV13(state)
+		},
+	)
+
+	const warm = await seedFreeUser('meter-schema-v7-upgrade')
+	await runInDurableObject(
+		meterStub(warm.userId),
+		async (instance: UserMeter, state) => {
+			await state.storage.deleteAll()
+			state.storage.sql.exec(`
 			CREATE TABLE user_meter_meta (
 				key TEXT PRIMARY KEY NOT NULL,
 				value INTEGER NOT NULL
@@ -135,492 +175,353 @@ test('warm UserMeter schema v7 upgrades to v12 and preserves leases', async () =
 			);
 		`)
 
-		const proto = Object.getPrototypeOf(instance) as {
-			initializeSchema: () => void
-		}
-		proto.initializeSchema.call(instance)
+			const proto = Object.getPrototypeOf(instance) as {
+				initializeSchema: () => void
+			}
+			proto.initializeSchema.call(instance)
 
-		const version = state.storage.sql
-			.exec<{ value: number }>(
-				`SELECT value FROM user_meter_meta
-				WHERE key = 'schema_version' LIMIT 1`,
-			)
-			.toArray()[0]
-		expect(Number(version?.value)).toBe(12)
-		expect(accountWriteLeaseColumnNames(state)).toEqual([
-			'token',
-			'holder',
-			'acquired_at',
-			'pending_repair_id',
-		])
-		expect(
-			state.storage.sql
-				.exec<{ name: string }>(
-					`SELECT name FROM sqlite_master
-					WHERE type = 'table' AND name = 'inbound_mcp_connection_last_used'`,
-				)
-				.toArray(),
-		).toEqual([{ name: 'inbound_mcp_connection_last_used' }])
-		expect(
-			state.storage.sql
-				.exec<{
-					token: string
-					holder: string
-					acquired_at: string
-					pending_repair_id: string | null
-				}>(
-					`SELECT token, holder, acquired_at, pending_repair_id
+			expectSchemaV13(state)
+			expect(
+				state.storage.sql
+					.exec(
+						`SELECT token, holder, acquired_at, pending_repair_id
 					FROM account_write_leases`,
-				)
-				.toArray(),
-		).toEqual([
-			{
-				token: 'warm-v7-token',
-				holder: 'warm-v7-holder',
-				acquired_at: '2026-08-03T00:00:00.000Z',
-				pending_repair_id: 'repair-v7',
-			},
-		])
-		const legacyIndex = state.storage.sql
-			.exec<{ name: string }>(
-				`SELECT name FROM sqlite_master
-				WHERE type = 'index'
-					AND name = 'idx_account_write_leases_authority_acquired_token'`,
-			)
-			.toArray()
-		expect(legacyIndex).toEqual([])
-		const packageServiceTables = state.storage.sql
-			.exec<{ name: string }>(
-				`SELECT name FROM sqlite_master
-				WHERE name IN (
-					'package_service_states',
-					'idx_package_service_states_status_source'
-				)`,
-			)
-			.toArray()
-		expect(packageServiceTables).toEqual([])
-		expect(
-			state.storage.sql
-				.exec<{ name: string }>(
-					`SELECT name FROM sqlite_master
-					WHERE type = 'table' AND name = 'dynamic_worker_days'`,
-				)
-				.toArray(),
-		).toEqual([{ name: 'dynamic_worker_days' }])
-	})
-}, 30_000)
-
-test('UserMeter claimDynamicWorkerDay is first-seen per worker and day', async () => {
-	const user = await seedFreeUser('meter-dw-day-claim')
-	const meter = userMeterRpc({ env, userId: user.userId })
-	const day = utcDayKey(new Date())
-	const createdAt = new Date().toISOString()
-
-	expect(
-		await meter.claimDynamicWorkerDay({
-			workerId: 'kody-worker-a',
-			day,
-			createdAt,
-		}),
-	).toEqual({ created: true })
-	expect(
-		await meter.claimDynamicWorkerDay({
-			workerId: 'kody-worker-a',
-			day,
-			createdAt,
-		}),
-	).toEqual({ created: false })
-	expect(
-		await meter.claimDynamicWorkerDay({
-			workerId: 'kody-worker-b',
-			day,
-			createdAt,
-		}),
-	).toEqual({ created: true })
-}, 30_000)
-
-test('UserMeter prunes stale unique worker-day claims with daily counters', async () => {
-	const user = await seedFreeUser('meter-dw-day-prune')
-	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
+					)
+					.toArray(),
+			).toEqual([
+				{
+					token: 'warm-v7-token',
+					holder: 'warm-v7-holder',
+					acquired_at: '2026-08-03T00:00:00.000Z',
+					pending_repair_id: 'repair-v7',
+				},
+			])
+			expect(
+				sqliteNames(
+					state,
+					`name IN (
+						'idx_account_write_leases_authority_acquired_token',
+						'package_service_states',
+						'idx_package_service_states_status_source'
+					)`,
+				),
+			).toEqual([])
+		},
 	)
-	const staleDay = '2020-01-01'
+}, 30_000)
+
+test('UserMeter claimDynamicWorkerDay is first-seen per worker and day, and prunes stale claims', async () => {
+	const user = await seedFreeUser('meter-dw-day-claim')
 	const today = utcDayKey(new Date())
+	const claim = (workerId: string, day = today) =>
+		user.meter.claimDynamicWorkerDay({
+			workerId,
+			day,
+			createdAt:
+				day === today ? new Date().toISOString() : `${day}T00:00:00.000Z`,
+		})
+
+	expect(await claim('kody-worker-a')).toEqual({ created: true })
+	expect(await claim('kody-worker-a')).toEqual({ created: false })
+	expect(await claim('kody-worker-b')).toEqual({ created: true })
+
+	const pruned = await seedFreeUser('meter-dw-day-prune')
+	const stub = meterStub(pruned.userId)
 	await stub.claimDynamicWorkerDay({
 		workerId: 'kody-stale',
-		day: staleDay,
-		createdAt: `${staleDay}T00:00:00.000Z`,
+		day: '2020-01-01',
+		createdAt: '2020-01-01T00:00:00.000Z',
 	})
 	await stub.claimDynamicWorkerDay({
 		workerId: 'kody-fresh',
 		day: today,
 		createdAt: new Date().toISOString(),
 	})
-
 	await runInDurableObject(stub, async (_instance: UserMeter, state) => {
-		const rows = state.storage.sql
-			.exec<{ worker_id: string; day: string }>(
-				`SELECT worker_id, day FROM dynamic_worker_days ORDER BY worker_id`,
-			)
-			.toArray()
-		expect(rows).toEqual([{ worker_id: 'kody-fresh', day: today }])
+		expect(
+			state.storage.sql
+				.exec(
+					`SELECT worker_id, day FROM dynamic_worker_days ORDER BY worker_id`,
+				)
+				.toArray(),
+		).toEqual([{ worker_id: 'kody-fresh', day: today }])
 	})
 }, 30_000)
 
-/**
- * A stable recent instant for daily-counter tests: yesterday at 15:00 UTC.
- * The UserMeter DO purges daily counters older than its retention window
- * against the real clock, so a hardcoded date silently ages out and flips
- * cold-consume reads back to `needs_bootstrap` (this suite broke exactly
- * seven days after its previous hardcoded date).
- */
-function recentDailyCounterNow(): Date {
-	const now = new Date()
-	return new Date(
-		Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1, 15),
-	)
-}
+test('cold, warm, and next-UTC-day daily consumes start at zero without preparing D1 entitlement_daily_counters', async () => {
+	const resource = 'email_sends_per_day'
+	using prepares = countDailyCounterPrepares()
 
-test('cold daily consume initializes at zero without D1 prepare/run and first unit is 1', async () => {
-	const now = recentDailyCounterNow()
-	const day = utcDayKey(now)
-	const user = await seedFreeUser('meter-cold-zero')
-	const meter = userMeterRpc({ env, userId: user.userId })
-
-	let dailyPrepareCalls = 0
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
-			return originalPrepare(query)
-		}) as D1Database['prepare']
-	})
-
-	expect(await meter.read({ resource: 'email_sends_per_day', day })).toEqual({
+	const coldNow = recentDailyCounterNow()
+	const cold = await seedFreeUser('meter-cold-zero')
+	expect(await cold.meter.read({ resource, day: utcDayKey(coldNow) })).toEqual({
 		outcome: 'needs_bootstrap',
 	})
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		resource: 'email_sends_per_day',
-		now,
-	})
-	expect(
-		await meter.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({
+	await cold.consume(resource, coldNow)
+	expect(await cold.readDaily(resource, coldNow)).toMatchObject({
 		outcome: 'ready',
 		count: 1,
 	})
-	expect(dailyPrepareCalls).toBe(0)
-}, 30_000)
 
-test('warm daily consume/read never prepares entitlement_daily_counters', async () => {
-	const now = new Date()
-	const day = utcDayKey(now)
-	const user = await seedFreeUser('meter-warm-no-d1')
-	const meter = userMeterRpc({ env, userId: user.userId })
-	await meter.initialize({
-		resource: 'email_sends_per_day',
-		day,
+	const warmNow = new Date()
+	const warm = await seedFreeUser('meter-warm-no-d1')
+	await warm.meter.initialize({
+		resource,
+		day: utcDayKey(warmNow),
 		count: 0,
-		updatedAt: now.toISOString(),
+		updatedAt: warmNow.toISOString(),
 	})
-
-	let dailyPrepareCalls = 0
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
-			return originalPrepare(query)
-		}) as D1Database['prepare']
-	})
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		resource: 'email_sends_per_day',
-		now,
-	})
+	await warm.consume(resource, warmNow)
 	await expect(
 		readDailyEntitlementResourceUsage({
 			env,
-			userId: user.userId,
-			resource: 'email_sends_per_day',
-			now,
+			userId: warm.userId,
+			resource,
+			now: warmNow,
 		}),
 	).resolves.toBe(1)
-	expect(dailyPrepareCalls).toBe(0)
-}, 30_000)
 
-test('next UTC day cold consume starts at zero independently', async () => {
 	const dayOne = recentDailyCounterNow()
 	// Ten hours later crosses into the next UTC day (15:00Z -> 01:00Z).
 	const dayTwo = new Date(dayOne.getTime() + 10 * 60 * 60 * 1000)
-	const user = await seedFreeUser('meter-next-day')
-	const meter = userMeterRpc({ env, userId: user.userId })
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		resource: 'email_sends_per_day',
-		now: dayOne,
+	const nextDay = await seedFreeUser('meter-next-day')
+	await nextDay.consume(resource, dayOne)
+	expect(await nextDay.readDaily(resource, dayOne)).toMatchObject({
+		outcome: 'ready',
+		count: 1,
 	})
-	expect(
-		await meter.read({
-			resource: 'email_sends_per_day',
-			day: utcDayKey(dayOne),
-			now: dayOne.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-
-	expect(
-		await meter.read({
-			resource: 'email_sends_per_day',
-			day: utcDayKey(dayTwo),
-			now: dayTwo.toISOString(),
-		}),
-	).toEqual({ outcome: 'needs_bootstrap' })
-
-	let dailyPrepareCalls = 0
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
-			return originalPrepare(query)
-		}) as D1Database['prepare']
+	expect(await nextDay.readDaily(resource, dayTwo)).toEqual({
+		outcome: 'needs_bootstrap',
 	})
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		resource: 'email_sends_per_day',
-		now: dayTwo,
+	await nextDay.consume(resource, dayTwo)
+	expect(await nextDay.readDaily(resource, dayTwo)).toMatchObject({
+		outcome: 'ready',
+		count: 1,
 	})
-	expect(
-		await meter.read({
-			resource: 'email_sends_per_day',
-			day: utcDayKey(dayTwo),
-			now: dayTwo.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-	expect(dailyPrepareCalls).toBe(0)
+	expect(prepares.calls).toBe(0)
 }, 30_000)
 
 test('UserMeter consume denies public execute when the UTC week hits first', async () => {
-	const wednesday = new Date('2026-07-08T15:00:00.000Z')
 	const monday = new Date('2026-07-06T15:00:00.000Z')
 	const tuesday = new Date('2026-07-07T15:00:00.000Z')
+	const wednesday = new Date('2026-07-08T15:00:00.000Z')
+	const resource = 'execute_calls_per_day'
 	const user = await seedFreeUser('meter-weekly-execute')
-	const meter = userMeterRpc({ env, userId: user.userId })
-	await meter.initialize({
-		resource: 'execute_calls_per_day',
-		day: utcDayKey(monday),
-		count: 150,
-		updatedAt: monday.toISOString(),
-	})
-	await meter.initialize({
-		resource: 'execute_calls_per_day',
-		day: utcDayKey(tuesday),
-		count: 150,
-		updatedAt: tuesday.toISOString(),
-	})
-	await meter.initialize({
-		resource: 'execute_calls_per_day',
-		day: utcDayKey(wednesday),
-		count: 99,
-		updatedAt: wednesday.toISOString(),
-	})
+	for (const [day, count] of [
+		[monday, 150],
+		[tuesday, 150],
+		[wednesday, 99],
+	] as const) {
+		await user.meter.initialize({
+			resource,
+			day: utcDayKey(day),
+			count,
+			updatedAt: day.toISOString(),
+		})
+	}
 	expect(
-		await meter.readRange({
-			resource: 'execute_calls_per_day',
+		await user.meter.readRange({
+			resource,
 			startDay: utcDayKey(monday),
 			endDay: utcDayKey(wednesday),
 			now: wednesday.toISOString(),
 		}),
 	).toEqual({ outcome: 'ready', count: 399 })
 
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		resource: 'execute_calls_per_day',
-		now: wednesday,
+	await user.consume(resource, wednesday)
+	const denied = await catchError(user.consume(resource, wednesday))
+	expect(denied).toBeInstanceOf(EntitlementLimitError)
+	expect(denied).toMatchObject({
+		details: { resource, limit: 400, current: 400, window: 'week' },
 	})
-	const denied = await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
+}, 30_000)
+
+test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call', async () => {
+	const monday = new Date('2026-07-06T15:00:00.000Z')
+	const tuesday = new Date('2026-07-07T15:00:00.000Z')
+	const user = await seedFreeUser('meter-usage-snapshot')
+	await user.meter.initialize({
 		resource: 'execute_calls_per_day',
-		now: wednesday,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
+		day: utcDayKey(monday),
+		count: 10,
+		updatedAt: monday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(tuesday),
+		count: 7,
+		updatedAt: tuesday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'email_sends_per_day',
+		day: utcDayKey(tuesday),
+		count: 3,
+		updatedAt: tuesday.toISOString(),
+	})
+	await user.meter.initializeStorageBytes({
+		bytes: 42,
+		updatedAt: tuesday.toISOString(),
+	})
+
+	const snapshot = await user.meter.readUsageSnapshot({
+		day: utcDayKey(tuesday),
+		weekStart: utcDayKey(monday),
+		dailyResources: ['execute_calls_per_day', 'email_sends_per_day'],
+		weeklyResources: ['execute_calls_per_day'],
+		includeStorageBytes: true,
+		now: tuesday.toISOString(),
+	})
+	expect(snapshot.daily).toEqual([
+		expect.objectContaining({
+			resource: 'execute_calls_per_day',
+			outcome: 'ready',
+			count: 7,
+		}),
+		expect.objectContaining({
+			resource: 'email_sends_per_day',
+			outcome: 'ready',
+			count: 3,
+		}),
+	])
+	expect(snapshot.weekly).toEqual([
+		{
+			resource: 'execute_calls_per_day',
+			outcome: 'ready',
+			count: 17,
+		},
+	])
+	expect(snapshot.storageBytes).toMatchObject({
+		outcome: 'ready',
+		bytes: 42,
+	})
+
+	const cold = await user.meter.readUsageSnapshot({
+		day: utcDayKey(tuesday),
+		weekStart: utcDayKey(monday),
+		dailyResources: ['outbound_fetches_per_day'],
+		weeklyResources: ['outbound_fetches_per_day'],
+		includeStorageBytes: false,
+		now: tuesday.toISOString(),
+	})
+	expect(cold.daily).toEqual([
+		{ resource: 'outbound_fetches_per_day', outcome: 'needs_bootstrap' },
+	])
+	expect(cold.weekly).toEqual([
+		{
+			resource: 'outbound_fetches_per_day',
+			outcome: 'ready',
+			count: 0,
+		},
+	])
+	expect(cold.storageBytes).toBeNull()
+}, 30_000)
+
+test('UserMeter readDailyTrend returns counters and unique worker days for the retention window', async () => {
+	const now = new Date('2026-10-07T15:00:00.000Z')
+	const yesterday = new Date('2026-10-06T15:00:00.000Z')
+	const user = await seedFreeUser('meter-daily-trend')
+	await user.meter.initialize({
+		resource: 'execute_calls_per_day',
+		day: utcDayKey(yesterday),
+		count: 11,
+		updatedAt: yesterday.toISOString(),
+	})
+	await user.meter.initialize({
+		resource: 'job_runs_per_day',
+		day: utcDayKey(yesterday),
+		count: 2,
+		updatedAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-a',
+		day: utcDayKey(yesterday),
+		createdAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-b',
+		day: utcDayKey(yesterday),
+		createdAt: yesterday.toISOString(),
+	})
+	await user.meter.claimDynamicWorkerDay({
+		workerId: 'worker-a',
+		day: utcDayKey(now),
+		createdAt: now.toISOString(),
+	})
+
+	const trend = await user.meter.readDailyTrend({ now: now.toISOString() })
+	expect(trend.retentionDays).toBeGreaterThan(0)
+	expect(trend.endDay).toBe(utcDayKey(now))
+	expect(trend.counters).toEqual(
+		expect.arrayContaining([
+			{
+				resource: 'execute_calls_per_day',
+				day: utcDayKey(yesterday),
+				count: 11,
+			},
+			{
+				resource: 'job_runs_per_day',
+				day: utcDayKey(yesterday),
+				count: 2,
+			},
+		]),
 	)
-	if (!(denied instanceof EntitlementLimitError)) {
-		throw new Error('Expected weekly EntitlementLimitError.')
-	}
-	expect(denied.details).toMatchObject({
-		resource: 'execute_calls_per_day',
-		limit: 400,
-		current: 400,
-		window: 'week',
-	})
+	expect(trend.uniqueWorkerDays).toEqual([
+		{ day: utcDayKey(yesterday), count: 2 },
+		{ day: utcDayKey(now), count: 1 },
+	])
 }, 30_000)
 
 test('UserMeter daily entitlement consume/refund/read/export/purge workflow is per-user without D1 daily table', async () => {
 	const now = recentDailyCounterNow()
 	const day = utcDayKey(now)
+	const resource = 'email_sends_per_day'
 	const sendLimit = planLimits.free.maxEmailSendsPerDay
 	const userA = await seedFreeUser('meter-a')
 	const userB = await seedFreeUser('meter-b')
-	const meterA = userMeterRpc({ env, userId: userA.userId })
-	const meterB = userMeterRpc({ env, userId: userB.userId })
+	const readA = () => userA.readDaily(resource, now)
+	const refundA = () =>
+		refundDailyEntitlement({ env, userId: userA.userId, resource, now })
 
 	expect(userMeterDurableObjectName(userA.userId)).toBe(userA.userId)
+	using prepares = countDailyCounterPrepares()
 
-	let dailyPrepareCalls = 0
-	using _patch = withPatchedDbPrepare(env.APP_DB, (originalPrepare) => {
-		return ((query: string) => {
-			if (query.includes('entitlement_daily_counters')) dailyPrepareCalls += 1
-			return originalPrepare(query)
-		}) as D1Database['prepare']
-	})
-
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: userA.userId,
-		email: userA.email,
-		resource: 'email_sends_per_day',
-		now,
-	})
-	expect(
-		await meterA.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-
+	await userA.consume(resource, now)
+	expect(await readA()).toMatchObject({ outcome: 'ready', count: 1 })
 	for (let index = 1; index < sendLimit; index += 1) {
-		await consumeDailyEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: userA.userId,
-			email: userA.email,
-			resource: 'email_sends_per_day',
-			now,
-		})
+		await userA.consume(resource, now)
 	}
 	const concurrent = await Promise.all(
-		Array.from({ length: 8 }, async () =>
-			consumeDailyEntitlement({
-				db: env.APP_DB,
-				env,
-				userId: userA.userId,
-				email: userA.email,
-				resource: 'email_sends_per_day',
-				now,
-			}).then(
+		Array.from({ length: 8 }, () =>
+			userA.consume(resource, now).then(
 				() => null,
 				(thrown: unknown) => thrown,
 			),
 		),
 	)
-	expect(concurrent.filter((result) => result === null)).toHaveLength(0)
-	const denials = concurrent.filter(
-		(result) => result instanceof EntitlementLimitError,
-	)
-	expect(denials).toHaveLength(8)
+	expect(
+		concurrent.filter((result) => result instanceof EntitlementLimitError),
+	).toHaveLength(8)
 
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: userB.userId,
-		email: userB.email,
-		resource: 'email_sends_per_day',
-		now,
+	await userB.consume(resource, now)
+	expect(await userB.readDaily(resource, now)).toMatchObject({
+		outcome: 'ready',
+		count: 1,
 	})
-	expect(
-		await meterB.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-	expect(
-		await meterA.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: sendLimit })
+	expect(await readA()).toMatchObject({ outcome: 'ready', count: sendLimit })
 
-	await refundDailyEntitlement({
-		env,
-		userId: userA.userId,
-		resource: 'email_sends_per_day',
-		now,
+	await refundA()
+	expect(await readA()).toMatchObject({
+		outcome: 'ready',
+		count: sendLimit - 1,
 	})
-	expect(
-		await meterA.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: sendLimit - 1 })
-	for (let index = 0; index < sendLimit; index += 1) {
-		await refundDailyEntitlement({
-			env,
-			userId: userA.userId,
-			resource: 'email_sends_per_day',
-			now,
-		})
-	}
-	expect(
-		await meterA.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 0 })
+	for (let index = 0; index < sendLimit; index += 1) await refundA()
+	expect(await readA()).toMatchObject({ outcome: 'ready', count: 0 })
 
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: userA.userId,
-		email: userA.email,
-		resource: 'email_sends_per_day',
-		now,
-	})
-	await consumeDailyEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: userA.userId,
-		email: userA.email,
-		resource: 'execute_calls_per_day',
-		now,
-	})
-	const exportedA = await meterA.exportCounters({})
-	expect(exportedA.counters).toEqual(
+	await userA.consume(resource, now)
+	await userA.consume('execute_calls_per_day', now)
+	expect((await userA.meter.exportCounters({})).counters).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				resource: 'email_sends_per_day',
-				day,
-				count: 1,
-			}),
+			expect.objectContaining({ resource, day, count: 1 }),
 			expect.objectContaining({
 				resource: 'execute_calls_per_day',
 				day,
@@ -630,177 +531,119 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	)
 
 	const [purgeResult, readDuringPurge, exportDuringPurge] = await Promise.all([
-		meterA.purge(),
-		meterA.read({ resource: 'email_sends_per_day', day }).then(
-			(value) => value,
-			(error: unknown) => error,
-		),
-		meterA.exportCounters({}).then(
-			(value) => value,
-			(error: unknown) => error,
-		),
+		userA.meter.purge(),
+		catchError(userA.meter.read({ resource, day })),
+		catchError(userA.meter.exportCounters({})),
 	])
 	expect(purgeResult).toEqual({ ok: true })
 	expect(readDuringPurge).not.toBeInstanceOf(Error)
 	expect(exportDuringPurge).not.toBeInstanceOf(Error)
-	expect(await meterA.read({ resource: 'email_sends_per_day', day })).toEqual({
+	expect(await userA.meter.read({ resource, day })).toEqual({
 		outcome: 'needs_bootstrap',
 	})
-	expect(await meterA.exportCounters({})).toEqual({
-		counters: [],
-		storageBytesState: null,
-		deletionState: {
-			deletingAt: null,
-			activeWriteLeaseCount: 0,
-			writeLeases: [],
+	expect(await userA.meter.exportCounters({})).toEqual(emptyExport())
+	expect(await userB.readDaily(resource, now)).toMatchObject({
+		outcome: 'ready',
+		count: 1,
+	})
+
+	await expect(userA.consume(resource, now)).resolves.toBeUndefined()
+	expect(await readA()).toMatchObject({ outcome: 'ready', count: 1 })
+	expect(prepares.calls).toBe(0)
+
+	await runInDurableObject(
+		meterStub(userA.userId),
+		async (instance: UserMeter) => {
+			await expect(
+				instance.consume({
+					resource,
+					day: 'not-a-day',
+					limit: 1,
+					updatedAt: '2026-07-31T15:00:00.000Z',
+				}),
+			).rejects.toThrow(/UTC YYYY-MM-DD/)
 		},
-		inboundConnectionLastUsed: [],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(
-		await meterB.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-
-	await expect(
-		consumeDailyEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: userA.userId,
-			email: userA.email,
-			resource: 'email_sends_per_day',
-			now,
-		}),
-	).resolves.toBeUndefined()
-	expect(
-		await meterA.read({
-			resource: 'email_sends_per_day',
-			day,
-			now: now.toISOString(),
-		}),
-	).toMatchObject({ outcome: 'ready', count: 1 })
-	expect(dailyPrepareCalls).toBe(0)
-
-	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(userA.userId)),
 	)
-	await runInDurableObject(stub, async (instance: UserMeter) => {
-		await expect(
-			instance.consume({
-				resource: 'email_sends_per_day',
-				day: 'not-a-day',
-				limit: 1,
-				updatedAt: '2026-07-31T15:00:00.000Z',
-			}),
-		).rejects.toThrow(/UTC YYYY-MM-DD/)
-	})
 }, 30_000)
 
 test('UserMeter purge blocks concurrent RPCs across deleteAll and schema restore', async () => {
 	const now = new Date('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey(now)
 	const user = await seedFreeUser('meter-purge-concurrency')
-	const meter = userMeterRpc({ env, userId: user.userId })
-	await meter.initialize({
+	await user.meter.initialize({
 		resource: 'email_sends_per_day',
 		day,
 		count: 4,
 		updatedAt: now.toISOString(),
 	})
 
-	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(user.userId)),
-	)
 	let releaseDelete: (() => void) | undefined
 	const deletePaused = new Promise<void>((resolve) => {
 		releaseDelete = resolve
 	})
 	let deleteAllReached = false
-	await runInDurableObject(stub, async (instance: UserMeter, state) => {
-		expect(instance).toBeInstanceOf(UserMeter)
-		const originalDeleteAll = state.storage.deleteAll.bind(state.storage)
-		state.storage.deleteAll = async () => {
-			await originalDeleteAll()
-			deleteAllReached = true
-			await deletePaused
-		}
-	})
-
-	const purgePromise = meter.purge()
-	await waitFor(() => deleteAllReached, 5_000, 'purge deleteAll')
-
-	const readPromise = meter.read({ resource: 'email_sends_per_day', day }).then(
-		(value) => value,
-		(error: unknown) => error,
+	await runInDurableObject(
+		meterStub(user.userId),
+		async (instance: UserMeter, state) => {
+			expect(instance).toBeInstanceOf(UserMeter)
+			const originalDeleteAll = state.storage.deleteAll.bind(state.storage)
+			state.storage.deleteAll = async () => {
+				await originalDeleteAll()
+				deleteAllReached = true
+				await deletePaused
+			}
+		},
 	)
-	const exportPromise = meter.exportCounters({}).then(
-		(value) => value,
-		(error: unknown) => error,
+
+	const purgePromise = user.meter.purge()
+	await vi
+		.waitFor(() => expect(deleteAllReached).toBe(true), {
+			timeout: 5_000,
+			interval: 1,
+		})
+		.catch(() => {
+			throw new Error('Timed out waiting for purge deleteAll.')
+		})
+	const readPromise = catchError(
+		user.meter.read({ resource: 'email_sends_per_day', day }),
 	)
+	const exportPromise = catchError(user.meter.exportCounters({}))
 	// Give queued RPCs a chance to enter the wiped-schema window if
 	// blockConcurrencyWhile is missing around deleteAll+initializeSchema.
 	await new Promise((resolve) => setTimeout(resolve, 25))
 	releaseDelete!()
 
-	const [purgeResult, readDuringPurge, exportDuringPurge] = await Promise.all([
-		purgePromise,
-		readPromise,
-		exportPromise,
-	])
-	expect(purgeResult).toEqual({ ok: true })
-	expect(readDuringPurge).toEqual({ outcome: 'needs_bootstrap' })
-	expect(exportDuringPurge).toEqual({
-		counters: [],
-		storageBytesState: null,
-		deletionState: {
-			deletingAt: null,
-			activeWriteLeaseCount: 0,
-			writeLeases: [],
-		},
-		inboundConnectionLastUsed: [],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(await meter.read({ resource: 'email_sends_per_day', day })).toEqual({
-		outcome: 'needs_bootstrap',
-	})
+	expect(await purgePromise).toEqual({ ok: true })
+	expect(await readPromise).toEqual({ outcome: 'needs_bootstrap' })
+	expect(await exportPromise).toEqual(emptyExport())
+	expect(
+		await user.meter.read({ resource: 'email_sends_per_day', day }),
+	).toEqual({ outcome: 'needs_bootstrap' })
 }, 30_000)
 
 test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, concurrency, and missing-user semantics', async () => {
 	const storageLimit = planLimits.free.maxStorageBytes
+	const reserve = (
+		user: { userId: string; email: string | null },
+		requested: number,
+	) =>
+		assertWithinStorageBytesEntitlement({
+			db: env.APP_DB,
+			env,
+			userId: user.userId,
+			email: user.email,
+			requested,
+		})
 
-	// === Section 1: Cold zero bootstrap, reserve, and denial ===
+	// Cold bootstrap zero-initializes UserMeter, then reserves 5.
 	const user = await seedFreeUser('meter-storage-do-authority')
-	const meter = userMeterRpc({ env, userId: user.userId })
-
-	// Cold bootstrap: zero-initializes UserMeter, then reserves 5.
-	await assertWithinStorageBytesEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		requested: 5,
-	})
-	expect(await meter.readStorageBytes()).toMatchObject({
+	await reserve(user, 5)
+	expect(await user.meter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
 		bytes: 5,
 	})
-
-	// Deny an over-limit request: 5 + (limit - 4) = limit + 1 > limit.
-	const denied = await assertWithinStorageBytesEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: user.userId,
-		email: user.email,
-		requested: storageLimit - 4,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+	// 5 + (limit - 4) = limit + 1 > limit.
+	const denied = await catchError(reserve(user, storageLimit - 4))
 	expect(denied).toBeInstanceOf(EntitlementLimitError)
 	expect(denied).toMatchObject({
 		details: {
@@ -811,62 +654,33 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 		},
 	})
 
-	// === Section 2: Concurrent reservations (UserMeter atomicity) ===
+	// Concurrent reservations are atomic in UserMeter.
 	const concurrentUser = await seedFreeUser('meter-storage-concurrent-do')
-	const concurrentMeter = userMeterRpc({ env, userId: concurrentUser.userId })
-	await concurrentMeter.initializeStorageBytes({
+	await concurrentUser.meter.initializeStorageBytes({
 		bytes: storageLimit - 10,
 		updatedAt: '2026-07-31T15:00:00.000Z',
 	})
-
 	const attempts = await Promise.all(
 		Array.from({ length: 20 }, () =>
-			assertWithinStorageBytesEntitlement({
-				db: env.APP_DB,
-				env,
-				userId: concurrentUser.userId,
-				email: concurrentUser.email,
-				requested: 5,
-			}).then(
+			reserve(concurrentUser, 5).then(
 				() => 'reserved' as const,
 				(error: unknown) => error,
 			),
 		),
 	)
-	const reserved = attempts.filter((result) => result === 'reserved')
-	const concurrentDenied = attempts.filter(
-		(result) => result instanceof EntitlementLimitError,
-	)
-	expect(reserved).toHaveLength(2)
-	expect(concurrentDenied).toHaveLength(18)
-	expect(await concurrentMeter.readStorageBytes()).toMatchObject({
+	expect(attempts.filter((result) => result === 'reserved')).toHaveLength(2)
+	expect(
+		attempts.filter((result) => result instanceof EntitlementLimitError),
+	).toHaveLength(18)
+	expect(await concurrentUser.meter.readStorageBytes()).toMatchObject({
 		outcome: 'ready',
 		bytes: storageLimit,
 	})
 
-	// === Section 3: Missing user (synthetic context, free-plan semantics) ===
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const missingUserId = 'a'.repeat(64)
-	await expect(
-		assertWithinStorageBytesEntitlement({
-			db: env.APP_DB,
-			env,
-			userId: missingUserId,
-			email: null,
-			requested: 1,
-		}),
-	).resolves.toBeUndefined()
-
-	const missingDenied = await assertWithinStorageBytesEntitlement({
-		db: env.APP_DB,
-		env,
-		userId: missingUserId,
-		email: null,
-		requested: storageLimit + 1,
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+	// Missing user (synthetic context) gets free-plan semantics.
+	const missing = { userId: 'a'.repeat(64), email: null }
+	await expect(reserve(missing, 1)).resolves.toBeUndefined()
+	const missingDenied = await catchError(reserve(missing, storageLimit + 1))
 	expect(missingDenied).toBeInstanceOf(EntitlementLimitError)
 	expect(missingDenied).toMatchObject({
 		details: {
@@ -879,8 +693,7 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 }, 30_000)
 
 test('UserMeter storage RPCs, authoritative export state, and purge work additively', async () => {
-	const user = await seedFreeUser('meter-storage-export-purge')
-	const meter = userMeterRpc({ env, userId: user.userId })
+	const { meter } = await seedFreeUser('meter-storage-export-purge')
 	await meter.initializeStorageBytes({
 		bytes: 42,
 		updatedAt: '2026-07-31T17:00:00.000Z',
@@ -895,7 +708,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		updatedAt: '2026-07-31T17:02:00.000Z',
 	})
 
-	// Wall-clock retention on export/read; keep counters inside the 7-day window.
+	// Wall-clock retention on export/read; keep counters inside the 14-day window.
 	const day = utcDayKey()
 	const counterUpdatedAt = new Date().toISOString()
 	for (const resource of [
@@ -903,6 +716,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 		'email_sends_per_day',
 		'execute_calls_per_day',
 		'job_runs_per_day',
+		'automation_invocations_per_day',
 		'outbound_fetches_per_day',
 	] as const) {
 		await meter.initialize({
@@ -914,78 +728,70 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 	}
 
 	const firstPage = await meter.exportCounters({ pageSize: 2 })
-	expect(firstPage.counters).toHaveLength(2)
-	expect(firstPage.truncated).toBe(true)
-	expect(firstPage.nextStartAfter).toEqual(expect.any(String))
-	expect(firstPage.storageBytesState).toEqual({
-		bytes: 11,
-		revision: 3,
-		updatedAt: '2026-07-31T17:02:00.000Z',
-		mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
-	})
-	expect(firstPage.deletionState).toEqual({
-		deletingAt: null,
-		activeWriteLeaseCount: 0,
-		writeLeases: [],
-	})
-	expect(firstPage.inboundConnectionLastUsed).toEqual([])
-
-	const secondPage = await meter.exportCounters({
-		pageSize: 2,
-		startAfter: firstPage.nextStartAfter,
-	})
-	expect(secondPage.counters).toHaveLength(2)
-	expect(secondPage.truncated).toBe(true)
-	expect(secondPage.nextStartAfter).toEqual(expect.any(String))
-	expect(secondPage.storageBytesState).toBeNull()
-	expect(secondPage.deletionState).toBeNull()
-	expect(secondPage.inboundConnectionLastUsed).toBeNull()
-
-	const thirdPage = await meter.exportCounters({
-		pageSize: 2,
-		startAfter: secondPage.nextStartAfter,
-	})
-	expect(thirdPage.counters).toHaveLength(1)
-	expect(thirdPage.truncated).toBe(false)
-	expect(thirdPage.nextStartAfter).toBeNull()
-
-	await expect(meter.purge()).resolves.toEqual({ ok: true })
-	expect(await meter.readStorageBytes()).toEqual({
-		outcome: 'needs_bootstrap',
-	})
-	expect(await meter.exportCounters({})).toEqual({
-		counters: [],
-		storageBytesState: null,
+	expect(firstPage).toMatchObject({
+		truncated: true,
+		nextStartAfter: expect.any(String),
+		storageBytesState: {
+			bytes: 11,
+			revision: 3,
+			updatedAt: '2026-07-31T17:02:00.000Z',
+			mirrorUpdatedAt: userMeterMirrorUpdatedAtToken(3),
+		},
 		deletionState: {
 			deletingAt: null,
 			activeWriteLeaseCount: 0,
 			writeLeases: [],
 		},
 		inboundConnectionLastUsed: [],
-		nextStartAfter: null,
-		truncated: false,
 	})
+	expect(firstPage.counters).toHaveLength(2)
+
+	const secondPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: firstPage.nextStartAfter,
+	})
+	expect(secondPage).toMatchObject({
+		truncated: true,
+		nextStartAfter: expect.any(String),
+		storageBytesState: null,
+		deletionState: null,
+		inboundConnectionLastUsed: null,
+	})
+	expect(secondPage.counters).toHaveLength(2)
+
+	const thirdPage = await meter.exportCounters({
+		pageSize: 2,
+		startAfter: secondPage.nextStartAfter,
+	})
+	expect(thirdPage).toMatchObject({ truncated: false, nextStartAfter: null })
+	expect(thirdPage.counters).toHaveLength(2)
+
+	await expect(meter.purge()).resolves.toEqual({ ok: true })
+	expect(await meter.readStorageBytes()).toEqual({
+		outcome: 'needs_bootstrap',
+	})
+	expect(await meter.exportCounters({})).toEqual(emptyExport())
 }, 30_000)
 
 test('UserMeter deletion leases: mark, acquire, release, repair, export, and purge tombstone', async () => {
-	const userA = await seedFreeUser('meter-deletion-a')
-	const userB = await seedFreeUser('meter-deletion-b')
-	const meterA = userMeterRpc({ env, userId: userA.userId })
-	const meterB = userMeterRpc({ env, userId: userB.userId })
+	const { meter: meterA } = await seedFreeUser('meter-deletion-a')
+	const { meter: meterB } = await seedFreeUser('meter-deletion-b')
+	const tokenA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+	const tokenB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+	const acquire = (
+		meter: typeof meterA,
+		token: string,
+		holder: string,
+		acquiredAt: string,
+	) => meter.acquireWriteLease({ token, holder, acquiredAt })
 
 	// markDeleting preserves tombstone; repeated calls return the first timestamp.
-	const firstMark = await meterA.markDeleting({
-		deletingAt: '2026-08-01 10:00:00',
-	})
-	expect(firstMark).toEqual({
-		deletingAt: '2026-08-01 10:00:00',
-		created: true,
-		leaseCount: 0,
-	})
-	const secondMark = await meterA.markDeleting({
-		deletingAt: '2026-08-01 11:00:00',
-	})
-	expect(secondMark).toEqual({
+	expect(
+		await meterA.markDeleting({ deletingAt: '2026-08-01 10:00:00' }),
+	).toEqual({ deletingAt: '2026-08-01 10:00:00', created: true, leaseCount: 0 })
+	expect(
+		await meterA.markDeleting({ deletingAt: '2026-08-01 11:00:00' }),
+	).toEqual({
 		deletingAt: '2026-08-01 10:00:00',
 		created: false,
 		leaseCount: 0,
@@ -993,70 +799,43 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	expect(await meterA.clearDeleting()).toEqual({ cleared: true })
 	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
 	expect(await meterA.clearDeleting()).toEqual({ cleared: false })
-	const thirdMark = await meterA.markDeleting({
-		deletingAt: '2026-08-01 12:00:00',
-	})
-	expect(thirdMark.created).toBe(true)
 	expect(
-		await meterA.clearDeleting({
-			expectedDeletingAt: '2026-08-01 10:00:00',
-		}),
+		(await meterA.markDeleting({ deletingAt: '2026-08-01 12:00:00' })).created,
+	).toBe(true)
+	expect(
+		await meterA.clearDeleting({ expectedDeletingAt: '2026-08-01 10:00:00' }),
 	).toEqual({ cleared: false })
 	expect(await meterA.readDeletionState()).toEqual({
 		deletingAt: '2026-08-01 12:00:00',
 	})
 	expect(
-		await meterA.clearDeleting({
-			expectedDeletingAt: '2026-08-01 12:00:00',
-		}),
+		await meterA.clearDeleting({ expectedDeletingAt: '2026-08-01 12:00:00' }),
 	).toEqual({ cleared: true })
-	const rematch = await meterA.markDeleting({
-		deletingAt: '2026-08-01 10:00:00',
-	})
-	expect(rematch).toEqual({
-		deletingAt: '2026-08-01 10:00:00',
-		created: true,
-		leaseCount: 0,
-	})
+	expect(
+		await meterA.markDeleting({ deletingAt: '2026-08-01 10:00:00' }),
+	).toEqual({ deletingAt: '2026-08-01 10:00:00', created: true, leaseCount: 0 })
 
 	// acquireWriteLease is idempotent (same token).
-	await expect(
-		meterB.acquireWriteLease({
-			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-			holder: 'test:writer-1',
-			acquiredAt: '2026-08-01 10:05:00',
-		}),
-	).resolves.toEqual({ acquired: true })
-	await expect(
-		meterB.acquireWriteLease({
-			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-			holder: 'test:writer-1',
-			acquiredAt: '2026-08-01 10:05:00',
-		}),
-	).resolves.toEqual({ acquired: true })
-	await expect(
-		meterB.acquireWriteLease({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			holder: 'test:writer-2',
-			acquiredAt: '2026-08-01 10:06:00',
-		}),
-	).resolves.toEqual({ acquired: true })
+	for (const [token, holder, acquiredAt] of [
+		[tokenA, 'test:writer-1', '2026-08-01 10:05:00'],
+		[tokenA, 'test:writer-1', '2026-08-01 10:05:00'],
+		[tokenB, 'test:writer-2', '2026-08-01 10:06:00'],
+	] as const) {
+		await expect(acquire(meterB, token, holder, acquiredAt)).resolves.toEqual({
+			acquired: true,
+		})
+	}
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
-
-	const markedWithActiveWrites = await meterB.markDeleting({
-		deletingAt: '2026-08-01 09:00:00',
-	})
-	expect(markedWithActiveWrites).toEqual({
-		deletingAt: '2026-08-01 09:00:00',
-		created: true,
-		leaseCount: 2,
-	})
+	expect(
+		await meterB.markDeleting({ deletingAt: '2026-08-01 09:00:00' }),
+	).toEqual({ deletingAt: '2026-08-01 09:00:00', created: true, leaseCount: 2 })
 	await expect(
-		meterB.acquireWriteLease({
-			token: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
-			holder: 'test:blocked-during-deletion',
-			acquiredAt: '2026-08-01 10:06:30',
-		}),
+		acquire(
+			meterB,
+			'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+			'test:blocked-during-deletion',
+			'2026-08-01 10:06:30',
+		),
 	).resolves.toEqual({ acquired: false })
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
 
@@ -1064,9 +843,7 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	const listed = await meterB.listWriteLeases({ pageSize: 1 })
 	expect(listed.leases).toHaveLength(1)
 	expect(listed.truncated).toBe(true)
-	expect(listed.leases[0]).toEqual(
-		expect.objectContaining({ token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }),
-	)
+	expect(listed.leases[0]).toEqual(expect.objectContaining({ token: tokenA }))
 	const listedRest = await meterB.listWriteLeases({
 		pageSize: 10,
 		startAfter: listed.nextStartAfter,
@@ -1074,70 +851,54 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	expect(listedRest.leases).toHaveLength(1)
 	expect(listedRest.truncated).toBe(false)
 	expect(listedRest.leases[0]).toEqual(
-		expect.objectContaining({ token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+		expect.objectContaining({ token: tokenB }),
 	)
 
-	// releaseWriteLease removes the row.
-	await expect(
-		meterB.releaseWriteLease({
-			token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-		}),
-	).resolves.toEqual({ released: true })
+	await expect(meterB.releaseWriteLease({ token: tokenA })).resolves.toEqual({
+		released: true,
+	})
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
 
 	// Acquiring on a deleted account is blocked.
 	await expect(
-		meterA.acquireWriteLease({
-			token: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-			holder: 'test:blocked',
-			acquiredAt: '2026-08-01 10:07:00',
-		}),
+		acquire(
+			meterA,
+			'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+			'test:blocked',
+			'2026-08-01 10:07:00',
+		),
 	).resolves.toEqual({ acquired: false })
 
 	// Repair: prepare + finalize (idempotent).
-	const prepared = await meterB.prepareWriteLeaseRepair({
-		token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+	const repairInput = {
+		token: tokenB,
 		expectedAcquiredAt: '2026-08-01 10:06:00',
-	})
+	}
+	const prepared = await meterB.prepareWriteLeaseRepair(repairInput)
 	expect(prepared).toEqual(
 		expect.objectContaining({
 			prepared: true,
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+			token: tokenB,
 			acquiredAt: '2026-08-01 10:06:00',
 		}),
 	)
 	const repairId =
 		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
+	await expect(meterB.prepareWriteLeaseRepair(repairInput)).resolves.toEqual(
+		expect.objectContaining({ prepared: true, repairId }),
+	)
+	await expect(meterB.assertWriteLeaseHeld({ token: tokenB })).resolves.toEqual(
+		{ held: true },
+	)
 	await expect(
-		meterB.prepareWriteLeaseRepair({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			expectedAcquiredAt: '2026-08-01 10:06:00',
-		}),
-	).resolves.toEqual(expect.objectContaining({ prepared: true, repairId }))
-	await expect(
-		meterB.assertWriteLeaseHeld({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-		}),
-	).resolves.toEqual({ held: true })
-	await expect(
-		meterB.finalizeWriteLeaseRepair({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			repairId,
-			expectedAcquiredAt: '2026-08-01 10:06:00',
-		}),
+		meterB.finalizeWriteLeaseRepair({ ...repairInput, repairId }),
 	).resolves.toEqual({ finalized: true })
-	await expect(
-		meterB.assertWriteLeaseHeld({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-		}),
-	).resolves.toEqual({ held: false })
+	await expect(meterB.assertWriteLeaseHeld({ token: tokenB })).resolves.toEqual(
+		{ held: false },
+	)
 	// Idempotent finalize: already gone, returns finalized: true.
 	await expect(
-		meterB.finalizeWriteLeaseRepair({
-			token: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-			repairId,
-			expectedAcquiredAt: '2026-08-01 10:06:00',
-		}),
+		meterB.finalizeWriteLeaseRepair({ ...repairInput, repairId }),
 	).resolves.toEqual({ finalized: true })
 
 	// Export: deletionState emitted on first page only.
@@ -1155,19 +916,21 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		})
 	}
 	const firstPage = await meterA.exportCounters({ pageSize: 1 })
-	expect(firstPage.truncated).toBe(true)
-	expect(firstPage.deletionState).toEqual({
-		deletingAt: '2026-08-01 10:00:00',
-		activeWriteLeaseCount: 0,
-		writeLeases: [],
+	expect(firstPage).toMatchObject({
+		truncated: true,
+		deletionState: {
+			deletingAt: '2026-08-01 10:00:00',
+			activeWriteLeaseCount: 0,
+			writeLeases: [],
+		},
+		inboundConnectionLastUsed: [],
 	})
-	expect(firstPage.inboundConnectionLastUsed).toEqual([])
-	const secondPage = await meterA.exportCounters({
-		pageSize: 1,
-		startAfter: firstPage.nextStartAfter,
-	})
-	expect(secondPage.deletionState).toBeNull()
-	expect(secondPage.inboundConnectionLastUsed).toBeNull()
+	expect(
+		await meterA.exportCounters({
+			pageSize: 1,
+			startAfter: firstPage.nextStartAfter,
+		}),
+	).toMatchObject({ deletionState: null, inboundConnectionLastUsed: null })
 
 	// Purge resets counters but preserves the deletion tombstone.
 	await expect(meterA.purge()).resolves.toEqual({ ok: true })
@@ -1178,33 +941,23 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	expect(await meterA.read({ resource: 'email_sends_per_day', day })).toEqual({
 		outcome: 'needs_bootstrap',
 	})
-	expect(await meterA.exportCounters({})).toEqual({
-		counters: [],
-		storageBytesState: null,
-		deletionState: {
-			deletingAt: '2026-08-01 10:00:00',
-			activeWriteLeaseCount: 0,
-			writeLeases: [],
-		},
-		inboundConnectionLastUsed: [],
-		nextStartAfter: null,
-		truncated: false,
-	})
+	expect(await meterA.exportCounters({})).toEqual(
+		emptyExport('2026-08-01 10:00:00'),
+	)
 	await expect(
-		meterA.acquireWriteLease({
-			token: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
-			holder: 'test:post-purge',
-			acquiredAt: '2026-08-01 13:00:00',
-		}),
+		acquire(
+			meterA,
+			'ffffffff-ffff-4fff-8fff-ffffffffffff',
+			'test:post-purge',
+			'2026-08-01 13:00:00',
+		),
 	).resolves.toEqual({ acquired: false })
 
 	expect(await meterB.readDeletionState()).toEqual({
 		deletingAt: '2026-08-01 09:00:00',
 	})
 	await expect(
-		meterB.markDeleting({
-			deletingAt: '2026-08-01 15:00:00',
-		}),
+		meterB.markDeleting({ deletingAt: '2026-08-01 15:00:00' }),
 	).resolves.toEqual({
 		deletingAt: '2026-08-01 09:00:00',
 		created: false,
@@ -1214,101 +967,156 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 }, 30_000)
 
 test('UserMeter inbound MCP last-used touches debounce, list, forget, export, and purge', async () => {
-	const user = await seedFreeUser('meter-inbound-last-used')
-	const other = await seedFreeUser('meter-inbound-last-used-other')
-	const meter = userMeterRpc({ env, userId: user.userId })
-	const otherMeter = userMeterRpc({ env, userId: other.userId })
+	const { meter } = await seedFreeUser('meter-inbound-last-used')
+	const { meter: otherMeter } = await seedFreeUser(
+		'meter-inbound-last-used-other',
+	)
 	const clientId = 'https://cursor.com/oauth/vG4-last-used/client.json'
 	const firstUsedAt = '2026-03-20T12:00:00.000Z'
 	const withinWindow = '2026-03-20T12:04:59.000Z'
 	const afterWindow = '2026-03-20T12:05:01.000Z'
+	const touch = (lastUsedAt: string) =>
+		meter.touchInboundConnectionLastUsed({ clientId, lastUsedAt })
+	const otherEntries = [{ clientId: 'other-client', lastUsedAt: afterWindow }]
 
-	await expect(
-		meter.touchInboundConnectionLastUsed({
-			clientId,
-			lastUsedAt: firstUsedAt,
-		}),
-	).resolves.toEqual({ updated: true })
-	await expect(
-		meter.touchInboundConnectionLastUsed({
-			clientId,
-			lastUsedAt: withinWindow,
-		}),
-	).resolves.toEqual({ updated: false })
+	await expect(touch(firstUsedAt)).resolves.toEqual({ updated: true })
+	await expect(touch(withinWindow)).resolves.toEqual({ updated: false })
 	expect(await meter.listInboundConnectionLastUsed()).toEqual([
 		{ clientId, lastUsedAt: firstUsedAt },
 	])
-	await expect(
-		meter.touchInboundConnectionLastUsed({
-			clientId,
-			lastUsedAt: afterWindow,
-		}),
-	).resolves.toEqual({ updated: true })
+	await expect(touch(afterWindow)).resolves.toEqual({ updated: true })
 	expect(await meter.listInboundConnectionLastUsed()).toEqual([
 		{ clientId, lastUsedAt: afterWindow },
 	])
 	await expect(
-		otherMeter.touchInboundConnectionLastUsed({
-			clientId: 'other-client',
-			lastUsedAt: afterWindow,
-		}),
+		otherMeter.touchInboundConnectionLastUsed(otherEntries[0]!),
 	).resolves.toEqual({ updated: true })
-	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
-		{ clientId: 'other-client', lastUsedAt: afterWindow },
-	])
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual(otherEntries)
 
 	const day = utcDayKey()
 	for (const resource of [
 		'email_sends_per_day',
 		'email_receives_per_day',
 	] as const) {
-		await meter.initialize({
-			resource,
-			day,
-			count: 1,
-			updatedAt: afterWindow,
-		})
+		await meter.initialize({ resource, day, count: 1, updatedAt: afterWindow })
 	}
 	const firstPage = await meter.exportCounters({ pageSize: 1 })
 	expect(firstPage.truncated).toBe(true)
 	expect(firstPage.inboundConnectionLastUsed).toEqual([
 		{ clientId, lastUsedAt: afterWindow },
 	])
-	const secondPage = await meter.exportCounters({
-		pageSize: 1,
-		startAfter: firstPage.nextStartAfter,
-	})
-	expect(secondPage.inboundConnectionLastUsed).toBeNull()
+	expect(
+		(
+			await meter.exportCounters({
+				pageSize: 1,
+				startAfter: firstPage.nextStartAfter,
+			})
+		).inboundConnectionLastUsed,
+	).toBeNull()
 
 	await expect(
 		meter.forgetInboundConnectionLastUsed({ clientId }),
 	).resolves.toEqual({ ok: true })
 	expect(await meter.listInboundConnectionLastUsed()).toEqual([])
-	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
-		{ clientId: 'other-client', lastUsedAt: afterWindow },
-	])
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual(otherEntries)
 
-	await expect(
-		meter.touchInboundConnectionLastUsed({
-			clientId,
-			lastUsedAt: afterWindow,
-		}),
-	).resolves.toEqual({ updated: true })
+	await expect(touch(afterWindow)).resolves.toEqual({ updated: true })
 	await expect(meter.purge()).resolves.toEqual({ ok: true })
 	expect(await meter.listInboundConnectionLastUsed()).toEqual([])
-	expect(await meter.exportCounters({})).toEqual({
-		counters: [],
-		storageBytesState: null,
-		deletionState: {
-			deletingAt: null,
-			activeWriteLeaseCount: 0,
-			writeLeases: [],
-		},
-		inboundConnectionLastUsed: [],
-		nextStartAfter: null,
-		truncated: false,
-	})
-	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual([
-		{ clientId: 'other-client', lastUsedAt: afterWindow },
-	])
+	expect(await meter.exportCounters({})).toEqual(emptyExport())
+	expect(await otherMeter.listInboundConnectionLastUsed()).toEqual(otherEntries)
 }, 30_000)
+
+test('UserMeter budget spend resets on UTC month rollover', async () => {
+	const { userId, meter } = await seedFreeUser('budget-meter')
+	const month = '2026-02'
+	const nextMonth = '2026-03'
+	await meter.assertWithinBudgetAndRecord({
+		month,
+		actorUserId: userId,
+		automationSource: null,
+		deltaMicroUsd: 1_000_000,
+		userBudgetMicroUsd: null,
+		automationBudgetMicroUsd: null,
+	})
+	await meter.assertWithinBudgetAndRecord({
+		month,
+		actorUserId: null,
+		automationSource: 'webhook',
+		deltaMicroUsd: 2_000_000,
+		userBudgetMicroUsd: null,
+		automationBudgetMicroUsd: null,
+	})
+	expect(await meter.getBudgetSpend({ month })).toEqual({
+		month,
+		users: { [userId]: 1_000_000 },
+		automationMicroUsd: 2_000_000,
+	})
+	expect(await meter.getBudgetSpend({ month: nextMonth })).toEqual({
+		month: nextMonth,
+		users: {},
+		automationMicroUsd: 0,
+	})
+})
+
+test('UserMeter budget enforcement separates user and automation limits', async () => {
+	const { userId, meter } = await seedFreeUser('budget-enforce')
+	const month = utcMonthKey(new Date())
+	await expect(
+		meter.assertWithinBudgetAndRecord({
+			month,
+			actorUserId: userId,
+			automationSource: null,
+			deltaMicroUsd: 0,
+			userBudgetMicroUsd: 1_000_000,
+			automationBudgetMicroUsd: null,
+			actorUsername: 'member',
+			orgSlug: 'team',
+		}),
+	).resolves.toBeDefined()
+	await meter.assertWithinBudgetAndRecord({
+		month,
+		actorUserId: userId,
+		automationSource: null,
+		deltaMicroUsd: 1_000_000,
+		userBudgetMicroUsd: 1_000_000,
+		automationBudgetMicroUsd: null,
+		actorUsername: 'member',
+		orgSlug: 'team',
+	})
+	const atUserBudget = await catchError(
+		meter.assertWithinBudgetAndRecord({
+			month,
+			actorUserId: userId,
+			automationSource: null,
+			deltaMicroUsd: 0,
+			userBudgetMicroUsd: 1_000_000,
+			automationBudgetMicroUsd: null,
+			actorUsername: 'member',
+			orgSlug: 'team',
+		}),
+	)
+	expect(atUserBudget).toMatchObject({ name: 'BudgetLimitError' })
+
+	await meter.assertWithinBudgetAndRecord({
+		month,
+		actorUserId: null,
+		automationSource: 'schedule',
+		deltaMicroUsd: 500_000,
+		userBudgetMicroUsd: null,
+		automationBudgetMicroUsd: 500_000,
+		orgSlug: 'team',
+	})
+	const overAutomation = await catchError(
+		meter.assertWithinBudgetAndRecord({
+			month,
+			actorUserId: null,
+			automationSource: 'schedule',
+			deltaMicroUsd: 1,
+			userBudgetMicroUsd: null,
+			automationBudgetMicroUsd: 500_000,
+			orgSlug: 'team',
+		}),
+	)
+	expect(overAutomation).toMatchObject({ name: 'BudgetLimitError' })
+})

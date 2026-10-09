@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { getOauthLoginErrorMessage } from '#universal/oauth-login-errors.ts'
 import { on } from '#client/event-mixin.ts'
 import { ProviderIcon } from '#client/provider-icons.tsx'

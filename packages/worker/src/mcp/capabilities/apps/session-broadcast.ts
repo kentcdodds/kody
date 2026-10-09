@@ -10,6 +10,7 @@ export const sessionBroadcastCapability = defineDomainCapability(
 	capabilityDomainNames.apps,
 	{
 		name: 'sessionBroadcast',
+		orgPermission: 'app:execute',
 		description:
 			'Broadcast a realtime websocket event to connected package app sessions, optionally scoped by facet or topic.',
 		keywords: ['apps', 'websocket', 'realtime', 'session', 'broadcast'],

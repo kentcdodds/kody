@@ -3,6 +3,8 @@ import { isRetryableCloudflareFailure } from './ci/resource-utils.ts'
 
 export const wranglerDeployRetryMaxAttempts = 4
 export const wranglerDeployRetryBaseDelayMs = 1_000
+export const wranglerD1MigrationsRetryMaxAttempts = 3
+export const wranglerD1MigrationsRetryBaseDelayMs = 10_000
 
 export function isRetryableWorkersDevSubdomainRace(output: string) {
 	const uploaded = /uploaded\s+\S+/i.test(output)
@@ -17,6 +19,10 @@ export function isRetryableWranglerDeployFailure(output: string) {
 		isRetryableWorkersDevSubdomainRace(output) ||
 		isRetryableCloudflareFailure(output)
 	)
+}
+
+export function isWranglerD1MigrationsApply(args: ReadonlyArray<string>) {
+	return args[0] === 'd1' && args[1] === 'migrations' && args[2] === 'apply'
 }
 
 export type WranglerDeployRunResult = {
@@ -93,11 +99,13 @@ export async function runWranglerDeployWithRetry(input: {
 	args: ReadonlyArray<string>
 	env?: NodeJS.ProcessEnv
 	maxAttempts?: number
+	baseDelayMs?: number
 	sleep?: (ms: number) => Promise<void>
 	run?: WranglerDeployRun
 	log?: (line: string) => void
 }) {
 	const maxAttempts = input.maxAttempts ?? wranglerDeployRetryMaxAttempts
+	const baseDelayMs = input.baseDelayMs ?? wranglerDeployRetryBaseDelayMs
 	const wait =
 		input.sleep ??
 		((ms: number) =>
@@ -117,9 +125,9 @@ export async function runWranglerDeployWithRetry(input: {
 		const combined = `${last.output} ${last.errorMessage}`
 		if (!isRetryableWranglerDeployFailure(combined)) return last
 		log(
-			`Retrying wrangler deploy (attempt ${attempt + 1}/${maxAttempts}) after a transient Cloudflare deploy race.`,
+			`Retrying wrangler (attempt ${attempt + 1}/${maxAttempts}) after a transient Cloudflare failure.`,
 		)
-		await wait(wranglerDeployRetryBaseDelayMs * 2 ** (attempt - 1))
+		await wait(baseDelayMs * 2 ** (attempt - 1))
 		last = await run(input.command, input.args, input.env)
 	}
 	return last

@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { buildAuthLink } from '#client/auth-links.ts'
 import { formatCommunityPublishedDate } from '#universal/community-display.ts'
 import { type ProfileShellLoaderData } from '#universal/loader-data.ts'

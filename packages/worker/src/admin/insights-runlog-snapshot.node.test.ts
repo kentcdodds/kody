@@ -17,8 +17,6 @@ const runLogMocks = vi.hoisted(() => ({
 				userId: string
 			}) => Promise<RunLogAdminInsightsSnapshot>
 		>(),
-	inFlight: 0,
-	maxInFlight: 0,
 }))
 
 vi.mock('#worker/run-records/service.ts', () => ({
@@ -73,68 +71,66 @@ function createUsersDb(
 	} as unknown as D1Database
 }
 
-test('refreshAdminInsightsRunLogSnapshot writes a content-free KV snapshot and bounds concurrency', async () => {
-	runLogMocks.inFlight = 0
-	runLogMocks.maxInFlight = 0
-	runLogMocks.getAdminInsightsSnapshot.mockImplementation(async (input) => {
-		runLogMocks.inFlight += 1
-		runLogMocks.maxInFlight = Math.max(
-			runLogMocks.maxInFlight,
-			runLogMocks.inFlight,
-		)
-		await Promise.resolve()
-		runLogMocks.inFlight -= 1
-		if (input.userId === 'user-a') {
-			return {
-				workflowStatusCounts: [{ status: 'complete', count: 2 }],
-				jobRunCounts: { success: 3, error: 1 },
-				activationMilestones: [
-					{
-						milestone: 'package_run_succeeded',
-						reachedAt: '2026-09-10T12:00:00.000Z',
-						packageId: 'opaque-pkg',
-					},
-				],
-			}
-		}
-		return emptySnapshot()
-	})
-	const kv = createMemoryKv()
-	const now = new Date('2026-09-10T18:00:00.000Z')
-	const snapshot = await refreshAdminInsightsRunLogSnapshot({
-		env: {
-			APP_DB: createUsersDb([
-				{
-					stable_user_id: 'user-a',
-					email_verified_at: '2026-09-01T00:00:00.000Z',
-				},
-				{
-					stable_user_id: 'user-b',
-					email_verified_at: '2026-09-02T00:00:00.000Z',
-				},
-			]),
-			BUNDLE_ARTIFACTS_KV: kv,
-		} as Env,
+function verifiedUser(stable_user_id: string) {
+	return { stable_user_id, email_verified_at: '2026-09-01T00:00:00.000Z' }
+}
+
+const now = new Date('2026-09-10T18:00:00.000Z')
+
+function refresh(
+	users: Array<ReturnType<typeof verifiedUser>>,
+	kv: KVNamespace | undefined,
+) {
+	return refreshAdminInsightsRunLogSnapshot({
+		env: { APP_DB: createUsersDb(users), BUNDLE_ARTIFACTS_KV: kv } as Env,
 		now,
 	})
+}
 
-	expect(snapshot.workflowRuns).toBe(2)
-	expect(snapshot.jobSuccessRuns).toBe(3)
-	expect(snapshot.packageRunSucceededUsers).toBe(1)
-	expect(snapshot.complete).toBe(true)
-	expect(snapshot.snapshotUpdatedAt).toBe(now.toISOString())
-	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
-	expect(runLogMocks.maxInFlight).toBeLessThanOrEqual(
-		adminInsightsRunLogConcurrency,
+test('refreshAdminInsightsRunLogSnapshot writes a content-free KV snapshot and bounds concurrency', async () => {
+	let inFlight = 0
+	let maxInFlight = 0
+	runLogMocks.getAdminInsightsSnapshot.mockImplementation(async (input) => {
+		inFlight += 1
+		maxInFlight = Math.max(maxInFlight, inFlight)
+		await Promise.resolve()
+		inFlight -= 1
+		if (input.userId !== 'user-a') return emptySnapshot()
+		return {
+			workflowStatusCounts: [{ status: 'complete', count: 2 }],
+			jobRunCounts: { success: 3, error: 1 },
+			activationMilestones: [
+				{
+					milestone: 'package_run_succeeded',
+					reachedAt: '2026-09-10T12:00:00.000Z',
+					packageId: 'opaque-pkg',
+				},
+			],
+		}
+	})
+	const kv = createMemoryKv()
+	const snapshot = await refresh(
+		[verifiedUser('user-a'), verifiedUser('user-b')],
+		kv,
 	)
+
+	expect(snapshot).toMatchObject({
+		workflowRuns: 2,
+		jobSuccessRuns: 3,
+		packageRunSucceededUsers: 1,
+		complete: true,
+		snapshotUpdatedAt: now.toISOString(),
+	})
+	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(2)
+	expect(maxInFlight).toBeLessThanOrEqual(adminInsightsRunLogConcurrency)
 	expect(kv.store.get(adminInsightsRunLogSnapshotKvKey)).not.toContain(
 		'opaque-pkg',
 	)
-
-	const read = await readAdminInsightsRunLogSnapshot(kv)
-	expect(read.workflowRuns).toBe(2)
-	expect(read.snapshotUpdatedAt).toBe(now.toISOString())
-	expect(read.complete).toBe(true)
+	expect(await readAdminInsightsRunLogSnapshot(kv)).toMatchObject({
+		workflowRuns: 2,
+		snapshotUpdatedAt: now.toISOString(),
+		complete: true,
+	})
 })
 
 test('readAdminInsightsRunLogSnapshot degrades when KV is missing or empty', async () => {
@@ -144,27 +140,14 @@ test('readAdminInsightsRunLogSnapshot degrades when KV is missing or empty', asy
 		workflowRuns: 0,
 	})
 	expect(await readAdminInsightsRunLogSnapshot(createMemoryKv())).toMatchObject(
-		{
-			complete: false,
-			snapshotUpdatedAt: null,
-		},
+		{ complete: false, snapshotUpdatedAt: null },
 	)
 })
 
 test('refreshAdminInsightsRunLogSnapshot throws when BUNDLE_ARTIFACTS_KV is missing', async () => {
-	await expect(
-		refreshAdminInsightsRunLogSnapshot({
-			env: {
-				APP_DB: createUsersDb([
-					{
-						stable_user_id: 'user-a',
-						email_verified_at: '2026-09-01T00:00:00.000Z',
-					},
-				]),
-			} as Env,
-			now: new Date('2026-09-10T18:00:00.000Z'),
-		}),
-	).rejects.toThrow(/BUNDLE_ARTIFACTS_KV is required/)
+	await expect(refresh([verifiedUser('user-a')], undefined)).rejects.toThrow(
+		/BUNDLE_ARTIFACTS_KV is required/,
+	)
 })
 
 test('refreshAdminInsightsRunLogSnapshot throws when the KV write fails', async () => {
@@ -173,67 +156,36 @@ test('refreshAdminInsightsRunLogSnapshot throws when the KV write fails', async 
 	kv.put = async () => {
 		throw new Error('kv write failed')
 	}
-	await expect(
-		refreshAdminInsightsRunLogSnapshot({
-			env: {
-				APP_DB: createUsersDb([
-					{
-						stable_user_id: 'user-a',
-						email_verified_at: '2026-09-01T00:00:00.000Z',
-					},
-				]),
-				BUNDLE_ARTIFACTS_KV: kv,
-			} as Env,
-			now: new Date('2026-09-10T18:00:00.000Z'),
-		}),
-	).rejects.toThrow(/kv write failed/)
+	await expect(refresh([verifiedUser('user-a')], kv)).rejects.toThrow(
+		/kv write failed/,
+	)
 })
 
 test('refreshAdminInsightsRunLogSnapshot caps per-tick fanout and marks the snapshot incomplete', async () => {
-	runLogMocks.getAdminInsightsSnapshot.mockReset()
 	runLogMocks.getAdminInsightsSnapshot.mockResolvedValue(emptySnapshot())
 	const kv = createMemoryKv()
 	const users = Array.from(
 		{ length: adminInsightsRunLogMaxUsersPerTick + 1 },
-		(_, index) => ({
-			stable_user_id: `user-${String(index + 1).padStart(4, '0')}`,
-			email_verified_at: '2026-09-01T00:00:00.000Z',
-		}),
+		(_, index) => verifiedUser(`user-${String(index + 1).padStart(4, '0')}`),
 	)
-	const snapshot = await refreshAdminInsightsRunLogSnapshot({
-		env: {
-			APP_DB: createUsersDb(users),
-			BUNDLE_ARTIFACTS_KV: kv,
-		} as Env,
-		now: new Date('2026-09-10T18:00:00.000Z'),
-	})
-
-	expect(snapshot.complete).toBe(false)
-	expect(snapshot.usersAttempted).toBe(adminInsightsRunLogMaxUsersPerTick)
+	const capped = {
+		complete: false,
+		usersAttempted: adminInsightsRunLogMaxUsersPerTick,
+	}
+	expect(await refresh(users, kv)).toMatchObject(capped)
 	expect(runLogMocks.getAdminInsightsSnapshot).toHaveBeenCalledTimes(
 		adminInsightsRunLogMaxUsersPerTick,
 	)
-	const stored = JSON.parse(
-		kv.store.get(adminInsightsRunLogSnapshotKvKey) ?? '{}',
-	) as { complete: boolean; usersAttempted: number }
-	expect(stored.complete).toBe(false)
-	expect(stored.usersAttempted).toBe(adminInsightsRunLogMaxUsersPerTick)
+	expect(
+		JSON.parse(kv.store.get(adminInsightsRunLogSnapshotKvKey) ?? '{}'),
+	).toMatchObject(capped)
 })
 
 test('foldRunLogSnapshots still reports partial fanout without user content', () => {
 	const folded = foldRunLogSnapshots([
+		{ user: verifiedUser('u1'), snapshot: emptySnapshot() },
 		{
-			user: {
-				stable_user_id: 'u1',
-				email_verified_at: '2026-07-01T00:00:00.000Z',
-			},
-			snapshot: emptySnapshot(),
-		},
-		{
-			user: {
-				stable_user_id: 'u2',
-				email_verified_at: null,
-			},
+			user: { stable_user_id: 'u2', email_verified_at: null },
 			snapshot: null,
 		},
 	])

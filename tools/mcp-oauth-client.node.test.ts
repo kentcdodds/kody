@@ -12,6 +12,7 @@ import {
 	readCookieHeader,
 	readStringField,
 	registerOAuthClient,
+	resolveAppMcpAuth,
 	usernameFromEmail,
 } from './mcp-oauth-client.ts'
 
@@ -177,11 +178,220 @@ test('OAuth helpers log in, register a client, authorize, and exchange a code', 
 	)
 	expect(requests).toEqual([
 		'POST /auth',
+		'POST /oauth/register',
+		'POST /oauth/authorize',
+		'POST /oauth/token',
+	])
+
+	const cachedRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			cachedRequests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			response.statusCode = 500
+			response.end('should not be called')
+		},
+		async (origin) => {
+			const session = await resolveAppMcpAuth(
+				origin,
+				{
+					email: 'me@kentcdodds.com',
+					username: 'me',
+					password: 'ilikecode',
+				},
+				{
+					cookieHeader: 'kody_session=cached',
+					oauth: {
+						clientId: 'client-1',
+						clientSecret: 'secret-1',
+						redirectUri: 'http://127.0.0.1/oauth/callback',
+						accessToken: 'token-1',
+					},
+				},
+			)
+			expect(session).toEqual({
+				cookieHeader: 'kody_session=cached',
+				oauth: {
+					clientId: 'client-1',
+					clientSecret: 'secret-1',
+					redirectUri: 'http://127.0.0.1/oauth/callback',
+					accessToken: 'token-1',
+				},
+			})
+		},
+	)
+	expect(cachedRequests).toEqual([])
+
+	const mintRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			mintRequests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			void readRequestBody(request).then((rawBody) => {
+				if (request.method === 'POST' && url.pathname === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/register') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							client_id: 'client-2',
+							client_secret: 'secret-2',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/authorize') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							redirectTo:
+								'http://127.0.0.1/oauth/callback?code=auth-code-2&state=kody-mcp-e2e-state',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/token') {
+					void rawBody
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ access_token: 'token-2' }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			})
+		},
+		async (origin) => {
+			const session = await resolveAppMcpAuth(origin, {
+				email: 'me@kentcdodds.com',
+				username: 'me',
+				password: 'ilikecode',
+			})
+			expect(session.cookieHeader).toBe('kody_session=fresh')
+			expect(session.oauth.accessToken).toBe('token-2')
+			expect(session.oauth.clientId).toBe('client-2')
+		},
+	)
+	expect(mintRequests).toEqual([
 		'POST /auth',
 		'POST /oauth/register',
 		'POST /oauth/authorize',
 		'POST /oauth/token',
 	])
+
+	const staleCookieRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			staleCookieRequests.push(
+				`${request.method ?? 'GET'} ${url.pathname} ${request.headers.cookie ?? ''}`,
+			)
+			void readRequestBody(request).then((rawBody) => {
+				if (request.method === 'POST' && url.pathname === '/oauth/authorize') {
+					if (request.headers.cookie === 'kody_session=stale') {
+						response.statusCode = 401
+						response.end('stale session')
+						return
+					}
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							redirectTo:
+								'http://127.0.0.1/oauth/callback?code=auth-code-3&state=kody-mcp-e2e-state',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/auth') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true }))
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/register') {
+					response.setHeader('Content-Type', 'application/json')
+					response.end(
+						JSON.stringify({
+							client_id: 'client-3',
+							client_secret: 'secret-3',
+						}),
+					)
+					return
+				}
+				if (request.method === 'POST' && url.pathname === '/oauth/token') {
+					void rawBody
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ access_token: 'token-3' }))
+					return
+				}
+				response.statusCode = 404
+				response.end('missing')
+			})
+		},
+		async (origin) => {
+			const session = await resolveAppMcpAuth(
+				origin,
+				{
+					email: 'me@kentcdodds.com',
+					username: 'me',
+					password: 'ilikecode',
+				},
+				{ cookieHeader: 'kody_session=stale' },
+			)
+			expect(session.cookieHeader).toBe('kody_session=fresh')
+			expect(session.oauth.accessToken).toBe('token-3')
+		},
+	)
+	expect(staleCookieRequests).toEqual([
+		'POST /oauth/register ',
+		'POST /oauth/authorize kody_session=stale',
+		'POST /auth ',
+		'POST /oauth/authorize kody_session=fresh',
+		'POST /oauth/token ',
+	])
+
+	const signupFirstRequests: Array<string> = []
+	await withMockOrigin(
+		(request, response) => {
+			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+			signupFirstRequests.push(`${request.method ?? 'GET'} ${url.pathname}`)
+			void readRequestBody(request).then((rawBody) => {
+				if (request.method !== 'POST' || url.pathname !== '/auth') {
+					response.statusCode = 404
+					response.end('missing')
+					return
+				}
+				const body = JSON.parse(rawBody) as { mode?: string }
+				if (body.mode === 'login') {
+					response.statusCode = 401
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ error: 'Invalid email or password.' }))
+					return
+				}
+				if (body.mode === 'signup') {
+					response.setHeader('Set-Cookie', 'kody_session=fresh; Path=/')
+					response.setHeader('Content-Type', 'application/json')
+					response.end(JSON.stringify({ ok: true, mode: 'signup' }))
+					return
+				}
+				response.statusCode = 400
+				response.end('unexpected auth mode')
+			})
+		},
+		async (origin) => {
+			await expect(
+				loginToApp(origin, {
+					email: 'new@example.com',
+					username: 'new-user',
+					password: 'ilikecode',
+				}),
+			).resolves.toBe('kody_session=fresh')
+		},
+	)
+	expect(signupFirstRequests).toEqual(['POST /auth', 'POST /auth'])
 
 	await withMockOrigin(
 		(_request, response) => {

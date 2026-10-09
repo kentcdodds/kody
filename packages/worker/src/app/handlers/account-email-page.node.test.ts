@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as EmailDestinations from '#worker/email/destinations.ts'
 import { createAccountEmailHandler } from '#app/handlers/account-email.ts'
 import { loadAccountEmailData } from '#app/account-email-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
@@ -18,8 +19,7 @@ vi.mock('#app/account-email-data.ts', () => ({
 }))
 
 vi.mock('#worker/email/destinations.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/email/destinations.ts')>()
+	const actual = await importOriginal<typeof EmailDestinations>()
 	return {
 		...actual,
 		listEmailNotificationDestinations: vi.fn(),

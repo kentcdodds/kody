@@ -12,25 +12,29 @@ import {
 	type WorkflowEvent,
 	type WorkflowStep,
 } from 'cloudflare:workers'
+import { NonRetryableError } from 'cloudflare:workflows'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
+import {
+	parseRequestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import {
 	readPreExecutionPackageInvocationInfrastructureCode,
 	readRetryablePackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
-import {
-	createExecutePackageInvokeTools,
-	createPackageRuntimeInvokeTools,
-	invokePackageExport,
-} from '#worker/package-invocations/service.ts'
+import { invokePackageExport } from '#worker/package-invocations/service.ts'
 import { packageWorkflowInvocationSource } from './package-invocation-sources.ts'
-import {
-	getSavedPackageById,
-	getSavedPackageByKodyId,
-} from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import {
+	AccountSuspendedError,
+	accountSuspendedErrorCode,
+	isAccountSuspendedError,
+} from '#worker/account/account-suspension.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import {
 	beginRunRecord,
@@ -47,8 +51,10 @@ import {
 import {
 	creatingWorkflowProjectionStatus,
 	isWorkflowBindingName,
+	workflowProjectionReservationStatuses,
 	type WorkflowBindingName,
 } from '#worker/run-records/workflow-projection.ts'
+import { runRecordMaxPageSize } from '#worker/run-records/types.ts'
 import { isTransientDurableObjectResetError } from '#worker/durable-object-reset-retry.ts'
 import { UserCodeError } from '#worker/user-code-error.ts'
 import { inlineWorkflowNameFallback } from '#universal/workflow-display.ts'
@@ -120,6 +126,7 @@ export type DynamicCallableWorkflowPayload =
 			runAt: string
 			planDate: string | null
 			params?: PackageWorkflowParams
+			lineage?: RequestLineage
 	  }
 	| {
 			version: 3
@@ -136,6 +143,7 @@ export type DynamicCallableWorkflowPayload =
 			runAt: string
 			planDate: string | null
 			params?: PackageWorkflowParams
+			lineage?: RequestLineage
 	  }
 
 export type WorkflowRunInspection = {
@@ -210,6 +218,18 @@ type DynamicCallableWorkflowStep = {
 }
 
 const packageWorkflowTokenId = 'internal:package-workflows'
+
+/**
+ * Instances created before payloads carried lineage run as Automation, which
+ * has no actor and so can only narrow what the starter could do.
+ */
+function workflowRequestSource(
+	payload: DynamicCallableWorkflowPayload,
+): RequestSource {
+	return payload.lineage
+		? { kind: 'inherited', lineage: payload.lineage }
+		: { kind: 'platform-event', sourceId: packageWorkflowTokenId }
+}
 const maxPackageWorkflowParamsJsonBytes = 16 * 1024
 const workflowStatusRefreshTtlMs = 30_000
 const knownWorkflowStatusValues = [
@@ -388,6 +408,7 @@ function createInlineWorkflowPayload(input: {
 	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
+	lineage: RequestLineage | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
 	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
@@ -406,6 +427,7 @@ function createInlineWorkflowPayload(input: {
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
+		...(input.lineage ? { lineage: input.lineage } : {}),
 	}
 }
 
@@ -420,6 +442,7 @@ function createDynamicPackageWorkflowPayload(input: {
 	runAt?: string | Date
 	params?: PackageWorkflowParams | null
 	planDate?: string | null
+	lineage: RequestLineage | null
 }): DynamicCallableWorkflowPayload {
 	const runAt = normalizeRunAt(input.runAt)
 	const idempotencyKey = normalizeWorkflowIdempotencyKey(input.idempotencyKey)
@@ -441,6 +464,7 @@ function createDynamicPackageWorkflowPayload(input: {
 		runAt,
 		planDate: input.planDate?.trim() || createPackageWorkflowPlanDate(runAt),
 		...(params === undefined ? {} : { params }),
+		...(input.lineage ? { lineage: input.lineage } : {}),
 	}
 }
 
@@ -455,6 +479,7 @@ function validateDynamicCallableWorkflowPayload(
 	const params = normalizePackageWorkflowParams(
 		record['params'] as PackageWorkflowParams | null | undefined,
 	)
+	const lineage = parseRequestLineage(record['lineage'])
 	if (sourceType === 'inline') {
 		if (record['version'] !== 3) {
 			throw new Error('Inline workflow payload version must be 3.')
@@ -507,6 +532,7 @@ function validateDynamicCallableWorkflowPayload(
 			params,
 			planDate:
 				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+			lineage,
 		})
 	}
 	if (sourceType === 'package') {
@@ -525,6 +551,7 @@ function validateDynamicCallableWorkflowPayload(
 			params,
 			planDate:
 				typeof record['planDate'] === 'string' ? record['planDate'] : null,
+			lineage,
 		})
 	}
 	throw new Error('Dynamic callable workflow payload sourceType is invalid.')
@@ -872,6 +899,7 @@ async function resolveWorkflowPayload(input: {
 		sourceId?: string | null
 	} | null
 	body: PackageWorkflowCreateInput
+	lineage: RequestLineage
 }): Promise<DynamicCallableWorkflowPayload> {
 	const body = input.body as PackageWorkflowCreateInput &
 		Record<string, unknown>
@@ -885,6 +913,7 @@ async function resolveWorkflowPayload(input: {
 			idempotencyKey: input.body.idempotencyKey,
 			runAt: input.body.runAt,
 			params: input.body.params,
+			lineage: input.lineage,
 		})
 	}
 	const packageIdOrKodyId =
@@ -895,15 +924,10 @@ async function resolveWorkflowPayload(input: {
 			'workflows.create requires packageId when exportName is used outside package runtime context.',
 		)
 	}
-	const savedPackage =
-		(await getSavedPackageById(input.env.APP_DB, {
-			userId: input.userId,
-			packageId: packageIdOrKodyId,
-		})) ??
-		(await getSavedPackageByKodyId(input.env.APP_DB, {
-			userId: input.userId,
-			kodyId: packageIdOrKodyId,
-		}))
+	const savedPackage = await resolveSavedPackageRef(input.env.APP_DB, {
+		userId: input.userId,
+		ref: packageIdOrKodyId,
+	})
 	if (!savedPackage) {
 		throw new Error(
 			`Package "${packageIdOrKodyId}" was not found or is not owned by the current user.`,
@@ -919,6 +943,7 @@ async function resolveWorkflowPayload(input: {
 		idempotencyKey: input.body.idempotencyKey,
 		runAt: input.body.runAt,
 		params: input.body.params,
+		lineage: input.lineage,
 	})
 }
 
@@ -932,6 +957,8 @@ export async function createDynamicCallableWorkflow(input: {
 		sourceId?: string | null
 	} | null
 	body: PackageWorkflowCreateInput
+	/** The run that starts the workflow; every step inherits it. */
+	lineage: RequestLineage
 }): Promise<PackageWorkflowCreateResult> {
 	const env = input.env as Env
 	const workflowBinding = resolveWorkflowEngineBinding(
@@ -1275,7 +1302,46 @@ export async function cancelWorkflowRunForUser(input: {
 	// worked; report the effective cancelled status to the caller while the
 	// row self-heals to the engine's terminal status on the next
 	// listWorkflowRunsForUser refresh.
-	return { outcome: 'cancelled', run: { ...projectedRun, status: 'cancelled' } }
+	return {
+		outcome: 'cancelled',
+		run: { ...projectedRun, status: 'cancelled' },
+	}
+}
+
+/**
+ * Terminate every non-terminal workflow run the user owns (account deletion).
+ * Each run goes through {@link cancelWorkflowRunForUser}, so a run that is
+ * still `creating` throws and the caller retries instead of leaving an engine
+ * instance running after the account's storage is purged.
+ */
+export async function cancelActiveWorkflowRunsForUser(input: {
+	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
+	userId: string
+}): Promise<number> {
+	const env = input.env as Env
+	let cancelled = 0
+	for (const status of workflowProjectionReservationStatuses) {
+		let cursor: string | null = null
+		do {
+			const page = await listWorkflowProjections({
+				env,
+				userId: input.userId,
+				status,
+				cursor,
+				limit: runRecordMaxPageSize,
+			})
+			for (const projection of page.projections) {
+				const result = await cancelWorkflowRunForUser({
+					env,
+					userId: input.userId,
+					workflowRunId: projection.id,
+				})
+				if (result.outcome === 'cancelled') cancelled += 1
+			}
+			cursor = page.nextCursor
+		} while (cursor)
+	}
+	return cancelled
 }
 
 export async function listWorkflowRunsForUser(input: {
@@ -1386,13 +1452,25 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					: 'execute inline workflow code',
 				workflowStepDoConfig,
 				async () => {
-					if (payload.sourceType === 'package') {
-						return await this.invokePackageWorkflowExport(
+					try {
+						if (payload.sourceType === 'package') {
+							return await this.invokePackageWorkflowExport(
+								payload,
+								event.instanceId,
+							)
+						}
+						return await this.invokeInlineWorkflowCode(
 							payload,
 							event.instanceId,
 						)
+					} catch (error) {
+						// Suspension stays in force across step retries, so fail the
+						// step once instead of waiting out the retry backoff.
+						if (isAccountSuspendedError(error)) {
+							throw new NonRetryableError(error.message, error.name)
+						}
+						throw error
 					}
-					return await this.invokeInlineWorkflowCode(payload, event.instanceId)
 				},
 			)
 		} catch (error) {
@@ -1453,6 +1531,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					entityId: input.instanceId,
 					durationMs: Date.now() - input.startedAtMs,
 					outcome: input.outcome,
+					actorUserId: '',
+					automationSource: 'schedule',
 				})
 				return { ok: true }
 			},
@@ -1498,6 +1578,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 					userId: payload.userId,
 					packageId: payload.packageId,
 					exportNames: [payload.exportName],
+					request: workflowRequestSource(payload),
 				},
 				request: {
 					packageIdOrKodyId: payload.packageId,
@@ -1510,6 +1591,11 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				ephemeral: true,
 				executorTimeoutMs: workflowExecutorTimeoutMs,
 			})
+			if (
+				readWorkflowInvocationErrorCode(response) === accountSuspendedErrorCode
+			) {
+				throw new AccountSuspendedError()
+			}
 			if (response.status < 200 || response.status >= 300) {
 				throwWorkflowInvocationFailure(response)
 			}
@@ -1563,24 +1649,8 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						storageId: null,
 					}
 				: null,
+			source: workflowRequestSource(payload),
 		})
-		// Inline workflow sandboxes use the same execute module loader, including
-		// packages.invoke. Package-created inline code keeps package-runtime
-		// provenance; execute-created inline code uses the execute invoke path.
-		const packageInvokeTools = payload.packageContext
-			? createPackageRuntimeInvokeTools({
-					env: this.env,
-					baseUrl: callerContext.baseUrl,
-					callerContext,
-					packageContext: payload.packageContext,
-					waitUntil,
-				})
-			: createExecutePackageInvokeTools({
-					env: this.env,
-					baseUrl: callerContext.baseUrl,
-					callerContext,
-					waitUntil,
-				})
 		const runHandle = beginRunRecord({
 			env: this.env,
 			userId: payload.userId,
@@ -1605,7 +1675,6 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 				payload.params,
 				{
 					packageContext: payload.packageContext,
-					packageInvokeTools,
 					executorTimeoutMs: workflowExecutorTimeoutMs,
 					runSurface: 'workflow',
 				},

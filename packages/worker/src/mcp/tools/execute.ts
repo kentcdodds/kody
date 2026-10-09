@@ -6,11 +6,13 @@ import {
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { resolveCallerFeatureFlags } from '#mcp/capabilities/access-control.ts'
+import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
 import {
 	executeInvokeFieldDescription,
 	executeInvokeFlagKey,
 	executeToolDescriptionWithInvoke,
-	resolveExecuteModuleSource,
+	buildExecuteAttributionMetadata,
+	resolveExecuteModule,
 } from '#mcp/execute-invoke.ts'
 import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import {
@@ -28,6 +30,7 @@ import {
 	validateDownstreamMcpContentBlocks,
 } from '#mcp/downstream-mcp-result.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import { getInboundRequestSignal } from '#mcp/inbound-request-signal.ts'
 import { runModuleWithRegistry } from '#mcp/run-kody-registry.ts'
 import { type McpRegistrationAgent } from '#mcp/mcp-registration-agent.ts'
 import { createProgressReporter, type McpToolCallExtra } from '#mcp/progress.ts'
@@ -57,7 +60,6 @@ import {
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
-import { createExecutePackageInvokeTools } from '#worker/package-invocations/service.ts'
 import {
 	abandonRunRecord,
 	claimRunRecord,
@@ -344,11 +346,19 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// flag here so a kill-switch applies on the next call even
 				// when a legacy session still has invoke in its tool list.
 				const liveFlags = await resolveCallerFeatureFlags(env, callerContext)
-				const resolvedCode = resolveExecuteModuleSource({
+				const resolvedModule = resolveExecuteModule({
 					code,
 					invoke,
 					invokeEnabled: liveFlags[executeInvokeFlagKey] === true,
 				})
+				const executeAttribution = buildExecuteAttributionMetadata({
+					entry: resolvedModule.entry,
+					invoke: resolvedModule.invoke,
+				})
+				const executeRunMetadata = {
+					conversationId: resolvedConversationId,
+					...executeAttribution,
+				}
 
 				// Daily execute quota, consumed before claim/bundling/sandbox
 				// so over-limit calls cost nothing and do not poison a key.
@@ -359,6 +369,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						userId: callerContext.user.userId,
 						email: callerContext.user.email,
 						resource: 'execute_calls_per_day',
+						orgBudget: callerContext.request
+							? {
+									orgId: callerContext.request.org.id,
+									orgSlug: callerContext.request.org.slug,
+									actorUserId: callerContext.request.actor?.userId ?? null,
+									actorUsername: callerContext.request.actor?.username ?? null,
+								}
+							: undefined,
 					})
 				}
 
@@ -371,9 +389,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							name: null,
 							storageId: activeStorageId,
 							idempotencyKey: normalizedIdempotencyKey,
-							metadata: {
-								conversationId: resolvedConversationId,
-							},
+							metadata: executeRunMetadata,
 						},
 					})
 					if (!claim) {
@@ -417,41 +433,45 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						},
 					},
 					async () => {
-						const packageInvokeTools = callerContext.user?.userId
-							? await createExecutePackageInvokeTools({
-									env,
-									baseUrl: callerContext.baseUrl,
-									callerContext,
-									conversationId: resolvedConversationId,
-									waitUntil,
-								})
-							: undefined
 						try {
-							return await runModuleWithRegistry(
-								env,
-								callerContext,
-								resolvedCode,
-								params,
-								{
-									executorExports: agent.getLoopbackExports(),
-									capabilityRegistry: registry,
-									packageInvokeTools,
-									rawFetchHostSink: rawFetchHosts.sink,
-									conversationId: resolvedConversationId,
-									runRecordHandle: claimedRunHandle,
-									waitUntil,
-									reportProgress: reportProgress ?? undefined,
-									runRecord: {
-										surface: 'execute',
-										name: null,
-										storageId: activeStorageId,
-										idempotencyKey: normalizedIdempotencyKey,
-										metadata: {
+							const inboundSignal = getInboundRequestSignal()
+							const execution = runWithRequestPermissions(
+								{ env, request: callerContext.request },
+								async () =>
+									runModuleWithRegistry(
+										env,
+										callerContext,
+										resolvedModule.code,
+										params,
+										{
+											executorExports: agent.getLoopbackExports(),
+											capabilityRegistry: registry,
+											rawFetchHostSink: rawFetchHosts.sink,
 											conversationId: resolvedConversationId,
+											runRecordHandle: claimedRunHandle,
+											waitUntil,
+											reportProgress: reportProgress ?? undefined,
+											signal: inboundSignal,
+											runRecord: {
+												surface: 'execute',
+												name: null,
+												storageId: activeStorageId,
+												idempotencyKey: normalizedIdempotencyKey,
+												metadata: executeRunMetadata,
+											},
 										},
-									},
-								},
+									),
 							)
+							// Client disconnect cancels the request task. Keep
+							// the sandbox promise alive so its abort handler can
+							// finish the run record.
+							waitUntil?.(
+								execution.then(
+									() => undefined,
+									() => undefined,
+								),
+							)
+							return await execution
 						} catch (cause) {
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
@@ -496,8 +516,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					callerContext,
 					conversationId: resolvedConversationId,
 					hostCounts: rawFetchHosts.hostCounts(),
-					usedIntegrationAuthHelpers:
-						codeUsesIntegrationAuthHelpers(resolvedCode),
+					usedIntegrationAuthHelpers: codeUsesIntegrationAuthHelpers(
+						resolvedModule.code,
+					),
 				})
 				const runId =
 					typeof result.runId === 'string'

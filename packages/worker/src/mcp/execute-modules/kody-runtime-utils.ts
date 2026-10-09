@@ -1,4 +1,5 @@
 import { kodyCallDispatcherName } from '#worker/kody-evaluate-bindings.ts'
+import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import {
 	assertIntegrationHostAllowed,
 	IntegrationHostNotAllowedError,
@@ -61,16 +62,22 @@ export type OAuthClientCredentialsInput = {
 
 export const secretHeaders = {
 	basic(input: BasicAuthSecretHeaderInput) {
+		const username = parseSecretNameOrPlaceholder(
+			input.usernameSecret,
+			'usernameSecret',
+		)
+		const password = parseSecretNameOrPlaceholder(
+			input.passwordSecret,
+			'passwordSecret',
+		)
 		return buildBasicAuthSecretPlaceholder({
-			usernameSecret: normalizeSecretName(
-				input.usernameSecret,
-				'usernameSecret',
-			),
-			passwordSecret: normalizeSecretName(
-				input.passwordSecret,
-				'passwordSecret',
-			),
-			scope: normalizeOptionalSecretScope(input.scope),
+			usernameSecret: username.name,
+			passwordSecret: password.name,
+			scope: resolveBasicAuthSecretScope({
+				explicitScope: input.scope,
+				usernameScope: username.scope,
+				passwordScope: password.scope,
+			}),
 		})
 	},
 }
@@ -92,30 +99,46 @@ async function refreshIntegrationTokensHostSide(
 	}
 	const result = (await tokenRefresh({ name: providerName })) as {
 		ok?: unknown
+		refreshed?: unknown
 	} | null
 	if (result?.ok !== true) {
 		throw new Error(
 			`Host-side token refresh for integration "${providerName}" did not succeed.`,
 		)
 	}
+	return result.refreshed !== false
 }
 
 export async function createAuthenticatedFetch(
 	kody: KodyNamespace,
 	providerName: string,
+	options?: {
+		/**
+		 * Outbound fetch implementation. Cloud / package-app sandboxes omit this
+		 * so ambient `fetch` hits the fetch gateway. CapabilityProxy local
+		 * execute passes `executeGatewayFetch` so placeholders expand on origin
+		 * and long-lived OAuth tokens never enter local workerd.
+		 */
+		fetch?: typeof globalThis.fetch
+	},
 ): Promise<
 	(input: ExecuteRequestInput, init?: RequestInit) => Promise<Response>
 > {
 	const integration = await readIntegrationConfig(kody, providerName)
+	const doFetch = options?.fetch ?? fetch
 
 	// Both lanes refresh host-side (integrationTokenRefresh) and retry with
 	// a placeholder header the gateway resolves to the fresh token, so the
 	// raw token never enters the sandbox. The user lane enforces each
 	// secret's allowed_hosts against the token URL host-side — the same
 	// containment the gateway applied when this refresh ran in-sandbox.
+	// Null when the connection has nothing to refresh (non-expiring grant);
+	// retrying with the same token would only repeat the failure.
 	const retryAuthorizationHeader = async () => {
-		await refreshIntegrationTokensHostSide(kody, providerName)
-		return buildAccessTokenAuthorizationHeader(providerName, integration)
+		const refreshed = await refreshIntegrationTokensHostSide(kody, providerName)
+		return refreshed
+			? buildAccessTokenAuthorizationHeader(providerName, integration)
+			: null
 	}
 
 	return async (input: ExecuteRequestInput, init?: RequestInit) => {
@@ -126,7 +149,7 @@ export async function createAuthenticatedFetch(
 		const retryRequest: Request = request.clone() as Request
 		let response: Response
 		try {
-			response = await fetch(
+			response = await doFetch(
 				createBearerRequest(
 					request,
 					buildAccessTokenAuthorizationHeader(providerName, integration),
@@ -134,21 +157,97 @@ export async function createAuthenticatedFetch(
 			)
 		} catch (error) {
 			if (!isMissingAccessTokenSecretError(error, providerName)) throw error
-			return fetch(
-				createBearerRequest(retryRequest, await retryAuthorizationHeader()),
-			)
+			const retryAuthorization = await retryAuthorizationHeader()
+			if (!retryAuthorization) throw error
+			return doFetch(createBearerRequest(retryRequest, retryAuthorization))
 		}
-		if (response.status !== 401) return response
+		if (!(await responseIndicatesAuthFailure(response, integration))) {
+			return response
+		}
 
+		const retryAuthorization = await retryAuthorizationHeader()
+		if (!retryAuthorization) return response
 		await response.body?.cancel()
-		return fetch(
-			createBearerRequest(retryRequest, await retryAuthorizationHeader()),
+		return doFetch(createBearerRequest(retryRequest, retryAuthorization))
+	}
+}
+
+const SLACK_AUTH_ERROR_CODES = new Set([
+	'token_expired',
+	'token_revoked',
+	'invalid_auth',
+	'not_authed',
+])
+
+function isSlackIntegration(integration: IntegrationConfig) {
+	if (integration.name.startsWith('slack')) return true
+	const apiBaseUrl = integration.apiBaseUrl ?? ''
+	if (hostLooksLikeSlack(apiBaseUrl)) return true
+	return (integration.requiredHosts ?? []).some((host) =>
+		hostLooksLikeSlack(host),
+	)
+}
+
+function hostLooksLikeSlack(value: string) {
+	const lower = value.toLowerCase()
+	return lower.includes('slack.com') || lower.includes('files.slack.com')
+}
+
+/**
+ * Detect auth failures that should trigger host-side refresh+retry.
+ * Always treats HTTP 401 as auth failure. For Slack integrations, also
+ * treats Web API `{ok:false}` auth error codes and files.slack.com HTML
+ * login redirects (dead token) as auth failures. Clones before reading
+ * JSON so non-auth ok:false bodies stay intact on the original response.
+ */
+async function responseIndicatesAuthFailure(
+	response: Response,
+	integration: IntegrationConfig,
+) {
+	if (response.status === 401) return true
+	if (!isSlackIntegration(integration)) return false
+
+	const contentType = response.headers.get('content-type') ?? ''
+	if (isSlackFilesHtmlLoginResponse(response, contentType)) return true
+
+	if (!contentType.toLowerCase().includes('application/json')) return false
+	try {
+		const body = (await response.clone().json()) as unknown
+		if (!body || typeof body !== 'object' || Array.isArray(body)) return false
+		const record = body as { ok?: unknown; error?: unknown }
+		return (
+			record.ok === false &&
+			typeof record.error === 'string' &&
+			SLACK_AUTH_ERROR_CODES.has(record.error)
 		)
+	} catch {
+		return false
+	}
+}
+
+function isSlackFilesHtmlLoginResponse(
+	response: Response,
+	contentType: string,
+) {
+	if (!contentType.toLowerCase().includes('text/html')) return false
+	try {
+		return new URL(response.url).hostname === 'files.slack.com'
+	} catch {
+		return false
 	}
 }
 
 export async function oauthClientCredentials(
 	input: OAuthClientCredentialsInput,
+	options?: {
+		/**
+		 * Outbound fetch implementation. Cloud / package-app sandboxes omit this
+		 * so ambient `fetch` hits the fetch gateway. CapabilityProxy local
+		 * execute passes `executeGatewayFetch` so secret placeholders expand on
+		 * origin and secret values never enter local workerd.
+		 */
+		fetch?: typeof globalThis.fetch
+	},
 ): Promise<Record<string, unknown>> {
 	const authStyle = (input.authStyle ?? 'basic') as string
 	if (authStyle !== 'basic') {
@@ -171,7 +270,8 @@ export async function oauthClientCredentials(
 			scope: input.scope,
 		}),
 	)
-	const response = await fetch(input.tokenUrl, {
+	const doFetch = options?.fetch ?? fetch
+	const response = await doFetch(input.tokenUrl, {
 		method: 'POST',
 		headers,
 		body: body.toString(),
@@ -241,21 +341,29 @@ function buildBasicAuthSecretPlaceholder(input: {
 		: `{{secret-basic:username=${input.usernameSecret},password=${input.passwordSecret}}}`
 }
 
-function normalizeSecretName(value: string, fieldName: string) {
-	const normalized = value.trim()
-	if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
-		throw new Error(
-			`${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.`,
-		)
-	}
-	return normalized
-}
-
 function normalizeOptionalSecretScope(scope: SecretScope | null | undefined) {
 	if (scope == null) return null
 	if (scope === 'package' || scope === 'session' || scope === 'user')
 		return scope
 	throw new Error(`Unsupported secret scope "${scope}".`)
+}
+
+function resolveBasicAuthSecretScope(input: {
+	explicitScope: SecretScope | null | undefined
+	usernameScope: SecretScope | null
+	passwordScope: SecretScope | null
+}) {
+	const explicit = normalizeOptionalSecretScope(input.explicitScope)
+	if (explicit != null) return explicit
+	const { usernameScope, passwordScope } = input
+	if (usernameScope == null) return passwordScope
+	if (passwordScope == null) return usernameScope
+	if (usernameScope !== passwordScope) {
+		throw new Error(
+			'usernameSecret and passwordSecret opaque refs disagree on scope. Pass scope explicitly or use matching refs.',
+		)
+	}
+	return usernameScope
 }
 
 function resolveRequestUrl(
@@ -404,27 +512,66 @@ const __kodyIsMissingAccessTokenSecretError = (error, providerName) => {
       \`Integration "\${providerName}" does not have a stored access token.\`
   );
 };
-const __kodyNormalizeSecretName = (value, fieldName) => {
-  const normalized = String(value ?? '').trim();
-  if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) {
+const __kodyParseSecretNameOrPlaceholder = (value, fieldName) => {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed) {
     throw new Error(
-      \`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens.\`,
+      \`\${fieldName} is required.\`,
     );
   }
-  return normalized;
+  if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+    const match = /^\\{\\{secret:([a-zA-Z0-9._-]+)(?:\\|scope=(session|package|user))?\\}}$/.exec(trimmed);
+    if (!match) {
+      throw new Error(
+        \`\${fieldName} must be a saved secret name or a single {{secret:…}} opaque ref.\`,
+      );
+    }
+    const scope = match[2];
+    return {
+      name: match[1],
+      scope:
+        scope === 'package' || scope === 'session' || scope === 'user'
+          ? scope
+          : null,
+    };
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+    throw new Error(
+      \`\${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens, or a single {{secret:…}} opaque ref.\`,
+    );
+  }
+  return { name: trimmed, scope: null };
 };
 const __kodyNormalizeOptionalSecretScope = (scope) => {
   if (scope == null) return null;
   if (scope === 'package' || scope === 'session' || scope === 'user') return scope;
   throw new Error(\`Unsupported secret scope "\${scope}".\`);
 };
+const __kodyResolveBasicAuthSecretScope = (input) => {
+  const explicit = __kodyNormalizeOptionalSecretScope(input.explicitScope);
+  if (explicit != null) return explicit;
+  const usernameScope = input.usernameScope;
+  const passwordScope = input.passwordScope;
+  if (usernameScope == null) return passwordScope;
+  if (passwordScope == null) return usernameScope;
+  if (usernameScope !== passwordScope) {
+    throw new Error(
+      'usernameSecret and passwordSecret opaque refs disagree on scope. Pass scope explicitly or use matching refs.',
+    );
+  }
+  return usernameScope;
+};
 const __kodyBuildBasicAuthSecretPlaceholder = (input) => {
-  const usernameSecret = __kodyNormalizeSecretName(input.usernameSecret, 'usernameSecret');
-  const passwordSecret = __kodyNormalizeSecretName(input.passwordSecret, 'passwordSecret');
-  const scope = __kodyNormalizeOptionalSecretScope(input.scope);
+  const username = __kodyParseSecretNameOrPlaceholder(input.usernameSecret, 'usernameSecret');
+  const password = __kodyParseSecretNameOrPlaceholder(input.passwordSecret, 'passwordSecret');
+  const scope = __kodyResolveBasicAuthSecretScope({
+    explicitScope: input.scope,
+    usernameScope: username.scope,
+    passwordScope: password.scope,
+  });
   return scope
-    ? \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}|scope=\${scope}}}\`
-    : \`{{secret-basic:username=\${usernameSecret},password=\${passwordSecret}}}\`;
+    ? \`{{secret-basic:username=\${username.name},password=\${password.name}|scope=\${scope}}}\`
+    : \`{{secret-basic:username=\${username.name},password=\${password.name}}}\`;
 };
 const secretHeaders = {
   basic(input) {
@@ -491,6 +638,7 @@ const __kodyRefreshIntegrationTokensHostSide = async (providerName) => {
       \`Host-side token refresh for integration "\${providerName}" did not succeed.\`,
     );
   }
+  return result.refreshed !== false;
 };
 const __kodyCreateAuthenticatedFetch = async (providerName) => {
   const integration = await __kodyReadIntegrationConfig(providerName);
@@ -498,8 +646,10 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
   // gateway resolves to the fresh token, so the raw token never enters the
   // sandbox.
   const retryAuthorizationHeader = async () => {
-    await __kodyRefreshIntegrationTokensHostSide(providerName);
-    return __kodyBuildAccessTokenAuthorizationHeader(providerName, integration);
+    const refreshed = await __kodyRefreshIntegrationTokensHostSide(providerName);
+    return refreshed
+      ? __kodyBuildAccessTokenAuthorizationHeader(providerName, integration)
+      : null;
   };
   return async (input, init) => {
     const resolvedUrl = __kodyResolveRequestUrl(input, integration);
@@ -516,16 +666,61 @@ const __kodyCreateAuthenticatedFetch = async (providerName) => {
       );
     } catch (error) {
       if (!__kodyIsMissingAccessTokenSecretError(error, providerName)) throw error;
-      return fetch(
-        __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
-      );
+      const retryAuthorization = await retryAuthorizationHeader();
+      if (!retryAuthorization) throw error;
+      return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
     }
-    if (response.status !== 401) return response;
+    if (!(await __kodyResponseIndicatesAuthFailure(response, integration))) {
+      return response;
+    }
+    const retryAuthorization = await retryAuthorizationHeader();
+    if (!retryAuthorization) return response;
     await response.body?.cancel();
-    return fetch(
-      __kodyCreateBearerRequest(retryRequest, await retryAuthorizationHeader()),
-    );
+    return fetch(__kodyCreateBearerRequest(retryRequest, retryAuthorization));
   };
+};
+const __kodySlackAuthErrorCodes = new Set([
+  'token_expired',
+  'token_revoked',
+  'invalid_auth',
+  'not_authed',
+]);
+const __kodyHostLooksLikeSlack = (value) => {
+  const lower = String(value ?? '').toLowerCase();
+  return lower.includes('slack.com') || lower.includes('files.slack.com');
+};
+const __kodyIsSlackIntegration = (integration) => {
+  if (String(integration?.name ?? '').startsWith('slack')) return true;
+  if (__kodyHostLooksLikeSlack(integration?.apiBaseUrl ?? '')) return true;
+  return (integration?.requiredHosts ?? []).some((host) =>
+    __kodyHostLooksLikeSlack(host),
+  );
+};
+const __kodyIsSlackFilesHtmlLoginResponse = (response, contentType) => {
+  if (!String(contentType).toLowerCase().includes('text/html')) return false;
+  try {
+    return new URL(response.url).hostname === 'files.slack.com';
+  } catch {
+    return false;
+  }
+};
+const __kodyResponseIndicatesAuthFailure = async (response, integration) => {
+  if (response.status === 401) return true;
+  if (!__kodyIsSlackIntegration(integration)) return false;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (__kodyIsSlackFilesHtmlLoginResponse(response, contentType)) return true;
+  if (!contentType.toLowerCase().includes('application/json')) return false;
+  try {
+    const body = await response.clone().json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+    return (
+      body.ok === false &&
+      typeof body.error === 'string' &&
+      __kodySlackAuthErrorCodes.has(body.error)
+    );
+  } catch {
+    return false;
+  }
 };
 const __kodyOauthClientCredentials = async (input) => {
   const authStyle = input.authStyle ?? 'basic';

@@ -1,13 +1,128 @@
-# Authorization (RBAC)
+# Authorization
 
-Kody is multi-user with strict per-user isolation as the default. Role-based
-access control (RBAC) adds a **narrow, explicitly-guarded exception** for
-deployment operators: permissions with `access = 'any'` allow specific
-account-administration endpoints to cross user boundaries. Operator-owned system
-email for reserved platform addresses is the other deliberate exception: it is
-stored under the reserved `system:email` owner id, not any human account. See
-[Project intent](../project-intent.md) and the `per-user-isolation` invariant in
-[Primitives map](./primitives.yaml).
+Kody has two permission systems, and neither implies the other:
+
+|            | Org access                                             | Site admin                                               |
+| ---------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| Who        | Every user, in their org                               | Kody staff                                               |
+| Vocabulary | `resource-type:action` (`package:read`, `org:execute`) | `action:entity:access` (`read:user:any`), `admin` role   |
+| Checked by | `authorize` (`packages/worker/src/authorization/`)     | `requiredRole` / `requiredPermission`, `require*` guards |
+| Source     | `packages/shared/src/org-permissions.ts`               | `packages/worker/universal/permissions.ts`               |
+
+Being a site admin grants no org permission. Holding every org permission (an
+org Owner) grants nothing site-wide. Say **site admin** for the second system,
+never "operator" or a bare "admin".
+
+## Org access
+
+Every request carries a `RequestContext`
+([Request context](./request-context.md)). One function decides whether it may
+do something:
+
+```ts
+await authorize({ env, request }, 'package:read', {
+	type: 'package',
+	id: saved.id,
+	orgId: request.org.id,
+	label: saved.name,
+})
+```
+
+Without a resource it checks an org-level permission. It throws
+`AuthorizationError` (an `McpCallerError`) naming the denial code, the
+permission, the org, and the resource. `checkPermission` is the same decision,
+synchronous, for callers that already hold the compiled permissions.
+
+`authorize` runs these steps in order:
+
+1. **Signed in.** A request without a person (`request: null`) is denied.
+2. **Org binding.** The resource must belong to `request.org.id` (`wrong_org`).
+3. **Effective permissions.** `computeEffectivePermissions` compiles
+   memberships, team memberships, and grants (`access-compile.ts`): Owner holds
+   every permission; Member and Billing hold their org-level basics plus any
+   direct or team grants; outside collaborators hold `search:read` plus grants
+   (and `org:execute` when they hold `package:execute` somewhere, the ad-hoc
+   rule). Compiled results are stored in `access_cache` and keyed by
+   `orgs.access_epoch`. Automation (no actor) acts for the org that owns the
+   job, webhook, or subscription. The result is also cached per request context.
+4. **Credential scopes.** Non-null `credential.scopes` narrow the result.
+5. **Connection profile.** A bound profile narrows package resources to the
+   packages and actions it lists. Profiles list packages only, so they do not
+   narrow other resources or org-level checks.
+
+A surface check without a resource (capability `orgPermission`, Open API
+`x-kody-permission`) passes when the permission is held at org level **or on any
+resource grant** in the org. A check with a resource requires that resource.
+Personal-org Owners still hold every permission, so steps 2 to 4 never deny for
+them. Profiles and the signed-in step are the other denials that can fire.
+
+### Checking many resources
+
+Lists, search, and background checks compile once and decide per resource:
+
+```ts
+const access = await computeEffectivePermissions({ env, request })
+const visible = packages.filter((pkg) =>
+	canSeeResource(access, reachedPackage(access.orgId, { id: pkg.id })),
+)
+```
+
+- `checkPermission(access, permission, resource)` is one decision.
+- `canSeeResource` is list and search visibility: the request holds some
+  permission on the resource. An execute-only profile still shows the package so
+  it can be invoked; reading its source or skills needs `package:read`.
+- `runWithRequestPermissions` binds the compiled permissions for deep call sites
+  that carry no caller context. Package import resolution reads them with
+  `getRequestPermissions` and checks `package:execute` on each imported package.
+- `reachedPackage` builds the resource for a package a lookup already reached:
+  one the org owns, one delegated through `package_scope`, an accepted share, or
+  a built-in platform package. Delegation and shares run their own checks first,
+  so the package counts as in the request's org until they become an org binding
+  and grants ([#3040](https://github.com/kentcdodds/kody/issues/3040)).
+
+The connection profile comes from `request.credential.profileName`. Automation
+keeps the profile of the credential that created the job or webhook, and a run
+started by another run keeps its starter's profile. Read the profile there,
+never from the wire `connectionProfileName`.
+
+### Surfaces declare their permission
+
+Every capability definition has a required
+`orgPermission: OrgPermission | 'none'`
+(`packages/worker/src/mcp/capabilities/types.ts`), so a capability without one
+does not compile. `defineCapability` checks it at dispatch with
+`authorizeSurface`, after the site-admin and feature-flag gates. Handlers then
+call `authorize` with the concrete resource they touch.
+
+Open API operations publish the same declaration as `x-kody-permission` and in
+each operation's description. Capability operations take it from the capability;
+native operations declare it in `nativeRoute`
+(`packages/worker/src/open-api/operations.ts`).
+
+`none` means the surface touches no org data: who-am-I, static guides,
+discovery, platform feedback, your own tokens, and site-admin tools, which
+`requiredRole` gates instead. `registry.node.test.ts` fails when a site-admin
+capability declares an org permission, and `operations.node.test.ts` fails when
+an operation publishes no valid permission.
+
+API tokens carry org-permission scopes (`org:execute`, `package:read`, …).
+`authorize` step 4 narrows the compiled role by `credential.scopes`. There is no
+write-implies-read hierarchy and no separate `x-kody-scope` check.
+
+Connection profiles remain an org-bound narrowing layer (not folded into
+scopes). A profile is stored with `org_id` and limits package resources listed
+on that credential; it does not replace token scopes.
+
+## Site admin
+
+The rest of this page covers site admin. Kody is multi-user with strict per-user
+isolation as the default. Site-admin RBAC adds a **narrow, explicitly-guarded
+exception** for Kody staff: permissions with `access = 'any'` allow specific
+account-administration endpoints to cross user boundaries. Site-admin-owned
+system email for reserved platform addresses is the other deliberate exception:
+it is stored under the reserved `system:email` owner id, not any human account.
+See [Project intent](../project-intent.md) and the `per-user-isolation`
+invariant in [Primitives map](./primitives.yaml).
 
 User-approved platform feedback is a third narrow exception. A submission
 crosses into the admin review surface only after the user explicitly approves
@@ -22,7 +137,7 @@ secrets, or unrelated account content.
 For browser and MCP authentication mechanics, see
 [Authentication](./authentication.md).
 
-## Model
+### Model
 
 Users have roles. Roles have permissions. A user's effective permissions are the
 **union** of all permissions attached to their roles.
@@ -139,29 +254,27 @@ async handler({ request }) {
 Roles and permissions load **fresh per request** in `readAuthenticatedAppUser`
 (`packages/worker/src/app/authenticated-user.ts`). They are not stored in the
 session cookie, so revocation takes effect immediately. If the roles query fails
-transiently, the lookup fails closed: the user stays authenticated with empty
-roles and permissions until the query recovers (the MCP context lookup behaves
-the same way).
+transiently, the browser lookup fails closed: the user stays authenticated with
+empty roles and permissions until the query recovers (`loadUserAndRoles` in
+`packages/worker/src/app/request-auth-cache.ts`). MCP context throws on that D1
+error, so the request stops. See [MCP context](#mcp-context).
 
 ### Where guards are used
 
-| Route / handler                                                 | Guard                                              |
-| --------------------------------------------------------------- | -------------------------------------------------- |
-| `GET /admin`                                                    | `requireUserWithRole('admin')` → redirect to users |
-| `GET /admin/users`                                              | `requireUserWithRole('admin')`                     |
-| `GET /admin/users.json`                                         | `requireUserWithPermission('read:user:any')`       |
-| `POST /admin/users.json` (roles, plan)                          | `requireUserWithPermission('update:user:any')`     |
-| `GET /admin/roles`                                              | `requireUserWithRole('admin')`                     |
-| `GET /admin/roles.json`                                         | `requireUserWithPermission('read:role:any')`       |
-| `GET /admin/system-email`                                       | `requireUserWithRole('admin')`                     |
-| `GET /admin/system-email.json`                                  | `requireUserWithRole('admin')`                     |
-| `GET /admin/banners`                                            | `requireUserWithRole('admin')`                     |
-| `GET/POST /admin/banners.json`                                  | `requireUserWithRole('admin')`                     |
-| `adminBannerList` / `adminBannerSave` / `adminBannerDelete` MCP | `requiredRole: 'admin'`                            |
+| Route / handler                        | Guard                                              |
+| -------------------------------------- | -------------------------------------------------- |
+| `GET /admin`                           | `requireUserWithRole('admin')` → redirect to users |
+| `GET /admin/users`                     | `requireUserWithRole('admin')`                     |
+| `GET /admin/users.json`                | `requireUserWithPermission('read:user:any')`       |
+| `POST /admin/users.json` (roles, plan) | `requireUserWithPermission('update:user:any')`     |
+| `GET /admin/roles`                     | `requireUserWithRole('admin')`                     |
+| `GET /admin/roles.json`                | `requireUserWithPermission('read:role:any')`       |
+| `GET /admin/system-email`              | `requireUserWithRole('admin')`                     |
+| `GET /admin/system-email.json`         | `requireUserWithRole('admin')`                     |
+| `POST /admin/system-email.json`        | `requireUserWithRole('admin')`                     |
 
 Handlers: `packages/worker/src/app/handlers/admin-users.ts`,
-`packages/worker/src/app/handlers/admin-roles.ts`,
-`packages/worker/src/app/handlers/admin-banners.ts`.
+`packages/worker/src/app/handlers/admin-roles.ts`.
 
 The users list accepts `q` (username/email substring), `role`, and
 `verification=stalled` (unverified person accounts whose latest signup/verify
@@ -224,15 +337,31 @@ the default account out.
 ## MCP context
 
 MCP requests authenticate via OAuth bearer tokens. Roles must **not** ride in
-grant props — they would go stale on revocation.
+grant props. They would go stale on revocation.
 
-Instead, `packages/worker/src/mcp-auth.ts` calls
-`buildMcpUserContextFromGrantProps`
-(`packages/worker/src/mcp-auth-user-context.ts`) when building
-`McpCallerContext`: look up the `users` row by the grant's email, then call
-`getUserRolesAndPermissions`. The shared schema in `packages/shared/src/chat.ts`
-(`mcpUserContextSchema`) includes optional `roles` and `permissions` arrays on
-the user object.
+`mcp-auth.ts` calls `buildMcpUserContextFromGrantProps`
+(`packages/worker/src/mcp-auth-user-context.ts`). The users row is
+`grantProps.userId` (`users.stable_user_id`), then roles for that integer id:
+
+```ts
+const userId = grantProps.userId.trim()
+const row = await env.APP_DB.prepare(
+	`SELECT id, email, username, display_name, stable_user_id,
+		deleting_at, email_verified_at, suspended_at, password_changed_at
+	 FROM users
+	 WHERE stable_user_id = ?`,
+)
+	.bind(userId)
+	.first()
+if (!row || row.deleting_at) return null
+const { roles, permissions } = await getUserRolesAndPermissions(
+	env.APP_DB,
+	row.id,
+)
+```
+
+A missing or blank `userId`, or a deleting account, returns null. A D1 error
+throws.
 
 For capability guards, use `requireMcpUserWithPermission` in
 `packages/worker/src/mcp/capabilities/meta/require-permission.ts`:
@@ -246,6 +375,49 @@ Admin MCP capabilities declare `requiredRole: 'admin'` or an explicit
 ineligible capabilities out of discovery, and the normalized execute-time guard
 is the security boundary. The platform-feedback review capabilities use the role
 gate; they do not create a general-purpose cross-user query helper.
+
+### Background and package callers
+
+Admin role membership is a property of the account, not of an interactive
+session. Package code that runs without a human present acts as the package
+owner and carries that owner's current roles and permissions.
+`resolveBackgroundMcpUser`
+(`packages/worker/src/identity/background-mcp-user.ts`) loads them from D1 with
+`getUserRolesAndPermissions` for every `executionOrigin: 'background'` caller it
+builds: package jobs, inbound webhook handlers, package subscription handlers,
+package exports invoked from other package code, package workflows, and
+retrievers. The per-binding identity cache holds a resolved user for up to 60
+seconds, so a revoked role can still pass background checks until that entry
+expires and the owner is resolved again. Interactive MCP and browser requests
+reload roles on every request.
+
+`requiredRole` / `requiredPermission` checks compare against those roles and do
+not inspect `executionOrigin`. No admin capability has an interactive-only gate,
+so package code owned by an admin can call admin-gated capabilities unattended —
+reads and mutations alike — with the same reach as that admin calling them from
+an MCP session. That includes fleet-wide / cross-user mutations such as
+`adminPackageCodemodApply` (republishes other users' published packages), and
+other high-blast writes such as `adminUserCreate`, `adminFeatureFlagSet`, and
+`adminSystemEmailSend`. Interactive-only gates exist on a few specific non-admin
+capabilities (for example `communityForkAdopt`, `packageAppFetch`,
+`packageSubscriptionDispatch`, and platform-feedback submit); they are
+per-capability contracts, not part of role evaluation. Interactive-only
+`executionOrigin` gates for admin mutations, and separate service principals,
+are deferred designs — not applied as a silent gate on these capabilities.
+
+Package app HTTP handlers and realtime hooks call capabilities through the
+package-app runtime bridge
+(`packages/worker/src/package-runtime/package-app.ts`). The bridge builds its
+caller context from worker props (user id, email, display name) without roles,
+so those direct capability calls do not see admin capabilities. That holds for
+realtime hooks even though the realtime session resolves a role-bearing context
+when it builds the app worker; only identity fields reach the bridge. Package
+exports that app or realtime code invokes run through the background path above
+and do carry the owner's roles.
+
+Treat any package saved on an admin account as running with full admin reach,
+including those mutations. See the residual-risk entry in
+[Security](../security.md#accepted-residual-risks-and-out-of-scope-items).
 
 ## Privacy boundary
 
@@ -313,13 +485,15 @@ warning, and a trusted `/admin/platform-feedback?feedbackId=<encoded id>` deep
 link. The warning and `_untrusted` names require notification handlers to treat
 the text as user-authored data, not instructions. The event omits admin notes,
 reviewer fields, revision, `updated_at`, roles, plan, and unrelated account
-content. Package runtime caller contexts do not carry admin roles, so the fresh
-consumer-time fan-out is the authorization boundary rather than a handler role
-check. This remains a narrow exception only for feedback shown to and explicitly
-approved by the user; it does not grant package runtime general admin roles.
-Username and email are stored submission-time snapshots. Package events never
-resolve mutable live profile data, and persisted feedback rows always carry both
-snapshots.
+content. The fresh consumer-time fan-out is the authorization boundary for who
+receives the event; handlers do not re-check roles. The handler itself runs as
+the admin package owner with that owner's roles (see
+[Background and package callers](#background-and-package-callers)). This remains
+a narrow exception only for feedback shown to and explicitly approved by the
+user; receiving the event grants no role or data access beyond what the owner
+already holds. Username and email are stored submission-time snapshots. Package
+events never resolve mutable live profile data, and persisted feedback rows
+always carry both snapshots.
 
 Submission awaits only Queue enqueue after persistence. An enqueue failure is
 logged without changing the successful response, preventing duplicate feedback
@@ -378,6 +552,14 @@ enqueue this topic. Fan-out, payload redaction, and retry semantics match
 admin owners only, metadata-only listing fields (including canonical
 `public_url`), permanent cancellation for missing or inactive listings, and
 enqueue failures that never fail `communityPublish`.
+
+A republish that moves the pinned commit fans `community.fork.upstream_updated`
+out across accounts, and only to accounts that hold a `community_forks` row for
+that listing. Each forker receives public listing metadata (id, name, package
+name leaf, `public_url`, publisher username, pinned commits and versions) plus
+identifiers of their own fork. The event never carries the publisher's stable
+id, email, or source, and never names other forkers. Delivery goes only to
+packages owned by that forker.
 
 **Admins can subscribe to public status-page incidents.** The isolated status
 worker records component incidents in its own Durable Object, then best-effort
@@ -466,16 +648,19 @@ suppresses repeat pages. Delivery is best-effort (no Queue).
 mail is stored under `system:email` as platform content, not under Kent's or any
 other user's account. Admin reads through MCP (`adminSystemEmailList`,
 `adminSystemEmailGet`) and the `/admin/system-email` UI are audit logged. Admins
-can also **send** from those reserved addresses with `adminSystemEmailSend`
-(also audit logged, with redacted recipients): that channel speaks for the
-platform, so it uses no user mailbox, sender identity, or plan entitlement, and
-it never reads or writes user-owned mail. Stored system mail also fans out
-metadata (never bodies or attachment bytes) on the
-`email.system-message.received` package subscription topic, and only to packages
-saved by users who hold the admin role at dispatch time — a non-admin subscriber
-never receives the event, and revoking admin stops delivery immediately.
-Successful reserved-sender sends fan `email.system-message.sent` the same
-admin-only way. That outbound topic includes the sent correspondence
+can **delete** that operator-owned mail with `adminSystemEmailDelete` (and the
+matching delete action on `/admin/system-email`), which removes the message row,
+attachments, delivery-event rows, blobs, and an empty parent thread — never
+user-owned mailbox content. Admins can also **send** from those reserved
+addresses with `adminSystemEmailSend` (also audit logged, with redacted
+recipients): that channel speaks for the platform, so it uses no user mailbox,
+sender identity, or plan entitlement, and it never reads or writes user-owned
+mail. Stored system mail also fans out metadata (never bodies or attachment
+bytes) on the `email.system-message.received` package subscription topic, and
+only to packages saved by users who hold the admin role at dispatch time — a
+non-admin subscriber never receives the event, and revoking admin stops delivery
+immediately. Successful reserved-sender sends fan `email.system-message.sent`
+the same admin-only way. That outbound topic includes the sent correspondence
 (recipients, subject, and bodies) because those sends are not written to the
 dedicated inbound graph (the graph refuses provider-message-id rows). It does
 not include user-owned mailbox content.
@@ -549,6 +734,8 @@ assignment happens through the admin UI.
 
 ## What to read when changing authorization
 
+- `packages/worker/src/authorization/authorize.ts` — org access check
+- `packages/shared/src/org-permissions.ts` — org permission vocabulary
 - `packages/worker/universal/permissions.ts` — typed registry
 - `packages/worker/src/identity/permissions-db.ts` — D1 queries
 - `packages/worker/src/app/permissions-server.ts` — request guards
@@ -556,4 +743,6 @@ assignment happens through the admin UI.
 - `packages/worker/src/app/handlers/admin-users.ts` — users admin API
 - `packages/worker/src/app/handlers/admin-roles.ts` — roles admin API
 - `packages/worker/src/mcp-auth-user-context.ts` — MCP role loading
+- `packages/worker/src/identity/background-mcp-user.ts` — background package
+  caller role loading
 - `packages/worker/src/mcp/capabilities/meta/require-permission.ts` — MCP guard

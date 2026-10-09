@@ -4,9 +4,10 @@ title: Package authoring
 summary:
   START HERE when creating or materially changing a Kody package: package
   shape, required README.md (human) and AGENTS.md (agent), README Intent
-  section, per-export JSDoc (search Purpose), personal-details hygiene
-  before going public, secret-using package approval checklist, and
-  scope-update guidance without adding new primitives.
+  section, per-export JSDoc (search Purpose), strict runtime input
+  checking for agent-facing exports, personal-details hygiene before going
+  public, secret-using package approval checklist, and scope-update
+  guidance without adding new primitives.
 category: platform
 ---
 
@@ -59,7 +60,10 @@ and confirm before proceeding.
 
 ## Package docs (`README.md` + `AGENTS.md`)
 
-Publish requires two non-empty root files. They are not interchangeable.
+Publish requires two non-empty root files. They are not interchangeable. Package
+docs and export JSDoc are two layers of progressive disclosure for agent
+guidance; see [Where agent guidance lives](./agent-guidance.md) before stuffing
+package specifics into memories or MCP server instructions.
 
 - **`README.md`** — human-focused. What the package does, who it is for,
   prerequisites, setup, and how a person knows it is working. Include a concise
@@ -123,11 +127,13 @@ import main from 'kody:@scope/id'
 
 ## Smoke tests
 
-Call the root export from `execute` after publish.
+After publish, run the module with local CLI execute. When, command, and
+failure: [Local CLI execute](./local-execute.md) (`guide:local_execute`).
 
 ## Edge cases
 
-…
+On exposed exports that publish or send, reject unknown input keys; see
+`guide:package_authoring#runtime-input-checking`.
 ````
 
 ## Export JSDoc
@@ -135,10 +141,14 @@ Call the root export from `execute` after publish.
 Search detail (`entity: "package:…"`) shows an Exports table whose **Purpose**
 column comes from each export's JSDoc. When JSDoc is missing, Purpose falls back
 to the generic string `Package export.` Agents skim that column first when
-choosing among sibling exports.
+choosing among sibling exports. Export-specific limits and call gotchas belong
+here, not in MCP server instructions or account memories
+([Where agent guidance lives](./agent-guidance.md)).
 
 TypeScript types and the export name give call shape when present. They do not
-say **when** or **why** to pick one export over another. README `## Intent` is
+say **when** or **why** to pick one export over another, and on exposed exports
+they do not protect callers who pass plain objects through `execute` (see
+[Runtime input checking](#runtime-input-checking)). README `## Intent` is
 package-scoped and often does not name every export. Neither replaces per-export
 JSDoc.
 
@@ -154,8 +164,7 @@ When you create or materially change a public export:
    it.
 3. Add `@param` for each input.
 4. Add `@returns`.
-5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it. Do
-   not lead with `packages.invoke`.
+5. Add `@example` that **imports** `kody:@scope/id/export` and **calls** it.
 
 If the export's `package.json` `exports` entry has a `types` condition, put the
 JSDoc on that types file — search reads the types module when it exists. JSDoc
@@ -186,6 +195,66 @@ export default async function formatReport(input: {
 
 Treat missing or generic Purpose (`Package export.`) as unfinished work, the
 same as a missing README `## Intent` section.
+
+## Runtime input checking
+
+This rule applies to **exposed exports** — the package surface agents call
+through `execute` with plain objects. Internal helpers and modules can rely on
+TypeScript; do not prescribe Remix Schema or fail-on-unknown for internal code.
+
+On those export boundaries, TypeScript types do not run at call time, so a
+guessed or mistyped key is easy to ship. For exports that publish, send, write
+remote records, or otherwise change external intent, validate inputs at runtime
+and prefer one clear contract.
+
+1. **Fail on unknown keys (strict).** At the export entrypoint, parse the call
+   object with a schema that rejects unrecognized fields. Prefer
+   [`remix/data-schema`](https://www.npmjs.com/package/@remix-run/data-schema)
+   over Zod when choosing a schema library for those boundaries (smaller and
+   faster in Worker isolates). Remix Schema's `object()` strips unknown keys by
+   default — pass `{ unknownKeys: 'error' }` for agent-facing export inputs:
+
+   ```ts
+   import { object, optional, parse, string } from 'remix/data-schema'
+
+   const createPostInput = object(
+   	{
+   		text: string(),
+   		reply: optional(
+   			object({ in_reply_to_tweet_id: string() }, { unknownKeys: 'error' }),
+   		),
+   	},
+   	{ unknownKeys: 'error' },
+   )
+
+   export default async function createPost(raw: unknown) {
+   	const input = parse(createPostInput, raw)
+   	// …
+   }
+   ```
+
+2. **Do not silently strip unknown params when a wrong key could change
+   intent.** Examples: reply vs new post, send vs draft, update vs create. If
+   the caller meant something the schema does not accept, reject with an error
+   that names the unknown key and the accepted shape. Silent drop turns a wrong
+   call into a successful action with the wrong meaning.
+
+3. **One documented contract — no alias sprawl.** Prefer a single canonical
+   field name. If a package intentionally accepts a synonym, map it explicitly
+   in code and document that mapping in export JSDoc (and `AGENTS.md` when it is
+   an agent gotcha). Do not invent broad alias or compat layers for guessed
+   keys.
+
+4. **Surface intent-critical mode in dry-run and confirm results.** When the
+   export supports `dryRun` (or similar preview) or returns a confirmation
+   payload, include the fields that show what will happen — for example that
+   this is a reply to a specific id, or a new standalone post. Agents and humans
+   confirm mode from that result, not from the raw input alone. See
+   [Package lifecycle](./package-lifecycle.md) for when to use `dryRun` before
+   live mutations.
+
+Document the accepted input shape in export JSDoc `@param` / `@example`. Put
+agent-facing gotchas (strict keys, dry-run mode fields) in `AGENTS.md`.
 
 ## Package app routing
 
@@ -322,15 +391,16 @@ When a package will use user-scoped secrets (`{{secret:name}}` placeholders or
 
 1. Ensure each secret exists (open `search({ entity: "guide:connect_secret" })`
    / `search({ entity: "guide:secret_backed_integration" })`).
-2. Self-authored packages and community forks adopted with `communityForkAdopt`
+2. Self-authored packages and community forks the owner adopted on the website
    after a real source review get automatic read/use access to user secrets
    (host approval still applies; `secretSet` / `secretDelete` still need an
    `allowed_packages` grant). After save/publish, read
    `pending_secret_package_approvals` from the tool result — it is non-null only
    for unadopted community forks.
-3. When pending approvals are present, either review the fork source and call
-   `communityForkAdopt` with a `review_summary`, or send the user
-   `bulk_approval_url` / each `approval_url`.
+3. When pending approvals are present, either review the fork source and send
+   the user the `approval_url` from `communityForkAdopt` (only the owner can
+   adopt, on the website), or send the user `bulk_approval_url` / each
+   `approval_url`.
 4. Wait for approval or adoption (when required), then smoke-test from `execute`
    with a static `kody:@scope/package/export` import. Use a read-only export or
    a package-supported dry-run input that actually reads the approved secret
@@ -344,6 +414,42 @@ Host approval (from an earlier ad hoc `execute` smoke test) is separate from
 package approval. Unadopted community-forked packages may need both;
 self-authored and adopted packages still need host approval when outbound calls
 require it.
+
+## Cross-package composition
+
+Call another package export the same way search entity detail shows: import it,
+then call it.
+
+- **Name known when you write the code** → static import, and list the package
+  in `package.json#kody.dependencies` when the call site is package source:
+
+  ```ts
+  import sendMail from 'kody:@scope/mailer/send'
+  await sendMail({ to, subject, text })
+  ```
+
+- **Name is data** (route table, config string, runtime choice) → computed
+  dynamic import:
+
+  ```ts
+  const mod = await import(specifier) // "kody:@scope/package/export"
+  await mod.default(params)
+  ```
+
+- **Exactly-once** → [workflows](../use/workflows.md), not a keyed invoke.
+- **External HTTP clients** → [inbound webhooks](../use/webhooks.md).
+
+README, `AGENTS.md`, and export `@example` blocks follow the same rules: import
+and call. Do not demo a `packages` helper. Package codemod
+`0008-packages-invoke-to-static-import` rewrites literal call sites and
+parseable Markdown examples; ambiguous or keyed sites need a manual edit as
+above.
+
+## Ship Agent Skills
+
+Put `skills/<name>/SKILL.md` (with `name` and `description` frontmatter) in the
+package. Publish validates it and a malformed skill fails the publish. See
+[Ship Agent Skills in a package](./package-skills.md) (`guide:package_skills`).
 
 ## Verify your publish
 

@@ -3,7 +3,7 @@ import {
 	type AccountSecretListItem,
 	type AccountSecretsLoaderData,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -93,7 +93,7 @@ export function AccountSecretsRoute(handle: Handle) {
 	let completedPackageApproval: ApprovalAction | null = null
 	let packageApprovalHref: string | null = null
 	let saveState: 'idle' | 'saving' | 'deleting' = 'idle'
-	let retryTimeout: ReturnType<typeof setTimeout> | null = null
+	let retryTimeout: number | null = null
 	let showSecretValue = false
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AccountSecretsLoaderData | null = null

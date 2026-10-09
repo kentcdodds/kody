@@ -2,7 +2,10 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { toSecretCapabilityOutput } from '#mcp/capabilities/secrets/shared.ts'
 import { listPackageSecretsByPackageIds } from '#mcp/secrets/service.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
@@ -22,12 +25,14 @@ import {
 	authorizeSharedPackagePermission,
 	packageShareAccessErrorMessage,
 } from '#worker/package-registry/share-grants.ts'
+import { authorize, reachedPackage } from '#worker/authorization/authorize.ts'
 import { packageDetailSchema } from './shared.ts'
 
 export const getPackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageGet',
+		orgPermission: 'package:read',
 		description:
 			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, the full export array, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values). For a single export contract, prefer search({ entity: "package:{kodyId}#{subpath}" }). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
 		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
@@ -103,6 +108,12 @@ export const getPackageCapability = defineDomainCapability(
 				}
 				throw new McpCallerError('Saved package not found for this user.')
 			}
+			const request = requireMcpRequest(ctx.callerContext)
+			await authorize(
+				{ env: ctx.env, request },
+				'package:read',
+				reachedPackage(request.org.id, { id: saved.id }),
+			)
 			const loaded = await loadPackageSourceBySourceId({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
@@ -124,6 +135,7 @@ export const getPackageCapability = defineDomainCapability(
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
+				slug: saved.kodyId,
 				name: saved.name,
 				description: saved.description,
 				tags: saved.tags,

@@ -106,6 +106,10 @@ const userOauthAccessTokenPurpose = 'user-oauth-access-token'
 const userOauthRefreshTokenPurpose = 'user-oauth-refresh-token'
 const userOauthClientSecretPurpose = 'user-oauth-client-secret'
 const webhookUrlSecretPurpose = 'webhook-url-secret'
+/** Package-owned HMAC signing material on webhook_endpoints (not user secrets). */
+const webhookHmacSecretPurpose = 'webhook-hmac-secret'
+/** Client-supplied `whsec_` signing secrets on mcp_event_subscriptions. */
+const mcpEventSubscriptionSecretPurpose = 'mcp-event-subscription-secret'
 
 /** AAD context for a user-owned secret ciphertext. */
 export function userSecretContext(userId: string) {
@@ -285,6 +289,85 @@ export async function decryptWebhookUrlSecret(
 		)
 	} catch {
 		throw new Error('Unable to decrypt webhook URL secret.')
+	}
+}
+
+/**
+ * AAD context for package-owned webhook HMAC ciphertext. Same endpoint
+ * identity as the URL secret so rotate/remint keep one binding per row.
+ */
+export function userWebhookHmacSecretContext(
+	userId: string,
+	endpointId: string,
+) {
+	return `user:${userId}:webhook-endpoint:${endpointId}:hmac`
+}
+
+export async function encryptWebhookHmacSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		webhookHmacSecretPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptWebhookHmacSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			webhookHmacSecretPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt webhook HMAC secret.')
+	}
+}
+
+/** AAD context for an MCP event subscription signing secret ciphertext. */
+export function userMcpEventSubscriptionSecretContext(
+	userId: string,
+	subscriptionId: string,
+) {
+	return `user:${userId}:mcp-event-subscription:${subscriptionId}`
+}
+
+export async function encryptMcpEventSubscriptionSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		mcpEventSubscriptionSecretPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptMcpEventSubscriptionSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			mcpEventSubscriptionSecretPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt MCP event subscription secret.')
 	}
 }
 

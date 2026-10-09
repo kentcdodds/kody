@@ -19,6 +19,10 @@ Drive-wide access need those scopes on the client you own.
 For a teaching walkthrough of Gmail inbox reading as an interactive agent
 transcript, see [google-oauth.md](../google-oauth.md).
 
+For drafts the agent must not send, watch
+[Make your agent safe and autonomous](https://www.youtube.com/watch?v=_EJTrJFLa3g).
+The written version is [Gmail drafts without send](../locked-gmail-drafts.md).
+
 ## What you get
 
 Once connected, you can ask Kody things like:

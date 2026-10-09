@@ -41,7 +41,10 @@ export function createAuthPageHandler(
 			// page: the enabled-provider list is deployment configuration,
 			// not per-user data, so there is nothing to lazily load.
 			// Document title/OG come from the shared registry by pathname
-			// (`/login` vs `/signup`).
+			// (`/login` vs `/signup`). Anonymous HTML is viewer-independent
+			// (no CSRF token, no session embed) and shares the marketing
+			// edge-cache path; a session cookie redirects above or forces
+			// no-store via resolveAppPageCacheControl.
 			return renderAppPage({
 				request,
 				env,

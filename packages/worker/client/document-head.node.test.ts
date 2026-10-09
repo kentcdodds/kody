@@ -75,7 +75,7 @@ test('doc artwork and blog posts route Open Graph cards through generated paths'
 		'https://kody.codes',
 	)
 	expect(guide.canonicalUrl).toBe('https://kody.codes/docs/kody-factory')
-	expect(guide.og.imageUrl).toBe('https://kody.codes/docs/kody-factory/og.png')
+	expect(guide.og?.imageUrl).toBe('https://kody.codes/docs/kody-factory/og.png')
 
 	// The introduction is canonical at /docs whether it was requested there or
 	// at its slug URL.
@@ -124,7 +124,7 @@ test('doc artwork and blog posts route Open Graph cards through generated paths'
 			'https://kody.codes',
 		)
 		expect(head.canonicalUrl).toBe('https://kody.codes/blog/kody-vs-executor')
-		expect(head.og.imageUrl).toBe(
+		expect(head.og?.imageUrl).toBe(
 			'https://kody.codes/blog/kody-vs-executor/og.png',
 		)
 	}
@@ -147,27 +147,23 @@ test('doc artwork and blog posts route Open Graph cards through generated paths'
 		}),
 		'https://kody.codes',
 	)
-	expect(withoutArt.og.imageUrl).toBe(
+	expect(withoutArt.og?.imageUrl).toBe(
 		'https://kody.codes/blog/your-assistants-home/og.png',
 	)
 })
 
-test('a missing public package uses the shared not-found title', () => {
+test('missing public packages and their settings use the shared not-found title', () => {
+	const notFound = {
+		communityDetailShell: { ok: false, notFound: true },
+	} as const
+	const cases: Array<[pathname: string, pendingTitle: string]> = [
+		['/@bad/bad-404', 'Package'],
+		['/@bad/bad-404/settings', 'Package settings'],
+	]
 	expect(
-		resolveDocumentTitle('/@bad/bad-404', {
-			communityDetailShell: { ok: false, notFound: true },
-		}),
-	).toBe(NOT_FOUND_DOCUMENT_TITLE)
-	expect(resolveDocumentTitle('/@bad/bad-404')).toBe('Package')
-})
-
-test('missing package settings use the shared not-found title', () => {
-	expect(
-		resolveDocumentTitle('/@bad/bad-404/settings', {
-			communityDetailShell: { ok: false, notFound: true },
-		}),
-	).toBe(NOT_FOUND_DOCUMENT_TITLE)
-	expect(resolveDocumentTitle('/@bad/bad-404/settings')).toBe(
-		'Package settings',
-	)
+		cases.map(([pathname]) => [
+			resolveDocumentTitle(pathname, notFound),
+			resolveDocumentTitle(pathname),
+		]),
+	).toEqual(cases.map(([, pending]) => [NOT_FOUND_DOCUMENT_TITLE, pending]))
 })

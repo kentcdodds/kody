@@ -2,13 +2,10 @@ import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
 	dispatchAdminPackageSubscriptionEvent,
+	loadMatchingPackageSubscriptions,
 	readPreExecutionPackageInvocationInfrastructureCode,
 } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { invokePackageSubscription } from '#worker/package-invocations/service.ts'
-import { listPackageSubscriptions } from '#worker/package-registry/manifest.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
-import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type CloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { listInternalEmailAttachmentsForMessage } from './mailbox-internal-read.ts'
 import { listSystemEmailAttachments } from './system-email-graph-store.ts'
@@ -61,11 +58,6 @@ type SystemEmailReceiptSubscriptionEnvelope =
 		/** Admin-interface link for the stored system message. */
 		admin_url: string
 	}
-
-type LoadedEmailSubscription = {
-	savedPackage: SavedPackageRecord
-	subscription: ReturnType<typeof listPackageSubscriptions>[number]
-}
 
 function stringArray(values: ReadonlyArray<unknown>) {
 	return values.filter((value): value is string => typeof value === 'string')
@@ -128,54 +120,7 @@ async function loadMatchingEmailSubscriptions(input: {
 	userId: string
 	topic: string
 }) {
-	let savedPackages: Array<SavedPackageRecord>
-	try {
-		savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.userId,
-		})
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message.includes('no such table: saved_packages')
-		) {
-			return {
-				subscriptions: [] as Array<LoadedEmailSubscription>,
-				discoveryErrors: [] as Array<unknown>,
-			}
-		}
-		throw error
-	}
-	const settled = await Promise.allSettled(
-		savedPackages.map(async (savedPackage) => {
-			const loaded = await loadPackageManifestBySourceId({
-				env: input.env as Env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			})
-			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) => candidate.topic === input.topic,
-			)
-			if (!subscription) return null
-			return { savedPackage, subscription } satisfies LoadedEmailSubscription
-		}),
-	)
-	const subscriptions: Array<LoadedEmailSubscription> = []
-	const discoveryErrors: Array<unknown> = []
-	for (const [index, result] of settled.entries()) {
-		if (result.status === 'fulfilled') {
-			if (result.value) subscriptions.push(result.value)
-			continue
-		}
-		const savedPackage = savedPackages[index]
-		console.warn('Failed to load package manifest for email subscription', {
-			sourceId: savedPackage?.sourceId,
-			packageId: savedPackage?.id,
-			error: result.reason,
-		})
-		discoveryErrors.push(result.reason)
-	}
-	return { subscriptions, discoveryErrors }
+	return await loadMatchingPackageSubscriptions(input)
 }
 
 export async function dispatchInboundEmailSubscriptionEvents(input: {
@@ -224,6 +169,10 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 							topic,
 						}),
 						source: 'email',
+						request: {
+							kind: 'inbound-email',
+							sourceId: input.message.inboxId ?? input.message.id,
+						},
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =
@@ -309,6 +258,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 						params: payload,
 						idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
 						source: 'email',
+						request: { kind: 'platform-event', sourceId: 'email' },
 						waitUntil: input.waitUntil,
 					})
 					return {

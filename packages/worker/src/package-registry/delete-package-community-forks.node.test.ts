@@ -28,61 +28,50 @@ vi.mock('#worker/storage-runner.ts', async (importOriginal) => {
 		...actual,
 		storageRunnerRpc: (...args: Array<unknown>) => {
 			mockModule.storageRunnerRpc(...args)
-			return {
-				clearStorage: (...clearArgs: Array<unknown>) =>
-					mockModule.clearStorage(...clearArgs),
-			}
+			return { clearStorage: mockModule.clearStorage }
 		},
 	}
 })
 
 vi.mock('#worker/package-config-cleanup.ts', () => ({
-	deleteAllAppScopedValues: (...args: Array<unknown>) =>
-		mockModule.deleteAllAppScopedValues(...args),
-	deleteAllPackageScopedSecrets: (...args: Array<unknown>) =>
-		mockModule.deleteAllPackageScopedSecrets(...args),
-	removeAllSecretApprovalsForPackage: (...args: Array<unknown>) =>
-		mockModule.removeAllSecretApprovalsForPackage(...args),
+	deleteAllAppScopedValues: mockModule.deleteAllAppScopedValues,
+	deleteAllPackageScopedSecrets: mockModule.deleteAllPackageScopedSecrets,
+	removeAllSecretApprovalsForPackage:
+		mockModule.removeAllSecretApprovalsForPackage,
 }))
 
 vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
-	removePackageRetrieverManifestCacheEntries: (...args: Array<unknown>) =>
-		mockModule.removePackageRetrieverManifestCacheEntries(...args),
+	removePackageRetrieverManifestCacheEntries:
+		mockModule.removePackageRetrieverManifestCacheEntries,
 	refreshPackageRetrieverManifestCache: vi.fn(),
 }))
 
 vi.mock('./vectorize.ts', () => ({
-	deleteSavedPackageVector: (...args: Array<unknown>) =>
-		mockModule.deleteSavedPackageVector(...args),
+	deleteSavedPackageVector: mockModule.deleteSavedPackageVector,
 	upsertSavedPackageVector: vi.fn(),
 }))
 
 vi.mock('#worker/jobs/jobs-data.ts', () => ({
 	jobsData: () => ({
-		deleteJob: (...args: Array<unknown>) => mockModule.deleteJobRow(...args),
-		listJobsForUser: (...args: Array<unknown>) =>
-			mockModule.listJobRowsByUserId(...args),
+		deleteJob: mockModule.deleteJobRow,
+		listJobsForUser: mockModule.listJobRowsByUserId,
 	}),
 }))
 
 vi.mock('#worker/jobs/manager-client.ts', () => ({
-	syncJobManagerAlarm: (...args: Array<unknown>) =>
-		mockModule.syncJobManagerAlarm(...args),
+	syncJobManagerAlarm: mockModule.syncJobManagerAlarm,
 }))
 
 vi.mock('#worker/repo/artifact-repo-cleanup.ts', () => ({
-	cleanupArtifactReposForPackage: (...args: Array<unknown>) =>
-		mockModule.cleanupArtifactReposForPackage(...args),
+	cleanupArtifactReposForPackage: mockModule.cleanupArtifactReposForPackage,
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	deleteEntitySource: (...args: Array<unknown>) =>
-		mockModule.deleteEntitySource(...args),
+	deleteEntitySource: mockModule.deleteEntitySource,
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
-	unpublishCommunityListing: (...args: Array<unknown>) =>
-		mockModule.unpublishCommunityListing(...args),
+	unpublishCommunityListing: mockModule.unpublishCommunityListing,
 }))
 
 vi.mock('#worker/community/repo.ts', async (importOriginal) => {
@@ -118,6 +107,7 @@ function createDeleteForkDb() {
 			search_text TEXT,
 			source_id TEXT NOT NULL,
 			has_app INTEGER NOT NULL DEFAULT 0,
+			has_skills INTEGER NOT NULL DEFAULT 0,
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
 			locked_at TEXT,
@@ -152,15 +142,12 @@ function createDeleteForkDb() {
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 			PRIMARY KEY (user_id, old_kody_id)
 		);
-		CREATE TABLE package_invocation_tokens (
-			id TEXT PRIMARY KEY NOT NULL,
+		CREATE TABLE package_slug_redirects (
 			user_id TEXT NOT NULL,
+			old_slug TEXT NOT NULL,
 			package_id TEXT NOT NULL,
-			token_hash TEXT NOT NULL,
-			name TEXT NOT NULL,
-			export_names_json TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
+			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+			PRIMARY KEY (user_id, old_slug)
 		);
 		CREATE TABLE user_storage_buckets (
 			user_id TEXT NOT NULL,
@@ -172,94 +159,109 @@ function createDeleteForkDb() {
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
-test('package delete removes community_forks so Fork outdated does not linger', async () => {
-	const { db } = createDeleteForkDb()
-	const meter = createInMemoryUserMeterEnv()
-	const env = {
-		APP_DB: db,
-		USER_METER: meter.env.USER_METER,
-	} as Env
-	await db
-		.prepare(
-			`INSERT INTO users (stable_user_id, deleting_at) VALUES ('user-kent', NULL)`,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
-			VALUES ('source-live', 'user-kent', 'package', 'package-live'),
-				('source-inert', 'user-kent', 'package', 'package-inert'),
-				('source-other', 'user-other', 'package', 'package-other')`,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, source_id
-			) VALUES (
-				'package-live', 'user-kent', '@kentcdodds/plaid', 'plaid',
-				'Kent copy', 'source-live'
-			)`,
-		)
-		.run()
-	await insertCommunityFork(db, {
-		id: 'fork-live',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
+function forkInput(
+	id: string,
+	forkerUserId: string,
+	packageId: string,
+	sourceId: string,
+	targetKodyId: string,
+) {
+	return {
+		id,
+		listing_id: listingRef.id,
+		forker_user_id: forkerUserId,
 		origin_commit: 'commit-old',
-		forked_package_id: 'package-live',
-		forked_source_id: 'source-live',
-		target_kody_id: 'plaid',
+		forked_package_id: packageId,
+		forked_source_id: sourceId,
+		target_kody_id: targetKodyId,
 		listing_name: '@kody/plaid',
 		listing_kody_id: 'plaid',
-	})
-	await insertCommunityFork(db, {
-		id: 'fork-inert',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-old',
-		forked_package_id: 'package-inert',
-		forked_source_id: 'source-inert',
-		target_kody_id: 'plaid-inert',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
-	await insertCommunityFork(db, {
-		id: 'fork-other',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-other',
-		origin_commit: 'commit-old',
-		forked_package_id: 'package-other',
-		forked_source_id: 'source-other',
-		target_kody_id: 'plaid',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
+	}
+}
 
-	const beforeInstalls = resolveViewerListingInstalls({
+function viewerFork(packageId: string, sourceId: string, targetKodyId: string) {
+	return {
+		listingId: listingRef.id,
+		targetKodyId,
+		forkedPackageId: packageId,
+		forkedSourceId: sourceId,
+		createdAt: '2026-08-13T00:00:00.000Z',
+		originCommit: 'commit-old',
+	}
+}
+
+function resolveKentInstall(input: {
+	savedPackages: Parameters<
+		typeof resolveViewerListingInstalls
+	>[0]['savedPackages']
+	forks: Array<ReturnType<typeof viewerFork>>
+}) {
+	return resolveViewerListingInstalls({
 		listings: [listingRef],
 		packageScope: 'kentcdodds',
-		savedPackages: [
-			{
-				id: 'package-live',
-				kodyId: 'plaid',
-				name: '@kentcdodds/plaid',
-				sourceId: 'source-live',
-			},
-		],
-		forks: [
-			{
-				listingId: 'listing-plaid',
-				targetKodyId: 'plaid',
-				forkedPackageId: 'package-live',
-				forkedSourceId: 'source-live',
-				createdAt: '2026-08-13T00:00:00.000Z',
-				originCommit: 'commit-old',
-			},
-		],
-		listingPinIsAncestorByListingId: new Map([['listing-plaid', false]]),
-	})
-	expect(beforeInstalls.get('listing-plaid')).toMatchObject({
+		listingPinIsAncestorByListingId: new Map([[listingRef.id, false]]),
+		...input,
+	}).get(listingRef.id)
+}
+
+test('package delete removes community_forks so Fork outdated does not linger', async () => {
+	const { db } = createDeleteForkDb()
+	const run = (sql: string) => db.prepare(sql).run()
+	const forkExists = async (id: string) =>
+		(await db
+			.prepare(`SELECT id FROM community_forks WHERE id = ?`)
+			.bind(id)
+			.first()) !== null
+	const env = {
+		APP_DB: db,
+		USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
+	} as Env
+	await run(
+		`INSERT INTO users (stable_user_id, deleting_at) VALUES ('user-kent', NULL)`,
+	)
+	await run(
+		`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
+		VALUES ('source-live', 'user-kent', 'package', 'package-live'),
+			('source-inert', 'user-kent', 'package', 'package-inert'),
+			('source-other', 'user-other', 'package', 'package-other')`,
+	)
+	await run(
+		`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+		VALUES ('package-live', 'user-kent', '@kentcdodds/plaid', 'plaid', 'Kent copy', 'source-live')`,
+	)
+	for (const fork of [
+		forkInput('fork-live', 'user-kent', 'package-live', 'source-live', 'plaid'),
+		forkInput(
+			'fork-inert',
+			'user-kent',
+			'package-inert',
+			'source-inert',
+			'plaid-inert',
+		),
+		forkInput(
+			'fork-other',
+			'user-other',
+			'package-other',
+			'source-other',
+			'plaid',
+		),
+	]) {
+		await insertCommunityFork(db, fork)
+	}
+
+	expect(
+		resolveKentInstall({
+			savedPackages: [
+				{
+					id: 'package-live',
+					kodyId: 'plaid',
+					name: '@kentcdodds/plaid',
+					sourceId: 'source-live',
+				},
+			],
+			forks: [viewerFork('package-live', 'source-live', 'plaid')],
+		}),
+	).toMatchObject({
 		status: 'installed',
 		listingAhead: true,
 		packageId: 'package-live',
@@ -268,13 +270,15 @@ test('package delete removes community_forks so Fork outdated does not linger', 
 	mockModule.cleanupArtifactReposForPackage.mockResolvedValue(0)
 	mockModule.deleteEntitySource.mockResolvedValue(true)
 	mockModule.listJobRowsByUserId.mockResolvedValue([])
-	mockModule.deleteSavedPackageVector.mockResolvedValue(undefined)
-	mockModule.removePackageRetrieverManifestCacheEntries.mockResolvedValue(
-		undefined,
-	)
-	mockModule.deleteAllAppScopedValues.mockResolvedValue(undefined)
-	mockModule.deleteAllPackageScopedSecrets.mockResolvedValue(undefined)
-	mockModule.removeAllSecretApprovalsForPackage.mockResolvedValue(undefined)
+	for (const cleanup of [
+		mockModule.deleteSavedPackageVector,
+		mockModule.removePackageRetrieverManifestCacheEntries,
+		mockModule.deleteAllAppScopedValues,
+		mockModule.deleteAllPackageScopedSecrets,
+		mockModule.removeAllSecretApprovalsForPackage,
+	]) {
+		cleanup.mockResolvedValue(undefined)
+	}
 
 	await deleteSavedPackageProjection({
 		env,
@@ -284,14 +288,9 @@ test('package delete removes community_forks so Fork outdated does not linger', 
 
 	const remaining = await db
 		.prepare(
-			`SELECT id, forker_user_id, forked_package_id FROM community_forks
-			ORDER BY id`,
+			`SELECT id, forker_user_id, forked_package_id FROM community_forks ORDER BY id`,
 		)
-		.all<{
-			id: string
-			forker_user_id: string
-			forked_package_id: string
-		}>()
+		.all<{ id: string; forker_user_id: string; forked_package_id: string }>()
 	expect(remaining.results).toEqual([
 		{
 			id: 'fork-inert',
@@ -309,110 +308,48 @@ test('package delete removes community_forks so Fork outdated does not linger', 
 			.prepare(`SELECT id FROM saved_packages WHERE id = 'package-live'`)
 			.first(),
 	).toBeNull()
-
-	const afterInstalls = resolveViewerListingInstalls({
-		listings: [listingRef],
-		packageScope: 'kentcdodds',
-		savedPackages: [],
-		forks: remaining.results
-			.filter((row) => row.forker_user_id === 'user-kent')
-			.map((row) => ({
-				listingId: 'listing-plaid',
-				targetKodyId: 'plaid-inert',
-				forkedPackageId: row.forked_package_id,
-				forkedSourceId: 'source-inert',
-				createdAt: '2026-08-13T00:00:00.000Z',
-				originCommit: 'commit-old',
-			})),
-		listingPinIsAncestorByListingId: new Map([['listing-plaid', false]]),
-	})
-	expect(afterInstalls.get('listing-plaid')).toMatchObject({
+	expect(
+		resolveKentInstall({
+			savedPackages: [],
+			forks: [viewerFork('package-inert', 'source-inert', 'plaid-inert')],
+		}),
+	).toMatchObject({
 		status: 'adaptation_required',
 		targetName: '@kentcdodds/plaid-inert',
 		packageId: null,
 	})
-	const kentDeletedCopyForks = await db
-		.prepare(
-			`SELECT id FROM community_forks
-			WHERE forker_user_id = 'user-kent'
-				AND listing_id = 'listing-plaid'
-				AND (forked_package_id = 'package-live' OR target_kody_id = 'plaid')`,
-		)
-		.all<{ id: string }>()
-	expect(kentDeletedCopyForks.results).toEqual([])
-	const afterDeletedCopyOnly = resolveViewerListingInstalls({
-		listings: [listingRef],
-		packageScope: 'kentcdodds',
-		savedPackages: [],
-		forks: kentDeletedCopyForks.results.map((row) => ({
-			listingId: 'listing-plaid',
-			targetKodyId: listingRef.kodyId,
-			forkedPackageId: row.id,
-			forkedSourceId: row.id,
-			createdAt: '2026-08-13T00:00:00.000Z',
-			originCommit: 'commit-old',
-		})),
-		listingPinIsAncestorByListingId: new Map([['listing-plaid', false]]),
-	})
-	expect(afterDeletedCopyOnly.has('listing-plaid')).toBe(false)
 
-	await db
-		.prepare(
-			`INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, source_id
-			) VALUES (
-				'package-trigger', 'user-kent', '@kentcdodds/plaid-trigger',
-				'plaid-trigger', 'Trigger copy', 'source-trigger'
-			)`,
-		)
-		.run()
-	await insertCommunityFork(db, {
-		id: 'fork-trigger-package',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-old',
-		forked_package_id: 'package-trigger',
-		forked_source_id: 'source-trigger',
-		target_kody_id: 'plaid-trigger',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
-	await db
-		.prepare(`DELETE FROM saved_packages WHERE id = 'package-trigger'`)
-		.run()
-	expect(
-		await db
-			.prepare(
-				`SELECT id FROM community_forks WHERE id = 'fork-trigger-package'`,
-			)
-			.first(),
-	).toBeNull()
+	await run(
+		`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+		VALUES ('package-trigger', 'user-kent', '@kentcdodds/plaid-trigger', 'plaid-trigger', 'Trigger copy', 'source-trigger')`,
+	)
+	await insertCommunityFork(
+		db,
+		forkInput(
+			'fork-trigger-package',
+			'user-kent',
+			'package-trigger',
+			'source-trigger',
+			'plaid-trigger',
+		),
+	)
+	await run(`DELETE FROM saved_packages WHERE id = 'package-trigger'`)
+	expect(await forkExists('fork-trigger-package')).toBe(false)
 
-	await db
-		.prepare(
-			`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
-			VALUES ('source-trigger-2', 'user-kent', 'package', 'package-gone')`,
-		)
-		.run()
-	await insertCommunityFork(db, {
-		id: 'fork-trigger-source',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-old',
-		forked_package_id: 'package-gone',
-		forked_source_id: 'source-trigger-2',
-		target_kody_id: 'plaid-source',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
-	await db
-		.prepare(`DELETE FROM entity_sources WHERE id = 'source-trigger-2'`)
-		.run()
-	expect(
-		await db
-			.prepare(
-				`SELECT id FROM community_forks WHERE id = 'fork-trigger-source'`,
-			)
-			.first(),
-	).toBeNull()
+	await run(
+		`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
+		VALUES ('source-trigger-2', 'user-kent', 'package', 'package-gone')`,
+	)
+	await insertCommunityFork(
+		db,
+		forkInput(
+			'fork-trigger-source',
+			'user-kent',
+			'package-gone',
+			'source-trigger-2',
+			'plaid-source',
+		),
+	)
+	await run(`DELETE FROM entity_sources WHERE id = 'source-trigger-2'`)
+	expect(await forkExists('fork-trigger-source')).toBe(false)
 })

@@ -16,8 +16,9 @@ export const communityForkCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityFork',
+		orgPermission: 'package:create',
 		description:
-			'Fork a public package into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. Pass a package name leaf (or `@owner/leaf`) when you already have a package with the same leaf.',
+			'Fork a public package into an inert package source in your scope. The fork cannot run until you review the code and publish through a repo session. When the listing leaf is already taken by an unrelated package and you omit `kody_id`, Kody picks the next free leaf (for example `leaf-2`). Pass an explicit package name leaf (or `@owner/leaf`) to choose the name yourself.',
 		keywords: ['community', 'fork', 'copy', 'listing', 'package', 'import'],
 		readOnly: false,
 		idempotent: false,
@@ -29,7 +30,7 @@ export const communityForkCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional package name leaf (or `@owner/leaf`) when the caller already has a package with the same leaf.',
+					'Optional package name leaf (or `@owner/leaf`). Omit to use the listing leaf, or the next free alternate when that leaf is already taken by an unrelated package.',
 				),
 		}),
 		outputSchema: z.object({

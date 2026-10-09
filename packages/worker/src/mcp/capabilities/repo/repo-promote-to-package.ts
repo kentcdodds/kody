@@ -10,7 +10,7 @@ import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { stampFirstSavedPackage } from '#worker/identity/activation-stamps.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
@@ -46,6 +46,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoPromoteToPackage',
+		orgPermission: 'package:create',
 		description:
 			'Promote a package-shaped plain repo (root package.json at HEAD) into a saved package. Runs the full external-push publish checks; on success creates the saved-package projection and removes the plain-repo row.',
 		keywords: ['repo', 'promote', 'package', 'activate'],
@@ -111,9 +112,10 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			} catch (error) {
 				throw new McpCallerError(getErrorMessage(error), { cause: error })
 			}
-			const kodyIdCollision = await getSavedPackageByKodyId(ctx.env.APP_DB, {
+			const kodyIdCollision = await resolveSavedPackageRef(ctx.env.APP_DB, {
 				userId: user.userId,
-				kodyId: manifest.kody.id,
+				ref: manifest.kody.id,
+				match: 'slug',
 			})
 			if (kodyIdCollision) {
 				throw new McpCallerError(
@@ -165,6 +167,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					search_text: manifest.kody.searchText ?? null,
 					source_id: source.id,
 					has_app: manifest.kody.app !== undefined ? 1 : 0,
+					has_skills: 0,
 					hidden: 0,
 					is_private: userRepo.isPrivate ? 1 : 0,
 					created_at: now,

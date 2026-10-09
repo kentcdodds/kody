@@ -5,6 +5,7 @@ style, tests, MCP capabilities, and runtime architecture.
 
 ## Setup and workflow
 
+- [Engineering principles](../principles/index.md)
 - [Getting started](./getting-started.md), [project intent](./project-intent.md)
 - [Decision records](./decisions/index.md) (steering veto list: product-shaped
   nos and durable constraints — not an ADR-per-PR log)
@@ -16,6 +17,10 @@ style, tests, MCP capabilities, and runtime architecture.
   [environment variables](./environment-variables.md),
   [setup manifest](./setup-manifest.md)
 - [Manual PR preview testing](./preview-manual-testing.md)
+- [Preview migration rehearsal](./preview-migration-rehearsal.md) (seed,
+  snapshot, migrate, verify, restore on a branch preview; operator/CI only)
+- [Teams production queries](./teams-production-queries.md) (read-only, sealed
+  counts and ids before the Teams data conversion; Kent runs)
 - [control-kody](./control-kody.md) (Feature Map + CLI; daily
   `@kentcdodds/verification-skill-maintain`)
 - [Optional Cloudflare offerings](./cloudflare-offerings.md)
@@ -30,8 +35,16 @@ style, tests, MCP capabilities, and runtime architecture.
   the same change, or open a GitHub issue)
 - [Planned breaking changes](./planned-breaking-changes.md) (leftovers that
   still work and will be removed later, including `kody_id` / `kody.id`)
-- [Friction log](./friction-log.md) (file through
-  `kody:@kentcdodds/friction-log/create`; daily Cursor agent investigates)
+- [Friction log](./friction-log.md) (when/where/how-to-fix policy; package owns
+  create/file/daily at
+  [@kentcdodds/friction-log](https://kody.codes/@kentcdodds/friction-log))
+- [Repo health](./repo-health.md) (CI + in-repo budgets: AGENTS.md ratchet,
+  Validate unit-job timing, ship-pr review-bot sort)
+- Local CLI execute (when, command, failure):
+  [guide:local_execute](../guides/local-execute.md) and
+  [prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md)
+- PR system recaps (visual plan/recap blocks in PR descriptions):
+  [visual-recap skill](../../.agents/skills/visual-recap/SKILL.md)
 
 ## Code and tooling
 
@@ -62,15 +75,10 @@ style, tests, MCP capabilities, and runtime architecture.
   not platform scope grants —
   [0050](./decisions/0050-package-share-grants-are-not-scope-grants.md))
 - [`packageStorage()` grants and stamp-aligned secrets](./package-storage-static-imports.md)
-  (stamp/grant model under fork-only official packages and no author-facing
-  invoke)
+  (stamp/grant model under fork-only official packages)
 - [Package codemods](./package-codemods.md)
-- [`packages.invoke` prefix migration](./package-invoke-prefix-migration.md)
-  (soak telemetry for the quarantined helper leftover)
 - [Public packages](./community-packages.md)
-- [External package invocation API](./package-invocation-api.md) (unadvertised
-  drain; first-party HTTP is [inbound webhooks](../use/webhooks.md))
-- [Invocation-token retirement runbook](./architecture/invocation-token-retirement-runbook.md)
+- [Inbound webhooks](../use/webhooks.md) (external HTTP knock)
 - [Adding capabilities](./adding-capabilities.md)
 - [Search entity plugins](./search-entity-plugins.md) (plugin module + registry,
   result/detail unions, list markdown, detail routing, public type lists)
@@ -98,7 +106,8 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Architecture](./architecture/index.md) — production worker fleet, request
   lifecycle, [authorization](./architecture/authorization.md) (RBAC)
 
-Documentation for **using** Kody as an MCP server (not building the repo) lives
-under [`docs/use/`](../use/index.md). How we write and maintain those pages (and
+Served usage docs are [`docs/guides/`](../guides/README.md) (`guide:{id}`,
+[kody.codes/docs](https://kody.codes/docs)). MCP field reference is
+[`docs/use/`](../use/README.md). How we write and maintain those pages (and
 contributing docs) is covered in [Documentation principles](./documentation.md)
 (prefer a checker over a should-list).

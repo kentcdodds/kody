@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { routes } from '#universal/routes.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
@@ -27,6 +27,7 @@ import {
 } from './account-management-components.tsx'
 import { RecordChips, recordBodyCss } from './record-table.tsx'
 import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
+import { AccountPackageForkAdoption } from './account-package-fork-adoption.tsx'
 import {
 	type AccountPackageDetail,
 	type AccountPackagesLoaderData,
@@ -336,6 +337,13 @@ export function AccountPackageOwnerDetails(
 						</div>
 					) : null}
 				</div>
+				{packageDetail.communityFork ? (
+					<AccountPackageForkAdoption
+						packageDetail={packageDetail}
+						communityFork={packageDetail.communityFork}
+						onPackagesPayload={handle.props.onPackagesPayload}
+					/>
+				) : null}
 				<AccountPackageDeleteDialog
 					ownerUsername={handle.props.ownerUsername}
 					packageDetail={packageDetail}

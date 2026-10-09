@@ -16,15 +16,50 @@ export const defaultMigrationLedgerPath = path.join(
 	'tools',
 	'migration-ledger.json',
 )
+export const defaultKnownMigrationDirectories: ReadonlyArray<string> = [
+	defaultMigrationsDir,
+	path.join('packages', 'jobs-worker', 'migrations'),
+	path.join('packages', 'worker', 'audit-migrations'),
+]
+export const defaultMigrationReferenceRoots: ReadonlyArray<string> = [
+	'docs',
+	path.join('packages', 'worker', 'src'),
+	path.join('packages', 'worker', 'universal'),
+]
 export const expectedMigrationBaselineSha256 =
 	'aee006f0719e4d967b7485fb3199f8e2eb0660258b7720661b7fc48ce67fc199'
+
+const migrationFilenameReferencePattern =
+	/\b(?<filename>\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*)\.sql\b/g
+
+const placeholderMigrationDescriptions = new Set([
+	'my-change',
+	'your-change',
+	'kebab-case-description',
+])
+
+const migrationReferenceFilePattern = /\.(?:md|mdx|mdc|ts|tsx)$/
+
+const skipMigrationReferenceDirectoryNames = new Set([
+	'node_modules',
+	'.git',
+	'dist',
+	'.tmp',
+])
+
+/** Point-in-time records may name pre-squash or retired files. */
+export const exemptMigrationReferencePrefixes: ReadonlyArray<string> = [
+	'docs/contributing/decisions/',
+	'docs/audits/',
+]
 
 /**
  * Exact grandfathered duplicate-prefix pairs. The 2026-08-04 migration
  * squash (0001-squashed-init.sql) retired every historical duplicate, so
  * this list is empty; new duplicates are always rejected.
  */
-export const allowedHistoricalDuplicateMigrationFilenames = [] as const
+export const allowedHistoricalDuplicateMigrationFilenames: ReadonlyArray<string> =
+	[]
 
 const allowedHistoricalDuplicateMigrationFilenameSet = new Set<string>(
 	allowedHistoricalDuplicateMigrationFilenames,
@@ -43,6 +78,11 @@ export type MigrationFilenameCheckResult = {
 	errors: Array<string>
 	nextPrefix: string
 	maxPrefix: number
+}
+
+type MigrationFilenameReferenceFile = {
+	path: string
+	content: string
 }
 
 export type MigrationLedgerEntry = {
@@ -125,6 +165,133 @@ export function getNextMigrationPrefix(
 
 function suggestNextPrefix(nextPrefix: string): string {
 	return `Use the next free prefix ${nextPrefix} (for example, ${nextPrefix}-your-change.sql).`
+}
+
+export function isPlaceholderMigrationFilename(filename: string) {
+	const parsed = parseMigrationFilename(filename)
+	return (
+		parsed !== null && placeholderMigrationDescriptions.has(parsed.description)
+	)
+}
+
+export function collectMigrationFilenameReferences(content: string) {
+	const filenames: Array<string> = []
+	const seen = new Set<string>()
+	for (const match of content.matchAll(migrationFilenameReferencePattern)) {
+		const filename = match.groups?.filename
+		if (!filename) {
+			continue
+		}
+		const withExtension = `${filename}.sql`
+		if (seen.has(withExtension)) {
+			continue
+		}
+		seen.add(withExtension)
+		filenames.push(withExtension)
+	}
+	return filenames
+}
+
+export function checkMigrationFilenameReferences(input: {
+	knownFilenames: ReadonlySet<string>
+	files: ReadonlyArray<MigrationFilenameReferenceFile>
+}): Array<string> {
+	const errors: Array<string> = []
+	for (const file of input.files) {
+		if (
+			exemptMigrationReferencePrefixes.some((prefix) =>
+				file.path.startsWith(prefix),
+			)
+		) {
+			continue
+		}
+		for (const filename of collectMigrationFilenameReferences(file.content)) {
+			if (input.knownFilenames.has(filename)) {
+				continue
+			}
+			if (isPlaceholderMigrationFilename(filename)) {
+				continue
+			}
+			errors.push(
+				`${file.path} references migration "${filename}", which is not in ${defaultMigrationsDir} (or jobs/audit migration directories). After a renumber, update the reference to the current filename.`,
+			)
+		}
+	}
+	return errors
+}
+
+async function readExistingDirectoryEntries(directory: string) {
+	try {
+		return await readdir(directory, { withFileTypes: true })
+	} catch (error) {
+		if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+			return []
+		}
+		throw error
+	}
+}
+
+async function collectMigrationReferenceFiles(
+	directory: string,
+	relativePrefix: string,
+): Promise<Array<MigrationFilenameReferenceFile>> {
+	const entries = await readExistingDirectoryEntries(directory)
+	const files: Array<MigrationFilenameReferenceFile> = []
+	for (const entry of entries) {
+		if (entry.isDirectory()) {
+			if (skipMigrationReferenceDirectoryNames.has(entry.name)) {
+				continue
+			}
+			files.push(
+				...(await collectMigrationReferenceFiles(
+					path.join(directory, entry.name),
+					`${relativePrefix}/${entry.name}`,
+				)),
+			)
+			continue
+		}
+		if (!entry.isFile() || !migrationReferenceFilePattern.test(entry.name)) {
+			continue
+		}
+		const relativePath = `${relativePrefix}/${entry.name}`.replaceAll('\\', '/')
+		files.push({
+			path: relativePath,
+			content: await readFile(path.join(directory, entry.name), 'utf8'),
+		})
+	}
+	return files
+}
+
+export async function listKnownMigrationFilenames(
+	directories: ReadonlyArray<string> = defaultKnownMigrationDirectories,
+): Promise<Set<string>> {
+	const filenames = new Set<string>()
+	for (const directory of directories) {
+		const entries = await readExistingDirectoryEntries(directory)
+		for (const entry of entries) {
+			if (entry.isFile() && entry.name.endsWith('.sql')) {
+				filenames.add(entry.name)
+			}
+		}
+	}
+	return filenames
+}
+
+export async function checkRepositoryMigrationFilenameReferences(
+	cwd: string = process.cwd(),
+	roots: ReadonlyArray<string> = defaultMigrationReferenceRoots,
+	knownDirectories: ReadonlyArray<string> = defaultKnownMigrationDirectories,
+): Promise<Array<string>> {
+	const knownFilenames = await listKnownMigrationFilenames(
+		knownDirectories.map((directory) => path.join(cwd, directory)),
+	)
+	const files: Array<MigrationFilenameReferenceFile> = []
+	for (const root of roots) {
+		files.push(
+			...(await collectMigrationReferenceFiles(path.join(cwd, root), root)),
+		)
+	}
+	return checkMigrationFilenameReferences({ knownFilenames, files })
 }
 
 export function checkMigrationFilenames(
@@ -523,7 +690,14 @@ export async function checkMigrationsDirectory(
 	const trustedHistory = trustedBase
 		? await readTrustedMigrationHistory(trustedBase)
 		: null
-	return checkMigrationLedger(files, ledger, trustedHistory)
+	const ledgerResult = checkMigrationLedger(files, ledger, trustedHistory)
+	const referenceErrors = await checkRepositoryMigrationFilenameReferences()
+	const errors = [...ledgerResult.errors, ...referenceErrors]
+	return {
+		...ledgerResult,
+		ok: errors.length === 0,
+		errors,
+	}
 }
 
 export async function main(

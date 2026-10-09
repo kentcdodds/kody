@@ -17,6 +17,9 @@ const subscriptionName = 'kody-push-default-package-package-1'
 const sourceId = 'source-1'
 const userId = 'user-1'
 
+const queuesPath = `/client/v4/accounts/${accountId}/queues`
+const subscriptionsPath = `/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
+
 function jsonResponse(status: number, body: unknown) {
 	return new Response(JSON.stringify(body), {
 		status,
@@ -24,16 +27,29 @@ function jsonResponse(status: number, body: unknown) {
 	})
 }
 
-function queueListBody() {
-	return {
+const queueList = () =>
+	jsonResponse(200, {
 		success: true,
 		result: [
 			{ queue_id: 'queue-other', queue_name: 'kody-email-delivery' },
 			{ queue_id: queueId, queue_name: 'kody-artifacts-repo-events' },
 		],
 		result_info: { total_pages: 1 },
-	}
-}
+	})
+
+const createConflict = () =>
+	jsonResponse(409, {
+		success: false,
+		result: null,
+		errors: [{ code: 1003, message: 'subscription already exists' }],
+	})
+
+const subscriptionList = (...records: Array<unknown>) =>
+	jsonResponse(200, {
+		success: true,
+		result: records,
+		result_info: { total_pages: 1 },
+	})
 
 function subscriptionRecord(id: string, destinationQueueId = queueId) {
 	return {
@@ -105,326 +121,144 @@ function createEnv(db: D1Database) {
 		CLOUDFLARE_API_TOKEN: 'token-123',
 		CLOUDFLARE_API_BASE_URL: apiOrigin,
 		ARTIFACTS_NAMESPACE: 'default',
-	} as Env
+	} as unknown as Env
 }
 
-function requestKey(method: string, pathname: string) {
-	return `${method} ${pathname}`
-}
+type Route = () => Response | Promise<Response>
 
-test('ensureArtifactsRepoPushSubscription posts without listing and caches the queue id', async () => {
+async function setup(routes: Record<string, Route>) {
 	resetArtifactsRepoEventsQueueIdCache()
 	const db = createDb()
 	await seedSource(db)
 	const calls: Array<string> = []
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			calls.push(requestKey(method, url.pathname))
-			if (
-				method === 'GET' &&
-				url.pathname === `/client/v4/accounts/${accountId}/queues`
-			) {
-				return jsonResponse(200, queueListBody())
-			}
-			if (
-				method === 'POST' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				return jsonResponse(200, {
-					success: true,
-					result: subscriptionRecord('sub-1'),
-				})
-			}
-			if (
-				method === 'GET' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions/sub-1`
-			) {
-				return jsonResponse(200, {
-					success: true,
-					result: subscriptionRecord('sub-1'),
-				})
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
-
-	try {
-		const first = await ensureArtifactsRepoPushSubscription({
+	vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+		const url = new URL(String(input))
+		const call = `${init?.method ?? 'GET'} ${url.pathname}`
+		calls.push(call)
+		const route = routes[call]
+		if (!route) throw new Error(`Unexpected fetch: ${call}`)
+		return route()
+	})
+	const ensure = () =>
+		ensureArtifactsRepoPushSubscription({
 			env: createEnv(db),
 			userId,
 			sourceId,
 			repoName,
 		})
-		expect(first).toEqual({ subscriptionId: 'sub-1', skipped: false })
-		await expect(
-			getArtifactsPushSubscriptionBySourceId(db, sourceId),
-		).resolves.toMatchObject({ subscription_id: 'sub-1' })
-		expect(calls).toEqual([
-			requestKey('GET', `/client/v4/accounts/${accountId}/queues`),
-			requestKey(
-				'POST',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`,
-			),
-		])
+	const stored = () => getArtifactsPushSubscriptionBySourceId(db, sourceId)
+	return { db, calls, ensure, stored }
+}
 
-		const second = await ensureArtifactsRepoPushSubscription({
-			env: createEnv(db),
-			userId,
-			sourceId,
-			repoName,
-		})
-		expect(second).toEqual({ subscriptionId: 'sub-1', skipped: false })
-		expect(calls).toEqual([
-			requestKey('GET', `/client/v4/accounts/${accountId}/queues`),
-			requestKey(
-				'POST',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`,
-			),
-			requestKey(
-				'GET',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions/sub-1`,
-			),
-		])
+const created = () =>
+	jsonResponse(200, { success: true, result: subscriptionRecord('sub-1') })
 
-		await db
-			.prepare(
-				`DELETE FROM entity_source_artifacts_push_subscriptions WHERE source_id = ?`,
-			)
-			.bind(sourceId)
-			.run()
-		const third = await ensureArtifactsRepoPushSubscription({
-			env: createEnv(db),
-			userId,
-			sourceId,
-			repoName,
-		})
-		expect(third).toEqual({ subscriptionId: 'sub-1', skipped: false })
-		expect(
-			calls.filter(
-				(call) => call.startsWith('GET ') && call.endsWith('/queues'),
-			),
-		).toHaveLength(1)
-		expect(calls.filter((call) => call.startsWith('POST '))).toHaveLength(2)
-		expect(
-			calls.some(
-				(call) =>
-					call.endsWith('/event_subscriptions/subscriptions') &&
-					call.startsWith('GET '),
-			),
-		).toBe(false)
-	} finally {
-		fetchMock.mockRestore()
-		resetArtifactsRepoEventsQueueIdCache()
-	}
+test('ensureArtifactsRepoPushSubscription posts without listing and caches the queue id', async () => {
+	const { db, calls, ensure, stored } = await setup({
+		[`GET ${queuesPath}`]: queueList,
+		[`POST ${subscriptionsPath}`]: created,
+		[`GET ${subscriptionsPath}/sub-1`]: created,
+	})
+
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: 'sub-1',
+		skipped: false,
+	})
+	await expect(stored()).resolves.toMatchObject({ subscription_id: 'sub-1' })
+	expect(calls).toEqual([`GET ${queuesPath}`, `POST ${subscriptionsPath}`])
+
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: 'sub-1',
+		skipped: false,
+	})
+	expect(calls).toEqual([
+		`GET ${queuesPath}`,
+		`POST ${subscriptionsPath}`,
+		`GET ${subscriptionsPath}/sub-1`,
+	])
+
+	await db
+		.prepare(
+			`DELETE FROM entity_source_artifacts_push_subscriptions WHERE source_id = ?`,
+		)
+		.bind(sourceId)
+		.run()
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: 'sub-1',
+		skipped: false,
+	})
+	expect(calls).toEqual([
+		`GET ${queuesPath}`,
+		`POST ${subscriptionsPath}`,
+		`GET ${subscriptionsPath}/sub-1`,
+		`POST ${subscriptionsPath}`,
+	])
 })
 
 test('ensureArtifactsRepoPushSubscription reuses an existing subscription on create conflict', async () => {
-	resetArtifactsRepoEventsQueueIdCache()
-	const db = createDb()
-	await seedSource(db)
-	const calls: Array<string> = []
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			calls.push(requestKey(method, url.pathname))
-			if (
-				method === 'GET' &&
-				url.pathname === `/client/v4/accounts/${accountId}/queues`
-			) {
-				return jsonResponse(200, queueListBody())
-			}
-			if (
-				method === 'POST' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				return jsonResponse(409, {
-					success: false,
-					result: null,
-					errors: [{ code: 1003, message: 'subscription already exists' }],
-				})
-			}
-			if (
-				method === 'GET' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				return jsonResponse(200, {
-					success: true,
-					result: [subscriptionRecord('sub-existing')],
-					result_info: { total_pages: 1 },
-				})
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const { calls, ensure, stored } = await setup({
+		[`GET ${queuesPath}`]: queueList,
+		[`POST ${subscriptionsPath}`]: createConflict,
+		[`GET ${subscriptionsPath}`]: () =>
+			subscriptionList(subscriptionRecord('sub-existing')),
+	})
 
-	try {
-		const result = await ensureArtifactsRepoPushSubscription({
-			env: createEnv(db),
-			userId,
-			sourceId,
-			repoName,
-		})
-		expect(result).toEqual({
-			subscriptionId: 'sub-existing',
-			skipped: false,
-		})
-		await expect(
-			getArtifactsPushSubscriptionBySourceId(db, sourceId),
-		).resolves.toMatchObject({ subscription_id: 'sub-existing' })
-		expect(calls).toEqual([
-			requestKey('GET', `/client/v4/accounts/${accountId}/queues`),
-			requestKey(
-				'POST',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`,
-			),
-			requestKey(
-				'GET',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`,
-			),
-		])
-	} finally {
-		fetchMock.mockRestore()
-		resetArtifactsRepoEventsQueueIdCache()
-	}
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: 'sub-existing',
+		skipped: false,
+	})
+	await expect(stored()).resolves.toMatchObject({
+		subscription_id: 'sub-existing',
+	})
+	expect(calls).toEqual([
+		`GET ${queuesPath}`,
+		`POST ${subscriptionsPath}`,
+		`GET ${subscriptionsPath}`,
+	])
 })
 
 test('ensureArtifactsRepoPushSubscription skips a name conflict that belongs to a different source', async () => {
-	resetArtifactsRepoEventsQueueIdCache()
 	silenceExpectedConsoleWarns(['artifacts-push-subscription-ensure-failed'])
-	const db = createDb()
-	await seedSource(db)
-	const calls: Array<string> = []
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			calls.push(requestKey(method, url.pathname))
-			if (
-				method === 'GET' &&
-				url.pathname === `/client/v4/accounts/${accountId}/queues`
-			) {
-				return jsonResponse(200, queueListBody())
-			}
-			if (
-				method === 'POST' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				return jsonResponse(409, {
-					success: false,
-					result: null,
-					errors: [{ code: 1003, message: 'subscription already exists' }],
-				})
-			}
-			if (
-				method === 'GET' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				return jsonResponse(200, {
-					success: true,
-					result: [
-						{
-							...subscriptionRecord('sub-other'),
-							source: {
-								type: 'artifacts.repo',
-								namespace: 'default',
-								repo_name: 'package-other-repo',
-							},
-						},
-					],
-					result_info: { total_pages: 1 },
-				})
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const { calls, ensure, stored } = await setup({
+		[`GET ${queuesPath}`]: queueList,
+		[`POST ${subscriptionsPath}`]: createConflict,
+		[`GET ${subscriptionsPath}`]: () =>
+			subscriptionList({
+				...subscriptionRecord('sub-other'),
+				source: {
+					type: 'artifacts.repo',
+					namespace: 'default',
+					repo_name: 'package-other-repo',
+				},
+			}),
+	})
 
-	try {
-		const result = await ensureArtifactsRepoPushSubscription({
-			env: createEnv(db),
-			userId,
-			sourceId,
-			repoName,
-		})
-		expect(result).toEqual({ subscriptionId: null, skipped: true })
-		await expect(
-			getArtifactsPushSubscriptionBySourceId(db, sourceId),
-		).resolves.toBeNull()
-		expect(calls.some((call) => call.startsWith('DELETE '))).toBe(false)
-	} finally {
-		fetchMock.mockRestore()
-		resetArtifactsRepoEventsQueueIdCache()
-	}
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: null,
+		skipped: true,
+	})
+	await expect(stored()).resolves.toBeNull()
+	expect(calls.some((call) => call.startsWith('DELETE '))).toBe(false)
 })
 
 test('ensureArtifactsRepoPushSubscription does not persist when the source is deleted during create', async () => {
-	resetArtifactsRepoEventsQueueIdCache()
-	const db = createDb()
-	await seedSource(db)
-	const calls: Array<string> = []
-	const fetchMock = vi
-		.spyOn(globalThis, 'fetch')
-		.mockImplementation(async (input, init) => {
-			const url = new URL(String(input))
-			const method = init?.method ?? 'GET'
-			calls.push(requestKey(method, url.pathname))
-			if (
-				method === 'GET' &&
-				url.pathname === `/client/v4/accounts/${accountId}/queues`
-			) {
-				return jsonResponse(200, queueListBody())
-			}
-			if (
-				method === 'POST' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions`
-			) {
-				await db
-					.prepare(`DELETE FROM entity_sources WHERE id = ?`)
-					.bind(sourceId)
-					.run()
-				return jsonResponse(200, {
-					success: true,
-					result: subscriptionRecord('sub-1'),
-				})
-			}
-			if (
-				method === 'DELETE' &&
-				url.pathname ===
-					`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions/sub-1`
-			) {
-				return jsonResponse(200, { success: true, result: null })
-			}
-			throw new Error(`Unexpected fetch: ${method} ${url.pathname}`)
-		})
+	const { db, calls, ensure, stored } = await setup({
+		[`GET ${queuesPath}`]: queueList,
+		[`POST ${subscriptionsPath}`]: async () => {
+			await db
+				.prepare(`DELETE FROM entity_sources WHERE id = ?`)
+				.bind(sourceId)
+				.run()
+			return created()
+		},
+		[`DELETE ${subscriptionsPath}/sub-1`]: () =>
+			jsonResponse(200, { success: true, result: null }),
+	})
 
-	try {
-		const result = await ensureArtifactsRepoPushSubscription({
-			env: createEnv(db),
-			userId,
-			sourceId,
-			repoName,
-		})
-		expect(result).toEqual({ subscriptionId: null, skipped: true })
-		await expect(
-			getArtifactsPushSubscriptionBySourceId(db, sourceId),
-		).resolves.toBeNull()
-		expect(calls).toContain(
-			requestKey(
-				'DELETE',
-				`/client/v4/accounts/${accountId}/event_subscriptions/subscriptions/sub-1`,
-			),
-		)
-	} finally {
-		fetchMock.mockRestore()
-		resetArtifactsRepoEventsQueueIdCache()
-	}
+	await expect(ensure()).resolves.toEqual({
+		subscriptionId: null,
+		skipped: true,
+	})
+	await expect(stored()).resolves.toBeNull()
+	expect(calls).toContain(`DELETE ${subscriptionsPath}/sub-1`)
 })

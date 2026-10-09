@@ -1,5 +1,6 @@
 import { renderTransactionalEmail } from '#app/email/template.ts'
 import { type PlatformFeedbackOutcomeStatus } from '#worker/platform-feedback/types.ts'
+import { formatCappedPercent } from '#universal/usage-presentation.ts'
 
 /**
  * Copy for every transactional email, kept free of runtime dependencies so the
@@ -106,9 +107,12 @@ export const userEntitlementWarningKinds = ['approaching', 'reached'] as const
 export type UserEntitlementWarningKind =
 	(typeof userEntitlementWarningKinds)[number]
 
+/** Daily execute quota resource id; drives the local-execute tip in this mail. */
+const executeCallsPerDayResource = 'execute_calls_per_day'
+
 export function buildUserEntitlementWarningEmail(input: {
 	appBaseUrl: string
-	billingUrl: string
+	creditsUrl: string
 	usageUrl: string
 	kind: UserEntitlementWarningKind
 	warnings: Array<{
@@ -116,27 +120,42 @@ export function buildUserEntitlementWarningEmail(input: {
 		current: number
 		limit: number
 		percentOfLimit: number
+		/** Entitlement resource id; required to gate the local-execute tip. */
+		resource?: string
 		whatCounts?: string
 		howToReduce?: string
+		include?: { unitLabel: string }
 	}>
 }) {
 	const lines = input.warnings.map((warning) => {
-		const percent = Math.round(warning.percentOfLimit * 100)
 		const counts = [
-			`${warning.label} — ${warning.current.toLocaleString('en-US')} of ${warning.limit.toLocaleString('en-US')} (${percent}%).`,
+			formatEntitlementWarningCount(warning),
 			warning.whatCounts,
 			warning.howToReduce,
 		].filter((part): part is string => Boolean(part && part.trim()))
 		return counts.join(' ')
 	})
 	const copy = entitlementWarningCopy(input.kind)
+	const includesExecuteQuota = input.warnings.some(
+		(warning) => warning.resource === executeCallsPerDayResource,
+	)
+	const body = [copy.intro, ...lines]
+	if (includesExecuteQuota) {
+		const localExecuteUrl = new URL(
+			'/docs/local-execute',
+			input.appBaseUrl,
+		).toString()
+		body.push(
+			`You can often avoid this execute quota by running locally with the CLI when the work does not need to stay on Kody: ${localExecuteUrl}`,
+		)
+	}
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: copy.subject,
 		preheader: copy.preheader,
 		heading: copy.heading,
-		body: [copy.intro, ...lines],
-		action: { label: 'Review your plan', url: input.billingUrl },
+		body,
+		action: { label: 'Add credits', url: input.creditsUrl },
 		afterAction: [
 			`You can also see every limit on your usage page: ${input.usageUrl}`,
 		],
@@ -148,6 +167,25 @@ export function buildUserEntitlementWarningEmail(input: {
 		},
 		footnote: copy.footnote,
 	})
+}
+
+function formatEntitlementWarningCount(warning: {
+	label: string
+	current: number
+	limit: number
+	percentOfLimit: number
+	include?: { unitLabel: string }
+}) {
+	const current = warning.current.toLocaleString('en-US')
+	const limit = warning.limit.toLocaleString('en-US')
+	const percent = formatCappedPercent(warning.percentOfLimit)
+	if (!warning.include) {
+		return `${warning.label} — ${current} of ${limit} (${percent}).`
+	}
+	const counts = `${current} of ${limit} ${warning.include.unitLabel}`
+	return warning.percentOfLimit >= 1
+		? `${warning.label} — this month's include is used up (${counts}).`
+		: `${warning.label} — ${percent} of this month's include (${counts}).`
 }
 
 function entitlementWarningCopy(kind: UserEntitlementWarningKind) {
@@ -320,7 +358,7 @@ export function buildAdvocateReferralEmail(input: {
 		preheader: 'Invite a friend. Tell us what stuck.',
 		heading: 'Share Kody and get a month free',
 		body: [
-			"You've been using Kody long enough to know if it stuck. Send someone you trust your invite. When they pay their first invoice, you both get a Standard month.",
+			"You've been using Kody long enough to know if it stuck. Send someone you trust your invite. When they pay their first invoice, you both get a month of Pro.",
 			"If you have thirty seconds, reply to this email and tell me what you think about Kody and how you're using it.",
 			'– Kent',
 		],
@@ -365,6 +403,73 @@ export function buildBillingSuccessEmail(input: {
 			height: 96,
 		},
 		footnote: "You're receiving this because you subscribed to a Kody plan.",
+	})
+}
+
+const creditsIllustration = {
+	src: '/images/kody-lantern.png',
+	alt: '',
+	width: 96,
+	height: 96,
+}
+
+export function buildCreditsAutoRefilledEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+	amountLabel: string
+	balanceLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: `Kody added ${input.amountLabel} in credits`,
+		preheader: `Auto-refill added ${input.amountLabel}. Balance: ${input.balanceLabel}.`,
+		heading: 'Credits auto-refilled',
+		body: [
+			`Auto-refill added ${input.amountLabel} to your Kody credits. Your balance is now ${input.balanceLabel}.`,
+		],
+		action: { label: 'Manage credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because auto-refill notices are on. Turn them off on your credits page.",
+	})
+}
+
+export function buildCreditsMonthlyCapEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Kody credits hit your monthly auto-refill cap',
+		preheader: 'Auto-refill is paused until next month or a higher cap.',
+		heading: 'Monthly auto-refill cap reached',
+		body: [
+			'Your credits are low, but another auto-refill would pass the monthly cap you set. When credits run out, rate and compute limits match Free until you top up. Add credits or raise the cap to keep going.',
+		],
+		action: { label: 'Manage credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because monthly cap notices are on. Turn them off on your credits page.",
+	})
+}
+
+export function buildCreditsLowBalanceEmail(input: {
+	appBaseUrl: string
+	creditsUrl: string
+	balanceLabel: string
+}) {
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'Your Kody credits are running low',
+		preheader: `Balance: ${input.balanceLabel}.`,
+		heading: 'Credits running low',
+		body: [
+			`Your Kody credit balance is ${input.balanceLabel}. When credits run out, rate and compute limits match Free until you top up.`,
+		],
+		action: { label: 'Add credits', url: input.creditsUrl },
+		illustration: creditsIllustration,
+		footnote:
+			"You're receiving this because low-balance notices are on. Turn them off on your credits page.",
 	})
 }
 
@@ -419,7 +524,7 @@ export function buildPastDueEmail(input: {
 export function buildUserErrorRateEmail(input: {
 	appBaseUrl: string
 	activityUrl: string
-	triagePackageUrl: string
+	supportUrl: string
 	errorCount: number
 	eventCount: number
 }) {
@@ -430,14 +535,14 @@ export function buildUserErrorRateEmail(input: {
 	return renderTransactionalEmail({
 		appBaseUrl: input.appBaseUrl,
 		subject: 'Your Kody runs are erroring more than usual',
-		preheader: 'A look at the failures, and a package that can help.',
+		preheader: 'A look at the failures, and where to get help.',
 		heading: 'A few runs need attention',
 		body: [
 			`This month Kody recorded ${input.errorCount.toLocaleString('en-US')} errors across ${input.eventCount.toLocaleString('en-US')} runs (${percent}%).`,
-			'Review the activity log, or fork Kent’s issue-triage package so a cloud agent can inspect the failures for you.',
+			'Review the activity log, or contact support if you need help sorting out the failures.',
 		],
 		action: { label: 'Review account activity', url: input.activityUrl },
-		afterAction: [`Loop-safe Cursor triage package: ${input.triagePackageUrl}`],
+		afterAction: [`Support: ${input.supportUrl}`],
 		illustration: {
 			src: '/images/kody-lantern.png',
 			alt: '',

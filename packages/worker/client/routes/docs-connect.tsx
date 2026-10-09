@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { type DocsConnectLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'

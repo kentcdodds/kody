@@ -24,40 +24,29 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		scene: 'desk',
 		line: { role: 'user' },
 	})
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'act' &&
-				beat.id === 'invoke' &&
-				beat.scene === 'phone' &&
-				beat.kicker.includes('{invoke}'),
-		),
-	).toBe(true)
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'act' &&
-				beat.id === 'notify' &&
-				beat.scene === 'phone' &&
-				beat.kicker.includes('{notify}'),
-		),
-	).toBe(true)
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'act' &&
-				beat.id === 'mail' &&
-				beat.later === 'The next day',
-		),
-	).toBe(true)
-	expect(
-		beats.some(
-			(beat) =>
-				beat.kind === 'line' &&
-				beat.actId === 'mail' &&
-				beat.line.role === 'email',
-		),
-	).toBe(true)
+	for (const beat of [
+		{
+			kind: 'act',
+			id: 'invoke',
+			scene: 'phone',
+			kicker: expect.stringContaining('{invoke}'),
+		},
+		{
+			kind: 'act',
+			id: 'notify',
+			scene: 'phone',
+			kicker: expect.stringContaining('{notify}'),
+		},
+		{ kind: 'act', id: 'mail', later: 'The next day' },
+		{
+			kind: 'line',
+			actId: 'mail',
+			line: expect.objectContaining({ role: 'email' }),
+		},
+		{ kind: 'line', line: expect.objectContaining({ role: 'tools' }) },
+	]) {
+		expect(beats).toContainEqual(expect.objectContaining(beat))
+	}
 	expect(
 		groupLandingLoopScenes(beats).map((group) => ({
 			scene: group.scene,
@@ -72,38 +61,24 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		{ scene: 'phone', act: 'notify' },
 		{ scene: 'desk', act: 'mail' },
 	])
-	expect(
-		beats.some((beat) => beat.kind === 'line' && beat.line.role === 'tools'),
-	).toBe(true)
 
+	// Only a user-driven scroll away from the bottom (not auto-scroll) explores.
+	const scrolls: Array<[boolean, boolean, boolean, boolean]> = [
+		[true, true, false, false],
+		[false, false, false, false],
+		[false, true, true, false],
+		[false, true, false, true],
+	]
 	expect(
-		landingLoopChatScrollShouldExplore({
-			autoScrolling: true,
-			userDriven: true,
-			atBottom: false,
-		}),
-	).toBe(false)
-	expect(
-		landingLoopChatScrollShouldExplore({
-			autoScrolling: false,
-			userDriven: false,
-			atBottom: false,
-		}),
-	).toBe(false)
-	expect(
-		landingLoopChatScrollShouldExplore({
-			autoScrolling: false,
-			userDriven: true,
-			atBottom: true,
-		}),
-	).toBe(false)
-	expect(
-		landingLoopChatScrollShouldExplore({
-			autoScrolling: false,
-			userDriven: true,
-			atBottom: false,
-		}),
-	).toBe(true)
+		scrolls.filter(
+			([autoScrolling, userDriven, atBottom, want]) =>
+				landingLoopChatScrollShouldExplore({
+					autoScrolling,
+					userDriven,
+					atBottom,
+				}) !== want,
+		),
+	).toEqual([])
 
 	const player = createLandingLoopPlayer({
 		beatCount: beats.length,
@@ -164,24 +139,29 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	expect(still.isPaused()).toBe(true)
 	expect(still.advance()).toEqual({ didAdvance: false, ended: false })
 
+	const state = (p: typeof player) => ({
+		revealed: p.revealedCount,
+		ended: p.isEnded(),
+		paused: p.isPaused(),
+	})
+	const teaser = landingLoopTeaserBeatCount
 	const finisher = createLandingLoopPlayer({
 		beatCount: 3,
 		reducedMotion: false,
 	})
-	expect(finisher.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(finisher.revealedCount).toBe(teaser)
 	expect(finisher.advance()).toEqual({ didAdvance: true, ended: false })
 	expect(finisher.revealedCount).toBe(3)
 	expect(finisher.advance()).toEqual({ didAdvance: false, ended: true })
-	expect(finisher.revealedCount).toBe(3)
-	expect(finisher.isEnded()).toBe(true)
-	expect(finisher.isPaused()).toBe(true)
+	expect(state(finisher)).toEqual({ revealed: 3, ended: true, paused: true })
 	finisher.play()
-	expect(finisher.isEnded()).toBe(true)
-	expect(finisher.isPaused()).toBe(true)
+	expect(state(finisher)).toEqual({ revealed: 3, ended: true, paused: true })
 	finisher.restart()
-	expect(finisher.isEnded()).toBe(false)
-	expect(finisher.isPaused()).toBe(false)
-	expect(finisher.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(state(finisher)).toEqual({
+		revealed: teaser,
+		ended: false,
+		paused: false,
+	})
 	expect(finisher.advance()).toEqual({ didAdvance: true, ended: false })
 
 	const skipper = createLandingLoopPlayer({
@@ -190,16 +170,12 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 	})
 	skipper.setHover(true)
 	skipper.skipToEnd()
-	expect(skipper.revealedCount).toBe(5)
-	expect(skipper.isEnded()).toBe(true)
-	expect(skipper.isPaused()).toBe(true)
+	expect(state(skipper)).toEqual({ revealed: 5, ended: true, paused: true })
 	expect(skipper.pauseReasons()).toEqual(['ended'])
 	skipper.skipToEnd()
-	expect(skipper.revealedCount).toBe(5)
-	expect(skipper.isEnded()).toBe(true)
+	expect(state(skipper)).toMatchObject({ revealed: 5, ended: true })
 	skipper.restart()
-	expect(skipper.isEnded()).toBe(false)
-	expect(skipper.revealedCount).toBe(landingLoopTeaserBeatCount)
+	expect(state(skipper)).toMatchObject({ revealed: teaser, ended: false })
 
 	vi.useFakeTimers()
 	try {
@@ -235,32 +211,16 @@ test('homepage loop player pauses for hover and explore, then play resumes and r
 		vi.useRealTimers()
 	}
 
+	const toggles: Array<[boolean, boolean, boolean, string | null]> = [
+		[false, false, false, 'Pause'],
+		[false, false, true, 'Play'],
+		[false, true, true, 'Restart'],
+		[true, false, false, null],
+	]
 	expect(
-		landingLoopToggleLabel({
-			reducedMotion: false,
-			ended: false,
-			paused: false,
-		}),
-	).toBe('Pause')
-	expect(
-		landingLoopToggleLabel({
-			reducedMotion: false,
-			ended: false,
-			paused: true,
-		}),
-	).toBe('Play')
-	expect(
-		landingLoopToggleLabel({
-			reducedMotion: false,
-			ended: true,
-			paused: true,
-		}),
-	).toBe('Restart')
-	expect(
-		landingLoopToggleLabel({
-			reducedMotion: true,
-			ended: false,
-			paused: false,
-		}),
-	).toBeNull()
+		toggles.filter(
+			([reducedMotion, ended, paused, want]) =>
+				landingLoopToggleLabel({ reducedMotion, ended, paused }) !== want,
+		),
+	).toEqual([])
 })

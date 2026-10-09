@@ -10,6 +10,16 @@ test('getErrorMessage reads Error messages and stringifies other values', () => 
 	expect(getErrorMessage('plain')).toBe('plain')
 	expect(getErrorMessage(42)).toBe('42')
 	expect(getErrorMessage(null)).toBe('null')
+	expect(
+		getErrorMessage({
+			name: 'ArtifactsError',
+			code: 'INTERNAL_ERROR',
+			message: 'An unexpected internal error occurred.',
+		}),
+	).toBe('An unexpected internal error occurred.')
+	expect(
+		getErrorMessage({ name: 'ArtifactsError', code: 'INTERNAL_ERROR' }),
+	).toBe('[object Object]')
 })
 
 test('cause chains are traversed without looping on cycles', () => {

@@ -1,3 +1,5 @@
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+
 /**
  * Shared `users` provisioning for `*.workers.test.ts` suites. Local D1 starts
  * empty and never applies migrations, so each suite creates the tables it
@@ -102,6 +104,18 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	second_agent_standard_gift_granted_at: { create: 'TEXT' },
 	second_agent_standard_gift_expires_at: { create: 'TEXT' },
 	referral_standard_credit_expires_at: { create: 'TEXT' },
+	stripe_credits_eligible: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (stripe_credits_eligible IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
+	admin_credits_eligible: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (admin_credits_eligible IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
+	signup_welcome_credits_pending: {
+		create: `INTEGER NOT NULL DEFAULT 0 CHECK (signup_welcome_credits_pending IN (0, 1))`,
+		alter: `INTEGER NOT NULL DEFAULT 0`,
+	},
 }
 
 /**
@@ -180,4 +194,33 @@ export async function ensureUsersTestSchema(input: {
 		// Index already exists, or a partial legacy index remains from an
 		// earlier suite sharing this database.
 	}
+	await ensureCreditWalletsTestTable(input.db)
+	await ensureOrgsTestSchema(input.db)
+}
+
+/**
+ * Mirrors `credit_wallets` from `0069-prepaid-credits.sql`. Created with
+ * `users` because entitlement resolution reads the wallet balance for any
+ * account on the purchasable Pro (including gift and referral overlays).
+ */
+export async function ensureCreditWalletsTestTable(db: D1Database) {
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS credit_wallets (
+	user_id TEXT PRIMARY KEY NOT NULL,
+	balance_micro_usd INTEGER NOT NULL DEFAULT 0,
+	auto_refill_enabled INTEGER NOT NULL DEFAULT 0,
+	auto_refill_threshold_cents INTEGER,
+	auto_refill_amount_cents INTEGER,
+	auto_refill_monthly_cap_cents INTEGER,
+	auto_refill_payment_method_id TEXT,
+	auto_refill_failed_at TEXT,
+	notify_auto_refilled INTEGER NOT NULL DEFAULT 1,
+	notify_monthly_cap INTEGER NOT NULL DEFAULT 1,
+	notify_low_balance INTEGER NOT NULL DEFAULT 1,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+)`,
+		)
+		.run()
 }

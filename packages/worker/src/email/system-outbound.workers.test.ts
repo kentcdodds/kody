@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
+import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { systemEmailDayKey, systemEmailLimits } from './system-email.ts'
 import { systemEmailSentTopic } from './system-email-sent-subscription-event.ts'
@@ -21,7 +21,7 @@ const { sendSystemEmail } = await import('./system-outbound.ts')
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
 
-const mswOptions = { onUnhandledRequest: 'bypass' as const }
+const mswOptions = { onUnhandledFrame: 'bypass' as const }
 
 function createSystemEnv() {
 	return {
@@ -44,11 +44,21 @@ async function readSendCounter(localPart: string, now = new Date()) {
 	return Number(row?.count ?? 0)
 }
 
+function send(overrides: Partial<Parameters<typeof sendSystemEmail>[0]> = {}) {
+	return sendSystemEmail({
+		env: createSystemEnv(),
+		to: 'reporter@example.com',
+		subject: 'Hi',
+		text: 'Body',
+		...overrides,
+	})
+}
+
 test('sendSystemEmail sends from the reserved system sender to external recipients', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const now = new Date('2026-03-04T05:06:07.000Z')
 	const payloads: Array<Record<string, unknown>> = []
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, async ({ request }) => {
 				payloads.push((await request.json()) as Record<string, unknown>)
@@ -62,8 +72,7 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 	)
 
 	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
-	const result = await sendSystemEmail({
-		env: createSystemEnv(),
+	const result = await send({
 		to: ['Reporter@Example.com', 'reporter@example.com'],
 		subject: '  Thanks for the report  ',
 		text: 'We shipped the fix.',
@@ -103,57 +112,34 @@ test('sendSystemEmail sends from the reserved system sender to external recipien
 	expect(payloads[0]).not.toHaveProperty('replyTo')
 	expect(await readSendCounter('kody', now)).toBe(1)
 
-	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
-	payloads.length = 0
-	const defaulted = await sendSystemEmail({
-		env: createSystemEnv(),
-		to: 'second@example.com',
-		subject: 'No explicit reply-to',
-		text: 'Default Reply-To please.',
-		now,
-	})
-	expect(defaulted.from).toBe('kody@kody.example.com')
-	expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			event: expect.objectContaining({
-				from: 'kody@kody.example.com',
-				reply_to: 'support@kody.example.com',
-			}),
-		}),
-	)
-	expect(payloads).toEqual([
-		expect.objectContaining({
+	// The kody sender defaults Reply-To to support; the support sender has none.
+	const replyToDefaults = [
+		{
+			localPart: undefined,
 			from: 'kody@kody.example.com',
-			reply_to: 'support@kody.example.com',
-		}),
-	])
-	expect(payloads[0]).not.toHaveProperty('replyTo')
-
-	mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
-	payloads.length = 0
-	await sendSystemEmail({
-		env: createSystemEnv(),
-		localPart: 'support',
-		to: 'third@example.com',
-		subject: 'Support sender',
-		text: 'No default Reply-To.',
-		now,
-	})
-	expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
-		expect.objectContaining({
-			event: expect.objectContaining({
-				from: 'support@kody.example.com',
-				reply_to: null,
+			replyTo: 'support@kody.example.com',
+		},
+		{ localPart: 'support', from: 'support@kody.example.com', replyTo: null },
+	] as const
+	for (const { localPart, from, replyTo } of replyToDefaults) {
+		mocks.dispatchSystemEmailSentSubscriptionEvent.mockClear()
+		payloads.length = 0
+		expect((await send({ localPart, now })).from).toBe(from)
+		expect(mocks.dispatchSystemEmailSentSubscriptionEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				event: expect.objectContaining({ from, reply_to: replyTo }),
 			}),
-		}),
-	)
-	expect(payloads[0]).not.toHaveProperty('replyTo')
-	expect(payloads[0]).not.toHaveProperty('reply_to')
+		)
+		expect(payloads).toHaveLength(1)
+		expect(payloads[0]).toMatchObject({ from })
+		expect(payloads[0]?.['reply_to']).toBe(replyTo ?? undefined)
+		expect(payloads[0]).not.toHaveProperty('replyTo')
+	}
 })
 
 test('sendSystemEmail rejects unusable senders, recipients, and bodies', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () => {
 				throw new Error('Send should not be attempted')
@@ -162,59 +148,34 @@ test('sendSystemEmail rejects unusable senders, recipients, and bodies', async (
 		mswOptions,
 	)
 
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			localPart: 'marketing' as 'kody',
-			to: 'reporter@example.com',
-			subject: 'Hi',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Unknown system sender "marketing"')
-
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			to: 'not-an-address',
-			subject: 'Hi',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Invalid recipient email address: not-an-address')
-
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			to: Array.from({ length: 6 }, (_, index) => `r${index}@example.com`),
-			subject: 'Hi',
-			text: 'Body',
-		}),
-	).rejects.toThrow('at most 5 recipients')
-
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			to: 'reporter@example.com',
-			subject: '   ',
-			text: 'Body',
-		}),
-	).rejects.toThrow('Email subject is required.')
-
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			to: 'reporter@example.com',
-			subject: 'Hi',
-		}),
-	).rejects.toThrow('Email text or HTML body is required.')
-
-	await expect(
-		sendSystemEmail({
-			env: { ...createSystemEnv(), APP_BASE_URL: '', SYSTEM_EMAIL_DOMAIN: '' },
-			to: 'reporter@example.com',
-			subject: 'Hi',
-			text: 'Body',
-		}),
-	).rejects.toThrow('no system email domain is configured')
+	const rejections: Array<
+		[Partial<Parameters<typeof sendSystemEmail>[0]>, string]
+	> = [
+		[{ localPart: 'marketing' as 'kody' }, 'Unknown system sender "marketing"'],
+		[
+			{ to: 'not-an-address' },
+			'Invalid recipient email address: not-an-address',
+		],
+		[
+			{ to: Array.from({ length: 6 }, (_, index) => `r${index}@example.com`) },
+			'at most 5 recipients',
+		],
+		[{ subject: '   ' }, 'Email subject is required.'],
+		[{ text: undefined }, 'Email text or HTML body is required.'],
+		[
+			{
+				env: {
+					...createSystemEnv(),
+					APP_BASE_URL: '',
+					SYSTEM_EMAIL_DOMAIN: '',
+				},
+			},
+			'no system email domain is configured',
+		],
+	]
+	for (const [overrides, message] of rejections) {
+		await expect(send(overrides)).rejects.toThrow(message)
+	}
 })
 
 test('a failed provider call refunds the daily send budget and the cap blocks further sends', async () => {
@@ -223,7 +184,7 @@ test('a failed provider call refunds the daily send budget and the cap blocks fu
 	// behavior under test here.
 	consoleWarn.mockImplementation(() => {})
 	const now = new Date('2026-03-05T05:06:07.000Z')
-	using _server = createMswNodeServer(
+	using _server = createMswWorkerServer(
 		[
 			http.post(cloudflareEmailApi, () =>
 				HttpResponse.json(
@@ -235,16 +196,9 @@ test('a failed provider call refunds the daily send budget and the cap blocks fu
 		mswOptions,
 	)
 
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			localPart: 'support',
-			to: 'reporter@example.com',
-			subject: 'Hi',
-			text: 'Body',
-			now,
-		}),
-	).rejects.toThrow('Recipient rejected')
+	await expect(send({ localPart: 'support', now })).rejects.toThrow(
+		'Recipient rejected',
+	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'cloudflare-email-api-failed',
 		expect.stringContaining('Recipient rejected'),
@@ -264,16 +218,9 @@ test('a failed provider call refunds the daily send budget and the cap blocks fu
 		)
 		.run()
 
-	await expect(
-		sendSystemEmail({
-			env: createSystemEnv(),
-			localPart: 'support',
-			to: 'reporter@example.com',
-			subject: 'Hi',
-			text: 'Body',
-			now,
-		}),
-	).rejects.toThrow('Daily system email send limit reached')
+	await expect(send({ localPart: 'support', now })).rejects.toThrow(
+		'Daily system email send limit reached',
+	)
 	// Receives keep their own budget: the send cap never blocks inbound mail.
 	expect(
 		await env.APP_DB.prepare(

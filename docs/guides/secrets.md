@@ -15,7 +15,14 @@ category: platform
 
 A secret is a credential stored on your Kody account — an API key, a personal
 access token, a webhook signing secret, a private key. Your agent can write code
-that uses a secret. It can never read one.
+that uses a secret. It can never read one — including via `packageSecrets.get`,
+which returns only an opaque `{{secret:…}}` placeholder for platform use sites
+(fetch, `secretHeaders`, `secretJwtSign`) to resolve.
+
+Watch:
+[Make your agent safe and autonomous](https://www.youtube.com/watch?v=_EJTrJFLa3g)
+for the locked Gmail drafts loop, written up in
+[Gmail drafts without send](./locked-gmail-drafts.md).
 
 ## The rule: there is no `secret_get`
 
@@ -47,13 +54,15 @@ boundary, on the final serialized request, and only for hosts you approved.
   interpolation; it works only in secret-aware `fetch`.
 - **Derived headers** — when an API wants Basic Auth built from two secrets,
   `secretHeaders.basic({ usernameSecret, passwordSecret })` from `kody:runtime`
-  produces the header without exposing either half.
+  produces the header without exposing either half. Each secret argument accepts
+  a saved secret name **or** an opaque `{{secret:…}}` ref from
+  `packageSecrets.get`.
 - **Signed JWTs** — `secretJwtSign` signs a JWT with a stored key and returns
   the compact token, never the key. HMAC (`HS256` / `HS384` / `HS512`) reads key
   material from the saved secret (`key_encoding` defaults to `base64`) and
   rejects keys shorter than 32, 48, or 64 bytes (JWA). `RS*`, `PS*`, `ES*`, and
   `EdDSA` use a PKCS#8 PEM private key. Pass the secret as
-  `private_key_secret_name`.
+  `private_key_secret_name` (name **or** opaque `{{secret:…}}` ref).
 
 Placeholders are live tokens. Do not paste one into an issue body, a comment, a
 log line, or a returned string — write `{{secret:<name>}}` with angle brackets
@@ -105,7 +114,7 @@ list. A pasted API key is a secret; a Slack login is an integration. See
 
 A secret can carry an expiry (`expires_at`). Expired secrets stay listed with
 `ttl_ms: 0`, and placeholders treat them as missing so Kody stops sending the
-value. Agents prefilling `/account/secrets/new` can set `expiresAt` in the query
+value. Agents prefilling `/connect/secret-set` can set `expiresAt` in the query
 string so the person pastes the token without typing a date.
 
 ## When a token is coarser than the job
@@ -120,7 +129,7 @@ on connected tool servers.
 
 ## Adding a secret
 
-- Pasting a key or PAT: the agent sends you a prefilled `/account/secrets/new`
+- Pasting a key or PAT: the agent sends you a prefilled `/connect/secret-set`
   link; you paste the value into the page, never into chat. URL shape and
   parameters: [Secret setup URL reference](./account-secret-setup.md).
 - Building an integration around one or more secrets:

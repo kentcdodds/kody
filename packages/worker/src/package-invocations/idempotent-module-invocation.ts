@@ -1,5 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
+	createPackageInvocationClientDisconnectedError,
+	isCallerDisconnectAbort,
+	packageInvocationClientDisconnectedErrorName,
+	packageInvocationStartedLog,
+} from '#worker/caller-disconnect.ts'
+import {
 	claimPackageInvocationRecord,
 	finishPackageInvocationRecord,
 	getPackageInvocationRecord,
@@ -11,6 +17,8 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import {
 	buildPackageInvocationStorageId,
 	resolveInvocationRuntimeName,
@@ -28,7 +36,11 @@ import { type ensureModuleArtifact } from './module-artifacts.ts'
 import { runSavedPackageModuleOnce } from './module-execution.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 import { buildSubscriptionInvocationRunMetadata } from './subscription-envelope.ts'
-import { boundedResponseJson, parseStoredResponse } from './repo.ts'
+import {
+	boundedResponseJson,
+	parseStoredResponse,
+	type PackageInvocationStoredResponse,
+} from './repo.ts'
 
 export const packageInvocationStaleAfterMs = 15 * 60 * 1000
 const packageInvocationPollIntervalMs = 100
@@ -36,6 +48,14 @@ const packageInvocationPollBudgetMs = 1_000
 
 function isStaleInvocation(updatedAt: string, now: Date) {
 	return Date.parse(updatedAt) <= now.getTime() - packageInvocationStaleAfterMs
+}
+
+function readInvocationErrorCode(body: unknown): string | null {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+	const error = (body as Record<string, unknown>)['error']
+	if (!error || typeof error !== 'object' || Array.isArray(error)) return null
+	const code = (error as Record<string, unknown>)['code']
+	return typeof code === 'string' ? code : null
 }
 
 function toResolvableLedgerRecord(
@@ -92,7 +112,7 @@ export async function invokeSavedPackageModule(input: {
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
 	/**
-	 * Artifact already prepared by a `packages.invoke` check phase moments
+	 * Artifact already prepared by a host invoke check phase moments
 	 * earlier; skips a second manifest + artifact load. The claim still
 	 * happens first, so replay semantics are unchanged.
 	 */
@@ -102,6 +122,25 @@ export async function invokeSavedPackageModule(input: {
 	executorTimeoutMs?: number | null
 	signal?: AbortSignal
 }) {
+	// Before the ledger: a suspended owner must neither replay a stored
+	// response nor leave a terminal denial that outlives the suspension.
+	// Other identity failures fall through to module execution, which
+	// reports them as before.
+	const suspension = await resolveBackgroundMcpUser(
+		input.env.APP_DB,
+		input.actor.orgId,
+	).then(
+		() => null,
+		(error: unknown) => (isAccountSuspendedError(error) ? error : null),
+	)
+	if (suspension) {
+		return buildJsonErrorResponse({
+			status: 403,
+			code: suspension.code,
+			message: suspension.message,
+			idempotencyKey: input.idempotencyKey,
+		})
+	}
 	const requestHash = await createRequestHash({
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,
@@ -113,7 +152,7 @@ export async function invokeSavedPackageModule(input: {
 		topic: input.topic,
 	})
 	const ledgerKey = {
-		tokenId: input.actor.tokenId,
+		tokenId: input.actor.sourceId,
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,
 		idempotencyKey: input.idempotencyKey,
@@ -181,7 +220,7 @@ export async function invokeSavedPackageModule(input: {
 	const attemptClaim = async () =>
 		await claimPackageInvocationRecord({
 			env: input.env,
-			userId: input.actor.userId,
+			userId: input.actor.orgId,
 			context: buildRunRecordContext(),
 			invocation: {
 				id: crypto.randomUUID(),
@@ -198,7 +237,7 @@ export async function invokeSavedPackageModule(input: {
 	const lookupLedger = async () =>
 		await getPackageInvocationRecord({
 			env: input.env,
-			userId: input.actor.userId,
+			userId: input.actor.orgId,
 			key: ledgerKey,
 		})
 	let claim: Awaited<ReturnType<typeof attemptClaim>>
@@ -265,6 +304,83 @@ export async function invokeSavedPackageModule(input: {
 		claimUpdatedAt: claim.claimUpdatedAt,
 		handle: claim.handle,
 	}
+	const startedLog = packageInvocationStartedLog(claimed.handle?.context.name)
+	let disconnectFinishSucceeded = false
+	let disconnectResponse: PackageInvocationStoredResponse | null = null
+	let disconnectFinish: Promise<void> | null = null
+	const finishForCallerDisconnect = () => {
+		const signal = input.signal
+		if (!signal || !isCallerDisconnectAbort(signal)) return
+		if (disconnectFinish || disconnectFinishSucceeded) return
+		const error = createPackageInvocationClientDisconnectedError()
+		disconnectResponse = buildJsonErrorResponse({
+			status: 408,
+			code: packageInvocationClientDisconnectedErrorName,
+			message: error.message,
+			idempotencyKey: input.idempotencyKey,
+		})
+		const pending = finishPackageInvocationRecord({
+			env: input.env,
+			userId: input.actor.orgId,
+			handle: claimed.handle,
+			invocationId: claimed.invocationId,
+			claimUpdatedAt: claimed.claimUpdatedAt,
+			ledgerStatus: 'failed',
+			responseJson: boundedResponseJson(disconnectResponse),
+			status: 'error',
+			logs: [startedLog],
+			error,
+			waitUntil: input.waitUntil,
+		}).then(
+			(finished) => {
+				if (!finished.ledgerUpdated) {
+					// Another terminal write won the fence. Replay that durable
+					// result instead of treating the local disconnect 408 as
+					// the stored response (same as completed/failed finishes).
+					disconnectResponse = finished.record
+						? resolveLedgerRecord(finished.record)
+						: buildJsonErrorResponse({
+								status: 500,
+								code: 'idempotency_response_unavailable',
+								message: 'Package invocation result lost its recovery claim.',
+								idempotencyKey: input.idempotencyKey,
+							})
+				}
+				disconnectFinishSucceeded = true
+			},
+			(finishError: unknown) => {
+				console.warn(
+					'package invocation disconnect finish failed',
+					getErrorMessage(finishError),
+				)
+				// Allow the settled sandbox outcome to attempt a normal fenced
+				// finish so a transient DO write failure does not leave the key
+				// in_progress after the caller already disconnected.
+				disconnectFinish = null
+			},
+		)
+		disconnectFinish = pending
+		input.waitUntil?.(pending)
+	}
+	const onCallerDisconnect = () => {
+		finishForCallerDisconnect()
+	}
+	if (input.signal) {
+		if (input.signal.aborted) onCallerDisconnect()
+		else {
+			input.signal.addEventListener('abort', onCallerDisconnect, {
+				once: true,
+			})
+		}
+	}
+	if (disconnectFinishSucceeded) {
+		if (disconnectResponse) return disconnectResponse
+	} else if (disconnectFinish) {
+		await disconnectFinish
+		if (disconnectFinishSucceeded && disconnectResponse) {
+			return disconnectResponse
+		}
+	}
 	const outcome = await runSavedPackageModuleOnce({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -286,14 +402,50 @@ export async function invokeSavedPackageModule(input: {
 		signal: input.signal,
 		externalRunRecordHandle: claimed.handle,
 	})
+	input.signal?.removeEventListener('abort', onCallerDisconnect)
+	if (disconnectFinish) {
+		await disconnectFinish
+	}
+	if (disconnectFinishSucceeded && disconnectResponse) {
+		return disconnectResponse
+	}
+	const logsWithStartedLine = (logs: Array<string>) =>
+		logs.includes(startedLog) ? logs : [startedLog, ...logs]
 	switch (outcome.kind) {
-		case 'artifact-unavailable': {
+		case 'artifact-unavailable':
+		case 'pre-execution-denied': {
+			// Nothing ran: free the key so a later retry (quota reset, limit
+			// bump, or artifact prepare) is not stuck replaying this response.
+			// Finish the claimed run as an error with logs (do not delete it)
+			// so Activity keeps pre-execution evidence instead of a vanished
+			// zero-log attempt.
+			const releaseReason =
+				outcome.kind === 'artifact-unavailable'
+					? 'Package artifact preparation failed before execution.'
+					: 'Package invocation denied before execution.'
+			const releaseErrorCode = readInvocationErrorCode(outcome.response.body)
 			const release = await releasePackageInvocationRecord({
 				env: input.env,
-				userId: input.actor.userId,
+				userId: input.actor.orgId,
 				invocationId: claimed.invocationId,
 				claimUpdatedAt: claimed.claimUpdatedAt,
 				handle: claimed.handle,
+				error: {
+					name: releaseErrorCode ?? outcome.kind,
+					message: releaseReason,
+				},
+				logs: [
+					startedLog,
+					{
+						level: 'error',
+						message: releaseReason,
+						fields: {
+							kind: outcome.kind,
+							...(releaseErrorCode ? { code: releaseErrorCode } : {}),
+						},
+					},
+				],
+				waitUntil: input.waitUntil,
 			})
 			if (!release.released) {
 				const current = release.record
@@ -304,7 +456,9 @@ export async function invokeSavedPackageModule(input: {
 								status: 500,
 								code: 'idempotency_conflict_unresolved',
 								message:
-									'Transient artifact preparation lost its invocation claim.',
+									outcome.kind === 'artifact-unavailable'
+										? 'Transient artifact preparation lost its invocation claim.'
+										: 'Pre-execution denial lost its invocation claim.',
 								idempotencyKey: input.idempotencyKey,
 							})
 				}
@@ -315,7 +469,7 @@ export async function invokeSavedPackageModule(input: {
 			try {
 				const finished = await finishPackageInvocationRecord({
 					env: input.env,
-					userId: input.actor.userId,
+					userId: input.actor.orgId,
 					handle: claimed.handle,
 					invocationId: claimed.invocationId,
 					claimUpdatedAt: claimed.claimUpdatedAt,
@@ -351,14 +505,14 @@ export async function invokeSavedPackageModule(input: {
 			try {
 				const finished = await finishPackageInvocationRecord({
 					env: input.env,
-					userId: input.actor.userId,
+					userId: input.actor.orgId,
 					handle: claimed.handle,
 					invocationId: claimed.invocationId,
 					claimUpdatedAt: claimed.claimUpdatedAt,
 					ledgerStatus: 'failed',
 					responseJson: boundedResponseJson(outcome.response),
 					status: 'error',
-					logs: outcome.logs,
+					logs: logsWithStartedLine(outcome.logs),
 					error: outcome.error,
 					waitUntil: input.waitUntil,
 				})

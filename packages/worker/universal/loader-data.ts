@@ -30,13 +30,29 @@ import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clien
 import { type EmailNotificationDestination } from '#universal/email-destinations.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { type IntegrationAuthFailureView } from '#universal/connection-trouble.ts'
+import {
+	type ConnectOauthChooserOption,
+	type PlatformIntegrationCatalogItem,
+} from '#universal/oauth-connect.ts'
 import { type WaitingItem } from '#universal/waiting.ts'
 import { type OnboardingFunnelStage } from '#universal/onboarding-funnel-point.ts'
-import { type EntitlementLadder } from '#universal/plans.ts'
 import {
-	type ComputeOverageDisposition,
+	type CreditWalletState,
+	type EntitlementLadder,
+} from '#universal/plans.ts'
+import {
+	type ComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
+import {
+	type AccountActivity,
+	type CreditsAlarm,
+	type IncludedComputeMeter,
+} from '#universal/usage-presentation.ts'
+import {
+	type CreditAttributionBreakdown,
+	type CreditAttributionRow,
+} from '#universal/credit-attribution.ts'
 import {
 	type AccountActivityStatusFilter,
 	type AccountActivitySurfaceFilter,
@@ -44,11 +60,6 @@ import {
 	type AccountActivityViewFilter,
 } from '#universal/account-activity-filters.ts'
 import { type FleetPackageErrorRateConcentration } from '#universal/fleet-package-error-rate-concentration.ts'
-import {
-	type SiteBannerRecord,
-	type SiteBannerView,
-	type SiteBannerViewer,
-} from '#universal/site-banners.ts'
 import {
 	type PackageShareFileChange,
 	type PackageShareGrantLoaderView,
@@ -326,6 +337,26 @@ export type AdminUserListItem = {
 	manualPlan: AdminPlanName
 	stripePlan: AdminPlanName | null
 	effectivePlan: AdminPlanName
+	/** Raw `users.second_agent_standard_gift_expires_at`, or null. */
+	secondAgentGiftExpiresAt: string | null
+	/** Raw `users.referral_standard_credit_expires_at`, or null. */
+	referralCreditExpiresAt: string | null
+	/**
+	 * Later of the two overlay expiry columns (or null). Same value
+	 * `resolveEffectivePlanWithSecondAgentGift` / gating use for the overlay.
+	 */
+	overlayExpiresAt: string | null
+	/**
+	 * True while a temporary Pro overlay currently raises Free. False for
+	 * paid/manual plans even when expiry columns are still set.
+	 */
+	isProOverlay: boolean
+	/**
+	 * Which overlay is classifying the current Pro raise.
+	 * When both are active, the later expiry wins; equal timestamps prefer
+	 * `second_agent_gift`. Null unless `isProOverlay`.
+	 */
+	overlayType: 'second_agent_gift' | 'referral_credit' | null
 	/** `legacy` keeps pre-cut Standard/Pro ceilings while paid access stays continuous. */
 	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean
@@ -364,6 +395,27 @@ export type AdminUsersLoaderData = {
 	total: number
 	availableRoles: Array<RoleName>
 	availablePlans: Array<AdminPlanName>
+}
+
+export type AdminCreditLedgerItem = AccountCreditsLedgerItem & {
+	/** Admin who granted (admin grants only). */
+	grantedByUsername: string | null
+	note: string | null
+}
+
+/** Admin view of one account's credit wallet (grant panel + audit). */
+export type AdminCreditWalletSummary = {
+	ok: true
+	stableUserId: string
+	username: string
+	plan: AdminPlanName
+	/** Purchasable Pro: credits unlock limits and debit usage. */
+	eligible: boolean
+	/** `users.admin_credits_eligible`: admin-set, never touched by Stripe. */
+	adminCreditsEligible: boolean
+	unlocked: boolean
+	balanceMicroUsd: number
+	recent: Array<AdminCreditLedgerItem>
 }
 
 export type AdminCreatedUserSetup = {
@@ -447,19 +499,6 @@ export type AdminFeatureFlagsLoaderData = {
 	featureFlags: Array<AdminFeatureFlag>
 }
 
-export type AdminBannersLoaderData = {
-	ok: true
-	banners: Array<SiteBannerRecord>
-	savedBannerId?: string
-}
-
-export type SiteBannerLoaderData = {
-	banner: SiteBannerView | null
-	candidates: Array<SiteBannerRecord>
-	dismissedIds: Array<string>
-	viewer: SiteBannerViewer
-}
-
 export type YoutubeWatchLoaderData = {
 	allowedVideoIds: Array<string>
 }
@@ -486,7 +525,10 @@ export type AdminPlatformIntegrationApp = {
 	allowedScopes: Array<string>
 	defaultScopes: Array<string>
 	requiredHosts: Array<string>
+	/** Hard kill for connect. */
 	enabled: boolean
+	/** Discovery surfaces offer only enabled + published apps. */
+	visibility: 'draft' | 'published'
 	logoPath: string | null
 	connectionCount: number
 	createdAt: string
@@ -571,8 +613,10 @@ export type AdminUsageMetric =
 	| 'email_send'
 	| 'email_received'
 	| 'dynamic_worker_day'
+	| 'dynamic_worker_cpu'
 	| 'durable_object_gb_seconds'
 	| 'durable_object_rows_read'
+	| 'durable_object_platform_rows_read'
 
 export type AdminUsageEntitlementResource =
 	| 'saved_packages'
@@ -587,6 +631,7 @@ export type AdminUsageEntitlementResource =
 	| 'execute_calls_per_day'
 	| 'outbound_fetches_per_day'
 	| 'job_runs_per_day'
+	| 'automation_invocations_per_day'
 
 export type AdminPlanName = 'free' | 'standard' | 'pro' | 'max'
 
@@ -771,7 +816,7 @@ export type AdminInsightsLaunchSignals = {
 	stripePlans: Array<AdminInsightsPlanSlice>
 	effectivePlans: Array<AdminInsightsPlanSlice>
 	/** Effective Standard from an active gift or referral while manual+Stripe stay free. */
-	overlayStandard: number
+	overlayPro: number
 	entitlementLadders: { public: number; legacy: number }
 	paidEntitlementLadders: { public: number; legacy: number }
 	activeUsers: { hours24: number; hours48: number; days7: number }
@@ -872,10 +917,23 @@ type AdminDynamicWorkerCost = {
 }
 
 type AdminDurableObjectDuration = {
+	/** RPC wall-clock proxy (StorageRunner only). */
 	gbSeconds: number
 	durationMs: number
 	rpcCount: number
 	memoryGb: number
+	/** Cloudflare-measured active time attributed to this user, this month. */
+	measured: AdminMeasuredDurableObjectDuration
+}
+
+type AdminMeasuredDurableObjectDuration = {
+	activeMs: number
+	gbSeconds: number
+	/** Gross at Cloudflare list, before the account-wide include. */
+	estimatedUsd: number
+	/** Latest UTC day with attributed rows; null when none yet. */
+	lastDay: string | null
+	byClass: Array<{ doClass: string; activeMs: number; gbSeconds: number }>
 }
 
 export type AdminInsightsDynamicWorkerCostConsumer = {
@@ -1083,6 +1141,20 @@ export type AccountFormerEmail = {
 	claimedAt: string
 }
 
+export type AccountOrganizationSummary = {
+	slug: string
+	displayName: string | null
+	role: 'owner' | 'member' | 'billing' | null
+	personal: boolean
+}
+
+type AccountInviteSummary = {
+	id: string
+	orgSlug: string
+	kind: string
+	role: string | null
+}
+
 export type AccountProfileLoaderData = {
 	ok: true
 	email: string
@@ -1094,6 +1166,19 @@ export type AccountProfileLoaderData = {
 	avatarUrl: string | null
 	profileVisibility: ProfileVisibility
 	formerEmails: Array<AccountFormerEmail>
+	organizations?: Array<AccountOrganizationSummary>
+	inviteCount?: number
+	lastUsedOrganization?: string | null
+}
+
+type AccountOrganizationsLoaderData = {
+	ok: true
+	error: string | null
+}
+
+export type AccountInvitesLoaderData = {
+	ok: true
+	invites: Array<AccountInviteSummary>
 }
 
 export type AccountConnectionListItem = {
@@ -1151,6 +1236,12 @@ export type OnboardingLoaderData = {
 	featuredMcpServers: Array<OnboardingFeaturedMcpServer>
 	/** Non-featured MCP servers the viewer added themselves. */
 	customMcpServers: Array<OnboardingCustomMcpServer>
+	/**
+	 * Built-in integrations from the onboarding allowlist that are published,
+	 * enabled, and not yet connected. Empty (or absent) while every built-in is
+	 * draft.
+	 */
+	featuredPlatformIntegrations?: Array<PlatformIntegrationCatalogItem>
 	/**
 	 * Most recently updated saved-package user-facing name (`@scope/kody-id`)
 	 * for Step 3 "You made …" chrome. Null when logged out, unverified, or
@@ -1212,6 +1303,20 @@ export type AccountMcpOauthClientsLoaderData = {
 
 export type AccountConnectedAgentListItem = ConnectedMcpAgent & {
 	grantIds: Array<string>
+	connectionProfileName: string | null
+}
+
+export type AccountConnectionProfileView = {
+	id: string
+	name: string
+	grants: Array<{
+		resourceType: string
+		resourceId: string
+		actions: Array<'read' | 'execute' | 'write'>
+	}>
+	mcpServerUrl: string
+	createdAt: string
+	updatedAt: string
 }
 
 export type AccountConnectedAgentsLoaderData = {
@@ -1223,12 +1328,21 @@ export type AccountConnectedAgentsLoaderData = {
 	 * cannot send an unverified user into the authorize → 403 loop.
 	 */
 	mcpServerUrl: string
+	/** Experimenter-only. Absent/empty when the connection-profiles flag is off. */
+	connectionProfilesEnabled?: boolean
+	connectionProfiles?: Array<AccountConnectionProfileView>
+	/** Owned packages offered when editing profile grants (id + name). */
+	connectionProfilePackageOptions?: Array<{
+		id: string
+		name: string
+		kodyId: string
+	}>
 }
 
 type PackageWebhookVerification = {
 	type: 'hmac-sha256' | 'hmac-sha1'
 	header: string
-	secretName: string
+	secretName?: string
 	encoding: 'hex' | 'base64'
 	prefix?: string
 	signedPayload?: 'body' | 'timestamp.body'
@@ -1243,6 +1357,48 @@ type PackageWebhookReplay = {
 		| 'stripe-signature'
 	toleranceSeconds?: number
 	deliveryIdHeader?: string
+} | null
+
+type PackageWebhookChallengeProve =
+	| { kind: 'none' }
+	| {
+			kind: 'verify-token'
+			in: 'query'
+			key: string
+			secretName: string
+			required?: boolean
+	  }
+	| {
+			kind: 'hmac'
+			secretName: string
+			algorithm: 'hmac-sha256'
+			encoding: 'hex' | 'base64'
+			prefix?: string
+	  }
+	| {
+			kind: 'request-hmac'
+			secretName: string
+			algorithm: 'hmac-sha256'
+			encoding: 'hex' | 'base64'
+			prefix?: string
+			timestampHeader: string
+			signatureHeader: string
+			signedPayload: 'v0.timestamp.body'
+	  }
+
+type PackageWebhookChallenge = {
+	type: 'subscription-challenge'
+	method: 'GET' | 'POST'
+	challenge: { in: 'query' | 'json'; key: string }
+	when?: {
+		query?: Record<string, string | Array<string>>
+		json?: Record<string, string>
+	}
+	prove?: PackageWebhookChallengeProve
+	respond:
+		| { as: 'text' }
+		| { as: 'json'; key: string }
+		| { as: 'json-hmac'; key: string }
 } | null
 
 /**
@@ -1265,6 +1421,7 @@ export type PackageWebhookListItem = {
 	rateLimitPerMinute: number
 	verification: PackageWebhookVerification
 	replay: PackageWebhookReplay
+	challenge: PackageWebhookChallenge
 	minted: boolean
 	handle: string | null
 	urlHost: string | null
@@ -1282,6 +1439,35 @@ export type PackageWebhookListItem = {
 }
 
 /** `/account/webhooks.json`: every declared webhook across the owner's packages. */
+
+export type ConnectWebhookApplyLoaderData =
+	| {
+			ok: true
+			handle: string
+			fingerprint: string
+			packageId: string
+			packageKodyId: string
+			packageName: string
+			webhookName: string
+			destination: {
+				method: string
+				url: string
+				headers: Array<{ name: string; value: string }>
+				body: string
+				secretName: string | null
+				integration: string | null
+				injectionSites: Array<string>
+				auth: string
+			}
+			alreadyGranted: boolean
+	  }
+	| {
+			ok: false
+			error: string
+			handle: string | null
+			fingerprint: string | null
+	  }
+
 export type AccountWebhooksLoaderData = {
 	ok: true
 	username: string
@@ -1459,14 +1645,16 @@ export type AccountIntegrationsLoaderData = {
 		usageMode: 'any' | 'packages'
 		alreadyGranted: boolean
 	} | null
+	/** Enabled + published built-ins the viewer has not connected yet. */
+	platformCatalog?: Array<PlatformIntegrationCatalogItem>
 }
 
 export type AccountIntegrationDetailLoaderData = {
 	ok: true
 	integration: AccountIntegrationListItem | null
 	/**
-	 * Always false. Platform connect is retired; the field stays so older
-	 * clients keep a stable loader shape.
+	 * Always false. Built-in connects start from `platform=<slug>` discovery
+	 * links instead; the field stays so older clients keep a stable shape.
 	 */
 	builtInAvailable?: boolean
 	/** See {@link ConnectOauthExistingConnection}. */
@@ -1513,20 +1701,11 @@ export type ConnectOauthLoaderData = {
 	redirectUri?: string
 	/**
 	 * Signed-in bare `/connect/oauth` visits: saved connections that can
-	 * start from `?provider=` alone. Omitted on provider/callback visits.
+	 * start from `?provider=` alone, then published built-ins not yet
+	 * connected. Omitted on provider/callback visits.
 	 */
 	chooser?: {
-		options: Array<{
-			id: string
-			href: string
-			label: string
-			detail: string
-			providerKey: string
-			logoPath: string | null
-			autoLogoPath: string | null
-			catalogLogoPath: string | null
-			kind: 'connection'
-		}>
+		options: Array<ConnectOauthChooserOption>
 	}
 }
 
@@ -1566,16 +1745,6 @@ export type AccountMcpServersLoaderData = {
 	savedPackages: Array<{ id: string; kodyId: string }>
 }
 
-export type AccountPackageToken = {
-	id: string
-	name: string
-	exportNames: Array<string>
-	createdAt: string
-	updatedAt: string
-	lastUsedAt: string | null
-	revokedAt: string | null
-}
-
 export type AccountPackageListingAhead = {
 	listingId: string
 	listingName: string
@@ -1612,11 +1781,23 @@ export type AccountPackageListItem = {
 	forkAhead: AccountPackageForkAhead | null
 }
 
+export type AccountPackageCommunityFork = {
+	listingName: string | null
+	adoptedAt: string | null
+	adoptionNote: string | null
+}
+
 export type AccountPackageDetail = AccountPackageListItem & {
 	searchText: string | null
 	exports: Array<string> | null
-	tokens: Array<AccountPackageToken>
 	publishedCommit: string | null
+	/** Null for self-authored packages (no `community_forks` row). */
+	communityFork: AccountPackageCommunityFork | null
+	/**
+	 * This UTC month's past-include credits for this package only (owner
+	 * view). Always a row for owners (zero credits when nothing past include).
+	 */
+	creditAttribution?: CreditAttributionRow | null
 }
 
 type AccountPackagePublishDiffFile = {
@@ -1936,6 +2117,10 @@ export type AccountActivityRunListItem = {
 	jobId: string | null
 	logCount: number
 	idempotencyKey: string | null
+	/** Execute-only: `invoke` | `code` from run metadata (forward-only). */
+	entry: 'invoke' | 'code' | null
+	/** Stable LOADER worker id (UWD graph identity) from run metadata. */
+	workerId: string | null
 }
 
 type AccountActivityRunLog = {
@@ -2132,6 +2317,12 @@ type AuthProvidersLoaderData = {
 	turnstileSiteKey: string | null
 }
 
+export type OAuthAuthorizeConsentOrg = {
+	slug: string
+	displayName: string | null
+	role: string | null
+}
+
 export type OAuthAuthorizeLoaderData =
 	| {
 			ok: true
@@ -2140,6 +2331,9 @@ export type OAuthAuthorizeLoaderData =
 			emailVerified: boolean | null
 			/** When true, authorize UI must collect credentials (prompt=login / max_age). */
 			requireCredentials: boolean
+			orgs: Array<OAuthAuthorizeConsentOrg>
+			/** From `?org=`, the sole accessible org, or null when multi and unspecified. */
+			selectedOrgSlug: string | null
 	  }
 	| {
 			ok: false
@@ -2176,8 +2370,6 @@ export type AppLoaderData = {
 	adminCommunityReports?: AdminCommunityReportsLoaderData
 	adminReservedUsernames?: AdminReservedUsernamesLoaderData
 	adminFeatureFlags?: AdminFeatureFlagsLoaderData
-	adminBanners?: AdminBannersLoaderData
-	siteBanner?: SiteBannerLoaderData
 	youtubeWatch?: YoutubeWatchLoaderData
 	landingHeroVideos?: Array<LandingHeroVideo>
 	adminPlatformIntegrations?: AdminPlatformIntegrationsLoaderData
@@ -2187,10 +2379,13 @@ export type AppLoaderData = {
 	adminPlatformFeedback?: AdminPlatformFeedbackLoaderData
 	adminSystemEmail?: AdminSystemEmailLoaderData
 	accountProfile?: AccountProfileLoaderData
+	accountOrganizations?: AccountOrganizationsLoaderData
+	accountInvites?: AccountInvitesLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
 	accountWebhooks?: AccountWebhooksLoaderData
+	connectWebhookApply?: ConnectWebhookApplyLoaderData
 	onboarding?: OnboardingLoaderData
 	connectOauth?: ConnectOauthLoaderData
 	pendingVerification?: PendingVerificationLoaderData
@@ -2240,13 +2435,130 @@ export type AccountBillingLoaderData = {
 	cancelAt: string | null
 	/** Stripe subscription status from on-page refresh; null if unknown/unavailable. */
 	subscriptionStatus: string | null
-	purchasablePlans: Array<'standard' | 'pro'>
+	purchasablePlans: Array<'pro'>
+	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
+	creditsEligible: boolean
+	/** Deep link to the Credits section of the usage page. */
+	creditsHref: '/account/usage#credits'
 	/** Deep link to the account usage page (limits / consumption). */
 	usageHref: '/account/usage'
 	referralProgram: ReferralProgramSummary | null
 	error?: string
 	/** Success notice mapped from `?billing=<code>` (e.g. a completed plan change). */
 	notice?: string
+}
+
+export type AccountCreditsLimit = {
+	resource: string
+	label: string
+	/** Included with the Pro subscription. */
+	included: number
+	/** How far credits can carry usage past the include. */
+	creditsCeiling: number
+}
+
+export type AccountCreditsLedgerItem = {
+	id: string
+	kind: 'top_up' | 'auto_refill' | 'admin_grant' | 'debit'
+	amountMicroUsd: number
+	description: string
+	createdAt: string
+}
+
+/**
+ * One credit-debit meter in the usage page's Credits section (rate card +
+ * this-period usage). Same meter path as included compute. Customer labels
+ * only (Worker compute / Rows read) — never UWD / Max jargon.
+ */
+export type AccountCreditsDebitMeter = {
+	meter: string
+	label: string
+	/** Published unit rate from `creditDebitRates`. */
+	unitRateLabel: string
+	/** Monthly include for the account's plan / wallet state. */
+	include: number
+	/** Usage this UTC month. */
+	used: number
+	/** Units past the include (billable when the wallet is funded). */
+	pastInclude: number
+	/** `used / include` (same as usage-page meter percent). */
+	percentOfInclude: number
+	/** Estimated credits for `pastInclude` at the published rate. */
+	estCreditsMicroUsd: number
+}
+
+/**
+ * Activity, included compute, and the credits alarm on `/account/usage`.
+ * The entitlement-warning emails share the same presentation helpers.
+ */
+export type AccountUsageStoryData = {
+	/** This UTC month's code executions and runs (the primary busy signal). */
+	activity: AccountActivity
+	/** Worker compute + Rows read vs the monthly include, ready to render. */
+	includedCompute: Array<IncludedComputeMeter>
+	includedComputeSummary: string
+	/** Set only when the wallet or access is actually at risk. */
+	creditsAlarm: CreditsAlarm | null
+}
+
+/**
+ * Credits spent this period attributed to packages (and Ad hoc). Loaded with
+ * `/account/usage`; package pages reuse the same breakdown shape.
+ */
+
+/**
+ * Credits section of `/account/usage`. Without a wallet (Free, retired
+ * Standard/Pro, gift/referral overlays, manual grants) it is only the
+ * switch-to-Pro prompt: no balance, no purchase UI.
+ */
+export type AccountUsageCredits =
+	| {
+			eligible: false
+			/** Checkout for the purchasable Pro is configured. */
+			canSwitchToPro: boolean
+			billingHref: '/account/billing'
+	  }
+	| AccountUsageCreditsWallet
+
+export type AccountUsageCreditsWallet = {
+	/** Purchasable Pro (or admin-eligible Pro) with the credit wallet. */
+	eligible: true
+	configured: boolean
+	/** Checkout for the purchasable Pro is configured. */
+	canSwitchToPro: boolean
+	/**
+	 * Subscribed on the purchasable Pro price with a Stripe customer, on a
+	 * deployment with billing configured.
+	 */
+	canBuyCredits: boolean
+	balanceMicroUsd: number
+	/**
+	 * Eligible wallet with credits left: usage past the include runs on
+	 * credits. False means rate and compute limits match Free.
+	 */
+	hasCredits: boolean
+	packsCents: Array<number>
+	customMinCents: number
+	customMaxCents: number
+	autoRefill: {
+		enabled: boolean
+		thresholdCents: number | null
+		amountCents: number | null
+		monthlyCapCents: number | null
+		minThresholdCents: number
+		refilledThisMonthCents: number
+		/** A top-up saved a card for off-session refills. */
+		hasPaymentMethod: boolean
+	}
+	notify: {
+		autoRefilled: boolean
+		monthlyCap: boolean
+		lowBalance: boolean
+	}
+	limits: Array<AccountCreditsLimit>
+	/** Worker compute + Rows read rate card and this-period usage. */
+	debitMeters: Array<AccountCreditsDebitMeter>
+	recent: Array<AccountCreditsLedgerItem>
 }
 
 export type AccountBillingSuccessLoaderData = {
@@ -2284,18 +2596,19 @@ type AccountUsageComputeMeter = {
 	include: number
 	percentOfLimit: number
 	overEightyPercent: boolean
+	creditsStatus: ComputeIncludeCreditsStatus
 }
 
 export type AccountUsageComputeOverage = {
 	meters: Array<AccountUsageComputeMeter>
-	disposition: ComputeOverageDisposition
-	totalCents: number
-	chargingEnabled: boolean
-	hasStripeCustomer: boolean
-	legacyUnbilled: boolean
+	creditWallet: CreditWalletState
+	/** Past-include state across both meters (worst meter wins). */
+	creditsStatus: ComputeIncludeCreditsStatus
+	/** This month's above-include usage at credit debit rates. */
+	creditsCostMicroUsd: number
 }
 
-export type AccountUsageLoaderData = {
+export type AccountUsageLoaderData = AccountUsageStoryData & {
 	ok: true
 	plan: AdminPlanName
 	manualPlan: AdminPlanName
@@ -2305,6 +2618,18 @@ export type AccountUsageLoaderData = {
 	entitlementConsumption: Array<AccountUsageEntitlementConsumption>
 	warnings: Array<AccountUsageEntitlementConsumption>
 	computeOverage: AccountUsageComputeOverage
+	/** True only for the purchasable Pro with a Stripe customer. */
+	canBuyCredits: boolean
+	/**
+	 * Past-include credits by package (and Ad hoc). Directly under the period
+	 * credit total on `/account/usage`.
+	 */
+	whereItWent: CreditAttributionBreakdown
+	/** Null for operator plans, which have no credits story. */
+	credits: AccountUsageCredits | null
+	/** Credits outcome (top-up added, settings saved) shown in that section. */
+	notice?: string
+	error?: string
 }
 
 export type AccountWaitingLoaderData = {

@@ -193,6 +193,11 @@ export const test = base.extend<{
 			const setCookieHeader = response.headers()['set-cookie']
 			if (setCookieHeader) {
 				const parsed = setCookieParser.parseString(setCookieHeader)
+				if (!parsed) {
+					throw new Error(
+						`Unable to parse set-cookie header: ${setCookieHeader}`,
+					)
+				}
 				const cookieConfig = {
 					name: parsed.name,
 					value: parsed.value,

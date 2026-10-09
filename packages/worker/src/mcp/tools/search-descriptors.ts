@@ -87,9 +87,9 @@ export function buildRecommendedNextStep(
 			topMatch.inputTypeDefinition &&
 			!topMatch.inputTypeDefinitionTruncated
 		) {
-			return `Call \`${accessor}(args)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "capability:${topMatch.name}" })\` only if you need the full type definitions.`
+			return `Call \`${accessor}(params)\` from \`execute\` using the inlined call shape above. Use \`search({ entity: "capability:${topMatch.name}" })\` only if you need the full type definitions.`
 		}
-		return `Inspect capability detail with \`search({ entity: "capability:${topMatch.name}" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(args)\`.`
+		return `Inspect capability detail with \`search({ entity: "capability:${topMatch.name}" })\` to confirm the TypeScript call shape, then call it from \`execute\` via \`${accessor}(params)\`.`
 	}
 	return undefined
 }

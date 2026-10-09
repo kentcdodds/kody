@@ -16,6 +16,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		capabilityDomainNames.packages,
 		{
 			name: 'orphan',
+			orgPermission: 'none',
 			description: 'test',
 			inputSchema: z.object({}),
 			handler: noopHandler,
@@ -33,6 +34,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		capabilityDomainNames.packages,
 		{
 			name: 'collision',
+			orgPermission: 'none',
 			description: 'a',
 			inputSchema: z.object({}),
 			handler: noopHandler,
@@ -40,6 +42,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 	)
 	const codingCollision = defineDomainCapability(capabilityDomainNames.coding, {
 		name: 'collision',
+		orgPermission: 'none',
 		description: 'b',
 		inputSchema: z.object({}),
 		handler: noopHandler,
@@ -65,6 +68,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		capabilities: [
 			defineDomainCapability(capabilityDomainNames.packages, {
 				name: 'only',
+				orgPermission: 'none',
 				description: 'o',
 				inputSchema: z.object({}),
 				handler: noopHandler,
@@ -78,6 +82,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		capabilityDomainNames.packages,
 		{
 			name: 'dup',
+			orgPermission: 'none',
 			description: '1',
 			inputSchema: z.object({}),
 			handler: noopHandler,
@@ -87,6 +92,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 		capabilityDomainNames.packages,
 		{
 			name: 'dup',
+			orgPermission: 'none',
 			description: '2',
 			inputSchema: z.object({}),
 			handler: noopHandler,
@@ -104,6 +110,7 @@ test('capability domain registration rejects mismatched and duplicate invariants
 test('capability registry exposes primary names and source metadata', () => {
 	const primaryCapability = defineDomainCapability(capabilityDomainNames.meta, {
 		name: 'primaryName',
+		orgPermission: 'none',
 		description: 'Primary capability.',
 		inputSchema: z.object({}),
 		outputSchema: z.object({ ok: z.boolean() }),

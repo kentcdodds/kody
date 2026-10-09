@@ -29,6 +29,12 @@ a chooser of saved connections that can start from a name alone. Selecting one
 updates the URL to `?provider=<name>`. Anonymous visits go to login and return
 here.
 
+Kody publishes built-in apps for some providers. `integrationPlatformAppList`
+returns the enabled + published ones. If it lists the provider, send
+`/connect/oauth?provider=<slug>&platform=<slug>`: the user connects without
+registering a provider app, and scopes are limited to that app's allowed menu.
+Every other provider uses the bring-your-own path in this guide.
+
 Send the signed-in user to `https://kody.codes/connect/oauth` with query
 parameters that describe the provider. The page runs authorize -> callback ->
 token exchange in a full browser context and persists access and refresh tokens
@@ -43,10 +49,15 @@ Example shape:
 ## Token refresh
 
 All integrations refresh host-side through `createAuthenticatedFetch`, which
-calls `integrationTokenRefresh` on 401 and retries with a secret placeholder —
-raw tokens never enter the sandbox. Reconnectable refresh failures dispatch
-`integration.auth.failed` to packages that subscribe; successful refreshes and
-`/connect/oauth` persists dispatch `integration.auth.succeeded` (see
+calls `integrationTokenRefresh` on auth failures and retries with a secret
+placeholder (raw tokens never enter the sandbox). Auth failure means HTTP 401
+for every provider. For Slack integrations it also means HTTP 200 JSON
+`{ok:false}` with `token_expired`, `token_revoked`, `invalid_auth`, or
+`not_authed` (Slack does not use 401 for dead tokens), and `files.slack.com`
+responses whose Content-Type is `text/html` (dead token redirected to login).
+Reconnectable refresh failures dispatch `integration.auth.failed` to packages
+that subscribe; successful refreshes and `/connect/oauth` persists dispatch
+`integration.auth.succeeded` (see
 [package subscriptions](./package-subscriptions.md)). Prefer
 `createAuthenticatedFetch` for header-based OAuth. There is no raw-token helper:
 host-side refresh returns metadata only.

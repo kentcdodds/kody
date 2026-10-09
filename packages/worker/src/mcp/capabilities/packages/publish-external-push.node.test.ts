@@ -1,9 +1,11 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
@@ -17,8 +19,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -80,27 +82,33 @@ const { publishExternalPushCapability } =
 const defaultPublishIdempotencyParts = [
 	'packagePublishExternalPush',
 	'{"allowForce":false,"destructiveOverwriteConfirmed":false,"newCommit":"commit-new","ownerUserId":"user-1","packageId":"package-1"}',
-] as const
-const forcedPublishIdempotencyParts = [
-	'packagePublishExternalPush',
-	'{"allowForce":true,"destructiveOverwriteConfirmed":true,"newCommit":"commit-new","ownerUserId":"user-1","packageId":"package-1"}',
-] as const
+]
+const moduleTarget = {
+	kind: 'module',
+	artifactName: '.',
+	entryPoint: 'src/index.ts',
+	bundleKind: 'module',
+}
+const allPhaseTimings = {
+	rebuild_ms: expect.any(Number),
+	dependents_ms: expect.any(Number),
+	total_ms: expect.any(Number),
+}
+const noStaticDependents = expect.objectContaining({
+	total: 0,
+	stale: 0,
+	truncated: false,
+	items: [],
+})
 
-function setupDefaultMocks() {
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		kodyId: 'demo-package',
-		name: '@kentcdodds/demo-package',
-		sourceId: 'source-1',
-		hasApp: false,
-	})
-	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+function sourceRow(publishedCommit = 'commit-old') {
+	return {
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
-		published_commit: 'commit-old',
+		published_commit: publishedCommit,
 		indexed_commit: null,
 		manifest_path: 'package.json',
 		source_root: '/',
@@ -108,7 +116,55 @@ function setupDefaultMocks() {
 		external_check_until: null,
 		created_at: '2026-05-04T00:00:00.000Z',
 		updated_at: '2026-05-04T00:00:00.000Z',
+	}
+}
+
+function publishedResult(overrides: Record<string, unknown> = {}) {
+	return {
+		status: 'published',
+		previous_commit: 'commit-old',
+		published_commit: 'commit-new',
+		manifest: {},
+		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		...overrides,
+	}
+}
+
+function rebuildCall(publishedCommit: string, target: unknown) {
+	return {
+		sourceId: 'source-1',
+		userId: 'user-1',
+		publishedCommit,
+		target,
+		baseUrl: 'https://kody.test',
+	}
+}
+
+function setupDefaultMocks({
+	head = 'commit-new',
+	hasApp = false,
+	publish,
+	targets = [],
+}: {
+	head?: string
+	hasApp?: boolean
+	publish?: Record<string, unknown>
+	targets?: Array<unknown>
+} = {}) {
+	for (const mock of Object.values(mockModule)) mock.mockReset()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		kodyId: 'demo-package',
+		name: '@kentcdodds/demo-package',
+		sourceId: 'source-1',
+		hasApp,
 	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue(sourceRow())
+	mockModule.resolveArtifactSourceHead.mockResolvedValue({
+		branch: 'main',
+		commit: head,
+	})
+	if (publish) mockModule.publishFromExternalRef.mockResolvedValue(publish)
 	mockModule.getStaticPackageDependentsSummary.mockResolvedValue({
 		total: 0,
 		stale: 0,
@@ -117,16 +173,11 @@ function setupDefaultMocks() {
 		recommended_next_action:
 			'No published bundle artifacts declare a static dependency on this package.',
 	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
 	mockModule.rebuildPublishedPackageArtifact.mockResolvedValue({
 		ok: true,
-		target: {
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
+		target: moduleTarget,
 		kvKey: 'bundle-key',
 	})
 	mockModule.runWithDurableEscalation.mockImplementation(
@@ -143,85 +194,65 @@ function createContext(
 	return {
 		env: {
 			APP_DB: {
-				prepare(_query: string) {
-					return {
-						bind() {
-							return {
-								first: async () => {
-									return { username: 'user' }
-								},
-							}
-						},
-					}
-				},
+				prepare: () => ({
+					bind: () => ({ first: async () => ({ username: 'user' }) }),
+				}),
 			},
 			DYNAMIC_CALLABLE_WORKFLOWS: {},
 			PACKAGE_APP_BASE_URL: 'https://packages.kody.test',
 		} as unknown as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.test',
-			...(executionOrigin === 'omit' ? {} : { executionOrigin }),
+			executionOrigin: executionOrigin === 'omit' ? undefined : executionOrigin,
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				username: 'user',
 				displayName: 'User',
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 
+function publish(
+	args: { allow_force?: boolean; confirm_destructive_overwrite?: boolean } = {},
+	executionOrigin?: 'interactive' | 'background' | 'omit',
+) {
+	return publishExternalPushCapability.handler(
+		{ package_id: 'package-1', ...args },
+		createContext(executionOrigin),
+	)
+}
+
 test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per target', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {
-			kody: {
-				app: { entry: './src/app.ts' },
-				subscriptions: {
-					'email.message.received': {
-						handler: './src/on-email.ts',
+	setupDefaultMocks({
+		publish: publishedResult({
+			manifest: {
+				kody: {
+					app: { entry: './src/app.ts' },
+					subscriptions: {
+						'email.message.received': { handler: './src/on-email.ts' },
 					},
 				},
 			},
-		},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
+		}),
 	})
 
-	const publishedResult = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
+	const publishedFirst = await publish()
 
-	expect(publishedResult.status).toBe('published')
-	expect(publishedResult).toEqual(
+	expect(publishedFirst.status).toBe('published')
+	expect(publishedFirst).toEqual(
 		expect.objectContaining({
-			phase_timings: {
-				rebuild_ms: expect.any(Number),
-				dependents_ms: expect.any(Number),
-				total_ms: expect.any(Number),
-			},
+			phase_timings: allPhaseTimings,
 			hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
 			test_hints: {
 				app: expect.stringContaining('package_id'),
 				subscriptions: [
-					expect.objectContaining({
-						topic: 'email.message.received',
-					}),
+					expect.objectContaining({ topic: 'email.message.received' }),
 				],
 			},
-			static_dependents: expect.objectContaining({
-				total: 0,
-				items: [],
-			}),
+			static_dependents: expect.objectContaining({ total: 0, items: [] }),
 		}),
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
@@ -240,121 +271,64 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledTimes(1)
 
 	const targets = [
+		moduleTarget,
 		{
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
-		{
+			...moduleTarget,
 			kind: 'importable-module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
 			bundleKind: 'importable-module',
 		},
 	]
 	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
 
-	const rebuiltResult = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-
-	expect(rebuiltResult.status).toBe('published')
+	expect((await publish()).status).toBe('published')
 	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledWith({
 		sourceId: 'source-1',
 		userId: 'user-1',
 	})
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
-		1,
-		{
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-new',
-			target: targets[0],
-			baseUrl: 'https://kody.test',
-		},
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenNthCalledWith(
-		2,
-		{
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-new',
-			target: targets[1],
-			baseUrl: 'https://kody.test',
-		},
-	)
+	expect(mockModule.rebuildPublishedPackageArtifact.mock.calls).toEqual([
+		[rebuildCall('commit-new', targets[0])],
+		[rebuildCall('commit-new', targets[1])],
+	])
 })
 
 test('publishExternalPush returns forwarded clone and check timings without collapsing bundle and rebuild', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
+	setupDefaultMocks({
+		publish: publishedResult({
+			phase_timings: {
+				clone_ms: 11,
+				checks_typecheck_ms: 22,
+				checks_bundle_ms: 33,
+			},
+		}),
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		phase_timings: {
-			clone_ms: 11,
-			checks_typecheck_ms: 22,
-			checks_bundle_ms: 33,
-		},
-	})
-
-	const published = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
+	const published = await publish()
 	expect(published.status).toBe('published')
-	if (published.status !== 'published') {
-		throw new Error('expected published')
-	}
+	if (published.status !== 'published') throw new Error('expected published')
 	expect(published.phase_timings).toEqual({
 		clone_ms: 11,
 		checks_typecheck_ms: 22,
 		checks_bundle_ms: 33,
-		rebuild_ms: expect.any(Number),
-		dependents_ms: expect.any(Number),
-		total_ms: expect.any(Number),
+		...allPhaseTimings,
 	})
-	expect(published.phase_timings.rebuild_ms).toBeGreaterThanOrEqual(0)
-	expect(published.phase_timings.dependents_ms).toBeGreaterThanOrEqual(0)
-	expect(published.phase_timings.total_ms).toBeGreaterThanOrEqual(0)
-	expect(published.phase_timings.checks_bundle_ms).toBe(33)
+	expect(
+		Object.values(published.phase_timings).filter(
+			(ms) => typeof ms !== 'number' || ms < 0,
+		),
+	).toEqual([])
 
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
+	setupDefaultMocks({
+		publish: publishedResult({
+			checks: [
+				{
+					kind: 'bundle',
+					ok: true,
+					message: 'Bundle validation deferred to published artifact rebuild.',
+				},
+			],
+			phase_timings: { clone_ms: 11, checks_typecheck_ms: 22 },
+		}),
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [
-			{
-				kind: 'bundle',
-				ok: true,
-				message: 'Bundle validation deferred to published artifact rebuild.',
-			},
-		],
-		phase_timings: {
-			clone_ms: 11,
-			checks_typecheck_ms: 22,
-		},
-	})
-	const deferredBundle = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
+	const deferredBundle = await publish()
 	expect(deferredBundle.status).toBe('published')
 	if (deferredBundle.status !== 'published') {
 		throw new Error('expected published')
@@ -362,9 +336,7 @@ test('publishExternalPush returns forwarded clone and check timings without coll
 	expect(deferredBundle.phase_timings).toEqual({
 		clone_ms: 11,
 		checks_typecheck_ms: 22,
-		rebuild_ms: expect.any(Number),
-		dependents_ms: expect.any(Number),
-		total_ms: expect.any(Number),
+		...allPhaseTimings,
 	})
 	expect(deferredBundle.phase_timings.checks_bundle_ms).toBeUndefined()
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
@@ -374,31 +346,20 @@ test('publishExternalPush returns forwarded clone and check timings without coll
 		}),
 	)
 
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-old',
+	setupDefaultMocks({
+		head: 'commit-old',
+		publish: {
+			status: 'already_published',
+			published_commit: 'commit-old',
+			phase_timings: { clone_ms: 7 },
+		},
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'already_published',
-		published_commit: 'commit-old',
-		phase_timings: { clone_ms: 7 },
-	})
-
-	const alreadyPublished = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
+	const alreadyPublished = await publish()
 	expect(alreadyPublished).toEqual(
 		expect.objectContaining({
 			status: 'already_published',
 			published_commit: 'commit-old',
-			phase_timings: {
-				clone_ms: 7,
-				rebuild_ms: expect.any(Number),
-				dependents_ms: expect.any(Number),
-				total_ms: expect.any(Number),
-			},
+			phase_timings: { clone_ms: 7, ...allPhaseTimings },
 		}),
 	)
 	if (alreadyPublished.status !== 'already_published') {
@@ -409,150 +370,69 @@ test('publishExternalPush returns forwarded clone and check timings without coll
 })
 
 test('publishExternalPush handles already_published branches, stale dependents, and rebuild failures', async () => {
-	const targets = [
-		{
-			kind: 'job',
-			artifactName: 'inbox',
-			entryPoint: 'src/job.ts',
-			bundleKind: 'module',
-		},
-	]
-	setupDefaultMocks()
-	mockModule.getSavedPackageById.mockResolvedValue({
-		id: 'package-1',
-		kodyId: 'demo-package',
-		name: '@kentcdodds/demo-package',
-		sourceId: 'source-1',
-		hasApp: true,
-	})
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-old',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
+	const jobTarget = {
+		kind: 'job',
+		artifactName: 'inbox',
+		entryPoint: 'src/job.ts',
+		bundleKind: 'module',
+	}
+	const alreadyPublishedOld = {
 		status: 'already_published',
 		published_commit: 'commit-old',
+	}
+	setupDefaultMocks({
+		head: 'commit-old',
+		hasApp: true,
+		publish: alreadyPublishedOld,
+		targets: [jobTarget],
 	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-
-	const alreadyPublished = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(alreadyPublished).toEqual({
+	expect(await publish()).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-old',
 		hosted_app_url: 'https://user.packages.kody.test/packages/demo-package',
-		static_dependents: expect.objectContaining({
-			total: 0,
-			stale: 0,
-			truncated: false,
-			items: [],
-		}),
+		static_dependents: noStaticDependents,
 		pending_secret_package_approvals: null,
-		phase_timings: {
-			rebuild_ms: expect.any(Number),
-			dependents_ms: expect.any(Number),
-			total_ms: expect.any(Number),
-		},
+		phase_timings: allPhaseTimings,
 	})
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-old',
-		target: targets[0],
-		baseUrl: 'https://kody.test',
-	})
-	expect(
-		consoleInfo.mock.calls.some((call) =>
-			String(call[0]).includes('"phase":"rebuild"'),
-		),
-	).toBe(true)
-	expect(
-		consoleInfo.mock.calls.some((call) =>
-			String(call[0]).includes('"phase":"dependents"'),
-		),
-	).toBe(true)
-
-	setupDefaultMocks()
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-old',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'already_published',
-		published_commit: 'commit-old',
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
-
-	const alreadyPublishedSkip = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
+		rebuildCall('commit-old', jobTarget),
 	)
-	expect(alreadyPublishedSkip.status).toBe('already_published')
+	for (const phase of ['"phase":"rebuild"', '"phase":"dependents"']) {
+		expect(
+			consoleInfo.mock.calls.some((call) => String(call[0]).includes(phase)),
+		).toBe(true)
+	}
+
+	setupDefaultMocks({
+		head: 'commit-old',
+		publish: alreadyPublishedOld,
+		targets: [jobTarget],
+	})
+	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
+	expect((await publish()).status).toBe('already_published')
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 
-	setupDefaultMocks()
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-old',
+	setupDefaultMocks({
+		head: 'commit-old',
+		publish: { ...alreadyPublishedOld, force_artifact_rebuild: true },
+		targets: [jobTarget],
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'already_published',
-		published_commit: 'commit-old',
-		force_artifact_rebuild: true,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
-
-	const alreadyPublishedForce = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
+	expect((await publish()).status).toBe('already_published')
+	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
+		rebuildCall('commit-old', jobTarget),
 	)
-	expect(alreadyPublishedForce.status).toBe('already_published')
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith({
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-old',
-		target: targets[0],
-		baseUrl: 'https://kody.test',
-	})
 
-	setupDefaultMocks()
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-old',
+	setupDefaultMocks({
+		head: 'commit-old',
+		publish: { status: 'already_published', published_commit: null },
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'already_published',
-		published_commit: null,
-	})
-	await expect(
-		publishExternalPushCapability.handler(
-			{ package_id: 'package-1' },
-			createContext(),
-		),
-	).rejects.toThrow(
+	await expect(publish()).rejects.toThrow(
 		'already published, but no published commit is available to rebuild artifacts',
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
+	setupDefaultMocks({ publish: publishedResult() })
 	mockModule.getStaticPackageDependentsSummary.mockResolvedValue({
 		total: 1,
 		stale: 1,
@@ -570,18 +450,12 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 				entrypoints_truncated: false,
 				bundled_dependency_commit: 'commit-a-old',
 				current_dependency_commit: 'commit-new',
-				recommended_action:
-					'Inspect this dependent package and republish it if its bundled static kody:@ snapshot should include the published dependency commit.',
+				recommended_action: 'Inspect this dependent package.',
 			},
 		],
-		recommended_next_action:
-			'Inspect stale static dependents and republish only the packages whose bundled snapshot should include this package publish. Kody does not republish dependents automatically.',
+		recommended_next_action: 'Inspect stale static dependents.',
 	})
-	const publishedWithDependents = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(publishedWithDependents).toEqual(
+	expect(await publish()).toEqual(
 		expect.objectContaining({
 			status: 'published',
 			static_dependents: expect.objectContaining({
@@ -599,33 +473,11 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 		}),
 	)
 
-	setupDefaultMocks()
-	const target = {
-		kind: 'module',
-		artifactName: '.',
-		entryPoint: 'src/index.ts',
-		bundleKind: 'module',
-	}
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([target])
+	setupDefaultMocks({ publish: publishedResult(), targets: [moduleTarget] })
 	mockModule.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
 		new Error('No matching default export for import "default"'),
 	)
-	const rebuildFailed = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(rebuildFailed).toEqual({
+	expect(await publish()).toEqual({
 		status: 'checks_failed',
 		failed_checks: [
 			expect.objectContaining({
@@ -640,45 +492,25 @@ test('publishExternalPush handles already_published branches, stale dependents, 
 })
 
 test('force publish passes destructive confirmation through and refuses without allow_force', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-rewrite',
+	setupDefaultMocks({
+		head: 'commit-rewrite',
+		publish: {
+			status: 'not_fast_forward',
+			previous_commit: 'commit-old',
+			published_commit: 'commit-rewrite',
+			message: 'The external Artifacts HEAD is not a descendant.',
+		},
 	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'not_fast_forward',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-rewrite',
-		message: 'The external Artifacts HEAD is not a descendant.',
-	})
-
-	const refused = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(refused.status).toBe('not_fast_forward')
+	expect((await publish()).status).toBe('not_fast_forward')
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
-		expect.objectContaining({
-			allowForce: false,
-		}),
+		expect.objectContaining({ allowForce: false }),
 	)
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalled()
 
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-rewrite',
-		manifest: {},
-		checks: [],
-	})
-	await publishExternalPushCapability.handler(
-		{
-			package_id: 'package-1',
-			allow_force: true,
-			confirm_destructive_overwrite: true,
-		},
-		createContext(),
+	mockModule.publishFromExternalRef.mockResolvedValue(
+		publishedResult({ published_commit: 'commit-rewrite', checks: [] }),
 	)
+	await publish({ allow_force: true, confirm_destructive_overwrite: true })
 	expect(mockModule.publishFromExternalRef).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			allowForce: true,
@@ -688,200 +520,89 @@ test('force publish passes destructive confirmation through and refuses without 
 })
 
 test('ineligible publishes return structured results without durable escalation dispatch', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
+	const checksFailed = {
 		status: 'checks_failed',
 		failed_checks: [{ kind: 'typecheck', ok: false, message: 'type error' }],
 		manifest: {},
 		run_id: 'run-1',
-	})
-
-	const failed = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(failed).toEqual({
-		status: 'checks_failed',
-		failed_checks: [{ kind: 'typecheck', ok: false, message: 'type error' }],
-		manifest: {},
-		run_id: 'run-1',
-	})
-	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledTimes(1)
-	const escalationInput = mockModule.runWithDurableEscalation.mock
-		.calls[0]?.[0] as {
-		userId: string
-		idempotencyParts: ReadonlyArray<string>
 	}
+	setupDefaultMocks({ publish: checksFailed })
+
+	expect(await publish()).toEqual(checksFailed)
 	// RunLog workflow projections are scoped by acting userId; parts keep full
 	// semantic input.
-	expect(escalationInput.userId).toBe('user-1')
-	expect(escalationInput.idempotencyParts).toEqual([
-		...defaultPublishIdempotencyParts,
-	])
-	expect(escalationInput.idempotencyParts).not.toEqual([
-		...forcedPublishIdempotencyParts,
+	expect(mockModule.runWithDurableEscalation.mock.calls).toEqual([
+		[
+			expect.objectContaining({
+				userId: 'user-1',
+				idempotencyParts: defaultPublishIdempotencyParts,
+			}),
+		],
 	])
 })
 
-test('missing executionOrigin fails closed and does not escalate', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-
-	const result = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext('omit'),
-	)
-	expect(result.status).toBe('published')
-	expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+test('missing executionOrigin fails closed and background re-entry skips escalation', async () => {
+	for (const origin of ['omit', 'background'] as const) {
+		setupDefaultMocks({ publish: publishedResult() })
+		expect((await publish({}, origin)).status).toBe('published')
+		expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
+		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+	}
 })
 
-test('budget exhaustion returns a dispatched handle and background re-entry skips escalation', async () => {
+test('budget exhaustion returns a dispatched handle', async () => {
 	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	const expectedParts = [...defaultPublishIdempotencyParts]
-	mockModule.runWithDurableEscalation.mockResolvedValue({
-		kind: 'dispatched',
-		handle: {
-			status: 'dispatched',
-			workflow_id: 'dynwf-publish-1',
-			workflow_name: 'packagePublishExternalPush',
-			idempotency_key: ['user-1', ...expectedParts].join(':'),
-			run_status: 'queued',
-			message: 'dispatched',
-		},
-	})
-
-	const dispatched = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext('interactive'),
-	)
-	expect(dispatched).toEqual({
+	const handle = {
 		status: 'dispatched',
 		workflow_id: 'dynwf-publish-1',
 		workflow_name: 'packagePublishExternalPush',
-		idempotency_key: ['user-1', ...expectedParts].join(':'),
+		idempotency_key: ['user-1', ...defaultPublishIdempotencyParts].join(':'),
 		run_status: 'queued',
 		message: 'dispatched',
-		phase_timings: {
-			total_ms: expect.any(Number),
-		},
+	}
+	mockModule.runWithDurableEscalation.mockResolvedValue({
+		kind: 'dispatched',
+		handle,
+	})
+
+	expect(await publish({}, 'interactive')).toEqual({
+		...handle,
+		phase_timings: { total_ms: expect.any(Number) },
 	})
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'user-1',
-			idempotencyParts: expectedParts,
+			idempotencyParts: defaultPublishIdempotencyParts,
 		}),
 	)
-
-	mockModule.runWithDurableEscalation.mockClear()
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	const background = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext('background'),
-	)
-	expect(background.status).toBe('published')
-	expect(mockModule.runWithDurableEscalation).not.toHaveBeenCalled()
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
 })
 
 test('publishExternalPush recovers from transient Durable Object resets', async () => {
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-
 	mockModule.publishFromExternalRef
 		.mockRejectedValueOnce(
 			new Error('Durable Object exceeded its CPU time limit and was reset'),
 		)
-		.mockResolvedValueOnce({
-			status: 'published',
-			previous_commit: 'commit-old',
-			published_commit: 'commit-new',
-			manifest: {},
-			checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		})
+		.mockResolvedValueOnce(publishedResult())
 
-	const recovered = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(recovered.status).toBe('published')
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(2)
-	expect(mockModule.publishFromExternalRef).toHaveBeenNthCalledWith(
-		1,
-		expect.objectContaining({
-			sessionId: 'external-publish-source-1',
-		}),
-	)
-	expect(mockModule.publishFromExternalRef).toHaveBeenNthCalledWith(
-		2,
-		expect.objectContaining({
-			sessionId: 'external-publish-source-1-retry-2',
-		}),
-	)
+	expect((await publish()).status).toBe('published')
+	expect(mockModule.publishFromExternalRef.mock.calls).toEqual([
+		[expect.objectContaining({ sessionId: 'external-publish-source-1' })],
+		[
+			expect.objectContaining({
+				sessionId: 'external-publish-source-1-retry-2',
+			}),
+		],
+	])
 	// Each transient reset leaves exactly one retry warn trail (no Sentry).
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
 
 	setupDefaultMocks()
 	mockModule.getEntitySourceByIdForUser
-		.mockResolvedValueOnce({
-			id: 'source-1',
-			user_id: 'user-1',
-			entity_kind: 'package',
-			entity_id: 'package-1',
-			repo_id: 'package-package-1',
-			published_commit: 'commit-old',
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: '/',
-			last_external_check_at: null,
-			external_check_until: null,
-			created_at: '2026-05-04T00:00:00.000Z',
-			updated_at: '2026-05-04T00:00:00.000Z',
-		})
-		.mockResolvedValueOnce({
-			id: 'source-1',
-			user_id: 'user-1',
-			entity_kind: 'package',
-			entity_id: 'package-1',
-			repo_id: 'package-package-1',
-			published_commit: 'commit-new',
-			indexed_commit: null,
-			manifest_path: 'package.json',
-			source_root: '/',
-			last_external_check_at: null,
-			external_check_until: null,
-			created_at: '2026-05-04T00:00:00.000Z',
-			updated_at: '2026-05-04T00:00:00.000Z',
-		})
+		.mockResolvedValueOnce(sourceRow('commit-old'))
+		.mockResolvedValueOnce(sourceRow('commit-new'))
 	mockModule.publishFromExternalRef
 		.mockRejectedValueOnce(
 			new Error(
@@ -892,158 +613,63 @@ test('publishExternalPush recovers from transient Durable Object resets', async 
 			status: 'already_published',
 			published_commit: 'commit-new',
 		})
-
-	const alreadyPublished = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-	expect(alreadyPublished).toEqual({
+	expect(await publish()).toEqual({
 		status: 'already_published',
 		published_commit: 'commit-new',
 		hosted_app_url: null,
-		static_dependents: expect.objectContaining({
-			total: 0,
-			stale: 0,
-			truncated: false,
-			items: [],
-		}),
+		static_dependents: noStaticDependents,
 		pending_secret_package_approvals: null,
-		phase_timings: {
-			rebuild_ms: expect.any(Number),
-			dependents_ms: expect.any(Number),
-			total_ms: expect.any(Number),
-		},
+		phase_timings: allPhaseTimings,
 	})
 
 	setupDefaultMocks()
-	mockModule.publishFromExternalRef.mockClear()
 	consoleWarn.mockClear()
 	mockModule.publishFromExternalRef.mockRejectedValue(
 		new Error('Durable Object exceeded its CPU time limit and was reset'),
 	)
-	await expect(
-		publishExternalPushCapability.handler(
-			{ package_id: 'package-1' },
-			createContext(),
-		),
-	).rejects.toThrow(
+	await expect(publish()).rejects.toThrow(
 		/could not recover after 3 transient Durable Object reset attempts/,
 	)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(3)
 	expect(consoleWarn).toHaveBeenCalledTimes(3)
 
-	setupDefaultMocks()
-	mockModule.publishFromExternalRef.mockClear()
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
-	const rebuildTarget = {
-		kind: 'module',
-		artifactName: '.',
-		entryPoint: 'src/index.ts',
-		bundleKind: 'module',
-	}
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		rebuildTarget,
-	])
-	mockModule.publishFromExternalRef.mockResolvedValueOnce({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	mockModule.rebuildPublishedPackageArtifact
-		.mockRejectedValueOnce(
-			new Error('rebuild target failed', {
-				cause: new Error(
-					'Durable Object exceeded its CPU time limit and was reset.',
-				),
-			}),
-		)
-		.mockResolvedValueOnce({
-			ok: true,
-			target: rebuildTarget,
-			kvKey: 'bundle-key',
-		})
-
-	const recoveredAfterRebuildReset =
-		await publishExternalPushCapability.handler(
-			{ package_id: 'package-1' },
-			createContext(),
-		)
-
-	expect(recoveredAfterRebuildReset.status).toBe('published')
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-
 	// Deploy-time DO resets use "Durable Object reset because…" (no "was").
 	// The old substring matcher missed that form and skipped retries entirely.
-	setupDefaultMocks()
-	mockModule.publishFromExternalRef.mockClear()
-	mockModule.rebuildPublishedPackageArtifact.mockClear()
-	consoleWarn.mockClear()
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		rebuildTarget,
-	])
-	mockModule.publishFromExternalRef.mockResolvedValueOnce({
-		status: 'published',
-		previous_commit: 'commit-old',
-		published_commit: 'commit-new',
-		manifest: {},
-		checks: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	mockModule.rebuildPublishedPackageArtifact
-		.mockRejectedValueOnce(
-			new Error(
-				'Package source publish succeeded, but bundle artifact rebuild failed.',
-				{
-					cause: new Error(
-						'Durable Object reset because its code was updated.',
-					),
-				},
-			),
+	for (const [message, cause] of [
+		[
+			'rebuild target failed',
+			'Durable Object exceeded its CPU time limit and was reset.',
+		],
+		[
+			'Package source publish succeeded, but bundle artifact rebuild failed.',
+			'Durable Object reset because its code was updated.',
+		],
+	]) {
+		setupDefaultMocks({ publish: publishedResult(), targets: [moduleTarget] })
+		consoleWarn.mockClear()
+		mockModule.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
+			new Error(message, { cause: new Error(cause) }),
 		)
-		.mockResolvedValueOnce({
-			ok: true,
-			target: rebuildTarget,
-			kvKey: 'bundle-key',
-		})
-
-	const recoveredAfterCodeUpdatedReset =
-		await publishExternalPushCapability.handler(
-			{ package_id: 'package-1' },
-			createContext(),
-		)
-	expect(recoveredAfterCodeUpdatedReset.status).toBe('published')
-	expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
+		expect((await publish()).status).toBe('published')
+		expect(mockModule.publishFromExternalRef).toHaveBeenCalledTimes(1)
+		expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
+		expect(consoleWarn).toHaveBeenCalledTimes(1)
+	}
 })
 
 test('publishExternalPush returns locked with pending_commit and an approval URL', async () => {
-	setupDefaultMocks()
-	mockModule.resolveArtifactSourceHead.mockResolvedValue({
-		branch: 'main',
-		commit: 'commit-new',
-	})
-	mockModule.publishFromExternalRef.mockResolvedValue({
-		status: 'locked',
-		previous_commit: 'commit-old',
-		pending_commit: 'commit-new',
-		message: 'Package "@kentcdodds/demo-package" is locked.',
-		packageId: 'package-1',
-		packageName: '@kentcdodds/demo-package',
+	setupDefaultMocks({
+		publish: {
+			status: 'locked',
+			previous_commit: 'commit-old',
+			pending_commit: 'commit-new',
+			message: 'Package "@kentcdodds/demo-package" is locked.',
+			packageId: 'package-1',
+			packageName: '@kentcdodds/demo-package',
+		},
 	})
 
-	const locked = await publishExternalPushCapability.handler(
-		{ package_id: 'package-1' },
-		createContext(),
-	)
-
-	expect(locked).toEqual({
+	expect(await publish()).toEqual({
 		status: 'locked',
 		previous_commit: 'commit-old',
 		pending_commit: 'commit-new',

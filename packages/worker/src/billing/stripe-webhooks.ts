@@ -19,13 +19,14 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
 import {
 	isBillingConfigured,
-	selectPlanRetainingSubscriptions,
+	selectKodyPlanRetainingSubscriptions,
 } from './billing-config.ts'
 import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
 	refreshStripePlanForStripeCustomer,
+	refreshStripePlanForUser,
 } from './subscription-sync.ts'
 import {
 	listSubscriptions,
@@ -44,6 +45,13 @@ import {
 	StripeWebhookSignatureError,
 	verifyStripeWebhookSignature,
 } from './stripe-webhook-signature.ts'
+import {
+	applyCreditTopUpFromCheckoutSession,
+	creditTopUpMetadataKey,
+	CreditTopUpError,
+} from './credit-top-ups.ts'
+import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
+import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
 
 const stripeEventSchema = object({
 	id: string(),
@@ -135,8 +143,16 @@ async function handleCheckoutSessionCompleted(input: {
 		session.customer_details?.email?.trim() ||
 		session.customer_email?.trim() ||
 		null
-	const stableUserIdHint =
-		session.metadata?.['kody_stable_user_id']?.trim() || null
+	const stableUserIdHint = resolveOrgIdFromStripeMetadata(session.metadata)
+
+	if (session.metadata?.[creditTopUpMetadataKey] === '1') {
+		await handleCreditTopUpCompleted({
+			env: input.env,
+			sessionId: session.id,
+			now: input.now,
+		})
+		return
+	}
 
 	try {
 		await linkStripeCustomerFromCheckoutSessionAttribution({
@@ -144,6 +160,7 @@ async function handleCheckoutSessionCompleted(input: {
 			sessionId: session.id,
 			clientReferenceId: session.client_reference_id,
 			stableUserIdHint,
+			metadata: session.metadata ?? undefined,
 			customerId: session.customer,
 			customerEmail,
 			now: input.now,
@@ -182,6 +199,34 @@ async function handleCheckoutSessionCompleted(input: {
 	}
 }
 
+async function handleCreditTopUpCompleted(input: {
+	env: Env
+	sessionId: string
+	now?: Date
+}) {
+	try {
+		const result = await applyCreditTopUpFromCheckoutSession({
+			env: input.env,
+			sessionId: input.sessionId,
+			now: input.now ?? new Date(),
+		})
+		if (!result.applied) {
+			console.info('stripe_webhook_credit_top_up_replay', {
+				sessionId: input.sessionId,
+			})
+		}
+	} catch (error) {
+		if (error instanceof CreditTopUpError) {
+			console.error('stripe_webhook_credit_top_up_skipped', {
+				code: error.code,
+				sessionId: input.sessionId,
+			})
+			return
+		}
+		throw error
+	}
+}
+
 async function handleCustomerSubscriptionChange(input: {
 	env: Env
 	object: Record<string, unknown>
@@ -195,11 +240,32 @@ async function handleCustomerSubscriptionChange(input: {
 		console.error('stripe_webhook_subscription_missing_customer')
 		return
 	}
-	const result = await refreshStripePlanForStripeCustomer({
+	const metadata =
+		input.object.metadata && typeof input.object.metadata === 'object'
+			? (input.object.metadata as Record<string, string>)
+			: null
+	const orgOrUserHint = resolveOrgIdFromStripeMetadata(metadata)
+	let result = await refreshStripePlanForStripeCustomer({
 		env: input.env,
 		customerId,
 		now: input.now,
 	})
+	if (result.userId == null && orgOrUserHint) {
+		const user = await input.env.APP_DB.prepare(
+			`SELECT id FROM users WHERE stable_user_id = ?`,
+		)
+			.bind(orgOrUserHint)
+			.first<{ id: number }>()
+		if (user?.id != null) {
+			const resolved = await refreshStripePlanForUser({
+				env: input.env,
+				userId: user.id,
+				customerId,
+				now: input.now,
+			})
+			result = { userId: user.id, resolved }
+		}
+	}
 	if (result.userId == null) {
 		console.error('stripe_webhook_subscription_user_not_found', { customerId })
 	}
@@ -240,17 +306,24 @@ async function handleInvoicePaymentFailed(input: {
 		return
 	}
 	const user = await input.env.APP_DB.prepare(
-		`SELECT email, stable_user_id FROM users WHERE id = ?`,
+		`SELECT stable_user_id FROM users WHERE id = ?`,
 	)
 		.bind(result.userId)
-		.first<{ email: string; stable_user_id: string }>()
-	if (!user?.email) return
+		.first<{ stable_user_id: string }>()
+	if (!user?.stable_user_id) return
+	const day = utcDayKey(input.now ?? new Date())
 	waitUntil(
-		sendPaymentFailedEmail({
-			env: input.env,
-			email: user.email,
-			userId: user.stable_user_id,
-			day: utcDayKey(input.now ?? new Date()),
+		sendToOrgBillingRecipients({
+			db: input.env.APP_DB,
+			orgId: user.stable_user_id,
+			sendOne: async (recipient) => {
+				await sendPaymentFailedEmail({
+					env: input.env,
+					email: recipient.email,
+					userId: recipient.userId,
+					day,
+				})
+			},
 		}).catch((error) => {
 			console.warn('billing-payment-failed-email-failed', error)
 		}),
@@ -268,7 +341,8 @@ export async function latestReferrerPaidPeriodEnd(input: {
 		.first<{ stripe_customer_id: string | null }>()
 	const customerId = row?.stripe_customer_id?.trim()
 	if (!customerId) return null
-	const subscriptions = selectPlanRetainingSubscriptions(
+	const subscriptions = selectKodyPlanRetainingSubscriptions(
+		input.env,
 		await listSubscriptions(input.env, customerId),
 	)
 	let latest: string | null = null

@@ -1,9 +1,40 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { firstPartySecurityHeaders } from './security-headers.ts'
 import { getEnv } from './env.ts'
 import { handleRequest } from './handler.ts'
+import { markSentryReported } from './sentry-reported-error.ts'
 import { silenceExpectedConsoleErrors } from '#worker/test-support/console-spies.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
+
+const captureException = vi.fn()
+
+vi.mock('@sentry/cloudflare', async () => {
+	const stub = await import('#worker/test-support/sentry-cloudflare-stub.ts')
+	return {
+		...stub,
+		captureException: (...args: Array<unknown>) => captureException(...args),
+	}
+})
+
+vi.mock('#app/router.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#app/router.ts')>()
+	return {
+		...actual,
+		createAppRouter(env: Env) {
+			const router = actual.createAppRouter(env)
+			return {
+				fetch(request: Request) {
+					if (request.headers.get('x-kody-test-reported-error') === '1') {
+						const error = new Error('ssr already reported')
+						markSentryReported(error)
+						return Promise.reject(error)
+					}
+					return router.fetch(request)
+				},
+			}
+		},
+	}
+})
 
 function createEnv(overrides: Record<string, unknown> = {}) {
 	return {
@@ -68,6 +99,7 @@ test('uncaught handler failures return an illustrated HTML 500 with a document t
 		'Remix server handler failed:',
 		'Illustrated 500 shell failed:',
 	])
+	captureException.mockClear()
 	const response = await handleRequest(
 		new Request('https://example.com/health'),
 		createEnv({ SENTRY_ENVIRONMENT: 'production' }),
@@ -77,7 +109,7 @@ test('uncaught handler failures return an illustrated HTML 500 with a document t
 	expect(response.status).toBe(500)
 	expect(response.headers.get('content-type')).toMatch(/text\/html/)
 	expect(body).toContain('lang="en"')
-	expect(body).toContain('<title>Something went wrong — kody</title>')
+	expect(body).toContain('<title>Something went wrong — Kody</title>')
 	expect(body).toContain('data-testid="internal-error-page"')
 	expect(body).toContain('We got a little zapped.')
 	expect(body).toContain('src="/images/kody-500-zapped.png"')
@@ -86,4 +118,31 @@ test('uncaught handler failures return an illustrated HTML 500 with a document t
 	expect(response.headers.get('Content-Security-Policy')).toBe(
 		firstPartySecurityHeaders['Content-Security-Policy'],
 	)
+	expect(captureException).toHaveBeenCalledTimes(1)
+	expect(captureException).toHaveBeenCalledWith(
+		expect.any(Error),
+		expect.objectContaining({
+			tags: expect.objectContaining({
+				surface: 'app-router',
+				pathname: '/health',
+			}),
+		}),
+	)
+})
+
+test('handleRequest skips Sentry when SSR already reported the failure', async () => {
+	silenceExpectedConsoleErrors([
+		'Remix server handler failed:',
+		'Illustrated 500 shell failed:',
+	])
+	captureException.mockClear()
+	const response = await handleRequest(
+		new Request('https://example.com/account', {
+			headers: { 'x-kody-test-reported-error': '1' },
+		}),
+		createEnv({ AUTH_RATE_LIMITER: {} }),
+	)
+
+	expect(response.status).toBe(500)
+	expect(captureException).not.toHaveBeenCalled()
 })

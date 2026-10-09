@@ -1,4 +1,9 @@
-import { recordUsage, type UsageEnv } from './record-usage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	recordUsage,
+	type UsageEnv,
+	usageAttributionFieldsFromRequest,
+} from './record-usage.ts'
 
 /**
  * Host-side sink for `package_static_call` usage events reported by the
@@ -9,7 +14,7 @@ import { recordUsage, type UsageEnv } from './record-usage.ts'
  * Trust model: the callee package id is stamped into generated import-proxy
  * code by the bundler, never taken from author-supplied strings. Generated
  * code still runs inside the sandbox realm, though, so the host validates
- * every reported id against the bundle's *static* dependency package ids
+ * every reported id against the bundle's *direct* static dependency package ids
  * recorded at build time (a strict subset of the `packageStorage()` grant
  * set, which additionally grants the run's own package id and
  * dynamic-import dependencies) and silently drops anything else. A
@@ -43,8 +48,9 @@ const maxRecordedEventsPerRun = 200
 export function createPackageStaticCallMeterTools(input: {
 	env: UsageEnv
 	userId: string | null | undefined
+	request?: RequestContext | null
 	/**
-	 * Saved-package UUIDs recorded as static dependencies of the running
+	 * Saved-package UUIDs recorded as direct static dependencies of the running
 	 * bundle at build time (`bundle.dependencies`), from bundler/host
 	 * controlled provenance only. Reported events whose stamped id is not
 	 * in this set are dropped.
@@ -63,6 +69,7 @@ export function createPackageStaticCallMeterTools(input: {
 					const recorded = await recordStaticCallEvent({
 						env: input.env,
 						userId,
+						request: input.request,
 						grantedPackageIds: input.grantedPackageIds,
 						rawEvent,
 					})
@@ -79,6 +86,7 @@ export function createPackageStaticCallMeterTools(input: {
 async function recordStaticCallEvent(input: {
 	env: UsageEnv
 	userId: string
+	request?: RequestContext | null
 	grantedPackageIds: ReadonlySet<string>
 	rawEvent: unknown
 }) {
@@ -113,6 +121,7 @@ async function recordStaticCallEvent(input: {
 		entityId: packageId,
 		durationMs,
 		outcome,
+		...usageAttributionFieldsFromRequest(input.request),
 	})
 	return true
 }

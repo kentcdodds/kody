@@ -1,4 +1,5 @@
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import { getValue, listValues } from '#mcp/values/service.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 
@@ -67,6 +68,7 @@ export function readAccountValuesSelectedValueId(
 }
 
 function readSelectedValueIdFromPath(pathname: string) {
+	pathname = accountAliasPath(pathname)
 	if (pathname === `${accountValuesBasePath}/new`) return null
 	const detailPrefix = `${accountValuesBasePath}/`
 	if (!pathname.startsWith(detailPrefix)) return null

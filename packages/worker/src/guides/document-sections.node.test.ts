@@ -33,6 +33,14 @@ Repo payload.
 Filter rules.
 `
 
+const resolve = (markdown: string, section?: string, maxChars = 10_000) =>
+	resolveMarkdownDocument({
+		markdown,
+		maxChars,
+		entityRef: 'guide:demo',
+		section,
+	})
+
 test('document sections parse headings, skip fences, and resolve by slug or title', () => {
 	expect(slugifyDocumentHeading('`repo.pushed`')).toBe('repo.pushed')
 	expect(slugifyDocumentHeading('Filters on package-emitted topics')).toBe(
@@ -59,45 +67,27 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	).toBe('filters-on-package-emitted-topics')
 	expect(findDocumentHeading(headings, 'missing-section')).toBeNull()
 
-	const full = resolveMarkdownDocument({
-		markdown: sample,
-		maxChars: 10_000,
-		entityRef: 'guide:demo',
-	})
+	const full = resolve(sample)
 	expect(full.mode).toBe('full')
 	expect(full.markdown).toBe(sample)
 
-	const toc = resolveMarkdownDocument({
-		markdown: sample,
-		maxChars: 80,
-		entityRef: 'guide:demo',
-	})
+	const toc = resolve(sample, undefined, 80)
 	expect(toc.mode).toBe('toc')
 	expect(toc.markdown).toContain('## Contents')
 	expect(toc.markdown).toContain('guide:demo#repo.pushed')
 	expect(toc.markdown).not.toContain('Repo payload.')
 	expect(toc.markdown).not.toContain('Fake heading in a fence')
 
-	const section = resolveMarkdownDocument({
-		markdown: sample,
-		maxChars: 80,
-		entityRef: 'guide:demo',
-		section: 'repo.pushed',
-	})
+	const section = resolve(sample, 'repo.pushed', 80)
 	expect(section.mode).toBe('section')
 	expect(section.markdown).toContain('## `repo.pushed`')
 	expect(section.markdown).toContain('Repo payload.')
 	expect(section.markdown).not.toContain('Filter rules.')
 	expect(section.selected?.slug).toBe('repo.pushed')
 
-	expect(() =>
-		resolveMarkdownDocument({
-			markdown: sample,
-			maxChars: 80,
-			entityRef: 'guide:demo',
-			section: 'not-a-heading',
-		}),
-	).toThrow(/Unknown section "not-a-heading" for guide:demo/)
+	expect(() => resolve(sample, 'not-a-heading', 80)).toThrow(
+		/Unknown section "not-a-heading" for guide:demo/,
+	)
 
 	const contents = formatDocumentContents({
 		headings,
@@ -108,12 +98,7 @@ test('document sections parse headings, skip fences, and resolve by slug or titl
 	)
 
 	const oversizedSection = `${'#'.repeat(2)} Only heading\n\n${'x'.repeat(400)}`
-	const truncated = resolveMarkdownDocument({
-		markdown: oversizedSection,
-		maxChars: 160,
-		entityRef: 'guide:demo',
-		section: 'only-heading',
-	})
+	const truncated = resolve(oversizedSection, 'only-heading', 160)
 	expect(truncated.mode).toBe('section')
 	expect(truncated.markdown).toContain('--- TRUNCATED ---')
 	expect(truncated.markdown.length).toBeLessThanOrEqual(160)
@@ -124,12 +109,7 @@ test('document sections resolve line anchors before heading slugs', () => {
 		{ length: 200 },
 		(_, index) => `line ${String(index + 1)}`,
 	).join('\n')
-	const line = resolveMarkdownDocument({
-		markdown: numbered,
-		maxChars: 10_000,
-		entityRef: 'guide:demo',
-		section: 'L165',
-	})
+	const line = resolve(numbered, 'L165')
 	expect(line.mode).toBe('lines')
 	expect(line.lines).toMatchObject({
 		requestedStartLine: 165,
@@ -142,12 +122,7 @@ test('document sections resolve line anchors before heading slugs', () => {
 	expect(line.markdown).not.toContain('144|line 144')
 	expect(line.selected).toBeNull()
 
-	const range = resolveMarkdownDocument({
-		markdown: numbered,
-		maxChars: 10_000,
-		entityRef: 'guide:demo',
-		section: 'L165-L180',
-	})
+	const range = resolve(numbered, 'L165-L180')
 	expect(range.mode).toBe('lines')
 	expect(range.lines).toMatchObject({
 		requestedStartLine: 165,
@@ -170,34 +145,19 @@ test('document sections resolve line anchors before heading slugs', () => {
 		'Other body.',
 		...Array.from({ length: 200 }, (_, index) => `pad ${String(index + 1)}`),
 	].join('\n')
-	const heading = resolveMarkdownDocument({
-		markdown: titled,
-		maxChars: 10_000,
-		entityRef: 'guide:demo',
-		section: 'l165',
-	})
+	const heading = resolve(titled, 'l165')
 	expect(heading.mode).toBe('section')
 	expect(heading.selected?.slug).toBe('l165')
 	expect(heading.markdown).toContain('Heading body.')
 	expect(heading.markdown).not.toContain('Other body.')
 
-	const lineWins = resolveMarkdownDocument({
-		markdown: titled,
-		maxChars: 10_000,
-		entityRef: 'guide:demo',
-		section: 'L165',
-	})
+	const lineWins = resolve(titled, 'L165')
 	expect(lineWins.mode).toBe('lines')
 	expect(lineWins.markdown).not.toContain('Heading body.')
 
-	expect(() =>
-		resolveMarkdownDocument({
-			markdown: numbered,
-			maxChars: 10_000,
-			entityRef: 'guide:demo',
-			section: 'L999',
-		}),
-	).toThrow(/Line 999 is past the end of guide:demo#L999/)
+	expect(() => resolve(numbered, 'L999')).toThrow(
+		/Line 999 is past the end of guide:demo#L999/,
+	)
 })
 
 test('document sections keep info-string fence lines inside the open block', () => {

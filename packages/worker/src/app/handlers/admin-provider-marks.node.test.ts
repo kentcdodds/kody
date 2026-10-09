@@ -1,5 +1,9 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
+import { RequestContext } from 'remix/router'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { expect, test, vi } from 'vitest'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
@@ -12,12 +16,14 @@ import {
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof AuthenticatedUser.readAuthenticatedAppUser>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
@@ -35,7 +41,9 @@ const { createAdminProviderMarksApiHandler } =
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 
-function createActor(roles: Array<RoleName>) {
+function createActor(
+	roles: Array<RoleName>,
+): AuthenticatedUser.AuthenticatedAppUser {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
 		: ['read:user:own']
@@ -43,62 +51,84 @@ function createActor(roles: Array<RoleName>) {
 		sessionUserId: '1',
 		userId: 1,
 		email: 'admin@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		username: 'admin-user',
 		displayName: 'admin-user',
 		roles,
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: '1'.padStart(64, '0'),
+			userId: personIdFromStored('1'.padStart(64, '0')),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
 		},
+		request: sessionRequestContext('1'.padStart(64, '0')),
 	}
 }
 
-function createHarness() {
+function createMarksClient() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const env = {
-		APP_DB: createD1FromSqlite(sqlite),
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		COMMUNITY_ASSETS: {
-			async put() {},
-			async get() {
-				return null
-			},
-			async delete() {},
-		} as unknown as R2Bucket,
-		IMAGES: createFakeImagesBinding(),
-	} as Env
-	return { env }
-}
-
-function postRequest(body: Record<string, unknown>) {
-	return new Request('https://example.com/admin/provider-marks.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	})
-}
-
-test('admin provider marks API saves and lists operator marks', async () => {
-	const { env } = createHarness()
+	const db = createD1FromSqlite(sqlite)
+	const images = createFakeImagesBinding()
+	const communityAssets = {
+		async put() {},
+		async get() {
+			return null
+		},
+		async delete() {},
+	}
+	const createEnv = (storage: boolean) =>
+		({
+			APP_DB: db,
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+			COMMUNITY_ASSETS: storage ? communityAssets : undefined,
+			IMAGES: images,
+		}) as unknown as Env
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler(env)
+	const url = new URL('https://example.com/admin/provider-marks.json')
+	const call = (
+		body?: Record<string, unknown>,
+		{ storage = true }: { storage?: boolean } = {},
+	) =>
+		createAdminProviderMarksApiHandler(createEnv(storage)).handler(
+			new RequestContext(
+				body
+					? new Request(url, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(body),
+						})
+					: new Request(url),
+			),
+		)
+	const listSlugs = async () => {
+		const response = await call()
+		expect(response.status).toBe(200)
+		const body = (await response.json()) as { marks: Array<{ slug: string }> }
+		return body.marks.map((mark) => mark.slug)
+	}
+	return { call, listSlugs }
+}
 
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			aliases: ['accounts.google.com'],
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
+const saveGoogle = {
+	action: 'save',
+	slug: 'google',
+	label: 'Google',
+	aliases: ['accounts.google.com'],
+	logoBase64: bytesToBase64(tinyPngBytes),
+}
+
+test('admin provider marks API saves, lists, and deletes marks, refusing logo writes without storage', async () => {
+	const { call, listSlugs } = createMarksClient()
+
+	const noStorageSave = await call(saveGoogle, { storage: false })
+	expect(noStorageSave.status).toBe(503)
+	expect(await listSlugs()).toEqual([])
+
+	const saved = await call(saveGoogle)
 	expect(saved.status).toBe(200)
 	const savedBody = (await saved.json()) as {
 		ok: true
@@ -109,98 +139,27 @@ test('admin provider marks API saves and lists operator marks', async () => {
 		/^\/integrations\/provider-marks\/google/,
 	)
 
-	const listed = await handler.handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
+	const relabeled = await call(
+		{ action: 'save', slug: 'google', label: 'Google Accounts' },
+		{ storage: false },
+	)
+	expect(relabeled.status).toBe(200)
+	await expect(relabeled.json()).resolves.toMatchObject({
+		marks: [
+			{
+				slug: 'google',
+				label: 'Google Accounts',
+				logoPath: savedBody.marks[0]?.logoPath,
+			},
+		],
 	})
-	expect(listed.status).toBe(200)
 
-	const deleted = await handler.handler({
-		request: postRequest({
-			action: 'delete',
-			slug: 'google',
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
+	const deleteGoogle = { action: 'delete', slug: 'google' }
+	const noStorageDelete = await call(deleteGoogle, { storage: false })
+	expect(noStorageDelete.status).toBe(503)
+	expect(await listSlugs()).toEqual(['google'])
+
+	const deleted = await call(deleteGoogle)
 	expect(deleted.status).toBe(200)
-	const deletedBody = (await deleted.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(deletedBody.marks).toEqual([])
-})
-
-test('admin provider marks API rejects a logo write when storage is missing without creating the mark', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler({
-		...env,
-		COMMUNITY_ASSETS: undefined,
-	} as Env)
-
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(saved.status).toBe(503)
-
-	const listed = await createAdminProviderMarksApiHandler(env).handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	const listedBody = (await listed.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(listedBody.marks).toEqual([])
-})
-
-test('admin provider marks API rejects delete when logo storage is missing', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminProviderMarksApiHandler(env)
-	const saved = await handler.handler({
-		request: postRequest({
-			action: 'save',
-			slug: 'google',
-			label: 'Google',
-			logoBase64: bytesToBase64(tinyPngBytes),
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(saved.status).toBe(200)
-
-	const deleted = await createAdminProviderMarksApiHandler({
-		...env,
-		COMMUNITY_ASSETS: undefined,
-	} as Env).handler({
-		request: postRequest({
-			action: 'delete',
-			slug: 'google',
-		}),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	expect(deleted.status).toBe(503)
-
-	const listed = await handler.handler({
-		request: new Request('https://example.com/admin/provider-marks.json'),
-		params: {},
-		url: new URL('https://example.com/admin/provider-marks.json'),
-	})
-	const listedBody = (await listed.json()) as {
-		ok: true
-		marks: Array<{ slug: string }>
-	}
-	expect(listedBody.marks.map((mark) => mark.slug)).toEqual(['google'])
+	await expect(deleted.json()).resolves.toMatchObject({ ok: true, marks: [] })
 })

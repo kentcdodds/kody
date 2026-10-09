@@ -1,14 +1,19 @@
 import {
-	buildComputeOverageHowToReduce,
+	accountCreditsPath,
+	buildComputeOverageCreditsGuidance,
 	computeOverageResourceVisibility,
+	computeOverageUnitLabels,
 	computeOverageWarningResourceLabels,
-	type ComputeOverageDisposition,
+	type ComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
 	entitlementResourceLabels,
 	formatMinJobInterval,
+	hasHigherPublicPlan,
+	isCreditsUnlockedResource,
 	isWeeklyComputeWindowResource,
+	type CreditWalletState,
 	parsePlanName,
 	weeklyEntitlementResourceLabel,
 	type EntitlementResource,
@@ -32,9 +37,52 @@ export type EntitlementLimitErrorDetails = {
 	window?: EntitlementLimitWindow
 }
 
-export function buildEntitlementUpgradeHint(resource: EntitlementResource) {
+/**
+ * Credits next step for a rate/compute include, or `null` when the plan's
+ * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 hits Free
+ * rate/compute caps and is nudged to top up; a funded wallet is already at the
+ * credits ceiling. Free keeps its hard caps (upgrade offer); retired and
+ * gift Pro accounts learn that Pro with credits runs past the include.
+ */
+export function entitlementCreditsOffer(
+	resource: EntitlementResource,
+	plan: PlanName,
+	creditWallet: CreditWalletState,
+): string | null {
+	if (!isCreditsUnlockedResource(resource) || plan === 'max') return null
+	switch (creditWallet) {
+		case 'empty':
+			return `add credits at ${accountCreditsPath} to restore Pro rates past your include`
+		case 'funded':
+			return null
+		case 'none':
+			return hasHigherPublicPlan(plan)
+				? null
+				: `Pro with prepaid credits at ${accountCreditsPath} runs past its include`
+		default: {
+			const exhaustive: never = creditWallet
+			throw new Error(`Unknown credit wallet state: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * Next step appended to every entitlement denial. Stock is on the
+ * purchasable Pro subscription, so it only offers an upgrade on Free.
+ */
+export function buildEntitlementUpgradeHint(
+	resource: EntitlementResource,
+	plan: PlanName,
+	creditWallet: CreditWalletState = 'none',
+) {
 	const label = entitlementResourceLabels[resource]
-	return `Remove or finish existing ${label} you no longer need, or upgrade your plan at /account/billing.`
+	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
+	const creditsOffer = entitlementCreditsOffer(resource, plan, creditWallet)
+	if (creditsOffer) {
+		return `${reduceGuidance.slice(0, -1)}, or ${creditsOffer}.`
+	}
+	if (!hasHigherPublicPlan(plan)) return reduceGuidance
+	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`
 }
 
 /**
@@ -143,9 +191,8 @@ export type JobIntervalFloorErrorDetails = {
 	upgradeHint: string
 }
 
-export function buildJobIntervalFloorUpgradeHint() {
-	return 'Space this job out, or upgrade at /account/billing.'
-}
+/** Free and Pro share the 15-minute floor, so there is no upgrade offer. */
+export const jobIntervalFloorUpgradeHint = 'Space this job out.'
 
 export function buildJobIntervalFloorMessage(
 	details: JobIntervalFloorErrorDetails,
@@ -210,64 +257,80 @@ export type ComputeOverageLimitErrorDetails = {
 	current: number
 	whatCounts: string
 	upgradeHint: string
-	disposition: ComputeOverageDisposition
+	creditsStatus: ComputeIncludeCreditsStatus
 }
 
-export function buildComputeOverageUpgradeHint(
-	resource: ComputeOverageWarningResource,
-	disposition?: ComputeOverageDisposition | null,
-) {
-	return buildComputeOverageHowToReduce(resource, disposition)
+function creditWalletForStatus(
+	status: ComputeIncludeCreditsStatus,
+): CreditWalletState {
+	switch (status) {
+		case 'debiting_credits':
+			return 'funded'
+		case 'add_credits':
+			return 'empty'
+		case 'within_include':
+		case 'switch_to_pro':
+		case 'not_charged':
+			return 'none'
+		default: {
+			const exhaustive: never = status
+			throw new Error(`Unknown credits status: ${String(exhaustive)}`)
+		}
+	}
 }
 
 /**
- * User-facing denial when an unpaid Free account is over a monthly
- * compute include (soft-block). Paid public-ladder overage invoices
- * instead; legacy is not cut. Enforcement points must not compose
- * their own messages.
+ * User-facing stop when an empty purchasable-Pro wallet has used up a
+ * monthly Worker compute or Rows read include. Enforcement points must not
+ * compose their own messages.
  */
 export function buildComputeOverageLimitMessage(
 	details: ComputeOverageLimitErrorDetails,
 ) {
 	const label = computeOverageWarningResourceLabels[details.resource]
-	return `Monthly compute include reached: your "${details.plan}" plan includes at most ${details.limit} ${label} this UTC month and you currently have ${details.current}. ${details.whatCounts} ${details.upgradeHint}`
+	const unit = computeOverageUnitLabels[details.resource]
+	return `${label} include used up: your "${details.plan}" plan includes ${formatCount(details.limit)} ${unit} this UTC month and you have used ${formatCount(details.current)}. ${details.upgradeHint}`
 }
 
 export function parseComputeOverageLimitMessage(
 	message: string,
 ): ComputeOverageLimitErrorDetails | null {
-	for (const [resource, label] of Object.entries(
+	for (const resource of Object.keys(
 		computeOverageWarningResourceLabels,
-	) as Array<[ComputeOverageWarningResource, string]>) {
+	) as Array<ComputeOverageWarningResource>) {
+		const label = computeOverageWarningResourceLabels[resource]
+		const unit = computeOverageUnitLabels[resource]
 		const match = new RegExp(
-			`^Monthly compute include reached: your "([^"]+)" plan includes at most (\\d+) ${escapeRegex(label)} this UTC month and you currently have (\\d+)\\. (.+)$`,
+			`^${escapeRegex(label)} include used up: your "([^"]+)" plan includes ([\\d,]+) ${escapeRegex(unit)} this UTC month and you have used ([\\d,]+)\\. (.+)$`,
 		).exec(message)
 		if (!match) continue
 
 		const plan = parsePlanName(match[1])
 		if (!plan) return null
-		const limit = Number(match[2])
-		const current = Number(match[3])
-		if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(current)) {
-			return null
-		}
-		const rest = match[4] ?? ''
-		const whatCounts = computeOverageResourceVisibility[resource].whatCounts
-		const upgradeHint = rest.startsWith(whatCounts)
-			? rest.slice(whatCounts.length).trim()
-			: rest
+		const limit = parseCount(match[2])
+		const current = parseCount(match[3])
+		if (limit === null || current === null) return null
 		return {
 			code: computeOverageLimitErrorCode,
 			resource,
 			plan,
 			limit,
 			current,
-			whatCounts,
-			upgradeHint,
-			disposition: 'soft_block',
+			whatCounts: computeOverageResourceVisibility[resource].whatCounts,
+			upgradeHint: match[4] ?? '',
+			creditsStatus: 'add_credits',
 		}
 	}
 	return null
+}
+
+function formatCount(value: number) {
+	return value.toLocaleString('en-US')
+}
+
+function parseCount(value: string | undefined) {
+	const count = Number((value ?? '').replaceAll(',', ''))
+	return Number.isSafeInteger(count) ? count : null
 }
 
 export class ComputeOverageLimitError extends Error {
@@ -282,19 +345,25 @@ export class ComputeOverageLimitError extends Error {
 			upgradeHint?: string
 		},
 	) {
+		const visibility = computeOverageResourceVisibility[details.resource]
+		const guidance = buildComputeOverageCreditsGuidance(
+			details.resource,
+			details.plan,
+			creditWalletForStatus(details.creditsStatus),
+		)
 		const fullDetails: ComputeOverageLimitErrorDetails = {
 			code: computeOverageLimitErrorCode,
 			resource: details.resource,
 			plan: details.plan,
 			limit: details.limit,
 			current: details.current,
-			whatCounts:
-				details.whatCounts ??
-				computeOverageResourceVisibility[details.resource].whatCounts,
+			whatCounts: details.whatCounts ?? visibility.whatCounts,
 			upgradeHint:
 				details.upgradeHint ??
-				buildComputeOverageUpgradeHint(details.resource, details.disposition),
-			disposition: details.disposition,
+				(guidance
+					? `${guidance} ${visibility.howToReduce}`
+					: visibility.howToReduce),
+			creditsStatus: details.creditsStatus,
 		}
 		super(buildComputeOverageLimitMessage(fullDetails))
 		this.name = 'ComputeOverageLimitError'
@@ -326,7 +395,7 @@ export class JobIntervalFloorError extends Error {
 	) {
 		const fullDetails: JobIntervalFloorErrorDetails = {
 			code: jobIntervalFloorErrorCode,
-			upgradeHint: details.upgradeHint ?? buildJobIntervalFloorUpgradeHint(),
+			upgradeHint: details.upgradeHint ?? jobIntervalFloorUpgradeHint,
 			plan: details.plan,
 			minIntervalMs: details.minIntervalMs,
 		}
@@ -352,4 +421,147 @@ export function isJobIntervalFloorError(
 
 function escapeRegex(value: string) {
 	return value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)
+}
+
+export const budgetLimitErrorCode = 'org_budget_limit_exceeded' as const
+
+export type BudgetLimitKind = 'user' | 'automation'
+
+export type BudgetLimitErrorDetails = {
+	code: typeof budgetLimitErrorCode
+	kind: BudgetLimitKind
+	orgSlug: string
+	actorUsername?: string
+	spentMicroUsd: number
+	budgetMicroUsd: number
+}
+
+export function formatBudgetMicroUsd(microUsd: number) {
+	return `$${(microUsd / 1_000_000).toFixed(2)}`
+}
+
+export function buildBudgetLimitMessage(details: BudgetLimitErrorDetails) {
+	const orgLabel = `@${details.orgSlug}`
+	switch (details.kind) {
+		case 'user': {
+			const actorLabel = details.actorUsername
+				? `@${details.actorUsername}`
+				: 'This member'
+			const spent = formatBudgetMicroUsd(details.spentMicroUsd)
+			const budget = formatBudgetMicroUsd(details.budgetMicroUsd)
+			return `${actorLabel} reached their monthly budget in org ${orgLabel} (${spent} of ${budget}). An org Owner or Billing member can raise it.`
+		}
+		case 'automation':
+			return `Automation in org ${orgLabel} reached its monthly budget. An org Owner or Billing member can raise it.`
+		default: {
+			const exhaustive: never = details.kind
+			throw new Error(`Unknown budget limit kind: ${String(exhaustive)}`)
+		}
+	}
+}
+
+export function parseBudgetLimitMessage(
+	message: string,
+): BudgetLimitErrorDetails | null {
+	const automationMatch =
+		/^Automation in org @([^ ]+) reached its monthly budget\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (automationMatch) {
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'automation',
+			orgSlug: automationMatch[1] ?? '',
+			spentMicroUsd: 0,
+			budgetMicroUsd: 0,
+		}
+	}
+	const userMatch =
+		/^@([^ ]+) reached their monthly budget in org @([^ ]+) \((\$[\d.]+) of (\$[\d.]+)\)\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (userMatch) {
+		const spentMicroUsd = parseBudgetDollarAmount(userMatch[3])
+		const budgetMicroUsd = parseBudgetDollarAmount(userMatch[4])
+		if (spentMicroUsd === null || budgetMicroUsd === null) return null
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'user',
+			actorUsername: userMatch[1],
+			orgSlug: userMatch[2] ?? '',
+			spentMicroUsd,
+			budgetMicroUsd,
+		}
+	}
+	const memberMatch =
+		/^This member reached their monthly budget in org @([^ ]+) \((\$[\d.]+) of (\$[\d.]+)\)\. An org Owner or Billing member can raise it\.$/.exec(
+			message,
+		)
+	if (memberMatch) {
+		const spentMicroUsd = parseBudgetDollarAmount(memberMatch[2])
+		const budgetMicroUsd = parseBudgetDollarAmount(memberMatch[3])
+		if (spentMicroUsd === null || budgetMicroUsd === null) return null
+		return {
+			code: budgetLimitErrorCode,
+			kind: 'user',
+			orgSlug: memberMatch[1] ?? '',
+			spentMicroUsd,
+			budgetMicroUsd,
+		}
+	}
+	return null
+}
+
+function parseBudgetDollarAmount(value: string | undefined) {
+	if (!value?.startsWith('$')) return null
+	const dollars = Number(value.slice(1))
+	if (!Number.isFinite(dollars)) return null
+	return Math.round(dollars * 1_000_000)
+}
+
+export class BudgetLimitError extends Error {
+	readonly details: BudgetLimitErrorDetails
+
+	constructor(details: Omit<BudgetLimitErrorDetails, 'code'>) {
+		const fullDetails: BudgetLimitErrorDetails = {
+			code: budgetLimitErrorCode,
+			...details,
+		}
+		super(buildBudgetLimitMessage(fullDetails))
+		this.name = 'BudgetLimitError'
+		this.details = fullDetails
+	}
+}
+
+export function isBudgetLimitError(error: unknown): error is BudgetLimitError {
+	return (
+		error instanceof BudgetLimitError ||
+		(error instanceof Error &&
+			'details' in error &&
+			typeof error.details === 'object' &&
+			error.details !== null &&
+			'code' in error.details &&
+			error.details.code === budgetLimitErrorCode)
+	)
+}
+
+/** Rehydrate a budget denial from a Durable Object RPC error. */
+export function coerceBudgetLimitError(
+	error: unknown,
+): BudgetLimitError | null {
+	if (isBudgetLimitError(error)) return error
+	if (!(error instanceof Error)) return null
+	if (
+		'details' in error &&
+		typeof error.details === 'object' &&
+		error.details !== null &&
+		'code' in error.details &&
+		error.details.code === budgetLimitErrorCode
+	) {
+		const details = error.details as BudgetLimitErrorDetails
+		return new BudgetLimitError(details)
+	}
+	const parsed = parseBudgetLimitMessage(error.message)
+	if (!parsed) return null
+	return new BudgetLimitError(parsed)
 }

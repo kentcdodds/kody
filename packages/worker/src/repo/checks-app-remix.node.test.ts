@@ -138,7 +138,13 @@ test('runRepoChecks rejects kody.app.runtime as a removed option', async () => {
 test('runRepoChecks bundles a router app and a fetch handler without a runtime field', async () => {
 	const remixResult = await runChecks(
 		new Map([
-			['package.json', createManifest({ app: { entry: './app/router.ts' } })],
+			[
+				'package.json',
+				createManifest({
+					app: { entry: './app/router.ts' },
+					dependencies: { remix: '3.0.0' },
+				}),
+			],
 			...remixAppFiles,
 		]),
 	)
@@ -165,7 +171,7 @@ test('runRepoChecks bundles a router app and a fetch handler without a runtime f
 	expect(fetchBundle?.message).toBe('Bundled 3 package target(s) successfully.')
 })
 
-test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<subpath>', async () => {
+test('runRepoChecks treats remix and @remix-run/* as ordinary npm dependencies', async () => {
 	const result = await runChecks(
 		new Map([
 			[
@@ -173,9 +179,39 @@ test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<s
 				createManifest({
 					app: { entry: './app/router.ts' },
 					dependencies: {
-						'@remix-run/fetch-router': '^0.22.0',
+						'@remix-run/ui': '0.12.1',
+						remix: '3.0.0',
 						zod: '^4.0.0',
 					},
+				}),
+			],
+			...remixAppFiles,
+		]),
+	)
+	expect(result.ok).toBe(true)
+	const dependencies = result.results.find(
+		(entry) => entry.kind === 'dependencies',
+	)
+	expect(dependencies?.ok).toBe(true)
+	expect(dependencies?.message).toContain(
+		'package.json declares 3 npm dependencies: "@remix-run/ui", "remix", "zod".',
+	)
+	expect(mockModule.buildKodyAppBundle).toHaveBeenCalledWith(
+		expect.objectContaining({ entryPoint: 'app/router.ts' }),
+	)
+})
+
+test('runRepoChecks fails when remix is only a types-only devDependency', async () => {
+	// Publish installs dependencies only; a types-only remix in
+	// devDependencies never reaches the bundle snapshot, so a runtime import
+	// of remix must fail the dependencies check (not silently publish).
+	const result = await runChecks(
+		new Map([
+			[
+				'package.json',
+				createManifest({
+					app: { entry: './app/router.ts' },
+					devDependencies: { remix: '3.0.0', typescript: '^6.0.0' },
 				}),
 			],
 			...remixAppFiles,
@@ -186,60 +222,8 @@ test('runRepoChecks rejects @remix-run/* npm dependencies and points at remix/<s
 		(entry) => entry.kind === 'dependencies',
 	)
 	expect(dependencies?.ok).toBe(false)
-	expect(dependencies?.message).toBe(
-		'package.json#dependencies must not list "@remix-run/fetch-router": import Remix as "remix/<subpath>" (for example "remix/router", "remix/ui"); Kody supplies that package to every bundle, and a second copy from npm would not share its component runtime.',
-	)
-	expect(result.results.some((entry) => entry.kind === 'bundle')).toBe(false)
-	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
-})
-
-test('runRepoChecks treats a types-only remix devDependency as no npm dependency at all', async () => {
-	const result = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createManifest({
-					app: { entry: './app/router.ts' },
-					devDependencies: { remix: '3.0.0-rc.2', typescript: '^6.0.0' },
-				}),
-			],
-			...remixAppFiles,
-		]),
-	)
-	expect(result.ok).toBe(true)
-	const dependencies = result.results.find(
-		(entry) => entry.kind === 'dependencies',
-	)
-	expect(dependencies?.ok).toBe(true)
 	expect(dependencies?.message).toContain(
 		'package.json declares no npm dependencies.',
 	)
-	// The bundle path receives the manifest untouched; publish never installs
-	// devDependencies, so the platform copy of remix is the only one.
-	expect(mockModule.buildKodyAppBundle).toHaveBeenCalledWith(
-		expect.objectContaining({ entryPoint: 'app/router.ts' }),
-	)
-})
-
-test('runRepoChecks notes that a declared remix dependency is not installed', async () => {
-	const result = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createManifest({
-					app: { entry: './app/router.ts' },
-					dependencies: { remix: '3.0.0-rc.2' },
-				}),
-			],
-			...remixAppFiles,
-		]),
-	)
-	expect(result.ok).toBe(true)
-	const dependencies = result.results.find(
-		(entry) => entry.kind === 'dependencies',
-	)
-	expect(dependencies?.ok).toBe(true)
-	expect(dependencies?.message).toContain(
-		'Kody supplies "remix" to every package bundle at the platform version, so the declared range is not installed.',
-	)
+	expect(dependencies?.message).toMatch(/undeclared bare package\(s\): "remix"/)
 })

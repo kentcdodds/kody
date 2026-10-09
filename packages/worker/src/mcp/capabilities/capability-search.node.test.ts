@@ -21,6 +21,7 @@ function spec(name: string, description: string): CapabilitySpec {
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
+		orgPermission: 'none',
 		source: 'builtin',
 		inputFields: [],
 		requiredInputFields: [],
@@ -145,6 +146,7 @@ test('offline capability search ranks lexical matches and returns structured det
 	const specs = {
 		oauth_setup_guide: {
 			name: 'oauth_setup_guide',
+			orgPermission: 'none',
 			domain: 'coding',
 			description: 'Guide for configuring OAuth redirect URIs.',
 			keywords: ['oauth', 'redirect uri', 'provider registration'],
@@ -168,7 +170,7 @@ test('offline capability search ranks lexical matches and returns structured det
 	const env = {
 		SENTRY_ENVIRONMENT: 'test',
 		AI: {} as Ai,
-	} as Env
+	} as unknown as Env
 
 	const oauthGuide = await searchCapabilities({
 		env,

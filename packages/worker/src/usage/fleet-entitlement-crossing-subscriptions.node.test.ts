@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as AdminPackageSubscriptions from '#worker/package-invocations/admin-package-subscriptions.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	buildFleetEntitlementCrossingIdempotencyKey,
 	buildFleetEntitlementResourceCrossedEvent,
@@ -6,7 +8,10 @@ import {
 } from './fleet-entitlement-crossing-subscription-event.ts'
 
 const mocks = vi.hoisted(() => ({
-	dispatchAdminPackageSubscriptionEvent: vi.fn(),
+	dispatchAdminPackageSubscriptionEvent:
+		vi.fn<
+			typeof AdminPackageSubscriptions.dispatchAdminPackageSubscriptionEvent
+		>(),
 }))
 
 vi.mock('#worker/package-invocations/admin-package-subscriptions.ts', () => ({
@@ -16,6 +21,24 @@ vi.mock('#worker/package-invocations/admin-package-subscriptions.ts', () => ({
 
 const { dispatchFleetEntitlementCrossingSubscriptionEvent } =
 	await import('./fleet-entitlement-crossing-subscriptions.ts')
+
+const adminSavedPackage: SavedPackageRecord = {
+	id: 'package-1',
+	userId: 'admin-user-1',
+	name: 'Admin package',
+	kodyId: 'admin-package',
+	description: '',
+	tags: [],
+	searchText: null,
+	sourceId: 'source-1',
+	hasApp: false,
+	hasSkills: false,
+	hidden: false,
+	isPrivate: false,
+	lockedAt: null,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
+}
 
 test('fleet entitlement crossing dispatch fans metadata-only events through admin package fan-out', async () => {
 	const event = buildFleetEntitlementResourceCrossedEvent({
@@ -31,23 +54,25 @@ test('fleet entitlement crossing dispatch fans metadata-only events through admi
 		observedAt: '2026-08-24T16:00:18.000Z',
 	})
 
+	const dispatched: Array<{
+		params: Record<string, unknown>
+		idempotencyKey: string
+		input: Parameters<
+			typeof AdminPackageSubscriptions.dispatchAdminPackageSubscriptionEvent
+		>[0]
+	}> = []
 	mocks.dispatchAdminPackageSubscriptionEvent.mockImplementation(
-		async (input: {
-			getParams: () =>
-				| Record<string, unknown>
-				| Promise<Record<string, unknown>>
-			buildIdempotencyKey: (savedPackage: { id: string }) => string
-			[key: string]: unknown
-		}) => [
-			{
+		async (input) => {
+			dispatched.push({
 				params: await input.getParams(),
-				idempotencyKey: input.buildIdempotencyKey({ id: 'package-1' }),
+				idempotencyKey: input.buildIdempotencyKey(adminSavedPackage),
 				input,
-			},
-		],
+			})
+			return []
+		},
 	)
 
-	const result = await dispatchFleetEntitlementCrossingSubscriptionEvent({
+	await dispatchFleetEntitlementCrossingSubscriptionEvent({
 		env: {
 			APP_DB: {} as D1Database,
 			BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
@@ -56,7 +81,7 @@ test('fleet entitlement crossing dispatch fans metadata-only events through admi
 		event,
 	})
 
-	expect(result[0]).toMatchObject({
+	expect(dispatched[0]).toMatchObject({
 		params: event,
 		idempotencyKey: buildFleetEntitlementCrossingIdempotencyKey({
 			event,
@@ -68,6 +93,6 @@ test('fleet entitlement crossing dispatch fans metadata-only events through admi
 			actorTokenId: 'internal:fleet-entitlement-crossing-subscriptions',
 		},
 	})
-	expect(JSON.stringify(result[0]?.params)).not.toContain('email')
-	expect(JSON.stringify(result[0]?.params)).not.toContain('plan')
+	expect(JSON.stringify(dispatched[0]?.params)).not.toContain('email')
+	expect(JSON.stringify(dispatched[0]?.params)).not.toContain('plan')
 })

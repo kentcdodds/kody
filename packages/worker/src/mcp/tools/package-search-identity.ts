@@ -9,7 +9,7 @@ import { readListingAheadFlag } from '#universal/community-listing-ahead.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
-	getSavedPackageWithCommunityProvenanceByKodyId,
+	resolveSavedPackageRefWithCommunityProvenance,
 } from '#worker/package-registry/repo.ts'
 import {
 	getPackageNameLeaf,
@@ -266,9 +266,10 @@ export async function resolvePackageIdentitySearch(input: {
 					userId: input.userId,
 					packageId: identity.value,
 				})
-			: await getSavedPackageWithCommunityProvenanceByKodyId(input.db, {
+			: await resolveSavedPackageRefWithCommunityProvenance(input.db, {
 					userId: input.userId,
-					kodyId: identity.value,
+					ref: identity.value,
+					match: 'slug',
 				})
 	const [record] =
 		loaded && input.env

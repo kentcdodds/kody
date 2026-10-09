@@ -95,9 +95,7 @@ test('a fully healthy pass reports every component ok', async () => {
 	expect(result.outcomes.map((entry) => entry.component).toSorted()).toEqual(
 		[...statusComponentIds].toSorted(),
 	)
-	for (const entry of result.outcomes) {
-		expect(entry.ok, `${entry.component} should be ok`).toBe(true)
-	}
+	expect(result.outcomes.filter((entry) => !entry.ok)).toEqual([])
 	expect(outcome(result, 'app_db')?.latencyMs).toBe(4)
 	expect(result.productionCommitSha).toBe(
 		'abc123def4567890abcdef1234567890abcdef12',
@@ -111,147 +109,128 @@ test('a fully healthy pass reports every component ok', async () => {
 	)
 })
 
-test('apex 302 is not package-runtime up; jobs probe failure is not app-down', async () => {
+const redirect: FakeRoute = {
+	status: 302,
+	headers: { Location: 'https://kody.codes/' },
+}
+
+test('apex 302 is not probed as package-runtime up', async () => {
 	const requested: Array<string> = []
-	const apexRedirect = healthyRoutes()
-	apexRedirect[`${packageAppOrigin}/`] = {
-		status: 302,
-		headers: { Location: 'https://kody.codes/' },
-	}
-	const apexFetcher = fakeFetcher(apexRedirect)
-	const trackingFetcher: typeof fetch = (async (input, init) => {
-		requested.push(typeof input === 'string' ? input : input.toString())
-		return apexFetcher(input, init)
-	}) as typeof fetch
+	const apexFetcher = fakeFetcher({
+		...healthyRoutes(),
+		[`${packageAppOrigin}/`]: redirect,
+	})
 	const apexResult = await runAllProbes({
 		primaryOrigin,
 		packageAppOrigin,
-		fetcher: trackingFetcher,
+		fetcher: (async (input, init) => {
+			requested.push(typeof input === 'string' ? input : input.toString())
+			return apexFetcher(input, init)
+		}) as typeof fetch,
 	})
 	expect(requested).not.toContain(`${packageAppOrigin}/`)
 	expect(requested).toContain(runtimeHealth)
 	expect(outcome(apexResult, 'package_apps')?.ok).toBe(true)
-
-	const runtimeRedirect = healthyRoutes()
-	runtimeRedirect[runtimeHealth] = {
-		status: 302,
-		headers: { Location: 'https://kody.codes/' },
-	}
-	const runtimeRedirectOutcomes = await probe(runtimeRedirect)
-	expect(outcome(runtimeRedirectOutcomes, 'package_apps')).toMatchObject({
-		ok: false,
-		detail: 'HTTP 302',
-	})
-	expect(runtimeRedirectOutcomes.runtimeCommitSha).toBeNull()
-	expect(outcome(runtimeRedirectOutcomes, 'app')?.ok).toBe(true)
-
-	const runtimeHtml = healthyRoutes()
-	runtimeHtml[runtimeHealth] = { status: 200, body: { ok: true } }
-	expect(outcome(await probe(runtimeHtml), 'package_apps')).toMatchObject({
-		ok: false,
-		detail: 'HTTP 200',
-	})
-
-	const jobsDown = healthyRoutes()
-	jobsDown[jobsHealth] = { error: 'jobs worker unreachable' }
-	jobsDown[jobsComponents] = { error: 'jobs worker unreachable' }
-	const jobsDownOutcomes = await probe(jobsDown)
-	expect(outcome(jobsDownOutcomes, 'jobs')).toMatchObject({
-		ok: false,
-		detail: 'jobs worker unreachable',
-	})
-	expect(outcome(jobsDownOutcomes, 'app')?.ok).toBe(true)
-	expect(outcome(jobsDownOutcomes, 'mcp')?.ok).toBe(true)
-	expect(outcome(jobsDownOutcomes, 'package_apps')?.ok).toBe(true)
-
-	const jobsDbDown = healthyRoutes()
-	jobsDbDown[jobsComponents] = {
-		status: 503,
-		body: {
-			ok: false,
-			components: [{ id: 'jobs_db', ok: false, error: 'timeout' }],
-		},
-	}
-	const jobsDbOutcomes = await probe(jobsDbDown)
-	expect(outcome(jobsDbOutcomes, 'jobs')).toMatchObject({
-		ok: false,
-		detail: 'timeout',
-	})
-	expect(outcome(jobsDbOutcomes, 'app')?.ok).toBe(true)
-	expect(jobsDbOutcomes.jobsCommitSha).toBe(
-		'7890abcdef1234567890abcdef1234567890abcd',
-	)
 })
 
 test('probe failures isolate to the affected component and map error details', async () => {
-	const mcpHttp = healthyRoutes()
-	mcpHttp[`${primaryOrigin}/mcp`] = { status: 500 }
-	expect(outcome(await probe(mcpHttp), 'mcp')).toMatchObject({
-		ok: false,
-		detail: 'HTTP 500',
-	})
-	expect(outcome(await probe(mcpHttp), 'app')?.ok).toBe(true)
-
-	const mcpChallenge = healthyRoutes()
-	mcpChallenge[`${primaryOrigin}/mcp`] = {
-		status: 401,
-		headers: { 'WWW-Authenticate': 'Basic realm="nope"' },
-	}
-	expect(outcome(await probe(mcpChallenge), 'mcp')).toMatchObject({
-		ok: false,
-		detail: 'HTTP 401',
-	})
-
-	const components = healthyRoutes()
-	components[`${primaryOrigin}/health/components`] = {
-		status: 503,
-		body: {
-			ok: false,
-			components: [
-				{ id: 'app_db', ok: false, error: 'timeout' },
-				{ id: 'audit_db', ok: true, latencyMs: 6 },
-				{ id: 'kv', ok: true, latencyMs: 2 },
-				{ id: 'assets', ok: true, latencyMs: 9 },
-			],
-			executeEvidence: {
-				lastSuccessAt: '2026-09-10T22:23:29.243Z',
+	const jobsUnreachable = { error: 'jobs worker unreachable' }
+	const originUnreachable = { error: 'connection refused' }
+	// [route overrides, failing component -> detail, still-ok components, result fields]
+	const cases: Array<
+		[
+			Record<string, FakeRoute>,
+			Record<string, string>,
+			Array<string>,
+			Record<string, unknown>?,
+		]
+	> = [
+		[
+			{ [runtimeHealth]: redirect },
+			{ package_apps: 'HTTP 302' },
+			['app'],
+			{ runtimeCommitSha: null },
+		],
+		[
+			{ [runtimeHealth]: { status: 200, body: { ok: true } } },
+			{ package_apps: 'HTTP 200' },
+			[],
+		],
+		[{ [runtimeHealth]: { status: 521 } }, { package_apps: 'HTTP 521' }, []],
+		[{ [runtimeHealth]: { status: 404 } }, { package_apps: 'HTTP 404' }, []],
+		// Jobs probe failure is not app-down.
+		[
+			{ [jobsHealth]: jobsUnreachable, [jobsComponents]: jobsUnreachable },
+			{ jobs: 'jobs worker unreachable' },
+			['app', 'mcp', 'package_apps'],
+		],
+		[
+			{
+				[jobsComponents]: {
+					status: 503,
+					body: {
+						ok: false,
+						components: [{ id: 'jobs_db', ok: false, error: 'timeout' }],
+					},
+				},
 			},
-		},
-	}
-	const componentOutcomes = await probe(components)
-	expect(outcome(componentOutcomes, 'app_db')).toMatchObject({
-		ok: false,
-		detail: 'timeout',
-	})
-	expect(outcome(componentOutcomes, 'kv')?.ok).toBe(true)
-	expect(outcome(componentOutcomes, 'assets')?.ok).toBe(true)
-	expect(componentOutcomes.executeLastSuccessAt).toBe(
-		Date.parse('2026-09-10T22:23:29.243Z'),
-	)
-
-	const unreachable = healthyRoutes()
-	unreachable[`${primaryOrigin}/health`] = { error: 'connection refused' }
-	unreachable[`${primaryOrigin}/health/components`] = {
-		error: 'connection refused',
-	}
-	const unreachableOutcomes = await probe(unreachable)
-	expect(outcome(unreachableOutcomes, 'app')).toMatchObject({
-		ok: false,
-		detail: 'connection refused',
-	})
-	expect(outcome(unreachableOutcomes, 'app_db')).toMatchObject({
-		ok: false,
-		detail: 'unreachable',
-	})
-	expect(outcome(unreachableOutcomes, 'jobs')?.ok).toBe(true)
-
-	for (const status of [521, 404]) {
-		const packageRuntime = healthyRoutes()
-		packageRuntime[runtimeHealth] = { status }
-		expect(outcome(await probe(packageRuntime), 'package_apps')).toMatchObject({
-			ok: false,
-			detail: `HTTP ${String(status)}`,
-		})
+			{ jobs: 'timeout' },
+			['app'],
+			{ jobsCommitSha: '7890abcdef1234567890abcdef1234567890abcd' },
+		],
+		[
+			{ [`${primaryOrigin}/mcp`]: { status: 500 } },
+			{ mcp: 'HTTP 500' },
+			['app'],
+		],
+		[
+			{
+				[`${primaryOrigin}/mcp`]: {
+					status: 401,
+					headers: { 'WWW-Authenticate': 'Basic realm="nope"' },
+				},
+			},
+			{ mcp: 'HTTP 401' },
+			[],
+		],
+		[
+			{
+				[`${primaryOrigin}/health/components`]: {
+					status: 503,
+					body: {
+						ok: false,
+						components: [
+							{ id: 'app_db', ok: false, error: 'timeout' },
+							{ id: 'audit_db', ok: true, latencyMs: 6 },
+							{ id: 'kv', ok: true, latencyMs: 2 },
+							{ id: 'assets', ok: true, latencyMs: 9 },
+						],
+						executeEvidence: { lastSuccessAt: '2026-09-10T22:23:29.243Z' },
+					},
+				},
+			},
+			{ app_db: 'timeout' },
+			['kv', 'assets'],
+			{ executeLastSuccessAt: Date.parse('2026-09-10T22:23:29.243Z') },
+		],
+		[
+			{
+				[`${primaryOrigin}/health`]: originUnreachable,
+				[`${primaryOrigin}/health/components`]: originUnreachable,
+			},
+			{ app: 'connection refused', app_db: 'unreachable' },
+			['jobs'],
+		],
+	]
+	for (const [overrides, failing, stillOk, fields = {}] of cases) {
+		const result = await probe({ ...healthyRoutes(), ...overrides })
+		for (const [component, detail] of Object.entries(failing)) {
+			expect(outcome(result, component)).toMatchObject({ ok: false, detail })
+		}
+		expect(
+			stillOk.filter((component) => !outcome(result, component)?.ok),
+		).toEqual([])
+		expect(result).toMatchObject(fields)
 	}
 })
 

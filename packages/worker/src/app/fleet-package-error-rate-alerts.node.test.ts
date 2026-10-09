@@ -3,20 +3,20 @@ import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { fleetPackageErrorRateKvKey } from '#worker/usage/fleet-package-error-rate.ts'
 
 const queryAnalyticsEngineSql = vi.fn()
-const dispatchFleetPackageErrorRateSubscriptionEvent = vi.fn(async () => [])
+const dispatchFleetPackageErrorRateSubscriptionEvent = vi.fn(
+	async (_input: { event: Record<string, unknown> }) => [],
+)
 
-vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => {
-	const original = (await importOriginal()) as Record<string, unknown>
-	return {
-		...original,
-		queryAnalyticsEngineSql: (...args: Array<unknown>) =>
-			queryAnalyticsEngineSql(...args),
-	}
-})
+vi.mock('#worker/usage/aggregate-rollups.ts', async (importOriginal) => ({
+	...(await importOriginal<Record<string, unknown>>()),
+	queryAnalyticsEngineSql: (...args: Array<unknown>) =>
+		queryAnalyticsEngineSql(...args),
+}))
 
 vi.mock('#worker/usage/fleet-package-error-rate-subscriptions.ts', () => ({
-	dispatchFleetPackageErrorRateSubscriptionEvent: (...args: Array<unknown>) =>
-		dispatchFleetPackageErrorRateSubscriptionEvent(...args),
+	dispatchFleetPackageErrorRateSubscriptionEvent: (input: {
+		event: Record<string, unknown>
+	}) => dispatchFleetPackageErrorRateSubscriptionEvent(input),
 }))
 
 const {
@@ -24,7 +24,11 @@ const {
 	refreshFleetPackageErrorRateAndMaybeAlert,
 } = await import('./fleet-package-error-rate-alerts.ts')
 
-function createKv(stored = new Map<string, string>()) {
+const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-/
+const alertNow = new Date('2026-08-22T19:32:00.000Z')
+
+function createKv() {
+	const stored = new Map<string, string>()
 	return {
 		stored,
 		kv: {
@@ -40,60 +44,57 @@ function createKv(stored = new Map<string, string>()) {
 	}
 }
 
-test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot and pages once', async () => {
-	consoleWarn.mockImplementation(() => {})
-	const { stored, kv } = createKv()
+function windows(
+	eventCount: number,
+	recentErrors: number,
+	previousErrors: number,
+) {
+	return [
+		['recent', recentErrors],
+		['previous', previousErrors],
+	].map(([window, errorCount]) => ({
+		window,
+		metric: 'package_export',
+		event_count: eventCount,
+		error_count: errorCount,
+	}))
+}
 
-	queryAnalyticsEngineSql.mockImplementation(
-		async (input: { query: string }) => {
-			if (input.query.includes("toDateTime('2026-08-21 19:00:00')")) {
-				return [
-					{
-						window: 'recent',
-						metric: 'package_export',
-						event_count: 80,
-						error_count: 16,
-					},
-					{
-						window: 'previous',
-						metric: 'package_export',
-						event_count: 80,
-						error_count: 2,
-					},
-				]
-			}
-			return [
-				{
-					window: 'recent',
-					metric: 'package_export',
-					event_count: 40,
-					error_count: 2,
-				},
-				{
-					window: 'previous',
-					metric: 'package_export',
-					event_count: 40,
-					error_count: 1,
-				},
-			]
-		},
-	)
+/** Elevated day window (16/80 vs 2/80) over a calm hour window. */
+function elevatedDayRows(query: string) {
+	return query.includes("toDateTime('2026-08-21 19:00:00')")
+		? windows(80, 16, 2)
+		: windows(40, 2, 1)
+}
 
-	const now = new Date('2026-08-22T19:32:00.000Z')
-	const env = {
+function alertEnv(kv: KVNamespace, APP_DB = {} as D1Database) {
+	return {
 		USAGE_EVENTS: {} as AnalyticsEngineDataset,
-		APP_DB: {} as D1Database,
+		APP_DB,
 		BUNDLE_ARTIFACTS_KV: kv,
 		APP_BASE_URL: 'https://kody.codes',
 		CLOUDFLARE_ACCOUNT_ID: 'account',
 		CLOUDFLARE_API_TOKEN: 'token',
 		SENTRY_ENVIRONMENT: 'production',
 	}
-	const first = await refreshFleetPackageErrorRateAndMaybeAlert({
-		env,
-		now,
-	})
-	expect(first).toMatchObject({
+}
+
+function lastDispatchedEvent() {
+	return dispatchFleetPackageErrorRateSubscriptionEvent.mock.calls.at(-1)?.[0]
+		.event
+}
+
+test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot and pages once', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const { stored, kv } = createKv()
+	queryAnalyticsEngineSql.mockImplementation(async (input: { query: string }) =>
+		elevatedDayRows(input.query),
+	)
+
+	const env = alertEnv(kv)
+	expect(
+		await refreshFleetPackageErrorRateAndMaybeAlert({ env, now: alertNow }),
+	).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
 		alert: { status: 'notified', eventId: 'day:2026-08-22T19:00:00.000Z' },
@@ -101,26 +102,25 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 	expect(dispatchFleetPackageErrorRateSubscriptionEvent).toHaveBeenCalledTimes(
 		1,
 	)
-	const dispatched = dispatchFleetPackageErrorRateSubscriptionEvent.mock
-		.calls[0]?.[0] as { event: Record<string, unknown> }
-	const payload = JSON.stringify(dispatched.event)
-	expect(payload).not.toContain('user_id')
-	expect(payload).not.toContain('admin@example.com')
-	expect(payload).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
-	expect(dispatched.event.event).toBe('fleet.package_error_rate.elevated')
-	expect(dispatched.event.concentration).toBeNull()
-
-	const snapshot = JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null')
-	expect(snapshot?.environment).toBe('production')
-	expect(snapshot?.day.recent.combined.errors).toBe(16)
-	expect(snapshot?.lastAlertEventId).toBe('day:2026-08-22T19:00:00.000Z')
-	expect(snapshot?.concentration).toBeNull()
-
-	const second = await refreshFleetPackageErrorRateAndMaybeAlert({
-		env,
-		now: new Date('2026-08-22T20:05:00.000Z'),
+	expect(lastDispatchedEvent()).toMatchObject({
+		event: 'fleet.package_error_rate.elevated',
+		concentration: null,
 	})
-	expect(second).toMatchObject({
+	expect(
+		JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null'),
+	).toMatchObject({
+		environment: 'production',
+		day: { recent: { combined: { errors: 16 } } },
+		lastAlertEventId: 'day:2026-08-22T19:00:00.000Z',
+		concentration: null,
+	})
+
+	expect(
+		await refreshFleetPackageErrorRateAndMaybeAlert({
+			env,
+			now: new Date('2026-08-22T20:05:00.000Z'),
+		}),
+	).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
 		alert: { status: 'cooldown' },
@@ -129,49 +129,27 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 		1,
 	)
 	expect(stored.get(fleetPackageErrorRateAlertKvKey)).toBe(
-		String(now.getTime()),
+		String(alertNow.getTime()),
 	)
 
 	await expect(
 		refreshFleetPackageErrorRateAndMaybeAlert({
 			env: { BUNDLE_ARTIFACTS_KV: {} as KVNamespace },
 		}),
-	).resolves.toEqual({
-		status: 'skipped',
-		reason: 'missing-analytics-config',
-	})
+	).resolves.toEqual({ status: 'skipped', reason: 'missing-analytics-config' })
 
-	dispatchFleetPackageErrorRateSubscriptionEvent.mockClear()
 	dispatchFleetPackageErrorRateSubscriptionEvent.mockRejectedValueOnce(
 		new Error('fan-out failed'),
 	)
+	queryAnalyticsEngineSql.mockResolvedValue(windows(80, 16, 2))
 	const failedKv = createKv()
-	queryAnalyticsEngineSql.mockResolvedValue([
-		{
-			window: 'recent',
-			metric: 'package_export',
-			event_count: 80,
-			error_count: 16,
-		},
-		{
-			window: 'previous',
-			metric: 'package_export',
-			event_count: 80,
-			error_count: 2,
-		},
-	])
-	const skipped = await refreshFleetPackageErrorRateAndMaybeAlert({
-		env: {
-			USAGE_EVENTS: {} as AnalyticsEngineDataset,
-			APP_DB: {} as D1Database,
-			BUNDLE_ARTIFACTS_KV: failedKv.kv,
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-			SENTRY_ENVIRONMENT: 'production',
-		},
-		now: new Date('2026-08-22T19:32:00.000Z'),
-	})
-	expect(skipped).toMatchObject({
+	const { APP_BASE_URL: _baseUrl, ...envWithoutBaseUrl } = alertEnv(failedKv.kv)
+	expect(
+		await refreshFleetPackageErrorRateAndMaybeAlert({
+			env: envWithoutBaseUrl,
+			now: alertNow,
+		}),
+	).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
 		alert: { status: 'skipped', reason: 'notify_failed' },
@@ -181,158 +159,85 @@ test('refreshFleetPackageErrorRateAndMaybeAlert writes a content-free snapshot a
 
 test('refreshFleetPackageErrorRateAndMaybeAlert names a one-account concentration without leaking identifiers', async () => {
 	consoleWarn.mockImplementation(() => {})
-	dispatchFleetPackageErrorRateSubscriptionEvent.mockClear()
 	const { stored, kv } = createKv()
-	const jettPackageIds = {
-		dji: '11111111-1111-4111-8111-111111111111',
-		earth: '22222222-2222-4222-8222-222222222222',
-		analysis: '33333333-3333-4333-8333-333333333333',
+	const kodyIdsByPackageId: Record<string, string> = {
+		'11111111-1111-4111-8111-111111111111': 'dji-cloud-relay-staging-deploy',
+		'22222222-2222-4222-8222-222222222222': 'earthranger-relay-staging-deploy',
+		'33333333-3333-4333-8333-333333333333': 'analysis-staging-deploy',
 	}
 	queryAnalyticsEngineSql.mockImplementation(
 		async (input: { query: string }) => {
 			if (input.query.includes('GROUP BY user_id, entity_id')) {
-				return [
-					{
-						user_id: 'jett-user',
-						entity_id: jettPackageIds.dji,
-						error_count: 40,
-					},
-					{
-						user_id: 'jett-user',
-						entity_id: jettPackageIds.earth,
-						error_count: 30,
-					},
-					{
-						user_id: 'jett-user',
-						entity_id: jettPackageIds.analysis,
-						error_count: 20,
-					},
-				]
+				return Object.keys(kodyIdsByPackageId).map((entityId, index) => ({
+					user_id: 'jett-user',
+					entity_id: entityId,
+					error_count: [40, 30, 20][index],
+				}))
 			}
 			if (input.query.includes('blob1 AS user_id')) {
 				return [{ user_id: 'jett-user', error_count: 16 }]
 			}
-			if (input.query.includes("toDateTime('2026-08-21 19:00:00')")) {
-				return [
-					{
-						window: 'recent',
-						metric: 'package_export',
-						event_count: 80,
-						error_count: 16,
-					},
-					{
-						window: 'previous',
-						metric: 'package_export',
-						event_count: 80,
-						error_count: 2,
-					},
-				]
-			}
-			return [
-				{
-					window: 'recent',
-					metric: 'package_export',
-					event_count: 40,
-					error_count: 2,
-				},
-				{
-					window: 'previous',
-					metric: 'package_export',
-					event_count: 40,
-					error_count: 1,
-				},
-			]
+			return elevatedDayRows(input.query)
 		},
 	)
 	const db = {
-		prepare(query: string) {
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async all() {
-							if (query.includes('FROM users')) {
-								return {
-									results: params.includes('jett-user')
-										? [
-												{
-													stable_user_id: 'jett-user',
-													username: 'jett',
-												},
-											]
-										: [],
-								}
-							}
-							if (query.includes('FROM saved_packages')) {
-								const kodyIds: Record<string, string> = {
-									[jettPackageIds.dji]: 'dji-cloud-relay-staging-deploy',
-									[jettPackageIds.earth]: 'earthranger-relay-staging-deploy',
-									[jettPackageIds.analysis]: 'analysis-staging-deploy',
-								}
-								return {
-									results: params
-										.filter((id): id is string => typeof id === 'string')
-										.flatMap((id) =>
-											kodyIds[id] ? [{ id, kody_id: kodyIds[id] }] : [],
-										),
-								}
-							}
-							return { results: [] }
-						},
+		prepare: (query: string) => ({
+			bind: (...params: Array<unknown>) => ({
+				async all() {
+					if (query.includes('FROM users')) {
+						return {
+							results: params.includes('jett-user')
+								? [{ stable_user_id: 'jett-user', username: 'jett' }]
+								: [],
+						}
 					}
+					if (query.includes('FROM saved_packages')) {
+						return {
+							results: params.flatMap((id) =>
+								typeof id === 'string' && kodyIdsByPackageId[id]
+									? [{ id, kody_id: kodyIdsByPackageId[id] }]
+									: [],
+							),
+						}
+					}
+					return { results: [] }
 				},
-			}
-		},
+			}),
+		}),
 	} as unknown as D1Database
 
-	const result = await refreshFleetPackageErrorRateAndMaybeAlert({
-		env: {
-			USAGE_EVENTS: {} as AnalyticsEngineDataset,
-			APP_DB: db,
-			BUNDLE_ARTIFACTS_KV: kv,
-			APP_BASE_URL: 'https://kody.codes',
-			CLOUDFLARE_ACCOUNT_ID: 'account',
-			CLOUDFLARE_API_TOKEN: 'token',
-			SENTRY_ENVIRONMENT: 'production',
-		},
-		now: new Date('2026-08-22T19:32:00.000Z'),
-	})
-	expect(result).toMatchObject({
+	expect(
+		await refreshFleetPackageErrorRateAndMaybeAlert({
+			env: alertEnv(kv, db),
+			now: alertNow,
+		}),
+	).toMatchObject({
 		status: 'refreshed',
 		elevated: true,
 		alert: { status: 'notified' },
 	})
-	const dispatched =
-		dispatchFleetPackageErrorRateSubscriptionEvent.mock.calls.at(-1)?.[0] as {
-			event: Record<string, unknown>
-		}
-	const payload = JSON.stringify(dispatched.event)
-	expect(dispatched.event.concentration).toMatchObject({
+	const event = lastDispatchedEvent()
+	expect(event?.concentration).toMatchObject({
 		kind: 'one_account',
 		owners: [
 			{
 				username: 'jett',
-				packages: [
-					{ kody_id: 'dji-cloud-relay-staging-deploy' },
-					{ kody_id: 'earthranger-relay-staging-deploy' },
-					{ kody_id: 'analysis-staging-deploy' },
-				],
+				packages: Object.values(kodyIdsByPackageId).map((kody_id) => ({
+					kody_id,
+				})),
 			},
 		],
 	})
-	expect(payload).toContain('jett')
-	expect(payload).toContain('dji-cloud-relay-staging-deploy')
+	const payload = JSON.stringify(event)
 	expect(payload).not.toContain('user_id')
 	expect(payload).not.toContain('jett-user')
-	expect(payload).not.toContain('admin@example.com')
-	expect(payload).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+	expect(payload).not.toMatch(uuidPattern)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'fleet-package-error-rate-alerted',
-		expect.objectContaining({
-			concentration: expect.any(String),
-		}),
+		expect.objectContaining({ concentration: expect.any(String) }),
 	)
-	const snapshot = JSON.parse(stored.get(fleetPackageErrorRateKvKey) ?? 'null')
-	expect(snapshot?.concentration?.kind).toBe('one_account')
-	expect(JSON.stringify(snapshot)).not.toContain('user_id')
-	expect(JSON.stringify(snapshot)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/)
+	const snapshot = stored.get(fleetPackageErrorRateKvKey) ?? 'null'
+	expect(JSON.parse(snapshot)?.concentration?.kind).toBe('one_account')
+	expect(snapshot).not.toContain('user_id')
+	expect(snapshot).not.toMatch(uuidPattern)
 })

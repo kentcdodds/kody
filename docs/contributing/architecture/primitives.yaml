@@ -111,6 +111,23 @@ primitives:
     docs:
       - docs/contributing/architecture/request-lifecycle.md
 
+  - id: open-api
+    group: surfaces
+    name: Open API (api.kody.codes)
+    summary:
+      Public JSON HTTP API (`/openapi.json`, versioned `/v1`) served by the
+      kody-api edge worker and the origin KodyApi entrypoint; also backs the MCP
+      `api` tool and the local-execute CapabilityProxy. Interactive docs live on
+      the separate `kody-api-docs` worker (`api-docs.kody.codes`).
+    code:
+      - packages/api-worker/
+      - packages/api-docs-worker/
+      - packages/worker/src/open-api/
+      - packages/worker/src/mcp/tools/api.ts
+      - tools/ci/api-worker-config.ts
+    docs:
+      - docs/contributing/architecture/open-api.md
+
   - id: scheduled-cron
     group: surfaces
     name: Scheduled handler
@@ -173,6 +190,20 @@ primitives:
       - packages/worker/src/oidc/
     docs:
       - docs/contributing/architecture/authentication.md
+
+  - id: api-tokens
+    group: auth
+    name: Scoped API tokens
+    summary:
+      Short-lived, scoped, sliding-TTL `kody_at_` bearer tokens for the Open API
+      and CapabilityProxy; a separate credential class from MCP OAuth.
+    code:
+      - packages/worker/src/api-tokens/
+      - packages/shared/src/api-token-format.ts
+    docs:
+      - docs/contributing/architecture/open-api.md
+      - docs/contributing/decisions/0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md
+      - docs/contributing/decisions/0055-cli-mcp-oauth-local-execute-http.md
 
   - id: rbac
     group: auth
@@ -306,8 +337,6 @@ primitives:
     code:
       - packages/worker/src/package-runtime/package-app.ts
       - packages/worker/src/package-runtime/package-app-assets.ts
-      - packages/worker/src/package-runtime/package-app-remix.ts
-      - packages/worker/src/package-runtime/package-app-remix-subpaths.ts
       - packages/worker/src/package-runtime/package-app-tsconfig.ts
       - packages/worker/src/package-runtime/module-graph-client-bundle.ts
     docs:
@@ -524,8 +553,14 @@ primitives:
     summary: Canonical published git source for packages and jobs.
     code:
       - packages/worker/src/repo/artifacts.ts
+      - packages/worker/src/repo/public-package-git-http.ts
+      - packages/worker/src/repo/public-package-git-http.node.test.ts
+      - packages/worker/src/repo/git-pkt-line.ts
+      - packages/worker/src/repo/git-pkt-line.node.test.ts
     docs:
       - docs/contributing/architecture/data-storage.md
+      - docs/use/community-packages.md
+      - docs/contributing/community-packages.md
 
   - id: bundle-artifacts-kv
     group: storage
@@ -646,12 +681,14 @@ primitives:
     group: storage
     name: Community listing published dispatch queue
     summary:
-      Durable opaque event delivery from first community listing publish to
-      admin packages.
+      Durable event delivery from first community listing publish to admin
+      packages, and from pin-moving republishes to forkers' packages.
     code:
       - packages/worker/src/community/listing-published-dispatch-queue
       - packages/worker/src/community/listing-published-package-subscriptions
       - packages/worker/src/community/listing-published-subscription-event
+      - packages/worker/src/community/fork-upstream-updated-package-subscriptions
+      - packages/worker/src/community/fork-upstream-updated-subscription-event
     docs:
       - docs/contributing/setup-manifest.md
       - docs/contributing/architecture/authorization.md
@@ -761,3 +798,13 @@ invariants:
       - docs/contributing/architecture/usage-metering.md
       - docs/contributing/architecture/run-records.md
       - docs/contributing/architecture/entitlements.md
+
+  - id: no-vendor-specific-platform-logic
+    summary:
+      Platform capabilities stay generic; third parties configure via params,
+      not vendor-named type forks.
+    docs:
+      - docs/contributing/decisions/0054-no-vendor-specific-platform-logic.md
+      - docs/contributing/project-intent.md
+      - docs/contributing/architecture/webhooks.md
+      - docs/use/webhooks.md

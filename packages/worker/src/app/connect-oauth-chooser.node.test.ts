@@ -90,13 +90,63 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 	).toMatchObject({
 		href: '/connect/oauth?provider=spotify-home&app=spotify-home',
 		kind: 'connection',
-		detail: 'Reconnect your OAuth app',
 	})
 	expect(
 		chooser.options.find((option) => option.id === 'connection:github'),
 	).toMatchObject({
 		href: '/connect/oauth?provider=github',
 		kind: 'connection',
-		detail: 'Set up your own OAuth app to reconnect',
+	})
+
+	const publish = (app: Parameters<typeof upsertPlatformOauthApp>[0]['app']) =>
+		upsertPlatformOauthApp({ db: env.APP_DB, env: platformEnv, app })
+	await publish({
+		slug: 'google',
+		clientId: 'platform-google-client',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		flow: 'confidential',
+		visibility: 'published',
+	})
+	await publish({
+		slug: 'github',
+		clientId: 'platform-github-client',
+		tokenUrl: 'https://github.com/login/oauth/access_token',
+		authorizeUrl: 'https://github.com/login/oauth/authorize',
+		flow: 'confidential',
+		visibility: 'published',
+	})
+	await publish({
+		slug: 'notion',
+		label: 'Notion',
+		clientId: 'platform-notion-client',
+		clientSecret: 'platform-notion-secret',
+		tokenUrl: 'https://api.notion.com/v1/oauth/token',
+		authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+		flow: 'confidential',
+		enabled: false,
+		visibility: 'published',
+	})
+
+	const published = await loadConnectOauthChooser({
+		env,
+		userId: 'user-chooser',
+	})
+	// Published + enabled only: disabled notion stays hidden, and the
+	// already-connected github is a reconnect rather than a new option.
+	expect(published.options.map((option) => option.id)).toEqual([
+		'connection:github',
+		'connection:spotify-home',
+		'platform:google',
+	])
+	expect(
+		published.options.find((option) => option.id === 'connection:github'),
+	).toMatchObject({ kind: 'connection' })
+	expect(
+		published.options.find((option) => option.id === 'platform:google'),
+	).toMatchObject({
+		href: '/connect/oauth?provider=google&platform=google',
+		kind: 'platform',
+		label: 'Google',
 	})
 })

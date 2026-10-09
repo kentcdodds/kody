@@ -1,6 +1,7 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { readRouterSearch } from '#client/router-location.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
@@ -173,10 +174,12 @@ export function ResetPasswordRoute(handle: Handle) {
 				>
 					{renderHoneypot()}
 					{mode === 'confirm' ? (
-						<label mix={css(fieldCss)}>
-							<span mix={css(fieldLabelCss)}>New password</span>
-							<input
-								type="password"
+						<div mix={css(fieldCss)}>
+							<label for="reset-password-new" mix={css(fieldLabelCss)}>
+								New password
+							</label>
+							<PasswordRevealInput
+								id="reset-password-new"
 								name="password"
 								required
 								{...passwordManagerIgnoreProps}
@@ -184,7 +187,7 @@ export function ResetPasswordRoute(handle: Handle) {
 								disabled={isSubmitting}
 								mix={css(inputCss)}
 							/>
-						</label>
+						</div>
 					) : (
 						<label mix={css(fieldCss)}>
 							<span mix={css(fieldLabelCss)}>Email</span>

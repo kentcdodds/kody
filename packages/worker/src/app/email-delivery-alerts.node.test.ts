@@ -1,12 +1,18 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { emailDeliveryBurstTopic } from './email-delivery-burst-subscription-event.ts'
+import type * as emailDeliveryBurstPackageSubscriptions from './email-delivery-burst-package-subscriptions.ts'
 
-const dispatchEmailDeliveryBurstSubscriptionEvent = vi.fn(async () => [])
+const dispatchEmailDeliveryBurstSubscriptionEvent = vi.fn<
+	typeof emailDeliveryBurstPackageSubscriptions.dispatchEmailDeliveryBurstSubscriptionEvent
+>(async () => [])
 
 vi.mock('./email-delivery-burst-package-subscriptions.ts', () => ({
-	dispatchEmailDeliveryBurstSubscriptionEvent: (...args: Array<unknown>) =>
-		dispatchEmailDeliveryBurstSubscriptionEvent(...args),
+	dispatchEmailDeliveryBurstSubscriptionEvent: (
+		...args: Parameters<
+			typeof emailDeliveryBurstPackageSubscriptions.dispatchEmailDeliveryBurstSubscriptionEvent
+		>
+	) => dispatchEmailDeliveryBurstSubscriptionEvent(...args),
 }))
 
 const {

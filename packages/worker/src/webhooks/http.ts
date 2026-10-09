@@ -3,13 +3,23 @@ import {
 	AccountDeletionInProgressError,
 	assertAccountWritable,
 } from '#worker/account/deletion-state.ts'
+import {
+	accountSuspendedErrorCode,
+	accountSuspendedMessage,
+	isAccountSuspended,
+} from '#worker/account/account-suspension.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
-import { getSavedPackageByKodyId } from '#worker/package-registry/repo.ts'
+import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
+import {
+	handleWebhookSubscriptionChallenge,
+	webhookChallengeAllowsGet,
+	webhookChallengeAllowsPost,
+} from './challenge.ts'
 import {
 	buildWebhookDeliveryIdempotencyKey,
 	buildWebhookTimestampBodyPayload,
@@ -42,10 +52,12 @@ import {
 	readWebhookCallerIdempotencyKey,
 	resolveWebhookParamsModeFirstArg,
 } from './params.ts'
+import { stripUntrustedWebhookSyntheticFields } from './synthetic.ts'
 import {
 	clearWebhookEndpointPreviousUrlSecret,
 	getWebhookEndpointByKey,
 } from './repo.ts'
+import { resolveWebhookHmacSigningSecret } from './signing-secret.ts'
 import {
 	isWebhookPreviousUrlLive,
 	webhookDefaultReplayToleranceSeconds,
@@ -288,6 +300,39 @@ async function runWithTimeout<T>(
 	}
 }
 
+function methodNotAllowedResponse(allow: string) {
+	return jsonResponse(
+		{
+			ok: false,
+			error: {
+				code: 'method_not_allowed',
+				message: 'Method not allowed.',
+			},
+		},
+		{ status: 405, headers: { Allow: allow } },
+	)
+}
+
+async function resolveWebhookChallengeSecret(input: {
+	env: Env
+	userId: string
+	packageId: string
+	secretName: string
+}) {
+	const resolved = await resolveSecret({
+		env: input.env,
+		userId: input.userId,
+		name: input.secretName,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: input.packageId,
+		},
+	})
+	if (!resolved.found || !resolved.value) return null
+	return resolved.value
+}
+
 export async function handleWebhookIngressRequest(
 	request: Request,
 	env: Env,
@@ -296,17 +341,8 @@ export async function handleWebhookIngressRequest(
 	const pathname = new URL(request.url).pathname
 	const route = parseWebhookIngressPath(pathname)
 	if (!route) return notFoundResponse()
-	if (request.method !== 'POST') {
-		return jsonResponse(
-			{
-				ok: false,
-				error: {
-					code: 'method_not_allowed',
-					message: 'Method not allowed.',
-				},
-			},
-			{ status: 405, headers: { Allow: 'POST' } },
-		)
+	if (request.method !== 'POST' && request.method !== 'GET') {
+		return methodNotAllowedResponse('GET, POST')
 	}
 
 	const receivedAt = new Date().toISOString()
@@ -317,9 +353,11 @@ export async function handleWebhookIngressRequest(
 	})
 	if (!routeUser) return notFoundResponse()
 
-	const savedPackage = await getSavedPackageByKodyId(env.APP_DB, {
+	const savedPackage = await resolveSavedPackageRef(env.APP_DB, {
 		userId: routeUser.mcpUserId,
-		kodyId: route.packageKodyId,
+		ref: route.packageKodyId,
+		match: 'slug',
+		followRedirects: true,
 	})
 	if (!savedPackage) return notFoundResponse()
 
@@ -333,13 +371,14 @@ export async function handleWebhookIngressRequest(
 	if (!endpoint || !endpoint.enabled) {
 		return notFoundResponse()
 	}
+	const liveEndpoint = endpoint
 
 	const secretMatch = await matchWebhookIngressUrlSecret({
 		candidate: route.urlSecret,
-		currentHash: endpoint.urlSecretHash,
-		previousHash: endpoint.previousUrlSecretHash,
+		currentHash: liveEndpoint.urlSecretHash,
+		previousHash: liveEndpoint.previousUrlSecretHash,
 	})
-	const previousLive = isWebhookPreviousUrlLive(endpoint, receivedAt)
+	const previousLive = isWebhookPreviousUrlLive(liveEndpoint, receivedAt)
 	// Wrong secret: no delivery row (avoids log-flush DoS) and no rate-limit
 	// side channel that would distinguish minted names from unknown ones.
 	// An expired previous hash is treated as unknown.
@@ -365,7 +404,7 @@ export async function handleWebhookIngressRequest(
 
 	const rateLimit = await checkRateLimit(
 		env.APP_DB,
-		`webhook:user:${endpoint.userId}:endpoint:${endpoint.id}`,
+		`webhook:user:${liveEndpoint.userId}:endpoint:${liveEndpoint.id}`,
 		webhookRateLimitConfigFor(declared?.rateLimitPerMinute),
 	)
 	if (!rateLimit.allowed) {
@@ -378,7 +417,7 @@ export async function handleWebhookIngressRequest(
 	if (!declared) {
 		await recordWebhookDelivery({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 404,
@@ -390,30 +429,76 @@ export async function handleWebhookIngressRequest(
 		return notFoundResponse()
 	}
 
-	try {
-		await assertAccountWritable(env, endpoint.userId)
-	} catch (error) {
-		if (!(error instanceof AccountDeletionInProgressError)) throw error
-		await recordWebhookDelivery({
+	const resolveChallengeSecret = (secretName: string) =>
+		resolveWebhookChallengeSecret({
 			env,
-			endpoint,
-			kodyId: savedPackage.kodyId,
-			outcome: 'rejected',
-			httpStatus: 409,
-			error: 'account_deleting',
-			payloadBytes: 0,
-			startedAt: receivedAt,
-			waitUntil,
+			userId: liveEndpoint.userId,
+			packageId: liveEndpoint.packageId,
+			secretName,
 		})
+
+	async function rejectAccountStateWithoutDelivery(input: {
+		httpStatus: number
+		code: string
+		message: string
+	}) {
 		return jsonResponse(
 			{
 				ok: false,
 				error: {
-					code: 'account_deleting',
-					message: error.message,
+					code: input.code,
+					message: input.message,
 				},
 			},
-			{ status: 409 },
+			{ status: input.httpStatus },
+		)
+	}
+
+	async function assertOwnerAllowsChallenge(): Promise<Response | null> {
+		try {
+			await assertAccountWritable(env, liveEndpoint.userId)
+		} catch (error) {
+			if (!(error instanceof AccountDeletionInProgressError)) throw error
+			return rejectAccountStateWithoutDelivery({
+				httpStatus: 409,
+				code: 'account_deleting',
+				message: error.message,
+			})
+		}
+		if (
+			await isAccountSuspended({
+				db: env.APP_DB,
+				stableUserId: liveEndpoint.userId,
+			})
+		) {
+			return rejectAccountStateWithoutDelivery({
+				httpStatus: 403,
+				code: accountSuspendedErrorCode,
+				message: accountSuspendedMessage,
+			})
+		}
+		return null
+	}
+
+	// Subscription challenges are answered by the platform only — never invoke
+	// package code, never record delivery history, never mutate kody state.
+	// Account-state rejects for challenge probes also skip delivery history.
+	if (declared.challenge && request.method === 'GET') {
+		const accountBlock = await assertOwnerAllowsChallenge()
+		if (accountBlock) return accountBlock
+		const challengeResult = await handleWebhookSubscriptionChallenge({
+			request,
+			challenge: declared.challenge,
+			resolveSecret: resolveChallengeSecret,
+		})
+		if (challengeResult.kind === 'respond') {
+			return challengeResult.response
+		}
+	}
+
+	if (request.method !== 'POST') {
+		return methodNotAllowedResponse(
+			webhookChallengeAllowsGet(declared.challenge) ? 'GET, POST' : 'POST',
 		)
 	}
 
@@ -421,7 +506,7 @@ export async function handleWebhookIngressRequest(
 	if (!bodyResult.ok) {
 		await recordWebhookDelivery({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 413,
@@ -439,10 +524,80 @@ export async function handleWebhookIngressRequest(
 	) as ArrayBuffer
 	const bodyText = new TextDecoder().decode(bodyBytes)
 
+	if (declared.challenge && webhookChallengeAllowsPost(declared.challenge)) {
+		const challengeResult = await handleWebhookSubscriptionChallenge({
+			request,
+			challenge: declared.challenge,
+			resolveSecret: resolveChallengeSecret,
+			bodyText,
+		})
+		if (challengeResult.kind === 'respond') {
+			const accountBlock = await assertOwnerAllowsChallenge()
+			if (accountBlock) return accountBlock
+			return challengeResult.response
+		}
+	}
+
+	try {
+		await assertAccountWritable(env, liveEndpoint.userId)
+	} catch (error) {
+		if (!(error instanceof AccountDeletionInProgressError)) throw error
+		await recordWebhookDelivery({
+			env,
+			endpoint: liveEndpoint,
+			kodyId: savedPackage.kodyId,
+			outcome: 'rejected',
+			httpStatus: 409,
+			error: 'account_deleting',
+			payloadBytes: bodyBytes.byteLength,
+			startedAt: receivedAt,
+			waitUntil,
+		})
+		return jsonResponse(
+			{
+				ok: false,
+				error: {
+					code: 'account_deleting',
+					message: error.message,
+				},
+			},
+			{ status: 409 },
+		)
+	}
+
+	if (
+		await isAccountSuspended({
+			db: env.APP_DB,
+			stableUserId: liveEndpoint.userId,
+		})
+	) {
+		await recordWebhookDelivery({
+			env,
+			endpoint: liveEndpoint,
+			kodyId: savedPackage.kodyId,
+			outcome: 'rejected',
+			httpStatus: 403,
+			error: accountSuspendedErrorCode,
+			payloadBytes: bodyBytes.byteLength,
+			startedAt: receivedAt,
+			waitUntil,
+		})
+		return jsonResponse(
+			{
+				ok: false,
+				error: {
+					code: accountSuspendedErrorCode,
+					message: accountSuspendedMessage,
+				},
+			},
+			{ status: 403 },
+		)
+	}
+
 	const rejectUnauthorized = (error: string) =>
 		rejectUnauthorizedSignature({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			error,
 			payloadBytes: bodyBytes.byteLength,
@@ -496,19 +651,20 @@ export async function handleWebhookIngressRequest(
 		if (!provided) {
 			return rejectUnauthorized('missing_signature')
 		}
-		const resolved = await resolveSecret({
-			env,
-			userId: endpoint.userId,
-			name: declared.verification.secretName,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: endpoint.packageId,
-			},
-		})
-		if (!resolved.found || !resolved.value) {
+		let hmacSecret: string
+		try {
+			hmacSecret = await resolveWebhookHmacSigningSecret({
+				env,
+				userId: liveEndpoint.userId,
+				endpoint: liveEndpoint,
+				verification: declared.verification,
+				allowLegacySecretNameFallback: true,
+			})
+		} catch {
 			return rejectUnauthorized(
-				`verification_secret_missing:${declared.verification.secretName}`,
+				declared.verification.secretName
+					? `verification_secret_missing:${declared.verification.secretName}`
+					: 'verification_secret_missing:package_owned_hmac',
 			)
 		}
 		const signedPayload = declared.verification.signedPayload ?? 'body'
@@ -533,7 +689,7 @@ export async function handleWebhookIngressRequest(
 			if (
 				await verifyWebhookHmacSignature({
 					algorithm: declared.verification.type,
-					secret: resolved.value,
+					secret: hmacSecret,
 					body: hmacPayload,
 					encoding: declared.verification.encoding,
 					prefix: declared.verification.prefix,
@@ -575,7 +731,7 @@ export async function handleWebhookIngressRequest(
 	if (paramsMode && !paramsMode.ok) {
 		await recordWebhookDelivery({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: 'rejected',
 			httpStatus: 400,
@@ -586,7 +742,9 @@ export async function handleWebhookIngressRequest(
 		})
 		return invalidParamsResponse()
 	}
-	const exportParams = paramsMode?.ok ? paramsMode.params : requestParams
+	const exportParams = paramsMode?.ok
+		? stripUntrustedWebhookSyntheticFields(paramsMode.params)
+		: requestParams
 	const deliveryId = crypto.randomUUID()
 	const callerIdempotencyKey = readWebhookCallerIdempotencyKey({
 		request,
@@ -601,12 +759,12 @@ export async function handleWebhookIngressRequest(
 		? callerIdempotencyKey
 		: providerDeliveryId
 			? await buildWebhookDeliveryIdempotencyKey({
-					userId: endpoint.userId,
-					packageId: endpoint.packageId,
-					webhookName: endpoint.webhookName,
+					userId: liveEndpoint.userId,
+					packageId: liveEndpoint.packageId,
+					webhookName: liveEndpoint.webhookName,
 					deliveryId: providerDeliveryId,
 				})
-			: `webhook:${endpoint.id}:${deliveryId}`
+			: `webhook:${liveEndpoint.id}:${deliveryId}`
 	// Delivery-id keys identify the event, not the HTTP attempt. Provider
 	// retries change `receivedAt` and often headers; the same delivery id is
 	// still that event even when body bytes differ. Matching the ledger by
@@ -633,10 +791,10 @@ export async function handleWebhookIngressRequest(
 	if (declared.responseMode === 'ack') {
 		let message = createWebhookDispatchQueueMessage({
 			endpoint: {
-				id: endpoint.id,
-				userId: endpoint.userId,
-				packageId: endpoint.packageId,
-				webhookName: endpoint.webhookName,
+				id: liveEndpoint.id,
+				userId: liveEndpoint.userId,
+				packageId: liveEndpoint.packageId,
+				webhookName: liveEndpoint.webhookName,
 			},
 			packageKodyId: savedPackage.kodyId,
 			exportName: declared.exportName,
@@ -658,14 +816,14 @@ export async function handleWebhookIngressRequest(
 			try {
 				const payloadKvKey = await storeWebhookDispatchPayload({
 					kv: env.BUNDLE_ARTIFACTS_KV,
-					userId: endpoint.userId,
+					userId: liveEndpoint.userId,
 					deliveryId,
 					body: bodyText,
 				})
 				message = withSpilledWebhookDispatchPayload(message, payloadKvKey)
 			} catch (error) {
 				console.error('webhook-dispatch-payload-store-failed', {
-					endpointId: endpoint.id,
+					endpointId: liveEndpoint.id,
 					error,
 				})
 				return dispatchUnavailableResponse()
@@ -681,14 +839,14 @@ export async function handleWebhookIngressRequest(
 					key: message.payloadKvKey,
 				}).catch((error) => {
 					console.error('webhook-dispatch-payload-delete-failed', {
-						endpointId: endpoint.id,
+						endpointId: liveEndpoint.id,
 						error,
 					})
 				})
 			}
 			await recordWebhookDelivery({
 				env,
-				endpoint,
+				endpoint: liveEndpoint,
 				kodyId: savedPackage.kodyId,
 				outcome: 'rejected',
 				httpStatus: 413,
@@ -712,20 +870,20 @@ export async function handleWebhookIngressRequest(
 					key: message.payloadKvKey,
 				}).catch((error) => {
 					console.error('webhook-dispatch-payload-delete-failed', {
-						endpointId: endpoint.id,
+						endpointId: liveEndpoint.id,
 						error,
 					})
 				})
 			}
 			console.error('webhook-dispatch-enqueue-failed', {
-				endpointId: endpoint.id,
+				endpointId: liveEndpoint.id,
 				error,
 			})
 			return dispatchUnavailableResponse()
 		}
 		await retirePreviousWebhookUrlIfConfirmed({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			secretMatch,
 		})
 		return jsonResponse({ ok: true }, { status: 202 })
@@ -734,14 +892,14 @@ export async function handleWebhookIngressRequest(
 	try {
 		await retirePreviousWebhookUrlIfConfirmed({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			secretMatch,
 		})
 		const response = await runWithTimeout(
 			dispatchWebhookInvocation({
 				env,
 				baseUrl,
-				endpoint,
+				endpoint: liveEndpoint,
 				packageKodyId: savedPackage.kodyId,
 				exportName: declared.exportName,
 				params: exportParams,
@@ -754,7 +912,7 @@ export async function handleWebhookIngressRequest(
 		if (response.status === 409) {
 			await recordWebhookDelivery({
 				env,
-				endpoint,
+				endpoint: liveEndpoint,
 				kodyId: savedPackage.kodyId,
 				outcome: 'rejected',
 				httpStatus: 409,
@@ -770,7 +928,7 @@ export async function handleWebhookIngressRequest(
 		const ok = response.status >= 200 && response.status < 300
 		await recordWebhookDelivery({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: ok ? 'delivered' : 'failed',
 			httpStatus: ok ? response.status : 502,
@@ -797,7 +955,7 @@ export async function handleWebhookIngressRequest(
 	} catch (error) {
 		await recordWebhookDelivery({
 			env,
-			endpoint,
+			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: 'failed',
 			httpStatus: 502,

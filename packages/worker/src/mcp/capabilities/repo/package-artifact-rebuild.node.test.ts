@@ -43,135 +43,108 @@ vi.mock('#worker/package-runtime/published-bundle-artifacts.ts', () => ({
 const { rebuildPublishedPackageArtifactsViaRepoSession } =
 	await import('./package-artifact-rebuild.ts')
 
-const sampleTargets = [
-	{
-		kind: 'module' as const,
-		artifactName: '.',
-		entryPoint: 'src/a.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './b',
-		entryPoint: 'src/b.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './c',
-		entryPoint: 'src/c.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './d',
-		entryPoint: 'src/d.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './e',
-		entryPoint: 'src/e.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './f',
-		entryPoint: 'src/f.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './g',
-		entryPoint: 'src/g.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './h',
-		entryPoint: 'src/h.ts',
-		bundleKind: 'module' as const,
-	},
-	{
-		kind: 'module' as const,
-		artifactName: './i',
-		entryPoint: 'src/i.ts',
-		bundleKind: 'module' as const,
-	},
-]
+const sampleTargets = [...'abcdefghi'].map((letter, index) => ({
+	kind: 'module' as const,
+	artifactName: index === 0 ? '.' : `./${letter}`,
+	entryPoint: `src/${letter}.ts`,
+	bundleKind: 'module' as const,
+}))
+type Target = (typeof sampleTargets)[number]
+const stagingKey = 'repo-artifact-rebuild-staging:v1:user-1:stage-1'
+const isolatedEnv = {
+	REPO_SESSION: {},
+	BUNDLE_ARTIFACTS_KV: {},
+} as unknown as Env
 
-function resetMocks() {
-	mockModule.listPublishedPackageArtifactTargets.mockReset()
-	mockModule.stagePublishedPackageArtifactRebuild.mockReset()
-	mockModule.rebuildPublishedPackageArtifact.mockReset()
-	mockModule.createIsolatedArtifactRebuildRunner.mockReset()
-	mockModule.isPublishedPackageArtifactBuiltForCommit.mockReset()
+function setup({
+	targets = sampleTargets,
+	run = vi.fn(async () => ({ ok: true, message: 'rebuilt' })),
+	isolated = true,
+	stageKey = stagingKey,
+}: {
+	targets?: Array<Target>
+	run?: ReturnType<typeof vi.fn>
+	isolated?: boolean
+	stageKey?: string | null
+} = {}) {
+	for (const mock of Object.values(mockModule)) mock.mockReset()
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(false)
-	mockModule.reusePublishedPackageArtifactIfUnchanged.mockReset()
 	mockModule.reusePublishedPackageArtifactIfUnchanged.mockResolvedValue(false)
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
+	if (stageKey) {
+		mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
+			stagingKey: stageKey,
+		})
+	}
+	const runner = {
+		touch: vi.fn(async () => undefined),
+		run,
+		discard: vi.fn(async () => undefined),
+	}
+	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(
+		isolated ? runner : null,
+	)
+	return runner
 }
 
-test('isolated rebuild lists then stages once, chunks targets per isolate with bounded concurrency, and discards staging', async () => {
-	resetMocks()
-
-	const run = vi.fn(async () => ({
-		ok: true,
-		message: 'rebuilt',
-		results: [],
-	}))
-	const touch = vi.fn(async () => undefined)
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch,
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets,
-	)
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	})
-
-	let inFlight = 0
-	let maxInFlight = 0
-	const releaseGates: Array<() => void> = []
-	run.mockImplementation(async (input: { targets: typeof sampleTargets }) => {
-		inFlight += 1
-		maxInFlight = Math.max(maxInFlight, inFlight)
-		await new Promise<void>((resolve) => {
-			releaseGates.push(() => {
-				inFlight -= 1
-				resolve()
-			})
-		})
-		return {
-			ok: true,
-			message: 'rebuilt',
-			results: input.targets.map((target) => ({
-				ok: true,
-				message: 'rebuilt',
-				target,
-			})),
-		}
-	})
-
-	const rebuildPromise = rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
+function rebuild(
+	overrides: { env?: Env; publishedCommit?: string; force?: boolean } = {},
+) {
+	return rebuildPublishedPackageArtifactsViaRepoSession({
+		env: isolatedEnv,
 		rpcSessionId: 'session-1',
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
 		baseUrl: 'https://kody.test',
+		...overrides,
 	})
+}
+
+function createGate<Input, Output>(finish: (input: Input) => Output) {
+	const gate = {
+		inFlight: 0,
+		maxInFlight: 0,
+		releases: [] as Array<() => void>,
+	}
+	return Object.assign(gate, {
+		impl: async (input: Input) => {
+			gate.inFlight += 1
+			gate.maxInFlight = Math.max(gate.maxInFlight, gate.inFlight)
+			await new Promise<void>((resolve) => {
+				gate.releases.push(() => {
+					gate.inFlight -= 1
+					resolve()
+				})
+			})
+			return finish(input)
+		},
+		releaseAll: () => gate.releases.splice(0).forEach((release) => release()),
+	})
+}
+
+const runTargets = (run: ReturnType<typeof vi.fn>) =>
+	run.mock.calls.map((call) => (call[0] as { targets: Array<Target> }).targets)
+
+test('isolated rebuild lists then stages once, chunks targets per isolate with bounded concurrency, and discards staging', async () => {
+	const gate = createGate((input: { targets: Array<Target> }) => ({
+		ok: true,
+		message: 'rebuilt',
+		results: input.targets.map((target) => ({
+			ok: true,
+			message: 'rebuilt',
+			target,
+		})),
+	}))
+	const run = vi.fn(gate.impl)
+	const { touch, discard } = setup({ run })
+
+	const rebuildPromise = rebuild()
 
 	await vi.waitFor(() => {
 		expect(run).toHaveBeenCalledTimes(2)
 	})
-	expect(maxInFlight).toBe(2)
+	expect(gate.maxInFlight).toBe(2)
 	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(
 		1,
 	)
@@ -180,29 +153,27 @@ test('isolated rebuild lists then stages once, chunks targets per isolate with b
 	)
 	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
 	expect(touch).not.toHaveBeenCalled()
-	expect(run.mock.calls[0]?.[0]?.targets).toEqual(sampleTargets.slice(0, 4))
-	expect(run.mock.calls[1]?.[0]?.targets).toEqual(sampleTargets.slice(4, 8))
+	expect(runTargets(run)).toEqual([
+		sampleTargets.slice(0, 4),
+		sampleTargets.slice(4, 8),
+	])
 
-	releaseGates.splice(0).forEach((release) => release())
+	gate.releaseAll()
 	await vi.waitFor(() => {
 		expect(run).toHaveBeenCalledTimes(3)
 	})
-	expect(touch).toHaveBeenCalledWith(
-		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	)
-	expect(run.mock.calls[2]?.[0]?.targets).toEqual(sampleTargets.slice(8))
-	releaseGates.splice(0).forEach((release) => release())
+	expect(touch).toHaveBeenCalledWith(stagingKey)
+	expect(runTargets(run)[2]).toEqual(sampleTargets.slice(8))
+	gate.releaseAll()
 	await rebuildPromise
 
-	expect(maxInFlight).toBe(2)
+	expect(gate.maxInFlight).toBe(2)
 	expect(run).toHaveBeenCalledTimes(3)
 	expect(touch).toHaveBeenCalledTimes(1)
-	expect(discard).toHaveBeenCalledWith(
-		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	)
+	expect(discard).toHaveBeenCalledWith(stagingKey)
 	expect(run).toHaveBeenCalledWith(
 		expect.objectContaining({
-			stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
+			stagingKey,
 			sourceId: 'source-1',
 			userId: 'user-1',
 			publishedCommit: 'commit-1',
@@ -211,62 +182,30 @@ test('isolated rebuild lists then stages once, chunks targets per isolate with b
 	)
 })
 
-test('isolated rebuild skips already-built targets and does not stage when all are built', async () => {
-	resetMocks()
-	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets.slice(0, 3),
-	)
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	})
-	mockModule.isPublishedPackageArtifactBuiltForCommit.mockImplementation(
-		async (input: { target: (typeof sampleTargets)[number] }) =>
-			input.target.artifactName === '.' || input.target.artifactName === './c',
-	)
+test('isolated rebuild skips already-built or unchanged targets and does not stage when all are built', async () => {
+	const builtOrUnchanged = async (input: { target: Target }) =>
+		input.target.artifactName === '.' || input.target.artifactName === './c'
+	for (const [check, publishedCommit] of [
+		[mockModule.isPublishedPackageArtifactBuiltForCommit, 'commit-1'],
+		[mockModule.reusePublishedPackageArtifactIfUnchanged, 'commit-2'],
+	] as const) {
+		const { run, discard } = setup({ targets: sampleTargets.slice(0, 3) })
+		check.mockImplementation(builtOrUnchanged)
 
-	const rebuildInput = {
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
+		await rebuild({ publishedCommit })
+
+		expect(runTargets(run)).toEqual([[sampleTargets[1]]])
+		expect(
+			mockModule.stagePublishedPackageArtifactRebuild,
+		).toHaveBeenCalledTimes(1)
+		expect(discard).toHaveBeenCalledTimes(1)
+		expect(check).toHaveBeenCalledTimes(3)
 	}
-	await rebuildPublishedPackageArtifactsViaRepoSession(rebuildInput)
 
-	expect(run).toHaveBeenCalledTimes(1)
-	expect(run).toHaveBeenCalledWith(
-		expect.objectContaining({ targets: [sampleTargets[1]] }),
-	)
-	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
-		1,
-	)
-	expect(discard).toHaveBeenCalledTimes(1)
-
-	resetMocks()
-	run.mockClear()
-	discard.mockClear()
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets,
-	)
+	const { run, discard } = setup()
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
 
-	await rebuildPublishedPackageArtifactsViaRepoSession(rebuildInput)
+	await rebuild()
 
 	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledTimes(
 		1,
@@ -276,80 +215,11 @@ test('isolated rebuild skips already-built targets and does not stage when all a
 	expect(discard).not.toHaveBeenCalled()
 })
 
-test('isolated rebuild reuses unchanged prior-commit targets and only stages dirty ones', async () => {
-	resetMocks()
-	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets.slice(0, 3),
-	)
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	})
-	mockModule.reusePublishedPackageArtifactIfUnchanged.mockImplementation(
-		async (input: { target: (typeof sampleTargets)[number] }) =>
-			input.target.artifactName === '.' || input.target.artifactName === './c',
-	)
-
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-2',
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(run).toHaveBeenCalledTimes(1)
-	expect(run).toHaveBeenCalledWith(
-		expect.objectContaining({ targets: [sampleTargets[1]] }),
-	)
-	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
-		1,
-	)
-	expect(discard).toHaveBeenCalledTimes(1)
-	expect(
-		mockModule.reusePublishedPackageArtifactIfUnchanged,
-	).toHaveBeenCalledTimes(3)
-})
-
 test('force rebuilds already-built targets so already_published can repair stale same-commit artifacts', async () => {
-	resetMocks()
-	const run = vi.fn(async () => ({ ok: true, message: 'rebuilt' }))
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets,
-	)
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	})
+	const { run, discard } = setup()
 	mockModule.isPublishedPackageArtifactBuiltForCommit.mockResolvedValue(true)
 
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-		force: true,
-	})
+	await rebuild({ force: true })
 
 	expect(
 		mockModule.isPublishedPackageArtifactBuiltForCommit,
@@ -371,278 +241,127 @@ test('force rebuilds already-built targets so already_published can repair stale
 })
 
 test('rebuild failure stops later chunks and reports succeeded versus failed for isolated and fallback paths', async () => {
-	const targets = sampleTargets
 	const failurePattern =
 		/Succeeded: \{ kind "module", artifact "\.", entry "src\/a\.ts", bundle "module" \}.+Failed:.+bundle b failed/
+	const isB = (target: Target) => target.artifactName === './b'
 
-	resetMocks()
-	const run = vi.fn(async (input: { targets: typeof targets }) => {
-		return {
-			ok: input.targets.every((target) => target.artifactName !== './b'),
-			message: input.targets.some((target) => target.artifactName === './b')
-				? 'bundle b failed'
-				: 'rebuilt',
-			results: input.targets.map((target) =>
-				target.artifactName === './b'
-					? { ok: false, message: 'bundle b failed', target }
-					: { ok: true, message: 'rebuilt', target },
-			),
-		}
-	})
-	const touch = vi.fn(async () => undefined)
-	const discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch,
-		run,
-		discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(targets)
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	})
+	const run = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: !input.targets.some(isB),
+		message: input.targets.some(isB) ? 'bundle b failed' : 'rebuilt',
+		results: input.targets.map((target) =>
+			isB(target)
+				? { ok: false, message: 'bundle b failed', target }
+				: { ok: true, message: 'rebuilt', target },
+		),
+	}))
+	const { touch, discard } = setup({ run })
 
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {
-				REPO_SESSION: {},
-				BUNDLE_ARTIFACTS_KV: {},
-			} as unknown as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(failurePattern)
+	await expect(rebuild()).rejects.toThrow(failurePattern)
 	expect(touch).not.toHaveBeenCalled()
-	expect(run).toHaveBeenCalledTimes(2)
-	expect(run).toHaveBeenCalledWith(
-		expect.objectContaining({ targets: targets.slice(0, 4) }),
-	)
-	expect(run).toHaveBeenCalledWith(
-		expect.objectContaining({ targets: targets.slice(4, 8) }),
-	)
-	expect(run).not.toHaveBeenCalledWith(
-		expect.objectContaining({ targets: targets.slice(8) }),
-	)
-	expect(discard).toHaveBeenCalledWith(
-		'repo-artifact-rebuild-staging:v1:user-1:stage-1',
-	)
+	expect(runTargets(run)).toEqual([
+		sampleTargets.slice(0, 4),
+		sampleTargets.slice(4, 8),
+	])
+	expect(discard).toHaveBeenCalledWith(stagingKey)
 
-	resetMocks()
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		targets.slice(0, 4),
-	)
+	setup({ targets: sampleTargets.slice(0, 4), isolated: false })
 	mockModule.rebuildPublishedPackageArtifact.mockImplementation(
-		async (input: { target: (typeof targets)[number] }) => {
-			if (input.target.artifactName === './b') {
-				throw new Error('bundle b failed')
-			}
+		async (input: { target: Target }) => {
+			if (isB(input.target)) throw new Error('bundle b failed')
 			return { ok: true, target: input.target, kvKey: 'bundle-key' }
 		},
 	)
 
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {} as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(failurePattern)
-
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[0] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[1] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[2] }),
-	)
-	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalledWith(
-		expect.objectContaining({ target: targets[3] }),
-	)
+	await expect(rebuild({ env: {} as Env })).rejects.toThrow(failurePattern)
+	expect(
+		mockModule.rebuildPublishedPackageArtifact.mock.calls.map(
+			(call) => (call[0] as { target: Target }).target,
+		),
+	).toEqual(sampleTargets.slice(0, 2))
 })
 
 test('falls back to per-target session rebuild when isolated runner bindings are missing', async () => {
-	resetMocks()
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue(null)
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue(
-		sampleTargets.slice(0, 3),
-	)
+	setup({ targets: sampleTargets.slice(0, 3), isolated: false })
+	const gate = createGate(() => ({ ok: true }))
+	mockModule.rebuildPublishedPackageArtifact.mockImplementation(gate.impl)
 
-	let inFlight = 0
-	let maxInFlight = 0
-	const releaseGates: Array<() => void> = []
-	mockModule.rebuildPublishedPackageArtifact.mockImplementation(async () => {
-		inFlight += 1
-		maxInFlight = Math.max(maxInFlight, inFlight)
-		await new Promise<void>((resolve) => {
-			releaseGates.push(() => {
-				inFlight -= 1
-				resolve()
-			})
-		})
-		return { ok: true }
-	})
-
-	const rebuildPromise = rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {} as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-	})
+	const rebuildPromise = rebuild({ env: {} as Env })
 
 	await vi.waitFor(() => {
 		expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(2)
 	})
-	expect(maxInFlight).toBe(2)
+	expect(gate.maxInFlight).toBe(2)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).not.toHaveBeenCalled()
 
-	releaseGates.splice(0).forEach((release) => release())
+	gate.releaseAll()
 	await vi.waitFor(() => {
 		expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(3)
 	})
-	releaseGates.splice(0).forEach((release) => release())
+	gate.releaseAll()
 	await rebuildPromise
 
-	expect(maxInFlight).toBe(2)
+	expect(gate.maxInFlight).toBe(2)
 	expect(mockModule.rebuildPublishedPackageArtifact).toHaveBeenCalledTimes(3)
 })
 
 test('retries transient platform errors during staging and target rebuild, then exhausts', async () => {
 	consoleWarn.mockImplementation(() => {})
-	resetMocks()
-
-	const stagingRun = vi.fn(async () => ({
-		ok: true,
-		message: 'rebuilt',
-	}))
-	const stagingDiscard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(async () => undefined),
-		run: stagingRun,
-		discard: stagingDiscard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
-	mockModule.stagePublishedPackageArtifactRebuild
-		.mockRejectedValueOnce(
-			new Error('Durable Object reset because its code was updated.'),
+	const codeUpdatedReset = new Error(
+		'Durable Object reset because its code was updated.',
+	)
+	const expectOneTransientWarn = () => {
+		expect(consoleWarn).toHaveBeenCalledTimes(1)
+		expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
+			'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
 		)
+	}
+
+	const staged = setup({ targets: [sampleTargets[0]!], stageKey: null })
+	mockModule.stagePublishedPackageArtifactRebuild
+		.mockRejectedValueOnce(codeUpdatedReset)
 		.mockResolvedValueOnce({
 			stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-retry',
 		})
 
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-	})
+	await rebuild()
 
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		2,
 	)
-	expect(stagingRun).toHaveBeenCalledTimes(1)
-	expect(stagingDiscard).toHaveBeenCalledWith(
+	expect(staged.run).toHaveBeenCalledTimes(1)
+	expect(staged.discard).toHaveBeenCalledWith(
 		'repo-artifact-rebuild-staging:v1:user-1:stage-retry',
 	)
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
-	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
-		'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
-	)
+	expectOneTransientWarn()
 
 	consoleWarn.mockClear()
-	resetMocks()
 	const d1Run = vi
 		.fn()
 		.mockResolvedValueOnce({
 			ok: false,
 			message: 'internal error; reference = s46pgsm6st3fg81p6qumom80',
 		})
-		.mockResolvedValueOnce({
-			ok: true,
-			message: 'rebuilt',
-		})
-	const d1Discard = vi.fn(async () => undefined)
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run: d1Run,
-		discard: d1Discard,
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-d1',
-	})
+		.mockResolvedValueOnce({ ok: true, message: 'rebuilt' })
+	const d1 = setup({ targets: [sampleTargets[0]!], run: d1Run })
 
-	await rebuildPublishedPackageArtifactsViaRepoSession({
-		env: {
-			REPO_SESSION: {},
-			BUNDLE_ARTIFACTS_KV: {},
-		} as unknown as Env,
-		rpcSessionId: 'session-1',
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		baseUrl: 'https://kody.test',
-	})
+	await rebuild()
 
 	expect(d1Run).toHaveBeenCalledTimes(2)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		2,
 	)
-	expect(d1Discard).toHaveBeenCalledTimes(2)
-	expect(consoleWarn).toHaveBeenCalledTimes(1)
-	expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
-		'rebuildPublishedPackageArtifactsViaRepoSession transient platform error',
-	)
+	expect(d1.discard).toHaveBeenCalledTimes(2)
+	expectOneTransientWarn()
 
 	consoleWarn.mockClear()
-	resetMocks()
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run: vi.fn(),
-		discard: vi.fn(),
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
+	setup({ targets: [sampleTargets[0]!], stageKey: null })
 	mockModule.stagePublishedPackageArtifactRebuild.mockRejectedValue(
-		new Error('Durable Object reset because its code was updated.'),
+		codeUpdatedReset,
 	)
 
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {
-				REPO_SESSION: {},
-				BUNDLE_ARTIFACTS_KV: {},
-			} as unknown as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(
+	await expect(rebuild()).rejects.toThrow(
 		/could not recover after 3 transient platform error attempts/,
 	)
-
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		3,
 	)
@@ -650,71 +369,103 @@ test('retries transient platform errors during staging and target rebuild, then 
 })
 
 test('does not retry non-transient rebuild failures', async () => {
-	resetMocks()
-
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run: vi.fn(),
-		discard: vi.fn(),
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
+	setup({ targets: [sampleTargets[0]!], stageKey: null })
 	mockModule.stagePublishedPackageArtifactRebuild.mockRejectedValue(
 		new Error('staging kv unavailable'),
 	)
 
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {
-				REPO_SESSION: {},
-				BUNDLE_ARTIFACTS_KV: {},
-			} as unknown as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(/bundle artifact rebuild failed/i)
-
+	await expect(rebuild()).rejects.toThrow(/bundle artifact rebuild failed/i)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		1,
 	)
 
-	resetMocks()
 	const run = vi.fn().mockResolvedValue({
 		ok: false,
 		message: 'No matching default export for import "default"',
 	})
-	mockModule.createIsolatedArtifactRebuildRunner.mockReturnValue({
-		touch: vi.fn(),
-		run,
-		discard: vi.fn(),
-	})
-	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([
-		sampleTargets[0],
-	])
-	mockModule.stagePublishedPackageArtifactRebuild.mockResolvedValue({
-		stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:stage-compile',
-	})
+	setup({ targets: [sampleTargets[0]!], run })
 
-	await expect(
-		rebuildPublishedPackageArtifactsViaRepoSession({
-			env: {
-				REPO_SESSION: {},
-				BUNDLE_ARTIFACTS_KV: {},
-			} as unknown as Env,
-			rpcSessionId: 'session-1',
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow(/bundle artifact rebuild failed/i)
-
+	await expect(rebuild()).rejects.toThrow(/bundle artifact rebuild failed/i)
 	expect(run).toHaveBeenCalledTimes(1)
 	expect(mockModule.stagePublishedPackageArtifactRebuild).toHaveBeenCalledTimes(
 		1,
 	)
+})
+
+test('undeclared bare-import rebuild failures rehydrate as UserCodeError; declared stay platform Errors', async () => {
+	const { isUserCodeError, UserCodeError } =
+		await import('#worker/user-code-error.ts')
+	const undeclaredMessage =
+		'Saved package module "src/a.ts" bundle still contains unresolved bare package imports after bundling (bundle.js: "remix/data-schema"). Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.'
+
+	const callerRun = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: undeclaredMessage,
+		results: input.targets.map((target) => ({
+			ok: false,
+			message: undeclaredMessage,
+			callerFailure: true,
+			target,
+		})),
+	}))
+	setup({ targets: [sampleTargets[0]!], run: callerRun })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(true)
+		expect(String(error)).toMatch(/unresolved bare package imports/)
+		return true
+	})
+
+	const platformRun = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: undeclaredMessage,
+		results: input.targets.map((target) => ({
+			ok: false,
+			message: undeclaredMessage,
+			target,
+		})),
+	}))
+	setup({ targets: [sampleTargets[0]!], run: platformRun })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(Error)
+		expect(error).not.toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(false)
+		return true
+	})
+})
+
+test('mixed caller and platform rebuild failures keep a platform cause for Sentry', async () => {
+	const { isUserCodeError, UserCodeError } =
+		await import('#worker/user-code-error.ts')
+	const callerMessage =
+		'Saved package module "src/a.ts" bundle still contains unresolved bare package imports after bundling (bundle.js: "remix/data-schema").'
+	const platformMessage = 'KV PUT failed: 500 Internal Server Error'
+	const run = vi.fn(async (input: { targets: Array<Target> }) => ({
+		ok: false,
+		message: 'mixed failures',
+		results: input.targets.map((target, index) =>
+			index === 0
+				? {
+						ok: false,
+						message: callerMessage,
+						callerFailure: true,
+						target,
+					}
+				: {
+						ok: false,
+						message: platformMessage,
+						target,
+					},
+		),
+	}))
+	setup({ targets: sampleTargets.slice(0, 2), run })
+	await expect(rebuild()).rejects.toSatisfy((error: unknown) => {
+		expect(error).toBeInstanceOf(Error)
+		expect(error).not.toBeInstanceOf(UserCodeError)
+		expect(isUserCodeError(error)).toBe(false)
+		expect((error as Error).cause).toBeInstanceOf(Error)
+		expect((error as Error).cause).not.toBeInstanceOf(UserCodeError)
+		expect(String((error as Error).cause)).toContain(platformMessage)
+		return true
+	})
 })

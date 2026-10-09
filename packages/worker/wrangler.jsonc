@@ -77,18 +77,32 @@
 			// — does not see those files. `wrangler-env.ts` also clears that
 			// collector's esbuild `watchFiles` / `watchDirs` (Friction #1789).
 			// Guide catalog stays in `src/generated/`.
+			//
+			// Each glob is one generated filename. A `*.mjs` glob would also
+			// upload a stray file left in that directory (Friction #2504).
+			// Keep this list equal to `tools/worker-additional-module-allowlist.ts`.
 			"type": "ESModule",
 			"globs": [
-				"generated/*.mjs",
-				"./generated/*.mjs",
-				"node_modules/.kody-generated/*.mjs",
-				"./node_modules/.kody-generated/*.mjs",
+				"generated/guide-catalog.mjs",
+				"generated/guide-metadata.mjs",
+				"./generated/guide-catalog.mjs",
+				"./generated/guide-metadata.mjs",
+				"node_modules/.kody-generated/worker-bundler.mjs",
+				"node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"node_modules/.kody-generated/oauth-provider.mjs",
+				"node_modules/.kody-generated/local-execute-runtime-support.mjs",
+				"node_modules/.kody-generated/isomorphic-git.mjs",
+				"./node_modules/.kody-generated/worker-bundler.mjs",
+				"./node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"./node_modules/.kody-generated/oauth-provider.mjs",
+				"./node_modules/.kody-generated/local-execute-runtime-support.mjs",
+				"./node_modules/.kody-generated/isomorphic-git.mjs",
 			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["node_modules/.kody-generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/esbuild.wasm"],
 			"fallthrough": true,
 		},
 	],
@@ -271,6 +285,7 @@
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+					"entrypoint": "RuntimeWorkerService",
 				},
 				{
 					"binding": "JOBS",
@@ -289,7 +304,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",
@@ -513,10 +527,6 @@
 					"dataset": "kody_mcp_protocol_events",
 				},
 				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events",
-				},
-				{
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
 					"dataset": "kody_execute_interpretable_events",
 				},
@@ -586,26 +596,23 @@
 				// same change or subscription plan matching silently degrades
 				// to the kody_plan metadata fallback. Checkout sessions are
 				// created server-side for authenticated users (no public
-				// Payment Link). STRIPE_STANDARD_PRICE_ID is the $12/month
-				// price on the "Kody Standard" product;
-				// STRIPE_STANDARD_YEARLY_PRICE_ID is $120/year (two months
-				// free). STRIPE_PRO_PRICE_ID / STRIPE_PRO_YEARLY_PRICE_ID are
-				// the public $49/month and $480/year prices on
-				// prod_V1ChgPPenrxsAX. Previous Pro list prices stay active
-				// in Stripe for existing subscribers and are matched via
-				// retiredProPriceIds. Historical $5 Standard is matched the
-				// same way.
-				"STRIPE_STANDARD_PRICE_ID": "price_1U3sg6LAQpAnsYszGeL2nc8O",
-				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_1U3sg6LAQpAnsYszqq9abwIY",
-				"STRIPE_PRO_PRICE_ID": "price_1UChg1LAQpAnsYszAYn6eGgt",
-				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1UChg2LAQpAnsYszKAFCR778",
+				// Payment Link). STRIPE_PRO_PRICE_ID /
+				// STRIPE_PRO_YEARLY_PRICE_ID are the purchasable Pro ($12 /
+				// $120) on prod_VKxtLxMdjEkOdu ("Kody Pro") with the prepaid
+				// credit wallet (#2617). The previous Standard $12/$120 and
+				// Pro $49/$480 ids (prod_V1ChgPPenrxsAX, now "Kody Pro
+				// (legacy)") live in retiredStandardPriceIds /
+				// retiredProPriceIds; reusing either here would make those
+				// subscribers wallet-eligible.
+				"STRIPE_PRO_PRICE_ID": "price_1UKHxZLAQpAnsYszwwqZTCCT",
+				"STRIPE_PRO_YEARLY_PRICE_ID": "price_1UKHxaLAQpAnsYszlsVHHXjK",
 				// Stripe Billing Portal configuration used by Manage
-				// subscription and by plan changes for existing subscribers
-				// (subscription_update flow, always_invoice proration, price
-				// switches limited to Standard $12/$120 and Pro $49/$480.
-				// Previous Pro list prices stay active off-portal). Preview
-				// and test leave it unset so Stripe uses the account default
-				// configuration.
+				// subscription and by switches to Pro for existing
+				// subscribers (subscription_update_confirm flow pinned to the
+				// Pro price, always_invoice proration). Its product list must
+				// offer only the purchasable Pro once those prices exist.
+				// Preview and test leave it unset so Stripe uses the account
+				// default configuration.
 				"STRIPE_BILLING_PORTAL_CONFIGURATION_ID": "bpc_1UBzc8LAQpAnsYszyBkO2N3F",
 				// Disaster-recovery exporter → locked R2 bucket in the KCD
 				// (DR) account. The companion S3 credentials are Worker
@@ -764,6 +771,7 @@
 				{
 					"binding": "RUNTIME_WORKER",
 					"service": "kody-runtime",
+					"entrypoint": "RuntimeWorkerService",
 				},
 				{
 					"binding": "JOBS",
@@ -782,7 +790,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",
@@ -936,10 +943,6 @@
 				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events_preview",
-				},
-				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events_preview",
 				},
 				{
 					"binding": "EXECUTE_INTERPRETABLE_EVENTS",
@@ -1099,7 +1102,6 @@
 				"directory": "./public",
 				"binding": "ASSETS",
 				"run_worker_first": [
-					"/@*/api/package-invocations/*",
 					"/@*/packages/*",
 					"/@*/webhooks/*",
 					"/robots.txt",
@@ -1257,8 +1259,6 @@
 				"DISCORD_CLIENT_ID": "MOCK_DISCORD_CLIENT_ID",
 				"DISCORD_CLIENT_SECRET": "MOCK_DISCORD_CLIENT_SECRET",
 				"STRIPE_SECRET_KEY": "sk_test_local",
-				"STRIPE_STANDARD_PRICE_ID": "price_standard",
-				"STRIPE_STANDARD_YEARLY_PRICE_ID": "price_standard_yearly",
 				"STRIPE_PRO_PRICE_ID": "price_pro",
 				"STRIPE_PRO_YEARLY_PRICE_ID": "price_pro_yearly",
 				"STRIPE_API_BASE_URL": "https://stripe.mock",

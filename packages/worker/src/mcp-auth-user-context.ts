@@ -1,3 +1,7 @@
+import {
+	personIdFromStored,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getUserRolesAndPermissions } from '#worker/identity/permissions-db.ts'
 import {
 	displayNameFromEmail,
@@ -33,7 +37,7 @@ export type McpAuthUserContext = {
 
 function buildBaseUserFromGrant(
 	grantProps: NonNullable<McpOAuthGrantProps>,
-	userId: string,
+	userId: PersonId,
 ): McpUserContext {
 	const email =
 		typeof grantProps.email === 'string' ? grantProps.email.trim() : ''
@@ -68,8 +72,9 @@ export async function buildMcpUserContextFromGrantProps(
 	if (!grantProps || typeof grantProps.userId !== 'string') {
 		return null
 	}
-	const userId = grantProps.userId.trim()
-	if (!userId) return null
+	const trimmedUserId = grantProps.userId.trim()
+	if (!trimmedUserId) return null
+	const userId = personIdFromStored(trimmedUserId)
 
 	const baseUser = buildBaseUserFromGrant(grantProps, userId)
 

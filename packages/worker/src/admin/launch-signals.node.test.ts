@@ -12,106 +12,95 @@ function createLaunchSignalsDb() {
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
+const stripeEnv = {
+	STRIPE_PRO_PRICE_ID: 'price_pro',
+	STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
+}
+
 function insertUser(
 	sqlite: DatabaseSync,
 	row: {
 		username: string
-		stableUserId: string
+		stable_user_id: string
 		plan?: string
-		stripePlan?: string | null
-		stripePriceId?: string | null
-		entitlementLadder?: string
-		emailVerifiedAt?: string | null
-		firstMcpConnectedAt?: string | null
-		firstSearchAt?: string | null
-		firstExecuteAt?: string | null
-		firstSavedPackageAt?: string | null
-		mcpClientName?: string | null
-		lastActiveAt?: string | null
-		giftExpiresAt?: string | null
-		referralExpiresAt?: string | null
-		createdAt?: string
-		deletingAt?: string | null
+		stripe_plan?: string
+		stripe_price_id?: string
+		entitlement_ladder?: string
+		email_verified_at?: string
+		first_mcp_connected_at?: string
+		first_search_at?: string
+		first_execute_at?: string
+		first_saved_package_at?: string
+		mcp_client_name?: string
+		last_active_at?: string
+		second_agent_standard_gift_expires_at?: string
+		created_at?: string
+		deleting_at?: string
 	},
 ) {
+	const createdAt = row.created_at ?? '2026-08-01T00:00:00.000Z'
+	const columns: Record<string, string> = {
+		email: `${row.username}@example.com`,
+		password_hash: 'x',
+		plan: 'free',
+		entitlement_ladder: 'public',
+		account_type: 'person',
+		...row,
+		created_at: createdAt,
+		updated_at: createdAt,
+	}
+	const names = Object.keys(columns)
 	sqlite
 		.prepare(
-			`INSERT INTO users (
-				username, email, password_hash, stable_user_id, plan, stripe_plan,
-				stripe_price_id, entitlement_ladder, email_verified_at,
-				first_mcp_connected_at, first_search_at, first_execute_at,
-				first_saved_package_at, mcp_client_name, last_active_at,
-				second_agent_standard_gift_expires_at, referral_standard_credit_expires_at,
-				created_at, updated_at, deleting_at, account_type
-			) VALUES (?, ?, 'x', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'person')`,
+			`INSERT INTO users (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`,
 		)
-		.run(
-			row.username,
-			`${row.username}@example.com`,
-			row.stableUserId,
-			row.plan ?? 'free',
-			row.stripePlan ?? null,
-			row.stripePriceId ?? null,
-			row.entitlementLadder ?? 'public',
-			row.emailVerifiedAt ?? null,
-			row.firstMcpConnectedAt ?? null,
-			row.firstSearchAt ?? null,
-			row.firstExecuteAt ?? null,
-			row.firstSavedPackageAt ?? null,
-			row.mcpClientName ?? null,
-			row.lastActiveAt ?? null,
-			row.giftExpiresAt ?? null,
-			row.referralExpiresAt ?? null,
-			row.createdAt ?? '2026-08-01T00:00:00.000Z',
-			row.createdAt ?? '2026-08-01T00:00:00.000Z',
-			row.deletingAt ?? null,
-		)
+		.run(...Object.values(columns))
 }
 
 test('launch signals aggregate paid MRR, funnels, activity, and overlays without paging users', async () => {
 	const { sqlite, db } = createLaunchSignalsDb()
 	insertUser(sqlite, {
 		username: 'paid-monthly',
-		stableUserId: 'user-paid-monthly',
+		stable_user_id: 'user-paid-monthly',
 		plan: 'free',
-		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
-		emailVerifiedAt: '2026-08-02T00:00:00.000Z',
-		firstMcpConnectedAt: '2026-08-03T00:00:00.000Z',
-		firstSearchAt: '2026-08-03T01:00:00.000Z',
-		firstExecuteAt: '2026-08-03T02:00:00.000Z',
-		firstSavedPackageAt: '2026-08-04T00:00:00.000Z',
-		mcpClientName: 'Cursor',
-		lastActiveAt: '2026-09-10T16:00:00.000Z',
-		entitlementLadder: 'legacy',
+		stripe_plan: 'standard',
+		stripe_price_id: 'price_1U3sg6LAQpAnsYszGeL2nc8O',
+		email_verified_at: '2026-08-02T00:00:00.000Z',
+		first_mcp_connected_at: '2026-08-03T00:00:00.000Z',
+		first_search_at: '2026-08-03T01:00:00.000Z',
+		first_execute_at: '2026-08-03T02:00:00.000Z',
+		first_saved_package_at: '2026-08-04T00:00:00.000Z',
+		mcp_client_name: 'Cursor',
+		last_active_at: '2026-09-10T16:00:00.000Z',
+		entitlement_ladder: 'legacy',
 	})
 	insertUser(sqlite, {
 		username: 'paid-yearly',
-		stableUserId: 'user-paid-yearly',
+		stable_user_id: 'user-paid-yearly',
 		plan: 'pro',
-		stripePlan: 'pro',
-		stripePriceId: 'price_pro_yearly',
-		emailVerifiedAt: '2026-09-10T08:00:00.000Z',
-		firstMcpConnectedAt: '2026-09-10T09:00:00.000Z',
-		mcpClientName: 'Claude Code',
-		lastActiveAt: '2026-09-09T12:00:00.000Z',
-		createdAt: '2026-09-10T07:00:00.000Z',
+		stripe_plan: 'pro',
+		stripe_price_id: 'price_1UChg2LAQpAnsYszKAFCR778',
+		email_verified_at: '2026-09-10T08:00:00.000Z',
+		first_mcp_connected_at: '2026-09-10T09:00:00.000Z',
+		mcp_client_name: 'Claude Code',
+		last_active_at: '2026-09-09T12:00:00.000Z',
+		created_at: '2026-09-10T07:00:00.000Z',
 	})
 	insertUser(sqlite, {
 		username: 'gifted',
-		stableUserId: 'user-gifted',
+		stable_user_id: 'user-gifted',
 		plan: 'free',
-		giftExpiresAt: '2026-09-20T00:00:00.000Z',
-		emailVerifiedAt: '2026-09-10T10:00:00.000Z',
-		lastActiveAt: '2026-09-03T00:00:00.000Z',
-		createdAt: '2026-09-10T10:00:00.000Z',
+		second_agent_standard_gift_expires_at: '2026-09-20T00:00:00.000Z',
+		email_verified_at: '2026-09-10T10:00:00.000Z',
+		last_active_at: '2026-09-03T00:00:00.000Z',
+		created_at: '2026-09-10T10:00:00.000Z',
 	})
 	insertUser(sqlite, {
 		username: 'deleting',
-		stableUserId: 'user-deleting',
-		stripePlan: 'pro',
-		stripePriceId: 'price_pro',
-		deletingAt: '2026-09-10T00:00:00.000Z',
+		stable_user_id: 'user-deleting',
+		stripe_plan: 'pro',
+		stripe_price_id: 'price_pro',
+		deleting_at: '2026-09-10T00:00:00.000Z',
 	})
 	sqlite
 		.prepare(
@@ -124,21 +113,11 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 				('fb-done', 'user-gifted', 'gifted', 'gifted@example.com',
 					'suggestion', 'Done idea', 'details', 'resolved', ?, ?)`,
 		)
-		.run(
-			now.toISOString(),
-			now.toISOString(),
-			now.toISOString(),
-			now.toISOString(),
-		)
+		.run(...Array.from({ length: 4 }, () => now.toISOString()))
 
 	const signals = await loadAdminLaunchSignals({
 		db,
-		env: {
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
-			STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-			STRIPE_PRO_PRICE_ID: 'price_pro',
-			STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
-		},
+		env: stripeEnv,
 		now,
 	})
 
@@ -168,10 +147,10 @@ test('launch signals aggregate paid MRR, funnels, activity, and overlays without
 		{ plan: 'standard', count: 1 },
 	])
 	expect(signals.effectivePlans).toEqual([
-		{ plan: 'standard', count: 2 },
-		{ plan: 'pro', count: 1 },
+		{ plan: 'pro', count: 2 },
+		{ plan: 'standard', count: 1 },
 	])
-	expect(signals.overlayStandard).toBe(1)
+	expect(signals.overlayPro).toBe(1)
 	expect(signals.entitlementLadders).toEqual({ public: 2, legacy: 1 })
 	expect(signals.paidEntitlementLadders).toEqual({ public: 1, legacy: 1 })
 	expect(signals.activeUsers).toEqual({
@@ -206,19 +185,14 @@ test('active windows count last_active_at UTC days, not a rolling ISO-hour cutof
 	const { sqlite, db } = createLaunchSignalsDb()
 	insertUser(sqlite, {
 		username: 'yesterday-early',
-		stableUserId: 'user-yesterday-early',
-		lastActiveAt: '2026-09-10T01:00:00.000Z',
-		createdAt: '2026-09-01T00:00:00.000Z',
+		stable_user_id: 'user-yesterday-early',
+		last_active_at: '2026-09-10T01:00:00.000Z',
+		created_at: '2026-09-01T00:00:00.000Z',
 	})
 
 	const signals = await loadAdminLaunchSignals({
 		db,
-		env: {
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
-			STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-			STRIPE_PRO_PRICE_ID: 'price_pro',
-			STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
-		},
+		env: stripeEnv,
 		now: new Date('2026-09-11T02:00:00.000Z'),
 	})
 

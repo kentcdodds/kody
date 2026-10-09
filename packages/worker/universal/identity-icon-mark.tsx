@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { identityIconMonogramLetter } from '#universal/identity-icon-leaf.ts'
 import { getLogoWellCss } from '#universal/styles/style-primitives.ts'
 import { colors } from '#universal/styles/tokens.ts'

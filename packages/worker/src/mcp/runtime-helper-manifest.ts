@@ -13,6 +13,7 @@ import {
 	createPackageStorageKodyTools,
 } from '#worker/storage-runner.ts'
 import { type PackageWorkflowCreateInput } from '#worker/package-runtime/package-workflows.ts'
+import { type ComputedPackageImportTools } from '#worker/package-runtime/computed-package-import.ts'
 import {
 	type PackageStaticCallMeterInput,
 	type PackageStaticCallMeterTools,
@@ -48,6 +49,10 @@ export type PackageStorageToolOptions = {
 }
 
 export type PackageSecretToolOptions = {
+	/**
+	 * Opaque `{{secret:…}}` placeholder after mount + grant checks. Never
+	 * decrypted plaintext — only platform use sites resolve it.
+	 */
 	get: (alias: string, packageId?: string | null) => Promise<string>
 	has: (alias: string, packageId?: string | null) => Promise<boolean>
 	/**
@@ -84,6 +89,8 @@ export type PackageInvokeInput = {
 	options?: PackageInvokeOptions
 }
 
+export type { ComputedPackageImportTools }
+
 export type PackageInvokeNormalizedInput = {
 	specifier: string
 	exportName: string
@@ -118,10 +125,6 @@ export type PackageInvokeCheckResult =
 			contract?: Partial<PackageInvokeContract>
 	  }
 
-export type PackageInvokeTools = {
-	invoke: (input: PackageInvokeInput, signal?: AbortSignal) => Promise<unknown>
-}
-
 export type PackageEventDispatchInput = {
 	topic?: unknown
 	idempotencyKey?: unknown
@@ -153,8 +156,8 @@ export type RuntimeHelperManifestContext = {
 	packageSecretTools?: PackageSecretToolOptions | undefined
 	emailTools?: EmailToolOptions | undefined
 	workflowTools?: PackageWorkflowTools | undefined
-	packageInvokeTools?: PackageInvokeTools | undefined
 	packageEventTools?: PackageEventTools | undefined
+	computedPackageImportTools?: ComputedPackageImportTools | undefined
 	staticCallMeterTools?: PackageStaticCallMeterTools | undefined
 }
 
@@ -264,24 +267,20 @@ const workflows = {
 	`.trim()
 }
 
-const packageInvokeRuntimeBridgeProviderName =
-	'__kodyPackageInvokeRuntimeBridge'
 const packageEventRuntimeBridgeProviderName = '__kodyPackageEventRuntimeBridge'
+const computedPackageImportRuntimeBridgeProviderName =
+	'__kodyComputedPackageImportRuntimeBridge'
 
-function createPackagesHelperPrelude() {
+// Internal bridge for computed `import(specifier)` of caller-owned `kody:@`
+// names. Not an author-facing helper (no unbound-access rewrite name). The
+// rewrite guard reads `__kodyComputedPackageImport` from ALS and returns a
+// sandbox-local `{ default }` wrapper; the host resolves the importable
+// artifact and evaluates the default export with library-load semantics.
+function createComputedPackageImportHelperPrelude() {
 	return `
-const packages = {
-  invoke: async (specifier, options) => {
-    if (typeof specifier !== 'string') {
-      throw new Error(
-        'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
-      );
-    }
-    return await ${packageInvokeRuntimeBridgeProviderName}.invoke({
-      specifier,
-      options: options ?? {},
-    });
-  },
+const __kodyComputedPackageImport = {
+  callDefault: async (input) =>
+    await ${computedPackageImportRuntimeBridgeProviderName}.callDefault(input ?? {}),
 };
 	`.trim()
 }
@@ -406,27 +405,6 @@ function createWorkflowKodyTools(
 	}
 }
 
-function createPackageInvokeRuntimeBridgeProvider(
-	packageInvokeTools: PackageInvokeTools,
-): ResolvedProvider {
-	const provider: ToolProvider = {
-		name: packageInvokeRuntimeBridgeProviderName,
-		tools: {
-			invoke: {
-				execute: async (args: unknown, signal?: AbortSignal) =>
-					await packageInvokeTools.invoke(
-						(args ?? {}) as PackageInvokeInput,
-						signal,
-					),
-			},
-		},
-	}
-	return {
-		...resolveProvider(provider),
-		abortSignalToolNames: ['invoke'],
-	} as ResolvedProvider
-}
-
 function createPackageEventRuntimeBridgeProvider(
 	packageEventTools: PackageEventTools,
 ): ResolvedProvider {
@@ -454,6 +432,26 @@ function createStaticCallMeterRuntimeBridgeProvider(
 				execute: async (args: unknown) =>
 					await staticCallMeterTools.record(
 						(args ?? {}) as PackageStaticCallMeterInput,
+					),
+			},
+		},
+	}
+	return resolveProvider(provider)
+}
+
+function createComputedPackageImportRuntimeBridgeProvider(
+	computedPackageImportTools: ComputedPackageImportTools,
+): ResolvedProvider {
+	const provider: ToolProvider = {
+		name: computedPackageImportRuntimeBridgeProviderName,
+		tools: {
+			callDefault: {
+				execute: async (args: unknown) =>
+					await computedPackageImportTools.callDefault(
+						(args ?? {}) as {
+							specifier: string
+							params?: Record<string, unknown>
+						},
 					),
 			},
 		},
@@ -559,11 +557,26 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 		runtimeName: 'packages',
 		runtimeBindings: [{ runtimeName: 'packages', absentValue: 'null' }],
 		unboundNames: ['packages'],
-		isBound: (context) => Boolean(context.packageInvokeTools),
-		createPrelude: () => createPackagesHelperPrelude(),
+		isBound: () => false,
+	},
+	{
+		runtimeName: 'computedPackageImport',
+		runtimeBindings: [
+			{
+				runtimeName: '__kodyComputedPackageImport',
+				absentValue: 'undefined',
+			},
+		],
+		unboundNames: [],
+		isBound: (context) => Boolean(context.computedPackageImportTools),
+		createPrelude: () => createComputedPackageImportHelperPrelude(),
 		extraProviders: (context) =>
-			context.packageInvokeTools
-				? [createPackageInvokeRuntimeBridgeProvider(context.packageInvokeTools)]
+			context.computedPackageImportTools
+				? [
+						createComputedPackageImportRuntimeBridgeProvider(
+							context.computedPackageImportTools,
+						),
+					]
 				: [],
 	},
 	{
@@ -605,6 +618,7 @@ const runtimeHelperRuntimeBindingOrder: Array<string> = [
 	'email',
 	'workflows',
 	'packages',
+	'computedPackageImport',
 	'events',
 	'staticCallMeter',
 ]

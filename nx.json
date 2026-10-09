@@ -8,12 +8,6 @@
 		"build": {
 			"cache": true
 		},
-		"build-client": {
-			"cache": true
-		},
-		"build-client-web": {
-			"cache": true
-		},
 		"typecheck": {
 			"cache": true
 		},
@@ -25,7 +19,11 @@
 				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
+				"{workspaceRoot}/skills-lock.json",
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
+				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
+				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
 			]
 		},
 		"test-node": {
@@ -36,7 +34,11 @@
 				{ "env": "CI" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
+				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
+				"{workspaceRoot}/skills-lock.json",
+				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
+				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
+				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
 			]
 		},
 		"test-workers": {
@@ -45,6 +47,7 @@
 				"default",
 				"^default",
 				{ "env": "CI" },
+				{ "env": "KODY_VALIDATE_LOAD" },
 				"{workspaceRoot}/vitest*.ts",
 				"{workspaceRoot}/tools/**/*",
 				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"

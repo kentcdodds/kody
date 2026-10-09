@@ -38,13 +38,25 @@ function setting(
 	}
 }
 
-test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown servers', async () => {
-	mockModule.getMcpServerSettingById.mockReset()
-	mockModule.listMcpServerSettings.mockReset()
+function snapshot(overrides: Record<string, unknown>) {
+	return {
+		serverId: 'server-1',
+		name: 'ha',
+		url: 'https://example.com/mcp',
+		state: 'ready' as const,
+		authUrl: null,
+		error: null,
+		instructions: null,
+		tools: [{ name: 'ping', inputSchema: { type: 'object' as const } }],
+		...overrides,
+	}
+}
 
+const owner = { env: { APP_DB: {} as D1Database }, userId: 'user-1' }
+
+test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown servers', async () => {
 	const blank = resolveMcpServerSetting({
-		env: { APP_DB: {} as D1Database },
-		userId: 'user-1',
+		...owner,
 		server: '   ',
 	})
 	await expect(blank).rejects.toThrow(McpCallerError)
@@ -55,8 +67,7 @@ test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown s
 	mockModule.getMcpServerSettingById.mockResolvedValueOnce(byId)
 	await expect(
 		resolveMcpServerSetting({
-			env: { APP_DB: {} as D1Database },
-			userId: 'user-1',
+			...owner,
 			server: 'server-by-id',
 		}),
 	).resolves.toEqual(byId)
@@ -67,8 +78,7 @@ test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown s
 	])
 	await expect(
 		resolveMcpServerSetting({
-			env: { APP_DB: {} as D1Database },
-			userId: 'user-1',
+			...owner,
 			server: 'HA',
 		}),
 	).resolves.toMatchObject({ id: 'server-by-name', name: 'ha' })
@@ -76,8 +86,7 @@ test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown s
 	mockModule.getMcpServerSettingById.mockResolvedValueOnce(null)
 	mockModule.listMcpServerSettings.mockResolvedValueOnce([setting()])
 	const missing = resolveMcpServerSetting({
-		env: { APP_DB: {} as D1Database },
-		userId: 'user-1',
+		...owner,
 		server: 'recipe-keeper',
 	})
 	await expect(missing).rejects.toThrow(McpCallerError)
@@ -102,16 +111,7 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 		"Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, id attempt-1)."
 	const hung = buildMcpServerStatusView({
 		setting: setting({ lastError }),
-		snapshot: {
-			serverId: 'server-1',
-			name: 'ha',
-			url: 'https://example.com/mcp',
-			state: 'connected',
-			authUrl: null,
-			error: null,
-			instructions: null,
-			tools: [],
-		},
+		snapshot: snapshot({ state: 'connected', tools: [] }),
 	})
 	expect(hung.connected).toBe(false)
 	expect(hung.error).toBe(lastError)
@@ -119,16 +119,7 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 
 	const ready = buildMcpServerStatusView({
 		setting: setting({ lastError }),
-		snapshot: {
-			serverId: 'server-1',
-			name: 'ha',
-			url: 'https://example.com/mcp',
-			state: 'ready',
-			authUrl: null,
-			error: null,
-			instructions: null,
-			tools: [{ name: 'ping', inputSchema: { type: 'object' } }],
-		},
+		snapshot: snapshot({}),
 	})
 	expect(ready.connected).toBe(true)
 	expect(ready.error).toBeNull()
@@ -137,13 +128,7 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 		"This MCP server's authorization server advertised refresh tokens, but the token response did not include a refresh token. The access token will expire and Kody cannot renew it (phase token exchange, id attempt-omit)."
 	const warned = buildMcpServerStatusView({
 		setting: setting(),
-		snapshot: {
-			serverId: 'server-1',
-			name: 'ha',
-			url: 'https://example.com/mcp',
-			state: 'ready',
-			authUrl: null,
-			error: null,
+		snapshot: snapshot({
 			lastError: {
 				message: omittedRefresh,
 				phase: 'token exchange',
@@ -156,9 +141,7 @@ test('buildMcpServerStatusView surfaces durable lastError when live connection e
 				at: '2026-09-16T00:00:00.000Z',
 			},
 			hasRefreshToken: false,
-			instructions: null,
-			tools: [{ name: 'ping', inputSchema: { type: 'object' } }],
-		},
+		}),
 	})
 	expect(warned.connected).toBe(true)
 	expect(warned.error).toBeTruthy()

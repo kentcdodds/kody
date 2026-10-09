@@ -148,6 +148,20 @@ export function runDisplayName(run: AccountActivityRunListItem) {
 	return run.name?.trim() || surfaceLabel(run.surface)
 }
 
+export function runAttributionSubtitle(
+	run: Pick<AccountActivityRunListItem, 'entry' | 'workerId'>,
+) {
+	const parts: Array<string> = []
+	if (run.entry === 'invoke') parts.push('invoke')
+	else if (run.entry === 'code') parts.push('code')
+	if (run.workerId) {
+		const shortId =
+			run.workerId.length > 16 ? `${run.workerId.slice(0, 12)}…` : run.workerId
+		parts.push(shortId)
+	}
+	return parts.length > 0 ? parts.join(' · ') : null
+}
+
 export function triageLabel(
 	run: Pick<AccountActivityRunListItem, 'status' | 'errorTriage'>,
 ) {

@@ -73,10 +73,23 @@ test('listCommunityIndexOverview loads shelves with one windowed listing query',
 		"SELECT category, COUNT(*) AS listing_count FROM community_listings WHERE status = 'active' GROUP BY category",
 	])
 
-	for (const day of [1, 2, 3, 4, 5, 6, 7, 8]) {
+	const seeds: Array<
+		[id: string, category: CommunityListingCategory, day: number]
+	> = [
+		...[1, 2, 3, 4, 5, 6, 7, 8].map(
+			(day): [string, CommunityListingCategory, number] => [
+				`integration-${day}`,
+				'integrations',
+				day,
+			],
+		),
+		['utility-3', 'utilities', 3],
+		['utility-5', 'utilities', 5],
+	]
+	for (const [id, category, day] of seeds) {
 		await insertOverviewListing(db, {
-			id: `integration-${day}`,
-			category: 'integrations',
+			id,
+			category,
 			publishedAt: publishedAtForDay(day),
 		})
 	}
@@ -85,16 +98,6 @@ test('listCommunityIndexOverview loads shelves with one windowed listing query',
 		category: 'integrations',
 		publishedAt: publishedAtForDay(9),
 		status: 'delisted',
-	})
-	await insertOverviewListing(db, {
-		id: 'utility-3',
-		category: 'utilities',
-		publishedAt: publishedAtForDay(3),
-	})
-	await insertOverviewListing(db, {
-		id: 'utility-5',
-		category: 'utilities',
-		publishedAt: publishedAtForDay(5),
 	})
 	await upsertCommunityRating(db, {
 		id: 'rating-oldest',
@@ -124,46 +127,34 @@ test('listCommunityIndexOverview loads shelves with one windowed listing query',
 		['integrations', 8],
 		['utilities', 2],
 	])
-	expect(newest.groups[0]?.listings.map((listing) => listing.id)).toEqual([
-		'integration-8',
-		'integration-7',
-		'integration-6',
-		'integration-5',
-		'integration-4',
-		'integration-3',
-	])
-	expect(newest.groups[1]?.listings.map((listing) => listing.id)).toEqual([
-		'utility-5',
-		'utility-3',
-	])
-	expect(newest.listings.map((listing) => listing.id)).toEqual([
-		'integration-8',
-		'integration-7',
-		'integration-6',
-		'integration-5',
-		'integration-4',
-		'integration-3',
-		'utility-5',
-		'utility-3',
-	])
-	expect(newest.categoryCounts.integrations).toBe(8)
-	expect(newest.categoryCounts.examples).toBe(0)
-
-	const listingSelects = queries.filter((query) =>
-		query.includes('ROW_NUMBER()'),
+	const newestIntegrations = [8, 7, 6, 5, 4, 3].map(
+		(day) => `integration-${day}`,
 	)
-	expect(listingSelects).toHaveLength(1)
-	expect(listingSelects[0]).toContain('category_rank <= ?')
-	expect(
-		queries.filter((query) => query.includes('GROUP BY category')),
-	).toHaveLength(1)
-	expect(
-		queries.filter((query) => query.includes('FROM community_ratings')),
-	).toHaveLength(1)
-	expect(
-		queries.filter((query) => query.includes('FROM community_forks')),
-	).toHaveLength(1)
+	const ids = (listings: Array<{ id: string }> = []) =>
+		listings.map((listing) => listing.id)
+	expect(ids(newest.groups[0]?.listings)).toEqual(newestIntegrations)
+	expect(ids(newest.groups[1]?.listings)).toEqual(['utility-5', 'utility-3'])
+	expect(ids(newest.listings)).toEqual([
+		...newestIntegrations,
+		'utility-5',
+		'utility-3',
+	])
+	expect(newest.categoryCounts).toMatchObject({ integrations: 8, examples: 0 })
+
 	expect(queries).toHaveLength(4)
+	expect(
+		[
+			'ROW_NUMBER()',
+			'GROUP BY category',
+			'FROM community_ratings',
+			'FROM community_forks',
+		].map(
+			(fragment) => queries.filter((query) => query.includes(fragment)).length,
+		),
+	).toEqual([1, 1, 1, 1])
+	expect(queries.find((query) => query.includes('ROW_NUMBER()'))).toContain(
+		'category_rank <= ?',
+	)
 
 	const best = await listCommunityIndexOverview({ env, sort: 'best' })
 	expect(best.groups[0]?.listings[0]).toEqual(

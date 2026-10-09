@@ -1,5 +1,10 @@
-import { css, type Handle, type RemixNode } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/component'
 import { routes } from '#universal/routes.ts'
+import {
+	accountNavItemsFor,
+	accountRailOrgSlug,
+	isAccountNavItemActive,
+} from './account-rail.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
@@ -19,10 +24,7 @@ import {
 import { readAppSession } from '#client/app-session-context.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import { renderRoutePendingStatus } from '#client/route-data.tsx'
-import {
-	packageShareGrantsFlagKey,
-	secretProvidersFlagKey,
-} from '#universal/feature-flags/registry.ts'
+import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { type IconName } from '#universal/icon.tsx'
 import { EntityExplainer, resolveEntityExplainer } from './entity-explainer.tsx'
 import {
@@ -183,8 +185,16 @@ export function AccountManagementShell(
 			data-account-shell
 			aria-busy={handle.props.busy ? 'true' : undefined}
 			mix={css({
+				width: '100%',
 				maxWidth: layoutMaxWidths.extended,
 				margin: '0 auto',
+				// `<main>` is a flex column for this shell (public/styles.css).
+				// Growing into it keeps the footer at the viewport bottom on a
+				// short page without leaving an empty band outside the shell;
+				// a tall page stays content-sized and scrolls to the footer.
+				// Rows pack to the top so the growth never spreads sections.
+				flexGrow: 1,
+				alignContent: 'start',
 				// Prototype `.account` padding. The inline gutter is the one every
 				// other page container carries, so the content column lines up
 				// with the header's 72rem content box instead of running wider
@@ -202,9 +212,11 @@ export function AccountManagementShell(
 				// nav-less shell users (onboarding, pending verification) keep
 				// the plain column. The rail starts at the gutter so it lines
 				// up with the header's brand. Its box is the shell (top and
-				// bottom), and the link column scrolls inside that box, so a
-				// short page stays as tall as its content. A fixed min-height
-				// here leaves a blank band above the footer. Note: `css()`
+				// bottom), so it runs down to the footer on a short page, and
+				// the link column scrolls inside that box when the list is
+				// taller. No fixed min-height: the flex growth above already
+				// fills the viewport, and more would push the footer below the
+				// fold on short pages. Note: `css()`
 				// classes each live in their own cascade sub-layer, so child
 				// spacing must stay on the shell's `gap`, never on per-child
 				// margins a child's own class would silently beat.
@@ -212,7 +224,6 @@ export function AccountManagementShell(
 					position: 'relative',
 					gap: accountSectionGap,
 					paddingLeft: `calc(${pageGutter} + 200px + clamp(2rem, 5vw, 4.5rem))`,
-					alignContent: 'start',
 					...(handle.props.maxWidth
 						? {
 								'& > *:not([data-account-nav])': {
@@ -329,12 +340,6 @@ const adminNavItems = [
 		paths: ['/admin/feature-flags'],
 	},
 	{
-		href: '/admin/banners',
-		label: 'Banners',
-		icon: 'announcement',
-		paths: ['/admin/banners'],
-	},
-	{
 		href: '/admin/platform-integrations',
 		label: 'Platform integrations',
 		icon: 'globe',
@@ -383,76 +388,11 @@ const adminNavItems = [
 	paths: ReadonlyArray<string>
 }>
 
-/**
- * Packages live on the signed-in user's public profile (`/@username`);
- * `/account/packages` only 302s there. Link straight to the canonical page
- * when the session knows the username and let the redirect cover the rare
- * case where it does not, so the rail never points at a dead route.
- */
-export function accountPackagesNavHref(username: string | null | undefined) {
-	return username
-		? routes.profile.href({ username })
-		: routes.accountPackages.href()
-}
-
-type AccountNavItem = { href: string; label: string; icon: IconName }
-
-/** Account rail items in display order for the signed-in session. */
-export function accountNavItemsFor(input: {
-	username: string | null | undefined
-	showShared: boolean
-	showSecretProviders: boolean
-}): Array<AccountNavItem> {
-	return [
-		{ href: '/account', label: 'Overview', icon: 'home' },
-		{ href: '/account/waiting', label: 'Waiting', icon: 'clock' },
-		{ href: '/account/experiments', label: 'Experiments', icon: 'star' },
-		{
-			href: routes.accountConnections.href(),
-			label: 'Connections',
-			icon: 'link',
-		},
-		{
-			href: accountPackagesNavHref(input.username),
-			label: 'Repositories',
-			icon: 'box',
-		},
-		...(input.showShared
-			? [
-					{
-						href: routes.accountShared.href(),
-						label: 'Shared',
-						icon: 'share' as const,
-					},
-				]
-			: []),
-		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
-		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
-		{ href: '/account/activity', label: 'Activity', icon: 'trending-up' },
-		{ href: '/account/jobs', label: 'Jobs', icon: 'briefcase' },
-		{ href: '/account/workflows', label: 'Workflows', icon: 'refresh' },
-		{ href: routes.accountWebhooks.href(), label: 'Webhooks', icon: 'cloud' },
-		{ href: '/account/secrets', label: 'Secrets', icon: 'key' },
-		...(input.showSecretProviders
-			? [
-					{
-						href: '/account/secret-providers',
-						label: 'Secret providers',
-						icon: 'key' as const,
-					},
-				]
-			: []),
-		{ href: '/account/integrations', label: 'Integrations', icon: 'plug' },
-		{ href: '/account/mcp-servers', label: 'MCP servers', icon: 'server' },
-		{ href: '/account/memories', label: 'Memories', icon: 'book' },
-		{ href: '/account/email', label: 'Email', icon: 'mail' },
-	]
-}
-
-function isAccountNavItemActive(itemHref: string, currentPath: string) {
-	if (itemHref === '/account') return currentPath === '/account'
-	return currentPath === itemHref || currentPath.startsWith(`${itemHref}/`)
-}
+export {
+	accountNavItemsFor,
+	accountPackagesNavHref,
+	accountRailOrgSlug,
+} from './account-rail.ts'
 
 type AccountPageHeaderProps = {
 	title: string
@@ -474,19 +414,24 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
 		const session = readAppSession(handle)?.session ?? null
+		const organizations = session?.organizations ?? []
+		const orgSlug = accountRailOrgSlug({
+			pathname: currentPath,
+			organizations,
+			username: session?.username,
+		})
+		const personal =
+			organizations.find((org) => org.slug === orgSlug)?.personal ??
+			Boolean(orgSlug && orgSlug === session?.username)
 		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
-		const showSecretProviders = isFeatureFlagEnabled(
-			session,
-			secretProvidersFlagKey,
-		)
 		const explainer =
 			!showShared && currentPath === routes.accountShared.href()
 				? null
 				: resolveEntityExplainer(currentPath)
 		const navItems = accountNavItemsFor({
-			username: session?.username,
+			orgSlug,
+			personal,
 			showShared,
-			showSecretProviders,
 		})
 
 		return (

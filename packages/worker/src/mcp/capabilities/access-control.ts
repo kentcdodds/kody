@@ -11,8 +11,10 @@ import {
 	type FeatureFlagKey,
 	featureFlagKeys,
 } from '#universal/feature-flags/registry.ts'
-import { getFeatureFlagEvaluationsForUser } from '#worker/feature-flags/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
+import {
+	getFeatureFlagEvaluationsForUser,
+	type FeatureFlagEvaluation,
+} from '#worker/feature-flags/service.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -74,12 +76,89 @@ async function resolveFeatureFlagUserId(
 	return row?.id ?? null
 }
 
+type CallerFeatureFlagResolution = {
+	stableUserId: string
+	evaluations: Record<FeatureFlagKey, FeatureFlagEvaluation>
+}
+
+const callerFeatureFlagResolutions = new WeakMap<
+	McpCallerContext,
+	Promise<CallerFeatureFlagResolution | null>
+>()
+
+const callerFeatureFlagMaps = new WeakMap<
+	McpCallerContext,
+	Promise<CallerFeatureFlags>
+>()
+
+async function loadCallerFeatureFlagResolution(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<CallerFeatureFlagResolution | null> {
+	let promise = callerFeatureFlagResolutions.get(callerContext)
+	if (!promise) {
+		promise = (async (): Promise<CallerFeatureFlagResolution | null> => {
+			if (!env.APP_DB) return null
+			if (!callerContext.user?.userId) return null
+			try {
+				const stableUserId = callerContext.user.userId.trim()
+				if (!stableUserId) return null
+				const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
+				if (userId === null) return null
+				const evaluations = await getFeatureFlagEvaluationsForUser(
+					env.APP_DB,
+					userId,
+				)
+				return { stableUserId, evaluations }
+			} catch {
+				return null
+			}
+		})()
+		callerFeatureFlagResolutions.set(callerContext, promise)
+	}
+	return await promise
+}
+
+async function resolveAndRecordCallerFeatureFlags(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<CallerFeatureFlags> {
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	if (!resolution) return disabledFeatureFlags()
+	await recordFeatureFlagExposures(env, {
+		stableUserId: resolution.stableUserId,
+		evaluations: resolution.evaluations,
+	})
+	return Object.fromEntries(
+		featureFlagKeys.map((key) => [key, resolution.evaluations[key].enabled]),
+	) as Record<FeatureFlagKey, boolean>
+}
+
 /**
- * Resolve the caller's evaluated feature-flag map once per request. Used by
- * registry filtering (search/list) so access checks stay synchronous.
- * Evaluation also records success-metric exposures for measured flags (see
- * `#worker/feature-flags/exposure.ts`) so MCP-only users are represented in
- * admin metric readouts.
+ * Full per-request flag evaluations (enabled + assignment source), cached on
+ * the caller context so search behavior and dedicated exposure recording
+ * share one assignment. Does not record evaluation-site exposures; call
+ * `resolveCallerFeatureFlags` when those writes are needed.
+ */
+export async function resolveCallerFeatureFlagEvaluations(
+	env: Env,
+	callerContext: McpCallerContext,
+): Promise<Record<FeatureFlagKey, FeatureFlagEvaluation> | null> {
+	const resolution = await loadCallerFeatureFlagResolution(env, callerContext)
+	return resolution?.evaluations ?? null
+}
+
+/**
+ * Resolve the caller's evaluated feature-flag map once per request (same
+ * `McpCallerContext` object). Used by registry filtering (search/list) so
+ * access checks stay synchronous. Evaluation also records success-metric
+ * exposures for measured flags (see `#worker/feature-flags/exposure.ts`) so
+ * MCP-only users are represented in admin metric readouts — once per request,
+ * not once per call site.
+ *
+ * This is request-scoped only: the stateless `/mcp` lane builds a new caller
+ * context per HTTP request, so each request still evaluates and records once.
+ * Do not add a cross-request or per-isolate TTL cache here.
  *
  * Fail-closed rules: anonymous callers and authenticated callers whose stable
  * id cannot be resolved to a `users.id` get every flag off, so gated
@@ -90,25 +169,12 @@ export async function resolveCallerFeatureFlags(
 	env: Env,
 	callerContext: McpCallerContext,
 ): Promise<CallerFeatureFlags> {
-	if (!env.APP_DB) return disabledFeatureFlags()
-	if (!callerContext.user?.userId) return disabledFeatureFlags()
-	try {
-		const stableUserId = normalizeStableUserId(callerContext.user.userId)
-		if (!stableUserId) return disabledFeatureFlags()
-		const userId = await resolveFeatureFlagUserId(env.APP_DB, stableUserId)
-		if (userId === null) return disabledFeatureFlags()
-		const evaluations = await getFeatureFlagEvaluationsForUser(
-			env.APP_DB,
-			userId,
-		)
-		await recordFeatureFlagExposures(env, { stableUserId, evaluations })
-		return Object.fromEntries(
-			featureFlagKeys.map((key) => [key, evaluations[key].enabled]),
-		) as Record<FeatureFlagKey, boolean>
-	} catch {
-		// Fail closed: gated capabilities stay hidden when evaluation fails.
-		return disabledFeatureFlags()
+	let promise = callerFeatureFlagMaps.get(callerContext)
+	if (!promise) {
+		promise = resolveAndRecordCallerFeatureFlags(env, callerContext)
+		callerFeatureFlagMaps.set(callerContext, promise)
 	}
+	return await promise
 }
 
 export function callerCanAccessCapability(
@@ -222,6 +288,40 @@ export function filterCapabilityRegistryForCaller(
 		return registry
 	}
 
+	return projectCapabilityRegistry(registry, capabilityList)
+}
+
+/**
+ * Discovery surfaces (search, metaListCapabilities) hide package-locked MCP
+ * servers the caller cannot use. Runtime execute keeps those capabilities so
+ * an approved package export imported into execute can still dispatch; call
+ * time assertCanUseMcpServer enforces the grant.
+ */
+export function filterCapabilityRegistryMcpServersForCaller(
+	registry: BuiltCapabilityRegistry,
+	visibleServerIds: ReadonlySet<string>,
+): BuiltCapabilityRegistry {
+	// Discovery callers and tests sometimes pass a partial registry (specs
+	// only). Without a capabilityList there is nothing to hide.
+	if (!Array.isArray(registry.capabilityList)) {
+		return registry
+	}
+	const capabilityList = registry.capabilityList.filter((capability) => {
+		if (capability.source !== 'mcp-server' || !capability.mcpServer) {
+			return true
+		}
+		return visibleServerIds.has(capability.mcpServer.serverId)
+	})
+	if (capabilityList.length === registry.capabilityList.length) {
+		return registry
+	}
+	return projectCapabilityRegistry(registry, capabilityList)
+}
+
+function projectCapabilityRegistry(
+	registry: BuiltCapabilityRegistry,
+	capabilityList: Array<Capability>,
+): BuiltCapabilityRegistry {
 	const allowedNames = new Set(
 		capabilityList.map((capability) => capability.name),
 	)

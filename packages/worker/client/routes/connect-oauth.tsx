@@ -3,7 +3,7 @@ import {
 	type ConnectOauthExistingConnection,
 	type ConnectOauthLoaderData,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import {
 	resolveOauthScopeMenu,
 	uniqueOauthScopes,
@@ -720,6 +720,10 @@ export function ConnectOauthRoute(handle: Handle) {
 					: null}
 				{currentStep === 'setup' ? (
 					<ConnectOauthCredentialsForm
+						// Remount when the connect location changes so uncontrolled
+						// defaultValue fields pick up applySetupState drafts (SPA
+						// provider hops otherwise keep the previous DOM values).
+						key={resolvedHref ?? currentConfig.providerKey}
 						config={currentConfig}
 						existingIntegrationConfig={existingIntegrationConfig}
 						hasStoredClientId={hasStoredClientId}
@@ -729,12 +733,12 @@ export function ConnectOauthRoute(handle: Handle) {
 						clientSecretInput={clientSecretInput}
 						submitting={submitting}
 						onClientIdInput={(value) => {
+							// Draft only — the credential inputs are uncontrolled, so
+							// a re-render is not required to show what the user typed.
 							clientIdInput = value
-							update()
 						}}
 						onClientSecretInput={(value) => {
 							clientSecretInput = value
-							update()
 						}}
 						onRevealStoredClientSecret={() => {
 							revealStoredClientSecretField = true

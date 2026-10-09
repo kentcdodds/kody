@@ -1,5 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { normalizeStableUserId, resolveUserStableId } from '#worker/user-id.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 
 function isUsersPlatformSchemaUnavailable(error: unknown) {
 	const message = getErrorMessage(error)
@@ -40,7 +43,7 @@ export type PlatformAccountRow = {
 	id: number
 	username: string
 	email: string
-	stableUserId: string
+	stableUserId: OwnerId
 }
 
 /**
@@ -91,7 +94,7 @@ export async function getPlatformAccountByUsername(
 			id: row.id,
 			username: row.username,
 			email: row.email,
-			stableUserId: resolveUserStableId(row),
+			stableUserId: ownerIdFromStored(row.stable_user_id),
 		}
 	} catch (error) {
 		if (isUsersPlatformSchemaUnavailable(error)) return null
@@ -103,7 +106,7 @@ export async function isPlatformAccountStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ) {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return false
 	try {
 		const row = await db

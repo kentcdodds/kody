@@ -1,6 +1,7 @@
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareEmail from '#app/email/cloudflare-email.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -8,14 +9,19 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { hashPasswordResetToken } from '#worker/identity/password-reset-tokens.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-const mockSendCloudflareEmail = vi.fn(async () => ({ ok: true }))
+const mockSendCloudflareEmail = vi.fn(
+	async (..._args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>) => ({
+		ok: true,
+	}),
+)
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		mockSendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+	) => mockSendCloudflareEmail(...args),
 }))
 
 const { createPasswordResetConfirmHandler } =
@@ -34,7 +40,7 @@ test('password reset confirm clears TOTP, passkeys, and linked providers', async
 	const { sqlite, db } = createMigratedDb()
 	const email = 'reset-owner@example.com'
 	const passwordHash = await createPasswordHash('old-password-ok')
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	const token = 'b'.repeat(64)
 	const tokenHash = await hashPasswordResetToken(token)
 	sqlite.exec(`

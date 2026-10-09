@@ -1,1 +1,1 @@
-npm run test:push
+node tools/git-hook-checks.ts pre-push

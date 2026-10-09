@@ -8,6 +8,7 @@ import {
 	type AuthoredPackageJson,
 	type PackageExportTarget,
 	type PackageRetrieverScope,
+	type PackageWebhookChallenge,
 } from './types.ts'
 
 const packageManifestPath = 'package.json'
@@ -341,7 +342,7 @@ export type PackageWebhookManifestEntry = {
 	verification: {
 		type: 'hmac-sha256' | 'hmac-sha1'
 		header: string
-		secretName: string
+		secretName?: string
 		encoding: 'hex' | 'base64'
 		prefix?: string
 		signedPayload?: 'body' | 'timestamp.body'
@@ -356,6 +357,7 @@ export type PackageWebhookManifestEntry = {
 		toleranceSeconds?: number
 		deliveryIdHeader?: string
 	} | null
+	challenge: PackageWebhookChallenge | null
 }
 
 export function listPackageWebhooks(
@@ -374,7 +376,9 @@ export function listPackageWebhooks(
 				? {
 						type: webhook.verification.type,
 						header: webhook.verification.header,
-						secretName: webhook.verification.secretName,
+						...(webhook.verification.secretName !== undefined
+							? { secretName: webhook.verification.secretName }
+							: {}),
 						encoding: webhook.verification.encoding,
 						...(webhook.verification.prefix !== undefined
 							? { prefix: webhook.verification.prefix }
@@ -400,6 +404,7 @@ export function listPackageWebhooks(
 							: {}),
 					}
 				: null,
+			challenge: webhook.challenge ?? null,
 		}))
 		.sort((left, right) => left.name.localeCompare(right.name))
 }
@@ -410,6 +415,7 @@ export function listPackageEmittedEvents(manifest: AuthoredPackageJson) {
 			topic,
 			description: emittedEvent.description.trim(),
 			payloadSchema: emittedEvent.payloadSchema ?? null,
+			...(emittedEvent.mcp === true ? { mcp: true as const } : {}),
 		}))
 		.sort((left, right) => left.topic.localeCompare(right.topic))
 }
@@ -493,6 +499,7 @@ export type PackageSearchProjection = {
 		topic: string
 		description: string
 		payloadSchema?: Record<string, unknown> | null
+		mcp?: true
 	}>
 	retrievers: Array<PackageRetrieverManifestEntry>
 	webhooks: Array<PackageWebhookManifestEntry>

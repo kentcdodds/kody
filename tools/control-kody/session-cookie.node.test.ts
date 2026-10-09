@@ -3,6 +3,7 @@ import {
 	cookieHeaderForOrigin,
 	formatCookieFile,
 	looksLikeLoginHtml,
+	sessionForOrigin,
 	shouldRefreshSession,
 } from './session-cookie.ts'
 
@@ -20,6 +21,58 @@ test('cookie files are bound to one origin', () => {
 	expect(cookieHeaderForOrigin(file, 'http://localhost:3742')).toBe(null)
 	expect(
 		cookieHeaderForOrigin('kody_session=legacy\n', 'http://localhost:3742'),
+	).toBe(null)
+})
+
+test('cookie files are bound to origin plus email when --email is used', () => {
+	const file = formatCookieFile(
+		'http://localhost:3742',
+		'kody_session=admin',
+		'kody@example.com',
+	)
+	expect(
+		cookieHeaderForOrigin(file, 'http://localhost:3742', 'kody@example.com'),
+	).toBe('kody_session=admin')
+	expect(
+		cookieHeaderForOrigin(file, 'http://localhost:3742', 'jane@example.com'),
+	).toBe(null)
+	expect(
+		cookieHeaderForOrigin(
+			formatCookieFile('http://localhost:3742', 'kody_session=legacy'),
+			'http://localhost:3742',
+			'jane@example.com',
+		),
+	).toBe(null)
+})
+
+test('cookie files persist OAuth client and bearer token for MCP reuse', () => {
+	const oauth = {
+		clientId: 'client-1',
+		clientSecret: 'secret-1',
+		redirectUri: 'http://127.0.0.1/oauth/callback',
+		accessToken: 'token-1',
+	}
+	const file = formatCookieFile(
+		'https://kody-pr-9.example',
+		'kody_session=preview',
+		'me@kentcdodds.com',
+		oauth,
+	)
+	expect(
+		cookieHeaderForOrigin(
+			file,
+			'https://kody-pr-9.example',
+			'me@kentcdodds.com',
+		),
+	).toBe('kody_session=preview')
+	expect(
+		sessionForOrigin(file, 'https://kody-pr-9.example', 'me@kentcdodds.com'),
+	).toMatchObject({
+		cookieHeader: 'kody_session=preview',
+		oauth,
+	})
+	expect(
+		sessionForOrigin(file, 'https://kody-pr-9.example', 'other@x.com'),
 	).toBe(null)
 })
 
@@ -49,6 +102,15 @@ test('login HTML on an account path refreshes the session', () => {
 			rawBody: '{"ok":false}',
 		}),
 	).toBe(true)
+	expect(
+		shouldRefreshSession({
+			skipLogin: false,
+			status: 200,
+			path: '/account/values.json',
+			rawBody: loginHtml,
+			method: 'POST',
+		}),
+	).toBe(true)
 })
 
 test('a login nav link on a real account page does not refresh the session', () => {
@@ -64,15 +126,6 @@ test('a login nav link on a real account page does not refresh the session', () 
 			path: '/account/waiting',
 			rawBody: waitingHtml,
 			method: 'GET',
-		}),
-	).toBe(false)
-	expect(
-		shouldRefreshSession({
-			skipLogin: false,
-			status: 200,
-			path: '/account/values.json',
-			rawBody: loginHtml,
-			method: 'POST',
 		}),
 	).toBe(false)
 })

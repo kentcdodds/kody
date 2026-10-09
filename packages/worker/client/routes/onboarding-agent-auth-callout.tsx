@@ -1,9 +1,10 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import {
 	type McpClientKind,
 	type OnboardingAgentSurface,
 	codexMcpLoginCommand,
 	isDefaultKodyMcpUrl,
+	museMcpLoginCommand,
 	openClawMcpLoginCommand,
 	openCodeMcpAuthCommand,
 } from '#client/routes/onboarding-mcp-clients.ts'
@@ -163,6 +164,27 @@ function renderAgentAuthHint(
 					Approve the Kody OAuth window.
 				</>
 			)
+		case 'muse':
+			return surface === 'mobile' ? (
+				<>
+					On a computer, merge Kody into{' '}
+					<code>~/.config/muse/settings.json</code>, run{' '}
+					<code>{museMcpLoginCommand}</code>, then complete OAuth. After OAuth
+					succeeds, you may need to paste a localhost URL into the Muse chat.
+				</>
+			) : (
+				<>
+					Run <code>{museMcpLoginCommand}</code> after saving{' '}
+					<code>~/.config/muse/settings.json</code>, then complete OAuth when
+					prompted. After OAuth succeeds, you may need to paste a localhost URL
+					into the Muse chat.
+				</>
+			)
+		case 'wajo':
+		case 'cue':
+		case 'openmuse':
+		case 'dots':
+			return <>Complete OAuth when the host opens it.</>
 		case 'copilot':
 			return surface === 'mobile' ? (
 				<>Complete OAuth when the GitHub or Copilot app opens it.</>

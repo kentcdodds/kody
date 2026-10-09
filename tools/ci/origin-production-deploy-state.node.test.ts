@@ -36,360 +36,310 @@ function transferredOn(script: string, classNames: ReadonlyArray<string>) {
 	return classNames.map((className) => ownership(script, className))
 }
 
-test('classifies a missing fleet with no namespaces as fresh', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: false,
-		namespaces: [],
+const platformOn = (script: string) =>
+	transferredOn(script, platformOwnedClassNames)
+const runtimeOn = (script: string) =>
+	transferredOn(script, runtimeOwnedClassNames)
+const multipartBoundary =
+	'fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63'
+const multipartScript = () =>
+	new Response(`--${multipartBoundary}`, {
+		status: 200,
+		headers: {
+			'Content-Type': `multipart/form-data; boundary=${multipartBoundary}`,
+		},
 	})
-	expect(state.mode).toBe('fresh')
-	const plan = planOriginProductionDeploy(state)
-	expect(plan).toMatchObject({
+const namespacesResponse = (result: Array<{ script: string; class: string }>) =>
+	Response.json({ success: true, result, result_info: { total_pages: 1 } })
+const inspect = (fetcher: typeof fetch) =>
+	inspectOriginProductionScriptState({
+		accountId: 'acct',
+		apiToken: 'token',
+		apiBaseUrl: 'https://cf.test',
+		fetcher,
+	})
+const scriptNameOf = (binding: unknown) =>
+	(binding as { script_name?: string }).script_name
+
+test('classifies production fleet ownership into fresh, steady, or ambiguous deploy plans', () => {
+	const origin = productionOriginScriptName
+	const platform = productionPlatformScriptName
+	const runtime = productionRuntimeScriptName
+	const fresh = {
 		originEntry: 'slim',
 		runOriginBootstrap: true,
 		forcePlatformAndRuntime: true,
-	})
-})
-
-test('classifies completed transfer ownership as steady', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
-			...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
-			ownership(productionOriginScriptName, 'JobsHost'),
+	}
+	const cases: Array<
+		[
+			boolean | null,
+			Array<DurableObjectNamespaceOwnership>,
+			Record<string, unknown>,
+		]
+	> = [
+		// Missing fleet with no namespaces.
+		[false, [], { mode: 'fresh', plan: fresh }],
+		// Completed transfer.
+		[
+			true,
+			[
+				...platformOn(platform),
+				...runtimeOn(runtime),
+				ownership(origin, 'JobsHost'),
+			],
+			{
+				mode: 'steady',
+				plan: {
+					originEntry: 'slim',
+					runOriginBootstrap: false,
+					forcePlatformAndRuntime: false,
+				},
+			},
 		],
-	})
-	expect(state.mode).toBe('steady')
-	expect(planOriginProductionDeploy(state)).toMatchObject({
-		originEntry: 'slim',
-		runOriginBootstrap: false,
-		forcePlatformAndRuntime: false,
-	})
-})
-
-test('refuses to treat a missing origin as fresh when platform already owns a transferred class', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: false,
-		namespaces: [ownership(productionPlatformScriptName, 'MCP')],
-	})
-	expect(state.mode).toBe('ambiguous')
-	expect(planOriginProductionDeploy(state)).toMatchObject({
-		originEntry: 'full',
-		runOriginBootstrap: false,
-		forcePlatformAndRuntime: false,
-	})
-})
-
-test('retries fresh bootstrap when origin still owns transferred classes and destinations own none', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			...transferredOn(productionOriginScriptName, platformOwnedClassNames),
-			...transferredOn(productionOriginScriptName, runtimeOwnedClassNames),
+		// A missing origin is not fresh when platform already owns a class.
+		[
+			false,
+			[ownership(platform, 'MCP')],
+			{
+				mode: 'ambiguous',
+				plan: {
+					originEntry: 'full',
+					runOriginBootstrap: false,
+					forcePlatformAndRuntime: false,
+				},
+			},
 		],
-	})
-	expect(state.mode).toBe('fresh')
-	expect(state.originOwnedTransferredClassNames).toEqual([
-		...platformOwnedClassNames,
-		...runtimeOwnedClassNames,
-	])
-	expect(planOriginProductionDeploy(state)).toMatchObject({
-		originEntry: 'slim',
-		runOriginBootstrap: true,
-		forcePlatformAndRuntime: true,
-	})
-})
-
-test('refuses to slim while origin still owns a transferred class', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
-			...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
-			ownership(productionOriginScriptName, 'Mailbox'),
+		// Origin still owns everything and destinations own none: retry fresh.
+		[
+			true,
+			[...platformOn(origin), ...runtimeOn(origin)],
+			{
+				mode: 'fresh',
+				originOwnedTransferredClassNames: [
+					...platformOwnedClassNames,
+					...runtimeOwnedClassNames,
+				],
+				plan: fresh,
+			},
 		],
-	})
-	expect(state.mode).toBe('ambiguous')
-	expect(state.originOwnedTransferredClassNames).toEqual(['Mailbox'])
-	expect(planOriginProductionDeploy(state).originEntry).toBe('full')
-})
-
-test('refuses to slim when platform is only partially transferred', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			ownership(productionPlatformScriptName, 'MCP'),
-			...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
+		// Refuses to slim while origin still owns a transferred class.
+		[
+			true,
+			[
+				...platformOn(platform),
+				...runtimeOn(runtime),
+				ownership(origin, 'Mailbox'),
+			],
+			{
+				mode: 'ambiguous',
+				originOwnedTransferredClassNames: ['Mailbox'],
+				plan: { originEntry: 'full' },
+			},
 		],
-	})
-	expect(state.mode).toBe('ambiguous')
+		// Platform only partially transferred.
+		[
+			true,
+			[ownership(platform, 'MCP'), ...runtimeOn(runtime)],
+			{ mode: 'ambiguous' },
+		],
+		// Unknown origin-script probe is never fresh or steady.
+		[null, [], { mode: 'ambiguous', plan: { runOriginBootstrap: false } }],
+	]
+	expect(
+		cases.map(([originScriptExists, namespaces]) => {
+			const state = classifyOriginProductionScriptState({
+				originScriptExists,
+				namespaces,
+			})
+			return { ...state, plan: planOriginProductionDeploy(state) }
+		}),
+	).toMatchObject(cases.map(([, , expected]) => expected))
+
+	// Script existence is the fallback only when namespace listing is unavailable.
+	const fallback: Array<[boolean, boolean, boolean, string]> = [
+		[false, false, false, 'fresh'],
+		[true, true, true, 'steady'],
+		[true, false, true, 'ambiguous'],
+	]
+	expect(
+		fallback.map(
+			([originScriptExists, platformScriptExists, runtimeScriptExists]) =>
+				classifyOriginProductionScriptState({
+					originScriptExists,
+					platformScriptExists,
+					runtimeScriptExists,
+					namespaces: null,
+				}).mode,
+		),
+	).toEqual(fallback.map(([, , , mode]) => mode))
 })
 
-test('an unknown origin-script probe is never fresh or steady', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: null,
-		namespaces: [],
-	})
-	expect(state.mode).toBe('ambiguous')
-	expect(planOriginProductionDeploy(state).runOriginBootstrap).toBe(false)
-})
-
-test('classifies a preview fleet by its own script names, not production names', () => {
+test('classifies a preview fleet by its own script names and always slims unless origin owns classes', () => {
 	const scriptNames = previewFleetScriptNames('kody-pr-7')
 	// Production-named ownership must be invisible to a preview probe.
 	const productionOwnership = [
-		...transferredOn(productionPlatformScriptName, platformOwnedClassNames),
-		...transferredOn(productionRuntimeScriptName, runtimeOwnedClassNames),
+		...platformOn(productionPlatformScriptName),
+		...runtimeOn(productionRuntimeScriptName),
 	]
-	expect(
+	const destinations = [
+		...platformOn(scriptNames.platform),
+		...runtimeOn(scriptNames.runtime),
+	]
+	const classify = (
+		originScriptExists: boolean,
+		namespaces: Array<DurableObjectNamespaceOwnership>,
+	) =>
 		classifyOriginProductionScriptState({
-			originScriptExists: false,
-			namespaces: productionOwnership,
+			originScriptExists,
+			namespaces,
 			scriptNames,
-		}).mode,
-	).toBe('fresh')
-	expect(
-		classifyOriginProductionScriptState({
-			originScriptExists: true,
-			namespaces: [
-				...productionOwnership,
-				...transferredOn(scriptNames.platform, platformOwnedClassNames),
-				...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
-			],
-			scriptNames,
-		}).mode,
-	).toBe('steady')
-})
+		})
+	expect(classify(false, productionOwnership).mode).toBe('fresh')
+	expect(classify(true, [...productionOwnership, ...destinations]).mode).toBe(
+		'steady',
+	)
 
-test('a fresh preview origin uploads the slim entry without bootstrapping', () => {
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: false,
-		namespaces: [],
-		scriptNames: previewFleetScriptNames('kody-pr-7'),
-	})
-	expect(state.mode).toBe('fresh')
-	expect(planOriginPreviewDeploy(state)).toMatchObject({
+	const freshState = classify(false, [])
+	expect(freshState.mode).toBe('fresh')
+	expect(planOriginPreviewDeploy(freshState)).toMatchObject({
 		mode: 'fresh',
 		originEntry: 'slim',
 	})
-})
 
-test('a retried preview run (platform/runtime deployed, origin missing) still uploads the slim entry', () => {
-	const scriptNames = previewFleetScriptNames('kody-pr-7')
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: false,
-		namespaces: [
-			...transferredOn(scriptNames.platform, platformOwnedClassNames),
-			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
-		],
-		scriptNames,
-	})
-	expect(state.mode).toBe('ambiguous')
-	// Production would keep the full entry here; preview never owns a class
-	// on origin, so ambiguity about the destinations does not change the
-	// origin upload.
-	expect(planOriginProductionDeploy(state).originEntry).toBe('full')
-	expect(planOriginPreviewDeploy(state).originEntry).toBe('slim')
-})
+	// A retried preview run (platform/runtime deployed, origin missing):
+	// production would keep the full entry, but preview never owns a class on
+	// origin, so ambiguity about the destinations does not change the upload.
+	const retried = classify(false, destinations)
+	expect(retried.mode).toBe('ambiguous')
+	expect(planOriginProductionDeploy(retried).originEntry).toBe('full')
+	expect(planOriginPreviewDeploy(retried).originEntry).toBe('slim')
 
-test('a steady preview fleet uploads the slim entry', () => {
-	const scriptNames = previewFleetScriptNames('kody-pr-7')
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			...transferredOn(scriptNames.platform, platformOwnedClassNames),
-			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
-			ownership(scriptNames.origin, 'JobsHost'),
-		],
-		scriptNames,
-	})
-	expect(state.mode).toBe('steady')
-	expect(planOriginPreviewDeploy(state).originEntry).toBe('slim')
-})
+	const steady = classify(true, [
+		...destinations,
+		ownership(scriptNames.origin, 'JobsHost'),
+	])
+	expect(steady.mode).toBe('steady')
+	expect(planOriginPreviewDeploy(steady).originEntry).toBe('slim')
 
-test('a legacy preview origin that still owns transferred classes falls back to the full entry', () => {
-	const scriptNames = previewFleetScriptNames('kody-pr-7')
 	// Pre-slim previews bootstrapped every class on origin and also created
 	// them on platform/runtime, so all three scripts own namespaces.
-	const state = classifyOriginProductionScriptState({
-		originScriptExists: true,
-		namespaces: [
-			...transferredOn(scriptNames.origin, platformOwnedClassNames),
-			...transferredOn(scriptNames.origin, runtimeOwnedClassNames),
-			...transferredOn(scriptNames.platform, platformOwnedClassNames),
-			...transferredOn(scriptNames.runtime, runtimeOwnedClassNames),
-		],
-		scriptNames,
-	})
-	expect(state.mode).toBe('ambiguous')
-	const plan = planOriginPreviewDeploy(state)
-	expect(plan.originEntry).toBe('full')
-	expect(plan.reason).toContain('Origin still owns')
-	expect(plan.reason).toContain('MCP')
+	const legacy = classify(true, [
+		...platformOn(scriptNames.origin),
+		...runtimeOn(scriptNames.origin),
+		...destinations,
+	])
+	expect(legacy.mode).toBe('ambiguous')
+	const legacyPlan = planOriginPreviewDeploy(legacy)
+	expect(legacyPlan.originEntry).toBe('full')
+	expect(legacyPlan.reason).toContain('Origin still owns')
+	expect(legacyPlan.reason).toContain('MCP')
 })
 
 test('stripOriginDurableObjectMigrations removes top-level and env migrations only', () => {
+	const migrations = [{ tag: 'v1', new_sqlite_classes: ['MCP'] }]
 	const config: Record<string, unknown> = {
 		main: './src/production-worker.ts',
-		migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
+		migrations,
 		durable_objects: { bindings: [] },
 		env: {
-			preview: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
-				vars: { APP_ENV: 'preview' },
-			},
-			production: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
-			},
+			preview: { migrations, vars: { APP_ENV: 'preview' } },
+			production: { migrations },
 		},
+	}
+	const base = {
+		main: './src/production-worker.ts',
+		durable_objects: { bindings: [] },
 	}
 	expect(
 		stripOriginDurableObjectMigrations(structuredClone(config), 'preview'),
 	).toEqual({
-		main: './src/production-worker.ts',
-		durable_objects: { bindings: [] },
+		...base,
 		env: {
 			preview: { vars: { APP_ENV: 'preview' } },
-			production: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
-			},
+			production: { migrations },
 		},
 	})
 	expect(
 		stripOriginDurableObjectMigrations(structuredClone(config), 'production'),
 	).toEqual({
-		main: './src/production-worker.ts',
-		durable_objects: { bindings: [] },
+		...base,
 		env: {
-			preview: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['MCP'] }],
-				vars: { APP_ENV: 'preview' },
-			},
+			preview: { migrations, vars: { APP_ENV: 'preview' } },
 			production: {},
 		},
 	})
 })
 
-test('falls back to script existence only when namespace listing is unavailable', () => {
+test('Cloudflare probe error classifiers match only 200 non-JSON and 404 failures', () => {
+	const cases: Array<[(error: unknown) => boolean, string, boolean]> = [
+		[
+			isCloudflareOkNonJsonError,
+			'Malformed Cloudflare response (200) for /workers/scripts/kody-runtime: --boundary',
+			true,
+		],
+		[
+			isCloudflareOkNonJsonError,
+			'Malformed Cloudflare response (502) for /workers/scripts/kody-runtime: upstream',
+			false,
+		],
+		[
+			isCloudflareNotFoundError,
+			'Cloudflare API request failed (404): workers.api.error.not_found',
+			true,
+		],
+		[
+			isCloudflareNotFoundError,
+			'Cloudflare API request failed (500): upstream',
+			false,
+		],
+	]
 	expect(
-		classifyOriginProductionScriptState({
-			originScriptExists: false,
-			platformScriptExists: false,
-			runtimeScriptExists: false,
-			namespaces: null,
-		}).mode,
-	).toBe('fresh')
-	expect(
-		classifyOriginProductionScriptState({
-			originScriptExists: true,
-			platformScriptExists: true,
-			runtimeScriptExists: true,
-			namespaces: null,
-		}).mode,
-	).toBe('steady')
-	expect(
-		classifyOriginProductionScriptState({
-			originScriptExists: true,
-			platformScriptExists: false,
-			runtimeScriptExists: true,
-			namespaces: null,
-		}).mode,
-	).toBe('ambiguous')
+		cases.filter(([fn, message, want]) => fn(new Error(message)) !== want),
+	).toEqual([])
 })
 
-test('isCloudflareOkNonJsonError matches only HTTP 200 non-JSON bodies', () => {
-	expect(
-		isCloudflareOkNonJsonError(
-			new Error(
-				'Malformed Cloudflare response (200) for /workers/scripts/kody-runtime: --boundary',
-			),
-		),
-	).toBe(true)
-	expect(
-		isCloudflareOkNonJsonError(
-			new Error(
-				'Malformed Cloudflare response (502) for /workers/scripts/kody-runtime: upstream',
-			),
-		),
-	).toBe(false)
-})
-
-test('getCloudflareWorkerScriptExists treats a 200 multipart script download as present', async () => {
+test('inspectOriginProductionScriptState probes scripts and ownership, failing closed on errors', async () => {
 	await expect(
 		getCloudflareWorkerScriptExists({
 			accountId: 'acct',
 			apiToken: 'token',
 			scriptName: productionRuntimeScriptName,
 			apiBaseUrl: 'https://cf.test',
-			fetcher: async () =>
-				new Response(
-					'--fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
-					{
-						status: 200,
-						headers: {
-							'Content-Type':
-								'multipart/form-data; boundary=fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
-						},
-					},
-				),
+			fetcher: async () => multipartScript(),
 		}),
 	).resolves.toBe(true)
-})
 
-test('inspectOriginProductionScriptState classifies a multipart script GET plus ownership as steady', async () => {
-	const state = await inspectOriginProductionScriptState({
-		accountId: 'acct',
-		apiToken: 'token',
-		apiBaseUrl: 'https://cf.test',
-		fetcher: async (input) => {
-			const url = String(input)
-			if (url.includes('/workers/durable_objects/namespaces')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: [
-							...platformOwnedClassNames.map((className) => ({
-								script: productionPlatformScriptName,
-								class: className,
-							})),
-							...runtimeOwnedClassNames.map((className) => ({
-								script: productionRuntimeScriptName,
-								class: className,
-							})),
-						],
-						result_info: { total_pages: 1 },
-					}),
-					{ status: 200, headers: { 'Content-Type': 'application/json' } },
-				)
-			}
-			return new Response(
-				'--fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
-				{
-					status: 200,
-					headers: {
-						'Content-Type':
-							'multipart/form-data; boundary=fe71c953c6db05262becd226201515a4e42a8860e6be9669fec682876e63',
-					},
-				},
-			)
-		},
+	const steady = await inspect(async (input) =>
+		String(input).includes('/workers/durable_objects/namespaces')
+			? namespacesResponse([
+					...platformOwnedClassNames.map((className) => ({
+						script: productionPlatformScriptName,
+						class: className,
+					})),
+					...runtimeOwnedClassNames.map((className) => ({
+						script: productionRuntimeScriptName,
+						class: className,
+					})),
+				])
+			: multipartScript(),
+	)
+	expect(steady.mode).toBe('steady')
+
+	const missing = await inspect(async (input) =>
+		String(input).includes('/workers/durable_objects/namespaces')
+			? namespacesResponse([])
+			: Response.json(
+					{ success: false, errors: [{ code: 10007, message: 'not found' }] },
+					{ status: 404 },
+				),
+	)
+	expect(missing.mode).toBe('fresh')
+
+	const failed = await inspect(async () => {
+		throw new Error('fetch failed')
 	})
-	expect(state.mode).toBe('steady')
-})
-
-test('isCloudflareNotFoundError matches only 404 probe failures', () => {
-	expect(
-		isCloudflareNotFoundError(
-			new Error(
-				'Cloudflare API request failed (404): workers.api.error.not_found',
-			),
-		),
-	).toBe(true)
-	expect(
-		isCloudflareNotFoundError(
-			new Error('Cloudflare API request failed (500): upstream'),
-		),
-	).toBe(false)
+	expect(failed.mode).toBe('ambiguous')
+	expect(failed.reason).toContain('Cloudflare script probe failed')
 })
 
 test('bootstrap config keeps the full entry and locally owns transferred classes', async () => {
@@ -442,90 +392,36 @@ test('bootstrap config keeps the full entry and locally owns transferred classes
 					durable_objects: {
 						bindings: Array<{ class_name: string; script_name?: string }>
 					}
-					workflows: Array<{
-						class_name: string
-						name?: string
-						script_name?: string
-					}>
+					workflows: Array<{ name?: string; script_name?: string }>
 				}
 			}
 		}
 		expect(written.main).toBe('./src/index.ts')
 		expect(
-			written.env.production.durable_objects.bindings.find(
-				(binding) => binding.class_name === 'MCP',
-			)?.script_name,
-		).toBeUndefined()
-		expect(
-			written.env.production.durable_objects.bindings.find(
-				(binding) => binding.class_name === 'StorageRunner',
-			)?.script_name,
-		).toBeUndefined()
-		expect(
-			written.env.production.durable_objects.bindings.find(
-				(binding) => binding.class_name === 'Other',
-			)?.script_name,
-		).toBe('someone-else')
+			written.env.production.durable_objects.bindings.map((binding) => [
+				binding.class_name,
+				binding.script_name,
+			]),
+		).toEqual([
+			['MCP', undefined],
+			['StorageRunner', undefined],
+			['Other', 'someone-else'],
+		])
 		expect(written.env.production.workflows[0]?.script_name).toBeUndefined()
 		expect(written.env.production.workflows[0]?.name).toBe(
 			productionOriginBootstrapWorkflowName,
 		)
+		// The generated input is not mutated.
 		expect(generated.main).toBe('./src/production-worker.ts')
 		expect(
-			(
-				generated.env.production.durable_objects.bindings[0] as {
-					script_name?: string
-				}
-			).script_name,
+			scriptNameOf(generated.env.production.durable_objects.bindings[0]),
 		).toBe(productionPlatformScriptName)
 	} finally {
 		await rm(tempDir, { recursive: true, force: true })
 	}
 })
 
-test('inspectOriginProductionScriptState fail-closes when the origin probe errors', async () => {
-	const state = await inspectOriginProductionScriptState({
-		accountId: 'acct',
-		apiToken: 'token',
-		apiBaseUrl: 'https://cf.test',
-		fetcher: async () => {
-			throw new Error('fetch failed')
-		},
-	})
-	expect(state.mode).toBe('ambiguous')
-	expect(state.reason).toContain('Cloudflare script probe failed')
-})
-
-test('inspectOriginProductionScriptState classifies a missing fleet from 404 probes', async () => {
-	const state = await inspectOriginProductionScriptState({
-		accountId: 'acct',
-		apiToken: 'token',
-		apiBaseUrl: 'https://cf.test',
-		fetcher: async (input) => {
-			const url = String(input)
-			if (url.includes('/workers/durable_objects/namespaces')) {
-				return new Response(
-					JSON.stringify({
-						success: true,
-						result: [],
-						result_info: { total_pages: 1 },
-					}),
-					{ status: 200, headers: { 'Content-Type': 'application/json' } },
-				)
-			}
-			return new Response(
-				JSON.stringify({
-					success: false,
-					errors: [{ code: 10007, message: 'not found' }],
-				}),
-				{ status: 404, headers: { 'Content-Type': 'application/json' } },
-			)
-		},
-	})
-	expect(state.mode).toBe('fresh')
-})
-
-test('stripOriginBindingsForLocallyOwnedClasses keeps transferred destination bindings', () => {
+test('strip helpers keep transferred destination bindings and no-op without matching script names', () => {
 	const config = {
 		env: {
 			production: {
@@ -554,58 +450,22 @@ test('stripOriginBindingsForLocallyOwnedClasses keeps transferred destination bi
 			},
 		},
 	}
-	stripOriginBindingsForLocallyOwnedClasses(config, ['StorageRunner'])
-	expect(
-		(
-			config.env.production.durable_objects.bindings[0] as {
-				script_name?: string
-			}
-		).script_name,
-	).toBe(productionPlatformScriptName)
-	expect(
-		(
-			config.env.production.durable_objects.bindings[1] as {
-				script_name?: string
-			}
-		).script_name,
-	).toBeUndefined()
-	expect(
-		(
-			config.env.production.workflows[0] as {
-				name?: string
-				script_name?: string
-			}
-		).script_name,
-	).toBeUndefined()
-	expect((config.env.production.workflows[0] as { name?: string }).name).toBe(
-		productionOriginBootstrapWorkflowName,
-	)
-})
-
-test('stripOriginCrossScriptClassBindings is a no-op when there are no matching script names', () => {
-	const config = {
-		env: {
-			production: {
-				durable_objects: {
-					bindings: [
-						{
-							name: 'MCP_OBJECT',
-							class_name: 'MCP',
-							script_name: productionPlatformScriptName,
-						},
-					],
-				},
-			},
-		},
-	}
+	const bindingScripts = () =>
+		config.env.production.durable_objects.bindings.map(scriptNameOf)
 	stripOriginCrossScriptClassBindings(config, new Set(['other-script']))
-	expect(
-		(
-			config.env.production.durable_objects.bindings[0] as {
-				script_name?: string
-			}
-		).script_name,
-	).toBe(productionPlatformScriptName)
+	expect(bindingScripts()).toEqual([
+		productionPlatformScriptName,
+		productionRuntimeScriptName,
+	])
+
+	stripOriginBindingsForLocallyOwnedClasses(config, ['StorageRunner'])
+	expect(bindingScripts()).toEqual([productionPlatformScriptName, undefined])
+	const workflow = config.env.production.workflows[0] as {
+		name?: string
+		script_name?: string
+	}
+	expect(workflow.script_name).toBeUndefined()
+	expect(workflow.name).toBe(productionOriginBootstrapWorkflowName)
 })
 
 test('originBootstrapConfigPath writes beside the generated config and rejects other suffixes', () => {

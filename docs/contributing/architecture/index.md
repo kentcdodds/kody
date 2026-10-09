@@ -9,20 +9,22 @@ to become.
 
 ## Production worker fleet
 
-Production is four product scripts plus independent ops workers. Origin owns
-**zero** Durable Object classes
+Production is four product scripts, the `kody-api` edge, and independent ops
+workers. Origin owns **zero** Durable Object classes
 ([ADR 0034](../decisions/0034-origin-owns-no-durable-objects.md)).
 
-| Script                       | Public surface                         | Owns                                                                                                                                               | Binds                                                                        |
-| ---------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`                                                                                 | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
-| `kody-platform`              | `/__platform/health` only              | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
-| `kody-runtime`               | `{user}.kody.run`; `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
-| `kody-jobs`                  | no public hostname                     | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                 | `HOST` → origin `JobsHost`                                                   |
-| `kody-highlight`             | no public hostname                     | Shiki tokenizer (`POST /highlight`)                                                                                                                | —                                                                            |
-| `kody-status`                | `status.kody.codes`                    | `StatusStore`                                                                                                                                      | HTTP probes + `JOBS` service                                                 |
-| `kody-nx-cache`              | `nx-cache.kody.codes`                  | R2 `kody-nx-cache`                                                                                                                                 | —                                                                            |
-| `kody-production-d1-backups` | operator-only                          | D1 backup / DR workflows                                                                                                                           | R2 `kody-production-backups`                                                 |
+| Script                       | Public surface                         | Owns                                                                                                                                                                         | Binds                                                                        |
+| ---------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `kody-production` (origin)   | `kody.codes`                           | Remix, MCP HTTP, OAuth, inbound email, queue consumers, `JobsHost`, `KodyApi`, `DynamicWorkerUsageTail`                                                                      | Platform DOs, runtime DOs / workflows, `RUNTIME_WORKER`, `JOBS`, `HIGHLIGHT` |
+| `kody-platform`              | `/__platform/health` only              | `MCP`, `McpClientHub`, `OAuthPurgeCoordinator`, `UserMeter`, `Mailbox`, `RepoSession`, `RepoSessionIndex`, `StripePlanRefresh`, `KodyFetchGateway`, `DynamicWorkerUsageTail` | Shared D1/KV/R2/AI; runtime DOs for package work                             |
+| `kody-runtime`               | `{user}.kody.run`; `/__runtime/health` | `StorageRunner`, `RunLog`, `PackageRealtimeSession`, `DynamicCallableWorkflow`, `KodyFetchGateway`, `DynamicWorkerUsageTail`, `PackageAppRuntimeBridge`                      | Platform DOs, `JOBS`                                                         |
+| `kody-jobs`                  | no public hostname                     | `JobManager`, `JOBS_DB`, `kody-scheduled-dispatch`                                                                                                                           | `HOST` → origin `JobsHost`                                                   |
+| `kody-highlight`             | no public hostname                     | Shiki tokenizer (`POST /highlight`)                                                                                                                                          | —                                                                            |
+| `kody-api`                   | `api.kody.codes`                       | Open API edge: CORS, rate limits, header strip, body cap                                                                                                                     | `KODY_API` → origin `KodyApi`                                                |
+| `kody-api-docs`              | `api-docs.kody.codes`                  | Scalar OpenAPI docs UI; proxies live `/openapi.json`                                                                                                                         | HTTPS fetch → `api.kody.codes`                                               |
+| `kody-status`                | `status.kody.codes`                    | `StatusStore`                                                                                                                                                                | HTTP probes + `JOBS` service                                                 |
+| `kody-nx-cache`              | `nx-cache.kody.codes`                  | R2 `kody-nx-cache`                                                                                                                                                           | —                                                                            |
+| `kody-production-d1-backups` | operator-only                          | D1 backup / DR workflows                                                                                                                                                     | R2 `kody-production-backups`                                                 |
 
 Local `npm run dev` attaches origin, platform, runtime, jobs, and highlight in
 one Miniflare. Playwright `CLOUDFLARE_ENV=test` is the exception: Durable Object
@@ -67,26 +69,31 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Platform accounts](./platform-accounts.md): operator-provisioned platform
   accounts, package scope grants, and actor/owner delegation for official
   package scopes.
-- [Authorization](./authorization.md): role-based access control (RBAC), admin
-  routes, and the `any`-access exception to per-user isolation.
+- [Request context](./request-context.md): the one `RequestContext` (org, actor,
+  attribution, credential) every request source derives, and lineage for runs
+  started by other runs.
+- [Authorization](./authorization.md): the one org access check (`authorize`),
+  what every surface declares, and site-admin RBAC with its `any`-access
+  exception to per-user isolation.
 - [Entitlements](./entitlements.md): per-user plans (`free`, `standard`, `pro`,
   `max`; live DDL defaults and writers use `free`; `max` is a manual-only high
   finite ceiling), finite per-plan resource limits, and the shared
   `assertWithinEntitlement` enforcement helper (`parseStoredPlanName` for reads;
   strict `parsePlanName` for untrusted admin/API input).
+- [Open API](./open-api.md): `api.kody.codes`, interactive docs on
+  `api-docs.kody.codes`, scoped API tokens, the MCP `api` tool, and the
+  CapabilityProxy contract used by local CLI execute.
 - [Feature Flags](./feature-flags.md): code-registry flags with D1-backed global
   state, percentage rollouts, and per-user overrides, managed at
   `/admin/feature-flags`.
-- [Site banners](./site-banners.md): operator-owned announcement banners with
-  page targeting, audience, priority, dismiss, and SSR rendering, managed at
-  `/admin/banners`.
 - [YouTube watch overlay](./youtube-watch.md): site-wide `/?youtubeId=` player
   and first-party thumbnail proxy for allowlisted YouTube videos.
 - [Data Storage](./data-storage.md): what is stored in D1, KV, and Durable
   Objects. The rubric for choosing between D1, a per-user Durable Object, and
   Analytics Engine is recorded in decision record
   [0002 — Data placement](../decisions/0002-data-placement.md).
-- [Usage Metering](./usage-metering.md): per-user usage events, the
+- [Usage Metering](./usage-metering.md): per-user usage events (including
+  Cloudflare-measured Worker Loader CPU and Durable Object duration), the
   `recordUsage()` helper contract, the D1 rollup table, and the usage-state
   campaign machine.
 - [Worker startup budget](./startup-budget.md): what counts toward Cloudflare's
@@ -118,9 +125,6 @@ wrote during that fetch) so the next cron can skip the synthetic.
 - [Values retirement runbook](./values-retirement-runbook.md): absorb values
   into memories, package storage, repos, secrets, and integrations
   ([ADR 0022](../decisions/0022-retire-values-primitive.md)).
-- [Invocation-token retirement runbook](./invocation-token-retirement-runbook.md):
-  drain HTTP invocation tokens after inbound webhooks cover first-party callers
-  ([ADR 0048](../decisions/0048-webhooks-replace-invocation-tokens.md)).
 - [Cleanup after migrations](../cleanup-after-migrations.md): drop leftovers in
   the same change when safe; otherwise open a GitHub issue.
 - [Primitives map](./primitives.yaml): stable taxonomy of system primitives and

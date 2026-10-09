@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
 	createAuthCookie,
@@ -9,7 +10,9 @@ import {
 	listInboundMcpConnectionLastUsed,
 	recordInboundMcpConnectionLastUsed,
 } from '#worker/inbound-mcp-connection-last-used.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -37,26 +40,15 @@ function createAppEnv(
 		lookupClient?: ReturnType<typeof vi.fn>
 	},
 	meter = createInMemoryUserMeterEnv(),
+	appDb: D1Database = {} as D1Database,
 ) {
 	return {
-		APP_DB: {} as D1Database,
+		APP_DB: appDb,
 		COOKIE_SECRET: testCookieSecret,
 		SENTRY_ENVIRONMENT: 'test',
 		OAUTH_PROVIDER: helpers,
 		...meter.env,
 	} as unknown as Env
-}
-
-type Handler = {
-	handler(context: never): Promise<Response>
-}
-
-async function runHandler(handler: Handler, request: Request) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
 }
 
 test('connected agents API lists unique inbound clients and revokes every grant for one clientId', async () => {
@@ -97,23 +89,49 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 			return { clientId, clientName: 'ChatGPT' }
 		}),
 	}
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: true,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
+	const signIn = (emailVerified: boolean) =>
+		mockModule.readAuthenticatedAppUser.mockResolvedValue({
+			email: userOneSession.email,
+			emailVerified,
+			mcpUser: { userId: userOneSession.stableUserId },
+		})
+	signIn(true)
 	const cookie = await createAuthCookie(userOneSession, false)
 	const meter = createInMemoryUserMeterEnv()
-	const handler = createAccountConnectedAgentsApiHandler(
-		createAppEnv(helpers, meter),
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const insertSubscription = sqlite.prepare(
+		`INSERT INTO mcp_event_subscriptions (
+			id, user_id, oauth_client_id, event_name, arguments_json,
+			callback_url, secret_encrypted
+		) VALUES (?, ?, ?, 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
 	)
+	insertSubscription.run('sub_a', userOneSession.stableUserId, 'client-a')
+	insertSubscription.run('sub_other_user', 'someone-else', 'client-a')
+	insertSubscription.run(
+		'sub_chatgpt',
+		userOneSession.stableUserId,
+		'https://chatgpt.com/oauth/vG3/client.json',
+	)
+	const { handler } = createAccountConnectedAgentsApiHandler(
+		createAppEnv(helpers, meter, createD1FromSqlite(sqlite)),
+	)
+	const url = 'https://example.com/account/connected-agents.json'
+	const request = (init: RequestInit = {}) => {
+		const req = new Request(url, {
+			...init,
+			headers: { Cookie: cookie, Accept: 'application/json', ...init.headers },
+		})
+		return handler({ request: req, url: new URL(url), params: {} } as never)
+	}
+	const revoke = (clientId: string) =>
+		request({
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ intent: 'revoke', clientId }),
+		})
 
-	const listed = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	const listed = await request()
 	expect(listed.status).toBe(200)
 	const listBody = (await listed.json()) as {
 		ok: true
@@ -135,28 +153,15 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	// request origin so preview and local deployments show their own URL.
 	expect(listBody.mcpServerUrl).toBe('https://example.com/mcp')
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: false,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
-	const unverified = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	signIn(false)
+	const unverified = await request()
 	expect(unverified.status).toBe(200)
 	// Same gate as the onboarding payload: no MCP URL until the email is
 	// verified, so the page cannot push a user into the authorize → 403 loop.
 	expect(
 		((await unverified.json()) as { mcpServerUrl: string }).mcpServerUrl,
 	).toBe('')
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: userOneSession.email,
-		emailVerified: true,
-		mcpUser: { userId: userOneSession.stableUserId },
-	})
+	signIn(true)
 
 	await recordInboundMcpConnectionLastUsed({
 		env: meter.env,
@@ -172,12 +177,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		lastUsedAt: '2026-03-10T12:00:00.000Z',
 		nowMs: Date.parse('2026-03-10T12:00:00.000Z'),
 	})
-	const listedWithLastUsed = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			headers: { Cookie: cookie, Accept: 'application/json' },
-		}),
-	)
+	const listedWithLastUsed = await request()
 	expect(listedWithLastUsed.status).toBe(200)
 	expect(
 		(
@@ -189,6 +189,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		{
 			clientId: 'client-a',
 			grantIds: ['grant-1', 'grant-2'],
+			connectionProfileName: null,
 			label: 'Cursor',
 			kind: 'cursor',
 			connectedAt: '2023-11-14T22:13:20.000Z',
@@ -197,6 +198,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		{
 			clientId: 'https://chatgpt.com/oauth/vG3/client.json',
 			grantIds: ['grant-3'],
+			connectionProfileName: null,
 			label: 'ChatGPT.com',
 			kind: 'chatgpt',
 			connectedAt: '2023-11-14T22:16:40.000Z',
@@ -204,18 +206,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		},
 	])
 
-	const revoked = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			method: 'POST',
-			headers: {
-				Cookie: cookie,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'revoke', clientId: 'client-a' }),
-		}),
-	)
+	const revoked = await revoke('client-a')
 	expect(revoked.status).toBe(200)
 	expect(helpers.revokeGrant).toHaveBeenCalledTimes(2)
 	const revokeBody = (await revoked.json()) as {
@@ -225,6 +216,14 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	expect(revokeBody.agents.map((agent) => agent.clientId)).toEqual([
 		'https://chatgpt.com/oauth/vG3/client.json',
 	])
+	// Only this user's grant to client-a is gone; a shared client's other
+	// users and this user's other clients keep their MCP event subscriptions.
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions ORDER BY id`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_chatgpt', 'sub_other_user'])
 	expect(
 		await listInboundMcpConnectionLastUsed({
 			env: meter.env,
@@ -244,24 +243,14 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 		}),
 	)
 
-	const missing = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json', {
-			method: 'POST',
-			headers: {
-				Cookie: cookie,
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ intent: 'revoke', clientId: 'missing' }),
-		}),
-	)
+	const missing = await revoke('missing')
 	expect(missing.status).toBe(404)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await runHandler(
-		handler,
-		new Request('https://example.com/account/connected-agents.json'),
-	)
+	const unauthorized = await handler({
+		request: new Request(url),
+		url: new URL(url),
+		params: {},
+	} as never)
 	expect(unauthorized.status).toBe(401)
 })

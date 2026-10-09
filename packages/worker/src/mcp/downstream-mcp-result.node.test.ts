@@ -21,6 +21,16 @@ import {
 const minimalWebpBase64 =
 	'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA='
 
+const webpBlock = {
+	type: 'image' as const,
+	data: minimalWebpBase64,
+	mimeType: 'image/webp',
+}
+
+function mcpServer(label: string) {
+	return { kind: 'mcp-server' as const, label }
+}
+
 function oversizedBase64(byteLength: number) {
 	// 'A' is valid base64 alphabet; length must be multiple of 4 for atob.
 	const rawLength = Math.ceil(byteLength / 4) * 4
@@ -28,11 +38,6 @@ function oversizedBase64(byteLength: number) {
 }
 
 test('downstream MCP wrap preserves WebP images, structured+content, oversized bounds, malformed errors, resources, and isError', () => {
-	const webpBlock = {
-		type: 'image' as const,
-		data: minimalWebpBase64,
-		mimeType: 'image/webp',
-	}
 	const resourceBlock = {
 		type: 'resource' as const,
 		resource: {
@@ -57,7 +62,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			content: [webpBlock, { type: 'text', text: 'chart' }],
 			isError: false,
 		},
-		{ kind: 'mcp-server', label: 'charts:render' },
+		mcpServer('charts:render'),
 	)
 	expect(webpWrapped).toMatchObject({
 		[mcpContentMarker]: [webpBlock, { type: 'text', text: 'chart' }],
@@ -73,7 +78,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			structuredContent: { chartId: 'c1', width: 640 },
 			isError: false,
 		},
-		{ kind: 'mcp-server', label: 'home:screenshot' },
+		mcpServer('home:screenshot'),
 	)
 	expect(structuredAndImage).toMatchObject({
 		chartId: 'c1',
@@ -108,10 +113,10 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 		limitMcpContentBlocks(reportedWebpBlocks, defaultMcpContentLimitBytes),
 	).toMatchObject({ ok: true, blocks: reportedWebpBlocks })
 	expect(
-		validateDownstreamMcpContentBlocks(reportedWebpBlocks, {
-			kind: 'mcp-server',
-			label: 'vision:shot',
-		}),
+		validateDownstreamMcpContentBlocks(
+			reportedWebpBlocks,
+			mcpServer('vision:shot'),
+		),
 	).toEqual(reportedWebpBlocks)
 
 	const largeData = oversizedBase64(110_000)
@@ -152,7 +157,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 	expect(() =>
 		validateDownstreamMcpContentBlocks(
 			[{ type: 'image', url: 'https://evil.example/x.png' }],
-			{ kind: 'mcp-server', label: 'evil:img' },
+			mcpServer('evil:img'),
 		),
 	).toThrow(/evil:img[\s\S]*does not fetch image\/audio URLs/)
 
@@ -161,7 +166,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			{
 				content: [{ type: 'image', data: '!!!', mimeType: 'image/png' }],
 			},
-			{ kind: 'mcp-server', label: 'cam:snap' },
+			mcpServer('cam:snap'),
 		),
 	).toThrow(/cam:snap[\s\S]*malformed MCP content/)
 
@@ -173,7 +178,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			content: [resourceBlock, resourceLinkBlock, audioBlock],
 			structuredContent: { ok: true },
 		},
-		{ kind: 'mcp-server', label: 'docs:get' },
+		mcpServer('docs:get'),
 	)
 	expect(extractMcpPassthrough(withResources)?.content).toEqual([
 		resourceBlock,
@@ -187,7 +192,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 			structuredContent: { code: 'forbidden' },
 			isError: true,
 		},
-		{ kind: 'mcp-server', label: 'linear:create_issue' },
+		mcpServer('linear:create_issue'),
 	)
 	expect(extractMcpPassthrough(errorWithStructured)).toEqual({
 		content: [{ type: 'text', text: 'permission denied' }],
@@ -206,7 +211,7 @@ test('downstream MCP wrap preserves WebP images, structured+content, oversized b
 				content: [{ type: 'text', text: 'ignored when structured present' }],
 				structuredContent: { id: 1 },
 			},
-			{ kind: 'mcp-server', label: 'linear:get' },
+			mcpServer('linear:get'),
 		),
 	).toEqual({ id: 1 })
 })
@@ -231,7 +236,7 @@ test('reserved structuredContent marker names are isolated on every wrap path', 
 			content: [{ type: 'text', text: 'ok' }],
 			structuredContent: collidingStructured,
 		},
-		{ kind: 'mcp-server', label: 'collision:text' },
+		mcpServer('collision:text'),
 	)
 	expect(textAndStructured).toEqual({
 		id: 1,
@@ -246,7 +251,7 @@ test('reserved structuredContent marker names are isolated on every wrap path', 
 	// Structured-only success.
 	const structuredOnly = wrapDownstreamMcpToolResult(
 		{ structuredContent: collidingStructured },
-		{ kind: 'mcp-server', label: 'collision:structured' },
+		mcpServer('collision:structured'),
 	)
 	expect(structuredOnly).toEqual(textAndStructured)
 	expect(extractMcpPassthrough(structuredOnly)).toBeNull()
@@ -262,7 +267,7 @@ test('reserved structuredContent marker names are isolated on every wrap path', 
 			},
 			isError: true,
 		},
-		{ kind: 'mcp-server', label: 'collision:error' },
+		mcpServer('collision:error'),
 	)
 	expect(errorWrapped[mcpIsErrorMarker]).toBe(true)
 	expect(errorWrapped[mcpContentMarker]).toEqual([
@@ -311,10 +316,10 @@ test('untrusted content is bounded by block count and payload size before schema
 		}),
 	)
 	expect(() =>
-		validateDownstreamMcpContentBlocks(tooManyBlocks, {
-			kind: 'mcp-server',
-			label: 'flood:blocks',
-		}),
+		validateDownstreamMcpContentBlocks(
+			tooManyBlocks,
+			mcpServer('flood:blocks'),
+		),
 	).toThrow(/flood:blocks[\s\S]*too many MCP content blocks/)
 	expect(atobSpy).not.toHaveBeenCalled()
 
@@ -329,14 +334,9 @@ test('untrusted content is bounded by block count and payload size before schema
 		defaultMcpContentLimitBytes,
 	)
 	expect(() =>
-		validateDownstreamMcpContentBlocks(hugePayload, {
-			kind: 'mcp-server',
-			label: 'flood:bytes',
-		}),
+		validateDownstreamMcpContentBlocks(hugePayload, mcpServer('flood:bytes')),
 	).toThrow(/flood:bytes[\s\S]*exceeding content limit/)
 	expect(atobSpy).not.toHaveBeenCalled()
-
-	atobSpy.mockRestore()
 
 	const withinCount = Array.from({ length: maxMcpContentBlockCount }, () => ({
 		type: 'text' as const,
@@ -351,17 +351,12 @@ test('untrusted content is bounded by block count and payload size before schema
 })
 
 test('persistence bounds or omits rawContent and strips markers from stored result', () => {
-	const webpBlock = {
-		type: 'image' as const,
-		data: minimalWebpBase64,
-		mimeType: 'image/webp',
-	}
 	const wrapped = wrapDownstreamMcpToolResult(
 		{
 			content: [webpBlock],
 			structuredContent: { shotId: 's1' },
 		},
-		{ kind: 'mcp-server', label: 'vision:shot' },
+		mcpServer('vision:shot'),
 	)
 	const persisted = persistableExecutionArtifacts(wrapped)
 	expect(persisted.result).toEqual({ shotId: 's1' })

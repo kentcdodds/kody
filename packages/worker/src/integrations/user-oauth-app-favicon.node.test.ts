@@ -25,19 +25,16 @@ test('favicon origin resolution prefers authorize hosts and skips unsafe URLs', 
 		])?.host,
 	).toBe('dropbox.com')
 
-	expect(() => assertHttpsPublicUrl('http://example.com/icon.png')).toThrow(
-		/https/,
-	)
-	expect(() =>
-		assertHttpsPublicUrl('https://user:pass@example.com/icon.png'),
-	).toThrow(/credentials/)
-	expect(() => assertHttpsPublicUrl('https://127.0.0.1/icon.png')).toThrow(
-		/public/,
-	)
-	expect(() =>
-		assertHttpsPublicUrl('https://169.254.169.254/latest/meta-data'),
-	).toThrow(/public/)
-	expect(() => assertHttpsPublicUrl('https://[::1]/icon.png')).toThrow(/public/)
+	const unsafeUrls = [
+		{ url: 'http://example.com/icon.png', reason: /https/ },
+		{ url: 'https://user:pass@example.com/icon.png', reason: /credentials/ },
+		{ url: 'https://127.0.0.1/icon.png', reason: /public/ },
+		{ url: 'https://169.254.169.254/latest/meta-data', reason: /public/ },
+		{ url: 'https://[::1]/icon.png', reason: /public/ },
+	]
+	for (const { url, reason } of unsafeUrls) {
+		expect(() => assertHttpsPublicUrl(url)).toThrow(reason)
+	}
 })
 
 test('parseHtmlIconCandidates ranks apple-touch-icon then larger icons', () => {

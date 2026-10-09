@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { createMemoryKv } from '#worker/test-support/auth-provider-harness.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import {
 	youtubePlaylistBrowseUrl,
@@ -39,47 +41,49 @@ function browsePayload(videos: ReadonlyArray<LandingHeroVideo>) {
 
 test('loadLandingHeroVideos reads Innertube browse order and serves SWR from KV', async () => {
 	let fetches = 0
-	const fetchImpl = async (input: string, init?: RequestInit) => {
-		fetches += 1
-		expect(input).toBe(youtubePlaylistBrowseUrl)
-		expect(init?.method).toBe('POST')
-		expect(init?.headers).toMatchObject({
-			'User-Agent': 'kody-agent/1.0',
-		})
-		return Response.json(browsePayload([first, second]))
-	}
+	using _server = createMswNodeServer([
+		http.post(youtubePlaylistBrowseUrl, ({ request }) => {
+			fetches += 1
+			expect(request.headers.get('User-Agent')).toBe('kody-agent/1.0')
+			return HttpResponse.json(browsePayload([first, second]))
+		}),
+	])
 	const env = { BUNDLE_ARTIFACTS_KV: createMemoryKv() } as Env
-	const loaded = await loadLandingHeroVideos({ env, fetchImpl })
+	const loaded = await loadLandingHeroVideos({ env })
 	expect(loaded).toEqual([first, second])
-	const cached = await loadLandingHeroVideos({ env, fetchImpl })
+	const cached = await loadLandingHeroVideos({ env })
 	expect(cached).toEqual([first, second])
 	expect(fetches).toBe(1)
 })
 
 test('loadLandingHeroVideos prefers the Data API when a key is set', async () => {
 	const urls: Array<string> = []
-	const fetchImpl = async (input: string) => {
-		urls.push(input)
-		return Response.json({
-			items: [
-				{
-					snippet: {
-						title: first.title,
-						resourceId: { videoId: first.videoId },
-					},
-				},
-				{
-					snippet: {
-						title: second.title,
-						resourceId: { videoId: second.videoId },
-					},
-				},
-			],
-		})
-	}
+	using _server = createMswNodeServer([
+		http.get(
+			`${youtubePlaylistItemsApiOrigin}/youtube/v3/playlistItems`,
+			({ request }) => {
+				urls.push(request.url)
+				return HttpResponse.json({
+					items: [
+						{
+							snippet: {
+								title: first.title,
+								resourceId: { videoId: first.videoId },
+							},
+						},
+						{
+							snippet: {
+								title: second.title,
+								resourceId: { videoId: second.videoId },
+							},
+						},
+					],
+				})
+			},
+		),
+	])
 	const loaded = await loadLandingHeroVideos({
 		env: { YOUTUBE_DATA_API_KEY: 'test-youtube-key' } as Env,
-		fetchImpl,
 	})
 	expect(loaded).toEqual([first, second])
 	expect(urls).toHaveLength(1)
@@ -91,48 +95,43 @@ test('loadLandingHeroVideos prefers the Data API when a key is set', async () =>
 })
 
 test('loadLandingHeroVideos falls back to Innertube when the Data API fails', async () => {
-	const fetchImpl = async (input: string) => {
-		if (input.startsWith(youtubePlaylistItemsApiOrigin)) {
-			return new Response('quota', { status: 403 })
-		}
-		return Response.json(browsePayload([second, first]))
-	}
+	using _server = createMswNodeServer([
+		http.get(
+			`${youtubePlaylistItemsApiOrigin}/youtube/v3/playlistItems`,
+			() => new HttpResponse('quota', { status: 403 }),
+		),
+		http.post(youtubePlaylistBrowseUrl, () =>
+			HttpResponse.json(browsePayload([second, first])),
+		),
+	])
 	const loaded = await loadLandingHeroVideos({
 		env: { YOUTUBE_DATA_API_KEY: 'bad-key' } as Env,
-		fetchImpl,
 	})
 	expect(loaded).toEqual([second, first])
 })
 
-test('loadLandingHeroVideos fails open when YouTube is unreachable', async () => {
+test('loadLandingHeroVideos fails open offline or on YouTube errors and does not cache the failure', async () => {
 	consoleWarn.mockImplementation(() => {})
-	await expect(
-		loadLandingHeroVideos({
-			env: {} as Env,
-			fetchImpl: async () => {
-				throw new Error('network down')
-			},
-		}),
-	).resolves.toEqual([])
+	{
+		using _offlineServer = createMswNodeServer([
+			http.post(youtubePlaylistBrowseUrl, () => HttpResponse.error()),
+		])
+		await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
+	}
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'landing-hero-videos',
 		expect.any(Error),
 	)
-})
 
-test('loadLandingHeroVideos stays offline in unit tests without a fetch impl', async () => {
-	await expect(loadLandingHeroVideos({ env: {} as Env })).resolves.toEqual([])
-})
-
-test('loadLandingHeroVideos does not cache a failed YouTube fetch', async () => {
-	consoleWarn.mockImplementation(() => {})
 	let fetches = 0
-	const fetchImpl = async () => {
-		fetches += 1
-		return new Response('no', { status: 503 })
-	}
+	using _unavailableServer = createMswNodeServer([
+		http.post(youtubePlaylistBrowseUrl, () => {
+			fetches += 1
+			return new HttpResponse('no', { status: 503 })
+		}),
+	])
 	const env = { BUNDLE_ARTIFACTS_KV: createMemoryKv() } as Env
-	await expect(loadLandingHeroVideos({ env, fetchImpl })).resolves.toEqual([])
-	await expect(loadLandingHeroVideos({ env, fetchImpl })).resolves.toEqual([])
+	await expect(loadLandingHeroVideos({ env })).resolves.toEqual([])
+	await expect(loadLandingHeroVideos({ env })).resolves.toEqual([])
 	expect(fetches).toBe(2)
 })

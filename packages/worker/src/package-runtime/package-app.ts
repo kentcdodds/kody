@@ -1,9 +1,12 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	WorkerEntrypoint,
 	exports as workerExports,
 	waitUntil as scheduleWorkerWaitUntil,
 } from 'cloudflare:workers'
+import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	getPackageAppEntryPath,
 	parseAuthoredPackageJson,
@@ -15,8 +18,6 @@ import {
 	buildKodyFns,
 	collectPackageStorageGrantIds,
 	type PackageEventTools,
-	type PackageInvokeInput,
-	type PackageInvokeTools,
 } from '#mcp/run-kody-registry.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
@@ -44,9 +45,14 @@ import {
 	storageRunnerRpc,
 } from '#worker/storage-runner.ts'
 import {
+	assertWithinComputeInclude,
 	estimateEntitlementStorageEntryByteDelta,
 	estimateEntitlementStorageSqlWriteBytes,
 } from '#worker/entitlements/service.ts'
+import {
+	pushServerTiming,
+	type ServerTimingEntry,
+} from '#worker/server-timing.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { packageRealtimeSessionRpc } from './realtime-session.ts'
 import {
@@ -82,6 +88,7 @@ import {
 	type PackageAppMount,
 } from '@kody-internal/shared/public-urls.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
 	packageAppSyntheticHeaderName,
 	packageAppSyntheticHeaderValue,
@@ -92,11 +99,23 @@ import {
 	resolvePackageAppClientArtifact,
 } from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import {
+	createNullPackagesInvokeRewriteHostSource,
+	modulesContainUnboundPackagesInvokeAccess,
+} from './unbound-runtime-helpers.ts'
+import { modulesReferenceKodyMcp } from './package-app-mcp-preload.ts'
 
 const packageAppEntrypointName = 'PackageAppWorker'
 const packageAppRuntimeBindingName = 'KODY_RUNTIME'
 
-function createPackageAppWorkerSource(input: { mainModule: string }) {
+function createPackageAppWorkerSource(input: {
+	mainModule: string
+	rewriteNullPackagesInvoke: boolean
+	preloadMcpServerNames: boolean
+}) {
+	const mcpServerNamesExpr = input.preloadMcpServerNames
+		? 'await runtimeBridge.listMcpServerNames().catch(() => [])'
+		: '() => runtimeBridge.listMcpServerNames().catch(() => [])'
 	return `
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -168,7 +187,7 @@ function buildFacetClassExportName(rawFacetName) {
 		: \`App_\${sanitizedFacetName}_\${hashSuffix}\`;
 }
 
-function createKodyProxy(runtimeBridge, mcpServerNames) {
+function createKodyProxy(runtimeBridge, mcpServerNamesOrLoader) {
 	const isProxyLookupKey = (name) =>
 		typeof name !== 'string' || name === 'then';
 	const createOpenNamespaceProxy = (getValue) =>
@@ -195,27 +214,61 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 	// Empty/missing names stay open (GOPD still returns getValue) so a
 	// listing failure does not hide Get. Only a non-empty list restricts
 	// has/GOPD. Tool namespaces stay fully open.
-	const knownServerNames = Array.isArray(mcpServerNames)
-		? [...new Set(mcpServerNames.filter((name) => typeof name === 'string' && name.length > 0))]
-		: [];
-	const restrictServerKeys = knownServerNames.length > 0;
+	//
+	// Entrypoints that statically reference kody.mcp preload names before
+	// author code runs (array argument). Hello-world / non-MCP apps pass a
+	// loader instead so listMcpServerNames runs only on first kody.mcp touch.
+	const mcpNamesState = { known: [], restrict: false };
+	let mcpNamesLoadPromise = null;
+	const applyMcpServerNames = (names) => {
+		mcpNamesState.known = [
+			...new Set(
+				(Array.isArray(names) ? names : []).filter(
+					(name) => typeof name === 'string' && name.length > 0,
+				),
+			),
+		];
+		mcpNamesState.restrict = mcpNamesState.known.length > 0;
+		return mcpNamesState.known;
+	};
+	const ensureMcpServerNames = () => {
+		if (mcpNamesLoadPromise) return mcpNamesLoadPromise;
+		if (Array.isArray(mcpServerNamesOrLoader)) {
+			applyMcpServerNames(mcpServerNamesOrLoader);
+			mcpNamesLoadPromise = Promise.resolve(mcpNamesState.known);
+			return mcpNamesLoadPromise;
+		}
+		const loader =
+			typeof mcpServerNamesOrLoader === 'function'
+				? mcpServerNamesOrLoader
+				: async () => [];
+		mcpNamesLoadPromise = Promise.resolve()
+			.then(() => loader())
+			.then((names) => applyMcpServerNames(names))
+			.catch(() => applyMcpServerNames([]));
+		return mcpNamesLoadPromise;
+	};
+	if (Array.isArray(mcpServerNamesOrLoader)) {
+		ensureMcpServerNames();
+	}
 	const createMcpServerNamespaceProxy = (getValue) =>
 		new Proxy({}, {
 			get(_target, name) {
 				if (isProxyLookupKey(name)) return undefined;
+				void ensureMcpServerNames();
 				return getValue(name);
 			},
 			has(_target, name) {
 				if (isProxyLookupKey(name)) return false;
-				if (!restrictServerKeys) return true;
-				return knownServerNames.includes(name);
+				if (!mcpNamesState.restrict) return true;
+				return mcpNamesState.known.includes(name);
 			},
 			ownKeys() {
-				return [...knownServerNames];
+				return [...mcpNamesState.known];
 			},
 			getOwnPropertyDescriptor(_target, name) {
 				if (isProxyLookupKey(name)) return undefined;
-				if (restrictServerKeys && !knownServerNames.includes(name)) {
+				if (mcpNamesState.restrict && !mcpNamesState.known.includes(name)) {
 					return undefined;
 				}
 				return {
@@ -253,10 +306,14 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 			}),
 		),
 	);
+	const touchMcp = () => {
+		void ensureMcpServerNames();
+		return mcp;
+	};
 	return new Proxy({}, {
 		get(_target, property) {
 			if (typeof property !== 'string' || property === 'then') return undefined;
-			if (property === 'mcp') return mcp;
+			if (property === 'mcp') return touchMcp();
 			if (property.startsWith('mcp:')) {
 				throw new Error(
 					\`MCP server tool "\${property}" is not available as a flat kody function. Use kody.mcp[serverName].toolName(input) instead.\`,
@@ -280,7 +337,7 @@ function createKodyProxy(runtimeBridge, mcpServerNames) {
 				configurable: true,
 				enumerable: true,
 				writable: true,
-				value: mcp,
+				value: touchMcp(),
 			};
 		},
 	});
@@ -424,34 +481,6 @@ function createWorkflowsProxy(runtimeBridge) {
 	};
 }
 
-function createPackagesProxy(runtimeBridge) {
-	// Permanent teaching stubs reject unsupported helpers locally and name the
-	// replacement without a bridge round trip.
-	return {
-		check: () => {
-			throw new Error(
-				'packages.check was removed: statically import kody:@scope/package/export when the name is known, or import(specifier) when the name is data.',
-			);
-		},
-		invoke: async (specifier, options) => {
-			if (typeof specifier !== 'string') {
-				throw new Error(
-					'Object-only packages.invoke was removed. Use a static import (import fn from "kody:@owner/package/export") when the name is known, or import(specifier) when the name is data.',
-				)
-			}
-			return await runtimeBridge.packageInvoke({
-				specifier,
-				options: options ?? {},
-			})
-		},
-		invokeChecked: () => {
-			throw new Error(
-				'packages.invokeChecked was removed: use a static import (import fn from "kody:@scope/pkg/export") when the target package is known at write time, or import(specifier) when the name is data. Exactly-once work uses workflows.',
-			);
-		},
-	};
-}
-
 function createEventsProxy(runtimeBridge) {
 	return {
 		dispatch: async (input) =>
@@ -581,7 +610,7 @@ function createPackageAppEnv(env, userModule) {
 	return runtimeEnv;
 }
 
-function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
+function createRuntime(runtimeBridge, packageContext, mcpServerNamesOrLoader) {
 	const packageId = packageContext?.packageId ?? '';
 	const packageSecrets =
 		packageId.length > 0
@@ -599,7 +628,7 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 					},
 				}
 	return {
-		kody: createKodyProxy(runtimeBridge, mcpServerNames),
+		kody: createKodyProxy(runtimeBridge, mcpServerNamesOrLoader),
 		storage: undefined,
 		__kodyPackageSecrets: (secretsPackageId) =>
 			createPackageSecretsProxy(runtimeBridge, secretsPackageId),
@@ -644,7 +673,7 @@ function createRuntime(runtimeBridge, packageContext, mcpServerNames) {
 		realtime: createRealtimeProxy(runtimeBridge),
 		packageSecrets,
 		workflows: createWorkflowsProxy(runtimeBridge),
-		packages: createPackagesProxy(runtimeBridge),
+		packages: null,
 		events: createEventsProxy(runtimeBridge),
 		packageContext,
 	};
@@ -664,6 +693,10 @@ function serializeRuntimeError(error) {
 				: String(error),
 	};
 }
+
+${createNullPackagesInvokeRewriteHostSource({
+	enabled: input.rewriteNullPackagesInvoke,
+})}
 
 function createConsoleLogCapture() {
 	const logs = [];
@@ -784,11 +817,10 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
-		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
-			mcpServerNames,
+			${mcpServerNamesExpr},
 		);
 		try {
 			consoleCapture.install();
@@ -817,13 +849,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			});
 			return response;
 		} catch (error) {
+			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
-				error: serializeRuntimeError(error),
+				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw error;
+			throw enrichedError;
 		} finally {
 			consoleCapture.restore();
 		}
@@ -841,11 +874,10 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			},
 		});
 		const consoleCapture = createConsoleLogCapture();
-		const mcpServerNames = await runtimeBridge.listMcpServerNames().catch(() => []);
 		const runtime = createRuntime(
 			runtimeBridge,
 			this.env.__kodyPackageContext ?? null,
-			mcpServerNames,
+			${mcpServerNamesExpr},
 		);
 		try {
 			consoleCapture.install();
@@ -881,13 +913,14 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			});
 			return result;
 		} catch (error) {
+			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
-				error: serializeRuntimeError(error),
+				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw error;
+			throw enrichedError;
 		} finally {
 			consoleCapture.restore();
 		}
@@ -936,7 +969,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	Env,
 	PackageAppRuntimeBridgeProps
 > {
-	private packageRuntimeInvokeTools: Promise<PackageInvokeTools> | null = null
 	private packageEventTools: Promise<PackageEventTools> | null = null
 	private readonly secretRedactor: ExecutionSecretRedactor =
 		createExecutionSecretRedactor()
@@ -946,7 +978,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
 			user: {
-				userId: this.ctx.props.userId,
+				userId: personIdFromStored(this.ctx.props.userId),
 				email: this.ctx.props.email,
 				username: undefined,
 				displayName: this.ctx.props.displayName,
@@ -957,6 +989,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				packageId: this.ctx.props.packageId,
 				storageId,
 			},
+			source: { kind: 'package-app' },
 		})
 	}
 
@@ -1372,9 +1405,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			packageId,
 			alias: input.alias,
 		})
-		this.secretRedactor.track(resolved.value)
+		// Opaque placeholder string only — never track or return plaintext.
 		return {
-			value: resolved.value,
+			value: resolved.ref,
 		}
 	}
 
@@ -1434,6 +1467,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async workflowCreate(input: unknown) {
+		const { request } = await this.createCallerContext(null)
+		if (!request)
+			throw new Error('workflows.create requires a package app user.')
 		return await createDynamicCallableWorkflow({
 			env: this.env,
 			userId: this.ctx.props.userId,
@@ -1444,37 +1480,8 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				sourceId: this.ctx.props.sourceId,
 			},
 			body: input as PackageWorkflowCreateInput,
+			lineage: requestLineage(request),
 		})
-	}
-
-	async createPackageRuntimeInvokeTools() {
-		if (this.packageRuntimeInvokeTools)
-			return await this.packageRuntimeInvokeTools
-
-		// Avoid a top-level package-app -> package-invocations cycle during worker
-		// startup; apps only need this helper when package code calls it.
-		this.packageRuntimeInvokeTools =
-			import('#worker/package-invocations/service.ts').then(
-				async ({ createPackageRuntimeInvokeTools }) => {
-					const packageContext = {
-						packageId: this.ctx.props.packageId,
-						kodyId: this.ctx.props.kodyId,
-						sourceId: this.ctx.props.sourceId,
-					}
-					return createPackageRuntimeInvokeTools({
-						env: this.env,
-						baseUrl: this.ctx.props.baseUrl,
-						callerContext: await this.createCallerContext(
-							this.ctx.props.packageId,
-						),
-						packageContext,
-						parentRunRecord: null,
-						packageInvokeDepth: 0,
-						runtimeSurface: 'app',
-					})
-				},
-			)
-		return await this.packageRuntimeInvokeTools
 	}
 
 	async createPackageEventTools() {
@@ -1503,11 +1510,6 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				},
 			)
 		return await this.packageEventTools
-	}
-
-	async packageInvoke(input: PackageInvokeInput) {
-		const tools = await this.createPackageRuntimeInvokeTools()
-		return await tools.invoke(input)
 	}
 
 	async packageEventDispatch(input: Record<string, unknown>) {
@@ -1616,16 +1618,18 @@ function buildPackageAppPublicContext(input: {
 	const username =
 		input.runtime.servingUsername ??
 		getUsernameFromPackageName(input.savedPackage.name)
-	const { kodyId } = input.savedPackage
+	// Public URLs use the name leaf (Kent: slug = leaf). Keep kodyId on the
+	// package context as identity; only the path segment switches to the leaf.
+	const urlSlug = getPackageNameLeaf(input.savedPackage.name)
 	if (input.runtime.hostedOrigin) {
 		// Request-scoped: the mount the request actually arrived on. On a
 		// per-user subdomain the username lives in the hostname, so the app is
-		// mounted at `/packages/{kodyId}`; inline serving keeps the
+		// mounted at `/packages/{slug}`; inline serving keeps the
 		// `/@{username}` path prefix.
 		const appBasePath =
 			input.runtime.mount === 'user-subdomain'
-				? buildPackageAppSubdomainPath({ kodyId })
-				: buildPackageAppPath({ username, kodyId })
+				? buildPackageAppSubdomainPath({ kodyId: urlSlug })
+				: buildPackageAppPath({ username, kodyId: urlSlug })
 		return {
 			appBasePath,
 			hostedUrl: `${input.runtime.hostedOrigin.replace(/\/+$/, '')}${appBasePath}`,
@@ -1638,7 +1642,7 @@ function buildPackageAppPublicContext(input: {
 		packageAppBaseUrl: getPackageAppBaseUrl({ env: input.env }),
 		appBaseUrl: input.baseUrl,
 		username,
-		kodyId,
+		kodyId: urlSlug,
 	})
 	return {
 		appBasePath: new URL(hostedUrl).pathname,
@@ -1923,6 +1927,9 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		...hydratedModules,
 		[mainModule]: createPackageAppWorkerSource({
 			mainModule: bundled.mainModule,
+			rewriteNullPackagesInvoke:
+				modulesContainUnboundPackagesInvokeAccess(hydratedModules),
+			preloadMcpServerNames: modulesReferenceKodyMcp(bundled.modules),
 		}),
 	}
 	return {
@@ -1930,7 +1937,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 		mainModule,
 		modules,
 		env: {
-			[packageAppRuntimeBindingName]: workerExports.PackageAppRuntimeBridge({
+			[packageAppRuntimeBindingName]: requireLocalPackageAppRuntimeBridge()({
 				props: {
 					baseUrl: input.baseUrl,
 					userId: input.userId,
@@ -1960,6 +1967,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 						baseUrl: input.baseUrl,
 						userId: input.userId,
 						email: input.runtime.callerContext.user?.email ?? null,
+						request: input.runtime.callerContext.request,
 						storageContext: {
 							sessionId: null,
 							appId: input.savedPackage.id,
@@ -2003,62 +2011,94 @@ export async function buildPackageAppWorker(input: {
 	 * path. Defaults to the invocation `waitUntil` from `cloudflare:workers`.
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
+	/**
+	 * Optional Server-Timing bag from `servePackageAppRequest`. Records
+	 * `assertWithinComputeInclude` and `appLoader` (options cache +
+	 * `APP_LOADER.get` / `load`).
+	 */
+	serverTiming?: Array<ServerTimingEntry>
 }) {
-	const publicContext = buildPackageAppPublicContext(input)
-	const cacheKey = createPackageAppWorkerCacheKey({
-		userId: input.userId,
-		packageId: input.savedPackage.id,
-		kodyId: input.savedPackage.kodyId,
-		sourceId: input.savedPackage.sourceId,
-		publishedCommit: input.savedPackage.publishedCommit,
-		baseUrl: input.baseUrl,
-		...publicContext,
-		callerEmail: input.runtime.callerContext.user?.email ?? '',
-		callerDisplayName:
-			input.runtime.callerContext.user?.displayName ??
-			`package:${input.savedPackage.id}`,
-	})
-	const surface = input.surface ?? 'app_fetch'
-	if (!cacheKey) {
+	// Apps run package code and read package storage without a daily counter,
+	// so they take the include → credits → stop gate directly.
+	await pushServerTiming(
+		input.serverTiming,
+		'assertWithinComputeInclude',
+		async () => {
+			await assertWithinComputeInclude({
+				db: input.env.APP_DB,
+				env: input.env,
+				userId: input.userId,
+				orgBudget: input.runtime.callerContext.request
+					? {
+							orgId: input.runtime.callerContext.request.org.id,
+							orgSlug: input.runtime.callerContext.request.org.slug,
+							actorUserId:
+								input.runtime.callerContext.request.actor?.userId ?? null,
+							actorUsername:
+								input.runtime.callerContext.request.actor?.username ?? null,
+						}
+					: undefined,
+			})
+		},
+	)
+	return await pushServerTiming(input.serverTiming, 'appLoader', async () => {
+		const publicContext = buildPackageAppPublicContext(input)
+		const cacheKey = createPackageAppWorkerCacheKey({
+			userId: input.userId,
+			packageId: input.savedPackage.id,
+			kodyId: input.savedPackage.kodyId,
+			sourceId: input.savedPackage.sourceId,
+			publishedCommit: input.savedPackage.publishedCommit,
+			baseUrl: input.baseUrl,
+			...publicContext,
+			callerEmail: input.runtime.callerContext.user?.email ?? '',
+			callerDisplayName:
+				input.runtime.callerContext.user?.displayName ??
+				`package:${input.savedPackage.id}`,
+		})
+		const surface = input.surface ?? 'app_fetch'
+		if (!cacheKey) {
+			return {
+				stub: input.env.APP_LOADER.load(
+					await buildPackageAppWorkerOptionsUncached(input),
+				),
+				entrypointName: packageAppEntrypointName,
+			}
+		}
+		const build = await packageAppWorkerOptionsCache.getOrCreate({
+			cacheKey,
+			create: async () => {
+				const workerOptions = await buildPackageAppWorkerOptionsUncached(input)
+				return {
+					workerId: await createPackageAppWorkerId({ cacheKey, workerOptions }),
+					workerOptions,
+				}
+			},
+		})
+		// Acquire the request-bound stub before claiming the day. A failed
+		// `APP_LOADER.get()` must not persist a (day, workerId) that a retry
+		// would then skip without a `dynamic_worker_day` event.
+		const stub = build.workerId
+			? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
+			: input.env.APP_LOADER.load(build.workerOptions)
+		if (build.workerId) {
+			schedulePackageAppUniqueWorkerDay({
+				env: input.env,
+				userId: input.userId,
+				workerId: build.workerId,
+				surface,
+				packageId: input.savedPackage.id,
+				waitUntil: input.waitUntil,
+			})
+		}
 		return {
-			stub: input.env.APP_LOADER.load(
-				await buildPackageAppWorkerOptionsUncached(input),
-			),
+			// Stubs are request-bound, so acquire a fresh one per request. The stable
+			// worker id (derived from user + package + commit + caller identity) lets
+			// the loader reuse a warm isolate instead of compiling a new worker.
+			stub,
 			entrypointName: packageAppEntrypointName,
 		}
-	}
-	const build = await packageAppWorkerOptionsCache.getOrCreate({
-		cacheKey,
-		create: async () => {
-			const workerOptions = await buildPackageAppWorkerOptionsUncached(input)
-			return {
-				workerId: await createPackageAppWorkerId({ cacheKey, workerOptions }),
-				workerOptions,
-			}
-		},
 	})
-	// Acquire the request-bound stub before claiming the day. A failed
-	// `APP_LOADER.get()` must not persist a (day, workerId) that a retry
-	// would then skip without a `dynamic_worker_day` event.
-	const stub = build.workerId
-		? input.env.APP_LOADER.get(build.workerId, () => build.workerOptions)
-		: input.env.APP_LOADER.load(build.workerOptions)
-	if (build.workerId) {
-		schedulePackageAppUniqueWorkerDay({
-			env: input.env,
-			userId: input.userId,
-			workerId: build.workerId,
-			surface,
-			waitUntil: input.waitUntil,
-		})
-	}
-	return {
-		// Stubs are request-bound, so acquire a fresh one per request. The stable
-		// worker id (derived from user + package + commit + caller identity) lets
-		// the loader reuse a warm isolate instead of compiling a new worker.
-		stub,
-		entrypointName: packageAppEntrypointName,
-	}
 }
 
 function schedulePackageAppUniqueWorkerDay(input: {
@@ -2066,6 +2106,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 	userId: string
 	workerId: string
 	surface: 'app_fetch' | 'app_realtime'
+	packageId: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const tracked = recordUniqueDynamicWorkerDay({
@@ -2073,6 +2114,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 		userId: input.userId,
 		workerId: input.workerId,
 		surface: input.surface,
+		packageId: input.packageId,
 	}).catch((error: unknown) => {
 		console.warn('package-app-dynamic-worker-day-record-failed', error)
 	})
@@ -2094,7 +2136,7 @@ export async function createPackageAppCallerContext(input: {
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user: {
-			userId: input.user.userId,
+			userId: personIdFromStored(input.user.userId),
 			email: input.user.email,
 			username: input.user.username,
 			displayName: input.user.displayName ?? `package:${input.packageId}`,
@@ -2105,5 +2147,6 @@ export async function createPackageAppCallerContext(input: {
 			packageId: input.packageId,
 			storageId: null,
 		},
+		source: { kind: 'package-app' },
 	})
 }

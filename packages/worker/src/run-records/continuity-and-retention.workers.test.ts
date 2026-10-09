@@ -23,6 +23,11 @@ function uniqueUserId(label: string) {
 	return `runlog-continuity-${label}-${crypto.randomUUID()}`
 }
 
+function runLogStub(userId: string) {
+	const namespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
+	return namespace.get(namespace.idFromName(userId))
+}
+
 function silenceExpectedConsoleWarns(substrings: Array<string>) {
 	silenceIncidentalRuntimeWarnings()
 	consoleWarn.mockImplementation((...args: Array<unknown>) => {
@@ -32,7 +37,7 @@ function silenceExpectedConsoleWarns(substrings: Array<string>) {
 }
 
 async function armRetentionOnNextFinish(userId: string) {
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	await runInDurableObject(stub, async (instance: RunLog) => {
 		expect(instance).toBeInstanceOf(RunLog)
 		seedRunLogMeta(instance, {
@@ -41,52 +46,65 @@ async function armRetentionOnNextFinish(userId: string) {
 	})
 }
 
+function finishRun(
+	userId: string,
+	context: Parameters<typeof beginRunRecord>[0]['context'],
+	status: 'success' | 'error' = 'success',
+	error?: Error,
+	runEnv: Env = env,
+) {
+	return finishRunRecord({
+		env: runEnv,
+		handle: beginRunRecord({ env: runEnv, userId, context }),
+		status,
+		error,
+	})
+}
+
+function upsertWorkflow(
+	userId: string,
+	projection: Partial<
+		Parameters<typeof upsertWorkflowProjection>[0]['projection']
+	> & { id: string; runAt: string; status: string },
+) {
+	return upsertWorkflowProjection({
+		env,
+		userId,
+		projection: {
+			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			sourceType: 'inline',
+			workflowName: projection.id,
+			idempotencyKey: `idem-${projection.id}`,
+			createdAt: projection.runAt,
+			updatedAt: projection.runAt,
+			...projection,
+		} as Parameters<typeof upsertWorkflowProjection>[0]['projection'],
+	})
+}
+
+const activationMilestone = (milestone: string, packageId: string) =>
+	expect.objectContaining({ milestone, packageId })
+
 test('activation milestones accumulate from zero across terminal finishes', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('activation-from-zero')
+	const context = { surface: 'job', packageId: 'pkg-seed' } as const
 
-	const first = beginRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'job',
-			name: 'first-success',
-			packageId: 'pkg-seed',
-		},
-	})
-	await finishRunRecord({ env, handle: first, status: 'success' })
+	await finishRun(userId, { ...context, name: 'first-success' })
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-seed', successCount: 1 }),
 	])
 	expect(await listActivationMilestones({ env, userId })).toEqual([
-		expect.objectContaining({
-			milestone: 'package_run_succeeded',
-			packageId: 'pkg-seed',
-		}),
+		activationMilestone('package_run_succeeded', 'pkg-seed'),
 	])
 
-	const second = beginRunRecord({
-		env,
-		userId,
-		context: {
-			surface: 'job',
-			name: 'second-success',
-			packageId: 'pkg-seed',
-		},
-	})
-	await finishRunRecord({ env, handle: second, status: 'success' })
+	await finishRun(userId, { ...context, name: 'second-success' })
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-seed', successCount: 2 }),
 	])
 	expect(await listActivationMilestones({ env, userId })).toEqual([
-		expect.objectContaining({
-			milestone: 'package_activated',
-			packageId: 'pkg-seed',
-		}),
-		expect.objectContaining({
-			milestone: 'package_run_succeeded',
-			packageId: 'pkg-seed',
-		}),
+		activationMilestone('package_activated', 'pkg-seed'),
+		activationMilestone('package_run_succeeded', 'pkg-seed'),
 	])
 })
 
@@ -95,17 +113,12 @@ test('job observability counters start from zero on first terminal finish', asyn
 	const userId = uniqueUserId('job-from-zero')
 	const jobId = `job-${crypto.randomUUID()}`
 
-	const handle = beginRunRecord({
-		env,
+	await finishRun(
 		userId,
-		context: { surface: 'job', name: 'first', jobId },
-	})
-	await finishRunRecord({
-		env,
-		handle,
-		status: 'error',
-		error: new Error('new failure'),
-	})
+		{ surface: 'job', name: 'first', jobId },
+		'error',
+		new Error('new failure'),
+	)
 	expect(await getJobRunObservability({ env, userId, jobId })).toMatchObject({
 		jobId,
 		runCount: 1,
@@ -114,12 +127,7 @@ test('job observability counters start from zero on first terminal finish', asyn
 		lastRunStatus: 'error',
 		lastRunError: 'new failure',
 	})
-	const second = beginRunRecord({
-		env,
-		userId,
-		context: { surface: 'job', name: 'second', jobId },
-	})
-	await finishRunRecord({ env, handle: second, status: 'success' })
+	await finishRun(userId, { surface: 'job', name: 'second', jobId })
 	expect(await getJobRunObservability({ env, userId, jobId })).toMatchObject({
 		runCount: 2,
 		successCount: 1,
@@ -130,7 +138,7 @@ test('job observability counters start from zero on first terminal finish', asyn
 
 test('finishRun rolls back run upsert when a later terminal side effect throws', async () => {
 	const userId = uniqueUserId('finish-tx')
-	const stub = env.RUN_LOG.get(env.RUN_LOG.idFromName(userId))
+	const stub = runLogStub(userId)
 	const runId = crypto.randomUUID()
 	await runInDurableObject(stub, async (instance: RunLog, state) => {
 		expect(instance).toBeInstanceOf(RunLog)
@@ -175,156 +183,87 @@ test('finishRun rolls back run upsert when a later terminal side effect throws',
 		} finally {
 			proto.recordTerminalRunSideEffects = original
 		}
-		const runs = state.storage.sql
-			.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE id = ?`, runId)
-			.one()
-		const successes = state.storage.sql
-			.exec<{ n: number }>(
+		const count = (query: string, ...bindings: Array<SqlStorageValue>) =>
+			Number(state.storage.sql.exec<{ n: number }>(query, ...bindings).one().n)
+		expect([
+			count(`SELECT COUNT(*) AS n FROM runs WHERE id = ?`, runId),
+			count(
 				`SELECT COUNT(*) AS n FROM package_run_successes WHERE package_id = 'pkg-finish-tx'`,
-			)
-			.one()
-		const jobs = state.storage.sql
-			.exec<{ n: number }>(
+			),
+			count(
 				`SELECT COUNT(*) AS n FROM job_run_observability WHERE job_id = 'job-finish-tx'`,
-			)
-			.one()
-		expect(Number(runs.n)).toBe(0)
-		expect(Number(successes.n)).toBe(0)
-		expect(Number(jobs.n)).toBe(0)
+			),
+		]).toEqual([0, 0, 0])
 	})
 
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
-	await finishRunRecord({
-		env,
-		handle: beginRunRecord({
-			env,
-			userId,
-			context: {
-				surface: 'job',
-				name: 'tx-ok',
-				packageId: 'pkg-tx-ok',
-			},
-		}),
-		status: 'success',
+	await finishRun(userId, {
+		surface: 'job',
+		name: 'tx-ok',
+		packageId: 'pkg-tx-ok',
 	})
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-tx-ok', successCount: 1 }),
 	])
 	expect(await listActivationMilestones({ env, userId })).toEqual([
-		expect.objectContaining({
-			milestone: 'package_run_succeeded',
-			packageId: 'pkg-tx-ok',
-		}),
+		activationMilestone('package_run_succeeded', 'pkg-tx-ok'),
 	])
 })
 
 test('workflow projection retention prunes old terminal rows but keeps active and unpruned dedicated state', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('wf-retention')
-	const oldTerminalAt = new Date(
-		Date.now() - (workflowProjectionRetentionDays + 5) * 24 * 60 * 60 * 1000,
-	).toISOString()
-	const oldActiveAt = new Date(
-		Date.now() - (workflowProjectionRetentionDays + 10) * 24 * 60 * 60 * 1000,
-	).toISOString()
+	const daysAgo = (days: number) =>
+		new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+	const oldTerminalAt = daysAgo(workflowProjectionRetentionDays + 5)
+	const oldActiveAt = daysAgo(workflowProjectionRetentionDays + 10)
 
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-old-terminal',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'inline',
-			workflowName: 'done',
-			idempotencyKey: 'idem-old-terminal',
-			runAt: oldTerminalAt,
-			status: 'complete',
-			createdAt: oldTerminalAt,
-			updatedAt: oldTerminalAt,
-			completedAt: oldTerminalAt,
-		},
+	await upsertWorkflow(userId, {
+		id: 'wf-old-terminal',
+		runAt: oldTerminalAt,
+		status: 'complete',
+		completedAt: oldTerminalAt,
 	})
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-old-active',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'inline',
-			workflowName: 'still-running',
-			idempotencyKey: 'idem-old-active',
-			runAt: oldActiveAt,
-			status: 'running',
-			createdAt: oldActiveAt,
-			updatedAt: oldActiveAt,
-		},
+	await upsertWorkflow(userId, {
+		id: 'wf-old-active',
+		runAt: oldActiveAt,
+		status: 'running',
 	})
-	await upsertWorkflowProjection({
-		env,
-		userId,
-		projection: {
-			id: 'wf-old-creating',
-			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-			sourceType: 'package',
-			packageId: 'pkg-keep',
-			workflowName: 'creating',
-			exportName: 'run',
-			idempotencyKey: 'idem-old-creating',
-			runAt: oldActiveAt,
-			status: 'creating',
-			createdAt: oldActiveAt,
-			updatedAt: oldActiveAt,
-		},
+	await upsertWorkflow(userId, {
+		id: 'wf-old-creating',
+		sourceType: 'package',
+		packageId: 'pkg-keep',
+		exportName: 'run',
+		runAt: oldActiveAt,
+		status: 'creating',
 	})
 
-	await finishRunRecord({
-		env,
-		handle: beginRunRecord({
-			env,
-			userId,
-			context: {
-				surface: 'job',
-				name: 'keep-stats',
-				jobId: 'job-keep-stats',
-				packageId: 'pkg-keep-stats',
-			},
-		}),
-		status: 'success',
+	await finishRun(userId, {
+		surface: 'job',
+		name: 'keep-stats',
+		jobId: 'job-keep-stats',
+		packageId: 'pkg-keep-stats',
 	})
-
 	await armRetentionOnNextFinish(userId)
-	await finishRunRecord({
-		env,
-		handle: beginRunRecord({
-			env,
-			userId,
-			context: {
-				surface: 'job',
-				name: 'trigger-retention',
-				packageId: 'pkg-keep-stats',
-			},
-		}),
-		status: 'success',
+	await finishRun(userId, {
+		surface: 'job',
+		name: 'trigger-retention',
+		packageId: 'pkg-keep-stats',
 	})
 
-	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-old-terminal' }),
-	).toBeNull()
-	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-old-active' }),
-	).toMatchObject({ id: 'wf-old-active', status: 'running' })
-	expect(
-		await getWorkflowProjection({ env, userId, id: 'wf-old-creating' }),
-	).toBeNull()
+	const projection = (id: string) => getWorkflowProjection({ env, userId, id })
+	expect(await projection('wf-old-terminal')).toBeNull()
+	expect(await projection('wf-old-active')).toMatchObject({
+		id: 'wf-old-active',
+		status: 'running',
+	})
+	expect(await projection('wf-old-creating')).toBeNull()
 
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
-		expect.objectContaining({
-			packageId: 'pkg-keep-stats',
-			successCount: 2,
-		}),
+		expect.objectContaining({ packageId: 'pkg-keep-stats', successCount: 2 }),
 	])
 	expect(
-		await listActivationMilestones({ env, userId }).then((rows) => rows.length),
+		(await listActivationMilestones({ env, userId })).length,
 	).toBeGreaterThan(0)
 	expect(
 		await getJobRunObservability({ env, userId, jobId: 'job-keep-stats' }),
@@ -334,21 +273,18 @@ test('workflow projection retention prunes old terminal rows but keeps active an
 test('missing APP_DB does not affect terminal job/activation updates', async () => {
 	silenceExpectedConsoleWarns(['activation-run-record-failed'])
 	const userId = uniqueUserId('no-app-db')
-	const envWithoutDb = { ...env, APP_DB: undefined } as unknown as Env
-	await finishRunRecord({
-		env: envWithoutDb,
-		handle: beginRunRecord({
-			env: envWithoutDb,
-			userId,
-			context: {
-				surface: 'job',
-				name: 'degrade',
-				jobId: 'missing-job',
-				packageId: 'pkg-degrade',
-			},
-		}),
-		status: 'success',
-	})
+	await finishRun(
+		userId,
+		{
+			surface: 'job',
+			name: 'degrade',
+			jobId: 'missing-job',
+			packageId: 'pkg-degrade',
+		},
+		'success',
+		undefined,
+		{ ...env, APP_DB: undefined } as unknown as Env,
+	)
 	expect(await listPackageRunSuccesses({ env, userId })).toEqual([
 		expect.objectContaining({ packageId: 'pkg-degrade', successCount: 1 }),
 	])

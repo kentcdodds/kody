@@ -1,4 +1,4 @@
-import { type RemixNode } from 'remix/ui'
+import { type RemixNode } from 'remix/component'
 import { renderIcon } from '#universal/icon.tsx'
 
 /** Decorative link icon for prose heading permalinks. */

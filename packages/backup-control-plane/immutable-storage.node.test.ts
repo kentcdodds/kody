@@ -11,141 +11,110 @@ import {
 	readManifest,
 	storeSignedDownload,
 } from './immutable-storage.ts'
-import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
+import { objectKeyForBookmark } from './backup-policy.ts'
 import {
 	DATABASE_ID,
 	MemoryBucket,
 	manifest,
+	backupError,
 } from './backup-control-plane-test-support.ts'
+
+const r2 = (bucket: MemoryBucket) => bucket as unknown as R2Bucket
+const sized = (body: string | Uint8Array<ArrayBuffer>, length?: number) =>
+	new Response(body, {
+		headers: {
+			'content-length': String(
+				length ?? (typeof body === 'string' ? body.length : body.byteLength),
+			),
+		},
+	})
+const tooLarge = async () => sized('', MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
+
+function store(
+	bucket: MemoryBucket,
+	key: string,
+	source: string | typeof fetch = 'valid',
+) {
+	return storeSignedDownload(
+		r2(bucket),
+		key,
+		'https://download.example',
+		typeof source === 'string' ? async () => sized(source) : source,
+	)
+}
+
+const dayPrefix = `daily/d1/${DATABASE_ID}/2026-07-22`
 
 test('streams once with an immutable conditional, checksum, byte count, and ETag', async () => {
 	const bucket = new MemoryBucket()
 	const bytes = new TextEncoder().encode('CREATE TABLE test;\n')
-	const stored = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () =>
-			new Response(bytes, {
-				headers: { 'content-length': String(bytes.byteLength) },
-			}),
-	)
+	const stored = await store(bucket, 'backup.sql', async () => sized(bytes))
 	assert.equal(stored.bytes, bytes.byteLength)
 	assert.equal(stored.sha256, createHash('sha256').update(bytes).digest('hex'))
 	assert.ok(stored.r2Etag)
 	assert.deepEqual(bucket.puts[0]?.options.onlyIf, { etagDoesNotMatch: '*' })
 
-	const duplicate = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () =>
-			new Response(bytes, {
-				headers: { 'content-length': String(bytes.byteLength) },
-			}),
-	)
+	const duplicate = await store(bucket, 'backup.sql', async () => sized(bytes))
 	assert.equal(duplicate.alreadyExisted, true)
 	assert.equal(duplicate.sha256, stored.sha256)
 })
 
 test('a missing manifest is finalized from the durable upload-step digest', async () => {
 	const bucket = new MemoryBucket()
-	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
-	const manifestKey = `${prefix}/manifest.json`
-	const objectKey = objectKeyForBookmark(prefix, 'bookmark-1')
-	const stored = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		objectKey,
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
+	const manifestKey = `${dayPrefix}/manifest.json`
+	const objectKey = objectKeyForBookmark(dayPrefix, 'bookmark-1')
+	const stored = await store(bucket, objectKey)
 	// Finalization verifies the stored object against the upload-step
 	// result; it never re-downloads from D1 (an expired poll can only be
 	// refreshed by exporting a newer database state).
 	await assert.doesNotReject(
-		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
-			manifestKey,
-			objectKey,
-			stored,
-		),
+		assertDuplicateMatchesManifest(r2(bucket), manifestKey, objectKey, stored),
 	)
 	await assert.rejects(
 		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
+			r2(bucket),
 			manifestKey,
-			`${prefix}/backup-missing.sql`,
+			`${dayPrefix}/backup-missing.sql`,
 			stored,
 		),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'stored-object-missing',
+		backupError('stored-object-missing'),
 	)
 	bucket.corrupt(objectKey, 'other')
 	await assert.rejects(
-		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
-			manifestKey,
-			objectKey,
-			stored,
-		),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'stored-object-mismatch',
+		assertDuplicateMatchesManifest(r2(bucket), manifestKey, objectKey, stored),
+		backupError('stored-object-mismatch'),
 	)
 })
 
 test('an orphaned object from a crashed run does not block a later manifest', async () => {
 	const bucket = new MemoryBucket()
-	const prefix = `daily/d1/${DATABASE_ID}/2026-07-22`
-	const manifestKey = `${prefix}/manifest.json`
-	const orphanKey = objectKeyForBookmark(prefix, 'bookmark-1')
-	await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		orphanKey,
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	const recoveryKey = objectKeyForBookmark(prefix, 'bookmark-2')
-	const recovered = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		recoveryKey,
-		'https://download.example',
-		async () => new Response('newer', { headers: { 'content-length': '5' } }),
-	)
+	const manifestKey = `${dayPrefix}/manifest.json`
+	const orphanKey = objectKeyForBookmark(dayPrefix, 'bookmark-1')
+	await store(bucket, orphanKey)
+	const recoveryKey = objectKeyForBookmark(dayPrefix, 'bookmark-2')
+	const recovered = await store(bucket, recoveryKey, 'newer')
 	assert.equal(recovered.alreadyExisted, false)
-	await putImmutableManifest(bucket as unknown as R2Bucket, manifestKey, {
-		...manifest(recovered),
+	const template = manifest(recovered)
+	await putImmutableManifest(r2(bucket), manifestKey, {
+		...template,
 		payload: {
-			...manifest(recovered).payload,
-			export: {
-				...manifest(recovered).payload.export,
-				bookmark: 'bookmark-2',
-			},
-			sql: { ...manifest(recovered).payload.sql, objectKey: recoveryKey },
+			...template.payload,
+			export: { ...template.payload.export, bookmark: 'bookmark-2' },
+			sql: { ...template.payload.sql, objectKey: recoveryKey },
 		},
 	})
 	assert.equal(
-		(await readManifest(bucket as unknown as R2Bucket, manifestKey))?.payload
-			.sql.objectKey,
+		(await readManifest(r2(bucket), manifestKey))?.payload.sql.objectKey,
 		recoveryKey,
 	)
 	assert.notEqual(await bucket.head(orphanKey), null)
 })
 
 test('sql statement stats measure quote-aware statement lengths during upload', async () => {
-	const bucket = new MemoryBucket()
 	// Two statements: the second hides semicolons and an escaped quote
 	// inside a string literal, and spans multiple lines.
 	const sql = `CREATE TABLE t (v TEXT);\nINSERT INTO t VALUES ('semi;colon''s\nnewline');\n`
-	const bytes = new TextEncoder().encode(sql)
-	const stored = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'stats.sql',
-		'https://download.example',
-		async () =>
-			new Response(bytes, {
-				headers: { 'content-length': String(bytes.byteLength) },
-			}),
-	)
+	const stored = await store(new MemoryBucket(), 'stats.sql', sql)
 	assert.deepEqual(stored.sqlStatementStats, {
 		maxStatementBytes: new TextEncoder().encode(
 			`\nINSERT INTO t VALUES ('semi;colon''s\nnewline');`,
@@ -172,309 +141,150 @@ test('sql statement stats measure quote-aware statement lengths during upload', 
 	})
 })
 
-test('truncated and interrupted downloads fail retryably, then a retry succeeds', async () => {
-	const bucket = new MemoryBucket()
-	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'truncated.sql',
-			'https://download.example',
-			async () => new Response('abc', { headers: { 'content-length': '5' } }),
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'download-truncated' &&
-			error.retryable === true,
-	)
-	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'retry.sql',
-			'https://download.example',
+test('new-object download failures have safe retry classification, never store empty exports, and a retry succeeds', async () => {
+	const failures: Array<[typeof fetch, string, boolean | undefined]> = [
+		[async () => sized('abc', 5), 'download-truncated', true],
+		[
 			async () => {
 				throw new Error('connection reset')
 			},
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'download-interrupted' &&
-			error.retryable,
-	)
-	const retry = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'retry.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	assert.equal(retry.bytes, 5)
-})
-
-test('direct existing-object mismatch with the signed source fails explicitly', async () => {
-	const bucket = new MemoryBucket()
-	await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'backup.sql',
-			'https://download.example',
-			async () => new Response('other', { headers: { 'content-length': '5' } }),
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'existing-object-source-mismatch' &&
-			error.retryable === false,
-	)
-})
-
-test('existing objects do not bypass signed source availability and size validation', async () => {
-	const bucket = new MemoryBucket()
-	await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	const failures: Array<{
-		code: string
-		fetcher: typeof fetch
-	}> = [
-		{
-			code: 'download-interrupted',
-			fetcher: async () => {
-				throw new Error('source unavailable')
-			},
-		},
-		{
-			code: 'download-http-error',
-			fetcher: async () => new Response('', { status: 403 }),
-		},
-		{
-			code: 'download-truncated',
-			fetcher: async () =>
-				new Response('abc', { headers: { 'content-length': '5' } }),
-		},
-		{
-			code: 'download-too-large',
-			fetcher: async () =>
-				new Response('', {
-					headers: {
-						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES),
-					},
-				}),
-		},
+			'download-interrupted',
+			true,
+		],
+		[
+			async () => new Response('', { status: 401 }),
+			'download-http-error',
+			false,
+		],
+		[
+			async () => new Response('', { status: 403 }),
+			'download-http-error',
+			false,
+		],
+		[
+			async () => new Response('', { status: 429 }),
+			'download-http-error',
+			true,
+		],
+		[
+			async () => new Response('', { status: 500 }),
+			'download-http-error',
+			true,
+		],
+		[async () => new Response('data'), 'download-missing-length', true],
+		[tooLarge, 'download-too-large', undefined],
 	]
-	for (const { code, fetcher } of failures) {
+	for (const [fetcher, code, retryable] of failures) {
 		await assert.rejects(
-			storeSignedDownload(
-				bucket as unknown as R2Bucket,
-				'backup.sql',
-				'https://download.example',
-				fetcher,
-			),
-			(error: unknown) => error instanceof BackupError && error.code === code,
+			store(new MemoryBucket(), 'retry.sql', fetcher),
+			backupError(code, retryable),
 		)
 	}
-})
 
-test('conditional-put races compare the winning object with the signed source', async () => {
-	const bucket = new MemoryBucket()
-	bucket.raceOnNextPut('backup.sql', 'other')
-	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'backup.sql',
-			'https://download.example',
-			async () => new Response('valid', { headers: { 'content-length': '5' } }),
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'existing-object-source-mismatch',
-	)
-	assert.equal(bucket.puts.length, 1)
-})
-
-test('download HTTP and malformed length failures have safe retry classification', async () => {
-	for (const [status, retryable] of [
-		[401, false],
-		[403, false],
-		[429, true],
-		[500, true],
-	] as const) {
-		await assert.rejects(
-			storeSignedDownload(
-				new MemoryBucket() as unknown as R2Bucket,
-				`${status}.sql`,
-				'https://download.example',
-				async () => new Response('', { status }),
-			),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === 'download-http-error' &&
-				error.retryable === retryable,
-		)
-	}
-	await assert.rejects(
-		storeSignedDownload(
-			new MemoryBucket() as unknown as R2Bucket,
-			'missing-length.sql',
-			'https://download.example',
-			async () => new Response('data'),
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'download-missing-length' &&
-			error.retryable,
-	)
-	await assert.rejects(
-		storeSignedDownload(
-			new MemoryBucket() as unknown as R2Bucket,
-			'too-large.sql',
-			'https://download.example',
-			async () =>
-				new Response('', {
-					headers: {
-						'content-length': String(MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES),
-					},
-				}),
-		),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'download-too-large',
-	)
-})
-
-test('zero-byte export is retryable and never stored', async () => {
 	const bucket = new MemoryBucket()
 	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'empty.sql',
-			'https://download.example',
-			async () => new Response('', { headers: { 'content-length': '0' } }),
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'download-empty' &&
-			error.retryable,
+		store(bucket, 'empty.sql', async () => sized('', 0)),
+		backupError('download-empty', true),
 	)
 	assert.equal(await bucket.head('empty.sql'), null)
 	assert.equal(bucket.puts.length, 0)
+
+	await assert.rejects(
+		store(bucket, 'retry.sql', async () => {
+			throw new Error('connection reset')
+		}),
+		backupError('download-interrupted', true),
+	)
+	assert.equal((await store(bucket, 'retry.sql')).bytes, 5)
 })
 
-test('pre-existing object at the size limit cannot be resumed into a manifest', async () => {
+test('existing objects still validate the signed source: mismatch, availability, size, and races', async () => {
 	const bucket = new MemoryBucket()
-	await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'oversized-existing.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	bucket.setReportedSize(
-		'oversized-existing.sql',
-		MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES,
-	)
+	await store(bucket, 'backup.sql')
 	await assert.rejects(
-		storeSignedDownload(
-			bucket as unknown as R2Bucket,
-			'oversized-existing.sql',
-			'https://download.example',
-			async () => new Response('valid', { headers: { 'content-length': '5' } }),
-		),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'download-too-large',
+		store(bucket, 'backup.sql', 'other'),
+		backupError('existing-object-source-mismatch', false),
 	)
+	const failures: Array<[typeof fetch, string]> = [
+		[
+			async () => {
+				throw new Error('source unavailable')
+			},
+			'download-interrupted',
+		],
+		[async () => new Response('', { status: 403 }), 'download-http-error'],
+		[async () => sized('abc', 5), 'download-truncated'],
+		[tooLarge, 'download-too-large'],
+	]
+	for (const [fetcher, code] of failures) {
+		await assert.rejects(
+			store(bucket, 'backup.sql', fetcher),
+			backupError(code),
+		)
+	}
+
+	// A pre-existing object at the size limit cannot be resumed into a manifest.
+	bucket.setReportedSize('backup.sql', MAXIMUM_SINGLE_BACKUP_OBJECT_BYTES)
+	await assert.rejects(
+		store(bucket, 'backup.sql'),
+		backupError('download-too-large'),
+	)
+
+	// Conditional-put races compare the winning object with the signed source.
+	const raceBucket = new MemoryBucket()
+	raceBucket.raceOnNextPut('backup.sql', 'other')
+	await assert.rejects(
+		store(raceBucket, 'backup.sql'),
+		backupError('existing-object-source-mismatch'),
+	)
+	assert.equal(raceBucket.puts.length, 1)
 })
 
-test('manifest is immutable across duplicate writes and commit changes', async () => {
+test('manifest is immutable, schema-checked, and must match an existing source-matched object', async () => {
 	const bucket = new MemoryBucket()
-	const stored = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	const first = manifest(stored)
-	await putImmutableManifest(
-		bucket as unknown as R2Bucket,
-		'manifest.json',
-		first,
-	)
-	await putImmutableManifest(
-		bucket as unknown as R2Bucket,
-		'manifest.json',
-		first,
-	)
+	const stored = await store(bucket, 'backup.sql')
+	const template = manifest(stored)
+	const first = {
+		...template,
+		payload: {
+			...template.payload,
+			sql: { ...template.payload.sql, objectKey: 'backup.sql' },
+		},
+	}
+	await putImmutableManifest(r2(bucket), 'manifest.json', first)
+	await putImmutableManifest(r2(bucket), 'manifest.json', first)
 	await assert.rejects(
-		putImmutableManifest(bucket as unknown as R2Bucket, 'manifest.json', {
+		putImmutableManifest(r2(bucket), 'manifest.json', {
 			...first,
 			payload: { ...first.payload, buildCommit: 'different' },
 		}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'manifest-conflict',
+		backupError('manifest-conflict'),
 	)
 	assert.equal(
-		(await readManifest(bucket as unknown as R2Bucket, 'manifest.json'))
-			?.payload.buildCommit,
+		(await readManifest(r2(bucket), 'manifest.json'))?.payload.buildCommit,
 		'abc123',
 	)
-})
 
-test('manifest reader rejects valid JSON with an invalid schema', async () => {
-	const bucket = new MemoryBucket()
-	await bucket.put('manifest.json', JSON.stringify({ schemaVersion: 1 }))
-	await assert.rejects(
-		readManifest(bucket as unknown as R2Bucket, 'manifest.json'),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'manifest-corrupt',
-	)
-})
-
-test('an existing source-matched object must also match its immutable manifest', async () => {
-	const bucket = new MemoryBucket()
-	const stored = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
-	const originalManifest = manifest(stored)
-	const recorded = {
-		...originalManifest,
-		payload: {
-			...originalManifest.payload,
-			sql: { ...originalManifest.payload.sql, objectKey: 'backup.sql' },
-		},
-	}
-	await putImmutableManifest(
-		bucket as unknown as R2Bucket,
-		'manifest.json',
-		recorded,
-	)
-	const matchingDuplicate = await storeSignedDownload(
-		bucket as unknown as R2Bucket,
-		'backup.sql',
-		'https://download.example',
-		async () => new Response('valid', { headers: { 'content-length': '5' } }),
-	)
+	const matchingDuplicate = await store(bucket, 'backup.sql')
 	await assertDuplicateMatchesManifest(
-		bucket as unknown as R2Bucket,
+		r2(bucket),
 		'manifest.json',
 		'backup.sql',
 		matchingDuplicate,
 	)
 	await assert.rejects(
 		assertDuplicateMatchesManifest(
-			bucket as unknown as R2Bucket,
+			r2(bucket),
 			'manifest.json',
 			'other-backup.sql',
 			matchingDuplicate,
 		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'duplicate-object-manifest-mismatch',
+		backupError('duplicate-object-manifest-mismatch'),
+	)
+
+	await bucket.put('corrupt.json', JSON.stringify({ schemaVersion: 1 }))
+	await assert.rejects(
+		readManifest(r2(bucket), 'corrupt.json'),
+		backupError('manifest-corrupt'),
 	)
 })

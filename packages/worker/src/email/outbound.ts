@@ -3,7 +3,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountSuspendedMessage,
 	getAccountRestrictionsByStableUserId,
-} from '#app/account-suspension.ts'
+} from '#worker/account/account-suspension.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
@@ -16,7 +16,11 @@ import {
 	estimateEntitlementStorageEntryBytes,
 	refundDailyEntitlement,
 } from '#worker/entitlements/service.ts'
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress } from './address.ts'
 import { resolveAcceptableNotificationEmails } from './destinations.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
@@ -86,6 +90,8 @@ export type OutboundEmailAttachmentInput = {
 export type EmailSendInput = {
 	env: SendEmailEnv
 	userId: string
+	/** MCP / Open API caller context when the send is user-initiated. */
+	request?: RequestContext | null
 	/**
 	 * Acting user's account email (not the message from/to) when the caller
 	 * context has one. Package runtime contexts may pass an empty string;
@@ -1003,6 +1009,7 @@ export async function sendOutboundEmail(
 					bytes: messageContentBytes,
 					durationMs: Date.now() - sendStartedAtMs,
 					outcome: sendOutcome,
+					...usageAttributionFieldsFromRequest(input.request),
 				})
 			}
 		}

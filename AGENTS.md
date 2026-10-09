@@ -6,68 +6,15 @@ email inboxes, durable storage).
 
 `npm run validate` is the single authoritative local gate.
 
-This file is intentionally brief. Detailed instructions live in focused docs:
+This file is a map, not the docs. Open the page that owns the task:
 
 - Contributor documentation map:
-  - [docs/contributing/index.md](./docs/contributing/index.md)
-- Friction log (repo papercuts; file through
-  `kody:@kentcdodds/friction-log/create`, never raw GitHub):
-  [docs/contributing/friction-log.md](./docs/contributing/friction-log.md)
-- Project intent and scope:
-  [docs/contributing/project-intent.md](./docs/contributing/project-intent.md)
-- Decision records (steering veto list — open before proposing a new primitive
-  or surface):
-  [docs/contributing/decisions/index.md](./docs/contributing/decisions/index.md)
-- Setup, checks, docs maintenance, preview deploys, and seeding:
-  - [docs/contributing/setup/index.md](./docs/contributing/setup/index.md)
-- Manual PR preview testing (medium/high risk, logged-in user + data):
-- [docs/contributing/preview-manual-testing.md](./docs/contributing/preview-manual-testing.md)
-  and the
-  [preview-manual-test skill](./.agents/skills/preview-manual-test/SKILL.md)
-- App verification CLI and Feature Map:
-- [docs/contributing/control-kody.md](./docs/contributing/control-kody.md) and
-  the [control-kody skill](./.agents/skills/control-kody/SKILL.md)
-- Documentation principles (usage vs contributing, MCP text, gardening, prefer
-  checkers over should-lists):
-  - [docs/contributing/documentation.md](./docs/contributing/documentation.md)
-- Code style conventions:
-  - [docs/contributing/code-style.md](./docs/contributing/code-style.md)
-- Enforced app / MCP / worker / universal import layering:
-  [docs/contributing/import-boundaries.md](./docs/contributing/import-boundaries.md)
-- Testing guidance:
-  - [docs/contributing/testing-principles.md](./docs/contributing/testing-principles.md)
-  - [docs/contributing/end-to-end-testing.md](./docs/contributing/end-to-end-testing.md)
-- Tooling and framework references:
-  - [docs/contributing/harness-engineering.md](./docs/contributing/harness-engineering.md)
-  - [docs/contributing/oxlint-js-plugins.md](./docs/contributing/oxlint-js-plugins.md)
-  - [docs/contributing/remix.md](./docs/contributing/remix.md) and the
-    repo-local [Remix skill](./.agents/skills/remix/SKILL.md)
-  - [docs/contributing/no-flash-navigation.md](./docs/contributing/no-flash-navigation.md)
-    (client routes keep the previous page until the next one is ready)
-  - [docs/contributing/cloudflare-agents-sdk.md](./docs/contributing/cloudflare-agents-sdk.md)
-- MCP capabilities (search/execute graph, domains, registry):
-  - [docs/contributing/adding-capabilities.md](./docs/contributing/adding-capabilities.md)
-- Project setup references:
-  - [docs/contributing/getting-started.md](./docs/contributing/getting-started.md)
-  - [docs/contributing/environment-variables.md](./docs/contributing/environment-variables.md)
-  - [docs/contributing/setup-manifest.md](./docs/contributing/setup-manifest.md)
-- Architecture references:
-  - [docs/contributing/architecture/index.md](./docs/contributing/architecture/index.md)
-    (production worker fleet, request lifecycle, authentication, data storage,
-    and the rest of the architecture leaves)
-  - Inbound webhooks (rotate keeps the previous URL live briefly):
-    [docs/use/webhooks.md](./docs/use/webhooks.md) and
-    [docs/contributing/architecture/webhooks.md](./docs/contributing/architecture/webhooks.md)
-  - [docs/contributing/architecture/primitives.yaml](./docs/contributing/architecture/primitives.yaml)
-    (stable taxonomy, not a feature changelog — see the architecture index for
-    the classify/check workflow)
-- PR system recaps (visual plan/recap blocks in PR descriptions):
-  - [.agents/skills/visual-recap/SKILL.md](./.agents/skills/visual-recap/SKILL.md)
+  [docs/contributing/index.md](./docs/contributing/index.md)
+- Engineering principles: [docs/principles/](./docs/principles/index.md)
+- Task skills: [`.agents/skills/`](./.agents/skills/)
 
 ## Cursor Cloud-specific instructions
 
-Cloud Agent VM gotchas (Node 26 on `PATH`, the Playwright browser-install hang
-and manual workaround, dev server, seeding, and local limitations) live in a
-dedicated reference:
-
-- [Cursor Cloud Agent notes](./docs/contributing/cloud-agents.md)
+Cloud Agent VM gotchas (Node on `PATH`, Playwright install, dev server, seeding,
+local limitations):
+[docs/contributing/cloud-agents.md](./docs/contributing/cloud-agents.md)

@@ -1,6 +1,13 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import os from 'node:os'
 import { chromium } from '@playwright/test'
+import { defaultPlaywrightBrowsersJsonPath } from './control-kody/playwright-browsers.ts'
+import {
+	installPlaywrightBrowsersUnzip,
+	isCloudAgentEnvironment,
+	shouldInstallPlaywrightBrowsersWithUnzip,
+} from './install-playwright-browsers-unzip.ts'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
 
 export function playwrightChromiumInstallArgs(input: {
@@ -15,7 +22,32 @@ export function playwrightChromiumInstallArgs(input: {
 	return ['install', 'chromium', '--with-deps']
 }
 
-function ensurePlaywrightChromium() {
+export function ensurePlaywrightChromium(
+	input: {
+		homeDir?: string
+		browsersJsonPath?: string
+		platform?: string
+		githubActions?: boolean
+		cloudAgent?: boolean
+	} = {},
+) {
+	const homeDir = input.homeDir ?? os.homedir()
+	const browsersJsonPath =
+		input.browsersJsonPath ?? defaultPlaywrightBrowsersJsonPath(process.cwd())
+	const githubActions =
+		input.githubActions ?? process.env.GITHUB_ACTIONS === 'true'
+	const cloudAgent = input.cloudAgent ?? isCloudAgentEnvironment({ homeDir })
+
+	if (
+		shouldInstallPlaywrightBrowsersWithUnzip({
+			platform: input.platform ?? process.platform,
+			githubActions,
+			cloudAgent,
+		})
+	) {
+		return installPlaywrightBrowsersUnzip({ homeDir, browsersJsonPath })
+	}
+
 	const browserExecutablePath = chromium.executablePath()
 	if (existsSync(browserExecutablePath)) {
 		console.log(
@@ -24,9 +56,7 @@ function ensurePlaywrightChromium() {
 		return 0
 	}
 
-	const installArgs = playwrightChromiumInstallArgs({
-		githubActions: process.env.GITHUB_ACTIONS === 'true',
-	})
+	const installArgs = playwrightChromiumInstallArgs({ githubActions })
 	console.log(
 		`Installing Playwright Chromium for E2E tests (${installArgs.join(' ')})...`,
 	)

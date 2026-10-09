@@ -1,27 +1,28 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import {
-	createPackageRuntimeInvokeTools,
-	createPackageEventTools,
-} from '#worker/package-invocations/service.ts'
+import { createPackageEventTools } from '#worker/package-invocations/service.ts'
+import type * as packageSourceModule from '#worker/package-registry/source.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 export const packageInvocationsRepoMockModule = (() => {
 	const loadPackageManifestBySourceId = vi.fn()
 	return {
 		getSavedPackageById: vi.fn(),
-		getSavedPackageByKodyId: vi.fn(),
+		resolveSavedPackageRef: vi.fn(),
 		getSavedPackageByName: vi.fn(),
 		listSavedPackagesByUserId: vi.fn(),
 		loadPackageManifestBySourceId,
 		// The invoke path loads the source row and manifest separately (see
 		// loadInvokeManifestBySourceId); default to the same per-test data the
 		// combined mock is configured with.
-		loadPackageSourceRowForUser: vi.fn(
-			async (input: { sourceId: string; userId: string }) =>
-				(await loadPackageManifestBySourceId(input)).source,
-		),
-		loadPackageManifestForSource: vi.fn(
-			async (input: { source: { id: string }; userId: string }) =>
+		loadPackageSourceRowForUser: vi.fn<
+			typeof packageSourceModule.loadPackageSourceRowForUser
+		>(async (input) => (await loadPackageManifestBySourceId(input)).source),
+		loadPackageManifestForSource: vi.fn<
+			typeof packageSourceModule.loadPackageManifestForSource
+		>(
+			async (input) =>
 				await loadPackageManifestBySourceId({
 					...input,
 					sourceId: input.source.id,
@@ -86,7 +87,15 @@ export function createFakeRunLog(
 		string,
 		{ milestone: string; reachedAt: string; packageId: string | null }
 	>()
+	const runLogs = new Map<string, Array<string>>()
 	const clone = <T>(value: T): T => structuredClone(value)
+	const logMessage = (entry: unknown) => {
+		if (typeof entry === 'string') return entry
+		if (entry && typeof entry === 'object' && 'message' in entry) {
+			return String((entry as { message: unknown }).message)
+		}
+		return String(entry)
+	}
 	const findByKey = (key: {
 		tokenId: string
 		packageId: string
@@ -108,6 +117,7 @@ export function createFakeRunLog(
 			>
 			staleBefore: string
 			run: Record<string, unknown> | null
+			initialLogs?: Array<unknown>
 		}) {
 			if (options.failClaim) throw new Error('RunLog unavailable')
 			const now = new Date().toISOString()
@@ -122,10 +132,9 @@ export function createFakeRunLog(
 				}
 				existing.updatedAt = now
 				if (input.run) {
-					runRows.set(
-						String(input.run['id']),
-						clone({ ...input.run, invocationId: existing.id }),
-					)
+					const runId = String(input.run['id'])
+					runRows.set(runId, clone({ ...input.run, invocationId: existing.id }))
+					runLogs.set(runId, (input.initialLogs ?? []).map(logMessage))
 				}
 				return {
 					outcome: 'claimed' as const,
@@ -142,10 +151,12 @@ export function createFakeRunLog(
 				updatedAt: now,
 			})
 			if (input.run) {
+				const runId = String(input.run['id'])
 				runRows.set(
-					String(input.run['id']),
+					runId,
 					clone({ ...input.run, invocationId: input.invocation.id }),
 				)
+				runLogs.set(runId, (input.initialLogs ?? []).map(logMessage))
 			}
 			return {
 				outcome: 'claimed' as const,
@@ -187,7 +198,9 @@ export function createFakeRunLog(
 				ledgerUpdated = true
 			}
 			if (input.run) {
-				const previous = runRows.get(String(input.run['id']))
+				const runId = String(input.run['id'])
+				runLogs.set(runId, input.logs.map(logMessage))
+				const previous = runRows.get(runId)
 				const previousStatus =
 					previous && typeof previous['status'] === 'string'
 						? String(previous['status'])
@@ -292,6 +305,8 @@ export function createFakeRunLog(
 			invocationId: string
 			claimUpdatedAt: string
 			runId: string | null
+			run: Record<string, unknown> | null
+			logs: Array<unknown>
 		}) {
 			const index = ledgerRows.findIndex(
 				(candidate) => candidate.id === input.invocationId,
@@ -306,7 +321,20 @@ export function createFakeRunLog(
 				ledgerRows.splice(index, 1)
 				released = true
 			}
-			if (input.runId) {
+			let runFinished = false
+			if (input.run) {
+				const runId = String(input.run['id'])
+				const previous = runRows.get(runId)
+				const previousStatus =
+					previous && typeof previous['status'] === 'string'
+						? String(previous['status'])
+						: null
+				if (previousStatus === 'running' || previousStatus == null) {
+					runRows.set(runId, clone(input.run))
+					runLogs.set(runId, input.logs.map(logMessage))
+					runFinished = true
+				}
+			} else if (input.runId) {
 				const run = runRows.get(input.runId)
 				if (run && run['status'] === 'running') {
 					runRows.delete(input.runId)
@@ -315,6 +343,7 @@ export function createFakeRunLog(
 			return {
 				released,
 				record: released || !row ? null : clone(row),
+				runFinished,
 			}
 		},
 		async getJobRunObservability(input: { jobId: string }) {
@@ -329,6 +358,7 @@ export function createFakeRunLog(
 		},
 		ledgerRows,
 		runRows,
+		runLogs,
 		corruptStoredResponses() {
 			for (const row of ledgerRows) {
 				row.responseJson = '{"status":200,"body":null}'
@@ -422,6 +452,8 @@ export function createEnv(
 	db: ReturnType<typeof createDatabase>,
 	overrides: Record<string, unknown> = {},
 ) {
+	const meter =
+		overrides['USER_METER'] == null ? createInMemoryUserMeterEnv() : null
 	return {
 		APP_DB: db,
 		RUN_LOG: db.runLog.namespace,
@@ -430,10 +462,29 @@ export function createEnv(
 			put: async () => undefined,
 			delete: async () => undefined,
 		},
+		...(meter ? { USER_METER: meter.env.USER_METER } : {}),
 		...overrides,
 	} as unknown as Env
 }
 
+/**
+ * Env plus the in-memory UserMeter harness so tests can seed daily counters.
+ */
+export function createEnvWithUserMeter(
+	db: ReturnType<typeof createDatabase>,
+	overrides: Record<string, unknown> = {},
+) {
+	const meter = createInMemoryUserMeterEnv()
+	return {
+		env: createEnv(db, {
+			USER_METER: meter.env.USER_METER,
+			...overrides,
+		}),
+		meter,
+	}
+}
+
+/** In-memory synthetic invoke scope for tests (not a D1 token row). */
 export function createToken(
 	overrides: Partial<{
 		packageId: string
@@ -446,12 +497,13 @@ export function createToken(
 		email: 'me@example.com',
 		packageId: overrides.packageId ?? 'pkg-1',
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
+		request: { kind: 'webhook', sourceId: 'discord-gateway' },
 	} as const
 }
 
 export function seedPackageResolution() {
 	packageInvocationsRepoMockModule.getSavedPackageById.mockResolvedValue(null)
-	packageInvocationsRepoMockModule.getSavedPackageByKodyId.mockResolvedValue({
+	packageInvocationsRepoMockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'pkg-1',
 		userId: 'user-123',
 		name: '@kentcdodds/discord-gateway',
@@ -792,11 +844,11 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 		],
 	])
 	packageInvocationsRepoMockModule.getSavedPackageById.mockResolvedValue(null)
-	packageInvocationsRepoMockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: unknown, input: { userId: string; kodyId: string }) => {
+	packageInvocationsRepoMockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { userId: string; ref: string }) => {
 			expect(input.userId).toBe('user-123')
-			if (input.kodyId === gateway.kodyId) return gateway
-			if (input.kodyId === subscriber.kodyId) return subscriber
+			if (input.ref === gateway.kodyId) return gateway
+			if (input.ref === subscriber.kodyId) return subscriber
 			return null
 		},
 	)
@@ -874,37 +926,8 @@ export default async function handleDiscordMessageCreated(input: { event: { id: 
 	return { gateway, manifests, sourceFiles, sources, subscriber }
 }
 
-export function createRuntimeDispatchTools(db: D1Database) {
-	return createPackageRuntimeInvokeTools({
-		env: createEnv(db),
-		baseUrl: 'https://kody.dev',
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://kody.dev',
-			user: {
-				userId: 'user-123',
-				email: 'me@example.com',
-				displayName: 'Me',
-			},
-		}),
-		packageContext: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-		},
-		parentRunRecord: {
-			packageId: 'pkg-gateway',
-			kodyId: 'discord-gateway',
-			sourceId: 'source-gateway',
-			surface: 'export',
-			name: './dispatch-message-created',
-			idempotencyKey: 'message-1',
-		},
-		packageInvokeDepth: 0,
-	})
-}
-
 export function createRuntimeEventTools(
-	db: D1Database,
+	db: ReturnType<typeof createDatabase>,
 	options: {
 		envOverrides?: Record<string, unknown>
 		packageInvokeDepth?: number
@@ -917,9 +940,10 @@ export function createRuntimeEventTools(
 		} as unknown as Env,
 		baseUrl: 'https://kody.dev',
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId: 'user-123',
+				userId: personIdFromStored('user-123'),
 				email: 'me@example.com',
 				displayName: 'Me',
 			},

@@ -2,56 +2,16 @@ import assert from 'node:assert/strict'
 
 import { test } from 'vitest'
 
-import { type BackupRuntimeStep } from './backup-runtime.ts'
 import {
 	BackupError,
 	errorCode,
 	workflowBackupErrorMessage,
 } from './backup-policy.ts'
+import {
+	RetryingWorkflowStep,
+	TestNonRetryableError,
+} from './backup-control-plane-test-support.ts'
 import { withNonRetryableBackupErrors } from './workflow-step-boundary.ts'
-
-class TestNonRetryableError extends Error {}
-
-class RetryingWorkflowStep implements BackupRuntimeStep {
-	attempts = 0
-
-	async do<T>(
-		name: string,
-		config: unknown,
-		callback: () => Promise<T>,
-	): Promise<T>
-	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
-	async do<T>(
-		_name: string,
-		configOrCallback: unknown,
-		callback?: () => Promise<T>,
-	): Promise<T> {
-		const execute =
-			typeof configOrCallback === 'function'
-				? (configOrCallback as () => Promise<T>)
-				: callback!
-		const retryLimit =
-			typeof configOrCallback === 'object' &&
-			configOrCallback !== null &&
-			'retries' in configOrCallback
-				? Number(
-						(configOrCallback as { retries: { limit: number } }).retries.limit,
-					)
-				: 0
-		for (let attempt = 0; ; attempt += 1) {
-			this.attempts += 1
-			try {
-				return await execute()
-			} catch (error) {
-				if (error instanceof TestNonRetryableError || attempt >= retryLimit) {
-					throw error
-				}
-			}
-		}
-	}
-
-	async sleep(): Promise<void> {}
-}
 
 function testNonRetryableError(error: BackupError): TestNonRetryableError {
 	return new TestNonRetryableError(workflowBackupErrorMessage(error))

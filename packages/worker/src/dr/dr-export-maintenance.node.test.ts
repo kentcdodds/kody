@@ -115,7 +115,7 @@ function createR2() {
 	} as unknown as R2Bucket
 }
 
-function createEnv(_client: DrBackupS3Client) {
+function createEnv() {
 	return {
 		DR_EXPORT_ENABLED: 'true',
 		DR_BACKUP_ACCOUNT_ID: 'acct',
@@ -128,7 +128,7 @@ function createEnv(_client: DrBackupS3Client) {
 		COMMUNITY_ASSETS: createR2(),
 		BUNDLE_ARTIFACTS_KV: { get: async () => null },
 		STORAGE_RUNNER: {},
-	} as unknown as Env & { __s3?: DrBackupS3Client }
+	} as unknown as Env
 }
 
 function postRequest(body: unknown, secret = 'operator-secret') {
@@ -143,7 +143,6 @@ function postRequest(body: unknown, secret = 'operator-secret') {
 }
 
 test('dr-export maintenance finishes a stranded day, then reports it complete', async () => {
-	storageMocks.exportStorage.mockReset()
 	storageMocks.exportStorage.mockResolvedValue({
 		entries: [{ key: 'k', value: 1 }],
 		truncated: false,
@@ -152,9 +151,9 @@ test('dr-export maintenance finishes a stranded day, then reports it complete', 
 		estimatedBytes: 1,
 	})
 	const { client } = createMemoryS3()
-	const env = createEnv(client)
+	const env = createEnv()
 	let nowMs = 1_000_000
-	const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
+	using _dateNow = vi.spyOn(Date, 'now').mockImplementation(() => nowMs)
 	const originalPut = client.put.bind(client)
 	client.put = async (key, body, options) => {
 		const result = await originalPut(key, body, options)
@@ -165,68 +164,43 @@ test('dr-export maintenance finishes a stranded day, then reports it complete', 
 		return result
 	}
 
-	try {
-		const nightly = await runDrExportTick({
-			env,
-			now: new Date('2026-07-23T06:10:00.000Z'),
-			timeBudgetMs: 20_000,
-			s3: client,
-		})
-		expect(nightly.summaryWritten).toBe(false)
-		nowMs = 1_000_000
-		client.put = originalPut
+	const nightly = await runDrExportTick({
+		env,
+		now: new Date('2026-07-23T06:10:00.000Z'),
+		timeBudgetMs: 20_000,
+		s3: client,
+	})
+	expect(nightly.summaryWritten).toBe(false)
+	nowMs = 1_000_000
+	client.put = originalPut
 
-		const response = await handleDrExportRequest(
-			postRequest({ day: '2026-07-23' }),
-			env,
-			client,
-		)
-		expect(response.status).toBe(200)
-		const result = (await response.json()) as {
-			ok: boolean
-			day: string
-			summaryWritten: boolean
-			ticks: Array<{ mode: string }>
-		}
-		expect(result).toMatchObject({
-			ok: true,
-			day: '2026-07-23',
-			summaryWritten: true,
-		})
-		expect(result.ticks.every((tick) => tick.mode === 'operator')).toBe(true)
-		expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeTruthy()
-
-		const again = await handleDrExportRequest(
-			postRequest({ day: '2026-07-23' }),
-			env,
-			client,
-		)
-		expect(await again.json()).toMatchObject({
-			ok: true,
-			summaryWritten: false,
-			skipped: true,
-			reason: 'already-complete',
-		})
-
-		const neverStaged = await handleDrExportRequest(
-			postRequest({ day: '2026-07-20', maxTicks: 2 }),
-			env,
-			client,
-		)
-		expect(await neverStaged.json()).toMatchObject({
-			ok: true,
-			summaryWritten: false,
-			skipped: true,
-			reason: 'no-staged-progress',
-		})
-	} finally {
-		dateNow.mockRestore()
+	const operatorExport = (body: unknown) =>
+		handleDrExportRequest(postRequest(body), env, client)
+	const response = await operatorExport({ day: '2026-07-23' })
+	expect(response.status).toBe(200)
+	const result = (await response.json()) as {
+		ticks: Array<{ mode: string }>
 	}
+	expect(result).toMatchObject({
+		ok: true,
+		day: '2026-07-23',
+		summaryWritten: true,
+	})
+	expect(result.ticks.every((tick) => tick.mode === 'operator')).toBe(true)
+	expect(await client.getText(stagingSummaryKey('2026-07-23'))).toBeTruthy()
+
+	const skipped = { ok: true, summaryWritten: false, skipped: true }
+	expect(
+		await (await operatorExport({ day: '2026-07-23' })).json(),
+	).toMatchObject({ ...skipped, reason: 'already-complete' })
+	expect(
+		await (await operatorExport({ day: '2026-07-20', maxTicks: 2 })).json(),
+	).toMatchObject({ ...skipped, reason: 'no-staged-progress' })
 })
 
 test('dr-export maintenance enforces auth, configuration, and input validation', async () => {
 	const { client } = createMemoryS3()
-	const env = createEnv(client)
+	const env = createEnv()
 
 	const nonPost = await handleDrExportRequest(
 		new Request('https://worker.example/__maintenance/dr-export'),
@@ -249,43 +223,18 @@ test('dr-export maintenance enforces auth, configuration, and input validation',
 	)
 	expect(badBearer.status).toBe(401)
 
-	const missingDay = await handleDrExportRequest(postRequest({}), env, client)
-	expect(missingDay.status).toBe(500)
-	expect(await missingDay.json()).toMatchObject({
-		ok: false,
-		error: 'Request body requires day: string',
-	})
-
-	const invalidDay = await handleDrExportRequest(
-		postRequest({ day: '23-07-2026' }),
-		env,
-		client,
-	)
-	expect(invalidDay.status).toBe(500)
-	expect(await invalidDay.json()).toMatchObject({
-		ok: false,
-		error: 'day must be a UTC YYYY-MM-DD day',
-	})
-
-	const invalidTicks = await handleDrExportRequest(
-		postRequest({ day: '2026-07-23', maxTicks: 99 }),
-		env,
-		client,
-	)
-	expect(invalidTicks.status).toBe(500)
-	expect(await invalidTicks.json()).toMatchObject({
-		ok: false,
-		error: 'maxTicks must be an integer between 1 and 10',
-	})
-
-	const futureDay = await handleDrExportRequest(
-		postRequest({ day: '2999-01-01' }),
-		env,
-		client,
-	)
-	expect(futureDay.status).toBe(500)
-	expect(await futureDay.json()).toMatchObject({
-		ok: false,
-		error: expect.stringContaining('future'),
-	})
+	const invalidBodies: Array<[unknown, unknown]> = [
+		[{}, 'Request body requires day: string'],
+		[{ day: '23-07-2026' }, 'day must be a UTC YYYY-MM-DD day'],
+		[
+			{ day: '2026-07-23', maxTicks: 99 },
+			'maxTicks must be an integer between 1 and 10',
+		],
+		[{ day: '2999-01-01' }, expect.stringContaining('future')],
+	]
+	for (const [body, error] of invalidBodies) {
+		const response = await handleDrExportRequest(postRequest(body), env, client)
+		expect(response.status).toBe(500)
+		expect(await response.json()).toMatchObject({ ok: false, error })
+	}
 })

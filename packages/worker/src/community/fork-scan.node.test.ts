@@ -23,54 +23,58 @@ const sampleManifest = `{
 }
 `
 
+function janeManifest(dependencies: unknown) {
+	return JSON.stringify({
+		name: '@jane/pkg',
+		kody: { id: 'pkg', description: 'Pkg', dependencies },
+		exports: { '.': './src/index.ts' },
+	})
+}
+
+function scanAsJane(
+	files: Record<string, string>,
+	allowedForeignScopes?: Array<string>,
+) {
+	return scanCrossScopeReferences({
+		files,
+		expectedPackageScope: 'jane',
+		...(allowedForeignScopes ? { allowedForeignScopes } : {}),
+	})
+}
+
 test('rewritePackageManifestForFork rewrites scope and kody id while preserving other fields', () => {
 	const { content, targetName } = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: 'jane',
 		targetKodyId: 'my-discord-gateway',
 	})
-
 	expect(targetName).toBe('@jane/my-discord-gateway')
-
-	const parsed = JSON.parse(content) as {
-		name: string
-		license: string
-		exports: Record<string, string>
+	expect(JSON.parse(content)).toMatchObject({
+		name: '@jane/my-discord-gateway',
+		license: 'MIT',
+		private: true,
+		exports: { '.': './src/index.ts' },
 		kody: {
-			id: string
-			description: string
-			tags: Array<string>
-			dependencies: Array<string>
-		}
-	}
-
-	expect(parsed.name).toBe('@jane/my-discord-gateway')
-	expect(parsed.license).toBe('MIT')
-	expect(parsed.private).toBe(true)
-	expect(parsed.exports).toEqual({ '.': './src/index.ts' })
-	expect(parsed.kody.id).toBe('my-discord-gateway')
-	expect(parsed.kody.tags).toEqual(['discord'])
-	expect(parsed.kody.dependencies).toEqual([
-		'@owner/shared-utils',
-		'@forker/local-lib',
-	])
+			id: 'my-discord-gateway',
+			tags: ['discord'],
+			dependencies: ['@owner/shared-utils', '@forker/local-lib'],
+		},
+	})
 
 	const override = rewritePackageManifestForFork({
 		manifestContent: sampleManifest,
 		expectedPackageScope: '@jane',
 		targetKodyId: 'custom-id',
 	})
-	const overrideParsed = JSON.parse(override.content) as {
-		name: string
-		kody: { id: string }
-	}
-	expect(overrideParsed.name).toBe('@jane/custom-id')
-	expect(overrideParsed.kody.id).toBe('custom-id')
+	expect(JSON.parse(override.content)).toMatchObject({
+		name: '@jane/custom-id',
+		kody: { id: 'custom-id' },
+	})
 })
 
 test('scanCrossScopeReferences finds foreign scopes and ignores same-scope references', () => {
-	const crossScope = scanCrossScopeReferences({
-		files: {
+	expect(
+		scanAsJane({
 			'package.json': sampleManifest,
 			'src/index.ts': `import { helper } from 'kody:@owner/shared-utils/helper'
 import { local } from 'kody:@jane/local-lib/local'
@@ -79,11 +83,8 @@ const sameScope = 'kody:@jane/pkg'
 			'src/util.ts': `export const value = "kody:@other-scope/dep/file.ts"
 import 'kody:@owner/a/x'
 import 'kody:@owner/a/y'`,
-		},
-		expectedPackageScope: 'jane',
-	})
-
-	expect(crossScope).toEqual([
+		}),
+	).toEqual([
 		{ file: 'package.json', specifier: '@forker/local-lib' },
 		{ file: 'package.json', specifier: '@owner/shared-utils' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
@@ -91,81 +92,37 @@ import 'kody:@owner/a/y'`,
 		{ file: 'src/util.ts', specifier: 'kody:@owner/' },
 	])
 
-	const sameScopeOnly = scanCrossScopeReferences({
-		files: {
-			'package.json': `{
-	"name": "@jane/pkg",
-	"kody": {
-		"id": "pkg",
-		"description": "Pkg",
-		"dependencies": ["@jane/local-lib"]
-	},
-	"exports": { ".": "./src/index.ts" }
-}
-`,
+	expect(
+		scanAsJane({
+			'package.json': janeManifest(['@jane/local-lib']),
 			'src/index.ts': `import { x } from 'kody:@jane/local-lib/x'`,
-		},
-		expectedPackageScope: 'jane',
-	})
+		}),
+	).toEqual([])
 
-	expect(sameScopeOnly).toEqual([])
-
-	const mapShaped = scanCrossScopeReferences({
-		files: {
-			'package.json': `{
-	"name": "@jane/pkg",
-	"kody": {
-		"id": "pkg",
-		"description": "Pkg",
-		"dependencies": {
-			"@owner/shared-utils": "*",
-			"@jane/local-lib": "*"
-		}
-	},
-	"exports": { ".": "./src/index.ts" }
-}
-`,
-		},
-		expectedPackageScope: 'jane',
-	})
-	expect(mapShaped).toEqual([
-		{ file: 'package.json', specifier: '@owner/shared-utils' },
-	])
+	expect(
+		scanAsJane({
+			'package.json': janeManifest({
+				'@owner/shared-utils': '*',
+				'@jane/local-lib': '*',
+			}),
+		}),
+	).toEqual([{ file: 'package.json', specifier: '@owner/shared-utils' }])
 })
 
 test('scanCrossScopeReferences treats platform scopes as foreign without an allowlist', () => {
 	const files = {
-		'package.json': `{
-	"name": "@jane/pkg",
-	"kody": {
-		"id": "pkg",
-		"description": "Pkg",
-		"dependencies": ["@kody/github", "@owner/shared-utils"]
-	},
-	"exports": { ".": "./src/index.ts" }
-}
-`,
+		'package.json': janeManifest(['@kody/github', '@owner/shared-utils']),
 		'src/index.ts': `import gh from 'kody:@kody/github/issues'
 import util from 'kody:@owner/util/helper'`,
 	}
-
-	const withAllowlist = scanCrossScopeReferences({
-		files,
-		expectedPackageScope: 'jane',
-		allowedForeignScopes: ['kody'],
-	})
-	expect(withAllowlist).toEqual([
+	expect(scanAsJane(files, ['kody'])).toEqual([
 		{ file: 'package.json', specifier: '@owner/shared-utils' },
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
 	])
-
-	const withoutAllowlist = scanCrossScopeReferences({
-		files,
-		expectedPackageScope: 'jane',
+	expect(scanAsJane(files)).toContainEqual({
+		file: 'src/index.ts',
+		specifier: 'kody:@kody/',
 	})
-	expect(
-		withoutAllowlist.some((entry) => entry.specifier === 'kody:@kody/'),
-	).toBe(true)
 })
 
 test('collectChangedForkFiles returns only rewritten paths', () => {

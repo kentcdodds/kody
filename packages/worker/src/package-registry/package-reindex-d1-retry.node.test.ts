@@ -19,102 +19,80 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/vectorize/embedding.ts', () => ({
-	embedTextsForVectorize: (...args: Array<unknown>) =>
-		mockModule.embedTextsForVectorize(...args),
-	getCapabilityVectorIndex: (...args: Array<unknown>) =>
-		mockModule.getCapabilityVectorIndex(...args),
-	isCapabilitySearchOffline: (...args: Array<unknown>) =>
-		mockModule.isCapabilitySearchOffline(...args),
+	embedTextsForVectorize: mockModule.embedTextsForVectorize,
+	getCapabilityVectorIndex: mockModule.getCapabilityVectorIndex,
+	isCapabilitySearchOffline: mockModule.isCapabilitySearchOffline,
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: mockModule.getEntitySourceById,
 }))
 
 vi.mock('#worker/repo/published-source.ts', () => ({
-	loadPublishedEntityManifest: (...args: Array<unknown>) =>
-		mockModule.loadPublishedEntityManifest(...args),
+	loadPublishedEntityManifest: mockModule.loadPublishedEntityManifest,
 	loadPublishedEntitySource: vi.fn(),
 }))
 
 vi.mock('./embed.ts', () => ({
-	buildSavedPackageEmbedText: (...args: Array<unknown>) =>
-		mockModule.buildSavedPackageEmbedText(...args),
+	buildSavedPackageEmbedText: mockModule.buildSavedPackageEmbedText,
 }))
 
 vi.mock('./repo.ts', () => ({
-	listSavedPackagesPage: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesPage(...args),
+	listSavedPackagesPage: mockModule.listSavedPackagesPage,
 	savedPackageVectorId: (packageId: string) => `package_${packageId}`,
 }))
 
 vi.mock('./search-index-debt.ts', () => ({
-	clearSavedPackageSearchIndexDebt: (...args: Array<unknown>) =>
-		mockModule.clearSavedPackageSearchIndexDebt(...args),
-	getSavedPackageSearchIndexDebtGeneration: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageSearchIndexDebtGeneration(...args),
+	clearSavedPackageSearchIndexDebt: mockModule.clearSavedPackageSearchIndexDebt,
+	getSavedPackageSearchIndexDebtGeneration:
+		mockModule.getSavedPackageSearchIndexDebtGeneration,
 }))
 
 const { reindexSavedPackageVectors } = await import('./package-reindex.ts')
 
-const exportError = () => new Error(`D1_ERROR: ${d1LongRunningExportMessage}.`)
+const exportErrorMessage = `D1_ERROR: ${d1LongRunningExportMessage}.`
 
-function resetMocks() {
-	mockModule.buildSavedPackageEmbedText.mockReset()
-	mockModule.embedTextsForVectorize.mockReset()
-	mockModule.getCapabilityVectorIndex.mockReset()
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.isCapabilitySearchOffline.mockReset()
-	mockModule.listSavedPackagesPage.mockReset()
-	mockModule.clearSavedPackageSearchIndexDebt.mockReset()
-	mockModule.clearSavedPackageSearchIndexDebt.mockResolvedValue(undefined)
-	mockModule.getSavedPackageSearchIndexDebtGeneration.mockReset()
-	mockModule.getSavedPackageSearchIndexDebtGeneration.mockResolvedValue(null)
-	mockModule.loadPublishedEntityManifest.mockReset()
+const source = {
+	id: 'source-pkg-1',
+	user_id: 'user-1',
+	entity_kind: 'package' as const,
+	entity_id: 'package-source-pkg-1',
+	repo_id: 'repo-source-pkg-1',
+	published_commit: 'commit-1',
+	indexed_commit: 'commit-1',
+	manifest_path: 'package.json',
+	source_root: '/',
+	created_at: '2026-01-01T00:00:00.000Z',
+	updated_at: '2026-01-01T00:00:00.000Z',
 }
 
-function createSourceRow(sourceId: string) {
-	return {
-		id: sourceId,
-		user_id: 'user-1',
-		entity_kind: 'package' as const,
-		entity_id: `package-${sourceId}`,
-		repo_id: `repo-${sourceId}`,
-		published_commit: 'commit-1',
-		indexed_commit: 'commit-1',
-		manifest_path: 'package.json',
-		source_root: '/',
-		created_at: '2026-01-01T00:00:00.000Z',
-		updated_at: '2026-01-01T00:00:00.000Z',
-	}
-}
-
-function createSavedPackage(id: string) {
-	return {
-		id,
-		userId: 'user-1',
-		name: `@user/${id}`,
-		kodyId: id,
-		description: `Package ${id}`,
-		tags: [],
-		searchText: null,
-		sourceId: `source-${id}`,
-		hasApp: false,
-		hidden: false,
-		isPrivate: false,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	}
-}
-
-function stubSuccessfulManifestLoad(sourceId: string) {
-	const source = createSourceRow(sourceId)
+/** One saved package whose manifest load succeeds once its entity source resolves. */
+function setupMocks() {
+	const upsert = vi.fn()
 	const manifest = {
 		name: '@user/pkg',
 		exports: { '.': './index.ts' },
 		kody: { id: 'pkg', description: 'Package' },
 	}
+	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
+	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
+	mockModule.listSavedPackagesPage.mockResolvedValue([
+		{
+			id: 'pkg-1',
+			userId: 'user-1',
+			name: '@user/pkg-1',
+			kodyId: 'pkg-1',
+			description: 'Package pkg-1',
+			tags: [],
+			searchText: null,
+			sourceId: source.id,
+			hasApp: false,
+			hidden: false,
+			isPrivate: false,
+			createdAt: '2026-01-01T00:00:00.000Z',
+			updatedAt: '2026-01-01T00:00:00.000Z',
+		},
+	])
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source,
 		content: JSON.stringify(manifest),
@@ -122,85 +100,68 @@ function stubSuccessfulManifestLoad(sourceId: string) {
 	})
 	mockModule.buildSavedPackageEmbedText.mockReturnValue('manifest embed')
 	mockModule.embedTextsForVectorize.mockResolvedValue([[0.1, 0.2, 0.3]])
-	return { source, manifest }
+	mockModule.clearSavedPackageSearchIndexDebt.mockResolvedValue(undefined)
+	mockModule.getSavedPackageSearchIndexDebtGeneration.mockResolvedValue(null)
+	return { upsert }
 }
 
-test('saved package reindex retries transient D1 export errors then reports exhaustion', async () => {
-	resetMocks()
-	const upsert = vi.fn()
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-	} as Env
-	const pkg = createSavedPackage('pkg-1')
-	const { source } = stubSuccessfulManifestLoad(pkg.sourceId)
-	mockModule.getCapabilityVectorIndex.mockReturnValue({ upsert })
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listSavedPackagesPage.mockResolvedValue([pkg])
+async function reindexWithFakeTimers(retryDelaysMs: Array<number>) {
+	vi.useFakeTimers()
+	try {
+		const promise = reindexSavedPackageVectors(
+			{ APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env,
+			{ baseUrl: 'https://kody.example.com' },
+		)
+		for (const delayMs of retryDelaysMs) {
+			await vi.advanceTimersByTimeAsync(delayMs)
+		}
+		return await promise
+	} finally {
+		vi.useRealTimers()
+	}
+}
+
+test('saved package reindex retries a transient D1 export error on source lookup', async () => {
+	const { upsert } = setupMocks()
 	mockModule.getEntitySourceById
-		.mockRejectedValueOnce(exportError())
+		.mockRejectedValueOnce(new Error(exportErrorMessage))
 		.mockResolvedValueOnce(source)
 
-	vi.useFakeTimers()
-	try {
-		const recoverPromise = reindexSavedPackageVectors(env, {
-			baseUrl: 'https://kody.example.com',
-		})
-		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
-		await expect(recoverPromise).resolves.toEqual({
-			upserted: 1,
-			complete: true,
-			afterId: null,
-		})
-	} finally {
-		vi.useRealTimers()
-	}
+	await expect(
+		reindexWithFakeTimers([d1LockRetryBaseDelayMs]),
+	).resolves.toEqual({ upserted: 1, complete: true, afterId: null })
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 	expect(upsert).toHaveBeenCalledTimes(1)
+})
 
-	resetMocks()
+test('saved package reindex reports source lookup failures after the retry budget', async () => {
 	consoleError.mockImplementation(() => {})
-	const exhaustedUpsert = vi.fn()
-	stubSuccessfulManifestLoad(pkg.sourceId)
-	mockModule.getCapabilityVectorIndex.mockReturnValue({
-		upsert: exhaustedUpsert,
+	const { upsert } = setupMocks()
+	mockModule.getEntitySourceById.mockRejectedValue(
+		new Error(exportErrorMessage),
+	)
+
+	await expect(
+		reindexWithFakeTimers(
+			Array.from(
+				{ length: d1LockRetryMaxAttempts - 1 },
+				(_, index) => d1LockRetryBaseDelayMs * 2 ** index,
+			),
+		),
+	).resolves.toEqual({
+		upserted: 0,
+		complete: true,
+		afterId: null,
+		failed: 1,
+		failures: [
+			{ id: 'package_pkg-1', phase: 'load', error: exportErrorMessage },
+		],
+		failedIds: ['package_pkg-1'],
+		error: '1 saved package vector(s) failed to reindex',
 	})
-	mockModule.isCapabilitySearchOffline.mockReturnValue(false)
-	mockModule.listSavedPackagesPage.mockResolvedValue([pkg])
-	mockModule.getEntitySourceById.mockRejectedValue(exportError())
-
-	vi.useFakeTimers()
-	try {
-		const exhaustedPromise = reindexSavedPackageVectors(env, {
-			baseUrl: 'https://kody.example.com',
-		})
-		for (let attempt = 1; attempt < d1LockRetryMaxAttempts; attempt++) {
-			await vi.advanceTimersByTimeAsync(
-				d1LockRetryBaseDelayMs * 2 ** (attempt - 1),
-			)
-		}
-		await expect(exhaustedPromise).resolves.toEqual({
-			upserted: 0,
-			complete: true,
-			afterId: null,
-			failed: 1,
-			failures: [
-				{
-					id: 'package_pkg-1',
-					phase: 'load',
-					error: `D1_ERROR: ${d1LongRunningExportMessage}.`,
-				},
-			],
-			failedIds: ['package_pkg-1'],
-			error: '1 saved package vector(s) failed to reindex',
-		})
-	} finally {
-		vi.useRealTimers()
-	}
-
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(
 		d1LockRetryMaxAttempts,
 	)
 	expect(mockModule.loadPublishedEntityManifest).not.toHaveBeenCalled()
-	expect(exhaustedUpsert).not.toHaveBeenCalled()
+	expect(upsert).not.toHaveBeenCalled()
 })

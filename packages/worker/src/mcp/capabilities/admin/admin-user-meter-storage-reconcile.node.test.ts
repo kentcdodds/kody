@@ -1,30 +1,38 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
+import type * as D1StorageReconciliation from '#worker/entitlements/d1-storage-reconciliation.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	d1StorageReconciliationBatchSize: 8,
-	reconcileD1StorageBytes: vi.fn(async () => ({
+	reconcileD1StorageBytes: vi.fn<
+		typeof D1StorageReconciliation.reconcileD1StorageBytes
+	>(async () => ({
 		scanned: 2,
 		updated: 1,
 		failed: 1,
 		deferred: 0,
 	})),
-	logAuditEvent: vi.fn(async () => undefined),
+	logAuditEvent: vi.fn<typeof AuditLog.logAuditEvent>(async () => ({
+		persisted: false,
+		failedSinks: [],
+	})),
 }))
 
 vi.mock('#worker/entitlements/d1-storage-reconciliation.ts', () => ({
 	d1StorageReconciliationBatchSize: mockModule.d1StorageReconciliationBatchSize,
-	reconcileD1StorageBytes: (...args: Array<unknown>) =>
-		mockModule.reconcileD1StorageBytes(...args),
+	reconcileD1StorageBytes: (
+		...args: Parameters<typeof D1StorageReconciliation.reconcileD1StorageBytes>
+	) => mockModule.reconcileD1StorageBytes(...args),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Array<unknown>) =>
+		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
 			mockModule.logAuditEvent(...args),
 	}
 })
@@ -36,9 +44,12 @@ function createAdminContext(env: Env) {
 	return {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: testStableUserIdFromEmail('admin@example.com'),
+				userId: personIdFromStored(
+					testStableUserIdFromEmail('admin@example.com'),
+				),
 				email: 'admin@example.com',
 				displayName: 'Admin',
 				roles: ['admin'],

@@ -9,6 +9,8 @@ import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsForUser,
 } from '#worker/oauth-grants.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import { deleteMcpEventSubscriptionsForUser } from '#mcp/events/subscriptions-repo.ts'
 import { AccountDeletionInProgressError } from '#worker/account/deletion-state.ts'
 import {
 	type ClearedAccountFactors,
@@ -71,6 +73,10 @@ export async function applyPasswordChange(
 				helpers,
 				userId: input.stableUserId,
 			})
+			await deleteMcpEventSubscriptionsForUser({
+				db: input.d1,
+				userId: input.stableUserId,
+			})
 			return null
 		} catch (error) {
 			return error instanceof Error
@@ -126,6 +132,11 @@ export async function applyPasswordChange(
 			updated_at: updatedAt,
 		})
 	}
+
+	// Invalidate immediately after the stamp so same-isolate package-app
+	// sessions issued before password_changed_at fail closed even if a later
+	// revoke or factor sweep returns stamped:true with ok:false.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 
 	// Stamp, then revoke again so a grant created in that window is still
 	// collected.

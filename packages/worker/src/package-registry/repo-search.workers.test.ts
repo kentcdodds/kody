@@ -18,6 +18,7 @@ async function ensureSchema(db: D1Database) {
 				search_text TEXT,
 				source_id TEXT NOT NULL,
 				has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+				has_skills INTEGER NOT NULL DEFAULT 0 CHECK (has_skills IN (0, 1)),
 				hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 				is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
 				locked_at TEXT,
@@ -26,21 +27,15 @@ async function ensureSchema(db: D1Database) {
 			)`,
 		)
 		.run()
-	try {
-		await db
-			.prepare(
-				`ALTER TABLE saved_packages ADD COLUMN is_private INTEGER NOT NULL DEFAULT 1`,
-			)
-			.run()
-	} catch {
-		// Column already present on newer schemas.
-	}
-	try {
-		await db
-			.prepare(`ALTER TABLE saved_packages ADD COLUMN locked_at TEXT`)
-			.run()
-	} catch {
-		// Column already present on newer schemas.
+	for (const column of [
+		'is_private INTEGER NOT NULL DEFAULT 1',
+		'locked_at TEXT',
+	]) {
+		try {
+			await db.prepare(`ALTER TABLE saved_packages ADD COLUMN ${column}`).run()
+		} catch {
+			// Column already present on newer schemas.
+		}
 	}
 	await db
 		.prepare(`DELETE FROM saved_packages WHERE user_id IN (?, ?)`)
@@ -70,6 +65,7 @@ function buildRow(input: {
 		search_text: input.searchText ?? null,
 		source_id: `source-${input.id}`,
 		has_app: input.hasApp ? (1 as const) : (0 as const),
+		has_skills: 0 as const,
 		hidden: 0 as const,
 		is_private: 0 as const,
 		created_at: input.createdAt,
@@ -77,10 +73,14 @@ function buildRow(input: {
 	}
 }
 
+type SearchInput = Omit<
+	Parameters<typeof searchSavedPackagesByUserId>[1],
+	'userId' | 'limit' | 'offset'
+> & { limit?: number; offset?: number }
+
 test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', async () => {
 	await ensureSchema(env.APP_DB)
-	await insertSavedPackage(
-		env.APP_DB,
+	for (const row of [
 		buildRow({
 			id: 'search-pkg-a',
 			name: '@user/alpha-dashboard',
@@ -91,9 +91,6 @@ test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', a
 			createdAt: '2026-01-03T00:00:00.000Z',
 			updatedAt: '2026-01-05T00:00:00.000Z',
 		}),
-	)
-	await insertSavedPackage(
-		env.APP_DB,
 		buildRow({
 			id: 'search-pkg-b',
 			name: '@user/beta-notifier',
@@ -103,9 +100,6 @@ test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', a
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-06T00:00:00.000Z',
 		}),
-	)
-	await insertSavedPackage(
-		env.APP_DB,
 		buildRow({
 			id: 'search-pkg-c',
 			name: '@user/gamma-sync',
@@ -115,9 +109,6 @@ test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', a
 			createdAt: '2026-01-02T00:00:00.000Z',
 			updatedAt: '2026-01-04T00:00:00.000Z',
 		}),
-	)
-	await insertSavedPackage(
-		env.APP_DB,
 		buildRow({
 			id: 'search-pkg-other',
 			userId: otherUserId,
@@ -127,106 +118,39 @@ test('searchSavedPackagesByUserId scopes, sorts, queries, filters, and pages', a
 			createdAt: '2026-01-01T00:00:00.000Z',
 			updatedAt: '2026-01-07T00:00:00.000Z',
 		}),
-	)
+	]) {
+		await insertSavedPackage(env.APP_DB, row)
+	}
 
-	const byUpdated = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		limit: 10,
-		offset: 0,
-	})
-	expect(byUpdated.total).toBe(3)
-	expect(byUpdated.items.map((item) => item.id)).toEqual([
-		'search-pkg-b',
-		'search-pkg-a',
-		'search-pkg-c',
-	])
-
-	const byCreated = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		sort: 'created',
-		limit: 10,
-		offset: 0,
-	})
-	expect(byCreated.items.map((item) => item.id)).toEqual([
-		'search-pkg-a',
-		'search-pkg-c',
-		'search-pkg-b',
-	])
-
-	const byName = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		sort: 'name',
-		limit: 10,
-		offset: 0,
-	})
-	expect(byName.items.map((item) => item.name)).toEqual([
-		'@user/alpha-dashboard',
-		'@user/beta-notifier',
-		'@user/gamma-sync',
-	])
-
-	const byNameQuery = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		query: 'ALPHA-DASH',
-		limit: 10,
-		offset: 0,
-	})
-	expect(byNameQuery.items.map((item) => item.id)).toEqual(['search-pkg-a'])
-
-	const bySearchText = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		query: 'digest',
-		limit: 10,
-		offset: 0,
-	})
-	expect(bySearchText.items.map((item) => item.id)).toEqual(['search-pkg-b'])
-
-	const byTag = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		query: 'calendar',
-		limit: 10,
-		offset: 0,
-	})
-	expect(byTag.items.map((item) => item.id)).toEqual(['search-pkg-c'])
-
-	const literalPercent = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		query: '100%',
-		limit: 10,
-		offset: 0,
-	})
-	expect(literalPercent.items.map((item) => item.id)).toEqual(['search-pkg-b'])
-
-	const wildcardOnly = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		query: '%',
-		limit: 10,
-		offset: 0,
-	})
-	expect(wildcardOnly.total).toBe(1)
-
-	const withApp = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		hasApp: true,
-		limit: 10,
-		offset: 0,
-	})
-	expect(withApp.total).toBe(1)
-	expect(withApp.items.map((item) => item.id)).toEqual(['search-pkg-a'])
-
-	const withoutApp = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		hasApp: false,
-		limit: 10,
-		offset: 0,
-	})
-	expect(withoutApp.total).toBe(2)
-
-	const pageTwo = await searchSavedPackagesByUserId(env.APP_DB, {
-		userId,
-		limit: 2,
-		offset: 2,
-	})
-	expect(pageTwo.total).toBe(3)
-	expect(pageTwo.items.map((item) => item.id)).toEqual(['search-pkg-c'])
+	const cases: Array<[input: SearchInput, total: number, ids: Array<string>]> =
+		[
+			[{}, 3, ['search-pkg-b', 'search-pkg-a', 'search-pkg-c']],
+			[
+				{ sort: 'created' },
+				3,
+				['search-pkg-a', 'search-pkg-c', 'search-pkg-b'],
+			],
+			[{ sort: 'name' }, 3, ['search-pkg-a', 'search-pkg-b', 'search-pkg-c']],
+			[{ query: 'ALPHA-DASH' }, 1, ['search-pkg-a']],
+			[{ query: 'digest' }, 1, ['search-pkg-b']],
+			[{ query: 'calendar' }, 1, ['search-pkg-c']],
+			[{ query: '100%' }, 1, ['search-pkg-b']],
+			[{ query: '%' }, 1, ['search-pkg-b']],
+			[{ hasApp: true }, 1, ['search-pkg-a']],
+			[{ hasApp: false }, 2, ['search-pkg-b', 'search-pkg-c']],
+			[{ limit: 2, offset: 2 }, 3, ['search-pkg-c']],
+		]
+	for (const [input, total, ids] of cases) {
+		const result = await searchSavedPackagesByUserId(env.APP_DB, {
+			userId,
+			limit: 10,
+			offset: 0,
+			...input,
+		})
+		expect({
+			input,
+			total: result.total,
+			ids: result.items.map((i) => i.id),
+		}).toEqual({ input, total, ids })
+	}
 })

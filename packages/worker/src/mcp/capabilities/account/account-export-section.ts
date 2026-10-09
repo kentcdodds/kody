@@ -16,6 +16,7 @@ export const accountExportSectionCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
 		name: 'accountExportSection',
+		orgPermission: 'org:read',
 		description:
 			'Read a paged section of the signed-in user account export. Use accountExportManifest first for section counts and warnings. Secret values are never exported.',
 		keywords: ['account', 'export', 'chunk', 'backup', 'migration'],

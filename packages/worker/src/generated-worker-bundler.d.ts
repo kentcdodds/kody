@@ -19,12 +19,20 @@ declare module '*/node_modules/.kody-generated/oauth-provider.mjs' {
 	export * from '@cloudflare/workers-oauth-provider'
 }
 
-/**
- * The platform-supplied `remix` package for package apps: a code-split
- * pre-bundle of the Workers-safe `remix/<subpath>` entries, keyed relative
- * to `node_modules/remix/` (see `packageAppRemixSubpaths`).
- */
-declare module '*/node_modules/.kody-generated/package-app-remix.mjs' {
-	export const remixVersion: string
-	export const files: Record<string, string>
+declare module '*/node_modules/.kody-generated/local-execute-runtime-support.mjs' {
+	export {
+		moduleSourceHasInlinedKodyRuntime,
+		rewriteInlinedLocalExecuteBundleSource,
+	} from './package-runtime/rewrite-inlined-local-runtime.ts'
+	export const localExecuteHostRuntimeModuleName: 'kody:runtime'
+	export function createLocalExecuteRuntimeShimSource(
+		modulePath?: string,
+	): string
+	export function createLocalExecutePackageRuntimeModuleSource(
+		packageId: string,
+	): string
+}
+
+declare module '*/node_modules/.kody-generated/isomorphic-git.mjs' {
+	export { git, http, createGit } from './repo/isomorphic-git-module.ts'
 }

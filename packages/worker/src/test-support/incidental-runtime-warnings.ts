@@ -3,9 +3,9 @@ import { silenceExpectedConsoleWarns } from './console-spies.ts'
 // The worker bundler warns that it is experimental, and the registry runtime's
 // optional MCP-server, usage, run-record, and activation lookups warn when
 // their tables or bindings are absent from the unit-test schema. The first
-// kody.* dispatch probe can also warn under workers-unit isolation; Vitest
-// skips that emit, and this tag stays allowlisted if a workerd isolate still
-// logs it. Tests that run those paths swallow exactly these messages; any
+// kody.* dispatch probe can also warn under workers-unit isolation; this tag
+// stays allowlisted so that incidental budget noise does not fail unrelated
+// suites. Tests that run those paths swallow exactly these messages; any
 // other warning still fails the test so real problems are never silently
 // suppressed.
 const incidentalRuntimeWarnings = [
@@ -22,6 +22,11 @@ const incidentalRuntimeWarnings = [
 	'activation-run-record-failed',
 	'artifacts-push-subscription-ensure-failed',
 	'kody-first-capability-dispatch-slow',
+	// Fire-and-forget estimate refresh after packageStorage / StorageRunner
+	// writes. The dedicated storage-buckets suite asserts the message; other
+	// workers-unit files that touch storage should not flake when a refresh
+	// fails in the isolate.
+	'storage-bucket-estimate-refresh-failed',
 ]
 
 export function silenceIncidentalRuntimeWarnings(

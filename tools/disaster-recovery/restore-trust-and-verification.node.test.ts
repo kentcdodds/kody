@@ -39,6 +39,47 @@ import {
 	parseTrustedRestoreBaselineRegistry,
 } from './restore-trust.ts'
 
+const jobsDatabaseId = '5410331e-4d25-47e4-a1e5-a248f7cc764c'
+
+function manifestInput(fixture: ReturnType<typeof manifestFixture>) {
+	return {
+		manifestBytes: fixture.bytes,
+		expectedManifestSha256: fixture.checksum,
+	}
+}
+
+async function expectDrillRejected(
+	overrides: Record<string, unknown>,
+	message: string,
+) {
+	const adapters = createAdapters()
+	await expect(
+		runD1RestoreDrill(drillInput(overrides), adapters),
+	).rejects.toThrow(message)
+	expect(adapters.createTarget).not.toHaveBeenCalled()
+}
+
+function verifyManifestJson(manifest: unknown) {
+	const bytes = new TextEncoder().encode(JSON.stringify(manifest))
+	return () => parseAndVerifyManifest(bytes, sha256(bytes), manifestKeyRegistry)
+}
+
+function cliArgs(...extra: Array<string>) {
+	return parseArguments([
+		'--manifest',
+		'manifest.json',
+		'--manifest-sha256',
+		'0'.repeat(64),
+		'--backup',
+		'backup.sql',
+		'--baseline-id',
+		'production-baseline-2026',
+		'--target-account-id',
+		targetAccountId,
+		...extra,
+	])
+}
+
 test('D1 drill verifies manifest, SQL evidence, and isolation rows before live creation', async () => {
 	const fixture = manifestFixture()
 	expect(
@@ -48,51 +89,34 @@ test('D1 drill verifies manifest, SQL evidence, and isolation rows before live c
 			manifestKeyRegistry,
 		),
 	).toEqual(fixture.manifest)
-	const adapters = createAdapters()
-	await expect(
-		runD1RestoreDrill(
-			drillInput({ expectedManifestSha256: '0'.repeat(64), dryRun: false }),
-			adapters,
-		),
-	).rejects.toThrow('manifest bytes do not match')
-	await expect(
-		runD1RestoreDrill(
-			drillInput({
+	const liveRejections: Array<[Record<string, unknown>, string]> = [
+		[{ expectedManifestSha256: '0'.repeat(64) }, 'manifest bytes do not match'],
+		[
+			{
 				backupFileEvidence: {
 					sizeBytes: backupBytes.byteLength - 1,
 					sha256: sha256(backupBytes),
 				},
-				dryRun: false,
-			}),
-			adapters,
-		),
-	).rejects.toThrow('local SQL file evidence')
-	await expect(
-		runD1RestoreDrill(
-			drillInput({
+			},
+			'local SQL file evidence',
+		],
+		[
+			{
 				backupFileEvidence: {
 					sizeBytes: backupBytes.byteLength,
 					sha256: 'f'.repeat(64),
 				},
-				dryRun: false,
-			}),
-			adapters,
-		),
-	).rejects.toThrow('local SQL file evidence')
-	const oversized = manifestFixture({
-		bytes: 5 * 1024 * 1024 * 1024,
-	})
-	await expect(
-		runD1RestoreDrill(
-			drillInput({
-				manifestBytes: oversized.bytes,
-				expectedManifestSha256: oversized.checksum,
-				dryRun: false,
-			}),
-			adapters,
-		),
-	).rejects.toThrow('exceeds the 5 GiB')
-	expect(adapters.createTarget).not.toHaveBeenCalled()
+			},
+			'local SQL file evidence',
+		],
+		[
+			manifestInput(manifestFixture({ bytes: 5 * 1024 * 1024 * 1024 })),
+			'exceeds the 5 GiB',
+		],
+	]
+	for (const [overrides, message] of liveRejections) {
+		await expectDrillRejected({ ...overrides, dryRun: false }, message)
+	}
 
 	const baseline = createBaseline({
 		isolationChecks: [
@@ -132,44 +156,23 @@ test('D1 drill verifies manifest, SQL evidence, and isolation rows before live c
 })
 
 test('restore requires a trusted manifest signature and checked baseline id', async () => {
-	const fixture = manifestFixture()
-	const unsignedBytes = new TextEncoder().encode(
-		JSON.stringify({
-			schemaVersion: fixture.manifest.schemaVersion,
-			payload: fixture.manifest.payload,
+	const { manifest } = manifestFixture()
+	expect(
+		verifyManifestJson({
+			schemaVersion: manifest.schemaVersion,
+			payload: manifest.payload,
 		}),
-	)
-	expect(() =>
-		parseAndVerifyManifest(
-			unsignedBytes,
-			sha256(unsignedBytes),
-			manifestKeyRegistry,
-		),
 	).toThrow('invalid versioned shape')
 
-	const tampered = structuredClone(fixture.manifest)
+	const tampered = structuredClone(manifest)
 	tampered.payload.sql.sha256 = 'f'.repeat(64)
-	const tamperedBytes = new TextEncoder().encode(JSON.stringify(tampered))
-	expect(() =>
-		parseAndVerifyManifest(
-			tamperedBytes,
-			sha256(tamperedBytes),
-			manifestKeyRegistry,
-		),
-	).toThrow('signature verification failed')
+	expect(verifyManifestJson(tampered)).toThrow('signature verification failed')
 
-	const unknownKey = structuredClone(fixture.manifest)
+	const unknownKey = structuredClone(manifest)
 	unknownKey.payload.signing.keyId = 'unknown-backup-key'
 	unknownKey.signature.keyId = 'unknown-backup-key'
 	unknownKey.signature.value = signManifestPayload(unknownKey.payload)
-	const unknownKeyBytes = new TextEncoder().encode(JSON.stringify(unknownKey))
-	expect(() =>
-		parseAndVerifyManifest(
-			unknownKeyBytes,
-			sha256(unknownKeyBytes),
-			manifestKeyRegistry,
-		),
-	).toThrow('signing key is not trusted')
+	expect(verifyManifestJson(unknownKey)).toThrow('signing key is not trusted')
 
 	await expect(
 		runD1RestoreDrill(
@@ -183,36 +186,31 @@ test('restore requires a trusted manifest signature and checked baseline id', as
 })
 
 test('restore trust registry is exact, pins the reviewed identities, and cannot be replaced by operator assertions', async () => {
-	expect(() =>
-		parseRestoreTrustRegistry({
-			...createTrustRegistry(),
-			operatorApproved: true,
-		}),
-	).toThrow('invalid shape')
-	expect(() =>
-		parseRestoreTrustRegistry({
-			...createTrustRegistry(),
-			productionSources: [
-				{
-					accountId: productionAccountId,
-					databaseId: productionUuid,
-					databaseName: 'kody-production',
-					purpose: 'production',
-				},
-			],
-		}),
-	).toThrow('invalid shape')
-	expect(() =>
-		parseRestoreTrustRegistry(
+	const registryRejections: Array<[unknown, string]> = [
+		[{ ...createTrustRegistry(), operatorApproved: true }, 'invalid shape'],
+		[
+			{
+				...createTrustRegistry(),
+				productionSources: [
+					{
+						accountId: productionAccountId,
+						databaseId: productionUuid,
+						databaseName: 'kody-production',
+						purpose: 'production',
+					},
+				],
+			},
+			'invalid shape',
+		],
+		[
 			createTrustRegistry({
 				drillTargets: [
 					{ accountId: 'not-a-cloudflare-account', databaseName: 'kody-drill' },
 				],
 			}),
-		),
-	).toThrow('Cloudflare account ID')
-	expect(() =>
-		parseRestoreTrustRegistry(
+			'Cloudflare account ID',
+		],
+		[
 			createTrustRegistry({
 				productionSources: [
 					{
@@ -222,10 +220,9 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 					},
 				],
 			}),
-		),
-	).toThrow('Cloudflare account ID')
-	expect(() =>
-		parseRestoreTrustRegistry(
+			'Cloudflare account ID',
+		],
+		[
 			createTrustRegistry({
 				drillTargets: [
 					{
@@ -234,20 +231,20 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 					},
 				],
 			}),
-		),
-	).toThrow('Cloudflare account ID')
+			'Cloudflare account ID',
+		],
+	]
+	for (const [registry, message] of registryRejections) {
+		expect(() => parseRestoreTrustRegistry(registry)).toThrow(message)
+	}
 
-	const checkedRegistry = JSON.parse(
-		await readFile(restoreTrustRegistryPath, 'utf8'),
-	) as unknown
-	const checkedManifestKeys = JSON.parse(
-		await readFile(manifestPublicKeyRegistryPath, 'utf8'),
-	) as unknown
-	const checkedBaselines = JSON.parse(
-		await readFile(restoreBaselineRegistryPath, 'utf8'),
-	) as unknown
+	const readJson = async (filePath: string): Promise<unknown> =>
+		JSON.parse(await readFile(filePath, 'utf8'))
+	const checkedRegistry = await readJson(restoreTrustRegistryPath)
 	expect(
-		parseTrustedManifestPublicKeyRegistry(checkedManifestKeys).keys,
+		parseTrustedManifestPublicKeyRegistry(
+			await readJson(manifestPublicKeyRegistryPath),
+		).keys,
 	).toEqual([
 		{
 			algorithm: 'Ed25519',
@@ -257,8 +254,10 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 		},
 	])
 	expect(
-		parseTrustedRestoreBaselineRegistry(checkedBaselines, parseBaseline)
-			.baselines,
+		parseTrustedRestoreBaselineRegistry(
+			await readJson(restoreBaselineRegistryPath),
+			parseBaseline,
+		).baselines,
 	).toEqual([])
 	// These exact identities are the reviewed allowlist for restore flows.
 	// Changing them requires updating this pin in the same reviewed change.
@@ -272,7 +271,7 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 			},
 			{
 				accountId: 'a99ee2e72728dd52902ef288b7b1447d',
-				databaseId: '5410331e-4d25-47e4-a1e5-a248f7cc764c',
+				databaseId: jobsDatabaseId,
 				databaseName: 'kody-jobs',
 			},
 		],
@@ -283,60 +282,40 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 			},
 		],
 	})
-	await expect(
-		runD1RestoreDrill(
-			drillInput({ trustRegistry: checkedRegistry }),
-			createAdapters(),
-		),
-	).rejects.toThrow('manifest source identity is not approved')
-	const checkedRegistryAdapters = createAdapters()
-	await expect(
-		runD1RestoreDrill(
-			drillInput({ trustRegistry: checkedRegistry, dryRun: false }),
-			checkedRegistryAdapters,
-		),
-	).rejects.toThrow('manifest source identity is not approved')
-	expect(checkedRegistryAdapters.createTarget).not.toHaveBeenCalled()
-
-	const fabricated = manifestFixture({
-		source: {
-			accountId: targetAccountId,
-			databaseId: targetUuid,
-			databaseName: 'kody-drill',
-		},
-	})
-	const fabricatedAdapters = createAdapters()
-	await expect(
-		runD1RestoreDrill(
-			drillInput({
-				manifestBytes: fabricated.bytes,
-				expectedManifestSha256: fabricated.checksum,
-				allowlist: [
-					{
+	for (const dryRun of [true, false]) {
+		await expectDrillRejected(
+			{ trustRegistry: checkedRegistry, dryRun },
+			'manifest source identity is not approved',
+		)
+	}
+	await expectDrillRejected(
+		{
+			...manifestInput(
+				manifestFixture({
+					source: {
 						accountId: targetAccountId,
-						name: 'kody-drill',
-						purpose: 'drill',
+						databaseId: targetUuid,
+						databaseName: 'kody-drill',
 					},
-				],
-				dryRun: false,
-			}),
-			fabricatedAdapters,
-		),
-	).rejects.toThrow('manifest source identity is not approved')
-	expect(fabricatedAdapters.createTarget).not.toHaveBeenCalled()
+				}),
+			),
+			allowlist: [
+				{ accountId: targetAccountId, name: 'kody-drill', purpose: 'drill' },
+			],
+			dryRun: false,
+		},
+		'manifest source identity is not approved',
+	)
 
 	const source = createManifest().payload.source
-	const uppercaseFixture = manifestFixture({
-		source: {
-			...source,
-			accountId: productionAccountId.toUpperCase(),
-		},
-	})
 	await expect(
 		runD1RestoreDrill(
 			drillInput({
-				manifestBytes: uppercaseFixture.bytes,
-				expectedManifestSha256: uppercaseFixture.checksum,
+				...manifestInput(
+					manifestFixture({
+						source: { ...source, accountId: productionAccountId.toUpperCase() },
+					}),
+				),
 				targetAccountId: targetAccountId.toUpperCase(),
 			}),
 			createAdapters(),
@@ -344,56 +323,25 @@ test('restore trust registry is exact, pins the reviewed identities, and cannot 
 	).resolves.toMatchObject({ dryRun: true })
 
 	expect(() =>
-		parseArguments([
-			'--manifest',
-			'manifest.json',
-			'--manifest-sha256',
-			'0'.repeat(64),
-			'--backup',
-			'backup.sql',
-			'--baseline-id',
-			'production-baseline-2026',
+		cliArgs(
 			'--allowlist',
 			'operator-registry.json',
-			'--target-account-id',
-			targetAccountId,
 			'--target-name',
 			'kody-drill',
-		]),
+		),
 	).toThrow('Unknown argument: --allowlist')
 })
 
 test('restore-drill --database selects a configured source and jobs migrations', () => {
-	const parsed = parseArguments([
-		'--manifest',
-		'manifest.json',
-		'--manifest-sha256',
-		'0'.repeat(64),
-		'--backup',
-		'backup.sql',
-		'--baseline-id',
-		'production-baseline-2026',
-		'--target-account-id',
-		targetAccountId,
-		'--target-name',
-		'kody-jobs-drill',
-		'--database',
-		'kody-jobs',
-	])
-	expect(parsed.database).toBe('kody-jobs')
+	expect(
+		cliArgs('--target-name', 'kody-jobs-drill', '--database', 'kody-jobs')
+			.database,
+	).toBe('kody-jobs')
 	expect(() =>
-		assertRequestedDatabase(
-			'kody-jobs',
-			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
-			'kody-jobs',
-		),
+		assertRequestedDatabase('kody-jobs', jobsDatabaseId, 'kody-jobs'),
 	).not.toThrow()
 	expect(() =>
-		assertRequestedDatabase(
-			'kody-jobs',
-			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
-			'5410331e-4d25-47e4-a1e5-a248f7cc764c',
-		),
+		assertRequestedDatabase('kody-jobs', jobsDatabaseId, jobsDatabaseId),
 	).not.toThrow()
 	expect(() =>
 		assertRequestedDatabase(

@@ -34,6 +34,17 @@ export function isPackagePrivate(content: string): boolean {
 	return parsePackagePrivateField(content) === true
 }
 
+/**
+ * Omitted `"private"` and `"private": true` are the same default-private
+ * visibility. First `packageSave` injects `true` when the field is missing;
+ * re-sending the author's unchanged files must not look like a change.
+ */
+function packagePrivateFieldSemantics(
+	value: PackagePrivateFieldValue,
+): 'private-default' | 'public-manifest' {
+	return value === false ? 'public-manifest' : 'private-default'
+}
+
 export function packagePrivateFieldChanged(
 	beforeContent: string | null | undefined,
 	afterContent: string,
@@ -41,7 +52,9 @@ export function packagePrivateFieldChanged(
 	const before =
 		beforeContent == null ? undefined : parsePackagePrivateField(beforeContent)
 	const after = parsePackagePrivateField(afterContent)
-	return before !== after
+	return (
+		packagePrivateFieldSemantics(before) !== packagePrivateFieldSemantics(after)
+	)
 }
 
 export function requiresPrivateVisibilityConfirmation(input: {
@@ -62,7 +75,7 @@ export function assertPackageNotPrivateForCommunityPublish(
 		// CommunityActionError so mcp observability keeps this caller-clearable
 		// precondition off Sentry (KODY-CLOUDFLARE-5T).
 		throw new CommunityActionError(
-			'community listings cannot publish packages with `"private": true` in package.json; set `"private": false` or remove `private` after the user explicitly approves public community sharing.',
+			'A package with `"private": true` in package.json cannot be published as a public package; set `"private": false` or remove `private` after the user explicitly approves sharing it publicly.',
 		)
 	}
 }

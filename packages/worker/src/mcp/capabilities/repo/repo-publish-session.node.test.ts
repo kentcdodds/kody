@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -42,9 +43,11 @@ function createCtx() {
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@test.invalid',
+				displayName: 'User',
 				username: 'user',
 			},
 			baseUrl: 'https://kody.test',
@@ -79,59 +82,45 @@ function resetMocks() {
 	})
 }
 
-test('repoPublishSession keeps a successful publish when fork absorb fails', async () => {
-	resetMocks()
-	mockModule.absorbCommunityForkUpstream.mockRejectedValue(
-		new Error('origin listing is gone'),
-	)
-	const ctx = createCtx()
-
-	const result = await repoPublishSessionCapability.handler(
-		{
-			session_id: 'session-1',
-			absorbed_upstream_commit: 'origin-head',
-		},
-		ctx,
-	)
-
-	expect(result).toEqual({
+test('repoPublishSession keeps a successful publish when fork absorb fails and stays quiet for self-authored packages', async () => {
+	const published = {
 		status: 'ok',
 		session_id: 'session-1',
 		published_commit: 'commit-1',
 		message: 'Published session to repo-artifacts-1.',
-		notice:
-			'Published, but the behind-upstream banner did not clear: origin listing is gone. Retry repoPublishSession with absorbed_upstream_commit.',
-	})
-	expect(mockModule.absorbCommunityForkUpstream).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 'user-1',
-			packageId: 'package-1',
-			originCommit: 'origin-head',
-		}),
-	)
-})
-
-test('repoPublishSession skips absorb notice for self-authored packages', async () => {
-	resetMocks()
-	mockModule.absorbCommunityForkUpstream.mockRejectedValue(
-		new CommunityActionError(
-			'Package "demo" is self-authored and has no catalog entry to absorb.',
-		),
-	)
-	const ctx = createCtx()
-
-	const result = await repoPublishSessionCapability.handler(
+	}
+	const cases = [
 		{
-			session_id: 'session-1',
-			absorbed_upstream_commit: 'origin-head',
+			absorbError: new Error('origin listing is gone'),
+			expected: {
+				...published,
+				notice:
+					'Published, but the behind-upstream banner did not clear: origin listing is gone. Retry repoPublishSession with absorbed_upstream_commit.',
+			},
 		},
-		ctx,
-	)
+		{
+			absorbError: new CommunityActionError(
+				'Package "demo" is self-authored and has no catalog entry to absorb.',
+			),
+			expected: published,
+		},
+	]
+	for (const { absorbError, expected } of cases) {
+		resetMocks()
+		mockModule.absorbCommunityForkUpstream.mockRejectedValue(absorbError)
 
-	expect(result).toEqual({
-		status: 'ok',
-		session_id: 'session-1',
-		published_commit: 'commit-1',
-		message: 'Published session to repo-artifacts-1.',
-	})
+		const result = await repoPublishSessionCapability.handler(
+			{ session_id: 'session-1', absorbed_upstream_commit: 'origin-head' },
+			createCtx(),
+		)
+
+		expect(result).toEqual(expected)
+		expect(mockModule.absorbCommunityForkUpstream).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: 'user-1',
+				packageId: 'package-1',
+				originCommit: 'origin-head',
+			}),
+		)
+	}
 })

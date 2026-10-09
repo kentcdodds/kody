@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { landingHomePrimitives } from '#universal/landing-home-copy.ts'
 import { landingPrimitiveIds } from '#universal/landing-lantern.ts'
-import { ensureOgBinaryAssetsReady } from '#worker/og/og-image-assets.ts'
+import { ensureOgBinaryAssetsReady } from '#worker/og/og-binary-assets.node.ts'
 import { getOgPalette } from '#worker/og/palette.ts'
 import { type SatoriChild, type SatoriElement } from '#worker/og/render.ts'
 import {
@@ -28,9 +28,7 @@ function hueOfHex(hex: string) {
 	const b = Number.parseInt(hex.slice(5, 7), 16) / 255
 	const lin = (channel: number) =>
 		channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-	const red = lin(r)
-	const green = lin(g)
-	const blue = lin(b)
+	const [red, green, blue] = [r, g, b].map(lin) as [number, number, number]
 	const l = Math.cbrt(
 		0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue,
 	)
@@ -82,15 +80,16 @@ function collectText(
 	return collectText(node.props.children)
 }
 
-function countPaths(
+function collectByType(
 	node: SatoriChild | Array<SatoriChild> | undefined,
-): number {
-	if (node == null || typeof node === 'string') return 0
+	type: string,
+): Array<SatoriElement> {
+	if (node == null || typeof node === 'string') return []
 	if (Array.isArray(node)) {
-		return node.reduce((sum, child) => sum + countPaths(child), 0)
+		return node.flatMap((child) => collectByType(child, type))
 	}
-	const self = node.type === 'path' ? 1 : 0
-	return self + countPaths(node.props.children)
+	const self = node.type === type ? [node] : []
+	return [...self, ...collectByType(node.props.children, type)]
 }
 
 test('homepage OG lantern lists every primitive and draws a leader each', async () => {
@@ -100,7 +99,9 @@ test('homepage OG lantern lists every primitive and draws a leader each', async 
 		landingHomePrimitives.map((primitive) => primitive.word),
 	)
 	// Halo plus core stroke for each primitive.
-	expect(countPaths(markup)).toBe(landingHomePrimitives.length * 2)
+	expect(collectByType(markup, 'path')).toHaveLength(
+		landingHomePrimitives.length * 2,
+	)
 })
 
 test('primitive leader colors follow the orb hues, not the old pink and lime', () => {
@@ -120,18 +121,6 @@ test('primitive leader colors follow the orb hues, not the old pink and lime', (
 	)
 })
 
-function collectByType(
-	node: SatoriChild | Array<SatoriChild> | undefined,
-	type: string,
-): Array<SatoriElement> {
-	if (node == null || typeof node === 'string') return []
-	if (Array.isArray(node)) {
-		return node.flatMap((child) => collectByType(child, type))
-	}
-	const self = node.type === type ? [node] : []
-	return [...self, ...collectByType(node.props.children, type)]
-}
-
 test('a highlighted primitive rings its orb and accents only that word', async () => {
 	await ensureOgBinaryAssetsReady()
 	const plain = createPrimitivesLantern('dark')
@@ -147,8 +136,10 @@ test('a highlighted primitive rings its orb and accents only that word', async (
 			labels.set(text, color)
 		}
 	}
-	expect(circles[0]?.props.stroke).toBe(labels.get('triggers'))
-	expect(circles[1]?.props.stroke).toBe(labels.get('triggers'))
+	expect(circles.map((circle) => circle.props.stroke)).toEqual([
+		labels.get('triggers'),
+		labels.get('triggers'),
+	])
 	expect(labels.get('memory')).toBe(getOgPalette('dark').textMuted)
 	expect(labels.get('triggers')).not.toBe(labels.get('memory'))
 })

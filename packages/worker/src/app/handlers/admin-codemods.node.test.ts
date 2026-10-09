@@ -95,53 +95,56 @@ const {
 	createAdminCodemodsRunStopApiHandler,
 } = await import('./admin-codemods.ts')
 
-function createGetRequest(search = '') {
-	const url = new URL(`https://example.com/admin/codemods.json${search}`)
+const codemodId = '0001-ambient-storage-to-package-storage'
+
+function createRequest(path: string, body?: unknown) {
+	const url = new URL(`https://example.com${path}`)
 	return {
 		request: new Request(url, {
-			method: 'GET',
-			headers: { Accept: 'application/json' },
+			method: body === undefined ? 'GET' : 'POST',
+			headers: {
+				Accept: 'application/json',
+				...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+			},
+			body: body === undefined ? undefined : JSON.stringify(body),
 		}),
 		params: {},
 		url,
 	} as never
 }
 
-function createRunRequest(body: unknown) {
-	const url = new URL('https://example.com/admin/codemods/run.json')
-	return {
-		request: new Request(url, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
-		}),
-		params: {},
-		url,
-	} as never
-}
+const getCodemods = (
+	handler: ReturnType<typeof createAdminCodemodsApiHandler>,
+	search = '',
+) => handler.handler(createRequest(`/admin/codemods.json${search}`))
+const postRun = (
+	handler: ReturnType<typeof createAdminCodemodsRunApiHandler>,
+	body: unknown,
+) => handler.handler(createRequest('/admin/codemods/run.json', body))
+const postStop = (
+	handler: ReturnType<typeof createAdminCodemodsRunStopApiHandler>,
+	body: unknown,
+) => handler.handler(createRequest('/admin/codemods/run/stop.json', body))
 
-function createStopRequest(body: unknown) {
-	const url = new URL('https://example.com/admin/codemods/run/stop.json')
-	return {
-		request: new Request(url, {
-			method: 'POST',
-			headers: {
-				Accept: 'application/json',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify(body),
-		}),
-		params: {},
-		url,
-	} as never
+async function expectAdminGate(send: () => Promise<Response>) {
+	for (const [actor, status] of [
+		[null, 401],
+		[createAdminActor(['user']), 403],
+	] as const) {
+		mockModule.readAuthenticatedAppUser.mockResolvedValue(actor)
+		expect([actor?.roles, (await send()).status]).toEqual([
+			actor?.roles,
+			status,
+		])
+	}
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(
+		createAdminActor(['admin']),
+	)
 }
 
 const sampleRun: PackageCodemodRunRecord = {
 	id: 'run-1',
-	codemodId: '0001-ambient-storage-to-package-storage',
+	codemodId,
 	mode: 'scan',
 	scopeUserId: null,
 	initiatedByUserId: 'stable-admin',
@@ -152,64 +155,22 @@ const sampleRun: PackageCodemodRunRecord = {
 	updatedAt: '2026-07-30T10:01:00.000Z',
 }
 
-function stubKnownCodemod() {
-	mockModule.getPackageCodemodById.mockReturnValue({
-		id: '0001-ambient-storage-to-package-storage',
-		description: 'Migrate ambient storage imports.',
-		detect: () => [],
-		transform: () => ({
-			files: {},
-			changed: false,
-			changedPaths: [],
-			needsManual: [],
-		}),
-	})
-}
-
-async function expectBadRunRequest(
-	handler: ReturnType<typeof createAdminCodemodsRunApiHandler>,
-	body: unknown,
-) {
-	const response = await handler.handler(createRunRequest(body))
-	expect(response.status).toBe(400)
-	await expect(response.json()).resolves.toMatchObject({ ok: false })
-	return response
-}
-
-test('admin codemods GET requires admin and returns codemods plus recent runs', async () => {
+test('admin codemods GET requires admin and returns codemods, recent runs, and paged run items', async () => {
 	const env = createTestEnv()
 	const handler = createAdminCodemodsApiHandler(env)
 	mockModule.listPackageCodemods.mockReturnValue([
-		{
-			id: '0001-ambient-storage-to-package-storage',
-			description: 'Migrate ambient storage imports.',
-		},
+		{ id: codemodId, description: 'Migrate ambient storage imports.' },
 	])
 	mockModule.listPackageCodemodRuns.mockResolvedValue([sampleRun])
 	mockModule.markAbandonedPackageCodemodRuns.mockResolvedValue(0)
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await handler.handler(createGetRequest())
-	expect(unauthorized.status).toBe(401)
-
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['user']),
-	)
-	const forbidden = await handler.handler(createGetRequest())
-	expect(forbidden.status).toBe(403)
-
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const response = await handler.handler(createGetRequest())
+	await expectAdminGate(() => getCodemods(handler))
+	const response = await getCodemods(handler)
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toEqual({
 		ok: true,
 		codemods: [
-			{
-				id: '0001-ambient-storage-to-package-storage',
-				description: 'Migrate ambient storage imports.',
-			},
+			{ id: codemodId, description: 'Migrate ambient storage imports.' },
 		],
 		runs: [sampleRun],
 	})
@@ -224,14 +185,7 @@ test('admin codemods GET requires admin and returns codemods plus recent runs', 
 	const cutoffMs = Date.parse(reconcileCall![1].updatedBefore)
 	expect(Date.now() - cutoffMs).toBeGreaterThanOrEqual(60 * 60 * 1000 - 1)
 	expect(Date.now() - cutoffMs).toBeLessThan(2 * 60 * 60 * 1000)
-})
 
-test('admin codemods GET with runId returns paged run items', async () => {
-	const env = createTestEnv()
-	const handler = createAdminCodemodsApiHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
 	mockModule.getPackageCodemodRunById.mockResolvedValue(sampleRun)
 	const items = Array.from({ length: 2 }, (_, index) => ({
 		id: `item-${index}`,
@@ -250,12 +204,12 @@ test('admin codemods GET with runId returns paged run items', async () => {
 		updatedAt: '2026-07-30T10:00:00.000Z',
 	}))
 	mockModule.listPackageCodemodRunItems.mockResolvedValue(items)
-
-	const response = await handler.handler(
-		createGetRequest('?runId=run-1&limit=2&afterId=item-0'),
+	const itemsResponse = await getCodemods(
+		handler,
+		'?runId=run-1&limit=2&afterId=item-0',
 	)
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({
+	expect(itemsResponse.status).toBe(200)
+	await expect(itemsResponse.json()).resolves.toEqual({
 		ok: true,
 		run: sampleRun,
 		items,
@@ -263,20 +217,16 @@ test('admin codemods GET with runId returns paged run items', async () => {
 	})
 	expect(mockModule.listPackageCodemodRunItems).toHaveBeenCalledWith(
 		env.APP_DB,
-		{
-			runId: 'run-1',
-			afterId: 'item-0',
-			limit: 2,
-		},
+		{ runId: 'run-1', afterId: 'item-0', limit: 2 },
 	)
 })
 
-test('admin codemods run POST requires admin, audits, and runs one step with fleet scope', async () => {
+test('admin codemods run POST requires admin, rejects invalid requests, audits, and runs one fleet step', async () => {
 	const env = createTestEnv()
 	const handler = createAdminCodemodsRunApiHandler(env)
 	const stepResult: PackageCodemodRunStepResult = {
 		runId: 'run-new',
-		codemodId: '0001-ambient-storage-to-package-storage',
+		codemodId,
 		mode: 'scan',
 		items: [
 			{
@@ -296,57 +246,73 @@ test('admin codemods run POST requires admin, audits, and runs one step with fle
 		nextCursor: null,
 		summary: { detected: 1 },
 	}
-	stubKnownCodemod()
+	mockModule.getPackageCodemodById.mockReturnValue({
+		id: codemodId,
+		description: 'Migrate ambient storage imports.',
+		detect: () => [],
+		transform: () => ({
+			files: {},
+			changed: false,
+			changedPaths: [],
+			needsManual: [],
+		}),
+	})
 	mockModule.runPackageCodemodStep.mockResolvedValue(stepResult)
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-		}),
+	await expectAdminGate(() =>
+		postRun(handler, { codemodId, mode: 'scan', scope: 'fleet' }),
 	)
-	expect(unauthorized.status).toBe(401)
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['user']),
-	)
-	const forbidden = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-		}),
-	)
-	expect(forbidden.status).toBe(403)
+	const badRequests = [
+		{ mode: 'apply' },
+		{ mode: 'revert', revertOfRunId: 'run-1' },
+		{ mode: 'explode', scope: 'fleet' },
+		{ mode: 'revert', scope: 'fleet' },
+		{ mode: 'revert', scope: 'fleet', runId: 'run-1' },
+		{ mode: 'scan', scope: 'fleet', filters: { packageIds: ['   '] } },
+		{ mode: 'scan', scope: 'fleet', filters: { userIds: [] } },
+	]
+	for (const body of badRequests) {
+		const response = await postRun(handler, { codemodId, ...body })
+		expect([body, response.status, await response.json()]).toEqual([
+			body,
+			400,
+			expect.objectContaining({ ok: false }),
+		])
+	}
+	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	const response = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-			filters: { packageIds: ['pkg-1'] },
-		}),
-	)
-	expect(response.status).toBe(200)
-	await expect(response.json()).resolves.toEqual({
-		ok: true,
-		...stepResult,
+	const omittedFilters = await postRun(handler, {
+		codemodId,
+		mode: 'scan',
+		scope: 'fleet',
 	})
-	expect(mockModule.runPackageCodemodStep).toHaveBeenCalledWith({
+	expect(omittedFilters.status).toBe(200)
+	const omittedCall = mockModule.runPackageCodemodStep.mock.calls.at(
+		-1,
+	)?.[0] as { filters?: unknown } | undefined
+	expect(omittedCall).toBeDefined()
+	expect(omittedCall).not.toHaveProperty('filters')
+
+	const response = await postRun(handler, {
+		codemodId,
+		mode: 'scan',
+		scope: 'fleet',
+		filters: { packageIds: ['pkg-1'] },
+	})
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toEqual({ ok: true, ...stepResult })
+	expect(mockModule.runPackageCodemodStep).toHaveBeenLastCalledWith({
 		env,
 		baseUrl: 'https://example.com',
 		initiatedByUserId: 'stable-admin',
-		codemodId: '0001-ambient-storage-to-package-storage',
+		codemodId,
 		mode: 'scan',
 		scope: { kind: 'fleet' },
 		filters: { packageIds: ['pkg-1'] },
 	})
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
+	expect(logAuditEventSpy).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'package_codemod_run_step',
@@ -354,122 +320,29 @@ test('admin codemods run POST requires admin, audits, and runs one step with fle
 			email: 'admin@example.com',
 			ip: '127.0.0.1',
 			path: '/admin/codemods/run.json',
-			reason:
-				'codemod_id=0001-ambient-storage-to-package-storage;mode=scan;scope=fleet;run_id=run-new;next_cursor=null;item_count=1',
+			reason: `codemod_id=${codemodId};mode=scan;scope=fleet;run_id=run-new;next_cursor=null;item_count=1`,
 		}),
 	)
-})
-
-test('admin codemods run POST rejects invalid requests and allows omitted filters', async () => {
-	const env = createTestEnv()
-	const handler = createAdminCodemodsRunApiHandler(env)
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
-	stubKnownCodemod()
-	mockModule.runPackageCodemodStep.mockResolvedValue({
-		runId: 'run-scan',
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'scan',
-		items: [],
-		nextCursor: null,
-		summary: {},
-	})
-
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'apply',
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'revert',
-		revertOfRunId: 'run-1',
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'explode',
-		scope: 'fleet',
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'revert',
-		scope: 'fleet',
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'revert',
-		scope: 'fleet',
-		runId: 'run-1',
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'scan',
-		scope: 'fleet',
-		filters: { packageIds: ['   '] },
-	})
-	await expectBadRunRequest(handler, {
-		codemodId: '0001-ambient-storage-to-package-storage',
-		mode: 'scan',
-		scope: 'fleet',
-		filters: { userIds: [] },
-	})
-	expect(mockModule.runPackageCodemodStep).not.toHaveBeenCalled()
-	expect(logAuditEventSpy).not.toHaveBeenCalled()
-
-	const omittedFilters = await handler.handler(
-		createRunRequest({
-			codemodId: '0001-ambient-storage-to-package-storage',
-			mode: 'scan',
-			scope: 'fleet',
-		}),
-	)
-	expect(omittedFilters.status).toBe(200)
-	const omittedCall = mockModule.runPackageCodemodStep.mock.calls.at(
-		-1,
-	)?.[0] as { filters?: unknown } | undefined
-	expect(omittedCall).toBeDefined()
-	expect(omittedCall).not.toHaveProperty('filters')
 })
 
 test('admin codemods stop POST requires admin and marks running runs abandoned', async () => {
 	const env = createTestEnv()
 	const handler = createAdminCodemodsRunStopApiHandler(env)
-	logAuditEventSpy.mockClear()
-	mockModule.updatePackageCodemodRunStatus.mockClear()
 	mockModule.updatePackageCodemodRunStatus.mockResolvedValue(undefined)
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await handler.handler(
-		createStopRequest({ runId: 'run-1' }),
-	)
-	expect(unauthorized.status).toBe(401)
+	await expectAdminGate(() => postStop(handler, { runId: 'run-1' }))
 
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['user']),
-	)
-	const forbidden = await handler.handler(createStopRequest({ runId: 'run-1' }))
-	expect(forbidden.status).toBe(403)
-
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(
-		createAdminActor(['admin']),
-	)
 	mockModule.updatePackageCodemodRunStatus.mockResolvedValue(1)
-	const missingRunId = await handler.handler(createStopRequest({}))
-	expect(missingRunId.status).toBe(400)
+	expect((await postStop(handler, {})).status).toBe(400)
 
 	mockModule.getPackageCodemodRunById.mockResolvedValue(null)
-	const notFound = await handler.handler(
-		createStopRequest({ runId: 'run-missing' }),
-	)
-	expect(notFound.status).toBe(404)
+	expect((await postStop(handler, { runId: 'run-missing' })).status).toBe(404)
 
 	mockModule.getPackageCodemodRunById.mockResolvedValue({
 		...sampleRun,
 		status: 'completed',
 	})
-	const alreadyTerminal = await handler.handler(
-		createStopRequest({ runId: 'run-1' }),
-	)
+	const alreadyTerminal = await postStop(handler, { runId: 'run-1' })
 	expect(alreadyTerminal.status).toBe(200)
 	await expect(alreadyTerminal.json()).resolves.toEqual({
 		ok: true,
@@ -482,7 +355,7 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 		...sampleRun,
 		status: 'running',
 	})
-	const stopped = await handler.handler(createStopRequest({ runId: 'run-1' }))
+	const stopped = await postStop(handler, { runId: 'run-1' })
 	expect(stopped.status).toBe(200)
 	await expect(stopped.json()).resolves.toEqual({
 		ok: true,
@@ -500,8 +373,7 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 			result: 'success',
 			email: 'admin@example.com',
 			path: '/admin/codemods/run/stop.json',
-			reason:
-				'run_id=run-1;codemod_id=0001-ambient-storage-to-package-storage;mode=scan',
+			reason: `run_id=run-1;codemod_id=${codemodId};mode=scan`,
 		}),
 	)
 
@@ -512,7 +384,7 @@ test('admin codemods stop POST requires admin and marks running runs abandoned',
 	mockModule.getPackageCodemodRunById
 		.mockResolvedValueOnce({ ...sampleRun, status: 'running' })
 		.mockResolvedValueOnce({ ...sampleRun, status: 'completed' })
-	const lostRace = await handler.handler(createStopRequest({ runId: 'run-1' }))
+	const lostRace = await postStop(handler, { runId: 'run-1' })
 	expect(lostRace.status).toBe(200)
 	await expect(lostRace.json()).resolves.toEqual({
 		ok: true,

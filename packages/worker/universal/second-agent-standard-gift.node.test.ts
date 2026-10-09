@@ -3,130 +3,89 @@ import {
 	describeSecondAgentStandardGift,
 	isSecondAgentStandardGiftActive,
 	resolveEffectivePlanWithSecondAgentGift,
+	resolvePlanOverlay,
 	resolveSecondAgentStandardGiftWrite,
 } from './second-agent-standard-gift.ts'
 
 const now = new Date('2026-09-07T12:00:00.000Z')
 const inTwoWeeks = '2026-09-21T12:00:00.000Z'
 const yesterday = '2026-09-06T12:00:00.000Z'
+const granted = now.toISOString()
 
-test('gift overlay raises free to Standard once, never double-applies, and no-ops paid tiers', () => {
-	expect(isSecondAgentStandardGiftActive(inTwoWeeks, now)).toBe(true)
-	expect(isSecondAgentStandardGiftActive(yesterday, now)).toBe(false)
-	expect(isSecondAgentStandardGiftActive(null, now)).toBe(false)
+type PlanArgs = Parameters<typeof resolvePlanOverlay>
 
+test('gift overlay raises free to the purchasable Pro once, never double-applies, and no-ops paid tiers', () => {
 	expect(
-		resolveEffectivePlanWithSecondAgentGift('free', null, inTwoWeeks, now),
-	).toBe('standard')
-	expect(
-		resolveEffectivePlanWithSecondAgentGift('free', null, yesterday, now),
-	).toBe('free')
-	expect(
-		resolveEffectivePlanWithSecondAgentGift(
-			'free',
-			'standard',
-			inTwoWeeks,
-			now,
+		[inTwoWeeks, yesterday, null].map((expiresAt) =>
+			isSecondAgentStandardGiftActive(expiresAt, now),
 		),
-	).toBe('standard')
-	expect(
-		resolveEffectivePlanWithSecondAgentGift('free', 'pro', inTwoWeeks, now),
-	).toBe('pro')
-	expect(
-		resolveEffectivePlanWithSecondAgentGift('max', null, inTwoWeeks, now),
-	).toBe('max')
-	expect(
-		resolveEffectivePlanWithSecondAgentGift('pro', 'standard', inTwoWeeks, now),
-	).toBe('pro')
+	).toEqual([true, false, false])
 
-	const applied = resolveSecondAgentStandardGiftWrite({
-		manualPlan: 'free',
-		stripePlan: null,
-		now,
-	})
-	expect(applied.expiresAt).toBe(inTwoWeeks)
+	// Retired Standard keeps its own plan (and table) under an overlay.
+	const overlays: Array<[PlanArgs, ReturnType<typeof resolvePlanOverlay>]> = [
+		[['free', null, inTwoWeeks, now], { plan: 'pro', isProOverlay: true }],
+		[
+			['free', 'standard', inTwoWeeks, now],
+			{ plan: 'standard', isProOverlay: false },
+		],
+		[['free', 'pro', inTwoWeeks, now], { plan: 'pro', isProOverlay: false }],
+	]
+	expect(overlays.map(([args]) => [args, resolvePlanOverlay(...args)])).toEqual(
+		overlays,
+	)
+
+	const effective: Array<[PlanArgs, string]> = [
+		[['free', null, inTwoWeeks, now], 'pro'],
+		[['free', null, yesterday, now], 'free'],
+		[['free', 'standard', inTwoWeeks, now], 'standard'],
+		[['free', 'pro', inTwoWeeks, now], 'pro'],
+		[['max', null, inTwoWeeks, now], 'max'],
+		[['pro', 'standard', inTwoWeeks, now], 'pro'],
+	]
+	expect(
+		effective.map(([args]) => [
+			args,
+			resolveEffectivePlanWithSecondAgentGift(...args),
+		]),
+	).toEqual(effective)
+
+	expect(
+		resolveSecondAgentStandardGiftWrite({
+			manualPlan: 'free',
+			stripePlan: null,
+			now,
+		}).expiresAt,
+	).toBe(inTwoWeeks)
 
 	// Already-paid Standard/Pro (and manual standard/pro/max): do not extend
 	// Stripe. There is no existing trial-period helper.
+	const alreadyPaid = [
+		{ manualPlan: 'free', stripePlan: 'standard' },
+		{ manualPlan: 'free', stripePlan: 'pro' },
+		{ manualPlan: 'standard', stripePlan: null },
+		{ manualPlan: 'max', stripePlan: null },
+	] as const
 	expect(
-		resolveSecondAgentStandardGiftWrite({
-			manualPlan: 'free',
-			stripePlan: 'standard',
-			now,
-		}),
-	).toEqual({ expiresAt: null })
-	expect(
-		resolveSecondAgentStandardGiftWrite({
-			manualPlan: 'free',
-			stripePlan: 'pro',
-			now,
-		}),
-	).toEqual({ expiresAt: null })
-	expect(
-		resolveSecondAgentStandardGiftWrite({
-			manualPlan: 'standard',
-			stripePlan: null,
-			now,
-		}),
-	).toEqual({ expiresAt: null })
-	expect(
-		resolveSecondAgentStandardGiftWrite({
-			manualPlan: 'max',
-			stripePlan: null,
-			now,
-		}),
-	).toEqual({ expiresAt: null })
+		alreadyPaid.map((plans) =>
+			resolveSecondAgentStandardGiftWrite({ ...plans, now }),
+		),
+	).toEqual(alreadyPaid.map(() => ({ expiresAt: null })))
 
+	const descriptions = [
+		[null, null, { received: false, active: false, status: 'none' }],
+		[granted, inTwoWeeks, { received: true, active: true, status: 'active' }],
+		[granted, yesterday, { received: true, active: false, status: 'expired' }],
+		[granted, null, { received: true, active: false, status: 'already_paid' }],
+	] as const
 	expect(
-		describeSecondAgentStandardGift({
-			grantedAt: null,
-			expiresAt: null,
-			now,
-		}),
-	).toEqual({
-		received: false,
-		active: false,
-		status: 'none',
-		expiresAt: null,
-		grantedAt: null,
-	})
-	expect(
-		describeSecondAgentStandardGift({
-			grantedAt: now.toISOString(),
-			expiresAt: inTwoWeeks,
-			now,
-		}),
-	).toEqual({
-		received: true,
-		active: true,
-		status: 'active',
-		expiresAt: inTwoWeeks,
-		grantedAt: now.toISOString(),
-	})
-	expect(
-		describeSecondAgentStandardGift({
-			grantedAt: now.toISOString(),
-			expiresAt: yesterday,
-			now,
-		}),
-	).toEqual({
-		received: true,
-		active: false,
-		status: 'expired',
-		expiresAt: yesterday,
-		grantedAt: now.toISOString(),
-	})
-	expect(
-		describeSecondAgentStandardGift({
-			grantedAt: now.toISOString(),
-			expiresAt: null,
-			now,
-		}),
-	).toEqual({
-		received: true,
-		active: false,
-		status: 'already_paid',
-		expiresAt: null,
-		grantedAt: now.toISOString(),
-	})
+		descriptions.map(([grantedAt, expiresAt]) =>
+			describeSecondAgentStandardGift({ grantedAt, expiresAt, now }),
+		),
+	).toEqual(
+		descriptions.map(([grantedAt, expiresAt, state]) => ({
+			...state,
+			expiresAt,
+			grantedAt,
+		})),
+	)
 })

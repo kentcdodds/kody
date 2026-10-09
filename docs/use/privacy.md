@@ -31,11 +31,11 @@ activation timestamps (email verified, first MCP connection, first execute,
 first saved package, first secret, first integration, first job), MCP client
 name when known, last-active day stamps used for return metrics, secrets,
 memories, packages and their source, jobs, email inboxes and messages, durable
-storage, MCP server configuration, OAuth grants, package invocation tokens,
-short-lived execution history (see [Activity](./activity.md)), stored community
-activity events, and any platform feedback you approve for submission. All of
-this remains scoped to your account except for content you deliberately make
-public (community listings and a public profile), the narrow admin review of
+storage, MCP server configuration, OAuth grants, short-lived execution history
+(see [Activity](./activity.md)), stored community activity events, and any
+platform feedback you approve for submission. All of this remains scoped to your
+account except for content you deliberately make public (public packages
+published to Community and a public profile), the narrow admin review of
 approved platform feedback, and the community activity metadata described below.
 
 When profile visibility is **public**, display name, bio, public package
@@ -47,9 +47,9 @@ The only cookies are the session cookie (`kody_session`), the one-week last-wins
 referral cookie (`kody_ref`) set by `/signup?ref=<username>` share links, and
 the package-app session cookie on `kody.run` (`__Host-kody_pkg_session` on
 HTTPS, `kody_pkg_session` on HTTP). Short-lived cookies support two-factor
-verification, passkey challenges, and OAuth login. Analytics (Fathom) is
-cookieless. The browser uses sessionStorage for first-touch signup attribution
-and scroll restoration, not tracking cookies.
+verification, passkey challenges, and OAuth login. Analytics (Fathom and Scarf)
+are cookieless. The browser uses sessionStorage for first-touch signup
+attribution and scroll restoration, not tracking cookies.
 
 Account export includes your profile columns and activity you authored. The
 browser download is a bounded metadata manifest; use its `accountExportSection`
@@ -67,8 +67,9 @@ yourself — Kody stores that connection in your account only: tokens, the scope
 you granted, and host allowlists. OAuth access and refresh tokens, and a
 user-lane app client secret, are stored encrypted on that connection or app.
 Standalone credentials (PATs and API keys) stay in the encrypted secret store.
-Your agent and package code refer to them by name; Kody substitutes them at the
-network boundary and never returns the raw value to chat, search, or capability
+Your agent and package code refer to them by name (or by opaque `{{secret:…}}`
+refs from `packageSecrets.get`); Kody substitutes them at the network boundary
+and never returns the raw value to chat, search, package JS, or capability
 output.
 
 Kody fetches data from a connected service only to fulfill a request you, or a
@@ -80,12 +81,12 @@ does not bill for chat tokens. Search and indexing call Cloudflare Workers AI
 for embeddings: the search query, plus indexed text for builtin capabilities,
 saved packages (manifest search fields, not full source), memories (subject,
 summary, details, and tags), jobs (name, description, and schedule), and public
-community listings (name, description, tags, and a short readme snippet). Ranked
-search can send that query plus candidate cards (type, id, title, and summary)
-to Workers AI for scoring. Secret values and OAuth tokens are never sent to
-those models. Connected-account provider content is embedded or scored only if
-it was first saved as one of those indexed records or appears on a search
-candidate card.
+packages published to Community (name, description, tags, and a short readme
+snippet). Ranked search can send that query plus candidate cards (type, id,
+title, and summary) to Workers AI for scoring. Secret values and OAuth tokens
+are never sent to those models. Connected-account provider content is embedded
+or scored only if it was first saved as one of those indexed records or appears
+on a search candidate card.
 
 **Share, transfer, and disclose.** Provider data leaves your isolated account
 only to Cloudflare, which hosts the application, database, object storage,
@@ -126,44 +127,45 @@ UI lists users and roles; it does not expose account content.
 Platform feedback you explicitly approve for admin review is a narrow
 user-content exception.
 
-Admins also moderate public community listings and community reports. Reporting
-a listing requires a signed-in user; reports are **not** anonymous — the
-reporter identity is attached. Admins can see who forked or rated a public
-listing, when, and the rating scores. One-click installs appear as forks because
-both use the same activity record. This activity view never includes private
-package source, rating notes, email, stable user ids, private profiles, secrets,
-or unrelated account content. Admin-configured notification packages may receive
-the same community metadata, and a metadata-only `user.created` or
-`user.deleted` event when a person account is created or self-deleted (stable
-user id, username, email, the create source and `created_at` or delete
-timestamp, and first-touch marketing attribution fields when present). Referral
-rows are account data (export and deletion) and are not included on those
-lifecycle events. Those lifecycle events omit passwords, roles, plan, secrets,
-and unrelated account content. Admin-configured notification packages may also
-receive a metadata-only `user.email_verification.failed` event when
-signup/verify mail first hits a terminal delivery failure (stable user id,
-username, email, status, `class` (`sender_block` / `other` / `null`), an admin
-user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
+Admins also moderate public packages in the Community catalog and community
+reports. Reporting a listing requires a signed-in user; reports are **not**
+anonymous — the reporter identity is attached. Admins can see who forked or
+rated a public listing, when, and the rating scores. One-click installs appear
+as forks because both use the same activity record. This activity view never
+includes private package source, rating notes, email, stable user ids, private
+profiles, secrets, or unrelated account content. Admin-configured notification
+packages may receive the same community metadata, and a metadata-only
+`user.created` or `user.deleted` event when a person account is created or
+self-deleted (stable user id, username, email, the create source and
+`created_at` or delete timestamp, and first-touch marketing attribution fields
+when present). Referral rows are account data (export and deletion) and are not
+included on those lifecycle events. Those lifecycle events omit passwords,
+roles, plan, secrets, and unrelated account content. Admin-configured
+notification packages may also receive a metadata-only
+`user.email_verification.failed` event when signup/verify mail first hits a
+terminal delivery failure (stable user id, username, email, status, `class`
+(`sender_block` / `other` / `null`), an admin user URL, and `occurred_at`). That
+event omits SMTP transcripts, tokens, and unrelated account content.
+Admin-configured notification packages may also receive a metadata-only
+`user.email_verification.stalled` event when signup/verify mail stays `accepted`
+for an hour with no Cloudflare lifecycle event (stable user id, username, email,
+`accepted_at`, stall threshold, an admin user URL, and `occurred_at`). That
+event omits SMTP transcripts, tokens, and unrelated account content.
+Admin-configured notification packages may also receive a metadata-only
+`user.email_outbound.paused` event when outbound sending is paused after a spam
+complaint or repeated bounces (stable user id, username, email, reason, bounce
+threshold when the reason is `bounced`, an admin user URL, and `occurred_at`).
+That event omits SMTP transcripts, message bodies, and unrelated account
+content. Admin-configured notification packages may also receive
+`email.system-message.sent` when operator correspondence leaves a reserved
+system sender (`kody@`, `support@`, and the other system locals). That event
+includes the recipients, subject, and sent text/HTML because outbound system
+mail is not stored on the inbound system-email graph; it is admin-only and omits
 unrelated account content. Admin-configured notification packages may also
-receive a metadata-only `user.email_verification.stalled` event when
-signup/verify mail stays `accepted` for an hour with no Cloudflare lifecycle
-event (stable user id, username, email, `accepted_at`, stall threshold, an admin
-user URL, and `occurred_at`). That event omits SMTP transcripts, tokens, and
-unrelated account content. Admin-configured notification packages may also
-receive a metadata-only `user.email_outbound.paused` event when outbound sending
-is paused after a spam complaint or repeated bounces (stable user id, username,
-email, reason, bounce threshold when the reason is `bounced`, an admin user URL,
-and `occurred_at`). That event omits SMTP transcripts, message bodies, and
-unrelated account content. Admin-configured notification packages may also
-receive `email.system-message.sent` when operator correspondence leaves a
-reserved system sender (`kody@`, `support@`, and the other system locals). That
-event includes the recipients, subject, and sent text/HTML because outbound
-system mail is not stored on the inbound system-email graph; it is admin-only
-and omits unrelated account content. Admin-configured notification packages may
-also receive metadata-only `auth.denial.burst` or `email.delivery.burst` events
-when hourly MCP auth denials or shared-domain bounce/complaint counts cross
-their thresholds (count, threshold, window, insights URL, and `observed_at`).
-Those events omit user identities, tokens, recipients, and message content.
+receive metadata-only `auth.denial.burst` or `email.delivery.burst` events when
+hourly MCP auth denials or shared-domain bounce/complaint counts cross their
+thresholds (count, threshold, window, insights URL, and `observed_at`). Those
+events omit user identities, tokens, recipients, and message content.
 Admin-configured notification packages may also receive a metadata-only
 `fleet.package_error_rate.elevated` event when package-runtime error rates rise
 (window bounds, per-metric counts and rates, public status URL, insights URL,
@@ -236,7 +238,6 @@ The admin role is not a general data-access role. Approving platform feedback
 does not let admins browse:
 
 - Secret values or secret metadata (names, scopes, allowlists)
-- Package invocation tokens
 - Memories
 - Private packages and their source
 - Jobs
@@ -290,6 +291,7 @@ cleanup periods:
 - Feature-flag exposure records: 90 days
 - Daily entitlement counters: 400 days
 - Monthly usage rollups: 24 months
+- Durable Object duration attribution: until account deletion
 - Stripe webhook event records: 30 days
 - Non-current published bundle artifacts: at least 30 days, then eligible for
   removal when no active source or repo session needs them
@@ -313,6 +315,11 @@ data needed for their role:
   purposes
 - Sentry — application error reporting and operational diagnostics
 - Fathom — privacy-focused website traffic analytics
+- Scarf — company-level analytics on public marketing pages and docs. We send
+  the public page path, without query strings or fragments. Scarf uses the
+  request IP address to identify companies, discards the raw IP address, and
+  does not set cookies. We skip these requests when your browser sends Global
+  Privacy Control or Do Not Track.
 
 ## Your choices and rights
 

@@ -90,7 +90,7 @@ test('community feature POST enforces admin role, validation, and error mapping'
 	)
 
 	mockModule.setCommunityListingFeatured.mockRejectedValue(
-		new CommunityActionError('Community listing "listing-1" was not found.'),
+		new CommunityActionError('Catalog entry "listing-1" was not found.'),
 	)
 	const userFacingError = await handler.handler(
 		buildFeatureRequest({ featured: true }),
@@ -98,7 +98,7 @@ test('community feature POST enforces admin role, validation, and error mapping'
 	expect(userFacingError.status).toBe(400)
 	expect(await userFacingError.json()).toEqual({
 		ok: false,
-		error: 'Community listing "listing-1" was not found.',
+		error: 'Catalog entry "listing-1" was not found.',
 	})
 
 	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})

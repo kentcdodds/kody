@@ -14,7 +14,10 @@ import {
 	vectorEmbedFingerprintVersion,
 } from './embed-fingerprints.ts'
 import * as embedding from './embedding.ts'
-import { reindexVectorCandidates } from './reindex-batches.ts'
+import {
+	reindexVectorCandidates,
+	type VectorReindexCandidate,
+} from './reindex-batches.ts'
 import { BUILTIN_VECTOR_NAMESPACE } from './vector-namespaces.ts'
 
 function createMigratedDb() {
@@ -31,38 +34,59 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 		.mockImplementation(async (_env, texts) =>
 			texts.map((text) => [text.length]),
 		)
+	const builtin: VectorReindexCandidate = {
+		id: 'search_memories',
+		text: 'search memories capability',
+		namespace: BUILTIN_VECTOR_NAMESPACE,
+		metadata: { kind: 'builtin' },
+	}
+	const memory: VectorReindexCandidate = {
+		id: 'memory-1',
+		text: 'remember the preview locale',
+		namespace: 'user-me',
+		metadata: { kind: 'memory' },
+	}
+	const reindex = (candidates: VectorReindexCandidate[], force?: boolean) => {
+		embedSpy.mockClear()
+		upsert.mockClear()
+		return reindexVectorCandidates({
+			env,
+			index: { upsert } as unknown as VectorizeIndex,
+			kind: 'test',
+			candidates,
+			force,
+		})
+	}
+	const skip = (
+		text: string,
+		metadata?: Record<string, VectorizeVectorMetadata>,
+		skipEnv = env,
+	) =>
+		shouldSkipVectorEmbed({
+			env: skipEnv,
+			userId: 'user-me',
+			vectorId: 'memory-1',
+			text,
+			metadata,
+		})
 
 	try {
-		const candidates = [
-			{
-				id: 'search_memories',
-				text: 'search memories capability',
-				namespace: BUILTIN_VECTOR_NAMESPACE,
-				metadata: { kind: 'builtin' as const },
-			},
-			{
-				id: 'memory-1',
-				text: 'remember the preview locale',
-				namespace: 'user-me',
-				metadata: { kind: 'memory' as const },
-			},
-		]
-
-		const hash = await vectorEmbedContentHash({
-			text: candidates[0]!.text,
-			metadata: candidates[0]!.metadata,
-		})
 		await expect(
 			sha256Hex(
 				[
 					embedding.CAPABILITY_EMBEDDING_MODEL,
 					String(embedding.CAPABILITY_EMBEDDING_DIMENSIONS),
 					String(vectorEmbedFingerprintVersion),
-					candidates[0]!.text,
-					canonicalizeVectorEmbedMetadata(candidates[0]!.metadata),
+					builtin.text,
+					canonicalizeVectorEmbedMetadata(builtin.metadata),
 				].join('\0'),
 			),
-		).resolves.toBe(hash)
+		).resolves.toBe(
+			await vectorEmbedContentHash({
+				text: builtin.text,
+				metadata: builtin.metadata,
+			}),
+		)
 
 		const longPrefix = 'x'.repeat(
 			embedding.CAPABILITY_EMBEDDING_MAX_INPUT_CHARS,
@@ -73,134 +97,58 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 			await vectorEmbedContentHash({ text: `${longPrefix}tail-b` }),
 		)
 
-		const first = await reindexVectorCandidates({
-			env,
-			index: { upsert } as unknown as VectorizeIndex,
-			kind: 'test',
-			candidates,
+		for (const [force, expected] of [
+			[false, { upserted: 2 }],
+			[false, { upserted: 0, skipped: 2 }],
+		] as const) {
+			await expect(reindex([builtin, memory], force)).resolves.toEqual(expected)
+			const calls = expected.upserted ? 1 : 0
+			expect(embedSpy).toHaveBeenCalledTimes(calls)
+			expect(upsert).toHaveBeenCalledTimes(calls)
+		}
+
+		await expect(skip(memory.text, { kind: 'memory' })).resolves.toBe(true)
+		await expect(
+			skip(memory.text, { kind: 'memory', status: 'deleted' }),
+		).resolves.toBe(false)
+		await expect(
+			skip(memory.text, { kind: 'memory' }, {} as Env),
+		).resolves.toBe(false)
+
+		await expect(reindex([builtin, memory], true)).resolves.toEqual({
+			upserted: 2,
 		})
-		expect(first).toEqual({ upserted: 2 })
 		expect(embedSpy).toHaveBeenCalledTimes(1)
 		expect(upsert).toHaveBeenCalledTimes(1)
 
-		embedSpy.mockClear()
-		upsert.mockClear()
-		const skipped = await reindexVectorCandidates({
-			env,
-			index: { upsert } as unknown as VectorizeIndex,
-			kind: 'test',
-			candidates,
+		const changedText = { ...memory, text: 'remember a different locale' }
+		await expect(reindex([builtin, changedText])).resolves.toEqual({
+			upserted: 1,
+			skipped: 1,
 		})
-		expect(skipped).toEqual({ upserted: 0, skipped: 2 })
-		expect(embedSpy).not.toHaveBeenCalled()
-		expect(upsert).not.toHaveBeenCalled()
-
-		await expect(
-			shouldSkipVectorEmbed({
-				env,
-				userId: 'user-me',
-				vectorId: 'memory-1',
-				text: 'remember the preview locale',
-				metadata: { kind: 'memory' },
-			}),
-		).resolves.toBe(true)
-		await expect(
-			shouldSkipVectorEmbed({
-				env,
-				userId: 'user-me',
-				vectorId: 'memory-1',
-				text: 'remember the preview locale',
-				metadata: { kind: 'memory', status: 'deleted' },
-			}),
-		).resolves.toBe(false)
-		await expect(
-			shouldSkipVectorEmbed({
-				env: {} as Env,
-				userId: 'user-me',
-				vectorId: 'memory-1',
-				text: 'remember the preview locale',
-				metadata: { kind: 'memory' },
-			}),
-		).resolves.toBe(false)
-
-		const forced = await reindexVectorCandidates({
-			env,
-			index: { upsert } as unknown as VectorizeIndex,
-			kind: 'test',
-			candidates,
-			force: true,
-		})
-		expect(forced).toEqual({ upserted: 2 })
-		expect(embedSpy).toHaveBeenCalledTimes(1)
-		expect(upsert).toHaveBeenCalledTimes(1)
-
-		embedSpy.mockClear()
-		upsert.mockClear()
-		const changed = await reindexVectorCandidates({
-			env,
-			index: { upsert } as unknown as VectorizeIndex,
-			kind: 'test',
-			candidates: [
-				candidates[0]!,
-				{ ...candidates[1]!, text: 'remember a different locale' },
-			],
-		})
-		expect(changed).toEqual({ upserted: 1, skipped: 1 })
 		expect(embedSpy).toHaveBeenCalledTimes(1)
 		expect(upsert).toHaveBeenCalledWith([
-			expect.objectContaining({
-				id: 'memory-1',
-				namespace: 'user-me',
-			}),
+			expect.objectContaining({ id: 'memory-1', namespace: 'user-me' }),
 		])
 
-		embedSpy.mockClear()
-		upsert.mockClear()
-		const metadataChanged = await reindexVectorCandidates({
-			env,
-			index: { upsert } as unknown as VectorizeIndex,
-			kind: 'test',
-			candidates: [
-				candidates[0]!,
-				{
-					...candidates[1]!,
-					text: 'remember a different locale',
-					metadata: { kind: 'memory', status: 'deleted' },
-				},
-			],
-		})
-		expect(metadataChanged).toEqual({ upserted: 1, skipped: 1 })
+		const deletedMetadata = { kind: 'memory', status: 'deleted' }
+		await expect(
+			reindex([builtin, { ...changedText, metadata: deletedMetadata }]),
+		).resolves.toEqual({ upserted: 1, skipped: 1 })
 		expect(embedSpy).toHaveBeenCalledTimes(1)
 		expect(upsert).toHaveBeenCalledWith([
-			expect.objectContaining({
-				id: 'memory-1',
-				metadata: { kind: 'memory', status: 'deleted' },
-			}),
+			expect.objectContaining({ id: 'memory-1', metadata: deletedMetadata }),
 		])
 
 		await recordVectorEmbedFingerprint({
 			env,
 			userId: 'user-me',
 			vectorId: 'memory-1',
-			text: 'remember a different locale',
+			text: changedText.text,
 		})
-		await expect(
-			shouldSkipVectorEmbed({
-				env,
-				userId: 'user-me',
-				vectorId: 'memory-1',
-				text: 'remember a different locale',
-			}),
-		).resolves.toBe(true)
+		await expect(skip(changedText.text)).resolves.toBe(true)
 		await tryDeleteVectorEmbedFingerprint({ env, vectorId: 'memory-1' })
-		await expect(
-			shouldSkipVectorEmbed({
-				env,
-				userId: 'user-me',
-				vectorId: 'memory-1',
-				text: 'remember a different locale',
-			}),
-		).resolves.toBe(false)
+		await expect(skip(changedText.text)).resolves.toBe(false)
 
 		const unmigratedEnv = {
 			APP_DB: createD1FromSqlite(new DatabaseSync(':memory:')),
@@ -213,13 +161,7 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 		).resolves.toBeNull()
 		await tryWriteVectorEmbedFingerprints({
 			env: unmigratedEnv,
-			rows: [
-				{
-					userId: 'user-me',
-					vectorId: 'memory-1',
-					contentHash: 'abc',
-				},
-			],
+			rows: [{ userId: 'user-me', vectorId: 'memory-1', contentHash: 'abc' }],
 		})
 		await tryDeleteVectorEmbedFingerprint({
 			env: unmigratedEnv,

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { getMcpUserPackageScope } from './user-scope.ts'
 
@@ -41,7 +42,7 @@ test('getMcpUserPackageScope uses context username, then stable user id — neve
 	})
 	await expect(
 		getMcpUserPackageScope(fromContext.db, {
-			userId: 'stable-1',
+			userId: personIdFromStored('stable-1'),
 			email: 'stale@example.com',
 			displayName: 'Caller',
 			username: 'From-Context',
@@ -56,7 +57,7 @@ test('getMcpUserPackageScope uses context username, then stable user id — neve
 	})
 	await expect(
 		getMcpUserPackageScope(fromStableId.db, {
-			userId: 'stable-2',
+			userId: personIdFromStored('stable-2'),
 			email: 'no-longer-this@example.com',
 			displayName: 'Caller',
 		}),
@@ -71,7 +72,7 @@ test('getMcpUserPackageScope uses context username, then stable user id — neve
 	})
 	await expect(
 		getMcpUserPackageScope(missing.db, {
-			userId: 'orphan-stable',
+			userId: personIdFromStored('orphan-stable'),
 			email: 'orphan@example.com',
 			displayName: 'Orphan',
 		}),

@@ -22,79 +22,27 @@ import {
 	setVerifySessionSecret,
 } from '#app/verify-session.ts'
 import { twoFactorVerifyRateLimitConfig } from '#app/rate-limit.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-function applyMigrations(db: DatabaseSync) {
-	const migrationsDir = new URL('../../../migrations/', import.meta.url)
-	applyAllMigrations(db, migrationsDir)
+const session: AuthSession = {
+	stableUserId: testStableUserIdFromEmail('kody@example.com'),
+	email: 'kody@example.com',
+	rememberMe: false,
 }
 
-function createMigratedDb() {
-	const sqlite = new DatabaseSync(':memory:')
-	applyMigrations(sqlite)
-	return {
-		sqlite,
-		db: createD1FromSqlite(sqlite),
-	}
-}
+type Handler = { handler(context: never): Promise<Response> }
 
-async function seedUser(
-	sqlite: DatabaseSync,
-	input: {
-		id: number
-		email: string
-		username: string
-		password: string
-	},
-) {
-	const passwordHash = await createPasswordHash(input.password)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
-	sqlite.exec(`
-		INSERT INTO users (
-			id,
-			username,
-			email,
-			stable_user_id,
-			password_hash,
-			email_verified_at
-		) VALUES (
-			${input.id},
-			${quoteSqlString(input.username)},
-			${quoteSqlString(input.email)},
-			${quoteSqlString(stableUserId)},
-			${quoteSqlString(passwordHash)},
-			CURRENT_TIMESTAMP
-		);
-	`)
-}
-
-function createAppEnv(db: D1Database) {
-	return {
-		APP_DB: db,
-		APP_BASE_URL: 'http://example.com',
-		COOKIE_SECRET: testCookieSecret,
-		SENTRY_ENVIRONMENT: 'test',
-	} as unknown as Parameters<typeof createAccountTwoFactorApiHandler>[0]
-}
-
-type Handler = {
-	handler(context: never): Promise<Response>
-}
-
-async function runHandler(
-	handler: Handler,
-	request: Request,
-): Promise<Response> {
+function runHandler(handler: Handler, request: Request) {
 	return handler.handler({
 		request,
 		url: new URL(request.url),
@@ -102,46 +50,27 @@ async function runHandler(
 	} as never)
 }
 
-async function createTwoFactorApiRequest(input: {
-	session: AuthSession
-	body: Record<string, unknown>
-}) {
-	const cookie = await createAuthCookie(input.session, false)
-	return new Request('http://example.com/account/two-factor.json', {
+function postJson(path: string, body: unknown, cookie?: string) {
+	return new Request(`http://example.com${path}`, {
 		method: 'POST',
 		headers: {
-			Cookie: cookie,
 			'Content-Type': 'application/json',
+			...(cookie ? { Cookie: cookie } : {}),
 		},
-		body: JSON.stringify(input.body),
+		body: JSON.stringify(body),
 	})
 }
 
-function readVerificationRow(sqlite: DatabaseSync, target: string) {
-	return sqlite
-		.prepare(
-			`SELECT type, secret, algorithm, digits, period, char_set
-			 FROM verifications WHERE target = ?`,
-		)
-		.get(target) as
-		| {
-				type: string
-				secret: string
-				algorithm: string
-				digits: number
-				period: number
-				char_set: string
-		  }
-		| undefined
-}
-
-async function generateCurrentCode(row: {
+type VerificationRow = {
+	type: string
 	secret: string
 	algorithm: string
 	digits: number
 	period: number
 	char_set: string
-}) {
+}
+
+async function currentCode(row: VerificationRow) {
 	const { otp } = await generateTOTP({
 		secret: row.secret,
 		algorithm: row.algorithm,
@@ -152,50 +81,106 @@ async function generateCurrentCode(row: {
 	return otp
 }
 
-function initTestSecrets() {
+function isClearedCookie(name: string) {
+	return (cookie: string) =>
+		cookie.startsWith(`${name}=`) && cookie.includes('Max-Age=0')
+}
+
+async function setupTwoFactor({ seedUser = true } = {}) {
 	setAuthSessionSecret(testCookieSecret)
 	setVerifySessionSecret(testCookieSecret)
-}
-
-const session: AuthSession = {
-	stableUserId: testStableUserIdFromEmail('kody@example.com'),
-	email: 'kody@example.com',
-	rememberMe: false,
-}
-
-async function seedPrimaryUser(sqlite: DatabaseSync) {
-	await seedUser(sqlite, {
-		id: 1,
-		email: 'kody@example.com',
-		username: 'kody',
-		password: 'ilikecode',
-	})
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	const db = createD1FromSqlite(sqlite)
+	if (seedUser) {
+		const passwordHash = await createPasswordHash('ilikecode')
+		const stableUserId = testStableUserIdFromEmail('kody@example.com')
+		sqlite.exec(`
+			INSERT INTO users (id, username, email, stable_user_id, password_hash, email_verified_at)
+			VALUES (1, 'kody', 'kody@example.com', ${quoteSqlString(stableUserId)},
+				${quoteSqlString(passwordHash)}, CURRENT_TIMESTAMP);
+		`)
+		await provisionPersonalOrgForSqliteUser(sqlite, {
+			stableUserId,
+			username: 'kody',
+		})
+	}
+	const env = {
+		APP_DB: db,
+		APP_BASE_URL: 'http://example.com',
+		COOKIE_SECRET: testCookieSecret,
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Parameters<typeof createAccountTwoFactorApiHandler>[0]
+	const twoFactorHandler = createAccountTwoFactorApiHandler(env)
+	const verifyHandler = createTwoFactorVerifyApiHandler(env)
+	const readRow = () =>
+		sqlite
+			.prepare(
+				`SELECT type, secret, algorithm, digits, period, char_set
+				 FROM verifications WHERE target = ?`,
+			)
+			.get('1') as VerificationRow | undefined
+	const post = async (body: Record<string, unknown>) =>
+		runHandler(
+			twoFactorHandler,
+			postJson(
+				'/account/two-factor.json',
+				body,
+				await createAuthCookie(session, false),
+			),
+		)
+	return {
+		sqlite,
+		db,
+		env,
+		readRow,
+		post,
+		async enable() {
+			await post({ intent: 'setup' })
+			const row = readRow()!
+			await post({ intent: 'confirm', code: await currentCode(row) })
+			return row
+		},
+		login() {
+			return runHandler(
+				createAuthHandler(
+					env as unknown as Parameters<typeof createAuthHandler>[0],
+				),
+				postJson('/auth', {
+					email: 'kody@example.com',
+					password: 'ilikecode',
+					mode: 'login',
+				}),
+			)
+		},
+		verify(code: string, cookie?: string) {
+			return runHandler(
+				verifyHandler,
+				postJson('/verify/2fa.json', { code }, cookie),
+			)
+		},
+		countRows() {
+			return (
+				sqlite
+					.prepare(
+						`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`,
+					)
+					.get() as { count: number }
+			).count
+		},
+	}
 }
 
 test('two-factor setup requires authentication and a valid code before activating', async () => {
-	initTestSecrets()
-	const { db } = createMigratedDb()
-	const unauthenticatedHandler = createAccountTwoFactorApiHandler(
-		createAppEnv(db),
-	)
+	const anonymous = await setupTwoFactor({ seedUser: false })
 	const unauthenticated = await runHandler(
-		unauthenticatedHandler,
-		new Request('http://example.com/account/two-factor.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ intent: 'setup' }),
-		}),
+		createAccountTwoFactorApiHandler(anonymous.env),
+		postJson('/account/two-factor.json', { intent: 'setup' }),
 	)
 	expect(unauthenticated.status).toBe(401)
 
-	const { sqlite, db: authedDb } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(authedDb))
-
-	const setupResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
+	const { post, readRow } = await setupTwoFactor()
+	const setupResponse = await post({ intent: 'setup' })
 	expect(setupResponse.status).toBe(200)
 	const setupPayload = (await setupResponse.json()) as {
 		ok: boolean
@@ -205,38 +190,23 @@ test('two-factor setup requires authentication and a valid code before activatin
 	expect(setupPayload.ok).toBe(true)
 	expect(setupPayload.otpUri).toContain('otpauth://totp/')
 	expect(setupPayload.otpUri).toContain(setupPayload.secret)
-
-	const pendingRow = readVerificationRow(sqlite, '1')
+	const pendingRow = readRow()!
 	expect(pendingRow).toMatchObject({
 		type: '2fa-verify',
 		secret: setupPayload.secret,
 	})
 
-	const invalidResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'confirm', code: '000000' },
-		}),
-	)
-	expect(invalidResponse.status).toBe(400)
-	expect(readVerificationRow(sqlite, '1')?.type).toBe('2fa-verify')
+	expect((await post({ intent: 'confirm', code: '000000' })).status).toBe(400)
+	expect(readRow()?.type).toBe('2fa-verify')
 
-	const validCode = await generateCurrentCode(pendingRow!)
-	const confirmResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'confirm', code: validCode },
-		}),
-	)
+	const confirmResponse = await post({
+		intent: 'confirm',
+		code: await currentCode(pendingRow),
+	})
 	expect(confirmResponse.status).toBe(200)
 	expect(await confirmResponse.json()).toEqual({ ok: true, enabled: true })
 	// The row is promoted in place: the scanned secret stays the active one.
-	expect(readVerificationRow(sqlite, '1')).toMatchObject({
-		type: '2fa',
-		secret: setupPayload.secret,
-	})
+	expect(readRow()).toMatchObject({ type: '2fa', secret: setupPayload.secret })
 	// Setup start, the rejected confirm, and the successful enable are audited
 	// — and nothing else.
 	expect(auditEventSummaries()).toEqual([
@@ -254,62 +224,23 @@ test('two-factor setup requires authentication and a valid code before activatin
 })
 
 test('cancelling a pending setup removes it without touching active 2fa', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
-
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const cancelResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'cancel' } }),
-	)
+	const { post, readRow } = await setupTwoFactor()
+	await post({ intent: 'setup' })
+	const cancelResponse = await post({ intent: 'cancel' })
 	expect(cancelResponse.status).toBe(200)
 	expect(await cancelResponse.json()).toEqual({ ok: true, enabled: false })
-	expect(readVerificationRow(sqlite, '1')).toBeUndefined()
+	expect(readRow()).toBeUndefined()
 })
 
-test('login with 2fa enabled defers the session cookie to code verification', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const appEnv = createAppEnv(db)
-	const twoFactorHandler = createAccountTwoFactorApiHandler(appEnv)
+test('login issues the session directly without 2fa and defers it to code verification once 2fa is enabled', async () => {
+	const { enable, login, verify } = await setupTwoFactor()
+	const directLogin = await login()
+	expect(directLogin.status).toBe(200)
+	expect(await directLogin.json()).toEqual({ ok: true, mode: 'login' })
+	expect(directLogin.headers.get('Set-Cookie')).toContain('kody_session=')
 
-	await runHandler(
-		twoFactorHandler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const verificationRow = readVerificationRow(sqlite, '1')!
-	await runHandler(
-		twoFactorHandler,
-		await createTwoFactorApiRequest({
-			session,
-			body: {
-				intent: 'confirm',
-				code: await generateCurrentCode(verificationRow),
-			},
-		}),
-	)
-
-	const authHandler = createAuthHandler(
-		appEnv as unknown as Parameters<typeof createAuthHandler>[0],
-	)
-	const loginResponse = await runHandler(
-		authHandler,
-		new Request('http://example.com/auth', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				email: 'kody@example.com',
-				password: 'ilikecode',
-				mode: 'login',
-			}),
-		}),
-	)
+	const verificationRow = await enable()
+	const loginResponse = await login()
 	expect(loginResponse.status).toBe(200)
 	expect(await loginResponse.json()).toEqual({
 		ok: true,
@@ -322,12 +253,7 @@ test('login with 2fa enabled defers the session cookie to code verification', as
 	)
 	expect(pendingCookie).toBeDefined()
 	// Any pre-existing session is cleared while the second factor is pending.
-	expect(
-		loginSetCookies.some(
-			(cookie) =>
-				cookie.startsWith('kody_session=') && cookie.includes('Max-Age=0'),
-		),
-	).toBe(true)
+	expect(loginSetCookies.some(isClearedCookie('kody_session'))).toBe(true)
 	expect(
 		loginSetCookies.some(
 			(cookie) =>
@@ -335,239 +261,88 @@ test('login with 2fa enabled defers the session cookie to code verification', as
 		),
 	).toBe(false)
 
-	const verifyHandler = createTwoFactorVerifyApiHandler(appEnv)
-	const verifyCookieValue = pendingCookie?.split(';')[0] ?? ''
+	const verifyCookie = pendingCookie?.split(';')[0] ?? ''
+	const invalidVerify = await verify('000000', verifyCookie)
+	expect(invalidVerify.status).toBe(400)
+	expect(invalidVerify.headers.get('Set-Cookie')).toBeNull()
 
-	const invalidVerifyResponse = await runHandler(
-		verifyHandler,
-		new Request('http://example.com/verify/2fa.json', {
-			method: 'POST',
-			headers: {
-				Cookie: verifyCookieValue,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ code: '000000' }),
-		}),
+	const validVerify = await verify(
+		await currentCode(verificationRow),
+		verifyCookie,
 	)
-	expect(invalidVerifyResponse.status).toBe(400)
-	expect(invalidVerifyResponse.headers.get('Set-Cookie')).toBeNull()
-
-	const validVerifyResponse = await runHandler(
-		verifyHandler,
-		new Request('http://example.com/verify/2fa.json', {
-			method: 'POST',
-			headers: {
-				Cookie: verifyCookieValue,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				code: await generateCurrentCode(verificationRow),
-			}),
-		}),
-	)
-	expect(validVerifyResponse.status).toBe(200)
-	expect(await validVerifyResponse.json()).toEqual({ ok: true })
-	const verifySetCookies = validVerifyResponse.headers.getSetCookie()
+	expect(validVerify.status).toBe(200)
+	expect(await validVerify.json()).toEqual({ ok: true })
+	const verifySetCookies = validVerify.headers.getSetCookie()
 	expect(
 		verifySetCookies.some((cookie) => cookie.startsWith('kody_session=')),
 	).toBe(true)
-	expect(
-		verifySetCookies.some(
-			(cookie) =>
-				cookie.startsWith('kody_verify=') && cookie.includes('Max-Age=0'),
-		),
-	).toBe(true)
+	expect(verifySetCookies.some(isClearedCookie('kody_verify'))).toBe(true)
 
-	const missingVerifyResponse = await runHandler(
-		verifyHandler,
-		new Request('http://example.com/verify/2fa.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ code: '123456' }),
-		}),
-	)
-	expect(missingVerifyResponse.status).toBe(401)
-	expect(await missingVerifyResponse.json()).toMatchObject({
+	const missingVerify = await verify('123456')
+	expect(missingVerify.status).toBe(401)
+	expect(await missingVerify.json()).toMatchObject({
 		ok: false,
 		code: 'expired',
 	})
 })
 
 test('repeated invalid codes lock the account out of 2fa verification', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const appEnv = createAppEnv(db)
-	const twoFactorHandler = createAccountTwoFactorApiHandler(appEnv)
-
-	await runHandler(
-		twoFactorHandler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const verificationRow = readVerificationRow(sqlite, '1')!
-	await runHandler(
-		twoFactorHandler,
-		await createTwoFactorApiRequest({
-			session,
-			body: {
-				intent: 'confirm',
-				code: await generateCurrentCode(verificationRow),
+	const { enable, verify } = await setupTwoFactor()
+	const verificationRow = await enable()
+	const pendingCookie = (
+		await createVerifySessionCookie(
+			{
+				stableUserId: session.stableUserId,
+				email: session.email,
+				rememberMe: false,
 			},
-		}),
-	)
-
-	const verifyHandler = createTwoFactorVerifyApiHandler(appEnv)
-	const pendingCookie = await createVerifySessionCookie(
-		{
-			stableUserId: session.stableUserId,
-			email: session.email,
-			rememberMe: false,
-		},
-		false,
-	)
-	const pendingCookieValue = pendingCookie.split(';')[0] ?? ''
-	function submitCode(code: string) {
-		return runHandler(
-			verifyHandler,
-			new Request('http://example.com/verify/2fa.json', {
-				method: 'POST',
-				headers: {
-					Cookie: pendingCookieValue,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({ code }),
-			}),
+			false,
 		)
-	}
+	).split(';')[0]
 
-	for (
-		let attempt = 0;
-		attempt < twoFactorVerifyRateLimitConfig.maxRequests;
-		attempt++
-	) {
-		const response = await submitCode('000000')
-		expect(response.status).toBe(400)
+	for (let i = 0; i < twoFactorVerifyRateLimitConfig.maxRequests; i++) {
+		expect((await verify('000000', pendingCookie)).status).toBe(400)
 	}
-
-	const lockedResponse = await submitCode('000000')
-	expect(lockedResponse.status).toBe(429)
-	expect(await lockedResponse.json()).toMatchObject({
-		ok: false,
-		code: 'locked',
-	})
-	expect(lockedResponse.headers.get('Retry-After')).toBe(
+	const locked = await verify('000000', pendingCookie)
+	expect(locked.status).toBe(429)
+	expect(await locked.json()).toMatchObject({ ok: false, code: 'locked' })
+	expect(locked.headers.get('Retry-After')).toBe(
 		String(twoFactorVerifyRateLimitConfig.windowSeconds),
 	)
 	expect(
-		lockedResponse.headers
-			.getSetCookie()
-			.some(
-				(cookie) =>
-					cookie.startsWith('kody_verify=') && cookie.includes('Max-Age=0'),
-			),
+		locked.headers.getSetCookie().some(isClearedCookie('kody_verify')),
 	).toBe(true)
 
 	// The budget is keyed on the account, so re-minting the pending cookie by
 	// logging in again does not buy more guesses.
-	const validAfterLockout = await submitCode(
-		await generateCurrentCode(verificationRow),
+	const validAfterLockout = await verify(
+		await currentCode(verificationRow),
+		pendingCookie,
 	)
 	expect(validAfterLockout.status).toBe(429)
 })
 
-test('login without 2fa still issues the session cookie directly', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const authHandler = createAuthHandler(
-		createAppEnv(db) as unknown as Parameters<typeof createAuthHandler>[0],
-	)
-
-	const loginResponse = await runHandler(
-		authHandler,
-		new Request('http://example.com/auth', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				email: 'kody@example.com',
-				password: 'ilikecode',
-				mode: 'login',
-			}),
-		}),
-	)
-	expect(loginResponse.status).toBe(200)
-	expect(await loginResponse.json()).toEqual({ ok: true, mode: 'login' })
-	expect(loginResponse.headers.get('Set-Cookie')).toContain('kody_session=')
-})
-
 test('disabling 2fa requires a valid current code and clears stale pending rows', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
+	const { sqlite, enable, post, readRow, countRows } = await setupTwoFactor()
+	const verificationRow = await enable()
 
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const verificationRow = readVerificationRow(sqlite, '1')!
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: {
-				intent: 'confirm',
-				code: await generateCurrentCode(verificationRow),
-			},
-		}),
-	)
-
-	const invalidDisable = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'disable', code: '000000' },
-		}),
-	)
-	expect(invalidDisable.status).toBe(400)
-	expect(readVerificationRow(sqlite, '1')?.type).toBe('2fa')
+	expect((await post({ intent: 'disable', code: '000000' })).status).toBe(400)
+	expect(readRow()?.type).toBe('2fa')
 
 	sqlite.exec(`
 		INSERT INTO verifications (
 			type, target, secret, algorithm, digits, period, char_set, expires_at
 		) VALUES ('2fa-verify', '1', 'STALESECRET', 'SHA-1', 6, 30, '0123456789', NULL);
 	`)
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`,
-				)
-				.get() as { count: number }
-		).count,
-	).toBe(2)
+	expect(countRows()).toBe(2)
 
-	const validDisable = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: {
-				intent: 'disable',
-				code: await generateCurrentCode(verificationRow),
-			},
-		}),
-	)
+	const validDisable = await post({
+		intent: 'disable',
+		code: await currentCode(verificationRow),
+	})
 	expect(validDisable.status).toBe(200)
 	expect(await validDisable.json()).toEqual({ ok: true, enabled: false })
-	expect(
-		(
-			sqlite
-				.prepare(
-					`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`,
-				)
-				.get() as { count: number }
-		).count,
-	).toBe(0)
+	expect(countRows()).toBe(0)
 	// The in-test 2FA enablement plus the rejected and successful disable
 	// attempts are audited — and nothing else.
 	expect(auditEventSummaries()).toEqual([
@@ -586,65 +361,27 @@ test('disabling 2fa requires a valid current code and clears stale pending rows'
 })
 
 test('setup and confirm are rejected while 2fa is already enabled', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
-
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const activeRow = readVerificationRow(sqlite, '1')!
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
-		}),
-	)
+	const { enable, post, readRow } = await setupTwoFactor()
+	const activeRow = await enable()
 
 	// A hijacked session must not be able to swap out the active factor.
-	const setupResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	expect(setupResponse.status).toBe(400)
-
-	const confirmResponse = await runHandler(
-		handler,
-		await createTwoFactorApiRequest({
-			session,
-			body: { intent: 'confirm', code: await generateCurrentCode(activeRow) },
-		}),
-	)
-	expect(confirmResponse.status).toBe(400)
-	// The active secret is untouched.
-	expect(readVerificationRow(sqlite, '1')).toMatchObject({
-		type: '2fa',
-		secret: activeRow.secret,
-	})
+	expect((await post({ intent: 'setup' })).status).toBe(400)
+	expect(
+		(await post({ intent: 'confirm', code: await currentCode(activeRow) }))
+			.status,
+	).toBe(400)
+	expect(readRow()).toMatchObject({ type: '2fa', secret: activeRow.secret })
 })
 
 test('a duplicate confirm cannot delete the active factor', async () => {
-	initTestSecrets()
-	const { sqlite, db } = createMigratedDb()
-	await seedPrimaryUser(sqlite)
-	const handler = createAccountTwoFactorApiHandler(createAppEnv(db))
-
-	await runHandler(
-		handler,
-		await createTwoFactorApiRequest({ session, body: { intent: 'setup' } }),
-	)
-	const pendingRow = readVerificationRow(sqlite, '1')!
+	const { db, post, readRow } = await setupTwoFactor()
+	await post({ intent: 'setup' })
+	const pendingRow = readRow()!
 
 	// Simulates two racing confirm requests that both passed the code check:
 	// the first promotes, the second must be a no-op rather than deleting the
 	// freshly-activated row.
 	expect(await confirmTwoFactorSetup(db, 1)).toBe(true)
 	expect(await confirmTwoFactorSetup(db, 1)).toBe(false)
-	expect(readVerificationRow(sqlite, '1')).toMatchObject({
-		type: '2fa',
-		secret: pendingRow.secret,
-	})
+	expect(readRow()).toMatchObject({ type: '2fa', secret: pendingRow.secret })
 })

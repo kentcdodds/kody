@@ -1,7 +1,8 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { renderToStream } from 'remix/ui/server'
-import { type RemixNode } from 'remix/ui'
+import * as Sentry from '@sentry/cloudflare'
+import { renderToStream } from 'remix/component/server'
+import { type RemixNode } from 'remix/component'
 import { buildStylesheetHref, getClientBuildId } from '#app/client-build-id.ts'
 import { getClientEntryAssets } from '#app/client-entry-assets.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
@@ -16,16 +17,12 @@ import { getRequestDataCacheLookup } from '#app/request-cache.ts'
 import { resolveAppPageCacheControl } from '#app/anonymous-html-cache.ts'
 import { applyFirstPartySecurityHeaders } from '#app/security-headers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
-import {
-	loadEnabledSiteBannersForSsr,
-	loadSiteBannerLoaderData,
-} from '#app/site-banner-ssr.ts'
-import { type SiteBannerRecord } from '#universal/site-banners.ts'
 import { loadYoutubeWatchLoaderData } from '#app/youtube-watch-ssr.ts'
 import { parseYoutubeWatchSearch } from '#universal/youtube-watch.ts'
 import { getInlineStylesheet } from '#app/inline-stylesheet.ts'
 import { SsrDocument } from '#app/ssr-document.tsx'
 import { openDocumentStream } from '#app/ssr-document-stream.ts'
+import { markSentryReported } from '#app/sentry-reported-error.ts'
 import { preloadClientRouteModules } from '#client/lazy-route.tsx'
 import { buildSsrSentryClientConfig } from '#universal/sentry-config.ts'
 import '#app/frame-registrations.ts'
@@ -79,10 +76,6 @@ export type RenderAppPageInput = {
 	extraSetCookies?: Array<string>
 	/** Loader phases already recorded for this request; session + ssr append. */
 	serverTiming?: Array<ServerTimingEntry>
-	/** Shared enabled-banner read started by the handler, if any. */
-	listedBanners?:
-		| Promise<ReadonlyArray<SiteBannerRecord>>
-		| ReadonlyArray<SiteBannerRecord>
 }
 
 export async function renderAppPage(input: RenderAppPageInput) {
@@ -107,26 +100,16 @@ export async function renderAppPage(input: RenderAppPageInput) {
 		() => loadSessionInfo(request, env),
 	)
 	const requestUrl = new URL(request.url)
-	const listedBanners = input.listedBanners ?? loadEnabledSiteBannersForSsr(env)
-	const [siteBanner, youtubeWatch] = await Promise.all([
-		pushServerTiming(serverTiming, 'siteBanner', () =>
-			loadSiteBannerLoaderData({
-				request,
-				env,
-				session,
-				pathname: requestUrl.pathname,
-				listedBanners,
-			}),
-		),
-		pushServerTiming(serverTiming, 'youtubeWatch', () =>
+	const youtubeWatch = await pushServerTiming(
+		serverTiming,
+		'youtubeWatch',
+		() =>
 			loadYoutubeWatchLoaderData({
 				env,
-				listedBanners,
 				loadPlaylists: parseYoutubeWatchSearch(requestUrl.search) !== null,
 			}),
-		),
-	])
-	const pageLoaderData = { ...loaderData, siteBanner, youtubeWatch }
+	)
+	const pageLoaderData = { ...loaderData, youtubeWatch }
 	const url = `${requestUrl.pathname}${requestUrl.search}${requestUrl.hash}`
 	const clientAssets = getClientEntryAssets(requestUrl.pathname)
 	const clientEntryHref = clientAssets.entry ?? '/client-entry.js'
@@ -205,6 +188,19 @@ export async function renderAppPage(input: RenderAppPageInput) {
 				},
 				onError(error) {
 					console.error('SSR render error:', error)
+					try {
+						Sentry.captureException(error, {
+							tags: {
+								surface: 'ssr-render',
+								pathname: requestUrl.pathname,
+							},
+						})
+						// Pre-first-chunk failures also reject openDocumentStream and
+						// reach handleRequest; skip a second capture there.
+						markSentryReported(error)
+					} catch {
+						// Sentry must never break the SSR error path.
+					}
 				},
 			},
 		)

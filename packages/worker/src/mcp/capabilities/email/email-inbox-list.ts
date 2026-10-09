@@ -12,6 +12,7 @@ export const emailInboxListCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailInboxList',
+		orgPermission: 'email:read',
 		description:
 			'List email inboxes and automatic platform addresses owned by the signed-in user.',
 		keywords: ['email', 'inbox', 'address', 'list'],

@@ -12,10 +12,21 @@ category: platform
 
 # Connect your agent
 
-Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Claude Code, Copilot, Grok, Gemini, OpenCode, OpenClaw, Devin, or any other
-agent that supports MCP — not from a separate Kody chat app. Getting started is
-three steps, and the in-app page at `/onboarding` walks you through each one.
+Kody is the home your agents share, and you reach it over MCP. Keep using the
+agent you like: Cursor, ChatGPT, Codex, Claude Desktop, Claude Code, Copilot,
+Grok, Gemini, OpenCode, OpenClaw, Muse, Devin, or any other agent that supports
+MCP. That agent stays the place you talk and work. Kody adds memory, secrets it
+never reads, saved packages, and jobs that every agent you connect can share.
+There is no separate Kody chat app to learn.
+
+Getting started is three steps, and the in-app page at `/onboarding` walks you
+through each one.
+
+> [!WATCH] https://www.youtube.com/watch?v=F_7hefxmEIw Watch: Install the Kody
+> ChatGPT plugin — web, desktop, and mobile
+
+Also watch:
+[Raycast runs Kody scripts — add a command with an agent in seconds](https://www.youtube.com/watch?v=OgQajyS0Sws).
 
 ## Before you start
 
@@ -58,8 +69,8 @@ for the server card.
 Using packages that already exist works well from non-coding agents: Claude
 Desktop, ChatGPT, Grok, Gemini, the Copilot app. Creating or editing packages is
 smoother from a coding agent — Cursor, Claude Code, Codex, Copilot CLI,
-OpenCode, Devin, OpenClaw — because those hosts edit files and iterate on code
-easily. Either kind can be first; the home is the same.
+OpenCode, Devin, OpenClaw, Muse — because those hosts edit files and iterate on
+code easily. Either kind can be first; the home is the same.
 
 ## Step 2 — Make something useful
 
@@ -85,15 +96,16 @@ about you.
 Step 3 is where Kody earns the name. Hosts are grouped by ecosystem: Grok
 (Cursor Local, Cursor Cloud, Grok Bot, Grok.com, and Grok CLI — Grok Bot shares
 a Cursor Cloud connection), Claude, ChatGPT, and the rest. Pick a host from a
-different ecosystem than the one already connected. A tab turns off only for a
-host Kody already knows is connected. Connect it the same way, then paste the
+different ecosystem than the one already connected. Already-connected hosts keep
+a Connected badge and stay selectable so you can re-view connect steps (second
+login, new machine, reinstall). Connect it the same way, then paste the
 portability prompt. The new agent loads
 `search({ entity: "guide:portability" })`, searches your account, and reuses the
 memory or package you just made — in a different product, with no setup
-repeated.
+repeated. Watch:
+[Build in Cursor, then run it from Claude Code or ChatGPT](https://www.youtube.com/watch?v=iGMkgjXc8Ho).
 
-Connecting that second agent unlocks the Standard plan free for two weeks, once
-per account.
+Connecting that second agent gives Pro free for two weeks, once per account.
 
 ## Where to go next
 

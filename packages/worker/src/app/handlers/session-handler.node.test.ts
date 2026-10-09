@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
 	createAuthCookie,
@@ -16,147 +16,74 @@ const rememberedSession: AuthSession = {
 	rememberMe: true,
 }
 
-function createSessionRequestContext(cookie: string) {
-	return new RequestContext(
-		new Request('http://example.com/session', {
-			headers: {
-				Cookie: cookie,
-			},
-		}),
-	)
-}
-
 function createSessionTestDb() {
-	const users = new Map([
-		[
-			1,
-			{
-				id: 1,
-				email: 'user@example.com',
-				username: 'session-user',
-				password_hash: 'unused',
-				stable_user_id: testStableUserIdFromEmail('user@example.com'),
-				created_at: new Date(0).toISOString(),
-				updated_at: new Date(0).toISOString(),
-			},
-		],
-	])
-
-	function createStatement(query: string, params: Array<unknown> = []) {
-		const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-		const executeAll = async () => {
-			if (
-				normalizedQuery.startsWith('select') &&
-				normalizedQuery.includes('from "users"') &&
-				/"stable_user_id"\s*=/.test(normalizedQuery)
-			) {
-				const user = [...users.values()].find(
-					(row) => row.stable_user_id === params[0],
-				)
-				return {
-					results: user ? [{ ...user }] : [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			if (
-				normalizedQuery.includes('from user_roles ur') &&
-				normalizedQuery.includes('join roles r')
-			) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			// Feature-flag evaluation during /session refresh; empty state uses
-			// registry defaults without throwing.
-			if (
-				normalizedQuery.includes('from feature_flags') ||
-				normalizedQuery.includes('from feature_flag_user_overrides')
-			) {
-				return {
-					results: [],
-					meta: { changes: 0, last_row_id: 0 },
-				}
-			}
-			return {
-				results: [],
-				meta: { changes: 0, last_row_id: 0 },
-			}
-		}
+	const userRow = {
+		id: 1,
+		email: 'user@example.com',
+		username: 'session-user',
+		password_hash: 'unused',
+		stable_user_id: rememberedSession.stableUserId,
+		created_at: new Date(0).toISOString(),
+		updated_at: new Date(0).toISOString(),
+	}
+	// Everything but the user lookup (roles, feature flags) resolves empty so
+	// /session falls back to registry defaults.
+	const createStatement = (query: string, params: Array<unknown> = []) => {
+		const isUserLookup =
+			/^select[\s\S]*from "users"[\s\S]*"stable_user_id"\s*=/i.test(
+				query.trim(),
+			)
+		const rows =
+			isUserLookup && params[0] === userRow.stable_user_id ? [userRow] : []
 		return {
 			query,
-			bind(...nextParams: Array<unknown>) {
-				return createStatement(query, nextParams)
-			},
-			async all() {
-				return executeAll()
-			},
-			async first() {
-				const result = await executeAll()
-				return result.results[0] ?? null
-			},
-			async run() {
-				return { meta: { changes: 0, last_row_id: 0 } }
-			},
+			bind: (...next: Array<unknown>) => createStatement(query, next),
+			all: async () => ({
+				results: rows,
+				meta: { changes: 0, last_row_id: 0 },
+			}),
+			first: async () => rows[0] ?? null,
+			run: async () => ({ meta: { changes: 0, last_row_id: 0 } }),
 		}
 	}
-
 	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
+		prepare: (query: string) => createStatement(query),
+		batch: (statements: Array<{ query?: string }>) =>
+			executePreparedD1Batch(statements),
+		exec: async () => undefined,
 	} as unknown as D1Database
 }
 
-function createEnv(db = createSessionTestDb()) {
-	return {
-		APP_DB: db,
+function setupSession() {
+	setAuthSessionSecret(testCookieSecret)
+	const session = createSessionHandler({
+		APP_DB: createSessionTestDb(),
 		COOKIE_SECRET: testCookieSecret,
-	} as Env
-}
-
-async function withMockedNow<T>(now: number, callback: () => Promise<T>) {
-	const originalDateNow = Date.now
-	Date.now = () => now
-	try {
-		return await callback()
-	} finally {
-		Date.now = originalDateNow
-	}
+	} as Env)
+	return (cookie: string) =>
+		session.handler(
+			new RequestContext(
+				new Request('http://example.com/session', {
+					headers: { Cookie: cookie },
+				}),
+			),
+		)
 }
 
 test('session handler only renews remembered sessions after the renewal window', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const session = createSessionHandler(createEnv())
+	const fetchSession = setupSession()
 	const now = Date.UTC(2026, 1, 1)
-	const scenarios = [
-		{
-			ageDays: 15,
-			expectSetCookie: true,
-		},
-		{
-			ageDays: 13,
-			expectSetCookie: false,
-		},
-	] as const
-
-	for (const scenario of scenarios) {
+	vi.spyOn(Date, 'now').mockReturnValue(now)
+	for (const { ageDays, renewed } of [
+		{ ageDays: 15, renewed: true },
+		{ ageDays: 13, renewed: false },
+	]) {
 		const cookie = await createAuthCookie(
 			rememberedSession,
 			false,
-			now - 1000 * 60 * 60 * 24 * scenario.ageDays,
+			now - 1000 * 60 * 60 * 24 * ageDays,
 		)
-
-		const response = await withMockedNow(now, () =>
-			session.handler(createSessionRequestContext(cookie)),
-		)
-
+		const response = await fetchSession(cookie)
 		expect(response.status).toBe(200)
 		expect(await response.json()).toEqual({
 			ok: true,
@@ -170,48 +97,35 @@ test('session handler only renews remembered sessions after the renewal window',
 				permissions: [],
 				featureFlags: {
 					'demo-indicator': false,
-					'compact-mcp-server-instructions': false,
-					'compute-overage-charging': true,
 					'package-share-grants': false,
-					'secret-providers': false,
 					'jev-search-rerank': false,
 					'execute-invoke': false,
+					'connection-profiles': false,
+					'mcp-skills-extension': false,
+					'mcp-events-extension': false,
 				},
+				organizations: [],
+				inviteCount: 0,
+				lastUsedOrganization: null,
 			},
 		})
-		if (scenario.expectSetCookie) {
-			expect(response.headers.get('Set-Cookie')).toContain('Max-Age=2592000')
-		} else {
-			expect(response.headers.get('Set-Cookie')).toBeNull()
-		}
+		const setCookie = response.headers.get('Set-Cookie')
+		expect({ ageDays, setCookie }).toEqual({
+			ageDays,
+			setCookie: renewed ? expect.stringContaining('Max-Age=2592000') : null,
+		})
 	}
 })
 
 test('session handler clears cookies for unknown stable user ids', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const session = createSessionHandler(createEnv())
-	const invalidCookies = await Promise.all([
-		createAuthCookie(
-			{
-				stableUserId: 'f'.repeat(64),
-				email: 'missing@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-		createAuthCookie(
-			{
-				stableUserId: 'e'.repeat(64),
-				email: 'user@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	])
-
-	for (const cookie of invalidCookies) {
-		const response = await session.handler(createSessionRequestContext(cookie))
-
+	const fetchSession = setupSession()
+	for (const [stableUserId, email] of [
+		['f'.repeat(64), 'missing@example.com'],
+		['e'.repeat(64), 'user@example.com'],
+	] as const) {
+		const response = await fetchSession(
+			await createAuthCookie({ stableUserId, email, rememberMe: false }, false),
+		)
 		expect(response.status).toBe(200)
 		expect(await response.json()).toEqual({ ok: false })
 		expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')

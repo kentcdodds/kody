@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { ProviderMark } from '#client/provider-icons.tsx'
 import { recordCellClamp } from '#client/routes/record-table.tsx'
 import { matchesSearchQuery } from '#client/search-filter.ts'

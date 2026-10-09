@@ -7,6 +7,11 @@ import { type StorageContext } from '#mcp/storage.ts'
  * id as {@link secretAuthorityArgName}. The host only honors a requested id
  * that is in the run's provenance grant set (same collector as
  * `packageStorage()`).
+ *
+ * Sandbox → host capability RPC loses AsyncLocalStorage. `createToolDispatchers`
+ * therefore captures the grant set from gateway props and reinstalls it on
+ * each call (same pattern as package-app `callCapability`), so a peeled stamp
+ * is not fail-closed against an empty set.
  */
 export const secretAuthorityHeaderName = 'x-kody-secret-authority'
 

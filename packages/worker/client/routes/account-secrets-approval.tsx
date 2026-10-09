@@ -1,6 +1,6 @@
 import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
 import { parseAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import {
 	type ApprovalAction,

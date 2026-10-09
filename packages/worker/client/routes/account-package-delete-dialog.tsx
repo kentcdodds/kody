@@ -1,4 +1,4 @@
-import { css, ref, type Handle } from 'remix/ui'
+import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { navigate } from '#client/client-router.tsx'
 import { copyPromptTooltipCss } from '#universal/fork-outdated-copy-button.tsx'
@@ -125,9 +125,9 @@ export function AccountPackageDeleteDialog(
 					data-testid="package-delete-controls"
 				>
 					<p mix={css(accountFieldNoteCss)}>
-						Permanently delete this package, its jobs, storage, secrets, tokens,
-						and public listing if it has one. Existing forks keep their copies.
-						This cannot be undone.
+						Permanently delete this package, its jobs, storage, secrets, and
+						public listing if it has one. Existing forks keep their copies. This
+						cannot be undone.
 					</p>
 					<div mix={css(accountActionsCss)}>
 						<button

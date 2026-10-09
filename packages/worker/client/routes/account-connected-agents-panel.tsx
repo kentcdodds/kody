@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { connectedAgentsApiPath } from '#client/routes/account-page-data.ts'
@@ -8,6 +8,10 @@ import {
 	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { toast } from '#client/toast.ts'
+import {
+	accountConnectionsNewHref,
+	isAccountConnectionAgent,
+} from '#universal/account-connections.ts'
 import {
 	connectedAgentConnectionLabel,
 	groupConnectedAgents,
@@ -33,6 +37,13 @@ import {
 export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
 	const pendingRevokes = new Set<string>()
+	/**
+	 * After a revoke commits, ignore those grant IDs in later payloads so a
+	 * prefetched / in-flight GET cannot restore the row or the Add connection
+	 * Connected mark. Keyed by grant (not clientId) so a same-client reconnect
+	 * with a new grant still appears. Cleared only on revoke failure or reload.
+	 */
+	const revokedGrantIds = new Set<string>()
 	const revokeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
 
 	function getRevokeCheck(clientId: string) {
@@ -43,9 +54,17 @@ export function createAccountConnectedAgents(handle: Handle) {
 		return created
 	}
 
+	function agentSurvivesRevokeFilter(agent: AccountConnectedAgentListItem) {
+		if (pendingRevokes.has(agent.clientId)) return false
+		if (revokedGrantIds.size === 0) return true
+		// Hide only when every listed grant was tombstoned. A new grant under
+		// the same clientId means a fresh reconnect and must stay visible.
+		return agent.grantIds.some((grantId) => !revokedGrantIds.has(grantId))
+	}
+
 	function visibleAgents(next: Array<AccountConnectedAgentListItem>) {
-		if (pendingRevokes.size === 0) return next
-		return next.filter((agent) => !pendingRevokes.has(agent.clientId))
+		if (pendingRevokes.size === 0 && revokedGrantIds.size === 0) return next
+		return next.filter(agentSurvivesRevokeFilter)
 	}
 
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
@@ -82,11 +101,16 @@ export function createAccountConnectedAgents(handle: Handle) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
 			pendingRevokes.delete(clientId)
+			for (const grantId of removed.grantIds) {
+				revokedGrantIds.add(grantId)
+			}
 			// Keep the optimistic list. Replacing from this response can put
 			// back a sibling that already committed if that POST listed earlier.
 			toast.success('Agent disconnected.')
 		} catch (error) {
 			pendingRevokes.delete(clientId)
+			// Do not clear revokedGrantIds: this attempt never added tombstones
+			// (only success does), and deleted IDs could wipe an earlier revoke.
 			if (!agents.some((agent) => agent.clientId === clientId)) {
 				agents = [...agents, removed]
 			}
@@ -102,13 +126,17 @@ export function createAccountConnectedAgents(handle: Handle) {
 	return {
 		applyPayload,
 		revokeAgent,
+		/** Current list after optimistic revokes — Add connection marks use this. */
+		listAgents() {
+			return agents
+		},
 		/** `actions` renders under the list (the Connections list page puts Add connection there). */
-		render(options?: { actions?: RemixNode }) {
+		render(options?: { actions?: RemixNode; pathname?: string }) {
 			const groups = groupConnectedAgents(agents)
 			return (
 				<AccountManagementPanel
 					title="Connected agents"
-					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect."
+					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
 					ariaLabel="Connected agents"
 				>
 					{groups.length > 0 ? (
@@ -126,6 +154,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 									key={group.label}
 									data-testid="connected-agent-group"
 									data-agent-label={group.label}
+									mix={css(groupItemCss)}
 								>
 									<details mix={css(groupDetailsCss)}>
 										<summary mix={css(groupSummaryCss)}>
@@ -282,6 +311,20 @@ export function createAccountConnectedAgents(handle: Handle) {
 											})}
 										</ul>
 									</details>
+									{isAccountConnectionAgent(group.kind) ? (
+										<a
+											href={accountConnectionsNewHref(
+												group.kind,
+												options?.pathname,
+											)}
+											data-testid="connected-agent-view-steps"
+											data-agent-kind={group.kind}
+											data-prevent-scroll-reset=""
+											mix={css(viewStepsLinkCss)}
+										>
+											View connect steps
+										</a>
+									) : null}
 								</li>
 							))}
 						</ul>
@@ -342,7 +385,16 @@ function ConnectedAgentMark(handle: Handle<{ icon: string | null }>) {
 	}
 }
 
+const groupItemCss = {
+	display: 'grid',
+	gridTemplateColumns: 'minmax(0, 1fr) auto',
+	alignItems: 'start',
+	gap: spacing.sm,
+	columnGap: spacing.md,
+}
+
 const groupDetailsCss = {
+	minWidth: 0,
 	'&[open] > summary': { marginBottom: spacing.sm },
 }
 
@@ -352,6 +404,18 @@ const groupSummaryCss = {
 	gap: spacing.sm,
 	cursor: 'pointer',
 	flexWrap: 'wrap' as const,
+}
+
+const viewStepsLinkCss = {
+	color: colors.primaryText,
+	fontSize: typography.fontSize.sm,
+	fontWeight: typography.fontWeight.medium,
+	textDecoration: 'none',
+	whiteSpace: 'nowrap' as const,
+	paddingBlock: '0.2rem',
+	'&:hover': {
+		color: colors.text,
+	},
 }
 
 const connectionRowCss = {

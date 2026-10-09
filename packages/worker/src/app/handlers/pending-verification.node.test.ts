@@ -8,6 +8,10 @@ import {
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -59,6 +63,11 @@ function createUserEnv(options: {
 						return { results: [], meta: { changes: 0 } }
 					},
 					async first() {
+						if (isOrgBindingMembershipQuery(normalizedQuery)) {
+							return user
+								? mockPersonalOrgBindingRow(user.stable_user_id, user.username)
+								: null
+						}
 						if (normalizedQuery.includes('email_verified_at')) {
 							return user ? { email_verified_at: user.email_verified_at } : null
 						}

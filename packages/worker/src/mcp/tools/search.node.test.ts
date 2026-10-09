@@ -1,7 +1,9 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
+import { type Capability } from '#mcp/capabilities/types.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
 	createTextEmbeddingCache,
@@ -22,6 +24,8 @@ import {
 	type PackageSearchRow,
 } from './search.ts'
 
+const now = '2026-04-20T00:00:00.000Z'
+
 function createJoinedIntegration(input: {
 	userId?: string
 	name: string
@@ -30,35 +34,29 @@ function createJoinedIntegration(input: {
 	provider?: string
 	clientId?: string
 	tokenUrl?: string
-	apiBaseUrl?: string | null
+	apiBaseUrl?: string
 	authorizeUrl?: string | null
-	flow?: JoinedIntegration['app']['flow']
 	scopes?: Array<string>
 	requiredHosts?: Array<string>
-	hasClientSecret?: boolean
 }): JoinedIntegration {
 	const userId = input.userId ?? 'user-1'
 	const appSlug = input.appSlug ?? input.name
-	const now = '2026-04-20T00:00:00.000Z'
 	return {
 		lane: 'user',
 		app: {
 			userId,
 			slug: appSlug,
-			provider: input.provider ?? appSlug.split('-')[0] ?? appSlug,
+			provider: input.provider ?? appSlug,
 			label: null,
 			clientId: input.clientId ?? `${input.name}-client-id`,
-			hasClientSecret: input.hasClientSecret ?? true,
+			hasClientSecret: true,
 			tokenUrl: input.tokenUrl ?? 'https://oauth2.googleapis.com/token',
 			authorizeUrl:
 				input.authorizeUrl === undefined
 					? 'https://accounts.google.com/o/oauth2/v2/auth'
 					: input.authorizeUrl,
-			apiBaseUrl:
-				input.apiBaseUrl === undefined
-					? 'https://www.googleapis.com'
-					: input.apiBaseUrl,
-			flow: input.flow ?? 'confidential',
+			apiBaseUrl: input.apiBaseUrl ?? 'https://www.googleapis.com',
+			flow: 'confidential',
 			usePkce: null,
 			tokenExchangeStyle: null,
 			scopeSeparator: null,
@@ -85,43 +83,32 @@ function createJoinedIntegration(input: {
 	}
 }
 
-function buildRoleGatedSearchRegistry() {
-	const publicCapability = defineDomainCapability('meta', {
-		name: 'publicDocsSearch',
-		description: 'Search public docs',
-		keywords: ['public', 'docs', 'search'],
+function cap(
+	name: string,
+	domain: string,
+	description: string,
+	overrides: Partial<Capability> = {},
+): Capability {
+	return {
+		name,
+		domain,
+		description,
+		keywords: [] as Array<string>,
 		readOnly: true,
 		idempotent: true,
-		inputSchema: {
-			type: 'object',
-			properties: {},
-		},
+		destructive: false,
+		orgPermission: 'none',
+		source: 'builtin',
+		inputSchema: { type: 'object' as const, properties: {} },
+		inputTypeDefinition: '',
 		handler: async () => null,
-	})
-	const adminCapability = defineDomainCapability('admin', {
-		name: 'adminUserList',
-		description: 'List admin user account metadata and roles',
-		keywords: ['admin', 'users', 'roles', 'accounts'],
-		readOnly: true,
-		idempotent: true,
-		requiredRole: 'admin',
-		inputSchema: {
-			type: 'object',
-			properties: {},
-		},
-		handler: async () => null,
-	})
+		...overrides,
+	}
+}
+
+function registryOf(name: string, capabilities: Array<Capability>) {
 	return buildCapabilityRegistry([
-		{
-			name: 'admin',
-			description: 'Admin capabilities',
-			capabilities: [adminCapability],
-		},
-		{
-			name: 'meta',
-			description: 'Meta capabilities',
-			capabilities: [publicCapability],
-		},
+		{ name, description: `${name} capabilities`, capabilities },
 	])
 }
 
@@ -135,52 +122,84 @@ const emptyOptionalSearchRows = {
 	'packageRows' | 'userSecretRows' | 'userValueRows' | 'userIntegrationRows'
 >
 
-function createDeterministicAiBinding(): Ai {
-	return {
-		async run(...args: Array<unknown>) {
-			const input = args[1] as { text?: unknown }
-			const texts = Array.isArray(input.text)
-				? input.text.map(String)
-				: [String(input.text ?? '')]
-			return {
-				data: texts.map((text) => deterministicEmbedding(text)),
-				shape: [texts.length, CAPABILITY_EMBEDDING_DIMENSIONS],
-			}
-		},
-	} as unknown as Ai
+const rows = (overrides: Partial<OptionalSearchRowsResult>) => ({
+	...emptyOptionalSearchRows,
+	...overrides,
+})
+
+function search(
+	input: Partial<Parameters<typeof searchUnified>[0]> & { query: string },
+) {
+	return searchUnified({
+		env: {} as Env,
+		limit: 5,
+		userId: 'user-1',
+		registry: buildCapabilityRegistry([]),
+		optionalRows: emptyOptionalSearchRows,
+		...input,
+	})
 }
 
-function leanPackage(
+function deterministicAiRun(
+	onTexts: (texts: Array<string>) => void = () => {},
+) {
+	return async (...args: Array<unknown>) => {
+		const input = args[1] as { text?: unknown }
+		const texts = Array.isArray(input.text)
+			? input.text.map(String)
+			: [String(input.text ?? '')]
+		onTexts(texts)
+		return {
+			data: texts.map((text) => deterministicEmbedding(text)),
+			shape: [texts.length, CAPABILITY_EMBEDDING_DIMENSIONS],
+		}
+	}
+}
+
+function packageRecord(
 	id: string,
 	userId: string,
-	name: string,
-	description: string,
-): PackageSearchRow {
+	overrides: Partial<PackageSearchRow['record']> = {},
+): PackageSearchRow['record'] {
 	return {
-		record: {
-			id,
-			userId,
-			name,
-			kodyId: name,
-			description,
-			tags: [],
-			searchText: null,
-			sourceId: `source-${id}`,
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: '2026-04-20T00:00:00.000Z',
-			updatedAt: '2026-04-20T00:00:00.000Z',
-		},
+		id,
+		userId,
+		name: id,
+		kodyId: id,
+		description: '',
+		tags: [],
+		searchText: null,
+		sourceId: `source-${id}`,
+		hasApp: false,
+		hasSkills: false,
+		hidden: false,
+		isPrivate: false,
+		lockedAt: null,
+		createdAt: now,
+		updatedAt: now,
+		...overrides,
+	}
+}
+
+function leanPackageRow(
+	id: string,
+	userId: string,
+	overrides: Partial<PackageSearchRow['record']> = {},
+): PackageSearchRow {
+	const record = packageRecord(id, userId, {
+		kodyId: overrides.name ?? id,
+		...overrides,
+	})
+	return {
+		record,
 		listingAhead: null,
 		projection: {
-			name,
-			kodyId: name,
-			description,
-			tags: [],
-			searchText: null,
-			hasApp: false,
-			hidden: false,
+			name: record.name,
+			kodyId: record.kodyId,
+			description: record.description,
+			tags: record.tags,
+			searchText: record.searchText,
+			hasApp: record.hasApp,
 			isPrivate: false,
 			appEntry: null,
 			exports: [],
@@ -193,78 +212,12 @@ function leanPackage(
 	}
 }
 
-function homeCapability(
-	name: string,
-	description: string,
-	keywords: Array<string>,
-) {
-	return {
-		name,
-		domain: 'home' as const,
-		description,
-		keywords,
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		inputSchema: { type: 'object' as const, properties: {} },
-		handler: async () => null,
-	}
-}
-
-function leanPackageRow(
+const leanPackage = (
 	id: string,
 	userId: string,
-	overrides: Partial<PackageSearchRow['record']> = {},
-): PackageSearchRow {
-	const row = leanPackage(
-		id,
-		userId,
-		overrides.name ?? id,
-		overrides.description ?? '',
-	)
-	return {
-		...row,
-		record: { ...row.record, ...overrides },
-		projection: {
-			...row.projection,
-			name: overrides.name ?? row.projection.name,
-			kodyId: overrides.kodyId ?? row.projection.kodyId,
-			description: overrides.description ?? row.projection.description,
-			tags: overrides.tags ?? row.projection.tags,
-			searchText: overrides.searchText ?? row.projection.searchText,
-			hasApp: overrides.hasApp ?? row.projection.hasApp,
-		},
-	}
-}
-
-function createPackageExportProjection(
-	subpath: string,
-	options: {
-		description?: string
-		typeDefinition?: string
-		functionName?: string
-		functionDescription?: string
-	} = {},
-) {
-	return {
-		subpath,
-		runtimeTarget: null,
-		typesPath: null,
-		description: options.description ?? null,
-		typeDefinition: options.typeDefinition ?? null,
-		functions: options.functionName
-			? [
-					{
-						name: options.functionName,
-						description: options.functionDescription ?? null,
-						typeDefinition: options.typeDefinition ?? null,
-						referencedTypes: [],
-					},
-				]
-			: [],
-		referencedTypes: [],
-	}
-}
+	name: string,
+	description: string,
+) => leanPackageRow(id, userId, { name, description })
 
 const sourceMocks = vi.hoisted(() => ({
 	loadPackageSourceBySourceId: vi.fn(),
@@ -282,107 +235,65 @@ vi.mock('#worker/package-registry/source.ts', async () => {
 })
 
 test('searchUnified ranks mixed search rows through one shared pipeline', async () => {
-	const registry = buildCapabilityRegistry([
-		{
-			name: 'meta',
-			description: 'Meta capabilities',
-			capabilities: [
+	const result = await search({
+		query: 'alpha\nbeta\ngamma\ndelta\nepsilon',
+		registry: registryOf('meta', [cap('alpha beta', 'meta', 'gamma helper')]),
+		optionalRows: rows({
+			packageRows: [
+				leanPackageRow('pkg-1', 'user-1', {
+					name: 'alpha',
+					kodyId: 'beta',
+					description: 'gamma',
+					tags: ['delta'],
+					searchText: 'epsilon',
+				}),
+			],
+			userSecretRows: [
 				{
-					name: 'alpha beta',
-					domain: 'meta',
-					description: 'gamma helper',
-					keywords: [],
-					readOnly: true,
-					idempotent: true,
-					destructive: false,
-					inputSchema: {
-						type: 'object',
-						properties: {},
-					},
-					handler: async () => null,
+					name: 'alpha-secret',
+					scope: 'user',
+					description: 'beta gamma delta secret',
+					packageId: null,
+					updatedAt: now,
 				},
 			],
-		},
-	])
-	const packageRows = [
-		leanPackageRow('pkg-1', 'user-1', {
-			name: 'alpha',
-			kodyId: 'beta',
-			description: 'gamma',
-			tags: ['delta'],
-			searchText: 'epsilon',
+			userIntegrationRows: [
+				createJoinedIntegration({
+					name: 'github',
+					description: 'alpha beta gamma integration',
+					tokenUrl: 'https://delta.example/token',
+					apiBaseUrl: 'https://epsilon.example/api',
+					authorizeUrl: null,
+					clientId: 'github-client-id',
+					requiredHosts: ['epsilon.example'],
+				}),
+			],
 		}),
-	]
-	const optionalRows = {
-		packageRows,
-		userSecretRows: [
-			{
-				name: 'alpha-secret',
-				scope: 'user',
-				description: 'beta gamma delta secret',
-				appId: null,
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-		],
-		userValueRows: [],
-		userIntegrationRows: [
-			createJoinedIntegration({
-				name: 'github',
-				description: 'alpha beta gamma integration',
-				tokenUrl: 'https://delta.example/token',
-				apiBaseUrl: 'https://epsilon.example/api',
-				authorizeUrl: null,
-				clientId: 'github-client-id',
-				requiredHosts: ['epsilon.example'],
-			}),
-		],
-		warnings: [],
-	} satisfies OptionalSearchRowsResult
-
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'alpha\nbeta\ngamma\ndelta\nepsilon',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows,
 	})
 
 	expect(result.offline).toBe(true)
 	expect(result.matches).toHaveLength(4)
 	expect(result.matches).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				type: 'capability',
-				name: 'alpha beta',
-			}),
-			expect.objectContaining({
-				type: 'package',
-				packageId: 'pkg-1',
-			}),
+			expect.objectContaining({ type: 'capability', name: 'alpha beta' }),
+			expect.objectContaining({ type: 'package', packageId: 'pkg-1' }),
 			expect.objectContaining({
 				type: 'integration',
 				integrationName: 'github',
 				tokenUrl: 'https://delta.example/token',
 				clientId: 'github-client-id',
 			}),
-			expect.objectContaining({
-				type: 'secret',
-				name: 'alpha-secret',
-			}),
+			expect.objectContaining({ type: 'secret', name: 'alpha-secret' }),
 		]),
 	)
 })
 
-test('searchUnified matches integrations by provider name, scope, and required host', async () => {
-	const registry = buildCapabilityRegistry([])
-	const googleAppSlug = 'google'
-	const optionalRows = {
-		...emptyOptionalSearchRows,
+test('searchUnified matches integrations by name, scope, and host, keeps shared-app connections distinct, and stays caller-scoped', async () => {
+	const optionalRows = rows({
 		userIntegrationRows: [
 			createJoinedIntegration({
 				name: 'google-calendar',
-				appSlug: googleAppSlug,
+				appSlug: 'google',
 				provider: 'google',
 				description: 'Calendar connection',
 				clientId: 'shared-google-client-id',
@@ -395,36 +306,21 @@ test('searchUnified matches integrations by provider name, scope, and required h
 				tokenUrl: 'https://accounts.spotify.com/api/token',
 				apiBaseUrl: 'https://api.spotify.com',
 				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				clientId: 'spotify-client-id',
 				scopes: ['user-read-playback-state'],
 				requiredHosts: ['api.spotify.com'],
 			}),
 		],
-	} satisfies OptionalSearchRowsResult
-
-	const byProvider = await searchUnified({
-		env: {} as Env,
-		query: 'google-calendar',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows,
 	})
-	expect(byProvider.matches[0]).toMatchObject({
+	expect(
+		(await search({ query: 'google-calendar', optionalRows })).matches[0],
+	).toMatchObject({
 		type: 'integration',
 		integrationName: 'google-calendar',
 		clientId: 'shared-google-client-id',
 	})
-
-	const byScope = await searchUnified({
-		env: {} as Env,
-		query: 'calendar.readonly',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows,
-	})
-	expect(byScope.matches).toEqual(
+	expect(
+		(await search({ query: 'calendar.readonly', optionalRows })).matches,
+	).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				type: 'integration',
@@ -432,100 +328,60 @@ test('searchUnified matches integrations by provider name, scope, and required h
 			}),
 		]),
 	)
-
-	const byHost = await searchUnified({
-		env: {} as Env,
-		query: 'api.spotify.com',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows,
-	})
-	expect(byHost.matches[0]).toMatchObject({
+	expect(
+		(await search({ query: 'api.spotify.com', optionalRows })).matches[0],
+	).toMatchObject({
 		type: 'integration',
 		integrationName: 'spotify',
 		requiredHosts: ['api.spotify.com'],
 	})
-})
 
-test('searchUnified returns four connections on one shared OAuth app as distinct entities', async () => {
-	const registry = buildCapabilityRegistry([])
-	const sharedApp = {
-		appSlug: 'google',
-		provider: 'google',
-		clientId: 'shared-google-client-id',
-		tokenUrl: 'https://oauth2.googleapis.com/token',
-		apiBaseUrl: 'https://www.googleapis.com',
-		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-	} as const
 	const connections = [
 		'google',
 		'google-calendar',
 		'google-mail',
 		'google-drive',
 	] as const
-	const optionalRows = {
-		...emptyOptionalSearchRows,
-		userIntegrationRows: connections.map((name) =>
-			createJoinedIntegration({
-				...sharedApp,
-				name,
-				description: `${name} connection`,
-				scopes: [`scope-for-${name}`],
-				requiredHosts: ['www.googleapis.com'],
-			}),
-		),
-	} satisfies OptionalSearchRowsResult
-
-	const result = await searchUnified({
-		env: {} as Env,
+	const shared = await search({
 		query: 'google www.googleapis.com',
 		limit: 10,
-		userId: 'user-1',
-		registry,
-		optionalRows,
-	})
-	const integrationNames = result.matches
-		.filter((match) => match.type === 'integration')
-		.map((match) => match.integrationName)
-		.sort()
-	expect(integrationNames).toEqual([...connections].sort())
-	expect(
-		result.matches
-			.filter((match) => match.type === 'integration')
-			.every(
-				(match) =>
-					match.type === 'integration' &&
-					match.clientId === 'shared-google-client-id',
+		optionalRows: rows({
+			userIntegrationRows: connections.map((name) =>
+				createJoinedIntegration({
+					name,
+					appSlug: 'google',
+					provider: 'google',
+					clientId: 'shared-google-client-id',
+					description: `${name} connection`,
+					scopes: [`scope-for-${name}`],
+					requiredHosts: ['www.googleapis.com'],
+				}),
 			),
-	).toBe(true)
-})
+		}),
+	})
+	const sharedIntegrations = shared.matches.flatMap((match) =>
+		match.type === 'integration'
+			? [[match.integrationName, match.clientId]]
+			: [],
+	)
+	expect(sharedIntegrations.sort()).toEqual(
+		[...connections].sort().map((name) => [name, 'shared-google-client-id']),
+	)
 
-test('searchUnified integration candidates stay scoped to the caller userId rows', async () => {
-	const registry = buildCapabilityRegistry([])
-	const optionalRows = {
-		...emptyOptionalSearchRows,
+	// Loader rows are already user-scoped; an empty load for another user must
+	// not surface the first user's integrations.
+	const githubRows = rows({
 		userIntegrationRows: [
 			createJoinedIntegration({
-				userId: 'user-1',
 				name: 'github',
 				description: 'user-1 github',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
 				requiredHosts: ['api.github.com'],
 			}),
 		],
-	} satisfies OptionalSearchRowsResult
-
-	const user1 = await searchUnified({
-		env: {} as Env,
-		query: 'github',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows,
 	})
-	expect(user1.matches).toEqual(
+	expect(
+		(await search({ query: 'github', optionalRows: githubRows })).matches,
+	).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
 				type: 'integration',
@@ -533,119 +389,92 @@ test('searchUnified integration candidates stay scoped to the caller userId rows
 			}),
 		]),
 	)
-
-	// Loader rows are already user-scoped; an empty load for another user must
-	// not surface the first user's integrations.
-	const user2 = await searchUnified({
-		env: {} as Env,
-		query: 'github',
-		limit: 5,
-		userId: 'user-2',
-		registry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-	expect(user2.matches.filter((match) => match.type === 'integration')).toEqual(
-		[],
-	)
+	expect(
+		(await search({ query: 'github', userId: 'user-2' })).matches.filter(
+			(match) => match.type === 'integration',
+		),
+	).toEqual([])
 })
 
 test('searchUnified hides admin capabilities from non-admins in offline search', async () => {
-	const registry = buildRoleGatedSearchRegistry()
-	const regularRegistry = filterCapabilityRegistryForCaller(
-		registry,
-		createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'user',
-				roles: ['user'],
-			},
-		}),
-	)
-	const adminRegistry = filterCapabilityRegistryForCaller(
-		registry,
-		createMcpCallerContext({
-			baseUrl: 'https://example.com',
-			user: {
-				userId: 'admin-1',
-				email: 'admin@example.com',
-				displayName: 'admin',
-				roles: ['admin'],
-			},
-		}),
-	)
-
-	const regularResult = await searchUnified({
-		env: { SENTRY_ENVIRONMENT: 'test' } as Env,
-		query: 'admin users roles',
-		limit: 5,
-		registry: regularRegistry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-	const adminResult = await searchUnified({
-		env: { SENTRY_ENVIRONMENT: 'test' } as Env,
-		query: 'admin users roles',
-		limit: 5,
-		registry: adminRegistry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-
-	expect(
-		regularResult.matches.some(
-			(match) => match.type === 'capability' && match.name === 'adminUserList',
-		),
-	).toBe(false)
-	expect(
-		adminResult.matches.some(
-			(match) => match.type === 'capability' && match.name === 'adminUserList',
-		),
-	).toBe(true)
-})
-
-test('searchUnified ranks package retriever results alongside capabilities', async () => {
 	const registry = buildCapabilityRegistry([
+		{
+			name: 'admin',
+			description: 'Admin capabilities',
+			capabilities: [
+				defineDomainCapability('admin', {
+					name: 'adminUserList',
+					orgPermission: 'none',
+					description: 'List admin user account metadata and roles',
+					keywords: ['admin', 'users', 'roles', 'accounts'],
+					readOnly: true,
+					idempotent: true,
+					requiredRole: 'admin',
+					inputSchema: { type: 'object', properties: {} },
+					handler: async () => null,
+				}),
+			],
+		},
 		{
 			name: 'meta',
 			description: 'Meta capabilities',
 			capabilities: [
-				{
-					name: 'target_lookup',
-					domain: 'meta',
-					description: 'Find target details',
-					keywords: [],
+				defineDomainCapability('meta', {
+					name: 'publicDocsSearch',
+					orgPermission: 'none',
+					description: 'Search public docs',
+					keywords: ['public', 'docs', 'search'],
 					readOnly: true,
 					idempotent: true,
-					destructive: false,
-					inputSchema: {
-						type: 'object',
-						properties: {},
-					},
+					inputSchema: { type: 'object', properties: {} },
 					handler: async () => null,
-				},
+				}),
 			],
 		},
 	])
-	const retrieverResults = [
-		{
-			id: 'note-1',
-			title: 'Target lookup note',
-			summary: 'Target can be reached at 555-1234.',
-			score: 0.9,
-			source: 'notes inbox',
-			packageId: 'package-1',
-			kodyId: 'notes-package',
-			retrieverKey: 'notes',
-			retrieverName: 'Notes retriever',
-		},
-	]
-	const directMatch = await searchUnified({
-		env: {} as Env,
+	const findsAdminCapability = async (roles: Array<string>) => {
+		const result = await search({
+			env: { SENTRY_ENVIRONMENT: 'test' } as unknown as Env,
+			query: 'admin users roles',
+			userId: undefined,
+			registry: filterCapabilityRegistryForCaller(
+				registry,
+				createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
+					baseUrl: 'https://example.com',
+					user: {
+						userId: personIdFromStored(`${roles[0]}-1`),
+						email: `${roles[0]}@example.com`,
+						displayName: roles[0]!,
+						roles,
+					},
+				}),
+			),
+		})
+		return result.matches.some(
+			(match) => match.type === 'capability' && match.name === 'adminUserList',
+		)
+	}
+	expect(await findsAdminCapability(['user'])).toBe(false)
+	expect(await findsAdminCapability(['admin'])).toBe(true)
+})
+
+test('searchUnified ranks package retriever results alongside capabilities', async () => {
+	const retrieverResult = {
+		id: 'note-1',
+		title: 'Target lookup note',
+		summary: 'Target can be reached at 555-1234.',
+		score: 0.9,
+		source: 'notes inbox',
+		packageId: 'package-1',
+		kodyId: 'notes-package',
+		retrieverKey: 'notes',
+		retrieverName: 'Notes retriever',
+	}
+	const directMatch = await search({
 		query: 'target lookup note',
-		limit: 5,
-		registry: buildCapabilityRegistry([]),
-		optionalRows: emptyOptionalSearchRows,
-		retrieverResults,
+		userId: undefined,
+		retrieverResults: [retrieverResult],
 	})
 	expect(directMatch.matches).toEqual([
 		expect.objectContaining({
@@ -657,15 +486,16 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 	])
 	expect(directMatch.telemetry.candidateCounts.retriever_result).toBe(1)
 
-	const mixedRanking = await searchUnified({
-		env: {} as Env,
+	const mixedRanking = await search({
 		query: 'target lookup',
 		limit: 2,
-		registry,
-		optionalRows: emptyOptionalSearchRows,
+		userId: undefined,
+		registry: registryOf('meta', [
+			cap('target_lookup', 'meta', 'Find target details'),
+		]),
 		retrieverResults: [
 			{
-				...retrieverResults[0]!,
+				...retrieverResult,
 				title: 'Unrelated appliance note',
 				summary: 'The appliance is 1800 watts.',
 				score: 50,
@@ -674,122 +504,61 @@ test('searchUnified ranks package retriever results alongside capabilities', asy
 	})
 	expect(mixedRanking.matches).toEqual(
 		expect.arrayContaining([
-			expect.objectContaining({
-				type: 'capability',
-				name: 'target_lookup',
-			}),
-			expect.objectContaining({
-				type: 'retriever_result',
-				id: 'note-1',
-			}),
+			expect.objectContaining({ type: 'capability', name: 'target_lookup' }),
+			expect.objectContaining({ type: 'retriever_result', id: 'note-1' }),
 		]),
 	)
 })
 
 test('optional search rows load packages and values without partial fallbacks', async () => {
-	const emptyRows = {
-		packageRows: [],
-		userSecretRows: [],
-		userValueRows: [],
-		userIntegrationRows: [],
-	}
-
-	await expect(
-		loadOptionalSearchRows({
-			userId: 'user-123',
-			loadPackages: async () => {
-				throw new Error('packages unavailable')
-			},
-			loadUserSecrets: async () => [],
-			loadUserValues: async () => [],
-			loadUserIntegrations: async () => [],
-		}),
-	).rejects.toThrow('packages unavailable')
-
-	const savedPackage = await loadOptionalSearchRows({
-		userId: 'user-123',
-		loadPackages: async () => [
-			{
-				record: {
-					id: 'package-123',
-					userId: 'user-123',
-					name: '@kody/roku-remote',
-					kodyId: 'roku-remote',
-					description: 'Saved package for the Roku remote',
-					tags: ['roku'],
-					searchText: null,
-					sourceId: 'source-package-123',
-					hasApp: true,
-					hidden: false,
-					isPrivate: false,
-					createdAt: '2026-03-24T00:00:00.000Z',
-					updatedAt: '2026-03-24T00:00:00.000Z',
-				},
-				listingAhead: null,
-				projection: {
-					name: '@kody/roku-remote',
-					kodyId: 'roku-remote',
-					description: 'Saved package for the Roku remote',
-					tags: ['roku'],
-					searchText: null,
-					hasApp: true,
-					hidden: false,
-					isPrivate: false,
-					appEntry: 'src/app.ts',
-					exports: [createPackageExportProjection('.')],
-					jobs: [],
-					subscriptions: [],
-					retrievers: [],
-					webhooks: [],
-				},
-			},
-		],
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => [],
-		loadUserIntegrations: async () => [],
-	})
-	expect(savedPackage.packageRows).toHaveLength(1)
-	expect(savedPackage.packageRows[0]?.record.kodyId).toBe('roku-remote')
-	expect(savedPackage.userSecretRows).toEqual([])
-	expect(savedPackage.userValueRows).toEqual([])
-	expect(savedPackage.userIntegrationRows).toEqual([])
-	expect(savedPackage.warnings).toEqual([])
-
-	await expect(
+	const loaders = (
+		overrides: Partial<Parameters<typeof loadOptionalSearchRows>[0]> = {},
+	) =>
 		loadOptionalSearchRows({
 			userId: 'user-123',
 			loadPackages: async () => [],
 			loadUserSecrets: async () => [],
-			loadUserValues: async () => {
-				throw new Error('values unavailable')
-			},
+			loadUserValues: async () => [],
 			loadUserIntegrations: async () => [],
-		}),
+			...overrides,
+		})
+	const unavailable = (name: string) => async () => {
+		throw new Error(name)
+	}
+
+	await expect(
+		loaders({ loadPackages: unavailable('packages unavailable') }),
+	).rejects.toThrow('packages unavailable')
+	await expect(
+		loaders({ loadUserValues: unavailable('values unavailable') }),
 	).rejects.toThrow('values unavailable')
 
-	const anonymous = await loadOptionalSearchRows({
-		userId: null,
-		loadPackages: async () => {
-			throw new Error('should not run')
-		},
-		loadUserSecrets: async () => [],
-		loadUserValues: async () => {
-			throw new Error('should not run')
-		},
-		loadUserIntegrations: async () => {
-			throw new Error('should not run')
-		},
+	const roku = leanPackageRow('package-123', 'user-123', {
+		name: '@kody/roku-remote',
+		kodyId: 'roku-remote',
+		hasApp: true,
+		hasSkills: false,
 	})
-	expect(anonymous).toEqual({
-		...emptyRows,
+	const savedPackage = await loaders({ loadPackages: async () => [roku] })
+	expect(savedPackage).toEqual({
+		...emptyOptionalSearchRows,
+		packageRows: [roku],
 		warnings: [],
 	})
+
+	expect(
+		await loaders({
+			userId: null,
+			loadPackages: unavailable('should not run'),
+			loadUserValues: unavailable('should not run'),
+			loadUserIntegrations: unavailable('should not run'),
+		}),
+	).toEqual({ ...emptyOptionalSearchRows, warnings: [] })
 })
 
 test('buildSavedPackageSearchRows defers source loading and hydrates only top matches', async () => {
 	const readmeBody =
 		'Package-first trace and debug workflow for failed processor service storage automation.'
-	const exportDescription = 'Trace failed processor service storage writes.'
 	const manifest = parseAuthoredPackageJson({
 		content: JSON.stringify({
 			name: '@kody/trace-package',
@@ -799,55 +568,47 @@ test('buildSavedPackageSearchRows defers source loading and hydrates only top ma
 					types: './src/trace-processor.d.ts',
 				},
 			},
-			kody: {
-				id: 'trace-package',
-				description: 'Trace package',
-			},
+			kody: { id: 'trace-package', description: 'Trace package' },
 		}),
 		manifestPath: 'package.json',
 	})
-	const files = {
-		'package.json': '{}',
-		'README.md': `# Trace package\n\n${readmeBody}`,
-		'src/trace-processor.d.ts': `/**
- * ${exportDescription}
- */
-export declare function traceProcessorFailure(messageId: string): Promise<void>
-`,
-	}
-	sourceMocks.loadPackageSourceBySourceId.mockClear()
 	sourceMocks.loadPackageSourceBySourceId.mockResolvedValueOnce({
 		source: { id: 'source-trace' },
 		manifest,
-		files,
+		files: {
+			'package.json': '{}',
+			'README.md': `# Trace package\n\n${readmeBody}`,
+			'src/trace-processor.d.ts':
+				'/**\n * Trace failed processor service storage writes.\n */\nexport declare function traceProcessorFailure(messageId: string): Promise<void>\n',
+		},
 	})
+	const buildRows = (record: PackageSearchRow['record']) =>
+		buildSavedPackageSearchRows({
+			env: {} as Env,
+			baseUrl: 'http://localhost',
+			userId: 'user-123',
+			records: [record],
+		})
+	const searchRows = (packageRows: Array<PackageSearchRow>, query: string) =>
+		search({
+			query,
+			limit: 3,
+			userId: 'user-123',
+			optionalRows: rows({ packageRows }),
+		})
 
-	const rows = await buildSavedPackageSearchRows({
-		env: {} as Env,
-		baseUrl: 'http://localhost',
-		userId: 'user-123',
-		records: [
-			{
-				id: 'trace-pkg',
-				userId: 'user-123',
-				name: '@kody/trace-package',
-				kodyId: 'trace-package',
-				description: 'Trace package',
-				tags: ['trace'],
-				searchText: null,
-				sourceId: 'source-trace',
-				hasApp: false,
-				hidden: false,
-				isPrivate: false,
-				createdAt: '2026-04-20T00:00:00.000Z',
-				updatedAt: '2026-04-20T00:00:00.000Z',
-			},
-		],
-	})
-
-	expect(rows.warnings).toEqual([])
+	const built = await buildRows(
+		packageRecord('trace-pkg', 'user-123', {
+			name: '@kody/trace-package',
+			kodyId: 'trace-package',
+			description: 'Trace package',
+			tags: ['trace'],
+			sourceId: 'source-trace',
+		}),
+	)
+	expect(built.warnings).toEqual([])
 	expect(sourceMocks.loadPackageSourceBySourceId).not.toHaveBeenCalled()
-	expect(rows.rows[0]).toMatchObject({
+	expect(built.rows[0]).toMatchObject({
 		readmeSnippet: null,
 		projection: expect.objectContaining({
 			kodyId: 'trace-package',
@@ -855,20 +616,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		}),
 	})
 
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'trace package',
-		limit: 3,
-		userId: 'user-123',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: rows.rows,
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-
+	const result = await searchRows(built.rows, 'trace package')
 	const packageMatch = result.matches.find((match) => match.type === 'package')
 	expect(packageMatch).toMatchObject({
 		type: 'package',
@@ -883,11 +631,7 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 		expect.arrayContaining([
 			expect.objectContaining({
 				subpath: './trace-processor',
-				functions: [
-					expect.objectContaining({
-						name: 'traceProcessorFailure',
-					}),
-				],
+				functions: [expect.objectContaining({ name: 'traceProcessorFailure' })],
 			}),
 		]),
 	)
@@ -897,41 +641,19 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	sourceMocks.loadPackageSourceBySourceId.mockRejectedValueOnce(
 		new Error('missing-source'),
 	)
-	const failedHydration = await buildSavedPackageSearchRows({
-		env: {} as Env,
-		baseUrl: 'http://localhost',
-		userId: 'user-123',
-		records: [
-			{
-				id: 'package-123',
-				userId: 'user-123',
-				name: '@kody/observed',
-				kodyId: 'observed',
-				description: 'Observed package',
-				tags: ['observed'],
-				searchText: 'search text',
-				sourceId: 'missing-source',
-				hasApp: true,
-				hidden: false,
-				isPrivate: false,
-				createdAt: '2026-03-24T00:00:00.000Z',
-				updatedAt: '2026-03-24T00:00:00.000Z',
-			},
-		],
-	})
-	const degraded = await searchUnified({
-		env: {} as Env,
-		query: 'observed package',
-		limit: 3,
-		userId: 'user-123',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: failedHydration.rows,
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
+	const failedHydration = await buildRows(
+		packageRecord('package-123', 'user-123', {
+			name: '@kody/observed',
+			kodyId: 'observed',
+			description: 'Observed package',
+			tags: ['observed'],
+			searchText: 'search text',
+			sourceId: 'missing-source',
+			hasApp: true,
+			hasSkills: false,
+		}),
+	)
+	const degraded = await searchRows(failedHydration.rows, 'observed package')
 	expect(degraded.matches).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
@@ -946,211 +668,97 @@ export declare function traceProcessorFailure(messageId: string): Promise<void>
 	)
 })
 
-test('searchUnified degrades to lexical package ranking when the vector query throws', async () => {
-	consoleWarn.mockImplementation(() => {})
-	let packageVectorQueryAttempts = 0
-	const env = {
-		SENTRY_ENVIRONMENT: 'production',
-		AI: createDeterministicAiBinding(),
-		CAPABILITY_VECTOR_INDEX: {
-			async query(
-				_values: Array<number>,
-				options: { filter?: Record<string, unknown> },
-			) {
-				const kind = (options.filter as { kind?: { $eq?: string } } | undefined)
-					?.kind?.$eq
-				if (kind === 'package') {
-					packageVectorQueryAttempts += 1
-					throw new Error('vectorize unavailable')
-				}
-				return { matches: [] }
-			},
-		},
-	} as unknown as Env
-
-	const result = await searchUnified({
-		env,
-		query: 'summarize inbox threads',
-		limit: 5,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: [
-				leanPackage(
-					'pkg-inbox',
-					'user-1',
-					'inbox-summarizer',
-					'summarize inbox threads',
-				),
-			],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-
-	expect(result.offline).toBe(false)
-	expect(packageVectorQueryAttempts).toBe(1)
-	expect(
-		result.matches.some(
-			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
-		),
-	).toBe(true)
-	expect(consoleWarn).toHaveBeenCalledWith(
-		expect.stringContaining('vectorize unavailable'),
-	)
-})
-
 test('searchUnified inlines call shapes for the top three capability matches only', async () => {
 	const longTypeBody = Array.from(
 		{ length: 40 },
 		(_, index) => `field${String(index)}: string`,
 	).join('; ')
-	const widgetsServer = {
-		serverId: 'widgets',
-		serverName: 'widgets',
-		kodyName: 'widgets',
+	const widget = (
+		mcpToolName: string,
+		description: string,
+		inputTypeDefinition: string,
+		overrides: Partial<Capability> = {},
+	) => {
+		const toolName = mcpToolName.replace('_', '')
+		return cap(`mcp:widgets:${toolName}`, 'mcp:widgets', description, {
+			keywords: ['widget', mcpToolName.split('_')[0]!, 'export'],
+			source: 'mcp-server',
+			mcpServer: {
+				serverId: 'widgets',
+				serverName: 'widgets',
+				kodyName: 'widgets',
+				mcpToolName,
+				toolName,
+			},
+			inputTypeDefinition,
+			...overrides,
+		})
 	}
-	const registry = buildCapabilityRegistry([
-		{
-			name: 'mcp:widgets',
-			description: 'Widget MCP ops',
-			capabilities: [
-				{
-					name: 'mcp:widgets:createwidget',
-					domain: 'mcp:widgets',
-					description: 'Create a widget export job.',
-					keywords: ['widget', 'create', 'export'],
-					readOnly: false,
-					idempotent: false,
-					destructive: false,
-					source: 'mcp-server' as const,
-					mcpServer: {
-						...widgetsServer,
-						mcpToolName: 'create_widget',
-						toolName: 'createwidget',
-					},
-					inputSchema: {
-						type: 'object',
-						properties: { name: { type: 'string' } },
-						required: ['name'],
-					},
-					inputTypeDefinition: `type CreateWidgetInput = { ${longTypeBody} }`,
-					handler: async () => null,
+	const idSchema = {
+		type: 'object' as const,
+		properties: { id: { type: 'string' as const } },
+		required: ['id'],
+	}
+	const registry = registryOf('mcp:widgets', [
+		widget(
+			'create_widget',
+			'Create a widget export job.',
+			`type CreateWidgetInput = { ${longTypeBody} }`,
+			{
+				readOnly: false,
+				idempotent: false,
+				inputSchema: {
+					type: 'object',
+					properties: { name: { type: 'string' } },
+					required: ['name'],
 				},
-				{
-					name: 'mcp:widgets:getwidget',
-					domain: 'mcp:widgets',
-					description: 'Get a widget export job.',
-					keywords: ['widget', 'get', 'export'],
-					readOnly: true,
-					idempotent: true,
-					destructive: false,
-					source: 'mcp-server' as const,
-					mcpServer: {
-						...widgetsServer,
-						mcpToolName: 'get_widget',
-						toolName: 'getwidget',
-					},
-					inputSchema: {
-						type: 'object',
-						properties: { id: { type: 'string' } },
-						required: ['id'],
-					},
-					inputTypeDefinition: 'type GetWidgetInput = { id: string }',
-					handler: async () => null,
-				},
-				{
-					name: 'mcp:widgets:listwidgets',
-					domain: 'mcp:widgets',
-					description: 'List widget export jobs.',
-					keywords: ['widget', 'list', 'export'],
-					readOnly: true,
-					idempotent: true,
-					destructive: false,
-					source: 'mcp-server' as const,
-					mcpServer: {
-						...widgetsServer,
-						mcpToolName: 'list_widgets',
-						toolName: 'listwidgets',
-					},
-					inputSchema: { type: 'object', properties: {} },
-					inputTypeDefinition: 'type ListWidgetsInput = Record<string, never>',
-					handler: async () => null,
-				},
-				{
-					name: 'mcp:widgets:deletewidget',
-					domain: 'mcp:widgets',
-					description: 'Delete a widget export job.',
-					keywords: ['widget', 'delete', 'export'],
-					readOnly: false,
-					idempotent: true,
-					destructive: true,
-					source: 'mcp-server' as const,
-					mcpServer: {
-						...widgetsServer,
-						mcpToolName: 'delete_widget',
-						toolName: 'deletewidget',
-					},
-					inputSchema: {
-						type: 'object',
-						properties: { id: { type: 'string' } },
-						required: ['id'],
-					},
-					inputTypeDefinition: 'type DeleteWidgetInput = { id: string }',
-					handler: async () => null,
-				},
-			],
-		},
+			},
+		),
+		widget(
+			'get_widget',
+			'Get a widget export job.',
+			'type GetWidgetInput = { id: string }',
+			{ inputSchema: idSchema },
+		),
+		widget(
+			'list_widgets',
+			'List widget export jobs.',
+			'type ListWidgetsInput = Record<string, never>',
+		),
+		widget(
+			'delete_widget',
+			'Delete a widget export job.',
+			'type DeleteWidgetInput = { id: string }',
+			{ readOnly: false, destructive: true, inputSchema: idSchema },
+		),
 	])
+	const searchWidgets = (query: string) =>
+		search({
+			query,
+			limit: 10,
+			userId: undefined,
+			domain: 'mcp:widgets',
+			registry,
+		})
 
-	const result = await searchUnified({
-		env: {} as Env,
-		query: 'create widget export job',
-		limit: 10,
-		domain: 'mcp:widgets',
-		registry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-
+	const result = await searchWidgets('create widget export job')
 	const capabilityMatches = result.matches.filter(
 		(match) => match.type === 'capability',
 	)
-	expect(capabilityMatches.length).toBeGreaterThanOrEqual(4)
-
-	const withShapes = capabilityMatches.filter(
-		(match) => match.type === 'capability' && match.inputTypeDefinition,
-	)
-	expect(withShapes).toHaveLength(3)
 	expect(
-		capabilityMatches
-			.slice(0, 3)
-			.every(
-				(match) =>
-					match.type === 'capability' &&
-					typeof match.inputTypeDefinition === 'string',
-			),
-	).toBe(true)
-	expect(capabilityMatches[3]).toMatchObject({ type: 'capability' })
+		capabilityMatches.map((match) => typeof match.inputTypeDefinition),
+	).toEqual(['string', 'string', 'string', 'undefined'])
 	expect(capabilityMatches[3]).not.toHaveProperty('inputTypeDefinition')
-
-	const [topMatch] = capabilityMatches
-	expect(topMatch).toMatchObject({
+	expect(capabilityMatches[0]).toMatchObject({
 		type: 'capability',
 		name: 'mcp:widgets:createwidget',
 		inputTypeDefinitionTruncated: true,
 	})
-	expect(topMatch?.inputTypeDefinition).toContain('required fields: name')
+	expect(capabilityMatches[0]?.inputTypeDefinition).toContain(
+		'required fields: name',
+	)
 
-	const nonTruncatedTop = await searchUnified({
-		env: {} as Env,
-		query: 'list widget export jobs',
-		limit: 10,
-		domain: 'mcp:widgets',
-		registry,
-		optionalRows: emptyOptionalSearchRows,
-	})
-	const [listTop] = nonTruncatedTop.matches
+	const [listTop] = (await searchWidgets('list widget export jobs')).matches
 	expect(listTop).toMatchObject({
 		type: 'capability',
 		name: 'mcp:widgets:listwidgets',
@@ -1174,8 +782,7 @@ test('settleWithBudget uses an absolute launch deadline and degrades safely', as
 
 	vi.useFakeTimers()
 	try {
-		const latePromise = new Promise<string>(() => {})
-		const settlement = settleWithBudget(latePromise, 40)
+		const settlement = settleWithBudget(new Promise<string>(() => {}), 40)
 		await vi.advanceTimersByTimeAsync(40)
 		await expect(settlement).resolves.toMatchObject({
 			ok: false,
@@ -1194,40 +801,20 @@ test('settleWithBudget uses an absolute launch deadline and degrades safely', as
 	}
 })
 
-test('searchUnified shares query embedding, fail-closes package isolation, and keeps lexical-only Vectorize misses', async () => {
+test('searchUnified shares query embedding, fail-closes package isolation, and degrades to lexical ranking on Vectorize misses or errors', async () => {
 	consoleWarn.mockImplementation(() => {})
 	let aiRunCount = 0
 	let inFlightQueries = 0
 	let maxInFlightQueries = 0
 	let packageQueryCount = 0
+	let packageVectorFails = false
 	const capturedFilters: Array<Record<string, unknown> | undefined> = []
-	const registry = buildCapabilityRegistry([
-		{
-			name: 'meta',
-			description: 'Meta',
-			capabilities: [
-				{
-					name: 'inbox_summarize',
-					domain: 'meta',
-					description: 'summarize inbox threads',
-					keywords: ['inbox', 'summarize'],
-					readOnly: true,
-					idempotent: true,
-					destructive: false,
-					inputSchema: { type: 'object', properties: {} },
-					handler: async () => null,
-				},
-			],
-		},
-	])
+	const aiRun = deterministicAiRun(() => {
+		aiRunCount += 1
+	})
 	const env = {
 		SENTRY_ENVIRONMENT: 'production',
-		AI: {
-			async run(...args: Array<unknown>) {
-				aiRunCount += 1
-				return createDeterministicAiBinding().run(...args)
-			},
-		},
+		AI: { run: aiRun },
 		CAPABILITY_VECTOR_INDEX: {
 			async query(
 				_values: Array<number>,
@@ -1242,34 +829,40 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 					?.kind?.$eq
 				if (kind === 'package') {
 					packageQueryCount += 1
+					if (packageVectorFails) throw new Error('vectorize unavailable')
 					return { matches: [{ id: 'package_pkg-weak', score: 0.99 }] }
 				}
 				return { matches: [{ id: 'inbox_summarize', score: 0.93 }] }
 			},
 		},
 	} as unknown as Env
-	const packageRows = [
-		leanPackage('pkg-weak', 'user-1', 'noise-helper', 'barely related helper'),
-		leanPackage(
-			'pkg-lexical',
-			'user-1',
-			'inbox-triage',
-			'summarize inbox threads for triage',
-		),
-	]
+	const weakRow = leanPackage(
+		'pkg-weak',
+		'user-1',
+		'noise-helper',
+		'barely related helper',
+	)
+	const query = 'summarize inbox threads for triage'
 
-	const overlapped = await searchUnified({
+	const overlapped = await search({
 		env,
-		query: 'summarize inbox threads for triage',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows: {
-			packageRows,
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
+		query,
+		registry: registryOf('meta', [
+			cap('inbox_summarize', 'meta', 'summarize inbox threads', {
+				keywords: ['inbox', 'summarize'],
+			}),
+		]),
+		optionalRows: rows({
+			packageRows: [
+				weakRow,
+				leanPackage(
+					'pkg-lexical',
+					'user-1',
+					'inbox-triage',
+					'summarize inbox threads for triage',
+				),
+			],
+		}),
 	})
 	expect(aiRunCount).toBe(1)
 	expect(maxInFlightQueries).toBeGreaterThanOrEqual(2)
@@ -1285,50 +878,29 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 		packageId: 'pkg-lexical',
 	})
 
-	packageQueryCount = 0
-	const noUserOnline = await searchUnified({
-		env,
-		query: 'summarize inbox threads for triage',
-		limit: 5,
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			packageRows: [packageRows[0]!],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-	})
-	expect(packageQueryCount).toBe(0)
-	expect(
-		noUserOnline.matches.filter((match) => match.type === 'package'),
-	).toEqual([])
-	expect(
-		(
-			await searchUnified({
-				env: {} as Env,
-				query: 'summarize inbox threads for triage',
-				limit: 5,
-				registry: buildCapabilityRegistry([]),
-				optionalRows: {
-					packageRows: [packageRows[0]!],
-					userSecretRows: [],
-					userValueRows: [],
-					userIntegrationRows: [],
-				},
-			})
-		).matches.filter((match) => match.type === 'package'),
-	).toEqual([])
+	// Without a caller userId (online or offline), packages fail closed.
+	for (const searchEnv of [env, {} as Env]) {
+		packageQueryCount = 0
+		const noUser = await search({
+			env: searchEnv,
+			query,
+			userId: undefined,
+			optionalRows: rows({ packageRows: [weakRow] }),
+		})
+		expect(packageQueryCount).toBe(0)
+		expect(noUser.matches.filter((match) => match.type === 'package')).toEqual(
+			[],
+		)
+	}
 
+	// A foreign row fails the whole package lane closed before Vectorize.
 	packageQueryCount = 0
-	const mismatched = await searchUnified({
+	const mismatched = await search({
 		env,
-		query: 'summarize inbox threads for triage',
-		limit: 5,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
+		query,
+		optionalRows: rows({
 			packageRows: [
-				packageRows[0]!,
+				weakRow,
 				leanPackage(
 					'pkg-foreign',
 					'user-2',
@@ -1336,31 +908,58 @@ test('searchUnified shares query embedding, fail-closes package isolation, and k
 					'summarize inbox threads',
 				),
 			],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
+		}),
 	})
 	expect(packageQueryCount).toBe(0)
 	expect(
 		mismatched.matches.filter((match) => match.type === 'package'),
 	).toEqual([])
+
+	packageQueryCount = 0
+	packageVectorFails = true
+	consoleWarn.mockClear()
+	const degraded = await search({
+		env,
+		query: 'summarize inbox threads',
+		optionalRows: rows({
+			packageRows: [
+				leanPackage(
+					'pkg-inbox',
+					'user-1',
+					'inbox-summarizer',
+					'summarize inbox threads',
+				),
+			],
+		}),
+	})
+	expect(degraded.offline).toBe(false)
+	expect(packageQueryCount).toBe(1)
+	expect(
+		degraded.matches.some(
+			(match) => match.type === 'package' && match.packageId === 'pkg-inbox',
+		),
+	).toBe(true)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining('vectorize unavailable'),
+	)
 })
 
 test('searchUnified inspect affinity: live-status, package-oriented, and generic value counterexample', async () => {
-	const statusCaps = [
-		homeCapability(
+	const home = (name: string, description: string, keywords: Array<string>) =>
+		cap(name, 'home', description, { keywords })
+	const registry = registryOf('home', [
+		home(
 			'sonos_list_players',
 			'List known Sonos players with room names and group membership.',
 			['sonos', 'speakers', 'list', 'players'],
 		),
-		homeCapability(
+		home(
 			'sonos_get_player_status',
 			'Get transport, track, queue, volume, and playback status for a Sonos player.',
 			['sonos', 'status', 'playing', 'speakers'],
 		),
 		{
-			...homeCapability('sonos_play', 'Start playback on a Sonos player.', [
+			...home('sonos_play', 'Start playback on a Sonos player.', [
 				'sonos',
 				'play',
 				'speakers',
@@ -1369,14 +968,11 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 			readOnly: false,
 			idempotent: false,
 		},
-		homeCapability(
+		home(
 			'webhook_list_status',
 			'List webhook delivery status and connection state.',
 			['webhook', 'status', 'list', 'connection'],
 		),
-	]
-	const registry = buildCapabilityRegistry([
-		{ name: 'home', description: 'Home', capabilities: statusCaps },
 	])
 	const notesPackage = leanPackageRow('pkg-sonos-notes', 'user-1', {
 		name: 'sonos-setup-notes',
@@ -1390,21 +986,15 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 			'Home automation package management wrappers and workflow helpers.',
 		tags: ['home', 'workflow', 'wrapper', 'package'],
 		hasApp: true,
+		hasSkills: false,
 	})
 	opsPackage.projection.appEntry = './app.tsx'
 
-	const live = await searchUnified({
-		env: {} as Env,
+	const live = await search({
 		query: 'check whether any Sonos speakers are playing',
 		limit: 8,
-		userId: 'user-1',
 		registry,
-		optionalRows: {
-			packageRows: [opsPackage, notesPackage],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
+		optionalRows: rows({ packageRows: [opsPackage, notesPackage] }),
 	})
 	expect(live.intent.task.name).toBe('inspect')
 	const liveNames = live.matches.map((match) =>
@@ -1417,51 +1007,35 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 	expect(liveNames[0]).toBe('sonos_get_player_status')
 	expect(liveNames.slice(0, 3)).toContain('sonos_list_players')
 	expect(liveNames.slice(0, 4)).not.toContain('home-ops-manager')
-	expect(liveNames).toEqual(
-		expect.arrayContaining(['sonos_get_player_status', 'sonos_play']),
-	)
+	expect(liveNames).toContain('sonos_play')
 	expect(liveNames.indexOf('sonos_get_player_status')).toBeLessThan(
 		liveNames.indexOf('sonos_play'),
 	)
 
-	const packageOriented = await searchUnified({
-		env: {} as Env,
+	const packageOriented = await search({
 		query: 'show my Sonos setup notes',
-		limit: 5,
-		userId: 'user-1',
 		registry,
-		optionalRows: {
-			packageRows: [notesPackage],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
+		optionalRows: rows({ packageRows: [notesPackage] }),
 	})
 	expect(packageOriented.matches[0]).toMatchObject({
 		type: 'package',
 		kodyId: 'sonos-setup-notes',
 	})
 
-	const genericSecret = await searchUnified({
-		env: {} as Env,
+	const genericSecret = await search({
 		query: 'show my webhook api key',
-		limit: 5,
-		userId: 'user-1',
 		registry,
-		optionalRows: {
-			packageRows: [],
+		optionalRows: rows({
 			userSecretRows: [
 				{
 					name: 'webhook_api_key',
 					scope: 'user',
 					description: 'Webhook API key for outbound hooks',
-					appId: null,
-					updatedAt: '2026-04-20T00:00:00.000Z',
+					packageId: null,
+					updatedAt: now,
 				},
 			],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
+		}),
 	})
 	expect(genericSecret.intent.task.name).toBe('inspect')
 	expect(genericSecret.matches[0]).toMatchObject({
@@ -1470,96 +1044,85 @@ test('searchUnified inspect affinity: live-status, package-oriented, and generic
 	})
 })
 
-function buildDomainScopedRegistry() {
-	const emailSend = defineDomainCapability('email', {
-		name: 'emailSend',
-		description: 'Send an email message from the per-user inbox',
-		keywords: ['email', 'send', 'mail'],
-		readOnly: false,
-		idempotent: false,
-		inputSchema: {
-			type: 'object',
-			properties: { to: { type: 'string' } },
-			required: ['to'],
-		},
-		handler: async () => null,
-	})
-	const emailList = defineDomainCapability('email', {
-		name: 'emailMessageList',
-		description: 'List stored email messages',
-		keywords: ['email', 'list', 'mail'],
-		readOnly: true,
-		idempotent: true,
-		inputSchema: { type: 'object', properties: {} },
-		handler: async () => null,
-	})
-	const jobUpdate = defineDomainCapability('jobs', {
-		name: 'jobUpdate',
-		description:
-			'Update metadata on a durable job that can send email reminders',
-		keywords: ['email', 'schedule', 'job', 'update'],
-		readOnly: false,
-		idempotent: false,
-		inputSchema: { type: 'object', properties: {} },
-		handler: async () => null,
-	})
-	return buildCapabilityRegistry([
+test('searchUnified domain scoping: filter, browse, reject unknown, and overview', async () => {
+	const registry = buildCapabilityRegistry([
 		{
 			name: 'email',
 			description: 'Email primitives for the per-user inbox.',
-			capabilities: [emailSend, emailList],
+			capabilities: [
+				defineDomainCapability('email', {
+					name: 'emailSend',
+					orgPermission: 'none',
+					description: 'Send an email message from the per-user inbox',
+					keywords: ['email', 'send', 'mail'],
+					readOnly: false,
+					idempotent: false,
+					inputSchema: {
+						type: 'object',
+						properties: { to: { type: 'string' } },
+						required: ['to'],
+					},
+					handler: async () => null,
+				}),
+				defineDomainCapability('email', {
+					name: 'emailMessageList',
+					orgPermission: 'none',
+					description: 'List stored email messages',
+					keywords: ['email', 'list', 'mail'],
+					readOnly: true,
+					idempotent: true,
+					inputSchema: { type: 'object', properties: {} },
+					handler: async () => null,
+				}),
+			],
 		},
 		{
 			name: 'jobs',
 			description: 'Schedule durable work.',
-			capabilities: [jobUpdate],
+			capabilities: [
+				defineDomainCapability('jobs', {
+					name: 'jobUpdate',
+					orgPermission: 'none',
+					description:
+						'Update metadata on a durable job that can send email reminders',
+					keywords: ['email', 'schedule', 'job', 'update'],
+					readOnly: false,
+					idempotent: false,
+					inputSchema: { type: 'object', properties: {} },
+					handler: async () => null,
+				}),
+			],
 		},
 	])
-}
+	const capabilityNames = (matches: Array<{ type: string; name?: string }>) =>
+		matches.map((match) =>
+			match.type === 'capability' ? match.name : match.type,
+		)
 
-test('searchUnified domain scoping: filter, browse, reject unknown, and overview', async () => {
-	const registry = buildDomainScopedRegistry()
-	const scoped = await searchUnified({
-		env: {} as Env,
+	const scoped = await search({
 		query: 'send email message',
 		limit: 10,
-		userId: 'user-1',
 		registry,
-		optionalRows: {
+		domain: 'email',
+		optionalRows: rows({
 			packageRows: [
 				leanPackageRow('pkg-email', 'user-1', {
 					name: 'email-digest',
-					kodyId: 'email-digest',
 					description: 'send email message digest package',
 				}),
 			],
-			userSecretRows: [],
-			userValueRows: [],
-			userIntegrationRows: [],
-		},
-		domain: 'email',
+		}),
 	})
-
 	expect(scoped.matches.length).toBeGreaterThan(0)
 	for (const match of scoped.matches) {
-		expect(match.type).toBe('capability')
-		if (match.type === 'capability') {
-			expect(match.domain).toBe('email')
-		}
+		expect(match).toMatchObject({ type: 'capability', domain: 'email' })
 	}
-	const names = scoped.matches.flatMap((match) =>
-		match.type === 'capability' ? [match.name] : [],
-	)
-	expect(names).toContain('emailSend')
-	expect(names).not.toContain('jobUpdate')
+	expect(capabilityNames(scoped.matches)).toContain('emailSend')
 
-	const unknownDomain = await searchUnified({
-		env: {} as Env,
+	const unknownDomain = await search({
 		query: 'send email',
 		limit: 10,
-		userId: 'user-1',
 		registry,
-		optionalRows: emptyOptionalSearchRows,
 		domain: 'nope',
 	}).catch((error: unknown) => error)
 	expect(unknownDomain).toBeInstanceOf(McpCallerError)
@@ -1567,20 +1130,16 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 		message: expect.stringMatching(/Unknown domain "nope"/),
 	})
 
-	const browse = await searchUnified({
-		env: {} as Env,
+	const browse = await search({
 		query: '',
 		limit: 100,
-		userId: 'user-1',
 		registry,
-		optionalRows: emptyOptionalSearchRows,
 		domain: 'email',
 	})
-	expect(
-		browse.matches.map((match) =>
-			match.type === 'capability' ? match.name : match.type,
-		),
-	).toEqual(['emailSend', 'emailMessageList'])
+	expect(capabilityNames(browse.matches)).toEqual([
+		'emailSend',
+		'emailMessageList',
+	])
 	expect(browse.matches[0]).toMatchObject({
 		type: 'capability',
 		domain: 'email',
@@ -1588,25 +1147,19 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	})
 	expect(browse.guidance).toBeDefined()
 
-	const truncated = await searchUnified({
-		env: {} as Env,
+	const truncated = await search({
 		query: '',
 		limit: 1,
-		userId: 'user-1',
 		registry,
-		optionalRows: emptyOptionalSearchRows,
 		domain: 'email',
 	})
 	expect(truncated.matches).toHaveLength(1)
 	expect(truncated.guidance).toMatch(/truncated/i)
 
-	const overview = await searchUnified({
-		env: {} as Env,
+	const overview = await search({
 		query: 'what can you do with email',
 		limit: 15,
-		userId: 'user-1',
 		registry,
-		optionalRows: emptyOptionalSearchRows,
 	})
 	expect(overview.matches).toEqual([
 		expect.objectContaining({
@@ -1619,58 +1172,44 @@ test('searchUnified domain scoping: filter, browse, reject unknown, and overview
 	expect(overview.guidance).toBeDefined()
 	expect(overview.telemetry.topResultTypes).toEqual(['domain'])
 
-	const taskQuery = await searchUnified({
-		env: {} as Env,
+	const taskQuery = await search({
 		query: 'send an email to kent',
 		limit: 15,
-		userId: 'user-1',
 		registry,
-		optionalRows: emptyOptionalSearchRows,
 	})
 	expect(taskQuery.matches.every((match) => match.type === 'capability')).toBe(
 		true,
 	)
-	expect(
-		taskQuery.matches.some(
-			(match) => match.type === 'capability' && match.name === 'emailSend',
-		),
-	).toBe(true)
+	expect(capabilityNames(taskQuery.matches)).toContain('emailSend')
 })
 
 test('searchUnified ranks platform (built-in) package rows and drops unmarked foreign rows', async () => {
-	const registry = buildCapabilityRegistry([])
-	const platformRow = {
-		...leanPackageRow('platform-pkg-1', 'platform-user', {
-			name: '@kody/github',
-			kodyId: 'github',
-			description: 'Official GitHub helpers',
-			tags: ['github'],
-		}),
-		platformScope: 'kody',
-	}
-	const withPlatform = await searchUnified({
-		env: {} as Env,
+	const withPlatform = await search({
 		query: 'github helpers',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows: {
-			...emptyOptionalSearchRows,
+		optionalRows: rows({
 			packageRows: [
 				leanPackageRow('pkg-own', 'user-1', {
 					name: '@user/notes',
 					kodyId: 'notes',
 					description: 'Notes helper',
 				}),
-				platformRow,
+				{
+					...leanPackageRow('platform-pkg-1', 'platform-user', {
+						name: '@kody/github',
+						kodyId: 'github',
+						description: 'Official GitHub helpers',
+						tags: ['github'],
+					}),
+					platformScope: 'kody',
+				},
 			],
-			warnings: [],
-		},
+		}),
 	})
-	const platformMatch = withPlatform.matches.find(
-		(match) => match.type === 'package' && match.kodyId === 'github',
-	)
-	expect(platformMatch).toMatchObject({
+	expect(
+		withPlatform.matches.find(
+			(match) => match.type === 'package' && match.kodyId === 'github',
+		),
+	).toMatchObject({
 		type: 'package',
 		name: '@kody/github',
 		platformScope: 'kody',
@@ -1679,14 +1218,9 @@ test('searchUnified ranks platform (built-in) package rows and drops unmarked fo
 	// An unmarked foreign row still fails the package lane closed (and logs
 	// the tripwire warning).
 	consoleWarn.mockImplementation(() => {})
-	const withForeign = await searchUnified({
-		env: {} as Env,
+	const withForeign = await search({
 		query: 'github helpers',
-		limit: 5,
-		userId: 'user-1',
-		registry,
-		optionalRows: {
-			...emptyOptionalSearchRows,
+		optionalRows: rows({
 			packageRows: [
 				leanPackageRow('foreign-pkg', 'someone-else', {
 					name: '@someoneelse/github',
@@ -1694,8 +1228,7 @@ test('searchUnified ranks platform (built-in) package rows and drops unmarked fo
 					description: 'Official GitHub helpers',
 				}),
 			],
-			warnings: [],
-		},
+		}),
 	})
 	expect(withForeign.matches.some((match) => match.type === 'package')).toBe(
 		false,
@@ -1705,34 +1238,11 @@ test('searchUnified ranks platform (built-in) package rows and drops unmarked fo
 	)
 })
 
-test('searchUnified embeds each distinct query text once online and never calls Workers AI offline', async () => {
+test('searchUnified embeds each distinct query text once online through a shared embedding cache', async () => {
 	const embedTexts: Array<string> = []
-	const offline = await searchUnified({
-		env: {} as Env,
-		query: 'summarize inbox threads',
-		limit: 5,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: emptyOptionalSearchRows,
-	})
-	expect(offline.offline).toBe(true)
-	expect(embedTexts).toEqual([])
-
 	const onlineEnv = {
 		SENTRY_ENVIRONMENT: 'production',
-		AI: {
-			async run(...args: Array<unknown>) {
-				const input = args[1] as { text?: unknown }
-				const batch = Array.isArray(input.text)
-					? input.text.map(String)
-					: [String(input.text ?? '')]
-				embedTexts.push(...batch)
-				return {
-					data: batch.map((text) => deterministicEmbedding(text)),
-					shape: [batch.length, CAPABILITY_EMBEDDING_DIMENSIONS],
-				}
-			},
-		},
+		AI: { run: deterministicAiRun((texts) => embedTexts.push(...texts)) },
 		CAPABILITY_VECTOR_INDEX: {
 			async query() {
 				return { matches: [] }
@@ -1740,44 +1250,24 @@ test('searchUnified embeds each distinct query text once online and never calls 
 		},
 	} as unknown as Env
 	const cache = createTextEmbeddingCache(onlineEnv)
-	const first = await searchUnified({
-		env: onlineEnv,
-		query: 'summarize inbox threads',
-		limit: 5,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			...emptyOptionalSearchRows,
-			packageRows: [
-				leanPackage(
-					'pkg-inbox',
-					'user-1',
-					'inbox-summarizer',
-					'summarize inbox threads',
-				),
-			],
-		},
-		embedText: cache.embedText,
-	})
-	const second = await searchUnified({
-		env: onlineEnv,
-		query: 'summarize inbox threads',
-		limit: 5,
-		userId: 'user-1',
-		registry: buildCapabilityRegistry([]),
-		optionalRows: {
-			...emptyOptionalSearchRows,
-			packageRows: [
-				leanPackage(
-					'pkg-inbox',
-					'user-1',
-					'inbox-summarizer',
-					'summarize inbox threads',
-				),
-			],
-		},
-		embedText: cache.embedText,
-	})
+	const searchInbox = () =>
+		search({
+			env: onlineEnv,
+			query: 'summarize inbox threads',
+			optionalRows: rows({
+				packageRows: [
+					leanPackage(
+						'pkg-inbox',
+						'user-1',
+						'inbox-summarizer',
+						'summarize inbox threads',
+					),
+				],
+			}),
+			embedText: cache.embedText,
+		})
+	const first = await searchInbox()
+	const second = await searchInbox()
 
 	expect(first.offline).toBe(false)
 	expect(second.offline).toBe(false)

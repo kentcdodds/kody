@@ -1,53 +1,44 @@
-import { beforeAll, beforeEach, expect, test, vi } from 'vitest'
+import { beforeAll, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-	updatePackagesForUsernameChange: vi.fn(),
-	republishCommunityListingsAfterUsernameChange: vi.fn(),
+	updatePackagesForUsernameChange: vi.fn(async () => ({
+		updatedPackages: [] as Array<unknown>,
+		skippedPackages: [],
+	})),
+	republishCommunityListingsAfterUsernameChange: vi.fn(async () => ({
+		republishedPackageIds: [] as Array<string>,
+		warnings: [],
+	})),
+	updateCommunityProfile: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/username-change-packages.ts', () => ({
 	updatePackagesForUsernameChange: (...args: Array<unknown>) =>
-		mocks.updatePackagesForUsernameChange(...args),
+		mocks.updatePackagesForUsernameChange(...(args as [])),
 	republishCommunityListingsAfterUsernameChange: (...args: Array<unknown>) =>
-		mocks.republishCommunityListingsAfterUsernameChange(...args),
+		mocks.republishCommunityListingsAfterUsernameChange(...(args as [])),
 }))
 
-import {
-	createAuthCookie,
-	setAuthSessionSecret,
-	type AuthSession,
-} from '#app/auth-session.ts'
+vi.mock('#worker/community/profile-service.ts', () => ({
+	updateCommunityProfile: (...args: Array<unknown>) =>
+		mocks.updateCommunityProfile(...args),
+}))
+
+import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAccountProfileApiHandler } from './account-profile.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-const mockModule = vi.hoisted(() => ({
-	updateCommunityProfile: vi.fn(),
-}))
-
-vi.mock('#worker/community/profile-service.ts', () => ({
-	updateCommunityProfile: (...args: Array<unknown>) =>
-		mockModule.updateCommunityProfile(...args),
-}))
-
-type TestUser = {
-	id: number
-	email: string
-	username: string
-	password_hash: string
-	stable_user_id: string
-	display_name: string | null
-	bio: string | null
-	avatar_key: string | null
-	profile_visibility: 'public' | 'private'
-	created_at: string
-	updated_at: string
-}
+type TestUser = ReturnType<typeof createUser>
 
 function createProfileTestDb(
 	initialUsers: Array<TestUser>,
@@ -60,19 +51,6 @@ function createProfileTestDb(
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
 				bind(...params: Array<unknown>) {
-					const readUserByStableUserId = () =>
-						[...users.values()].find(
-							(user) => user.stable_user_id === params[0],
-						) ?? null
-					const readUserById = () => users.get(Number(params[0])) ?? null
-					const readUserByUsername = () => {
-						const username = String(params[0] ?? '').toLowerCase()
-						return (
-							Array.from(users.values()).find(
-								(user) => user.username.toLowerCase() === username,
-							) ?? null
-						)
-					}
 					const updateUsername = () => {
 						const [username, updatedAt, id] = params as Array<string | number>
 						const user = users.get(Number(id))
@@ -93,6 +71,26 @@ function createProfileTestDb(
 						user.updated_at = String(updatedAt)
 						return user
 					}
+					const selectUser = () => {
+						const needle = String(params[0] ?? '')
+						const matchers: Array<[RegExp, (user: TestUser) => boolean]> = [
+							[
+								/"stable_user_id"\s*=/,
+								(user) => user.stable_user_id === needle,
+							],
+							[/"id"\s*=/, (user) => user.id === Number(needle)],
+							[
+								/"username"\s*=/,
+								(user) => user.username.toLowerCase() === needle.toLowerCase(),
+							],
+						]
+						const matcher = matchers.find(([pattern]) =>
+							pattern.test(normalizedQuery),
+						)
+						return matcher
+							? (Array.from(users.values()).find(matcher[1]) ?? null)
+							: null
+					}
 					const executeAll = async () => {
 						if (normalizedQuery.includes('update "users"')) {
 							const user = updateUsername()
@@ -101,62 +99,41 @@ function createProfileTestDb(
 								meta: { changes: user ? 1 : 0, last_row_id: 0 },
 							}
 						}
-						if (
+						const user =
 							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"stable_user_id"\s*=/.test(normalizedQuery)
-						) {
-							const user = readUserByStableUserId()
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"id"\s*=/.test(normalizedQuery)
-						) {
-							const user = readUserById()
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"username"\s*=/.test(normalizedQuery)
-						) {
-							const user = readUserByUsername()
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
+							normalizedQuery.includes('from "users"')
+								? selectUser()
+								: null
 						return {
-							results: [],
+							results: user ? [{ ...user }] : [],
 							meta: { changes: 0, last_row_id: 0 },
 						}
 					}
 
 					return {
 						query,
-						async all() {
-							return executeAll()
-						},
+						all: executeAll,
 						async first() {
+							if (isOrgBindingMembershipQuery(normalizedQuery)) {
+								const personId = String(params[0] ?? '')
+								const user = Array.from(users.values()).find(
+									(row) => row.stable_user_id === personId,
+								)
+								return user
+									? mockPersonalOrgBindingRow(
+											user.stable_user_id,
+											user.username,
+										)
+									: null
+							}
 							const result = await executeAll()
 							return result.results[0] ?? null
 						},
 						async run() {
-							if (normalizedQuery.includes('update "users"')) {
-								const user = updateUsername()
-								return {
-									meta: { changes: user ? 1 : 0, last_row_id: 0 },
-								}
-							}
-							return { meta: { changes: 0, last_row_id: 0 } }
+							const user = normalizedQuery.includes('update "users"')
+								? updateUsername()
+								: null
+							return { meta: { changes: user ? 1 : 0, last_row_id: 0 } }
 						},
 					}
 				},
@@ -173,96 +150,81 @@ function createProfileTestDb(
 	return { db, users }
 }
 
-function createUser(
-	id: number,
-	username: string,
-	email = `${username}@example.com`,
-	profile?: Partial<
-		Pick<TestUser, 'display_name' | 'bio' | 'avatar_key' | 'profile_visibility'>
-	>,
-) {
+function createUser(id: number, username: string) {
+	const email = `${username}@example.com`
 	return {
 		id,
 		email,
 		username,
 		password_hash: 'unused',
 		stable_user_id: testStableUserIdFromEmail(email),
-		display_name: profile?.display_name ?? null,
-		bio: profile?.bio ?? null,
-		avatar_key: profile?.avatar_key ?? null,
-		profile_visibility: profile?.profile_visibility ?? 'public',
+		display_name: null as string | null,
+		bio: null as string | null,
+		avatar_key: null as string | null,
+		profile_visibility: 'public' as 'public' | 'private',
 		created_at: new Date(0).toISOString(),
 		updated_at: new Date(0).toISOString(),
-	} satisfies TestUser
+	}
 }
 
-async function createRequest(input: {
-	session: AuthSession
-	method?: string
-	body?: Record<string, unknown>
-}) {
-	const cookie = await createAuthCookie(input.session, false)
-	return new Request('http://example.com/account/profile.json', {
-		method: input.method ?? 'GET',
-		headers: {
-			Cookie: cookie,
-			...(input.body ? { 'Content-Type': 'application/json' } : {}),
-		},
-		body: input.body ? JSON.stringify(input.body) : undefined,
-	})
-}
-
-function createEnv(db: D1Database, kv?: KVNamespace) {
-	return {
-		APP_DB: db,
+function createProfileClient(
+	usernames: Array<string>,
+	options: { persistUsernameUpdates?: boolean; kv?: KVNamespace } = {},
+) {
+	const testDb = createProfileTestDb(
+		usernames.map((username, index) => createUser(index + 1, username)),
+		options,
+	)
+	const env = {
+		APP_DB: testDb.db,
 		COOKIE_SECRET: testCookieSecret,
 		APP_BASE_URL: 'http://example.com',
-		...(kv ? { BUNDLE_ARTIFACTS_KV: kv } : {}),
+		...(options.kv ? { BUNDLE_ARTIFACTS_KV: options.kv } : {}),
 	} as Env
+	const { handler } = createAccountProfileApiHandler(env)
+	const email = `${usernames[0]}@example.com`
+	const send = async (body?: Record<string, unknown>) => {
+		const cookie = await createAuthCookie(
+			{
+				stableUserId: testStableUserIdFromEmail(email),
+				email,
+				rememberMe: false,
+			},
+			false,
+		)
+		const request = new Request('http://example.com/account/profile.json', {
+			method: body ? 'POST' : 'GET',
+			headers: {
+				Cookie: cookie,
+				...(body ? { 'Content-Type': 'application/json' } : {}),
+			},
+			body: body ? JSON.stringify(body) : undefined,
+		})
+		return handler({ request, url: new URL(request.url), params: {} } as never)
+	}
+	return {
+		testDb,
+		env,
+		get: () => send(),
+		post: (body: Record<string, unknown>) => send(body),
+		username: () => testDb.users.get(1)?.username,
+	}
 }
 
-async function runHandler(
-	handler: ReturnType<typeof createAccountProfileApiHandler>,
-	request: Request,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
+function expectAccountAudit(action: string, result: string, extra = {}) {
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ category: 'account', action, result, ...extra }),
+	)
 }
 
 beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
 })
 
-beforeEach(() => {
-	mocks.updatePackagesForUsernameChange.mockReset()
-	mocks.republishCommunityListingsAfterUsernameChange.mockReset()
-	mocks.updatePackagesForUsernameChange.mockResolvedValue({
-		updatedPackages: [],
-		skippedPackages: [],
-	})
-	mocks.republishCommunityListingsAfterUsernameChange.mockResolvedValue({
-		republishedPackageIds: [],
-		warnings: [],
-	})
-})
-
 test('account profile API returns email and username for the signed-in user', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
+	const { get } = createProfileClient(['current-user'])
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-				email: 'current-user@example.com',
-				rememberMe: false,
-			},
-		}),
-	)
+	const response = await get()
 
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({
@@ -276,6 +238,9 @@ test('account profile API returns email and username for the signed-in user', as
 		avatarUrl: null,
 		profileVisibility: 'public',
 		formerEmails: [],
+		organizations: [],
+		inviteCount: 0,
+		lastUsedOrganization: null,
 	})
 	// Reads are not audited.
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
@@ -283,8 +248,7 @@ test('account profile API returns email and username for the signed-in user', as
 })
 
 test('account profile API updates username for the signed-in user', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
+	const { post, username } = createProfileClient(['current-user'])
 	mocks.updatePackagesForUsernameChange.mockResolvedValueOnce({
 		updatedPackages: [
 			{
@@ -304,18 +268,7 @@ test('account profile API updates username for the signed-in user', async () => 
 		warnings: [],
 	})
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-				email: 'current-user@example.com',
-				rememberMe: false,
-			},
-			method: 'POST',
-			body: { username: 'Next-Jane' },
-		}),
-	)
+	const response = await post({ username: 'Next-Jane' })
 
 	expect(response.status).toBe(200)
 	expect(await response.json()).toMatchObject({
@@ -329,8 +282,8 @@ test('account profile API updates username for the signed-in user', async () => 
 		communityListingsRepublished: 1,
 		packageUpdateMessage: 'Updated 1 package to the new @next-jane scope.',
 	})
-	expect(testDb.users.get(1)?.username).toBe('next-jane')
-	expect(mockModule.updateCommunityProfile).not.toHaveBeenCalled()
+	expect(username()).toBe('next-jane')
+	expect(mocks.updateCommunityProfile).not.toHaveBeenCalled()
 	expect(mocks.updatePackagesForUsernameChange).toHaveBeenCalledWith(
 		expect.objectContaining({
 			previousUsername: 'current-user',
@@ -339,45 +292,27 @@ test('account profile API updates username for the signed-in user', async () => 
 	)
 	expect(
 		mocks.republishCommunityListingsAfterUsernameChange,
-	).toHaveBeenCalledWith(
-		expect.objectContaining({
-			packageIds: ['pkg-1'],
-		}),
-	)
+	).toHaveBeenCalledWith(expect.objectContaining({ packageIds: ['pkg-1'] }))
 	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'update_username',
-			result: 'success',
-		}),
-	)
+	expectAccountAudit('update_username', 'success')
 })
 
 test('account profile API treats an unchanged username as a no-op so grandfathered reserved usernames can still save profile fields', async () => {
 	// 'kody' is on the reserved username list; an account that already holds
 	// it must still be able to save display name / bio / visibility.
-	const testDb = createProfileTestDb([createUser(1, 'kody')])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
-	mockModule.updateCommunityProfile.mockResolvedValue(undefined)
+	const { post, username } = createProfileClient(['kody'])
+	mocks.updateCommunityProfile.mockResolvedValue(undefined)
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('kody@example.com'),
-				email: 'kody@example.com',
-				rememberMe: false,
-			},
-			method: 'POST',
-			body: { username: 'kody', displayName: 'Kody the Koala', bio: 'Hi' },
-		}),
-	)
+	const response = await post({
+		username: 'kody',
+		displayName: 'Kody the Koala',
+		bio: 'Hi',
+	})
 
 	expect(response.status).toBe(200)
 	expect(await response.json()).toMatchObject({ ok: true, username: 'kody' })
-	expect(testDb.users.get(1)?.username).toBe('kody')
-	expect(mockModule.updateCommunityProfile).toHaveBeenCalledWith(
+	expect(username()).toBe('kody')
+	expect(mocks.updateCommunityProfile).toHaveBeenCalledWith(
 		expect.objectContaining({
 			numericUserId: 1,
 			displayName: 'Kody the Koala',
@@ -390,25 +325,13 @@ test('account profile API treats an unchanged username as a no-op so grandfather
 	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
 })
 
-test('account profile API rejects username changes when package updates fail', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
+test('account profile API rejects username changes when package updates fail or the rename does not persist', async () => {
+	const failing = createProfileClient(['current-user'])
 	mocks.updatePackagesForUsernameChange.mockRejectedValueOnce(
 		new Error('sync failed'),
 	)
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-				email: 'current-user@example.com',
-				rememberMe: false,
-			},
-			method: 'POST',
-			body: { username: 'next-jane' },
-		}),
-	)
+	const response = await failing.post({ username: 'next-jane' })
 
 	expect(response.status).toBe(500)
 	expect(await response.json()).toEqual({
@@ -416,119 +339,54 @@ test('account profile API rejects username changes when package updates fail', a
 		error:
 			'Username was not changed because package updates failed: sync failed',
 	})
-	expect(testDb.users.get(1)?.username).toBe('current-user')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'update_username',
-			result: 'failure',
-			reason: 'package_scope_update_failed',
-		}),
-	)
-})
-
-test('account profile API rejects invalid or duplicate usernames', async () => {
-	const testDb = createProfileTestDb([
-		createUser(1, 'current-user'),
-		createUser(2, 'taken-jane'),
-	])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
-	const session = {
-		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-		email: 'current-user@example.com',
-		rememberMe: false,
-	}
-
-	const invalidResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { username: 'bad username' },
-		}),
-	)
-	expect(invalidResponse.status).toBe(400)
-
-	const reservedResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { username: 'kody' },
-		}),
-	)
-	expect(reservedResponse.status).toBe(400)
-	expect(await reservedResponse.json()).toEqual({
-		ok: false,
-		error: '`kody` is reserved.',
+	expect(failing.username()).toBe('current-user')
+	expectAccountAudit('update_username', 'failure', {
+		reason: 'package_scope_update_failed',
 	})
 
-	const duplicateResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { username: 'Taken-Jane' },
-		}),
-	)
-	expect(duplicateResponse.status).toBe(409)
-	expect(await duplicateResponse.json()).toEqual({
-		ok: false,
-		error: '`taken-jane` is taken.',
-	})
-	expect(testDb.users.get(1)?.username).toBe('current-user')
-	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
-	// Only the duplicate attempt is audited; validation rejections are not.
-	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'update_username',
-			result: 'failure',
-			reason: 'username_exists',
-		}),
-	)
-})
-
-test('account profile API does not report success when the requested username did not persist', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'jklotz08')], {
+	mocks.updatePackagesForUsernameChange.mockClear()
+	const unpersisted = createProfileClient(['jklotz08'], {
 		persistUsernameUpdates: false,
 	})
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
-
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session: {
-				stableUserId: testStableUserIdFromEmail('jklotz08@example.com'),
-				email: 'jklotz08@example.com',
-				rememberMe: false,
-			},
-			method: 'POST',
-			body: { username: 'jklotz' },
-		}),
-	)
-
-	expect(response.status).toBe(500)
-	expect(await response.json()).toEqual({
+	const unpersistedResponse = await unpersisted.post({ username: 'jklotz' })
+	expect(unpersistedResponse.status).toBe(500)
+	expect(await unpersistedResponse.json()).toEqual({
 		ok: false,
 		error: 'Username was not changed to `jklotz`.',
 	})
-	expect(testDb.users.get(1)?.username).toBe('jklotz08')
+	expect(unpersisted.username()).toBe('jklotz08')
 	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
 })
 
-test('account profile API rounds trip displayName, bio, and visibility', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
-	const env = createEnv(testDb.db)
-	const handler = createAccountProfileApiHandler(env)
-	const session = {
-		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-		email: 'current-user@example.com',
-		rememberMe: false,
-	}
+test('account profile API rejects invalid, reserved, or duplicate usernames', async () => {
+	const { post, username } = createProfileClient(['current-user', 'taken-jane'])
 
-	mockModule.updateCommunityProfile.mockImplementation(
+	expect((await post({ username: 'bad username' })).status).toBe(400)
+
+	const rejections: Array<[string, number, string]> = [
+		['kody', 400, '`kody` is reserved.'],
+		['Taken-Jane', 409, '`taken-jane` is taken.'],
+	]
+	for (const [requested, status, error] of rejections) {
+		const response = await post({ username: requested })
+		expect([response.status, await response.json()]).toEqual([
+			status,
+			{ ok: false, error },
+		])
+	}
+	expect(username()).toBe('current-user')
+	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
+	// Only the duplicate attempt is audited; validation rejections are not.
+	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
+	expectAccountAudit('update_username', 'failure', {
+		reason: 'username_exists',
+	})
+})
+
+test('account profile API round trips and validates displayName, bio, and visibility', async () => {
+	const { testDb, env, get, post } = createProfileClient(['current-user'])
+	const trimmedOrNull = (value: string) => value.trim() || null
+	mocks.updateCommunityProfile.mockImplementation(
 		async (input: {
 			displayName?: string
 			bio?: string
@@ -537,32 +395,20 @@ test('account profile API rounds trip displayName, bio, and visibility', async (
 			const user = testDb.users.get(1)
 			if (!user) return
 			if (input.displayName !== undefined) {
-				user.display_name =
-					input.displayName.trim().length === 0
-						? null
-						: input.displayName.trim()
+				user.display_name = trimmedOrNull(input.displayName)
 			}
-			if (input.bio !== undefined) {
-				user.bio = input.bio.trim().length === 0 ? null : input.bio.trim()
-			}
+			if (input.bio !== undefined) user.bio = trimmedOrNull(input.bio)
 			if (input.visibility !== undefined) {
 				user.profile_visibility = input.visibility
 			}
 		},
 	)
 
-	const response = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: {
-				displayName: 'Current User',
-				bio: 'I build packages',
-				profileVisibility: 'private',
-			},
-		}),
-	)
+	const response = await post({
+		displayName: 'Current User',
+		bio: 'I build packages',
+		profileVisibility: 'private',
+	})
 
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({
@@ -577,66 +423,32 @@ test('account profile API rounds trip displayName, bio, and visibility', async (
 		profileVisibility: 'private',
 		formerEmails: [],
 	})
-	expect(mockModule.updateCommunityProfile).toHaveBeenCalledWith({
+	expect(mocks.updateCommunityProfile).toHaveBeenCalledWith({
 		env,
 		numericUserId: 1,
 		displayName: 'Current User',
 		bio: 'I build packages',
 		visibility: 'private',
 	})
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'account',
-			action: 'update_profile',
-			result: 'success',
-		}),
-	)
+	expectAccountAudit('update_profile', 'success')
 
-	const getResponse = await runHandler(
-		handler,
-		await createRequest({ session }),
-	)
-	expect(await getResponse.json()).toMatchObject({
+	expect(await (await get()).json()).toMatchObject({
 		displayName: 'Current User',
 		bio: 'I build packages',
 		profileVisibility: 'private',
 	})
-})
 
-test('account profile API validates profile field updates', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db))
-	const session = {
-		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-		email: 'current-user@example.com',
-		rememberMe: false,
-	}
-
-	const invalidVisibility = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { profileVisibility: 'friends' },
-		}),
-	)
+	const invalidVisibility = await post({ profileVisibility: 'friends' })
 	expect(invalidVisibility.status).toBe(400)
 	expect(await invalidVisibility.json()).toEqual({
 		ok: false,
 		error: 'Profile visibility is invalid.',
 	})
 
-	mockModule.updateCommunityProfile.mockRejectedValue(
+	mocks.updateCommunityProfile.mockRejectedValue(
 		new CommunityActionError('Display name must be at most 50 characters.'),
 	)
-	const invalidDisplayName = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { displayName: 'x'.repeat(51) },
-		}),
-	)
+	const invalidDisplayName = await post({ displayName: 'x'.repeat(51) })
 	expect(invalidDisplayName.status).toBe(400)
 	expect(await invalidDisplayName.json()).toEqual({
 		ok: false,
@@ -645,7 +457,6 @@ test('account profile API validates profile field updates', async () => {
 })
 
 test('account profile username change consults KV reserved additions and removals', async () => {
-	const testDb = createProfileTestDb([createUser(1, 'current-user')])
 	const kv = {
 		async get(key: string, type?: string) {
 			if (key !== reservedUsernamesKvKey) return null
@@ -658,35 +469,15 @@ test('account profile username change consults KV reserved additions and removal
 			return type === 'json' ? JSON.parse(raw) : raw
 		},
 	} as unknown as KVNamespace
-	const handler = createAccountProfileApiHandler(createEnv(testDb.db, kv))
-	const session = {
-		stableUserId: testStableUserIdFromEmail('current-user@example.com'),
-		email: 'current-user@example.com',
-		rememberMe: false,
-	}
+	const { post, username } = createProfileClient(['current-user'], { kv })
 
-	const addedResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { username: 'brandnew' },
-		}),
-	)
+	const addedResponse = await post({ username: 'brandnew' })
 	expect(addedResponse.status).toBe(400)
 	expect(await addedResponse.json()).toEqual({
 		ok: false,
 		error: '`brandnew` is reserved.',
 	})
 
-	const unreservedResponse = await runHandler(
-		handler,
-		await createRequest({
-			session,
-			method: 'POST',
-			body: { username: 'faq' },
-		}),
-	)
-	expect(unreservedResponse.status).toBe(200)
-	expect(testDb.users.get(1)?.username).toBe('faq')
+	expect((await post({ username: 'faq' })).status).toBe(200)
+	expect(username()).toBe('faq')
 })

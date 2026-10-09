@@ -65,6 +65,7 @@ import {
 	runSurfaceValues,
 	workflowProjectionRetentionDays,
 } from './types.ts'
+import { recordDurableObjectPlatformRowsRead } from '#worker/usage/durable-object-rows.ts'
 
 const textEncoder = new TextEncoder()
 const maxAgeDeletesPerFinish = 100
@@ -703,8 +704,10 @@ class RunLogBase extends DurableObject<Env> {
 	private finishesSinceRetentionCache: number | null = null
 	/**
 	 * Per-op SqlStorageCursor.rowsRead/rowsWritten accumulators for this
-	 * isolate. Durable totals use atomic run_log_meta increments (no new AE
-	 * dataset; USAGE_EVENTS would inflate billed overage).
+	 * isolate. Durable totals use atomic run_log_meta increments. Rows read
+	 * also stream to `durable_object_platform_rows_read` (observe-only, never
+	 * in include or overage math) keyed by the DO name, which is the user's
+	 * stable id.
 	 */
 	private sqlBillingByOp = new Map<
 		RunLogSqlBillingOp,
@@ -1055,6 +1058,15 @@ class RunLogBase extends DurableObject<Env> {
 		prev.rowsWritten += rowsWritten
 		prev.calls += 1
 		this.sqlBillingByOp.set(op, prev)
+		const userId = this.ctx.id.name
+		if (userId) {
+			recordDurableObjectPlatformRowsRead({
+				env: this.env,
+				userId,
+				doClass: 'RunLog',
+				rowsRead,
+			})
+		}
 		this.adjustMeta(sqlBillingMetaKey(op, 'rr'), rowsRead)
 		this.adjustMeta(sqlBillingMetaKey(op, 'rw'), rowsWritten)
 		this.adjustMeta(sqlBillingMetaKey(op, 'n'), 1)
@@ -1362,6 +1374,19 @@ class RunLogBase extends DurableObject<Env> {
 			`DELETE FROM run_logs WHERE run_id = ?`,
 			runId,
 		).run()
+		this.insertLogRows(runId, logs)
+	}
+
+	/**
+	 * Insert log rows for a run that has none yet (claim-time phase line).
+	 * Finish still replaces the set, so a completed attempt keeps sandbox logs.
+	 */
+	private insertInitialLogs(runId: string, logs: Array<RunLogEntryInput>) {
+		if (logs.length === 0) return
+		this.insertLogRows(runId, logs)
+	}
+
+	private insertLogRows(runId: string, logs: Array<RunLogEntryInput>) {
 		const kept = logs.slice(-runRecordMaxLogEntriesPerRun)
 		let insertRowsRead = 0
 		let insertRowsWritten = 0
@@ -2359,6 +2384,12 @@ class RunLogBase extends DurableObject<Env> {
 		staleBefore: string
 		/** Eager `running` run row for this attempt; `null` when the caller owns the run record (workflow-sourced invokes). */
 		run: RunLogRowInput | null
+		/**
+		 * Phase lines written with the running row. They survive an isolate
+		 * kill that never reaches finish; finish replaces them with the
+		 * attempt's terminal logs.
+		 */
+		initialLogs?: Array<RunLogEntryInput>
 	}): Promise<PackageInvocationClaimResult> {
 		const now = new Date().toISOString()
 		const existing = this.findInvocationLedgerRow(input.invocation)
@@ -2377,6 +2408,7 @@ class RunLogBase extends DurableObject<Env> {
 			)
 			if (input.run) {
 				this.insertRunningRun({ ...input.run, invocationId: existing.id })
+				this.insertInitialLogs(input.run.id, input.initialLogs ?? [])
 				await this.ensureRetentionAlarm()
 			}
 			return {
@@ -2409,6 +2441,7 @@ class RunLogBase extends DurableObject<Env> {
 				...input.run,
 				invocationId: input.invocation.id,
 			})
+			this.insertInitialLogs(input.run.id, input.initialLogs ?? [])
 			await this.ensureRetentionAlarm()
 		}
 		return {
@@ -2503,16 +2536,22 @@ class RunLogBase extends DurableObject<Env> {
 	/**
 	 * Release a claim whose execution never started so retries are not
 	 * poisoned. Deletes the still-`in_progress` ledger row (fenced on
-	 * `claimUpdatedAt`) and the attempt's still-`running` run row.
+	 * `claimUpdatedAt`). The attempt's still-`running` run row is finished as
+	 * an error with diagnostic logs (not deleted) so Activity keeps evidence
+	 * of pre-execution failures.
 	 */
 	async releasePackageInvocation(input: {
 		invocationId: string
 		claimUpdatedAt: string
 		runId: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
 	}): Promise<{
 		released: boolean
 		/** Current row when the fence failed, so the caller can resolve it. */
 		record: PackageInvocationLedgerRecord | null
+		/** True when this RPC finished the attempt's run as an error. */
+		runFinished: boolean
 	}> {
 		// Same explicit read-then-write fence as finishPackageInvocation: DO
 		// execution is serialized, so this is atomic within the RPC.
@@ -2527,13 +2566,42 @@ class RunLogBase extends DurableObject<Env> {
 				input.invocationId,
 			)
 		}
-		if (input.runId) {
+		// Finish this attempt's run even when the ledger fence failed — the
+		// attempt still happened and must not stay `running` or vanish.
+		let runFinished = false
+		const releasedRun = input.run
+		if (releasedRun) {
+			const previousStatus = this.getRunStatus(releasedRun.id)
+			if (previousStatus === 'running' || previousStatus == null) {
+				const existed = previousStatus != null
+				this.transactionSyncWithMetaCache(() => {
+					this.clearSystemPlatformInterruptTriageBeforeErrorFinish(releasedRun)
+					this.upsertRun(releasedRun, 'replace')
+					this.replaceLogs(releasedRun.id, input.logs)
+					if (!existed) {
+						this.adjustRunCount(1)
+					}
+					this.recordTerminalRunSideEffects({
+						previousStatus,
+						run: releasedRun,
+					})
+				})
+				runFinished = true
+				this.retentionIdleConfirmed = false
+				this.invalidateReadMemos()
+				this.resetRetentionEmptyBackoff()
+				this.maybeEnforceRetention()
+				await this.ensureRetentionAlarm()
+			}
+		} else if (input.runId) {
+			// Callers without a built terminal row still must not leave a
+			// running attempt (legacy / fence-only release).
 			await this.deleteRunIfRunning({ runId: input.runId })
 		}
 		if (released) {
-			return { released: true, record: null }
+			return { released: true, record: null, runFinished }
 		}
-		return { released: false, record: current }
+		return { released: false, record: current, runFinished }
 	}
 
 	/**
@@ -3918,6 +3986,7 @@ export const RunLog = Sentry.instrumentDurableObjectWithSentry(
 	(env: Env) => buildSentryOptions(env),
 	RunLogBase,
 )
+export type RunLog = InstanceType<typeof RunLog>
 
 export type RunLogRpc = DurableObjectPitrRpc & {
 	startRun: (input: { run: RunLogRowInput }) => Promise<{ ok: true }>
@@ -3950,6 +4019,7 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		invocation: PackageInvocationClaimInput
 		staleBefore: string
 		run: RunLogRowInput | null
+		initialLogs?: Array<RunLogEntryInput>
 	}) => Promise<PackageInvocationClaimResult>
 	getPackageInvocation: (
 		input: PackageInvocationLedgerKey,
@@ -3969,9 +4039,12 @@ export type RunLogRpc = DurableObjectPitrRpc & {
 		invocationId: string
 		claimUpdatedAt: string
 		runId: string | null
+		run: RunLogRowInput | null
+		logs: Array<RunLogEntryInput>
 	}) => Promise<{
 		released: boolean
 		record: PackageInvocationLedgerRecord | null
+		runFinished: boolean
 	}>
 	upsertWorkflowProjection: (
 		input: WorkflowProjectionUpsertInput,

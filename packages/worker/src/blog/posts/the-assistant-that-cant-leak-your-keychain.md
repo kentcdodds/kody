@@ -91,8 +91,10 @@ placeholder string in the header, which is worth nothing.
 
 Trace the plaintext's journey and you'll find it never enters a prompt, never
 lands in chat, never appears in the assistant's context window, never comes back
-in an execute result. The model reasons about a name. Only the gateway ever
-touches the value. There is no "please don't reveal the secret" instruction
+in an execute result — and package code that calls `packageSecrets.get` receives
+only an opaque `{{secret:…}}` placeholder, not the value. The model reasons
+about a name. Only the gateway (and other platform use sites like JWT signing)
+ever touches the value. There is no "please don't reveal the secret" instruction
 anywhere, because there's no secret in reach to reveal.
 
 ## Layer 3: isolation all the way down to the Durable Object
@@ -138,7 +140,7 @@ and everything it accumulates lives in an account you own.
 
 An assistant's home holding 51 keys had better be built like it. The full
 secrets model is documented at
-[secrets and values](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
+[Secrets and host approval](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
 and the code behind every claim in this post is in
 [the repo](https://github.com/kentcdodds/kody).
 

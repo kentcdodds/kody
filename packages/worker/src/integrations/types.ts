@@ -5,6 +5,7 @@ import {
 	tokenExchangeStyleValues,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import { type PlatformOauthApp } from './platform-apps.ts'
+import { type IntegrationRefreshPolicy } from './refresh-policy.ts'
 import { integrationUsageModeValues } from './usage-mode.ts'
 export const oauthAppFlowSchema = z.enum(integrationFlowValues)
 export const oauthTokenExchangeStyleSchema = z.enum(tokenExchangeStyleValues)
@@ -57,6 +58,7 @@ export type UserIntegrationConnection = z.infer<
 	typeof userIntegrationConnectionSchema
 > & {
 	lastAuthFailure?: IntegrationAuthFailureSnapshot | null
+	refreshPolicy?: IntegrationRefreshPolicy | null
 }
 
 export type UserOauthAppWithConnectionCount = UserOauthApp & {
@@ -124,6 +126,7 @@ export type UserIntegrationRow = {
 	auth_failed_provider_description?: string | null
 	auth_failed_http_status?: number | null
 	auth_failed_reconnectable?: number | null
+	refresh_policy?: string | null
 	created_at: string
 	updated_at: string
 }

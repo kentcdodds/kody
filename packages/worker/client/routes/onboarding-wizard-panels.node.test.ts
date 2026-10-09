@@ -1,5 +1,5 @@
-import { css } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
+import { css } from 'remix/component'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { defaultKodyMcpUrl } from './onboarding-mcp-clients.ts'
 import {
@@ -8,214 +8,163 @@ import {
 	renderSecondAgentPanel,
 } from './onboarding-wizard-panels.tsx'
 
-const discoveryPrompt =
-	"I'm deciding whether Kody (https://example.com) would be useful for me. Read https://example.com/docs/what-is-kody and then interview me to find out what Kody could do for me."
+type ConnectProps = Parameters<typeof renderConnectAgentPanel>[0]
+type AccessProps = Parameters<typeof renderAccessPanel>[0]
+type SecondProps = Parameters<typeof renderSecondAgentPanel>[0]
 
-function connectPanel(selected: {
-	agent: 'claude-desktop' | 'cursor' | null
-	label: string | null
-	loggedIn?: boolean
-	hasMcpClient?: boolean
-	search?: string
-	awaitingConnect?: boolean
-	connectedAgents?: Array<{
-		label: string
-		kind?: 'chatgpt' | 'claude-desktop' | 'cursor'
-	}>
-}) {
-	return renderConnectAgentPanel({
-		entrance: css({}),
-		activeStep: 1,
-		onSelectStep() {},
-		loggedIn: selected.loggedIn ?? false,
-		hasMcpClient: selected.hasMcpClient ?? false,
-		connectedAgents: selected.connectedAgents,
-		selectedAgent: selected.agent,
-		selectedAgentLabel: selected.label,
-		agentChooser: null,
-		mcpServerUrl: defaultKodyMcpUrl,
-		mcpHighlights: {},
-		search: selected.search,
-		awaitingConnect: selected.awaitingConnect,
-	})
+const shared = {
+	entrance: css({}),
+	onSelectStep() {},
+	agentChooser: null,
+	mcpServerUrl: defaultKodyMcpUrl,
+	mcpHighlights: {},
 }
 
-function accessPanel(selected: {
-	hasMcpClient?: boolean
-	hasAccessWin?: boolean
-	selectedAgentLabel?: string | null
-	discoveryPrompt?: string
-	connectedAgents?: Array<{
-		label: string
-		kind?: 'claude-desktop' | 'cursor'
-	}>
-}) {
-	return renderAccessPanel({
-		entrance: css({}),
-		activeStep: 2,
-		onSelectStep() {},
-		hasMcpClient: selected.hasMcpClient ?? false,
-		hasAccessWin: selected.hasAccessWin ?? false,
-		discoveryPrompt: selected.discoveryPrompt ?? discoveryPrompt,
-		selectedAgentLabel: selected.selectedAgentLabel ?? null,
-		connectedAgents: selected.connectedAgents,
-	})
-}
+const connectPanel = (props: Partial<ConnectProps>) =>
+	renderToString(
+		renderConnectAgentPanel({
+			...shared,
+			activeStep: 1,
+			loggedIn: false,
+			hasMcpClient: false,
+			selectedAgent: null,
+			selectedAgentLabel: null,
+			...props,
+		}),
+	)
 
-function secondAgentPanel(selected: {
-	firstAgent: 'codex' | 'cursor' | 'gemini' | null
-	agent: 'claude-code' | null
-	label: string | null
-	loggedIn?: boolean
-	hasSecondMcpClient?: boolean
-	secondAgentGiftActive?: boolean
-	search?: string
-	awaitingConnect?: boolean
-	accessWinMemorySubject?: string | null
-	persistedPackageName?: string | null
-	connectedAgents?: Array<{
-		label: string
-		kind?:
-			| 'chatgpt'
-			| 'claude-code'
-			| 'claude-desktop'
-			| 'codex'
-			| 'copilot'
-			| 'cursor'
-			| 'devin'
-			| 'grok'
-			| 'grok-cli'
-	}>
-}) {
-	return renderSecondAgentPanel({
-		entrance: css({}),
-		activeStep: 3,
-		onSelectStep() {},
-		loggedIn: selected.loggedIn ?? true,
-		hasSecondMcpClient: selected.hasSecondMcpClient ?? false,
-		secondAgentGiftActive: selected.secondAgentGiftActive,
-		connectedAgents: selected.connectedAgents,
-		firstAgent: selected.firstAgent,
-		selectedAgent: selected.agent,
-		selectedAgentLabel: selected.label,
-		agentChooser: null,
-		mcpServerUrl: defaultKodyMcpUrl,
-		mcpHighlights: {},
-		search: selected.search,
-		awaitingConnect: selected.awaitingConnect,
-		accessWinMemorySubject: selected.accessWinMemorySubject,
-		persistedPackageName: selected.persistedPackageName,
-	})
-}
+const accessPanel = (props: Partial<AccessProps>) =>
+	renderToString(
+		renderAccessPanel({
+			...shared,
+			activeStep: 2,
+			hasMcpClient: false,
+			hasAccessWin: false,
+			discoveryPrompt:
+				"I'm deciding whether Kody (https://example.com) would be useful for me. Read https://example.com/docs/what-is-kody and then interview me to find out what Kody could do for me.",
+			selectedAgentLabel: null,
+			...props,
+		}),
+	)
+
+const secondAgentPanel = (props: Partial<SecondProps>) =>
+	renderToString(
+		renderSecondAgentPanel({
+			...shared,
+			activeStep: 3,
+			loggedIn: true,
+			hasSecondMcpClient: false,
+			firstAgent: 'codex',
+			selectedAgent: null,
+			selectedAgentLabel: null,
+			...props,
+		}),
+	)
+
+const missing = (html: string | undefined, parts: Array<string>) =>
+	parts.filter((part) => !html?.includes(part))
+
+const cursor = {
+	selectedAgent: 'cursor',
+	selectedAgentLabel: 'Cursor',
+} as const
+const cursorAwaiting = {
+	...cursor,
+	loggedIn: true,
+	hasMcpClient: true,
+	awaitingConnect: true,
+} as const
+const claudeDesktop = {
+	selectedAgent: 'claude-desktop',
+	selectedAgentLabel: 'Claude Desktop',
+	loggedIn: true,
+	hasMcpClient: true,
+} as const
+const claudeCode = {
+	selectedAgent: 'claude-code',
+	selectedAgentLabel: 'Claude Code',
+} as const
 
 test('step 1 title names the selected agent and offers a text change link', async () => {
-	const picker = await renderToString(
-		connectPanel({ agent: null, label: null }),
-	)
-	expect(picker).toContain('Connect your agent')
-	expect(picker).toContain('href="/onboarding/step-1/cursor"')
-	expect(picker).toContain('data-testid="onboarding-wizard-next"')
+	const picker = await connectPanel({})
+	expect(
+		missing(picker, [
+			'Connect your agent',
+			'href="/onboarding/step-1/cursor"',
+			'data-testid="onboarding-wizard-next"',
+		]),
+	).toEqual([])
 
-	const cursor = await renderToString(
-		connectPanel({ agent: 'cursor', label: 'Cursor' }),
-	)
-	expect(cursor).toContain('Connect Cursor')
-	expect(cursor).toContain('data-testid="onboarding-agent-change"')
-	expect(cursor).toContain('href="/onboarding/step-1"')
-	expect(cursor).toContain('Log in to connect Cursor')
+	expect(
+		missing(await connectPanel(cursor), [
+			'Connect Cursor',
+			'data-testid="onboarding-agent-change"',
+			'href="/onboarding/step-1"',
+			'Log in to connect Cursor',
+		]),
+	).toEqual([])
 
-	const connected = await renderToString(
-		connectPanel({
-			agent: 'cursor',
-			label: 'Cursor',
-			loggedIn: true,
-			hasMcpClient: true,
-			connectedAgents: [
-				{ label: 'Cursor', kind: 'cursor' },
-				{ label: 'Claude Desktop', kind: 'claude-desktop' },
-			],
-		}),
-	)
-	expect(connected).toContain('Cursor is connected')
-	expect(connected).toContain('data-testid="onboarding-connected-agents"')
-	expect(connected).toContain('data-agent-kind="cursor"')
+	const connected = await connectPanel({
+		...cursor,
+		loggedIn: true,
+		hasMcpClient: true,
+		connectedAgents: [
+			{ label: 'Cursor', kind: 'cursor' },
+			{ label: 'Claude Desktop', kind: 'claude-desktop' },
+		],
+	})
+	expect(
+		missing(connected, [
+			'Cursor is connected',
+			'data-testid="onboarding-connected-agents"',
+			'data-agent-kind="cursor"',
+		]),
+	).toEqual([])
 	expect(connected).not.toContain('data-agent-kind="claude-desktop"')
 
-	const claudeWhileChatGpt = await renderToString(
-		connectPanel({
-			agent: 'claude-desktop',
-			label: 'Claude Desktop',
-			loggedIn: true,
-			hasMcpClient: true,
-			connectedAgents: [{ label: 'ChatGPT.com', kind: 'chatgpt' }],
-		}),
-	)
+	const claudeWhileChatGpt = await connectPanel({
+		...claudeDesktop,
+		connectedAgents: [{ label: 'ChatGPT.com', kind: 'chatgpt' }],
+	})
 	expect(claudeWhileChatGpt).not.toContain('data-connected="true"')
 	expect(claudeWhileChatGpt).not.toContain('ChatGPT.com')
 	expect(claudeWhileChatGpt).not.toContain(
 		'data-testid="onboarding-connected-agents"',
 	)
 	expect(claudeWhileChatGpt).toContain('data-testid="onboarding-wizard-next"')
-
-	const claudeWithoutGrantList = await renderToString(
-		connectPanel({
-			agent: 'claude-desktop',
-			label: 'Claude Desktop',
-			loggedIn: true,
-			hasMcpClient: true,
-		}),
+	expect(await connectPanel(claudeDesktop)).not.toContain(
+		'data-connected="true"',
 	)
-	expect(claudeWithoutGrantList).not.toContain('data-connected="true"')
 
-	const waitingToConnect = await renderToString(
-		connectPanel({
-			agent: 'cursor',
-			label: 'Cursor',
-			loggedIn: true,
-			awaitingConnect: true,
-		}),
-	)
+	const waitingToConnect = await connectPanel({
+		...cursor,
+		loggedIn: true,
+		awaitingConnect: true,
+	})
 	expect(waitingToConnect).toContain('data-testid="onboarding-connect-wait"')
 	expect(waitingToConnect).toContain('Waiting for Cursor to connect')
 	expect(waitingToConnect).not.toContain('data-testid="onboarding-wizard-next"')
 
-	const cursorLocalGrant = await renderToString(
-		connectPanel({
-			agent: 'cursor',
-			label: 'Cursor',
-			loggedIn: true,
-			hasMcpClient: true,
-			awaitingConnect: true,
-			connectedAgents: [{ label: 'Cursor Local', kind: 'cursor-local' }],
-		}),
-	)
+	// Cursor Local / Cloud grants satisfy the Cursor card; Grok Bot does not.
+	const cursorLocalGrant = await connectPanel({
+		...cursorAwaiting,
+		connectedAgents: [{ label: 'Cursor Local', kind: 'cursor-local' }],
+	})
 	expect(cursorLocalGrant).toContain('Cursor is connected')
 	expect(cursorLocalGrant).toContain('data-testid="onboarding-wizard-next"')
 	expect(cursorLocalGrant).not.toContain('Waiting for Cursor to connect')
 
-	const cursorCloudGrant = await renderToString(
-		connectPanel({
-			agent: 'cursor',
-			label: 'Cursor',
-			loggedIn: true,
-			hasMcpClient: true,
-			awaitingConnect: true,
-			connectedAgents: [{ label: 'Cursor Cloud', kind: 'cursor-cloud' }],
-		}),
-	)
+	const cursorCloudGrant = await connectPanel({
+		...cursorAwaiting,
+		connectedAgents: [{ label: 'Cursor Cloud', kind: 'cursor-cloud' }],
+	})
 	expect(cursorCloudGrant).toContain('Cursor is connected')
 	expect(cursorCloudGrant).not.toContain('Waiting for Cursor to connect')
 
-	const grokBotOnCursorCard = await renderToString(
-		connectPanel({
-			agent: 'cursor',
-			label: 'Cursor',
-			loggedIn: true,
-			hasMcpClient: true,
-			awaitingConnect: true,
-			connectedAgents: [{ label: 'Grok Bot', kind: 'grok-bot' }],
-		}),
-	)
+	const grokBotOnCursorCard = await connectPanel({
+		...cursorAwaiting,
+		connectedAgents: [{ label: 'Grok Bot', kind: 'grok-bot' }],
+	})
 	expect(grokBotOnCursorCard).toContain('Waiting for Cursor to connect')
 	expect(grokBotOnCursorCard).not.toContain(
 		'data-testid="onboarding-wizard-next"',
@@ -223,169 +172,167 @@ test('step 1 title names the selected agent and offers a text change link', asyn
 })
 
 test('step 2 shows one prompt and a search waiting spinner', async () => {
-	const unconnected = await renderToString(accessPanel({}))
+	const unconnected = await accessPanel({})
 	expect(unconnected).toContain('data-testid="onboarding-wizard-next"')
 	expect(unconnected).toContain('data-testid="onboarding-unconnected-prompt"')
 	expect(unconnected).not.toContain('data-onboarding-connect-action')
 
-	const waiting = await renderToString(
-		accessPanel({
-			hasMcpClient: true,
-			selectedAgentLabel: 'Cursor',
-			connectedAgents: [
-				{ label: 'Cursor', kind: 'cursor' },
-				{ label: 'Claude Desktop', kind: 'claude-desktop' },
-			],
-		}),
-	)
-	expect(waiting).toContain('data-testid="onboarding-step-2-prompt"')
-	expect(waiting).toContain('data-testid="onboarding-search-status"')
-	expect(waiting).toContain('data-testid="onboarding-guide-pointer"')
-	expect(waiting).toContain('data-testid="onboarding-wizard-next"')
+	const waiting = await accessPanel({
+		hasMcpClient: true,
+		selectedAgentLabel: 'Cursor',
+		connectedAgents: [
+			{ label: 'Cursor', kind: 'cursor' },
+			{ label: 'Claude Desktop', kind: 'claude-desktop' },
+		],
+	})
+	expect(
+		missing(waiting, [
+			'data-testid="onboarding-step-2-prompt"',
+			'data-testid="onboarding-search-status"',
+			'data-testid="onboarding-guide-pointer"',
+			'data-testid="onboarding-wizard-next"',
+			'data-testid="onboarding-connected-agents"',
+		]),
+	).toEqual([])
 	expect(waiting).not.toContain('data-connected="true"')
-	expect(waiting).toContain('data-testid="onboarding-connected-agents"')
 
-	const started = await renderToString(
-		accessPanel({
-			hasMcpClient: true,
-			hasAccessWin: true,
-			selectedAgentLabel: 'Cursor',
-		}),
-	)
+	const started = await accessPanel({
+		hasMcpClient: true,
+		hasAccessWin: true,
+		selectedAgentLabel: 'Cursor',
+	})
 	expect(started).toContain('data-testid="onboarding-search-status"')
 	expect(started).toContain('data-connected="true"')
 })
 
 test('step 3 groups ecosystems and folds in a portability proof', async () => {
-	const picker = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: null,
-			label: null,
-		}),
-	)
-	expect(picker).toContain('Connect a second agent')
-	expect(picker).toContain('Standard free for 2 weeks')
-	expect(picker).toContain('data-picker="ecosystem"')
-	expect(picker).toContain('data-testid="onboarding-ecosystem-xai"')
+	const picker = await secondAgentPanel({})
+	expect(
+		missing(picker, [
+			'Connect a second agent',
+			'Pro free for 2 weeks',
+			'data-picker="ecosystem"',
+			'data-testid="onboarding-ecosystem-xai"',
+			'data-testid="onboarding-ecosystem-openai"',
+			'data-testid="onboarding-agent-chatgpt"',
+			'href="/onboarding/step-3/claude-code"',
+			'href="/onboarding/step-3/cursor-local"',
+			'href="/onboarding/step-3/cursor-cloud"',
+			'href="/onboarding/step-3/chatgpt"',
+			'href="/onboarding/step-3/codex"',
+			'href="/community"',
+		]),
+	).toEqual([])
 	const grokSection = picker.slice(
 		picker.indexOf('data-testid="onboarding-ecosystem-xai"'),
 		picker.indexOf('data-testid="onboarding-ecosystem-anthropic"'),
 	)
-	expect(grokSection).toContain('>Grok<')
-	expect(grokSection).toContain('Cursor Local')
-	expect(grokSection).toContain('Cursor Cloud')
-	expect(grokSection).toContain('Grok Bot')
-	expect(grokSection).toContain('Grok.com')
-	expect(grokSection).toContain('Grok CLI')
-	expect(picker).toContain('data-testid="onboarding-ecosystem-openai"')
-	expect(picker).toContain('data-testid="onboarding-agent-chatgpt"')
-	expect(picker).toContain('href="/onboarding/step-3/claude-code"')
-	expect(picker).toContain('href="/onboarding/step-3/cursor-local"')
-	expect(picker).toContain('href="/onboarding/step-3/cursor-cloud"')
-	expect(picker).toContain('href="/onboarding/step-3/chatgpt"')
-	expect(picker).toContain('href="/onboarding/step-3/codex"')
+	expect(
+		missing(grokSection, [
+			'>Grok<',
+			'Cursor Local',
+			'Cursor Cloud',
+			'Grok Bot',
+			'Grok.com',
+			'Grok CLI',
+		]),
+	).toEqual([])
 	expect(picker).not.toContain('data-greyed="true"')
 	expect(picker).not.toContain('data-testid="onboarding-portability-proof"')
 	expect(picker).not.toContain('data-testid="onboarding-access-win-made"')
-	expect(picker).toContain('href="/community"')
 
-	const withArtifact = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: null,
-			label: null,
+	expect(
+		await secondAgentPanel({
 			accessWinMemorySubject: 'Preferred commute',
 			persistedPackageName: '@you/morning-digest',
 		}),
-	)
-	expect(withArtifact).toContain('data-testid="onboarding-access-win-made"')
+	).toContain('data-testid="onboarding-access-win-made"')
 
-	const selected = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: 'claude-code',
-			label: 'Claude Code',
-		}),
-	)
-	expect(selected).toContain('Connect Claude Code')
+	const selected = await secondAgentPanel(claudeCode)
+	expect(
+		missing(selected, [
+			'Connect Claude Code',
+			'data-testid="onboarding-wizard-explore-packages"',
+			'data-testid="onboarding-portability-proof"',
+			'data-testid="onboarding-portability-guide-pointer"',
+			'href="/docs/portability"',
+		]),
+	).toEqual([])
 	expect(selected).not.toContain('Waiting for Claude Code to connect')
-	expect(selected).toContain('data-testid="onboarding-wizard-explore-packages"')
 
-	const waitingForSecond = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: 'claude-code',
-			label: 'Claude Code',
-			awaitingConnect: true,
-		}),
-	)
+	const waitingForSecond = await secondAgentPanel({
+		...claudeCode,
+		awaitingConnect: true,
+	})
 	expect(waitingForSecond).toContain('data-testid="onboarding-connect-wait"')
 	expect(waitingForSecond).toContain('Waiting for Claude Code to connect')
 	expect(waitingForSecond).not.toContain(
 		'data-testid="onboarding-wizard-explore-packages"',
 	)
-	expect(selected).toContain('data-testid="onboarding-portability-proof"')
-	expect(selected).toContain(
-		'data-testid="onboarding-portability-guide-pointer"',
-	)
-	expect(selected).toContain('href="/docs/portability"')
 
-	const connected = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: 'claude-code',
-			label: 'Claude Code',
-			hasSecondMcpClient: true,
-			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
-		}),
-	)
+	const secondConnected = {
+		...claudeCode,
+		hasSecondMcpClient: true,
+		connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
+	} as const
+	const connected = await secondAgentPanel(secondConnected)
 	expect(connected).toContain("You've connected a second agent.")
-	expect(connected).not.toContain('Standard is free for 2 weeks')
+	expect(connected).not.toContain('Pro is free for 2 weeks')
+	expect(
+		await secondAgentPanel({ ...secondConnected, secondAgentGiftActive: true }),
+	).toContain("You've connected a second agent. Pro is free for 2 weeks.")
 
-	const gifted = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'codex',
-			agent: 'claude-code',
-			label: 'Claude Code',
-			hasSecondMcpClient: true,
-			secondAgentGiftActive: true,
-			connectedAgents: [{ label: 'Claude Code', kind: 'claude-code' }],
-		}),
+	const labeled = await secondAgentPanel({
+		firstAgent: 'gemini',
+		hasSecondMcpClient: true,
+		connectedAgents: [
+			{ label: 'Devin', kind: 'devin' },
+			{ label: 'Claude Desktop', kind: 'claude-desktop' },
+			{ label: 'ChatGPT.com', kind: 'chatgpt' },
+			{ label: 'Codex', kind: 'codex' },
+			{ label: 'Cursor', kind: 'cursor' },
+			{ label: 'Grok.com', kind: 'grok' },
+			{ label: 'Kody' },
+			{ label: 'Copilot', kind: 'copilot' },
+			{ label: 'Grok CLI', kind: 'grok-cli' },
+			{ label: 'Zephyr' },
+		],
+	})
+	expect(
+		missing(labeled, [
+			'data-testid="onboarding-connected-agents"',
+			'aria-label="Connected: Devin, Claude Desktop',
+			'data-agent-kind="devin"',
+			'data-agent-kind="unknown"',
+			'/images/icons/devin.svg',
+			'/images/icons/claude.svg',
+			'/images/icons/chatgpt.svg',
+			'/images/icons/cursor.svg',
+			'/images/icons/githubcopilot.svg',
+			'data-greyed-reason="connected"',
+			'data-testid="onboarding-agent-gemini"',
+			'data-testid="onboarding-agent-cursor-local"',
+			'data-testid="onboarding-agent-chatgpt"',
+			'data-testid="onboarding-agent-devin"',
+			'href="/onboarding/step-3/gemini"',
+			'href="/onboarding/step-3/cursor-local"',
+			'href="/onboarding/step-3/cursor-cloud"',
+			// Already-connected hosts stay links so connect steps can be re-viewed.
+			'href="/onboarding/step-3/chatgpt"',
+			'href="/onboarding/step-3/devin"',
+			'href="/onboarding/step-3/codex"',
+			'href="/onboarding/step-3/copilot"',
+			'href="/onboarding/step-3/claude-code"',
+			'href="/onboarding/step-3/grok-bot"',
+			'Already connected. Select to view connect steps again.',
+		]),
+	).toEqual([])
+	expect(labeled).toMatch(
+		/href="\/onboarding\/step-3\/codex"[^>]*data-greyed="true"/,
 	)
-	expect(gifted).toContain(
-		"You've connected a second agent. Standard is free for 2 weeks.",
+	expect(labeled).toMatch(
+		/href="\/onboarding\/step-3\/chatgpt"[^>]*data-greyed-reason="connected"/,
 	)
-
-	const labeled = await renderToString(
-		secondAgentPanel({
-			firstAgent: 'gemini',
-			agent: null,
-			label: null,
-			hasSecondMcpClient: true,
-			connectedAgents: [
-				{ label: 'Devin', kind: 'devin' },
-				{ label: 'Claude Desktop', kind: 'claude-desktop' },
-				{ label: 'ChatGPT.com', kind: 'chatgpt' },
-				{ label: 'Codex', kind: 'codex' },
-				{ label: 'Cursor', kind: 'cursor' },
-				{ label: 'Grok.com', kind: 'grok' },
-				{ label: 'Kody' },
-				{ label: 'Copilot', kind: 'copilot' },
-				{ label: 'Grok CLI', kind: 'grok-cli' },
-				{ label: 'Zephyr' },
-			],
-		}),
-	)
-	expect(labeled).toContain('data-testid="onboarding-connected-agents"')
-	expect(labeled).toContain('aria-label="Connected: Devin, Claude Desktop')
-	expect(labeled).toContain('data-agent-kind="devin"')
-	expect(labeled).toContain('data-agent-kind="unknown"')
-	expect(labeled).toContain('/images/icons/devin.svg')
-	expect(labeled).toContain('/images/icons/claude.svg')
-	expect(labeled).toContain('/images/icons/chatgpt.svg')
-	expect(labeled).toContain('/images/icons/cursor.svg')
-	expect(labeled).toContain('/images/icons/githubcopilot.svg')
 	const connectedLine = labeled.match(
 		/data-testid="onboarding-connected-agents"[\s\S]*?<\/p>/,
 	)?.[0]
@@ -397,49 +344,32 @@ test('step 3 groups ecosystems and folds in a portability proof', async () => {
 	const markCss = labeled.match(
 		new RegExp(`data-rmx-style="${markClass}"[\\s\\S]*?</style>`),
 	)?.[0]
-	expect(markCss).toContain('display: inline-block')
-	expect(markCss).toContain('width: 1cap')
-	expect(markCss).toContain('height: 1cap')
-	expect(markCss).toContain('vertical-align: baseline')
-	expect(labeled).toContain('data-greyed-reason="connected"')
-	expect(labeled).toContain('data-testid="onboarding-agent-gemini"')
-	expect(labeled).toContain('data-testid="onboarding-agent-cursor-local"')
-	expect(labeled).toContain('data-testid="onboarding-agent-chatgpt"')
-	expect(labeled).toContain('data-testid="onboarding-agent-devin"')
-	expect(labeled).toContain('href="/onboarding/step-3/gemini"')
-	expect(labeled).toContain('href="/onboarding/step-3/cursor-local"')
-	expect(labeled).toContain('href="/onboarding/step-3/cursor-cloud"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/chatgpt"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/devin"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/codex"')
-	expect(labeled).not.toContain('href="/onboarding/step-3/copilot"')
-	expect(labeled).toContain('href="/onboarding/step-3/claude-code"')
-	expect(labeled).toContain('href="/onboarding/step-3/grok-bot"')
-	expect(labeled).toContain('Already connected.')
+	expect(
+		missing(markCss, [
+			'display: inline-block',
+			'width: 1cap',
+			'height: 1cap',
+			'vertical-align: baseline',
+		]),
+	).toEqual([])
 	const githubSection = labeled.slice(
 		labeled.indexOf('data-testid="onboarding-ecosystem-github"'),
 		labeled.indexOf('data-testid="onboarding-ecosystem-google"'),
 	)
-	expect(githubSection).toContain('>GitHub<')
-	expect(githubSection).toContain('Copilot App')
-	expect(githubSection).toContain('data-testid="onboarding-agent-copilot-app"')
+	expect(
+		missing(githubSection, [
+			'>GitHub<',
+			'Copilot App',
+			'data-testid="onboarding-agent-copilot-app"',
+		]),
+	).toEqual([])
 
-	const notListedDeepLink = await renderToString(
-		renderSecondAgentPanel({
-			entrance: css({}),
-			activeStep: 3,
-			onSelectStep() {},
-			loggedIn: true,
-			hasSecondMcpClient: false,
-			connectedAgents: [{ label: 'Zephyr' }, { label: 'Kody' }],
-			firstAgent: 'other',
-			selectedAgent: 'other',
-			selectedAgentLabel: 'Not listed',
-			agentChooser: null,
-			mcpServerUrl: defaultKodyMcpUrl,
-			mcpHighlights: {},
-		}),
-	)
+	const notListedDeepLink = await secondAgentPanel({
+		connectedAgents: [{ label: 'Zephyr' }, { label: 'Kody' }],
+		firstAgent: 'other',
+		selectedAgent: 'other',
+		selectedAgentLabel: 'Not listed',
+	})
 	expect(notListedDeepLink).toContain('data-picker="ecosystem"')
 	expect(notListedDeepLink).toContain('data-agent-kind="unknown"')
 	expect(notListedDeepLink).not.toContain('data-greyed="true"')

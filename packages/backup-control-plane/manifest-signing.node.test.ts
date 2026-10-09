@@ -54,54 +54,40 @@ test('Worker-compatible Ed25519 manifest signatures reject tampering and wrong k
 		canonicalBackupManifestPayload(manifest.payload),
 	)
 	const signature = Buffer.from(manifest.signature.value, 'base64')
-	async function importPublicKey(key: typeof signingKeys.publicKey) {
-		const der = key.export({ format: 'der', type: 'spki' })
-		return await crypto.subtle.importKey('spki', der, 'Ed25519', false, [
-			'verify',
-		])
-	}
-	assert.equal(
-		await crypto.subtle.verify(
-			'Ed25519',
-			await importPublicKey(signingKeys.publicKey),
-			signature,
-			payloadBytes,
-		),
-		true,
-	)
-	const tamperedPayload = {
-		...manifest.payload,
-		sql: { ...manifest.payload.sql, sha256: '2'.repeat(64) },
-	}
-	assert.equal(
-		await crypto.subtle.verify(
-			'Ed25519',
-			await importPublicKey(signingKeys.publicKey),
-			signature,
-			new TextEncoder().encode(canonicalBackupManifestPayload(tamperedPayload)),
-		),
-		false,
+	const tamperedPayloadBytes = new TextEncoder().encode(
+		canonicalBackupManifestPayload({
+			...manifest.payload,
+			sql: { ...manifest.payload.sql, sha256: '2'.repeat(64) },
+		}),
 	)
 	const tamperedSignature = Buffer.from(signature)
 	tamperedSignature[0] = (tamperedSignature[0] ?? 0) ^ 1
-	assert.equal(
-		await crypto.subtle.verify(
+	const cases: Array<
+		[
+			typeof signingKeys.publicKey,
+			Uint8Array<ArrayBuffer>,
+			Uint8Array<ArrayBuffer>,
+			boolean,
+		]
+	> = [
+		[signingKeys.publicKey, signature, payloadBytes, true],
+		[signingKeys.publicKey, signature, tamperedPayloadBytes, false],
+		[signingKeys.publicKey, tamperedSignature, payloadBytes, false],
+		[wrongKeys.publicKey, signature, payloadBytes, false],
+	]
+	for (const [publicKey, candidateSignature, bytes, valid] of cases) {
+		const key = await crypto.subtle.importKey(
+			'spki',
+			publicKey.export({ format: 'der', type: 'spki' }),
 			'Ed25519',
-			await importPublicKey(signingKeys.publicKey),
-			tamperedSignature,
-			payloadBytes,
-		),
-		false,
-	)
-	assert.equal(
-		await crypto.subtle.verify(
-			'Ed25519',
-			await importPublicKey(wrongKeys.publicKey),
-			signature,
-			payloadBytes,
-		),
-		false,
-	)
+			false,
+			['verify'],
+		)
+		assert.equal(
+			await crypto.subtle.verify('Ed25519', key, candidateSignature, bytes),
+			valid,
+		)
+	}
 })
 
 test('invalid PKCS#8 signing material fails without exposing key material', async () => {

@@ -1,4 +1,6 @@
 import { expect, test, vi } from 'vitest'
+import type * as AdminPackageSubscriptions from '#worker/package-invocations/admin-package-subscriptions.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
 	buildStatusIncidentIdempotencyKey,
 	buildStatusIncidentOpenedEvent,
@@ -8,7 +10,10 @@ import {
 } from './subscription-event.ts'
 
 const mocks = vi.hoisted(() => ({
-	dispatchAdminPackageSubscriptionEvent: vi.fn(),
+	dispatchAdminPackageSubscriptionEvent:
+		vi.fn<
+			typeof AdminPackageSubscriptions.dispatchAdminPackageSubscriptionEvent
+		>(),
 }))
 
 vi.mock('#worker/package-invocations/admin-package-subscriptions.ts', () => ({
@@ -18,6 +23,24 @@ vi.mock('#worker/package-invocations/admin-package-subscriptions.ts', () => ({
 
 const { dispatchStatusIncidentSubscriptionEvent } =
 	await import('./package-subscriptions.ts')
+
+const adminSavedPackage: SavedPackageRecord = {
+	id: 'package-1',
+	userId: 'admin-user-1',
+	name: 'Admin package',
+	kodyId: 'admin-package',
+	description: '',
+	tags: [],
+	searchText: null,
+	sourceId: 'source-1',
+	hasApp: false,
+	hasSkills: false,
+	hidden: false,
+	isPrivate: false,
+	lockedAt: null,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
+}
 
 test('status incident dispatch fans metadata-only events through admin package fan-out', async () => {
 	const opened = buildStatusIncidentOpenedEvent({
@@ -34,20 +57,22 @@ test('status incident dispatch fans metadata-only events through admin package f
 		statusUrl: 'https://status.kody.codes',
 	})
 
+	const dispatched: Array<{
+		params: Record<string, unknown>
+		idempotencyKey: string
+		input: Parameters<
+			typeof AdminPackageSubscriptions.dispatchAdminPackageSubscriptionEvent
+		>[0]
+	}> = []
 	mocks.dispatchAdminPackageSubscriptionEvent.mockImplementation(
-		async (input: {
-			getParams: () =>
-				| Record<string, unknown>
-				| Promise<Record<string, unknown>>
-			buildIdempotencyKey: (savedPackage: { id: string }) => string
-			[key: string]: unknown
-		}) => [
-			{
+		async (input) => {
+			dispatched.push({
 				params: await input.getParams(),
-				idempotencyKey: input.buildIdempotencyKey({ id: 'package-1' }),
+				idempotencyKey: input.buildIdempotencyKey(adminSavedPackage),
 				input,
-			},
-		],
+			})
+			return []
+		},
 	)
 
 	const env = {
@@ -55,16 +80,16 @@ test('status incident dispatch fans metadata-only events through admin package f
 		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
 		APP_BASE_URL: 'https://heykody.dev',
 	}
-	const openedResult = await dispatchStatusIncidentSubscriptionEvent({
+	await dispatchStatusIncidentSubscriptionEvent({
 		env,
 		event: opened,
 	})
-	const resolvedResult = await dispatchStatusIncidentSubscriptionEvent({
+	await dispatchStatusIncidentSubscriptionEvent({
 		env,
 		event: resolved,
 	})
 
-	expect(openedResult[0]).toMatchObject({
+	expect(dispatched[0]).toMatchObject({
 		params: opened,
 		idempotencyKey: buildStatusIncidentIdempotencyKey({
 			event: opened,
@@ -76,7 +101,7 @@ test('status incident dispatch fans metadata-only events through admin package f
 			actorTokenId: 'internal:status-incident-subscriptions',
 		},
 	})
-	expect(resolvedResult[0]).toMatchObject({
+	expect(dispatched[1]).toMatchObject({
 		params: resolved,
 		idempotencyKey: buildStatusIncidentIdempotencyKey({
 			event: resolved,
@@ -87,6 +112,6 @@ test('status incident dispatch fans metadata-only events through admin package f
 			source: 'status-incidents',
 		},
 	})
-	expect(JSON.stringify(openedResult[0]?.params)).not.toContain('user_id')
-	expect(JSON.stringify(openedResult[0]?.params)).not.toContain('probe')
+	expect(JSON.stringify(dispatched[0]?.params)).not.toContain('user_id')
+	expect(JSON.stringify(dispatched[0]?.params)).not.toContain('probe')
 })

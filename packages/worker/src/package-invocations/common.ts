@@ -1,9 +1,8 @@
 import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
-import {
-	type PackageEventTools,
-	type PackageInvokeTools,
-} from '#mcp/run-kody-registry.ts'
+import { type PackageEventTools } from '#mcp/run-kody-registry.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
 import {
 	type RunRecordContext,
 	type RunSurface,
@@ -24,6 +23,7 @@ export type PackageInvocationTokenScope = {
 	email?: string
 	packageId: string
 	exportNames?: Array<string>
+	request: RequestSource
 }
 
 export type PackageInvocationRequest = {
@@ -33,7 +33,7 @@ export type PackageInvocationRequest = {
 	/**
 	 * `null` selects the key-less (lean/ephemeral) path for runtime callers:
 	 * no idempotency ledger row, no account write lease, run records on
-	 * failure only. External HTTP token invocations still require a key.
+	 * failure only. External webhook invocations still require a key.
 	 */
 	idempotencyKey: string | null
 	/**
@@ -59,8 +59,15 @@ export type PackageInvocationRequest = {
 export type PackageInvocationResponse = PackageInvocationStoredResponse
 
 export type PackageInvocationActor = {
-	tokenId: string
-	userId: string
+	/**
+	 * Frozen synthetic id (`internal:webhook:<id>`, `internal:package-events:…`).
+	 * Keys the idempotency ledger and the automation entitlement skip.
+	 */
+	sourceId: string
+	/** The org that owns the invoked package. */
+	orgId: OwnerId
+	/** How the run is attributed and authenticated. */
+	request: RequestSource
 }
 
 export type PackageModuleSelector =
@@ -110,9 +117,6 @@ export function waitUntilFromExecutionContext(ctx?: ExecutionContext) {
 }
 
 export type PackageRuntimeToolFactories = {
-	createPackageRuntimeInvokeTools(
-		input: PackageRuntimeToolFactoryInput,
-	): PackageInvokeTools
 	createPackageEventTools(
 		input: PackageRuntimeToolFactoryInput,
 	): PackageEventTools
@@ -124,8 +128,6 @@ export {
 	syntheticPackageSubscriptionSource,
 } from './subscription-envelope.ts'
 export const internalPackageEventSubscriptionTokenId = 'internal:package-events'
-export const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
-export const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 export const maxPackageRuntimeInvokeDepth = 8
 export const packageInvocationScopeWildcard = '*'
 
@@ -143,7 +145,7 @@ export function normalizeNullableString(value: string | null | undefined) {
 export function buildSavedPackageNotFoundMessage(packageIdOrKodyId: string) {
 	const message = `Saved package ${JSON.stringify(packageIdOrKodyId)} was not found for this user.`
 	if (!npmScopedPackageNamePattern.test(packageIdOrKodyId)) return message
-	return `${message} Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@kentcdodds/github").`
+	return `${message} Dynamic package invocation uses the bare kodyId (for example, "github"), not the npm-scoped package name (for example, "@acme/github").`
 }
 
 export function buildPackageInvocationStorageId(packageId: string) {

@@ -5,7 +5,7 @@ import {
 	type FeatureFlagKey,
 } from '#universal/feature-flags/registry.ts'
 import { usageEventTypes } from '#universal/usage-event-types.ts'
-import { isStableUserId, normalizeStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { stableUserIdSchema } from './admin-shared.ts'
 
 export const adminFeatureFlagOverrideSchema = z.object({
@@ -43,6 +43,7 @@ export const adminFeatureFlagMetricReadoutSchema = z.discriminatedUnion(
 			windowEnd: z.string(),
 			on: featureFlagMetricCohortSchema,
 			off: featureFlagMetricCohortSchema,
+			override: featureFlagMetricCohortSchema,
 			overrideUsers: z.number().int().min(0),
 			mixedUsers: z.number().int().min(0),
 		}),
@@ -87,8 +88,8 @@ export async function resolveTargetUser(
 		throw new Error('Provide either stableUserId or username, not both.')
 	}
 	if (input.stableUserId !== undefined) {
-		const stableUserId = normalizeStableUserId(input.stableUserId)
-		if (!isStableUserId(stableUserId)) {
+		const stableUserId = parsePersonId(input.stableUserId)
+		if (!stableUserId) {
 			throw new Error('stableUserId must be a valid stable user id.')
 		}
 		const row = await db

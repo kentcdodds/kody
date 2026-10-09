@@ -1,13 +1,17 @@
 import { expect, test } from 'vitest'
+import { http, HttpResponse } from 'msw'
+import { youtubePlaylistBrowseUrl } from '#universal/youtube-playlist.ts'
 import { youtubeWatchSampleVideoId } from '#universal/youtube-watch.ts'
+import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
 import {
+	bundledDocWatchVideoIds,
 	loadPlaylistVideoIds,
 	resolveYoutubeWatchAllowedVideoIds,
 } from './youtube-watch-allowlist.ts'
 
 const videoId = youtubeWatchSampleVideoId
-const builtInVideoIds = [videoId]
 const playlistId = 'PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY'
+const youtubePlaylistFeedPath = 'https://www.youtube.com/feeds/videos.xml'
 
 test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () => {
 	const store = new Map<string, Response>()
@@ -20,21 +24,21 @@ test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () =>
 		},
 	} as unknown as Cache
 	let fetches = 0
-	const fetchImpl = async () => {
-		fetches += 1
-		return new Response(
-			`<feed><entry><yt:videoId>${videoId}</yt:videoId></entry></feed>`,
-		)
-	}
+	using _server = createMswNodeServer([
+		http.get(youtubePlaylistFeedPath, () => {
+			fetches += 1
+			return new HttpResponse(
+				`<feed><entry><yt:videoId>${videoId}</yt:videoId></entry></feed>`,
+			)
+		}),
+	])
 
 	const first = await loadPlaylistVideoIds({
 		playlistIds: [playlistId],
-		fetchImpl,
 		cache,
 	})
 	const second = await loadPlaylistVideoIds({
 		playlistIds: [playlistId],
-		fetchImpl,
 		cache,
 	})
 	expect(first).toEqual([videoId])
@@ -43,78 +47,54 @@ test('loadPlaylistVideoIds parses the Atom feed and caches the xml', async () =>
 })
 
 test('loadPlaylistVideoIds fails open when YouTube is unreachable', async () => {
+	using _server = createMswNodeServer([
+		http.get(youtubePlaylistFeedPath, () => HttpResponse.error()),
+	])
 	await expect(
 		loadPlaylistVideoIds({
 			playlistIds: [playlistId],
-			fetchImpl: async () => {
-				throw new Error('network down')
-			},
 		}),
 	).resolves.toEqual([])
 })
 
-test('resolveYoutubeWatchAllowedVideoIds always includes the look-preview sample id and env extras', async () => {
+test('resolveYoutubeWatchAllowedVideoIds always includes the sample id and env extras', async () => {
 	const extraVideoId = 'dQw4w9wgvcQ'
-	const fetchImpl = async () => {
-		throw new Error('playlist fetch should not run')
-	}
+	using _server = createMswNodeServer([
+		http.post(youtubePlaylistBrowseUrl, () => HttpResponse.json({})),
+	])
 	const sampleOnly = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 		} as Env,
-		fetchImpl,
 	})
-	expect(sampleOnly).toEqual(builtInVideoIds)
+	expect(sampleOnly).toContain(videoId)
+	const docWatchIds = bundledDocWatchVideoIds()
+	expect(docWatchIds.length).toBeGreaterThan(0)
+	expect(sampleOnly).toEqual(expect.arrayContaining(docWatchIds))
 
 	const withExtra = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
 			YOUTUBE_ALLOWED_VIDEO_IDS: extraVideoId,
 		} as Env,
-		fetchImpl,
 	})
-	expect(withExtra).toEqual([extraVideoId, ...builtInVideoIds])
+	expect(withExtra).toContain(extraVideoId)
+	expect(withExtra).toContain(videoId)
+	expect(withExtra).toEqual(expect.arrayContaining(docWatchIds))
+	expect(withExtra.indexOf(extraVideoId)).toBeLessThan(
+		withExtra.indexOf(videoId),
+	)
 })
 
 test('resolveYoutubeWatchAllowedVideoIds skips playlist fetch when loadPlaylists is false', async () => {
+	using _server = createMswNodeServer([])
 	const ids = await resolveYoutubeWatchAllowedVideoIds({
 		env: {
 			YOUTUBE_ALLOWED_PLAYLIST_IDS: playlistId,
 			YOUTUBE_ALLOWED_VIDEO_IDS: videoId,
 		} as Env,
-		fetchImpl: async () => {
-			throw new Error('playlist fetch should not run')
-		},
 		loadPlaylists: false,
-		listedBanners: [
-			{
-				ctaHref: `/?youtubeId=${videoId}`,
-				secondaryHref: null,
-				imageUrl: null,
-			},
-		],
 	})
-	expect(ids).toEqual(builtInVideoIds)
-})
-
-test('resolveYoutubeWatchAllowedVideoIds uses listedBanners instead of querying D1', async () => {
-	const bannerVideoId = 'dQw4w9wgvcQ'
-	const ids = await resolveYoutubeWatchAllowedVideoIds({
-		env: {
-			YOUTUBE_ALLOWED_PLAYLIST_IDS: 'none',
-			APP_DB: {
-				prepare() {
-					throw new Error('site_banners should not be queried')
-				},
-			},
-		} as unknown as Env,
-		listedBanners: [
-			{
-				ctaHref: `/?youtubeId=${bannerVideoId}`,
-				secondaryHref: null,
-				imageUrl: null,
-			},
-		],
-	})
-	expect(ids).toEqual([...builtInVideoIds, bannerVideoId])
+	expect(ids).toContain(videoId)
+	expect(ids).toEqual(expect.arrayContaining(bundledDocWatchVideoIds()))
 })

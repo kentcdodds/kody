@@ -1,6 +1,7 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { accountInputCss } from '#client/routes/account-management-components.tsx'
 import { recordBodyCss } from '#client/routes/record-table.tsx'
 import {
@@ -199,19 +200,20 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 				</span>
 			</label>
 
-			<label mix={css(fieldCss)}>
-				<span mix={css(fieldLabelCss)}>
+			<div mix={css(fieldCss)}>
+				<label for="mcp-server-bearer-token" mix={css(fieldLabelCss)}>
 					Bearer token{' '}
 					<span mix={css({ color: colors.textMuted })}>(optional)</span>
-				</span>
-				<input
+				</label>
+				<PasswordRevealInput
+					id="mcp-server-bearer-token"
 					data-field-ring
 					name="bearerToken"
-					type="password"
 					value={addBearerToken}
 					placeholder="Paste token (or Bearer …)"
 					disabled={isMutating}
 					autocomplete="off"
+					revealNoun="bearer token"
 					mix={[
 						on('input', (event) => {
 							onBearerTokenInput(event.currentTarget.value)
@@ -226,7 +228,7 @@ export function renderAddMcpServerForm(props: AddMcpServerFormProps) {
 					unauthenticated servers. The token is stored only in your private MCP
 					client hub and is never shown again.
 				</span>
-			</label>
+			</div>
 
 			<div>
 				<button type="submit" disabled={isMutating} mix={css(primaryButtonCss)}>

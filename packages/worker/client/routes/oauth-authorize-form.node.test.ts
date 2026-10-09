@@ -4,6 +4,10 @@ import {
 	oauthAuthorizeApproveAriaLabel,
 	oauthAuthorizeConsentFormAttrs,
 	oauthAuthorizeEmailVerificationDenyDisabled,
+	oauthAuthorizeGrantHeading,
+	oauthAuthorizeOrgField,
+	readOAuthAuthorizeConsentOrgs,
+	readOAuthAuthorizeSelectedOrgSlug,
 } from './oauth-authorize-form.ts'
 
 test('authorize consent form defaults preserve the OAuth query on native submit', () => {
@@ -20,33 +24,24 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 		action: href,
 	})
 
+	// Consent actions stay disabled until hydration and a ready status.
+	const actions: Array<[boolean, boolean, boolean]> = [
+		[false, true, true],
+		[true, true, false],
+		[true, false, true],
+	]
 	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: false,
-			statusReady: true,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(true)
-	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: true,
-			statusReady: true,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(false)
-	expect(
-		oauthAuthorizeActionsDisabled({
-			hydrated: true,
-			statusReady: false,
-			submitting: false,
-			sessionLoading: false,
-			needsEmailVerification: false,
-		}),
-	).toBe(true)
+		actions.filter(
+			([hydrated, statusReady, want]) =>
+				oauthAuthorizeActionsDisabled({
+					hydrated,
+					statusReady,
+					submitting: false,
+					sessionLoading: false,
+					needsEmailVerification: false,
+				}) !== want,
+		),
+	).toEqual([])
 
 	expect(
 		oauthAuthorizeApproveAriaLabel({
@@ -61,25 +56,72 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 		}),
 	).toBeUndefined()
 
+	const deny: Array<[boolean, boolean, boolean]> = [
+		[false, false, true],
+		[true, false, false],
+		[true, true, true],
+	]
 	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: false,
-			submitting: false,
-			sessionLoading: false,
-		}),
-	).toBe(true)
+		deny.filter(
+			([hydrated, submitting, want]) =>
+				oauthAuthorizeEmailVerificationDenyDisabled({
+					hydrated,
+					submitting,
+					sessionLoading: false,
+				}) !== want,
+		),
+	).toEqual([])
+})
+
+test('consent org field hides the picker for a sole org and requires a pick when several', () => {
+	expect(oauthAuthorizeGrantHeading(null)).toBe('This agent gets full access')
+	expect(oauthAuthorizeGrantHeading('acme')).toBe(
+		'This agent gets full access in @acme',
+	)
 	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: true,
-			submitting: false,
-			sessionLoading: false,
+		oauthAuthorizeOrgField({
+			orgs: [{ slug: 'ada', displayName: 'Ada', role: 'owner' }],
+			selectedOrgSlug: 'ada',
+			signedIn: true,
 		}),
-	).toBe(false)
+	).toEqual({ kind: 'hidden', slug: 'ada' })
 	expect(
-		oauthAuthorizeEmailVerificationDenyDisabled({
-			hydrated: true,
-			submitting: true,
-			sessionLoading: false,
+		oauthAuthorizeOrgField({
+			orgs: [
+				{ slug: 'acme', displayName: 'Acme', role: 'member' },
+				{ slug: 'ada', displayName: 'Ada', role: 'owner' },
+			],
+			selectedOrgSlug: 'acme',
+			signedIn: true,
 		}),
-	).toBe(true)
+	).toEqual({
+		kind: 'picker',
+		selectedSlug: 'acme',
+		options: [
+			{ slug: 'acme', displayName: 'Acme', role: 'member' },
+			{ slug: 'ada', displayName: 'Ada', role: 'owner' },
+		],
+	})
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [],
+			selectedOrgSlug: null,
+			signedIn: true,
+		}),
+	).toEqual({ kind: 'missing' })
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [],
+			selectedOrgSlug: null,
+			signedIn: false,
+		}),
+	).toEqual({ kind: 'pending' })
+	expect(
+		readOAuthAuthorizeConsentOrgs([
+			{ slug: 'Acme', displayName: 'Acme', role: 'owner' },
+			{ slug: '' },
+			null,
+		]),
+	).toEqual([{ slug: 'acme', displayName: 'Acme', role: 'owner' }])
+	expect(readOAuthAuthorizeSelectedOrgSlug(' Acme ')).toBe('acme')
 })

@@ -1,3 +1,4 @@
+import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	createDynamicCallableWorkflow,
@@ -180,6 +181,8 @@ export async function runWithDurableEscalation<T>(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
 	userId: string
 	userEmail?: string | null
+	/** The run that escalates; the durable workflow inherits it. */
+	lineage: RequestLineage
 	budgetMs?: number
 	/**
 	 * Operation-specific key segments (not including userId). The helper
@@ -317,6 +320,7 @@ export async function runWithDurableEscalation<T>(input: {
 				code: input.durableCode,
 				params: input.durableParams,
 			},
+			lineage: input.lineage,
 		})
 		if (
 			typeof workflow.status === 'string' &&

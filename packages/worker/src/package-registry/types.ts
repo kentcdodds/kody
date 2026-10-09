@@ -32,7 +32,7 @@ export type PackageJobDefinition = z.infer<typeof packageJobDefinitionSchema>
 
 /**
  * A bare package specifier the browser bundle leaves as an `import` for the
- * page's import map to resolve (for example `@remix-run/ui`). Relative
+ * page's import map to resolve (for example `lit`). Relative
  * paths, URLs, and Worker-only schemes are not externals: the first two need
  * no declaration and the last never belong in a browser graph.
  */
@@ -47,7 +47,7 @@ export const packageAppClientExternalSchema = z
 			!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(specifier),
 		{
 			message:
-				'kody.app.client.externals entries must be bare package specifiers such as "@remix-run/ui" or "preact/hooks" (no relative paths, URLs, or kody:/cloudflare:/node: schemes).',
+				'kody.app.client.externals entries must be bare package specifiers such as "lit" or "preact/hooks" (no relative paths, URLs, or kody:/cloudflare:/node: schemes).',
 		},
 	)
 
@@ -134,7 +134,13 @@ export type WebhookTimestampFormat =
 export const packageWebhookVerificationSchema = z.object({
 	type: z.enum(['hmac-sha256', 'hmac-sha1']),
 	header: z.string().regex(httpFieldNamePattern),
-	secretName: z.string().min(1),
+	/**
+	 * Optional. Omit for package-owned HMAC (minted onto the webhook URL
+	 * record). Set only for provider-issued signing secrets that live in the
+	 * secret store (for example Sentry). GitHub-style hooks that register via
+	 * webhookUrlApply with {{webhookSecret}} should omit this.
+	 */
+	secretName: z.string().min(1).optional(),
 	encoding: z.enum(['hex', 'base64']),
 	prefix: z.string().optional(),
 	signedPayload: z.enum(webhookSignedPayloadValues).optional(),
@@ -143,6 +149,171 @@ export const packageWebhookVerificationSchema = z.object({
 export type PackageWebhookVerification = z.infer<
 	typeof packageWebhookVerificationSchema
 >
+
+/**
+ * Platform-handled ownership quizzes on the minted webhook URL. Challenge
+ * requests never invoke package code: the worker answers from query/body +
+ * optional named secret only.
+ *
+ * Only `subscription-challenge` (generic knobs) is supported. Do not add
+ * vendor-named type ids (see decision 0054); configure providers with
+ * documented presets under this type.
+ */
+export const webhookChallengeTypeValues = ['subscription-challenge'] as const
+export type WebhookChallengeType = (typeof webhookChallengeTypeValues)[number]
+
+const webhookChallengeParamKeySchema = z
+	.string()
+	.min(1)
+	.max(128)
+	.regex(
+		/^(?!__proto__$|prototype$|constructor$)[A-Za-z0-9][A-Za-z0-9._-]*$/,
+		'Challenge keys must be alphanumeric (with . _ -) and must not be prototype property names.',
+	)
+
+const webhookChallengeWhenValueSchema = z.union([
+	z.string().min(1),
+	z.array(z.string().min(1)).min(1),
+])
+
+export const packageWebhookSubscriptionChallengeSchema = z.object({
+	type: z.literal('subscription-challenge'),
+	method: z.enum(['GET', 'POST']),
+	/** Where the challenge token arrives. */
+	challenge: z.object({
+		in: z.enum(['query', 'json']),
+		key: webhookChallengeParamKeySchema,
+	}),
+	/**
+	 * Recognition filters. On GET, a mismatch is 400. On POST, a mismatch
+	 * means the request is not a quiz (fall through to delivery).
+	 */
+	when: z
+		.object({
+			query: z
+				.record(z.string().min(1), webhookChallengeWhenValueSchema)
+				.optional(),
+			json: z.record(z.string().min(1), z.string().min(1)).optional(),
+		})
+		.optional(),
+	/**
+	 * How the subscriber proves ownership. Omit or `{ kind: "none" }` for
+	 * an unauthenticated echo (for example WebSub without verify_token).
+	 */
+	prove: z
+		.discriminatedUnion('kind', [
+			z.object({
+				kind: z.literal('none'),
+			}),
+			z.object({
+				kind: z.literal('verify-token'),
+				in: z.literal('query'),
+				key: webhookChallengeParamKeySchema,
+				secretName: z.string().min(1),
+				/** Default true. When false, missing/empty tokens are allowed. */
+				required: z.boolean().optional(),
+			}),
+			z.object({
+				kind: z.literal('hmac'),
+				secretName: z.string().min(1),
+				algorithm: z.enum(['hmac-sha256']),
+				encoding: z.enum(['hex', 'base64']),
+				prefix: z.string().optional(),
+			}),
+			z.object({
+				kind: z.literal('request-hmac'),
+				secretName: z.string().min(1),
+				algorithm: z.enum(['hmac-sha256']),
+				encoding: z.enum(['hex', 'base64']),
+				prefix: z.string().optional(),
+				timestampHeader: z.string().regex(httpFieldNamePattern),
+				signatureHeader: z.string().regex(httpFieldNamePattern),
+				signedPayload: z.literal('v0.timestamp.body'),
+			}),
+		])
+		.optional(),
+	/** How a successful quiz is echoed back to the provider. */
+	respond: z.discriminatedUnion('as', [
+		z.object({ as: z.literal('text') }),
+		z.object({
+			as: z.literal('json'),
+			key: webhookChallengeParamKeySchema,
+		}),
+		z.object({
+			as: z.literal('json-hmac'),
+			key: webhookChallengeParamKeySchema,
+		}),
+	]),
+})
+
+export type PackageWebhookSubscriptionChallenge = z.infer<
+	typeof packageWebhookSubscriptionChallengeSchema
+>
+
+export const packageWebhookChallengeSchema =
+	packageWebhookSubscriptionChallengeSchema.superRefine((challenge, ctx) => {
+		if (challenge.method === 'GET' && challenge.challenge.in !== 'query') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['challenge', 'in'],
+				message: 'GET subscription challenges must read challenge.in=query.',
+			})
+		}
+		if (challenge.method === 'POST' && challenge.challenge.in !== 'json') {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['challenge', 'in'],
+				message: 'POST subscription challenges must read challenge.in=json.',
+			})
+		}
+		if (challenge.method === 'POST') {
+			const hasJsonWhen =
+				challenge.when?.json != null &&
+				Object.keys(challenge.when.json).length > 0
+			if (!hasJsonWhen) {
+				ctx.addIssue({
+					code: 'custom',
+					path: ['when', 'json'],
+					message:
+						'POST subscription challenges require when.json so ordinary event POSTs can fall through to delivery.',
+				})
+			}
+		}
+		if (
+			challenge.respond.as === 'json-hmac' &&
+			challenge.prove?.kind !== 'hmac'
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['respond', 'as'],
+				message:
+					'respond.as=json-hmac requires prove.kind=hmac (CRC-style answer).',
+			})
+		}
+		if (
+			challenge.prove?.kind === 'hmac' &&
+			challenge.respond.as !== 'json-hmac'
+		) {
+			ctx.addIssue({
+				code: 'custom',
+				path: ['respond', 'as'],
+				message: 'prove.kind=hmac requires respond.as=json-hmac.',
+			})
+		}
+	})
+
+export type PackageWebhookChallenge = z.infer<
+	typeof packageWebhookChallengeSchema
+>
+
+/** Secret name used by a challenge declaration's prove block, if any. */
+export function webhookChallengeSecretName(
+	challenge: PackageWebhookChallenge,
+): string | undefined {
+	const prove = challenge.prove
+	if (!prove || prove.kind === 'none') return undefined
+	return prove.secretName
+}
 
 const webhookTimestampFormatSchema = z.string().superRefine((value, ctx) => {
 	if (
@@ -204,6 +375,7 @@ export const packageWebhookDefinitionSchema = z
 			.optional(),
 		verification: packageWebhookVerificationSchema.optional(),
 		replay: packageWebhookReplaySchema.optional(),
+		challenge: packageWebhookChallengeSchema.optional(),
 	})
 	.superRefine((webhook, ctx) => {
 		if (
@@ -245,6 +417,9 @@ export const packageEmittedEventDefinitionSchema = z.object({
 	// keyword set is enforced in parseAuthoredPackageJson (manifest.ts) so
 	// schema problems surface as publish-time manifest errors.
 	payloadSchema: z.record(z.string(), z.unknown()).optional(),
+	// Opt-in exposure through the MCP Events extension (events/list,
+	// events/subscribe). Absent or false keeps the topic package-internal.
+	mcp: z.boolean().optional(),
 })
 
 export type PackageEmittedEventDefinition = z.infer<
@@ -462,6 +637,7 @@ export type SavedPackageRow = {
 	search_text: string | null
 	source_id: string
 	has_app: 0 | 1
+	has_skills: 0 | 1
 	hidden: 0 | 1
 	is_private: 0 | 1
 	locked_at: string | null
@@ -479,6 +655,7 @@ export type SavedPackageRecord = {
 	searchText: string | null
 	sourceId: string
 	hasApp: boolean
+	hasSkills: boolean
 	hidden: boolean
 	isPrivate: boolean
 	lockedAt: string | null

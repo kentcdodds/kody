@@ -20,7 +20,6 @@ export type TagExistingKitSubscriberOnSignupInput = {
 	apiKey: string
 	email: string
 	tagId?: number
-	fetchImpl?: typeof fetch
 	timeoutMs?: number
 }
 
@@ -92,13 +91,12 @@ function isAbortError(error: unknown) {
 }
 
 async function kitFetch(
-	fetchImpl: typeof fetch,
 	url: string,
 	init: RequestInit,
 	timeoutMs: number,
 ): Promise<Response> {
 	try {
-		return await fetchImpl(url, {
+		return await fetch(url, {
 			...init,
 			signal: AbortSignal.timeout(timeoutMs),
 		})
@@ -123,14 +121,12 @@ async function kitFetch(
 export async function tagExistingKitSubscriberOnSignup(
 	input: TagExistingKitSubscriberOnSignupInput,
 ): Promise<TagExistingKitSubscriberOnSignupResult> {
-	const fetchImpl = input.fetchImpl ?? fetch
 	const tagId = input.tagId ?? DEFAULT_KIT_SIGNED_UP_TAG_ID
 	const timeoutMs = input.timeoutMs ?? KIT_SIGNUP_REQUEST_TIMEOUT_MS
 	const headers = kitHeaders(input.apiKey)
 
 	const lookupUrl = `${KIT_API_BASE_URL}/subscribers?email_address=${encodeURIComponent(input.email)}`
 	const lookupResponse = await kitFetch(
-		fetchImpl,
 		lookupUrl,
 		{ method: 'GET', headers },
 		timeoutMs,
@@ -157,7 +153,6 @@ export async function tagExistingKitSubscriberOnSignup(
 	}
 
 	const tagResponse = await kitFetch(
-		fetchImpl,
 		`${KIT_API_BASE_URL}/tags/${tagId}/subscribers`,
 		{
 			method: 'POST',
@@ -211,7 +206,6 @@ export function resolveKitSignedUpTagId(
 export async function maybeTagKitSubscriberOnSignup(input: {
 	env: Pick<Env, 'KIT_API_KEY' | 'KIT_SIGNED_UP_TAG_ID'>
 	email: string
-	fetchImpl?: typeof fetch
 }): Promise<void> {
 	const apiKey = input.env.KIT_API_KEY?.trim()
 	if (!apiKey) return
@@ -229,7 +223,6 @@ export async function maybeTagKitSubscriberOnSignup(input: {
 			apiKey,
 			email: input.email,
 			tagId,
-			fetchImpl: input.fetchImpl,
 		})
 	} catch (error) {
 		console.warn('Failed to tag Kit subscriber on signup:', error)

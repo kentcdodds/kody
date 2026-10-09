@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as packageInvocationsModule from '#worker/package-invocations/service.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	mcpServerDisconnectedTopic,
@@ -7,7 +8,9 @@ import {
 } from './connection-episodes.ts'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
+	invokePackageSubscription: vi.fn<
+		typeof packageInvocationsModule.invokePackageSubscription
+	>(async () => ({ status: 200, body: {} })),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	listEnabledMcpServerSettingRows: vi.fn(),
@@ -42,55 +45,54 @@ function createEnv() {
 	} as Env
 }
 
-function disconnectedEvent(): McpServerConnectionEvent {
-	return {
-		topic: mcpServerDisconnectedTopic,
-		eventId: 'event-1',
-		episodeId: 'episode-1',
-		serverId: 'server-home',
-		serverName: 'home',
-		state: 'disconnected',
-		previousState: 'ready',
-		observedAt: '2026-08-18T17:54:07.000Z',
-	}
+const savedPackage = {
+	id: 'package-1',
+	userId: 'user-1',
+	sourceId: 'source-1',
+	kodyId: 'home-watch',
+	name: '@user/home-watch',
 }
 
-function subscribedManifest(input: { topic: string }) {
-	return {
+const disconnectedEvent: McpServerConnectionEvent = {
+	topic: mcpServerDisconnectedTopic,
+	eventId: 'event-1',
+	episodeId: 'episode-1',
+	serverId: 'server-home',
+	serverName: 'home',
+	state: 'disconnected',
+	previousState: 'ready',
+	observedAt: '2026-08-18T17:54:07.000Z',
+}
+
+function seedSubscribedPackage(topic: string) {
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
+	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce({
 		manifest: {
 			name: '@user/home-watch',
 			kody: {
 				id: 'home-watch',
 				description: 'Home MCP notifier',
-				subscriptions: {
-					[input.topic]: {
-						handler: './src/on-mcp-server.ts',
-					},
-				},
+				subscriptions: { [topic]: { handler: './src/on-mcp-server.ts' } },
 			},
 		},
-	}
+	})
+}
+
+function emit(event: McpServerConnectionEvent = disconnectedEvent) {
+	return emitMcpServerConnectionEventsIfNeeded({
+		env: createEnv(),
+		userId: 'user-1',
+		events: [event],
+	})
 }
 
 test('mcp.server.disconnected fans out a lean same-user payload', async () => {
-	const savedPackage = {
-		id: 'package-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'home-watch',
-		name: '@user/home-watch',
-	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
-		subscribedManifest({ topic: mcpServerDisconnectedTopic }),
-	)
-	const env = createEnv()
-	const event = disconnectedEvent()
+	seedSubscribedPackage(mcpServerDisconnectedTopic)
 
 	const results = await dispatchMcpServerConnectionSubscriptionEvents({
-		env,
+		env: createEnv(),
 		userId: 'user-1',
-		event,
+		event: disconnectedEvent,
 	})
 
 	expect(results.complete).toBe(true)
@@ -127,125 +129,60 @@ test('mcp.server.disconnected fans out a lean same-user payload', async () => {
 
 test('mcp.server connection events skip disabled servers and never throw', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mocks.invokePackageSubscription.mockReset()
-	mocks.listSavedPackagesByUserId.mockReset()
-	mocks.loadPackageManifestBySourceId.mockReset()
-	mocks.listEnabledMcpServerSettingRows.mockReset()
-	const env = createEnv()
-	const event = disconnectedEvent()
+	const enabledHome = () =>
+		mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([
+			{ id: 'server-home' },
+		])
+	const eventContext = {
+		eventId: 'event-1',
+		topic: mcpServerDisconnectedTopic,
+		serverName: 'home',
+	}
 
 	mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([])
-	await emitMcpServerConnectionEventsIfNeeded({
-		env,
-		userId: 'user-1',
-		events: [event],
-	})
+	await emit()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 
-	mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([
-		{ id: 'server-home' },
-	])
+	enabledHome()
 	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
 		new Error('D1 unavailable'),
 	)
-	await expect(
-		emitMcpServerConnectionEventsIfNeeded({
-			env,
-			userId: 'user-1',
-			events: [event],
-		}),
-	).resolves.toBe(false)
+	await expect(emit()).resolves.toBe(false)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp.server connection package subscription discovery incomplete',
-		expect.objectContaining({
-			eventId: 'event-1',
-			topic: mcpServerDisconnectedTopic,
-			serverName: 'home',
-		}),
+		expect.objectContaining(eventContext),
 	)
 
-	mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([
-		{ id: 'server-home' },
-	])
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{
-			id: 'package-1',
-			userId: 'user-1',
-			sourceId: 'source-1',
-			kodyId: 'home-watch',
-			name: '@user/home-watch',
-		},
-	])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
-		subscribedManifest({ topic: mcpServerReconnectedTopic }),
-	)
-	await emitMcpServerConnectionEventsIfNeeded({
-		env,
-		userId: 'user-1',
-		events: [
-			{
-				...event,
-				topic: mcpServerReconnectedTopic,
-				state: 'ready',
-				previousState: 'disconnected',
-			},
-		],
+	enabledHome()
+	seedSubscribedPackage(mcpServerReconnectedTopic)
+	await emit({
+		...disconnectedEvent,
+		topic: mcpServerReconnectedTopic,
+		state: 'ready',
+		previousState: 'disconnected',
 	})
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
-		expect.objectContaining({
-			topic: mcpServerReconnectedTopic,
-		}),
+		expect.objectContaining({ topic: mcpServerReconnectedTopic }),
 	)
 
 	mocks.listEnabledMcpServerSettingRows.mockRejectedValueOnce(
 		new Error('D1 unavailable'),
 	)
-	await expect(
-		emitMcpServerConnectionEventsIfNeeded({
-			env,
-			userId: 'user-1',
-			events: [event],
-		}),
-	).resolves.toBe(false)
+	await expect(emit()).resolves.toBe(false)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp.server connection event enabled-server lookup failed',
-		expect.objectContaining({
-			error: expect.any(Error),
-		}),
+		expect.objectContaining({ error: expect.any(Error) }),
 	)
 
-	mocks.listEnabledMcpServerSettingRows.mockResolvedValueOnce([
-		{ id: 'server-home' },
-	])
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{
-			id: 'package-1',
-			userId: 'user-1',
-			sourceId: 'source-1',
-			kodyId: 'home-watch',
-			name: '@user/home-watch',
-		},
-	])
-	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
-		subscribedManifest({ topic: mcpServerDisconnectedTopic }),
-	)
+	enabledHome()
+	seedSubscribedPackage(mcpServerDisconnectedTopic)
 	mocks.invokePackageSubscription.mockResolvedValueOnce({
 		status: 503,
 		body: { error: { code: 'idempotency_lookup_failed' } },
 	})
-	await expect(
-		emitMcpServerConnectionEventsIfNeeded({
-			env,
-			userId: 'user-1',
-			events: [event],
-		}),
-	).resolves.toBe(false)
+	await expect(emit()).resolves.toBe(false)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'mcp.server connection package subscription invoke failed',
-		expect.objectContaining({
-			eventId: 'event-1',
-			topic: mcpServerDisconnectedTopic,
-			serverName: 'home',
-		}),
+		expect.objectContaining(eventContext),
 	)
 })

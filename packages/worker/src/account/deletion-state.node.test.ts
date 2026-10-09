@@ -4,6 +4,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import {
 	userMeterRpc,
 	type UserMeterEnv,
+	type UserMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { durableObjectInstanceInactiveCloseMessage } from '#worker/sentry-options.ts'
@@ -19,7 +20,95 @@ import {
 	withAccountWriteLease,
 } from './deletion-state.ts'
 
-function createLeaseTestDb() {
+const fence = '2099-01-01 00:00:00'
+const atMinute = (minute: number) => new Date(Date.UTC(2099, 0, 1, 0, minute))
+const repairReason = 'Inspected worker crash and confirmed process termination.'
+
+/**
+ * Wraps the in-memory UserMeter so tests can intercept individual RPCs;
+ * `wrap` runs once per `namespace.get` (one RPC stub).
+ */
+function createWrappedMeterEnv(
+	wrap: (stub: UserMeterRpc, stubId: number) => Partial<UserMeterRpc>,
+) {
+	const namespace = createInMemoryUserMeterEnv().env.USER_METER
+	let stubCount = 0
+	return {
+		USER_METER: {
+			idFromName: namespace.idFromName.bind(namespace),
+			get(id: DurableObjectId) {
+				const stub = namespace.get(id) as unknown as UserMeterRpc
+				return { ...stub, ...wrap(stub, ++stubCount) }
+			},
+		},
+	} as unknown as UserMeterEnv
+}
+
+function failingMeterEnv(methods: Record<string, () => Promise<never>>) {
+	return {
+		USER_METER: {
+			idFromName: (name: string) => ({ name, toString: () => name }),
+			get: () => methods,
+		},
+	} as unknown as UserMeterEnv
+}
+
+function createTrackedLeaseDoEnv(
+	input: {
+		acquireResetCount?: number
+		releaseResetCount?: number
+		rpcTimeoutMs?: number
+	} = {},
+) {
+	const calls: Array<{ stubId: number; method: string }> = []
+	const attempts = { acquireWriteLease: 0, releaseWriteLease: 0 }
+	const resets = {
+		acquireWriteLease: input.acquireResetCount ?? 0,
+		releaseWriteLease: input.releaseResetCount ?? 0,
+	}
+	const env = createWrappedMeterEnv((stub, stubId) => {
+		const createdAt = Date.now()
+		const track = (
+			method:
+				| 'acquireWriteLease'
+				| 'assertWriteLeaseHeld'
+				| 'releaseWriteLease',
+		) => {
+			calls.push({ stubId, method })
+			if (
+				input.rpcTimeoutMs != null &&
+				Date.now() - createdAt > input.rpcTimeoutMs
+			) {
+				throw new Error('Durable Object RPC stub exceeded its timeout.')
+			}
+			if (method !== 'assertWriteLeaseHeld') {
+				attempts[method] += 1
+				if (attempts[method] <= resets[method]) {
+					throw new Error(durableObjectInstanceInactiveCloseMessage)
+				}
+			}
+		}
+		return {
+			acquireWriteLease: async (args) => {
+				track('acquireWriteLease')
+				return stub.acquireWriteLease(args)
+			},
+			assertWriteLeaseHeld: async (args) => {
+				track('assertWriteLeaseHeld')
+				return stub.assertWriteLeaseHeld(args)
+			},
+			releaseWriteLease: async (args) => {
+				track('releaseWriteLease')
+				return stub.releaseWriteLease(args)
+			},
+		}
+	})
+	return { env, calls, attempts }
+}
+
+function createLeaseHarness(
+	env: UserMeterEnv = createInMemoryUserMeterEnv().env,
+) {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE users (
@@ -31,12 +120,6 @@ function createLeaseTestDb() {
 		);
 		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
 		INSERT INTO users (id, stable_user_id) VALUES (2, 'user-b');
-	`)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
-}
-
-function addLeaseRepairsTable(sqlite: DatabaseSync) {
-	sqlite.exec(`
 		CREATE TABLE account_write_lease_repairs (
 			id TEXT PRIMARY KEY,
 			target_user_id TEXT NOT NULL,
@@ -48,361 +131,324 @@ function addLeaseRepairsTable(sqlite: DatabaseSync) {
 			created_at TEXT NOT NULL
 		);
 	`)
-}
-
-function createDeferred() {
-	let resolve: () => void = () => undefined
-	const promise = new Promise<void>((next) => {
-		resolve = next
-	})
-	return { promise, resolve: () => resolve() }
-}
-
-function createGatedDoEnv(input: {
-	releaseGate?: Promise<void>
-	finalizeGate?: Promise<void>
-	finalizeFailOnceError?: string
-}) {
-	const base = createInMemoryUserMeterEnv()
-	const namespace = base.env.USER_METER!
-	const gates = { releaseEntered: false, finalizeEntered: false }
-	let finalizeAttempts = 0
-	const env = {
-		USER_METER: {
-			idFromName: namespace.idFromName.bind(namespace),
-			get(id: DurableObjectId) {
-				const stub = namespace.get(id)
-				return new Proxy(stub, {
-					get(target, prop, receiver) {
-						const value = Reflect.get(target, prop, receiver)
-						if (prop === 'releaseWriteLease' && input.releaseGate) {
-							return async (args: { token: string }) => {
-								gates.releaseEntered = true
-								await input.releaseGate
-								return target.releaseWriteLease(args)
-							}
-						}
-						if (prop === 'finalizeWriteLeaseRepair') {
-							return async (args: {
-								token: string
-								repairId: string
-								expectedAcquiredAt: string
-							}) => {
-								if (input.finalizeGate) {
-									gates.finalizeEntered = true
-									await input.finalizeGate
-								}
-								if (input.finalizeFailOnceError) {
-									finalizeAttempts += 1
-									if (finalizeAttempts === 1) {
-										throw new Error(input.finalizeFailOnceError)
-									}
-								}
-								return target.finalizeWriteLeaseRepair(args)
-							}
-						}
-						return typeof value === 'function' ? value.bind(target) : value
-					},
-				})
-			},
-		},
-	} as unknown as UserMeterEnv
+	const db = createD1FromSqlite(sqlite)
 	return {
+		sqlite,
+		db,
 		env,
-		gates,
-		get finalizeAttempts() {
-			return finalizeAttempts
+		// Getters so RPC stubs are only opened when a test reads the meter.
+		get meterA() {
+			return userMeterRpc({ env, userId: 'user-a' })
 		},
-		meterFor(userId: string) {
-			return userMeterRpc({ env, userId })
+		get meterB() {
+			return userMeterRpc({ env, userId: 'user-b' })
 		},
-	}
-}
-
-function createTrackedLeaseDoEnv(input?: {
-	acquireResetCount?: number
-	releaseResetCount?: number
-	rpcTimeoutMs?: number
-}) {
-	const base = createInMemoryUserMeterEnv()
-	const namespace = base.env.USER_METER!
-	const calls: Array<{ stubId: number; method: string }> = []
-	let stubCount = 0
-	let acquireAttempts = 0
-	let releaseAttempts = 0
-	const env = {
-		USER_METER: {
-			idFromName: namespace.idFromName.bind(namespace),
-			get(id: DurableObjectId) {
-				const target = namespace.get(id)
-				const stubId = ++stubCount
-				const createdAt = Date.now()
-				const assertFresh = () => {
-					if (
-						input?.rpcTimeoutMs != null &&
-						Date.now() - createdAt > input.rpcTimeoutMs
-					) {
-						throw new Error('Durable Object RPC stub exceeded its timeout.')
-					}
-				}
-				return new Proxy(target, {
-					get(target, prop, receiver) {
-						const value = Reflect.get(target, prop, receiver)
-						if (prop === 'acquireWriteLease') {
-							return async (args: {
-								token: string
-								holder: string
-								acquiredAt: string
-							}) => {
-								calls.push({ stubId, method: 'acquireWriteLease' })
-								assertFresh()
-								acquireAttempts += 1
-								if (acquireAttempts <= (input?.acquireResetCount ?? 0)) {
-									throw new Error(durableObjectInstanceInactiveCloseMessage)
-								}
-								return target.acquireWriteLease(args)
-							}
-						}
-						if (prop === 'assertWriteLeaseHeld') {
-							return async (args: { token: string }) => {
-								calls.push({ stubId, method: 'assertWriteLeaseHeld' })
-								assertFresh()
-								return target.assertWriteLeaseHeld(args)
-							}
-						}
-						if (prop === 'releaseWriteLease') {
-							return async (args: { token: string }) => {
-								calls.push({ stubId, method: 'releaseWriteLease' })
-								assertFresh()
-								releaseAttempts += 1
-								if (releaseAttempts <= (input?.releaseResetCount ?? 0)) {
-									throw new Error(durableObjectInstanceInactiveCloseMessage)
-								}
-								return target.releaseWriteLease(args)
-							}
-						}
-						return typeof value === 'function' ? value.bind(target) : value
-					},
-				})
-			},
+		lease<T>(
+			write: () => Promise<T>,
+			input: { stableUserId?: string; holder?: string } = {},
+		) {
+			return withAccountWriteLease({
+				db,
+				stableUserId: 'user-a',
+				env,
+				write,
+				...input,
+			})
 		},
-	} as unknown as UserMeterEnv
-	return {
-		env,
-		calls,
-		get acquireAttempts() {
-			return acquireAttempts
+		markDeleting(minute = 0, markEnv = env) {
+			return markAccountDeleting({
+				db,
+				dbUserId: 1,
+				now: atMinute(minute),
+				env: markEnv,
+			})
 		},
-		get releaseAttempts() {
-			return releaseAttempts
+		d1DeletingAt() {
+			return sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get()
 		},
-		meterFor(userId: string) {
-			return userMeterRpc({ env: base.env, userId })
+		repairCount() {
+			return sqlite
+				.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
+				.get()
 		},
-	}
-}
-
-async function waitFor(predicate: () => Promise<boolean>, label: string) {
-	await vi
-		.waitFor(
-			async () => {
-				expect(await predicate()).toBe(true)
-			},
-			{ timeout: 2_000, interval: 1 },
-		)
-		.catch(() => {
-			throw new Error(`Timed out waiting for ${label}`)
-		})
-}
-
-function holdDoWriteLease(input: {
-	db: D1Database
-	env: UserMeterEnv
-	holder: string
-	stableUserId?: string
-}) {
-	const stableUserId = input.stableUserId ?? 'user-a'
-	const finish = createDeferred()
-	const started = createDeferred()
-	let token = ''
-	let acquiredAt = ''
-	const operation = withAccountWriteLease({
-		db: input.db,
-		stableUserId,
-		holder: input.holder,
-		env: input.env,
-		async write() {
-			const [lease] = await listActiveAccountWriteLeases(
-				input.env,
-				stableUserId,
+		async countA() {
+			const meterA = userMeterRpc({ env, userId: 'user-a' })
+			return (await meterA.countActiveWriteLeases()).count
+		},
+		activeHolders(stableUserId = 'user-a') {
+			return listActiveAccountWriteLeases(env, stableUserId).then((leases) =>
+				leases.map((lease) => lease.holder),
 			)
-			token = lease!.token
-			acquiredAt = lease!.acquired_at
-			started.resolve()
-			await finish.promise
+		},
+	}
+}
+
+type LeaseHarness = ReturnType<typeof createLeaseHarness>
+
+function holdDoWriteLease(h: LeaseHarness, holder: string) {
+	let finish: () => void = () => undefined
+	const finished = new Promise<void>((resolve) => {
+		finish = resolve
+	})
+	let started: () => void = () => undefined
+	const startedPromise = new Promise<void>((resolve) => {
+		started = resolve
+	})
+	const lease = { token: '', acquiredAt: '' }
+	const operation = h.lease(
+		async () => {
+			const [active] = await listActiveAccountWriteLeases(h.env, 'user-a')
+			lease.token = active!.token
+			lease.acquiredAt = active!.acquired_at
+			started()
+			await finished
 			return 'lost'
 		},
-	})
+		{ holder },
+	)
 	return {
 		operation,
-		started: started.promise,
-		finish: finish.resolve,
+		started: startedPromise,
+		finish: () => finish(),
 		get token() {
-			return token
+			return lease.token
 		},
 		get acquiredAt() {
-			return acquiredAt
+			return lease.acquiredAt
 		},
 	}
 }
 
-test('env is required: UserMeter authoritative for acquire/held/release with D1 deleting_at gate', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const meterB = userMeterRpc({ env: meter.env, userId: 'user-b' })
+type HeldLease = ReturnType<typeof holdDoWriteLease>
 
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:do-authority',
-		env: meter.env,
-		async write() {
-			expect(
-				await listActiveAccountWriteLeases(meter.env, 'user-a'),
-			).toHaveLength(1)
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-			return 'ok'
-		},
-	})
-	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
-		0,
-	)
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:do-repair',
-	})
-	await held.started
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:00:00.000Z'),
-			env: meter.env,
-		}),
-	).resolves.toEqual({
-		leaseCount: 1,
-		created: true,
-		deletingAt: '2099-01-01 00:00:00',
-	})
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
-
-	await repairAccountWriteLease({
-		db,
+function repairHeld(h: LeaseHarness, held: HeldLease) {
+	return repairAccountWriteLease({
+		db: h.db,
 		stableUserId: 'user-a',
 		token: held.token,
 		expectedAcquiredAt: held.acquiredAt,
 		repairedByUserId: 'admin-user',
-		reason: 'Inspected worker crash and confirmed process termination.',
-		env: meter.env,
+		reason: repairReason,
+		env: h.env,
 	})
+}
+
+async function prepareRepairWithAuditRow(
+	h: LeaseHarness,
+	held: HeldLease,
+	holder: string,
+) {
+	const prepared = await h.meterA.prepareWriteLeaseRepair({
+		token: held.token,
+		expectedAcquiredAt: held.acquiredAt,
+	})
+	expect(prepared.prepared).toBe(true)
+	const repairId = prepared.prepared ? prepared.repairId : 'missing-repair-id'
+	h.sqlite
+		.prepare(
+			`INSERT INTO account_write_lease_repairs (
+				id, target_user_id, lease_token, lease_holder,
+				lease_acquired_at, repaired_by_user_id, reason, created_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.run(
+			repairId,
+			'user-a',
+			held.token,
+			holder,
+			held.acquiredAt,
+			'admin-user',
+			repairReason,
+			fence,
+		)
+	return repairId
+}
+
+const isHeld = (h: LeaseHarness, held: HeldLease) =>
+	h.meterA.assertWriteLeaseHeld({ token: held.token })
+
+const settle = (promise: Promise<unknown>) =>
+	promise.then(
+		() => 'resolved' as const,
+		(error: unknown) => error,
+	)
+
+test('env is required: UserMeter authoritative for acquire/held/release with D1 deleting_at gate', async () => {
+	const h = createLeaseHarness()
+
+	await h.lease(
+		async () => {
+			expect(await h.activeHolders()).toEqual(['test:do-authority'])
+			expect(await h.countA()).toBe(1)
+		},
+		{ holder: 'test:do-authority' },
+	)
+	expect(await h.activeHolders()).toEqual([])
+	expect(await h.countA()).toBe(0)
+
+	const held = holdDoWriteLease(h, 'test:do-repair')
+	await held.started
+	expect(await h.countA()).toBe(1)
+
+	await expect(h.markDeleting()).resolves.toEqual({
+		leaseCount: 1,
+		created: true,
+		deletingAt: fence,
+	})
+	expect(await h.meterA.readDeletionState()).toEqual({ deletingAt: fence })
+
+	await repairHeld(h, held)
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
 		AccountWriteLeaseLostError,
 	)
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	expect(await h.countA()).toBe(0)
 	expect(
-		sqlite.prepare(`SELECT reason FROM account_write_lease_repairs`).get(),
-	).toEqual({
-		reason: 'Inspected worker crash and confirmed process termination.',
-	})
+		h.sqlite.prepare(`SELECT reason FROM account_write_lease_repairs`).get(),
+	).toEqual({ reason: repairReason })
 
+	await expect(h.lease(async () => 'blocked')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
 	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: meter.env,
-			async write() {
-				return 'blocked'
-			},
+		h.lease(async () => 'ok', {
+			stableUserId: 'user-b',
+			holder: 'test:other-user',
 		}),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-b',
-		holder: 'test:other-user',
-		env: meter.env,
-		async write() {
-			return 'ok'
-		},
-	})
-	expect(await meterB.readDeletionState()).toEqual({ deletingAt: null })
+	).resolves.toBe('ok')
+	expect(await h.meterB.readDeletionState()).toEqual({ deletingAt: null })
 })
 
-test('nested same-user lease reuses the outer lease instead of re-acquiring', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+test('nested same-user lease reuses the outer lease, detached work re-acquires, and release is awaited', async () => {
+	const h = createLeaseHarness()
 
-	const result = await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		env: meter.env,
-		async write() {
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-			return await withAccountWriteLease({
-				db,
-				stableUserId: 'user-a',
-				holder: 'test:nested',
-				env: meter.env,
-				async write() {
+	const nested = await h.lease(
+		async () => {
+			expect(await h.countA()).toBe(1)
+			return await h.lease(
+				async () => {
 					// Still only the outer lease: the nested call must not pay
 					// another acquire/release round trip.
-					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-					const active = await listActiveAccountWriteLeases(meter.env, 'user-a')
-					expect(active).toHaveLength(1)
-					expect(active[0]).toEqual(
-						expect.objectContaining({ holder: 'test:outer' }),
-					)
+					expect(await h.countA()).toBe(1)
+					expect(await h.activeHolders()).toEqual(['test:outer'])
 					return 'nested-result'
 				},
-			})
+				{ holder: 'test:nested' },
+			)
 		},
-	})
-	expect(result).toBe('nested-result')
-	// The outer release is the only release.
-	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
-		0,
+		{ holder: 'test:outer' },
 	)
+	expect(nested).toBe('nested-result')
+	// The outer release is the only release.
+	expect(await h.activeHolders()).toEqual([])
+
+	let detached: Promise<void> = Promise.resolve()
+	let releaseOuter: () => void = () => undefined
+	const outerReleased = new Promise<void>((resolve) => {
+		releaseOuter = resolve
+	})
+	await h.lease(
+		async () => {
+			// Created inside the lease scope (inheriting the AsyncLocalStorage
+			// context) but running only after the outer lease has been released.
+			detached = (async () => {
+				await outerReleased
+				await h.lease(
+					async () => {
+						expect(await h.activeHolders()).toEqual(['test:detached'])
+					},
+					{ holder: 'test:detached' },
+				)
+			})()
+		},
+		{ holder: 'test:outer' },
+	)
+	releaseOuter()
+	await detached
+	expect(await h.countA()).toBe(0)
+
+	// Release is awaited: withAccountWriteLease does not settle until DO release completes.
+	let releaseEntered = false
+	let openGate: () => void = () => undefined
+	const releaseGate = new Promise<void>((resolve) => {
+		openGate = resolve
+	})
+	const gated = createLeaseHarness(
+		createWrappedMeterEnv((stub) => ({
+			async releaseWriteLease(args) {
+				releaseEntered = true
+				await releaseGate
+				return stub.releaseWriteLease(args)
+			},
+		})),
+	)
+	let settled = false
+	const awaitedRelease = gated
+		.lease(async () => 'ok', { holder: 'test:await-do-release' })
+		.then((value) => {
+			settled = true
+			return value
+		})
+	await vi.waitFor(
+		async () => {
+			expect(releaseEntered).toBe(true)
+			expect(await gated.countA()).toBe(1)
+		},
+		{ timeout: 2_000, interval: 1 },
+	)
+	expect(settled).toBe(false)
+	openGate()
+	await expect(awaitedRelease).resolves.toBe('ok')
+	expect(await gated.countA()).toBe(0)
+})
+
+test('nested lease for a different user and sequential siblings each acquire their own lease', async () => {
+	const h = createLeaseHarness()
+
+	await h.lease(
+		async () => {
+			await h.lease(
+				async () => {
+					expect(await h.countA()).toBe(1)
+					expect(await h.meterB.countActiveWriteLeases()).toEqual({
+						count: 1,
+					})
+					expect(await h.activeHolders('user-b')).toEqual(['test:other-user'])
+				},
+				{ stableUserId: 'user-b', holder: 'test:other-user' },
+			)
+		},
+		{ holder: 'test:outer' },
+	)
+	expect(await h.activeHolders('user-a')).toEqual([])
+	expect(await h.activeHolders('user-b')).toEqual([])
+
+	for (const holder of ['test:first', 'test:second']) {
+		await h.lease(
+			async () => {
+				expect(await h.activeHolders()).toEqual([holder])
+			},
+			{ holder },
+		)
+	}
+	expect(await h.activeHolders()).toEqual([])
 })
 
 test('long write callback does not retain a UserMeter RPC stub', async () => {
 	vi.useFakeTimers()
 	try {
 		vi.setSystemTime(new Date('2099-01-01T00:00:00.000Z'))
-		const { db } = createLeaseTestDb()
 		const rpcTimeoutMs = 90_000
 		const meter = createTrackedLeaseDoEnv({ rpcTimeoutMs })
+		const h = createLeaseHarness(meter.env)
 
-		const operation = withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			holder: 'test:long-write',
-			env: meter.env,
-			async write() {
+		const operation = h.lease(
+			async () => {
 				await new Promise((resolve) => setTimeout(resolve, rpcTimeoutMs + 1))
 				return 'finished'
 			},
-		})
+			{ holder: 'test:long-write' },
+		)
 		await vi.runAllTimersAsync()
 
 		await expect(operation).resolves.toBe('finished')
@@ -419,334 +465,134 @@ test('long write callback does not retain a UserMeter RPC stub', async () => {
 test('UserMeter instance-inactive acquire and release retry then fail closed', async () => {
 	vi.useFakeTimers()
 	try {
-		const { db } = createLeaseTestDb()
 		const recovered = createTrackedLeaseDoEnv({
 			acquireResetCount: 1,
 			releaseResetCount: 1,
 		})
 		let recoveredWrites = 0
-		const recoveredOperation = withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: recovered.env,
-			async write() {
+		const recoveredOperation = createLeaseHarness(recovered.env).lease(
+			async () => {
 				recoveredWrites += 1
 				return 'recovered'
 			},
-		})
+		)
 		await vi.runAllTimersAsync()
 		await expect(recoveredOperation).resolves.toBe('recovered')
 		expect(recoveredWrites).toBe(1)
-		expect(recovered.acquireAttempts).toBe(2)
-		expect(recovered.releaseAttempts).toBe(2)
+		expect(recovered.attempts).toEqual({
+			acquireWriteLease: 2,
+			releaseWriteLease: 2,
+		})
 
+		const inactiveError = expect.objectContaining({
+			message: durableObjectInstanceInactiveCloseMessage,
+		})
 		const acquireUnavailable = createTrackedLeaseDoEnv({
 			acquireResetCount: 4,
 		})
 		let blockedWrites = 0
-		const blockedOperation = withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: acquireUnavailable.env,
-			async write() {
+		const blockedResult = settle(
+			createLeaseHarness(acquireUnavailable.env).lease(async () => {
 				blockedWrites += 1
-			},
-		})
-		const blockedResult = blockedOperation.then(
-			() => 'resolved' as const,
-			(error: unknown) => error,
-		)
-		await vi.runAllTimersAsync()
-		expect(await blockedResult).toEqual(
-			expect.objectContaining({
-				message: durableObjectInstanceInactiveCloseMessage,
 			}),
 		)
-		expect(acquireUnavailable.acquireAttempts).toBe(4)
+		await vi.runAllTimersAsync()
+		expect(await blockedResult).toEqual(inactiveError)
+		expect(acquireUnavailable.attempts.acquireWriteLease).toBe(4)
 		expect(blockedWrites).toBe(0)
 
 		const releaseUnavailable = createTrackedLeaseDoEnv({
 			releaseResetCount: 4,
 		})
+		const releaseHarness = createLeaseHarness(releaseUnavailable.env)
 		let completedWrites = 0
-		const releaseFailedOperation = withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: releaseUnavailable.env,
-			async write() {
+		const releaseFailedResult = settle(
+			releaseHarness.lease(async () => {
 				completedWrites += 1
-			},
-		})
-		const releaseFailedResult = releaseFailedOperation.then(
-			() => 'resolved' as const,
-			(error: unknown) => error,
-		)
-		await vi.runAllTimersAsync()
-		expect(await releaseFailedResult).toEqual(
-			expect.objectContaining({
-				message: durableObjectInstanceInactiveCloseMessage,
 			}),
 		)
+		await vi.runAllTimersAsync()
+		expect(await releaseFailedResult).toEqual(inactiveError)
 		expect(completedWrites).toBe(1)
-		expect(releaseUnavailable.releaseAttempts).toBe(4)
-		expect(
-			await releaseUnavailable.meterFor('user-a').countActiveWriteLeases(),
-		).toEqual({ count: 1 })
+		expect(releaseUnavailable.attempts.releaseWriteLease).toBe(4)
+		expect(await releaseHarness.countA()).toBe(1)
 	} finally {
 		vi.useRealTimers()
 	}
 })
 
-test('nested lease for a different user still acquires its own lease', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const meterB = userMeterRpc({ env: meter.env, userId: 'user-b' })
-
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		env: meter.env,
-		async write() {
-			await withAccountWriteLease({
-				db,
-				stableUserId: 'user-b',
-				holder: 'test:other-user',
-				env: meter.env,
-				async write() {
-					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-					expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
-					expect(
-						await listActiveAccountWriteLeases(meter.env, 'user-b'),
-					).toHaveLength(1)
-				},
-			})
-		},
-	})
-	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
-		0,
+test('USER_METER failures fail closed (missing binding throws)', async () => {
+	const h = createLeaseHarness(
+		failingMeterEnv({
+			async acquireWriteLease() {
+				throw new Error('do acquire failed')
+			},
+			async markDeleting() {
+				throw new Error('do mark failed')
+			},
+		}),
 	)
-	expect(await listActiveAccountWriteLeases(meter.env, 'user-b')).toHaveLength(
-		0,
+
+	await expect(h.lease(async () => 'mutated')).rejects.toThrow(
+		'do acquire failed',
 	)
-})
-
-test('detached work spawned inside write re-acquires after the outer lease releases', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	let detached: Promise<void> = Promise.resolve()
-	let releaseOuter: () => void = () => undefined
-	const outerReleased = new Promise<void>((resolve) => {
-		releaseOuter = resolve
-	})
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer',
-		env: meter.env,
-		async write() {
-			// Created inside the lease scope (inheriting the AsyncLocalStorage
-			// context) but running only after the outer lease has been released.
-			detached = (async () => {
-				await outerReleased
-				await withAccountWriteLease({
-					db,
-					stableUserId: 'user-a',
-					holder: 'test:detached',
-					env: meter.env,
-					async write() {
-						const active = await listActiveAccountWriteLeases(
-							meter.env,
-							'user-a',
-						)
-						expect(active).toHaveLength(1)
-						expect(active[0]).toEqual(
-							expect.objectContaining({ holder: 'test:detached' }),
-						)
-					},
-				})
-			})()
-		},
-	})
-	releaseOuter()
-	await detached
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-})
-
-test('sequential sibling leases each acquire after the previous released', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		env: meter.env,
-		async write() {
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-		},
-	})
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		env: meter.env,
-		async write() {
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-			expect(
-				await listActiveAccountWriteLeases(meter.env, 'user-a'),
-			).toHaveLength(1)
-		},
-	})
-	expect(await listActiveAccountWriteLeases(meter.env, 'user-a')).toHaveLength(
-		0,
-	)
-})
-
-test('nested/detached parity for DO-authority leases', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	const nested = await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer-do',
-		env: meter.env,
-		async write() {
-			expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-			return await withAccountWriteLease({
-				db,
-				stableUserId: 'user-a',
-				holder: 'test:nested-do',
-				env: meter.env,
-				async write() {
-					expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-					const active = await listActiveAccountWriteLeases(meter.env, 'user-a')
-					expect(active).toHaveLength(1)
-					expect(active[0]).toEqual(
-						expect.objectContaining({ holder: 'test:outer-do' }),
-					)
-					return 'nested'
-				},
-			})
-		},
-	})
-	expect(nested).toBe('nested')
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-
-	let detached: Promise<void> = Promise.resolve()
-	let releaseOuter: () => void = () => undefined
-	const outerReleased = new Promise<void>((resolve) => {
-		releaseOuter = resolve
-	})
-	await withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:outer-do',
-		env: meter.env,
-		async write() {
-			detached = (async () => {
-				await outerReleased
-				await withAccountWriteLease({
-					db,
-					stableUserId: 'user-a',
-					holder: 'test:detached-do',
-					env: meter.env,
-					async write() {
-						const active = await listActiveAccountWriteLeases(
-							meter.env,
-							'user-a',
-						)
-						expect(active).toHaveLength(1)
-						expect(active[0]).toEqual(
-							expect.objectContaining({ holder: 'test:detached-do' }),
-						)
-					},
-				})
-			})()
-		},
-	})
-	releaseOuter()
-	await detached
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-
-	// Release is awaited: withAccountWriteLease does not settle until DO release completes.
-	const release = createDeferred()
-	const gated = createGatedDoEnv({ releaseGate: release.promise })
-	const gatedMeter = gated.meterFor('user-a')
-
-	let settled = false
-	const awaitedRelease = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:await-do-release',
-		env: gated.env,
-		async write() {
-			return 'ok'
-		},
-	}).then((value) => {
-		settled = true
-		return value
-	})
-	await waitFor(
-		async () =>
-			gated.gates.releaseEntered &&
-			(await gatedMeter.countActiveWriteLeases()).count === 1 &&
-			!settled,
-		'DO release gate',
-	)
-	release.resolve()
-	await expect(awaitedRelease).resolves.toBe('ok')
-	expect(await gatedMeter.countActiveWriteLeases()).toEqual({ count: 0 })
-})
-
-test('D1 deleting_at gate fails closed after purge tombstone', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	await markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
-	})
-	await meterA.purge()
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	await expect(h.markDeleting()).rejects.toThrow('do mark failed')
+	expect(h.d1DeletingAt()).toEqual({ deleting_at: null })
 
 	await expect(
 		withAccountWriteLease({
-			db,
+			db: h.db,
 			stableUserId: 'user-a',
-			env: meter.env,
+			env: {},
 			async write() {
 				return 'blocked'
 			},
 		}),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
+})
+
+test('held UserMeter lease is exported in deletion state without D1 mirror operations', async () => {
+	const h = createLeaseHarness()
+	h.db.batch = (async () => {
+		throw new Error(
+			'D1 batch must not be called in env path after mirror retirement',
+		)
+	}) as D1Database['batch']
+	const mirrorCalls: Array<string> = []
+	const originalPrepare = h.db.prepare.bind(h.db)
+	h.db.prepare = ((query: string) => {
+		if (query.includes('active_write_count')) mirrorCalls.push(query)
+		return originalPrepare(query)
+	}) as D1Database['prepare']
+
+	const held = holdDoWriteLease(h, 'test:do-no-mirror')
+	await held.started
+	expect(await h.countA()).toBe(1)
+	expect(
+		(await h.meterA.exportCounters({ pageSize: 1 })).deletionState,
+	).toEqual({
+		deletingAt: null,
+		activeWriteLeaseCount: 1,
+		writeLeases: [{ acquiredAt: held.acquiredAt }],
+	})
+
+	held.finish()
+	await expect(held.operation).resolves.toBe('lost')
+	expect(await h.countA()).toBe(0)
+	expect(mirrorCalls).toEqual([])
 })
 
 test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:do-repair-protocol',
-	})
+	const h = createLeaseHarness()
+	const held = holdDoWriteLease(h, 'test:do-repair-protocol')
 	await held.started
 
-	const prepared = await meterA.prepareWriteLeaseRepair({
-		token: held.token,
-		expectedAcquiredAt: held.acquiredAt,
-	})
+	const prepare = () =>
+		h.meterA.prepareWriteLeaseRepair({
+			token: held.token,
+			expectedAcquiredAt: held.acquiredAt,
+		})
+	const prepared = await prepare()
 	expect(prepared).toEqual(
 		expect.objectContaining({
 			prepared: true,
@@ -754,34 +600,20 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 			acquiredAt: held.acquiredAt,
 		}),
 	)
-	const repairId =
-		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
-	const retried = await meterA.prepareWriteLeaseRepair({
-		token: held.token,
-		expectedAcquiredAt: held.acquiredAt,
-	})
-	expect(retried).toEqual(expect.objectContaining({ prepared: true, repairId }))
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: true,
-	})
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+	const repairId = prepared.prepared ? prepared.repairId : 'missing-repair-id'
+	expect(await prepare()).toEqual(
+		expect.objectContaining({ prepared: true, repairId }),
+	)
+	expect(await isHeld(h, held)).toEqual({ held: true })
+	expect(await h.countA()).toBe(1)
 
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: meter.env,
-		}),
-	).resolves.toEqual({ repaired: true, repairId })
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: false,
+	await expect(repairHeld(h, held)).resolves.toEqual({
+		repaired: true,
+		repairId,
 	})
+	expect(await isHeld(h, held)).toEqual({ held: false })
 	expect(
-		sqlite
+		h.sqlite
 			.prepare(
 				`SELECT id, lease_token, lease_acquired_at FROM account_write_lease_repairs`,
 			)
@@ -793,22 +625,11 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 	})
 
 	// Idempotent retry returns the same repairId without creating a second audit row.
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: meter.env,
-		}),
-	).resolves.toEqual({ repaired: true, repairId })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
-			.get(),
-	).toEqual({ count: 1 })
+	await expect(repairHeld(h, held)).resolves.toEqual({
+		repaired: true,
+		repairId,
+	})
+	expect(h.repairCount()).toEqual({ count: 1 })
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -816,188 +637,25 @@ test('DO repair prepare/audit/finalize is idempotent and lease-lost aware', asyn
 	)
 })
 
-test('USER_METER failures fail closed (missing binding throws)', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const failingEnv = {
-		USER_METER: {
-			idFromName: (name: string) => ({ name, toString: () => name }),
-			get: () => ({
-				async acquireWriteLease() {
-					throw new Error('do acquire failed')
-				},
-				async markDeleting() {
-					throw new Error('do mark failed')
-				},
-			}),
-		},
-	} as unknown as UserMeterEnv
-
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: failingEnv,
-			async write() {
-				return 'mutated'
-			},
-		}),
-	).rejects.toThrow('do acquire failed')
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			env: failingEnv,
-		}),
-	).rejects.toThrow('do mark failed')
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: null })
-
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: {},
-			async write() {
-				return 'blocked'
-			},
-		}),
-	).rejects.toThrow('USER_METER Durable Object binding is not configured.')
-})
-
-test('env path uses UserMeter leases without D1 mirror operations', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	// Verify D1 batch is not called on the env/DO path after mirror retirement.
-	const originalBatch = db.batch.bind(db)
-	db.batch = (async () => {
-		throw new Error(
-			'D1 batch must not be called in env path after mirror retirement',
-		)
-	}) as D1Database['batch']
-	const mirrorCalls: Array<string> = []
-	const originalPrepare = db.prepare.bind(db)
-	db.prepare = ((query: string) => {
-		if (query.includes('active_write_count')) {
-			mirrorCalls.push(query)
-		}
-		return originalPrepare(query)
-	}) as D1Database['prepare']
-
-	let startWrite: () => void = () => undefined
-	let finishWrite: () => void = () => undefined
-	const started = new Promise<void>((resolve) => {
-		startWrite = resolve
-	})
-	const finish = new Promise<void>((resolve) => {
-		finishWrite = resolve
-	})
-	const operation = withAccountWriteLease({
-		db,
-		stableUserId: 'user-a',
-		holder: 'test:do-no-mirror',
-		env: meter.env,
-		async write() {
-			startWrite()
-			await finish
-			return 'held'
-		},
-	})
-	await started
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
-
-	finishWrite()
-	await expect(operation).resolves.toBe('held')
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-	// No legacy counter calls from the env path.
-	expect(mirrorCalls).toHaveLength(0)
-
-	db.batch = originalBatch
-	db.prepare = originalPrepare
-})
-
-test('DO repair is audit-first: prepare + audit row before finalize, absent D1 mirror', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:do-repair-mirror',
-	})
+test('DO repair is audit-first: an existing prepared audit row is adopted before finalize', async () => {
+	const h = createLeaseHarness()
+	const held = holdDoWriteLease(h, 'test:do-repair-mirror')
 	await held.started
+	const repairId = await prepareRepairWithAuditRow(
+		h,
+		held,
+		'test:do-repair-mirror',
+	)
+	expect(await isHeld(h, held)).toEqual({ held: true })
 
-	const prepared = await meterA.prepareWriteLeaseRepair({
-		token: held.token,
-		expectedAcquiredAt: held.acquiredAt,
-	})
-	expect(prepared.prepared).toBe(true)
-	const repairId =
-		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
-
-	// Manually insert the audit row (simulating the audit-first write from repairAccountWriteLease).
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_lease_repairs (
-				id, target_user_id, lease_token, lease_holder,
-				lease_acquired_at, repaired_by_user_id, reason, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.run(
+	for (let attempt = 0; attempt < 2; attempt += 1) {
+		await expect(repairHeld(h, held)).resolves.toEqual({
+			repaired: true,
 			repairId,
-			'user-a',
-			held.token,
-			'test:do-repair-mirror',
-			held.acquiredAt,
-			'admin-user',
-			'Inspected worker crash and confirmed process termination.',
-			'2099-01-01 00:00:00',
-		)
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: true,
-	})
-
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: meter.env,
-		}),
-	).resolves.toEqual({ repaired: true, repairId })
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: false,
-	})
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
-			.get(),
-	).toEqual({ count: 1 })
-
-	// Idempotent retry returns the same repairId.
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: meter.env,
-		}),
-	).resolves.toEqual({ repaired: true, repairId })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
-			.get(),
-	).toEqual({ count: 1 })
+		})
+		expect(await isHeld(h, held)).toEqual({ held: false })
+		expect(h.repairCount()).toEqual({ count: 1 })
+	}
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -1006,67 +664,27 @@ test('DO repair is audit-first: prepare + audit row before finalize, absent D1 m
 })
 
 test('lost-finalize retry returns stable repairId and leaves DO released', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:stale-after-finalize',
-	})
+	const h = createLeaseHarness()
+	const held = holdDoWriteLease(h, 'test:stale-after-finalize')
 	await held.started
-
-	const prepared = await meterA.prepareWriteLeaseRepair({
-		token: held.token,
-		expectedAcquiredAt: held.acquiredAt,
-	})
-	const repairId =
-		prepared.prepared === true ? prepared.repairId : 'missing-repair-id'
-	sqlite
-		.prepare(
-			`INSERT INTO account_write_lease_repairs (
-				id, target_user_id, lease_token, lease_holder,
-				lease_acquired_at, repaired_by_user_id, reason, created_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		)
-		.run(
-			repairId,
-			'user-a',
-			held.token,
-			'test:stale-after-finalize',
-			held.acquiredAt,
-			'admin-user',
-			'Inspected worker crash and confirmed process termination.',
-			'2099-01-01 00:00:00',
-		)
+	const repairId = await prepareRepairWithAuditRow(
+		h,
+		held,
+		'test:stale-after-finalize',
+	)
 	// Simulate: finalize completed but the repairAccountWriteLease response was lost.
-	await meterA.finalizeWriteLeaseRepair({
+	await h.meterA.finalizeWriteLeaseRepair({
 		token: held.token,
 		repairId,
 		expectedAcquiredAt: held.acquiredAt,
 	})
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: false,
-	})
+	expect(await isHeld(h, held)).toEqual({ held: false })
 
-	// Retry with the same reason returns the stable repairId.
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: meter.env,
-		}),
-	).resolves.toEqual({ repaired: true, repairId })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM account_write_lease_repairs`)
-			.get(),
-	).toEqual({ count: 1 })
+	await expect(repairHeld(h, held)).resolves.toEqual({
+		repaired: true,
+		repairId,
+	})
+	expect(h.repairCount()).toEqual({ count: 1 })
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -1075,50 +693,31 @@ test('lost-finalize retry returns stable repairId and leaves DO released', async
 })
 
 test('finalize failure leaves DO held and retry succeeds', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	addLeaseRepairsTable(sqlite)
-	const gated = createGatedDoEnv({
-		finalizeFailOnceError: 'simulated finalize transport failure',
-	})
-	const meterA = gated.meterFor('user-a')
-	const held = holdDoWriteLease({
-		db,
-		env: gated.env,
-		holder: 'test:finalize-fail-closed',
-	})
+	let finalizeAttempts = 0
+	const h = createLeaseHarness(
+		createWrappedMeterEnv((stub) => ({
+			async finalizeWriteLeaseRepair(args) {
+				finalizeAttempts += 1
+				if (finalizeAttempts === 1) {
+					throw new Error('simulated finalize transport failure')
+				}
+				return stub.finalizeWriteLeaseRepair(args)
+			},
+		})),
+	)
+	const held = holdDoWriteLease(h, 'test:finalize-fail-closed')
 	await held.started
 
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: gated.env,
-		}),
-	).rejects.toThrow('simulated finalize transport failure')
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: true,
-	})
+	await expect(repairHeld(h, held)).rejects.toThrow(
+		'simulated finalize transport failure',
+	)
+	expect(await isHeld(h, held)).toEqual({ held: true })
 
-	// Retry succeeds on second finalize attempt.
-	await expect(
-		repairAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			token: held.token,
-			expectedAcquiredAt: held.acquiredAt,
-			repairedByUserId: 'admin-user',
-			reason: 'Inspected worker crash and confirmed process termination.',
-			env: gated.env,
-		}),
-	).resolves.toEqual(expect.objectContaining({ repaired: true }))
-	expect(await meterA.assertWriteLeaseHeld({ token: held.token })).toEqual({
-		held: false,
-	})
-	expect(gated.finalizeAttempts).toBe(2)
+	await expect(repairHeld(h, held)).resolves.toEqual(
+		expect.objectContaining({ repaired: true }),
+	)
+	expect(await isHeld(h, held)).toEqual({ held: false })
+	expect(finalizeAttempts).toBe(2)
 
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
@@ -1127,325 +726,135 @@ test('finalize failure leaves DO held and retry succeeds', async () => {
 })
 
 test('D1 deleting_at race: gate queries D1 before DO acquire', async () => {
-	// The D1 deleting_at query happens first; a concurrent deletion that sets D1
-	// deleting_at before the DO acquire will block new leases cleanly.
-	const { sqlite, db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
+	const h = createLeaseHarness()
 	// Pre-mark D1 deleting_at (simulates another worker racing to delete).
-	sqlite
-		.prepare(
-			`UPDATE users SET deleting_at = '2099-01-01 00:00:00' WHERE id = 1`,
-		)
-		.run()
+	h.sqlite.prepare(`UPDATE users SET deleting_at = ? WHERE id = 1`).run(fence)
 
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: meter.env,
-			async write() {
-				return 'should not run'
-			},
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	await expect(h.lease(async () => 'should not run')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
 	// DO was never asked to acquire.
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
-})
-
-test('export: deletion state includes active lease count and acquiredAt list', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:export',
-	})
-	await held.started
-
-	const exported = await meterA.exportCounters({ pageSize: 1 })
-	expect(exported.deletionState).toEqual({
-		deletingAt: null,
-		activeWriteLeaseCount: 1,
-		writeLeases: [{ acquiredAt: expect.any(String) }],
-	})
-
-	held.finish()
-	await expect(held.operation).resolves.toBe('lost')
+	expect(await h.countA()).toBe(0)
 })
 
 test('purge resets lease state but preserves deletingAt tombstone', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
+	const h = createLeaseHarness()
 	// Hold a lease while the account is still writable (before marking for deletion).
-	const held = holdDoWriteLease({
-		db,
-		env: meter.env,
-		holder: 'test:pre-purge',
-		stableUserId: 'user-a',
-	})
+	const held = holdDoWriteLease(h, 'test:pre-purge')
 	await held.started
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 1 })
+	expect(await h.countA()).toBe(1)
 
-	// Now mark for deletion; DO tombstone is set, purge will clear leases.
-	await markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
-	})
-
-	await meterA.purge()
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
-	expect(await meterA.countActiveWriteLeases()).toEqual({ count: 0 })
+	await h.markDeleting()
+	await h.meterA.purge()
+	expect(await h.meterA.readDeletionState()).toEqual({ deletingAt: fence })
+	expect(await h.countA()).toBe(0)
 	// D1 gate still blocks (deleting_at is permanent).
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: meter.env,
-			async write() {
-				return 'blocked'
-			},
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	await expect(h.lease(async () => 'blocked')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
 	held.finish()
 	await expect(held.operation).rejects.toBeInstanceOf(
 		AccountWriteLeaseLostError,
 	)
 })
 
-test('abortAccountDeleting clears the D1 gate and UserMeter tombstone', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+test('abortAccountDeleting clears the D1 gate and UserMeter tombstone only for the matching fence', async () => {
+	const h = createLeaseHarness()
+	const expectFence = async (deletingAt: string | null) => {
+		expect(h.d1DeletingAt()).toEqual({ deleting_at: deletingAt })
+		expect(await h.meterA.readDeletionState()).toEqual({ deletingAt })
+	}
 
-	await markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
-	})
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
+	await h.markDeleting()
+	await expectFence(fence)
 
 	await abortAccountDeleting({
-		db,
+		db: h.db,
 		dbUserId: 1,
-		now: new Date('2099-01-01T00:01:00.000Z'),
-		env: meter.env,
+		now: atMinute(5),
+		env: h.env,
+		expectedDeletingAt: '2098-12-31 00:00:00',
 	})
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: null })
-	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: meter.env,
-			async write() {
-				return 'ok'
-			},
-		}),
-	).resolves.toBe('ok')
-})
+	await expectFence(fence)
 
-test('abortAccountDeletingByStableUserId resolves the user then clears the fence', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	await markAccountDeleting({
-		db,
+	await abortAccountDeleting({
+		db: h.db,
 		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
+		now: atMinute(1),
+		env: h.env,
 	})
+	await expectFence(null)
+	await expect(h.lease(async () => 'ok')).resolves.toBe('ok')
 
+	await h.markDeleting()
 	await abortAccountDeletingByStableUserId({
-		db,
+		db: h.db,
 		stableUserId: 'user-a',
-		now: new Date('2099-01-01T00:02:00.000Z'),
-		env: meter.env,
+		now: atMinute(2),
+		env: h.env,
 	})
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: null })
-	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
-})
-
-test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-
-	await meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2026-08-31 15:22:12',
-	})
-
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env: meter.env,
-			async write() {
-				return 'ok'
-			},
-		}),
-	).resolves.toBe('ok')
-	expect(await meterA.readDeletionState()).toEqual({ deletingAt: null })
-})
-
-test('withAccountWriteLease restores the meter tombstone when deletion starts during leftover heal', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const base = createInMemoryUserMeterEnv()
-	const namespace = base.env.USER_METER!
-	const deletingAt = '2026-08-31 16:04:00'
-	const env = {
-		USER_METER: {
-			idFromName: namespace.idFromName.bind(namespace),
-			get(id: DurableObjectId) {
-				const stub = namespace.get(id)
-				return new Proxy(stub, {
-					get(target, prop, receiver) {
-						const value = Reflect.get(target, prop, receiver)
-						if (prop === 'clearDeleting') {
-							return async (
-								args?: Parameters<typeof stub.clearDeleting>[0],
-							) => {
-								sqlite
-									.prepare(
-										`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
-									)
-									.run(deletingAt, 'user-a')
-								return target.clearDeleting(args)
-							}
-						}
-						return typeof value === 'function' ? value.bind(target) : value
-					},
-				})
-			},
-		},
-	} as unknown as UserMeterEnv
-	const meterA = userMeterRpc({ env, userId: 'user-a' })
-
-	await meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
-
-	await expect(
-		withAccountWriteLease({
-			db,
-			stableUserId: 'user-a',
-			env,
-			async write() {
-				return 'ok'
-			},
-		}),
-	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	expect(
-		sqlite
-			.prepare(`SELECT deleting_at FROM users WHERE stable_user_id = ?`)
-			.get('user-a'),
-	).toEqual({ deleting_at: deletingAt })
-	expect(await meterA.readDeletionState()).toEqual({ deletingAt })
-})
-
-test('clearUserMeterDeletionTombstone is a no-op without USER_METER', async () => {
-	await expect(
-		clearUserMeterDeletionTombstone({
-			env: {},
-			stableUserId: 'user-a',
-		}),
-	).resolves.toEqual({ cleared: false })
-})
-
-test('abortAccountDeletingByStableUserId fails closed for an unknown user', async () => {
-	const { db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
+	await expectFence(null)
 
 	await expect(
 		abortAccountDeletingByStableUserId({
-			db,
+			db: h.db,
 			stableUserId: 'missing-user',
-			env: meter.env,
+			env: h.env,
 		}),
 	).rejects.toThrow('User not found.')
+	await expect(
+		clearUserMeterDeletionTombstone({ env: {}, stableUserId: 'user-a' }),
+	).resolves.toEqual({ cleared: false })
+})
+
+test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {
+	const h = createLeaseHarness()
+	await h.meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	expect(await h.meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+
+	await expect(h.lease(async () => 'ok')).resolves.toBe('ok')
+	expect(await h.meterA.readDeletionState()).toEqual({ deletingAt: null })
+})
+
+test('withAccountWriteLease restores the meter tombstone when deletion starts during leftover heal', async () => {
+	const deletingAt = '2026-08-31 16:04:00'
+	let sqlite: DatabaseSync | null = null
+	const h = createLeaseHarness(
+		createWrappedMeterEnv((stub) => ({
+			async clearDeleting(args) {
+				sqlite!
+					.prepare(`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`)
+					.run(deletingAt, 'user-a')
+				return stub.clearDeleting(args)
+			},
+		})),
+	)
+	sqlite = h.sqlite
+	await h.meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+
+	await expect(h.lease(async () => 'ok')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+	expect(h.d1DeletingAt()).toEqual({ deleting_at: deletingAt })
+	expect(await h.meterA.readDeletionState()).toEqual({ deletingAt })
 })
 
 test('markAccountDeleting does not roll back a fence another attempt owns', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	await markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
-	})
+	const h = createLeaseHarness()
+	await h.markDeleting()
 
-	const failingEnv = {
-		USER_METER: {
-			idFromName: (name: string) => ({ name, toString: () => name }),
-			get: () => ({
+	await expect(
+		h.markDeleting(
+			5,
+			failingMeterEnv({
 				async markDeleting() {
 					throw new Error('do mark failed')
 				},
 			}),
-		},
-	} as unknown as UserMeterEnv
-
-	await expect(
-		markAccountDeleting({
-			db,
-			dbUserId: 1,
-			now: new Date('2099-01-01T00:05:00.000Z'),
-			env: failingEnv,
-		}),
+		),
 	).rejects.toThrow('do mark failed')
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
-	expect(
-		await userMeterRpc({
-			env: meter.env,
-			userId: 'user-a',
-		}).readDeletionState(),
-	).toEqual({ deletingAt: '2099-01-01 00:00:00' })
-})
-
-test('abortAccountDeleting leaves a newer fence when expectedDeletingAt does not match', async () => {
-	const { sqlite, db } = createLeaseTestDb()
-	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
-	await markAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:00:00.000Z'),
-		env: meter.env,
-	})
-
-	await abortAccountDeleting({
-		db,
-		dbUserId: 1,
-		now: new Date('2099-01-01T00:05:00.000Z'),
-		env: meter.env,
-		expectedDeletingAt: '2098-12-31 00:00:00',
-	})
-	expect(
-		sqlite.prepare(`SELECT deleting_at FROM users WHERE id = 1`).get(),
-	).toEqual({ deleting_at: '2099-01-01 00:00:00' })
-	expect(await meterA.readDeletionState()).toEqual({
-		deletingAt: '2099-01-01 00:00:00',
-	})
+	expect(h.d1DeletingAt()).toEqual({ deleting_at: fence })
+	expect(await h.meterA.readDeletionState()).toEqual({ deletingAt: fence })
 })

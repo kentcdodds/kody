@@ -3,7 +3,7 @@ id: secret_backed_integration
 title: Secret-backed integrations
 summary:
   Default non-OAuth recipe for secret-backed integrations: research auth,
-  collect secrets through /account/secrets/new, run a smoke test, build the
+  collect secrets through /connect/secret-set, run a smoke test, build the
   downstream package, then surface package secret approval links (prefer
   bulk) before calling the work complete.
 category: platform
@@ -27,7 +27,7 @@ This is the default path for many automation-oriented integrations:
 Keep the integration flow simple:
 
 1. research the provider's auth requirements (see step 1 below)
-2. collect the required secret values through `/account/secrets/new`
+2. collect the required secret values through `/connect/secret-set`
 3. run one real authenticated smoke test
 4. only then build the downstream package or workflow
 
@@ -50,7 +50,7 @@ smoke-test path is unclear.
    - Use `search` first for saved secret references.
    - Use `kody.secretList({})` inside `execute` only when you need the current
      runtime metadata.
-3. If any secret is missing, stop and send the user to `/account/secrets/new`.
+3. If any secret is missing, stop and send the user to `/connect/secret-set`.
    - Ask for each missing secret by name.
    - Include the provider dashboard URL and short creation steps when helpful.
    - Do **not** ask the user to paste the secret into chat.
@@ -70,16 +70,17 @@ smoke-test path is unclear.
      browser-side forms, or hosted callbacks.
 8. After the package is saved or published, finish package secret approval when
    needed.
-   - Self-authored packages and adopted forks (`communityForkAdopt`) get
-     automatic read/use access to user secrets (mutations still need an
-     `allowed_packages` grant); unadopted community forks still need explicit
-     package approval for read/use, or adoption after review.
+   - Self-authored packages and owner-adopted forks get automatic read/use
+     access to user secrets (mutations still need an `allowed_packages` grant);
+     unadopted community forks still need explicit package approval for
+     read/use, or adoption after review.
    - An ad hoc `execute` smoke test does **not** grant package secret access for
      community forks.
    - Read `pending_secret_package_approvals` from `packageSave` or
      `packagePublishExternalPush` (null for self-authored / adopted packages).
-   - When present, either review the source and call `communityForkAdopt`, or
-     send `bulk_approval_url` / each `approval_url`.
+   - When present, either review the source and send the owner the adoption link
+     from `communityForkAdopt` (agents cannot adopt), or send
+     `bulk_approval_url` / each `approval_url`.
    - Wait for the user to approve or for adoption (when required), then verify
      from `execute` with a static `kody:@scope/package/export` import before
      treating the package as complete. Prefer a read-only export or a
@@ -138,9 +139,9 @@ Rules:
 - For Basic Auth derived from two secrets, use `secretHeaders.basic(...)` from
   `kody:runtime` (see the secrets usage docs).
 
-## When `/account/secrets/new` is enough
+## When `/connect/secret-set` is enough
 
-In the common case, `/account/secrets/new` is the whole setup surface.
+In the common case, `/connect/secret-set` is the whole setup surface.
 
 Use it when:
 
@@ -159,10 +160,10 @@ Do **not** build one just to:
 - collect a normal API key or token
 - collect an account ID or other readable config
 - work around the need to ask the user for a secret through
-  `/account/secrets/new`
+  `/connect/secret-set`
 
 A package app is the exception when the setup requires something
-`/account/secrets/new` cannot express cleanly, such as:
+`/connect/secret-set` cannot express cleanly, such as:
 
 - browser-side OAuth or hosted callback handling
 - a provider-specific setup wizard with multiple non-secret choices
@@ -178,14 +179,14 @@ For a new secret-backed integration, the default response shape is:
 
 1. state the auth requirement you found
 2. ask the user to save the required secret or secrets through
-   `/account/secrets/new`
+   `/connect/secret-set`
 3. say you will run a smoke test after they confirm setup
 4. say you will build the package only after the smoke test passes
 
 Example:
 
 - \"This API uses an account ID plus a token. Please save `providerToken`
-  through `/account/secrets/new`. I will keep `providerAccountId` as readable
+  through `/connect/secret-set`. I will keep `providerAccountId` as readable
   config (memory or package storage), run a real authenticated smoke test, and
   then build the package.\"
 
@@ -193,15 +194,15 @@ Example:
 
 Avoid these mistakes:
 
-- building a package app before checking whether `/account/secrets/new` is
-  enough
+- building a package app before checking whether `/connect/secret-set` is enough
 - saving readable config as a secret
 - saving the downstream package before the smoke test passes
 - assuming a saved secret automatically approves outbound hosts
 - treating an ad hoc `execute` smoke test as package secret approval for a
   community-forked package
 - marking an unadopted community-forked secret-using package complete without
-  adopting after review (`communityForkAdopt`) or sending package approval links
-  (prefer the bulk approval URL when multiple secrets need access)
+  sending the adoption link after review (`communityForkAdopt`) or package
+  approval links (prefer the bulk approval URL when multiple secrets need
+  access)
 - inventing a provider-specific flow when one or two secrets plus a smoke test
   would do

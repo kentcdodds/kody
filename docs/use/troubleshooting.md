@@ -132,6 +132,7 @@ reset email.
 ## Job, webhook, or package app failed
 
 Open **[`/account/activity`](./activity.md)** (failures-first) or ask your agent
-to use **`runSummary`** / **`runList`** / **`runGet`**. Successful key-less
-ad-hoc **`execute`** calls are not stored there — only execute failures, keyed
-execute runs (including successes), and other runtime surfaces.
+to use **`runSummary`** / **`runList`** / **`runGet`**. Ad-hoc **`execute`**
+runs, including successes, are stored there with jobs, webhooks, and other
+surfaces. Switch Activity to **Recent runs** (or pass `status: success`) to see
+them; Open errors hides successes.

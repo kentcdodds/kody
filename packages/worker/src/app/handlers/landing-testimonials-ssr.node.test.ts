@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { createBlogPostHandler } from '#app/handlers/blog.tsx'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { getBlogPost, getReadNextBlogPost } from '#worker/blog/catalog.ts'
@@ -58,7 +58,7 @@ function createTestEnv() {
 }
 
 test('homepage carousel SSR keeps short quotes and story links only for vignettes', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const response = await renderAppPage({
 		request: new Request('https://example.com/'),
@@ -67,10 +67,11 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	})
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(3)
+	expect(html.match(/class="landing-testimonial-story"/g)).toHaveLength(4)
 	expect(html).toContain('href="/blog/early-kody-users#josh-tomaino"')
 	expect(html).toContain('href="/blog/early-kody-users#jett-hays"')
 	expect(html).toContain('href="/blog/early-kody-users#gabriel-alegria"')
+	expect(html).toContain('href="/blog/early-kody-users#maciek-sitkowski"')
 	expect(html).toContain('Gabriel Alegría')
 	expect(html).toContain('src="/images/testimonials/gabriel-alegria.webp"')
 	expect(html).toContain(
@@ -84,11 +85,13 @@ test('homepage carousel SSR keeps short quotes and story links only for vignette
 	expect(html).not.toContain('landing-testimonial-initials')
 })
 
-test('early-users blog post SSR renders approved vignettes and heading anchors', async () => {
-	resetDataCacheForTests()
+test('case studies blog post SSR renders approved vignettes and heading anchors', async () => {
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const post = getBlogPost(landingTestimonialsStorySlug)
 	expect(post).toBeDefined()
+	expect(post?.title).toBe('Case studies')
+	expect(post?.placeholder).toBe(false)
 	const env = createTestEnv()
 	const response = await createBlogPostHandler(env).handler({
 		request: new Request(
@@ -99,9 +102,31 @@ test('early-users blog post SSR renders approved vignettes and heading anchors',
 	expect(response.status).toBe(200)
 	const html = await response.text()
 
+	expect(html).toContain('Case studies')
 	expect(html).toContain('id="josh-tomaino"')
 	expect(html).toContain('id="jett-hays"')
 	expect(html).toContain('id="gabriel-alegria"')
+	expect(html).toContain('id="maciek-sitkowski"')
 	expect(html).toContain('Gabriel Alegría')
+	expect(html).toContain('Maciek Sitkowski')
 	expect(getReadNextBlogPost(landingTestimonialsStorySlug)).not.toBeNull()
+})
+
+test('case studies page SSR renders all vignettes and stable anchors', async () => {
+	invalidateCommunityPublicCache()
+	setAuthSessionSecret(testCookieSecret)
+	const response = await renderAppPage({
+		request: new Request('https://example.com/case-studies'),
+		env: createTestEnv(),
+		loaderData: {},
+	})
+	expect(response.status).toBe(200)
+	const html = await response.text()
+	expect(html).toContain('id="josh-tomaino"')
+	expect(html).toContain('id="jett-hays"')
+	expect(html).toContain('id="gabriel-alegria"')
+	expect(html).toContain('id="maciek-sitkowski"')
+	expect(html).toContain('Maciek Sitkowski')
+	expect(html).toContain('Frontend Developer, Keto-Mojo')
+	expect(html).toContain('/blog/early-kody-users')
 })

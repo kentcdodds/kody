@@ -2,17 +2,20 @@ import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	buildComputeOverageHowToReduce,
 	computeMonthlyOverage,
-	computeOverageBillingPolicy,
 	computeOverageIncludePercent,
 	computeOverageResourceVisibility,
 	computeOverageWarningResourceLabels,
-	resolveComputeOverageDisposition,
-	type ComputeOverageDisposition,
+	isCustomerFacingComputeMeter,
+	resolveComputeIncludeCreditsStatus,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
-import { type EntitlementLadder, type PlanName } from '#universal/plans.ts'
+import {
+	type CreditWalletState,
+	type EntitlementLadder,
+	type PlanName,
+} from '#universal/plans.ts'
 import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
-import { isComputeOverageChargingEnabled } from './compute-overage-charging.ts'
+import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { readMonthlyComputeUsage } from './compute-overage-usage.ts'
 
 export type ComputeOverageUsageRow = {
@@ -30,70 +33,51 @@ export type ComputeOverageUsageRow = {
 
 export async function readAccountComputeOverage(input: {
 	db: D1Database
-	userId: number | null
 	stableUserId: string
 	plan: PlanName
 	ladder: EntitlementLadder
-	hasStripeCustomer: boolean
+	creditWallet: CreditWalletState
 	now: Date
 }): Promise<AccountUsageComputeOverage> {
 	const month = utcMonthKey(input.now)
-	const [usage, chargingEnabled] = await Promise.all([
-		readMonthlyComputeUsage({
-			db: input.db,
-			stableUserId: input.stableUserId,
-			month,
-		}),
-		isComputeOverageChargingEnabled(input.db, input.userId),
-	])
+	const usage = await readMonthlyComputeUsage({
+		db: input.db,
+		stableUserId: input.stableUserId,
+		month,
+	})
 	const overage = computeMonthlyOverage({
 		plan: input.plan,
 		ladder: input.ladder,
+		creditWallet: input.creditWallet,
 		uniqueWorkerDays: usage.uniqueWorkerDays,
 		durableObjectRowsRead: usage.durableObjectRowsRead,
 	})
-	const uniqueWorkerDayPercent =
-		computeOverageIncludePercent(
-			usage.uniqueWorkerDays,
-			overage.includedUniqueWorkerDays,
-		) ?? 0
-	const durableObjectRowsReadPercent =
-		computeOverageIncludePercent(
-			usage.durableObjectRowsRead,
-			overage.includedDurableObjectRowsRead,
-		) ?? 0
-	const disposition = resolveComputeOverageDisposition({
-		plan: input.plan,
-		ladder: input.ladder,
-		overage,
-		hasStripeCustomer: input.hasStripeCustomer,
-		chargingEnabled,
-		policy: computeOverageBillingPolicy,
-	})
+	// Both debit meters are customer-facing (Worker compute + Rows read).
+	const meters = [
+		toComputeMeter({
+			resource: 'unique_worker_days',
+			current: usage.uniqueWorkerDays,
+			include: overage.includedUniqueWorkerDays,
+			plan: input.plan,
+			creditWallet: input.creditWallet,
+		}),
+		toComputeMeter({
+			resource: 'durable_object_rows_read',
+			current: usage.durableObjectRowsRead,
+			include: overage.includedDurableObjectRowsRead,
+			plan: input.plan,
+			creditWallet: input.creditWallet,
+		}),
+	].filter((meter) => isCustomerFacingComputeMeter(meter.resource))
 	return {
-		meters: [
-			toComputeMeter({
-				resource: 'unique_worker_days',
-				current: usage.uniqueWorkerDays,
-				include: overage.includedUniqueWorkerDays,
-				percentOfLimit: uniqueWorkerDayPercent,
-				disposition,
-				legacyUnbilled: overage.legacyUnbilled,
-			}),
-			toComputeMeter({
-				resource: 'durable_object_rows_read',
-				current: usage.durableObjectRowsRead,
-				include: overage.includedDurableObjectRowsRead,
-				percentOfLimit: durableObjectRowsReadPercent,
-				disposition,
-				legacyUnbilled: overage.legacyUnbilled,
-			}),
-		],
-		disposition,
-		totalCents: overage.totalCents,
-		chargingEnabled,
-		hasStripeCustomer: input.hasStripeCustomer,
-		legacyUnbilled: overage.legacyUnbilled,
+		meters,
+		creditWallet: input.creditWallet,
+		creditsStatus: resolveComputeIncludeCreditsStatus({
+			plan: input.plan,
+			creditWallet: input.creditWallet,
+			pastInclude: meters.some((meter) => meter.percentOfLimit > 1),
+		}),
+		creditsCostMicroUsd: overage.creditsCostMicroUsd,
 	}
 }
 
@@ -114,9 +98,14 @@ export function toComputeOverageUsageRows(
 	}))
 }
 
+/**
+ * Monthly include rows for `usageGet` warnings: only when crossing the
+ * include would stop runs (see {@link computeIncludeWarningPutsAccessAtRisk}).
+ */
 export function computeOverageUsageWarningRows(
 	overage: AccountUsageComputeOverage,
 ): Array<ComputeOverageUsageRow> {
+	if (!computeIncludeWarningPutsAccessAtRisk(overage.creditWallet)) return []
 	return toComputeOverageUsageRows(overage).filter(
 		(row) => row.overEightyPercent,
 	)
@@ -126,26 +115,29 @@ function toComputeMeter(input: {
 	resource: ComputeOverageWarningResource
 	current: number
 	include: number
-	percentOfLimit: number
-	disposition: ComputeOverageDisposition
-	legacyUnbilled: boolean
+	plan: PlanName
+	creditWallet: CreditWalletState
 }) {
 	const visibility = computeOverageResourceVisibility[input.resource]
+	const percentOfLimit =
+		computeOverageIncludePercent(input.current, input.include) ?? 0
 	return {
 		resource: input.resource,
 		label: computeOverageWarningResourceLabels[input.resource],
 		whatCounts: visibility.whatCounts,
 		howToReduce: buildComputeOverageHowToReduce(
 			input.resource,
-			input.legacyUnbilled
-				? 'skip_legacy'
-				: input.percentOfLimit >= 1
-					? input.disposition
-					: 'skip_zero',
+			input.plan,
+			input.creditWallet,
 		),
 		current: input.current,
 		include: input.include,
-		percentOfLimit: input.percentOfLimit,
-		overEightyPercent: input.percentOfLimit >= 0.8,
+		percentOfLimit,
+		overEightyPercent: percentOfLimit >= 0.8,
+		creditsStatus: resolveComputeIncludeCreditsStatus({
+			plan: input.plan,
+			creditWallet: input.creditWallet,
+			pastInclude: percentOfLimit > 1,
+		}),
 	}
 }

@@ -9,6 +9,7 @@ export const emailMessageDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailMessageDelete',
+		orgPermission: 'email:delete',
 		description:
 			'Delete one stored email message owned by the signed-in user. Frees a stored_email_messages slot so new inbound mail can be accepted again.',
 		keywords: [

@@ -1,5 +1,8 @@
 import { expect, test, vi } from 'vitest'
-import { REMIX_FRAME_TARGET_HEADER } from '#universal/frame-constants.ts'
+import {
+	REMIX_FRAME_HEADER,
+	REMIX_FRAME_TARGET_HEADER,
+} from '#universal/frame-constants.ts'
 import {
 	assertRenderableFrameResponse,
 	createFrameResolveInit,
@@ -24,6 +27,7 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	expect((getInit.headers as Headers).get(REMIX_FRAME_TARGET_HEADER)).toBe(
 		'community-listings',
 	)
+	expect((getInit.headers as Headers).get(REMIX_FRAME_HEADER)).toBe('true')
 
 	const headInit = createFrameResolveInit({
 		method: 'HEAD',
@@ -31,6 +35,7 @@ test('frame resolve never attaches a body to GET or HEAD, including lowercase me
 	})
 	expect(headInit.method).toBe('HEAD')
 	expect(headInit.body).toBeUndefined()
+	expect((headInit.headers as Headers).get(REMIX_FRAME_HEADER)).toBe('true')
 
 	const postInit = createFrameResolveInit({
 		method: 'post',

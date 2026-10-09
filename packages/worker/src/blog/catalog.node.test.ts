@@ -1,4 +1,6 @@
 import { expect, test } from 'vitest'
+import { blogPostSlugs } from '#universal/blog-post-slugs.ts'
+import { caseStudies } from '#universal/case-studies.ts'
 import {
 	getBlogPost,
 	getReadNextBlogPost,
@@ -7,6 +9,10 @@ import {
 } from './catalog.ts'
 import { parseBlogPostMarkdown } from './parse-frontmatter.ts'
 import { buildBlogRssXml } from './rss.ts'
+
+const markdown = (frontmatter: string, body = 'Body\n') =>
+	`---\n${frontmatter}\n---\n\n${body}`
+const baseFrontmatter = 'date: 2026-08-20\ndescription: Nope\norder: 1'
 
 test('normalizeMarkdownPhraseSource strips blockquote markers and wrapping', () => {
 	expect(
@@ -17,21 +23,15 @@ test('normalizeMarkdownPhraseSource strips blockquote markers and wrapping', () 
 })
 
 test('parseBlogPostMarkdown reads frontmatter and rejects invalid input', () => {
-	const post = parseBlogPostMarkdown(
-		'sample',
-		`---
-title: Sample title
-date: 2026-07-18
-description: A short description for meta tags.
-order: 3
----
-
-# Hello
-
-Body paragraph.
-`,
-	)
-	expect(post).toEqual({
+	expect(
+		parseBlogPostMarkdown(
+			'sample',
+			markdown(
+				'title: Sample title\ndate: 2026-07-18\ndescription: A short description for meta tags.\norder: 3',
+				'# Hello\n\nBody paragraph.\n',
+			),
+		),
+	).toEqual({
 		slug: 'sample',
 		title: 'Sample title',
 		date: '2026-07-18',
@@ -44,125 +44,69 @@ Body paragraph.
 		body: '# Hello\n\nBody paragraph.\n',
 	})
 
-	const multiline = parseBlogPostMarkdown(
-		'multiline',
-		`---
-title: Multiline
-date: 2026-07-19
-description:
-  First sentence about the post.
-  Second sentence for meta tags.
-order: 2
----
-
-Body
-`,
-	)
-	expect(multiline.description).toBe(
-		'First sentence about the post. Second sentence for meta tags.',
-	)
-
-	expect(() =>
+	expect(
 		parseBlogPostMarkdown(
-			'bad-date',
-			`---
-title: Bad date
-date: 07/20/2026
-description: Nope
-order: 1
----
+			'multiline',
+			markdown(
+				'title: Multiline\ndate: 2026-07-19\ndescription:\n  First sentence about the post.\n  Second sentence for meta tags.\norder: 2',
+			),
+		).description,
+	).toBe('First sentence about the post. Second sentence for meta tags.')
 
-Body
-`,
-		),
-	).toThrow(/invalid frontmatter "date"/)
-
-	expect(() =>
+	expect(
 		parseBlogPostMarkdown(
-			'missing-title',
-			`---
-date: 2026-07-20
-description: Nope
-order: 1
----
-
-Body
-`,
+			'reviewed',
+			markdown(
+				`title: Reviewed\n${baseFrontmatter}\nplaceholder: false\nimage: /images/kody-vs-executor.webp\nimageAlt: Kody and the Executor logo size each other up.`,
+			),
 		),
-	).toThrow(/missing frontmatter "title"/)
-
-	const reviewed = parseBlogPostMarkdown(
-		'reviewed',
-		`---
-title: Reviewed
-date: 2026-08-20
-description: A reviewed post.
-order: 1
-placeholder: false
-image: /images/kody-vs-executor.webp
-imageAlt: Kody and the Executor logo size each other up.
----
-
-Body
-`,
-	)
-	expect(reviewed).toMatchObject({
+	).toMatchObject({
 		placeholder: false,
 		image: '/images/kody-vs-executor.webp',
 		imageAlt: 'Kody and the Executor logo size each other up.',
 		ogImage: null,
 	})
 
-	const customOg = parseBlogPostMarkdown(
-		'custom-og',
-		`---
-title: Custom OG
-date: 2026-08-20
-description: A post with a static social image.
-order: 1
-image: /images/kody-vs-executor.webp
-imageAlt: Headline art.
-ogImage: /images/kody-vs-executor.webp
----
-
-Body
-`,
-	)
-	expect(customOg.ogImage).toBe('/images/kody-vs-executor.webp')
-
-	expect(() =>
+	expect(
 		parseBlogPostMarkdown(
-			'bad-placeholder',
-			`---
-title: Bad placeholder
-date: 2026-08-20
-description: Nope
-order: 1
-placeholder: maybe
----
+			'custom-og',
+			markdown(
+				`title: Custom OG\n${baseFrontmatter}\nimage: /images/kody-vs-executor.webp\nimageAlt: Headline art.\nogImage: /images/kody-vs-executor.webp`,
+			),
+		).ogImage,
+	).toBe('/images/kody-vs-executor.webp')
 
-Body
-`,
-		),
-	).toThrow(/invalid frontmatter "placeholder"/)
-
-	expect(() =>
-		parseBlogPostMarkdown(
-			'bad-image',
-			`---
-title: Bad image
-date: 2026-08-20
-description: Nope
-order: 1
-image: https://example.com/image.webp
-imageAlt: Nope
----
-
-Body
-`,
-		),
-	).toThrow(/invalid frontmatter "image"/)
+	for (const [frontmatter, error] of [
+		[
+			'title: Bad date\ndate: 07/20/2026\ndescription: Nope\norder: 1',
+			/invalid frontmatter "date"/,
+		],
+		[baseFrontmatter, /missing frontmatter "title"/],
+		[
+			`title: Bad placeholder\n${baseFrontmatter}\nplaceholder: maybe`,
+			/invalid frontmatter "placeholder"/,
+		],
+		[
+			`title: Bad image\n${baseFrontmatter}\nimage: https://example.com/image.webp\nimageAlt: Nope`,
+			/invalid frontmatter "image"/,
+		],
+	] as const) {
+		expect(() => parseBlogPostMarkdown('bad', markdown(frontmatter))).toThrow(
+			error,
+		)
+	}
 })
+
+function expectPost(
+	slug: string,
+	fields: Record<string, unknown>,
+	phrases: Array<string>,
+) {
+	const post = getBlogPost(slug)
+	expect(post).toMatchObject(fields)
+	const body = normalizeMarkdownPhraseSource(post?.body ?? '')
+	expect(phrases.filter((phrase) => !body.includes(phrase))).toEqual([])
+}
 
 test('blog catalog enumerates posts with required fields and slug lookup', () => {
 	const posts = listBlogPosts()
@@ -178,73 +122,85 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 		expect(getBlogPost(post.slug)).toEqual(post)
 	}
 
-	const earlyUsers = getBlogPost('early-kody-users')
-	expect(earlyUsers?.title).toBe('Early Kody users')
-	expect(earlyUsers?.date).toBe('2026-09-08')
-	expect(earlyUsers?.placeholder).toBe(true)
-	const earlyUsersBody = normalizeMarkdownPhraseSource(earlyUsers?.body ?? '')
-	expect(earlyUsersBody).toContain(
-		'funnels all my tools into one secure MCP I can manage myself',
+	// Client-safe scarf allowlist must stay in lockstep with the catalog.
+	expect([...blogPostSlugs].sort()).toEqual(
+		posts.map((post) => post.slug).sort(),
 	)
-	expect(earlyUsersBody).toContain(
-		"life or death for some of the world's most endangered species",
-	)
-	expect(earlyUsersBody).toContain('## Josh Tomaino')
-	expect(earlyUsersBody).toContain('## Jett Hays')
-	expect(earlyUsersBody).toContain('## Gabriel Alegría')
 
-	const comparison = getBlogPost('kody-vs-executor')
-	expect(comparison?.title).toBe('Kody vs Executor?')
-	expect(comparison?.date).toBe('2026-08-20')
-	expect(comparison?.placeholder).toBe(false)
-	const openclaw = getBlogPost('openclaw-2-needs-a-home')
-	expect(openclaw?.title).toBe('OpenClaw 2 needs a home')
-	expect(openclaw?.date).toBe('2026-08-31')
-	expect(openclaw?.placeholder).toBe(true)
-	expect(openclaw?.image).toBe('/images/openclaw-2-needs-a-home.webp')
-	expect(openclaw?.ogImage).toBe('/images/openclaw-2-needs-a-home-og.jpg')
-	expect((openclaw?.body ?? '').replace(/\s+/g, ' ')).toContain(
-		'openclaw mcp add kody',
+	expectPost(
+		'early-kody-users',
+		{ title: 'Case studies', date: '2026-09-08', placeholder: false },
+		[
+			'funnels all my tools into one secure MCP I can manage myself',
+			"life or death for some of the world's most endangered species",
+			'## Josh Tomaino',
+			'## Jett Hays',
+			'## Gabriel Alegría',
+			'## Maciek Sitkowski',
+			'shared layer behind how I work with agents',
+		],
 	)
-	const factoryLoop = getBlogPost(
+	const caseStudiesPost = getBlogPost('early-kody-users')
+	const caseStudiesBlogSource = normalizeMarkdownPhraseSource(
+		caseStudiesPost?.body ?? '',
+	)
+	for (const study of caseStudies) {
+		expect(caseStudiesBlogSource).toContain(
+			study.body.replace(/\s+/g, ' ').trim(),
+		)
+		expect(caseStudiesPost?.body).toContain(`## ${study.name}`)
+	}
+	expectPost(
+		'kody-vs-executor',
+		{
+			title: 'Kody vs Executor?',
+			date: '2026-08-20',
+			placeholder: false,
+			image: '/images/kody-vs-executor.webp',
+			ogImage: '/images/kody-vs-executor-og.jpg',
+		},
+		[
+			'best of both worlds',
+			'Leave one `execute`',
+			'I wrote this on August 20, 2026. Both products will keep moving. The comparison is accurate as of that date.',
+		],
+	)
+	expectPost(
+		'openclaw-2-needs-a-home',
+		{
+			title: 'OpenClaw 2 needs a home',
+			date: '2026-08-31',
+			placeholder: true,
+			image: '/images/openclaw-2-needs-a-home.webp',
+			ogImage: '/images/openclaw-2-needs-a-home-og.jpg',
+		},
+		['openclaw mcp add kody'],
+	)
+	expectPost(
 		'how-to-turn-agent-work-into-software-you-own',
-	)
-	expect(factoryLoop?.title).toBe(
-		'How to turn agent work into software you own',
-	)
-	expect(factoryLoop?.date).toBe('2026-08-31')
-	expect(factoryLoop?.order).toBe(8)
-	expect(factoryLoop?.placeholder).toBe(true)
-	expect(factoryLoop?.image).toBe('/images/kody-factory-map.webp')
-	expect(factoryLoop?.ogImage).toBe('/images/kody-factory-map-og.jpg')
-	const factoryLoopBody = (factoryLoop?.body ?? '').replace(/\s+/g, ' ')
-	expect(factoryLoopBody).toContain('I call that the factory loop')
-	expect(factoryLoopBody).toContain('https://kody.codes/docs/how-kody-works')
-	expect(factoryLoopBody).toContain('https://kody.codes/onboarding')
-	expect(factoryLoopBody).toContain(
-		'https://kody.codes/blog/your-assistants-home',
-	)
-	expect(factoryLoopBody).toContain(
-		'https://kody.codes/blog/the-automations-you-never-built',
-	)
-	expect(factoryLoopBody).toContain(
-		'https://kody.codes/blog/zero-inference-calls',
-	)
-	expect(factoryLoopBody).toContain(
-		'https://kody.codes/blog/every-install-is-a-fork-you-own',
-	)
-	expect(comparison?.image).toBe('/images/kody-vs-executor.webp')
-	expect(comparison?.ogImage).toBe('/images/kody-vs-executor-og.jpg')
-	const comparisonBody = (comparison?.body ?? '').replace(/\s+/g, ' ')
-	expect(comparisonBody).toContain('best of both worlds')
-	expect(comparisonBody).toContain('Leave one `execute`')
-	expect(comparisonBody).toContain(
-		'I wrote this on August 20, 2026. Both products will keep moving. The comparison is accurate as of that date.',
+		{
+			title: 'How to turn agent work into software you own',
+			date: '2026-08-31',
+			order: 8,
+			placeholder: true,
+			image: '/images/kody-factory-map.webp',
+			ogImage: '/images/kody-factory-map-og.jpg',
+		},
+		[
+			'I call that the factory loop',
+			'https://kody.codes/docs/how-kody-works',
+			'https://kody.codes/onboarding',
+			'https://kody.codes/blog/your-assistants-home',
+			'https://kody.codes/blog/the-automations-you-never-built',
+			'https://kody.codes/blog/zero-inference-calls',
+			'https://kody.codes/blog/every-install-is-a-fork-you-own',
+		],
 	)
 	expect(getBlogPost('does-not-exist')).toBeNull()
 
 	const placeholderPosts = posts.filter(
-		(post) => post.slug !== 'kody-vs-executor',
+		(post) =>
+			post.slug !== 'kody-vs-executor' && post.slug !== 'early-kody-users',
 	)
 	expect(placeholderPosts.length).toBeGreaterThan(0)
 	expect(placeholderPosts.every((post) => post.placeholder)).toBe(true)
@@ -263,25 +219,18 @@ test('blog catalog enumerates posts with required fields and slug lookup', () =>
 test('getReadNextBlogPost follows catalog order and wraps to the first post', () => {
 	const posts = listBlogPosts()
 	expect(posts.length).toBeGreaterThan(1)
-
-	for (let index = 0; index < posts.length; index += 1) {
-		const current = posts[index]!
-		const expected = posts[(index + 1) % posts.length]!
-		expect(getReadNextBlogPost(current.slug)).toEqual({
-			slug: expected.slug,
-			title: expected.title,
-		})
-	}
-
+	expect(posts.map((post) => getReadNextBlogPost(post.slug))).toEqual(
+		posts.map((_, index) => {
+			const next = posts[(index + 1) % posts.length]!
+			return { slug: next.slug, title: next.title }
+		}),
+	)
 	expect(getReadNextBlogPost('does-not-exist')).toBeNull()
 })
 
 test('buildBlogRssXml escapes markup and includes every catalog post', () => {
 	const posts = listBlogPosts()
-	const xml = buildBlogRssXml({
-		origin: 'https://heykody.dev',
-		posts,
-	})
+	const xml = buildBlogRssXml({ origin: 'https://heykody.dev', posts })
 
 	expect(xml).toContain('<?xml version="1.0" encoding="UTF-8"?>')
 	expect(xml).toContain('<rss version="2.0">')

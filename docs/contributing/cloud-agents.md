@@ -23,8 +23,13 @@ partway through (around `libwidevinecdm.so`), and `UV_USE_IO_URING=0` does not
 stop it. The browser zip downloads fine; only the built-in extraction hangs.
 
 If browsers are ever missing (e.g. a Playwright version bump changes the
-revision), do **not** rely on `playwright install`. Instead download and extract
-manually with native `unzip`:
+revision), do **not** rely on `playwright install`. Run
+`npm run test:e2e:ensure`: on Cloud Agent Linux it downloads the `browsers.json`
+revision and extracts with native `unzip`
+(`tools/install-playwright-browsers-unzip.ts`). Other machines still use
+`playwright install` (with `--with-deps` locally). A Cloud Agent snapshot
+install should run `test:e2e:ensure` after `npm install` so a Playwright bump
+does not leave stale `chromium-1208` markers. To do the same steps by hand:
 
 1. Get the revision + Chrome-for-Testing version from
    `node_modules/playwright-core/browsers.json` and the CDN URL printed by
@@ -32,12 +37,19 @@ manually with native `unzip`:
    `https://cdn.playwright.dev/builds/cft/<cft-version>/linux64/chrome-linux64.zip`
    and `.../chrome-headless-shell-linux64.zip`).
 2. `curl -fsSL -o /tmp/c.zip <chrome-linux64.zip>` then
-   `unzip -q /tmp/c.zip -d ~/.cache/ms-playwright/chromium-<rev>/` and
-   `touch ~/.cache/ms-playwright/chromium-<rev>/INSTALLATION_COMPLETE`.
+   `unzip -q /tmp/c.zip -d ~/.cache/ms-playwright/chromium-<rev>/`.
 3. Repeat for the headless shell into
    `~/.cache/ms-playwright/chromium_headless_shell-<rev>/` (Playwright launches
    headless via the separate headless-shell binary, so both are required).
-4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries.
+4. `chmod +x` the `chrome` and `chrome-headless-shell` binaries, then
+   `touch INSTALLATION_COMPLETE` in each revision directory.
+
+`control-kody doctor` reads the `chromium` and `chromium-headless-shell`
+revisions from `node_modules/playwright-core/browsers.json`. It passes only when
+both `~/.cache/ms-playwright/chromium-<rev>/INSTALLATION_COMPLETE` and
+`chromium_headless_shell-<rev>/INSTALLATION_COMPLETE` exist. A marker from
+another revision fails, and the failure prints the unzip steps for that
+revision.
 
 ## Nx remote cache
 
@@ -56,7 +68,7 @@ Use `CI=1` on cached test commands (the repo scripts already do). Leave the
 variables unset to run without remote cache. Those scripts run through
 `tools/run-nx.ts` so a mid-run `/v1/cache` transport flake cannot fail
 `test:push` or validate after the tasks already succeeded. See
-[`packages/nx-cache/readme.md`](../packages/nx-cache/readme.md).
+[`packages/nx-cache/readme.md`](../../packages/nx-cache/readme.md).
 
 ## Git hooks
 
@@ -67,7 +79,11 @@ dispatcher with Husky: `core.hooksPath` stays on the dispatcher,
 `.cursor-original-hooks-path` points at `.husky/_`, and `pre-push` /
 `pre-commit` / `commit-msg` become dispatcher symlinks when those user scripts
 exist. `git push` then runs `npm run test:push` (`test:node` + `test:workers`)
-and can upload those Nx remote-cache artifacts before GitHub Actions starts.
+when the push changes a non-docs path, and can upload those Nx remote-cache
+artifacts before GitHub Actions starts. A docs-only push skips the suites. A
+push that touches `skills-lock.json` or `.agents/skills/` still runs
+`npm run skills-lock:check`.
+
 Playwright E2E is not in the push hook: that suite is heavier than the unit
 gate, and a failed e2e leg skips the unit gate when the push is retried with
 `--no-verify`. Bundler artifacts live under `src/node_modules/.kody-generated/`
@@ -86,11 +102,68 @@ Cloud Agent environment `start` should run `npm run hooks:ensure` so a snapshot
 boot that skips `npm ci` still composes hooks after Cursor installs the
 dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
 
+## Dependency install
+
+Cloud Agent environment setup and local setup both run `npm install`. CI runs
+`npm ci`. A snapshot built before a lockfile bump still has the old
+`node_modules` after `git pull`; `npm run install:check` (pre-commit when the
+staged diff is not docs-only, plus prevalidate) and `control-kody doctor`'s
+`deps` check fail with `run npm ci` instead of downstream type/bundle errors. Do
+not treat a cached typecheck as proof the install matches the lockfile — run
+`install:check` (or `npm ci`) first. `npm install` keeps `package-lock.json`
+unchanged when every locked direct dependency satisfies the peer ranges its
+declared range can still reach, including optional peers.
+`npm run lockfile:check` (part of `npm run validate` and the CI static job)
+rejects a lockfile `npm install` would rewrite, such as an
+`@cloudflare/workers-types` pin older than wrangler's peer range. A boot can
+already show `package-lock.json` modified, often that `workers-types` bump,
+before you install anything yourself. Leave that diff unstaged. Restore it with
+`git restore package-lock.json` when you did not change dependencies. A pin
+update that `lockfile:check` asks for belongs in its own commit.
+
+## GitHub CLI
+
+Cloud Agent `gh` can read issues, PRs, and checks (`gh issue view`,
+`gh pr view`, `gh pr checks`). It cannot write GitHub issues or PR review-thread
+replies (`403` / GraphQL `Resource not accessible by integration`). That
+includes `gh issue comment`, `gh issue close`, `gh issue edit --add-label`, and
+review-thread replies.
+
+Write those with `kody:@kentcdodds/github/request` (kody-bot) or Cursor
+`ManagePullRequest` `post_comment` / `in_reply_to`. See
+[ship-pr](../../.agents/skills/ship-pr/SKILL.md).
+
+## GitHub token expiry mid-run
+
+The `x-access-token` baked into `~/.gitconfig` and `~/.config/gh/hosts.yml` at
+VM boot can stop working after tens of minutes (`git push` / `gh` report `401` /
+`Invalid username or token`). The metadata socket has no token endpoint. The
+environment rewrites those files on its own; there is no supported way to mint a
+replacement from this repo.
+
+When `git push` or `gh` fails with bad credentials:
+
+1. Confirm it: `gh auth status` and `git ls-remote origin HEAD`.
+2. Check whether the environment has rewritten the files (`stat ~/.gitconfig`
+   `~/.config/gh/hosts.yml`). If mtimes are still boot-time, wait and retry
+   those two commands. Observed rewrite delay has been on the order of 30–40
+   minutes; do not treat that as a contract.
+3. Once `gh auth status` is valid again, retry `git push`. Cursor
+   `ManagePullRequest` does not replace `git push`.
+4. Do **not** invent a Contents API / Git Data API / throwaway-repo transfer as
+   kody-bot. That path ships the wrong author and skips the standard AI
+   reviewer. If the token is still dead at the end of the run, park the PR and
+   say so.
+
+Kody `@kentcdodds/github/request` (kody-bot) can still comment, close, label,
+and read when the Cloud Agent git token is stale. Use it for GitHub API writes
+that ship-pr already routes through kody-bot — not for pushing the branch.
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Install deps       | `npm install`                                                                                                                                                               |
+| Install deps       | `npm ci` after pulling a lockfile bump; `npm run install:check` / `control-kody doctor` say so when `node_modules` lags                                                     |
 | Start or reuse dev | `npm run dev:ensure` (prints the resolved URL)                                                                                                                              |
 | Migrate local D1   | `npm run migrate:local`                                                                                                                                                     |
 | Seed test login    | `node tools/seed-test-data.ts --local` (see seeding note below)                                                                                                             |
@@ -118,27 +191,50 @@ dispatcher. The command is a no-op on machines without `~/.cursor/agent-hooks`.
   verification opens that real origin (for example `/onboarding`); do not
   substitute a `renderToString` dump of one component.
 - `npm run dev` starts the optional Cloudflare API mock, then Vite so origin SSR
-  and the client hydrate in one workerd graph. Generated platform, runtime,
-  jobs, and highlight configs join as Vite auxiliary workers (local D1/KV/DO
-  persistence). Non-TTY sessions print `App running at` only after `/health`
-  responds.
+  and the client hydrate in one workerd graph. Generated platform and runtime
+  configs join as Vite auxiliary workers, with the committed jobs and highlight
+  configs (local D1/KV/DO persistence). Non-TTY sessions print `App running at`
+  only after `/health` responds.
 - Default worker port is **3742** (`cli.ts`); the CLI picks a free port when
   3742 is taken and prints `App running at http://localhost:<port>`.
 - Run long-lived interactive `npm run dev` in tmux so the session survives tool
   timeouts. `dev:ensure` detaches the started process so the ensure command can
-  exit.
+  exit, tees that process to `.tmp/dev-server.log`, and prints
+  `Dev server log: <path>` so a later crash is readable without restarting.
 - Health check (no auth): `curl http://localhost:<port>/health` →
   `{"ok":true,"commitSha":...,"commit":...,"pullRequest":...,"deploy":...}`.
   Locally the extra fields are `null` unless a deploy var is set. Platform and
   runtime health paths (`/__platform/health`, `/__runtime/health`) 404 on the
-  origin port.
+  origin port. After `npm ci` or a merge that changes source under a running
+  `dev:ensure` process, `/health` can hang while workerd crash-loops. Stop that
+  Vite PID before `npm run test:e2e:run`; the e2e web server refuses to start
+  and names the leftover when 3742–3751 is listening but unhealthy.
 
 ## Environment file
 
 Copy `packages/worker/.env.example` to `packages/worker/.env` if missing.
-`dev:ensure` does this copy itself. `COOKIE_SECRET` and `SECRET_STORE_KEY` are
-required for local dev. The file does not create D1, KV, or Durable Object
-bindings.
+`dev:ensure` and `migrate:local` do this copy themselves. `COOKIE_SECRET` and
+`SECRET_STORE_KEY` are required for local dev. The file does not create D1, KV,
+or Durable Object bindings.
+
+## Local Kody execute (CLI)
+
+When this VM has Node ≥22 (Cloud Agents use Node 26) and `@kodycodes/cli`,
+prefer `npx @kodycodes/cli execute --local` over hosted MCP `execute` for
+one-off modules and smoke tests — including modules with static `kody:@…`
+imports (CLI downloads stamped modules via
+`POST /v1/local-execute/package-graph` and embeds them in local workerd; keep
+`--local`).
+
+Interactive / desktop agents prefer `cliCredentialBootstrap` (MCP session →
+one-shot CLI code) or `kody login`, and omit pasting `KODY_API_TOKEN`. Cloud
+Agents without interactive login may put a scoped `kody_at_…` `KODY_API_TOKEN`
+in the Cloud **environment** secrets/vars (not in the prompt), or call
+`cliCredentialBootstrap` from MCP and run the returned CLI command. Mint via MCP
+`api` `tokenCreate` only when bootstrap/login are unavailable; never paste the
+token into chat. Guide: [Local CLI execute](../guides/local-execute.md). Skill:
+[prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+Open API fallback: [Open API](../guides/open-api.md).
 
 ## Seeding a test account
 
@@ -147,7 +243,8 @@ After `npm run migrate:local`, seed the local fixture logins per
 the `admin` role) and `jane@example.com` / `ilikecode` (regular account). These
 credentials are local test fixtures only. The seed script resolves the worker
 Wrangler config automatically (same default as `wrangler-env.ts`), so
-`node tools/seed-test-data.ts --local` works without extra flags.
+`node tools/seed-test-data.ts --local` works without extra flags. Migrate and
+seed write D1 under `.wrangler/state`, the directory Vite persists.
 
 ## Local limitations
 
@@ -155,3 +252,12 @@ Wrangler config automatically (same default as `wrangler-env.ts`), so
   offline ranker when `WRANGLER_IS_LOCAL_DEV` is set (normal for `npm run dev`).
 - `/mcp` returns **401** without OAuth; use browser login or MCP E2E tests for
   authenticated MCP checks.
+- Package repo storage (Cloudflare Artifacts, the `ARTIFACTS` binding) is
+  remote-only. Wrangler treats that binding as an always-remote type; local
+  platform config strips it so `npm run dev` can start, and the origin test env
+  never binds it. `packageSave`, publish, and `packageGetGitRemote` / git-remote
+  flows then fail on a local origin — often with
+  `Binding ARTIFACTS needs to be run remotely`. Verify those paths on a PR
+  preview (`control-kody execute --origin <preview>` or
+  `package-create --origin <preview>`). Do not migrate, seed, and start
+  `npm run dev` just to exercise package source persistence.

@@ -110,8 +110,13 @@ export function toAdminCostVsPay(input: {
 	manualPlan?: string | null | undefined
 	username?: string | null | undefined
 	isOperator?: boolean
+	/** Plan include; omit for fleet estimates (Cloudflare account-wide 1,000). */
+	includedPerAccountMonth?: number
 }): AdminCostVsPay {
-	const cost = toAdminDynamicWorkerCost(input.uniqueWorkerDays)
+	const cost = toAdminDynamicWorkerCost(
+		input.uniqueWorkerDays,
+		input.includedPerAccountMonth,
+	)
 	const paid = estimatePaidListMrrUsdCents(input)
 	const paidUsd = paid.cents / 100
 	const risk = classifyAdminCostRisk({

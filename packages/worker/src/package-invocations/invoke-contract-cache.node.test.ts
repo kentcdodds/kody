@@ -1,18 +1,22 @@
 import { expect, test, vi } from 'vitest'
+import { type PackageInvokeInput } from '#worker/mcp/runtime-helper-manifest.ts'
+import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 import {
 	invalidateInvokeContractFreshness,
 	invokeContractFreshnessTtlMs,
 	loadModuleArtifactWithCommitCache,
+	resolvePackageAppSlugWithFreshnessCache,
 } from './invoke-contract-cache.ts'
 import {
 	ensureModuleArtifact,
 	loadInvokeManifestBySourceId,
+	resolveSavedPackage,
 } from './module-artifacts.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
 	getPlatformAccountByUsername: vi.fn(),
 	isPlatformAccountStableUserId: vi.fn(),
@@ -28,8 +32,8 @@ const mockModule = vi.hoisted(() => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
 }))
@@ -77,7 +81,7 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
  */
 const contractCheckLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
-	['saved package by kody id (D1)', mockModule.getSavedPackageByKodyId],
+	['saved package by kody id (D1)', mockModule.resolveSavedPackageRef],
 	['saved package by name (D1)', mockModule.getSavedPackageByName],
 	[
 		'platform account by username (D1)',
@@ -111,6 +115,10 @@ function clearContractCheckLoadCounters() {
 	}
 }
 
+const zeroContractCheckLoads = Object.fromEntries(
+	contractCheckLoadMocks.map(([label]) => [label, 0]),
+)
+
 function createFixture(input: {
 	userId: string
 	publishedCommit: string
@@ -120,7 +128,7 @@ function createFixture(input: {
 }) {
 	const suffix = input.suffix ?? input.userId
 	const sourceId = `source-${suffix}`
-	const savedPackage = {
+	const savedPackage: SavedPackageRecord = {
 		id: `pkg-${suffix}`,
 		userId: input.userId,
 		name: input.packageName ?? '@kentcdodds/sentry-triage',
@@ -130,8 +138,10 @@ function createFixture(input: {
 		searchText: null,
 		sourceId,
 		hasApp: false,
+		hasSkills: false,
 		hidden: false,
 		isPrivate: false,
+		lockedAt: null,
 		createdAt: '2026-07-01T00:00:00.000Z',
 		updatedAt: '2026-07-01T00:00:00.000Z',
 	}
@@ -191,9 +201,9 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 			: null
 	}
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: unknown, input: { userId: string; kodyId: string }) =>
-			byKodyId(input.userId, input.kodyId),
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: unknown, input: { userId: string; ref: string }) =>
+			byKodyId(input.userId, input.ref),
 	)
 	mockModule.getSavedPackageByName.mockImplementation(
 		async (_db: unknown, input: { userId: string; name: string }) => {
@@ -257,7 +267,12 @@ function createEnv() {
 	} as Env
 }
 
-async function runContractCheck(input: { userId: string; specifier?: string }) {
+async function runContractCheck(input: {
+	userId: string
+	specifier?: PackageInvokeInput['specifier']
+	callerKind?: 'package' | 'execute'
+	callingPackageId?: string
+}) {
 	return await checkPackageInvokeForRuntimeWithPreloads({
 		env: createEnv(),
 		baseUrl: 'https://kody.dev',
@@ -268,7 +283,38 @@ async function runContractCheck(input: { userId: string; specifier?: string }) {
 				input.specifier ?? 'kody:@kentcdodds/sentry-triage/get-issue-state',
 			options: { params: { issueId: 'issue-1' } },
 		},
+		callerKind: input.callerKind,
+		callingPackageId: input.callingPackageId,
 	})
+}
+
+function publishedCommitOf(
+	check: Awaited<ReturnType<typeof runContractCheck>>,
+) {
+	return check.result.ok ? check.result.contract.publishedCommit : null
+}
+
+function mockModuleArtifactRebuild(
+	fixture: Fixture,
+	files: Record<string, string>,
+	snapshotCreatedAt?: string | null,
+) {
+	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
+	mockModule.loadPublishedEntitySource.mockResolvedValue({
+		source: fixture.source,
+		files,
+		snapshotCreatedAt: snapshotCreatedAt ?? null,
+	})
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
+		ok: true,
+	})
+	mockModule.buildKodyModuleBundle.mockResolvedValue({
+		mainModule: 'main.js',
+		modules: { 'main.js': 'export default async () => ({ ok: true })' },
+		dependencies: [],
+		dynamicDependencies: [],
+	})
+	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
 }
 
 test('person package runtimes cannot invoke official platform packages', async () => {
@@ -281,193 +327,96 @@ test('person package runtimes cannot invoke official platform packages', async (
 			kodyId: 'github',
 		}),
 	})
-	mockModule.getSavedPackageById.mockImplementation(
-		async (_db: unknown, input: { userId: string; packageId: string }) =>
-			input.userId === 'user-1' && input.packageId === 'pkg-user-1'
-				? {
-						id: 'pkg-user-1',
-						userId: 'user-1',
-						name: '@kentcdodds/sentry-triage',
-						kodyId: 'sentry-triage',
-					}
-				: null,
-	)
-
-	const denied = await checkPackageInvokeForRuntimeWithPreloads({
-		env: createEnv(),
-		baseUrl: 'https://kody.dev',
-		operationName: 'packages.invoke',
-		userId: 'user-1',
-		rawInput: {
-			specifier: 'kody:@kody/github/get-issue-state',
-			options: { params: {} },
+	const callers = {
+		'pkg-user-1': {
+			userId: 'user-1',
+			name: '@kentcdodds/sentry-triage',
+			kodyId: 'sentry-triage',
 		},
-		callerKind: 'package',
-		callingPackageId: 'pkg-user-1',
-	})
-	expect(denied.result.ok).toBe(false)
-	expect(denied.result.message).toContain('not runnable from a person account')
-	expect(denied.preloads).toBeNull()
-
-	const fromExecute = await checkPackageInvokeForRuntimeWithPreloads({
-		env: createEnv(),
-		baseUrl: 'https://kody.dev',
-		operationName: 'packages.invoke',
-		userId: 'user-1',
-		rawInput: {
-			specifier: 'kody:@kody/github/get-issue-state',
-			options: { params: {} },
+		'pkg-kody-github': {
+			userId: 'platform-owner',
+			name: '@kody/github',
+			kodyId: 'github',
 		},
-		callerKind: 'execute',
-	})
-	expect(fromExecute.result.ok).toBe(false)
-	expect(fromExecute.result.message).toContain(
-		'not runnable from a person account',
-	)
-	expect(fromExecute.preloads).toBeNull()
-
+	} as const
 	mockModule.getSavedPackageById.mockImplementation(
-		async (_db: unknown, input: { userId: string; packageId: string }) =>
-			input.userId === 'platform-owner' && input.packageId === 'pkg-kody-github'
-				? {
-						id: 'pkg-kody-github',
-						userId: 'platform-owner',
-						name: '@kody/github',
-						kodyId: 'github',
-					}
-				: null,
+		async (_db: unknown, input: { userId: string; packageId: string }) => {
+			const caller = callers[input.packageId as keyof typeof callers]
+			return caller?.userId === input.userId
+				? { id: input.packageId, ...caller }
+				: null
+		},
 	)
-	const fromPlatformPackage = await checkPackageInvokeForRuntimeWithPreloads({
-		env: createEnv(),
-		baseUrl: 'https://kody.dev',
-		operationName: 'packages.invoke',
+	const specifier = 'kody:@kody/github/get-issue-state'
+
+	for (const caller of [
+		{ callerKind: 'package', callingPackageId: 'pkg-user-1' },
+		{ callerKind: 'execute' },
+	] as const) {
+		const denied = await runContractCheck({
+			userId: 'user-1',
+			specifier,
+			...caller,
+		})
+		expect(denied.result.ok).toBe(false)
+		if (denied.result.ok)
+			throw new Error('Expected the contract check to deny.')
+		expect(denied.result.message).toContain(
+			'not runnable from a person account',
+		)
+		expect(denied.preloads).toBeNull()
+	}
+
+	const fromPlatformPackage = await runContractCheck({
 		userId: 'platform-owner',
-		rawInput: {
-			specifier: 'kody:@kody/github/get-issue-state',
-			options: { params: {} },
-		},
+		specifier,
 		callerKind: 'package',
 		callingPackageId: 'pkg-kody-github',
 	})
 	expect(fromPlatformPackage.result.ok).toBe(true)
 })
 
-test('a warm keyless invoke contract check performs zero D1/KV loads', async () => {
-	seedFixtures({
-		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
-	})
-
-	const cold = await runContractCheck({ userId: 'user-1' })
-	expect(cold.result.ok).toBe(true)
-	expect(cold.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
-		'commit-1',
-	)
-	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
-	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
-	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
-	expect(
-		mockModule.loadPublishedBundleArtifactByIdentity,
-	).toHaveBeenCalledTimes(1)
-
-	clearContractCheckLoadCounters()
-	const warm = await runContractCheck({ userId: 'user-1' })
-
-	expect(warm.result.ok).toBe(true)
-	expect(warm.result.ok && warm.result.contract.publishedCommit).toBe(
-		'commit-1',
-	)
-	expect(warm.preloads?.savedPackage.id).toBe('pkg-user-1')
-	expect(warm.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
-		'commit-1',
-	)
-	expect(countContractCheckLoads()).toEqual({
-		'saved package by id (D1)': 0,
-		'saved package by kody id (D1)': 0,
-		'saved package by name (D1)': 0,
-		'platform account by username (D1)': 0,
-		'platform account by user id (D1)': 0,
-		'entity source row (D1)': 0,
-		'published manifest snapshot (KV)': 0,
-		'published source snapshot (KV)': 0,
-		'bundle artifact identity + payload (D1 + KV)': 0,
-	})
-})
-
-test('a republish is picked up immediately after same-isolate invalidation', async () => {
-	const fixture = createFixture({
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-	})
-	seedFixtures({ 'user-1': fixture })
-
-	const beforeRepublish = await runContractCheck({ userId: 'user-1' })
-	expect(
-		beforeRepublish.result.ok &&
-			beforeRepublish.result.contract.publishedCommit,
-	).toBe('commit-1')
-
-	// Republish: the source row advances to commit-2 and new artifacts exist.
-	seedFixtures({
-		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-2' }),
-	})
-
-	// Still within the freshness TTL, the warm cache serves the old contract.
-	const stillCached = await runContractCheck({ userId: 'user-1' })
-	expect(
-		stillCached.result.ok && stillCached.result.contract.publishedCommit,
-	).toBe('commit-1')
-
-	// The projection refresh invalidates in its own isolate.
-	invalidateInvokeContractFreshness({
-		userId: 'user-1',
-		packageIdOrKodyIds: [
-			fixture.savedPackage.id,
-			fixture.savedPackage.kodyId,
-			`kody:${fixture.savedPackage.name}`,
-		],
-		sourceId: fixture.source.id,
-	})
-	const afterInvalidation = await runContractCheck({ userId: 'user-1' })
-	expect(
-		afterInvalidation.result.ok &&
-			afterInvalidation.result.contract.publishedCommit,
-	).toBe('commit-2')
-	expect(
-		afterInvalidation.preloads?.moduleArtifact.artifact.publishedCommit,
-	).toBe('commit-2')
-})
-
-test('a republish is picked up in other isolates once the freshness TTL elapses', async () => {
+test('a republish is picked up by same-isolate invalidation, or in other isolates once the freshness TTL elapses', async () => {
 	vi.useFakeTimers()
 	try {
-		seedFixtures({
-			'user-1': createFixture({
-				userId: 'user-1',
-				publishedCommit: 'commit-1',
-			}),
+		const userId = 'user-republish'
+		const publish = (publishedCommit: string) => {
+			const fixture = createFixture({ userId, publishedCommit })
+			seedFixtures({ [userId]: fixture })
+			return fixture
+		}
+		const check = async () => {
+			const result = await runContractCheck({ userId })
+			expect(result.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
+				publishedCommitOf(result),
+			)
+			return publishedCommitOf(result)
+		}
+
+		const fixture = publish('commit-1')
+		expect(await check()).toBe('commit-1')
+
+		// Republish: within the freshness TTL the warm cache serves the old
+		// contract until the projection refresh invalidates in its own isolate.
+		publish('commit-2')
+		expect(await check()).toBe('commit-1')
+		invalidateInvokeContractFreshness({
+			userId,
+			packageIdOrKodyIds: [
+				fixture.savedPackage.id,
+				fixture.savedPackage.kodyId,
+				`kody:${fixture.savedPackage.name}`,
+			],
+			sourceId: fixture.source.id,
 		})
-		const warm = await runContractCheck({ userId: 'user-1' })
-		expect(warm.result.ok && warm.result.contract.publishedCommit).toBe(
-			'commit-1',
-		)
+		expect(await check()).toBe('commit-2')
 
 		// Republish observed only through D1/KV — no invalidation reaches this
 		// isolate.
-		seedFixtures({
-			'user-1': createFixture({
-				userId: 'user-1',
-				publishedCommit: 'commit-2',
-			}),
-		})
+		publish('commit-3')
+		expect(await check()).toBe('commit-2')
 		vi.setSystemTime(Date.now() + invokeContractFreshnessTtlMs + 1)
-
-		const afterTtl = await runContractCheck({ userId: 'user-1' })
-		expect(afterTtl.result.ok && afterTtl.result.contract.publishedCommit).toBe(
-			'commit-2',
-		)
-		expect(afterTtl.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
-			'commit-2',
-		)
+		expect(await check()).toBe('commit-3')
 	} finally {
 		vi.useRealTimers()
 	}
@@ -476,64 +425,63 @@ test('a republish is picked up in other isolates once the freshness TTL elapses'
 test('contract-check caches never serve entries across users', async () => {
 	seedFixtures({
 		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
-		'user-2': createFixture({
-			userId: 'user-2',
-			publishedCommit: 'commit-2',
-			suffix: 'user-2',
-		}),
+		'user-2': createFixture({ userId: 'user-2', publishedCommit: 'commit-2' }),
 	})
 
-	const first = await runContractCheck({ userId: 'user-1' })
-	expect(first.result.ok && first.result.contract.publishedCommit).toBe(
+	expect(publishedCommitOf(await runContractCheck({ userId: 'user-1' }))).toBe(
 		'commit-1',
 	)
-
 	clearContractCheckLoadCounters()
 	const other = await runContractCheck({ userId: 'user-2' })
 
-	expect(other.result.ok && other.result.contract.publishedCommit).toBe(
-		'commit-2',
-	)
+	expect(publishedCommitOf(other)).toBe('commit-2')
 	expect(other.preloads?.savedPackage.id).toBe('pkg-user-2')
 	// The second user's check must load its own rows, not reuse user-1's.
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 
-test('platform package invalidation clears the platform-owner specifier cache', async () => {
+test('warm platform contract checks perform zero D1/KV loads until invalidation clears the platform-owner specifier cache', async () => {
 	const platformFixture = createFixture({
 		userId: 'platform-owner',
 		publishedCommit: 'commit-platform',
 		packageName: '@kody/sentry-triage',
 	})
 	seedFixtures({ 'platform-owner': platformFixture })
-
-	const beforeDelete = await runContractCheck({
+	invalidateInvokeContractFreshness({
 		userId: 'platform-owner',
-		specifier: 'kody:@kody/sentry-triage/get-issue-state',
+		packageIdOrKodyIds: [
+			platformFixture.savedPackage.id,
+			platformFixture.savedPackage.kodyId,
+			`kody:${platformFixture.savedPackage.name}`,
+		],
+		sourceId: platformFixture.source.id,
 	})
+	const check = () =>
+		runContractCheck({
+			userId: 'platform-owner',
+			specifier: 'kody:@kody/sentry-triage/get-issue-state',
+		})
+
+	const beforeDelete = await check()
 	expect(beforeDelete.result.ok).toBe(true)
 	expect(beforeDelete.preloads?.savedPackage.id).toBe(
 		platformFixture.savedPackage.id,
 	)
+	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
+	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
+	expect(
+		mockModule.loadPublishedBundleArtifactByIdentity,
+	).toHaveBeenCalledTimes(1)
 
 	clearContractCheckLoadCounters()
-	const warm = await runContractCheck({
-		userId: 'platform-owner',
-		specifier: 'kody:@kody/sentry-triage/get-issue-state',
-	})
+	const warm = await check()
 	expect(warm.result.ok).toBe(true)
-	expect(countContractCheckLoads()).toEqual({
-		'saved package by id (D1)': 0,
-		'saved package by kody id (D1)': 0,
-		'saved package by name (D1)': 0,
-		'platform account by username (D1)': 0,
-		'platform account by user id (D1)': 0,
-		'entity source row (D1)': 0,
-		'published manifest snapshot (KV)': 0,
-		'published source snapshot (KV)': 0,
-		'bundle artifact identity + payload (D1 + KV)': 0,
-	})
+	expect(publishedCommitOf(warm)).toBe('commit-platform')
+	expect(warm.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
+		'commit-platform',
+	)
+	expect(countContractCheckLoads()).toEqual(zeroContractCheckLoads)
 
 	seedFixtures({})
 	invalidateInvokeContractFreshness({
@@ -546,83 +494,49 @@ test('platform package invalidation clears the platform-owner specifier cache', 
 		sourceId: platformFixture.source.id,
 	})
 
-	const afterDelete = await runContractCheck({
-		userId: 'platform-owner',
-		specifier: 'kody:@kody/sentry-triage/get-issue-state',
-	})
+	const afterDelete = await check()
 	expect(afterDelete.result.ok).toBe(false)
+	if (afterDelete.result.ok) {
+		throw new Error('Expected the contract check to fail after delete.')
+	}
 	expect(afterDelete.result.message).toContain('could not be resolved')
 })
 
 test('an artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
 	const userId = 'user-rebuild'
 	const sourceId = 'source-rebuild'
-	const savedPackage = createFixture({
-		userId,
-		publishedCommit: 'commit-1',
-		suffix: 'rebuild',
-	}).savedPackage
 	const buildManifestContent = (entryPoint: string) =>
 		JSON.stringify({
 			name: '@kentcdodds/sentry-triage',
 			exports: { './probe': entryPoint },
 			kody: { id: 'sentry-triage', description: 'probe' },
 		})
-	const buildSourceRow = (publishedCommit: string) => ({
-		...createFixture({ userId, publishedCommit, suffix: 'rebuild' }).source,
-		id: sourceId,
-	})
+	const fixtureAt = (publishedCommit: string) => {
+		const fixture = createFixture({
+			userId,
+			publishedCommit,
+			suffix: 'rebuild',
+		})
+		return { ...fixture, source: { ...fixture.source, id: sourceId } }
+	}
+	const v1 = fixtureAt('commit-1')
 
-	// Warm the freshness cache with the commit-1 row + manifest, where the
-	// probe export points at the v1 entry point.
-	mockModule.getEntitySourceById.mockResolvedValue(buildSourceRow('commit-1'))
+	// Warm only the freshness-tier row cache with the commit-1 manifest, where
+	// the probe export points at the v1 entry point (no artifact exists for the
+	// identity yet).
+	mockModule.getEntitySourceById.mockResolvedValue(v1.source)
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
-		source: buildSourceRow('commit-1'),
+		source: v1.source,
 		content: buildManifestContent('./src/probe-v1.ts'),
 	})
-	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue(null)
-	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
-		ok: true,
-	})
-	mockModule.buildKodyModuleBundle.mockResolvedValue({
-		mainModule: 'main.js',
-		modules: { 'main.js': 'export default async () => ({ ok: true })' },
-		dependencies: [],
-		dynamicDependencies: [],
-	})
-	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
+	await loadInvokeManifestBySourceId({ env: createEnv(), userId, sourceId })
 
-	// Republish lands between the manifest load and the rebuild: the fresh
-	// source is commit-2 and moves the probe export to the v2 entry point,
+	// Republish lands between the manifest load and the first-ever rebuild: the
+	// fresh source is commit-2 and moves the probe export to the v2 entry point,
 	// while this isolate's freshness cache still holds the commit-1 row.
-	const v2Files = {
+	mockModuleArtifactRebuild(fixtureAt('commit-2'), {
 		'package.json': buildManifestContent('./src/probe-v2.ts'),
 		'src/probe-v2.ts': 'export default async function probe() { return 2 }',
-	}
-	const runEnsure = async () =>
-		await ensureModuleArtifact({
-			env: createEnv(),
-			baseUrl: 'https://kody.dev',
-			savedPackage: { ...savedPackage, sourceId },
-			selector: { kind: 'export', exportName: 'probe' },
-			userId,
-		})
-
-	// Warm only the freshness-tier row cache with the commit-1 manifest (no
-	// artifact exists for the identity yet).
-	await loadInvokeManifestBySourceId({
-		env: createEnv(),
-		userId,
-		sourceId,
-	})
-
-	// Now the republish is visible to fresh reads only; the first-ever
-	// artifact rebuild for this identity happens against the stale cached
-	// manifest.
-	mockModule.getEntitySourceById.mockResolvedValue(buildSourceRow('commit-2'))
-	mockModule.loadPublishedEntitySource.mockResolvedValue({
-		source: buildSourceRow('commit-2'),
-		files: v2Files,
 	})
 	mockModule.loadPublishedBundleArtifactByIdentity
 		.mockResolvedValueOnce(null)
@@ -631,11 +545,16 @@ test('an artifact rebuild resolves its entry point from the fresh source, not th
 			artifact: { publishedCommit: 'commit-2', entryPoint: 'src/probe-v2.ts' },
 		})
 
-	const rebuilt = await runEnsure()
+	const rebuilt = await ensureModuleArtifact({
+		env: createEnv(),
+		baseUrl: 'https://kody.dev',
+		savedPackage: { ...v1.savedPackage, sourceId },
+		selector: { kind: 'export', exportName: 'probe' },
+		userId,
+	})
 
-	// The rebuild must be self-consistent with the freshly loaded commit-2
-	// source: typecheck, bundle, and persisted identity all use the v2 entry
-	// point, even though this isolate's cached manifest still says v1.
+	// Typecheck, bundle, and persisted identity all use the v2 entry point, even
+	// though this isolate's cached manifest still says v1.
 	expect(
 		mockModule.typecheckPackageEntrypointsFromSourceFiles,
 	).toHaveBeenCalledWith(
@@ -653,98 +572,102 @@ test('an artifact rebuild resolves its entry point from the fresh source, not th
 	expect(rebuilt.entryPoint).toBe('src/probe-v2.ts')
 })
 
-test('ensureModuleArtifact rebuilds when the identity artifact is for a different commit', async () => {
-	const fixture = createFixture({
-		userId: 'user-stale-artifact',
-		publishedCommit: 'commit-new',
-		suffix: 'stale-artifact',
-	})
-	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
-	mockModule.loadPublishedEntityManifest.mockResolvedValue({
-		source: fixture.source,
-		content: fixture.manifestContent,
-	})
-	mockModule.loadPublishedEntitySource.mockResolvedValue({
-		source: fixture.source,
-		files: {
+test('ensureModuleArtifact rebuilds when the identity artifact is stale or its row lacks a published commit', async () => {
+	for (const [suffix, staleIdentity] of [
+		[
+			'stale-artifact',
+			{ rowCommit: 'commit-old', artifactCommit: 'commit-old' },
+		],
+		['null-row', { rowCommit: null, artifactCommit: 'commit-new' }],
+	] as const) {
+		mockModule.persistPublishedBundleArtifact.mockClear()
+		const fixture = createFixture({
+			userId: `user-${suffix}`,
+			publishedCommit: 'commit-new',
+			suffix,
+		})
+		mockModuleArtifactRebuild(fixture, {
 			'package.json': fixture.manifestContent,
 			'src/get-issue-state.ts':
 				'export default async function main() { return "new" }',
-		},
-	})
-	mockModule.loadPublishedBundleArtifactByIdentity
-		.mockResolvedValueOnce({
-			row: { publishedCommit: 'commit-old' },
-			artifact: { ...fixture.artifact, publishedCommit: 'commit-old' },
 		})
-		.mockResolvedValueOnce({
-			row: { publishedCommit: 'commit-new' },
-			artifact: fixture.artifact,
+		mockModule.loadPublishedEntityManifest.mockResolvedValue({
+			source: fixture.source,
+			content: fixture.manifestContent,
 		})
-	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
-		ok: true,
-	})
-	mockModule.buildKodyModuleBundle.mockResolvedValue({
-		mainModule: 'main.js',
-		modules: { 'main.js': 'export default async () => ({ ok: true })' },
-		dependencies: [],
-		dynamicDependencies: [],
-	})
-	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
+		mockModule.loadPublishedBundleArtifactByIdentity
+			.mockResolvedValueOnce({
+				row: { publishedCommit: staleIdentity.rowCommit },
+				artifact: {
+					...fixture.artifact,
+					publishedCommit: staleIdentity.artifactCommit,
+				},
+			})
+			.mockResolvedValueOnce({
+				row: { publishedCommit: 'commit-new' },
+				artifact: fixture.artifact,
+			})
 
-	const rebuilt = await ensureModuleArtifact({
-		env: createEnv(),
-		baseUrl: 'https://kody.dev',
-		savedPackage: fixture.savedPackage,
-		selector: { kind: 'export', exportName: 'get-issue-state' },
-		userId: fixture.savedPackage.userId,
-	})
+		const rebuilt = await ensureModuleArtifact({
+			env: createEnv(),
+			baseUrl: 'https://kody.dev',
+			savedPackage: fixture.savedPackage,
+			selector: { kind: 'export', exportName: 'get-issue-state' },
+			userId: fixture.savedPackage.userId,
+		})
 
-	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledTimes(1)
-	expect(rebuilt.artifact.publishedCommit).toBe('commit-new')
+		expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledTimes(1)
+		expect(rebuilt.artifact.publishedCommit).toBe('commit-new')
+	}
 })
 
-test('ensureModuleArtifact rebuilds when the identity row is missing a published commit', async () => {
-	const fixture = createFixture({
-		userId: 'user-null-row',
-		publishedCommit: 'commit-new',
-		suffix: 'null-row',
-	})
-	mockModule.getEntitySourceById.mockResolvedValue(fixture.source)
+test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a republish rebuild is still in flight', async () => {
+	const fixture = {
+		...createFixture({
+			userId: 'user-npm-window',
+			publishedCommit: 'commit-new',
+			suffix: 'npm-window',
+		}),
+	}
+	fixture.source = {
+		...fixture.source,
+		updated_at: '2026-07-01T00:00:00.000Z',
+	}
+	const previousArtifact = {
+		...fixture.artifact,
+		publishedCommit: 'commit-old',
+	}
+	const npmFiles = {
+		'package.json': JSON.stringify({
+			name: fixture.savedPackage.name,
+			exports: {
+				'./get-issue-state': './src/get-issue-state.ts',
+			},
+			dependencies: {
+				react: '^19.0.0',
+			},
+			kody: {
+				id: fixture.savedPackage.kodyId,
+				description: 'Sentry triage helpers',
+			},
+		}),
+		'src/get-issue-state.ts':
+			'export default async function main() { return "new" }',
+	}
+	mockModule.persistPublishedBundleArtifact.mockClear()
+	mockModule.buildKodyModuleBundle.mockClear()
+	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockClear()
+	mockModuleArtifactRebuild(fixture, npmFiles, new Date().toISOString())
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source: fixture.source,
-		content: fixture.manifestContent,
+		content: npmFiles['package.json'],
 	})
-	mockModule.loadPublishedEntitySource.mockResolvedValue({
-		source: fixture.source,
-		files: {
-			'package.json': fixture.manifestContent,
-			'src/get-issue-state.ts':
-				'export default async function main() { return "new" }',
-		},
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { publishedCommit: 'commit-old' },
+		artifact: previousArtifact,
 	})
-	mockModule.loadPublishedBundleArtifactByIdentity
-		.mockResolvedValueOnce({
-			row: { publishedCommit: null },
-			artifact: fixture.artifact,
-		})
-		.mockResolvedValueOnce({
-			row: { publishedCommit: 'commit-new' },
-			artifact: fixture.artifact,
-		})
-	mockModule.typecheckPackageEntrypointsFromSourceFiles.mockResolvedValue({
-		ok: true,
-	})
-	mockModule.buildKodyModuleBundle.mockResolvedValue({
-		mainModule: 'main.js',
-		modules: { 'main.js': 'export default async () => ({ ok: true })' },
-		dependencies: [],
-		dynamicDependencies: [],
-	})
-	mockModule.persistPublishedBundleArtifact.mockReset()
-	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
 
-	const rebuilt = await ensureModuleArtifact({
+	const served = await ensureModuleArtifact({
 		env: createEnv(),
 		baseUrl: 'https://kody.dev',
 		savedPackage: fixture.savedPackage,
@@ -752,8 +675,67 @@ test('ensureModuleArtifact rebuilds when the identity row is missing a published
 		userId: fixture.savedPackage.userId,
 	})
 
-	expect(mockModule.persistPublishedBundleArtifact).toHaveBeenCalledTimes(1)
-	expect(rebuilt.artifact.publishedCommit).toBe('commit-new')
+	expect(served.artifact.publishedCommit).toBe('commit-old')
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
+	expect(
+		mockModule.typecheckPackageEntrypointsFromSourceFiles,
+	).not.toHaveBeenCalled()
+})
+
+test('ensureModuleArtifact stops serving a previous npm-backed bundle after the rebuild window', async () => {
+	const fixture = createFixture({
+		userId: 'user-npm-expired',
+		publishedCommit: 'commit-new',
+		suffix: 'npm-expired',
+	})
+	fixture.source = {
+		...fixture.source,
+		updated_at: new Date().toISOString(),
+	}
+	const npmFiles = {
+		'package.json': JSON.stringify({
+			name: fixture.savedPackage.name,
+			exports: {
+				'./get-issue-state': './src/get-issue-state.ts',
+			},
+			dependencies: {
+				react: '^19.0.0',
+			},
+			kody: {
+				id: fixture.savedPackage.kodyId,
+				description: 'Sentry triage helpers',
+			},
+		}),
+		'src/get-issue-state.ts':
+			'export default async function main() { return "new" }',
+	}
+	mockModule.persistPublishedBundleArtifact.mockClear()
+	mockModule.buildKodyModuleBundle.mockClear()
+	mockModuleArtifactRebuild(fixture, npmFiles, '2026-07-01T00:00:00.000Z')
+	mockModule.loadPublishedEntityManifest.mockResolvedValue({
+		source: fixture.source,
+		content: npmFiles['package.json'],
+	})
+	mockModule.loadPublishedBundleArtifactByIdentity.mockResolvedValue({
+		row: { publishedCommit: 'commit-old' },
+		artifact: {
+			...fixture.artifact,
+			publishedCommit: 'commit-old',
+		},
+	})
+
+	await expect(
+		ensureModuleArtifact({
+			env: createEnv(),
+			baseUrl: 'https://kody.dev',
+			savedPackage: fixture.savedPackage,
+			selector: { kind: 'export', exportName: 'get-issue-state' },
+			userId: fixture.savedPackage.userId,
+		}),
+	).rejects.toThrow('no published runtime bundle artifact is available yet')
+	expect(mockModule.persistPublishedBundleArtifact).not.toHaveBeenCalled()
+	expect(mockModule.buildKodyModuleBundle).not.toHaveBeenCalled()
 })
 
 test('an artifact from a different commit is served but never retained', async () => {
@@ -762,26 +744,96 @@ test('an artifact from a different commit is served but never retained', async (
 		source: { id: 'source-mismatch' } as never,
 		entryPoint: 'src/index.ts',
 	}))
+	const loadOnce = () =>
+		loadModuleArtifactWithCommitCache({
+			userId: 'user-1',
+			sourceId: 'source-mismatch',
+			publishedCommit: 'commit-new',
+			artifactName: './index',
+			entryPoint: 'src/index.ts',
+			load,
+		})
 
-	const first = await loadModuleArtifactWithCommitCache({
-		userId: 'user-1',
-		sourceId: 'source-mismatch',
-		publishedCommit: 'commit-new',
-		artifactName: './index',
-		entryPoint: 'src/index.ts',
-		load,
-	})
-	const second = await loadModuleArtifactWithCommitCache({
-		userId: 'user-1',
-		sourceId: 'source-mismatch',
-		publishedCommit: 'commit-new',
-		artifactName: './index',
-		entryPoint: 'src/index.ts',
-		load,
-	})
-
-	expect(first.artifact.publishedCommit).toBe('commit-old')
-	expect(second.artifact.publishedCommit).toBe('commit-old')
+	for (let i = 0; i < 2; i++) {
+		expect((await loadOnce()).artifact.publishedCommit).toBe('commit-old')
+	}
 	// A commit mismatch means the entry must not be cached under this key.
 	expect(load).toHaveBeenCalledTimes(2)
+})
+
+test('resolveSavedPackage resolves id or slug through one package ref lookup', async () => {
+	const record = { id: 'pkg-by-ref', kodyId: 'shared-key' }
+	mockModule.resolveSavedPackageRef.mockResolvedValue(record)
+
+	await expect(
+		resolveSavedPackage({
+			db: {} as D1Database,
+			userId: 'user-resolve-ref',
+			packageIdOrKodyId: 'shared-key',
+		}),
+	).resolves.toEqual(record)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(1)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
+		expect.anything(),
+		{ userId: 'user-resolve-ref', ref: 'shared-key' },
+	)
+	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
+})
+
+test('package-app slug cache evicts by name leaf from kody:@ refs and packageAppSlugs', async () => {
+	const userId = 'user-slug-evict'
+	const savedPackage = {
+		id: 'pkg-slug-evict',
+		userId,
+		name: '@kentcdodds/new-leaf',
+		kodyId: 'legacy-kody-id',
+	} as SavedPackageRecord
+	const load = vi.fn(async () => ({
+		savedPackage,
+		retired: true,
+	}))
+	const loadOld = () =>
+		resolvePackageAppSlugWithFreshnessCache({
+			userId,
+			slug: 'old-leaf',
+			load,
+		})
+	const loadNew = () =>
+		resolvePackageAppSlugWithFreshnessCache({
+			userId,
+			slug: 'new-leaf',
+			load: async () => ({ savedPackage, retired: false }),
+		})
+
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(1)
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(1)
+
+	// kody:@ refs alone must clear the leaf-keyed package-app slug cache.
+	invalidateInvokeContractFreshness({
+		userId,
+		packageIdOrKodyIds: [`kody:@kentcdodds/old-leaf`],
+	})
+	expect((await loadOld())?.retired).toBe(true)
+	expect(load).toHaveBeenCalledTimes(2)
+
+	await loadNew()
+	invalidateInvokeContractFreshness({
+		userId,
+		packageIdOrKodyIds: [savedPackage.id, savedPackage.kodyId],
+		packageAppSlugs: ['new-leaf', 'prior-redirect'],
+	})
+	const loadPrior = vi.fn(async () => null)
+	await resolvePackageAppSlugWithFreshnessCache({
+		userId,
+		slug: 'prior-redirect',
+		load: loadPrior,
+	})
+	expect(loadPrior).toHaveBeenCalledTimes(1)
+	await resolvePackageAppSlugWithFreshnessCache({
+		userId,
+		slug: 'new-leaf',
+		load: async () => ({ savedPackage, retired: false }),
+	})
 })

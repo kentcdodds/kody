@@ -61,18 +61,13 @@ Quick start
 - To modify, use 'update_issues', then verify with 'list_issues'.
 ```
 
-**Example in this repo:** Server-level instructions stay short: workflows,
-examples, and links to [`docs/use/`](../use/index.md). Tool-specific behavior
-lives in each tool description and schemas; detail that only matters after a
-call returns belongs in the tool response (see
-[Documentation principles](./documentation.md)).
-
-**Retiring a primitive:** add one line to `retiringPrimitiveNotices` in
-`packages/worker/src/mcp/instructions/retiring-primitives.ts` and put the
-destination map in a `guide:{id}` search entity. Do not paste the migration
-table into always-on instructions. Assembly includes a notice only for users who
-still have rows of that primitive (`loadActiveRetiringNoticeIds`). An empty
-active set omits the section.
+**Example in this repo:** Server-level instructions stay a short neutral stub:
+what Kody is, how to use `search` / `execute`, and links to docs / local CLI.
+Tool-specific behavior lives in each tool description and schemas; detail that
+only matters after a call returns belongs in the tool response (see
+[Documentation principles](./documentation.md)). Package lifecycle and
+prefer-Kody-over-host guidance belong in guides or skills, not always-on server
+instructions.
 
 ---
 
@@ -322,10 +317,10 @@ export async function registerTools(agent: MCP) {
 - Easier to add/remove tools without touching unrelated tools
 
 **Example in this repo:** Server instructions are built by
-`buildMcpServerInstructions` in `packages/worker/src/mcp/server-instructions.ts`
-(with fragments under `packages/worker/src/mcp/instructions/`). The snippet
-above is the generic pattern for small tools; the search tool deliberately
-splits its responsibilities across metadata/schemas
+`buildMcpServerInstructions` in
+`packages/worker/src/mcp/server-instructions.ts`. The snippet above is the
+generic pattern for small tools; the search tool deliberately splits its
+responsibilities across metadata/schemas
 (`packages/worker/src/mcp/tools/search-tool-definition.ts`), registration
 (`search-register.ts`), and the handler (`search-tool-runner.ts`) because each
 piece grew large, with `packages/worker/src/mcp/register-tools.ts` as the small

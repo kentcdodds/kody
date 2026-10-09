@@ -25,6 +25,13 @@ Prefer the scoped `name` in docs, capability blurbs, and new callers. Mention
 `package_id` only as the fallback. Do not teach `kody_id` / `kody.id` as
 first-class identity.
 
+Server lookups go through `resolveSavedPackageRef` (leaf, `@scope/leaf`, or
+UUID; slug = leaf of `saved_packages.name`). The `saved_packages.kody_id` and
+`community_listings.kody_id` columns are still written but are not lookup keys.
+Rename redirects dual-write `package_slug_redirects` and the legacy
+`package_kody_id_redirects`. Dropping the columns and the legacy table is
+[#1909](https://github.com/kentcdodds/kody/issues/1909) phase 4.
+
 **Ready when:** agent transcripts and create/resolve traffic no longer need the
 leftover param (Sentry KODY-7M and similar scoped-name-as-`kody_id` collisions
 stay quiet), and a dedicated removal PR can drop the field without a fleet

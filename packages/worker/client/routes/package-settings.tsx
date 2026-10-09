@@ -1,5 +1,5 @@
 // remix-skill: owner settings for a package (`/@user/name/settings`).
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'

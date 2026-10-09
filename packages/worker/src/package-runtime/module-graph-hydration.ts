@@ -4,6 +4,7 @@ import {
 	normalizePackageExportKey,
 	resolvePackageExportPath,
 } from '#worker/package-registry/manifest.ts'
+import { assertNotSealedSecretProviderExport } from '#mcp/secrets/secret-providers/sealed-export.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import { type PublishedBundleArtifact } from './published-runtime-artifacts.ts'
 import {
@@ -28,7 +29,16 @@ import {
 } from './runtime-source-modules.ts'
 import { createRelativeImportSpecifier } from './module-graph-paths.ts'
 
-async function resolveCurrentDynamicPackageArtifact(input: {
+/**
+ * Resolve a caller-owned (or forked / share-granted) `kody:@` specifier to its
+ * published `importable-module` artifact. Used by literal dynamic-import
+ * hydration and by computed `import(specifier)` library loads
+ * ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
+ * Never live-resolves platform scopes (`allowPlatformScopes: false`).
+ * Source and published artifacts load under `sourceOwnerUserId` so share
+ * guests match static `kody:@` imports. Rebuild+persist stays owner-only.
+ */
+export async function resolveCurrentDynamicPackageArtifact(input: {
 	env: Env
 	baseUrl: string
 	userId: string
@@ -40,7 +50,7 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		)
 	}
 	const parsed = parseKodyPackageSpecifier(input.specifier)
-	// This lane rebuilds and persists artifacts under the caller's identity.
+	assertNotSealedSecretProviderExport(parsed.exportName)
 	// Person accounts never resolve platform-owned sources here.
 	const resolution = await resolveSavedPackageImport({
 		db: input.env.APP_DB,
@@ -58,10 +68,11 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		)
 	}
 	const { row } = resolution
+	const sourceOwnerUserId = resolution.sourceOwnerUserId
 	const loaded = await loadPackageSourceBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: input.userId,
+		userId: sourceOwnerUserId,
 		sourceId: row.sourceId,
 	})
 	if (!loaded.source.published_commit) {
@@ -74,9 +85,11 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 		manifest: loaded.manifest,
 		exportName,
 	})
+	// Published artifacts are owned by the source owner (own package, share
+	// grant, or nested share rewrite), matching static import rewriting.
 	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
-		userId: input.userId,
+		userId: sourceOwnerUserId,
 		sourceId: row.sourceId,
 		kind: 'importable-module',
 		artifactName: exportName,
@@ -85,6 +98,13 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 	if (loadedArtifact?.artifact) {
 		return loadedArtifact.artifact
 	}
+	// Share guests must not rebuild or persist under the owner's identity, and
+	// persisting under the guest would leave the next owner-keyed load cold.
+	if (resolution.shareOwned === true && sourceOwnerUserId !== input.userId) {
+		throw new Error(
+			`Dynamic Kody package import "${input.specifier}" resolved shared package "${row.name}", but its published importable-module artifact for "${exportName}" is missing. Ask the package owner to publish again.`,
+		)
+	}
 	assertPublishedSourceCanRebuildWithoutInstallingDeps({
 		sourceFiles: loaded.files,
 		bundleLabel: `Dynamic Kody package import "${input.specifier}"`,
@@ -92,14 +112,14 @@ async function resolveCurrentDynamicPackageArtifact(input: {
 	const rebuilt = await buildKodyImportableModuleBundle({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: input.userId,
+		userId: sourceOwnerUserId,
 		sourceFiles: loaded.files,
 		entryPoint,
 		rootPackageId: row.id,
 	})
 	await persistPublishedBundleArtifact({
 		env: input.env,
-		userId: input.userId,
+		userId: sourceOwnerUserId,
 		source: loaded.source,
 		kind: 'importable-module',
 		artifactName: exportName,

@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from './event-mixin.ts'
 import {
 	handleForkOutdatedCopyClick,
@@ -51,7 +51,6 @@ import { buildAuthLink } from './auth-links.ts'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { NotFoundPage } from './not-found-page.tsx'
 import { InternalErrorPage } from './internal-error-page.tsx'
-import { SiteBanner } from './site-banner.tsx'
 import { YouTubeWatchOverlay } from './youtube-watch-overlay.tsx'
 import { scheduleConsumeAccountCreatedFathomSignal } from './fathom-events.ts'
 import { stripHomeOgQueryFromLocation } from './strip-home-og-query.ts'
@@ -60,6 +59,7 @@ import {
 	clearStoredFirstTouchAttribution,
 } from './first-touch-attribution.ts'
 import { persistReferralCookieFromLocation } from './referral-cookie.ts'
+import { createScarfPageTracker } from './scarf-analytics.ts'
 
 registerRouteLoaders(clientRouteLoaders)
 registerClientRoutes(clientRoutes)
@@ -77,6 +77,7 @@ function isRedesignedMarketingPath(pathname: string) {
 		pathname === '/' ||
 		pathname === '/pricing' ||
 		pathname === '/faq' ||
+		pathname === '/case-studies' ||
 		pathname === '/blog' ||
 		pathname === '/community' ||
 		pathname === '/onboarding' ||
@@ -178,6 +179,15 @@ export function App(handle: Handle<AppProps>) {
 
 	if (typeof document !== 'undefined') {
 		setSessionRefreshHandler(queueSessionRefresh)
+		const trackScarfPage = createScarfPageTracker()
+		if (
+			!handle.props.notFound &&
+			!handle.props.unauthorized &&
+			!handle.props.internalError
+		) {
+			trackScarfPage()
+		}
+		listenToRouterNavigationEnd(handle, trackScarfPage)
 		// Capture UTMs from any landing URL before homepage CTAs rewrite them.
 		// Referral share links write a last-wins one-week cookie separately.
 		captureFirstTouchAttributionFromLocation()
@@ -317,7 +327,6 @@ export function App(handle: Handle<AppProps>) {
 						>
 							Skip to content
 						</a>
-						<SiteBanner snapshot={handle.props.loaderData?.siteBanner} />
 						{isAuthShellPath ? null : (
 							<SiteHeader
 								loggedIn={isLoggedIn}
@@ -328,6 +337,9 @@ export function App(handle: Handle<AppProps>) {
 								showDemoIndicator={isLoggedIn && showDemoIndicator}
 								loginHref={loginHref}
 								currentPathname={currentPathname}
+								organizations={session?.organizations}
+								inviteCount={session?.inviteCount}
+								lastUsedOrganization={session?.lastUsedOrganization}
 							/>
 						)}
 						<main

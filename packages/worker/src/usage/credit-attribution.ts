@@ -1,0 +1,368 @@
+/**
+ * Load and (in production) recompute daily credit-attribution units from
+ * Analytics Engine into `usage_attribution_daily`. Local/dev upserts on
+ * each billable `recordUsage` write instead.
+ */
+import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import {
+	buildCreditAttributionBreakdown,
+	creditAttributionMeterFromComputeResource,
+	creditAttributionMeters,
+	creditAttributionUsageEventTypes,
+	type CreditAttributionBreakdown,
+	type CreditAttributionDailyUnit,
+	type CreditAttributionMeter,
+} from '#universal/credit-attribution.ts'
+import { type AccountUsageComputeOverage } from '#universal/loader-data.ts'
+import { routes } from '#universal/routes.ts'
+import {
+	filterLiveUsageRows,
+	queryAnalyticsEngineSql,
+	resolveUsageEventsDataset,
+	type UsageAggregationEnv,
+} from '#worker/usage/aggregate-rollups.ts'
+import { runD1WithRetry } from '#worker/d1-retry.ts'
+
+const attributionUpsertStatement = `
+INSERT INTO usage_attribution_daily (
+	user_id, day, package_id, meter, units, updated_at,
+	actor_user_id, automation_source
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+ON CONFLICT (user_id, day, package_id, meter) DO UPDATE SET
+	units = excluded.units,
+	updated_at = excluded.updated_at,
+	actor_user_id = excluded.actor_user_id,
+	automation_source = excluded.automation_source
+`.trim()
+
+/**
+ * Analytics Engine SQL for billable units this UTC month, grouped by day and
+ * package id (blob9). Empty blob9 is Ad hoc / historical unattributed.
+ * `blob1` is the org billing id. When multiple actors share a rollup key,
+ * `any(blob10)` and `any(blob11)` pick one representative row.
+ */
+export function buildCreditAttributionDailyQuery(
+	dataset: string,
+	bounds: { monthStart: string; nextMonthStart: string },
+) {
+	const billable = creditAttributionUsageEventTypes
+		.map((eventType) => `'${eventType}'`)
+		.join(', ')
+	return `
+SELECT
+	blob1 AS user_id,
+	toDate(timestamp) AS day,
+	blob9 AS package_id,
+	blob2 AS event_type,
+	any(blob10) AS actor_user_id,
+	any(blob11) AS automation_source,
+	sum(
+		if(blob2 = 'durable_object_rows_read' AND double3 > 0, double3, 1.0) * _sample_interval
+	) AS units
+FROM ${dataset}
+WHERE timestamp >= toDateTime('${bounds.monthStart}')
+	AND timestamp < toDateTime('${bounds.nextMonthStart}')
+	AND blob2 IN (${billable})
+GROUP BY user_id, day, package_id, event_type
+FORMAT JSON
+`.trim()
+}
+
+function utcMonthBounds(now: Date) {
+	const toDateTimeArgument = (date: Date) =>
+		`${date.toISOString().slice(0, 'YYYY-MM-DD'.length)} 00:00:00`
+	return {
+		monthStart: toDateTimeArgument(
+			new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
+		),
+		nextMonthStart: toDateTimeArgument(
+			new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+		),
+	}
+}
+
+type AttributionAnalyticsRow = {
+	user_id: string
+	day: string
+	package_id: string | null
+	event_type: string
+	actor_user_id?: string | null
+	automation_source?: string | null
+	units: number | string
+}
+
+function meterFromEventType(eventType: string): CreditAttributionMeter | null {
+	switch (eventType) {
+		case 'dynamic_worker_day':
+			return 'unique_worker_days'
+		case 'durable_object_rows_read':
+			return 'durable_object_rows_read'
+		default:
+			return null
+	}
+}
+
+const attributionUpsertBatchSize = 50
+const attributionDeleteBatchSize = 50
+/** D1 bind budget: one for user_id plus package ids per IN chunk. */
+const attributionPackageLabelChunkSize = 80
+
+/**
+ * Recompute the current UTC month's attribution daily rows from Analytics
+ * Engine. Called from the same hourly lane as `usage_rollups`. No-op when
+ * AE credentials are missing (local path already upserts on write).
+ */
+export async function aggregateCreditAttributionDaily(
+	env: UsageAggregationEnv,
+	now: Date = new Date(),
+): Promise<
+	{ skipped: true; reason: string } | { skipped: false; upserted: number }
+> {
+	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
+	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
+	if (!env.USAGE_EVENTS || !accountId || !apiToken) {
+		return { skipped: true, reason: 'missing-analytics-config' }
+	}
+	const baseUrl =
+		env.CLOUDFLARE_API_BASE_URL?.trim() || 'https://api.cloudflare.com'
+	const dataset = resolveUsageEventsDataset(env)
+	const analyticsRows = await queryAnalyticsEngineSql<AttributionAnalyticsRow>({
+		accountId,
+		apiToken,
+		baseUrl,
+		query: buildCreditAttributionDailyQuery(dataset, utcMonthBounds(now)),
+	})
+	// Same live-user guard as usage_rollups: AE retains points after account
+	// deletion; never reinsert those into D1 attribution rows.
+	const liveRows = await filterLiveUsageRows(env.APP_DB, analyticsRows)
+	const month = utcMonthKey(now)
+	const updatedAt = now.toISOString()
+	const presentKeys = new Set<string>()
+	const upsertStatements: Array<D1PreparedStatement> = []
+	for (const row of liveRows) {
+		const meter = meterFromEventType(row.event_type)
+		if (!meter) continue
+		const day =
+			typeof row.day === 'string'
+				? row.day.slice(0, 'YYYY-MM-DD'.length)
+				: String(row.day).slice(0, 'YYYY-MM-DD'.length)
+		if (!day.startsWith(month)) continue
+		const packageId = (row.package_id ?? '').trim()
+		const units = Number(row.units)
+		if (!Number.isFinite(units) || units <= 0) continue
+		presentKeys.add(`${row.user_id}\0${day}\0${packageId}\0${meter}`)
+		const actorUserId =
+			(typeof row.actor_user_id === 'string' && row.actor_user_id.trim()) ||
+			row.user_id
+		const automationSource =
+			typeof row.automation_source === 'string'
+				? row.automation_source.trim()
+				: ''
+		upsertStatements.push(
+			env.APP_DB.prepare(attributionUpsertStatement).bind(
+				row.user_id,
+				day,
+				packageId,
+				meter,
+				units,
+				updatedAt,
+				actorUserId,
+				automationSource,
+			),
+		)
+	}
+	for (
+		let index = 0;
+		index < upsertStatements.length;
+		index += attributionUpsertBatchSize
+	) {
+		await runD1WithRetry(() =>
+			env.APP_DB.batch(
+				upsertStatements.slice(index, index + attributionUpsertBatchSize),
+			),
+		)
+	}
+	// Empty AE result is more likely ingestion lag than a truly empty month;
+	// skip stale cleanup rather than wiping real attribution (same as rollups).
+	// A non-empty AE result that yields no live rows still runs cleanup so
+	// deleted-account rows do not linger.
+	if (analyticsRows.length === 0) {
+		return { skipped: false, upserted: 0 }
+	}
+	const existing = await env.APP_DB.prepare(
+		`SELECT user_id, day, package_id, meter
+		 FROM usage_attribution_daily
+		 WHERE day >= ? AND day < ?`,
+	)
+		.bind(
+			`${month}-01`,
+			utcMonthBounds(now).nextMonthStart.slice(0, 'YYYY-MM-DD'.length),
+		)
+		.all<{
+			user_id: string
+			day: string
+			package_id: string
+			meter: string
+		}>()
+	const deleteStatements: Array<D1PreparedStatement> = []
+	for (const row of existing.results ?? []) {
+		const key = `${row.user_id}\0${row.day}\0${row.package_id}\0${row.meter}`
+		if (presentKeys.has(key)) continue
+		deleteStatements.push(
+			env.APP_DB.prepare(
+				`DELETE FROM usage_attribution_daily
+				 WHERE user_id = ? AND day = ? AND package_id = ? AND meter = ?`,
+			).bind(row.user_id, row.day, row.package_id, row.meter),
+		)
+	}
+	for (
+		let index = 0;
+		index < deleteStatements.length;
+		index += attributionDeleteBatchSize
+	) {
+		await runD1WithRetry(() =>
+			env.APP_DB.batch(
+				deleteStatements.slice(index, index + attributionDeleteBatchSize),
+			),
+		)
+	}
+	return { skipped: false, upserted: upsertStatements.length }
+}
+
+export async function readCreditAttributionDailyUnits(input: {
+	db: D1Database
+	stableUserId: string
+	month: string
+}): Promise<Array<CreditAttributionDailyUnit>> {
+	const nextMonth = nextUtcMonthKey(input.month)
+	const rows = await input.db
+		.prepare(
+			`SELECT day, package_id, meter, units
+			 FROM usage_attribution_daily
+			 WHERE user_id = ?
+				AND day >= ?
+				AND day < ?
+				AND meter IN (${creditAttributionMeters.map(() => '?').join(', ')})`,
+		)
+		.bind(
+			input.stableUserId,
+			`${input.month}-01`,
+			`${nextMonth}-01`,
+			...creditAttributionMeters,
+		)
+		.all<{
+			day: string
+			package_id: string
+			meter: string
+			units: number
+		}>()
+	const units: Array<CreditAttributionDailyUnit> = []
+	for (const row of rows.results ?? []) {
+		if (
+			!(creditAttributionMeters as ReadonlyArray<string>).includes(row.meter)
+		) {
+			continue
+		}
+		units.push({
+			day: row.day,
+			packageId: row.package_id,
+			meter: row.meter as CreditAttributionMeter,
+			units: Number(row.units) || 0,
+		})
+	}
+	return units
+}
+
+function nextUtcMonthKey(month: string) {
+	const [yearText, monthText] = month.split('-')
+	const year = Number(yearText)
+	const monthIndex = Number(monthText) - 1
+	const next = new Date(Date.UTC(year, monthIndex + 1, 1))
+	return utcMonthKey(next)
+}
+
+export async function loadCreditAttributionBreakdown(input: {
+	db: D1Database
+	stableUserId: string
+	username: string
+	computeOverage: AccountUsageComputeOverage | null
+	now?: Date
+}): Promise<CreditAttributionBreakdown> {
+	const now = input.now ?? new Date()
+	const month = utcMonthKey(now)
+	const dailyUnits = await readCreditAttributionDailyUnits({
+		db: input.db,
+		stableUserId: input.stableUserId,
+		month,
+	})
+	const packageIds = [
+		...new Set(
+			dailyUnits
+				.map((row) => row.packageId.trim())
+				.filter((packageId) => packageId.length > 0),
+		),
+	]
+	const { names, hrefs } = await loadPackageAttributionLabels({
+		db: input.db,
+		stableUserId: input.stableUserId,
+		username: input.username,
+		packageIds,
+	})
+	const includes =
+		input.computeOverage?.meters.map((meter) => ({
+			meter: creditAttributionMeterFromComputeResource(meter.resource),
+			include: meter.include,
+		})) ?? creditAttributionMeters.map((meter) => ({ meter, include: 0 }))
+	return buildCreditAttributionBreakdown({
+		month,
+		dailyUnits,
+		includes,
+		packageNames: names,
+		packageHrefs: hrefs,
+	})
+}
+
+async function loadPackageAttributionLabels(input: {
+	db: D1Database
+	stableUserId: string
+	username: string
+	packageIds: Array<string>
+}): Promise<{
+	names: Map<string, string>
+	hrefs: Map<string, string>
+}> {
+	const names = new Map<string, string>()
+	const hrefs = new Map<string, string>()
+	if (input.packageIds.length === 0) return { names, hrefs }
+	for (
+		let index = 0;
+		index < input.packageIds.length;
+		index += attributionPackageLabelChunkSize
+	) {
+		const chunk = input.packageIds.slice(
+			index,
+			index + attributionPackageLabelChunkSize,
+		)
+		const placeholders = chunk.map(() => '?').join(', ')
+		const rows = await input.db
+			.prepare(
+				`SELECT id, kody_id, name
+				 FROM saved_packages
+				 WHERE user_id = ?
+				 AND id IN (${placeholders})`,
+			)
+			.bind(input.stableUserId, ...chunk)
+			.all<{ id: string; kody_id: string; name: string }>()
+		for (const row of rows.results ?? []) {
+			names.set(row.id, row.name?.trim() || row.kody_id)
+			hrefs.set(
+				row.id,
+				routes.communityPackage.href({
+					username: input.username,
+					kodyId: row.kody_id,
+				}),
+			)
+		}
+	}
+	return { names, hrefs }
+}

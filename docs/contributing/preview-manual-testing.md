@@ -17,7 +17,9 @@ From the repo root, on a pushed PR branch, with `gh` authenticated:
 npm run preview:manual-test
 ```
 
-Same thing: `node tools/preview-manual-test.ts`.
+Same thing: `node tools/preview-manual-test.ts`, or
+`npm run control-kody -- preview --pr <n>` (flags after `preview` go to this
+script; a `--` separator is optional).
 
 The script signs in as the preview seed user and keeps that session. The seed
 account starts **empty** except the user row — there are no secrets, packages,
@@ -27,6 +29,15 @@ same user. For a saved package, use `package-create` (not a create action on
 
 ```bash
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+```
+
+For arbitrary MCP `execute` or `search` as the same seed user (fixtures,
+`jobRunNow`, probing `kody:runtime`), use the CLI instead of a throwaway OAuth
+script:
+
+```bash
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
+npm run control-kody -- search --origin <preview> --query "packageSave"
 ```
 
 JSON APIs still cover other account data:
@@ -39,8 +50,29 @@ npm run preview:manual-test -- \
 ```
 
 `--request` is authenticated HTTP as the seed user. Spec:
-`METHOD /path [expected-status] [json-body]`. Default success is any 2xx.
-Example negative check: `--request 'GET /admin 403'`.
+`METHOD /path [expected-status] [json-body] [--dump] [--contains <text>]`.
+Default success is any 2xx. Example negative check:
+`--request 'GET /admin 403'`. `--dump` and `--contains` behave like
+`control-kody request`: `--dump` writes the raw body to `.tmp/control-kody-body`
+(`-<n>` suffix per request when several dump) and `--contains` fails the check
+unless the body includes the text (everything up to the next flag, so
+`--request 'GET /pricing --dump --contains Worker compute'` works). They can
+also follow the spec as separate flags and apply to the previous `--request`.
+
+`GET /account/export.json` is a bounded metadata manifest (header
+`X-Kody-Export-Completeness: manifest-only`). It lists section counts and points
+at MCP export capabilities; it does not inline D1 rows, secret names, or other
+user payload. Do not use `--contains` on that route to assert saved secrets,
+memories, or similar — the check fails even when export works. At most assert
+manifest shape, for example
+`--request 'GET /account/export.json --contains accountExportSection'`. To
+verify exported content, use MCP `accountExportSection` via
+`control-kody execute` on the same preview origin. One-line example for
+`secret_entries` metadata (name only, never the value):
+
+```bash
+npm run control-kody -- execute --origin <preview> --code 'import { kody } from "kody:runtime"; export default async function main() { return await kody.accountExportSection({ section: "d1_table", table: "secret_entries" }) }'
+```
 
 `--json` includes session metadata for the scripted run. For more authenticated
 HTTP, use `control-kody request` with the same `--origin` (and `--dump` /
@@ -58,9 +90,9 @@ not enough. Add `--request` / `--check` for the flows this PR changes, or run
 Ready-for-review PRs on this repository (not forks, not drafts) get a per-PR
 origin worker (`kody-pr-<n>`), sibling platform, runtime, and jobs workers
 (`kody-pr-<n>-platform`, `kody-pr-<n>-runtime`, `kody-pr-<n>-jobs`), isolated
-app/audit/jobs D1 resources, KV, mock workers, and a seeded login. The workflow
-comments the URL on the PR. Details of resource names and cleanup live in
-[`preview deploys`](./setup/preview-deploys.md).
+app/audit/jobs D1 resources, a Vectorize index, KV, mock workers, and a seeded
+login. The workflow comments the URL on the PR. Details of resource names and
+cleanup live in [`preview deploys`](./setup/preview-deploys.md).
 
 `/health` `commitSha` is GitHub's `github.sha` for that workflow run. On
 `pull_request` events that is the merge commit, not the branch tip, so it can
@@ -68,6 +100,29 @@ differ from `HEAD` / `headRefOid`. GitHub environment deployments record the PR
 head SHA, not that merge commit. The script treats `/health` as ready when
 `commitSha` equals the PR head **or** is a merge commit that has the PR head as
 a parent. Pass `--sha` to override the expected commit.
+
+## DR backup control plane
+
+The origin preview does not run the disaster-recovery backup control plane. That
+worker is `kody-production-d1-backups` (`packages/backup-control-plane/`, admin
+UI at `https://kody-dr.kentcdodds.com`). `POST /actions/seal-day` and the other
+control-plane routes are not served by `kody-pr-<n>`.
+
+`.github/workflows/preview.yml` never deploys this worker.
+`.github/workflows/deploy.yml` deploys it from `main` only, in
+`deploy-backup-control-plane`, when the 15-commit path filter matches
+`packages/backup-control-plane/`, `packages/shared/src/backup-*`,
+`tools/ci/backup-resources`, or `deploy.yml` (a manual Deploy dispatch forces it
+too). Shared backup helpers that the origin worker imports can still run on a
+preview. Behavior that exists only on the control-plane worker cannot.
+
+For a change whose behavior lives only on that worker, an origin preview pass is
+not proof. Use the control-plane Node tests
+(`packages/backup-control-plane/**/*.node.test.ts`, included by
+`vitest.node.config.ts` via `npm run test:node`), `npm run backup:build`
+(Wrangler dry-run of that config), and, after merge, the
+`deploy-backup-control-plane` job on `main`. See
+[disaster recovery](./disaster-recovery.md).
 
 ## Seed login
 
@@ -80,7 +135,22 @@ seeded remotely):
 
 The script signs in through `POST /auth` (Turnstile is off on preview). Sign in
 in a browser at `/login` with Email + Password and the **Sign in** button.
-`/admin` is expected to 403.
+Prefer a deep link with `redirectTo` when UI login is still needed, for example
+`/login?redirectTo=%2F%40user-me%2Fyour-pkg`, so you land on the page under test
+instead of `/account`. Or skip typing entirely with
+`npm run control-kody -- browse --origin <preview> --path <path>` after the
+scripted session (reuses `.tmp/control-kody-cookie`). `/admin` is expected
+to 403. Preview credentials are public, so the seed is intentionally non-admin.
+States that only an admin can set (account suspension, outbound-email pause,
+account deletion kickoff, fleet feature flags) cannot be reproduced on preview.
+For those paths, sufficient evidence is the local admin seed (`kody@example.com`
+/ `ilikecode`) plus targeted Workers or unit tests — not a preview `/admin`
+session and not raw D1 writes.
+
+The one exception is the operator/CI-only
+[migration rehearsal](./preview-migration-rehearsal.md): its `seed` action
+creates a site admin on a `kody-branch-*` preview, with private credentials that
+leave CI only sealed to the operator's key. PR previews never get an admin.
 
 Do not seed preview D1 from the agent VM with `tools/ci/preview-resources.ts`
 unless you are an operator with Cloudflare credentials. Create user data through
@@ -90,11 +160,30 @@ the product JSON APIs (`/account/*.json` in
 Those JSON endpoints are the same ones the UI posts to. Package creation is
 MCP-only (`packageGetGitRemote({ create: true, kody_id })` with the package name
 leaf or `@owner/leaf`); there is no create action on
-`POST /account/packages.json`.
+`POST /account/packages.json`. Arbitrary MCP `execute` / `search` uses
+`control-kody execute` / `search` against the same origin.
 
 `/mcp` stays OAuth-protected; an unauthenticated GET is 401 by design. Logged-in
 preview testing does not require agents to hand-roll an MCP OAuth dance — the
 CLI does it for them.
+
+`emailSend` on a PR preview still stores the mailbox row (so `emailMessageGet`
+and `GET /account/email.json?selected=` can read the text and HTML bodies).
+Provider delivery fails with Cloudflare's
+`could not find domain config of sending domain` because the per-preview inbox
+host (`user-me@inbox.kody-pr-<n>.…workers.dev`) is not a configured sending
+domain. Treat `status: "failed"` plus that error as the expected preview send;
+the stored row is the body round-trip. Production and local mock/REST fallbacks
+are the paths that actually deliver.
+
+Two `packageSave` packages on the seed account are both self-authored and share
+implicit user-secret read. That is not a locked-secret denial test. To preview
+the denial path, publish a listing, install or `communityFork` it under a
+different `kody_id`, skip adoption (`community_forks.adopted_at` stays null),
+lock the user secret to the original package, then run the fork. Workers
+coverage in `package-secret-authority.workers.test.ts` is authoritative for the
+denial path; see
+[Package approval](../use/secrets-and-values.md#package-approval).
 
 ## Logged-in data and UI pass
 
@@ -102,13 +191,19 @@ CLI does it for them.
 2. If you need a longer session, keep using `control-kody request` (or more
    `--request` flags) against the same origin. Do not `cat` the cookie into
    `curl` or Python.
-3. Open the preview URL (computerUse on Cloud Agents), sign in with the seed
-   credentials, and confirm the same data in the UI. Stay on the preview origin
-   (do not follow package-app handoff into production).
-4. Record what you saw in the PR.
+3. Prefer MCP/API/`control-kody` `execute` for proof. Open a browser only when
+   UI is under test.
+4. When UI is under test, open already signed in with
+   `npm run control-kody -- browse --origin <preview> --path <path>` (optional
+   `--record`). Cursor `computerUse` cannot drive that Playwright window — for
+   computerUse, open `/login?redirectTo=<path>` with the seed credentials and
+   stay on the preview origin (do not follow package-app handoff into
+   production).
+5. Record what you saw in the PR.
 
-Do not point Playwright at the preview. Local E2E (`npm run test:e2e:run`) boots
-its own worker against `.wrangler/state/e2e`.
+Do not point Playwright at the preview for the repo E2E suite. Local E2E
+(`npm run test:e2e:run`) boots its own worker against `.wrangler/state/e2e`.
+`control-kody browse` is the intentional headed exception for preview UI demos.
 
 ## If the script cannot find a preview
 

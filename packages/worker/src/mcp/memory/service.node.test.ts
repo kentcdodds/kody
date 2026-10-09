@@ -57,7 +57,7 @@ function createMemoryTestDb() {
 								normalizedQuery.includes('from mcp_memories') &&
 								normalizedQuery.includes('where user_id = ? and id = ?')
 							) {
-								const [userId, memoryId] = params as Array<string>
+								const [userId, memoryId] = params as [string, string]
 								const row = memories.get(memoryId)
 								if (!row || row.user_id !== userId) return null
 								return { ...row } as T
@@ -112,7 +112,11 @@ function createMemoryTestDb() {
 									'from mcp_memory_conversation_suppressions',
 								)
 							) {
-								const [userId, conversationId, now] = params as Array<string>
+								const [userId, conversationId, now] = params as [
+									string,
+									string,
+									string,
+								]
 								const rows = [...suppressions.values()]
 									.filter((row) => row.user_id === userId)
 									.filter((row) => row.conversation_id === conversationId)
@@ -202,8 +206,11 @@ function createMemoryTestDb() {
 										'set last_accessed_at = ?, updated_at = updated_at',
 									)
 								) {
-									const [lastAccessedAt, userId, ...memoryIds] =
-										params as Array<string>
+									const [lastAccessedAt, userId, ...memoryIds] = params as [
+										string,
+										string,
+										...Array<string>,
+									]
 									let changes = 0
 									for (const memoryId of memoryIds) {
 										const existing = memories.get(memoryId)
@@ -218,7 +225,7 @@ function createMemoryTestDb() {
 								}
 							}
 							if (normalizedQuery.startsWith('delete from mcp_memories')) {
-								const [userId, memoryId] = params as Array<string>
+								const [userId, memoryId] = params as [string, string]
 								const existing = memories.get(memoryId)
 								if (!existing || existing.user_id !== userId) {
 									return { meta: { changes: 0 } }
@@ -238,7 +245,7 @@ function createMemoryTestDb() {
 									createdAt,
 									lastSeenAt,
 									expiresAt,
-								] = params as Array<string>
+								] = params as [string, string, string, string, string, string]
 								suppressions.set(
 									suppressionKey(userId, conversationId, memoryId),
 									{
@@ -258,7 +265,7 @@ function createMemoryTestDb() {
 								)
 							) {
 								if (normalizedQuery.includes('where expires_at <= ?')) {
-									const [cutoff] = params as Array<string>
+									const [cutoff] = params as [string]
 									let changes = 0
 									for (const [key, row] of suppressions.entries()) {
 										if (row.expires_at <= cutoff) {
@@ -315,99 +322,106 @@ function createDeterministicAiBinding(): Ai {
 	} as unknown as Ai
 }
 
-test('memory service upserts, verifies, and soft deletes', async () => {
+const editorThemeUri = 'https://docs.example.com/preferences/editor-theme'
+const memoryDocsUri =
+	'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md'
+
+test('memory service upserts, verifies, soft deletes, and validates source uris', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
+	const base = { env: runtimeEnv, userId: 'user-123' }
 
 	const created = await upsertMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		subject: 'Preferred editor theme',
 		summary: 'User prefers a dark theme in editors.',
 		details: 'Applies to code editors and dashboards.',
 		category: 'preference',
 		tags: ['theme', 'dark-mode'],
-		sourceUris: ['https://docs.example.com/preferences/editor-theme'],
+		sourceUris: [editorThemeUri],
 		verificationReference: 'verify-1',
 	})
-
 	expect(created.mode).toBe('created')
 	expect(created.memory.subject).toBe('Preferred editor theme')
-	expect(created.memory.sourceUris).toEqual([
-		'https://docs.example.com/preferences/editor-theme',
-	])
+	expect(created.memory.sourceUris).toEqual([editorThemeUri])
 
 	const verify = await verifyMemoryCandidate({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		candidate: {
 			subject: 'Editor theme preference',
 			summary: 'User likes dark mode in editing interfaces.',
 			category: 'preference',
 			tags: ['theme'],
-			sourceUris: ['https://docs.example.com/preferences/editor-theme'],
+			sourceUris: [editorThemeUri],
 		},
 	})
-
 	expect(verify.relatedMemories).toHaveLength(1)
 	expect(verify.relatedMemories[0]?.memory.id).toBe(created.memory.id)
-	expect(verify.candidate.source_uris).toEqual([
-		'https://docs.example.com/preferences/editor-theme',
-	])
-	expect(verify.relatedMemories[0]?.memory.sourceUris).toEqual([
-		'https://docs.example.com/preferences/editor-theme',
-	])
+	expect(verify.candidate.source_uris).toEqual([editorThemeUri])
+	expect(verify.relatedMemories[0]?.memory.sourceUris).toEqual([editorThemeUri])
 
 	const updated = await upsertMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		memoryId: created.memory.id,
 		subject: 'Preferred editor theme',
 		summary: 'User prefers dark mode everywhere.',
 		category: 'preference',
 		tags: ['theme', 'dark-mode'],
-		sourceUris: [
-			'https://docs.example.com/preferences/editor-theme',
-			'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
-		],
+		sourceUris: [editorThemeUri, memoryDocsUri],
 		verificationReference: 'verify-2',
 	})
-
 	expect(updated.mode).toBe('updated')
 	expect(updated.memory.summary).toBe('User prefers dark mode everywhere.')
-	expect(updated.memory.sourceUris).toEqual([
-		'https://docs.example.com/preferences/editor-theme',
-		'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
-	])
+	expect(updated.memory.sourceUris).toEqual([editorThemeUri, memoryDocsUri])
 
 	const deleted = await deleteMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		memoryId: created.memory.id,
 		force: false,
 	})
-
 	expect(deleted?.status).toBe('deleted')
-
-	const loaded = await getMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
-		memoryId: created.memory.id,
-	})
+	const loaded = await getMemory({ ...base, memoryId: created.memory.id })
 	expect(loaded?.status).toBe('deleted')
-	expect(loaded?.sourceUris).toEqual([
-		'https://docs.example.com/preferences/editor-theme',
-		'https://github.com/kentcdodds/kody/blob/main/docs/use/memory.md',
-	])
+	expect(loaded?.sourceUris).toEqual([editorThemeUri, memoryDocsUri])
+
+	await expect(
+		upsertMemory({
+			...base,
+			subject: 'Invalid source URIs',
+			summary: 'This write should fail validation.',
+			sourceUris: ['not-a-url'],
+			verificationReference: 'verify-4',
+		}),
+	).rejects.toThrow('Memory source_uris entries must be valid URLs.')
+
+	// Rows stored before source URIs existed load with an empty list.
+	testDb.memories.set('legacy-memory', {
+		id: 'legacy-memory',
+		user_id: 'user-123',
+		category: 'profile',
+		status: 'active',
+		subject: 'Legacy memory',
+		summary: 'Stored before source URIs existed.',
+		details: '',
+		tags_json: '["legacy"]',
+		dedupe_key: null,
+		created_at: '2026-01-01T00:00:00.000Z',
+		updated_at: '2026-01-01T00:00:00.000Z',
+		last_accessed_at: null,
+		deleted_at: null,
+	} as unknown as McpMemoryRow)
+	expect(
+		(await getMemory({ ...base, memoryId: 'legacy-memory' }))?.sourceUris,
+	).toEqual([])
 })
 
-test('memory search returns mutable user-owned ids that can be updated and deleted', async () => {
+test('memory search returns mutable user-owned ids and upsert rejects unknown ids', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
+	const base = { env: runtimeEnv, userId: 'user-123' }
 
 	await upsertMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		subject: 'Mutable memory id',
 		summary: 'Search results should return ids that mutation calls can reuse.',
 		category: 'workflow',
@@ -423,18 +437,15 @@ test('memory search returns mutable user-owned ids that can be updated and delet
 	})
 
 	const search = await searchMemoryRecords({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		query: 'mutable memory id mutation calls',
 	})
-
 	expect(search.matches).toHaveLength(1)
 	const match = search.matches[0]!
 	expect(match.subject).toBe('Mutable memory id')
 
 	const updated = await upsertMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
+		...base,
 		memoryId: match.id,
 		subject: 'Mutable memory id',
 		summary: 'The exact search result id was accepted by upsert.',
@@ -444,23 +455,13 @@ test('memory search returns mutable user-owned ids that can be updated and delet
 	expect(updated.mode).toBe('updated')
 	expect(updated.memory.id).toBe(match.id)
 
-	const deleted = await deleteMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
-		memoryId: match.id,
-	})
+	const deleted = await deleteMemory({ ...base, memoryId: match.id })
 	expect(deleted?.id).toBe(match.id)
 	expect(deleted?.status).toBe('deleted')
-})
-
-test('memory upsert rejects unknown mutation ids', async () => {
-	const testDb = createMemoryTestDb()
-	const runtimeEnv = env(testDb.db)
 
 	await expect(
 		upsertMemory({
-			env: runtimeEnv,
-			userId: 'user-123',
+			...base,
 			memoryId: 'transcribed-memory-id',
 			subject: 'Preferred editor theme',
 			summary: 'User prefers a dark theme in editors.',
@@ -475,7 +476,7 @@ test('memory upsert rejects unknown mutation ids', async () => {
 test('memory surfacing suppresses repeated memories per conversation', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
-
+	const query = 'deployment preference after 4pm'
 	await upsertMemory({
 		env: runtimeEnv,
 		userId: 'user-123',
@@ -484,44 +485,32 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 		category: 'workflow',
 		verificationReference: 'verify-3',
 	})
+	const surface = (conversationId: string) =>
+		surfaceRelevantMemories({
+			env: runtimeEnv,
+			userId: 'user-123',
+			query,
+			conversationId,
+		})
 
-	const first = await surfaceRelevantMemories({
-		env: runtimeEnv,
-		userId: 'user-123',
-		query: 'deployment preference after 4pm',
-		conversationId: 'conv-123',
-	})
-
+	const first = await surface('conv-123')
 	expect(first.memories).toHaveLength(1)
 	expect(first.suppressedCount).toBe(0)
 
-	const second = await surfaceRelevantMemories({
-		env: runtimeEnv,
-		userId: 'user-123',
-		query: 'deployment preference after 4pm',
-		conversationId: 'conv-123',
-	})
-
+	const second = await surface('conv-123')
 	expect(second.memories).toHaveLength(0)
 	expect(second.suppressedCount).toBeGreaterThanOrEqual(1)
 
-	const otherConversation = await surfaceRelevantMemories({
-		env: runtimeEnv,
-		userId: 'user-123',
-		query: 'deployment preference after 4pm',
-		conversationId: 'conv-other-agent',
-	})
-
+	const otherConversation = await surface('conv-other-agent')
 	expect(otherConversation.memories).toHaveLength(1)
 	expect(otherConversation.suppressedCount).toBe(0)
 
 	const search = await searchMemoryRecords({
 		env: runtimeEnv,
 		userId: 'user-123',
-		query: 'deployment preference after 4pm',
+		query,
 		conversationId: 'conv-123',
 	})
-
 	expect(search.matches).toHaveLength(0)
 	expect(search.suppressedCount).toBeGreaterThanOrEqual(1)
 })
@@ -561,65 +550,23 @@ test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one b
 	)
 })
 
-test('memory service rejects invalid source uris and tolerates missing stored values', async () => {
-	const testDb = createMemoryTestDb()
-	const runtimeEnv = env(testDb.db)
-
-	await expect(
-		upsertMemory({
-			env: runtimeEnv,
-			userId: 'user-123',
-			subject: 'Invalid source URIs',
-			summary: 'This write should fail validation.',
-			sourceUris: ['not-a-url'],
-			verificationReference: 'verify-4',
-		}),
-	).rejects.toThrow('Memory source_uris entries must be valid URLs.')
-
-	testDb.memories.set('legacy-memory', {
-		id: 'legacy-memory',
-		user_id: 'user-123',
-		category: 'profile',
-		status: 'active',
-		subject: 'Legacy memory',
-		summary: 'Stored before source URIs existed.',
-		details: '',
-		tags_json: '["legacy"]',
-		dedupe_key: null,
-		created_at: '2026-01-01T00:00:00.000Z',
-		updated_at: '2026-01-01T00:00:00.000Z',
-		last_accessed_at: null,
-		deleted_at: null,
-	} as unknown as McpMemoryRow)
-
-	const loaded = await getMemory({
-		env: runtimeEnv,
-		userId: 'user-123',
-		memoryId: 'legacy-memory',
-	})
-
-	expect(loaded?.sourceUris).toEqual([])
-})
-
 test('memory search online queries Vectorize first and hydrates vector hits by id', async () => {
 	const testDb = createMemoryTestDb()
 	const baseTime = Date.parse('2026-06-01T00:00:00.000Z')
-	function seedMemory(input: {
-		id: string
-		subject: string
-		summary: string
-		ageMinutes: number
-	}) {
-		const timestamp = new Date(
-			baseTime - input.ageMinutes * 60_000,
-		).toISOString()
-		testDb.memories.set(input.id, {
-			id: input.id,
+	const seedMemory = (
+		id: string,
+		subject: string,
+		summary: string,
+		ageMinutes: number,
+	) => {
+		const timestamp = new Date(baseTime - ageMinutes * 60_000).toISOString()
+		testDb.memories.set(id, {
+			id,
 			user_id: 'user-123',
 			category: null,
 			status: 'active',
-			subject: input.subject,
-			summary: input.summary,
+			subject,
+			summary,
 			details: '',
 			tags_json: '[]',
 			source_uris_json: '[]',
@@ -630,52 +577,43 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 			deleted_at: null,
 		})
 	}
-	seedMemory({
-		id: 'memory-recent',
-		subject: 'Deployment window',
-		summary: 'User prefers deployments after 4pm.',
-		ageMinutes: 0,
-	})
+	seedMemory(
+		'memory-recent',
+		'Deployment window',
+		'User prefers deployments after 4pm.',
+		0,
+	)
 	// Enough newer filler rows that the old memory falls outside the bounded
 	// lexical candidate set (most recent 50 rows).
 	for (let index = 0; index < 60; index += 1) {
-		seedMemory({
-			id: `filler-${index}`,
-			subject: `Filler note ${index}`,
-			summary: 'Unrelated grocery reminder.',
-			ageMinutes: index + 1,
-		})
+		seedMemory(
+			`filler-${index}`,
+			`Filler note ${index}`,
+			'Unrelated grocery reminder.',
+			index + 1,
+		)
 	}
-	seedMemory({
-		id: 'memory-old-vector-hit',
-		subject: 'Deployment window history',
-		summary: 'Old deployment window memory only reachable via Vectorize.',
-		ageMinutes: 10_000,
-	})
+	seedMemory(
+		'memory-old-vector-hit',
+		'Deployment window history',
+		'Old deployment window memory only reachable via Vectorize.',
+		10_000,
+	)
 
-	const vectorQueryCalls: Array<{
-		topK: number
-		namespace?: string
-		filter?: Record<string, unknown>
-	}> = []
+	const vectorQueryCalls: Array<VectorizeQueryOptions | undefined> = []
+	const vectorIndex: Pick<VectorizeIndex, 'query'> = {
+		async query(_values, options) {
+			vectorQueryCalls.push(options)
+			return {
+				count: 1,
+				matches: [{ id: 'memory_memory-old-vector-hit', score: 0.92 }],
+			}
+		},
+	}
 	const runtimeEnv = env(testDb.db, {
 		SENTRY_ENVIRONMENT: 'production',
 		AI: createDeterministicAiBinding(),
-		CAPABILITY_VECTOR_INDEX: {
-			async query(
-				_values: Array<number>,
-				options: {
-					topK: number
-					namespace?: string
-					filter?: Record<string, unknown>
-				},
-			) {
-				vectorQueryCalls.push(options)
-				return {
-					matches: [{ id: 'memory_memory-old-vector-hit', score: 0.92 }],
-				}
-			},
-		},
+		CAPABILITY_VECTOR_INDEX: vectorIndex as VectorizeIndex,
 	})
 
 	const result = await searchMemoryRecords({

@@ -7,87 +7,54 @@ import {
 } from './account-workflows-filter.ts'
 
 function workflow(
-	overrides: Partial<FilterableAccountWorkflow> &
-		Pick<FilterableAccountWorkflow, 'id'>,
+	id: string,
+	workflowName: string,
+	status: FilterableAccountWorkflow['status'],
+	overrides: Partial<FilterableAccountWorkflow> = {},
 ): FilterableAccountWorkflow {
 	return {
+		id,
 		sourceType: 'inline',
-		workflowName: overrides.id,
-		status: 'queued',
+		workflowName,
+		status,
 		runAt: '2026-07-28T12:00:00.000Z',
 		...overrides,
 	}
 }
 
 test('account workflows filters cover active/history views and search', () => {
-	expect(readWorkflowsViewFilter('/account/workflows')).toBe('active')
-	expect(readWorkflowsViewFilter('/account/workflows?view=history')).toBe(
-		'history',
+	const views = [
+		['/account/workflows', 'active'],
+		['/account/workflows?view=history', 'history'],
+		['/account/workflows?view=all', 'all'],
+		['/account/workflows?view=nope', 'active'],
+	] as const
+	expect(views.map(([href]) => [href, readWorkflowsViewFilter(href)])).toEqual(
+		views,
 	)
-	expect(readWorkflowsViewFilter('/account/workflows?view=all')).toBe('all')
-	expect(readWorkflowsViewFilter('/account/workflows?view=nope')).toBe('active')
 
 	const workflows = [
-		workflow({
-			id: 'live-queued',
-			workflowName: 'Send digest',
-			status: 'queued',
-		}),
-		workflow({
-			id: 'live-running',
-			workflowName: 'Package sync',
+		workflow('live-queued', 'Send digest', 'queued'),
+		workflow('live-running', 'Package sync', 'running', {
 			sourceType: 'package',
 			packageId: 'pkg-1',
-			status: 'running',
 		}),
-		workflow({
-			id: 'done-complete',
-			workflowName: 'Finished digest',
-			status: 'complete',
-		}),
-		workflow({
-			id: 'done-errored',
-			workflowName: 'Failed ping',
-			status: 'errored',
-			lastError: 'boom',
-		}),
+		workflow('done-complete', 'Finished digest', 'complete'),
+		workflow('done-errored', 'Failed ping', 'errored', { lastError: 'boom' }),
 	]
-
 	expect(isActiveAccountWorkflow(workflows[0]!)).toBe(true)
 	expect(isActiveAccountWorkflow(workflows[2]!)).toBe(false)
 
-	expect(
-		filterAccountWorkflows(workflows, {
-			view: 'active',
-			search: '',
-		}).map((item) => item.id),
-	).toEqual(['live-queued', 'live-running'])
-
-	expect(
-		filterAccountWorkflows(workflows, {
-			view: 'history',
-			search: '',
-		}).map((item) => item.id),
-	).toEqual(['done-complete', 'done-errored'])
-
-	expect(
-		filterAccountWorkflows(workflows, {
-			view: 'all',
-			search: '',
-		}).map((item) => item.id),
-	).toEqual(['live-queued', 'live-running', 'done-complete', 'done-errored'])
-
-	expect(
-		filterAccountWorkflows(workflows, {
-			view: 'history',
-			search: 'failed',
-		}).map((item) => item.id),
-	).toEqual(['done-errored'])
-
-	expect(
-		filterAccountWorkflows(workflows, {
-			view: 'all',
-			search: 'pkg-1',
-		}).map((item) => item.id),
-	).toEqual(['live-running'])
+	const ids = (view: 'active' | 'history' | 'all', search = '') =>
+		filterAccountWorkflows(workflows, { view, search }).map((item) => item.id)
+	expect(ids('active')).toEqual(['live-queued', 'live-running'])
+	expect(ids('history')).toEqual(['done-complete', 'done-errored'])
+	expect(ids('all')).toEqual([
+		'live-queued',
+		'live-running',
+		'done-complete',
+		'done-errored',
+	])
+	expect(ids('history', 'failed')).toEqual(['done-errored'])
+	expect(ids('all', 'pkg-1')).toEqual(['live-running'])
 })

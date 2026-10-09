@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/cloudflare'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { runWithDeferredWork } from '#worker/deferred-work.ts'
 import { getEnv } from '#app/env.ts'
@@ -7,6 +8,7 @@ import {
 	retryHrefFromRequest,
 } from '#app/internal-error-page.ts'
 import { createAppRouter } from '#app/router.ts'
+import { wasSentryReported } from '#app/sentry-reported-error.ts'
 import { runWithRequestContext } from '#worker/request-context.ts'
 
 type AppRouterBundle = {
@@ -56,6 +58,22 @@ export async function handleRequest(
 		)
 	} catch (error) {
 		console.error('Remix server handler failed:', error)
+		// App-router 500s previously only hit console.error, so Sentry never saw
+		// the stack (unlike package-app / DO paths). Capture before recovering
+		// so the next illustrated 500 is diagnosable. SSR onError may already
+		// have reported pre-first-chunk render failures.
+		if (!wasSentryReported(error)) {
+			try {
+				Sentry.captureException(error, {
+					tags: {
+						surface: 'app-router',
+						pathname: new URL(request.url).pathname,
+					},
+				})
+			} catch {
+				// Sentry must never block the illustrated 500 response.
+			}
+		}
 		return recoverFromUncaughtHandlerFailure({ request, env })
 	}
 }

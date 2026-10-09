@@ -2,18 +2,18 @@ import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 const { parsePackageSearchIdentity, resolvePackageIdentitySearch } =
@@ -40,85 +40,7 @@ function createSavedPackage(input?: { hidden?: boolean; userId?: string }) {
 }
 
 test('package identity parser accepts exact ids and current-origin URLs and rejects unsafe ones', () => {
-	const common = {
-		baseUrl: 'https://heykody.dev',
-		username: 'user',
-	}
-	expect(parsePackageSearchIdentity({ ...common, query: packageId })).toEqual({
-		kind: 'package-id',
-		value: packageId,
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({ ...common, query: 'daily-notes' }),
-	).toEqual({
-		kind: 'kody-id',
-		value: 'daily-notes',
-		authoritative: false,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: '@user/daily-notes',
-		}),
-	).toEqual({
-		kind: 'kody-id',
-		value: 'daily-notes',
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: '@other/daily-notes',
-		}),
-	).toEqual({ kind: 'not-package-identity' })
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: `/account/packages/${packageId}`,
-		}),
-	).toEqual({
-		kind: 'package-id',
-		value: packageId,
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: `https://heykody.dev/account/packages/${packageId}?tab=source#top`,
-		}),
-	).toEqual({
-		kind: 'package-id',
-		value: packageId,
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: '/@user/packages/daily-notes',
-		}),
-	).toEqual({
-		kind: 'kody-id',
-		value: 'daily-notes',
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: 'https://heykody.dev/@user/packages/daily-notes',
-		}),
-	).toEqual({
-		kind: 'kody-id',
-		value: 'daily-notes',
-		authoritative: true,
-	})
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: 'find a package for daily notes',
-		}),
-	).toEqual({ kind: 'not-package-identity' })
-
+	const common = { baseUrl: 'https://heykody.dev', username: 'user' }
 	// Hosted package apps run on their own origin in production, so the URL a
 	// user copies from the address bar is on that host.
 	const hosted = {
@@ -126,145 +48,147 @@ test('package identity parser accepts exact ids and current-origin URLs and reje
 		packageAppBaseUrl: 'https://kody.run',
 		packageAppLegacyHosts: 'kodyapps.dev',
 	}
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://kody.run/@user/packages/daily-notes',
-		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://kodyapps.dev/@user/packages/daily-notes',
-		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
-	// A deep link inside a running app is not a package identity — unchanged from
-	// how the app origin already treated `/@user/packages/x/<rest>`.
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://kodyapps.dev/@user/packages/daily-notes/report?tab=1',
-		}),
-	).toEqual({ kind: 'not-package-identity' })
-
-	// The canonical hosted URL is the caller's per-user subdomain, where the
-	// username lives in the hostname and the path carries only the mount.
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://user.kody.run/packages/daily-notes?tab=source#top',
-		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://user.kodyapps.dev/packages/daily-notes?tab=source#top',
-		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://user.kodyapps.dev/packages/daily-notes/report?tab=1',
-		}),
-	).toEqual({ kind: 'not-package-identity' })
-	for (const query of [
+	const byId = { kind: 'package-id', value: packageId, authoritative: true }
+	const byKodyId = {
+		kind: 'kody-id',
+		value: 'daily-notes',
+		authoritative: true,
+	}
+	const notIdentity = { kind: 'not-package-identity' }
+	const invalid = { kind: 'invalid-package-identity' }
+	const cases: Array<
+		[Partial<Parameters<typeof parsePackageSearchIdentity>[0]>, string, object]
+	> = [
+		[common, packageId, byId],
+		[common, 'daily-notes', { ...byKodyId, authoritative: false }],
+		[common, '@user/daily-notes', byKodyId],
+		[common, '@other/daily-notes', notIdentity],
+		[common, `/account/packages/${packageId}`, byId],
+		[
+			common,
+			`https://heykody.dev/account/packages/${packageId}?tab=source#top`,
+			byId,
+		],
+		[common, '/@user/packages/daily-notes', byKodyId],
+		[common, 'https://heykody.dev/@user/packages/daily-notes', byKodyId],
+		[common, 'find a package for daily notes', notIdentity],
+		[hosted, 'https://kody.run/@user/packages/daily-notes', byKodyId],
+		[hosted, 'https://kodyapps.dev/@user/packages/daily-notes', byKodyId],
+		// A deep link inside a running app is not a package identity — unchanged
+		// from how the app origin already treated `/@user/packages/x/<rest>`.
+		[
+			hosted,
+			'https://kodyapps.dev/@user/packages/daily-notes/report?tab=1',
+			notIdentity,
+		],
+		// The canonical hosted URL is the caller's per-user subdomain, where the
+		// username lives in the hostname and the path carries only the mount.
+		[
+			hosted,
+			'https://user.kody.run/packages/daily-notes?tab=source#top',
+			byKodyId,
+		],
+		[
+			hosted,
+			'https://user.kodyapps.dev/packages/daily-notes?tab=source#top',
+			byKodyId,
+		],
+		[
+			hosted,
+			'https://user.kodyapps.dev/packages/daily-notes/report?tab=1',
+			notIdentity,
+		],
 		// Another user's subdomain, even for the same kody id.
-		'https://other.kodyapps.dev/packages/daily-notes',
+		[hosted, 'https://other.kodyapps.dev/packages/daily-notes', invalid],
 		// Nested labels are never a user subdomain.
-		'https://a.user.kodyapps.dev/packages/daily-notes',
+		[hosted, 'https://a.user.kodyapps.dev/packages/daily-notes', invalid],
 		// Embedded credentials stay refused on the subdomain form too.
-		'https://user:password@user.kodyapps.dev/packages/daily-notes',
+		[
+			hosted,
+			'https://user:password@user.kodyapps.dev/packages/daily-notes',
+			invalid,
+		],
 		// Wrong scheme for the configured package-app origin.
-		'http://user.kodyapps.dev/packages/daily-notes',
-	]) {
-		expect(parsePackageSearchIdentity({ ...hosted, query })).toEqual({
-			kind: 'invalid-package-identity',
-		})
-	}
-	// The app origin keeps working, and relative URLs still resolve against it.
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: 'https://heykody.dev/@user/packages/daily-notes',
-		}),
-	).toEqual({ kind: 'kody-id', value: 'daily-notes', authoritative: true })
-	expect(
-		parsePackageSearchIdentity({
-			...hosted,
-			query: `/account/packages/${packageId}`,
-		}),
-	).toEqual({ kind: 'package-id', value: packageId, authoritative: true })
-
-	for (const query of [
+		[hosted, 'http://user.kodyapps.dev/packages/daily-notes', invalid],
+		// The app origin keeps working, and relative URLs still resolve against it.
+		[hosted, 'https://heykody.dev/@user/packages/daily-notes', byKodyId],
+		[hosted, `/account/packages/${packageId}`, byId],
 		// Another user's package, even on the package-app origin.
-		'https://kodyapps.dev/@other/packages/daily-notes',
+		[hosted, 'https://kodyapps.dev/@other/packages/daily-notes', invalid],
 		// The package-app origin never serves account pages.
-		`https://kodyapps.dev/account/packages/${packageId}`,
+		[hosted, `https://kodyapps.dev/account/packages/${packageId}`, invalid],
 		// Neighbouring hosts are not this deployment.
-		'https://evil-kodyapps.dev/@user/packages/daily-notes',
-		'https://kodyapps.dev.attacker.example/@user/packages/daily-notes',
-		'https://user:password@kodyapps.dev/@user/packages/daily-notes',
-	]) {
-		expect(parsePackageSearchIdentity({ ...hosted, query })).toEqual({
-			kind: 'invalid-package-identity',
-		})
-	}
-	// Deployments that serve package apps inline (no separate origin) must not
-	// start accepting that host.
+		[hosted, 'https://evil-kodyapps.dev/@user/packages/daily-notes', invalid],
+		[
+			hosted,
+			'https://kodyapps.dev.attacker.example/@user/packages/daily-notes',
+			invalid,
+		],
+		[
+			hosted,
+			'https://user:password@kodyapps.dev/@user/packages/daily-notes',
+			invalid,
+		],
+		// Deployments that serve package apps inline (no separate origin) must
+		// not start accepting that host.
+		[common, 'https://kodyapps.dev/@user/packages/daily-notes', invalid],
+		[
+			{ ...common, packageAppBaseUrl: 'not-a-url' },
+			'https://kodyapps.dev/@user/packages/daily-notes',
+			invalid,
+		],
+		[common, `https://attacker.example/account/packages/${packageId}`, invalid],
+		[common, 'https://attacker.example/@user/packages/daily-notes', invalid],
+		[common, 'https://heykody.dev/account/packages/%E0%A4%A', invalid],
+		[common, 'https://heykody.dev/@user/packages/%E0%A4%A', invalid],
+		[common, 'https://heykody.dev/@other/packages/daily-notes', invalid],
+		[common, '/@INVALID/packages/daily-notes', invalid],
+		[
+			common,
+			`https://user:password@heykody.dev/account/packages/${packageId}`,
+			invalid,
+		],
+	]
 	expect(
-		parsePackageSearchIdentity({
-			...common,
-			query: 'https://kodyapps.dev/@user/packages/daily-notes',
-		}),
-	).toEqual({ kind: 'invalid-package-identity' })
-	expect(
-		parsePackageSearchIdentity({
-			...common,
-			packageAppBaseUrl: 'not-a-url',
-			query: 'https://kodyapps.dev/@user/packages/daily-notes',
-		}),
-	).toEqual({ kind: 'invalid-package-identity' })
-
-	for (const query of [
-		`https://attacker.example/account/packages/${packageId}`,
-		`https://attacker.example/@user/packages/daily-notes`,
-		'https://heykody.dev/account/packages/%E0%A4%A',
-		'https://heykody.dev/@user/packages/%E0%A4%A',
-		'https://heykody.dev/@other/packages/daily-notes',
-		'/@INVALID/packages/daily-notes',
-		'https://user:password@heykody.dev/account/packages/' + packageId,
-	]) {
-		expect(parsePackageSearchIdentity({ ...common, query })).toEqual({
-			kind: 'invalid-package-identity',
-		})
-	}
+		cases.map(([options, query]) => [
+			query,
+			parsePackageSearchIdentity({
+				...common,
+				...options,
+				query,
+			}),
+		]),
+	).toEqual(cases.map(([, query, expected]) => [query, expected]))
 })
 
-test('package identity resolution is user-scoped, gates hidden matches, and skips unsafe lookups', async () => {
-	const visible = createSavedPackage()
-	const hidden = createSavedPackage({ hidden: true })
-	mockModule.getSavedPackageById
-		.mockResolvedValueOnce(visible)
-		.mockResolvedValueOnce(hidden)
-		.mockResolvedValueOnce(hidden)
-		.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId
-		.mockResolvedValueOnce(createSavedPackage())
-		.mockResolvedValueOnce(null)
-
-	const common = {
+function resolve(
+	overrides: Partial<Parameters<typeof resolvePackageIdentitySearch>[0]> = {},
+) {
+	return resolvePackageIdentitySearch({
 		db: {} as D1Database,
 		userId: 'user-1',
 		query: packageId,
 		baseUrl: 'https://heykody.dev',
 		username: 'user',
-	}
-	await expect(
-		resolvePackageIdentitySearch({
-			...common,
-			includeHiddenPackages: false,
-		}),
-	).resolves.toMatchObject({
+		includeHiddenPackages: false,
+		...overrides,
+	})
+}
+
+const noMatch = { recognized: true, match: null }
+
+test('package identity resolution is user-scoped, gates hidden matches, and skips unsafe lookups', async () => {
+	const hidden = createSavedPackage({ hidden: true })
+	mockModule.getSavedPackageById
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce(hidden)
+		.mockResolvedValueOnce(hidden)
+		.mockResolvedValueOnce(null)
+	mockModule.resolveSavedPackageRef
+		.mockResolvedValueOnce(createSavedPackage())
+		.mockResolvedValueOnce(null)
+
+	await expect(resolve()).resolves.toMatchObject({
 		recognized: true,
 		match: {
 			type: 'package',
@@ -273,113 +197,53 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 			hidden: false,
 		},
 	})
+	await expect(resolve()).resolves.toEqual(noMatch)
+	await expect(resolve({ includeHiddenPackages: true })).resolves.toMatchObject(
+		{
+			recognized: true,
+			match: { packageId, hidden: true },
+		},
+	)
 	await expect(
-		resolvePackageIdentitySearch({
-			...common,
-			includeHiddenPackages: false,
-		}),
-	).resolves.toEqual({ recognized: true, match: null })
-	await expect(
-		resolvePackageIdentitySearch({
-			...common,
-			includeHiddenPackages: true,
-		}),
-	).resolves.toMatchObject({
-		recognized: true,
-		match: { packageId, hidden: true },
-	})
-	await expect(
-		resolvePackageIdentitySearch({
-			...common,
-			userId: 'user-2',
-			includeHiddenPackages: true,
-		}),
-	).resolves.toEqual({ recognized: true, match: null })
-
-	await expect(
-		resolvePackageIdentitySearch({
-			db: {} as D1Database,
-			userId: 'user-1',
-			query: 'daily-notes',
-			baseUrl: 'https://heykody.dev',
-			username: 'user',
-			includeHiddenPackages: false,
-		}),
-	).resolves.toMatchObject({
+		resolve({ userId: 'user-2', includeHiddenPackages: true }),
+	).resolves.toEqual(noMatch)
+	await expect(resolve({ query: 'daily-notes' })).resolves.toMatchObject({
 		recognized: true,
 		match: { kodyId: 'daily-notes' },
 	})
-	await expect(
-		resolvePackageIdentitySearch({
-			db: {} as D1Database,
-			userId: 'user-1',
-			query: 'email',
-			baseUrl: 'https://heykody.dev',
-			username: 'user',
-			includeHiddenPackages: false,
-		}),
-	).resolves.toEqual({ recognized: false })
-
+	await expect(resolve({ query: 'email' })).resolves.toEqual({
+		recognized: false,
+	})
 	expect(mockModule.getSavedPackageById).toHaveBeenNthCalledWith(
 		4,
 		{},
-		{
-			userId: 'user-2',
-			packageId,
-		},
+		{ userId: 'user-2', packageId },
 	)
 
 	for (const input of [
-		{
-			userId: 'user-1',
-			query: `https://other.example/account/packages/${packageId}`,
-			username: 'user',
-		},
-		{
-			userId: 'user-1',
-			query: 'https://heykody.dev/@other/packages/daily-notes',
-			username: 'user',
-		},
+		{ query: `https://other.example/account/packages/${packageId}` },
+		{ query: 'https://heykody.dev/@other/packages/daily-notes' },
 		{ userId: null, query: packageId, username: null },
 	]) {
 		await expect(
-			resolvePackageIdentitySearch({
-				db: {} as D1Database,
-				...input,
-				baseUrl: 'https://heykody.dev',
-				includeHiddenPackages: true,
-			}),
-		).resolves.toEqual({ recognized: true, match: null })
+			resolve({ ...input, includeHiddenPackages: true }),
+		).resolves.toEqual(noMatch)
 	}
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(2)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(2)
 })
 
 test('package identity match includes listingAhead only when the fork is behind', async () => {
-	mockModule.getSavedPackageById.mockReset()
 	mockModule.getSavedPackageById
-		.mockResolvedValueOnce({
-			...createSavedPackage(),
-			listingAhead: true,
-		})
-		.mockResolvedValueOnce({
-			...createSavedPackage(),
-			listingAhead: false,
-		})
+		.mockResolvedValueOnce({ ...createSavedPackage(), listingAhead: true })
+		.mockResolvedValueOnce({ ...createSavedPackage(), listingAhead: false })
 
-	const common = {
-		db: {} as D1Database,
-		userId: 'user-1',
-		query: packageId,
-		baseUrl: 'https://heykody.dev',
-		username: 'user',
-		includeHiddenPackages: false,
-	}
-	await expect(resolvePackageIdentitySearch(common)).resolves.toMatchObject({
+	await expect(resolve()).resolves.toMatchObject({
 		recognized: true,
 		match: { listingAhead: true },
 	})
-	const current = await resolvePackageIdentitySearch(common)
+	const current = await resolve()
 	expect(current).toMatchObject({ recognized: true })
+	if (!current.recognized) throw new Error('Expected recognized identity')
 	expect(current.match).not.toHaveProperty('listingAhead')
 })

@@ -1,13 +1,17 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { type CapabilityContext } from '../types.ts'
 import { kodyOfficialGuideCapability } from './kody-official-guide.ts'
 import { guides } from '#worker/guides/catalog.ts'
 
-const ctx = {
+const ctx: CapabilityContext = {
 	env: {} as Env,
-	callerContext: {
+	callerContext: createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.example',
 		user: null,
-	},
+	}),
 }
 
 test('codingGuideGet serves public bundled guides and hides admin-only docs from anonymous callers', async () => {
@@ -74,15 +78,16 @@ test('codingGuideGet serves public bundled guides and hides admin-only docs from
 		{ guide: 'admin_events' },
 		{
 			env: {} as Env,
-			callerContext: {
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://kody.example',
 				user: {
-					userId: 'admin-1',
+					userId: personIdFromStored('admin-1'),
 					email: 'admin@example.com',
 					displayName: 'Admin',
 					roles: ['admin'],
 				},
-			},
+			}),
 		},
 	)
 	expect(adminResult.title).toBe('Admin events')

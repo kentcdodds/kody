@@ -3,7 +3,7 @@
  * a `<style>` tag. The stylesheet is render-blocking as a `<link>`; inlining
  * removes a full round trip from first paint on slow connections.
  *
- * The remix/ui stream renderer HTML-escapes text children, which would
+ * The remix/component stream renderer HTML-escapes text children, which would
  * corrupt CSS containing `&`, `<`, or `>` (e.g. child combinators). Escaping
  * is the identity function for CSS without those characters, so inlining is
  * only offered when the text is escape-safe; callers fall back to the

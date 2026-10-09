@@ -72,12 +72,15 @@ test('runner touches staging TTL, fans out one target chunk per throwaway DO, an
 		entryPoint: 'src/index.ts',
 		bundleKind: 'module' as const,
 	}
-	const outcome = await runner.run({
+	const runInput = {
 		stagingKey,
 		sourceId: 'source-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-1',
 		targets: [target],
+	}
+	const outcome = await runner.run({
+		...runInput,
 		baseUrl: 'https://kody.test',
 	})
 	expect(outcome.ok).toBe(true)
@@ -85,11 +88,7 @@ test('runner touches staging TTL, fans out one target chunk per throwaway DO, an
 		expect.stringMatching(/^isolated-artifact-rebuild-user-1-/),
 	)
 	expect(runIsolatedArtifactRebuild).toHaveBeenCalledWith({
-		stagingKey,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		targets: [target],
+		...runInput,
 		baseUrl: 'https://kody.test',
 	})
 
@@ -98,13 +97,7 @@ test('runner touches staging TTL, fans out one target chunk per throwaway DO, an
 			"Durable Object's isolate exceeded its memory limit and was reset.",
 		),
 	)
-	const resetOutcome = await runner.run({
-		stagingKey,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		publishedCommit: 'commit-1',
-		targets: [target],
-	})
+	const resetOutcome = await runner.run(runInput)
 	expect(resetOutcome.ok).toBe(false)
 	expect(resetOutcome.message).toContain('memory or CPU limits')
 	expect(resetOutcome.message).toContain(
@@ -118,15 +111,9 @@ test('runner touches staging TTL, fans out one target chunk per throwaway DO, an
 	runIsolatedArtifactRebuild.mockRejectedValueOnce(
 		new Error('Durable Object reset because its code was updated.'),
 	)
-	await expect(
-		runner.run({
-			stagingKey,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			publishedCommit: 'commit-1',
-			targets: [target],
-		}),
-	).rejects.toThrow('Durable Object reset because its code was updated.')
+	await expect(runner.run(runInput)).rejects.toThrow(
+		'Durable Object reset because its code was updated.',
+	)
 
 	await runner.discard(stagingKey)
 	expect(del).toHaveBeenCalledWith(stagingKey)

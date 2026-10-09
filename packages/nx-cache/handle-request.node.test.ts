@@ -7,171 +7,157 @@ import { type NxCacheEnv } from './nx-cache-types.ts'
 const ACCESS_TOKEN = 'test-nx-cache-token'
 const READ_TOKEN = 'test-nx-cache-read-token'
 const HASH = '0123456789abcdef0123456789abcdef'
+const CACHE_PATH = `/v1/cache/${HASH}`
 
-function env(
-	overrides: { token?: string; readToken?: string; commit?: string } = {},
-) {
+type CacheEnv = Pick<
+	NxCacheEnv,
+	'CACHE_ACCESS_TOKEN' | 'CACHE_READ_TOKEN' | 'BUILD_COMMIT'
+>
+
+function env(overrides: Partial<CacheEnv> = {}): CacheEnv {
 	return {
-		CACHE_ACCESS_TOKEN: overrides.token ?? ACCESS_TOKEN,
-		CACHE_READ_TOKEN: overrides.readToken,
-		BUILD_COMMIT: overrides.commit ?? 'commit-sha',
+		CACHE_ACCESS_TOKEN: ACCESS_TOKEN,
+		BUILD_COMMIT: 'commit-sha',
+		...overrides,
 	}
 }
 
-async function handle(
+function handle(
 	request: Request,
 	store = createMemoryCacheStore(),
-	environment: Pick<
-		NxCacheEnv,
-		'CACHE_ACCESS_TOKEN' | 'CACHE_READ_TOKEN' | 'BUILD_COMMIT'
-	> = env(),
+	environment = env(),
 ) {
 	return handleNxCacheRequest(request, environment, store)
 }
 
-function authorized(
+function cacheRequest(
 	method: string,
 	path: string,
-	body?: ArrayBuffer,
-	token = ACCESS_TOKEN,
+	{
+		body,
+		token = ACCESS_TOKEN,
+		headers = body
+			? {
+					'content-type': 'application/octet-stream',
+					'content-length': String(body.byteLength),
+				}
+			: {},
+	}: {
+		body?: ArrayBuffer | Uint8Array<ArrayBuffer>
+		token?: string | null
+		headers?: Record<string, string>
+	} = {},
 ) {
 	return new Request(`https://nx-cache.kody.codes${path}`, {
 		method,
 		headers: {
-			authorization: `Bearer ${token}`,
-			...(body
-				? {
-						'content-type': 'application/octet-stream',
-						'content-length': String(body.byteLength),
-					}
-				: {}),
+			...(token === null ? {} : { authorization: `Bearer ${token}` }),
+			...headers,
 		},
 		body: body ?? null,
 	})
 }
 
 test('health is public; cache routes require a configured bearer token', async () => {
-	expect(parseCacheHash(`/v1/cache/${HASH}`)).toBe(HASH)
+	expect(parseCacheHash(CACHE_PATH)).toBe(HASH)
 	expect(parseCacheHash('/v1/cache/../secrets')).toBeNull()
 	expect(parseCacheHash('/v1/cache/not-hex')).toBeNull()
 
-	const health = await handle(new Request('https://nx-cache.kody.codes/health'))
+	const health = await handle(cacheRequest('GET', '/health', { token: null }))
 	expect(health.status).toBe(200)
 	await expect(health.json()).resolves.toEqual({
 		ok: true,
 		commit: 'commit-sha',
 	})
 
-	const missing = await handle(
-		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`),
+	const cases: Array<[Request, CacheEnv, number]> = [
+		[cacheRequest('GET', CACHE_PATH, { token: null }), env(), 401],
+		[cacheRequest('GET', CACHE_PATH, { token: 'wrong-token' }), env(), 401],
+		[cacheRequest('GET', CACHE_PATH), env({ CACHE_ACCESS_TOKEN: '   ' }), 503],
+		[
+			cacheRequest('GET', CACHE_PATH),
+			env({ CACHE_ACCESS_TOKEN: undefined }),
+			503,
+		],
+		[
+			cacheRequest('PUT', CACHE_PATH),
+			env({ CACHE_READ_TOKEN: ACCESS_TOKEN }),
+			503,
+		],
+	]
+	const responses = await Promise.all(
+		cases.map(([request, environment]) =>
+			handle(request, createMemoryCacheStore(), environment),
+		),
 	)
-	expect(missing.status).toBe(401)
-
-	const wrong = await handle(
-		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`, {
-			headers: { authorization: 'Bearer wrong-token' },
-		}),
+	expect(responses.map((response) => response.status)).toEqual(
+		cases.map(([, , status]) => status),
 	)
-	expect(wrong.status).toBe(401)
-
-	const blank = await handle(
-		authorized('GET', `/v1/cache/${HASH}`),
-		createMemoryCacheStore(),
-		env({ token: '   ' }),
+	expect(await responses.at(-1)!.text()).toBe(
+		'Nx cache tokens are misconfigured',
 	)
-	expect(blank.status).toBe(503)
-
-	const unconfigured = await handle(
-		authorized('GET', `/v1/cache/${HASH}`),
-		createMemoryCacheStore(),
-		{ CACHE_ACCESS_TOKEN: undefined, BUILD_COMMIT: 'commit-sha' },
-	)
-	expect(unconfigured.status).toBe(503)
-
-	const identicalTokens = await handle(
-		authorized('PUT', `/v1/cache/${HASH}`),
-		createMemoryCacheStore(),
-		env({ token: ACCESS_TOKEN, readToken: ACCESS_TOKEN }),
-	)
-	expect(identicalTokens.status).toBe(503)
-	expect(await identicalTokens.text()).toBe('Nx cache tokens are misconfigured')
 })
 
 test('PUT then GET round-trips an artifact and rejects invalid writes', async () => {
 	const store = createMemoryCacheStore()
 	const artifact = new TextEncoder().encode('nx-cache-artifact').buffer
+	const withReadToken = env({ CACHE_READ_TOKEN: READ_TOKEN })
 
-	const created = await handle(
-		authorized('PUT', `/v1/cache/${HASH}`, artifact),
-		store,
-	)
-	expect(created.status).toBe(200)
+	const put = () =>
+		handle(cacheRequest('PUT', CACHE_PATH, { body: artifact }), store)
+	expect((await put()).status).toBe(200)
+	expect((await put()).status).toBe(409)
 
-	const replay = await handle(
-		authorized('PUT', `/v1/cache/${HASH}`, artifact),
-		store,
-	)
-	expect(replay.status).toBe(409)
-
-	const fetched = await handle(authorized('GET', `/v1/cache/${HASH}`), store)
+	const fetched = await handle(cacheRequest('GET', CACHE_PATH), store)
 	expect(fetched.status).toBe(200)
 	expect(fetched.headers.get('content-type')).toBe('application/octet-stream')
 	expect(await fetched.text()).toBe('nx-cache-artifact')
 
-	const missing = await handle(
-		authorized('GET', `/v1/cache/${'a'.repeat(32)}`),
-		store,
-	)
-	expect(missing.status).toBe(404)
-
-	const badHash = await handle(authorized('GET', '/v1/cache/../secrets'), store)
-	expect(badHash.status).toBe(404)
+	for (const path of [`/v1/cache/${'a'.repeat(32)}`, '/v1/cache/../secrets']) {
+		expect((await handle(cacheRequest('GET', path), store)).status).toBe(404)
+	}
 
 	const readGet = await handle(
-		authorized('GET', `/v1/cache/${HASH}`, undefined, READ_TOKEN),
+		cacheRequest('GET', CACHE_PATH, { token: READ_TOKEN }),
 		store,
-		env({ readToken: READ_TOKEN }),
+		withReadToken,
 	)
 	expect(readGet.status).toBe(200)
 	expect(await readGet.text()).toBe('nx-cache-artifact')
 
 	const readPut = await handle(
-		authorized('PUT', `/v1/cache/${'b'.repeat(32)}`, artifact, READ_TOKEN),
+		cacheRequest('PUT', `/v1/cache/${'b'.repeat(32)}`, {
+			body: artifact,
+			token: READ_TOKEN,
+		}),
 		store,
-		env({ readToken: READ_TOKEN }),
+		withReadToken,
 	)
 	expect(readPut.status).toBe(403)
 	expect(readPut.headers.get('content-type')).toMatch(/^text\/plain/)
 	expect(await store.get('b'.repeat(32))).toBeNull()
 
 	const missingLength = await handle(
-		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`, {
+		new Request(`https://nx-cache.kody.codes${CACHE_PATH}`, {
 			method: 'PUT',
 			headers: {
 				authorization: `Bearer ${ACCESS_TOKEN}`,
 				'content-type': 'application/octet-stream',
 			},
 			// Stream bodies do not get an automatic Content-Length.
-			body: new ReadableStream({
-				start(controller) {
-					controller.enqueue(new Uint8Array([1, 2, 3]))
-					controller.close()
-				},
-			}),
+			body: new Response(new Uint8Array([1, 2, 3])).body,
 			duplex: 'half',
 		} as RequestInit),
 	)
 	expect(missingLength.status).toBe(400)
 
 	const tooLarge = await handle(
-		new Request(`https://nx-cache.kody.codes/v1/cache/${HASH}`, {
-			method: 'PUT',
+		cacheRequest('PUT', CACHE_PATH, {
+			body: new Uint8Array([1]),
 			headers: {
-				authorization: `Bearer ${ACCESS_TOKEN}`,
 				'content-type': 'application/octet-stream',
 				'content-length': String(100 * 1024 * 1024 + 1),
 			},
-			body: new Uint8Array([1]),
 		}),
 	)
 	expect(tooLarge.status).toBe(413)

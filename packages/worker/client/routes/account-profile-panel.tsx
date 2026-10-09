@@ -1,6 +1,7 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
@@ -163,7 +164,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						data-field-ring
 						required
 						autoComplete="username"
-						pattern="[A-Za-z0-9][A-Za-z0-9-]{1,30}[A-Za-z0-9]"
+						pattern={'[A-Za-z0-9][A-Za-z0-9\\-]{1,30}[A-Za-z0-9]'}
 						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
 						value={draftUsername}
 						aria-invalid={usernameFieldError ? 'true' : undefined}
@@ -353,10 +354,15 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 								mix={[css(accountInputCss), on('input', onDraftEmailInput)]}
 							/>
 						</label>
-						<label mix={css(accountFieldCss)}>
-							<span mix={css(accountFieldLabelCss)}>Current password</span>
-							<input
-								type="password"
+						<div mix={css(accountFieldCss)}>
+							<label
+								for="account-email-change-password"
+								mix={css(accountFieldLabelCss)}
+							>
+								Current password
+							</label>
+							<PasswordRevealInput
+								id="account-email-change-password"
 								name="password"
 								data-field-ring
 								required
@@ -367,7 +373,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 									on('input', onEmailChangePasswordInput),
 								]}
 							/>
-						</label>
+						</div>
 						<div>
 							<button
 								type="submit"

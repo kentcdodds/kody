@@ -20,9 +20,12 @@ import {
 } from '#app/auth-session.ts'
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getEnv } from '#app/env.ts'
-import { type OAuthAuthorizeLoaderData } from '#universal/loader-data.ts'
+import {
+	type OAuthAuthorizeConsentOrg,
+	type OAuthAuthorizeLoaderData,
+} from '#universal/loader-data.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { createDb, usersTable } from './db.ts'
 import { upgradePasswordHashIfNeeded } from './password-upgrade.ts'
@@ -35,7 +38,7 @@ import { getPkceValidationError } from '#worker/oauth-pkce.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampAuthorizationResponseIssuer } from '#worker/oauth-authorization-response.ts'
-import { mcpResourcePath } from './mcp-auth.ts'
+import { mcpOAuthResourceUri } from '#worker/oauth-provider-options.ts'
 import {
 	listUserOAuthGrantsForClient,
 	revokeOAuthGrant,
@@ -51,6 +54,7 @@ import {
 	userOwnsMcpOauthClient,
 } from '#app/account-mcp-oauth-clients.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
+import { deleteMcpEventSubscriptionsForOauthClient } from '#mcp/events/subscriptions-repo.ts'
 import {
 	isOAuthAuthorizeClobberedResubmit,
 	oauthAuthorizeClobberedResubmitMessage,
@@ -60,6 +64,33 @@ import {
 	isOidcAuthorizeParamsParseError,
 	parseOidcAuthorizeParams,
 } from '#worker/oidc/authorize-oidc.ts'
+import {
+	connectionProfileGrantFields,
+	resolveAuthorizeConnectionProfile,
+} from '#worker/connection-profiles/oauth.ts'
+import {
+	ConnectionProfileAuthorizeError,
+	isConnectionProfileAuthorizeError,
+} from '#worker/connection-profiles/authorize-error.ts'
+import { getConnectionProfileByName } from '#worker/connection-profiles/repo.ts'
+import {
+	readOrgSlugFromUrl,
+	stripOrgFromResourceUri,
+} from '#universal/org-binding/url.ts'
+import { isOrgAuthorizeError } from '#worker/orgs/authorize-error.ts'
+import {
+	grantMatchesConsentOrg,
+	orgGrantFields,
+} from '#worker/orgs/oauth-grant.ts'
+import {
+	readOrgSlugFromForm,
+	resolveAuthorizeOrg,
+	selectConsentOrg,
+	selectConsentOrgsForLoader,
+	stripLoginFromAuthorizePrompt,
+	type AuthorizeOrg,
+} from '#worker/orgs/oauth-authorize.ts'
+import { listOrgsForPerson } from '#worker/orgs/repo.ts'
 
 export { oauthPaths }
 
@@ -69,21 +100,8 @@ const invalidOAuthClientRegistrationMessage =
 export const oauthEmailVerificationRequiredMessage =
 	'Verify your account email before authorizing MCP access. Keep this page open, resend or open the verification link from Account in another tab, then continue.'
 
-type OAuthProps = {
-	userId: string
-	email: string
-	username: string
-	displayName: string
-	authTime: number
-	nonce?: string
-}
-
 type OAuthEnv = Env & {
 	OAUTH_PROVIDER: OAuthHelpers
-}
-
-type OAuthContext = ExecutionContext & {
-	props?: OAuthProps
 }
 
 function getValidOAuthUsername(value: unknown) {
@@ -91,6 +109,55 @@ function getValidOAuthUsername(value: unknown) {
 		!getUsernameFormatValidationError(value.trim())
 		? value.trim()
 		: null
+}
+
+function isAuthorizeBindingError(error: unknown): error is { message: string } {
+	return isOrgAuthorizeError(error) || isConnectionProfileAuthorizeError(error)
+}
+
+async function resolveAuthorizeOrgAndProfile(input: {
+	env: Env
+	request: Request
+	authRequest: AuthRequest
+	userId: string
+	formSlug?: string | null
+}): Promise<{
+	org: AuthorizeOrg
+	connectionProfileName: string | null
+}> {
+	const urlOrg = await resolveAuthorizeOrg({
+		env: input.env,
+		request: input.request,
+		authRequest: input.authRequest,
+		userId: input.userId,
+	})
+	const org = await selectConsentOrg({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		formSlug: input.formSlug ?? null,
+		urlOrg,
+	})
+	const connectionProfileName = await resolveAuthorizeConnectionProfile({
+		env: input.env,
+		request: input.request,
+		authRequest: input.authRequest,
+		userId: input.userId,
+	})
+	if (connectionProfileName) {
+		const profile = await getConnectionProfileByName({
+			db: input.env.APP_DB,
+			userId: input.userId,
+			name: connectionProfileName,
+		})
+		const profileOrgId =
+			profile && typeof profile.orgId === 'string' ? profile.orgId.trim() : ''
+		if (profileOrgId && profileOrgId !== org.orgId) {
+			throw new ConnectionProfileAuthorizeError(
+				`Connection profile "${connectionProfileName}" was not found in @${org.slug}.`,
+			)
+		}
+	}
+	return { org, connectionProfileName }
 }
 
 async function evaluateSecondAgentGiftAfterAuthorize(
@@ -284,7 +351,7 @@ function defaultMcpResourceForAuthRequest(
 		env,
 		requestUrl: request.url,
 	})
-	authRequest.resource = `${origin}${mcpResourcePath}`
+	authRequest.resource = mcpOAuthResourceUri(origin)
 }
 
 function isCimdMetadataResolutionError(error: unknown) {
@@ -552,7 +619,7 @@ async function handleResetClientRequest(
 				createSetCookieHeaders([clearResetVerificationCookie]),
 			)
 		}
-		const userId = resolveUserStableId(userRecord)
+		const userId = personIdFromStored(userRecord.stable_user_id)
 		const grants = await listUserOAuthGrantsForClient(helpers, userId, clientId)
 		await Promise.all(
 			grants.map((grant) => revokeOAuthGrant(helpers, grant.id, userId)),
@@ -570,6 +637,11 @@ async function handleResetClientRequest(
 				clientId,
 			)
 		}
+		await deleteMcpEventSubscriptionsForOauthClient({
+			db: env.APP_DB,
+			oauthClientId: clientId,
+			...(ownsClient ? {} : { userId }),
+		})
 		void logAuditEvent({
 			db: auditDatabaseFromEnv(env),
 			category: 'oauth',
@@ -870,6 +942,46 @@ export async function loadOAuthAuthorizeData(
 		})
 	}
 
+	let orgs: Array<OAuthAuthorizeConsentOrg> = []
+	let selectedOrgSlug: string | null = readOrgSlugFromUrl(request.url)
+	if (!requireCredentials && authorizeSession.stableUserId) {
+		// Match approve: resolve `?org=` from the authorize URL and resource
+		// before auto-selecting. Fail closed when the client named an
+		// inaccessible or conflicting org, so the consent screen cannot look
+		// ready and then reject on submit.
+		let resolvedRequested: AuthorizeOrg | null = null
+		try {
+			resolvedRequested = await resolveAuthorizeOrg({
+				env,
+				request,
+				authRequest,
+				userId: authorizeSession.stableUserId,
+			})
+		} catch (error) {
+			if (isOrgAuthorizeError(error)) {
+				return {
+					data: {
+						ok: false,
+						error: error.message,
+						allowClientReset: false,
+					},
+					setCookie: clearResetVerificationCookie ?? sessionSetCookie,
+				}
+			}
+			throw error
+		}
+		const accessible = await listOrgsForPerson(
+			env.APP_DB,
+			authorizeSession.stableUserId,
+		)
+		const consent = selectConsentOrgsForLoader(
+			accessible,
+			resolvedRequested?.slug ?? null,
+		)
+		orgs = consent.orgs
+		selectedOrgSlug = consent.selectedOrgSlug
+	}
+
 	return {
 		data: {
 			ok: true,
@@ -880,6 +992,8 @@ export async function loadOAuthAuthorizeData(
 			scopes: resolvedScopes,
 			emailVerified,
 			requireCredentials,
+			orgs,
+			selectedOrgSlug,
 		},
 		setCookie: clearResetVerificationCookie ?? sessionSetCookie,
 	}
@@ -907,6 +1021,8 @@ export async function handleAuthorizeInfo(
 			scopes: data.scopes,
 			emailVerified: data.emailVerified,
 			requireCredentials: data.requireCredentials,
+			orgs: data.orgs,
+			selectedOrgSlug: data.selectedOrgSlug,
 		},
 		{
 			headers: createSetCookieHeaders([setCookie]),
@@ -1082,7 +1198,7 @@ async function tryHandleSilentOidcAuthorize(
 	}
 
 	const approvedEmail = userRecord.email.trim().toLowerCase()
-	const approvedUserId = resolveUserStableId(userRecord)
+	const approvedUserId = personIdFromStored(userRecord.stable_user_id)
 	recordMcpConnectFunnelEvent(env, {
 		stage: 'mcp_connect_started',
 		userId: approvedUserId,
@@ -1125,13 +1241,46 @@ async function tryHandleSilentOidcAuthorize(
 		return respondAuthorizeError(request, resolvedScopes.error)
 	}
 
+	const authTime = authorizeSession.issuedAt
+		? Math.floor(authorizeSession.issuedAt / 1000)
+		: Math.floor(Date.now() / 1000)
+	let authorizeOrg: AuthorizeOrg
+	let connectionProfileName: string | null
+	try {
+		const resolved = await resolveAuthorizeOrgAndProfile({
+			env,
+			request,
+			authRequest,
+			userId: approvedUserId,
+		})
+		authorizeOrg = resolved.org
+		connectionProfileName = resolved.connectionProfileName
+	} catch (error) {
+		if (isAuthorizeBindingError(error)) {
+			const redirectTo = oidcClientErrorRedirect(
+				authRequest,
+				'invalid_request',
+				error.message,
+			)
+			if (redirectTo) return Response.redirect(redirectTo, 302)
+			return respondAuthorizeError(request, error.message)
+		}
+		throw error
+	}
+
 	const existingGrants = await listUserOAuthGrantsForClient(
 		helpers,
 		approvedUserId,
 		authRequest.clientId,
 	)
-	const hasMatchingConsent = existingGrants.some((grant) =>
-		resolvedScopes.every((scope) => grant.scope.includes(scope)),
+	const hasMatchingConsent = existingGrants.some(
+		(grant) =>
+			resolvedScopes.every((scope) => grant.scope.includes(scope)) &&
+			grantMatchesConsentOrg({
+				metadata: grant.metadata,
+				userId: approvedUserId,
+				orgId: authorizeOrg.orgId,
+			}),
 	)
 	if (!hasMatchingConsent) {
 		const redirectTo = oidcClientErrorRedirect(
@@ -1147,10 +1296,8 @@ async function tryHandleSilentOidcAuthorize(
 			'consent_required',
 		)
 	}
-
-	const authTime = authorizeSession.issuedAt
-		? Math.floor(authorizeSession.issuedAt / 1000)
-		: Math.floor(Date.now() / 1000)
+	const profileFields = connectionProfileGrantFields(connectionProfileName)
+	const orgFields = orgGrantFields(authorizeOrg.orgId)
 	const { redirectTo: providerRedirectTo } =
 		await helpers.completeAuthorization({
 			request: authRequest,
@@ -1158,6 +1305,8 @@ async function tryHandleSilentOidcAuthorize(
 			metadata: {
 				email: approvedEmail,
 				clientId: authRequest.clientId,
+				...profileFields.metadata,
+				...orgFields.metadata,
 			},
 			scope: resolvedScopes,
 			props: {
@@ -1167,6 +1316,8 @@ async function tryHandleSilentOidcAuthorize(
 				displayName: username,
 				authTime,
 				...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+				...profileFields.props,
+				...orgFields.props,
 			},
 		})
 	const redirectTo = stampClientAuthorizationRedirect(
@@ -1338,6 +1489,7 @@ export async function handleAuthorizeRequest(
 	let approvedEmail = ''
 	let approvedUsername = ''
 	let approvedUserId = ''
+	let requiresOrgChoiceReload = false
 	if (hasFormCredentials) {
 		const db = createDb(env.APP_DB)
 		const userRecord = await db.findOne(usersTable, {
@@ -1364,12 +1516,12 @@ export async function handleAuthorizeRequest(
 			if (userRecord) {
 				recordMcpConnectFunnelEvent(env, {
 					stage: 'mcp_connect_started',
-					userId: resolveUserStableId(userRecord),
+					userId: personIdFromStored(userRecord.stable_user_id),
 					clientId: authRequest.clientId,
 				})
 				recordMcpConnectFunnelEvent(env, {
 					stage: 'mcp_connect_failed',
-					userId: resolveUserStableId(userRecord),
+					userId: personIdFromStored(userRecord.stable_user_id),
 					clientId: authRequest.clientId,
 					errorClass: 'invalid_credentials',
 				})
@@ -1415,12 +1567,12 @@ export async function handleAuthorizeRequest(
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_started',
-				userId: resolveUserStableId(userRecord),
+				userId: personIdFromStored(userRecord.stable_user_id),
 				clientId: authRequest.clientId,
 			})
 			recordMcpConnectFunnelEvent(env, {
 				stage: 'mcp_connect_failed',
-				userId: resolveUserStableId(userRecord),
+				userId: personIdFromStored(userRecord.stable_user_id),
 				clientId: authRequest.clientId,
 				errorClass: 'two_factor_required',
 			})
@@ -1432,7 +1584,24 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = normalizedEmail
 		approvedUsername = username
-		approvedUserId = resolveUserStableId(userRecord)
+		approvedUserId = personIdFromStored(userRecord.stable_user_id)
+		// Inline login never saw the org picker (loader had no session). After
+		// email verification, establish a browser session and reload authorize
+		// when the account has several orgs and neither the form, authorize
+		// URL, nor OAuth resource named an org, so the picker can render.
+		// Peek only — do not call resolveAuthorizeOrg here; it strips `?org=`
+		// from authRequest.resource and would hide a resource-only org from
+		// the later approval resolve.
+		const formOrgSlug = readOrgSlugFromForm(formData)
+		const urlOrgSlug = readOrgSlugFromUrl(request.url)
+		const resourceOrgSlug =
+			typeof authRequest.resource === 'string'
+				? stripOrgFromResourceUri(authRequest.resource).orgSlug
+				: null
+		if (!formOrgSlug && !urlOrgSlug && !resourceOrgSlug) {
+			const accessible = await listOrgsForPerson(env.APP_DB, approvedUserId)
+			requiresOrgChoiceReload = accessible.length > 1
+		}
 	} else if (sessionEmail) {
 		const db = createDb(env.APP_DB)
 		const userRecord = session?.stableUserId
@@ -1469,7 +1638,7 @@ export async function handleAuthorizeRequest(
 		}
 		approvedEmail = userRecord.email.trim().toLowerCase()
 		approvedUsername = username
-		approvedUserId = resolveUserStableId(userRecord)
+		approvedUserId = personIdFromStored(userRecord.stable_user_id)
 		if (session && approvedEmail !== sessionEmail) {
 			setCookie = await createAuthCookie(
 				{
@@ -1518,6 +1687,34 @@ export async function handleAuthorizeRequest(
 		)
 	}
 
+	if (hasFormCredentials) {
+		setCookie = await createAuthCookie(
+			{
+				stableUserId: approvedUserId,
+				email: approvedEmail,
+				rememberMe: false,
+			},
+			isSecureRequest(request),
+		)
+		if (requiresOrgChoiceReload) {
+			const reloadTo = stripLoginFromAuthorizePrompt(request.url)
+			const cookieHeaders = createSetCookieHeaders([setCookie])
+			if (wantsJson(request)) {
+				return jsonResponse(
+					{ ok: true, redirectTo: reloadTo, requiresOrgChoice: true },
+					{ headers: cookieHeaders },
+				)
+			}
+			return new Response(null, {
+				status: 302,
+				headers: {
+					Location: reloadTo,
+					...(setCookie ? { 'Set-Cookie': setCookie } : {}),
+				},
+			})
+		}
+	}
+
 	const resolvedScopes = resolveScopes(authRequest.scope)
 	if (Array.isArray(resolvedScopes)) {
 		const userId = approvedUserId
@@ -1527,6 +1724,44 @@ export async function handleAuthorizeRequest(
 			: authorizeSession.issuedAt
 				? Math.floor(authorizeSession.issuedAt / 1000)
 				: Math.floor(Date.now() / 1000)
+		let authorizeOrg: AuthorizeOrg
+		let connectionProfileName: string | null
+		try {
+			const resolved = await resolveAuthorizeOrgAndProfile({
+				env,
+				request,
+				authRequest,
+				userId,
+				formSlug: readOrgSlugFromForm(formData),
+			})
+			authorizeOrg = resolved.org
+			connectionProfileName = resolved.connectionProfileName
+		} catch (error) {
+			if (isAuthorizeBindingError(error)) {
+				const redirectTo = createOidcClientErrorRedirectUrl(
+					authRequest,
+					'invalid_request',
+					error.message,
+					request,
+					env,
+				)
+				if (redirectTo) {
+					return wantsJson(request)
+						? jsonResponse({ ok: false, error: error.message, redirectTo })
+						: Response.redirect(redirectTo, 302)
+				}
+				return respondAuthorizeError(
+					request,
+					error.message,
+					400,
+					'invalid_request',
+					createSetCookieHeaders([setCookie]),
+				)
+			}
+			throw error
+		}
+		const profileFields = connectionProfileGrantFields(connectionProfileName)
+		const orgFields = orgGrantFields(authorizeOrg.orgId)
 		const { redirectTo: providerRedirectTo } =
 			await helpers.completeAuthorization({
 				request: authRequest,
@@ -1534,6 +1769,8 @@ export async function handleAuthorizeRequest(
 				metadata: {
 					email: approvedEmail,
 					clientId: authRequest.clientId,
+					...profileFields.metadata,
+					...orgFields.metadata,
 				},
 				scope: resolvedScopes,
 				props: {
@@ -1543,6 +1780,8 @@ export async function handleAuthorizeRequest(
 					displayName,
 					authTime,
 					...(oidcParams.nonce ? { nonce: oidcParams.nonce } : {}),
+					...profileFields.props,
+					...orgFields.props,
 				},
 			})
 		const redirectTo = stampClientAuthorizationRedirect(
@@ -1600,20 +1839,36 @@ export function handleOAuthCallback(
 	return renderSpaShell(request, env, { status: hasError ? 400 : 200 })
 }
 
-export const apiHandler = {
-	async fetch(request: Request, _env: unknown, ctx: ExecutionContext) {
-		const url = new URL(request.url)
-		if (url.pathname === '/api/me') {
-			const props = (ctx as OAuthContext).props
-			if (!props) {
-				return jsonResponse(
-					{ ok: false, error: 'Unauthorized' },
-					{ status: 401 },
-				)
-			}
-			return jsonResponse({ ok: true, user: props })
-		}
-
+/**
+ * Legacy OAuth-protected JSON helper for grant props. Remains outside the MCP
+ * resource (`/mcp`); callers present a Bearer token minted for this origin's
+ * MCP audience. Not the OIDC UserInfo endpoint.
+ */
+export async function handleOAuthProtectedApiMe(request: Request, env: Env) {
+	const url = new URL(request.url)
+	if (url.pathname !== '/api/me') {
 		return jsonResponse({ error: 'Not found' }, { status: 404 })
-	},
-} satisfies ExportedHandler
+	}
+	const authorization = request.headers.get('Authorization')
+	const match = authorization?.match(/^Bearer(?:\s+(.*))?$/i)
+	const token = match?.[1]?.trim() ?? ''
+	if (!token) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	const helpers = (env as Partial<OAuthEnv>).OAUTH_PROVIDER
+	if (!helpers) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	const summary = await helpers.unwrapToken(token)
+	const origin = getAppBaseUrl({ env, requestUrl: request.url })
+	const expectedAudience = mcpOAuthResourceUri(origin)
+	const audience = summary?.audience
+	const audienceOk =
+		typeof audience === 'string'
+			? audience === expectedAudience
+			: Array.isArray(audience) && audience.includes(expectedAudience)
+	if (!summary || !audienceOk) {
+		return jsonResponse({ ok: false, error: 'Unauthorized' }, { status: 401 })
+	}
+	return jsonResponse({ ok: true, user: summary.grant.props })
+}

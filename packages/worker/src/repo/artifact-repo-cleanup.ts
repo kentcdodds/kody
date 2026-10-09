@@ -41,6 +41,14 @@ export async function deleteUserScopedArtifactRepo(input: {
 	userId: string
 	repoName: string
 	warnings?: Array<string>
+	/**
+	 * Cloudflare Artifacts REST delete can return before `get` observes
+	 * `not_found`. Community fork fallback needs the dest gone before
+	 * `ensureEntitySource` recreates an empty repo with bootstrapAccess.
+	 */
+	waitUntilAbsent?: boolean
+	waitUntilAbsentAttempts?: number
+	waitUntilAbsentDelayMs?: number
 }): Promise<boolean> {
 	const repoName = input.repoName.trim()
 	if (!repoName) return false
@@ -55,6 +63,28 @@ export async function deleteUserScopedArtifactRepo(input: {
 			repoName,
 			result,
 		})
+		if (input.waitUntilAbsent) {
+			const maxAttempts = input.waitUntilAbsentAttempts ?? 10
+			const delayMs = input.waitUntilAbsentDelayMs ?? 50
+			for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+				const observed = await binding.get(repoName)
+				if (observed.status === 'not_found') break
+				if (attempt === maxAttempts) {
+					const message = `Artifact repo "${repoName}" still present after delete (${observed.status}).`
+					input.warnings?.push(message)
+					console.warn(
+						JSON.stringify({
+							message: 'artifact repo delete not yet absent',
+							userId: input.userId,
+							repoName,
+							status: observed.status,
+						}),
+					)
+					return false
+				}
+				await new Promise((resolve) => setTimeout(resolve, delayMs))
+			}
+		}
 		return true
 	} catch (error) {
 		const message = getErrorMessage(error)

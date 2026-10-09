@@ -10,10 +10,21 @@ import {
 import { exports as workerExports } from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
+	type Capability,
+	type CapabilityOpenApiPrincipal,
+} from '#mcp/capabilities/types.ts'
+import {
 	createExecuteExecutor,
 	createNamedExecutionError,
 } from '#mcp/executor.ts'
+import {
+	callerDisconnectedSandboxLog,
+	callerDisconnectedSandboxMessage,
+	createCallerDisconnectedExecutionError,
+	isCallerDisconnectAbort,
+} from '#worker/caller-disconnect.ts'
 import { recordExecuteInterpretableEvent } from '#mcp/execute-interpretable.ts'
+import { executeWorkerIdMetadataKey } from '#mcp/execute-invoke.ts'
 import {
 	classifyExecuteThinGlue,
 	type ExecuteThinGlueClass,
@@ -35,7 +46,6 @@ import {
 import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
-import { type Capability } from '#mcp/capabilities/types.ts'
 import { createRemovedValueWriteError } from '#mcp/capabilities/values/shared.ts'
 import {
 	type KodyMcpServerMetadata,
@@ -55,7 +65,6 @@ import {
 	type AdditionalKodyTools,
 	type EmailToolOptions,
 	type PackageEventTools,
-	type PackageInvokeTools,
 	type PackageSecretToolOptions,
 	type PackageStorageToolOptions,
 	type PackageWorkflowTools,
@@ -64,6 +73,13 @@ import {
 	buildKodyModuleBundle,
 	hydrateKodyRuntimeModules,
 } from '#worker/package-runtime/module-graph.ts'
+import {
+	buildComputedPackageImportCallBundle,
+	maxComputedPackageImportDepth,
+	resolveComputedPackageImportArtifact,
+	throwComputedPackageImportFailure,
+	type ComputedPackageImportTools,
+} from '#worker/package-runtime/computed-package-import.ts'
 import { kodyProviderEvaluateBindingName } from '#worker/kody-evaluate-bindings.ts'
 import {
 	collectLiteralImportSpecifiers,
@@ -84,8 +100,15 @@ import {
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
-import { type BundleArtifactDependency } from '#worker/package-runtime/published-runtime-artifacts.ts'
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import { requestLineage } from '#worker/request-context/request-context.ts'
+import {
+	isDirectBundleDependency,
+	type BundleArtifactDependency,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 import { createPackageStaticCallMeterTools } from '#worker/usage/package-static-call-usage.ts'
 import { recordAgentPackageConversationUses } from '#worker/usage/agent-package-conversation-uses.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
@@ -94,7 +117,7 @@ import {
 	getMcpServerStatus,
 } from '#worker/mcp-client/status.ts'
 import { mcpServerKodyName } from '#worker/mcp-client/mcp-domain-id.ts'
-import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	reportExecutePhaseProgress,
 	type McpReportProgress,
@@ -103,6 +126,69 @@ import {
 	firstCapabilityDispatchWarnTag,
 	shouldWarnFirstCapabilityDispatch,
 } from './first-capability-dispatch.ts'
+
+/**
+ * Wall-clock budget for ad-hoc execute `prepareKodyGraphFiles` + esbuild
+ * before sandbox start. Sandbox has its own ~90s host deadline; this bounds
+ * the pre-run path so a hung dual heavy-export bundle (historically ~328s
+ * MCP client abort with no run row) finishes as a recorded error instead.
+ */
+export const executeBundleTimeoutMs = 90_000
+
+export function createExecuteBundleTimeoutMessage(timeoutMs: number) {
+	const seconds = Math.max(1, Math.round(timeoutMs / 1000))
+	return `Execute module bundling exceeded ${seconds}s before sandbox start. Heavy multi-export package graphs (for example multiple zod-based exports from one package) can exceed this budget; prefer remix/data-schema for agent-facing export validation, or import one heavy export per execute module.`
+}
+
+export class ExecuteBundleTimeoutError extends Error {
+	override name = 'ExecuteBundleTimeoutError'
+	constructor(timeoutMs: number) {
+		super(createExecuteBundleTimeoutMessage(timeoutMs))
+	}
+}
+
+async function raceWithExecuteBundleDeadline<T>(
+	work: () => Promise<T>,
+	input: {
+		timeoutMs: number
+		signal?: AbortSignal
+	},
+): Promise<T> {
+	const { timeoutMs, signal } = input
+	if (signal?.aborted) {
+		const reason = signal.reason
+		if (reason instanceof Error) throw reason
+		throw new DOMException(callerDisconnectedSandboxMessage, 'AbortError')
+	}
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+		return await work()
+	}
+	let timeoutId: ReturnType<typeof setTimeout> | undefined
+	let onAbort: (() => void) | undefined
+	const timeoutPromise = new Promise<never>((_resolve, reject) => {
+		timeoutId = setTimeout(() => {
+			reject(new ExecuteBundleTimeoutError(timeoutMs))
+		}, timeoutMs)
+		if (!signal) return
+		onAbort = () => {
+			const reason = signal.reason
+			if (reason instanceof Error) {
+				reject(reason)
+				return
+			}
+			reject(new DOMException(callerDisconnectedSandboxMessage, 'AbortError'))
+		}
+		signal.addEventListener('abort', onAbort, { once: true })
+	})
+	try {
+		return await Promise.race([work(), timeoutPromise])
+	} finally {
+		if (timeoutId !== undefined) clearTimeout(timeoutId)
+		if (signal && onAbort) {
+			signal.removeEventListener('abort', onAbort)
+		}
+	}
+}
 
 type ExecuteServerTimingEntry = {
 	name: string
@@ -146,7 +232,6 @@ export type {
 	PackageInvokeInput,
 	PackageInvokeNormalizedInput,
 	PackageInvokeOptions,
-	PackageInvokeTools,
 	PackageWorkflowTools,
 } from '#mcp/runtime-helper-manifest.ts'
 
@@ -224,7 +309,7 @@ function createPackageSecretTools(input: {
 					packageId: resolveAuthorityPackageId(requestedPackageId),
 					alias,
 				})
-			).value,
+			).ref,
 		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
 				await resolvePackageMountedSecret({
@@ -253,7 +338,8 @@ export function createWorkflowTools(input: {
 	return {
 		create: async (body) => {
 			const userId = input.callerContext.user?.userId
-			if (!userId) {
+			const request = input.callerContext.request
+			if (!userId || !request) {
 				throw new Error('workflows.create requires an authenticated user.')
 			}
 			return await createDynamicCallableWorkflow({
@@ -262,6 +348,7 @@ export function createWorkflowTools(input: {
 				userEmail: input.callerContext.user?.email,
 				packageContext,
 				body,
+				lineage: requestLineage(request),
 			})
 		},
 	}
@@ -284,7 +371,7 @@ export async function buildKodyFns(
 	return (await buildKodyToolContext(env, callerContext, options)).tools
 }
 
-async function buildKodyToolContext(
+export async function buildKodyToolContext(
 	env: Env,
 	callerContext: McpCallerContext,
 	options?: {
@@ -298,6 +385,7 @@ async function buildKodyToolContext(
 		capabilityRegistry?: BuiltCapabilityRegistry
 		reportProgress?: McpReportProgress
 		waitUntil?: (promise: Promise<unknown>) => void
+		openApiPrincipal?: CapabilityOpenApiPrincipal
 	},
 ): Promise<{
 	tools: AdditionalKodyTools
@@ -353,6 +441,9 @@ async function buildKodyToolContext(
 							? { reportProgress: options.reportProgress }
 							: {}),
 						...(options?.waitUntil ? { waitUntil: options.waitUntil } : {}),
+						...(options?.openApiPrincipal
+							? { openApiPrincipal: options.openApiPrincipal }
+							: {}),
 					})
 				} finally {
 					if (shouldSampleFirstDispatch) {
@@ -421,10 +512,12 @@ async function buildKodyMcpServerMetadata(input: {
 	if (userId) {
 		// Per-user 30s cache: runtime metadata assembly runs on every execute /
 		// package invocation, so this must not cost a D1 read per call.
-		const refs = await listVisibleEnabledMcpServerRefsCached({
+		// List every enabled server (including package-locked). Call-time
+		// assertCanUseMcpServer + stamp ALS deny execute / unapproved packages;
+		// filtering here would make package-via-execute throw Unknown MCP server.
+		const refs = await listEnabledMcpServerRefsCached({
 			env: input.env,
 			userId,
-			packageId: input.callerContext.storageContext?.packageId,
 		}).catch((error: unknown) => {
 			// Degrade to "no MCP servers" but leave a trail: silently losing
 			// kody.mcp[...] accessors is very hard to debug otherwise.
@@ -538,7 +631,6 @@ export async function runModuleWithRegistry(
 		workflowTools?: PackageWorkflowTools
 		executorTimeoutMs?: number | null
 		signal?: AbortSignal
-		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
 		capabilityRegistry?: BuiltCapabilityRegistry
 		rawFetchHostSink?: RawFetchHostSink
@@ -585,74 +677,124 @@ export async function runModuleWithRegistry(
 	if (isAdHocExecute && !options?.packageContext) {
 		recordExecuteInterpretableEvent(env, { source: code })
 	}
-	await reportExecutePhaseProgress(reportProgress, 'bundle')
-	const bundleStartedAtMs = Date.now()
-	const bundled = await buildKodyModuleBundle({
-		env,
-		baseUrl: callerContext.baseUrl,
-		userId,
-		sourceFiles: createAdHocExecuteSourceFiles(code),
-		entryPoint: 'entry.ts',
-		reuseCachedBundle: true,
-		bundleContext: 'ad-hoc-execute',
-	})
-	serverTiming.push({
-		name: 'bundle',
-		durationMs: Date.now() - bundleStartedAtMs,
-	})
-	const conversationId = options?.conversationId?.trim()
-	if (conversationId && userId) {
-		const packageIds = bundled.dependencies
-			.map((dependency) => dependency.packageId)
-			.filter((packageId): packageId is string => Boolean(packageId))
-		if (packageIds.length > 0) {
-			await scheduleAgentPackageConversationUses(
-				env,
-				{
-					userId,
-					packageIds,
-					conversationId,
-				},
-				options?.waitUntil,
-			)
-		}
-	}
-	const runStartedAtMs = Date.now()
-	const result = await runBundledModuleWithRegistry(
-		env,
-		callerContext,
-		{
-			mainModule: bundled.mainModule,
-			modules: bundled.modules,
-			dependencies: bundled.dependencies,
-		},
-		params,
-		{
-			...options,
-			executeShape,
-			packageContext: options?.packageContext ?? null,
-			workflowTools:
-				options?.workflowTools ??
-				createWorkflowTools({
-					env,
-					callerContext,
-					packageContext: options?.packageContext ?? null,
-				}),
-			packageInvokeTools: options?.packageInvokeTools,
-			packageEventTools: options?.packageEventTools,
-			conversationId: options?.conversationId ?? null,
-			reportProgress,
+	// Begin (or reuse a keyed claim) before bundling so a hung/timeout
+	// prepare+esbuild path still leaves a visible run row. Previously
+	// begin lived only inside runBundledModuleWithRegistry — after bundle —
+	// so dual heavy-export hangs produced MCP client aborts with no Activity.
+	const runRecordHandle =
+		options?.runRecordHandle ??
+		beginRunRecord({
+			env,
+			userId: callerContext.user?.userId ?? null,
+			context: options?.runRecord ?? null,
 			waitUntil: options?.waitUntil,
-		},
-	)
-	// Sub-phases (hydrate → provider-assembly → sandbox) report inside the
-	// bundled run so progress stays monotonic. `run` is only the enclosing
-	// serverTiming wall-clock span, not a client progress step.
-	serverTiming.push(...(result.serverTiming ?? []), {
-		name: 'run',
-		durationMs: Date.now() - runStartedAtMs,
-	})
-	return { ...result, serverTiming }
+		})
+	let enteredBundledRun = false
+	try {
+		await reportExecutePhaseProgress(reportProgress, 'bundle')
+		const bundleStartedAtMs = Date.now()
+		const bundled = await raceWithExecuteBundleDeadline(
+			async () =>
+				await buildKodyModuleBundle({
+					env,
+					baseUrl: callerContext.baseUrl,
+					userId,
+					sourceFiles: createAdHocExecuteSourceFiles(code),
+					entryPoint: 'entry.ts',
+					reuseCachedBundle: true,
+					bundleContext: 'ad-hoc-execute',
+				}),
+			{
+				timeoutMs: executeBundleTimeoutMs,
+				signal: options?.signal,
+			},
+		)
+		serverTiming.push({
+			name: 'bundle',
+			durationMs: Date.now() - bundleStartedAtMs,
+		})
+		const conversationId = options?.conversationId?.trim()
+		if (conversationId && userId) {
+			const packageIds = bundled.dependencies
+				.filter(isDirectBundleDependency)
+				.map((dependency) => dependency.packageId)
+				.filter((packageId): packageId is string => Boolean(packageId))
+			if (packageIds.length > 0) {
+				await scheduleAgentPackageConversationUses(
+					env,
+					{
+						userId,
+						packageIds,
+						conversationId,
+					},
+					options?.waitUntil,
+				)
+			}
+		}
+		const runStartedAtMs = Date.now()
+		enteredBundledRun = true
+		const result = await runBundledModuleWithRegistry(
+			env,
+			callerContext,
+			{
+				mainModule: bundled.mainModule,
+				modules: bundled.modules,
+				dependencies: bundled.dependencies,
+			},
+			params,
+			{
+				...options,
+				executeShape,
+				runRecordHandle,
+				packageContext: options?.packageContext ?? null,
+				workflowTools:
+					options?.workflowTools ??
+					createWorkflowTools({
+						env,
+						callerContext,
+						packageContext: options?.packageContext ?? null,
+					}),
+				packageEventTools: options?.packageEventTools,
+				conversationId: options?.conversationId ?? null,
+				reportProgress,
+				waitUntil: options?.waitUntil,
+			},
+		)
+		// Sub-phases (hydrate → provider-assembly → sandbox) report inside the
+		// bundled run so progress stays monotonic. `run` is only the enclosing
+		// serverTiming wall-clock span, not a client progress step.
+		serverTiming.push(...(result.serverTiming ?? []), {
+			name: 'run',
+			durationMs: Date.now() - runStartedAtMs,
+		})
+		return { ...result, serverTiming }
+	} catch (error) {
+		if (runRecordHandle && !enteredBundledRun) {
+			const disconnect =
+				options?.signal &&
+				isCallerDisconnectAbort(options.signal) &&
+				!(error instanceof ExecuteBundleTimeoutError)
+			const recordedError = disconnect
+				? createCallerDisconnectedExecutionError()
+				: error
+			await finishRunRecord({
+				env,
+				handle: runRecordHandle,
+				status: 'error',
+				error: recordedError,
+			})
+			return {
+				result: undefined,
+				error: getErrorMessage(recordedError),
+				logs: [],
+				...(runRecordHandle.persistence === 'eager'
+					? { runId: runRecordHandle.id }
+					: {}),
+				serverTiming,
+			}
+		}
+		throw error
+	}
 }
 
 /**
@@ -688,6 +830,128 @@ export function collectPackageStorageGrantIds(input: {
 	return grantedPackageIds
 }
 
+/**
+ * Host tools for computed `import(specifier)` of caller-owned `kody:@`
+ * names. Nested evaluate uses library-load semantics: caller's
+ * `packageContext`, callee stamp grants via the importable-module artifact.
+ */
+export function createComputedPackageImportTools(input: {
+	env: Env
+	baseUrl: string
+	callerContext: McpCallerContext
+	packageContext: PackageContextOptions
+	packageEventTools?: PackageEventTools
+	emailTools?: EmailToolOptions
+	workflowTools?: PackageWorkflowTools
+	additionalTools?: AdditionalKodyTools
+	skipCapabilityRegistry?: boolean
+	capabilityRegistry?: BuiltCapabilityRegistry
+	waitUntil?: (promise: Promise<unknown>) => void
+	signal?: AbortSignal
+	/** Preserve outer execute timeout policy on nested library loads. */
+	executorTimeoutMs?: number | null
+	computedImportDepth?: number
+	/**
+	 * Agent conversation id from the outer MCP execute. Records the resolved
+	 * callee package id for popularity; nested evaluate does not re-attribute
+	 * the callee's own transitive deps.
+	 */
+	conversationId?: string | null
+	/**
+	 * Propagate closed-world retriever restrictions into nested library loads
+	 * when a restricted run supplies these tools explicitly.
+	 */
+	closedWorldRetrieverRuntime?: boolean
+}): ComputedPackageImportTools {
+	const computedImportDepth = input.computedImportDepth ?? 0
+	return {
+		async callDefault(rawInput) {
+			const specifier =
+				typeof rawInput?.specifier === 'string' ? rawInput.specifier.trim() : ''
+			if (!specifier) {
+				throw new Error(
+					'Computed kody:@ import requires a non-empty specifier string.',
+				)
+			}
+			const userId = input.callerContext.user?.userId
+			if (!userId) {
+				throw new Error(
+					'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
+				)
+			}
+			if (computedImportDepth >= maxComputedPackageImportDepth) {
+				throw new Error(
+					`Computed kody:@ import exceeded the maximum nested depth (${maxComputedPackageImportDepth}).`,
+				)
+			}
+			const artifact = await resolveComputedPackageImportArtifact({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId,
+				specifier,
+			})
+			const conversationId = input.conversationId?.trim()
+			const calleePackageId = artifact.packageContext?.packageId?.trim()
+			if (conversationId && calleePackageId) {
+				await scheduleAgentPackageConversationUses(
+					input.env,
+					{
+						userId,
+						packageIds: [calleePackageId],
+						conversationId,
+					},
+					input.waitUntil,
+				)
+			}
+			const callBundle = buildComputedPackageImportCallBundle({
+				artifact,
+				specifier,
+			})
+			const nestedTools = createComputedPackageImportTools({
+				...input,
+				computedImportDepth: computedImportDepth + 1,
+			})
+			const result = await runBundledModuleWithRegistry(
+				input.env,
+				input.callerContext,
+				{
+					mainModule: callBundle.mainModule,
+					modules: callBundle.modules,
+					dependencies: callBundle.dependencies,
+				},
+				rawInput.params,
+				{
+					packageContext: input.packageContext,
+					packageEventTools: input.packageEventTools,
+					emailTools: input.emailTools,
+					workflowTools: input.workflowTools,
+					additionalTools: input.additionalTools,
+					skipCapabilityRegistry: input.skipCapabilityRegistry,
+					capabilityRegistry: input.capabilityRegistry,
+					waitUntil: input.waitUntil,
+					executorTimeoutMs: input.executorTimeoutMs,
+					signal: input.signal,
+					computedImportDepth: computedImportDepth + 1,
+					computedPackageImportTools: nestedTools,
+					closedWorldRetrieverRuntime: input.closedWorldRetrieverRuntime,
+					// Library load is not enter-as-package: do not attribute a
+					// package_export usage event to the caller's package id.
+					skipPackageExportUsage: true,
+					// Nested evaluate is not a second MCP execute call.
+					skipExecuteUsage: true,
+				},
+			)
+			if (result.error) {
+				throwComputedPackageImportFailure({
+					specifier,
+					error: result.error,
+				})
+			}
+			return result.result
+		},
+	}
+}
+
 export async function runBundledModuleWithRegistry(
 	env: Env,
 	callerContext: McpCallerContext,
@@ -709,8 +973,27 @@ export async function runBundledModuleWithRegistry(
 		packageContext?: PackageContextOptions
 		emailTools?: EmailToolOptions
 		workflowTools?: PackageWorkflowTools
-		packageInvokeTools?: PackageInvokeTools
 		packageEventTools?: PackageEventTools
+		/**
+		 * Host bridge for computed `import(specifier)` of caller-owned
+		 * `kody:@` names. When omitted on an authenticated run (outside
+		 * closed-world retriever), a default bridge is created.
+		 */
+		computedPackageImportTools?: ComputedPackageImportTools
+		/** Nested depth for computed import library loads. */
+		computedImportDepth?: number
+		/**
+		 * Skip `package_export` usage attribution for this evaluate. Used by
+		 * computed-import library loads so the caller's package id is not
+		 * billed as if its own export ran.
+		 */
+		skipPackageExportUsage?: boolean
+		/**
+		 * Skip `execute` usage metering for this evaluate. Used by computed
+		 * import library loads so nested default calls do not inflate the
+		 * outer MCP execute daily quota.
+		 */
+		skipExecuteUsage?: boolean
 		skipCapabilityRegistry?: boolean
 		/**
 		 * Retriever enrichment profile: no capability map, no workflows,
@@ -793,6 +1076,7 @@ export async function runBundledModuleWithRegistry(
 	async function recordPackageExportUsage(outcome: 'success' | 'error') {
 		if (usageRecorded) return
 		usageRecorded = true
+		if (options?.skipPackageExportUsage) return
 		const userId = callerContext.user?.userId
 		if (!options?.packageContext || !userId) return
 		await recordUsage(env, {
@@ -801,6 +1085,7 @@ export async function runBundledModuleWithRegistry(
 			entityId: options.packageContext.packageId,
 			durationMs: Date.now() - usageStartedAtMs,
 			outcome,
+			...usageAttributionFieldsFromRequest(callerContext.request),
 		})
 	}
 	async function finishObservedRun(input: {
@@ -822,6 +1107,23 @@ export async function runBundledModuleWithRegistry(
 			waitUntil,
 		})
 		runRecordFinished = true
+	}
+	function resolveThrownRunError(error: unknown): {
+		error: unknown
+		logs: Array<string> | undefined
+	} {
+		if (
+			options?.signal &&
+			isCallerDisconnectAbort(options.signal) &&
+			error instanceof Error &&
+			error.name === 'AbortError'
+		) {
+			return {
+				error: createCallerDisconnectedExecutionError(),
+				logs: capturedLogs ?? [callerDisconnectedSandboxLog],
+			}
+		}
+		return { error, logs: capturedLogs }
 	}
 	function withRunId<T extends ExecuteResult>(
 		result: T,
@@ -907,17 +1209,19 @@ export async function runBundledModuleWithRegistry(
 			}
 		}
 		// Static package export calls report through a sandbox bridge with a
-		// bundler-stamped callee package id; only ids recorded as *static*
-		// bundle dependencies at build time are accepted (mismatches are
+		// bundler-stamped callee package id; only ids recorded as *direct*
+		// static bundle dependencies at build time are accepted (mismatches are
 		// dropped host-side). This is deliberately tighter than the
 		// packageStorage grant set, which additionally includes the run's own
-		// package id and dynamic-import dependencies — neither of which the
-		// bundler ever stamps into a metered static import proxy.
+		// package id, dynamic-import dependencies, and transitive static
+		// dependencies.
 		const staticCallMeterTools = createPackageStaticCallMeterTools({
 			env,
 			userId: callerContext.user?.userId ?? null,
+			request: callerContext.request,
 			grantedPackageIds: new Set(
 				(bundle.dependencies ?? [])
+					.filter(isDirectBundleDependency)
 					.map((dependency) => dependency.packageId)
 					.filter((packageId): packageId is string => Boolean(packageId)),
 			),
@@ -933,6 +1237,7 @@ export async function runBundledModuleWithRegistry(
 				baseUrl: callerContext.baseUrl,
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
+				request: callerContext.request,
 				storageContext: normalizedStorageContext,
 				grantedSecretAuthorityPackageIds: [...authorizedPackageStorageIds],
 			},
@@ -941,18 +1246,33 @@ export async function runBundledModuleWithRegistry(
 			rawFetchHostSink: options?.packageContext
 				? undefined
 				: options?.rawFetchHostSink,
-			recordExecuteUsage: shouldRecordExecuteUsageForRun({
-				surface: observedRunSurface(options),
-				hasPackageContext: Boolean(options?.packageContext),
-			}),
+			recordExecuteUsage:
+				options?.skipExecuteUsage === true
+					? false
+					: shouldRecordExecuteUsageForRun({
+							surface: observedRunSurface(options),
+							hasPackageContext: Boolean(options?.packageContext),
+						}),
 			surface: resolveDynamicWorkerDaySurface({
 				surface: options?.runRecord?.surface,
 				handleSurface: options?.runRecordHandle?.context.surface,
 				runSurface: options?.runSurface,
 				hasPackageContext: Boolean(options?.packageContext),
 			}),
+			packageId: options?.packageContext?.packageId ?? null,
 			executeShape: options?.executeShape,
 			allowOutboundFetch: !closedWorldRetrieverRuntime,
+			onWorkerId: runRecordHandle
+				? (workerId) => {
+						runRecordHandle.context = {
+							...runRecordHandle.context,
+							metadata: {
+								...runRecordHandle.context.metadata,
+								[executeWorkerIdMetadataKey]: workerId,
+							},
+						}
+					}
+				: undefined,
 			waitUntil: options?.waitUntil,
 		})
 		const workflowTools = closedWorldRetrieverRuntime
@@ -963,6 +1283,28 @@ export async function runBundledModuleWithRegistry(
 					callerContext,
 					packageContext: options?.packageContext ?? null,
 				}))
+		const computedPackageImportTools =
+			options?.computedPackageImportTools ??
+			(callerContext.user?.userId && !closedWorldRetrieverRuntime
+				? createComputedPackageImportTools({
+						env,
+						baseUrl: callerContext.baseUrl,
+						callerContext,
+						packageContext: options?.packageContext ?? null,
+						packageEventTools: options?.packageEventTools,
+						emailTools: options?.emailTools,
+						workflowTools,
+						additionalTools: options?.additionalTools,
+						skipCapabilityRegistry: options?.skipCapabilityRegistry,
+						capabilityRegistry: options?.capabilityRegistry,
+						waitUntil: options?.waitUntil,
+						signal: options?.signal,
+						executorTimeoutMs: options?.executorTimeoutMs,
+						computedImportDepth: options?.computedImportDepth ?? 0,
+						conversationId: options?.conversationId ?? null,
+						closedWorldRetrieverRuntime,
+					})
+				: undefined)
 		// Register the package_storage_* tools whenever the run has a user, even
 		// with an empty grant set: an unauthorized packageStorage() call then
 		// fails with the structured provenance message instead of a bare
@@ -1012,12 +1354,10 @@ export async function runBundledModuleWithRegistry(
 			packageSecretTools,
 			emailTools: closedWorldRetrieverRuntime ? undefined : options?.emailTools,
 			workflowTools,
-			packageInvokeTools: closedWorldRetrieverRuntime
-				? undefined
-				: options?.packageInvokeTools,
 			packageEventTools: closedWorldRetrieverRuntime
 				? undefined
 				: options?.packageEventTools,
+			computedPackageImportTools,
 			staticCallMeterTools,
 		}
 		const runtimeHelperPreludes =
@@ -1189,10 +1529,11 @@ ${runtimeHelperRuntimePropertySource}
 				throw error
 			}
 			if (!runRecordFinished) {
+				const resolved = resolveThrownRunError(error)
 				await finishObservedRun({
 					status: 'error',
-					logs: capturedLogs,
-					error,
+					logs: resolved.logs,
+					error: resolved.error,
 				})
 			}
 			throw error
@@ -1206,10 +1547,11 @@ ${runtimeHelperRuntimePropertySource}
 			throw error
 		}
 		if (!runRecordFinished) {
+			const resolved = resolveThrownRunError(error)
 			await finishObservedRun({
 				status: 'error',
-				logs: capturedLogs,
-				error,
+				logs: resolved.logs,
+				error: resolved.error,
 			})
 		}
 		await recordPackageExportUsage('error')

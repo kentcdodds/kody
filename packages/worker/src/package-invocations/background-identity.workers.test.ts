@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { metaGetCurrentUserCapability } from '#mcp/capabilities/meta/meta-get-current-user.ts'
@@ -26,7 +27,10 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 	const userId = 'a'.repeat(64)
 	const email = 'subscription-owner@example.com'
 	const displayName = 'Subscription Owner'
-	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureUsersTestSchema({
+		db: env.APP_DB,
+		columns: ['stripe_plan'],
+	})
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username,
@@ -94,8 +98,9 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		env,
 		baseUrl: 'https://kody.dev',
 		actor: {
-			tokenId: 'internal:email-subscriptions',
-			userId,
+			sourceId: 'internal:email-subscriptions',
+			orgId: ownerIdFromStored(userId),
+			request: { kind: 'inbound-email', sourceId: 'inbox-1' },
 		},
 		savedPackage: {
 			id: 'package-1',
@@ -107,10 +112,12 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 			searchText: null,
 			sourceId: 'source-1',
 			hasApp: false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: true,
 			createdAt: '2026-08-08T00:00:00.000Z',
 			updatedAt: '2026-08-08T00:00:00.000Z',
+			lockedAt: null,
 		},
 		invocationName: 'subscription:email.message.received',
 		moduleSelector: {
@@ -124,7 +131,6 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		topic: 'email.message.received',
 		notFoundCode: 'subscription_not_found',
 		toolFactories: {
-			createPackageRuntimeInvokeTools: vi.fn(() => ({}) as never),
 			createPackageEventTools: vi.fn(() => ({}) as never),
 		},
 	})

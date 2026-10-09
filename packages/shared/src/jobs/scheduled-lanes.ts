@@ -8,8 +8,6 @@
 export const scheduledLaneNames = [
 	'reconcile_artifacts_pushes',
 	'repo_session_cleanup',
-	// Inactive no-op; name stays in the union so in-flight queue messages parse.
-	'repo_session_index_backfill',
 	'reconcile_inbound_deliveries',
 	'system_email_retention',
 	'storage_bucket_estimate_backfill',
@@ -19,7 +17,7 @@ export const scheduledLaneNames = [
 	'job_retention',
 	'unverified_account_purge',
 	'usage_aggregation',
-	'compute_overage_billing',
+	'durable_object_duration_attribution',
 	'auth_denial_alert',
 	'email_delivery_alert',
 	'email_verification_stall_alert',
@@ -162,11 +160,11 @@ export function shouldRunUsageAggregationCron(now: Date) {
 }
 
 /**
- * Hourly at minute 0. The lane itself no-ops outside UTC days 1–3
- * (and day 1 hour 0) so usage_aggregation can finish the prior month.
+ * Hourly at minute 20: Cloudflare's per-object Durable Object analytics lag
+ * a few minutes, and minute 0 already carries the heavier usage lanes.
  */
-export function shouldRunComputeOverageBillingCron(now: Date) {
-	return now.getUTCMinutes() === 0
+export function shouldRunDurableObjectDurationAttributionCron(now: Date) {
+	return now.getUTCMinutes() === 20
 }
 
 export function shouldRunAuthDenialAlertCron(now: Date) {
@@ -256,8 +254,8 @@ export function getScheduledLaneCadence(
 	if (shouldRunUsageAggregationCron(scheduledAt)) {
 		lanes.push('usage_aggregation')
 	}
-	if (shouldRunComputeOverageBillingCron(scheduledAt)) {
-		lanes.push('compute_overage_billing')
+	if (shouldRunDurableObjectDurationAttributionCron(scheduledAt)) {
+		lanes.push('durable_object_duration_attribution')
 	}
 	if (shouldRunAuthDenialAlertCron(scheduledAt)) {
 		lanes.push('auth_denial_alert')

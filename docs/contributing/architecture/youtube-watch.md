@@ -1,8 +1,6 @@
 # YouTube watch overlay
 
-Site-wide `/?youtubeId=<id>` player for allowlisted YouTube videos. Banners can
-point at it by storing that relative href. Absolute YouTube watch URLs on a
-banner stay external and do not get rewritten to `/?youtubeId=`.
+Site-wide `/?youtubeId=<id>` player for allowlisted YouTube videos.
 
 ## Surfaces
 
@@ -15,12 +13,10 @@ banner stay external and do not get rewritten to `/?youtubeId=`.
   time and KV-cached with SWR. The homepage lite player embeds the selected
   chooser video only, without a playlist id, so YouTube player chrome uses that
   video's title. Chooser ids are allowlisted when thumbs or `?youtubeId=` load
-  playlists, so `/youtube-thumb/:id` works for those videos without a banner.
+  playlists, so `/youtube-thumb/:id` works for those videos.
 - **Thumbnail proxy**: `GET /youtube-thumb/:videoId` (404 unless allowlisted).
   Fetches `maxresdefault.jpg` first (1280×720), then `sddefault.jpg`, then
   `hqdefault.jpg` when a higher quality is missing.
-- **Admin helper**: `/admin/banners` paste a watch URL to fill `/?youtubeId=` +
-  the first-party thumb path
 
 The overlay player is a first-party `<dialog>` with a poster + play control.
 Play swaps in `https://www.youtube-nocookie.com/embed/<id>?autoplay=1`. Closing
@@ -35,17 +31,12 @@ A video id is allowed when it appears in any of:
 1. The latest items from `YOUTUBE_ALLOWED_PLAYLIST_IDS` (YouTube playlist Atom
    feed, typically ~15 items per playlist, cached about an hour)
 2. `YOUTUBE_ALLOWED_VIDEO_IDS` (comma-separated extra ids)
-3. The look-preview sample id (`youtubeWatchSampleVideoId`) so
-   `?siteBannerLook=` thumbs and Watch CTAs work without an enabled banner
+3. The sample id (`youtubeWatchSampleVideoId`) used by tests and fixtures
 4. Homepage hero chooser ids from `landingHeroSourcePlaylistId` so `/` posters
-   and `/youtube-thumb/:id` thumbs work without `?youtubeId=` or an enabled
-   banner. That fetch shares the home loader's KV SWR cache.
-5. Enabled banner `ctaHref`, `secondaryHref`, or `imageUrl` values that parse as
-   a YouTube video (`/?youtubeId=`, watch/embed/short URLs, or
-   `/youtube-thumb/<id>`). Absolute `https://kody.codes/?youtubeId=` is not
-   parsed — admin and banners store the relative `/?youtubeId=` form.
-   Third-party hosts are never treated as a YouTube id, even when they carry
-   `?v=` or `?youtubeId=`.
+   and `/youtube-thumb/:id` thumbs work without `?youtubeId=`. That fetch shares
+   the home loader's KV SWR cache.
+5. Video ids authored in first-party docs `> [!WATCH]` blocks. Those posters
+   stay allowed when the film is unlisted and absent from the public Atom feed.
 
 The overlay follows the live `youtubeId` search param only. Closing strips that
 param; it does not fall back to SSR loader data, so the dialog stays closed
@@ -54,20 +45,17 @@ across client navigations.
 Unset playlist env means no overlay playlist fetch (tests stay offline). `none`
 disables overlay playlists explicitly. Production and preview set Kent's public
 overlay playlist id in `packages/worker/wrangler.jsonc` so shared `/?youtubeId=`
-links work without a banner. The Atom feed is not the full catalog and is not
-the homepage chooser source.
+links work. The Atom feed is not the full catalog and is not the homepage
+chooser source.
 
-Failed playlist fetches fail open: env extra ids and banner hrefs stay in the
-allowlist. A failed homepage playlist fetch fails open to an empty chooser.
+Failed playlist fetches fail open: env extra ids stay in the allowlist. A failed
+homepage playlist fetch fails open to an empty chooser.
 
 SSR documents other than `/` without `?youtubeId=` skip both the overlay Atom
-fetch and the homepage hero playlist fetch. They merge env extras, the sample
-id, and enabled-banner hrefs (from the same `listEnabledSiteBanners` read as the
-site-banner loader). Home starts that shared banner read next to auth so
-signed-in `/` (always `no-store`) does not wait for banners only after those
-finish. `?youtubeId=` HTML and `/youtube-thumb/:videoId` load playlists
-(including hero chooser ids). Shared watch links are full document loads, so
-they resolve playlist ids.
+fetch and the homepage hero playlist fetch. They merge env extras and the sample
+id. `?youtubeId=` HTML and `/youtube-thumb/:videoId` load playlists (including
+hero chooser ids). Shared watch links are full document loads, so they resolve
+playlist ids.
 
 Homepage `/` always loads the chooser playlist for SSR (and
 `GET /landing-hero-videos.json` for client navigations), even when the request

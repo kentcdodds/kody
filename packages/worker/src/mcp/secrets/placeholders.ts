@@ -201,6 +201,37 @@ export function replaceSecretPlaceholdersInFormUrlEncoded(
 	return nextParams.toString()
 }
 
+/**
+ * Accept a bare saved-secret name or a single opaque `{{secret:…}}`
+ * placeholder (as returned by packageSecrets.get). Derived ops
+ * (secretHeaders.basic, secretJwtSign) use this so package JS can pass
+ * either form without ever seeing plaintext.
+ */
+export function parseSecretNameOrPlaceholder(
+	value: string,
+	fieldName: string,
+): ReferencedSecret {
+	const trimmed = value.trim()
+	if (!trimmed) {
+		throw new Error(`${fieldName} is required.`)
+	}
+	if (trimmed.startsWith('{{') && trimmed.endsWith('}}')) {
+		const parsed = parseSecretPlaceholders(trimmed)
+		if (parsed.length !== 1 || buildSecretPlaceholder(parsed[0]!) !== trimmed) {
+			throw new Error(
+				`${fieldName} must be a saved secret name or a single {{secret:…}} opaque ref.`,
+			)
+		}
+		return parsed[0]!
+	}
+	if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
+		throw new Error(
+			`${fieldName} must be a saved secret name using letters, numbers, dots, underscores, or hyphens, or a single {{secret:…}} opaque ref.`,
+		)
+	}
+	return { name: trimmed, scope: null }
+}
+
 export function containsSecretPlaceholder(value: string) {
 	return /\{\{(?:secret(?:\/|:|-basic:)|integration-token:)/.test(value)
 }

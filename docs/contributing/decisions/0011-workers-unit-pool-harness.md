@@ -31,7 +31,14 @@ Durable Objects from `globalSetup` or workers-unit `setupFiles`. Prefer
 `*.node.test.ts` unless real Cloudflare bindings or Workers-only APIs are
 required. Keep a shared Vitest `testTimeout` of 20s (and `CI=1` on `test:push` /
 validate’s test and e2e legs) so the pool’s per-file DO cold load does not fail
-the default budget.
+the default budget. When `npm run validate` runs workers-unit beside the rest of
+the parallel gate (`KODY_VALIDATE_LOAD=1` on that leg only; #2939 / #2475),
+`vitest.workers.config.ts` raises workers-unit `testTimeout`/`hookTimeout` to
+40s and drops `maxWorkers` from 3 to 2 so load-induced stretch does not flake.
+The override stays on the workers project only (not `sharedProjectConfig`) so
+node-unit Nx caches stay keyed to the 20s default; do **not** loosen production
+worker startup CPU budgets for that contention (`worker-startup-time:check`
+already runs after validate's parallel phase).
 
 ## Consequences
 

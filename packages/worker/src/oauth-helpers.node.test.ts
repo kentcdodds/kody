@@ -1,31 +1,32 @@
+import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { expect, test } from 'vitest'
 import { resolveOAuthHelpers } from './oauth-helpers.ts'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 import { readMainWorkerWranglerCompatibility } from '#worker/test-support/wrangler-compatibility.ts'
 
-function grantRecord(input: {
-	id: string
-	userId: string
-	clientId: string
-	scope?: Array<string>
-}) {
+function grantRecord(
+	id: string,
+	userId: string,
+	clientId: string,
+	scope = ['mcp'],
+) {
 	return JSON.stringify({
-		id: input.id,
-		clientId: input.clientId,
-		userId: input.userId,
-		scope: input.scope ?? ['mcp'],
-		metadata: { label: input.id },
+		id,
+		clientId,
+		userId,
+		scope,
+		metadata: { label: id },
 		createdAt: 1_700_000_000,
 		encryptedProps: 'opaque',
 		authCodeId: null,
 	})
 }
 
-function tokenRecord(input: { userId: string; grantId: string; id: string }) {
+function tokenRecord(userId: string, grantId: string, id: string) {
 	return JSON.stringify({
-		id: input.id,
-		grantId: input.grantId,
-		userId: input.userId,
+		id,
+		grantId,
+		userId,
 		createdAt: 1_700_000_000,
 		expiresAt: 1_700_003_600,
 		wrappedEncryptionKey: 'opaque',
@@ -33,50 +34,34 @@ function tokenRecord(input: { userId: string; grantId: string; id: string }) {
 }
 
 function seedProviderKv() {
+	const tokens: Array<[string, string, string]> = [
+		['user-aaa', 'grant-1', 'tok-1'],
+		['user-aaa', 'grant-1', 'tok-2'],
+		['user-aaa', 'grant-2', 'tok-3'],
+		['user-bbb', 'grant-3', 'tok-4'],
+	]
 	return createMemoryKvNamespace({
 		'client:client-a': JSON.stringify({ clientId: 'client-a' }),
 		'client:client-b': JSON.stringify({ clientId: 'client-b' }),
-		'grant:user-aaa:grant-1': grantRecord({
-			id: 'grant-1',
-			userId: 'user-aaa',
-			clientId: 'client-a',
-			scope: ['mcp', 'profile'],
-		}),
-		'grant:user-aaa:grant-2': grantRecord({
-			id: 'grant-2',
-			userId: 'user-aaa',
-			clientId: 'client-b',
-		}),
-		'grant:user-bbb:grant-3': grantRecord({
-			id: 'grant-3',
-			userId: 'user-bbb',
-			clientId: 'client-a',
-		}),
-		'token:user-aaa:grant-1:tok-1': tokenRecord({
-			userId: 'user-aaa',
-			grantId: 'grant-1',
-			id: 'tok-1',
-		}),
-		'token:user-aaa:grant-1:tok-2': tokenRecord({
-			userId: 'user-aaa',
-			grantId: 'grant-1',
-			id: 'tok-2',
-		}),
-		'token:user-aaa:grant-2:tok-3': tokenRecord({
-			userId: 'user-aaa',
-			grantId: 'grant-2',
-			id: 'tok-3',
-		}),
-		'token:user-bbb:grant-3:tok-4': tokenRecord({
-			userId: 'user-bbb',
-			grantId: 'grant-3',
-			id: 'tok-4',
-		}),
+		'grant:user-aaa:grant-1': grantRecord('grant-1', 'user-aaa', 'client-a', [
+			'mcp',
+			'profile',
+		]),
+		'grant:user-aaa:grant-2': grantRecord('grant-2', 'user-aaa', 'client-b'),
+		'grant:user-bbb:grant-3': grantRecord('grant-3', 'user-bbb', 'client-a'),
+		...Object.fromEntries(
+			tokens.map(([userId, grantId, id]) => [
+				`token:${userId}:${grantId}:${id}`,
+				tokenRecord(userId, grantId, id),
+			]),
+		),
 	})
 }
 
 async function libraryHelpersFor(kv: KVNamespace) {
-	const helpers = await resolveOAuthHelpers({ OAUTH_KV: kv } as Env)
+	const helpers = await resolveOAuthHelpers<OAuthHelpers>({
+		OAUTH_KV: kv,
+	} as Env)
 	if (!helpers) throw new Error('expected library-backed OAuth helpers')
 	return helpers
 }
@@ -162,20 +147,12 @@ test('library-backed revokeGrant deletes the grant and every token under it and 
 
 test('library-backed revokeGrant pages through more tokens than one list call returns', async () => {
 	const { kv, store } = createMemoryKvNamespace({
-		'grant:user-aaa:grant-1': grantRecord({
-			id: 'grant-1',
-			userId: 'user-aaa',
-			clientId: 'client-a',
-		}),
+		'grant:user-aaa:grant-1': grantRecord('grant-1', 'user-aaa', 'client-a'),
 	})
 	for (let index = 0; index < 1_250; index++) {
 		store.set(
 			`token:user-aaa:grant-1:tok-${String(index).padStart(4, '0')}`,
-			tokenRecord({
-				userId: 'user-aaa',
-				grantId: 'grant-1',
-				id: `tok-${index}`,
-			}),
+			tokenRecord('user-aaa', 'grant-1', `tok-${index}`),
 		)
 	}
 

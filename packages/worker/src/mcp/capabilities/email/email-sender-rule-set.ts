@@ -17,6 +17,7 @@ export const emailSenderRuleSetCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailSenderRuleSet',
+		orgPermission: 'email:write',
 		description:
 			'Create or update a sender rule for the signed-in user. Rules classify inbound mail at receive time: allow/block/quarantine by address or domain (address beats domain; subdomain suffix matching). Block rejects at SMTP before quota; quarantine stores mail and fires email.message.quarantined instead of email.message.received.',
 		keywords: [

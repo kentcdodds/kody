@@ -1,10 +1,12 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { filterCapabilityRegistryMcpServersForCaller } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
 import { listUserSecretsForSearch } from '#mcp/secrets/service.ts'
 import { type SecretSearchRow } from '#mcp/secrets/types.ts'
 import { type ValueMetadata } from '#mcp/values/types.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
+import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import {
 	listPlatformPackagesForSearch,
 	type PlatformPackageForSearch,
@@ -15,6 +17,12 @@ import {
 	listSavedPackagesWithCommunityProvenanceByUserId,
 } from '#worker/package-registry/repo.ts'
 import { listAcceptedInboundSharedPackages } from '#worker/package-registry/share-grants.ts'
+import {
+	canSeeResource,
+	computeEffectivePermissions,
+	reachedPackage,
+	runWithRequestPermissions,
+} from '#worker/authorization/authorize.ts'
 
 import { buildSavedPackageSearchRows } from './search-package-rows.ts'
 import {
@@ -87,115 +95,160 @@ export async function loadSearchRowsAndRegistry(input: {
 	userId: string | null
 	includeHiddenPackages?: boolean
 }) {
-	const [registry, optionalRows] = await Promise.all([
-		getCapabilityRegistryForContext({
-			env: input.env,
-			callerContext: input.callerContext,
-		}),
-		loadOptionalSearchRows({
-			userId: input.userId,
-			loadPackages: async () => {
-				const userId = input.userId
-				if (!userId) {
-					return { rows: [], warnings: [] }
-				}
-				const [savedPackages, platformPackages] = await Promise.all([
-					applySavedPackageForkListingAncestry({
-						env: input.env,
-						records: await listSavedPackagesWithCommunityProvenanceByUserId(
-							input.env.APP_DB,
-							{
-								userId,
-							},
-						),
-					}),
-					listPlatformPackagesForSearch(input.env.APP_DB),
-				])
-				const ownRecords = savedPackages.filter((pkg) =>
-					input.includeHiddenPackages ? true : !pkg.hidden,
-				)
-				const packageRows = await buildSavedPackageSearchRows({
+	const { request } = input.callerContext
+	const access = request
+		? await computeEffectivePermissions({ env: input.env, request })
+		: null
+	const reveal = (packageId: string) =>
+		!access ||
+		canSeeResource(access, reachedPackage(access.orgId, { id: packageId }))
+	return await runWithRequestPermissions(
+		{ env: input.env, request },
+		async () => {
+			const [runtimeRegistry, optionalRows] = await Promise.all([
+				getCapabilityRegistryForContext({
 					env: input.env,
-					baseUrl: input.callerContext.baseUrl,
-					userId,
-					records: ownRecords,
-				})
-				const sharedRecords = (
-					await Promise.all(
-						(
-							await listAcceptedInboundSharedPackages({
-								db: input.env.APP_DB,
-								granteeUserId: userId,
-							})
-						).map((record) =>
-							getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
-								userId: record.userId,
-								packageId: record.id,
-							}),
+					callerContext: input.callerContext,
+				}),
+				loadOptionalSearchRows({
+					userId: input.userId,
+					loadPackages: async () => {
+						const userId = input.userId
+						if (!userId) {
+							return { rows: [], warnings: [] }
+						}
+						const [savedPackages, platformPackages, sharedRecords] =
+							await Promise.all([
+								listSavedPackagesWithCommunityProvenanceByUserId(
+									input.env.APP_DB,
+									{
+										userId,
+									},
+								).then((records) =>
+									applySavedPackageForkListingAncestry({
+										env: input.env,
+										records,
+									}),
+								),
+								listPlatformPackagesForSearch(input.env.APP_DB),
+								listAcceptedInboundSharedPackages({
+									db: input.env.APP_DB,
+									granteeUserId: userId,
+								})
+									.then((grants) =>
+										Promise.all(
+											grants.map((record) =>
+												getSavedPackageWithCommunityProvenanceById(
+													input.env.APP_DB,
+													{
+														userId: record.userId,
+														packageId: record.id,
+													},
+												),
+											),
+										),
+									)
+									.then((records) =>
+										records.filter(
+											(record): record is NonNullable<typeof record> =>
+												Boolean(record),
+										),
+									),
+							])
+						const ownRecords = savedPackages.filter(
+							(pkg) =>
+								(input.includeHiddenPackages ? true : !pkg.hidden) &&
+								reveal(pkg.id),
+						)
+						const packageRows = await buildSavedPackageSearchRows({
+							env: input.env,
+							baseUrl: input.callerContext.baseUrl,
+							userId,
+							records: ownRecords,
+						})
+						const ownIds = new Set(savedPackages.map((pkg) => pkg.id))
+						const sharedRows = await buildSavedPackageSearchRows({
+							env: input.env,
+							baseUrl: input.callerContext.baseUrl,
+							userId,
+							records: sharedRecords.filter(
+								(record) => !ownIds.has(record.id) && reveal(record.id),
+							),
+							shareGranted: true,
+						})
+						// Platform (built-in) packages are discoverable for everyone;
+						// the caller's own copy of the same name or kody id wins
+						// (fork-to-customize replaces the platform row in results).
+						const ownNames = new Set(savedPackages.map((pkg) => pkg.name))
+						const ownKodyIds = new Set(savedPackages.map((pkg) => pkg.kodyId))
+						const platformRowGroups = await Promise.all(
+							groupPlatformPackagesByScope(platformPackages).map(
+								async ({ platformScope, records }) =>
+									buildSavedPackageSearchRows({
+										env: input.env,
+										baseUrl: input.callerContext.baseUrl,
+										userId,
+										records: records.filter(
+											(record) =>
+												!ownNames.has(record.name) &&
+												!ownKodyIds.has(record.kodyId) &&
+												reveal(record.id),
+										),
+										platformScope,
+									}),
+							),
+						)
+						return {
+							rows: [
+								...packageRows.rows,
+								...sharedRows.rows,
+								...platformRowGroups.flatMap((group) => group.rows),
+							],
+							warnings: [...packageRows.warnings, ...sharedRows.warnings],
+						}
+					},
+					loadUserSecrets: async () => {
+						// Connection profiles grant packages only, never secrets.
+						if (access?.profileGrants) return []
+						const userId = input.userId
+						if (!userId) return []
+						return listUserSecretsForSearch({
+							env: input.env,
+							userId,
+						})
+					},
+					loadUserValues: async () => [],
+					loadUserIntegrations: async () => {
+						if (access?.profileGrants) return []
+						const userId = input.userId
+						if (!userId) return []
+						return listJoinedIntegrations({
+							env: input.env,
+							userId,
+						})
+					},
+				}),
+			])
+			// Runtime registry keeps package-locked MCP servers for call-time grants;
+			// search must still hide servers the caller cannot use (execute / other pkgs).
+			const registry = input.userId
+				? filterCapabilityRegistryMcpServersForCaller(
+						runtimeRegistry,
+						new Set(
+							(
+								await listVisibleEnabledMcpServerRefsCached({
+									env: input.env,
+									userId: input.userId,
+									packageId: input.callerContext.storageContext?.packageId,
+								}).catch(() => [])
+							).map((ref) => ref.serverId),
 						),
 					)
-				).filter((record): record is NonNullable<typeof record> =>
-					Boolean(record),
-				)
-				const ownIds = new Set(savedPackages.map((pkg) => pkg.id))
-				const sharedRows = await buildSavedPackageSearchRows({
-					env: input.env,
-					baseUrl: input.callerContext.baseUrl,
-					userId,
-					records: sharedRecords.filter((record) => !ownIds.has(record.id)),
-					shareGranted: true,
-				})
-				// Platform (built-in) packages are discoverable for everyone;
-				// the caller's own copy of the same name or kody id wins
-				// (fork-to-customize replaces the platform row in results).
-				const ownNames = new Set(savedPackages.map((pkg) => pkg.name))
-				const ownKodyIds = new Set(savedPackages.map((pkg) => pkg.kodyId))
-				const platformRowGroups = await Promise.all(
-					groupPlatformPackagesByScope(platformPackages).map(
-						async ({ platformScope, records }) =>
-							buildSavedPackageSearchRows({
-								env: input.env,
-								baseUrl: input.callerContext.baseUrl,
-								userId,
-								records: records.filter(
-									(record) =>
-										!ownNames.has(record.name) &&
-										!ownKodyIds.has(record.kodyId),
-								),
-								platformScope,
-							}),
-					),
-				)
-				return {
-					rows: [
-						...packageRows.rows,
-						...sharedRows.rows,
-						...platformRowGroups.flatMap((group) => group.rows),
-					],
-					warnings: [...packageRows.warnings, ...sharedRows.warnings],
-				}
-			},
-			loadUserSecrets: async () => {
-				const userId = input.userId
-				if (!userId) return []
-				return listUserSecretsForSearch({
-					env: input.env,
-					userId,
-				})
-			},
-			loadUserValues: async () => [],
-			loadUserIntegrations: async () => {
-				const userId = input.userId
-				if (!userId) return []
-				return listJoinedIntegrations({
-					env: input.env,
-					userId,
-				})
-			},
-		}),
-	])
-	return {
-		registry,
-		...optionalRows,
-	}
+				: runtimeRegistry
+			return {
+				registry,
+				...optionalRows,
+			}
+		},
+	)
 }

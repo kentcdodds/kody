@@ -6,10 +6,10 @@ import {
 	setAuthSessionSecret,
 	type AuthSession,
 } from '#app/auth-session.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { identityEmailDestinationId } from '#universal/email-destinations.ts'
 import { createAccountEmailDestinationsHandler } from './account-email-destinations.ts'
@@ -30,7 +30,7 @@ async function seedUser(
 	input: { verified?: boolean } = {},
 ) {
 	const email = 'owner@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id, username, email, stable_user_id, password_hash, email_verified_at
@@ -43,6 +43,10 @@ async function seedUser(
 			${input.verified === false ? 'NULL' : 'CURRENT_TIMESTAMP'}
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: 'owner',
+	})
 	return stableUserId
 }
 

@@ -92,89 +92,38 @@ test('same-path replace and write instructions compose in order instead of keepi
 })
 
 test('replace options, missing files, and no-op searches keep the shell contract', async () => {
-	const files = new Map<string, string>([
-		['/session/src/note.ts', 'Foo foo FOO\n'],
-	])
+	const notePath = '/session/src/note.ts'
+	const readNote = async (path: string) =>
+		path === notePath ? 'Foo foo FOO\n' : null
+	const replaceNote = (
+		search: string,
+		replacement: string,
+		options?: Record<string, boolean>,
+	) =>
+		planRepoSessionContentEdits(
+			[{ kind: 'replace', path: notePath, search, replacement, options }],
+			readNote,
+		)
 
-	const caseSensitive = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'foo',
-				replacement: 'bar',
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
-	expect(caseSensitive.edits[0]?.content).toBe('Foo bar FOO\n')
+	const replaceCases: Array<
+		[string, string, Record<string, boolean> | undefined, string]
+	> = [
+		['foo', 'bar', undefined, 'Foo bar FOO\n'],
+		['foo', 'bar', { caseSensitive: false }, 'bar bar bar\n'],
+		['Foo', 'Ok', { wholeWord: true }, 'Ok foo FOO\n'],
+		['FOO', '$PRICE $$ $&', undefined, 'Foo foo $PRICE $$ $&\n'],
+		['F[oO]o', 'X', { regex: true }, 'X foo FOO\n'],
+	]
+	for (const [search, replacement, options, content] of replaceCases) {
+		const plan = await replaceNote(search, replacement, options)
+		expect([search, options, plan.edits[0]?.content]).toEqual([
+			search,
+			options,
+			content,
+		])
+	}
 
-	const caseInsensitive = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'foo',
-				replacement: 'bar',
-				options: { caseSensitive: false },
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
-	expect(caseInsensitive.edits[0]?.content).toBe('bar bar bar\n')
-
-	const wholeWord = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'Foo',
-				replacement: 'Ok',
-				options: { wholeWord: true },
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
-	expect(wholeWord.edits[0]?.content).toBe('Ok foo FOO\n')
-
-	const dollarLiteral = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'FOO',
-				replacement: '$PRICE $$ $&',
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
-	expect(dollarLiteral.edits[0]?.content).toBe('Foo foo $PRICE $$ $&\n')
-
-	const regex = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'F[oO]o',
-				replacement: 'X',
-				options: { regex: true },
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
-	expect(regex.edits[0]?.content).toBe('X foo FOO\n')
-
-	const noOp = await planRepoSessionContentEdits(
-		[
-			{
-				kind: 'replace',
-				path: '/session/src/note.ts',
-				search: 'missing',
-				replacement: 'nope',
-			},
-		],
-		async (path) => files.get(path) ?? null,
-	)
+	const noOp = await replaceNote('missing', 'nope')
 	expect(noOp.totalChanged).toBe(0)
 	expect(noOp.edits[0]).toMatchObject({
 		changed: false,
@@ -206,33 +155,10 @@ test('replace options, missing files, and no-op searches keep the shell contract
 			async () => null,
 		),
 	).rejects.toThrow('ENOENT: no such file: /session/src/missing.ts')
-
-	await expect(
-		planRepoSessionContentEdits(
-			[
-				{
-					kind: 'replace',
-					path: '/session/src/note.ts',
-					search: '',
-					replacement: 'y',
-				},
-			],
-			async (path) => files.get(path) ?? null,
-		),
-	).rejects.toThrow('Search query must not be empty')
-
-	await expect(
-		planRepoSessionContentEdits(
-			[
-				{
-					kind: 'replace',
-					path: '/session/src/note.ts',
-					search: '(',
-					replacement: 'y',
-					options: { regex: true },
-				},
-			],
-			async (path) => files.get(path) ?? null,
-		),
-	).rejects.toThrow(/Invalid search pattern/)
+	await expect(replaceNote('', 'y')).rejects.toThrow(
+		'Search query must not be empty',
+	)
+	await expect(replaceNote('(', 'y', { regex: true })).rejects.toThrow(
+		/Invalid search pattern/,
+	)
 })

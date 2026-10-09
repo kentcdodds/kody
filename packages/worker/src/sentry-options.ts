@@ -1,22 +1,60 @@
 import { type CloudflareOptions } from '@sentry/cloudflare'
 import { type ErrorEvent, type EventHint } from '@sentry/core'
+import { redactKodyCredentials } from '@kody-internal/shared/api-token-format.ts'
 import { getErrorCauseChain } from '@kody-internal/shared/error-message.ts'
 import { isRetryableD1LockSentryEvent } from './d1-retry.ts'
 import { isCloudflareKvTransientHttpErrorMessage } from './cloudflare-kv-platform-error.ts'
+import { isCloudflareOpaqueInternalErrorMessage } from './cloudflare-opaque-internal-error.ts'
 import { isCimdUnknownClientSentryMessage } from './oauth-cimd-error.ts'
 import {
 	isComputeOverageLimitError,
 	isEntitlementLimitError,
 } from './entitlements/errors.ts'
 import { isIntegrationTokenRefreshCallerMessage } from './integrations/token-refresh.ts'
-import { isArtifactsGitTransientErrorMessage } from './repo/artifacts-git-retry.ts'
+import {
+	isArtifactsGitTransientErrorMessage,
+	isArtifactsGitTransientRemapError,
+} from './repo/artifacts-git-retry.ts'
+import {
+	isArtifactsGitReadTimeoutMessage,
+	isArtifactsOpaqueInternalRetryMessage,
+	isArtifactsRepoLookupTimeoutMessage,
+	isSourceRecoveryOpaqueInternalErrorMessage,
+} from './repo/source-safety-policy.ts'
 import { isUserCodeError } from './user-code-error.ts'
+
+export {
+	cloudflareArtifactsOpaqueInternalErrorMessage,
+	cloudflareOpaqueInternalErrorMessage,
+	isCloudflareOpaqueInternalErrorMessage,
+} from './cloudflare-opaque-internal-error.ts'
 
 function sentryEventMessages(event: ErrorEvent) {
 	return [
 		event.message,
 		...(event.exception?.values?.map((value) => value.value) ?? []),
 	]
+}
+
+export function redactKodyCredentialsInSentryEvent(
+	event: ErrorEvent,
+): ErrorEvent {
+	if (typeof event.message === 'string') {
+		event.message = redactKodyCredentials(event.message)
+	}
+
+	const logentry = event.logentry
+	if (typeof logentry?.message === 'string') {
+		logentry.message = redactKodyCredentials(logentry.message)
+	}
+
+	for (const exception of event.exception?.values ?? []) {
+		if (typeof exception.value === 'string') {
+			exception.value = redactKodyCredentials(exception.value)
+		}
+	}
+
+	return event
 }
 
 /**
@@ -246,11 +284,13 @@ export const durableObjectInstanceInactiveCloseMessage =
  * Cloudflare Durable Object SQLite storage opaque platform fault with a
  * support reference, e.g.
  * `Internal error in Durable Object storage caused object to be reset; reference = <id>`.
- * Same class as D1's `Internal error in D1 DB storage caused object to be
- * reset` (see `d1-retry.ts`): not an application defect — DO storage hit an
- * internal fault. Require `reference =` and this exact phrasing so bare /
- * unrelated "Durable Object storage …" messages stay Sentry-visible.
- * Reference ids use the same alphabet as D1: alphanumeric, plus `_` or `-`.
+ * D1 bindings can surface the same DO-storage reset under optional `Error:` /
+ * `D1_ERROR:` prefixes (KODY-82). Same class as D1's `Internal error in D1 DB
+ * storage caused object to be reset` (see `d1-retry.ts`): not an application
+ * defect — DO storage hit an internal fault. Require `reference =` and this
+ * exact phrasing so bare / unrelated "Durable Object storage …" messages stay
+ * Sentry-visible. Reference ids use the same alphabet as D1: alphanumeric,
+ * plus `_` or `-`.
  */
 const durableObjectStorageObjectResetPattern =
 	/^internal error in Durable Object storage caused object to be reset;\s*reference\s*=\s*[A-Za-z0-9_-]+$/i
@@ -262,9 +302,22 @@ function normalizeDurableObjectIsolateResetMessage(message: string) {
 		: `${withoutErrorPrefix}.`
 }
 
+/**
+ * Strip the same optional platform prefixes D1 bindings attach (`Error:` then
+ * `D1_ERROR:`) before matching the anchored DO-storage reset sentence. Same
+ * order as `stripD1ErrorPrefixes` in `d1-retry.ts`.
+ */
+function normalizeDurableObjectStorageObjectResetMessage(message: string) {
+	return message
+		.trim()
+		.replace(/^Error:\s*/i, '')
+		.replace(/^D1_ERROR:\s*/i, '')
+}
+
 export function isDurableObjectStorageObjectResetMessage(message: string) {
-	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
-	return durableObjectStorageObjectResetPattern.test(withoutErrorPrefix)
+	return durableObjectStorageObjectResetPattern.test(
+		normalizeDurableObjectStorageObjectResetMessage(message),
+	)
 }
 
 /**
@@ -375,32 +428,26 @@ export function filterDurableObjectOverloadedSentryEvent(event: ErrorEvent) {
 /**
  * Bare Cloudflare platform "internal error" with no support reference and no
  * app context. Observed on `repoOpenSession` when Durable Object / Artifacts
- * infrastructure fails opaquely (KODY-CLOUDFLARE-4H). Distinct from D1/DO
- * storage resets that carry `reference = <id>`, and from bare `internal error`
- * which stays Sentry-visible because it is too short to attribute safely.
+ * infrastructure fails opaquely (KODY-CLOUDFLARE-4H) and on Artifacts REST
+ * during package source-safety checks (KODY-8F). Matcher lives in
+ * `cloudflare-opaque-internal-error.ts` so repo/ source-safety can share it
+ * without importing this Sentry options module.
  *
- * Also matches Artifacts `INTERNAL_ERROR` (10400) wording from the public docs.
- * Require the exact sentence (optional trailing period / `Error:` prefix) so
- * wrapped recovery messages stay visible.
+ * Drop when every non-empty exception / message value is one of:
+ * - the bare opaque Cloudflare / Artifacts sentence
+ * - the source-safety retry wrapper for that blip
+ * - a source-recovery wrap whose reason is that opaque sentence
+ *
+ * Real recovery wraps (missing snapshot, HEAD mismatch, repo not found, …)
+ * stay Sentry-visible.
  */
-export const cloudflareOpaqueInternalErrorMessage =
-	'An internal error occurred.'
-
-export const cloudflareArtifactsOpaqueInternalErrorMessage =
-	'An unexpected internal error occurred.'
-
-function normalizeCloudflareOpaqueInternalErrorMessage(message: string) {
-	const withoutErrorPrefix = message.trim().replace(/^Error:\s*/i, '')
-	return withoutErrorPrefix.endsWith('.')
-		? withoutErrorPrefix
-		: `${withoutErrorPrefix}.`
-}
-
-export function isCloudflareOpaqueInternalErrorMessage(message: string) {
-	const normalized = normalizeCloudflareOpaqueInternalErrorMessage(message)
+export function isDroppableCloudflareOpaqueInternalErrorMessage(
+	message: string,
+) {
 	return (
-		normalized === cloudflareOpaqueInternalErrorMessage ||
-		normalized === cloudflareArtifactsOpaqueInternalErrorMessage
+		isCloudflareOpaqueInternalErrorMessage(message) ||
+		isArtifactsOpaqueInternalRetryMessage(message) ||
+		isSourceRecoveryOpaqueInternalErrorMessage(message)
 	)
 }
 
@@ -411,7 +458,9 @@ export function isCloudflareOpaqueInternalErrorSentryEvent(event: ErrorEvent) {
 	)
 	return (
 		messages.length > 0 &&
-		messages.every((message) => isCloudflareOpaqueInternalErrorMessage(message))
+		messages.every((message) =>
+			isDroppableCloudflareOpaqueInternalErrorMessage(message),
+		)
 	)
 }
 
@@ -428,21 +477,39 @@ export function filterCloudflareOpaqueInternalErrorSentryEvent(
  * corruption when upload-pack returns a bad pack body (KODY-CLOUDFLARE-55 /
  * 56). Call sites retry briefly; exhausted HTTP failures keep the stable
  * `Artifacts listServerRefs|git fetch|git clone failed for …: HTTP Error: NNN`
- * wrapper. Packfile corruption is matched by its unique phrase even when bare
- * (clone paths historically threw unwrapped InternalError).
+ * wrapper, the same operations timing out (`Artifacts git request timed out
+ * after Nms`), and packfile corruption. Packfile corruption is matched by its
+ * unique phrase even when bare (clone paths historically threw unwrapped
+ * InternalError).
+ *
+ * Also drops source-safety remaps of Artifacts repo-lookup and git-HEAD
+ * timeouts (`TimeoutError` / ArtifactsGitTimeoutError) so a lookup stall is
+ * not labeled a git failure and neither opens Sentry issues.
+ *
+ * Open API / MCP map exhausted transient Artifacts git failures to
+ * `ApiError` (`internal_error`, HTTP 503) with the wrapper as `cause`
+ * (KODY-8P). Match `hint.originalException` through the cause chain so those
+ * remapped events stay filtered the same way as the raw wrapper.
  */
-export function isArtifactsGitTransientHttpErrorSentryEvent(event: ErrorEvent) {
+export function isArtifactsGitTransientHttpErrorSentryEvent(
+	event: ErrorEvent,
+	hint?: EventHint,
+) {
+	if (isArtifactsGitTransientRemapError(hint?.originalException)) return true
 	return sentryEventMessages(event).some(
 		(message) =>
 			typeof message === 'string' &&
-			isArtifactsGitTransientErrorMessage(message),
+			(isArtifactsGitTransientErrorMessage(message) ||
+				isArtifactsGitReadTimeoutMessage(message) ||
+				isArtifactsRepoLookupTimeoutMessage(message)),
 	)
 }
 
 export function filterArtifactsGitTransientHttpErrorSentryEvent(
 	event: ErrorEvent,
+	hint?: EventHint,
 ) {
-	if (!isArtifactsGitTransientHttpErrorSentryEvent(event)) return event
+	if (!isArtifactsGitTransientHttpErrorSentryEvent(event, hint)) return event
 	return null
 }
 
@@ -559,14 +626,14 @@ export function filterSentryEvent(event: ErrorEvent, hint?: EventHint) {
 	if (filterDurableObjectOverloadedSentryEvent(event) === null) return null
 	if (filterCloudflareOpaqueInternalErrorSentryEvent(event) === null)
 		return null
-	if (filterArtifactsGitTransientHttpErrorSentryEvent(event) === null)
+	if (filterArtifactsGitTransientHttpErrorSentryEvent(event, hint) === null)
 		return null
 	if (filterMcpAgentSessionDestroyedAbortSentryEvent(event) === null)
 		return null
 	if (filterCimdUnknownClientSentryEvent(event) === null) return null
 	if (filterCloudflareKvTransientHttpErrorSentryEvent(event) === null)
 		return null
-	return event
+	return redactKodyCredentialsInSentryEvent(event)
 }
 
 export function buildSentryOptions(env: Env): CloudflareOptions {
@@ -611,17 +678,22 @@ export function buildSentryOptions(env: Env): CloudflareOptions {
 		// Object platform reset strings (memory/CPU limits, DO SQLite
 		// SQLITE_NOMEM, deploy-time code updates, blockConcurrencyWhile
 		// timeouts, DO storage operation timeouts, and DO storage object-reset
-		// with a support reference) are dropped the same way — see
+		// with a support reference — including D1_ERROR:-prefixed forms D1
+		// bindings emit) are dropped the same way — see
 		// filterDurableObjectIsolateResetSentryEvent. Bare Durable Object queue
 		// saturation strings ("… overloaded. Requests queued for too long", etc.)
 		// are dropped the same way — see filterDurableObjectOverloadedSentryEvent.
 		// Exact opaque Cloudflare "An internal error occurred." (and Artifacts
 		// INTERNAL_ERROR wording) with no support reference are dropped the
-		// same way — see filterCloudflareOpaqueInternalErrorSentryEvent.
+		// same way, including source-safety retry wrappers and recovery wraps
+		// whose reason is that opaque sentence (KODY-8F) — see
+		// filterCloudflareOpaqueInternalErrorSentryEvent.
 		// Artifacts git protocol HTTP 5xx / 429 wrappers (listServerRefs /
-		// git fetch / git clone) and isomorphic-git "Packfile payload
-		// corrupted" events are dropped the same way after brief call-site
-		// retries — see filterArtifactsGitTransientHttpErrorSentryEvent.
+		// git fetch / git clone), stalled info/refs deadlines, and
+		// isomorphic-git "Packfile payload corrupted" events are dropped the
+		// same way after brief call-site retries — including when Open API
+		// remaps them to ApiError with the wrapper as cause (KODY-8P) — see
+		// filterArtifactsGitTransientHttpErrorSentryEvent.
 		// Bare Durable Object abort token `destroyed` from Agents MCP session
 		// teardown (`ctx.abort("destroyed")`) is dropped the same way — see
 		// filterMcpAgentSessionDestroyedAbortSentryEvent. Expected CIMD

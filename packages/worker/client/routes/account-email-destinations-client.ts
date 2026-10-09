@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { type EmailNotificationDestination } from '#universal/email-destinations.ts'
 import { type AccountEmailDestinationsLoaderData } from '#universal/loader-data.ts'

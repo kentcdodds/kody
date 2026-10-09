@@ -42,55 +42,49 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 	expect(
 		parseHttpStatusFromMcpError('upstream HTTP 403: missing audience'),
 	).toBe(403)
-	expect(
-		inferMcpOAuthSettlePhase({
-			state: 'connected',
-			error: null,
-		}),
-	).toBe('server/discover')
-	expect(
-		inferMcpOAuthSettlePhase({
-			state: 'discovering',
-			error: null,
-		}),
-	).toBe('tools/list')
-	expect(
-		inferMcpOAuthSettlePhase({
+	const phaseCases = [
+		{ state: 'connected', error: null, expected: 'server/discover' },
+		{ state: 'discovering', error: null, expected: 'tools/list' },
+		{
 			state: 'failed',
 			error: 'Protected resource metadata HTTP 401',
-		}),
-	).toBe('resource metadata')
+			expected: 'resource metadata',
+		},
+	] as const
+	expect(
+		phaseCases.filter(
+			({ expected, ...input }) => inferMcpOAuthSettlePhase(input) !== expected,
+		),
+	).toEqual([])
+	const mcpEndpoint = 'https://mcp.example/mcp'
 	expect(
 		buildIncompleteDiscoverLastError({
 			state: 'connected',
-			mcpEndpoint: 'https://mcp.example/mcp',
+			mcpEndpoint,
 			attemptId: 'attempt-discover',
 		})?.phase,
 	).toBe('server/discover')
 	expect(
 		buildIncompleteDiscoverLastError({
 			state: 'discovering',
-			mcpEndpoint: 'https://mcp.example/mcp',
+			mcpEndpoint,
 			attemptId: 'attempt-tools',
 		}),
 	).toMatchObject({
 		phase: 'tools/list',
 		attemptId: 'attempt-tools',
-		mcpEndpoint: 'https://mcp.example/mcp',
+		mcpEndpoint,
 	})
 	expect(
 		buildIncompleteDiscoverLastError({
 			state: 'connected',
-			mcpEndpoint: 'https://mcp.example/mcp',
+			mcpEndpoint,
 			attemptId: 'attempt-catalog',
 			phase: 'tools/list',
 		})?.phase,
 	).toBe('tools/list')
 	expect(
-		buildIncompleteDiscoverLastError({
-			state: 'ready',
-			mcpEndpoint: 'https://mcp.example/mcp',
-		}),
+		buildIncompleteDiscoverLastError({ state: 'ready', mcpEndpoint }),
 	).toBeNull()
 
 	const lastError = buildMcpServerLastError({
@@ -148,22 +142,13 @@ test('settle error helpers sanitize secrets and keep observable phases', () => {
 	expect(wrapped.match(/\bphase\s/g)?.length).toBe(1)
 	expect(wrapped.match(/\bid\s/g)?.length).toBe(1)
 	expect(wrapped).toContain('id 11111111-1111-4111-8111-111111111111')
-	expect(
-		formatMcpOAuthSettleErrorMessage({
-			state: 'authenticating',
-			authUrl: 'https://auth.example/authorize',
-			error: 'Stored OAuth tokens could not be refreshed',
-			phase: 'token exchange',
-			attemptId: '33333333-3333-4333-8333-333333333333',
-		}),
-	).toContain('Stored OAuth tokens could not be refreshed')
-	expect(
-		formatMcpOAuthSettleErrorMessage({
-			state: 'authenticating',
-			authUrl: 'https://auth.example/authorize',
-			error: 'Stored OAuth tokens could not be refreshed',
-			phase: 'token exchange',
-			attemptId: '33333333-3333-4333-8333-333333333333',
-		}),
-	).not.toContain('Authorization completed')
+	const refreshFailure = formatMcpOAuthSettleErrorMessage({
+		state: 'authenticating',
+		authUrl: 'https://auth.example/authorize',
+		error: 'Stored OAuth tokens could not be refreshed',
+		phase: 'token exchange',
+		attemptId: '33333333-3333-4333-8333-333333333333',
+	})
+	expect(refreshFailure).toContain('Stored OAuth tokens could not be refreshed')
+	expect(refreshFailure).not.toContain('Authorization completed')
 })

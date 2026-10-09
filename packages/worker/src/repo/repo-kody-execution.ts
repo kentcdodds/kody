@@ -118,15 +118,54 @@ export async function loadRepoSourceFilesFromSession(input: {
 }
 
 export function createRepoCapabilitiesModuleTypecheckHarness(input: {
-	entryPoint: string
+	entryPoints: ReadonlyArray<string>
 }) {
+	if (input.entryPoints.length === 0) {
+		return `/// <reference path="./.__kody_repo_runtime__.d.ts" />
+`
+	}
+	const imports = input.entryPoints
+		.map(
+			(entryPoint, index) =>
+				`import userEntrypoint${index} from ${createRelativeImportSpecifier(entryPoint)};`,
+		)
+		.join('\n')
+	const checks = input.entryPoints
+		.map((_, index) => `__kodyTypecheckModule(userEntrypoint${index});`)
+		.join('\n')
 	return `/// <reference path="./.__kody_repo_runtime__.d.ts" />
-import userEntrypoint from ${createRelativeImportSpecifier(input.entryPoint)};
+${imports}
 
 declare function __kodyTypecheckModule(
   fn: (params?: Record<string, unknown>) => Promise<unknown> | unknown,
 ): void;
 
-__kodyTypecheckModule(userEntrypoint);
+${checks}
 `
+}
+
+/**
+ * Map harness line numbers (0-based) to the callable entry they typecheck.
+ * Import lines and `__kodyTypecheckModule(...)` call lines both count so
+ * diagnostics from a single language-service pass can be attributed the same
+ * way the old per-target harness loop did.
+ */
+export function mapRepoCapabilitiesModuleTypecheckHarnessLines(input: {
+	entryPoints: ReadonlyArray<string>
+}) {
+	const lineToEntryPoint = new Map<number, string>()
+	if (input.entryPoints.length === 0) return lineToEntryPoint
+	// Line 0 is the triple-slash reference.
+	let line = 1
+	for (const entryPoint of input.entryPoints) {
+		lineToEntryPoint.set(line, entryPoint)
+		line += 1
+	}
+	// blank line + declare function (3 lines) + blank line
+	line += 5
+	for (const entryPoint of input.entryPoints) {
+		lineToEntryPoint.set(line, entryPoint)
+		line += 1
+	}
+	return lineToEntryPoint
 }

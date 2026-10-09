@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 
-function createOidcEnv(overrides: Partial<Env> = {}) {
+function createOidcEnv(
+	scope: string[] | null = ['openid', 'email', 'profile'],
+) {
 	return {
 		APP_DB: {
 			prepare() {
@@ -15,34 +17,39 @@ function createOidcEnv(overrides: Partial<Env> = {}) {
 				}
 			},
 		},
-		OAUTH_PROVIDER: {
-			unwrapToken: async () => ({
-				scope: ['openid', 'email', 'profile'],
-				grant: {
-					clientId: 'client-123',
-					scope: ['openid', 'email', 'profile'],
-					props: {
-						userId: 'user-stable-id',
-						email: 'user@example.com',
-						username: 'test-user',
-						displayName: 'test-user',
-						authTime: 1_700_000_000,
-					},
-				},
-			}),
-		},
-		...overrides,
+		OAUTH_PROVIDER: scope
+			? {
+					unwrapToken: async () => ({
+						scope,
+						grant: {
+							clientId: 'client-123',
+							scope,
+							props: {
+								userId: 'user-stable-id',
+								email: 'user@example.com',
+								username: 'test-user',
+								displayName: 'test-user',
+								authTime: 1_700_000_000,
+							},
+						},
+					}),
+				}
+			: undefined,
 	} as unknown as Env
 }
 
-test('userinfo returns claims for verified bearer tokens and 401 without bearer', async () => {
-	const env = createOidcEnv()
-	const okResponse = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo', {
-			headers: { Authorization: 'Bearer demo-token' },
-		}),
+function userinfo(env: Env, init?: RequestInit) {
+	return handleOidcUserinfoRequest(
+		new Request('https://heykody.dev/oauth/userinfo', init),
 		env,
 	)
+}
+
+const bearer = { headers: { Authorization: 'Bearer demo-token' } }
+
+test('userinfo returns claims for verified bearer tokens and 401 without bearer', async () => {
+	const env = createOidcEnv()
+	const okResponse = await userinfo(env, bearer)
 	expect(okResponse.status).toBe(200)
 	await expect(okResponse.json()).resolves.toEqual({
 		sub: 'user-stable-id',
@@ -50,72 +57,28 @@ test('userinfo returns claims for verified bearer tokens and 401 without bearer'
 		email_verified: true,
 		preferred_username: 'test-user',
 	})
-
-	const unauthorized = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo'),
-		env,
-	)
-	expect(unauthorized.status).toBe(401)
+	expect((await userinfo(env)).status).toBe(401)
 })
 
 test('userinfo accepts POST with form access_token', async () => {
-	const env = createOidcEnv()
-	const response = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
-			},
-			body: 'access_token=demo-token',
-		}),
-		env,
-	)
+	const response = await userinfo(createOidcEnv(), {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'access_token=demo-token',
+	})
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toMatchObject({
 		sub: 'user-stable-id',
 	})
 })
 
-test('userinfo requires openid scope', async () => {
-	const env = createOidcEnv({
-		OAUTH_PROVIDER: {
-			unwrapToken: async () => ({
-				scope: ['email', 'profile'],
-				grant: {
-					clientId: 'client-123',
-					scope: ['email', 'profile'],
-					props: {
-						userId: 'user-stable-id',
-						email: 'user@example.com',
-						username: 'test-user',
-						displayName: 'test-user',
-						authTime: 1_700_000_000,
-					},
-				},
-			}),
-		},
-	} as Partial<Env>)
-	const response = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo', {
-			headers: { Authorization: 'Bearer demo-token' },
-		}),
-		env,
-	)
-	expect(response.status).toBe(403)
-	await expect(response.json()).resolves.toMatchObject({
-		error: 'insufficient_scope',
-	})
-})
-
-test('userinfo returns 401 when OAuth helpers are unavailable', async () => {
-	const response = await handleOidcUserinfoRequest(
-		new Request('https://heykody.dev/oauth/userinfo', {
-			headers: { Authorization: 'Bearer demo-token' },
-		}),
-		createOidcEnv({ OAUTH_PROVIDER: undefined } as Partial<Env>),
-	)
-	expect(response.status).toBe(401)
-	await expect(response.json()).resolves.toMatchObject({
-		error: 'invalid_token',
-	})
+test('userinfo requires openid scope and 401s when OAuth helpers are unavailable', async () => {
+	for (const [scope, status, error] of [
+		[['email', 'profile'], 403, 'insufficient_scope'],
+		[null, 401, 'invalid_token'],
+	] as const) {
+		const response = await userinfo(createOidcEnv(scope && [...scope]), bearer)
+		expect(response.status).toBe(status)
+		await expect(response.json()).resolves.toMatchObject({ error })
+	}
 })

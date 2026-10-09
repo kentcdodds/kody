@@ -8,24 +8,34 @@ import {
 	type AccountPackageListItem,
 	type AccountPackageForkAhead,
 	type AccountPackageListingAhead,
-	type AccountPackageToken,
 	type AccountPackagesAppFilter,
 	type AccountPackagesLoaderData,
 	type AccountPackagesSort,
 } from '#universal/loader-data.ts'
-import { listPackageManifestExportNames } from '#universal/package-token-export-selection.ts'
+import {
+	creditAttributionForPackage,
+	type CreditAttributionRow,
+} from '#universal/credit-attribution.ts'
+import { listPackageManifestExportNames } from '#universal/package-export-selection.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
-	listPackageInvocationTokensByPackageId,
-	type PackageInvocationTokenRecord,
-} from '#worker/package-invocations/repo.ts'
+	resolveUserEntitlementFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
+import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
+import { routes } from '#universal/routes.ts'
 import { readPagination } from '#worker/query-params.ts'
 import { recordServerTiming } from '#worker/request-context.ts'
-import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
+import {
+	getCommunityForkByForkedPackageId,
+	getCommunityListingByOwnerAndPackage,
+} from '#worker/community/repo.ts'
 import {
 	getSavedPackageWithCommunityProvenanceById,
-	getSavedPackageWithCommunityProvenanceByKodyId,
+	resolveSavedPackageRefWithCommunityProvenance,
 	listSavedPackageCommunityProvenanceByIds,
 	searchSavedPackagesByUserId,
 } from '#worker/package-registry/repo.ts'
@@ -180,18 +190,6 @@ function toListItem(
 	}
 }
 
-function toToken(token: PackageInvocationTokenRecord): AccountPackageToken {
-	return {
-		id: token.id,
-		name: token.name,
-		exportNames: token.exportNames,
-		createdAt: token.created_at,
-		updatedAt: token.updated_at,
-		lastUsedAt: token.last_used_at,
-		revokedAt: token.revoked_at,
-	}
-}
-
 async function loadPackageExportNames(input: {
 	env: Env
 	requestUrl: string
@@ -218,23 +216,33 @@ async function toDetail(input: {
 	env: Env
 	requestUrl: string
 	userId: string
+	username?: string
 	record: SavedPackageWithCommunityProvenanceRecord
 	hasCommunityListing: boolean
 }): Promise<AccountPackageDetail> {
-	const [tokens, exports, source] = await Promise.all([
-		listPackageInvocationTokensByPackageId({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			packageId: input.record.id,
-		}),
-		loadPackageExportNames({
-			env: input.env,
-			requestUrl: input.requestUrl,
-			userId: input.userId,
-			sourceId: input.record.sourceId,
-		}),
-		getEntitySourceById(input.env.APP_DB, input.record.sourceId),
-	])
+	const [exports, source, communityFork, creditAttribution] = await Promise.all(
+		[
+			loadPackageExportNames({
+				env: input.env,
+				requestUrl: input.requestUrl,
+				userId: input.userId,
+				sourceId: input.record.sourceId,
+			}),
+			getEntitySourceById(input.env.APP_DB, input.record.sourceId),
+			input.record.sourceListingId == null
+				? Promise.resolve(null)
+				: getCommunityForkByForkedPackageId(input.env.APP_DB, {
+						forkerUserId: input.userId,
+						forkedPackageId: input.record.id,
+					}),
+			loadPackageCreditAttributionRow({
+				env: input.env,
+				stableUserId: input.userId,
+				username: input.username ?? '',
+				packageId: input.record.id,
+			}),
+		],
+	)
 	return {
 		...toListItem(
 			input.record,
@@ -244,11 +252,82 @@ async function toDetail(input: {
 		hasCommunityListing: input.hasCommunityListing,
 		searchText: input.record.searchText,
 		exports,
-		tokens: tokens.map(toToken),
 		publishedCommit:
 			source?.user_id === input.userId
 				? (source.published_commit ?? null)
 				: null,
+		communityFork: communityFork
+			? {
+					listingName: input.record.listingName,
+					adoptedAt: communityFork.adoptedAt,
+					adoptionNote: communityFork.adoptionNote,
+				}
+			: null,
+		creditAttribution,
+	}
+}
+
+async function loadPackageCreditAttributionRow(input: {
+	env: Env
+	stableUserId: string
+	username: string
+	packageId: string
+}): Promise<CreditAttributionRow | null> {
+	if (!input.username.trim()) return null
+	if (typeof input.env.APP_DB?.prepare !== 'function') return null
+	try {
+		const userRow = await input.env.APP_DB.prepare(
+			`SELECT ${userEntitlementColumnsSql()}
+			 FROM users WHERE stable_user_id = ?`,
+		)
+			.bind(input.stableUserId)
+			.first<UserEntitlementRow>()
+		if (!userRow) return null
+		const now = new Date()
+		const entitlement = await resolveUserEntitlementFromRow({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			row: userRow,
+			now,
+		})
+		const computeOverage = await readAccountComputeOverage({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
+			now,
+		})
+		const breakdown = await loadCreditAttributionBreakdown({
+			db: input.env.APP_DB,
+			stableUserId: input.stableUserId,
+			username: input.username,
+			computeOverage,
+			now,
+		})
+		const attribution = creditAttributionForPackage(breakdown, input.packageId)
+		if (!attribution) return null
+		if (
+			attribution.name === input.packageId ||
+			attribution.name === attribution.packageId
+		) {
+			const saved = await input.env.APP_DB.prepare(
+				`SELECT kody_id, name FROM saved_packages WHERE id = ? AND user_id = ?`,
+			)
+				.bind(input.packageId, input.stableUserId)
+				.first<{ kody_id: string; name: string }>()
+			if (saved) {
+				attribution.name = saved.name?.trim() || saved.kody_id
+				attribution.href = routes.communityPackage.href({
+					username: input.username,
+					kodyId: saved.kody_id,
+				})
+			}
+		}
+		return attribution
+	} catch (error) {
+		console.warn('package-credit-attribution-load-failed', error)
+		return null
 	}
 }
 
@@ -268,13 +347,16 @@ export async function loadAccountPackageDetail(input: {
 	env: Env
 	requestUrl: string
 	userId: string
+	/** Owner username; required to load credit attribution on the package page. */
+	username?: string
 	packageId?: string
 	kodyId?: string
 }): Promise<AccountPackageDetail | null> {
 	const record = input.kodyId
-		? await getSavedPackageWithCommunityProvenanceByKodyId(input.env.APP_DB, {
+		? await resolveSavedPackageRefWithCommunityProvenance(input.env.APP_DB, {
 				userId: input.userId,
-				kodyId: input.kodyId,
+				ref: input.kodyId,
+				match: 'slug',
 			})
 		: input.packageId
 			? await getSavedPackageWithCommunityProvenanceById(input.env.APP_DB, {
@@ -293,19 +375,21 @@ export async function loadAccountPackageDetail(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 			userId: input.userId,
+			username: input.username,
 			record: enriched,
 		}),
 	)
 }
 
 /**
- * The listing lookup and the detail reads (tokens, manifest, source row) are
+ * The listing lookup and the detail reads (manifest, source row) are
  * independent D1/KV round trips; run them together.
  */
 async function toDetailWithListingState(input: {
 	env: Env
 	requestUrl: string
 	userId: string
+	username?: string
 	record: SavedPackageWithCommunityProvenanceRecord
 }): Promise<AccountPackageDetail> {
 	const [hasCommunityListing, detail] = await Promise.all([
@@ -318,6 +402,7 @@ async function toDetailWithListingState(input: {
 			env: input.env,
 			requestUrl: input.requestUrl,
 			userId: input.userId,
+			username: input.username,
 			record: input.record,
 			hasCommunityListing: false,
 		}),
@@ -361,22 +446,33 @@ export async function loadAccountPackagesData(input: {
 				})
 			: Promise.resolve(null),
 	])
-	const provenanceRecords = await applySavedPackageForkListingAncestry({
-		env: input.env,
-		records: await listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
+	const [provenanceRecords, selectedPackage] = await Promise.all([
+		listSavedPackageCommunityProvenanceByIds(input.env.APP_DB, {
 			userId,
 			packageIds: items.map((item) => item.id),
-		}),
-	})
+		}).then((records) =>
+			applySavedPackageForkListingAncestry({ env: input.env, records }),
+		),
+		selectedRecord
+			? applySavedPackageForkListingAncestry({
+					env: input.env,
+					records: [selectedRecord],
+				}).then(([enrichedSelected]) =>
+					enrichedSelected
+						? toDetailWithListingState({
+								env: input.env,
+								requestUrl: input.request.url,
+								userId,
+								username: input.user.username,
+								record: enrichedSelected,
+							})
+						: null,
+				)
+			: null,
+	])
 	const provenanceById = new Map(
 		provenanceRecords.map((record) => [record.id, record]),
 	)
-	const [enrichedSelected] = selectedRecord
-		? await applySavedPackageForkListingAncestry({
-				env: input.env,
-				records: [selectedRecord],
-			})
-		: [null]
 
 	return {
 		ok: true,
@@ -394,14 +490,7 @@ export async function loadAccountPackagesData(input: {
 				provenance ? toForkAhead(provenance) : null,
 			)
 		}),
-		selectedPackage: enrichedSelected
-			? await toDetailWithListingState({
-					env: input.env,
-					requestUrl: input.request.url,
-					userId,
-					record: enrichedSelected,
-				})
-			: null,
+		selectedPackage,
 		page,
 		pageSize,
 		total,

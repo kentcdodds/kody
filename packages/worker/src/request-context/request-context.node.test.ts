@@ -1,0 +1,209 @@
+import { expect, test } from 'vitest'
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	createMcpCallerContext,
+	parseMcpCallerContextWire,
+	toMcpCallerContextWire,
+} from '#mcp/context.ts'
+import {
+	deriveRequestContext,
+	inheritRequest,
+	parseRequestLineage,
+	requestLineage,
+} from './request-context.ts'
+
+const stableId = 'a'.repeat(64)
+const user: McpUserContext = {
+	userId: personIdFromStored(stableId),
+	email: 'ada@example.com',
+	username: 'ada',
+	displayName: 'Ada',
+}
+
+test('orgBinding overrides implicit personalOrgId slug from username', () => {
+	const request = deriveRequestContext({
+		user,
+		source: { kind: 'session' },
+		orgBinding: {
+			org: { id: ownerIdFromStored(stableId), slug: 'legacy-slug' },
+			role: 'owner',
+		},
+	})
+	expect(request.org).toEqual({ id: stableId, slug: 'legacy-slug' })
+})
+
+test('interactive sources act as the person, as Owner of their own org', () => {
+	const session = deriveRequestContext({ user, source: { kind: 'session' } })
+	expect(session).toEqual({
+		org: { id: stableId, slug: 'ada' },
+		actor: { userId: stableId, username: 'ada' },
+		attribution: { kind: 'user', userId: stableId },
+		credential: {
+			kind: 'session',
+			id: null,
+			orgId: stableId,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'owner' },
+	})
+
+	const token = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+		profileName: 'work',
+		scopes: ['org:execute', 'org:read'],
+	})
+	expect(token.credential).toEqual({
+		kind: 'api-token',
+		id: 'tok_1',
+		orgId: stableId,
+		scopes: ['org:execute', 'org:read'],
+		profileName: 'work',
+	})
+	expect(token.actor).toEqual(session.actor)
+})
+
+test('automation sources have no actor and no membership', () => {
+	const cases = [
+		[{ kind: 'schedule', jobId: 'job-1' }, 'schedule', 'schedule'],
+		[{ kind: 'webhook', sourceId: 'wh-1' }, 'webhook', 'webhook'],
+		[{ kind: 'inbound-email', sourceId: 'inbox-1' }, 'email', 'inbound-email'],
+		[{ kind: 'platform-event', sourceId: 'repo' }, 'event', 'platform-event'],
+	] as const
+	for (const [source, automationSource, credentialKind] of cases) {
+		const request = deriveRequestContext({ user, source })
+		expect(request.org.id).toBe(stableId)
+		expect(request.actor).toBeNull()
+		expect(request.membership).toBeNull()
+		expect(request.attribution).toEqual({
+			kind: 'automation',
+			source: automationSource,
+			sourceId: 'jobId' in source ? source.jobId : source.sourceId,
+		})
+		expect(request.credential.kind).toBe(credentialKind)
+	}
+})
+
+test('inherited runs keep the starter lineage and re-resolve the org', () => {
+	const starter = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+	})
+	const nested = deriveRequestContext({
+		user,
+		source: inheritRequest(starter),
+	})
+	expect(nested).toEqual(starter)
+
+	const automation = deriveRequestContext({
+		user,
+		source: { kind: 'webhook', sourceId: 'wh-1' },
+	})
+	const emitted = deriveRequestContext({
+		user,
+		source: inheritRequest(automation),
+	})
+	expect(emitted.actor).toBeNull()
+	expect(emitted.membership).toBeNull()
+	expect(emitted.attribution).toEqual(automation.attribution)
+})
+
+test('every source keeps the connection profile it was reached through', () => {
+	const job = deriveRequestContext({
+		user,
+		source: { kind: 'schedule', jobId: 'job-1' },
+		profileName: '  work  ',
+	})
+	expect(job.credential.profileName).toBe('work')
+	expect(
+		deriveRequestContext({
+			user,
+			source: { kind: 'session' },
+			profileName: ' ',
+		}).credential.profileName,
+	).toBeNull()
+
+	// A run started by a profile-bound credential keeps that profile; a run
+	// whose starter had none keeps the profile persisted with the job.
+	const starter = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+		profileName: 'starter',
+	})
+	expect(
+		deriveRequestContext({
+			user,
+			source: inheritRequest(starter),
+			profileName: 'work',
+		}).credential.profileName,
+	).toBe('starter')
+	const unprofiled = deriveRequestContext({ user, source: { kind: 'session' } })
+	expect(
+		deriveRequestContext({
+			user,
+			source: inheritRequest(unprofiled),
+			profileName: 'work',
+		}).credential.profileName,
+	).toBe('work')
+})
+
+test('lineage survives a JSON round trip and malformed lineage is rejected', () => {
+	const lineage = requestLineage(
+		deriveRequestContext({ user, source: { kind: 'mcp-oauth' } }),
+	)
+	expect(parseRequestLineage(JSON.parse(JSON.stringify(lineage)))).toEqual(
+		lineage,
+	)
+	const automation = requestLineage(
+		deriveRequestContext({ user, source: { kind: 'schedule', jobId: 'j' } }),
+	)
+	expect(parseRequestLineage(JSON.parse(JSON.stringify(automation)))).toEqual(
+		automation,
+	)
+
+	expect(parseRequestLineage(undefined)).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			credential: { ...lineage.credential, kind: 'site-admin' },
+		}),
+	).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			credential: { ...lineage.credential, scopes: ['package:root'] },
+		}),
+	).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			attribution: { kind: 'automation', source: 'cron', sourceId: 'x' },
+		}),
+	).toBeNull()
+})
+
+test('the request context is derived, never part of the persisted caller context', () => {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user,
+		source: { kind: 'mcp-oauth' },
+	})
+	expect(callerContext.request?.credential.kind).toBe('mcp-oauth')
+	const wire = toMcpCallerContextWire(callerContext)
+	expect(wire).not.toHaveProperty('request')
+	expect(parseMcpCallerContextWire(JSON.parse(JSON.stringify(wire)))).toEqual(
+		wire,
+	)
+
+	expect(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			source: { kind: 'mcp-oauth' },
+		}).request,
+	).toBeNull()
+})

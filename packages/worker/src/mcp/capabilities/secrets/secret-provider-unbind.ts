@@ -3,14 +3,13 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { secretProvidersFlagKey } from '#mcp/secrets/secret-providers/flag.ts'
 import { unbindSecretProvider } from '#mcp/secrets/secret-providers/service.ts'
 
 export const secretProviderUnbindCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderUnbind',
-		featureFlag: secretProvidersFlagKey,
+		orgPermission: 'secret:delete',
 		description:
 			'Remove the account binding for an external secret provider id. Unbind and rebind to a different package drop every grant for that provider. Does not return secret values.',
 		keywords: ['secret', 'provider', 'unbind', 'disconnect'],

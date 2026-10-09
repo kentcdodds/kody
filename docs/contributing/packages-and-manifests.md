@@ -73,9 +73,20 @@ Important behavior:
   and publish-time artifact rebuilds.
 - Published bundle artifacts are what package exports, jobs, subscriptions,
   retrievers, and apps execute at runtime.
+- External publish flips `published_commit` before the per-target npm bundle
+  rebuild finishes. While that rebuild is in flight, invoke may serve the
+  previous npm-backed bundle for two minutes, keyed to the published source
+  snapshot `createdAt` from finalize (not `entity_sources.updated_at`, which
+  also moves on indexed_commit and reconcile writes). After the window, missing
+  bundles fail as retryable `artifact_preparation_failed`.
 - If a package declares a dependency that the bundler cannot resolve or bundle,
   repo checks fail with the underlying bundling error instead of allowing a
   publish that will only fail later at runtime.
+- Undeclared bare package imports on entry points fail the dependencies check
+  before `published_commit` advances, including when check-time esbuild is
+  deferred. Add them to `package.json#dependencies` or vendor
+  `node_modules/<name>` in the snapshot. Unparseable entry source fails the same
+  way so publish cannot skip the check.
 - An isolate memory or CPU reset during bundle validation is the same class of
   failure: the npm graph does not fit a Worker isolate. The check message points
   at `search({ entity: "guide:heavy_work_offload" })`.
@@ -151,8 +162,8 @@ A saved package is a repo with the package extension activated. Four concepts:
   declarations.
 - Computed `import(specifier)` is the name-as-data path for caller-owned and
   forked modules. The bundler rewrites non-literal `import(...)` expressions
-  through a runtime helper that loads `kody:@` specifiers when the package
-  helper is bound. Prefer a static import when the name is known at write time.
+  through a host `__kodyComputedPackageImport` bridge that loads `kody:@`
+  specifiers. Prefer a static import when the name is known at write time.
 - `kody:runtime` is a reserved host-external virtual module. The bundler may add
   a placeholder so author code can keep `import { kody } from "kody:runtime"`,
   but published bundle artifacts must not persist the host runtime
@@ -164,19 +175,26 @@ A saved package is a repo with the package extension activated. Four concepts:
   build via `rootPackageId`, and statically imported package sources) get their
   `kody:runtime` import rewritten to a per-package virtual runtime module,
   `.__kody_virtual__/package-runtime/<hex(packageId)>.js`, which re-exports the
-  shared runtime and overrides `packageStorage` / `packageSecrets` with variants
-  that close over the package's immutable id. The closure survives esbuild
-  inlining, so per-module identity holds even after the graph collapses into one
-  module. Hydration regenerates per-package runtime modules from the id encoded
-  in the path, exactly like the shared runtime module.
+  shared runtime's public names (an explicit allowlist, never `export *`) and
+  overrides `packageStorage` / `packageSecrets` with variants that close over
+  the package's immutable id. Unstamped modules rewrite to the same allowlist at
+  `.__kody_virtual__/public-runtime.js`. Package files must not import
+  `.__kody_virtual__/` directly; the build rejects such import specifiers (and
+  manifest / wrangler path values), comments and strings that only name the
+  directory still build, and computed `import()` of those paths throws. The
+  closure survives esbuild inlining, so per-module identity holds even after the
+  graph collapses into one module. Hydration regenerates per-package runtime
+  modules from the id encoded in the path, exactly like the shared runtime
+  module.
 - The stamp routes identity but is not the security boundary. At execution,
   `packageStorage()` bucket access and stamp-aligned secret authority are
   granted only from host-controlled provenance metadata: the run's own package
   context, the `packageId` entries recorded in the bundle's static dependency
-  metadata, and published static dependency artifacts installed during
-  hydration. Sandbox-supplied strings never extend the grant set, so
-  hand-written source claiming an arbitrary package id is rejected (`packageId`
-  on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
+  metadata (direct imports plus `transitive` entries reached through a
+  dependency's reachable source), and published static dependency artifacts
+  installed during hydration. Sandbox-supplied strings never extend the grant
+  set, so hand-written source claiming an arbitrary package id is rejected
+  (`packageId` on `BundleArtifactDependency`, `collectPackageStorageGrantIds` in
   `#mcp/run-kody-registry.ts`, and `createPackageStorageKodyTools` in
   `#worker/storage-runner.ts`). Cross-user access stays structurally impossible
   because storage runner names are keyed by the calling user's id.
@@ -218,9 +236,11 @@ import handleEvent from 'kody:@kentcdodds/event-subscriber/handle-event'
 await handleEvent({ event })
 ```
 
-`kody:runtime` quarantines a `packages` helper for leftover published modules
-that call it ([#1750](https://github.com/kentcdodds/kody/issues/1750)). Authors
-and agents do not get that helper. Fleet source migrates with package codemod
+`kody:runtime` exports `packages` only as an always-`null` leftover so old
+`if (packages)` guards keep bundling
+([#1750](https://github.com/kentcdodds/kody/issues/1750)). Computed
+`import(specifier)` loads caller-owned modules through a separate host bridge.
+Fleet source migrates with package codemod
 `0008-packages-invoke-to-static-import`. See
 [0037](./decisions/0037-no-author-packages-invoke.md). Interactive MCP
 `packageSubscriptionDispatch` is the post-publish subscription smoke test
@@ -258,19 +278,17 @@ A package app is a hosted Worker entry running in the package-app isolate:
   published snapshot is ignored
 - The host uses esbuild defaults unless the package's root `tsconfig.json` sets
   `compilerOptions.jsx` / `jsxImportSource` (mapped onto the bundle for any
-  import source). Remix recipes set those to `react-jsx` / `remix/ui`, remount
-  the Request when the route contract includes `appBasePath`, and pass explicit
-  `clientEntry` ids (`kody:app#Name`). A handler that borrows `remix/headers` or
-  `remix/html-template` needs none of that
-- Remix itself is an optional convenience:
-  `tools/build-worker-bundler-modules.ts` pre-bundles the Workers-safe
-  `remix/<subpath>` set (`packageAppRemixSubpaths`) with code splitting into the
-  deferred module `package-app-remix.mjs`, and `withPlatformRemixFiles`
-  (`package-app-remix.ts`) mounts it at `node_modules/remix/` in the bundler
-  file system for every package bundle (app, app-client, callable, importable,
-  ad hoc execute). The bundler skips the npm install for a package whose
-  `node_modules/<name>/package.json` exists, so a `remix` dependency is inert;
-  publish checks reject `@remix-run/*` dependencies outright
+  import source). Remix recipes set those to `react-jsx` / `remix/component`,
+  remount the Request when the route contract includes `appBasePath`, and pass
+  explicit `clientEntry` ids (`kody:app#Name`). A handler that borrows
+  `remix/headers` or `remix/html-template` needs none of that
+- Frameworks are ordinary package dependencies. The platform does not vendor,
+  mount, inject, sniff, or stamp version metadata for Remix (or TanStack,
+  Preact, or any other library) onto package bundles; the dirty check for
+  artifact reuse is file-content-only
+  ([decision 0057](./decisions/0057-no-framework-platform-affordance.md)).
+  Bundling asserts that every `node_modules/` path in the bundler file set
+  already exists in the package snapshot (`assertNoPlatformSuppliedNodeModules`)
 - `kody:runtime` exports `KodyRuntime`, a frozen `{ defaultValue }` object that
   Remix's `RequestContext.get()` returns when nothing called `set()`; the value
   is the module's default export (late-bound to the current run), and the
@@ -341,6 +359,18 @@ bundle artifacts for subscription handlers during repo checks and package
 publish. At runtime, event dispatch invokes the handler through the package
 execution path with package context, package-owned storage, package secrets, and
 the host-owned `kody:runtime` module.
+
+Wake discovery prefers a normalized source of truth (each package's
+`package.json#kody.subscriptions`) plus a per-user KV cache of the computed
+topic→package-id map
+(`packages/worker/src/package-invocations/subscription-topic-cache.ts`). A wake
+reads that one key; on a miss it scans manifests once, fills KV, and uses the
+result. Publish and unpublish bump a generation stamp then delete-and-recompute
+the map in the same write path so a failed delete or a late wake write cannot
+leave wakes matching a stale projection. Incomplete scans (manifest load
+failures) never write the map. There is no TTL — a TTL could hide a newly
+published subscription. Do not add a denormalized topic-index table; the
+manifest stays authoritative.
 
 The built-in `packageSubscriptionsList` capability is the generic discovery
 surface for declared subscriptions. It reads the signed-in user's saved package
@@ -417,11 +447,13 @@ instructions.
 The event deliberately omits admin notes, reviewer fields, revision,
 `updated_at`, roles, plan, and unrelated account content. This is a narrow
 exception for feedback shown to and explicitly approved by the user before
-submission; it does not grant package runtime general admin roles or access to
-other user data. Submitter username and email are snapshots stored with the
-submission; retries never resolve mutable live profile data, so profile changes
-cannot alter the request hash. Legacy rows without submitter snapshots retain
-null username/email. Copies already delivered outside Kody, including Discord
+submission. Receiving the event grants no role or access to other user data; the
+handler runs as the admin owner with that owner's existing roles (see
+[Background and package callers](./architecture/authorization.md#background-and-package-callers)).
+Submitter username and email are snapshots stored with the submission; retries
+never resolve mutable live profile data, so profile changes cannot alter the
+request hash. Legacy rows without submitter snapshots retain null
+username/email. Copies already delivered outside Kody, including Discord
 messages, cannot be recalled and may remain after Kody account deletion under
 the deployment operator's retention and deletion controls. Such copies contain
 only the exact approved feedback and attribution, never unrelated account
@@ -456,6 +488,12 @@ Republishes write `listing_updated` for the timeline but do not enqueue this
 topic. Payload shape, admin gating, and delivery semantics match
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins);
 enqueue failures are logged and never fail `communityPublish`.
+
+A republish that moves the pinned commit enqueues
+`community.fork.upstream_updated` on the same queue. That topic is not
+admin-only. It reaches each forking account's own subscribed packages, one event
+per fork. See
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 Status-page incident open/resolve is a separate admin-only, best-effort path.
 The isolated status worker POSTs metadata to

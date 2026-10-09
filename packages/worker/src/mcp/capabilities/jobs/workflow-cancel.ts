@@ -7,6 +7,7 @@ export const workflowCancelCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
 		name: 'workflowRunCancel',
+		orgPermission: 'job:execute',
 		description:
 			'Cancel a Cloudflare Workflow run created through kody:runtime workflows.create by id. Terminates the underlying workflow instance and marks the run cancelled; cancelling an already-finished run is a safe no-op.',
 		keywords: [

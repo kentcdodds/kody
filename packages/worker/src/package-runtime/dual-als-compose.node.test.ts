@@ -21,7 +21,11 @@ test('compose artifact then canonical refresh leaves one full runtime', () => {
 		...materialized,
 	})
 	const fullPaths = Object.entries(composed)
-		.filter(([, source]) => source.includes('__kodyCreateRuntimeObjectProxy'))
+		.filter(
+			([, source]) =>
+				typeof source === 'string' &&
+				source.includes('__kodyCreateRuntimeObjectProxy'),
+		)
 		.map(([path]) => path)
 	expect(fullPaths).toEqual(['.__kody_virtual__/runtime.js'])
 	expect(composed[artRuntime]).toContain('export * from')

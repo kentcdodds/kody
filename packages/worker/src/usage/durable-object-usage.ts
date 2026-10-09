@@ -7,6 +7,12 @@ import {
 
 export const durableObjectGbSecondsEventType = 'durable_object_gb_seconds'
 
+/** Coalesced Durable Object metrics that share one burst queue. */
+type DurableObjectUsageEventType =
+	| typeof durableObjectGbSecondsEventType
+	| 'durable_object_rows_read'
+	| 'durable_object_platform_rows_read'
+
 /**
  * Wait after the last RPC in a burst before writing one Analytics Engine
  * point. Sequential StorageRunner calls in one request then share a single
@@ -20,11 +26,16 @@ export const durableObjectUsageMaxBurstMs = 5_000
 
 type PendingDurableObjectUsage = {
 	env: UsageEnv
+	eventType: DurableObjectUsageEventType
 	userId: string
 	doClass: string
 	outcome: UsageOutcome
 	durationMs: number
 	eventCount: number
+	/** Package id when known; empty string coalesces with unset (Ad hoc). */
+	packageId: string
+	/** First queued event in this bucket; the flush writes this timestamp. */
+	timestamp: string
 }
 
 const pendingByKey = new Map<string, PendingDurableObjectUsage>()
@@ -67,10 +78,12 @@ export function createMeteredDurableObjectStub<T extends object>(input: {
 					try {
 						queueDurableObjectUsage({
 							env: input.env,
+							eventType: durableObjectGbSecondsEventType,
 							userId: input.userId,
 							doClass: input.doClass,
 							outcome,
 							durationMs: Date.now() - startedAt,
+							units: 1,
 						})
 					} catch (error) {
 						console.debug('durable-object-usage-failed', error)
@@ -122,26 +135,87 @@ export async function flushDurableObjectUsageWrites(): Promise<void> {
 	}
 }
 
+/**
+ * Queue SQLite rows read by a per-user Durable Object into the same burst
+ * as duration, so a run that issues many storage reads writes one Analytics
+ * Engine point per (user, class, metric, outcome) instead of one per call.
+ * Without `USAGE_EVENTS` (local dev, tests) it records directly so the D1
+ * rollup fallback still sees each read.
+ */
+export function queueDurableObjectRowsRead(input: {
+	env: UsageEnv
+	eventType: 'durable_object_rows_read' | 'durable_object_platform_rows_read'
+	userId: string
+	doClass: string
+	rowsRead: number
+	outcome?: UsageOutcome
+	packageId?: string | null
+}): void {
+	try {
+		if (!input.userId) return
+		if (!Number.isFinite(input.rowsRead) || input.rowsRead < 1) return
+		const rowsRead = Math.trunc(input.rowsRead)
+		const outcome = input.outcome ?? 'success'
+		const packageId = input.packageId?.trim() || ''
+		if (!input.env.USAGE_EVENTS) {
+			recordUsage(input.env, {
+				userId: input.userId,
+				eventType: input.eventType,
+				entityId: input.doClass,
+				eventCount: rowsRead,
+				outcome,
+				...(packageId ? { packageId } : {}),
+			}).catch((error: unknown) => {
+				console.debug('durable-object-rows-read-failed', error)
+			})
+			return
+		}
+		queueDurableObjectUsage({
+			env: input.env,
+			eventType: input.eventType,
+			userId: input.userId,
+			doClass: input.doClass,
+			outcome,
+			durationMs: 0,
+			units: rowsRead,
+			packageId,
+		})
+	} catch (error) {
+		console.debug('durable-object-rows-read-failed', error)
+	}
+}
+
 function queueDurableObjectUsage(input: {
 	env: UsageEnv
+	eventType: DurableObjectUsageEventType
 	userId: string
 	doClass: string
 	outcome: UsageOutcome
 	durationMs: number
+	units: number
+	packageId?: string
 }) {
-	const key = `${input.userId}\0${input.doClass}\0${input.outcome}`
+	const timestamp = new Date().toISOString()
+	// Buckets never span a UTC month, so a burst that crosses midnight on the
+	// last day cannot move earlier units into the next month's rollup.
+	const month = timestamp.slice(0, 'YYYY-MM'.length)
+	const packageId = input.packageId?.trim() || ''
+	const key = `${input.eventType}\0${input.userId}\0${input.doClass}\0${input.outcome}\0${month}\0${packageId}`
 	const existing = pendingByKey.get(key)
 	if (existing) {
 		existing.durationMs += input.durationMs
-		existing.eventCount += 1
+		existing.eventCount += input.units
 	} else {
 		pendingByKey.set(key, {
 			env: input.env,
+			eventType: input.eventType,
 			userId: input.userId,
 			doClass: input.doClass,
 			outcome: input.outcome,
 			durationMs: input.durationMs,
-			eventCount: 1,
+			eventCount: input.units,
+			packageId,
+			timestamp,
 		})
 	}
 	scheduleDurableObjectUsageFlush()
@@ -193,11 +267,15 @@ async function flushQueuedDurableObjectUsage() {
 		buckets.map((bucket) =>
 			recordUsage(bucket.env, {
 				userId: bucket.userId,
-				eventType: durableObjectGbSecondsEventType,
+				eventType: bucket.eventType,
 				entityId: bucket.doClass,
-				durationMs: bucket.durationMs,
+				...(bucket.eventType === durableObjectGbSecondsEventType
+					? { durationMs: bucket.durationMs }
+					: {}),
 				eventCount: bucket.eventCount,
 				outcome: bucket.outcome,
+				timestamp: bucket.timestamp,
+				...(bucket.packageId ? { packageId: bucket.packageId } : {}),
 			}),
 		),
 	).then(() => undefined)

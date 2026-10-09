@@ -82,6 +82,8 @@ export async function recordDynamicWorkerInvoke(input: {
 	codeChars: number
 	executeShape?: ExecuteThinGlueClass | null
 	paramsChars?: number
+	actorUserId?: string | null
+	automationSource?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
 	try {
@@ -98,6 +100,12 @@ export async function recordDynamicWorkerInvoke(input: {
 				codeChars: input.codeChars,
 				paramsChars: input.paramsChars ?? 0,
 				...(input.executeShape ? { executeShape: input.executeShape } : {}),
+				...(input.actorUserId != null
+					? { actorUserId: input.actorUserId }
+					: {}),
+				...(input.automationSource != null
+					? { automationSource: input.automationSource }
+					: {}),
 			},
 			{ waitUntil: input.waitUntil },
 		)

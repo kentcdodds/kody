@@ -6,3 +6,10 @@ export function requireMcpUser(context: McpCallerContext) {
 	}
 	return context.user
 }
+
+export function requireMcpRequest(context: McpCallerContext) {
+	if (!context.request) {
+		throw new Error('Authenticated MCP user is required for this capability.')
+	}
+	return context.request
+}

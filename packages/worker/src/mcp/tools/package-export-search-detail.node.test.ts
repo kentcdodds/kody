@@ -39,6 +39,7 @@ function createHomeControlsDetail(
 			searchText: null,
 			sourceId: 'source-home',
 			hasApp: false,
+			hasSkills: false,
 			hidden: false,
 			isPrivate: false,
 			lockedAt: null,
@@ -127,65 +128,86 @@ test('package heading detail returns one export contract without packageGet', ()
 	expect(root.markdown).toBe(dottedRoot.markdown)
 })
 
-test('platform package heading detail tells person accounts to communityFork first', () => {
-	const detail = createHomeControlsDetail('bond-area-shades')
-	const formatted = formatPackageExportEntityDetail({
-		detail: {
-			...detail,
-			title: '@kody/official-tools',
-			platformScope: 'kody',
-			record: {
-				...detail.record,
-				name: '@kody/official-tools',
-				kodyId: 'official-tools',
-			},
-		},
-		exportDetail: {
-			subpath: './lookup',
-			runtimeTarget: 'src/lookup.ts',
-			typesPath: null,
-			description: 'Look up one official record.',
-			typeDefinition:
-				'export default async function lookup(input: { id: string }): Promise<{ id: string }>',
-			functions: [
-				{
-					name: 'default',
-					description: 'Look up one official record.',
-					typeDefinition:
-						'export default async function lookup(input: { id: string }): Promise<{ id: string }>',
-					referencedTypes: [],
-				},
-			],
-			referencedTypes: [],
-		},
-	})
-	expect(formatted.structured).toMatchObject({
-		detailMode: 'export',
-		platformScope: 'kody',
-		importSpecifier: 'kody:@kody/official-tools/lookup',
-	})
-	expect(formatted.markdown).toContain(
-		'This is a platform (built-in) package from @kody. communityFork it into your scope before importing it.',
-	)
-	expect(formatted.structured).toMatchObject({
-		followUp: expect.stringContaining('communityFork'),
-	})
-})
+const shadeDefinition =
+	'export default async function bondAreaShades(input: ShadeInput): Promise<ShadeInput>'
 
-test('heading usage matches the namespace execute snippet when there is no callable', () => {
-	const formatted = formatPackageExportEntityDetail({
+function defaultFunction(description: string, typeDefinition: string) {
+	return { name: 'default', description, typeDefinition, referencedTypes: [] }
+}
+
+function formatExport(
+	exportDetail: Partial<
+		Parameters<typeof formatPackageExportEntityDetail>[0]['exportDetail']
+	>,
+	options: Partial<Parameters<typeof formatPackageExportEntityDetail>[0]> = {},
+) {
+	return formatPackageExportEntityDetail({
 		detail: createHomeControlsDetail('bond-area-shades'),
 		exportDetail: {
 			subpath: './bond-area-shades',
 			runtimeTarget: 'src/bond-area-shades.ts',
 			typesPath: null,
+			description: 'Lower or raise Bond-controlled shades.',
+			typeDefinition: shadeDefinition,
+			functions: [
+				defaultFunction(
+					'Lower or raise Bond-controlled shades.',
+					shadeDefinition,
+				),
+			],
+			referencedTypes: [],
+			...exportDetail,
+		},
+		...options,
+	})
+}
+
+test('platform package heading detail tells person accounts to communityFork first', () => {
+	const detail = createHomeControlsDetail('bond-area-shades')
+	const lookupDefinition =
+		'export default async function lookup(input: { id: string }): Promise<{ id: string }>'
+	const formatted = formatExport(
+		{
+			subpath: './lookup',
+			runtimeTarget: 'src/lookup.ts',
+			description: 'Look up one official record.',
+			typeDefinition: lookupDefinition,
+			functions: [
+				defaultFunction('Look up one official record.', lookupDefinition),
+			],
+		},
+		{
+			detail: {
+				...detail,
+				title: '@kody/official-tools',
+				platformScope: 'kody',
+				record: {
+					...detail.record,
+					name: '@kody/official-tools',
+					kodyId: 'official-tools',
+				},
+			},
+		},
+	)
+	expect(formatted.structured).toMatchObject({
+		detailMode: 'export',
+		platformScope: 'kody',
+		importSpecifier: 'kody:@kody/official-tools/lookup',
+		followUp: expect.stringContaining('communityFork'),
+	})
+	expect(formatted.markdown).toContain(
+		'This is a platform (built-in) package from @kody. communityFork it into your scope before importing it.',
+	)
+})
+
+test('heading usage uses the namespace import without a callable and prefers the default export over named helpers', () => {
+	expect(
+		formatExport({
 			description: 'Shade constants.',
 			typeDefinition: 'export const positions = ["open", "closed"] as const',
 			functions: [],
-			referencedTypes: [],
-		},
-	})
-	expect(formatted.structured).toMatchObject({
+		}).structured,
+	).toMatchObject({
 		detailMode: 'export',
 		usage:
 			'import * as exported from "kody:@user/home-controls/bond-area-shades"',
@@ -193,83 +215,42 @@ test('heading usage matches the namespace execute snippet when there is no calla
 			'import * as exported from "kody:@user/home-controls/bond-area-shades"',
 		),
 	})
-})
 
-test('heading execute prefers the default export over named helpers', () => {
-	const formatted = formatPackageExportEntityDetail({
-		detail: createHomeControlsDetail('bond-area-shades'),
-		exportDetail: {
-			subpath: './bond-area-shades',
-			runtimeTarget: 'src/bond-area-shades.ts',
-			typesPath: null,
-			description: 'Lower or raise Bond-controlled shades.',
-			typeDefinition:
-				'export default async function bondAreaShades(input: ShadeInput): Promise<ShadeInput>',
-			functions: [
-				{
-					name: 'default',
-					description: 'Lower or raise Bond-controlled shades.',
-					typeDefinition:
-						'export default async function bondAreaShades(input: ShadeInput): Promise<ShadeInput>',
-					referencedTypes: [],
-				},
-				{
-					name: 'describeShade',
-					description: 'Describe one shade.',
-					typeDefinition: 'export function describeShade(id: string): string',
-					referencedTypes: [],
-				},
-			],
-			referencedTypes: [],
-		},
+	const withHelper = formatExport({
+		functions: [
+			defaultFunction(
+				'Lower or raise Bond-controlled shades.',
+				shadeDefinition,
+			),
+			{
+				name: 'describeShade',
+				description: 'Describe one shade.',
+				typeDefinition: 'export function describeShade(id: string): string',
+				referencedTypes: [],
+			},
+		],
 	})
-	expect(formatted.structured).toMatchObject({
+	expect(withHelper.structured).toMatchObject({
 		detailMode: 'export',
 		usage: 'import action from "kody:@user/home-controls/bond-area-shades"',
 		executeExample: expect.stringContaining(
 			'import action from "kody:@user/home-controls/bond-area-shades"',
 		),
 	})
-	if (formatted.structured.type !== 'package') {
-		throw new Error('expected package entity detail')
-	}
-	if (formatted.structured.detailMode !== 'export') {
-		throw new Error('expected package export heading')
-	}
-	expect(formatted.structured.usage).not.toContain('describeShade')
 })
 
 test('unknown package export heading is a clear per-entity caller error', () => {
-	expect(() =>
-		formatEntityDetailMarkdown(createHomeControlsDetail('missing-export')),
-	).toThrow(McpCallerError)
-	expect(() =>
-		formatEntityDetailMarkdown(createHomeControlsDetail('missing-export')),
-	).toThrow(
+	const format = () =>
+		formatEntityDetailMarkdown(createHomeControlsDetail('missing-export'))
+	expect(format).toThrow(McpCallerError)
+	expect(format).toThrow(
 		'Unknown export "missing-export" for package:home-controls. Available: ., ./bond-area-shades.',
 	)
 })
 
 test('oversized referenced types keep the signature and type names', () => {
-	const detail = createHomeControlsDetail('bond-area-shades')
-	const formatted = formatPackageExportEntityDetail({
-		detail,
-		exportDetail: {
-			subpath: './bond-area-shades',
-			runtimeTarget: 'src/bond-area-shades.ts',
-			typesPath: null,
-			description: 'Lower or raise Bond-controlled shades.',
-			typeDefinition:
-				'export default async function bondAreaShades(input: ShadeInput): Promise<ShadeInput>',
-			functions: [
-				{
-					name: 'default',
-					description: 'Lower or raise Bond-controlled shades.',
-					typeDefinition:
-						'export default async function bondAreaShades(input: ShadeInput): Promise<ShadeInput>',
-					referencedTypes: [],
-				},
-			],
+	const formatted = formatExport(
+		{
 			referencedTypes: [
 				{
 					name: 'ShadeInput',
@@ -278,22 +259,22 @@ test('oversized referenced types keep the signature and type names', () => {
 				},
 			],
 		},
-		maxChars: 1_200,
-	})
+		{ maxChars: 1_200 },
+	)
 	expect(formatted.structured).toMatchObject({
 		detailMode: 'export',
 		typeDefinition: expect.stringContaining('bondAreaShades'),
 		referencedTypesTruncated: true,
 		referencedTypes: [{ name: 'ShadeInput', kind: 'type', definition: null }],
 	})
-	expect(formatted.markdown).toContain('bondAreaShades')
-	expect(formatted.markdown).toContain('`ShadeInput`')
-	expect(formatted.markdown).toContain(
+	for (const text of [
+		'bondAreaShades',
+		'`ShadeInput`',
 		'Referenced type definitions omitted (exceeds search response budget).',
-	)
-	expect(formatted.markdown).toContain(
 		'packageGet({ package_id: "package-home" })',
-	)
+	]) {
+		expect(formatted.markdown).toContain(text)
+	}
 	expect(formatted.markdown.length).toBeLessThanOrEqual(1_200)
 })
 
@@ -310,7 +291,10 @@ test('package file fragments focus headings and line ranges without replacing ex
 			heading: { slug: 'intent', title: 'Intent' },
 		},
 	})
-	if (heading.structured.detailMode !== 'file') {
+	if (
+		!('detailMode' in heading.structured) ||
+		heading.structured.detailMode !== 'file'
+	) {
 		throw new Error('expected package file detail')
 	}
 	expect(heading.structured.content).toContain('Control shades and lights.')

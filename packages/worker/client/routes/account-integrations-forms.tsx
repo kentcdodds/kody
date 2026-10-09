@@ -2,9 +2,10 @@ import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
 	AccountManagementMessage,
@@ -40,6 +41,8 @@ const addAccountLinkCss = {
 export function AddAccountForm(
 	handle: Handle<{
 		slug: string
+		/** Built-in row: also send `platform=` so the built-in lane wins over a same-slug personal app while it is discoverable. */
+		platform?: boolean
 		existingNames: ReadonlyArray<string>
 		open: boolean
 		openHref: string
@@ -53,6 +56,7 @@ export function AddAccountForm(
 		return buildConnectOauthHref({
 			name: connectionName,
 			appSlug: handle.props.slug,
+			platformSlug: handle.props.platform ? handle.props.slug : undefined,
 		})
 	}
 
@@ -427,14 +431,17 @@ export function RotateCredentialsForm(
 							]}
 						/>
 					</label>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>New client secret</span>
-						<input
-							type="password"
+					<div mix={css(fieldCss)}>
+						<label for="oauth-app-client-secret" mix={css(fieldLabelCss)}>
+							New client secret
+						</label>
+						<PasswordRevealInput
+							id="oauth-app-client-secret"
 							data-field-ring
 							name="oauthAppClientSecret"
 							value={clientSecret}
 							{...passwordManagerIgnoreProps}
+							revealNoun="client secret"
 							mix={[
 								on('input', (event) => {
 									clientSecret = event.currentTarget.value
@@ -443,7 +450,7 @@ export function RotateCredentialsForm(
 								css(accountInputCss),
 							]}
 						/>
-					</label>
+					</div>
 					<label
 						mix={css({
 							display: 'flex',

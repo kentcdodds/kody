@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/component'
 import { type SessionInfo, type SessionStatus } from './session.ts'
 
 export type AppSessionContextValue = {

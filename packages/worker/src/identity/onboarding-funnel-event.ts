@@ -11,7 +11,7 @@ import {
 	sanitizeOnboardingFunnelPlan,
 	type OnboardingFunnelStage,
 } from '#universal/onboarding-funnel-point.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export type OnboardingFunnelEnv = {
 	ONBOARDING_FUNNEL_EVENTS?: AnalyticsEngineDataset
@@ -63,7 +63,7 @@ export function recordOnboardingFunnelEvent(
 ): void {
 	try {
 		if (!env.ONBOARDING_FUNNEL_EVENTS) return
-		if (!isStableUserId(input.userId)) return
+		if (!parsePersonId(input.userId)) return
 		if (!stageSet.has(input.stage)) return
 		const errorClass =
 			input.stage === 'mcp_connect_failed'

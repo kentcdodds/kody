@@ -12,6 +12,8 @@ import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 export type PublishedEntitySource = {
 	source: Awaited<ReturnType<typeof getEntitySourceById>>
 	files: Record<string, string>
+	/** KV snapshot `createdAt` when finalize wrote this commit; null on artifact backfill. */
+	snapshotCreatedAt: string | null
 }
 
 export type PublishedEntityManifest = {
@@ -126,6 +128,7 @@ export async function loadPublishedEntitySource(input: {
 	return {
 		source,
 		files: freezeFiles(files),
+		snapshotCreatedAt: storedSnapshot?.createdAt ?? null,
 	}
 }
 

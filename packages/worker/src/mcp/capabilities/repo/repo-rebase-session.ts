@@ -17,6 +17,7 @@ export const repoRebaseSessionCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoRebaseSession',
+		orgPermission: 'package:write',
 		description:
 			'Rebase a repo session against the latest published source state when the base commit has moved.',
 		keywords: ['repo', 'rebase', 'session', 'publish', 'base moved'],

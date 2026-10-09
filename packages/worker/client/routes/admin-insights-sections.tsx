@@ -1,4 +1,4 @@
-import { css, type Handle, type RemixNode } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/component'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { cardCss } from '#universal/styles/style-primitives.ts'
 import {

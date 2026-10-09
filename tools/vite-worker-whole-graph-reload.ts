@@ -9,7 +9,7 @@ import { type EnvironmentModuleNode, type Plugin } from 'vite'
  * HMR boundary, so a change never dead-ends into Vite's own full reload: the
  * module runner re-imports the nearest boundary and re-evaluates only the
  * invalidated importer chain, while every module off that chain keeps its
- * state. `remix/ui-hmr` also instruments every component module into its own
+ * state. `remix/component-hmr` also instruments every component module into its own
  * boundary. Both are fine for a browser tab and wrong for SSR: each evaluation
  * of a component module mints new component functions, and Remix keys
  * `handle.context` on component identity. A request rendered during the

@@ -8,10 +8,15 @@ import {
 } from './repo.ts'
 import {
 	getPlatformFeedbackForAdmin,
+	getPlatformFeedbackForSubmitter,
 	listPlatformFeedbackForAdmin,
+	listPlatformFeedbackForSubmitter,
 	submitPlatformFeedback,
 	updatePlatformFeedbackForAdmin,
 } from './service.ts'
+
+type Db = D1Database
+type SubmitInput = Parameters<typeof submitPlatformFeedback>[0]
 
 function createPlatformFeedbackDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -24,36 +29,53 @@ function createPlatformFeedbackDb() {
 	}
 }
 
+function submit(
+	db: Db,
+	userId: string,
+	input: Partial<Pick<SubmitInput, 'category' | 'summary' | 'details'>> = {},
+) {
+	return submitPlatformFeedback({
+		db,
+		submitterUserId: userId,
+		submitterUsername: `${userId}-name`,
+		submitterEmail: `${userId}@example.com`,
+		category: input.category ?? 'friction',
+		summary: input.summary ?? 'Feedback',
+		details: input.details ?? 'Feedback details',
+	})
+}
+
+function review(
+	db: Db,
+	feedbackId: string,
+	reviewerUserId: string,
+	action: 'triage' | 'resolve' | 'dismiss',
+	adminNote?: string,
+) {
+	return updatePlatformFeedbackForAdmin({
+		db,
+		feedbackId,
+		reviewerUserId,
+		action,
+		...(adminNote === undefined ? {} : { adminNote }),
+	})
+}
+
+const rateLimitMessage = (retryAfterSeconds: number) =>
+	`Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after ${retryAfterSeconds} seconds.`
+
 test('platform feedback workflow submits, lists, reads, transitions, and preserves submitter attribution', async () => {
 	const { sqlite, db, queries } = createPlatformFeedbackDb()
-	const first = await submitPlatformFeedback({
-		db,
-		submitterUserId: 'user-a',
-		submitterUsername: 'user-a-name',
-		submitterEmail: 'user-a@example.com',
-		category: 'friction',
+	const first = await submit(db, 'user-a', {
 		summary: '  Setup is confusing  ',
 		details: '  The setup flow does not explain the next action.  ',
 	})
-	const second = await submitPlatformFeedback({
-		db,
-		submitterUserId: 'user-b',
-		submitterUsername: 'user-b-name',
-		submitterEmail: 'user-b@example.com',
+	const second = await submit(db, 'user-b', {
 		category: 'bug',
 		summary: 'Button does not save',
 		details: 'The save button leaves the form unchanged.',
 	})
-	const third = await submitPlatformFeedback({
-		db,
-		submitterUserId: 'user-a',
-		submitterUsername: 'user-a-name',
-		submitterEmail: 'user-a@example.com',
-		category: 'experience',
-		summary: 'Search feels slow',
-		details: 'Search takes several seconds to show the first result.',
-	})
-
+	const third = await submit(db, 'user-a', { category: 'experience' })
 	expect(first).toMatchObject({
 		submitterUserId: 'user-a',
 		submitterUsername: 'user-a-name',
@@ -66,30 +88,21 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	expect(second.submitterUserId).toBe('user-b')
 	expect(third.submitterUserId).toBe('user-a')
 
-	const page = await listPlatformFeedbackForAdmin({
-		db,
-		page: 1,
-		pageSize: 2,
-	})
+	const page = await listPlatformFeedbackForAdmin({ db, page: 1, pageSize: 2 })
 	expect(page).toMatchObject({ total: 3, page: 1, pageSize: 2 })
-	expect(page.items).toHaveLength(2)
-	for (const item of page.items) {
-		expect(Object.keys(item).sort()).toEqual(
-			[
-				'category',
-				'createdAt',
-				'id',
-				'reviewedAt',
-				'reviewedByUserId',
-				'status',
-				'submitterUserId',
-				'summary',
-				'updatedAt',
-			].sort(),
-		)
-		expect(item).not.toHaveProperty('submitterUsername')
-		expect(item).not.toHaveProperty('submitterEmail')
-	}
+	expect(page.items.map((item) => Object.keys(item).sort())).toEqual(
+		Array(2).fill([
+			'category',
+			'createdAt',
+			'id',
+			'reviewedAt',
+			'reviewedByUserId',
+			'status',
+			'submitterUserId',
+			'summary',
+			'updatedAt',
+		]),
+	)
 	queries.length = 0
 	const clampedPage = await listPlatformFeedbackForAdmin({
 		db,
@@ -113,10 +126,7 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 	})
 	expect(bugFeedback).toMatchObject({ page: 1, pageSize: 20, total: 1 })
 	expect(bugFeedback.items).toEqual([
-		expect.objectContaining({
-			id: second.id,
-			submitterUserId: 'user-b',
-		}),
+		expect.objectContaining({ id: second.id, submitterUserId: 'user-b' }),
 	])
 
 	expect(
@@ -135,14 +145,9 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		adminNote: null,
 	})
 
-	const triaged = await updatePlatformFeedbackForAdmin({
-		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-a',
-		action: 'triage',
-		adminNote: 'Needs setup-flow review.',
-	})
-	expect(triaged).toMatchObject({
+	expect(
+		await review(db, first.id, 'admin-a', 'triage', 'Needs setup-flow review.'),
+	).toMatchObject({
 		previousStatus: 'open',
 		didChangeStatus: true,
 		feedback: {
@@ -151,13 +156,13 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 			adminNote: 'Needs setup-flow review.',
 		},
 	})
-	const correctedTriage = await updatePlatformFeedbackForAdmin({
+	const correctedTriage = await review(
 		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-b',
-		action: 'triage',
-		adminNote: 'Corrected setup-flow note.',
-	})
+		first.id,
+		'admin-b',
+		'triage',
+		'Corrected setup-flow note.',
+	)
 	expect(correctedTriage).toMatchObject({
 		previousStatus: 'triaged',
 		didChangeStatus: false,
@@ -168,22 +173,15 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 		},
 	})
 	expect(
-		await updatePlatformFeedbackForAdmin({
+		await review(
 			db,
-			feedbackId: first.id,
-			reviewerUserId: 'admin-c',
-			action: 'triage',
-			adminNote: 'Corrected setup-flow note.',
-		}),
+			first.id,
+			'admin-c',
+			'triage',
+			'Corrected setup-flow note.',
+		),
 	).toEqual(correctedTriage)
-	const clearedTriage = await updatePlatformFeedbackForAdmin({
-		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-c',
-		action: 'triage',
-		adminNote: '   ',
-	})
-	expect(clearedTriage).toMatchObject({
+	expect(await review(db, first.id, 'admin-c', 'triage', '   ')).toMatchObject({
 		didChangeStatus: false,
 		feedback: {
 			status: 'triaged',
@@ -191,60 +189,37 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 			adminNote: null,
 		},
 	})
-	const restoredTriage = await updatePlatformFeedbackForAdmin({
+	const preservedNote = 'Preserve this note when resolving.'
+	const restoredTriage = await review(
 		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-d',
-		action: 'triage',
-		adminNote: 'Preserve this note when resolving.',
-	})
-	expect(restoredTriage.feedback.adminNote).toBe(
-		'Preserve this note when resolving.',
+		first.id,
+		'admin-d',
+		'triage',
+		preservedNote,
 	)
+	expect(restoredTriage.feedback.adminNote).toBe(preservedNote)
 
-	const resolved = await updatePlatformFeedbackForAdmin({
-		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-e',
-		action: 'resolve',
-	})
+	const resolved = await review(db, first.id, 'admin-e', 'resolve')
 	expect(resolved).toMatchObject({
 		previousStatus: 'triaged',
 		didChangeStatus: true,
 		feedback: {
 			status: 'resolved',
 			reviewedByUserId: 'admin-e',
-			adminNote: 'Preserve this note when resolving.',
+			adminNote: preservedNote,
 		},
 	})
-	const resolvedAgain = await updatePlatformFeedbackForAdmin({
-		db,
-		feedbackId: first.id,
-		reviewerUserId: 'admin-c',
-		action: 'resolve',
-	})
+	const resolvedAgain = await review(db, first.id, 'admin-c', 'resolve')
 	expect(resolvedAgain.feedback).toEqual(resolved.feedback)
 	expect(resolvedAgain).toMatchObject({
 		previousStatus: 'resolved',
 		didChangeStatus: false,
 	})
-	await expect(
-		updatePlatformFeedbackForAdmin({
-			db,
-			feedbackId: first.id,
-			reviewerUserId: 'admin-c',
-			action: 'dismiss',
-		}),
-	).rejects.toThrow(
+	await expect(review(db, first.id, 'admin-c', 'dismiss')).rejects.toThrow(
 		`Cannot dismiss platform feedback "${first.id}" from status "resolved".`,
 	)
 	await expect(
-		updatePlatformFeedbackForAdmin({
-			db,
-			feedbackId: 'missing-feedback',
-			reviewerUserId: 'admin-a',
-			action: 'triage',
-		}),
+		review(db, 'missing-feedback', 'admin-a', 'triage'),
 	).rejects.toThrow('Platform feedback "missing-feedback" was not found.')
 
 	const rows = sqlite
@@ -253,12 +228,7 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 			 FROM platform_feedback
 			 ORDER BY submitter_user_id, id`,
 		)
-		.all() as Array<{
-		id: string
-		submitter_user_id: string
-		submitter_username: string
-		submitter_email: string
-	}>
+		.all() as Array<{ id: string; submitter_user_id: string }>
 	expect(rows.filter((row) => row.submitter_user_id === 'user-a')).toHaveLength(
 		2,
 	)
@@ -278,80 +248,43 @@ test('platform feedback workflow submits, lists, reads, transitions, and preserv
 
 test('platform feedback admin note updates reject the same stale revision', async () => {
 	const { db } = createPlatformFeedbackDb()
-	const submitted = await submitPlatformFeedback({
-		db,
-		submitterUserId: 'user-a',
-		submitterUsername: 'user-a-name',
-		submitterEmail: 'user-a@example.com',
-		category: 'friction',
-		summary: 'Setup is confusing',
-		details: 'The setup flow does not explain the next action.',
-	})
+	const submitted = await submit(db, 'user-a')
 	const stale = await getPlatformFeedbackByIdForAdmin(db, submitted.id)
-	expect(stale).not.toBeNull()
 	if (!stale) throw new Error('Expected submitted platform feedback.')
 	expect(stale.revision).toBe(0)
 
-	const firstUpdate = await updatePlatformFeedbackStatusForAdmin(db, {
-		feedbackId: stale.id,
-		expectedStatus: stale.status,
-		expectedRevision: stale.revision,
-		status: stale.status,
-		reviewedByUserId: 'admin-a',
-		reviewedAt: '2026-07-19T01:00:00.000Z',
-		adminNote: 'First competing note.',
-	})
-	const staleUpdate = await updatePlatformFeedbackStatusForAdmin(db, {
-		feedbackId: stale.id,
-		expectedStatus: stale.status,
-		expectedRevision: stale.revision,
-		status: stale.status,
-		reviewedByUserId: 'admin-b',
-		reviewedAt: '2026-07-19T01:00:00.000Z',
-		adminNote: 'Second competing note.',
-	})
-	expect(firstUpdate).toBe(true)
-	expect(staleUpdate).toBe(false)
-
-	const current = await getPlatformFeedbackByIdForAdmin(db, submitted.id)
-	expect(current).toMatchObject({
-		status: 'open',
-		reviewedByUserId: 'admin-a',
-		adminNote: 'First competing note.',
-		revision: 1,
-	})
-	const publicRecord = await getPlatformFeedbackForAdmin({
-		db,
-		feedbackId: submitted.id,
-	})
-	expect(publicRecord).not.toHaveProperty('revision')
+	const updateNote = (reviewedByUserId: string, adminNote: string) =>
+		updatePlatformFeedbackStatusForAdmin(db, {
+			feedbackId: stale.id,
+			expectedStatus: stale.status,
+			expectedRevision: stale.revision,
+			status: stale.status,
+			reviewedByUserId,
+			reviewedAt: '2026-07-19T01:00:00.000Z',
+			adminNote,
+		})
+	expect(await updateNote('admin-a', 'First competing note.')).toBe(true)
+	expect(await updateNote('admin-b', 'Second competing note.')).toBe(false)
+	expect(await getPlatformFeedbackByIdForAdmin(db, submitted.id)).toMatchObject(
+		{
+			status: 'open',
+			reviewedByUserId: 'admin-a',
+			adminNote: 'First competing note.',
+			revision: 1,
+		},
+	)
+	expect(
+		await getPlatformFeedbackForAdmin({ db, feedbackId: submitted.id }),
+	).not.toHaveProperty('revision')
 })
 
 test('platform feedback submission enforces the rolling rate limit and atomic active queue cap', async () => {
 	const rateLimited = createPlatformFeedbackDb()
 	for (let index = 0; index < 10; index += 1) {
-		await submitPlatformFeedback({
-			db: rateLimited.db,
-			submitterUserId: 'rate-limited-user',
-			submitterUsername: 'rate-limited-user',
-			submitterEmail: 'rate-limited-user@example.com',
-			category: 'friction',
-			summary: `Feedback ${index}`,
-			details: `Feedback details ${index}`,
-		})
+		await submit(rateLimited.db, 'rate-limited-user')
 	}
-	await expect(
-		submitPlatformFeedback({
-			db: rateLimited.db,
-			submitterUserId: 'rate-limited-user',
-			submitterUsername: 'rate-limited-user',
-			submitterEmail: 'rate-limited-user@example.com',
-			category: 'friction',
-			summary: 'Feedback 11',
-			details: 'This submission exceeds the rolling limit.',
-		}),
-	).rejects.toThrow(
-		'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 86400 seconds.',
+	await expect(submit(rateLimited.db, 'rate-limited-user')).rejects.toThrow(
+		rateLimitMessage(86400),
 	)
 	expect(
 		rateLimited.sqlite
@@ -372,30 +305,13 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 				id, submitter_user_id, submitter_username, submitter_email,
 				category, summary, details, created_at, updated_at
 			) VALUES (?, 'rate-limited-user', 'rate-limited-user',
-				'rate-limited-user@example.com', 'friction', ?, ?, ?, ?)`,
+				'rate-limited-user@example.com', 'friction', 'Feedback', 'Details', ?, ?)`,
 		)
 		for (let index = 0; index < 10; index += 1) {
-			insertFeedback.run(
-				`feedback-${index}`,
-				`Feedback ${index}`,
-				`Feedback details ${index}`,
-				createdAt,
-				createdAt,
-			)
+			insertFeedback.run(`feedback-${index}`, createdAt, createdAt)
 		}
-
-		await expect(
-			submitPlatformFeedback({
-				db,
-				submitterUserId: 'rate-limited-user',
-				submitterUsername: 'rate-limited-user',
-				submitterEmail: 'rate-limited-user@example.com',
-				category: 'friction',
-				summary: 'Feedback 11',
-				details: 'This submission exceeds the rolling limit.',
-			}),
-		).rejects.toThrow(
-			'Platform feedback is limited to 10 submissions per rolling 24 hours. Retry after 3600 seconds.',
+		await expect(submit(db, 'rate-limited-user')).rejects.toThrow(
+			rateLimitMessage(3600),
 		)
 	} finally {
 		vi.useRealTimers()
@@ -407,57 +323,29 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 			id, submitter_user_id, submitter_username, submitter_email,
 			category, summary, details, status, created_at, updated_at
 		) VALUES (?, 'queue-limited-user', 'queue-limited-user',
-			'queue-limited-user@example.com', 'friction', ?, ?, ?, ?, ?)`,
+			'queue-limited-user@example.com', 'friction', 'Queued', 'Details', ?, ?, ?)`,
 	)
 	const createdAt = new Date(Date.now() - 48 * 60 * 60 * 1_000).toISOString()
 	for (let index = 0; index < 99; index += 1) {
 		insertQueued.run(
 			`queued-${index}`,
-			`Queued feedback ${index}`,
-			`Queued feedback details ${index}`,
 			index % 2 === 0 ? 'open' : 'triaged',
 			createdAt,
 			createdAt,
 		)
 	}
-	await submitPlatformFeedback({
-		db: queueLimited.db,
-		submitterUserId: 'queue-limited-user',
-		submitterUsername: 'queue-limited-user',
-		submitterEmail: 'queue-limited-user@example.com',
-		category: 'bug',
-		summary: 'One hundredth active submission',
-		details: 'This reaches the active queue boundary.',
-	})
+	await submit(queueLimited.db, 'queue-limited-user', { category: 'bug' })
 	await expect(
-		submitPlatformFeedback({
-			db: queueLimited.db,
-			submitterUserId: 'queue-limited-user',
-			submitterUsername: 'queue-limited-user',
-			submitterEmail: 'queue-limited-user@example.com',
-			category: 'bug',
-			summary: 'One over the active queue boundary',
-			details: 'This must be rejected atomically.',
-		}),
+		submit(queueLimited.db, 'queue-limited-user', { category: 'bug' }),
 	).rejects.toThrow(
 		'You already have 100 open or triaged platform feedback submissions.',
 	)
 	queueLimited.sqlite
 		.prepare(
-			`UPDATE platform_feedback
-			SET status = 'resolved', updated_at = ?
-			WHERE id = 'queued-0'`,
+			`UPDATE platform_feedback SET status = 'resolved', updated_at = ? WHERE id = 'queued-0'`,
 		)
 		.run(createdAt)
-	await submitPlatformFeedback({
-		db: queueLimited.db,
-		submitterUserId: 'queue-limited-user',
-		submitterUsername: 'queue-limited-user',
-		submitterEmail: 'queue-limited-user@example.com',
-		category: 'bug',
-		summary: 'Replacement active submission',
-		details: 'A resolved active row makes room for this submission.',
-	})
+	await submit(queueLimited.db, 'queue-limited-user', { category: 'bug' })
 	expect(
 		queueLimited.sqlite
 			.prepare(
@@ -472,19 +360,94 @@ test('platform feedback submission enforces the rolling rate limit and atomic ac
 
 test('platform feedback accepts the cancellation category', async () => {
 	const { db, sqlite } = createPlatformFeedbackDb()
-	const submitted = await submitPlatformFeedback({
-		db,
-		submitterUserId: 'user-c',
-		submitterUsername: 'user-c-name',
-		submitterEmail: 'user-c@example.com',
-		category: 'cancellation',
-		summary: 'Subscription cancellation feedback',
-		details: 'Too expensive for my current usage.',
-	})
+	const submitted = await submit(db, 'user-c', { category: 'cancellation' })
 	expect(submitted.category).toBe('cancellation')
 	expect(
 		sqlite
 			.prepare(`SELECT category FROM platform_feedback WHERE id = ?`)
 			.get(submitted.id),
 	).toEqual({ category: 'cancellation' })
+})
+
+test('submitter get and list are owner-scoped and omit reviewer fields', async () => {
+	const { db } = createPlatformFeedbackDb()
+	const owned = await submit(db, 'user-a', {
+		summary: 'Owned feedback',
+		details: 'Owned details for status checks.',
+	})
+	const other = await submit(db, 'user-b', {
+		summary: 'Other user feedback',
+		details: 'Should not be readable by user-a.',
+	})
+	await review(db, owned.id, 'admin-a', 'resolve', 'Internal note')
+	await review(db, other.id, 'admin-a', 'triage', 'Other note')
+
+	const got = await getPlatformFeedbackForSubmitter({
+		db,
+		feedbackId: owned.id,
+		submitterUserId: 'user-a',
+	})
+	expect(got).toEqual({
+		id: owned.id,
+		category: 'friction',
+		summary: 'Owned feedback',
+		details: 'Owned details for status checks.',
+		status: 'resolved',
+		createdAt: owned.createdAt,
+		updatedAt: expect.any(String),
+	})
+	expect(got).not.toHaveProperty('reviewedByUserId')
+	expect(got).not.toHaveProperty('reviewedAt')
+	expect(got).not.toHaveProperty('adminNote')
+	expect(got).not.toHaveProperty('submitterUserId')
+
+	expect(
+		await getPlatformFeedbackForSubmitter({
+			db,
+			feedbackId: other.id,
+			submitterUserId: 'user-a',
+		}),
+	).toBeNull()
+	expect(
+		await getPlatformFeedbackForSubmitter({
+			db,
+			feedbackId: 'missing-feedback',
+			submitterUserId: 'user-a',
+		}),
+	).toBeNull()
+
+	const listed = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+	})
+	expect(listed).toMatchObject({ total: 1, page: 1, pageSize: 20 })
+	expect(listed.items).toEqual([
+		{
+			id: owned.id,
+			category: 'friction',
+			summary: 'Owned feedback',
+			status: 'resolved',
+			createdAt: owned.createdAt,
+			updatedAt: expect.any(String),
+		},
+	])
+	expect(listed.items[0]).not.toHaveProperty('details')
+	expect(listed.items[0]).not.toHaveProperty('adminNote')
+	expect(listed.items[0]).not.toHaveProperty('reviewedByUserId')
+	expect(listed.items.map((item) => item.id)).not.toContain(other.id)
+
+	const openOnly = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+		status: 'open',
+	})
+	expect(openOnly).toMatchObject({ total: 0, page: 1, items: [] })
+
+	const resolvedOnly = await listPlatformFeedbackForSubmitter({
+		db,
+		submitterUserId: 'user-a',
+		status: 'resolved',
+	})
+	expect(resolvedOnly.total).toBe(1)
+	expect(resolvedOnly.items[0]?.id).toBe(owned.id)
 })

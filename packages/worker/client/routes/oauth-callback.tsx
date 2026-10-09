@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { readRouterSearch } from '#client/router-location.tsx'
 import {
 	cardCss,

@@ -11,7 +11,6 @@ vi.mock('#worker/worker-bundler-modules.ts', () => ({
 }))
 
 import { packageAppClientModuleNamePattern } from './package-app-client-module-name.ts'
-import { isVendoredRemixPath } from './package-app-remix.ts'
 
 const { buildKodyAppClientBundle, isDeclaredClientExternal } =
 	await import('./module-graph-client-bundle.ts')
@@ -25,6 +24,10 @@ const packageJson = JSON.stringify({
 		app: { entry: './src/app.ts', client: './src/client.ts' },
 	},
 })
+
+function bundlerCall() {
+	return mockModule.createWorker.mock.calls[0]?.[0] as Record<string, unknown>
+}
 
 function mockBundledOutput(source: string) {
 	mockModule.createWorker.mockReset()
@@ -67,17 +70,13 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(call.entryPoint).toBe('src/client.ts')
 	expect(call.bundle).toBe(true)
 	const fileKeys = Object.keys(call.files).sort()
-	expect(fileKeys.filter((key) => !isVendoredRemixPath(key))).toEqual([
+	expect(fileKeys).toEqual([
 		'node_modules/left-pad/index.js',
 		'node_modules/left-pad/package.json',
 		'package.json',
 		'src/client.ts',
 		'src/greet.ts',
 	])
-	// The platform's vendored Remix rides along so `remix/ui` resolves in
-	// the browser graph without an npm install.
-	expect(fileKeys).toContain('node_modules/remix/package.json')
-	expect(fileKeys).toContain('node_modules/remix/dist/ui.js')
 	// A plain DOM client keeps esbuild's JSX defaults.
 	expect(call).not.toHaveProperty('jsxImportSource')
 
@@ -95,81 +94,81 @@ test('buildKodyAppClientBundle bundles only the browser graph and names the outp
 	expect(changed.mainModule).not.toBe(bundle.mainModule)
 })
 
-test('buildKodyAppClientBundle keeps esbuild JSX defaults even when the client graph imports remix/ui', async () => {
-	mockBundledOutput('export const Counter = () => null;\n')
-	await buildKodyAppClientBundle({
-		sourceFiles: {
-			'package.json': packageJson,
-			'src/client.ts':
-				"import { run } from 'remix/ui'\nrun({ loadModule: async () => ({}) })",
-		},
-		entryPoint: 'src/client.ts',
-	})
-	const uiCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
-		string,
-		unknown
-	>
-	expect(uiCall).not.toHaveProperty('jsx')
-	expect(uiCall).not.toHaveProperty('jsxImportSource')
-
-	mockBundledOutput('export const Counter = () => null;\n')
-	await buildKodyAppClientBundle({
-		sourceFiles: {
-			'package.json': packageJson,
-			'tsconfig.json': JSON.stringify({
-				compilerOptions: {
-					jsx: 'react-jsx',
-					jsxImportSource: 'remix/ui',
-				},
-			}),
-			'src/client.ts':
-				"import { run } from 'remix/ui'\nrun({ loadModule: async () => ({}) })",
-		},
-		entryPoint: 'src/client.ts',
-	})
-	const tsconfigCall = mockModule.createWorker.mock.calls[0]?.[0] as {
-		jsx?: string
-		jsxImportSource?: string
+test('buildKodyAppClientBundle keeps esbuild JSX defaults unless the package tsconfig sets them', async () => {
+	const trivialClient = 'console.log("client")'
+	for (const [files, expectedJsx] of [
+		[{ 'src/client.ts': trivialClient }, null],
+		[
+			{
+				'tsconfig.json': JSON.stringify({
+					compilerOptions: {
+						jsx: 'react-jsx',
+						jsxImportSource: 'remix/component',
+					},
+				}),
+				'src/client.ts': trivialClient,
+			},
+			{ jsx: 'automatic', jsxImportSource: 'remix/component' },
+		],
+		[
+			{
+				'src/client.ts': 'console.log("headers")',
+			},
+			null,
+		],
+	] as const) {
+		mockBundledOutput('export {}\n')
+		await buildKodyAppClientBundle({
+			sourceFiles: { 'package.json': packageJson, ...files },
+			entryPoint: 'src/client.ts',
+		})
+		const call = bundlerCall()
+		expect(Object.keys(call.files as Record<string, string>)).not.toContain(
+			'node_modules/remix/package.json',
+		)
+		if (expectedJsx) {
+			expect(call).toMatchObject(expectedJsx)
+		} else {
+			expect(call).not.toHaveProperty('jsx')
+			expect(call).not.toHaveProperty('jsxImportSource')
+		}
 	}
-	expect(tsconfigCall).toMatchObject({
-		jsx: 'automatic',
-		jsxImportSource: 'remix/ui',
-	})
-
-	mockBundledOutput('export {}\n')
-	await buildKodyAppClientBundle({
-		sourceFiles: {
-			'package.json': packageJson,
-			'src/client.ts':
-				"import { CacheControl } from 'remix/headers'\nconsole.log(CacheControl)",
-		},
-		entryPoint: 'src/client.ts',
-	})
-	const headersCall = mockModule.createWorker.mock.calls[0]?.[0] as Record<
-		string,
-		unknown
-	>
-	expect(headersCall).not.toHaveProperty('jsx')
-	expect(headersCall).not.toHaveProperty('jsxImportSource')
 })
 
-test('buildKodyAppClientBundle rejects kody:, cloudflare:, and node: imports before bundling', async () => {
-	mockBundledOutput('')
+test('buildKodyAppClientBundle does not inject remix and fails when the bundle still imports it', async () => {
+	mockBundledOutput(
+		'import { run } from "remix/component";\nrun({ loadModule: async () => ({}) });\n',
+	)
 	await expect(
 		buildKodyAppClientBundle({
 			sourceFiles: {
 				'package.json': packageJson,
-				'src/client.ts': [
-					"import { packageContext } from 'kody:runtime'",
-					"import helper from 'kody:@kentcdodds/helper'",
-					"import { shared } from './shared.ts'",
-					'console.log(packageContext, helper, shared)',
-				].join('\n'),
-				'src/shared.ts': [
-					"import { DurableObject } from 'cloudflare:workers'",
-					"import { readFile } from 'node:fs/promises'",
-					'export const shared = [DurableObject, readFile]',
-				].join('\n'),
+				'src/client.ts':
+					"import { run } from 'remix/component'\nrun({ loadModule: async () => ({}) })",
+			},
+			entryPoint: 'src/client.ts',
+		}),
+	).rejects.toThrow(
+		/still contains unresolved bare package imports after bundling \("remix\/component"\)/,
+	)
+	const call = bundlerCall()
+	expect(Object.keys(call.files as Record<string, string>)).not.toContain(
+		'node_modules/remix/package.json',
+	)
+})
+
+test('buildKodyAppClientBundle rejects kody:, cloudflare:, and node: imports before bundling', async () => {
+	await expect(
+		buildKodyAppClientBundle({
+			sourceFiles: {
+				'package.json': packageJson,
+				'src/client.ts': `import { packageContext } from 'kody:runtime'
+import helper from 'kody:@kentcdodds/helper'
+import { shared } from './shared.ts'
+console.log(packageContext, helper, shared)`,
+				'src/shared.ts': `import { DurableObject } from 'cloudflare:workers'
+import { readFile } from 'node:fs/promises'
+export const shared = [DurableObject, readFile]`,
 			},
 			entryPoint: 'src/client.ts',
 		}),
@@ -180,7 +179,6 @@ test('buildKodyAppClientBundle rejects kody:, cloudflare:, and node: imports bef
 })
 
 test('buildKodyAppClientBundle rejects stylesheet imports with an assets-directory hint', async () => {
-	mockBundledOutput('')
 	await expect(
 		buildKodyAppClientBundle({
 			sourceFiles: {
@@ -226,46 +224,30 @@ test('buildKodyAppClientBundle fails when the bundled output still imports unres
 })
 
 test('buildKodyAppClientBundle keeps declared externals as bare imports for an import map and passes them to the bundler', async () => {
-	const packageJsonWithExternals = JSON.stringify({
-		name: '@kentcdodds/client-app',
-		exports: { '.': './src/index.ts' },
-		kody: {
-			id: 'client-app',
-			description: 'Client app',
-			app: {
-				entry: './src/app.ts',
-				client: {
-					entry: './src/client.ts',
-					externals: ['@remix-run/ui', 'preact'],
-				},
-			},
-		},
-	})
-	const sourceFiles = {
-		'package.json': packageJsonWithExternals,
-		'src/client.ts': [
-			"import { Button } from '@remix-run/ui'",
-			"import { render } from 'preact'",
-			"import { useState } from 'preact/hooks'",
-			'render(Button, useState)',
-		].join('\n'),
+	const manifest = JSON.parse(packageJson)
+	manifest.kody.app.client = {
+		entry: './src/client.ts',
+		externals: ['lit', 'preact'],
 	}
-	mockBundledOutput(
-		[
-			'import { Button } from "@remix-run/ui";',
-			'import { render } from "preact";',
-			'import { useState } from "preact/hooks";',
-			'render(Button, useState);',
-			'',
-		].join('\n'),
-	)
+	const sourceFiles = {
+		'package.json': JSON.stringify(manifest),
+		'src/client.ts': `import { html } from 'lit'
+import { render } from 'preact'
+import { useState } from 'preact/hooks'
+render(html, useState)`,
+	}
+	mockBundledOutput(`import { html } from "lit";
+import { render } from "preact";
+import { useState } from "preact/hooks";
+render(html, useState);
+`)
 
 	const bundle = await buildKodyAppClientBundle({
 		sourceFiles,
 		entryPoint: 'src/client.ts',
 	})
 	expect(bundle.mainModule).toMatch(packageAppClientModuleNamePattern)
-	expect(bundle.modules[bundle.mainModule]).toContain('from "@remix-run/ui"')
+	expect(bundle.modules[bundle.mainModule]).toContain('from "lit"')
 	// Externals reach esbuild through a plugin with exact-or-subpath matching
 	// (the bundler's own `externals` option is a raw prefix match).
 	const call = mockModule.createWorker.mock.calls[0]?.[0] as {
@@ -284,29 +266,28 @@ test('buildKodyAppClientBundle keeps declared externals as bare imports for an i
 	const [plugin] =
 		call.__dangerouslyUseEsBuildPluginsDoNotUseOrYouWillBeFired ?? []
 	expect(plugin?.name).toBe('kody-package-app-client-externals')
-	let resolve: ((args: { path: string }) => unknown) | null = null
-	let filter: RegExp | null = null
+	let resolve = null as ((args: { path: string }) => unknown) | null
+	let filter = null as RegExp | null
 	plugin?.setup({
 		onResolve(options, callback) {
 			filter = options.filter
 			resolve = callback
 		},
 	})
-	expect(filter?.test('preact')).toBe(true)
-	expect(filter?.test('@remix-run/ui')).toBe(true)
-	expect(filter?.test('./local.ts')).toBe(false)
-	expect(filter?.test('/abs.js')).toBe(false)
-	expect(resolve?.({ path: '@remix-run/ui' })).toEqual({
-		path: '@remix-run/ui',
-		external: true,
-	})
-	expect(resolve?.({ path: 'preact/hooks' })).toEqual({
-		path: 'preact/hooks',
-		external: true,
-	})
-	expect(resolve?.({ path: 'preact-render-to-string' })).toBeUndefined()
-	expect(resolve?.({ path: '@remix-run/ui-extra' })).toBeUndefined()
-
+	for (const [specifier, matches] of [
+		['preact', true],
+		['lit', true],
+		['./local.ts', false],
+		['/abs.js', false],
+	] as const) {
+		expect(filter?.test(specifier)).toBe(matches)
+	}
+	for (const path of ['lit', 'preact/hooks']) {
+		expect(resolve?.({ path })).toEqual({ path, external: true })
+	}
+	for (const path of ['preact-render-to-string', 'lit-extra']) {
+		expect(resolve?.({ path })).toBeUndefined()
+	}
 	expect(isDeclaredClientExternal('preact/hooks', ['preact'])).toBe(true)
 	expect(isDeclaredClientExternal('preact-render-to-string', ['preact'])).toBe(
 		false,
@@ -323,7 +304,6 @@ test('buildKodyAppClientBundle keeps declared externals as bare imports for an i
 })
 
 test('buildKodyAppClientBundle names a missing client entry', async () => {
-	mockBundledOutput('')
 	await expect(
 		buildKodyAppClientBundle({
 			sourceFiles: { 'package.json': packageJson },

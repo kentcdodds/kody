@@ -1,4 +1,4 @@
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'

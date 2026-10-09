@@ -20,7 +20,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import {
 	buildPlainRepoPromotionErrorMessage,
@@ -289,9 +289,10 @@ async function resolveOwnedSavedPackage(input: {
 					packageId: input.packageId,
 				})
 			}
-			return await getSavedPackageByKodyId(input.db, {
+			return await resolveSavedPackageRef(input.db, {
 				userId: input.userId,
-				kodyId: requestedKodyId ?? '',
+				ref: requestedKodyId ?? '',
+				match: 'slug',
 			})
 		},
 	})
@@ -301,6 +302,7 @@ export const packageAppFetchCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: packageAppFetchCapabilityName,
+		orgPermission: 'app:execute',
 		description:
 			'Invoke a published package app fetch handler with a synthetic HTTP request for post-publish smoke tests. Runs on the app_fetch surface with normal package context, packageStorage(), and secret mounts; handler side effects are real. Does not replace hosted-URL checks for browser UI, cookies, OAuth redirects, or websocket realtime flows.',
 		keywords: [

@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 export * from './jobs-service-mocks.ts'
 import { repoMockModule } from './jobs-service-mocks.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -12,11 +13,16 @@ import { computeNextRunAt, toJobView } from '#worker/jobs/schedule.ts'
 import { createJobStorageId } from '#worker/storage-runner.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { buildPackageJobId } from '#worker/jobs/package-job-id.ts'
+import { type EntityKind } from '#worker/repo/types.ts'
 import {
 	type JobRecord,
 	type JobSchedule,
 	type PersistedJobCallerContext,
 } from '#worker/jobs/types.ts'
+import {
+	type McpCallerContext,
+	type McpUserContext,
+} from '@kody-internal/shared/chat.ts'
 export function mockRepoPersistence() {
 	repoMockModule.ensureEntitySource.mockImplementation(
 		async ({ db, id, userId, entityKind, entityId, sourceRoot }) => {
@@ -44,6 +50,8 @@ export function mockRepoPersistence() {
 				indexed_commit: null,
 				manifest_path: entityKind === 'package' ? 'package.json' : 'kody.json',
 				source_root: sourceRoot ?? '/',
+				last_external_check_at: null,
+				external_check_until: null,
 				created_at: '2026-04-18T00:00:00.000Z',
 				updated_at: '2026-04-18T00:00:00.000Z',
 				bootstrapAccess: null,
@@ -87,6 +95,8 @@ export function mockRepoPersistence() {
 							indexed_commit: null,
 							manifest_path: String(existing['manifest_path'] ?? 'kody.json'),
 							source_root: String(existing['source_root'] ?? '/'),
+							last_external_check_at: null,
+							external_check_until: null,
 							created_at: String(
 								existing['created_at'] ?? '2026-04-16T00:00:00.000Z',
 							),
@@ -220,7 +230,13 @@ export function createDatabase(
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
-							if (query.includes('SELECT plan, stripe_plan')) {
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
+								if (query.includes('FROM orgs')) {
+									return null
+								}
 								const pairLookup = query.includes('email = ?')
 								return selectOne('users', (row) =>
 									pairLookup
@@ -371,6 +387,16 @@ export function createDatabase(
 							// Cold bootstrap probes for a users row; none seeded here so
 							// null triggers synthetic-context free-plan allow.
 							if (query.includes('SELECT 1 AS present FROM users')) {
+								if (query.includes('email = ?')) {
+									return selectOne(
+										'users',
+										(row) =>
+											row['email'] === params[0] &&
+											row['stable_user_id'] === params[1],
+									)
+										? ({ present: 1 } as T)
+										: null
+								}
 								return selectOne(
 									'users',
 									(row) => row['stable_user_id'] === params[0],
@@ -1019,7 +1045,7 @@ export async function insertPublishedEntitySource(input: {
 	env?: Env
 	kv?: KVNamespace
 	sourceId: string
-	entityKind?: 'job' | 'package'
+	entityKind?: EntityKind
 	entityId: string
 	publishedCommit: string
 	manifestPath?: string
@@ -1069,6 +1095,8 @@ export async function insertPublishedEntitySource(input: {
 				indexed_commit: null,
 				manifest_path: input.manifestPath ?? 'kody.json',
 				source_root: input.sourceRoot ?? '/',
+				last_external_check_at: null,
+				external_check_until: null,
 				created_at: '2026-04-16T00:00:00.000Z',
 				updated_at: '2026-04-16T00:00:00.000Z',
 			},
@@ -1077,19 +1105,31 @@ export async function insertPublishedEntitySource(input: {
 	}
 }
 
-export function createBaseCallerContext(): PersistedJobCallerContext {
-	return createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'user@example.com',
-			displayName: 'User Example',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-		},
-	}) as PersistedJobCallerContext
+export function withCallerUser(
+	callerContext: McpCallerContext,
+): McpCallerContext & { user: McpUserContext } {
+	if (!callerContext.user) throw new Error('Caller context needs a user')
+	return { ...callerContext, user: callerContext.user }
+}
+
+export function createBaseCallerContext() {
+	return withCallerUser(
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored('user-123'),
+				email: 'user@example.com',
+				displayName: 'User Example',
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'app-123',
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	)
 }
 
 export async function insertLeftoverJob(input: {

@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
@@ -55,206 +56,215 @@ function createMockAppDb(options: {
 	return { db, queries }
 }
 
+function account(
+	id: number,
+	stableUserId: string,
+	email: string,
+	username: string,
+	extra: Partial<GrantUserRow> = {},
+): GrantUserRow {
+	return {
+		id,
+		email,
+		username,
+		display_name: null,
+		stable_user_id: stableUserId,
+		...extra,
+	}
+}
+
+type GrantProps = NonNullable<
+	Parameters<typeof buildMcpUserContextFromGrantProps>[1]
+>
+
+async function build(
+	options: Parameters<typeof createMockAppDb>[0],
+	grantProps: GrantProps,
+) {
+	const appDb = createMockAppDb(options)
+	const result = await buildMcpUserContextFromGrantProps(
+		{ APP_DB: appDb.db } as Env,
+		grantProps,
+	)
+	return { result, ...appDb }
+}
+
 test('buildMcpUserContextFromGrantProps resolves identity from the stable user id', async () => {
-	mockModule.getUserRolesAndPermissions.mockReset()
-	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
-		roles: ['admin'],
-		permissions: ['read:user:any', 'read:role:any'],
-	})
-	const refreshed = createMockAppDb({
-		row: {
-			id: 42,
-			email: 'current@example.com',
-			username: 'admin',
-			display_name: 'Admin Display',
-			stable_user_id: 'stable-admin-id',
-		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: refreshed.db } as Env, {
-			userId: 'stable-admin-id',
-			email: 'stale@example.com',
-			displayName: 'stale',
-		}),
-	).resolves.toEqual({
-		user: {
-			userId: 'stable-admin-id',
+	const resolvedCases: Array<{
+		grantProps: GrantProps
+		row: GrantUserRow
+		roles: Array<string>
+		permissions: Array<string>
+		email: string
+		username: string
+		displayName: string
+	}> = [
+		{
+			grantProps: {
+				userId: 'stable-admin-id',
+				email: 'stale@example.com',
+				displayName: 'stale',
+			},
+			row: account(42, 'stable-admin-id', 'current@example.com', 'admin', {
+				display_name: 'Admin Display',
+			}),
+			roles: ['admin'],
+			permissions: ['read:user:any', 'read:role:any'],
 			email: 'current@example.com',
 			username: 'admin',
 			displayName: 'Admin Display',
-			roles: ['admin'],
-			permissions: ['read:user:any', 'read:role:any'],
 		},
-		emailVerified: false,
-		suspended: false,
-		passwordChangedAt: null,
-	})
-	expect(refreshed.queries).toHaveLength(1)
-	expect(refreshed.queries[0]?.params).toEqual(['stable-admin-id'])
-	expect(refreshed.queries[0]?.sql).toContain('email_verified_at')
-	expect(refreshed.queries[0]?.sql).toContain('suspended_at')
-	expect(refreshed.queries[0]?.sql).toContain('password_changed_at')
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
-		refreshed.db,
-		42,
-	)
-
-	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
-		roles: ['user'],
-		permissions: [],
-	})
-	const staleEmailOwnedElsewhere = createMockAppDb({
-		row: {
-			id: 7,
-			email: 'original-owner@example.com',
-			username: 'original',
-			display_name: null,
-			stable_user_id: 'stable-original',
-		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps(
-			{ APP_DB: staleEmailOwnedElsewhere.db } as Env,
-			{
+		{
+			grantProps: {
 				userId: 'stable-original',
 				email: 'reused-by-admin@example.com',
 				displayName: 'stale',
 			},
-		),
-	).resolves.toEqual({
-		user: {
-			userId: 'stable-original',
+			row: account(
+				7,
+				'stable-original',
+				'original-owner@example.com',
+				'original',
+			),
+			roles: ['user'],
+			permissions: [],
 			email: 'original-owner@example.com',
 			username: 'original',
 			displayName: 'original',
+		},
+		{
+			grantProps: { userId: 'legacy-id' },
+			row: account(9, 'legacy-id', 'resolved@example.com', 'resolved'),
 			roles: ['user'],
 			permissions: [],
-		},
-		emailVerified: false,
-		suspended: false,
-		passwordChangedAt: null,
-	})
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledWith(
-		staleEmailOwnedElsewhere.db,
-		7,
-	)
-
-	mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
-		roles: ['user'],
-		permissions: [],
-	})
-	const emailOmitted = createMockAppDb({
-		row: {
-			id: 9,
-			email: 'resolved@example.com',
-			username: 'resolved',
-			display_name: null,
-			stable_user_id: 'legacy-id',
-		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: emailOmitted.db } as Env, {
-			userId: 'legacy-id',
-		}),
-	).resolves.toEqual({
-		user: {
-			userId: 'legacy-id',
 			email: 'resolved@example.com',
 			username: 'resolved',
 			displayName: 'resolved',
-			roles: ['user'],
-			permissions: [],
 		},
-		emailVerified: false,
-		suspended: false,
-		passwordChangedAt: null,
-	})
-	expect(emailOmitted.queries[0]?.params).toEqual(['legacy-id'])
+	]
+	for (const {
+		grantProps,
+		row,
+		roles,
+		permissions,
+		...user
+	} of resolvedCases) {
+		mockModule.getUserRolesAndPermissions.mockResolvedValueOnce({
+			roles,
+			permissions,
+		})
+		const { result, db, queries } = await build({ row }, grantProps)
+		expect(result).toEqual({
+			user: { userId: grantProps.userId, ...user, roles, permissions },
+			emailVerified: false,
+			suspended: false,
+			passwordChangedAt: null,
+		})
+		expect(queries.map((query) => query.params)).toEqual([[grantProps.userId]])
+		for (const column of [
+			'email_verified_at',
+			'suspended_at',
+			'password_changed_at',
+		]) {
+			expect(queries[0]?.sql).toContain(column)
+		}
+		expect(mockModule.getUserRolesAndPermissions).toHaveBeenLastCalledWith(
+			db,
+			row.id,
+		)
+	}
 
-	const missingRow = createMockAppDb({ row: null })
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: missingRow.db } as Env, {
+	const missingRow = await build(
+		{ row: null },
+		{
 			userId: 'orphan-id',
 			email: 'missing@example.com',
 			displayName: 'missing',
-		}),
-	).resolves.toBeNull()
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
-
-	const deleting = createMockAppDb({
-		row: {
-			id: 10,
-			email: 'deleting@example.com',
-			username: 'deleting',
-			display_name: null,
-			stable_user_id: 'deleting-id',
-			deleting_at: '2026-07-22 22:00:00',
 		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: deleting.db } as Env, {
-			userId: 'deleting-id',
-			email: 'deleting@example.com',
-		}),
-	).resolves.toBeNull()
+	)
+	expect(missingRow.result).toBeNull()
+	const deleting = await build(
+		{
+			row: account(10, 'deleting-id', 'deleting@example.com', 'deleting', {
+				deleting_at: '2026-07-22 22:00:00',
+			}),
+		},
+		{ userId: 'deleting-id', email: 'deleting@example.com' },
+	)
+	expect(deleting.result).toBeNull()
 
 	consoleError.mockImplementation(() => {})
-	const failingDb = createMockAppDb({
-		reject: new Error('D1 unavailable'),
-	})
 	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: failingDb.db } as Env, {
-			userId: 'resilient-id',
-			email: 'resilient@example.com',
-			displayName: 'resilient',
-		}),
+		build(
+			{ reject: new Error('D1 unavailable') },
+			{
+				userId: 'resilient-id',
+				email: 'resilient@example.com',
+				displayName: 'resilient',
+			},
+		),
 	).rejects.toThrow('D1 unavailable')
 	expect(consoleError).toHaveBeenCalled()
-	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(3)
+	expect(mockModule.getUserRolesAndPermissions).toHaveBeenCalledTimes(
+		resolvedCases.length,
+	)
 })
 
 test('MCP auth reads verification and suspension from the account row', async () => {
-	mockModule.getUserRolesAndPermissions.mockReset()
 	mockModule.getUserRolesAndPermissions.mockResolvedValue({
 		roles: ['user'],
 		permissions: [],
 	})
-	const verified = createMockAppDb({
-		row: {
-			id: 11,
-			email: 'verified@example.com',
-			username: 'verified',
-			display_name: null,
-			stable_user_id: 'verified-id',
-			email_verified_at: '2026-07-22 22:00:00',
-		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: verified.db } as Env, {
-			userId: 'verified-id',
+	const verifiedAt = { email_verified_at: '2026-07-22 22:00:00' }
+	const results = await Promise.all(
+		[
+			account(
+				11,
+				'verified-id',
+				'verified@example.com',
+				'verified',
+				verifiedAt,
+			),
+			account(12, 'suspended-id', 'suspended@example.com', 'suspended', {
+				...verifiedAt,
+				suspended_at: '2026-07-23 22:00:00',
+			}),
+		].map(async (row) => {
+			const { result } = await build({ row }, { userId: row.stable_user_id })
+			return {
+				emailVerified: result?.emailVerified,
+				suspended: result?.suspended,
+			}
 		}),
-	).resolves.toMatchObject({
-		emailVerified: true,
-		suspended: false,
-	})
+	)
+	expect(results).toEqual([
+		{ emailVerified: true, suspended: false },
+		{ emailVerified: true, suspended: true },
+	])
+})
 
-	const suspended = createMockAppDb({
-		row: {
-			id: 12,
-			email: 'suspended@example.com',
-			username: 'suspended',
-			display_name: null,
-			stable_user_id: 'suspended-id',
-			email_verified_at: '2026-07-22 22:00:00',
-			suspended_at: '2026-07-23 22:00:00',
-		},
-	})
-	await expect(
-		buildMcpUserContextFromGrantProps({ APP_DB: suspended.db } as Env, {
-			userId: 'suspended-id',
-		}),
-	).resolves.toMatchObject({
-		emailVerified: true,
-		suspended: true,
-	})
+test('authorization.md copies the stable_user_id lookup from this module', async () => {
+	const source = await readFile(
+		new URL('./mcp-auth-user-context.ts', import.meta.url),
+		'utf8',
+	)
+	const doc = await readFile(
+		new URL(
+			'../../../docs/contributing/architecture/authorization.md',
+			import.meta.url,
+		),
+		'utf8',
+	)
+	const sql = source.match(
+		/SELECT id, email, username, display_name, stable_user_id,[\s\S]*?WHERE stable_user_id = \?/,
+	)?.[0]
+	if (!sql)
+		throw new Error(
+			'mcp-auth-user-context.ts is missing the stable_user_id lookup',
+		)
+	const compact = (value: string) => value.replace(/\s+/g, ' ').trim()
+	expect(compact(doc)).toContain(compact(sql))
+	expect(doc).toContain('.bind(userId)')
+	expect(doc).toContain('getUserRolesAndPermissions')
+	expect(doc).not.toMatch(/grant's email/i)
 })

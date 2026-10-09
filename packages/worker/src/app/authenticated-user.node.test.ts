@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import {
 	createAuthCookie,
 	setAuthSessionSecret,
@@ -12,300 +12,172 @@ import {
 	hasResolvedRequestFeatureFlags,
 	loadRequestFeatureFlags,
 } from '#app/request-feature-flags-cache.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 
 const testCookieSecret = 'LOCAL_TEST_COOKIE_SECRET_32_CHARS_MINIMUM'
+const email = 'user@example.com'
+const stableUserId = testStableUserIdFromEmail(email)
 
-test('readAuthenticatedAppUser only requires the session cookie secret from env', async () => {
-	const user = await readAuthenticatedAppUser(
-		new Request('https://example.com/account/secrets.json'),
-		{
-			COOKIE_SECRET: 'LOCAL_TEST_COOKIE_SECRET_32_CHARS_MINIMUM',
-		} as unknown as Env,
-	)
-
-	expect(user).toBeNull()
-})
-
-test('readAuthenticatedAppUser rejects unknown stable user ids', async () => {
+async function sessionRequest(url: string, sessionStableUserId = stableUserId) {
 	setAuthSessionSecret(testCookieSecret)
 	const cookie = await createAuthCookie(
 		{
-			stableUserId: 'f'.repeat(64),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
-
-	const user = await readAuthenticatedAppUser(
-		new Request('https://example.com/account/profile.json', {
-			headers: {
-				Cookie: cookie,
-			},
-		}),
-		{
-			APP_DB: createAuthenticatedUserTestDb(),
-			COOKIE_SECRET: testCookieSecret,
-		} as Env,
-	)
-
-	expect(user).toBeNull()
-})
-
-function createAuthenticatedUserTestDb() {
-	return {
-		prepare(query: string) {
-			const statement = {
-				query,
-				bind() {
-					return statement
-				},
-				async first() {
-					return null
-				},
-				async all() {
-					return { results: [] }
-				},
-				async run() {
-					return { meta: { changes: 0 } }
-				},
-			}
-			return statement
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
-	} as unknown as D1Database
-}
-
-test('readAuthenticatedAppUser fails closed to empty roles when the rbac query errors', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
-
-	const db = {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			const statement = {
-				query,
-				bind() {
-					return statement
-				},
-				async all() {
-					if (normalizedQuery.includes('from user_roles')) {
-						throw new Error('D1 unavailable')
-					}
-					if (normalizedQuery.includes('from "users"')) {
-						return {
-							results: [
-								{
-									id: 7,
-									email: 'user@example.com',
-									username: 'resilient-user',
-									password_hash: 'irrelevant',
-									stable_user_id: testStableUserIdFromEmail('user@example.com'),
-								},
-							],
-							meta: { changes: 0 },
-						}
-					}
-					return { results: [], meta: { changes: 0 } }
-				},
-			}
-			return statement
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-		async exec() {
-			return
-		},
-	} as unknown as D1Database
-
-	const consoleError = vi
-		.spyOn(console, 'error')
-		.mockImplementation(() => undefined)
-	try {
-		const user = await readAuthenticatedAppUser(
-			new Request('https://example.com/session', {
-				headers: { Cookie: cookie },
-			}),
-			{
-				APP_DB: db,
-				COOKIE_SECRET: testCookieSecret,
-			} as Env,
-		)
-
-		expect(user).not.toBeNull()
-		expect(user?.username).toBe('resilient-user')
-		expect(user?.roles).toEqual([])
-		expect(user?.permissions).toEqual([])
-		expect(consoleError).toHaveBeenCalled()
-	} finally {
-		consoleError.mockRestore()
-	}
-})
-
-test('deleting accounts are invalid for normal requests but can retry deletion', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId: testStableUserIdFromEmail('user@example.com'),
-			email: 'user@example.com',
-			rememberMe: false,
-		} satisfies AuthSession,
-		false,
-	)
-	const db = {
-		prepare(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			const statement = {
-				query,
-				bind() {
-					return statement
-				},
-				async all() {
-					if (normalized.includes('from "users"')) {
-						return {
-							results: [
-								{
-									id: 7,
-									email: 'user@example.com',
-									username: 'deleting-user',
-									stable_user_id: testStableUserIdFromEmail('user@example.com'),
-									deleting_at: '2026-07-22 22:00:00',
-								},
-							],
-							meta: { changes: 0 },
-						}
-					}
-					return { results: [], meta: { changes: 0 } }
-				},
-			}
-			return statement
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			return await executePreparedD1Batch(statements)
-		},
-	} as unknown as D1Database
-	const env = { APP_DB: db, COOKIE_SECRET: testCookieSecret } as Env
-	const request = () =>
-		new Request('https://example.com/account/delete', {
-			headers: { Cookie: cookie },
-		})
-	await expect(readAuthenticatedAppUser(request(), env)).resolves.toBeNull()
-	await expect(
-		readAuthenticatedAppUserForDeletion(request(), env),
-	).resolves.toEqual(
-		expect.objectContaining({
-			userId: 7,
-			username: 'deleting-user',
-		}),
-	)
-})
-
-test('readAuthenticatedAppUser prefetches flags only when HTML pages opt in', async () => {
-	setAuthSessionSecret(testCookieSecret)
-	const email = 'user@example.com'
-	const stableUserId = testStableUserIdFromEmail(email)
-	const cookie = await createAuthCookie(
-		{
-			stableUserId,
+			stableUserId: sessionStableUserId,
 			email,
 			rememberMe: false,
 		} satisfies AuthSession,
 		false,
 	)
-	const counts = { batch: 0, flagPrepares: 0 }
-	const db = {
-		prepare(query: string) {
-			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			if (
-				normalized.includes('from feature_flags') ||
-				normalized.includes('from feature_flag_user_overrides')
-			) {
-				counts.flagPrepares += 1
-			}
-			const statement = {
-				query,
-				bind() {
-					return statement
-				},
-				async all() {
-					if (normalized.includes('from "users"')) {
-						return {
-							results: [
-								{
-									id: 7,
-									email,
-									username: 'html-user',
-									stable_user_id: stableUserId,
-								},
-							],
-							meta: { changes: 0 },
-						}
-					}
-					return { results: [], meta: { changes: 0 } }
-				},
-				async first() {
-					return null
-				},
-				async run() {
-					return { meta: { changes: 0 } }
-				},
-			}
-			return statement
-		},
-		async batch(statements: Array<{ query?: string }>) {
-			counts.batch += 1
-			return await executePreparedD1Batch(statements)
-		},
-	} as unknown as D1Database
+	return new Request(url, { headers: { Cookie: cookie } })
+}
+
+/** D1 stub that returns `user` for the users lookup and nothing else. */
+function createUsersDb(
+	options: {
+		user?: Record<string, unknown>
+		rolesError?: boolean
+		counts?: { batch: number; flagPrepares: number }
+	} = {},
+) {
+	const { user, rolesError = false, counts } = options
 	const env = {
-		APP_DB: db,
+		APP_DB: {
+			prepare(query: string) {
+				const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+				if (
+					counts &&
+					(normalized.includes('from feature_flags') ||
+						normalized.includes('from feature_flag_user_overrides'))
+				) {
+					counts.flagPrepares += 1
+				}
+				const statement = {
+					query,
+					bind: () => statement,
+					first: async () => {
+						if (
+							normalized.includes('from org_memberships') &&
+							normalized.includes('inner join orgs')
+						) {
+							const slug =
+								typeof user?.username === 'string' ? user.username : 'html-user'
+							return {
+								org_id: stableUserId,
+								org_slug: slug,
+								role: 'owner',
+							}
+						}
+						return null
+					},
+					run: async () => ({ meta: { changes: 0 } }),
+					async all() {
+						if (rolesError && normalized.includes('from user_roles')) {
+							throw new Error('D1 unavailable')
+						}
+						if (user && normalized.includes('from "users"')) {
+							return {
+								results: [
+									{ id: 7, email, stable_user_id: stableUserId, ...user },
+								],
+								meta: { changes: 0 },
+							}
+						}
+						return { results: [], meta: { changes: 0 } }
+					},
+				}
+				return statement
+			},
+			async batch(statements: Array<{ query?: string }>) {
+				if (counts) counts.batch += 1
+				return await executePreparedD1Batch(statements)
+			},
+			async exec() {},
+		} as unknown as D1Database,
 		COOKIE_SECRET: testCookieSecret,
 		FLAG_EXPOSURES: { writeDataPoint() {} },
-	} as Env
+	}
+	return env as unknown as Env
+}
 
-	const apiRequest = new Request('https://example.com/account/connections', {
-		headers: { Cookie: cookie },
+test('readAuthenticatedAppUser returns null without a cookie or for unknown stable user ids', async () => {
+	expect(
+		await readAuthenticatedAppUser(
+			new Request('https://example.com/account/secrets.json'),
+			{ COOKIE_SECRET: testCookieSecret } as Env,
+		),
+	).toBeNull()
+
+	expect(
+		await readAuthenticatedAppUser(
+			await sessionRequest(
+				'https://example.com/account/profile.json',
+				'f'.repeat(64),
+			),
+			createUsersDb(),
+		),
+	).toBeNull()
+})
+
+test('readAuthenticatedAppUser fails closed to empty roles when the rbac query errors', async () => {
+	consoleError.mockImplementation(() => {})
+	const user = await readAuthenticatedAppUser(
+		await sessionRequest('https://example.com/session'),
+		createUsersDb({
+			user: { username: 'resilient-user', password_hash: 'irrelevant' },
+			rolesError: true,
+		}),
+	)
+	expect(user).toMatchObject({
+		username: 'resilient-user',
+		roles: [],
+		permissions: [],
 	})
+	expect(consoleError).toHaveBeenCalled()
+})
+
+test('deleting accounts are invalid for normal requests but can retry deletion', async () => {
+	const env = createUsersDb({
+		user: { username: 'deleting-user', deleting_at: '2026-07-22 22:00:00' },
+	})
+	const url = 'https://example.com/account/delete'
+	await expect(
+		readAuthenticatedAppUser(await sessionRequest(url), env),
+	).resolves.toBeNull()
+	await expect(
+		readAuthenticatedAppUserForDeletion(await sessionRequest(url), env),
+	).resolves.toEqual(
+		expect.objectContaining({ userId: 7, username: 'deleting-user' }),
+	)
+})
+
+test('readAuthenticatedAppUser prefetches flags only when HTML pages opt in', async () => {
+	const counts = { batch: 0, flagPrepares: 0 }
+	const env = createUsersDb({ user: { username: 'html-user' }, counts })
+
+	const apiRequest = await sessionRequest(
+		'https://example.com/account/connections',
+	)
 	const apiUser = await readAuthenticatedAppUser(apiRequest, env)
 	expect(apiUser?.username).toBe('html-user')
 	expect(hasResolvedRequestFeatureFlags(apiRequest)).toBe(false)
 	// API-style: user+roles only. No Accept/path heuristic can start flags.
-	expect(counts.flagPrepares).toBe(0)
-	expect(counts.batch).toBe(1)
+	expect(counts).toEqual({ batch: 1, flagPrepares: 0 })
 
-	const htmlRequest = new Request('https://example.com/', {
-		headers: { Cookie: cookie },
-	})
+	const htmlRequest = await sessionRequest('https://example.com/')
 	const htmlUser = await readAuthenticatedAppUser(htmlRequest, env, {
 		prefetchFeatureFlags: true,
 	})
-	expect(htmlUser?.username).toBe('html-user')
-	expect(htmlUser).not.toBeNull()
 	if (!htmlUser) throw new Error('expected authenticated html user')
+	expect(htmlUser.username).toBe('html-user')
 	expect(hasResolvedRequestFeatureFlags(htmlRequest)).toBe(true)
 	// HTML opt-in adds one user+roles batch and one flags batch (total 3).
-	expect(counts.flagPrepares).toBe(2)
-	expect(counts.batch).toBe(3)
+	expect(counts).toEqual({ batch: 3, flagPrepares: 2 })
 
 	await loadRequestFeatureFlags(htmlRequest, env, {
 		userId: htmlUser.userId,
 		stableUserId: htmlUser.mcpUser.userId,
 	})
-	expect(counts.flagPrepares).toBe(2)
-	expect(counts.batch).toBe(3)
+	expect(counts).toEqual({ batch: 3, flagPrepares: 2 })
 })

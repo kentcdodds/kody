@@ -1,6 +1,7 @@
 import {
 	entitlementResourceLabels,
 	resolvePlanLimit,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type EntitlementResource,
 	type PlanName,
@@ -20,6 +21,7 @@ export const adminEntitlementResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
+	'automation_invocations_per_day',
 	'storage_bytes',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
@@ -31,13 +33,28 @@ export const entitlementWarningThreshold = 0.8
  * account usage page. `ladder` must be the account's stored
  * `users.entitlement_ladder` so legacy Standard/Pro is scored against
  * `legacyPlanLimits`, matching `consumeDailyEntitlement`.
+ *
+ * Pass {@link inboundReceive} when the account may have a temporary Pro
+ * overlay: inbound mail enforces `email_receives_per_day` against the base
+ * (manual + Stripe) plan, never the gift overlay, so fleet / admin pressure
+ * must score that one resource the same way.
  */
 export async function readAdminEntitlementConsumption(input: {
 	env: Env
 	usageUserId: string
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
 	now: Date
+	/**
+	 * Base-plan entitlement for `email_receives_per_day` when it differs from
+	 * the effective plan (gift / referral overlays).
+	 */
+	inboundReceive?: {
+		plan: PlanName
+		ladder: EntitlementLadder
+		creditWallet: CreditWalletState
+	}
 }): Promise<Array<AdminUsageEntitlementConsumption>> {
 	return await Promise.all(
 		adminEntitlementResources.map(async (resource) => {
@@ -48,7 +65,20 @@ export async function readAdminEntitlementConsumption(input: {
 				resource,
 				now: input.now,
 			})
-			const limit = resolvePlanLimit(input.plan, resource, input.ladder)
+			const limitEntitlement =
+				resource === 'email_receives_per_day' && input.inboundReceive
+					? input.inboundReceive
+					: {
+							plan: input.plan,
+							ladder: input.ladder,
+							creditWallet: input.creditWallet,
+						}
+			const limit = resolvePlanLimit(
+				limitEntitlement.plan,
+				resource,
+				limitEntitlement.ladder,
+				limitEntitlement.creditWallet,
+			)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {
 				resource,

@@ -2,8 +2,8 @@
 
 Kody inbound webhooks are **package-centered**: you declare them in
 `package.json#kody.webhooks`, mint an opaque handle with `webhookUrlMint`, then
-register the credential with `webhookUrlApply` (GitHub repository hooks) or copy
-the URL yourself from the package's
+register the credential with `webhookUrlApply` (generic HTTPS, including the
+GitHub Hooks API) or copy the URL yourself from the package's
 [settings page](#manage-webhook-urls-in-package-settings). MCP and execute never
 return the credential URL or `url_secret`. Each delivery invokes the bound
 package export.
@@ -11,8 +11,6 @@ package export.
 This is the HTTP sibling of [email primitives](./email-primitives.md). Webhooks
 are the external HTTP knock: vendor providers (Sentry, GitHub, Stripe) and
 first-party trusted clients (gateway proxies, CLIs) both POST to a minted URL.
-[Package invocation bearer tokens](../contributing/package-invocation-api.md)
-are an unadvertised drain; new callers use webhooks.
 
 There is no `*` / multi-export URL. One declared webhook name binds one export.
 
@@ -62,13 +60,18 @@ Rules:
   `params` (see [Trusted clients](#trusted-clients)).
 - `rateLimitPerMinute` is optional. Default **60**. Maximum **600** (gateway
   fan-in). A leaked URL is still bounded; there is no unlimited setting.
-- `verification.secretName` references a **named secret in your secret store** —
-  never an inline secret value. The platform resolves it at delivery time; if
-  the secret is missing, the delivery is rejected and logged. First-party
-  trusted clients omit `verification` and rely on the URL secret.
+- `verification.secretName` is **optional**. Omit it for GitHub-style hooks
+  where Kody mints package-owned HMAC onto the webhook URL record at
+  `webhookUrlMint` (not listed in account secrets, no host Allow). Set it only
+  for **provider-issued** signing secrets that must live in the secret store
+  (for example Sentry). Never put an inline secret value in the manifest.
 - `verification.signedPayload` is `'body'` (default) or `'timestamp.body'`. Use
   `'timestamp.body'` when the provider HMAC covers
   `` `${timestamp}.${rawBody}` ``.
+- `challenge` is optional. When set, the platform answers the provider's
+  ownership quiz on the **same minted URL** (GET CRC / hub challenge, or Slack
+  `url_verification` POST) without invoking your export. See
+  [Subscription challenges](#subscription-challenges).
 - `replay` is optional. Without it, body-only HMAC is **replayable**: anyone who
   observes one legitimate signed delivery can POST it again. Opt in per webhook
   with a timestamp window and/or a unique delivery id. Trusted clients send
@@ -81,23 +84,29 @@ Declaring a webhook does **not** open ingress by itself.
 Use the MCP `webhooks` domain:
 
 1. Save/publish the package with `kody.webhooks`.
-2. Store the HMAC secret with `secretSet` under the name used in
-   `verification.secretName` (for example `sentryWebhookSecret`).
+2. For provider-issued HMAC only, store that secret with `secretSet` under
+   `verification.secretName` (for example `sentryWebhookSecret`). GitHub-style
+   hooks that use `{{webhookSecret}}` on apply should **omit**
+   `verification.secretName` — Kody mints package-owned signing material when
+   you mint the URL.
 3. Call `webhookUrlMint` with the scoped package name (or `package_id` when the
    name is not known) and `webhookName`.
-4. Call `webhookUrlApply` with the returned `handle` and a first-class
-   destination. GitHub repository hooks use the connected `github` integration
-   (or a host-approved GitHub token). For any other provider, tell the owner to
-   copy the URL from the package's
-   [settings page](#manage-webhook-urls-in-package-settings)
-   (`/@<username>/<packageKodyId>/settings#webhooks`).
+4. Call `webhookUrlApply` with the returned `handle` and a `type: "http"`
+   destination. Kody POSTs/PUTs the minted URL into any HTTPS registration
+   endpoint via `{{webhookUrl}}` substitution (for example GitHub's
+   `POST /repos/{owner}/{repo}/hooks`). The owner can copy the URL from the
+   package's [settings page](#manage-webhook-urls-in-package-settings)
+   (`/@<username>/<packageKodyId>/settings#webhooks`) when that is simpler.
 
-Other capabilities: `webhookList` (declarations joined with minted handle /
-enabled state), `webhookUrlRotate`, `webhookEnable`, `webhookDisable`, and
-`webhookDeliveryList` (metadata only; bodies are never stored). The same
-delivery history also appears under [Activity](./activity.md)
-(`/account/activity` and the `runs` capabilities). List, mint, rotate, and apply
-never return the credential URL.
+Other capabilities: `webhookList` (declarations — including `verification`,
+`replay`, and `challenge` — joined with minted handle / enabled state),
+`webhookUrlRotate`, `webhookEnable`, `webhookDisable`, `webhookDeliveryList`
+(metadata only; bodies are never stored), and `webhookSyntheticDispatch`
+(interactive-MCP smoke test for a minted webhook — see
+[Synthetic smoke test](#synthetic-smoke-test)). The same delivery history also
+appears under [Activity](./activity.md) (`/account/activity` and the `runs`
+capabilities). List, mint, rotate, apply, and synthetic dispatch never return
+the credential URL.
 
 ## Manage webhook URLs in package settings
 
@@ -119,9 +128,9 @@ package declares, joined with its minted state, one card per webhook:
   webhooks answer 404.
 
 The URL is the human path. Agents get the handle and `url_host` through MCP and
-either apply the handle to a supported destination or ask the owner to copy the
-URL from package settings. Mints that predate encrypted secret storage cannot be
-shown; the card offers Rotate for those.
+either apply the handle (`type: "http"`) or ask the owner to copy the URL from
+package settings. Mints that predate encrypted secret storage cannot be shown;
+the card offers Rotate for those.
 
 `/account/webhooks` (account rail → Webhooks) is a read-only index of every
 webhook across your packages. Each row links to the owning package's Webhooks
@@ -130,40 +139,123 @@ section; nothing is minted or revealed from the index.
 ### Apply a handle to a destination
 
 `webhookUrlApply` resolves the handle inside Kody and registers the URL through
-a first-class destination adapter. The model never sees the secret. Apply does
-not accept an arbitrary outbound URL: substituting the credential into a
-caller-chosen request would let the model exfiltrate it.
+an outbound HTTPS request (`type: "http"`). The model never sees the secret:
+Kody injects the minted URL server-side via `{{webhookUrl}}` and returns only
+`{ ok, url_host, http_status, remote_id, error }`. Remote bodies that echo the
+hook URL are redacted.
 
-GitHub (creates `POST /repos/{owner}/{repo}/hooks` on `api.github.com`):
+Owner rationale: the signed-in owner can already reveal and paste the URL from
+package settings. Opaque apply exists so agents can register that same
+credential without pulling plaintext into model context — including at
+caller-chosen HTTPS endpoints. Settings reveal/paste is owner consent. Silent
+model-chosen apply to an arbitrary URL is not: prompt injection could POST the
+long-lived credential to an attacker endpoint. Generic `http` therefore requires
+an interactive hard confirm that surfaces the exact destination before the
+outbound request runs.
+
+Generic HTTPS (`type: "http"`) — Kody sends the request and substitutes
+`{{webhookUrl}}` (and optional `{{webhookSecret}}`) into `url`, header values,
+and/or `body` (form bodies are decoded/re-encoded). `{{webhookUrl}}` is
+required. `{{webhookSecret}}` injects **package-owned HMAC signing material**
+stored on the minted webhook URL record (not a user secrets-list entry, and not
+host-gated). When a package declares `verification.secretName`, reminting (or
+rotating) the URL copies that value onto the endpoint when the named secret
+exists — apply never does a live `secretName` lookup for `{{webhookSecret}}` (so
+changing the name after destination Allow cannot swap credentials). Destination
+`secretName` / `integration` Bearer auth requires host approval / integration
+allowlists. Destination URLs must be `https://`. Redirects are not followed.
+Auth is optional via `secretName` or `integration` (Bearer), or a
+caller-supplied `Authorization` header — not both. Destination `secretName` /
+`integration` authorize the outbound request; they are not the webhook HMAC
+signing secret.
+
+That path is **interactive MCP only** and reuses the same **account owner
+approval flow** as secret host approval (`/connect/secrets`), secret package
+grants, and locked-package publish approval: the capability returns an
+`approval_url` to `/connect/webhook-apply` with the exact method, URL,
+`{{webhookUrl}}` / `{{webhookSecret}}` injection sites, headers, body template,
+and auth mode. The signed-in owner Allows on the website (writing a durable
+destination grant); the agent then retries and the outbound request runs.
+Package runtimes cannot use `http` apply. Agents never grant access and never
+see the webhook credential.
 
 ```ts
 await kody.webhooks.webhookUrlApply({
 	handle,
 	destination: {
-		type: 'github',
-		owner: 'acme',
-		repo: 'api',
-		events: ['push', 'pull_request'],
+		type: 'http',
+		url: 'https://hooks.example/register',
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"webhookUrl":"{{webhookUrl}}"}',
+		secretName: 'hooksRegistrationToken',
+	},
+})
+// If approval is required, send the owner approval_url (/connect/webhook-apply),
+// wait for Allow, then retry the same call.
+```
+
+GitHub repository hooks use the same `http` path against the Hooks API
+(`POST https://api.github.com/repos/{owner}/{repo}/hooks`). Put `{{webhookUrl}}`
+in `config.url`, include `User-Agent: kody` (GitHub requires a User-Agent), send
+the GitHub Accept / API-Version headers, and authorize with
+`integration: 'github'` (or a host-approved token via `secretName`). Declare
+HMAC `verification` **without** `secretName` so mint stores package-owned
+signing material, and put `{{webhookSecret}}` in `config.secret`:
+
+```ts
+await kody.webhooks.webhookUrlApply({
+	handle,
+	destination: {
+		type: 'http',
+		url: 'https://api.github.com/repos/acme/api/hooks',
+		method: 'POST',
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		body: JSON.stringify({
+			name: 'web',
+			active: true,
+			events: ['push', 'pull_request'],
+			config: {
+				url: '{{webhookUrl}}',
+				content_type: 'json',
+				insecure_ssl: '0',
+				secret: '{{webhookSecret}}',
+			},
+		}),
 		integration: 'github',
 	},
 })
 ```
 
-Authorize with the user's GitHub OAuth integration (default `github`) or a
-host-approved GitHub token (`secretName`). Additional vendor adapters can follow
-the same pattern (known host + known API). Other providers still POST to the
-minted ingress URL; apply does not register them — the owner copies the URL from
-the package's settings page instead.
+`{{webhookSecret}}` injects package-owned HMAC from the webhook URL record (or a
+value copied from `verification.secretName` at mint/rotate). If the placeholder
+is present but verification is undeclared, or package-owned HMAC is missing,
+apply fails with a clear error. Omit `{{webhookSecret}}` when the webhook has no
+HMAC verification. GitHub-style hooks that declare `verification.secretName` can
+drop that secrets-list entry after reminting (with the named secret present so
+mint can copy it) or after reminting without `secretName`.
 
-Returns `{ ok, url_host, http_status, remote_id, error }`. Remote bodies that
-echo the hook URL are stripped.
+Prefer `http` for Workers and any provider API that accepts a callback URL
+field. Providers that need an ownership quiz (X Activity CRC, WebSub / YouTube,
+Meta, Slack URL verification) use a declared
+[`challenge`](#subscription-challenges) on the webhook — you do not need a shim
+Worker for those. Do not invent per-vendor apply adapters when a single HTTPS
+registration request is enough. The owner can also reveal and paste the URL from
+package settings.
 
 ## Ingress URL
 
-`POST https://<origin>/@<username>/webhooks/<packageKodyId>/<webhookName>/<urlSecret>`
+`GET|POST https://<origin>/@<username>/webhooks/<packageKodyId>/<webhookName>/<urlSecret>`
 
 - Unknown / unminted / disabled / renamed-away / wrong secret → **404** (no
   distinction).
+- `GET` is allowed only when the webhook declares a GET-capable
+  [`challenge`](#subscription-challenges); otherwise **405**.
 - Payload > **1 MB** → **413**.
 - Rate limit per minted webhook → **429**. Default **60**/min; override with
   `rateLimitPerMinute` up to **600**.
@@ -171,7 +263,10 @@ echo the hook URL are stripped.
   export runs in the background. Bodies use the same **1 MB** cap as sync;
   oversized queue messages spill to ephemeral storage until the consumer runs. A
   temporary queue failure returns **503** so the provider can retry without Kody
-  claiming acceptance.
+  claiming acceptance. Activity duration for ack deliveries measures queue
+  consumer + export time (ingress receive time is kept as metadata). Failed
+  deliveries keep diagnostic logs — including when the export never reached user
+  code.
 - `sync`: waits for the export JSON result (**502** on failure).
 
 Background delivery retries keep the same idempotency key, so a transient
@@ -179,6 +274,172 @@ platform persistence failure does not duplicate a completed export. Package
 exports still have the normal execution limit (about 90 seconds); packages that
 exceed it receive an explicit timeout failure and should split or checkpoint
 their work.
+
+## Subscription challenges
+
+Some providers prove URL ownership with a fixed quiz before they send events:
+HMAC a challenge token, echo a hub challenge, or return a JSON challenge field.
+Kody answers those on the minted webhook URL **in the platform** — the bound
+export never runs for the quiz, and challenge handling does not mutate account
+state, call MCP, or fetch outbound.
+
+Declare one `challenge` object next to (or instead of, when the provider has no
+POST HMAC) `verification`. Use the generic `subscription-challenge` type with
+knobs, or copy a documented preset below.
+
+### Generic `subscription-challenge`
+
+| Knob        | Role                                                                                                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `method`    | `GET` or `POST`                                                                                                                                                                          |
+| `challenge` | Where the token arrives: `{ in: "query" \| "json", key }`                                                                                                                                |
+| `when`      | Optional filters (`query` / `json`). GET mismatch → **400**; POST mismatch → not a quiz (delivery continues). **Required for POST** (`when.json`) so ordinary event bodies fall through. |
+| `prove`     | `none`, `verify-token` (query secret match), `hmac` (CRC of token), or `request-hmac` (sign the request)                                                                                 |
+| `respond`   | `text` echo, `json` echo under `key`, or `json-hmac` (CRC response)                                                                                                                      |
+
+`prove.*.secretName` is the same named secret-store reference as
+`verification.secretName` — never an inline value. Later provider POSTs still go
+through normal URL-secret + optional HMAC verification; only verified deliveries
+reach the export.
+
+Platform schema stays vendor-agnostic
+([0054](../contributing/decisions/0054-no-vendor-specific-platform-logic.md)):
+configure providers with knobs or documented presets, not new `foo-hub` type
+ids.
+
+### Presets (copy into `challenge`)
+
+**Hub echo as `text/plain` (Meta / Facebook / WhatsApp-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": "subscribe" } },
+	"prove": {
+		"kind": "verify-token",
+		"in": "query",
+		"key": "hub.verify_token",
+		"secretName": "metaVerifyToken"
+	},
+	"respond": { "as": "text" }
+}
+```
+
+**Hub echo as JSON `{ "hub.challenge" }` (Strava-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": "subscribe" } },
+	"prove": {
+		"kind": "verify-token",
+		"in": "query",
+		"key": "hub.verify_token",
+		"secretName": "stravaVerifyToken"
+	},
+	"respond": { "as": "json", "key": "hub.challenge" }
+}
+```
+
+Store the same `verify_token` value you pass when creating the Strava push
+subscription. Mint the webhook, register the revealed URL as `callback_url`, and
+pass that secret as `verify_token` on create.
+
+**WebSub / YouTube hub (optional verify token; allows unsubscribe):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "hub.challenge" },
+	"when": { "query": { "hub.mode": ["subscribe", "unsubscribe"] } },
+	"respond": { "as": "text" }
+}
+```
+
+Add a `prove.verify-token` block with `secretName` when the hub sends
+`hub.verify_token`.
+
+**CRC of query token → JSON HMAC field (X Account Activity-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "GET",
+	"challenge": { "in": "query", "key": "crc_token" },
+	"prove": {
+		"kind": "hmac",
+		"secretName": "xConsumerSecret",
+		"algorithm": "hmac-sha256",
+		"encoding": "base64",
+		"prefix": "sha256="
+	},
+	"respond": { "as": "json-hmac", "key": "response_token" }
+}
+```
+
+**JSON body challenge + optional request signature (Slack Events-style):**
+
+```json
+{
+	"type": "subscription-challenge",
+	"method": "POST",
+	"challenge": { "in": "json", "key": "challenge" },
+	"when": { "json": { "type": "url_verification" } },
+	"prove": {
+		"kind": "request-hmac",
+		"secretName": "slackSigningSecret",
+		"algorithm": "hmac-sha256",
+		"encoding": "hex",
+		"prefix": "v0=",
+		"timestampHeader": "x-slack-request-timestamp",
+		"signatureHeader": "x-slack-signature",
+		"signedPayload": "v0.timestamp.body"
+	},
+	"respond": { "as": "json", "key": "challenge" }
+}
+```
+
+When `prove` is omitted, the platform echoes without a signature check. Event
+POSTs still use the normal delivery path — declare a matching `verification`
+block when those deliveries must also verify request signing.
+
+### X Activity (CRC) example for `@kentcdodds/x`
+
+```json
+{
+	"name": "activity-event",
+	"export": "./activity-event",
+	"challenge": {
+		"type": "subscription-challenge",
+		"method": "GET",
+		"challenge": { "in": "query", "key": "crc_token" },
+		"prove": {
+			"kind": "hmac",
+			"secretName": "xConsumerSecret",
+			"algorithm": "hmac-sha256",
+			"encoding": "base64",
+			"prefix": "sha256="
+		},
+		"respond": { "as": "json-hmac", "key": "response_token" }
+	},
+	"verification": {
+		"type": "hmac-sha256",
+		"header": "X-Twitter-Webhooks-Signature",
+		"secretName": "xConsumerSecret",
+		"encoding": "base64",
+		"prefix": "sha256="
+	}
+}
+```
+
+Store the X consumer secret with `secretSet` under `xConsumerSecret`, mint the
+webhook, then register the revealed URL directly with X. CRC GETs never invoke
+`./activity-event`; activity POSTs do, after HMAC verification.
 
 ## Payload shape seen by the package export
 
@@ -224,11 +485,13 @@ export async function handleSentryWebhook(input) {
 
 ### GitHub
 
+Omit `secretName` so `webhookUrlMint` stores package-owned HMAC on the URL
+record (not in account secrets). Use `{{webhookSecret}}` on apply:
+
 ```json
 {
 	"type": "hmac-sha256",
 	"header": "x-hub-signature-256",
-	"secretName": "githubWebhookSecret",
 	"encoding": "hex",
 	"prefix": "sha256="
 }
@@ -244,7 +507,6 @@ replayed `X-GitHub-Delivery` is acknowledged without running the export again:
 	"verification": {
 		"type": "hmac-sha256",
 		"header": "x-hub-signature-256",
-		"secretName": "githubWebhookSecret",
 		"encoding": "hex",
 		"prefix": "sha256="
 	},
@@ -283,6 +545,34 @@ window:
 is missing, unparseable, or older than `toleranceSeconds` (default 300) are
 rejected with the same generic 401 as a bad HMAC.
 
+## Synthetic smoke test
+
+After mint, smoke-test the bound export from **interactive MCP** with
+`webhookSyntheticDispatch` instead of POSTing a real provider delivery to
+yourself. Search the `webhooks` domain, then call:
+
+```json
+{
+	"kodyId": "@you/sentry-bridge",
+	"webhookName": "sentry",
+	"request": {
+		"json": { "action": "created" }
+	}
+}
+```
+
+For `inputMode: "params"` webhooks, pass `params` (the first-arg object) instead
+of `request`. The platform skips the public URL and HMAC path, marks the
+Activity webhook run `synthetic: true`, and counts the invoke against automation
+usage like a normal delivery. **Side effects are real.** The capability is
+owner-only and unavailable from package jobs, subscriptions, webhooks, or other
+package runtimes. It never returns `url` / `url_secret`.
+
+Do not confuse platform synthetic dispatch with a package-local `dryRun` field
+on trusted-client POSTs — those are unrelated contracts. Sibling fields such as
+`route` and `dryRun` on `params`-mode fixtures are preserved for the export; the
+platform only sets top-level `synthetic: true`.
+
 ## Trusted clients
 
 A first-party caller (Discord gateway proxy, YouTube WebSub worker, Raycast
@@ -303,14 +593,15 @@ Use `sync` when the caller needs the export JSON (or a **409** idempotency
 conflict). Use `ack` when the caller only needs acceptance; the queue consumer
 applies the same idempotency ledger.
 
-`inputMode: "params"` passes a JSON object as the export's **first argument**,
-matching invocation-token `params`. If the body is the invoke envelope
-(`{ "params": { … } }` with optional `idempotencyKey`, `source`, and `topic`),
-the platform unwraps `params`. A top-level JSON object that is not that envelope
-is the first argument as-is, even when it also has a nested `params` object.
-Arrays and non-objects are **400** `invalid_params`. Default
-`inputMode: "request"` is unchanged: the export still receives
-`{ webhook, request }`.
+`inputMode: "params"` passes a JSON object as the export's **first argument**.
+If the body is the invoke envelope (`{ "params": { … } }` with optional
+`idempotencyKey`, `source`, and `topic`), the platform unwraps `params`.
+`idempotencyKey` counts only as a non-empty string, and `source` / `topic` only
+as a string or null. A top-level JSON object that is not that envelope is the
+first argument as-is, so sibling fields such as `route` and `dryRun` stay
+visible even when a nested `params` object is present. Arrays and non-objects
+are **400** `invalid_params`. Default `inputMode: "request"` passes
+`{ webhook, request }` as the export's first argument.
 
 Send **`Idempotency-Key`** (standard header). In `params` mode, JSON
 `idempotencyKey` is accepted when the header is absent. Same key + same payload

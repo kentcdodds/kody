@@ -1,6 +1,9 @@
 import { readTrimmedParam } from '#client/url-params.ts'
 
-const newSecretPath = '/account/secrets/new'
+const secretSetupPaths = new Set([
+	'/connect/secret-set',
+	'/account/secrets/new',
+])
 
 const newSecretQueryKeys = [
 	'name',
@@ -17,7 +20,7 @@ const newSecretQueryKeys = [
 
 export function getNewSecretQueryKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	if (url.pathname !== newSecretPath) return ''
+	if (!secretSetupPaths.has(url.pathname)) return ''
 	return newSecretQueryKeys
 		.map((key) => `${key}=${url.searchParams.getAll(key).join('\u0000')}`)
 		.join('&')

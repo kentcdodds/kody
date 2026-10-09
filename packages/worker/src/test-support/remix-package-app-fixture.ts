@@ -1,21 +1,189 @@
+import { build, type Plugin } from 'esbuild'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 /**
- * A mid-complexity Remix package app used by the workers bundling test and
- * the MCP end-to-end test. It is the shape
- * `docs/guides/package-apps.md` documents as Example A (Remix recipe), so
- * the tests prove the recipe as written — including the boilerplate the
- * host does not apply (JSX import source, remount, explicit island ids).
+ * A mid-complexity Remix package app used by the MCP end-to-end test. It is
+ * the shape `docs/guides/package-apps.md` documents as Example A (Remix
+ * recipe), so the test proves the recipe as written — including the
+ * boilerplate the host does not apply (JSX import source, remount, explicit
+ * island ids).
+ *
+ * Remix arrives as an ordinary package dependency: package.json declares
+ * `remix@3.0.0`, and the fixture plants a self-contained
+ * `node_modules/remix` built from the repo install for the recipe subpaths.
+ * That matches what createWorker does when `node_modules/<name>/package.json`
+ * is already present (skip npm install for that name) without requiring the
+ * Worker to fetch remix from the registry during the MCP e2e window.
  */
-export function createRemixPackageAppFiles(input: {
+
+const remixPackageName = 'remix'
+
+/** Recipe subpaths the fixture imports (and their JSX runtimes). */
+const remixRecipeSubpaths = [
+	'component',
+	'component/jsx-dev-runtime',
+	'component/jsx-runtime',
+	'component/server',
+	'data-schema',
+	'data-schema/form-data',
+	'middleware/form-data',
+	'response/html',
+	'response/redirect',
+	'router',
+	'routes',
+] as const
+
+const nodeBuiltins = new Set([
+	'assert',
+	'async_hooks',
+	'buffer',
+	'child_process',
+	'crypto',
+	'events',
+	'fs',
+	'http',
+	'https',
+	'inspector',
+	'module',
+	'net',
+	'os',
+	'path',
+	'perf_hooks',
+	'process',
+	'stream',
+	'tls',
+	'url',
+	'util',
+	'worker_threads',
+	'zlib',
+])
+
+const remixExternalsPlugin: Plugin = {
+	name: 'remix-fixture-externals',
+	setup(pluginBuild) {
+		pluginBuild.onResolve({ filter: /^cloudflare:/ }, (args) => ({
+			path: args.path,
+			external: true,
+		}))
+		pluginBuild.onResolve({ filter: /^node:/ }, (args) => ({
+			path: args.path,
+			external: true,
+		}))
+		pluginBuild.onResolve({ filter: /^[a-z_]+$/ }, (args) => {
+			if (!nodeBuiltins.has(args.path)) return null
+			return { path: `node:${args.path}`, external: true }
+		})
+	},
+}
+
+type RemixExportTarget = string | { default?: string; types?: string }
+
+let packageSuppliedRemixFilesPromise: Promise<Record<string, string>> | null =
+	null
+
+function resolveRepoRoot() {
+	return path.resolve(
+		path.dirname(fileURLToPath(import.meta.url)),
+		'../../../..',
+	)
+}
+
+/**
+ * Bundle the recipe's `remix/<subpath>` entries from the repo install into a
+ * self-contained `node_modules/remix` package. createWorker skips npm install
+ * for any dependency whose `node_modules/<name>/package.json` is already in
+ * the snapshot, so planting these files is what makes the e2e publish resolve
+ * remix from the package instead of the registry.
+ */
+export async function loadPackageSuppliedRemixFiles(): Promise<
+	Record<string, string>
+> {
+	packageSuppliedRemixFilesPromise ??= (async () => {
+		const repoRoot = resolveRepoRoot()
+		const remixPackageDir = path.join(
+			repoRoot,
+			'node_modules',
+			remixPackageName,
+		)
+		const remixPackage = JSON.parse(
+			await readFile(path.join(remixPackageDir, 'package.json'), 'utf8'),
+		) as { version: string; exports: Record<string, RemixExportTarget> }
+		const entryPoints: Record<string, string> = {}
+		const vendoredExports: Record<string, string> = {
+			'./package.json': './package.json',
+		}
+		for (const subpath of remixRecipeSubpaths) {
+			const target = remixPackage.exports[`./${subpath}`]
+			const targetFile =
+				typeof target === 'string' ? target : (target?.default ?? null)
+			if (!targetFile) {
+				throw new Error(
+					`remix@${remixPackage.version} does not export "./${subpath}"; update remixRecipeSubpaths.`,
+				)
+			}
+			entryPoints[`${remixPackageName}/dist/${subpath}`] = path.join(
+				remixPackageDir,
+				targetFile,
+			)
+			vendoredExports[`./${subpath}`] = `./dist/${subpath}.js`
+		}
+		const bundleOutdir = path.join(repoRoot, 'node_modules')
+		const result = await build({
+			entryPoints,
+			bundle: true,
+			splitting: true,
+			format: 'esm',
+			platform: 'neutral',
+			mainFields: ['module', 'main'],
+			conditions: ['workerd', 'worker', 'browser', 'import', 'default'],
+			target: 'es2022',
+			minify: true,
+			write: false,
+			outdir: bundleOutdir,
+			chunkNames: 'remix/dist/chunks/[name]-[hash]',
+			plugins: [remixExternalsPlugin],
+			logLevel: 'silent',
+		})
+		const files: Record<string, string> = {
+			[`node_modules/${remixPackageName}/package.json`]: JSON.stringify(
+				{
+					name: remixPackageName,
+					version: remixPackage.version,
+					type: 'module',
+					exports: vendoredExports,
+				},
+				null,
+				'\t',
+			),
+		}
+		for (const output of result.outputFiles) {
+			const relative = path
+				.relative(bundleOutdir, output.path)
+				.replaceAll(path.sep, '/')
+			if (relative.startsWith('..')) {
+				throw new Error(
+					`remix fixture prebuild emitted "${output.path}" outside node_modules.`,
+				)
+			}
+			files[`node_modules/${relative}`] = output.text
+		}
+		return files
+	})()
+	return await packageSuppliedRemixFilesPromise
+}
+
+export async function createRemixPackageAppFiles(input: {
 	username: string
 	kodyId: string
-}): Record<string, string> {
+}): Promise<Record<string, string>> {
 	const packageJson = {
 		name: `@${input.username}/${input.kodyId}`,
 		private: true,
 		exports: { '.': './src/index.ts' },
-		// Types only: publish installs `dependencies`, never `devDependencies`,
-		// so the platform copy of remix is what the bundle uses.
-		devDependencies: { remix: '3.0.0-rc.2' },
+		// Ordinary npm dependency: the platform does not supply remix.
+		dependencies: { remix: '3.0.0' },
 		kody: {
 			id: input.kodyId,
 			description:
@@ -27,13 +195,13 @@ export function createRemixPackageAppFiles(input: {
 			},
 		},
 	}
-	return {
+	const authored: Record<string, string> = {
 		'package.json': `${JSON.stringify(packageJson, null, '\t')}\n`,
 		'tsconfig.json': `${JSON.stringify(
 			{
 				compilerOptions: {
 					jsx: 'react-jsx',
-					jsxImportSource: 'remix/ui',
+					jsxImportSource: 'remix/component',
 					allowImportingTsExtensions: true,
 					strict: true,
 					noEmit: true,
@@ -53,9 +221,10 @@ export function createRemixPackageAppFiles(input: {
 			'Remix recipe. Default-export a fetch handler. The host strips the',
 			'app mount; remount the Request if the route contract is prefixed.',
 			'',
-			'- Import Remix as `remix/<subpath>`; the platform supplies it. Never add',
-			'  `@remix-run/*` or `remix` to `dependencies` (publish rejects `@remix-run/*`).',
-			'- Set `"jsxImportSource": "remix/ui"` in tsconfig and/or a per-file pragma.',
+			'- Import Remix as `remix/<subpath>` and declare `remix` in',
+			'  `package.json#dependencies` (and `@remix-run/ui` if you use primitives).',
+			'  The platform does not supply frameworks.',
+			'- Set `"jsxImportSource": "remix/component"` in tsconfig and/or a per-file pragma.',
 			'- Routes live in `app/routes.ts`, prefixed with `packageContext.appBasePath`;',
 			'  remount in `app/router.ts` so those prefixes match. Build every URL with',
 			'  `routes.x.href()`, never a root-relative literal.',
@@ -145,7 +314,7 @@ export async function addNote(context: RequestContext, text: string) {
 	return note
 }
 `,
-		'app/controllers/home.tsx': `/** @jsxImportSource remix/ui */
+		'app/controllers/home.tsx': `/** @jsxImportSource remix/component */
 import type { BuildAction } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
 import { listNotes } from '../data/notes.ts'
@@ -171,7 +340,7 @@ export default {
 	},
 } satisfies BuildAction<'ANY', typeof routes.home>
 `,
-		'app/controllers/notes.tsx': `/** @jsxImportSource remix/ui */
+		'app/controllers/notes.tsx': `/** @jsxImportSource remix/component */
 import type { Controller } from 'remix/router'
 import * as s from 'remix/data-schema'
 import * as f from 'remix/data-schema/form-data'
@@ -222,11 +391,11 @@ export default {
 	},
 } satisfies Controller<typeof routes.notes>
 `,
-		'app/ui/render.tsx': `/** @jsxImportSource remix/ui */
+		'app/ui/render.tsx': `/** @jsxImportSource remix/component */
 import type { RequestContext } from 'remix/router'
 import { KodyRuntime } from 'kody:runtime'
-import type { RemixNode } from 'remix/ui'
-import { renderToStream } from 'remix/ui/server'
+import type { RemixNode } from 'remix/component'
+import { renderToStream } from 'remix/component/server'
 import { createHtmlResponse } from 'remix/response/html'
 import { Document } from './document.tsx'
 
@@ -254,8 +423,8 @@ export function render(
 	return createHtmlResponse(stream, init)
 }
 `,
-		'app/ui/layout.tsx': `/** @jsxImportSource remix/ui */
-import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/layout.tsx': `/** @jsxImportSource remix/component */
+import type { Handle, RemixNode } from 'remix/component'
 import { routes } from '../routes.ts'
 
 // Server-only: imports the route contract (and so kody:runtime). Islands must
@@ -272,8 +441,8 @@ export function Layout(handle: Handle<{ children?: RemixNode }>) {
 	)
 }
 `,
-		'app/ui/document.tsx': `/** @jsxImportSource remix/ui */
-import type { Handle, RemixNode } from 'remix/ui'
+		'app/ui/document.tsx': `/** @jsxImportSource remix/component */
+import type { Handle, RemixNode } from 'remix/component'
 import { Layout } from './layout.tsx'
 
 export function Document(
@@ -305,8 +474,8 @@ export function Document(
 	)
 }
 `,
-		'app/ui/counter.tsx': `/** @jsxImportSource remix/ui */
-import { clientEntry, on, type Handle } from 'remix/ui'
+		'app/ui/counter.tsx': `/** @jsxImportSource remix/component */
+import { clientEntry, on, type Handle } from 'remix/component'
 
 export const Counter = clientEntry(
 	'kody:app#Counter',
@@ -327,7 +496,7 @@ export const Counter = clientEntry(
 	},
 )
 `,
-		'app/assets/entry.ts': `import { run } from 'remix/ui'
+		'app/assets/entry.ts': `import { run } from 'remix/component'
 import { Counter } from '../ui/counter.tsx'
 
 // One browser module, so hydration resolves exports here instead of by URL.
@@ -353,4 +522,6 @@ void app.ready().then(() => {
 `,
 		'public/styles.css': 'body { font-family: system-ui, sans-serif; }\n',
 	}
+	const remixFiles = await loadPackageSuppliedRemixFiles()
+	return { ...authored, ...remixFiles }
 }

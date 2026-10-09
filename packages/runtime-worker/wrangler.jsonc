@@ -9,8 +9,17 @@
 	// `#worker`/`#app` import maps, and the pre-bundled generated
 	// modules resolve identically to the main Worker.
 	"name": "kody-runtime",
-	"compatibility_date": "2026-04-16",
-	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	// Birthday Week 2026-10-01: pending I/O keeps a DO from idle eviction for
+	// up to 15 minutes per operation (execute / StorageRunner / RunLog /
+	// PackageRealtimeSession). Date default on 2026-10-01; bump here for the
+	// execute-path DO host. Keep the flag explicit — see platform-worker.
+	// https://developers.cloudflare.com/workers/configuration/compatibility-flags/#durable-object-io-tasks-prevent-eviction
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public",
+		"durable_object_io_tasks_prevent_eviction",
+	],
 	// Same rationale as the main worker: package runtime lanes fan out into
 	// many D1 + Durable Object subrequests per invocation.
 	"limits": {
@@ -33,18 +42,31 @@
 			"fallthrough": true,
 		},
 		{
+			// Allowlisted generated filenames only. A `*.mjs` glob uploads
+			// stray files under `node_modules/.kody-generated/` (Friction #2504).
+			// Keep this list equal to `tools/worker-additional-module-allowlist.ts`.
 			"type": "ESModule",
 			"globs": [
-				"generated/*.mjs",
-				"./generated/*.mjs",
-				"node_modules/.kody-generated/*.mjs",
-				"./node_modules/.kody-generated/*.mjs",
+				"generated/guide-catalog.mjs",
+				"generated/guide-metadata.mjs",
+				"./generated/guide-catalog.mjs",
+				"./generated/guide-metadata.mjs",
+				"node_modules/.kody-generated/worker-bundler.mjs",
+				"node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"node_modules/.kody-generated/oauth-provider.mjs",
+				"node_modules/.kody-generated/local-execute-runtime-support.mjs",
+				"node_modules/.kody-generated/isomorphic-git.mjs",
+				"./node_modules/.kody-generated/worker-bundler.mjs",
+				"./node_modules/.kody-generated/worker-bundler-typescript.mjs",
+				"./node_modules/.kody-generated/oauth-provider.mjs",
+				"./node_modules/.kody-generated/local-execute-runtime-support.mjs",
+				"./node_modules/.kody-generated/isomorphic-git.mjs",
 			],
 			"fallthrough": true,
 		},
 		{
 			"type": "CompiledWasm",
-			"globs": ["node_modules/.kody-generated/*.wasm"],
+			"globs": ["node_modules/.kody-generated/esbuild.wasm"],
 			"fallthrough": true,
 		},
 	],
@@ -259,10 +281,6 @@
 					"dataset": "kody_mcp_protocol_events",
 				},
 				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events",
-				},
-				{
 					"binding": "ONBOARDING_FUNNEL_EVENTS",
 					"dataset": "kody_onboarding_funnel_events",
 				},
@@ -425,10 +443,6 @@
 				{
 					"binding": "MCP_PROTOCOL_EVENTS",
 					"dataset": "kody_mcp_protocol_events_preview",
-				},
-				{
-					"binding": "PACKAGE_INVOKE_SPECIFIER_EVENTS",
-					"dataset": "kody_package_invoke_specifier_events_preview",
 				},
 				{
 					"binding": "ONBOARDING_FUNNEL_EVENTS",

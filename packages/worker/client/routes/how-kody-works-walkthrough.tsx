@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { CopyCodeBlock } from '#client/copy-code-block.tsx'
 import {
 	highlightSnippetKey,

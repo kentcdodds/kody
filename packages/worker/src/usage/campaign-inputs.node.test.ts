@@ -14,46 +14,59 @@ import {
 	isPackagedSingleClientTrialCtaLive,
 } from './campaign-states.ts'
 
-test('campaign inputs treat Stripe Standard/Pro as paid and require execute depth for strong use', () => {
-	expect(isStripePaidPlan('standard')).toBe(true)
-	expect(isStripePaidPlan('pro')).toBe(true)
-	expect(isStripePaidPlan('free')).toBe(false)
-	expect(isStripePaidPlan('max')).toBe(false)
-	expect(isStripePaidPlan(null)).toBe(false)
+const now = new Date('2026-09-07T12:00:00.000Z')
+const noJobsEnv = { JOBS: { listJobsForUser: async () => [] } }
 
-	const now = new Date('2026-09-07T12:00:00.000Z')
+function createMigratedDb() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	return { sqlite, db: createD1FromSqlite(sqlite) }
+}
+
+function makeCandidate(
+	overrides: Partial<UsageCampaignCandidate> = {},
+): UsageCampaignCandidate {
+	return {
+		stable_user_id: 'user-stock',
+		username: 'stock',
+		email: 'stock@example.com',
+		email_verified_at: '2026-09-01T00:00:00.000Z',
+		first_mcp_connected_at: null,
+		first_saved_package_at: '2026-09-02T00:00:00.000Z',
+		first_execute_at: null,
+		mcp_client_name: null,
+		last_active_at: null,
+		second_agent_standard_gift_granted_at: null,
+		second_agent_standard_gift_expires_at: null,
+		referral_standard_credit_expires_at: null,
+		plan: 'free',
+		stripe_plan: null,
+		entitlement_ladder: null,
+		...overrides,
+	}
+}
+
+test('campaign inputs treat Stripe Standard/Pro as paid and require execute depth for strong use', () => {
 	expect(
-		isStrongRecentUse({
-			lastActiveAt: '2026-09-06T00:00:00.000Z',
-			firstExecuteAt: '2026-09-02T00:00:00.000Z',
-			executeCount: 3,
-			now,
-		}),
-	).toBe(true)
+		(['standard', 'pro', 'free', 'max', null] as const).map(isStripePaidPlan),
+	).toEqual([true, true, false, false, false])
+
+	const strongUseCases = [
+		['2026-09-06', '2026-09-02', 3, true],
+		['2026-09-06', '2026-09-02', 2, false],
+		['2026-08-01', '2026-08-01', 20, false],
+		['2026-09-06', null, 10, false],
+	] as const
 	expect(
-		isStrongRecentUse({
-			lastActiveAt: '2026-09-06T00:00:00.000Z',
-			firstExecuteAt: '2026-09-02T00:00:00.000Z',
-			executeCount: 2,
-			now,
-		}),
-	).toBe(false)
-	expect(
-		isStrongRecentUse({
-			lastActiveAt: '2026-08-01T00:00:00.000Z',
-			firstExecuteAt: '2026-08-01T00:00:00.000Z',
-			executeCount: 20,
-			now,
-		}),
-	).toBe(false)
-	expect(
-		isStrongRecentUse({
-			lastActiveAt: '2026-09-06T00:00:00.000Z',
-			firstExecuteAt: null,
-			executeCount: 10,
-			now,
-		}),
-	).toBe(false)
+		strongUseCases.map(([lastActive, firstExecute, executeCount]) =>
+			isStrongRecentUse({
+				lastActiveAt: `${lastActive}T00:00:00.000Z`,
+				firstExecuteAt: firstExecute && `${firstExecute}T00:00:00.000Z`,
+				executeCount,
+				now,
+			}),
+		),
+	).toEqual(strongUseCases.map(([, , , want]) => want))
 
 	expect(campaignClientLabel(null)).toBe('your agent')
 	expect(campaignClientLabel('Cursor')).toBe('Cursor')
@@ -62,15 +75,13 @@ test('campaign inputs treat Stripe Standard/Pro as paid and require execute dept
 		isPackagedSingleClientTrialCtaLive({
 			grantedAt: '2026-09-01T00:00:00.000Z',
 			expiresAt: '2026-09-15T00:00:00.000Z',
-			now: new Date('2026-09-07T12:00:00.000Z'),
+			now,
 		}),
 	).toBe(false)
 })
 
 test('near-cap reads use Standard overlays, not the stored free plan', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	const db = createD1FromSqlite(sqlite)
+	const { sqlite, db } = createMigratedDb()
 	sqlite
 		.prepare(
 			`INSERT INTO users (
@@ -89,98 +100,45 @@ test('near-cap reads use Standard overlays, not the stored free plan', async () 
 			)
 			.run(`pkg-${i}`, `pkg-${i}`, `pkg-${i}`, `source-${i}`)
 	}
+	const env = { APP_DB: db, ...noJobsEnv } as unknown as Env
 
-	const now = new Date('2026-09-07T12:00:00.000Z')
-	const env = {
-		APP_DB: db,
-		JOBS: {
-			listJobsForUser: async () => [],
-		},
-	} as unknown as Env
-	const baseUser: UsageCampaignCandidate = {
-		stable_user_id: 'user-stock',
-		username: 'stock',
-		email: 'stock@example.com',
-		email_verified_at: '2026-09-01T00:00:00.000Z',
-		first_mcp_connected_at: null,
-		first_saved_package_at: '2026-09-02T00:00:00.000Z',
-		first_execute_at: null,
-		mcp_client_name: null,
-		last_active_at: null,
-		second_agent_standard_gift_granted_at: null,
-		second_agent_standard_gift_expires_at: null,
-		referral_standard_credit_expires_at: null,
-		plan: 'free',
-		stripe_plan: null,
-		entitlement_ladder: null,
+	const overlayCases: Array<[Partial<UsageCampaignCandidate>, boolean]> = [
+		[{}, true],
+		[
+			{
+				second_agent_standard_gift_granted_at: '2026-09-01T00:00:00.000Z',
+				second_agent_standard_gift_expires_at: '2026-09-15T00:00:00.000Z',
+			},
+			false,
+		],
+		[
+			{
+				second_agent_standard_gift_granted_at: '2026-08-01T00:00:00.000Z',
+				second_agent_standard_gift_expires_at: '2026-08-15T00:00:00.000Z',
+			},
+			true,
+		],
+		[
+			{ referral_standard_credit_expires_at: '2026-10-01T00:00:00.000Z' },
+			false,
+		],
+		[{ referral_standard_credit_expires_at: '2026-08-01T00:00:00.000Z' }, true],
+	]
+	const nearCap: Array<boolean> = []
+	for (const [overrides] of overlayCases) {
+		const snapshot = await gatherUsageCampaignSnapshot({
+			env,
+			user: makeCandidate(overrides),
+			now,
+		})
+		nearCap.push(snapshot.isNearEntitlementCap)
 	}
-
-	expect(
-		(
-			await gatherUsageCampaignSnapshot({
-				env,
-				user: baseUser,
-				now,
-			})
-		).isNearEntitlementCap,
-	).toBe(true)
-	expect(
-		(
-			await gatherUsageCampaignSnapshot({
-				env,
-				user: {
-					...baseUser,
-					second_agent_standard_gift_granted_at: '2026-09-01T00:00:00.000Z',
-					second_agent_standard_gift_expires_at: '2026-09-15T00:00:00.000Z',
-				},
-				now,
-			})
-		).isNearEntitlementCap,
-	).toBe(false)
-	expect(
-		(
-			await gatherUsageCampaignSnapshot({
-				env,
-				user: {
-					...baseUser,
-					second_agent_standard_gift_granted_at: '2026-08-01T00:00:00.000Z',
-					second_agent_standard_gift_expires_at: '2026-08-15T00:00:00.000Z',
-				},
-				now,
-			})
-		).isNearEntitlementCap,
-	).toBe(true)
-	expect(
-		(
-			await gatherUsageCampaignSnapshot({
-				env,
-				user: {
-					...baseUser,
-					referral_standard_credit_expires_at: '2026-10-01T00:00:00.000Z',
-				},
-				now,
-			})
-		).isNearEntitlementCap,
-	).toBe(false)
-	expect(
-		(
-			await gatherUsageCampaignSnapshot({
-				env,
-				user: {
-					...baseUser,
-					referral_standard_credit_expires_at: '2026-08-01T00:00:00.000Z',
-				},
-				now,
-			})
-		).isNearEntitlementCap,
-	).toBe(true)
+	expect(nearCap).toEqual(overlayCases.map(([, want]) => want))
 })
 
 test('execute rollup failures do not look like zero use', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	const db = createD1FromSqlite(sqlite)
+	const { db } = createMigratedDb()
 	const failingDb = {
 		prepare(query: string) {
 			if (query.includes('usage_rollups')) {
@@ -189,31 +147,17 @@ test('execute rollup failures do not look like zero use', async () => {
 			return db.prepare(query)
 		},
 	}
-	const now = new Date('2026-09-07T12:00:00.000Z')
 	const snapshot = await gatherUsageCampaignSnapshot({
-		env: {
-			APP_DB: failingDb,
-			JOBS: {
-				listJobsForUser: async () => [],
-			},
-		} as unknown as Env,
-		user: {
+		env: { APP_DB: failingDb, ...noJobsEnv } as unknown as Env,
+		user: makeCandidate({
 			stable_user_id: 'user-exec',
 			username: 'exec',
 			email: 'exec@example.com',
-			email_verified_at: '2026-09-01T00:00:00.000Z',
 			first_mcp_connected_at: '2026-09-02T00:00:00.000Z',
 			first_saved_package_at: '2026-09-03T00:00:00.000Z',
 			first_execute_at: '2026-09-03T00:00:00.000Z',
-			mcp_client_name: null,
 			last_active_at: '2026-09-06T00:00:00.000Z',
-			second_agent_standard_gift_granted_at: null,
-			second_agent_standard_gift_expires_at: null,
-			referral_standard_credit_expires_at: null,
-			plan: 'free',
-			stripe_plan: null,
-			entitlement_ladder: null,
-		},
+		}),
 		now,
 	})
 	expect(snapshot.executeReadFailed).toBe(true)

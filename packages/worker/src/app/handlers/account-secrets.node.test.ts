@@ -1,113 +1,224 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as secretsService from '#mcp/secrets/service.ts'
+import type * as valuesService from '#mcp/values/service.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import type * as platformApps from '#worker/integrations/platform-apps.ts'
+import type * as packageSubscriptions from '#worker/integrations/package-subscriptions.ts'
 import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
+import type * as HostApproval from '#mcp/secrets/host-approval.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
 		sessionUserId: '42',
 		userId: 42,
+		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			displayName: 'user',
 		},
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-	saveSecret: vi.fn(async () => ({
+	saveSecret: vi.fn<typeof secretsService.saveSecret>(async () => ({
 		name: 'githubAccessToken',
 		scope: 'user',
 		description: '',
 		packageId: null,
 		allowedHosts: [],
+		allowedPackages: [],
 		createdAt: new Date(0).toISOString(),
 		updatedAt: new Date(0).toISOString(),
 		expiresAt: null,
 		ttlMs: null,
 	})),
-	setSecretAllowedHosts: vi.fn(async () => undefined),
-	saveValue: vi.fn(async () => undefined),
-	buildSecretHostApprovalUrl: vi.fn(
+	setSecretAllowedHosts: vi.fn<typeof secretsService.setSecretAllowedHosts>(
+		async (input) => ({
+			name: input.name,
+			scope: input.scope,
+			description: '',
+			packageId: null,
+			allowedHosts: input.allowedHosts,
+			allowedPackages: [],
+			createdAt: new Date(0).toISOString(),
+			updatedAt: new Date(0).toISOString(),
+			expiresAt: null,
+			ttlMs: null,
+		}),
+	),
+	saveValue: vi.fn<typeof valuesService.saveValue>(async (input) => ({
+		name: input.name,
+		scope: input.scope,
+		value: input.value,
+		description: '',
+		appId: null,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		ttlMs: null,
+	})),
+	buildSecretHostApprovalUrl: vi.fn<
+		typeof HostApproval.buildSecretHostApprovalUrl
+	>(
 		(input: { name: string; requestedHost: string }) =>
 			`https://example.com/account/secrets/user/${input.name}?allowed-host=${input.requestedHost}`,
 	),
-	listSavedPackagesByUserId: vi.fn(async () => []),
-	listSecrets: vi.fn(async () => []),
-	listPackageSecretsByPackageIds: vi.fn(async () => []),
-	resolveSecret: vi.fn(async () => ({ found: false, value: null })),
-	deleteSecret: vi.fn(async () => false),
-	setSecretAllowedPackages: vi.fn(async () => undefined),
-	getValue: vi.fn(async () => null),
-	upsertIntegration: vi.fn(async (input: { config: { name: string } }) => ({
-		...input.config,
-		name: String(input.config.name).toLowerCase(),
+	listSavedPackagesByUserId: vi.fn<
+		typeof packageRepo.listSavedPackagesByUserId
+	>(async () => []),
+	listSecrets: vi.fn<typeof secretsService.listSecrets>(async () => []),
+	listPackageSecretsByPackageIds: vi.fn<
+		typeof secretsService.listPackageSecretsByPackageIds
+	>(async () => new Map()),
+	resolveSecret: vi.fn<typeof secretsService.resolveSecret>(async () => ({
+		found: false,
+		value: null,
+		scope: null,
+		allowedHosts: [],
+		allowedPackages: [],
 	})),
-	upsertOauthAppWithoutConnection: vi.fn(
-		async (input: {
-			config: {
-				name: string
-				clientId: string
-				tokenUrl: string
-				flow: 'pkce' | 'confidential'
-				hasClientSecret?: boolean
-				apiBaseUrl?: string | null
-				usePkce?: boolean | null
-				tokenExchangeStyle?: string | null
-			}
-		}) => ({
-			userId: 'stable-user-1',
-			slug: String(input.config.name).toLowerCase().replace(/\s+/g, '-'),
-			provider: String(input.config.name)
+	deleteSecret: vi.fn<typeof secretsService.deleteSecret>(async () => false),
+	setSecretAllowedPackages: vi.fn<
+		typeof secretsService.setSecretAllowedPackages
+	>(async (input) => ({
+		name: input.name,
+		scope: input.scope,
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: input.allowedPackages,
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
+		expiresAt: null,
+		ttlMs: null,
+	})),
+	getValue: vi.fn<typeof valuesService.getValue>(async () => null),
+	upsertIntegration: vi.fn<typeof IntegrationsService.upsertIntegration>(
+		async (input) => ({
+			...input.config,
+			name: String(input.config.name).toLowerCase(),
+		}),
+	),
+	upsertOauthAppWithoutConnection: vi.fn<
+		typeof IntegrationsService.upsertOauthAppWithoutConnection
+	>(async (input) => ({
+		userId: 'stable-user-1',
+		slug: String(input.config.name).toLowerCase().replace(/\s+/g, '-'),
+		provider:
+			String(input.config.name)
 				.toLowerCase()
 				.replace(/\s+/g, '-')
-				.split('-')[0],
-			label: null,
-			clientId: input.config.clientId,
-			hasClientSecret: input.config.hasClientSecret === true,
-			tokenUrl: input.config.tokenUrl,
-			authorizeUrl: null,
-			apiBaseUrl: input.config.apiBaseUrl ?? null,
-			flow: input.config.flow,
-			usePkce: input.config.usePkce ?? null,
-			tokenExchangeStyle: input.config.tokenExchangeStyle ?? null,
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		}),
-	),
-	getAvailablePlatformApp: vi.fn(async () => null),
-	upsertPlatformIntegration: vi.fn(
-		async (input: { platformAppSlug: string; name?: string | null }) => ({
-			name: String(input.name ?? input.platformAppSlug).toLowerCase(),
-			platform: true,
-		}),
-	),
-	getPlatformOauthAppClientSecret: vi.fn(async () => null),
-	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn(async () => []),
-	persistIntegrationTokens: vi.fn(async () => undefined),
-	persistUserOauthAppClientSecret: vi.fn(async () => undefined),
-	resolveUserOauthAppClientSecret: vi.fn(async () => null),
-	getOauthApp: vi.fn(async () => null),
-	findOauthAppForProviderSetup: vi.fn(async () => null),
-	getJoinedIntegration: vi.fn(async (input: { name: string }) => ({
-		lane: 'user' as const,
-		app: { slug: String(input.name).toLowerCase() },
-		connection: { name: String(input.name).toLowerCase() },
+				.split('-')[0] ?? '',
+		label: null,
+		clientId: input.config.clientId,
+		hasClientSecret: false,
+		tokenUrl: input.config.tokenUrl,
+		authorizeUrl: null,
+		apiBaseUrl: input.config.apiBaseUrl ?? null,
+		flow: input.config.flow,
+		usePkce: input.config.usePkce ?? null,
+		tokenExchangeStyle: input.config.tokenExchangeStyle ?? null,
+		scopeSeparator: null,
+		extraAuthorizeParams: {},
+		createdAt: new Date(0).toISOString(),
+		updatedAt: new Date(0).toISOString(),
 	})),
+	getAvailablePlatformApp: vi.fn<
+		typeof IntegrationsService.getAvailablePlatformApp
+	>(async () => null),
+	upsertPlatformIntegration: vi.fn<
+		typeof IntegrationsService.upsertPlatformIntegration
+	>(async (input) => ({
+		name: String(input.name ?? input.platformAppSlug).toLowerCase(),
+		tokenUrl: 'https://example.com/oauth/token',
+		flow: 'confidential',
+		clientId: 'platform-client-id',
+		platform: true,
+	})),
+	getPlatformOauthAppClientSecret: vi.fn<
+		typeof platformApps.getPlatformOauthAppClientSecret
+	>(async () => null),
+	dispatchIntegrationAuthSucceededSubscriptionEvents: vi.fn<
+		typeof packageSubscriptions.dispatchIntegrationAuthSucceededSubscriptionEvents
+	>(async () => []),
+	persistIntegrationTokens: vi.fn<
+		typeof IntegrationsCredentials.persistIntegrationTokens
+	>(async () => undefined),
+	persistUserOauthAppClientSecret: vi.fn<
+		typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+	>(async () => undefined),
+	resolveUserOauthAppClientSecret: vi.fn<
+		typeof IntegrationsCredentials.resolveUserOauthAppClientSecret
+	>(async () => null),
+	getOauthApp: vi.fn<typeof IntegrationsService.getOauthApp>(async () => null),
+	findOauthAppForProviderSetup: vi.fn<
+		typeof IntegrationsService.findOauthAppForProviderSetup
+	>(async () => null),
+	getJoinedIntegration: vi.fn<typeof IntegrationsService.getJoinedIntegration>(
+		async (input) => {
+			const name = String(input.name).toLowerCase()
+			return {
+				lane: 'user',
+				app: {
+					userId: 'stable-user-1',
+					slug: name,
+					provider: name,
+					label: null,
+					clientId: `${name}-client-id`,
+					hasClientSecret: false,
+					tokenUrl: 'https://example.com/oauth/token',
+					authorizeUrl: null,
+					apiBaseUrl: null,
+					flow: 'pkce',
+					usePkce: null,
+					tokenExchangeStyle: null,
+					scopeSeparator: null,
+					extraAuthorizeParams: {},
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+				},
+				connection: {
+					userId: 'stable-user-1',
+					name,
+					appSlug: name,
+					platformAppSlug: null,
+					accountLabel: null,
+					description: '',
+					scopes: [],
+					requiredHosts: [],
+					usageMode: 'any',
+					allowedPackageIds: [],
+					connectedAt: null,
+					tokenRefreshedAt: null,
+					createdAt: new Date(0).toISOString(),
+					updatedAt: new Date(0).toISOString(),
+				},
+			}
+		},
+	),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -127,49 +238,70 @@ vi.mock('#mcp/secrets/allowed-hosts.ts', async (importOriginal) => {
 })
 
 vi.mock('#mcp/secrets/host-approval.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/secrets/host-approval.ts')>()
+	const actual = await importOriginal<typeof HostApproval>()
 	return {
 		...actual,
-		buildSecretHostApprovalUrl: (...args: Array<unknown>) =>
-			mockModule.buildSecretHostApprovalUrl(...args),
+		buildSecretHostApprovalUrl: (
+			...args: Parameters<typeof HostApproval.buildSecretHostApprovalUrl>
+		) => mockModule.buildSecretHostApprovalUrl(...args),
 	}
 })
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	saveSecret: (...args: Array<unknown>) => mockModule.saveSecret(...args),
-	setSecretAllowedHosts: (...args: Array<unknown>) =>
-		mockModule.setSecretAllowedHosts(...args),
-	listSecrets: (...args: Array<unknown>) => mockModule.listSecrets(...args),
-	listPackageSecretsByPackageIds: (...args: Array<unknown>) =>
-		mockModule.listPackageSecretsByPackageIds(...args),
-	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
-	deleteSecret: (...args: Array<unknown>) => mockModule.deleteSecret(...args),
-	setSecretAllowedPackages: (...args: Array<unknown>) =>
-		mockModule.setSecretAllowedPackages(...args),
+	saveSecret: (...args: Parameters<typeof secretsService.saveSecret>) =>
+		mockModule.saveSecret(...args),
+	setSecretAllowedHosts: (
+		...args: Parameters<typeof secretsService.setSecretAllowedHosts>
+	) => mockModule.setSecretAllowedHosts(...args),
+	listSecrets: (...args: Parameters<typeof secretsService.listSecrets>) =>
+		mockModule.listSecrets(...args),
+	listPackageSecretsByPackageIds: (
+		...args: Parameters<typeof secretsService.listPackageSecretsByPackageIds>
+	) => mockModule.listPackageSecretsByPackageIds(...args),
+	resolveSecret: (...args: Parameters<typeof secretsService.resolveSecret>) =>
+		mockModule.resolveSecret(...args),
+	deleteSecret: (...args: Parameters<typeof secretsService.deleteSecret>) =>
+		mockModule.deleteSecret(...args),
+	setSecretAllowedPackages: (
+		...args: Parameters<typeof secretsService.setSecretAllowedPackages>
+	) => mockModule.setSecretAllowedPackages(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
-	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
-	saveValue: (...args: Array<unknown>) => mockModule.saveValue(...args),
+	getValue: (...args: Parameters<typeof valuesService.getValue>) =>
+		mockModule.getValue(...args),
+	saveValue: (...args: Parameters<typeof valuesService.saveValue>) =>
+		mockModule.saveValue(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof IntegrationsService>()
 	return {
-		upsertIntegration: (...args: Array<unknown>) =>
-			mockModule.upsertIntegration(...args),
-		upsertOauthAppWithoutConnection: (...args: Array<unknown>) =>
-			mockModule.upsertOauthAppWithoutConnection(...args),
-		getAvailablePlatformApp: (...args: Array<unknown>) =>
-			mockModule.getAvailablePlatformApp(...args),
-		upsertPlatformIntegration: (...args: Array<unknown>) =>
-			mockModule.upsertPlatformIntegration(...args),
-		getJoinedIntegration: (...args: Array<unknown>) =>
-			mockModule.getJoinedIntegration(...args),
-		getOauthApp: (...args: Array<unknown>) => mockModule.getOauthApp(...args),
-		findOauthAppForProviderSetup: (...args: Array<unknown>) =>
-			mockModule.findOauthAppForProviderSetup(...args),
+		upsertIntegration: (
+			...args: Parameters<typeof IntegrationsService.upsertIntegration>
+		) => mockModule.upsertIntegration(...args),
+		upsertOauthAppWithoutConnection: (
+			...args: Parameters<
+				typeof IntegrationsService.upsertOauthAppWithoutConnection
+			>
+		) => mockModule.upsertOauthAppWithoutConnection(...args),
+		getAvailablePlatformApp: (
+			...args: Parameters<typeof IntegrationsService.getAvailablePlatformApp>
+		) => mockModule.getAvailablePlatformApp(...args),
+		upsertPlatformIntegration: (
+			...args: Parameters<typeof IntegrationsService.upsertPlatformIntegration>
+		) => mockModule.upsertPlatformIntegration(...args),
+		getJoinedIntegration: (
+			...args: Parameters<typeof IntegrationsService.getJoinedIntegration>
+		) => mockModule.getJoinedIntegration(...args),
+		getOauthApp: (
+			...args: Parameters<typeof IntegrationsService.getOauthApp>
+		) => mockModule.getOauthApp(...args),
+		findOauthAppForProviderSetup: (
+			...args: Parameters<
+				typeof IntegrationsService.findOauthAppForProviderSetup
+			>
+		) => mockModule.findOauthAppForProviderSetup(...args),
 		// Real scope validation so handler ordering tests exercise the actual
 		// allowlist semantics.
 		assertScopesAllowedForPlatformApp: actual.assertScopesAllowedForPlatformApp,
@@ -178,7 +310,9 @@ vi.mock('#worker/integrations/service.ts', async (importOriginal) => {
 
 vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
 	dispatchIntegrationAuthSucceededSubscriptionEvents: (
-		...args: Array<unknown>
+		...args: Parameters<
+			typeof packageSubscriptions.dispatchIntegrationAuthSucceededSubscriptionEvents
+		>
 	) => mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents(...args),
 	dispatchIntegrationAuthFailedSubscriptionEvents: vi.fn(async () => []),
 	integrationAuthFailedTopic: 'integration.auth.failed',
@@ -186,60 +320,106 @@ vi.mock('#worker/integrations/package-subscriptions.ts', () => ({
 }))
 
 vi.mock('#worker/integrations/platform-apps.ts', () => ({
-	getPlatformOauthAppClientSecret: (...args: Array<unknown>) =>
-		mockModule.getPlatformOauthAppClientSecret(...args),
+	getPlatformOauthAppClientSecret: (
+		...args: Parameters<typeof platformApps.getPlatformOauthAppClientSecret>
+	) => mockModule.getPlatformOauthAppClientSecret(...args),
 }))
 
 vi.mock('#worker/integrations/credentials.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof IntegrationsCredentials>()
 	return {
 		...actual,
-		persistIntegrationTokens: (...args: Array<unknown>) =>
-			mockModule.persistIntegrationTokens(...args),
-		persistUserOauthAppClientSecret: (...args: Array<unknown>) =>
-			mockModule.persistUserOauthAppClientSecret(...args),
-		resolveUserOauthAppClientSecret: (...args: Array<unknown>) =>
-			mockModule.resolveUserOauthAppClientSecret(...args),
+		persistIntegrationTokens: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.persistIntegrationTokens
+			>
+		) => mockModule.persistIntegrationTokens(...args),
+		persistUserOauthAppClientSecret: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.persistUserOauthAppClientSecret
+			>
+		) => mockModule.persistUserOauthAppClientSecret(...args),
+		resolveUserOauthAppClientSecret: (
+			...args: Parameters<
+				typeof IntegrationsCredentials.resolveUserOauthAppClientSecret
+			>
+		) => mockModule.resolveUserOauthAppClientSecret(...args),
 	}
 })
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
 }))
 
 const { createAccountSecretsApiHandler } = await import('./account-secrets.ts')
 
-function createEnv() {
-	return {
+const secretsUrl = 'https://example.com/account/secrets.json'
+const epoch = new Date(0).toISOString()
+const userStorage = { sessionId: null, appId: null, packageId: null }
+
+function createHandler() {
+	const { handler } = createAccountSecretsApiHandler({
 		APP_DB: {} as D1Database,
 		COOKIE_SECRET: 'secret',
-	} as Env
+	} as Env)
+	return (request: Request) => handler({ request, params: {} } as never)
+}
+
+function getRequest(search: string) {
+	return new Request(`${secretsUrl}${search}`, { method: 'GET' })
+}
+
+function postRequest(body: Record<string, unknown>, search = '') {
+	return new Request(`${secretsUrl}${search}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	})
+}
+
+const approve = (search: string) => postRequest({ action: 'approve' }, search)
+
+function makeSecret(name: string, overrides: Record<string, unknown> = {}) {
+	return {
+		name,
+		scope: 'user' as const,
+		description: '',
+		packageId: null,
+		allowedHosts: [] as Array<string>,
+		allowedPackages: [] as Array<string>,
+		createdAt: epoch,
+		updatedAt: epoch,
+		expiresAt: null,
+		ttlMs: null,
+		...overrides,
+	}
+}
+
+function mockSecretsListing(secrets: Array<unknown>) {
+	mockModule.listSecrets.mockResolvedValue(secrets as never)
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
 }
 
 test('save_oauth_app persists the app (client id + endpoints) before authorize redirect', async () => {
-	mockModule.upsertOauthAppWithoutConnection.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
+	const call = createHandler()
 
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save_oauth_app',
-				provider: 'GitHub',
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				flow: 'pkce',
-				usePkce: true,
-				clientId: 'github-client-id-value',
-				scopeSeparator: ' ',
-				extraAuthorizeParams: { prompt: 'consent' },
-			}),
+	const response = await call(
+		postRequest({
+			action: 'save_oauth_app',
+			provider: 'GitHub',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			flow: 'pkce',
+			usePkce: true,
+			clientId: 'github-client-id-value',
+			scopeSeparator: ' ',
+			extraAuthorizeParams: { prompt: 'consent' },
 		}),
-		params: {},
-	} as never)
+	)
 
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toMatchObject({
@@ -272,32 +452,21 @@ test('save_oauth_app persists the app (client id + endpoints) before authorize r
 	)
 	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
-})
 
-test('save_oauth_app does not delete user secrets after persisting a client-secret ciphertext', async () => {
-	mockModule.persistUserOauthAppClientSecret.mockClear()
-	mockModule.deleteSecret.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save_oauth_app',
-				provider: 'slack',
-				authorizeUrl: 'https://slack.com/oauth/v2/authorize',
-				tokenUrl: 'https://slack.com/api/oauth.v2.access',
-				apiBaseUrl: 'https://slack.com/api',
-				flow: 'confidential',
-				clientId: 'slack-client-id',
-				clientSecret: 'slack-client-secret',
-			}),
+	const slackResponse = await call(
+		postRequest({
+			action: 'save_oauth_app',
+			provider: 'slack',
+			authorizeUrl: 'https://slack.com/oauth/v2/authorize',
+			tokenUrl: 'https://slack.com/api/oauth.v2.access',
+			apiBaseUrl: 'https://slack.com/api',
+			flow: 'confidential',
+			clientId: 'slack-client-id',
+			clientSecret: 'slack-client-secret',
 		}),
-		params: {},
-	} as never)
+	)
 
-	expect(response.status).toBe(200)
+	expect(slackResponse.status).toBe(200)
 	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: 'stable-user-1',
@@ -309,39 +478,29 @@ test('save_oauth_app does not delete user secrets after persisting a client-secr
 })
 
 test('connect oauth saves tokens via the secret store and persists app+connection through the integrations service', async () => {
-	mockModule.upsertIntegration.mockClear()
-	mockModule.saveSecret.mockClear()
-	mockModule.buildSecretHostApprovalUrl.mockClear()
-	mockModule.setSecretAllowedHosts.mockClear()
-	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
+	const call = createHandler()
 
-	const githubResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'GitHub',
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-				tokenUrl: 'https://github.com/login/oauth/access_token',
-				apiBaseUrl: 'https://api.github.com',
-				scopes: ['repo', 'read:user'],
-				scopeSeparator: ' ',
-				extraAuthorizeParams: { prompt: 'consent' },
-				flow: 'pkce',
-				clientId: 'github-client-id-value',
-				accessTokenSecretName: 'githubAccessToken',
-				refreshTokenSecretName: 'githubRefreshToken',
-				allowedHosts: ['api.github.com'],
-				tokenPayload: {
-					access_token: 'access-token',
-					refresh_token: 'refresh-token',
-				},
-			}),
+	const githubResponse = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'GitHub',
+			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			tokenUrl: 'https://github.com/login/oauth/access_token',
+			apiBaseUrl: 'https://api.github.com',
+			scopes: ['repo', 'read:user'],
+			scopeSeparator: ' ',
+			extraAuthorizeParams: { prompt: 'consent' },
+			flow: 'pkce',
+			clientId: 'github-client-id-value',
+			accessTokenSecretName: 'githubAccessToken',
+			refreshTokenSecretName: 'githubRefreshToken',
+			allowedHosts: ['api.github.com'],
+			tokenPayload: {
+				access_token: 'access-token',
+				refresh_token: 'refresh-token',
+			},
 		}),
-		params: {},
-	} as never)
+	)
 
 	expect(githubResponse.status).toBe(200)
 	await expect(githubResponse.json()).resolves.toMatchObject({
@@ -365,6 +524,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			name: 'github',
 			accessToken: 'access-token',
 			refreshToken: 'refresh-token',
+			refreshPolicy: 'required',
 		}),
 	)
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
@@ -393,41 +553,35 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		expect.objectContaining({
 			userId: 'stable-user-1',
 			source: 'oauth_connect',
-			integration: expect.objectContaining({
-				name: 'github',
-				lane: 'user',
-			}),
+			integration: expect.objectContaining({ name: 'github', lane: 'user' }),
 		}),
 	)
 
 	mockModule.upsertIntegration.mockClear()
-	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
-	const spotifyResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'spotify',
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				apiBaseUrl: 'https://api.spotify.com/v1',
-				scopes: ['user-read-playback-state', 'playlist-modify-private'],
-				scopeSeparator: ' ',
-				extraAuthorizeParams: { show_dialog: 'true' },
-				flow: 'pkce',
-				clientId: 'spotify-client-id-value',
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				allowedHosts: ['api.spotify.com'],
-				tokenPayload: {
-					access_token: 'newly-scoped-access-token',
-					scope: 'user-read-playback-state playlist-modify-private',
-				},
-			}),
+	const spotifyConnect = {
+		action: 'connect_oauth',
+		provider: 'spotify',
+		authorizeUrl: 'https://accounts.spotify.com/authorize',
+		tokenUrl: 'https://accounts.spotify.com/api/token',
+		apiBaseUrl: 'https://api.spotify.com/v1',
+		flow: 'pkce',
+		clientId: 'spotify-client-id-value',
+		accessTokenSecretName: 'spotifyAccessToken',
+		refreshTokenSecretName: 'spotifyRefreshToken',
+		allowedHosts: ['api.spotify.com'],
+	}
+	const spotifyResponse = await call(
+		postRequest({
+			...spotifyConnect,
+			scopes: ['user-read-playback-state', 'playlist-modify-private'],
+			scopeSeparator: ' ',
+			extraAuthorizeParams: { show_dialog: 'true' },
+			tokenPayload: {
+				access_token: 'newly-scoped-access-token',
+				scope: 'user-read-playback-state playlist-modify-private',
+			},
 		}),
-		params: {},
-	} as never)
+	)
 
 	expect(spotifyResponse.status).toBe(200)
 	await expect(spotifyResponse.json()).resolves.toMatchObject({
@@ -449,133 +603,69 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 			userId: 'stable-user-1',
 			name: 'spotify',
 			accessToken: 'newly-scoped-access-token',
+			refreshPolicy: 'not_applicable',
 		}),
 	)
 
+	const spotifyHosts = ['api.spotify.com', 'accounts.spotify.com']
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'spotifyAccessToken',
-			scope: 'user',
-			description: '',
-			packageId: null,
-			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-		{
-			name: 'spotifyRefreshToken',
-			scope: 'user',
-			description: '',
-			packageId: null,
-			allowedHosts: ['api.spotify.com', 'accounts.spotify.com'],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		makeSecret('spotifyAccessToken', { allowedHosts: spotifyHosts }),
+		makeSecret('spotifyRefreshToken', { allowedHosts: spotifyHosts }),
+	] as never)
 	mockModule.upsertIntegration.mockClear()
-	const spotifyReconnect = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'spotify',
-				authorizeUrl: 'https://accounts.spotify.com/authorize',
-				tokenUrl: 'https://accounts.spotify.com/api/token',
-				apiBaseUrl: 'https://api.spotify.com/v1',
-				scopes: ['user-read-playback-state'],
-				flow: 'pkce',
-				clientId: 'spotify-client-id-value',
-				accessTokenSecretName: 'spotifyAccessToken',
-				refreshTokenSecretName: 'spotifyRefreshToken',
-				allowedHosts: ['api.spotify.com'],
-				tokenPayload: {
-					access_token: 'rotated-access-token',
-				},
-			}),
+	const spotifyReconnect = await call(
+		postRequest({
+			...spotifyConnect,
+			scopes: ['user-read-playback-state'],
+			tokenPayload: { access_token: 'rotated-access-token', expires_in: 3600 },
 		}),
-		params: {},
-	} as never)
+	)
 	expect(spotifyReconnect.status).toBe(200)
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
 		expect.objectContaining({
-			config: expect.objectContaining({
-				name: 'spotify',
-			}),
+			config: expect.objectContaining({ name: 'spotify' }),
 		}),
 	)
 	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
 		expect.objectContaining({
 			name: 'spotify',
 			accessToken: 'rotated-access-token',
+			refreshPolicy: 'required',
 		}),
 	)
 
+	const teslaHosts = [
+		'auth.tesla.com',
+		'fleet-api.prd.na.vn.cloud.tesla.com',
+		'fleet-auth.prd.vn.cloud.tesla.com',
+	]
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'teslaAccessToken',
-			scope: 'user',
-			description: '',
-			packageId: null,
-			allowedHosts: [
-				'auth.tesla.com',
-				'fleet-api.prd.na.vn.cloud.tesla.com',
-				'fleet-auth.prd.vn.cloud.tesla.com',
-			],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-		{
-			name: 'teslaRefreshToken',
-			scope: 'user',
-			description: '',
-			packageId: null,
-			allowedHosts: [
-				'auth.tesla.com',
-				'fleet-api.prd.na.vn.cloud.tesla.com',
-				'fleet-auth.prd.vn.cloud.tesla.com',
-			],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		makeSecret('teslaAccessToken', { allowedHosts: teslaHosts }),
+		makeSecret('teslaRefreshToken', { allowedHosts: teslaHosts }),
+	] as never)
 
-	const teslaResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'Tesla',
-				tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
-				apiBaseUrl: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
-				flow: 'pkce',
-				clientId: 'tesla-client-id-value',
-				accessTokenSecretName: 'teslaAccessToken',
-				refreshTokenSecretName: 'teslaRefreshToken',
-				allowedHosts: [
-					'fleet-api.prd.na.vn.cloud.tesla.com',
-					'fleet-auth.prd.vn.cloud.tesla.com',
-				],
-				tokenPayload: {
-					access_token: 'access-token',
-					refresh_token: 'refresh-token',
-				},
-			}),
+	const teslaResponse = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'Tesla',
+			tokenUrl: 'https://auth.tesla.com/oauth2/v3/token',
+			apiBaseUrl: 'https://fleet-api.prd.na.vn.cloud.tesla.com',
+			flow: 'pkce',
+			clientId: 'tesla-client-id-value',
+			accessTokenSecretName: 'teslaAccessToken',
+			refreshTokenSecretName: 'teslaRefreshToken',
+			allowedHosts: teslaHosts.slice(1),
+			tokenPayload: {
+				access_token: 'access-token',
+				refresh_token: 'refresh-token',
+			},
 		}),
-		params: {},
-	} as never)
+	)
 
 	expect(teslaResponse.status).toBe(200)
-	const teslaPayload = await teslaResponse.json()
+	const teslaPayload = (await teslaResponse.json()) as {
+		allowedHosts: Array<string>
+	}
 	expect(teslaPayload).toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
@@ -583,86 +673,45 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		hostApprovalLinks: [],
 		integrationName: 'tesla',
 	})
-	expect(teslaPayload.allowedHosts).toEqual(
-		expect.arrayContaining([
-			'auth.tesla.com',
-			'fleet-api.prd.na.vn.cloud.tesla.com',
-			'fleet-auth.prd.vn.cloud.tesla.com',
-		]),
-	)
+	expect(teslaPayload.allowedHosts).toEqual(expect.arrayContaining(teslaHosts))
 })
 
 test('connect oauth rejects invalid authorization metadata', async () => {
-	mockModule.upsertIntegration.mockClear()
-
-	const handler = createAccountSecretsApiHandler(createEnv())
 	await expect(
-		handler.handler({
-			request: new Request('https://example.com/account/secrets.json', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					action: 'connect_oauth',
-					provider: 'GitHub',
-					authorizeUrl: 'ftp://github.com/login/oauth/authorize',
-					tokenUrl: 'https://github.com/login/oauth/access_token',
-					apiBaseUrl: 'https://api.github.com',
-					scopes: ['repo'],
-					flow: 'pkce',
-					clientId: 'github-client-id-value',
-					accessTokenSecretName: 'githubAccessToken',
-					refreshTokenSecretName: 'githubRefreshToken',
-					allowedHosts: ['api.github.com'],
-					tokenPayload: {
-						access_token: 'access-token',
-						refresh_token: 'refresh-token',
-					},
-				}),
+		createHandler()(
+			postRequest({
+				action: 'connect_oauth',
+				provider: 'GitHub',
+				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com',
+				scopes: ['repo'],
+				flow: 'pkce',
+				clientId: 'github-client-id-value',
+				accessTokenSecretName: 'githubAccessToken',
+				refreshTokenSecretName: 'githubRefreshToken',
+				allowedHosts: ['api.github.com'],
+				tokenPayload: {
+					access_token: 'access-token',
+					refresh_token: 'refresh-token',
+				},
 			}),
-			params: {},
-		} as never),
+		),
 	).rejects.toThrow('OAuth integration configuration is invalid.')
 	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
 })
 
 test('host approval view and approve persist normalized hosts for the selected secret', async () => {
-	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'cloudflareToken',
-			scope: 'user',
-			description: 'Cloudflare token',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
-	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'cloudflareToken',
-			scope: 'user',
-			description: 'Cloudflare token',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+	const cloudflareToken = makeSecret('cloudflareToken', {
+		description: 'Cloudflare token',
+	})
+	mockModule.listSecrets.mockResolvedValueOnce([cloudflareToken] as never)
+	mockModule.listSecrets.mockResolvedValueOnce([cloudflareToken] as never)
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const viewResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const call = createHandler()
+	const selected =
+		'?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com'
+	const viewResponse = await call(getRequest(selected))
 
 	expect(viewResponse.status).toBe(200)
 	await expect(viewResponse.json()).resolves.toMatchObject({
@@ -677,34 +726,13 @@ test('host approval view and approve persist normalized hosts for the selected s
 	})
 
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'cloudflareToken',
-			scope: 'user',
-			description: 'Cloudflare token',
-			packageId: null,
-			allowedHosts: ['api.github.com'],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		{ ...cloudflareToken, allowedHosts: ['api.github.com'] },
+	] as never)
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
-	const approveResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=API.Cloudflare.com',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const approveResponse = await call(approve(selected))
 
 	expect(approveResponse.status).toBe(200)
 	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
@@ -713,37 +741,20 @@ test('host approval view and approve persist normalized hosts for the selected s
 			name: 'cloudflareToken',
 			scope: 'user',
 			allowedHosts: ['api.cloudflare.com', 'api.github.com'],
-			storageContext: { sessionId: null, appId: null, packageId: null },
+			storageContext: userStorage,
 		}),
 	)
 })
 
 test('host bulk approval adds every requested host to each listed secret', async () => {
-	mockModule.setSecretAllowedHosts.mockClear()
-	const secret = {
-		name: 'cloudflareToken',
-		scope: 'user' as const,
-		description: 'Cloudflare token',
-		packageId: null,
-		allowedHosts: ['api.github.com'],
-		allowedPackages: [],
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		expiresAt: null,
-		ttlMs: null,
-	}
-	mockModule.listSecrets.mockResolvedValue([secret])
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockSecretsListing([
+		makeSecret('cloudflareToken', { allowedHosts: ['api.github.com'] }),
+	])
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const viewResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const call = createHandler()
+	const bulk =
+		'?names=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com'
+	const viewResponse = await call(getRequest(bulk))
 	expect(viewResponse.status).toBe(200)
 	await expect(viewResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -756,17 +767,7 @@ test('host bulk approval adds every requested host to each listed secret', async
 		},
 	})
 
-	const approveResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=cloudflareToken&hosts=api.cloudflare.com,dash.cloudflare.com',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const approveResponse = await call(approve(bulk))
 	expect(approveResponse.status).toBe(200)
 	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
 	expect(mockModule.setSecretAllowedHosts).toHaveBeenCalledWith(
@@ -783,31 +784,11 @@ test('host bulk approval adds every requested host to each listed secret', async
 })
 
 test('host approval rejects truncated and malformed hosts instead of writing them', async () => {
-	mockModule.setSecretAllowedHosts.mockClear()
-	const secret = {
-		name: 'openaiApiKey',
-		scope: 'user' as const,
-		description: 'OpenAI API key',
-		packageId: null,
-		allowedHosts: [] as Array<string>,
-		allowedPackages: [],
-		createdAt: new Date(0).toISOString(),
-		updatedAt: new Date(0).toISOString(),
-		expiresAt: null,
-		ttlMs: null,
-	}
-	mockModule.listSecrets.mockResolvedValue([secret])
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockSecretsListing([makeSecret('openaiApiKey')])
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const mixedView = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=hooks.slack.com,api.ope',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const call = createHandler()
+	const mixed = '?names=openaiApiKey&hosts=hooks.slack.com,api.ope'
+	const mixedView = await call(getRequest(mixed))
 	expect(mixedView.status).toBe(200)
 	await expect(mixedView.json()).resolves.toMatchObject({
 		ok: true,
@@ -816,26 +797,11 @@ test('host approval rejects truncated and malformed hosts instead of writing the
 			names: ['openaiApiKey'],
 			requestedHost: 'hooks.slack.com',
 			requestedHosts: ['hooks.slack.com'],
-			rejectedHosts: [
-				{
-					host: 'api.ope',
-					reason: 'unknown_suffix',
-				},
-			],
+			rejectedHosts: [{ host: 'api.ope', reason: 'unknown_suffix' }],
 		},
 	})
 
-	const mixedApprove = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=hooks.slack.com,api.ope',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const mixedApprove = await call(approve(mixed))
 	expect(mixedApprove.status).toBe(200)
 	await expect(mixedApprove.json()).resolves.toMatchObject({
 		ok: true,
@@ -852,13 +818,9 @@ test('host approval rejects truncated and malformed hosts instead of writing the
 	)
 
 	mockModule.setSecretAllowedHosts.mockClear()
-	const invalidOnlyView = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=api.openai.com/v1,%20%20,api.ope',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const invalidOnlyView = await call(
+		getRequest('?names=openaiApiKey&hosts=api.openai.com/v1,%20%20,api.ope'),
+	)
 	expect(invalidOnlyView.status).toBe(200)
 	await expect(invalidOnlyView.json()).resolves.toMatchObject({
 		ok: true,
@@ -871,17 +833,9 @@ test('host approval rejects truncated and malformed hosts instead of writing the
 		},
 	})
 
-	const invalidOnlyApprove = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?names=openaiApiKey&hosts=api.ope',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const invalidOnlyApprove = await call(
+		approve('?names=openaiApiKey&hosts=api.ope'),
+	)
 	expect(invalidOnlyApprove.status).toBe(400)
 	await expect(invalidOnlyApprove.json()).resolves.toMatchObject({
 		ok: false,
@@ -892,71 +846,34 @@ test('host approval rejects truncated and malformed hosts instead of writing the
 })
 
 test('approval requests reject invalid targets and ignore stale capability query params', async () => {
-	const handler = createAccountSecretsApiHandler(createEnv())
+	const call = createHandler()
+	const selected = '?selected=user::::cloudflareToken'
 
-	const ambiguousResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&allowed-host=api.cloudflare.com&package_id=pkg-123',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-	expect(ambiguousResponse.status).toBe(400)
-	await expect(ambiguousResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Approval request contains both host and package.',
-	})
+	const rejected: Array<[string, string]> = [
+		[
+			`${selected}&allowed-host=api.cloudflare.com&package_id=pkg-123`,
+			'Approval request contains both host and package.',
+		],
+		[selected, 'Approval request is missing a host or package.'],
+		[
+			`${selected}&capability=secretSet`,
+			'Approval request is missing a host or package.',
+		],
+	]
+	for (const [search, error] of rejected) {
+		const response = await call(approve(search))
+		expect(response.status).toBe(400)
+		await expect(response.json()).resolves.toMatchObject({ ok: false, error })
+	}
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
-
-	const missingTargetResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-	expect(missingTargetResponse.status).toBe(400)
-	await expect(missingTargetResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Approval request is missing a host or package.',
-	})
-
-	const staleCapabilityResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secretSet',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
-	expect(staleCapabilityResponse.status).toBe(400)
-	await expect(staleCapabilityResponse.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Approval request is missing a host or package.',
-	})
 
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
-	const staleCapabilityView = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::cloudflareToken&capability=secretSet',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const staleCapabilityView = await call(
+		getRequest(`${selected}&capability=secretSet`),
+	)
 	expect(staleCapabilityView.status).toBe(200)
 	await expect(staleCapabilityView.json()).resolves.toMatchObject({
 		ok: true,
@@ -966,81 +883,43 @@ test('approval requests reject invalid targets and ignore stale capability query
 })
 
 test('account secrets payload includes all packages and package titles and allowed packages', async () => {
+	const makePackage = (id: string, kodyId: string, hasApp: boolean) => ({
+		id,
+		userId: 'stable-user-1',
+		name: `@kentcdodds/${kodyId}`,
+		kodyId,
+		description: kodyId,
+		tags: ['discord'],
+		searchText: null,
+		sourceId: `source-${id}`,
+		hasApp,
+		hidden: false,
+		isPrivate: false,
+		createdAt: epoch,
+		updatedAt: epoch,
+	})
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([
-		{
-			id: 'package-123',
-			userId: 'stable-user-1',
-			name: '@kentcdodds/discord-gateway',
-			kodyId: 'discord-gateway',
-			description: 'Discord gateway package',
-			tags: ['discord'],
-			searchText: null,
-			sourceId: 'source-1',
-			hasApp: true,
-			hidden: false,
-			isPrivate: false,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		},
-		{
-			id: 'pkg-allowed',
-			userId: 'stable-user-1',
-			name: '@kentcdodds/discord-general-chat',
-			kodyId: 'discord-general-chat',
-			description: 'Discord subscriber',
-			tags: ['discord'],
-			searchText: null,
-			sourceId: 'source-2',
-			hasApp: false,
-			hidden: false,
-			isPrivate: false,
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-		},
-	])
+		makePackage('package-123', 'discord-gateway', true),
+		makePackage('pkg-allowed', 'discord-general-chat', false),
+	] as never)
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'discordBotToken',
-			scope: 'user',
-			description: 'Discord bot token',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: ['pkg-allowed'],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		makeSecret('discordBotToken', { allowedPackages: ['pkg-allowed'] }),
+	] as never)
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(
 		new Map([
 			[
 				'package-123',
 				[
-					{
-						name: 'gatewaySigningSecret',
+					makeSecret('gatewaySigningSecret', {
 						scope: 'package',
-						description: 'Gateway signing secret',
 						packageId: 'package-123',
-						allowedHosts: [],
-						allowedPackages: [],
-						createdAt: new Date(0).toISOString(),
-						updatedAt: new Date(0).toISOString(),
-						expiresAt: null,
-						ttlMs: null,
-					},
+					}),
 				],
 			],
-		]),
+		]) as never,
 	)
 
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const response = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'GET',
-		}),
-		params: {},
-	} as never)
+	const response = await createHandler()(getRequest(''))
 
 	expect(response.status).toBe(200)
 	await expect(response.json()).resolves.toMatchObject({
@@ -1061,37 +940,26 @@ test('account secrets payload includes all packages and package titles and allow
 })
 
 test('package approval reject and approve handle missing secrets and deduplicate package ids', async () => {
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const savedPackages = [
-		{
-			id: 'pkg-allowed',
-			kodyId: 'allowed-pkg',
-			name: '@user/allowed-pkg',
-			updatedAt: new Date(0).toISOString(),
-		},
-		{
-			id: 'pkg-new',
-			kodyId: 'new-pkg',
-			name: '@user/new-pkg',
-			updatedAt: new Date(0).toISOString(),
-		},
-	]
+	const call = createHandler()
+	const savedPackages = ['allowed', 'new'].map((suffix) => ({
+		id: `pkg-${suffix}`,
+		kodyId: `${suffix}-pkg`,
+		name: `@user/${suffix}-pkg`,
+		updatedAt: epoch,
+	}))
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(
+		savedPackages as never,
+	)
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
-	const rejectResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-allowed',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'reject' }),
-			},
+	const rejectResponse = await call(
+		postRequest(
+			{ action: 'reject' },
+			'?selected=user::::discordBotToken&package_id=pkg-allowed',
 		),
-		params: {},
-	} as never)
+	)
 
 	expect(rejectResponse.status).toBe(200)
 	await expect(rejectResponse.json()).resolves.toMatchObject({
@@ -1101,36 +969,23 @@ test('package approval reject and approve handle missing secrets and deduplicate
 	expect(mockModule.setSecretAllowedHosts).not.toHaveBeenCalled()
 	expect(mockModule.setSecretAllowedPackages).not.toHaveBeenCalled()
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(
+		savedPackages as never,
+	)
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'discordBotToken',
-			scope: 'user',
-			description: 'Discord bot token',
-			packageId: null,
-			allowedHosts: [],
+		makeSecret('discordBotToken', {
 			allowedPackages: ['pkg-allowed', 'pkg-allowed'],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		}),
+	] as never)
 	mockModule.listSecrets.mockResolvedValueOnce([])
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
+	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(
+		savedPackages as never,
+	)
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
-	const approveResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::discordBotToken&package_id=pkg-new',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const approveResponse = await call(
+		approve('?selected=user::::discordBotToken&package_id=pkg-new'),
+	)
 
 	expect(approveResponse.status).toBe(200)
 	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
@@ -1144,66 +999,24 @@ test('package approval reject and approve handle missing secrets and deduplicate
 })
 
 test('bulk package approval view and approve grant the package on every listed secret', async () => {
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const savedPackages = [
+	const call = createHandler()
+	mockSecretsListing([
+		makeSecret('discordBotToken'),
+		makeSecret('xAccessToken'),
+		makeSecret('githubAccessToken', { allowedPackages: ['pkg-release'] }),
+	])
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([
 		{
 			id: 'pkg-release',
 			kodyId: 'release',
 			name: '@kentcdodds/release',
-			updatedAt: new Date(0).toISOString(),
+			updatedAt: epoch,
 		},
-	]
-	const secrets = [
-		{
-			name: 'discordBotToken',
-			scope: 'user' as const,
-			description: 'Discord',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-		{
-			name: 'xAccessToken',
-			scope: 'user' as const,
-			description: 'X',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-		{
-			name: 'githubAccessToken',
-			scope: 'user' as const,
-			description: 'GitHub',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: ['pkg-release'],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	]
+	] as never)
+	const bulk =
+		'?package_id=pkg-release&names=discordBotToken,xAccessToken,githubAccessToken'
 
-	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce(savedPackages)
-	mockModule.listSecrets.mockResolvedValueOnce(secrets)
-	mockModule.listSecrets.mockResolvedValueOnce(secrets)
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
-
-	const viewResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?package_id=pkg-release&names=discordBotToken,xAccessToken,githubAccessToken',
-			{ method: 'GET' },
-		),
-		params: {},
-	} as never)
+	const viewResponse = await call(getRequest(bulk))
 
 	expect(viewResponse.status).toBe(200)
 	await expect(viewResponse.json()).resolves.toMatchObject({
@@ -1215,80 +1028,37 @@ test('bulk package approval view and approve grant the package on every listed s
 		},
 	})
 
-	mockModule.setSecretAllowedPackages.mockClear()
-	mockModule.listSavedPackagesByUserId.mockResolvedValue(savedPackages)
-	mockModule.listSecrets.mockResolvedValue(secrets)
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
-
-	const approveResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?package_id=pkg-release&names=discordBotToken,xAccessToken,githubAccessToken',
-			{
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ action: 'approve' }),
-			},
-		),
-		params: {},
-	} as never)
+	const approveResponse = await call(approve(bulk))
 
 	expect(approveResponse.status).toBe(200)
 	await expect(approveResponse.json()).resolves.toMatchObject({ ok: true })
 	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledTimes(2)
-	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'discordBotToken',
-			allowedPackages: ['pkg-release'],
-		}),
-	)
-	expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
-		expect.objectContaining({
-			name: 'xAccessToken',
-			allowedPackages: ['pkg-release'],
-		}),
-	)
-
-	mockModule.listSavedPackagesByUserId.mockReset()
-	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	mockModule.listSecrets.mockReset()
-	mockModule.listSecrets.mockResolvedValue([])
-	mockModule.listPackageSecretsByPackageIds.mockReset()
-	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	for (const name of ['discordBotToken', 'xAccessToken']) {
+		expect(mockModule.setSecretAllowedPackages).toHaveBeenCalledWith(
+			expect.objectContaining({ name, allowedPackages: ['pkg-release'] }),
+		)
+	}
 })
 
 test('account secrets API loads selected secret values and deletes the selected user secret', async () => {
 	mockModule.listSecrets.mockResolvedValueOnce([
-		{
-			name: 'myApiKey',
-			scope: 'user',
-			description: 'API key',
-			packageId: null,
-			allowedHosts: [],
-			allowedPackages: [],
-			createdAt: new Date(0).toISOString(),
-			updatedAt: new Date(0).toISOString(),
-			expiresAt: null,
-			ttlMs: null,
-		},
-	])
+		makeSecret('myApiKey', { description: 'API key' }),
+	] as never)
 	mockModule.listSavedPackagesByUserId.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 	mockModule.resolveSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'seeded-secret-value',
-	})
-
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const getResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/secrets.json?selected=user::::myApiKey',
-			{ method: 'GET' },
-		),
-		params: {},
 	} as never)
 
+	const call = createHandler()
+	const getResponse = await call(getRequest('?selected=user::::myApiKey'))
+
 	expect(getResponse.status).toBe(200)
-	const getPayload = await getResponse.json()
+	const getPayload = (await getResponse.json()) as {
+		ok: boolean
+		selectedSecret: unknown
+	}
 	expect(getPayload.ok).toBe(true)
 	expect(getPayload.selectedSecret).toMatchObject({
 		name: 'myApiKey',
@@ -1299,7 +1069,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 		expect.objectContaining({
 			name: 'myApiKey',
 			scope: 'user',
-			storageContext: { sessionId: null, appId: null, packageId: null },
+			storageContext: userStorage,
 		}),
 	)
 
@@ -1308,17 +1078,9 @@ test('account secrets API loads selected secret values and deletes the selected 
 	mockModule.listSecrets.mockResolvedValueOnce([])
 	mockModule.listPackageSecretsByPackageIds.mockResolvedValueOnce(new Map())
 
-	const deleteResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				currentId: 'user::::myApiKey',
-			}),
-		}),
-		params: {},
-	} as never)
+	const deleteResponse = await call(
+		postRequest({ action: 'delete', currentId: 'user::::myApiKey' }),
+	)
 
 	expect(deleteResponse.status).toBe(200)
 	await expect(deleteResponse.json()).resolves.toMatchObject({
@@ -1332,47 +1094,182 @@ test('account secrets API loads selected secret values and deletes the selected 
 			userId: 'stable-user-1',
 			name: 'myApiKey',
 			scope: 'user',
-			storageContext: { sessionId: null, appId: null, packageId: null },
+			storageContext: userStorage,
 		}),
 	)
+})
+
+test('account secrets save returns the new secret after a successful write', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockResolvedValueOnce([makeSecret('newApiKey')])
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'fresh-secret',
+	} as never)
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			name: 'newApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			description: 'API key',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::newApiKey',
+			name: 'newApiKey',
+			value: 'fresh-secret',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'newApiKey',
+			value: 'fresh-secret',
+			scope: 'user',
+		}),
+	)
+})
+
+test('account secrets save stays ok when metadata reload fails after write', async () => {
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([])
+		.mockRejectedValueOnce(new Error('metadata reload failed'))
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			name: 'newApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			description: 'API key',
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::newApiKey',
+			name: 'newApiKey',
+			value: 'fresh-secret',
+		},
+	})
+	expect(mockModule.saveSecret).toHaveBeenCalled()
+})
+
+test('account secrets save fallback uses the saved record metadata', async () => {
+	const existing = makeSecret('oldApiKey', {
+		ttlMs: 60_000,
+		expiresAt: '2026-10-06T00:00:00.000Z',
+	})
+	const savedAt = '2026-10-05T12:00:00.000Z'
+	const expiresAt = new Date(
+		Date.now() + 30 * 24 * 60 * 60 * 1000,
+	).toISOString()
+	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
+	mockModule.listPackageSecretsByPackageIds.mockResolvedValue(new Map())
+	mockModule.listSecrets
+		.mockResolvedValueOnce([existing])
+		.mockRejectedValueOnce(new Error('metadata reload failed'))
+	mockModule.saveSecret.mockResolvedValueOnce({
+		name: 'renamedApiKey',
+		scope: 'user',
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: savedAt,
+		updatedAt: savedAt,
+		expiresAt,
+		ttlMs: 2_592_000_000,
+	} as never)
+
+	const call = createHandler()
+	const response = await call(
+		postRequest({
+			action: 'save',
+			currentId: 'user::::oldApiKey',
+			name: 'renamedApiKey',
+			scope: 'user',
+			value: 'fresh-secret',
+			expiresAt,
+			allowedHosts: [],
+			allowedPackages: [],
+		}),
+	)
+
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		selectedSecret: {
+			id: 'user::::renamedApiKey',
+			createdAt: savedAt,
+			expiresAt,
+			ttlMs: 2_592_000_000,
+		},
+	})
 })
 
 test('oauth_exchange maps provider failures and forwards exchange styles', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	fetchMock.mockResolvedValueOnce(
-		new Response(
-			JSON.stringify({
-				access_token: 'notion-access',
-				refresh_token: 'notion-refresh',
-			}),
-			{ status: 200, headers: { 'Content-Type': 'application/json' } },
-		),
-	)
-
-	const notionSuccess = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
+	const call = createHandler()
+	const jsonResponse = (body: unknown, status = 200) =>
+		new Response(JSON.stringify(body), {
+			status,
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
+		})
+	const exchange = (
+		tokenUrl: string,
+		params: Record<string, string>,
+		extra: Record<string, unknown>,
+	) =>
+		call(
+			postRequest({
 				action: 'oauth_exchange',
-				tokenUrl: 'https://api.notion.com/v1/oauth/token',
+				tokenUrl,
 				params: new URLSearchParams({
 					grant_type: 'authorization_code',
-					client_id: 'notion-client-id',
-					code: 'auth-code',
 					redirect_uri: 'https://example.com/connect/oauth',
+					...params,
 				}).toString(),
 				flow: 'confidential',
-				clientSecret: 'notion-client-secret',
-				allowedHosts: ['api.notion.com'],
+				...extra,
 			}),
-		}),
-		params: {},
-	} as never)
+		)
+	const notion = {
+		clientSecret: 'notion-client-secret',
+		allowedHosts: ['api.notion.com'],
+	}
+	const notionTokenUrl = 'https://api.notion.com/v1/oauth/token'
 
+	fetchMock.mockResolvedValueOnce(
+		jsonResponse({
+			access_token: 'notion-access',
+			refresh_token: 'notion-refresh',
+		}),
+	)
+	const notionSuccess = await exchange(
+		notionTokenUrl,
+		{ client_id: 'notion-client-id', code: 'auth-code' },
+		notion,
+	)
 	expect(notionSuccess.status).toBe(200)
 	await expect(notionSuccess.json()).resolves.toMatchObject({
 		access_token: 'notion-access',
@@ -1381,71 +1278,37 @@ test('oauth_exchange maps provider failures and forwards exchange styles', async
 	expect(fetchMock).toHaveBeenCalledTimes(1)
 
 	fetchMock.mockResolvedValueOnce(
-		new Response(JSON.stringify({ access_token: 'slack-access' }), {
-			status: 200,
-			headers: { 'Content-Type': 'application/json' },
-		}),
+		jsonResponse({ access_token: 'slack-access' }),
 	)
-
-	const formSuccess = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				tokenUrl: 'https://slack.com/api/oauth.v2.access',
-				params: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: 'slack-client-id',
-					code: 'slack-code',
-					redirect_uri: 'https://example.com/connect/oauth',
-				}).toString(),
-				flow: 'confidential',
-				tokenExchangeStyle: 'form',
-				clientSecret: 'slack-client-secret',
-				allowedHosts: ['slack.com'],
-			}),
-		}),
-		params: {},
-	} as never)
-
+	const formSuccess = await exchange(
+		'https://slack.com/api/oauth.v2.access',
+		{ client_id: 'slack-client-id', code: 'slack-code' },
+		{
+			tokenExchangeStyle: 'form',
+			clientSecret: 'slack-client-secret',
+			allowedHosts: ['slack.com'],
+		},
+	)
 	expect(formSuccess.status).toBe(200)
 	await expect(formSuccess.json()).resolves.toMatchObject({
 		access_token: 'slack-access',
 	})
 
 	fetchMock.mockResolvedValueOnce(
-		new Response(
-			JSON.stringify({
-				access_token: 'canva-access',
-				refresh_token: 'canva-refresh',
-			}),
-			{ status: 200, headers: { 'Content-Type': 'application/json' } },
-		),
-	)
-
-	const canvaSuccess = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-				params: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: 'canva-client-id',
-					code: 'canva-code',
-					redirect_uri: 'https://example.com/connect/oauth',
-					code_verifier: 'pkce-verifier',
-				}).toString(),
-				flow: 'confidential',
-				clientSecret: 'canva-client-secret',
-				allowedHosts: ['api.canva.com'],
-			}),
+		jsonResponse({
+			access_token: 'canva-access',
+			refresh_token: 'canva-refresh',
 		}),
-		params: {},
-	} as never)
-
+	)
+	const canvaSuccess = await exchange(
+		'https://api.canva.com/rest/v1/oauth/token',
+		{
+			client_id: 'canva-client-id',
+			code: 'canva-code',
+			code_verifier: 'pkce-verifier',
+		},
+		{ clientSecret: 'canva-client-secret', allowedHosts: ['api.canva.com'] },
+	)
 	expect(canvaSuccess.status).toBe(200)
 	await expect(canvaSuccess.json()).resolves.toMatchObject({
 		access_token: 'canva-access',
@@ -1454,36 +1317,19 @@ test('oauth_exchange maps provider failures and forwards exchange styles', async
 	expect(fetchMock).toHaveBeenCalledTimes(3)
 
 	fetchMock.mockResolvedValueOnce(
-		new Response(
-			JSON.stringify({
+		jsonResponse(
+			{
 				error: 'invalid_client',
 				error_description: 'Client authentication failed',
-			}),
-			{ status: 401, headers: { 'Content-Type': 'application/json' } },
+			},
+			401,
 		),
 	)
-
-	const notionFailure = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				tokenUrl: 'https://api.notion.com/v1/oauth/token',
-				params: new URLSearchParams({
-					grant_type: 'authorization_code',
-					client_id: 'notion-client-id',
-					code: 'bad-code',
-					redirect_uri: 'https://example.com/connect/oauth',
-				}).toString(),
-				flow: 'confidential',
-				clientSecret: 'notion-client-secret',
-				allowedHosts: ['api.notion.com'],
-			}),
-		}),
-		params: {},
-	} as never)
-
+	const notionFailure = await exchange(
+		notionTokenUrl,
+		{ client_id: 'notion-client-id', code: 'bad-code' },
+		notion,
+	)
 	expect(notionFailure.status).toBe(502)
 	const notionFailureBody = await notionFailure.text()
 	expect(JSON.parse(notionFailureBody)).toEqual({
@@ -1498,39 +1344,29 @@ test('oauth_exchange maps provider failures and forwards exchange styles', async
 })
 
 test('connect oauth persists usePkce for confidential + PKCE providers like Canva', async () => {
-	mockModule.saveValue.mockClear()
-	mockModule.deleteSecret.mockClear()
-	const handler = createAccountSecretsApiHandler(createEnv())
-
-	const canvaResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
-				provider: 'canva',
-				authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
-				tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-				apiBaseUrl: 'https://api.canva.com/rest/v1',
-				scopes: ['design:content:read'],
-				scopeSeparator: ' ',
-				flow: 'confidential',
-				usePkce: true,
-				tokenExchangeStyle: 'basic-form',
-				clientId: 'canva-client-id-value',
-				allowedHosts: ['api.canva.com'],
-				tokenPayload: {
-					access_token: 'access-token',
-					refresh_token: 'refresh-token',
-				},
-			}),
+	const canvaResponse = await createHandler()(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'canva',
+			authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
+			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
+			apiBaseUrl: 'https://api.canva.com/rest/v1',
+			scopes: ['design:content:read'],
+			scopeSeparator: ' ',
+			flow: 'confidential',
+			usePkce: true,
+			tokenExchangeStyle: 'basic-form',
+			clientId: 'canva-client-id-value',
+			allowedHosts: ['api.canva.com'],
+			tokenPayload: {
+				access_token: 'access-token',
+				refresh_token: 'refresh-token',
+			},
 		}),
-		params: {},
-	} as never)
+	)
 
 	expect(canvaResponse.status).toBe(200)
-	const canvaPayload = await canvaResponse.json()
-	expect(canvaPayload).toMatchObject({
+	await expect(canvaResponse.json()).resolves.toMatchObject({
 		ok: true,
 		accessTokenSaved: true,
 		refreshTokenSaved: true,
@@ -1563,51 +1399,180 @@ test('connect oauth persists usePkce for confidential + PKCE providers like Canv
 	)
 })
 
-test('platform-lane oauth exchange and connect are rejected', async () => {
+const publishedGithubPlatformApp = {
+	slug: 'github-platform',
+	provider: 'github',
+	label: 'GitHub',
+	description: null,
+	clientId: 'platform-client-id',
+	hasClientSecret: true,
+	tokenUrl: 'https://github.com/login/oauth/access_token',
+	authorizeUrl: 'https://github.com/login/oauth/authorize',
+	apiBaseUrl: 'https://api.github.com',
+	flow: 'confidential' as const,
+	usePkce: true,
+	tokenExchangeStyle: null,
+	scopeSeparator: null,
+	extraAuthorizeParams: {},
+	allowedScopes: ['read:user', 'repo'],
+	defaultScopes: ['read:user'],
+	requiredHosts: ['github.com'],
+	enabled: true,
+	visibility: 'published' as const,
+	logoKey: null,
+	logoContentType: null,
+	createdAt: epoch,
+	updatedAt: epoch,
+}
+
+test('platform-lane oauth exchange and connect reject apps that are not discoverable', async () => {
 	const fetchMock = vi.fn()
 	vi.stubGlobal('fetch', fetchMock)
-	const handler = createAccountSecretsApiHandler(createEnv())
-	const retired = {
+	mockModule.getAvailablePlatformApp.mockResolvedValue(null)
+	mockModule.persistIntegrationTokens.mockClear()
+	const call = createHandler()
+	const unavailable = {
 		ok: false,
-		error:
-			'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
+		error: 'Platform integration is not available.',
 	}
 
-	const exchangeResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'oauth_exchange',
-				platformAppSlug: 'github',
-				params: 'grant_type=authorization_code',
-			}),
+	const exchangeResponse = await call(
+		postRequest({
+			action: 'oauth_exchange',
+			platformAppSlug: 'google-platform',
+			params: 'grant_type=authorization_code',
 		}),
-		params: {},
-	} as never)
+	)
 	expect(exchangeResponse.status).toBe(400)
-	await expect(exchangeResponse.json()).resolves.toEqual(retired)
+	await expect(exchangeResponse.json()).resolves.toEqual(unavailable)
 	expect(fetchMock).not.toHaveBeenCalled()
+	expect(mockModule.getPlatformOauthAppClientSecret).not.toHaveBeenCalled()
 
-	const connectResponse = await handler.handler({
-		request: new Request('https://example.com/account/secrets.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'connect_oauth',
+	const connectResponse = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'google-platform',
+			platformAppSlug: 'google-platform',
+			scopes: ['openid'],
+			tokenPayload: { access_token: 'google-access-token' },
+		}),
+	)
+	expect(connectResponse.status).toBe(400)
+	await expect(connectResponse.json()).resolves.toEqual(unavailable)
+	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
+	expect(mockModule.persistIntegrationTokens).not.toHaveBeenCalled()
+
+	vi.unstubAllGlobals()
+})
+
+test('published platform apps exchange with the app row credentials and connect in the platform lane', async () => {
+	const fetchMock = vi.fn(
+		async (_url: string, _init?: RequestInit) =>
+			new Response(JSON.stringify({ access_token: 'gh-access-token' }), {
+				status: 200,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	mockModule.getAvailablePlatformApp.mockResolvedValue(
+		publishedGithubPlatformApp,
+	)
+	mockModule.getPlatformOauthAppClientSecret.mockResolvedValue(
+		'shared-platform-secret',
+	)
+	mockModule.persistIntegrationTokens.mockClear()
+	mockModule.persistUserOauthAppClientSecret.mockClear()
+	mockModule.upsertPlatformIntegration.mockClear()
+	mockModule.upsertIntegration.mockClear()
+	mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents.mockClear()
+	const call = createHandler()
+
+	const exchangeResponse = await call(
+		postRequest({
+			action: 'oauth_exchange',
+			platformAppSlug: 'github-platform',
+			tokenUrl: 'https://attacker.example/token',
+			flow: 'pkce',
+			params: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code: 'auth-code',
+				client_id: 'attacker-client-id',
+				client_secret: 'attacker-secret',
+			}).toString(),
+		}),
+	)
+	expect(exchangeResponse.status).toBe(200)
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+	const [exchangeUrl, exchangeInit] = fetchMock.mock.calls[0] ?? []
+	expect(exchangeUrl).toBe('https://github.com/login/oauth/access_token')
+	const exchangeBody = new URLSearchParams(String(exchangeInit?.body))
+	expect(exchangeBody.get('client_id')).toBe('platform-client-id')
+	expect(exchangeBody.get('client_secret')).toBe('shared-platform-secret')
+	expect(exchangeBody.get('code')).toBe('auth-code')
+
+	const rejectedScopes = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'github-platform',
+			platformAppSlug: 'github-platform',
+			scopes: ['admin:org'],
+			tokenPayload: { access_token: 'gh-access-token' },
+		}),
+	)
+	expect(rejectedScopes.status).toBe(400)
+	expect(mockModule.persistIntegrationTokens).not.toHaveBeenCalled()
+
+	const connectResponse = await call(
+		postRequest({
+			action: 'connect_oauth',
+			provider: 'github-platform',
+			platformAppSlug: 'github-platform',
+			tokenUrl: 'https://attacker.example/token',
+			clientId: 'attacker-client-id',
+			clientSecret: 'attacker-secret',
+			scopes: ['read:user'],
+			tokenPayload: {
+				access_token: 'gh-access-token',
+				refresh_token: 'gh-refresh-token',
+			},
+		}),
+	)
+	expect(connectResponse.status).toBe(200)
+	await expect(connectResponse.json()).resolves.toMatchObject({
+		ok: true,
+		integrationName: 'github-platform',
+		refreshTokenSaved: true,
+		allowedHosts: ['api.github.com', 'github.com'],
+	})
+	expect(mockModule.upsertPlatformIntegration).toHaveBeenCalledWith(
+		expect.objectContaining({
+			platformAppSlug: 'github-platform',
+			name: 'github-platform',
+			scopes: ['read:user'],
+		}),
+	)
+	expect(mockModule.upsertIntegration).not.toHaveBeenCalled()
+	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
+		expect.objectContaining({
+			name: 'github-platform',
+			accessToken: 'gh-access-token',
+			refreshToken: 'gh-refresh-token',
+		}),
+	)
+	expect(mockModule.persistUserOauthAppClientSecret).not.toHaveBeenCalled()
+	expect(
+		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
+	).toHaveBeenCalledWith(
+		expect.objectContaining({
+			integration: expect.objectContaining({
+				lane: 'platform',
 				provider: 'github',
-				platformAppSlug: 'github',
-				scopes: ['read:user'],
-				accessTokenSecretName: 'githubAccessToken',
-				tokenPayload: { access_token: 'gh-access-token' },
+				platform_app_slug: 'github-platform',
 			}),
 		}),
-		params: {},
-	} as never)
-	expect(connectResponse.status).toBe(400)
-	await expect(connectResponse.json()).resolves.toEqual(retired)
-	expect(mockModule.upsertPlatformIntegration).not.toHaveBeenCalled()
-	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	)
 
+	mockModule.getAvailablePlatformApp.mockResolvedValue(null)
+	mockModule.getPlatformOauthAppClientSecret.mockResolvedValue(null)
 	vi.unstubAllGlobals()
 })

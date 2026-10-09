@@ -23,6 +23,10 @@ import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	orgAccountClientLoaders,
+	orgAccountClientRoutes,
+} from './org-account-routes.tsx'
 import { HomeRoute, homeRouteLoader } from './home.tsx'
 import { OAuthCallbackRoute } from './oauth-callback.tsx'
 import { ProfileRoute, profileRouteLoader } from './profile.tsx'
@@ -229,10 +233,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		adminArea,
 		(m) => m.adminFeatureFlagsRouteLoader,
 	),
-	[routePattern(routes.adminBanners)]: lazyRouteLoader(
-		adminArea,
-		(m) => m.adminBannersRouteLoader,
-	),
 	[routePattern(routes.adminPlatformIntegrations)]: lazyRouteLoader(
 		adminArea,
 		(m) => m.adminPlatformIntegrationsRouteLoader,
@@ -370,6 +370,14 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		onboardingArea,
 		(m) => m.connectSecretsRouteLoader,
 	),
+	[routePattern(routes.connectSecretSet)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectSecretSetRouteLoader,
+	),
+	[routePattern(routes.connectWebhookApply)]: lazyRouteLoader(
+		onboardingArea,
+		(m) => m.connectWebhookApplyRouteLoader,
+	),
 	[routePattern(routes.pendingVerification)]: lazyRouteLoader(
 		authArea,
 		(m) => m.pendingVerificationRouteLoader,
@@ -386,6 +394,7 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		marketingArea,
 		(m) => m.faqRouteLoader,
 	),
+	...orgAccountClientLoaders,
 }
 
 export const clientRoutes = {
@@ -542,9 +551,6 @@ export const clientRoutes = {
 	[routePattern(routes.adminFeatureFlags)]: (
 		<LazyAdminRoute render={(m) => <m.AdminFeatureFlagsRoute />} />
 	),
-	[routePattern(routes.adminBanners)]: (
-		<LazyAdminRoute render={(m) => <m.AdminBannersRoute />} />
-	),
 	[routePattern(routes.adminPlatformIntegrations)]: (
 		<LazyAdminRoute render={(m) => <m.AdminPlatformIntegrationsRoute />} />
 	),
@@ -645,6 +651,9 @@ export const clientRoutes = {
 	[routePattern(routes.faq)]: (
 		<LazyMarketingRoute render={(m) => <m.FaqRoute />} />
 	),
+	[routePattern(routes.caseStudies)]: (
+		<LazyMarketingRoute render={(m) => <m.CaseStudiesRoute />} />
+	),
 	[routePattern(routes.support)]: (
 		<LazyMarketingRoute render={(m) => <m.SupportRoute />} />
 	),
@@ -687,8 +696,15 @@ export const clientRoutes = {
 	[routePattern(routes.connectSecrets)]: (
 		<LazyOnboardingRoute render={(m) => <m.ConnectSecretsRoute />} />
 	),
+	[routePattern(routes.connectSecretSet)]: (
+		<LazyOnboardingRoute render={(m) => <m.ConnectSecretSetRoute />} />
+	),
+	[routePattern(routes.connectWebhookApply)]: (
+		<LazyOnboardingRoute render={(m) => <m.ConnectWebhookApplyRoute />} />
+	),
 	[oauthPaths.authorize]: (
 		<LazyOnboardingRoute render={(m) => <m.OAuthAuthorizeRoute />} />
 	),
 	[oauthPaths.callback]: <OAuthCallbackRoute />,
+	...orgAccountClientRoutes,
 }

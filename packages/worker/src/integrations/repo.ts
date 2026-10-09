@@ -16,6 +16,10 @@ import {
 	type PlatformOauthAppRow,
 } from './platform-apps.ts'
 import {
+	isIntegrationRefreshPolicy,
+	type IntegrationRefreshPolicy,
+} from './refresh-policy.ts'
+import {
 	type JoinedIntegration,
 	type UserIntegrationConnection,
 	type UserIntegrationRow,
@@ -48,6 +52,7 @@ type JoinedIntegrationRow = NullablePrefixed<UserOauthAppRow, 'a_'> &
 		auth_failed_provider_description: string | null
 		auth_failed_http_status: number | null
 		auth_failed_reconnectable: number | null
+		refresh_policy: string | null
 		connection_created_at: string
 		connection_updated_at: string
 	}
@@ -114,6 +119,7 @@ const joinedSelectColumns = `
 	p.default_scopes_json AS p_default_scopes_json,
 	p.required_hosts_json AS p_required_hosts_json,
 	p.enabled AS p_enabled,
+	p.visibility AS p_visibility,
 	p.logo_key AS p_logo_key,
 	p.logo_content_type AS p_logo_content_type,
 	p.created_at AS p_created_at,
@@ -135,6 +141,7 @@ const joinedSelectColumns = `
 	i.auth_failed_provider_description AS auth_failed_provider_description,
 	i.auth_failed_http_status AS auth_failed_http_status,
 	i.auth_failed_reconnectable AS auth_failed_reconnectable,
+	i.refresh_policy AS refresh_policy,
 	i.created_at AS connection_created_at,
 	i.updated_at AS connection_updated_at
 `
@@ -546,6 +553,7 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 	name: string
 	accessTokenEncrypted: string
 	refreshTokenEncrypted: string | null
+	refreshPolicy: IntegrationRefreshPolicy
 }): Promise<void> {
 	const now = new Date().toISOString()
 	await input.db
@@ -553,12 +561,14 @@ export async function updateIntegrationCredentialCiphertexts(input: {
 			`UPDATE user_integrations
 			SET access_token_encrypted = ?,
 				refresh_token_encrypted = COALESCE(?, refresh_token_encrypted),
+				refresh_policy = ?,
 				updated_at = ?
 			WHERE user_id = ? AND name = ?`,
 		)
 		.bind(
 			input.accessTokenEncrypted,
 			input.refreshTokenEncrypted,
+			input.refreshPolicy,
 			now,
 			input.userId,
 			input.name,
@@ -655,6 +665,9 @@ export function mapOauthAppRow(row: UserOauthAppRow): UserOauthApp {
 export function mapIntegrationRow(
 	row: UserIntegrationRow,
 ): UserIntegrationConnection {
+	const refreshPolicy = isIntegrationRefreshPolicy(row.refresh_policy)
+		? row.refresh_policy
+		: null
 	return {
 		userId: row.user_id,
 		name: row.name,
@@ -668,7 +681,8 @@ export function mapIntegrationRow(
 		allowedPackageIds: parseAllowedPackages(row.allowed_packages_json),
 		connectedAt: row.connected_at,
 		tokenRefreshedAt: row.token_refreshed_at,
-		lastAuthFailure: mapLastAuthFailure(row),
+		lastAuthFailure: mapLastAuthFailure(row, refreshPolicy),
+		refreshPolicy,
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}
@@ -741,17 +755,28 @@ export async function clearIntegrationAuthFailure(input: {
 		.run()
 }
 
-function mapLastAuthFailure(row: {
-	auth_failed_at?: string | null
-	auth_failed_reason?: string | null
-	auth_failed_provider_error?: string | null
-	auth_failed_provider_description?: string | null
-	auth_failed_http_status?: number | null
-	auth_failed_reconnectable?: number | null
-}) {
+function mapLastAuthFailure(
+	row: {
+		auth_failed_at?: string | null
+		auth_failed_reason?: string | null
+		auth_failed_provider_error?: string | null
+		auth_failed_provider_description?: string | null
+		auth_failed_http_status?: number | null
+		auth_failed_reconnectable?: number | null
+	},
+	refreshPolicy: IntegrationRefreshPolicy | null,
+) {
 	const occurredAt = row.auth_failed_at?.trim() ?? ''
 	const reason = row.auth_failed_reason?.trim() ?? ''
 	if (!occurredAt || !isIntegrationAuthFailureReason(reason)) return null
+	// A non-expiring grant is healthy without a refresh token, so a stale
+	// snapshot from before the policy was known must not surface as trouble.
+	if (
+		reason === 'missing_refresh_token' &&
+		refreshPolicy === 'not_applicable'
+	) {
+		return null
+	}
 	return {
 		occurredAt,
 		reason,
@@ -785,6 +810,7 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 		auth_failed_provider_description: row.auth_failed_provider_description,
 		auth_failed_http_status: row.auth_failed_http_status,
 		auth_failed_reconnectable: row.auth_failed_reconnectable,
+		refresh_policy: row.refresh_policy,
 		created_at: row.connection_created_at,
 		updated_at: row.connection_updated_at,
 	})
@@ -810,6 +836,7 @@ function mapJoinedRow(row: JoinedIntegrationRow): JoinedIntegration {
 				default_scopes_json: row.p_default_scopes_json ?? '[]',
 				required_hosts_json: row.p_required_hosts_json ?? '[]',
 				enabled: row.p_enabled ?? 0,
+				visibility: row.p_visibility ?? 'draft',
 				logo_key: row.p_logo_key ?? null,
 				logo_content_type: row.p_logo_content_type ?? null,
 				created_at: row.p_created_at ?? '',

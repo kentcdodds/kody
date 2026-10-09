@@ -2,7 +2,6 @@ import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 import { listingNeedsRepublish } from './listing-needs-republish.ts'
 import { extractCommunityListingLikeTokens } from './repo.ts'
 import {
@@ -73,7 +72,7 @@ export async function getUserSocialRowByStableId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<UserSocialRow | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	const row = await db
 		.prepare(

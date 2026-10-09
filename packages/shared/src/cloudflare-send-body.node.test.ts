@@ -1,6 +1,15 @@
 import { expect, test } from 'vitest'
 import { toCloudflareSendBody } from './cloudflare-send-body.ts'
 
+type OutboundMessage = {
+	from: string
+	to: string
+	subject: string
+	html: string
+	text?: string
+	replyTo?: string | null
+}
+
 test('toCloudflareSendBody maps replyTo to reply_to and omits camelCase', () => {
 	expect(
 		toCloudflareSendBody({
@@ -35,7 +44,7 @@ test('toCloudflareSendBody maps replyTo to reply_to and omits camelCase', () => 
 		reply_to: 'abuse@kody.codes',
 	})
 	expect(
-		toCloudflareSendBody({
+		toCloudflareSendBody<OutboundMessage>({
 			from: 'support@kody.codes',
 			to: 'user@example.com',
 			subject: 'Support',

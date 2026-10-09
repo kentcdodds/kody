@@ -4,6 +4,10 @@ import {
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
 import { artifactsBindingErrorCode } from '#worker/repo/artifacts.ts'
+import {
+	isArtifactsGitTransientRemapError,
+	toArtifactsGitUnavailableError,
+} from '#worker/repo/artifacts-git-retry.ts'
 import { isDurableObjectIsolateResourceLimitResetMessage } from '#worker/sentry-options.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -39,6 +43,11 @@ export function rethrowCommunityForkFailure(error: unknown): never {
 	if (error instanceof CommunityForkResourceLimitError) throw error
 	if (isCommunityForkResourceLimitCause(error)) {
 		throw new CommunityForkResourceLimitError(error)
+	}
+	// Same class as Open API `toApiError` Artifacts remap: fork (MCP capability
+	// and website install) must surface a reportable next step, not remotes.
+	if (isArtifactsGitTransientRemapError(error)) {
+		throw toArtifactsGitUnavailableError(error)
 	}
 	throw error
 }

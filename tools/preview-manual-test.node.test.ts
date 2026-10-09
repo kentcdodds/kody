@@ -37,39 +37,40 @@ const sampleComment = [
 	'- cloudflare: [https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks](https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks?token=abc) (`kody-pr-42-mock-cloudflare`)',
 ].join('\n')
 
-test('preview manual test parses flags, PR comments, worker URLs, and health payloads', () => {
-	const options = parseArgs([
-		'--pr',
-		'42',
-		'--no-wait',
-		'--skip-login',
-		'--timeout-ms',
-		'1000',
-		'--poll-ms',
-		'50',
-		'--sha',
-		'abc123',
-		'--json',
-	])
-	expect(options.prNumber).toBe(42)
-	expect(options.wait).toBe(false)
-	expect(options.skipLogin).toBe(true)
-	expect(options.timeoutMs).toBe(1000)
-	expect(options.pollIntervalMs).toBe(50)
-	expect(options.expectedSha).toBe('abc123')
-	expect(options.json).toBe(true)
+const plainSpec = {
+	expectedStatus: null,
+	body: null,
+	dump: false,
+	contains: [],
+}
 
+test('preview manual test parses flags, PR comments, worker URLs, and health payloads', () => {
+	expect(
+		parseArgs(
+			'--pr 42 --no-wait --skip-login --timeout-ms 1000 --poll-ms 50 --sha abc123 --json'.split(
+				' ',
+			),
+		),
+	).toMatchObject({
+		prNumber: 42,
+		wait: false,
+		skipLogin: true,
+		timeoutMs: 1000,
+		pollIntervalMs: 50,
+		expectedSha: 'abc123',
+		json: true,
+	})
 	expect(() => parseArgs(['--nope'])).toThrow(/Unknown flag/)
 	expect(() => parseArgs(['--check', '/account', '--skip-login'])).toThrow(
 		/--check requires a session cookie/,
 	)
 	expect(() =>
-		parseArgs(['--request', 'GET /account/values.json', '--skip-login']),
+		parseArgs(['--request', 'GET /account/secrets.json', '--skip-login']),
 	).toThrow(/--request requires a session cookie/)
 	expect(
 		parseArgs([
 			'--request',
-			'POST /account/values.json {"action":"save","name":"locale","value":"en-US"}',
+			'POST /account/secrets.json {"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}',
 			'--request',
 			'GET /admin 403',
 			'--cookie-file',
@@ -80,29 +81,31 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			cookieFile: '.tmp/preview-cookie',
 			sessionRequests: [
 				{
+					...plainSpec,
 					method: 'POST',
-					path: '/account/values.json',
-					expectedStatus: null,
-					body: { action: 'save', name: 'locale', value: 'en-US' },
+					path: '/account/secrets.json',
+					body: {
+						action: 'save',
+						scope: 'user',
+						name: 'previewSeed',
+						value: 'preview-seed-value',
+						allowedHosts: ['api.example.com'],
+					},
 				},
-				{
-					method: 'GET',
-					path: '/admin',
-					expectedStatus: 403,
-					body: null,
-				},
+				{ ...plainSpec, method: 'GET', path: '/admin', expectedStatus: 403 },
 			],
 		}),
 	)
-	expect(parseSessionRequest('GET /account/values.json')).toEqual({
+	expect(parseSessionRequest('GET /account/secrets.json')).toEqual({
+		...plainSpec,
 		method: 'GET',
-		path: '/account/values.json',
-		expectedStatus: null,
-		body: null,
+		path: '/account/secrets.json',
 	})
 	expect(() => parseSessionRequest('FETCH /nope')).toThrow(/Invalid --request/)
 
 	expect(parsePreviewComment('no marker here')).toBeNull()
+	const mock =
+		'cloudflare: [https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks](https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks?token=abc) (`kody-pr-42-mock-cloudflare`)'
 	expect(parsePreviewComment(sampleComment)).toEqual({
 		previewUrl: 'https://kody-pr-42.kody.workers.dev',
 		workerName: 'kody-pr-42',
@@ -112,10 +115,21 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		platformUrl: 'https://kody-pr-42-platform.kody.workers.dev',
 		d1DatabaseName: 'kody-pr-42-db',
 		oauthKvTitle: 'kody-pr-42-oauth-kv',
-		mocks: [
-			'cloudflare: [https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks](https://kody-pr-42-mock-cloudflare.kody.workers.dev/__mocks?token=abc) (`kody-pr-42-mock-cloudflare`)',
-		],
+		mocks: [mock],
 	})
+	expect(
+		parsePreviewComment(
+			[
+				sampleComment,
+				'',
+				'### Seed login (public preview fixture)',
+				'',
+				'- Email: `me@kentcdodds.com`',
+				'- Password: `ilikecode`',
+				'- Already signed in: `npm run control-kody -- browse`',
+			].join('\n'),
+		)?.mocks,
+	).toEqual([mock])
 	expect(
 		parsePreviewComment(sampleCommentWithUrl('http://127.0.0.1:9')),
 	).toEqual({
@@ -141,73 +155,57 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 			'kody-pr-42-runtime',
 		),
 	).toBe('https://kody-pr-42-runtime.kody.workers.dev')
-
 	expect(
 		cookieHeaderFromSetCookie(['kody_session=abc; Path=/; HttpOnly']),
 	).toBe('kody_session=abc')
 
-	expect(evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc')).toEqual({
-		ok: true,
-		commitSha: 'abc',
-		detail: 'ok, commitSha abc',
-	})
-	expect(
-		evaluateAppHealth(
-			{
-				ok: true,
-				commitSha: '91bab582b2040e7b55a84f2415be82c1684ad565',
-			},
-			'91bab582',
-		),
-	).toEqual({
-		ok: true,
-		commitSha: '91bab582b2040e7b55a84f2415be82c1684ad565',
-		detail:
-			'ok, commitSha 91bab582b2040e7b55a84f2415be82c1684ad565 (matches 91bab582)',
-	})
-	expect(evaluateAppHealth({ ok: true, commitSha: 'old' }, 'new').ok).toBe(
-		false,
-	)
-	expect(
+	const fullSha = '91bab582b2040e7b55a84f2415be82c1684ad565'
+	expect([
+		evaluateAppHealth({ ok: true, commitSha: 'abc' }, 'abc'),
+		evaluateAppHealth({ ok: true, commitSha: fullSha }, '91bab582'),
 		evaluateAppHealth({ ok: true, commitSha: 'mergesha' }, 'headsha', [
 			'basesha',
 			'headsha',
 		]),
-	).toEqual({
-		ok: true,
-		commitSha: 'mergesha',
-		detail: 'ok, commitSha mergesha (merge of headsha)',
-	})
-	expect(
-		evaluateRuntimeHealth(
-			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: true },
-			null,
-		).ok,
-	).toBe(true)
-	expect(
-		evaluateRuntimeHealth(
-			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: false },
-			null,
-		).ok,
-	).toBe(false)
-	expect(
-		evaluatePlatformHealth(
-			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: true },
-			null,
-		).ok,
-	).toBe(true)
-	expect(
-		evaluatePlatformHealth(
-			{ status: 'ok', commitSha: 'abc', cookieSecretConfigured: false },
-			null,
-		).ok,
-	).toBe(false)
+	]).toEqual([
+		{ ok: true, commitSha: 'abc', detail: 'ok, commitSha abc' },
+		{
+			ok: true,
+			commitSha: fullSha,
+			detail: `ok, commitSha ${fullSha} (matches 91bab582)`,
+		},
+		{
+			ok: true,
+			commitSha: 'mergesha',
+			detail: 'ok, commitSha mergesha (merge of headsha)',
+		},
+	])
+	expect(evaluateAppHealth({ ok: true, commitSha: 'old' }, 'new').ok).toBe(
+		false,
+	)
+	for (const evaluate of [evaluateRuntimeHealth, evaluatePlatformHealth]) {
+		for (const cookieSecretConfigured of [true, false]) {
+			expect(
+				evaluate(
+					{ status: 'ok', commitSha: 'abc', cookieSecretConfigured },
+					null,
+				).ok,
+			).toBe(cookieSecretConfigured)
+		}
+	}
 
-	expect(displayTitleMentionsPr('Preview #42', 42)).toBe(true)
-	expect(displayTitleMentionsPr('Preview #42', 4)).toBe(false)
-	expect(displayTitleMentionsPr('Preview #4', 4)).toBe(true)
-	expect(displayTitleMentionsPr('Preview #4 from main', 4)).toBe(true)
-	expect(displayTitleMentionsPr(undefined, 4)).toBe(false)
+	const titles: Array<[string | undefined, number, boolean]> = [
+		['Preview #42', 42, true],
+		['Preview #42', 4, false],
+		['Preview #4', 4, true],
+		['Preview #4 from main', 4, true],
+		[undefined, 4, false],
+	]
+	expect(
+		titles.filter(
+			([title, pr, want]) => displayTitleMentionsPr(title, pr) !== want,
+		),
+	).toEqual([])
 
 	expect(flattenGhJsonPages([{ body: 'a' }, { body: 'b' }])).toEqual([
 		{ body: 'a' },
@@ -217,6 +215,146 @@ test('preview manual test parses flags, PR comments, worker URLs, and health pay
 		flattenGhJsonPages([[{ body: 'a' }], [{ body: 'b' }, { body: 'c' }]]),
 	).toEqual([{ body: 'a' }, { body: 'b' }, { body: 'c' }])
 	expect(flattenGhJsonPages({ not: 'an array' })).toEqual([])
+})
+
+test('preview manual test --request specs accept control-kody request --dump/--contains flags', () => {
+	expect(
+		parseSessionRequest('GET /pricing --dump --contains Worker compute'),
+	).toEqual({
+		...plainSpec,
+		method: 'GET',
+		path: '/pricing',
+		dump: true,
+		contains: ['Worker compute'],
+	})
+	expect(
+		parseSessionRequest(
+			String.raw`GET /pricing 200 --contains Worker\ compute --contains "is metered"`,
+		),
+	).toEqual(
+		expect.objectContaining({
+			expectedStatus: 200,
+			dump: false,
+			contains: ['Worker compute', 'is metered'],
+		}),
+	)
+	expect(
+		parseSessionRequest(
+			'POST /account/secrets.json 201 {"action":"save"} --contains selectedSecretId',
+		),
+	).toEqual(
+		expect.objectContaining({
+			expectedStatus: 201,
+			body: { action: 'save' },
+			contains: ['selectedSecretId'],
+		}),
+	)
+	expect(
+		parseSessionRequest(
+			'POST /account/secrets.json {"value":"use --dump --contains"} --contains "a --dump b" --contains Kent\'s --dump',
+		),
+	).toEqual(
+		expect.objectContaining({
+			body: { value: 'use --dump --contains' },
+			dump: true,
+			contains: ['a --dump b', "Kent's"],
+		}),
+	)
+	expect(
+		parseSessionRequest(
+			String.raw`GET /docs --contains C:\tools\kody --contains '\n stays'`,
+		).contains,
+	).toEqual([String.raw`C:\tools\kody`, String.raw`\n stays`])
+	expect(() => parseSessionRequest('GET /pricing --contains')).toThrow(
+		/--contains requires text/,
+	)
+	expect(() => parseSessionRequest('GET /pricing --dump nope')).toThrow(
+		/--dump takes no value/,
+	)
+	expect(() => parseSessionRequest('GET /pricing oops')).toThrow(
+		/GET --request cannot include a JSON body: oops[\s\S]*--contains <text>/,
+	)
+
+	expect(
+		parseArgs([
+			'--request',
+			'GET /pricing',
+			'--dump',
+			'--contains',
+			'Worker compute',
+			'--request',
+			'GET /account',
+		]).sessionRequests,
+	).toEqual([
+		expect.objectContaining({
+			path: '/pricing',
+			dump: true,
+			contains: ['Worker compute'],
+		}),
+		expect.objectContaining({ path: '/account', dump: false, contains: [] }),
+	])
+	expect(() => parseArgs(['--contains', 'x'])).toThrow(
+		/--contains applies to the previous --request/,
+	)
+})
+
+test('preview manual test --request --dump/--contains assert the raw response body', async () => {
+	await using server = await createPreviewFixtureServer()
+	const logs: Array<string> = []
+	const files = new Map<string, string>()
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--request',
+			'GET /pricing --dump --contains Worker compute',
+			'--request',
+			'GET /account/secrets.json --contains previewSeed',
+			'--json',
+		],
+		createSilentDeps({ logs, files }),
+	)
+	expect(exitCode).toBe(0)
+	const checks = result?.smoke?.checks ?? []
+	expect(checks.find((check) => check.name === 'GET /pricing (2xx)')).toEqual(
+		expect.objectContaining({
+			ok: true,
+			detail: expect.stringContaining('dumped .tmp/control-kody-body'),
+		}),
+	)
+	expect(files.get('.tmp/control-kody-body')).toBe(
+		'<h1>Pricing</h1><p>Worker compute is metered.</p>',
+	)
+
+	const failing = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--request',
+			'GET /pricing --dump',
+			'--request',
+			'GET /admin 403 --dump --contains Worker compute',
+			'--json',
+		],
+		createSilentDeps({ logs, files }),
+	)
+	expect(failing.exitCode).toBe(1)
+	expect(
+		failing.result?.smoke?.checks.find(
+			(check) => check.name === 'GET /admin (403)',
+		),
+	).toEqual(
+		expect.objectContaining({
+			ok: false,
+			detail: expect.stringContaining(
+				'response body does not contain "Worker compute"',
+			),
+		}),
+	)
+	expect(files.get('.tmp/control-kody-body-1')).toContain('Pricing')
+	expect(files.get('.tmp/control-kody-body-2')).toBe('forbidden')
 })
 
 test('preview manual test smokes a local preview: health, login page, auth, session, account, mcp', async () => {
@@ -231,9 +369,9 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 			'--cookie-file',
 			'.tmp/preview-cookie',
 			'--request',
-			'POST /account/values.json {"action":"save","name":"preview-locale","value":"en-US"}',
+			'POST /account/secrets.json {"action":"save","scope":"user","name":"previewSeed","value":"preview-seed-value","allowedHosts":["api.example.com"]}',
 			'--request',
-			'GET /account/values.json',
+			'GET /account/secrets.json',
 			'--request',
 			'GET /admin 403',
 			'--check',
@@ -248,7 +386,10 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 	expect(result?.smoke?.ok).toBe(true)
 	expect(result?.smoke?.sessionEmail).toBe(previewSeedEmail)
 	expect(result?.session.cookieHeader).toBe('kody_session=test-cookie')
-	expect(files.get('.tmp/preview-cookie')).toBe('kody_session=test-cookie\n')
+	const writtenCookie = files.get('.tmp/preview-cookie') ?? ''
+	expect(writtenCookie).toContain('# origin=')
+	expect(writtenCookie).toContain(`# email=${previewSeedEmail}`)
+	expect(writtenCookie).toContain('kody_session=test-cookie')
 	expect(logs.join('\n')).not.toContain('kody_session=test-cookie')
 	expect(logs.join('\n')).toContain('"cookieHeader": "present"')
 	expect(result?.smoke?.checks.map((check) => check.name)).toEqual([
@@ -259,12 +400,13 @@ test('preview manual test smokes a local preview: health, login page, auth, sess
 		'GET /session',
 		'GET /account',
 		'cookie-file',
-		'POST /account/values.json (2xx)',
-		'GET /account/values.json (2xx)',
+		'POST /account/secrets.json (2xx)',
+		'GET /account/secrets.json (2xx)',
 		'GET /admin (403)',
 		'GET /account/secrets',
 	])
 	expect(result?.briefing).toContain(server.origin)
+	expect(result?.briefing).toContain('/account/secrets.json')
 })
 
 test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
@@ -562,88 +704,97 @@ function jsonGh(value: unknown): GhResult {
 }
 
 async function createPreviewFixtureServer(commitSha = 'deployedsha') {
-	const server = createServer(
-		(request: IncomingMessage, response: ServerResponse) => {
-			const url = new URL(request.url ?? '/', 'http://127.0.0.1')
-			if (request.method === 'GET' && url.pathname === '/health') {
-				json(response, 200, { ok: true, commitSha })
-				return
-			}
-			if (request.method === 'GET' && url.pathname === '/login') {
-				response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-				response.end(
-					'<h1>Welcome back</h1><label>Email</label><label>Password</label>',
-				)
-				return
-			}
-			if (request.method === 'GET' && url.pathname === '/mcp') {
-				response.writeHead(401, { 'WWW-Authenticate': 'Bearer' })
-				response.end('unauthorized')
-				return
-			}
-			if (request.method === 'POST' && url.pathname === '/auth') {
-				response.writeHead(200, {
-					'Content-Type': 'application/json',
-					'Set-Cookie': 'kody_session=test-cookie; Path=/; HttpOnly',
-				})
-				response.end(JSON.stringify({ ok: true }))
-				return
-			}
-			if (request.method === 'GET' && url.pathname === '/session') {
-				if (!hasSessionCookie(request)) {
-					json(response, 200, { ok: false })
-					return
-				}
-				json(response, 200, {
-					ok: true,
-					session: { email: previewSeedEmail, username: 'user-me' },
-				})
-				return
-			}
-			if (request.method === 'GET' && url.pathname === '/admin') {
-				response.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' })
-				response.end('forbidden')
-				return
-			}
-			if (
-				request.method === 'POST' &&
-				url.pathname === '/account/values.json'
-			) {
-				if (!hasSessionCookie(request)) {
-					json(response, 401, { ok: false, error: 'Unauthorized.' })
-					return
-				}
-				json(response, 200, { ok: true, selectedValueId: 'preview-locale' })
-				return
-			}
-			if (request.method === 'GET' && url.pathname === '/account/values.json') {
-				if (!hasSessionCookie(request)) {
-					json(response, 401, { ok: false, error: 'Unauthorized.' })
-					return
-				}
-				json(response, 200, {
-					ok: true,
-					values: [{ id: 'preview-locale', value: 'en-US' }],
-				})
-				return
-			}
-			if (
-				request.method === 'GET' &&
-				(url.pathname === '/account' || url.pathname === '/account/secrets')
-			) {
-				if (!hasSessionCookie(request)) {
-					response.writeHead(302, { Location: '/login' })
-					response.end()
-					return
-				}
-				response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-				response.end('<h1>Account</h1>')
-				return
-			}
-			response.writeHead(404)
-			response.end('not found')
+	const html = (response: ServerResponse, status: number, body: string) => {
+		response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' })
+		response.end(body)
+	}
+	type Handler = (request: IncomingMessage, response: ServerResponse) => void
+	const requireSession =
+		(handler: Handler): Handler =>
+		(request, response) => {
+			if (hasSessionCookie(request)) handler(request, response)
+			else json(response, 401, { ok: false, error: 'Unauthorized.' })
+		}
+	const accountPage: Handler = (request, response) => {
+		if (hasSessionCookie(request)) {
+			html(response, 200, '<h1>Account</h1>')
+			return
+		}
+		response.writeHead(302, { Location: '/login' })
+		response.end()
+	}
+	const routes: Record<string, Handler> = {
+		'GET /health': (_request, response) =>
+			json(response, 200, { ok: true, commitSha }),
+		'GET /login': (_request, response) =>
+			html(
+				response,
+				200,
+				'<h1>Welcome back</h1><label>Email</label><label>Password</label>',
+			),
+		'GET /mcp': (_request, response) => {
+			response.writeHead(401, { 'WWW-Authenticate': 'Bearer' })
+			response.end('unauthorized')
 		},
-	)
+		'POST /auth': (_request, response) => {
+			response.writeHead(200, {
+				'Content-Type': 'application/json',
+				'Set-Cookie': 'kody_session=test-cookie; Path=/; HttpOnly',
+			})
+			response.end(JSON.stringify({ ok: true }))
+		},
+		'GET /session': (request, response) =>
+			json(
+				response,
+				200,
+				hasSessionCookie(request)
+					? {
+							ok: true,
+							session: { email: previewSeedEmail, username: 'user-me' },
+						}
+					: { ok: false },
+			),
+		'GET /pricing': (_request, response) =>
+			html(response, 200, '<h1>Pricing</h1><p>Worker compute is metered.</p>'),
+		'GET /admin': (_request, response) => html(response, 403, 'forbidden'),
+		'POST /account/secrets.json': requireSession((_request, response) =>
+			json(response, 200, {
+				ok: true,
+				selectedSecretId: 'user::::previewSeed',
+				secrets: [
+					{
+						id: 'user::::previewSeed',
+						name: 'previewSeed',
+						scope: 'user',
+					},
+				],
+			}),
+		),
+		'GET /account/secrets.json': requireSession((_request, response) =>
+			json(response, 200, {
+				ok: true,
+				secrets: [
+					{
+						id: 'user::::previewSeed',
+						name: 'previewSeed',
+						scope: 'user',
+					},
+				],
+			}),
+		),
+		'GET /account': accountPage,
+		'GET /account/secrets': accountPage,
+	}
+	const server = createServer((request, response) => {
+		const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+		const handler = routes[`${request.method} ${url.pathname}`]
+		if (handler) {
+			handler(request, response)
+			return
+		}
+		response.writeHead(404)
+		response.end('not found')
+	})
 
 	await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
 	const address = server.address()

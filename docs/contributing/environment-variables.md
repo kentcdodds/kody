@@ -91,6 +91,18 @@ Optional Wrangler `var` (public, non-secret; see
   is required for `sendBeacon` duration/events, not for the image pageview
   beacon.
 
+## Scarf
+
+No Wrangler var. The client pixel id lives in
+`packages/worker/client/scarf-analytics.ts`. It fires only on
+`https://kody.codes` public marketing and docs paths (homepage, pricing, FAQ,
+case studies, community, blog catalog slugs, and official docs slugs). Preview,
+local, and other hosts never send. The pixel includes the public path and no
+query string, fragment, referrer, or account id. Global Privacy Control and Do
+Not Track skip the request. The CSP in
+`packages/worker/src/app/security-headers.ts` allowlists
+`https://static.scarf.sh` in `img-src` only.
+
 ## YouTube watch overlay
 
 Optional Wrangler vars (public, non-secret; see
@@ -271,43 +283,34 @@ safely. Manual `users.plan` grants apply regardless.
   production deploy when set.
 - `STRIPE_API_BASE_URL` — optional API base URL; defaults to
   `https://api.stripe.com` when unset. Override for tests/mocks.
-- `STRIPE_STANDARD_PRICE_ID` — Stripe Price id for the $12/month `standard`
-  plan.
-- `STRIPE_STANDARD_YEARLY_PRICE_ID` — Stripe Price id for the
-  $120/year
-  `standard` plan ($10/month billed annually).
-- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the public $49/month `pro`
-  checkout price (`price_1UChg1LAQpAnsYszAYn6eGgt` on `prod_V1ChgPPenrxsAX` in
-  production).
-- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the public
-  $480/year
-  `pro` checkout price (`price_1UChg2LAQpAnsYszKAFCR778`, $40/month
-  billed annually).
+- `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro
+  (`price_1UKHxZLAQpAnsYszwwqZTCCT` on `prod_VKxtLxMdjEkOdu` in production), the
+  only self-serve paid plan and the only Stripe price that grants the prepaid
+  credit wallet (`users.stripe_credits_eligible`). Reusing a retired Standard or
+  Pro id here would make those subscribers wallet-eligible.
+- `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the purchasable $120/year
+  Pro (`price_1UKHxaLAQpAnsYszlsVHHXjK`).
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` — optional Stripe Billing Portal
   configuration id (`bpc_...`) passed as `configuration` when creating portal
   sessions for Manage subscription and for plan changes by existing subscribers.
   The production configuration enables `subscription_update` with
-  `proration_behavior=always_invoice`, allows price switches among the public
-  Standard $12/$120 and Pro $49/$480 checkout prices, cancel at period end,
-  payment method and customer updates, and invoice history. Previous Pro list
-  prices stay active in Stripe off-portal so existing subscribers keep their
-  plan. When unset (preview, test, local), Stripe uses the account's default
-  portal configuration.
+  `proration_behavior=always_invoice`, cancel at period end, payment method and
+  customer updates, and invoice history; its product list should offer only the
+  purchasable Pro. Switching to Pro from Kody uses the
+  `subscription_update_confirm` flow pinned to the Pro price. When unset
+  (preview, test, local), Stripe uses the account's default portal
+  configuration.
 
 Each price id independently enables authenticated Checkout and subscription
 matching for its tier and interval; leaving a monthly or yearly id unset makes
 only that interval unavailable for purchase. Price ids and the portal
 configuration id are public (non-secret) values committed as production Wrangler
-vars in `packages/worker/wrangler.jsonc`, not Worker secrets. Historical
-$5
-Standard and previous Pro monthly/yearly price ids remain in
+vars in `packages/worker/wrangler.jsonc`, not Worker secrets. The retired
+Standard ($12/$120, $5) and Pro ($49/$480 and earlier) price ids remain in
 `retiredStandardPriceIds` / `retiredProPriceIds` in
 `packages/worker/src/billing/billing-config.ts` so existing subscribers keep
-their plan after checkout ids rotate. Those retired Pro prices stay active
-off-portal; the Stripe Billing Portal configuration
-(`STRIPE_BILLING_PORTAL_CONFIGURATION_ID`) lists only the public Standard
-$12/$120 and Pro $49/$480
-checkout prices.
+their plan (no mass migration). Retired prices are never wallet-eligible; delete
+each id once no subscriber remains on it.
 
 Dashboard-side dunning (not an environment variable, recorded here so it
 survives re-provisioning): the production Stripe account has every customer
@@ -350,7 +353,8 @@ secrets at rest in D1.
 Worker bindings (see `packages/worker/wrangler.jsonc`):
 
 - **`CAPABILITY_VECTOR_INDEX`** — Cloudflare Vectorize index for semantic
-  retrieval (`kody-capabilities-prod` / `kody-capabilities-preview`). Create
+  retrieval (`kody-capabilities-prod`; each preview gets its own
+  `<preview-worker-name>-vectors` from `tools/ci/preview-resources.ts`). Create
   indexes with **`--dimensions=384 --metric=cosine`** to match
   `@cf/baai/bge-small-en-v1.5` with `cls` pooling (see
   `packages/worker/src/vectorize/embedding.ts`). The **`test`** Wrangler
@@ -429,7 +433,10 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare account id required by the Cloudflare
   Email Service REST API fallback used by local mocks and preview deploys. This
   is a Worker var (not a secret) and should match the account behind
-  `CLOUDFLARE_API_TOKEN`.
+  `CLOUDFLARE_API_TOKEN`. When `CLOUDFLARE_API_BASE_URL` points at the in-repo
+  Cloudflare mock, the account id is a path segment for mock state partitioning;
+  the mock accepts the caller's authenticated account id (preview keeps the real
+  account id).
 - `CLOUDFLARE_API_BASE_URL` — API base URL; defaults to
   `https://api.cloudflare.com` when unset, including for outbound email sending.
   Local `npm run dev` sets this to the Cloudflare mock Worker unless
@@ -443,7 +450,15 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   set it alongside the mock). The real Cloudflare API has no such endpoint, so
   production leaves it unset and
   `packages/worker/src/repo/artifact-source-snapshot.ts` returns `null` without
-  a request; published trees come from `BUNDLE_ARTIFACTS_KV` snapshots.
+  a request; published trees come from `BUNDLE_ARTIFACTS_KV` snapshots. PR
+  previews also leave it unset and use per-PR `BUNDLE_ARTIFACTS_KV` the same
+  way.
+- `CLOUDFLARE_ARTIFACTS_API_TOKEN` — optional. When the Worker binds real
+  `ARTIFACTS` but `CLOUDFLARE_API_BASE_URL` points at a mock (PR previews),
+  Artifacts createToken/fork REST uses this token against
+  `https://api.cloudflare.com` instead of the mock. Preview deploy syncs the
+  real deploy token here while `CLOUDFLARE_API_TOKEN` stays the mock credential
+  for email. Production leaves it unset and uses `CLOUDFLARE_API_TOKEN`.
 - `USER_EMAIL_DOMAIN` — optional override for the user email domain (see
   `packages/worker/src/email/platform-address.ts`). Defaults to
   `inbox.<APP_BASE_URL hostname>` (for example `inbox.kody.codes`): every user
@@ -471,11 +486,13 @@ Optional Worker secrets/vars (see `packages/worker/src/env-schema.ts` and
   leaves these unset.
 - `ARTIFACTS_NAMESPACE` — Cloudflare Artifacts namespace for repo REST calls and
   for choosing the env-scoped `ARTIFACTS` binding. Defaults to `default` when
-  unset (local dev and tests). Wrangler sets `production` and `preview` per
-  environment in `packages/worker/wrangler.jsonc`. Production/preview also bind
-  `ARTIFACTS` (JSRPC); create/get prefer that binding and fall back to REST. New
-  repo sessions persist this value in D1 as `session_repo_namespace` so
-  follow-up lookups resolve the correct namespace even after env changes.
+  unset (local dev and tests). Wrangler sets `production` for production.
+  Preview ensure rewrites the generated configs to the per-PR worker name
+  (`kody-pr-<n>` / `kody-branch-<slug>`) so each preview has an isolated
+  Artifacts namespace. Production/preview also bind `ARTIFACTS` (JSRPC);
+  create/get prefer that binding and fall back to REST. New repo sessions
+  persist this value in D1 as `session_repo_namespace` so follow-up lookups
+  resolve the correct namespace even after env changes.
 
 ## Disaster recovery (production Worker)
 

@@ -4,7 +4,6 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'vitest'
 
 import {
-	BackupError,
 	assertConfiguredIdentity,
 	assertRemoteDatabaseIdentity,
 	backupPayload,
@@ -20,20 +19,21 @@ import {
 } from './backup-policy.ts'
 import {
 	DATABASE_ID,
+	backupError,
 	environment,
 } from './backup-control-plane-test-support.ts'
 
 const PRODUCTION_APP_DB_ID = '8c1014d1-6b41-4695-a0a2-159071f0f919'
 const PRODUCTION_JOBS_DB_ID = '5410331e-4d25-47e4-a1e5-a248f7cc764c'
 const JOBS_DATABASE_ID = '44444444-4444-4444-8444-444444444444'
+const APP_DB = { id: DATABASE_ID, name: 'production-db' }
+const JOBS_DB = { id: JOBS_DATABASE_ID, name: 'kody-jobs' }
+const APP_DB_LIVE = { uuid: DATABASE_ID, name: 'production-db' }
 
 function multiDatabaseEnv() {
 	const env = environment()
-	env.SOURCE_DATABASES = JSON.stringify([
-		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
-		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
-	])
-	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${JOBS_DATABASE_ID}`
+	env.SOURCE_DATABASES = JSON.stringify([APP_DB, JOBS_DB])
+	env.ALLOWED_SOURCE_DATABASE_IDS = `${DATABASE_ID},${JOBS_DATABASE_ID}`
 	return env
 }
 
@@ -49,30 +49,16 @@ test('requires both explicit enable and benchmark approval', () => {
 
 test('guards configured account/database allowlists and live D1 UUID/name', () => {
 	const env = environment()
-	assert.doesNotThrow(() =>
-		assertRemoteDatabaseIdentity(env, {
-			uuid: DATABASE_ID,
-			name: 'production-db',
-		}),
-	)
+	assert.doesNotThrow(() => assertRemoteDatabaseIdentity(env, APP_DB_LIVE))
 	assert.throws(
 		() =>
-			assertRemoteDatabaseIdentity(env, {
-				uuid: DATABASE_ID,
-				name: 'wrong-db',
-			}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'source-identity-mismatch',
+			assertRemoteDatabaseIdentity(env, { ...APP_DB_LIVE, name: 'wrong-db' }),
+		backupError('source-identity-mismatch'),
 	)
 	env.ALLOWED_SOURCE_DATABASE_IDS = '33333333-3333-4333-8333-333333333333'
 	assert.throws(
-		() =>
-			assertRemoteDatabaseIdentity(env, {
-				uuid: DATABASE_ID,
-				name: 'production-db',
-			}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'source-not-allowlisted',
+		() => assertRemoteDatabaseIdentity(env, APP_DB_LIVE),
+		backupError('source-not-allowlisted'),
 	)
 	const mixedCaseEnv = environment()
 	mixedCaseEnv.SOURCE_ACCOUNT_ID = 'abcdefabcdefabcdefabcdefabcdefab'
@@ -126,8 +112,7 @@ test('bookmark-derived keys reject unsafe bookmark path input', () => {
 	]) {
 		assert.throws(
 			() => objectKeyForBookmark(prefix, bookmark),
-			(error: unknown) =>
-				error instanceof BackupError && error.code === 'unsafe-export-bookmark',
+			backupError('unsafe-export-bookmark'),
 		)
 	}
 	assert.notEqual(
@@ -138,27 +123,17 @@ test('bookmark-derived keys reject unsafe bookmark path input', () => {
 
 test('falls back to SOURCE_DATABASE_ID when SOURCE_DATABASES is unset', () => {
 	const env = environment()
-	assert.deepEqual(configuredSourceDatabases(env), [
-		{ id: DATABASE_ID, name: 'production-db' },
-	])
-	assert.deepEqual(resolveSourceDatabase(env, undefined), {
-		id: DATABASE_ID,
-		name: 'production-db',
-	})
+	assert.deepEqual(configuredSourceDatabases(env), [APP_DB])
+	assert.deepEqual(resolveSourceDatabase(env, undefined), APP_DB)
 })
 
 test('exports a database-specific prefix for each SOURCE_DATABASES entry', () => {
 	const env = multiDatabaseEnv()
-	assert.deepEqual(configuredSourceDatabases(env), [
-		{ id: DATABASE_ID, name: 'production-db' },
-		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
-	])
-	const app = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	assert.deepEqual(configuredSourceDatabases(env), [APP_DB, JOBS_DB])
+	const at = new Date('2026-07-22T02:15:00Z')
+	const app = backupPayload(env, at)
 	assert.equal(app.objectPrefix, `daily/d1/${DATABASE_ID}/2026-07-22`)
-	const jobs = backupPayload(env, new Date('2026-07-22T02:15:00Z'), {
-		id: JOBS_DATABASE_ID,
-		name: 'kody-jobs',
-	})
+	const jobs = backupPayload(env, at, JOBS_DB)
 	assert.equal(jobs.objectPrefix, `daily/d1/${JOBS_DATABASE_ID}/2026-07-22`)
 	assert.equal(
 		jobs.manifestKey,
@@ -175,44 +150,30 @@ test('exports a database-specific prefix for each SOURCE_DATABASES entry', () =>
 			jobs.day,
 			jobs.retentionTier,
 		),
-		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
+		JOBS_DB,
 	)
-	assert.deepEqual(resolveSourceDatabase(env, 'kody-jobs'), {
-		id: JOBS_DATABASE_ID,
-		name: 'kody-jobs',
-	})
-	assert.deepEqual(resolveSourceDatabase(env, JOBS_DATABASE_ID.toUpperCase()), {
-		id: JOBS_DATABASE_ID,
-		name: 'kody-jobs',
-	})
+	assert.deepEqual(resolveSourceDatabase(env, 'kody-jobs'), JOBS_DB)
+	assert.deepEqual(
+		resolveSourceDatabase(env, JOBS_DATABASE_ID.toUpperCase()),
+		JOBS_DB,
+	)
 	assert.throws(
 		() => resolveSourceDatabase(env, 'unknown-db'),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'unknown-source-database',
+		backupError('unknown-source-database'),
 	)
 })
 
-test('rejects SOURCE_DATABASES entries that are missing from the allowlist', () => {
-	const env = multiDatabaseEnv()
-	env.ALLOWED_SOURCE_DATABASE_IDS = DATABASE_ID
-	assert.throws(
-		() => assertConfiguredIdentity(env),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'source-not-allowlisted',
-	)
-})
-
-test('requires SOURCE_DATABASE_ID/NAME to appear in SOURCE_DATABASES', () => {
-	const env = environment()
-	env.SOURCE_DATABASES = JSON.stringify([
-		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
-	])
-	env.ALLOWED_SOURCE_DATABASE_IDS = `${DATABASE_ID},${JOBS_DATABASE_ID}`
-	assert.throws(
-		() => assertConfiguredIdentity(env),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'source-not-allowlisted',
-	)
+test('rejects SOURCE_DATABASES missing from the allowlist or missing SOURCE_DATABASE_ID/NAME', () => {
+	const notAllowlisted = multiDatabaseEnv()
+	notAllowlisted.ALLOWED_SOURCE_DATABASE_IDS = DATABASE_ID
+	const primaryAbsent = multiDatabaseEnv()
+	primaryAbsent.SOURCE_DATABASES = JSON.stringify([JOBS_DB])
+	for (const env of [notAllowlisted, primaryAbsent]) {
+		assert.throws(
+			() => assertConfiguredIdentity(env),
+			backupError('source-not-allowlisted'),
+		)
+	}
 })
 
 test('committed control-plane allowlist includes production kody-jobs', async () => {
@@ -226,16 +187,15 @@ test('committed control-plane allowlist includes production kody-jobs', async ()
 			`"ALLOWED_SOURCE_DATABASE_IDS": "${PRODUCTION_APP_DB_ID},${PRODUCTION_JOBS_DB_ID}"`,
 		),
 	)
-	assert.ok(
-		wrangler.includes(
-			`\\"${PRODUCTION_JOBS_DB_ID}\\",\\"name\\":\\"kody-jobs\\"`,
-		),
-		'SOURCE_DATABASES must list production kody-jobs',
-	)
-	assert.ok(
-		wrangler.includes(`\\"${PRODUCTION_APP_DB_ID}\\",\\"name\\":\\"kody\\"`),
-		'SOURCE_DATABASES must list production kody',
-	)
+	for (const [id, name] of [
+		[PRODUCTION_JOBS_DB_ID, 'kody-jobs'],
+		[PRODUCTION_APP_DB_ID, 'kody'],
+	]) {
+		assert.ok(
+			wrangler.includes(`\\"${id}\\",\\"name\\":\\"${name}\\"`),
+			`SOURCE_DATABASES must list production ${name}`,
+		)
+	}
 })
 
 test('declaredSourceDatabases uses the sealed day list and notes absent configured DBs', () => {
@@ -244,46 +204,26 @@ test('declaredSourceDatabases uses the sealed day list and notes absent configur
 	assert.deepEqual(declaredSourceDatabases(env, []), [
 		primarySourceDatabase(env),
 	])
+	const declare = (id: string, name: string, sha: string) => ({
+		databaseId: id,
+		databaseName: name,
+		manifestKey: `daily/d1/${id}/2026-07-22/manifest.json`,
+		manifestSha256: sha.repeat(64),
+	})
 	const declared = [
-		{
-			databaseId: DATABASE_ID,
-			databaseName: 'production-db',
-			manifestKey: `daily/d1/${DATABASE_ID}/2026-07-22/manifest.json`,
-			manifestSha256: 'a'.repeat(64),
-		},
-		{
-			databaseId: JOBS_DATABASE_ID,
-			databaseName: 'kody-jobs',
-			manifestKey: `daily/d1/${JOBS_DATABASE_ID}/2026-07-22/manifest.json`,
-			manifestSha256: 'b'.repeat(64),
-		},
+		declare(DATABASE_ID, 'production-db', 'a'),
+		declare(JOBS_DATABASE_ID, 'kody-jobs', 'b'),
 	]
-	assert.deepEqual(declaredSourceDatabases(env, declared), [
-		{ id: DATABASE_ID, name: 'production-db' },
-		{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
-	])
+	assert.deepEqual(declaredSourceDatabases(env, declared), [APP_DB, JOBS_DB])
 	assert.deepEqual(
-		restoreImportOrder(declaredSourceDatabases(env, declared), {
-			id: DATABASE_ID,
-			name: 'production-db',
-		}),
-		[
-			{ id: JOBS_DATABASE_ID, name: 'kody-jobs' },
-			{ id: DATABASE_ID, name: 'production-db' },
-		],
+		restoreImportOrder(declaredSourceDatabases(env, declared), APP_DB),
+		[JOBS_DB, APP_DB],
 	)
 	assert.throws(
 		() =>
 			declaredSourceDatabases(env, [
-				{
-					databaseId: '55555555-5555-4555-8555-555555555555',
-					databaseName: 'other',
-					manifestKey: 'daily/d1/other/2026-07-22/manifest.json',
-					manifestSha256: 'c'.repeat(64),
-				},
+				declare('55555555-5555-4555-8555-555555555555', 'other', 'c'),
 			]),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'restore-d1-source-not-configured',
+		backupError('restore-d1-source-not-configured'),
 	)
 })

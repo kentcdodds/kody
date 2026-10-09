@@ -1,4 +1,5 @@
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
+import type * as artifactsModule from '#worker/repo/artifacts.ts'
 import { listingPinIsAncestorOfForkTip } from './fork-listing-ancestry.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -7,30 +8,37 @@ const mocks = vi.hoisted(() => ({
 	init: vi.fn(),
 	log: vi.fn(),
 	resolveExistingArtifactSourceRepo: vi.fn(),
-	isLoopbackArtifactsRemote: vi.fn(() => false),
+	isLoopbackArtifactsRemote: vi.fn<
+		typeof artifactsModule.isLoopbackArtifactsRemote
+	>(() => false),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
-		fetch: (...args: Array<unknown>) => mocks.fetch(...args),
-		init: (...args: Array<unknown>) => mocks.init(...args),
-		log: (...args: Array<unknown>) => mocks.log(...args),
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('#worker/repo/isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			addRemote: (...args: Array<unknown>) => mocks.addRemote(...args),
+			fetch: (...args: Array<unknown>) => mocks.fetch(...args),
+			init: (...args: Array<unknown>) => mocks.init(...args),
+			log: (...args: Array<unknown>) => mocks.log(...args),
+		},
+		http: {},
+	}),
 }))
 
 vi.mock('#worker/repo/artifacts.ts', () => ({
 	buildArtifactsGitAuth: () => ({ username: 'x', password: 'token' }),
 	buildAuthenticatedArtifactsRemote: ({ remote }: { remote: string }) => remote,
-	isLoopbackArtifactsRemote: (...args: Array<unknown>) =>
-		mocks.isLoopbackArtifactsRemote(...args),
+	isLoopbackArtifactsRemote: (
+		...args: Parameters<typeof artifactsModule.isLoopbackArtifactsRemote>
+	) => mocks.isLoopbackArtifactsRemote(...args),
 	resolveExistingArtifactSourceRepo: (...args: Array<unknown>) =>
 		mocks.resolveExistingArtifactSourceRepo(...args),
 }))
+
+// Answers are cached per isolate, so each case uses its own repo id.
+beforeEach(() => {
+	vi.clearAllMocks()
+})
 
 function readyRepo() {
 	return {
@@ -91,7 +99,7 @@ test('listing pin ancestry walks the origin absorb marker and treats missing his
 	expect(
 		await listingPinIsAncestorOfForkTip({
 			env: {} as Env,
-			repoId: 'repo-1',
+			repoId: 'repo-loopback',
 			listingPinnedCommit: 'commit-pin',
 			forkTip: 'commit-tip',
 		}),
@@ -106,4 +114,45 @@ test('listing pin ancestry walks the origin absorb marker and treats missing his
 			forkTip: 'commit-tip',
 		}),
 	).toBe(null)
+})
+
+test('listing pin ancestry reuses definite answers without refetching the origin graph', async () => {
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue(readyRepo())
+	mocks.log.mockResolvedValue([{ oid: 'commit-tip' }, { oid: 'commit-pin' }])
+	const input = {
+		env: {} as Env,
+		repoId: 'repo-reuse',
+		listingPinnedCommit: 'commit-pin',
+		forkTip: 'commit-tip',
+	}
+
+	const concurrent = await Promise.all([
+		listingPinIsAncestorOfForkTip(input),
+		listingPinIsAncestorOfForkTip(input),
+	])
+	expect(concurrent).toEqual([true, true])
+	expect(await listingPinIsAncestorOfForkTip(input)).toBe(true)
+	expect(mocks.fetch).toHaveBeenCalledTimes(1)
+
+	mocks.log.mockResolvedValue([{ oid: 'commit-tip' }])
+	const notAncestor = { ...input, listingPinnedCommit: 'commit-other' }
+	expect(await listingPinIsAncestorOfForkTip(notAncestor)).toBe(false)
+	expect(await listingPinIsAncestorOfForkTip(notAncestor)).toBe(false)
+	expect(mocks.fetch).toHaveBeenCalledTimes(2)
+})
+
+test('listing pin ancestry retries after an unreadable graph instead of caching null', async () => {
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValueOnce(null)
+	const input = {
+		env: {} as Env,
+		repoId: 'repo-flaky',
+		listingPinnedCommit: 'commit-pin',
+		forkTip: 'commit-tip',
+	}
+	expect(await listingPinIsAncestorOfForkTip(input)).toBe(null)
+
+	mocks.resolveExistingArtifactSourceRepo.mockResolvedValue(readyRepo())
+	mocks.log.mockResolvedValue([{ oid: 'commit-tip' }, { oid: 'commit-pin' }])
+	expect(await listingPinIsAncestorOfForkTip(input)).toBe(true)
+	expect(mocks.resolveExistingArtifactSourceRepo).toHaveBeenCalledTimes(2)
 })

@@ -6,9 +6,9 @@ import {
 	isAccountEmailVerified,
 	verifyEmailToken,
 } from '#app/email-verification.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 test('email verification links preserve safe resume targets and reject open redirects', () => {
 	const oauthResume = '/oauth/authorize?client_id=demo&state=abc'
@@ -37,59 +37,42 @@ type VerificationUser = {
 }
 
 function createVerificationTestDb(users: Array<VerificationUser>) {
-	const db = {
+	const lookups: Array<
+		[string, (user: VerificationUser, params: Array<unknown>) => boolean]
+	> = [
+		[
+			'where email = ? and stable_user_id = ?',
+			(user, [email, stableUserId]) =>
+				user.email === email && user.stable_user_id === stableUserId,
+		],
+		['where email = ?', (user, [email]) => user.email === email],
+		[
+			'where stable_user_id = ?',
+			(user, [stableUserId]) => user.stable_user_id === stableUserId,
+		],
+	]
+	return {
 		prepare(sql: string) {
+			const normalized = sql.replace(/\s+/g, ' ').toLowerCase()
+			const lookup = lookups.find(([clause]) => normalized.includes(clause))
+			if (!lookup) throw new Error(`Unsupported query: ${sql}`)
 			return {
-				bind(...params: Array<unknown>) {
-					const normalized = sql.replace(/\s+/g, ' ').toLowerCase()
-					return {
-						async first<T>() {
-							if (
-								normalized.includes('where email = ? and stable_user_id = ?')
-							) {
-								const row = users.find(
-									(user) =>
-										user.email === params[0] &&
-										user.stable_user_id === params[1],
-								)
-								return (
-									row ? { email_verified_at: row.email_verified_at } : null
-								) as T | null
-							}
-							if (
-								normalized.includes('where email = ?') &&
-								!normalized.includes('stable_user_id')
-							) {
-								const row = users.find((user) => user.email === params[0])
-								return (
-									row ? { email_verified_at: row.email_verified_at } : null
-								) as T | null
-							}
-							if (normalized.includes('where stable_user_id = ?')) {
-								const row = users.find(
-									(user) => user.stable_user_id === params[0],
-								)
-								return (
-									row ? { email_verified_at: row.email_verified_at } : null
-								) as T | null
-							}
-							throw new Error(`Unsupported query: ${sql}`)
-						},
-					}
-				},
+				bind: (...params: Array<unknown>) => ({
+					async first() {
+						const row = users.find((user) => lookup[1](user, params))
+						return row ? { email_verified_at: row.email_verified_at } : null
+					},
+				}),
 			}
 		},
 	} as unknown as D1Database
-	return { db }
 }
 
 test('isAccountEmailVerified binds email+stable id together and keeps single-key lookup paths', async () => {
 	const ownerEmail = 'owner@example.com'
-	const ownerStableId = await createStableUserIdFromEmail(ownerEmail)
+	const ownerStableId = testStableUserIdFromEmail(ownerEmail)
 	const reusedEmail = 'reused@example.com'
-	const otherStableId = await createStableUserIdFromEmail(
-		'other-account@example.com',
-	)
+	const otherStableId = testStableUserIdFromEmail('other-account@example.com')
 	const combined = createVerificationTestDb([
 		{
 			email: ownerEmail,
@@ -105,7 +88,7 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 
 	expect(
 		await isAccountEmailVerified({
-			db: combined.db,
+			db: combined,
 			email: ownerEmail,
 			stableUserId: ownerStableId,
 		}),
@@ -115,14 +98,14 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 	// for the original stable id.
 	expect(
 		await isAccountEmailVerified({
-			db: combined.db,
+			db: combined,
 			email: reusedEmail,
 			stableUserId: ownerStableId,
 		}),
 	).toBe(false)
 
 	const email = 'browser@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	const singleKey = createVerificationTestDb([
 		{
 			email,
@@ -131,58 +114,74 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 		},
 	])
 
-	expect(await isAccountEmailVerified({ db: singleKey.db, email })).toBe(true)
-	expect(await isAccountEmailVerified({ db: singleKey.db, stableUserId })).toBe(
+	expect(await isAccountEmailVerified({ db: singleKey, email })).toBe(true)
+	expect(await isAccountEmailVerified({ db: singleKey, stableUserId })).toBe(
 		true,
 	)
 	expect(
 		await isAccountEmailVerified({
-			db: singleKey.db,
+			db: singleKey,
 			email: 'missing@example.com',
 		}),
 	).toBe(false)
 	expect(
 		await isAccountEmailVerified({
-			db: singleKey.db,
+			db: singleKey,
 			stableUserId: 'missing-stable-id',
 		}),
 	).toBe(false)
 })
 
-test('verifyEmailToken treats a fenced account as an invalid token and does not mark it verified', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	const db = createD1FromSqlite(sqlite)
-	const email = 'fenced-verify@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
+async function seedPendingVerification(
+	db: D1Database,
+	input: { username: string; deletingAt?: string },
+) {
+	const email = `${input.username}@example.com`
 	await db
 		.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id, deleting_at
 			) VALUES (?, ?, 'hash', ?, ?)`,
 		)
-		.bind('fenced-verify', email, stableUserId, '2026-09-02 12:00:00')
+		.bind(
+			input.username,
+			email,
+			testStableUserIdFromEmail(email),
+			input.deletingAt ?? null,
+		)
 		.run()
-	const token = 'fenced-verify-token'
-	const tokenHash = await hashVerificationToken(token)
+	const token = `${input.username}-token`
 	await db
 		.prepare(
 			`INSERT INTO email_verifications (user_id, token_hash, expires_at)
 			 VALUES (1, ?, ?)`,
 		)
-		.bind(tokenHash, Date.now() + 60_000)
+		.bind(await hashVerificationToken(token), Date.now() + 60_000)
 		.run()
+	return token
+}
+
+function createMigratedDb() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	return { sqlite, db: createD1FromSqlite(sqlite) }
+}
+
+test('verifyEmailToken treats a fenced account as an invalid token and does not mark it verified', async () => {
+	const { sqlite, db } = createMigratedDb()
+	const token = await seedPendingVerification(db, {
+		username: 'fenced-verify',
+		deletingAt: '2026-09-02 12:00:00',
+	})
 
 	await expect(verifyEmailToken({ db, token })).resolves.toEqual({
 		ok: false,
 		reason: 'invalid_token',
 	})
-	const row = sqlite
-		.prepare(`SELECT email_verified_at FROM users WHERE id = 1`)
-		.get() as { email_verified_at: string | null }
-	expect(row.email_verified_at).toBeNull()
+	expect(
+		sqlite.prepare(`SELECT email_verified_at FROM users WHERE id = 1`).get(),
+	).toEqual({ email_verified_at: null })
 })
-
 function withDeletingAtAfterWritableCheck(
 	db: D1Database,
 	deletingAt: string,
@@ -222,41 +221,19 @@ function withDeletingAtAfterWritableCheck(
 }
 
 test('verifyEmailToken does not mark verified when a purge claim lands between the writable check and the stamp', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
-	const db = withDeletingAtAfterWritableCheck(
-		createD1FromSqlite(sqlite),
-		'2026-09-02 12:00:00',
-	)
-	const email = 'race-verify@example.com'
-	const stableUserId = await createStableUserIdFromEmail(email)
-	await db
-		.prepare(
-			`INSERT INTO users (
-				username, email, password_hash, stable_user_id
-			) VALUES (?, ?, 'hash', ?)`,
-		)
-		.bind('race-verify', email, stableUserId)
-		.run()
-	const token = 'race-verify-token'
-	const tokenHash = await hashVerificationToken(token)
-	await db
-		.prepare(
-			`INSERT INTO email_verifications (user_id, token_hash, expires_at)
-			 VALUES (1, ?, ?)`,
-		)
-		.bind(tokenHash, Date.now() + 60_000)
-		.run()
+	const { sqlite, db: rawDb } = createMigratedDb()
+	const db = withDeletingAtAfterWritableCheck(rawDb, '2026-09-02 12:00:00')
+	const token = await seedPendingVerification(db, { username: 'race-verify' })
 
 	await expect(verifyEmailToken({ db, token })).resolves.toEqual({
 		ok: false,
 		reason: 'invalid_token',
 	})
-	const row = sqlite
-		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 1`)
-		.get() as { email_verified_at: string | null; deleting_at: string | null }
-	expect(row.email_verified_at).toBeNull()
-	expect(row.deleting_at).toBe('2026-09-02 12:00:00')
+	expect(
+		sqlite
+			.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 1`)
+			.get(),
+	).toEqual({ email_verified_at: null, deleting_at: '2026-09-02 12:00:00' })
 	expect(
 		sqlite.prepare(`SELECT COUNT(*) AS count FROM email_verifications`).get(),
 	).toEqual({ count: 1 })

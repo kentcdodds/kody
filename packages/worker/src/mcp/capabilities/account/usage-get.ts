@@ -3,7 +3,6 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
-import { uniqueWorkerDayMechanic } from '#universal/compute-overage.ts'
 import { planNames } from '#universal/plans.ts'
 import {
 	computeOverageUsageWarningRows,
@@ -39,8 +38,9 @@ export const usageGetCapability = defineDomainCapability(
 	capabilityDomainNames.account,
 	{
 		name: 'usageGet',
+		orgPermission: 'billing:read',
 		description:
-			'Read the signed-in user’s entitlement usage against plan limits, including monthly unique worker days (Dynamic Worker isolates) and Durable Object rows-read: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
+			'Read the signed-in user’s entitlement usage against plan limits, including monthly Worker compute and Rows read plus execute/outbound hard caps: per-resource current, limit, percent used, and plain-language guidance on what counts and how to reduce it.',
 		keywords: [
 			'account',
 			'usage',
@@ -48,8 +48,9 @@ export const usageGetCapability = defineDomainCapability(
 			'limits',
 			'entitlements',
 			'plan',
-			'unique worker days',
-			'dynamic worker',
+			'execute',
+			'worker compute',
+			'rows read',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -71,18 +72,6 @@ export const usageGetCapability = defineDomainCapability(
 				userId: user.userId,
 				email: user.email,
 			})
-			const billing = await db
-				.prepare(
-					user.email
-						? `SELECT id, stripe_customer_id FROM users WHERE email = ? AND stable_user_id = ?`
-						: `SELECT id, stripe_customer_id FROM users WHERE stable_user_id = ?`,
-				)
-				.bind(
-					...(user.email
-						? [user.email.trim().toLowerCase(), user.userId]
-						: [user.userId]),
-				)
-				.first<{ id: number; stripe_customer_id: string | null }>()
 			const [snapshot, computeOverage] = await Promise.all([
 				readEntitlementUsageSnapshot({
 					db,
@@ -90,14 +79,14 @@ export const usageGetCapability = defineDomainCapability(
 					usageUserId: user.userId,
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
+					creditWallet: entitlement.creditWallet,
 				}),
 				readAccountComputeOverage({
 					db,
-					userId: billing?.id ?? null,
 					stableUserId: user.userId,
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
-					hasStripeCustomer: Boolean(billing?.stripe_customer_id?.trim()),
+					creditWallet: entitlement.creditWallet,
 					now: new Date(),
 				}),
 			])
@@ -129,9 +118,6 @@ export const usageGetCapability = defineDomainCapability(
 				limit: row.limit,
 				percent: row.percentOfLimit,
 				overEightyPercent: row.overEightyPercent,
-				...(row.resource === 'unique_worker_days' && row.overEightyPercent
-					? { mechanic: uniqueWorkerDayMechanic }
-					: {}),
 				...(row.week
 					? {
 							week: {

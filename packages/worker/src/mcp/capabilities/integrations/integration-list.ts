@@ -17,6 +17,7 @@ export const integrationListCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
 		name: 'integrationList',
+		orgPermission: 'integration:read',
 		description:
 			'List saved OAuth integration connections. Call createAuthenticatedFetch(name) to use one. Do not persist access or refresh tokens with secretSet.',
 		keywords: [

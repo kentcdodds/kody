@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { renderAccountProfilePanel } from './account-profile-panel.tsx'
 
@@ -57,6 +57,28 @@ test('profile panel keeps the typed username and shows a save error without succ
 	expect(html).toContain('data-testid="account-username-error"')
 	expect(html).toContain('`jklotz` is taken.')
 	expect(html).not.toContain('Profile saved.')
+})
+
+test('username pattern compiles as an HTML pattern and enforces the username shape', async () => {
+	const html = await renderToString(
+		jsx('div', {
+			children: renderAccountProfilePanel(panelProps()),
+		}),
+	)
+	const pattern = html.match(
+		/<input[^>]*id="account-username"[^>]*pattern="([^"]*)"/,
+	)?.[1]
+	expect(pattern).toBeDefined()
+	// Browsers compile `pattern` as `^(?:…)$` with the RegExp `v` flag.
+	const usernameRegex = new RegExp(`^(?:${pattern})$`, 'v')
+
+	expect(usernameRegex.test('jklotz')).toBe(true)
+	expect(usernameRegex.test('kent-c-dodds')).toBe(true)
+	expect(usernameRegex.test('ab')).toBe(false)
+	expect(usernameRegex.test('-kent')).toBe(false)
+	expect(usernameRegex.test('kent-')).toBe(false)
+	expect(usernameRegex.test('kent_dodds')).toBe(false)
+	expect(usernameRegex.test('a'.repeat(33))).toBe(false)
 })
 
 test('change-email disclosure stays open after a new-email keystroke remounts the panel', async () => {

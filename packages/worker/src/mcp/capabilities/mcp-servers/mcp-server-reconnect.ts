@@ -27,6 +27,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
 		name: 'mcpServerReconnect',
+		orgPermission: 'integration:write',
 		description:
 			'Retry connecting to a saved MCP server that is failed or disconnected. Tries stored OAuth refresh first; an authUrl means the user must re-authorize. Surfaces a durable lastError when refresh failed.',
 		keywords: ['mcp', 'server', 'reconnect', 'retry', 'connection', 'client'],

@@ -23,6 +23,12 @@ test('toAdminDynamicWorkerCost truncates to a non-negative integer day count', (
 		usdPerUniqueDay: 0.002,
 		includedPerAccountMonth: 1000,
 	})
+	expect(toAdminDynamicWorkerCost(12.9, 50)).toEqual({
+		uniqueWorkerDays: 12,
+		estimatedGrossUsd: 0.024,
+		usdPerUniqueDay: 0.002,
+		includedPerAccountMonth: 50,
+	})
 	expect(formatDynamicWorkerUsd(0.002)).toBe('$0.002')
 	expect(formatDynamicWorkerUsd(1)).toBe('$1.00')
 	expect(fleetDynamicWorkerCostAlertUsd('free')).toBe(2)

@@ -6,11 +6,11 @@ import { runBackupRuntime } from './backup-runtime.ts'
 import { DEFAULT_BACKUP_MAX_SOURCE_BYTES } from './d1-export-api.ts'
 import { readManifest } from './immutable-storage.ts'
 import {
-	BackupError,
 	backupPayload,
 	objectKeyForBookmark,
 	workflowInstanceId,
 } from './backup-policy.ts'
+import { type BackupEnvironment, type BackupPayload } from './backup-types.ts'
 import {
 	CachedUploadStep,
 	DATABASE_ID,
@@ -22,21 +22,70 @@ import {
 	environment,
 	exportEnvelope,
 	identityEnvelope,
+	backupError,
 } from './backup-control-plane-test-support.ts'
 
 afterEach(() => {
 	vi.restoreAllMocks()
 })
 
+type RuntimeStep = Parameters<typeof runBackupRuntime>[2]
+type RuntimeOptions = NonNullable<Parameters<typeof runBackupRuntime>[3]>
+
+const okDownload = async () =>
+	new Response('valid', { headers: { 'content-length': '5' } })
+
+function completeApi(
+	onExport: (init?: RequestInit) => Response = () => exportEnvelope('complete'),
+) {
+	return {
+		fetcher: async (input: RequestInfo | URL, init?: RequestInit) =>
+			String(input).endsWith('/export')
+				? onExport(init)
+				: identityEnvelope(1_000),
+		sleep: async () => undefined,
+	}
+}
+
+const completeOptions = (): RuntimeOptions => ({
+	api: completeApi(),
+	downloadFetcher: okDownload,
+})
+
+function runDay(
+	env: BackupEnvironment,
+	payload: BackupPayload,
+	step: RuntimeStep,
+	options?: RuntimeOptions,
+	rawPayload: unknown = payload,
+) {
+	return runBackupRuntime(
+		env,
+		{
+			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
+			payload: rawPayload,
+			timestamp: new Date(Date.parse(payload.scheduledAt) + 1_000),
+		},
+		step,
+		options,
+	)
+}
+
+const julyPayload = (env: BackupEnvironment, day = '2026-07-22') =>
+	backupPayload(env, new Date(`${day}T02:15:00Z`))
+
+const consoleEvents = (spy: { mock: { calls: Array<Array<unknown>> } }) =>
+	spy.mock.calls.map(([record]) => JSON.parse(String(record)).event as string)
+
 test('source size gates block export for zero and oversize readings', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	let liveSize = 0
 	let exportCalls = 0
-	const options = {
+	const options: RuntimeOptions = {
 		api: {
 			fetcher: async (input: RequestInfo | URL) => {
 				if (!String(input).endsWith('/export')) {
@@ -47,34 +96,20 @@ test('source size gates block export for zero and oversize readings', async () =
 			},
 			sleep: async () => undefined,
 		},
-		downloadFetcher: async () =>
-			new Response('valid', { headers: { 'content-length': '5' } }),
-	}
-	const event = {
-		instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-		payload,
-		timestamp: new Date('2026-07-22T02:15:01Z'),
+		downloadFetcher: okDownload,
 	}
 
 	await assert.rejects(
-		runBackupRuntime(
-			env,
-			event,
-			new CachedUploadStep(() => undefined),
-			options,
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'source-size-zero' &&
-			error.retryable,
+		runDay(env, payload, new CachedUploadStep(() => undefined), options),
+		backupError('source-size-zero', true),
 	)
 	assert.equal(exportCalls, 0)
 	assert.equal(bucket.puts.length, 0)
 
 	liveSize = 1_000
-	const result = await runBackupRuntime(
+	const result = await runDay(
 		env,
-		event,
+		payload,
 		new CachedUploadStep(() => undefined),
 		options,
 	)
@@ -86,7 +121,7 @@ test('source size gates block export for zero and oversize readings', async () =
 	consoleError.mockClear()
 	const oversizeUrls: string[] = []
 	await assert.rejects(
-		runBackupRuntime(env, event, new RetryAfterCommitStep(), {
+		runDay(env, payload, new RetryAfterCommitStep(), {
 			api: {
 				fetcher: async (input) => {
 					oversizeUrls.push(String(input))
@@ -94,9 +129,7 @@ test('source size gates block export for zero and oversize readings', async () =
 				},
 			},
 		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'source-size-limit-exceeded',
+		backupError('source-size-limit-exceeded'),
 	)
 	assert.equal(oversizeUrls.length, 1)
 	assert.equal(
@@ -106,10 +139,10 @@ test('source size gates block export for zero and oversize readings', async () =
 	assert.equal(consoleError.mock.calls.length, 2)
 })
 
-test('legacy persisted scheduled payload without kind resumes as scheduled', async () => {
+test('legacy scheduled payloads without kind resume; malformed legacy or scheduled payloads are rejected', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const current = julyPayload(env)
 	const legacyPayload = {
 		scheduledAt: current.scheduledAt,
 		day: current.day,
@@ -117,44 +150,19 @@ test('legacy persisted scheduled payload without kind resumes as scheduled', asy
 		manifestKey: current.manifestKey,
 		retentionTier: current.retentionTier,
 	}
-	const result = await runBackupRuntime(
+	const result = await runDay(
 		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, current.day),
-			payload: legacyPayload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
-		},
+		current,
 		new CachedUploadStep(() => undefined),
-		{
-			api: {
-				fetcher: async (input) =>
-					String(input).endsWith('/export')
-						? exportEnvelope('complete')
-						: identityEnvelope(1_000),
-				sleep: async () => undefined,
-			},
-			downloadFetcher: async () =>
-				new Response('valid', { headers: { 'content-length': '5' } }),
-		},
+		completeOptions(),
+		legacyPayload,
 	)
-
 	assert.equal(result.payload.export.scheduledAt, legacyPayload.scheduledAt)
 	assert.equal(result.payload.sql.bytes, 5)
 	assert.notEqual(await bucket.get(current.manifestKey), null)
-})
 
-test('legacy scheduled compatibility rejects invalid dates, extra keys, and unusual objects', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
-	const env = environment()
-	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const legacyPayload = {
-		scheduledAt: current.scheduledAt,
-		day: current.day,
-		objectPrefix: current.objectPrefix,
-		manifestKey: current.manifestKey,
-		retentionTier: current.retentionTier,
-	}
 	const accessorPayload = { ...legacyPayload }
 	Object.defineProperty(accessorPayload, 'scheduledAt', {
 		enumerable: true,
@@ -165,7 +173,7 @@ test('legacy scheduled compatibility rejects invalid dates, extra keys, and unus
 		enumerable: true,
 		value: 'extra',
 	})
-	for (const invalidPayload of [
+	const invalidPayloads = [
 		{ ...legacyPayload, scheduledAt: undefined },
 		{ ...legacyPayload, scheduledAt: null },
 		{ ...legacyPayload, scheduledAt: 'not-a-date' },
@@ -177,91 +185,53 @@ test('legacy scheduled compatibility rejects invalid dates, extra keys, and unus
 		Object.assign(Object.create(null), legacyPayload),
 		accessorPayload,
 		symbolPayload,
-	]) {
-		await assert.rejects(
-			runBackupRuntime(
-				env,
-				{
-					instanceId: workflowInstanceId(DATABASE_ID, current.day),
-					payload: invalidPayload,
-					timestamp: new Date('2026-07-22T02:15:01Z'),
-				},
-				new CachedUploadStep(() => undefined),
-			),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === 'invalid-workflow-payload',
-		)
-	}
-	assert.equal(consoleError.mock.calls.length, 11)
-})
-
-test('scheduled discriminants require exact payload fields', async () => {
-	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockImplementation(() => undefined)
-	const env = environment()
-	const current = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	for (const invalidPayload of [
+		// Scheduled discriminants require exact payload fields too.
 		{ ...current, extra: true },
 		Object.assign(Object.create({ inherited: true }), current),
-	]) {
+	]
+	for (const invalidPayload of invalidPayloads) {
 		await assert.rejects(
-			runBackupRuntime(
-				env,
-				{
-					instanceId: workflowInstanceId(DATABASE_ID, current.day),
-					payload: invalidPayload,
-					timestamp: new Date('2026-07-22T02:15:01Z'),
-				},
+			runDay(
+				environment(),
+				current,
 				new CachedUploadStep(() => undefined),
+				undefined,
+				invalidPayload,
 			),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === 'invalid-workflow-payload',
+			backupError('invalid-workflow-payload'),
 		)
 	}
-	assert.equal(consoleError.mock.calls.length, 2)
+	assert.equal(consoleError.mock.calls.length, 13)
 })
 
 test('workflow retry reuses an upload committed before step persistence and writes the absent manifest', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	const step = new RetryAfterCommitStep()
 	const apiCalls: string[] = []
 	const downloadUrls: string[] = []
 	let exportCalls = 0
-	const result = await runBackupRuntime(
-		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
-		},
-		step,
-		{
-			api: {
-				fetcher: async (input) => {
-					const url = String(input)
-					apiCalls.push(url)
-					if (!url.endsWith('/export')) return identityEnvelope(1_000)
-					exportCalls += 1
-					return exportEnvelope(
-						'complete',
-						'bookmark-1',
-						`https://download.example/url-${exportCalls}`,
-					)
-				},
-				sleep: async () => undefined,
+	const result = await runDay(env, payload, step, {
+		api: {
+			fetcher: async (input) => {
+				const url = String(input)
+				apiCalls.push(url)
+				if (!url.endsWith('/export')) return identityEnvelope(1_000)
+				exportCalls += 1
+				return exportEnvelope(
+					'complete',
+					'bookmark-1',
+					`https://download.example/url-${exportCalls}`,
+				)
 			},
-			downloadFetcher: async (input) => {
-				downloadUrls.push(String(input))
-				return new Response('valid', {
-					headers: { 'content-length': '5' },
-				})
-			},
+			sleep: async () => undefined,
 		},
-	)
+		downloadFetcher: async (input) => {
+			downloadUrls.push(String(input))
+			return okDownload()
+		},
+	})
 	assert.deepEqual(step.uploadResults, [false, true])
 	assert.deepEqual(downloadUrls, [
 		'https://download.example/url-2',
@@ -277,7 +247,7 @@ test('workflow retry reuses an upload committed before step persistence and writ
 		result,
 	)
 	// Statement stats are persisted next to the SQL object.
-	const statsObject = await (bucket as unknown as R2Bucket).get(
+	const statsObject = await bucket.get(
 		`${result.payload.sql.objectKey}.stats.json`,
 	)
 	assert.notEqual(statsObject, null)
@@ -294,37 +264,19 @@ test('oversized SQL writes stats then fails retryably without a day manifest', a
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-31T02:15:00Z'))
+	const payload = julyPayload(env, '2026-07-31')
 	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
 	const sql = `INSERT INTO t VALUES ('${'x'.repeat(100_001)}');`
 
 	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-31T02:15:01Z'),
-			},
-			new CachedUploadStep(() => undefined),
-			{
-				api: {
-					fetcher: async (input) =>
-						String(input).endsWith('/export')
-							? exportEnvelope('complete')
-							: identityEnvelope(1_000),
-					sleep: async () => undefined,
-				},
-				downloadFetcher: async () =>
-					new Response(sql, {
-						headers: { 'content-length': String(sql.length) },
-					}),
-			},
-		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'backup-unrestorable-statements' &&
-			error.retryable,
+		runDay(env, payload, new CachedUploadStep(() => undefined), {
+			api: completeApi(),
+			downloadFetcher: async () =>
+				new Response(sql, {
+					headers: { 'content-length': String(sql.length) },
+				}),
+		}),
+		backupError('backup-unrestorable-statements', true),
 	)
 
 	const statsObject = await bucket.get(`${objectKey}.stats.json`)
@@ -334,164 +286,98 @@ test('oversized SQL writes stats then fails retryably without a day manifest', a
 	}
 	assert.equal(stats.oversizedStatementCount, 1)
 	assert.equal(await bucket.head(payload.manifestKey), null)
-	const events = consoleError.mock.calls.map(([record]) =>
-		JSON.parse(String(record)),
-	) as Array<{ event: string }>
-	assert.ok(
-		events.some(({ event }) => event === 'backup-unrestorable-statements'),
-	)
-	assert.ok(events.some(({ event }) => event === 'backup-failure'))
+	const events = consoleEvents(consoleError)
+	assert.ok(events.includes('backup-unrestorable-statements'))
+	assert.ok(events.includes('backup-failure'))
 })
 
-test('cached pre-stats uploads are allowed only for legacy backup days', async () => {
+test('cached pre-stats uploads are allowed only for legacy backup days; conflicting stats block the manifest', async () => {
 	const consoleError = vi.spyOn(console, 'error')
 	consoleError.mockImplementation(() => undefined)
 	const consoleLog = vi.spyOn(console, 'log')
 	consoleLog.mockImplementation(() => undefined)
-	const options = {
-		api: {
-			fetcher: async (input: RequestInfo | URL) =>
-				String(input).endsWith('/export')
-					? exportEnvelope('complete')
-					: identityEnvelope(1_000),
-			sleep: async () => undefined,
-		},
-		downloadFetcher: async () =>
-			new Response('valid', { headers: { 'content-length': '5' } }),
-	}
 
 	const legacyBucket = new MemoryBucket()
 	const legacyEnv = environment(legacyBucket)
-	const legacyPayload = backupPayload(
+	const legacyPayload = julyPayload(legacyEnv, '2026-07-27')
+	await runDay(
 		legacyEnv,
-		new Date('2026-07-27T02:15:00Z'),
-	)
-	await runBackupRuntime(
-		legacyEnv,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, legacyPayload.day),
-			payload: legacyPayload,
-			timestamp: new Date('2026-07-27T02:15:01Z'),
-		},
+		legacyPayload,
 		new PreStatsUploadStep(),
-		options,
+		completeOptions(),
 	)
 	assert.notEqual(await legacyBucket.head(legacyPayload.manifestKey), null)
-	const legacyEvents = consoleLog.mock.calls.map(([record]) =>
-		JSON.parse(String(record)),
-	) as Array<{ event: string }>
-	assert.ok(
-		legacyEvents.some(({ event }) => event === 'backup-stats-legacy-missing'),
-	)
+	assert.ok(consoleEvents(consoleLog).includes('backup-stats-legacy-missing'))
 
 	const requiredBucket = new MemoryBucket()
 	const requiredEnv = environment(requiredBucket)
-	const requiredPayload = backupPayload(
-		requiredEnv,
-		new Date('2026-07-28T02:15:00Z'),
-	)
+	const requiredPayload = julyPayload(requiredEnv, '2026-07-28')
 	await assert.rejects(
-		runBackupRuntime(
+		runDay(
 			requiredEnv,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, requiredPayload.day),
-				payload: requiredPayload,
-				timestamp: new Date('2026-07-28T02:15:01Z'),
-			},
+			requiredPayload,
 			new PreStatsUploadStep(),
-			options,
+			completeOptions(),
 		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'backup-sql-stats-missing' &&
-			error.retryable,
+		backupError('backup-sql-stats-missing', true),
 	)
 	assert.equal(await requiredBucket.head(requiredPayload.manifestKey), null)
-})
 
-test('conflicting immutable SQL stats prevent manifest publication', async () => {
-	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockImplementation(() => undefined)
-	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-31T02:15:00Z'))
-	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
-
+	const conflictBucket = new MemoryBucket()
+	const conflictEnv = environment(conflictBucket)
+	const conflictPayload = julyPayload(conflictEnv, '2026-07-31')
+	const objectKey = objectKeyForBookmark(
+		conflictPayload.objectPrefix,
+		'bookmark-1',
+	)
 	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-31T02:15:01Z'),
-			},
+		runDay(
+			conflictEnv,
+			conflictPayload,
 			new CachedUploadStep(async () => {
-				await bucket.put(
+				await conflictBucket.put(
 					`${objectKey}.stats.json`,
-					JSON.stringify(badSqlStatsFixture(payload.day, objectKey)),
+					JSON.stringify(badSqlStatsFixture(conflictPayload.day, objectKey)),
 				)
 			}),
-			{
-				api: {
-					fetcher: async (input) =>
-						String(input).endsWith('/export')
-							? exportEnvelope('complete')
-							: identityEnvelope(1_000),
-					sleep: async () => undefined,
-				},
-				downloadFetcher: async () =>
-					new Response('valid', { headers: { 'content-length': '5' } }),
-			},
+			completeOptions(),
 		),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'backup-sql-stats-conflict',
+		backupError('backup-sql-stats-conflict'),
 	)
-	assert.equal(await bucket.head(payload.manifestKey), null)
+	assert.equal(await conflictBucket.head(conflictPayload.manifestKey), null)
 })
 
 test('initial upload ignores a stale cached signed URL and refreshes it in the callback', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	const exportBodies: unknown[] = []
 	const downloadUrls: string[] = []
-	let exportCalls = 0
-	const result = await runBackupRuntime(
+	const signedUrls = [
+		'https://download.example/stale-initial',
+		'https://download.example/fresh-upload',
+		'https://download.example/fresh-finalization',
+	]
+	const result = await runDay(
 		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
-		},
+		payload,
 		new CachedUploadStep(() => undefined),
 		{
-			api: {
-				fetcher: async (input, init) => {
-					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
-					exportBodies.push(JSON.parse(String(init?.body)))
-					exportCalls += 1
-					return exportEnvelope(
-						'complete',
-						'bookmark-1',
-						[
-							'https://download.example/stale-initial',
-							'https://download.example/fresh-upload',
-							'https://download.example/fresh-finalization',
-						][exportCalls - 1],
-					)
-				},
-				sleep: async () => undefined,
-			},
+			api: completeApi((init) => {
+				exportBodies.push(JSON.parse(String(init?.body)))
+				return exportEnvelope(
+					'complete',
+					'bookmark-1',
+					signedUrls[exportBodies.length - 1],
+				)
+			}),
 			downloadFetcher: async (input) => {
 				const url = String(input)
 				downloadUrls.push(url)
 				if (url === 'https://download.example/stale-initial') {
 					return new Response('', { status: 403 })
 				}
-				return new Response('valid', {
-					headers: { 'content-length': '5' },
-				})
+				return okDownload()
 			},
 		},
 	)
@@ -514,39 +400,25 @@ test('a replayed finalization tolerates the already-written manifest and stats',
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
-	const options = {
-		api: {
-			fetcher: async (input: RequestInfo | URL) =>
-				String(input).endsWith('/export')
-					? exportEnvelope('complete')
-					: identityEnvelope(1_000),
-			sleep: async () => undefined,
-		},
-		downloadFetcher: async () =>
-			new Response('valid', { headers: { 'content-length': '5' } }),
-	}
-	const event = {
-		instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-		payload,
-		timestamp: new Date('2026-07-22T02:15:01Z'),
-	}
+	const payload = julyPayload(env)
 	const step = new CachedUploadStep(() => undefined)
-	const first = await runBackupRuntime(env, event, step, options)
+	const first = await runDay(env, payload, step, completeOptions())
 	// Replaying the same instance returns every cached step result without
 	// re-executing uploads or manifest writes.
-	const replay = await runBackupRuntime(env, event, step, options)
+	const replay = await runDay(env, payload, step, completeOptions())
 	assert.deepEqual(replay, first)
 
 	// A *new* execution over an already-manifested day fails closed on the
 	// immutable manifest instead of silently replacing it.
 	await new Promise((resolve) => setTimeout(resolve, 2))
 	await assert.rejects(
-		runBackupRuntime(env, event, new CachedUploadStep(() => undefined), {
-			...options,
-		}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'manifest-conflict',
+		runDay(
+			env,
+			payload,
+			new CachedUploadStep(() => undefined),
+			completeOptions(),
+		),
+		backupError('manifest-conflict'),
 	)
 	assert.deepEqual(
 		await readManifest(bucket as unknown as R2Bucket, payload.manifestKey),
@@ -557,43 +429,28 @@ test('a replayed finalization tolerates the already-written manifest and stats',
 test('zero-byte upload retries with a fresh URL before manifest success', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	const step = new RetryUploadStep()
 	let exportCalls = 0
 	const downloadUrls: string[] = []
-	const result = await runBackupRuntime(
-		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
+	const result = await runDay(env, payload, step, {
+		api: completeApi(() => {
+			exportCalls += 1
+			return exportEnvelope(
+				'complete',
+				'bookmark-1',
+				`https://download.example/export-${String(exportCalls)}`,
+			)
+		}),
+		downloadFetcher: async (input) => {
+			const url = String(input)
+			downloadUrls.push(url)
+			if (url.endsWith('export-2')) {
+				return new Response('', { headers: { 'content-length': '0' } })
+			}
+			return okDownload()
 		},
-		step,
-		{
-			api: {
-				fetcher: async (input) => {
-					if (!String(input).endsWith('/export')) return identityEnvelope(1_000)
-					exportCalls += 1
-					return exportEnvelope(
-						'complete',
-						'bookmark-1',
-						`https://download.example/export-${String(exportCalls)}`,
-					)
-				},
-				sleep: async () => undefined,
-			},
-			downloadFetcher: async (input) => {
-				const url = String(input)
-				downloadUrls.push(url)
-				if (url.endsWith('export-2')) {
-					return new Response('', { headers: { 'content-length': '0' } })
-				}
-				return new Response('valid', {
-					headers: { 'content-length': '5' },
-				})
-			},
-		},
-	)
+	})
 	assert.deepEqual(step.uploadAttempts, [1, 2])
 	assert.deepEqual(downloadUrls, [
 		'https://download.example/export-2',
@@ -634,41 +491,21 @@ test('tampered objects are rejected for retry and cached-upload paths without wr
 		consoleError.mockClear()
 		const bucket = new MemoryBucket()
 		const env = environment(bucket)
-		const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+		const payload = julyPayload(env)
 		const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
 		const step = createStep(() => {
 			bucket.corrupt(objectKey, 'evil!')
 		})
 		let downloadCalls = 0
 		await assert.rejects(
-			runBackupRuntime(
-				env,
-				{
-					instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-					payload,
-					timestamp: new Date('2026-07-22T02:15:01Z'),
+			runDay(env, payload, step, {
+				api: completeApi(),
+				downloadFetcher: async () => {
+					downloadCalls += 1
+					return okDownload()
 				},
-				step,
-				{
-					api: {
-						fetcher: async (input) =>
-							String(input).endsWith('/export')
-								? exportEnvelope('complete')
-								: identityEnvelope(1_000),
-						sleep: async () => undefined,
-					},
-					downloadFetcher: async () => {
-						downloadCalls += 1
-						return new Response('valid', {
-							headers: { 'content-length': '5' },
-						})
-					},
-				},
-			),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === expectedCode &&
-				error.retryable === false,
+			}),
+			backupError(expectedCode, false),
 		)
 		assert.equal(downloadCalls, expectedDownloads)
 		assert.equal(
@@ -682,7 +519,7 @@ test('tampered objects are rejected for retry and cached-upload paths without wr
 test('source verification and manifest commit share one Workflow step boundary', async () => {
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	let finalizationObserved = false
 	const step = new CachedUploadStep(
 		() => undefined,
@@ -694,82 +531,30 @@ test('source verification and manifest commit share one Workflow step boundary',
 			)
 		},
 	)
-	await runBackupRuntime(
-		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
-		},
-		step,
-		{
-			api: {
-				fetcher: async (input) =>
-					String(input).endsWith('/export')
-						? exportEnvelope('complete')
-						: identityEnvelope(1_000),
-				sleep: async () => undefined,
-			},
-			downloadFetcher: async () =>
-				new Response('valid', {
-					headers: { 'content-length': '5' },
-				}),
-		},
-	)
+	await runDay(env, payload, step, completeOptions())
 	assert.equal(finalizationObserved, true)
 })
 
 test('manifest signing failure leaves committed SQL manifest-less and retry succeeds', async () => {
 	const consoleError = vi.spyOn(console, 'error')
-	consoleError.mockClear()
 	consoleError.mockImplementation(() => undefined)
 	const bucket = new MemoryBucket()
 	const env = environment(bucket)
 	const validPrivateKey = env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64
 	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 =
 		Buffer.from('invalid-pkcs8').toString('base64')
-	const payload = backupPayload(env, new Date('2026-07-22T02:15:00Z'))
+	const payload = julyPayload(env)
 	const objectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
 	const step = new CachedUploadStep(() => undefined)
-	const options = {
-		api: {
-			fetcher: async (input: RequestInfo | URL) =>
-				String(input).endsWith('/export')
-					? exportEnvelope('complete')
-					: identityEnvelope(1_000),
-			sleep: async () => undefined,
-		},
-		downloadFetcher: async () =>
-			new Response('valid', { headers: { 'content-length': '5' } }),
-	}
 	await assert.rejects(
-		runBackupRuntime(
-			env,
-			{
-				instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-				payload,
-				timestamp: new Date('2026-07-22T02:15:01Z'),
-			},
-			step,
-			options,
-		),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'manifest-signing-failed',
+		runDay(env, payload, step, completeOptions()),
+		backupError('manifest-signing-failed'),
 	)
 	assert.notEqual(await bucket.head(objectKey), null)
 	assert.equal(await bucket.head(payload.manifestKey), null)
 
 	env.BACKUP_MANIFEST_SIGNING_PRIVATE_KEY_PKCS8_BASE64 = validPrivateKey
-	await runBackupRuntime(
-		env,
-		{
-			instanceId: workflowInstanceId(DATABASE_ID, payload.day),
-			payload,
-			timestamp: new Date('2026-07-22T02:15:01Z'),
-		},
-		step,
-		options,
-	)
+	await runDay(env, payload, step, completeOptions())
 	assert.notEqual(await bucket.head(payload.manifestKey), null)
 	assert.equal(consoleError.mock.calls.length, 1)
 })

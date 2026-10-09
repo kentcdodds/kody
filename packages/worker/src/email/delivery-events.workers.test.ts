@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { processCloudflareEmailDeliveryEvent } from './delivery-events.ts'
 import { mailboxRpc } from './mailbox-client.ts'
+import { baseMessage } from './mailbox-test-helpers.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
@@ -11,16 +12,10 @@ function captureD1Sql(db: D1Database) {
 		sql,
 		db: new Proxy(db, {
 			get(target, property, receiver) {
-				if (property === 'prepare') {
+				if (property === 'prepare' || property === 'exec') {
 					return (statement: string) => {
 						sql.push(statement)
-						return target.prepare(statement)
-					}
-				}
-				if (property === 'exec') {
-					return (statement: string) => {
-						sql.push(statement)
-						return target.exec(statement)
+						return target[property](statement)
 					}
 				}
 				const value = Reflect.get(target, property, receiver)
@@ -63,48 +58,19 @@ function providerEvent(input: {
 test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `provider-user-${crypto.randomUUID()}`
-	const messageId = `message-${crypto.randomUUID()}`
 	const providerMessageId = `provider-${crypto.randomUUID()}`
 	const createdAt = '2026-08-03T01:00:00.000Z'
 	const mailbox = mailboxRpc({ env, userId })
-	await mailbox.upsertMessageGraph({
-		ownerId: userId,
-		message: {
-			id: messageId,
-			direction: 'outbound',
-			inboxId: null,
-			threadId: null,
-			senderIdentityId: null,
-			fromAddress: 'user@inbox.example.com',
-			envelopeFrom: null,
-			toAddresses: ['recipient@example.net'],
-			ccAddresses: [],
-			bccAddresses: [],
-			replyToAddresses: [],
-			subject: 'Delivery lifecycle',
-			messageIdHeader: '<outbound@example.com>',
-			inReplyToHeader: null,
-			references: [],
-			headers: {},
-			authResults: null,
-			textBody: 'Body',
-			htmlBody: null,
-			rawMimeKey: null,
-			rawSize: 4,
-			processingStatus: 'sent',
-			classification: 'accepted',
-			classificationReason: null,
-			providerMessageId,
-			deliveryStatus: null,
-			deliveryStatusAt: null,
-			error: null,
-			receivedAt: null,
-			sentAt: createdAt,
-			createdAt,
-			updatedAt: createdAt,
-		},
-		attachments: [],
+	const message = baseMessage(userId, {
+		direction: 'outbound',
+		inboxId: null,
+		processingStatus: 'sent',
+		providerMessageId,
+		sentAt: createdAt,
+		createdAt,
 	})
+	const messageId = message.id
+	await mailbox.upsertMessageGraph({ ownerId: userId, message })
 	await upsertOutboundProviderIndexRow({
 		db: env.APP_DB,
 		providerMessageId,
@@ -158,12 +124,11 @@ test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', a
 		status: 'bounced',
 		at: bouncedAt,
 	})
-	await expect(
-		processCloudflareEmailDeliveryEvent({ env: flowEnv, body: bounced }),
-	).resolves.toMatchObject({ outcome: 'recorded' })
-	await expect(
-		processCloudflareEmailDeliveryEvent({ env: flowEnv, body: bounced }),
-	).resolves.toMatchObject({ outcome: 'duplicate' })
+	for (const outcome of ['recorded', 'duplicate']) {
+		await expect(
+			processCloudflareEmailDeliveryEvent({ env: flowEnv, body: bounced }),
+		).resolves.toMatchObject({ outcome })
+	}
 	expect(
 		await env.APP_DB.prepare(
 			`SELECT provider, event_type, occurred_at

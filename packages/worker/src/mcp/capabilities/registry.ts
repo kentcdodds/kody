@@ -13,7 +13,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
-import { listVisibleEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
+import { listEnabledMcpServerRefsCached } from '#worker/mcp-client/settings-service.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 
 let staticRegistryMemo: Promise<BuiltCapabilityRegistry> | null = null
@@ -45,7 +45,7 @@ function createCapabilityRegistryCache() {
 	})
 }
 
-let capabilityRegistryCache = createCapabilityRegistryCache()
+const capabilityRegistryCache = createCapabilityRegistryCache()
 
 function createCapabilityRegistryCacheKey(input: {
 	userId: string
@@ -116,18 +116,24 @@ async function resolveFeatureFlagsForRegistry(input: {
 }
 
 async function loadEnabledMcpServerRefs(input: {
-	env: Env
+	env: Pick<Env, 'APP_DB'>
 	userId: string
-	packageId?: string | null
 }): Promise<ReadonlyArray<McpServerRef>> {
 	try {
 		// Per-user 30s cache: registry assembly runs on every execute /
 		// package invocation, so this must not cost a D1 read per call.
-		return await listVisibleEnabledMcpServerRefsCached({
+		// Include package-locked servers so an approved package export
+		// imported into execute can still dispatch kody.mcp["server"].tool —
+		// assertCanUseMcpServer enforces the grant at call time via the
+		// bundler stamp (secret-authority ALS), not via this listing filter.
+		const refs = await listEnabledMcpServerRefsCached({
 			env: input.env,
 			userId: input.userId,
-			packageId: input.packageId,
 		})
+		return refs.map((ref) => ({
+			serverId: ref.serverId,
+			name: ref.name,
+		}))
 	} catch {
 		// A missing/unavailable settings table must not break builtin
 		// capabilities; the caller just sees no MCP server domains.
@@ -178,7 +184,6 @@ export async function getCapabilityRegistryForContext(input: {
 	const mcpServerRefs = await loadEnabledMcpServerRefs({
 		env: input.env,
 		userId,
-		packageId: input.callerContext.storageContext?.packageId,
 	})
 	if (mcpServerRefs.length === 0) {
 		const registry = await getStaticRegistry()
@@ -219,8 +224,4 @@ export async function getCapabilityRegistryForContext(input: {
 			registry,
 		}),
 	})
-}
-
-export function clearCapabilityRegistryCacheForTests() {
-	capabilityRegistryCache = createCapabilityRegistryCache()
 }

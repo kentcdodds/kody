@@ -1,3 +1,2 @@
 npm exec lint-staged
-npm run typecheck
-npm run migrations:check
+node tools/git-hook-checks.ts pre-commit

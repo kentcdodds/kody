@@ -31,6 +31,8 @@ import {
 } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
+import { type AccountSecretsLoaderData } from '#universal/loader-data.ts'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { normalizeAllowedHosts } from '#mcp/secrets/allowed-hosts.ts'
@@ -41,17 +43,22 @@ import {
 	integrationConfigSchema,
 } from '#mcp/capabilities/integrations/integration-shared.ts'
 import {
+	assertScopesAllowedForPlatformApp,
 	findOauthAppForProviderSetup,
+	getAvailablePlatformApp,
 	getJoinedIntegration,
 	upsertIntegration,
 	upsertOauthAppWithoutConnection,
+	upsertPlatformIntegration,
 } from '#worker/integrations/service.ts'
+import { getPlatformOauthAppClientSecret } from '#worker/integrations/platform-apps.ts'
 import {
 	persistIntegrationTokens,
 	persistUserOauthAppClientSecret,
 	resolveUserOauthAppClientSecret,
 } from '#worker/integrations/credentials.ts'
 import { dispatchIntegrationAuthSucceededSubscriptionEvents } from '#worker/integrations/package-subscriptions.ts'
+import { inferIntegrationRefreshPolicy } from '#worker/integrations/refresh-policy.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import {
 	buildOAuthTokenExchangeFailurePayload,
@@ -85,6 +92,20 @@ export function createAccountSecretsHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
+			const requestUrl = new URL(request.url)
+			// Prefill agent links use the focused /connect/secret-set page.
+			// Bare /account/secrets/new stays on the account list editor.
+			if (
+				accountAliasPath(requestUrl.pathname) === '/account/secrets/new' &&
+				requestUrl.searchParams.get('name')?.trim()
+			) {
+				const redirectUrl = new URL(
+					`/connect/secret-set${requestUrl.search}`,
+					requestUrl.origin,
+				)
+				return Response.redirect(redirectUrl, 302)
+			}
+
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -312,24 +333,44 @@ async function handleConnectOauthAction(input: {
 }) {
 	const provider = readString(input.body, 'provider')
 	const platformAppSlug = readOptionalString(input.body, 'platformAppSlug')
-	if (platformAppSlug) {
+	const platformApp = platformAppSlug
+		? await getAvailablePlatformApp({ env: input.env, slug: platformAppSlug })
+		: null
+	if (platformAppSlug && !platformApp) {
 		return jsonResponse(
-			{
-				ok: false,
-				error:
-					'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
-			},
+			{ ok: false, error: 'Platform integration is not available.' },
 			400,
 		)
 	}
-	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
-	const apiBaseUrl = readOptionalString(input.body, 'apiBaseUrl')
-	const authorizeUrl = readOptionalString(input.body, 'authorizeUrl')
-	const flow = readOptionalString(input.body, 'flow')
-	const usePkce = readOptionalBoolean(input.body, 'usePkce')
-	const clientId = readOptionalString(input.body, 'clientId')
+	// Platform lane: endpoints and hosts come from the operator-provisioned
+	// app row, not the request body.
+	const tokenUrl = platformApp
+		? platformApp.tokenUrl
+		: readOptionalString(input.body, 'tokenUrl')
+	const apiBaseUrl = platformApp
+		? platformApp.apiBaseUrl
+		: readOptionalString(input.body, 'apiBaseUrl')
+	const authorizeUrl = platformApp
+		? platformApp.authorizeUrl
+		: readOptionalString(input.body, 'authorizeUrl')
+	const flow = platformApp
+		? platformApp.flow
+		: readOptionalString(input.body, 'flow')
+	const usePkce = platformApp
+		? platformApp.usePkce
+		: readOptionalBoolean(input.body, 'usePkce')
+	const clientId = platformApp
+		? platformApp.clientId
+		: readOptionalString(input.body, 'clientId')
 	const allowedHosts = normalizeAllowedHosts(
-		readStringArray(input.body, 'allowedHosts'),
+		platformApp
+			? [
+					...platformApp.requiredHosts,
+					...(platformApp.apiBaseUrl
+						? [safeParseHost(platformApp.apiBaseUrl) ?? '']
+						: []),
+				]
+			: readStringArray(input.body, 'allowedHosts'),
 	)
 	const scopes = readStringArray(input.body, 'scopes')
 	const scopeSeparator = readRawOptionalString(input.body, 'scopeSeparator')
@@ -376,54 +417,88 @@ async function handleConnectOauthAction(input: {
 			400,
 		)
 	}
-	const integrationName = await saveIntegrationConfig({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		provider,
-		tokenUrl,
-		apiBaseUrl,
-		flow: flow === 'confidential' ? 'confidential' : 'pkce',
-		usePkce,
-		clientId,
-		tokenExchangeStyle: resolveTokenExchangeStyle({
-			tokenUrl,
-			tokenExchangeStyle: readOptionalString(input.body, 'tokenExchangeStyle'),
-		}),
-		allowedHosts,
-		authorization: authorizeUrl
-			? {
-					authorizeUrl,
+	// Scope validation must precede token persistence: a rejected scope set
+	// must not leave orphan token rows behind.
+	if (platformApp) {
+		try {
+			assertScopesAllowedForPlatformApp(platformApp, scopes)
+		} catch (error) {
+			return jsonResponse(
+				{
+					ok: false,
+					error:
+						error instanceof Error
+							? error.message
+							: 'Requested scopes are not allowed.',
+				},
+				400,
+			)
+		}
+	}
+	const integrationName = platformApp
+		? (
+				await upsertPlatformIntegration({
+					env: input.env,
+					userId: input.user.mcpUser.userId,
+					platformAppSlug: platformApp.slug,
+					name: provider,
 					scopes,
-					scopeSeparator,
-					extraAuthorizeParams,
-				}
-			: null,
-	})
+				})
+			).name
+		: await saveIntegrationConfig({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				provider,
+				tokenUrl,
+				apiBaseUrl,
+				flow: flow === 'confidential' ? 'confidential' : 'pkce',
+				usePkce,
+				clientId,
+				tokenExchangeStyle: resolveTokenExchangeStyle({
+					tokenUrl,
+					tokenExchangeStyle: readOptionalString(
+						input.body,
+						'tokenExchangeStyle',
+					),
+				}),
+				allowedHosts,
+				authorization: authorizeUrl
+					? {
+							authorizeUrl,
+							scopes,
+							scopeSeparator,
+							extraAuthorizeParams,
+						}
+					: null,
+			})
 	await persistIntegrationTokens({
 		env: input.env,
 		userId: input.user.mcpUser.userId,
 		name: integrationName,
 		accessToken,
 		refreshToken,
+		refreshPolicy: inferIntegrationRefreshPolicy(tokenRecord),
 	})
-	const clientSecret = await resolveConnectClientSecret({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		provider: integrationName,
-		clientSecret: readOptionalString(input.body, 'clientSecret'),
-	})
-	const saved = await getJoinedIntegration({
-		env: input.env,
-		userId: input.user.mcpUser.userId,
-		name: integrationName,
-	})
-	if (clientSecret && saved?.lane === 'user') {
-		await persistUserOauthAppClientSecret({
+	if (!platformApp) {
+		const clientSecret = await resolveConnectClientSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
-			slug: saved.app.slug,
-			value: clientSecret,
+			provider: integrationName,
+			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
+		const saved = await getJoinedIntegration({
+			env: input.env,
+			userId: input.user.mcpUser.userId,
+			name: integrationName,
+		})
+		if (clientSecret && saved?.lane === 'user') {
+			await persistUserOauthAppClientSecret({
+				env: input.env,
+				userId: input.user.mcpUser.userId,
+				slug: saved.app.slug,
+				value: clientSecret,
+			})
+		}
 	}
 	const hostApprovalLinks: Array<ConnectOauthHostApprovalLink> = []
 
@@ -448,11 +523,11 @@ async function handleConnectOauthAction(input: {
 		userId: input.user.mcpUser.userId,
 		integration: {
 			name: integrationName,
-			lane: 'user',
+			lane: platformApp ? 'platform' : 'user',
 			account_label: null,
 			description: null,
-			provider: null,
-			platform_app_slug: null,
+			provider: platformApp?.provider ?? null,
+			platform_app_slug: platformApp?.slug ?? null,
 			scopes,
 			connected_at: null,
 			token_refreshed_at: null,
@@ -514,15 +589,13 @@ async function handleOAuthExchangeAction(input: {
 	if (!paramsRaw) {
 		return jsonResponse({ ok: false, error: 'Token params are required.' }, 400)
 	}
-	if (readOptionalString(input.body, 'platformAppSlug')) {
-		return jsonResponse(
-			{
-				ok: false,
-				error:
-					'Built-in platform OAuth apps are no longer a connect path. Create your own OAuth app and connect it at /connect/oauth.',
-			},
-			400,
-		)
+	const platformAppSlug = readOptionalString(input.body, 'platformAppSlug')
+	if (platformAppSlug) {
+		return handlePlatformOAuthExchange({
+			env: input.env,
+			paramsRaw,
+			platformAppSlug,
+		})
 	}
 
 	const tokenUrl = readOptionalString(input.body, 'tokenUrl')
@@ -569,15 +642,79 @@ async function handleOAuthExchangeAction(input: {
 		}
 	}
 
-	const params = new URLSearchParams(paramsRaw)
+	return exchangeOAuthToken({
+		tokenUrl,
+		params: new URLSearchParams(paramsRaw),
+		flow,
+		clientSecret,
+		style: tokenExchangeStyle,
+	})
+}
 
+/**
+ * Every exchange input comes from the operator-provisioned app row, never
+ * from the request body, so a caller cannot point the decrypted shared client
+ * secret at an arbitrary token URL. Only discoverable (enabled + published)
+ * apps exchange; drafts keep refreshing existing connections server-side.
+ */
+async function handlePlatformOAuthExchange(input: {
+	env: Env
+	paramsRaw: string
+	platformAppSlug: string
+}) {
+	const platformApp = await getAvailablePlatformApp({
+		env: input.env,
+		slug: input.platformAppSlug,
+	})
+	if (!platformApp) {
+		return jsonResponse(
+			{ ok: false, error: 'Platform integration is not available.' },
+			400,
+		)
+	}
+	let clientSecret: string | null = null
+	if (platformApp.flow === 'confidential') {
+		clientSecret = await getPlatformOauthAppClientSecret({
+			db: input.env.APP_DB,
+			env: input.env,
+			slug: platformApp.slug,
+		})
+		if (!clientSecret) {
+			return jsonResponse(
+				{ ok: false, error: 'Platform client secret is not configured.' },
+				500,
+			)
+		}
+	}
+	const params = new URLSearchParams(input.paramsRaw)
+	params.set('client_id', platformApp.clientId)
+	params.delete('client_secret')
+	return exchangeOAuthToken({
+		tokenUrl: platformApp.tokenUrl,
+		params,
+		flow: platformApp.flow,
+		clientSecret,
+		style: resolveTokenExchangeStyle({
+			tokenUrl: platformApp.tokenUrl,
+			tokenExchangeStyle: platformApp.tokenExchangeStyle,
+		}),
+	})
+}
+
+async function exchangeOAuthToken(input: {
+	tokenUrl: string
+	params: URLSearchParams
+	flow: 'pkce' | 'confidential'
+	clientSecret: string | null
+	style: TokenExchangeStyle
+}) {
 	let exchangeRequest: { headers: Record<string, string>; body: string }
 	try {
 		exchangeRequest = buildOAuthTokenExchangeRequest({
-			params,
-			flow,
-			clientSecret,
-			style: tokenExchangeStyle,
+			params: input.params,
+			flow: input.flow,
+			clientSecret: input.clientSecret,
+			style: input.style,
 		})
 	} catch (error) {
 		return jsonResponse(
@@ -592,7 +729,7 @@ async function handleOAuthExchangeAction(input: {
 		)
 	}
 
-	const response = await fetch(tokenUrl, {
+	const response = await fetch(input.tokenUrl, {
 		method: 'POST',
 		headers: exchangeRequest.headers,
 		body: exchangeRequest.body,
@@ -1113,8 +1250,9 @@ async function handleSaveAction(input: {
 		)
 	}
 
+	let saved: Awaited<ReturnType<typeof saveSecret>>
 	try {
-		await saveSecret({
+		saved = await saveSecret({
 			env: input.env,
 			userId: input.user.mcpUser.userId,
 			userEmail: input.user.mcpUser.email,
@@ -1160,16 +1298,6 @@ async function handleSaveAction(input: {
 				storageContext: getSecretContextForAccountSecret(currentSecret),
 			})
 		}
-
-		const payload = await loadAccountSecretsData({
-			request: input.request,
-			env: input.env,
-			user: input.user,
-			packageOptions,
-			savedPackages,
-			selectedSecretId: nextId,
-		})
-		return jsonResponse(payload)
 	} catch (error) {
 		return jsonResponse(
 			{
@@ -1179,6 +1307,73 @@ async function handleSaveAction(input: {
 			},
 			400,
 		)
+	}
+
+	try {
+		const payload = await loadAccountSecretsData({
+			request: input.request,
+			env: input.env,
+			user: input.user,
+			packageOptions,
+			savedPackages,
+			selectedSecretId: nextId,
+		})
+		return jsonResponse(payload)
+	} catch {
+		// Write already succeeded. Do not report ok:false — a create retry with
+		// currentId null would 409 on the same name.
+		const selectedSecret = {
+			id: nextId,
+			name,
+			scope,
+			description,
+			packageId: packageId ?? null,
+			packageTitle:
+				packageId == null
+					? null
+					: (packageOptions.find((option) => option.id === packageId)?.title ??
+						null),
+			allowedHosts,
+			allowedPackages,
+			createdAt: saved.createdAt,
+			updatedAt: saved.updatedAt,
+			expiresAt: saved.expiresAt,
+			ttlMs: saved.ttlMs,
+			value,
+		}
+		const fallback: AccountSecretsLoaderData = {
+			ok: true,
+			email: input.user.email,
+			packageOptions,
+			packages: savedPackages.map((entry) => ({
+				id: entry.id,
+				kodyId: entry.kodyId,
+				name: entry.name,
+			})),
+			secrets: [
+				...secrets.filter(
+					(secret) => secret.id !== currentId && secret.id !== nextId,
+				),
+				{
+					id: selectedSecret.id,
+					name: selectedSecret.name,
+					scope: selectedSecret.scope,
+					description: selectedSecret.description,
+					packageId: selectedSecret.packageId,
+					packageTitle: selectedSecret.packageTitle,
+					allowedHosts: selectedSecret.allowedHosts,
+					allowedPackages: selectedSecret.allowedPackages,
+					createdAt: selectedSecret.createdAt,
+					updatedAt: selectedSecret.updatedAt,
+					expiresAt: selectedSecret.expiresAt,
+					ttlMs: selectedSecret.ttlMs,
+				},
+			],
+			selectedSecret,
+			approval: null,
+			approvalError: null,
+		}
+		return jsonResponse(fallback)
 	}
 }
 

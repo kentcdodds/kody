@@ -1,0 +1,28 @@
+{
+	"name": "@kentcdodds/mcp-ping",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"kody": {
+		"id": "mcp-ping",
+		"description": "Fixture package that emits an MCP-opted ping event for events extension tests.",
+		"emits": {
+			"@kentcdodds/mcp-ping.ready": {
+				"description": "A ping was requested for an MCP Events subscriber.",
+				"mcp": true,
+				"payloadSchema": {
+					"type": "object",
+					"properties": {
+						"message": { "type": "string", "minLength": 1 }
+					},
+					"required": ["message"],
+					"additionalProperties": false
+				}
+			},
+			"@kentcdodds/mcp-ping.internal": {
+				"description": "Internal-only ping; not exposed over MCP.",
+				"mcp": false
+			}
+		}
+	}
+}

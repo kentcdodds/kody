@@ -1,14 +1,25 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { type getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
+import * as registryModule from '#mcp/capabilities/registry.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
-import type * as ModuleGraph from '#worker/package-runtime/module-graph.ts'
+import * as moduleGraph from '#worker/package-runtime/module-graph.ts'
 import { runBundledModuleWithRegistry } from './run-kody-registry.ts'
 import * as mcpExecutor from '#mcp/executor.ts'
 import { createFakeRunLogNamespace } from '#worker/test-support/run-kody-registry.ts'
+import * as settingsService from '#worker/mcp-client/settings-service.ts'
+import * as hubClient from '#worker/mcp-client/hub-client.ts'
+import * as usageModule from '#worker/usage/record-usage.ts'
+import * as runRecords from '#worker/run-records/service.ts'
+import {
+	callerDisconnectedSandboxLog,
+	packageInvocationClientDisconnectedErrorName,
+} from '#worker/caller-disconnect.ts'
+import { createStorageEstimateReadError } from '#worker/storage-estimate-error.ts'
+import { d1NetworkConnectionLostMessage } from '#worker/d1-retry.ts'
 
 vi.mock('#worker/package-runtime/module-graph.ts', async () => {
-	const actual = await vi.importActual<typeof ModuleGraph>(
+	const actual = await vi.importActual<typeof moduleGraph>(
 		'#worker/package-runtime/module-graph.ts',
 	)
 	return {
@@ -22,10 +33,84 @@ vi.mock('#worker/package-runtime/module-graph.ts', async () => {
 		})),
 	}
 })
-test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
-	silenceIncidentalRuntimeWarnings()
+
+type ProviderFns = Record<string, (args: unknown) => Promise<unknown>>
+
+function requireFn<Fn>(fns: Record<string, Fn>, name: string): Fn {
+	const fn = fns[name]
+	if (!fn) throw new Error(`Expected kody function "${name}"`)
+	return fn
+}
+type Providers = Array<{ fns: ProviderFns }>
+type RunOptions = NonNullable<
+	Parameters<typeof runBundledModuleWithRegistry>[4]
+>
+
+const env = {} as Env
+const emptyRegistry = {
+	capabilityDomains: [],
+	capabilityDomainDescriptionsByName: {} as Record<string, string>,
+	capabilityHandlers: {},
+	capabilityList: [],
+	capabilityMap: {},
+	capabilitySpecs: {},
+	capabilityToolDescriptors: {},
+} as Awaited<ReturnType<typeof registryModule.getCapabilityRegistryForContext>>
+const okBundle = {
+	mainModule: 'entry.js',
+	modules: { 'entry.js': 'export default async () => "ok"' },
+}
+const callerFor = (userId = 'user-123') =>
+	createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: personIdFromStored(userId),
+			email: `${userId}@example.com`,
+			displayName: userId,
+		},
+	})
+
+const runOk = (options: RunOptions = {}, callerContext = callerFor()) =>
+	runBundledModuleWithRegistry(env, callerContext, okBundle, undefined, {
+		skipCapabilityRegistry: true,
+		...options,
+	})
+
+function mockExecutor(
+	initial: (providers: Providers) => unknown = () => ({
+		result: 'ok',
+		logs: [],
+	}),
+) {
+	let respond = initial
+	const calls: Array<{
+		source: string
+		providers: Providers
+		input: Parameters<typeof mcpExecutor.createExecuteExecutor>[0]
+	}> = []
+	const spy = vi.spyOn(mcpExecutor, 'createExecuteExecutor').mockImplementation(
+		(input) =>
+			({
+				async execute(source: unknown, providers: Providers) {
+					input.onWorkerId?.('kody-testworkerid00000000000000000000000000')
+					calls.push({ source: String(source), providers, input })
+					return await respond(providers)
+				},
+			}) as never,
+	)
+	return {
+		spy,
+		calls,
+		fns: () => calls.at(-1)!.providers[0]!.fns,
+		respondWith(next: typeof initial) {
+			respond = next
+		},
+	}
+}
+
+function createWorkflowEnv() {
 	const created: Array<WorkflowInstanceCreateOptions<unknown>> = []
-	const runLog = createFakeRunLogNamespace()
 	const workflowEnv = {
 		APP_DB: {
 			prepare(query: string) {
@@ -47,7 +132,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 				}
 			},
 		} as unknown as D1Database,
-		RUN_LOG: runLog.namespace,
+		RUN_LOG: createFakeRunLogNamespace().namespace,
 		DYNAMIC_CALLABLE_WORKFLOWS: {
 			get: async () => {
 				throw new Error('not found')
@@ -60,501 +145,196 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 					status: async () => ({ status: 'queued' }),
 				} as WorkflowInstance
 			},
+			createBatch: async () => {
+				throw new Error('createBatch is not supported in this test')
+			},
 		} as Workflow<unknown>,
 	} as Env
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
+	return { workflowEnv, created }
+}
+
+test('runBundledModuleWithRegistry passes params and injects runtime helpers', async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.spyOn(registryModule, 'getCapabilityRegistryForContext').mockResolvedValue(
+		emptyRegistry,
+	)
+	const executor = mockExecutor(() => ({
+		result: { room: 'office' },
+		logs: [],
+	}))
+
+	const paramsResult = await runBundledModuleWithRegistry(
+		env,
+		callerFor(),
+		{
+			mainModule: 'entry.js',
+			modules: {
+				'entry.js':
+					'export default async function main(input = {}) { return input }',
+			},
+		},
+		{ room: 'office' },
+		{ skipCapabilityRegistry: true },
+	)
+	expect(paramsResult.result).toEqual({ room: 'office' })
+
+	executor.respondWith(() => ({ result: 'ok', logs: [] }))
+	const emailResult = await runOk({
+		skipCapabilityRegistry: false,
+		emailTools: {
+			getMessage: async (messageId) => ({ id: messageId, subject: 'Hello' }),
+			getAttachment: async (attachmentId) => ({
+				id: attachmentId,
+				text: 'hello',
+			}),
+		},
 	})
-	const emptyRegistry = {
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {} as Record<string, string>,
-		capabilityHandlers: {},
-		capabilityList: [],
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	const paramsBundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js':
-				'export default async function main(input = {}) { return input }',
-		},
-	}
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue(emptyRegistry)
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	let packageBridgeFns: Record<
-		string,
-		(args: unknown) => Promise<unknown>
-	> | null = null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: { room: 'office' },
-					logs: [],
-				}
-			},
-		} as never)
+	expect(emailResult.result).toBe('ok')
+	await expect(
+		requireFn(executor.fns(), 'emailMessageGet')({ message_id: 'message-1' }),
+	).resolves.toEqual({ id: 'message-1', subject: 'Hello' })
+	await expect(
+		requireFn(
+			executor.fns(),
+			'emailAttachmentGet',
+		)({ attachment_id: 'attachment-1' }),
+	).resolves.toEqual({ id: 'attachment-1', text: 'hello' })
 
-	try {
-		const paramsResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			paramsBundle,
-			{ room: 'office' },
-			{
-				skipCapabilityRegistry: true,
-			},
-		)
-		expect(paramsResult.result).toEqual({ room: 'office' })
+	const workflowResult = await runOk({
+		skipCapabilityRegistry: false,
+		workflowTools: { create: async (input) => ({ ok: true, input }) },
+	})
+	expect(workflowResult.result).toBe('ok')
+	await expect(
+		requireFn(
+			executor.fns(),
+			'packageWorkflowCreate',
+		)({ workflowName: 'custom' }),
+	).resolves.toEqual({ ok: true, input: { workflowName: 'custom' } })
 
-		createExecuteExecutorSpy.mockImplementation(() => {
-			return {
-				async execute(_source, providers) {
-					providerFns = (
-						providers[0] as {
-							fns: Record<string, (args: unknown) => Promise<unknown>>
-						}
-					).fns
-					return {
-						result: 'ok',
-						logs: [],
-					}
-				},
-			} as never
-		})
+	const packageEventResult = await runOk({
+		skipCapabilityRegistry: false,
+		packageEventTools: { dispatch: async (input) => ({ ok: true, input }) },
+	})
+	expect(packageEventResult.result).toBe('ok')
+	// Main provider + computed-import bridge + package-events bridge +
+	// static-call meter bridge (bound whenever the run has a user).
+	const packageEventProviders = executor.calls.at(-1)!.providers
+	expect(packageEventProviders).toHaveLength(4)
+	await expect(
+		requireFn(packageEventProviders[2]!.fns, 'dispatch')({ topic: 'x' }),
+	).resolves.toEqual({ ok: true, input: { topic: 'x' } })
 
-		createExecuteExecutorSpy.mockImplementation(
-			() =>
-				({
-					async execute(_source, providers) {
-						providerFns = (
-							providers[0] as {
-								fns: Record<string, (args: unknown) => Promise<unknown>>
-							}
-						).fns
-						return {
-							result: 'ok',
-							logs: [],
-						}
-					},
-				}) as never,
-		)
-
-		const emailResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				emailTools: {
-					getMessage: async (messageId) => ({
-						id: messageId,
-						subject: 'Hello',
-					}),
-					getAttachment: async (attachmentId) => ({
-						id: attachmentId,
-						text: 'hello',
-					}),
-				},
-			},
-		)
-		expect(emailResult.result).toBe('ok')
-		expect(providerFns).not.toBeNull()
-		await expect(
-			providerFns?.emailMessageGet({
-				message_id: 'message-1',
-			}),
-		).resolves.toEqual({
-			id: 'message-1',
-			subject: 'Hello',
-		})
-		await expect(
-			providerFns?.emailAttachmentGet({
-				attachment_id: 'attachment-1',
-			}),
-		).resolves.toEqual({
-			id: 'attachment-1',
-			text: 'hello',
-		})
-
-		createExecuteExecutorSpy.mockImplementation(
-			() =>
-				({
-					async execute(_wrapped, providers) {
-						providerFns = (
-							providers[0] as {
-								fns: Record<string, (args: unknown) => Promise<unknown>>
-							}
-						).fns
-						return {
-							result: 'ok',
-							logs: [],
-						}
-					},
-				}) as never,
-		)
-
-		const workflowResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				workflowTools: {
-					create: async (input) => ({ ok: true, input }),
-				},
-			},
-		)
-		expect(workflowResult.result).toBe('ok')
-		expect(providerFns).not.toBeNull()
-		await expect(
-			providerFns?.packageWorkflowCreate({ workflowName: 'custom' }),
-		).resolves.toEqual({
-			ok: true,
-			input: { workflowName: 'custom' },
-		})
-
-		createExecuteExecutorSpy.mockImplementation(
-			() =>
-				({
-					async execute(_wrapped, providers) {
-						// Main provider + packages bridge + static-call meter
-						// bridge (bound whenever the run has a user).
-						expect(providers).toHaveLength(3)
-						providerFns = (
-							providers[0] as {
-								fns: Record<string, (args: unknown) => Promise<unknown>>
-							}
-						).fns
-						packageBridgeFns = (
-							providers[1] as {
-								fns: Record<string, (args: unknown) => Promise<unknown>>
-							}
-						).fns
-						return {
-							result: 'ok',
-							logs: [],
-						}
-					},
-				}) as never,
-		)
-
-		const packageResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				packageInvokeTools: {
-					invoke: async (input) => ({ ok: true, input }),
-				},
-			},
-		)
-		expect(packageResult.result).toBe('ok')
-		expect(providerFns).not.toBeNull()
-		expect(packageBridgeFns).not.toBeNull()
-		await expect(
-			packageBridgeFns?.invoke({
-				specifier:
-					'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
-				options: {},
-			}),
-		).resolves.toEqual({
-			ok: true,
-			input: {
-				specifier:
-					'kody:@kentcdodds/discord-general-chat/handle-discord-message-created',
-				options: {},
-			},
-		})
-
-		createExecuteExecutorSpy.mockImplementation(
-			() =>
-				({
-					async execute(_wrapped, providers) {
-						providerFns = (
-							providers[0] as {
-								fns: Record<string, (args: unknown) => Promise<unknown>>
-							}
-						).fns
-						return {
-							result: 'ok',
-							logs: [],
-						}
-					},
-				}) as never,
-		)
-
-		await runBundledModuleWithRegistry(
-			workflowEnv,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				packageContext: null,
-			},
-		)
-		await expect(
-			providerFns?.packageWorkflowCreate({
-				runAt: '2026-05-03T12:00:00.000Z',
-				idempotencyKey: 'execute-smoke',
-				code: 'export default async function main(p){ return { ok: true, p }; }',
-				params: { greeting: 'hello' },
-			}),
-		).resolves.toMatchObject({
-			ok: true,
-			source_type: 'inline',
-			status: 'queued',
-		})
-		expect(created[0]?.params).toEqual(
-			expect.objectContaining({
-				sourceType: 'inline',
-				userId: 'user-123',
-				params: { greeting: 'hello' },
-			}),
-		)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
+	const { workflowEnv, created } = createWorkflowEnv()
+	await runBundledModuleWithRegistry(
+		workflowEnv,
+		callerFor(),
+		okBundle,
+		undefined,
+		{ packageContext: null },
+	)
+	await expect(
+		requireFn(
+			executor.fns(),
+			'packageWorkflowCreate',
+		)({
+			runAt: '2026-05-03T12:00:00.000Z',
+			idempotencyKey: 'execute-smoke',
+			code: 'export default async function main(p){ return { ok: true, p }; }',
+			params: { greeting: 'hello' },
+		}),
+	).resolves.toMatchObject({
+		ok: true,
+		source_type: 'inline',
+		status: 'queued',
+	})
+	expect(created[0]?.params).toEqual(
+		expect.objectContaining({
+			sourceType: 'inline',
+			userId: 'user-123',
+			params: { greeting: 'hello' },
+		}),
+	)
 })
 
 test('closed-world retriever runtime skips capabilities, hub snapshots, workflows, invoke, and outbound fetch', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
 	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
+		.spyOn(registryModule, 'getCapabilityRegistryForContext')
 		.mockResolvedValue({} as never)
 	const listMcpServerRefsSpy = vi
-		.spyOn(
-			await import('#worker/mcp-client/settings-service.ts'),
-			'listVisibleEnabledMcpServerRefsCached',
-		)
+		.spyOn(settingsService, 'listEnabledMcpServerRefsCached')
 		.mockResolvedValue([])
 	const getHubSnapshotSpy = vi
-		.spyOn(
-			await import('#worker/mcp-client/hub-client.ts'),
-			'getCachedMcpClientHubSnapshot',
-		)
+		.spyOn(hubClient, 'getCachedMcpClientHubSnapshot')
 		.mockResolvedValue({ servers: [] })
-	let executorInput: { allowOutboundFetch?: boolean } | null = null
-	let providerFns: Record<string, (args: unknown) => Promise<unknown>> | null =
-		null
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockImplementation((input) => {
-			executorInput = input
-			return {
-				async execute(_source, providers) {
-					providerFns = (
-						providers[0] as {
-							fns: Record<string, (args: unknown) => Promise<unknown>>
-						}
-					).fns
-					return {
-						result: 'ok',
-						logs: [],
-					}
-				},
-			} as never
-		})
+	const executor = mockExecutor()
 
-	try {
-		const result = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				closedWorldRetrieverRuntime: true,
-				packageContext: {
-					packageId: 'pkg-1',
-					kodyId: 'notes',
-					sourceId: 'source-1',
-				},
-				packageInvokeTools: {
-					invoke: async () => {
-						throw new Error('invoke should not be bound')
-					},
-				},
+	const result = await runOk({
+		skipCapabilityRegistry: false,
+		closedWorldRetrieverRuntime: true,
+		packageContext: {
+			packageId: 'pkg-1',
+			kodyId: 'notes',
+			sourceId: 'source-1',
+		},
+		packageEventTools: {
+			dispatch: async () => {
+				throw new Error('dispatch should not be bound')
 			},
-		)
-		expect(result.result).toBe('ok')
-		expect(getRegistrySpy).not.toHaveBeenCalled()
-		expect(listMcpServerRefsSpy).not.toHaveBeenCalled()
-		expect(getHubSnapshotSpy).not.toHaveBeenCalled()
-		expect(executorInput?.allowOutboundFetch).toBe(false)
-		expect(providerFns?.packageWorkflowCreate).toBeUndefined()
-		expect(providerFns?.emailSend).toBeUndefined()
-		await expect(providerFns?.packageStorageSet?.({})).rejects.toThrow(
-			'packageStorage() is read-only during retriever runs',
-		)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-		listMcpServerRefsSpy.mockRestore()
-		getHubSnapshotSpy.mockRestore()
-	}
+		},
+	})
+	expect(result.result).toBe('ok')
+	expect(getRegistrySpy).not.toHaveBeenCalled()
+	expect(listMcpServerRefsSpy).not.toHaveBeenCalled()
+	expect(getHubSnapshotSpy).not.toHaveBeenCalled()
+	expect(executor.calls[0]?.input.allowOutboundFetch).toBe(false)
+	const fns = executor.fns()
+	expect(fns.packageWorkflowCreate).toBeUndefined()
+	expect(fns.emailSend).toBeUndefined()
+	await expect(fns.packageStorageSet?.({})).rejects.toThrow(
+		'packageStorage() is read-only during retriever runs',
+	)
 })
 
-test('runBundledModuleWithRegistry uses a prebuilt capability registry without reloading', async () => {
+test('runBundledModuleWithRegistry uses a prebuilt capability registry and gates execute metering', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const emptyRegistry = {
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {} as Record<string, string>,
-		capabilityHandlers: {},
-		capabilityList: [],
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	let loadCount = 0
 	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockImplementation(async () => {
-			loadCount += 1
-			return emptyRegistry
-		})
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: 'ok',
-					logs: [],
-				}
-			},
-		} as never)
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
+		.spyOn(registryModule, 'getCapabilityRegistryForContext')
+		.mockResolvedValue(emptyRegistry)
+	const executor = mockExecutor()
 
-	try {
-		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
-			capabilityRegistry: emptyRegistry,
-		})
-		expect(loadCount).toBe(0)
+	await runOk({
+		skipCapabilityRegistry: false,
+		capabilityRegistry: emptyRegistry,
+	})
+	expect(getRegistrySpy).not.toHaveBeenCalled()
+	await runOk({ skipCapabilityRegistry: false })
+	expect(getRegistrySpy).toHaveBeenCalledTimes(1)
 
-		await runBundledModuleWithRegistry(env, callerContext, bundle)
-		expect(loadCount).toBe(1)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-	}
+	// skipExecuteUsage suppresses execute metering on nested library loads.
+	executor.spy.mockClear()
+	await runOk({ packageContext: null, skipExecuteUsage: true })
+	await runOk({ packageContext: null })
+	expect(
+		executor.spy.mock.calls.map(([input]) => input.recordExecuteUsage),
+	).toEqual([false, true])
 })
 
 test('runBundledModuleWithRegistry records package_export usage for bundled runs with package context', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-metered',
-			email: 'metered@example.com',
-			displayName: 'Metered User',
-		},
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
+	const callerContext = callerFor('user-metered')
 	const packageContext = {
 		packageId: 'pkg-metered',
 		kodyId: 'metered-package',
 		sourceId: 'source-metered',
 	}
-	const emptyRegistry = {
-		capabilityDomains: [],
-		capabilityDomainDescriptionsByName: {} as Record<string, string>,
-		capabilityHandlers: {},
-		capabilityList: [],
-		capabilityMap: {},
-		capabilitySpecs: {},
-		capabilityToolDescriptors: {},
-	} as Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
-	const getRegistrySpy = vi
-		.spyOn(
-			await import('#mcp/capabilities/registry.ts'),
-			'getCapabilityRegistryForContext',
-		)
-		.mockResolvedValue(emptyRegistry)
-	const usageModule = await import('#worker/usage/record-usage.ts')
 	const recordUsageSpy = vi
 		.spyOn(usageModule, 'recordUsage')
 		.mockResolvedValue(undefined)
-	let executeResult: { result: unknown; error?: unknown; logs: Array<string> } =
-		{
-			result: 'ok',
-			logs: [],
-		}
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return executeResult
-			},
-		} as never)
-
-	try {
-		const successResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				packageContext,
-				skipCapabilityRegistry: true,
-			},
-		)
-		expect(successResult.result).toBe('ok')
-		expect(createExecuteExecutorSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				recordExecuteUsage: false,
-			}),
-		)
+	const executor = mockExecutor()
+	const runPackage = () => runOk({ packageContext }, callerContext)
+	const expectOnePackageExport = (outcome: 'success' | 'error') => {
 		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 		expect(recordUsageSpy).toHaveBeenCalledWith(
 			env,
@@ -562,279 +342,141 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 				userId: 'user-metered',
 				eventType: 'package_export',
 				entityId: 'pkg-metered',
-				outcome: 'success',
+				outcome,
 				durationMs: expect.any(Number),
 			}),
 		)
 		expect(
 			recordUsageSpy.mock.calls[0]?.[1]?.durationMs,
 		).toBeGreaterThanOrEqual(0)
-
 		recordUsageSpy.mockClear()
-		executeResult = {
-			result: undefined,
-			error: 'sandbox failed',
-			logs: [],
-		}
-		const errorResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				packageContext,
-				skipCapabilityRegistry: true,
-			},
-		)
-		expect(errorResult.error).toBe('sandbox failed')
-		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
-		expect(recordUsageSpy).toHaveBeenCalledWith(
-			env,
-			expect.objectContaining({
-				userId: 'user-metered',
-				eventType: 'package_export',
-				entityId: 'pkg-metered',
-				outcome: 'error',
-				durationMs: expect.any(Number),
-			}),
-		)
+	}
 
-		recordUsageSpy.mockClear()
-		executeResult = {
-			result: 'ok',
-			logs: [],
-		}
-		await runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
-			skipCapabilityRegistry: true,
-		})
-		expect(recordUsageSpy).not.toHaveBeenCalled()
+	expect((await runPackage()).result).toBe('ok')
+	expect(executor.spy).toHaveBeenCalledWith(
+		expect.objectContaining({ recordExecuteUsage: false }),
+	)
+	expectOnePackageExport('success')
 
-		recordUsageSpy.mockClear()
-		const anonymousCallerContext = createMcpCallerContext({
+	executor.respondWith(() => ({
+		result: undefined,
+		error: 'sandbox failed',
+		logs: [],
+	}))
+	expect((await runPackage()).error).toBe('sandbox failed')
+	expectOnePackageExport('error')
+
+	// No package context or no signed-in user: nothing recorded.
+	executor.respondWith(() => ({ result: 'ok', logs: [] }))
+	await runOk({}, callerContext)
+	await runOk(
+		{ packageContext },
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: null,
-		})
-		await runBundledModuleWithRegistry(
-			env,
-			anonymousCallerContext,
-			bundle,
-			undefined,
-			{
-				packageContext,
-				skipCapabilityRegistry: true,
-			},
-		)
-		expect(recordUsageSpy).not.toHaveBeenCalled()
+		}),
+	)
+	expect(recordUsageSpy).not.toHaveBeenCalled()
 
-		// Failures before the sandbox ever runs (executor construction, module
-		// hydration, provider assembly) still count as failed package runs.
-		recordUsageSpy.mockClear()
-		createExecuteExecutorSpy.mockImplementation(() => {
-			throw new Error('executor construction failed')
-		})
-		await expect(
-			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
-				packageContext,
-				skipCapabilityRegistry: true,
-			}),
-		).rejects.toThrow('executor construction failed')
-		expect(recordUsageSpy).toHaveBeenCalledTimes(1)
-		expect(recordUsageSpy).toHaveBeenCalledWith(
-			env,
-			expect.objectContaining({
-				userId: 'user-metered',
-				eventType: 'package_export',
-				entityId: 'pkg-metered',
-				outcome: 'error',
-			}),
-		)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-		getRegistrySpy.mockRestore()
-		recordUsageSpy.mockRestore()
-	}
+	// Failures before the sandbox ever runs (executor construction, module
+	// hydration, provider assembly) still count as failed package runs.
+	executor.spy.mockImplementation(() => {
+		throw new Error('executor construction failed')
+	})
+	await expect(runPackage()).rejects.toThrow('executor construction failed')
+	expectOnePackageExport('error')
 })
 
 test('runBundledModuleWithRegistry injects OAuth helper prelude only when execute helper capabilities are present', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
-	const wrappedSources: Array<string> = []
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute(wrapped) {
-				wrappedSources.push(String(wrapped))
-				return {
-					result: 'ok',
-					logs: [],
-				}
+	const executor = mockExecutor()
+
+	await expect(runOk()).resolves.toMatchObject({ result: 'ok' })
+	await expect(
+		runOk({
+			additionalTools: {
+				integrationGet: async () => ({}),
+				integrationTokenRefresh: async () => ({}),
+				valueGet: async () => ({}),
 			},
-		} as never)
+		}),
+	).resolves.toMatchObject({ result: 'ok' })
 
-	try {
-		await expect(
-			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
-				skipCapabilityRegistry: true,
-			}),
-		).resolves.toMatchObject({ result: 'ok' })
-		await expect(
-			runBundledModuleWithRegistry(env, callerContext, bundle, undefined, {
-				skipCapabilityRegistry: true,
-				additionalTools: {
-					integrationGet: async () => ({}),
-					integrationTokenRefresh: async () => ({}),
-					valueGet: async () => ({}),
-				},
-			}),
-		).resolves.toMatchObject({ result: 'ok' })
-
-		const [withoutHelpers, withHelpers] = wrappedSources
-		expect(withoutHelpers).toBeTruthy()
-		expect(withHelpers).toBeTruthy()
-		expect(withoutHelpers).not.toContain('__kodyCreateAuthenticatedFetch')
-		expect(withHelpers).toContain('__kodyCreateAuthenticatedFetch')
-		expect(withHelpers!.length).toBeGreaterThan(withoutHelpers!.length)
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-	}
+	const [withoutHelpers, withHelpers] = executor.calls.map((c) => c.source)
+	expect(withoutHelpers).not.toContain('__kodyCreateAuthenticatedFetch')
+	expect(withHelpers).toContain('__kodyCreateAuthenticatedFetch')
+	expect(withHelpers!.length).toBeGreaterThan(withoutHelpers!.length)
 })
 
 test('runBundledModuleWithRegistry rewrites guard-less unbound runtime helper errors with a bound-context hint', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-123' },
-	})
+	const bareTypeError = "Cannot read properties of null (reading 'getMessage')"
+	mockExecutor(() => ({ result: undefined, error: bareTypeError, logs: [] }))
+	const dynamicImportEntry = `export default async function main() {
+	const mod = await import('kody:@scope/notes/note-list')
+	return await mod.default({})
+}`
+
 	// Mirrors a saved-package export imported statically into an ad hoc
 	// execute call: the bundled module imports `email` through the rewritten
 	// virtual runtime path and calls it without a falsiness guard.
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': `import { email } from './.__kody_virtual__/runtime.js'
+	const unboundResult = await runBundledModuleWithRegistry(
+		env,
+		callerFor(),
+		{
+			mainModule: 'entry.js',
+			modules: {
+				'entry.js': `import { email } from './.__kody_virtual__/runtime.js'
 
 export default async function main() {
 	return await email.getMessage('m-1')
 }`,
+			},
 		},
-	}
-	const bareTypeError = "Cannot read properties of null (reading 'getMessage')"
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return {
-					result: undefined,
-					error: bareTypeError,
-					logs: [],
-				}
-			},
-		} as never)
+		undefined,
+		{ skipCapabilityRegistry: true },
+	)
+	expect(unboundResult.error).toContain(bareTypeError)
+	const details = mcpExecutor.getExecutionErrorDetails(unboundResult.error)
+	expect(details).toMatchObject({
+		kind: 'runtime_helper_unbound',
+		helperName: 'email',
+		nextStep: expect.stringContaining('email-triggered'),
+	})
 
-	try {
-		const unboundResult = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-			},
-		)
-		expect(unboundResult.error).toContain(bareTypeError)
-		expect(
-			mcpExecutor.getExecutionErrorDetails(unboundResult.error),
-		).toMatchObject({
-			kind: 'runtime_helper_unbound',
-			helperName: 'email',
-			nextStep: expect.stringContaining('email-triggered'),
-		})
-		expect(
-			mcpExecutor.getExecutionErrorDetails(unboundResult.error)?.nextStep,
-		).not.toContain('packages.invokeChecked')
-
-		// Guard-less access inside a dynamically hydrated package module
-		// (literal dynamic `import("kody:@...")` target) must be matched too:
-		// the original bundle has no runtime import, only the hydrated module
-		// graph the sandbox actually executed does.
-		const hydrateSpy = vi
-			.spyOn(
-				await import('#worker/package-runtime/module-graph.ts'),
-				'hydrateKodyRuntimeModules',
-			)
-			.mockResolvedValue({
-				modules: {
-					'entry.js': `export default async function main() {
-	const mod = await import('kody:@scope/notes/note-list')
-	return await mod.default({})
-}`,
-					'.__kody_dynamic__/scope/notes/note-list.js': `import { email } from '../../.__kody_virtual__/runtime.js'
+	// Guard-less access inside a dynamically hydrated package module
+	// (literal dynamic `import("kody:@...")` target) must be matched too:
+	// the original bundle has no runtime import, only the hydrated module
+	// graph the sandbox actually executed does.
+	vi.spyOn(moduleGraph, 'hydrateKodyRuntimeModules').mockResolvedValue({
+		modules: {
+			'entry.js': dynamicImportEntry,
+			'.__kody_dynamic__/scope/notes/note-list.js': `import { email } from '../../.__kody_virtual__/runtime.js'
 export default async () => await email.getMessage('m-1')`,
-				},
-				dynamicDependencyPackageIds: [],
-			})
-		try {
-			const hydratedResult = await runBundledModuleWithRegistry(
-				env,
-				callerContext,
-				{
-					mainModule: 'entry.js',
-					modules: {
-						'entry.js': `export default async function main() {
-	const mod = await import('kody:@scope/notes/note-list')
-	return await mod.default({})
-}`,
-					},
-				},
-				undefined,
-				{
-					skipCapabilityRegistry: true,
-				},
-			)
-			expect(hydratedResult.error).toContain(
-				'The optional kody:runtime export "email" is not bound in this execution context',
-			)
-		} finally {
-			hydrateSpy.mockRestore()
-		}
-	} finally {
-		createExecuteExecutorSpy.mockRestore()
-	}
+		},
+		dynamicDependencyPackageIds: [],
+	})
+	const hydratedResult = await runBundledModuleWithRegistry(
+		env,
+		callerFor(),
+		{ mainModule: 'entry.js', modules: { 'entry.js': dynamicImportEntry } },
+		undefined,
+		{ skipCapabilityRegistry: true },
+	)
+	expect(hydratedResult.error).toContain(
+		'The optional kody:runtime export "email" is not bound in this execution context',
+	)
 })
 
-test('runBundledModuleWithRegistry finishes execute run records on failure only', async () => {
+test('runBundledModuleWithRegistry records execute run success, failure, and caller disconnect', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-execute-records',
-			email: 'execute@example.com',
-			displayName: 'Execute User',
-		},
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
+	const callerContext = callerFor('user-execute-records')
 	const handle = {
 		id: 'run-execute-1',
 		userId: 'user-execute-records',
 		startedAt: '2026-07-26T00:00:00.000Z',
-		persistence: 'on-failure' as const,
+		persistence: 'eager' as const,
 		context: {
 			surface: 'execute' as const,
 			name: null,
@@ -842,7 +484,12 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 			metadata: { conversationId: 'conv-1' },
 		},
 	}
-	const runRecords = await import('#worker/run-records/service.ts')
+	const runRecord = {
+		surface: 'execute' as const,
+		name: null,
+		storageId: 'storage-1',
+		metadata: { conversationId: 'conv-1' },
+	}
 	const beginSpy = vi
 		.spyOn(runRecords, 'beginRunRecord')
 		.mockReturnValue(handle)
@@ -850,128 +497,90 @@ test('runBundledModuleWithRegistry finishes execute run records on failure only'
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockImplementation(async (input) => {
-			const current = input.handle
-			if (!current) return
-			if (current.persistence === 'on-failure' && input.status === 'success') {
-				return
-			}
+			if (!input.handle) return false
 			persistedStatuses.push(input.status)
+			return true
 		})
-	let executeResult: { result: unknown; error?: unknown; logs: Array<string> } =
-		{
-			result: 'ok',
+	const executor = mockExecutor(() => ({
+		result: 'ok',
+		logs: ['success log'],
+	}))
+
+	const success = await runOk({ runRecord }, callerContext)
+	expect(success.error).toBeUndefined()
+	expect(success.runId).toBe(handle.id)
+	expect(beginSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: 'user-execute-records',
+			context: expect.objectContaining({
+				surface: 'execute',
+				storageId: 'storage-1',
+			}),
+		}),
+	)
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'success',
 			logs: ['success log'],
-		}
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return executeResult
-			},
-		} as never)
+			result: 'ok',
+		}),
+	)
+	expect(handle.context.metadata).toEqual(
+		expect.objectContaining({
+			conversationId: 'conv-1',
+			sandboxMs: expect.any(Number),
+			workerId: 'kody-testworkerid00000000000000000000000000',
+		}),
+	)
 
-	try {
-		const success = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'execute',
-					name: null,
-					storageId: 'storage-1',
-					metadata: { conversationId: 'conv-1' },
-				},
-			},
-		)
-		expect(success.error).toBeUndefined()
-		expect(beginSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				userId: 'user-execute-records',
-				context: expect.objectContaining({
-					surface: 'execute',
-					storageId: 'storage-1',
-				}),
-			}),
-		)
-		expect(finishSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				handle,
-				status: 'success',
-				logs: ['success log'],
-			}),
-		)
-		expect(handle.context.metadata).toEqual(
-			expect.objectContaining({
-				conversationId: 'conv-1',
-				sandboxMs: expect.any(Number),
-			}),
-		)
-		expect(persistedStatuses).toEqual([])
-
-		beginSpy.mockClear()
-		finishSpy.mockClear()
-		executeResult = {
-			result: undefined,
-			error: mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
+	finishSpy.mockClear()
+	const timeoutMessage = mcpExecutor.createExecutorSandboxTimeoutMessage(2_500)
+	executor.respondWith(() => ({
+		result: undefined,
+		error: timeoutMessage,
+		logs: ['failure log'],
+	}))
+	const failure = await runOk({ runRecord }, callerContext)
+	expect(failure.error).toBe(timeoutMessage)
+	expect(failure.runId).toBe(handle.id)
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'error',
 			logs: ['failure log'],
-		}
-		const failure = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'execute',
-					name: null,
-					storageId: 'storage-1',
-					metadata: { conversationId: 'conv-1' },
-				},
-			},
-		)
-		expect(failure.error).toBe(
-			mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
-		)
-		expect(finishSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				handle,
-				status: 'error',
-				logs: ['failure log'],
-				error: expect.objectContaining({
-					name: 'TimeoutError',
-					message: mcpExecutor.createExecutorSandboxTimeoutMessage(2_500),
-				}),
+			error: expect.objectContaining({
+				name: 'TimeoutError',
+				message: timeoutMessage,
 			}),
-		)
-		expect(persistedStatuses).toEqual(['error'])
-	} finally {
-		beginSpy.mockRestore()
-		finishSpy.mockRestore()
-		createExecuteExecutorSpy.mockRestore()
-	}
+		}),
+	)
+	expect(persistedStatuses).toEqual(['success', 'error'])
+
+	// A caller disconnect before the sandbox runs finishes as
+	// client_disconnected.
+	finishSpy.mockClear()
+	executor.respondWith(() => ({ result: 'should-not-run', logs: [] }))
+	const controller = new AbortController()
+	controller.abort(new DOMException('The operation was aborted.', 'AbortError'))
+	await expect(
+		runOk({ signal: controller.signal, runRecord }, callerContext),
+	).rejects.toMatchObject({ name: 'AbortError' })
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'error',
+			logs: [callerDisconnectedSandboxLog],
+			error: expect.objectContaining({
+				name: packageInvocationClientDisconnectedErrorName,
+			}),
+		}),
+	)
 })
 
 test('runBundledModuleWithRegistry leaves claimed job transient failures running', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-job-estimate',
-			email: 'job-estimate@example.com',
-			displayName: 'Job Estimate',
-		},
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
+	const callerContext = callerFor('user-job-estimate')
 	const handle = {
 		id: 'run-job-estimate-1',
 		userId: 'user-job-estimate',
@@ -984,204 +593,118 @@ test('runBundledModuleWithRegistry leaves claimed job transient failures running
 			metadata: {},
 		},
 	}
-	const runRecords = await import('#worker/run-records/service.ts')
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockResolvedValue(true)
-	const { createStorageEstimateReadError } =
-		await import('#worker/storage-estimate-error.ts')
-	const { d1NetworkConnectionLostMessage } = await import('#worker/d1-retry.ts')
-	const estimateError = createStorageEstimateReadError({
-		storageId: 'package:estimate-target',
-		attempts: 4,
-		cause: new Error('Storage estimate read timed out after 2000ms.'),
+	let executeError: unknown
+	mockExecutor(() => {
+		if (executeError instanceof Error) throw executeError
+		return { result: undefined, error: executeError, logs: [] }
 	})
-	const transientErrors = [
-		estimateError.message,
-		`${d1NetworkConnectionLostMessage}.`,
-		`D1_ERROR: ${d1NetworkConnectionLostMessage}.`,
-	]
-	let executeError: unknown = transientErrors[0]
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				if (executeError instanceof Error) {
-					throw executeError
-				}
-				return {
-					result: undefined,
-					error: executeError,
-					logs: [],
-				}
-			},
-		} as never)
-	const claimedJobOptions = {
-		skipCapabilityRegistry: true,
-		runRecord: {
-			surface: 'job' as const,
-			name: 'sweep',
-			jobId: 'package-job:estimate:sweep',
-		},
-		runRecordHandle: handle,
-	}
-
-	try {
-		for (const error of transientErrors) {
-			executeError = error
-			finishSpy.mockClear()
-			const claimed = await runBundledModuleWithRegistry(
-				env,
-				callerContext,
-				bundle,
-				undefined,
-				claimedJobOptions,
-			)
-			expect(claimed.error).toBe(error)
-			expect(finishSpy).not.toHaveBeenCalled()
-		}
-
-		executeError = new Error(`${d1NetworkConnectionLostMessage}.`)
-		finishSpy.mockClear()
-		await expect(
-			runBundledModuleWithRegistry(
-				env,
-				callerContext,
-				bundle,
-				undefined,
-				claimedJobOptions,
-			),
-		).rejects.toThrow(`${d1NetworkConnectionLostMessage}.`)
-		expect(finishSpy).not.toHaveBeenCalled()
-
-		executeError = 'user code failed'
-		finishSpy.mockClear()
-		const userCode = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			claimedJobOptions,
-		)
-		expect(userCode.error).toBe('user code failed')
-		expect(finishSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				handle,
-				status: 'error',
-			}),
-		)
-
-		executeError = `${d1NetworkConnectionLostMessage}.`
-		finishSpy.mockClear()
-		const executeFailure = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
+	const runClaimedJob = () =>
+		runOk(
 			{
-				skipCapabilityRegistry: true,
 				runRecord: {
+					surface: 'job',
+					name: 'sweep',
+					jobId: 'package-job:estimate:sweep',
+				},
+				runRecordHandle: handle,
+			},
+			callerContext,
+		)
+	const connectionLost = `${d1NetworkConnectionLostMessage}.`
+
+	for (const error of [
+		createStorageEstimateReadError({
+			storageId: 'package:estimate-target',
+			attempts: 4,
+			cause: new Error('Storage estimate read timed out after 2000ms.'),
+		}).message,
+		connectionLost,
+		`D1_ERROR: ${connectionLost}`,
+	]) {
+		executeError = error
+		expect((await runClaimedJob()).error).toBe(error)
+	}
+	executeError = new Error(connectionLost)
+	await expect(runClaimedJob()).rejects.toThrow(connectionLost)
+	expect(finishSpy).not.toHaveBeenCalled()
+
+	executeError = 'user code failed'
+	expect((await runClaimedJob()).error).toBe('user code failed')
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ handle, status: 'error' }),
+	)
+
+	// Non-job surfaces finish transient failures as errors.
+	finishSpy.mockClear()
+	executeError = connectionLost
+	const executeFailure = await runOk(
+		{
+			runRecord: { surface: 'execute', name: null, storageId: 'storage-1' },
+			runRecordHandle: {
+				...handle,
+				context: {
 					surface: 'execute',
 					name: null,
 					storageId: 'storage-1',
-				},
-				runRecordHandle: {
-					...handle,
-					context: {
-						surface: 'execute',
-						name: null,
-						storageId: 'storage-1',
-						metadata: {},
-					},
+					metadata: {},
 				},
 			},
-		)
-		expect(executeFailure.error).toBe(`${d1NetworkConnectionLostMessage}.`)
-		expect(finishSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				status: 'error',
-			}),
-		)
-	} finally {
-		finishSpy.mockRestore()
-		createExecuteExecutorSpy.mockRestore()
-	}
+		},
+		callerContext,
+	)
+	expect(executeFailure.error).toBe(connectionLost)
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ status: 'error' }),
+	)
 })
 
 test('runBundledModuleWithRegistry retries transient Durable Object isolate resets', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-do-reset',
-			email: 'reset@example.com',
-			displayName: 'Reset User',
-		},
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
 	const handle = {
 		id: 'run-do-reset-1',
 		userId: 'user-do-reset',
 		startedAt: '2026-08-18T00:00:00.000Z',
 		persistence: 'on-failure' as const,
-		context: {
-			surface: 'export' as const,
-			name: './scan',
-			metadata: {},
-		},
+		context: { surface: 'export' as const, name: './scan', metadata: {} },
 	}
-	const runRecords = await import('#worker/run-records/service.ts')
-	const beginSpy = vi
-		.spyOn(runRecords, 'beginRunRecord')
-		.mockReturnValue(handle)
+	vi.spyOn(runRecords, 'beginRunRecord').mockReturnValue(handle)
 	const finishSpy = vi
 		.spyOn(runRecords, 'finishRunRecord')
-		.mockResolvedValue(undefined)
-	const cleanHostSideEffects = {
-		dispatcherAttempts: 0,
-		fetchAttempts: 0,
-	}
+		.mockResolvedValue(true)
+	const resetMessage = 'Durable Object reset because its code was updated.'
+	const resetResult = (dispatcherAttempts: number) => ({
+		result: undefined,
+		error: resetMessage,
+		logs: [],
+		hostMediatedSideEffects: { dispatcherAttempts, fetchAttempts: 0 },
+	})
 	const execute = vi
 		.fn()
-		.mockResolvedValueOnce({
-			result: undefined,
-			error: 'Durable Object reset because its code was updated.',
-			logs: [],
-			hostMediatedSideEffects: cleanHostSideEffects,
-		})
+		.mockResolvedValueOnce(resetResult(0))
 		.mockResolvedValueOnce({
 			result: { scanned: 2 },
 			logs: ['recovered'],
-			hostMediatedSideEffects: cleanHostSideEffects,
+			hostMediatedSideEffects: { dispatcherAttempts: 0, fetchAttempts: 0 },
 		})
-	const createExecuteExecutorSpy = vi
-		.spyOn(mcpExecutor, 'createExecuteExecutor')
-		.mockReturnValue({
-			execute,
-		} as never)
+	vi.spyOn(mcpExecutor, 'createExecuteExecutor').mockReturnValue({
+		execute,
+	} as never)
 	const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-	try {
-		vi.useFakeTimers()
-		const recoveredPending = runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'export',
-					name: './scan',
-				},
-			},
+	const resetWarning = expect.stringContaining(
+		'runBundledModuleWithRegistry transient Durable Object reset',
+	)
+	const runScan = () =>
+		runOk(
+			{ runRecord: { surface: 'export', name: './scan' } },
+			callerFor('user-do-reset'),
 		)
+
+	vi.useFakeTimers()
+	try {
+		const recoveredPending = runScan()
 		await vi.runAllTimersAsync()
 		const recovered = await recoveredPending
 		expect(recovered.error).toBeUndefined()
@@ -1195,109 +718,36 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 				result: { scanned: 2 },
 			}),
 		)
-		expect(consoleWarn).toHaveBeenCalledWith(
-			expect.stringContaining(
-				'runBundledModuleWithRegistry transient Durable Object reset',
-			),
-		)
+		expect(consoleWarn).toHaveBeenCalledWith(resetWarning)
 
 		execute.mockReset()
 		finishSpy.mockClear()
-		consoleWarn.mockClear()
-		execute.mockResolvedValue({
-			result: undefined,
-			error: 'Durable Object reset because its code was updated.',
-			logs: [],
-			hostMediatedSideEffects: cleanHostSideEffects,
-		})
-		const exhaustedPending = runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'export',
-					name: './scan',
-				},
-			},
-		)
+		execute.mockResolvedValue(resetResult(0))
+		const exhaustedPending = runScan()
 		await vi.runAllTimersAsync()
-		const exhausted = await exhaustedPending
-		expect(exhausted.error).toBe(
-			'Durable Object reset because its code was updated.',
-		)
+		expect((await exhaustedPending).error).toBe(resetMessage)
 		expect(execute).toHaveBeenCalledTimes(4)
 		expect(finishSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				status: 'error',
-				error: expect.objectContaining({
-					message: 'Durable Object reset because its code was updated.',
-				}),
+				error: expect.objectContaining({ message: resetMessage }),
 			}),
 		)
 
+		// Host-mediated side effects make the reset unsafe to retry.
 		execute.mockReset()
-		finishSpy.mockClear()
 		consoleWarn.mockClear()
-		execute.mockResolvedValue({
-			result: undefined,
-			error: 'Durable Object reset because its code was updated.',
-			logs: [],
-			hostMediatedSideEffects: {
-				dispatcherAttempts: 1,
-				fetchAttempts: 0,
-			},
-		})
-		const dirty = await runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'export',
-					name: './scan',
-				},
-			},
-		)
-		expect(dirty.error).toBe(
-			'Durable Object reset because its code was updated.',
-		)
+		execute.mockResolvedValue(resetResult(1))
+		expect((await runScan()).error).toBe(resetMessage)
 		expect(execute).toHaveBeenCalledTimes(1)
-		expect(consoleWarn).not.toHaveBeenCalledWith(
-			expect.stringContaining(
-				'runBundledModuleWithRegistry transient Durable Object reset',
-			),
-		)
+		expect(consoleWarn).not.toHaveBeenCalledWith(resetWarning)
 	} finally {
 		vi.useRealTimers()
-		consoleWarn.mockRestore()
-		beginSpy.mockRestore()
-		finishSpy.mockRestore()
-		createExecuteExecutorSpy.mockRestore()
 	}
 })
 
 test('runBundledModuleWithRegistry schedules finish via waitUntil when provided', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const env = {} as Env
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-wait-until',
-			email: 'wait@example.com',
-			displayName: 'Wait User',
-		},
-	})
-	const bundle = {
-		mainModule: 'entry.js',
-		modules: {
-			'entry.js': 'export default async () => "ok"',
-		},
-	}
 	const handle = {
 		id: 'run-wait-until-1',
 		userId: 'user-wait-until',
@@ -1308,10 +758,7 @@ test('runBundledModuleWithRegistry schedules finish via waitUntil when provided'
 			name: 'email.message.received',
 		},
 	}
-	const runRecords = await import('#worker/run-records/service.ts')
-	const beginSpy = vi
-		.spyOn(runRecords, 'beginRunRecord')
-		.mockReturnValue(handle)
+	vi.spyOn(runRecords, 'beginRunRecord').mockReturnValue(handle)
 	let resolveFinish: (() => void) | undefined
 	const finishGate = new Promise<void>((resolve) => {
 		resolveFinish = resolve
@@ -1320,56 +767,33 @@ test('runBundledModuleWithRegistry schedules finish via waitUntil when provided'
 		.spyOn(runRecords, 'finishRunRecord')
 		.mockImplementation(async (input) => {
 			if (input.waitUntil) {
-				input.waitUntil(
-					(async () => {
-						await finishGate
-					})(),
-				)
-				return
+				input.waitUntil(finishGate)
+				return true
 			}
 			await finishGate
+			return true
 		})
-	const createExecuteExecutorSpy = vi
-		.spyOn(await import('#mcp/executor.ts'), 'createExecuteExecutor')
-		.mockReturnValue({
-			async execute() {
-				return { result: 'ok', logs: [] }
-			},
-		} as never)
+	mockExecutor()
 	const waitUntilTasks: Array<Promise<unknown>> = []
 
-	try {
-		const resultPromise = runBundledModuleWithRegistry(
-			env,
-			callerContext,
-			bundle,
-			undefined,
-			{
-				skipCapabilityRegistry: true,
-				runRecord: {
-					surface: 'subscription',
-					name: 'email.message.received',
-				},
-				waitUntil: (promise) => {
-					waitUntilTasks.push(promise)
-				},
+	const result = await runOk(
+		{
+			runRecord: { surface: 'subscription', name: 'email.message.received' },
+			waitUntil: (promise) => {
+				waitUntilTasks.push(promise)
 			},
-		)
-		const result = await resultPromise
-		expect(result.error).toBeUndefined()
-		expect(finishSpy).toHaveBeenCalledWith(
-			expect.objectContaining({
-				handle,
-				status: 'success',
-				waitUntil: expect.any(Function),
-			}),
-		)
-		expect(waitUntilTasks).toHaveLength(1)
-		resolveFinish?.()
-		await Promise.all(waitUntilTasks)
-	} finally {
-		beginSpy.mockRestore()
-		finishSpy.mockRestore()
-		createExecuteExecutorSpy.mockRestore()
-	}
+		},
+		callerFor('user-wait-until'),
+	)
+	expect(result.error).toBeUndefined()
+	expect(finishSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle,
+			status: 'success',
+			waitUntil: expect.any(Function),
+		}),
+	)
+	expect(waitUntilTasks).toHaveLength(1)
+	resolveFinish?.()
+	await Promise.all(waitUntilTasks)
 })

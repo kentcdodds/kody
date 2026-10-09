@@ -3,10 +3,11 @@ import { expect, test } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
 import { loadDiscordPageData } from '#app/discord-page-data.ts'
 import { createDiscordApiHandler } from '#app/handlers/discord.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -33,13 +34,17 @@ async function seedUser(
 	sqlite: DatabaseSync,
 	input: { id: number; email: string },
 ) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	sqlite
 		.prepare(
 			`INSERT INTO users (id, username, email, stable_user_id, password_hash)
 			 VALUES (?, ?, ?, ?, ?)`,
 		)
 		.run(input.id, `user-${input.id}`, input.email, stableUserId, 'x')
+	await provisionPersonalOrg(createD1FromSqlite(sqlite), {
+		stableUserId,
+		username: `user-${input.id}`,
+	})
 	return stableUserId
 }
 

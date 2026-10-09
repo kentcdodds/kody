@@ -30,9 +30,12 @@ hosting. The package page tabs are **Repo**, **Files**
 (`/@username/:name/tree/:ref` — the same URL whether the package is public or
 private), and **Settings**. Visibility keeps private source off the public web.
 Owner controls (lock, visibility, share, webhooks, delete) live at
-`/@username/:name/settings`. Inbound HTTP uses [webhooks](./webhooks.md). To let
-another paid account use a package without getting a copy,
-[share it](../guides/package-sharing.md).
+`/@username/:name/settings`. Public listings also expose a read-only
+[`.git` clone URL](./community-packages.md#clone-a-public-package-read-only-git).
+Inbound HTTP uses [webhooks](./webhooks.md). To let another paid account use a
+package without getting a copy, [share it](../guides/package-sharing.md). To
+ship Agent Skills with a package, see
+[package skills](../guides/package-skills.md).
 
 ## Package state model
 
@@ -112,9 +115,9 @@ For predictable package resolution, saved packages must use a scoped
 username. Changing your username on `/account` rewrites every saved package to
 the new `@{username}/…` name (including same-account `kody:@` imports and
 `kody.dependencies`), publishes an automatic update commit per package, and
-republishes any community listing that was already pinned to that package's
-latest commit. Third-party integrations and dynamic invocations that hard-code a
-previous `@{username}` scope need updates from their owners.
+republishes to Community any public package that was already pinned to that
+package's latest commit. Third-party integrations and dynamic invocations that
+hard-code a previous `@{username}` scope need updates from their owners.
 
 ### npm dependencies
 
@@ -191,8 +194,18 @@ exhaustive.
   or both.
 - Direct package invocation calls the resolved module's default export when that
   export is a function. Importing a package from `execute` or another package
-  can use any named exports that the module provides.
+  can use any named exports that the module provides. A named-only export still
+  publishes; invoking it directly fails with an error that names the entry file.
 - Packages may also export non-callable helper modules and values for reuse.
+- Publish typecheck is opt-in through a root `tsconfig.json`. With one, publish
+  fails on TypeScript errors in every `.ts` / `.tsx` file reachable from exports
+  (including their `types` targets), jobs, subscription handlers, and
+  retrievers, using that config's compiler options (TypeScript defaults to
+  `strict`). The check has no `node_modules`, so bare imports (npm packages,
+  `remix/*`, `kody:@…`, `node:*`) are typed as `any`; bundling still verifies
+  that they resolve. Without a `tsconfig.json`, publish only checks that job,
+  subscription, and retriever entrypoints default export a function, and the
+  typecheck message says that source files and exports are not typechecked.
 - Add JSDoc to every public export. Search Purpose comes from that JSDoc;
   missing comments fall back to `Package export.` See
   [Export JSDoc](../guides/package-authoring.md#export-jsdoc) in the package
@@ -233,13 +246,13 @@ Person-owned packages must not import a platform scope; `communityFork` first.
 `packageStorage()` on a static import reaches the declaring package's bucket for
 **caller-owned** packages.
 
-There is no author-facing `packages.invoke`. Interactive MCP
-`packageSubscriptionDispatch` is the post-publish subscription smoke test, not a
-composition primitive. External trusted clients that must call a named export
-over HTTP use inbound webhooks: declare one webhook per export, mint a handle
-with `webhookUrlMint`, register it with `webhookUrlApply` when a provider needs
-the URL, and POST JSON (`inputMode: "params"` and `Idempotency-Key` for
-first-party clients). See [Inbound webhooks](./webhooks.md).
+Interactive MCP `packageSubscriptionDispatch` is the post-publish subscription
+smoke test, not a composition primitive. External trusted clients that must call
+a named export over HTTP use inbound webhooks: declare one webhook per export,
+mint a handle with `webhookUrlMint`, register it with `webhookUrlApply` when a
+provider needs the URL, and POST JSON (`inputMode: "params"` and
+`Idempotency-Key` for first-party clients). See
+[Inbound webhooks](./webhooks.md).
 
 Scoped resolution is exact: `kody:@kentcdodds/google` selects a package under
 that person scope that the caller owns or has an accepted
@@ -300,15 +313,15 @@ the write when truncated — only the returned row list is capped. See
 `packageStorage()` identity comes from the bundler, not from source code: the
 publish pipeline stamps each module with the saved package it originated from,
 and execution grants bucket access only from that recorded provenance — the
-running package itself and the packages the bundle statically imported.
-Hand-written code cannot claim another package's id to read its bucket. Two
-consequences:
+running package itself and the packages the bundle statically imported, directly
+or through another imported package's export. Hand-written code cannot claim
+another package's id to read its bucket. Two consequences:
 
 - Inline `execute` code has no package provenance, so `packageStorage()` throws
   an actionable error there. Statically import the owning package's export.
-- Provenance grants cover directly imported packages. For data owned by a
-  package that is not the running package and not statically imported by the
-  bundle, import that package's export and let its stamp do the reading.
+- When A's export statically imports B, importing A is enough: B's code keeps
+  B's bucket. You do not also import B. Only files reachable from the export you
+  import count, so A's unrelated exports grant nothing.
 
 User secrets follow the same stamp. An export that reads a secret locked to its
 declaring package (or declared in that package's `kody.secretMounts`) keeps that
@@ -374,8 +387,8 @@ A package app is a hosted Worker entry:
   handler (a function, `{ fetch }`, or a named `fetch` export). The host strips
   the app mount before forwarding. There is no runtime field; publish rejects
   `kody.app.runtime`. A leftover field on a published snapshot is ignored. Remix
-  is a recipe (`guide:package_apps#remix-recipe`): the platform supplies
-  `remix/<subpath>` at the origin version as an optional convenience
+  is a recipe (`guide:package_apps#remix-recipe`): declare `remix` in
+  `dependencies` like any other package; the platform does not supply frameworks
 - Kody's runtime is available from `kody:runtime` (`packageStorage()`,
   `packageSecrets`, `kody`, `createAuthenticatedFetch`, `workflows`, and
   `packageContext`). Remix controllers can also `get(KodyRuntime)`
@@ -501,9 +514,10 @@ payloads and the distinction between live HEAD and package publish.
 
 Inbound HTTP webhooks are declared under `package.json#kody.webhooks` and bound
 to a package export. Declaring a webhook does not open ingress — mint a handle
-with `webhookUrlMint` first, then `webhookUrlApply` to register a first-class
-destination (GitHub repository hooks). Full contract, signature examples, and
-payload shape: [Inbound webhooks](./webhooks.md).
+with `webhookUrlMint` first, then `webhookUrlApply` to register a destination
+(`type: "http"` with `{{webhookUrl}}`; GitHub repo hooks use the Hooks API over
+the same path). Full contract, signature examples, and payload shape:
+[Inbound webhooks](./webhooks.md).
 
 ## Package-owned jobs
 
@@ -616,9 +630,9 @@ Use:
   is missing or wrong.
 
 Delete removes the package from discovery, stops its jobs, clears package
-storage and package-scoped secrets, drops invocation tokens, and unlists a
-public catalog entry if one exists. Artifact repos are cleaned up best-effort.
-Existing forks keep their copies.
+storage and package-scoped secrets, and unlists a public catalog entry if one
+exists. Artifact repos are cleaned up best-effort. Existing forks keep their
+copies.
 
 Hiding and making a package private are not deletion. Use those when the package
 should stay saved.
@@ -803,12 +817,11 @@ publish checks run.
    with that `workflow_id` until the run finishes; do not retry the same publish
    while the run is active.
 
-Dynamic package invocation is different from static bundled imports. When a
-runtime feature invokes another package dynamically through the package
-execution path, it resolves the current published package at invocation time
-instead of embedding a source snapshot in the dependent bundle. Dynamic
-invocation should not require republishing a dependent package just because the
-called package was republished.
+Computed `import(specifier)` (and other runtime package loads) resolve the
+current published package at call time instead of embedding a source snapshot in
+the dependent bundle. Those loads do not require republishing a dependent just
+because the called package was republished. Static `kody:@` imports inside a
+saved package still snapshot at that dependent's publish.
 
 Choose the narrowest token scope that fits the task. Use `read` for inspection
 or local diffing, and `write` only when the git client needs to push. Keep TTLs

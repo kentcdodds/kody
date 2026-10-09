@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
 import {
 	CommunityForkResourceLimitError,
@@ -53,4 +53,30 @@ test('rethrowCommunityForkFailure wraps resource limits without leaking isolate 
 	expect(() => rethrowCommunityForkFailure(new Error('sync failed'))).toThrow(
 		'sync failed',
 	)
+})
+
+test('rethrowCommunityForkFailure remaps Artifacts git transients to a reportable unavailable error', () => {
+	const wrapped = new Error(
+		'Artifacts git clone failed for https://acct.artifacts.cloudflare.net/git/production/repo.git: HTTP Error: 500 Internal Server Error',
+	)
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		rethrowCommunityForkFailure(wrapped)
+		throw new Error('expected rethrow')
+	} catch (error) {
+		expect(error).toBeInstanceOf(Error)
+		expect((error as Error).name).toBe('ArtifactsGitUnavailableError')
+		expect((error as Error).message).toMatch(
+			/^The package source could not be read after retries \(HTTP 5xx\)\. Report id: /,
+		)
+		expect((error as Error).cause).toBe(wrapped)
+		expect((error as Error).message).not.toContain('artifacts.cloudflare.net')
+		expect((error as Error).message).not.toContain('HTTP Error')
+		expect((error as Error).message).not.toMatch(/temporarily unavailable/i)
+		expect(errorSpy).toHaveBeenCalledWith(
+			expect.stringContaining('"message":"artifacts-git-unavailable"'),
+		)
+	} finally {
+		errorSpy.mockRestore()
+	}
 })

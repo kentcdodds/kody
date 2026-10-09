@@ -33,6 +33,11 @@ import { scrollRestorationInlineScriptCspHash } from '#universal/router-scroll-r
  *   set, see `ssr-document.tsx`): the script loads from that host, reports
  *   pageviews via an image beacon, and uses `navigator.sendBeacon` for
  *   visit-duration pings and `trackEvent`.
+ * - `https://static.scarf.sh` in `img-src` allows the Scarf page pixel
+ *   (`packages/worker/client/scarf-analytics.ts`). It fires only on
+ *   `https://kody.codes` public marketing and docs paths, sends the path
+ *   without query strings or fragments, and skips Global Privacy Control and
+ *   Do Not Track. Scarf is not a script.
  * - Cloudflare Web Analytics: injected at the edge by Cloudflare,
  *   privacy-preserving, no cookies. The beacon script loads from
  *   `https://static.cloudflareinsights.com` (`script-src`) and POSTs to
@@ -54,7 +59,7 @@ const contentSecurityPolicy = [
 	"object-src 'none'",
 	"frame-ancestors 'none'",
 	"form-action 'self'",
-	"img-src 'self' data: blob: https://cdn.usefathom.com",
+	"img-src 'self' data: blob: https://cdn.usefathom.com https://static.scarf.sh",
 	"font-src 'self' data:",
 	"style-src 'self' 'unsafe-inline'",
 	`script-src 'self' ${scrollRestorationInlineScriptCspHash} https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com`,

@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, ref } from 'remix/ui'
+import { type Handle, type RemixNode, ref } from 'remix/component'
 import {
 	isElementNearViewport,
 	observeNearViewport,

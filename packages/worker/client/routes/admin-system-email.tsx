@@ -1,8 +1,9 @@
 import { buildAdminEmailHtmlPreviewDocument } from '#client/email-html-preview.ts'
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { type Handle, css } from 'remix/ui'
-import { Tab, TabList, TabPanel, Tabs } from 'remix/ui/tabs'
-import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { type Handle, css, unsafeHTML } from 'remix/component'
+import { Tab, TabList, TabPanel, Tabs } from '#client/tabs.tsx'
+import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
+import { createDoubleCheck } from '#client/double-check.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -11,7 +12,10 @@ import {
 	spacing,
 	typography,
 } from '#universal/styles/tokens.ts'
-import { cardCss } from '#universal/styles/style-primitives.ts'
+import {
+	cardCss,
+	getDangerPillCss,
+} from '#universal/styles/style-primitives.ts'
 import {
 	AccountManagementMessage,
 	AccountManagementPanel,
@@ -33,10 +37,14 @@ import {
 } from '#client/route-loader.ts'
 
 const clampedCellCss = css(recordCellClamp(30))
+const dangerButtonCss = getDangerPillCss({ size: 'sm' })
 
 type PageStatus = 'loading' | 'ready' | 'error'
+type DeleteState = 'idle' | 'deleting'
+type MessageTone = 'info' | 'error'
 
 const adminSystemEmailApiPath = '/admin/system-email.json'
+const adminSystemEmailListHref = '/admin/system-email'
 
 const emailBodyPreCss = css({
 	margin: 0,
@@ -91,9 +99,12 @@ export async function adminSystemEmailRouteLoader(
 export function AdminSystemEmailRoute(handle: Handle) {
 	let data: AdminSystemEmailLoaderData | null = null
 	let message: string | null = null
+	let messageTone: MessageTone = 'info'
+	let deleteState: DeleteState = 'idle'
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AdminSystemEmailLoaderData | null = null
 	let appliedError: Error | null = null
+	const deleteMessageCheck = createDoubleCheck(handle)
 	const systemEmailData = createRouteData({
 		key: 'adminSystemEmail',
 		async load(href, signal) {
@@ -117,6 +128,58 @@ export function AdminSystemEmailRoute(handle: Handle) {
 		},
 	})
 
+	async function deleteSelectedMessage() {
+		const selected = data?.selectedMessage
+		if (!selected || deleteState !== 'idle') return
+		deleteState = 'deleting'
+		message = null
+		handle.update()
+		try {
+			const response = await fetch(adminSystemEmailApiPath, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				credentials: 'include',
+				body: JSON.stringify({
+					action: 'delete',
+					message_id: selected.id,
+				}),
+			})
+			if (response.status === 401) {
+				window.location.assign('/login')
+				return
+			}
+			const payload = await readJson<
+				AdminSystemEmailLoaderData & { error?: string }
+			>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error(payload?.error || 'Unable to delete system email.')
+			}
+			// Do not assign appliedPayload here: while href is still the detail
+			// URL, the next render would treat the cached GET snapshot as new
+			// and restore selectedMessage (clearing the success state). Same
+			// pattern as account-email delete.
+			data = payload
+			deleteState = 'idle'
+			deleteMessageCheck.reset()
+			message = 'System email message deleted.'
+			messageTone = 'info'
+			handle.update()
+			navigate(adminSystemEmailListHref)
+		} catch (error) {
+			deleteState = 'idle'
+			deleteMessageCheck.reset()
+			message =
+				error instanceof Error
+					? error.message
+					: 'Unable to delete system email.'
+			messageTone = 'error'
+			handle.update()
+		}
+	}
+
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const snapshot = systemEmailData.read(handle, currentHref)
@@ -124,10 +187,13 @@ export function AdminSystemEmailRoute(handle: Handle) {
 			appliedPayload = snapshot.data
 			data = snapshot.data
 			message = null
+			messageTone = 'info'
+			deleteMessageCheck.reset()
 		}
 		if (snapshot.error && snapshot.error !== appliedError) {
 			appliedError = snapshot.error
 			message = snapshot.error.message
+			messageTone = 'error'
 		}
 		const pending = snapshot.kind === 'pending'
 		const status: PageStatus =
@@ -141,11 +207,12 @@ export function AdminSystemEmailRoute(handle: Handle) {
 			? Math.max(1, Math.ceil(data.total / data.pageSize))
 			: 1
 		const selectedMessage = data?.selectedMessage ?? null
+		const isMutating = deleteState !== 'idle'
 
 		return (
 			<AccountManagementShell
 				maxWidth="min(100%, 92rem)"
-				busy={pending && appliedPayload !== null}
+				busy={(pending && appliedPayload !== null) || isMutating}
 			>
 				<AdminPageHeader
 					title="Admin system email"
@@ -159,7 +226,7 @@ export function AdminSystemEmailRoute(handle: Handle) {
 				) : null}
 				{message ? (
 					<AccountManagementMessage
-						tone={status === 'error' ? 'error' : 'info'}
+						tone={status === 'error' ? 'error' : messageTone}
 					>
 						{message}
 					</AccountManagementMessage>
@@ -240,23 +307,65 @@ export function AdminSystemEmailRoute(handle: Handle) {
 									selectedMessage ? (
 										<div mix={css(recordBodyCss)}>
 											<div mix={css({ display: 'grid', gap: spacing.xs })}>
-												<h2
+												<div
 													mix={css({
-														margin: 0,
-														fontSize: typography.fontSize.lg,
-														fontWeight: typography.fontWeight.semibold,
-														color: colors.text,
+														display: 'flex',
+														flexWrap: 'wrap',
+														gap: spacing.sm,
+														alignItems: 'center',
+														justifyContent: 'space-between',
 													})}
 												>
-													{selectedMessage.subject || '(no subject)'}
-												</h2>
+													<h2
+														mix={css({
+															margin: 0,
+															fontSize: typography.fontSize.lg,
+															fontWeight: typography.fontWeight.semibold,
+															color: colors.text,
+														})}
+													>
+														{selectedMessage.subject || '(no subject)'}
+													</h2>
+													<button
+														type="button"
+														disabled={isMutating}
+														aria-label={
+															deleteMessageCheck.doubleCheck
+																? `Confirm delete message "${selectedMessage.subject || '(no subject)'}"`
+																: `Delete message "${selectedMessage.subject || '(no subject)'}"`
+														}
+														title={
+															deleteMessageCheck.doubleCheck
+																? 'Click again to permanently delete this system email message'
+																: 'Delete this system email message and its attachments'
+														}
+														mix={[
+															...deleteMessageCheck.getButtonMix({
+																on: {
+																	click: () => {
+																		void deleteSelectedMessage()
+																	},
+																},
+																resetAfterAction: false,
+															}),
+															css(dangerButtonCss),
+														]}
+													>
+														{deleteState === 'deleting'
+															? 'Deleting…'
+															: deleteMessageCheck.doubleCheck
+																? 'Confirm delete'
+																: 'Delete'}
+													</button>
+												</div>
 												<p
 													mix={css({
 														margin: 0,
 														color: colors.textMuted,
 													})}
 												>
-													Admin reads of message content are audit logged.
+													Admin reads and deletes of message content are audit
+													logged.
 												</p>
 											</div>
 											<MetadataGrid
@@ -322,8 +431,10 @@ export function AdminSystemEmailRoute(handle: Handle) {
 																title="Email HTML preview"
 																sandbox=""
 																referrerPolicy="no-referrer"
-																srcdoc={buildAdminEmailHtmlPreviewDocument(
-																	selectedMessage.html_body,
+																srcdoc={unsafeHTML(
+																	buildAdminEmailHtmlPreviewDocument(
+																		selectedMessage.html_body,
+																	),
 																)}
 																mix={emailHtmlPreviewIframeCss}
 															/>

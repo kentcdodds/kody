@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
@@ -10,7 +11,7 @@ import {
 	claimAccountEmail,
 	isEmailReservedForOtherAccount,
 } from '#worker/identity/email-claims.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
 import { reconcileDestinationsAfterIdentityEmailChange } from '#worker/email/destinations.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
@@ -195,7 +196,7 @@ export async function verifyEmailChangeToken(input: {
 
 	// Preserve the existing stable id across email changes so MCP identity,
 	// ownership rows, and grants stay bound to the same account.
-	const stableUserId = resolveUserStableId(record)
+	const stableUserId = personIdFromStored(record.stable_user_id)
 	const verifiedAt = now.toISOString()
 
 	try {
@@ -216,6 +217,10 @@ export async function verifyEmailChangeToken(input: {
 		}
 		throw error
 	}
+
+	// Invalidate immediately after the email write so same-isolate package-app
+	// serve cannot keep the old email while later cleanup claims may fail.
+	invalidatePackageAppOwnerCache({ stableUserId })
 
 	await input.db
 		.prepare(`DELETE FROM pending_email_changes WHERE user_id = ?`)

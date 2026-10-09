@@ -1,8 +1,6 @@
 import { type createMcpCallerContext } from '#mcp/context.ts'
-import {
-	type PackageEventTools,
-	type PackageInvokeTools,
-} from '#mcp/run-kody-registry.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
+import { type PackageEventTools } from '#mcp/run-kody-registry.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import {
@@ -15,10 +13,6 @@ import {
 	type PackageRuntimeToolFactories,
 } from './common.ts'
 import { invokePackageExportWithToolFactories } from './http-invoke.ts'
-import {
-	createExecutePackageInvokeToolsWithToolFactories,
-	createPackageRuntimeInvokeToolsWithToolFactories,
-} from './runtime-tool-factories.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import {
 	createPackageEventToolsWithToolFactories,
@@ -36,35 +30,12 @@ export {
 }
 
 const packageRuntimeToolFactories: PackageRuntimeToolFactories = {
-	createPackageRuntimeInvokeTools(input) {
-		return createPackageRuntimeInvokeToolsWithToolFactories({
-			...input,
-			toolFactories: packageRuntimeToolFactories,
-		})
-	},
 	createPackageEventTools(input) {
 		return createPackageEventToolsWithToolFactories({
 			...input,
 			toolFactories: packageRuntimeToolFactories,
 		})
 	},
-}
-
-export function createPackageRuntimeInvokeTools(input: {
-	env: Env
-	baseUrl: string
-	callerContext: ReturnType<typeof createMcpCallerContext>
-	packageContext: PackageRuntimeContext | null
-	parentRunRecord?: RunRecordContext | null
-	packageInvokeDepth?: number
-	/** Coarse telemetry attribution for package-app bridge calls. */
-	runtimeSurface?: 'app'
-	waitUntil?: (promise: Promise<unknown>) => void
-}): PackageInvokeTools {
-	return createPackageRuntimeInvokeToolsWithToolFactories({
-		...input,
-		toolFactories: packageRuntimeToolFactories,
-	})
 }
 
 export function createPackageEventTools(input: {
@@ -77,22 +48,6 @@ export function createPackageEventTools(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): PackageEventTools {
 	return createPackageEventToolsWithToolFactories({
-		...input,
-		toolFactories: packageRuntimeToolFactories,
-	})
-}
-
-export function createExecutePackageInvokeTools(input: {
-	env: Env
-	baseUrl: string
-	callerContext: ReturnType<typeof createMcpCallerContext>
-	parentRunRecord?: RunRecordContext | null
-	packageInvokeDepth?: number
-	/** MCP execute conversation id for agent-facing popularity recording. */
-	conversationId?: string | null
-	waitUntil?: (promise: Promise<unknown>) => void
-}): PackageInvokeTools {
-	return createExecutePackageInvokeToolsWithToolFactories({
 		...input,
 		toolFactories: packageRuntimeToolFactories,
 	})
@@ -113,6 +68,8 @@ export async function invokePackageExport(input: {
 	ephemeral?: boolean
 	/** Sandbox wall-clock budget; omit for the default ~90s export cap. */
 	executorTimeoutMs?: number | null
+	/** Inbound request abort. Caller disconnect finishes the keyed run. */
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	return await invokePackageExportWithToolFactories({
 		...input,
@@ -142,6 +99,7 @@ export async function invokePackageSubscription(input: {
 	source?: string | null
 	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
+	request: RequestSource
 	runtimeInvokeDepth?: number
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css } from 'remix/ui'
+import { type Handle, type RemixNode, css } from 'remix/component'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { type HighlightedCode } from '#universal/highlighted-code.ts'
@@ -32,12 +32,15 @@ import {
 import { HowKodyWorksWalkthrough } from '#client/routes/how-kody-works-walkthrough.tsx'
 import { renderGoogleOauthWalkthrough } from '#client/routes/google-oauth-walkthrough.tsx'
 import { renderPackageSharingFlagCallout } from '#client/routes/package-sharing-flag-callout.tsx'
-import { renderSecretProvidersFlagCallout } from '#client/routes/secret-providers-flag-callout.tsx'
+import { renderPackageSkillsFlagCallout } from '#client/routes/package-skills-flag-callout.tsx'
+import { renderMcpEventsFlagCallout } from '#client/routes/mcp-events-flag-callout.tsx'
 import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import {
+	mcpSkillsExtensionFlagKey,
+	mcpEventsExtensionFlagKey,
 	packageShareGrantsFlagKey,
-	secretProvidersFlagKey,
 } from '#universal/feature-flags/registry.ts'
+import { extractDocWatchMarkdown } from '#universal/doc-youtube.ts'
 import { colors, radius } from '#universal/styles/tokens.ts'
 import { userHasRole } from '#universal/permissions.ts'
 import {
@@ -65,11 +68,12 @@ const interactiveDocRenderers: Readonly<
  * Doc page for `/docs` (the introduction) and `/docs/:slug`: docs shell
  * (sidebar) → section eyebrow → title + meta → `.prose` body rendered from
  * the server's bundled markdown catalog with the first-party link policy
- * (docs link into `/connect/oauth` and `/account/secrets/new`) and copyable
+ * (docs link into `/connect/oauth` and `/connect/secret-set`) and copyable
  * code blocks → previous/next → a quiet foot with the raw markdown twin for
  * agents (`data-rmx-document` so the SPA does not intercept
  * `/docs/:slug.md`). Interactive slugs (how-kody-works, google-oauth) swap
- * the prose body for a transcript walkthrough. Body headings get kebab-case
+ * the prose body for a transcript walkthrough. A `[!WATCH]` block in that
+ * body still renders above the walkthrough. Body headings get kebab-case
  * ids so in-doc and legacy fragment links land.
  */
 
@@ -200,20 +204,39 @@ export function DocDetailRoute(handle: Handle) {
 	// the rendered body per markdown string (same policy as MarkdownView).
 	let renderedForBody: string | null = null
 	let renderedBody: Array<RemixNode> = []
+	let renderedWatchForBody: string | null = null
+	let renderedWatch: Array<RemixNode> = []
+
+	const docMarkdownOptions = {
+		headingOffset: 0,
+		linkRel: 'noopener noreferrer',
+		linkPolicy: 'first-party' as const,
+		copyCodeBlocks: true,
+		headingIds: true,
+	}
 
 	function renderDocBody(doc: DocDetailLoaderData) {
 		if (renderedForBody !== doc.body) {
 			renderedForBody = doc.body
 			renderedBody = renderMarkdownNodes(stripLeadingH1(doc.body), {
-				headingOffset: 0,
-				linkRel: 'noopener noreferrer',
-				linkPolicy: 'first-party',
-				copyCodeBlocks: true,
-				headingIds: true,
+				...docMarkdownOptions,
 				fences: doc.bodyFences,
 			})
 		}
 		return renderedBody
+	}
+
+	function renderInteractiveWatch(doc: DocDetailLoaderData) {
+		if (!interactiveDocRenderers[doc.slug]) return null
+		if (renderedWatchForBody !== doc.body) {
+			renderedWatchForBody = doc.body
+			const watchMarkdown = extractDocWatchMarkdown(stripLeadingH1(doc.body))
+			renderedWatch = watchMarkdown
+				? renderMarkdownNodes(watchMarkdown, docMarkdownOptions)
+				: []
+		}
+		if (renderedWatch.length === 0) return null
+		return <div mix={css(docProseCss)}>{renderedWatch}</div>
 	}
 
 	return () => {
@@ -304,11 +327,23 @@ export function DocDetailRoute(handle: Handle) {
 								),
 							})
 						: null}
-
-					{doc.slug === 'secret-providers'
-						? renderSecretProvidersFlagCallout({
+					{doc.slug === 'mcp-events'
+						? renderMcpEventsFlagCallout({
 								loggedIn: Boolean(session),
-								enabled: isFeatureFlagEnabled(session, secretProvidersFlagKey),
+								enabled: isFeatureFlagEnabled(
+									session,
+									mcpEventsExtensionFlagKey,
+								),
+							})
+						: null}
+
+					{doc.slug === 'package-skills'
+						? renderPackageSkillsFlagCallout({
+								loggedIn: Boolean(session),
+								enabled: isFeatureFlagEnabled(
+									session,
+									mcpSkillsExtensionFlagKey,
+								),
 							})
 						: null}
 
@@ -325,6 +360,8 @@ export function DocDetailRoute(handle: Handle) {
 							mix={css(docImageCss)}
 						/>
 					) : null}
+
+					{renderInteractiveWatch(doc)}
 
 					{interactiveDocRenderers[doc.slug]?.(
 						doc.walkthroughHighlights,

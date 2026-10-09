@@ -1,5 +1,19 @@
 # Usage metering
 
+## Contents
+
+- [Per-user isolation](#per-user-isolation)
+- [The event schema](#the-event-schema)
+- [Sinks](#sinks)
+- [Agent package conversation uses](#agent-package-conversation-uses)
+- [Helper contract](#helper-contract)
+- [Recipe: instrumenting a new chokepoint](#recipe-instrumenting-a-new-chokepoint)
+- [Execute interpretable share (`q`)](#execute-interpretable-share-q)
+- [MCP search duration](#mcp-search-duration)
+- [Onboarding funnel](#onboarding-funnel)
+- [Reading the data](#reading-the-data)
+- [Usage campaign](#usage-campaign)
+
 Kody records per-user usage events at runtime chokepoints for cost attribution,
 admin cohort views, and abuse detection. This document describes the event
 schema, the `recordUsage()` helper contract, which chokepoints are instrumented,
@@ -12,8 +26,17 @@ document covers event capture and rollups only.
 ## Per-user isolation
 
 Usage metering follows the repo-wide isolation invariant: every event carries a
-required `userId`, the Analytics Engine index is the `userId`, and the D1 rollup
-table is keyed by `user_id`. Admin and account reads stay scoped to one user.
+required billing scope id on `UsageEvent.userId`, the Analytics Engine index is
+that same id, and D1 rollups are keyed by `usage_rollups.user_id`. For Teams,
+that id is the **org billing id** (`orgId`). For a personal org the id equals
+the owner's stable user id, so AE `index1` / `blob1` and `usage_rollups.user_id`
+match the historical per-user key. Types and call sites still often name the
+field `userId` even though Analytics Engine `blob1` and `index1` are the org id.
+
+**Actor attribution** is separate: who triggered the metered unit lives in
+`actorUserId` / Analytics Engine `blob10` (empty for Automation runs). Org
+members share one rollup; account usage breakdowns can split by actor where
+`usage_attribution_daily` is populated.
 
 ## The event schema
 
@@ -22,7 +45,7 @@ One schema covers every chokepoint. It is defined in
 
 ```ts
 type UsageEvent = {
-	userId: string // required; owning user
+	userId: string // required; org billing id (rollup / AE index1 and blob1)
 	eventType: UsageEventType // see the metric table below
 	entityId?: string | null // metered entity id when one exists
 	durationMs?: number | null // wall-clock duration of the metered unit
@@ -36,8 +59,21 @@ type UsageEvent = {
 	cacheReuse?: 'hit' | 'miss' | null // billing-aligned LOADER reuse; AE blob8
 	codeChars?: number | null // module-graph text length; AE double4
 	paramsChars?: number | null // stable JSON length of params; AE double5
+	packageId?: string | null // saved package id when known; AE blob9 (empty = Ad hoc)
+	actorUserId?: string | null // person who triggered the unit; AE blob10 ('' = Automation)
+	automationSource?: string | null // closed automation source; AE blob11
 }
 ```
+
+When `actorUserId` and `automationSource` are omitted at write time,
+`usageEventBlobs()` defaults `blob10` to `userId` (org billing id) for
+interactive runs and leaves `blob11` empty. Explicit Automation runs use
+`actorUserId: ''` and a non-empty `automationSource` when known. Allowed
+`automationSource` values written to Analytics Engine are `''`, `webhook`,
+`schedule`, and `email` (platform `event` automations map to `''`). Blob
+positions are centralized in `usageEventBlobIndexes` in
+`packages/worker/src/usage/record-usage.ts` (0-based array indexes; Analytics
+Engine SQL names them `blob1` through `blob11`).
 
 `eventType` is a closed union defined in the dependency-free
 `packages/worker/universal/usage-event-types.ts` (re-exported by
@@ -50,21 +86,24 @@ events for the admin on/off cohort readout.
 
 ### Metrics and their chokepoints
 
-| `eventType`                 | Metered unit                                                                                                                                                                                                                    | Recorded at                                                                                                                                                                                                                                                                                                                                                                                                         | `entityId`                     |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| `execute`                   | one MCP execute-tool sandbox evaluation                                                                                                                                                                                         | `packages/worker/src/mcp/executor.ts` (`execute`), only when the run surface is execute                                                                                                                                                                                                                                                                                                                             | none                           |
-| `package_export`            | one saved-package bundled-code run                                                                                                                                                                                              | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)                                                                                                                                                                                                                                                                                                                                | package id                     |
-| `package_static_call`       | one call of a statically imported package export (function-valued, incl. default)                                                                                                                                               | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`)                                                                                                                                                                                                                                         | callee package id              |
-| `job_run`                   | one job execution                                                                                                                                                                                                               | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                                                                                                                                                                                                                                                            | job id                         |
-| `workflow_run`              | one Cloudflare Workflow run                                                                                                                                                                                                     | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`)                                                                                                                                                                                                                                                                                                                          | workflow instance id           |
-| `realtime_session`          | one realtime websocket session                                                                                                                                                                                                  | reserved — not instrumented                                                                                                                                                                                                                                                                                                                                                                                         | session id                     |
-| `outbound_fetch`            | one outbound fetch through the gateway                                                                                                                                                                                          | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                                                                                                                                                                                                                                                               | request host                   |
-| `email_send`                | one outbound email send attempt                                                                                                                                                                                                 | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                                                                                                                                                                                                                                                                       | email message id               |
-| `email_received`            | one inbound receive attempt for a routed inbox                                                                                                                                                                                  | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                                                                                                                                                                                                                                                               | email message id (when stored) |
-| `dynamic_worker_day`        | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                 | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId` (sandbox surfaces) and `packages/worker/src/package-runtime/package-app.ts` (`APP_LOADER` with a stable id); uniqueness via `UserMeter.claimDynamicWorkerDay`. Each event carries `surface` (Analytics Engine blob6).                                                                                                                     | worker id                      |
-| `dynamic_worker_invoke`     | one LOADER evaluate (hit or miss) on the execute-sandbox path                                                                                                                                                                   | `packages/worker/src/mcp/executor.ts` after `claimDynamicWorkerDay`, on every signed-in sandbox surface (execute, job, package_export, workflow, …). Observe-only. `cacheReuse` is `miss` when `claimDynamicWorkerDay.created === true` and `hit` otherwise. Also carries `codeChars`, `paramsChars`, `durationMs`, `surface`, and `executeShape` when known. No worker id, source, params, or package names.       | none                           |
-| `durable_object_gb_seconds` | one typed per-user Durable Object RPC burst (wall-clock in `durationMs`; admin converts to GB-s at 128 MB). Same-outcome RPCs in one request coalesce into a single Analytics Engine point whose `eventCount` is the RPC count. | `createMeteredDurableObjectStub` on `storageRunnerRpc` when `USAGE_EVENTS` is bound. Other per-user RPC factories can adopt the same helper; UserMeter, Mailbox, RunLog, and RepoSessionIndex stay unwrapped so admin usage reads do not inflate the metric. Observe-only / unmetered: excluded from fleet event-count rankings, entitlement-pressure candidate selection, and customer usage emails. Never billed. | DO class name                  |
-| `durable_object_rows_read`  | StorageRunner SQLite `rowsRead` from one `sqlQuery` (skipped when `rowsRead < 1`). Same-outcome bursts coalesce; hourly rollups recover the unit count from Analytics Engine `double3`.                                         | `recordDurableObjectRowsRead` in `StorageRunner.sqlQuery` when `USAGE_EVENTS` is bound. Other customer Durable Objects are not instrumented, so this meter undercounts rather than overcharges. Observe-only for fleet event-count rankings and entitlement-pressure selection; monthly overage math and compute-include warning emails still read the rollup.                                                      | DO class name                  |
+| `eventType`                         | Metered unit                                                                                                                                                                                                                                               | Recorded at                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `entityId`                                                                                                               |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `execute`                           | one MCP execute-tool sandbox evaluation                                                                                                                                                                                                                    | `packages/worker/src/mcp/executor.ts` (`execute`), only when the run surface is execute                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | none                                                                                                                     |
+| `package_export`                    | one saved-package bundled-code run                                                                                                                                                                                                                         | `packages/worker/src/mcp/run-kody-registry.ts` (bundled runs with a package context)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | package id                                                                                                               |
+| `package_static_call`               | one call of a statically imported package export (function-valued, incl. default)                                                                                                                                                                          | sandbox-side wrapper stamped by the bundler; validated and recorded host-side by `packages/worker/src/usage/package-static-call-usage.ts` (wired in `run-kody-registry.ts`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | callee package id                                                                                                        |
+| `job_run`                           | one job execution                                                                                                                                                                                                                                          | `packages/worker/src/jobs/service.ts` (`executeJobOnce`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | job id                                                                                                                   |
+| `workflow_run`                      | one Cloudflare Workflow run                                                                                                                                                                                                                                | `packages/worker/src/package-runtime/package-workflows.ts` (`DynamicCallableWorkflow.run`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | workflow instance id                                                                                                     |
+| `realtime_session`                  | one realtime websocket session                                                                                                                                                                                                                             | reserved — not instrumented                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | session id                                                                                                               |
+| `outbound_fetch`                    | one outbound fetch through the gateway                                                                                                                                                                                                                     | `packages/worker/src/mcp/fetch-gateway.ts` (`KodyFetchGateway.fetch`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | request host                                                                                                             |
+| `email_send`                        | one outbound email send attempt                                                                                                                                                                                                                            | `packages/worker/src/email/outbound.ts` (`sendOutboundEmail`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | email message id                                                                                                         |
+| `email_received`                    | one inbound receive attempt for a routed inbox                                                                                                                                                                                                             | `packages/worker/src/email/inbound.ts` (`handleInboundEmail`, after inbox resolution)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | email message id (when stored)                                                                                           |
+| `dynamic_worker_day`                | first use of one Dynamic Worker id on a UTC day                                                                                                                                                                                                            | `packages/worker/src/mcp/executor.ts` after `createStableDynamicWorkerId` (sandbox surfaces) and `packages/worker/src/package-runtime/package-app.ts` (`APP_LOADER` with a stable id); uniqueness via `UserMeter.claimDynamicWorkerDay`. Each event carries `surface` (Analytics Engine blob6) and optional `packageId` (blob9) when the run belongs to a known package.                                                                                                                                                                                                                                                                                                                     | worker id                                                                                                                |
+| `dynamic_worker_invoke`             | one LOADER evaluate (hit or miss) on the execute-sandbox path                                                                                                                                                                                              | `packages/worker/src/mcp/executor.ts` after `claimDynamicWorkerDay`, on every signed-in sandbox surface (execute, job, package_export, workflow, …). Observe-only. `cacheReuse` is `miss` when `claimDynamicWorkerDay.created === true` and `hit` otherwise. Also carries `codeChars`, `paramsChars`, `durationMs`, `surface`, and `executeShape` when known. No worker id, source, params, or package names.                                                                                                                                                                                                                                                                                | none                                                                                                                     |
+| `dynamic_worker_cpu`                | one Worker Loader invocation's CPU as measured by Cloudflare (`TraceItem.cpuTime` → `cpuMs`, AE double2; `wallTime` → `durationMs`). Zero is recorded, so `event_count` is tail delivery coverage against `dynamic_worker_invoke`.                         | `DynamicWorkerUsageTail` (`packages/worker/src/usage/dynamic-worker-cpu.ts`), attached as `WorkerCode.tails` by `createExecuteExecutor` on every executor surface when the loopback export exists (origin, platform, runtime). Runs after the response. Tailed isolates use a separate Loader cache id (`-cpu1` suffix) so cached tail-less isolates cannot skip it; `entityId` stays the stable worker id. `outcome` is the isolate's platform outcome, not the sandbox result. Package-app `APP_LOADER` isolates do not attach it. Observe-only; included in admin usage rollups, the shared admin `usageMetricSeries` (insights and per-user usage charts), and insights duration labels. | worker id                                                                                                                |
+| `durable_object_gb_seconds`         | one typed per-user Durable Object RPC burst (wall-clock in `durationMs`; admin converts to GB-s at 128 MB). Same-outcome RPCs in one request coalesce into a single Analytics Engine point whose `eventCount` is the RPC count.                            | `createMeteredDurableObjectStub` on `storageRunnerRpc` when `USAGE_EVENTS` is bound. Other per-user RPC factories can adopt the same helper; UserMeter, Mailbox, RunLog, and RepoSessionIndex stay unwrapped so admin usage reads do not inflate the metric. Observe-only / unmetered: excluded from fleet event-count rankings, entitlement-pressure candidate selection, and customer usage emails. Never billed.                                                                                                                                                                                                                                                                          | DO class name                                                                                                            |
+| `durable_object_rows_read`          | Customer-controlled StorageRunner SQLite rows read: cursor `rowsRead` from `sqlQuery`, plus key-value reads at Cloudflare's billing unit (1 per `getValue` key, 1 per `listValues` entry including the truncation look-ahead). Zero-row reads are skipped. | `storageRunnerRpc` (`recordDurableObjectRowsRead`). Queued into the same per-burst coalescer as duration, so one run writes one point per (user, class, outcome, packageId). When the storage id is package-owned, `packageId` is stamped (blob9); otherwise the debit stays Ad hoc. Observe-only for fleet event-count rankings and entitlement-pressure selection; credit debits and compute-include warning emails read the rollup.                                                                                                                                                                                                                                                       | DO class name                                                                                                            |
+| `durable_object_platform_rows_read` | Rows read by Kody-owned per-user Durable Objects. RunLog only: every tracked `execSqlTracked` cursor's `rowsRead`, attributed to the DO name (the stable user id via `ctx.id.name`).                                                                       | `RunLog.recordSqlBilling` (`recordDurableObjectPlatformRowsRead`), coalesced like the customer meter. Recorded only when `USAGE_EVENTS` is bound (no per-statement local D1 fallback). Observe-only cost visibility on admin usage; never in include, credit debit, or warning math.                                                                                                                                                                                                                                                                                                                                                                                                         | DO class name                                                                                                            |
+| `api_call`                          | one Open API operation (`api.kody.codes`, the MCP `api` tool, a CapabilityProxy hop, or local-execute package-graph prep)                                                                                                                                  | `packages/worker/src/open-api/invoke.ts` (`invokeApiOperation`), including CapabilityProxy / package-graph scope failures that run through invoke, and CapabilityProxy auth failures metered from `http-handler` when the token resolves to a user. Observe-only. Local-execute native failure entity ids append `:<ApiErrorCode>` (e.g. `capabilityProxySession:insufficient_scope`, `localExecutePackageGraph:package_import_unresolved`). The capability behind the operation meters itself as usual; local-execute CPU is never recorded. Package-graph prep is not `execute` / `dynamic_worker_day`.                                                                                    | operation id, or `capability-proxy:<path>` for proxy hops; CapabilityProxy / package-graph failures may append `:<code>` |
 
 `email_received` covers receive attempts once an inbound message is routed to a
 known, enabled inbox: stored messages record `success`; unverified-account
@@ -83,6 +122,73 @@ wrapper fails every surface that touches package storage. The wrapper is a
 plain-object Proxy that `Reflect.get` / `Reflect.apply`s against the original
 stub. Local and workers-unit `env` omit `USAGE_EVENTS`, which skips the wrapper;
 tests that need the production path bind a stub Analytics Engine dataset.
+
+### Durable Object rows-read policy
+
+Cloudflare bills SQLite-backed Durable Objects for rows read, including
+key-value `get()` / `list()` calls on their hidden table. Kody splits that cost
+by who controls the query shape:
+
+- **Customer (`durable_object_rows_read`)** — StorageRunner, the per-bucket
+  store behind `storage.*` and `packageStorage()`. SQL uses the cursor's real
+  `rowsRead`; the KV API exposes no cursor, so reads use Cloudflare's documented
+  per-key / per-entry billing unit. `exportStorage` is platform-initiated
+  (account export, backup) and stays unmetered. This is the include / credit
+  debit meter.
+- **Platform (`durable_object_platform_rows_read`)** — RunLog run history. Its
+  reads come from Kody's own queries (one RunLog hot spot read ~14B rows/day on
+  one account), so they are recorded for cost visibility but never counted
+  against a customer's include or invoiced.
+- **Not instrumented** — Mailbox (inbound volume is sender-controlled and small:
+  ~7M rows in September 2026), UserMeter (enforcement bookkeeping, ~10M),
+  RepoSessionIndex, RepoSession, McpClientHub, and MCP session DOs. Their cost
+  shows only in Cloudflare account analytics. Instrument one by recording its
+  cursor `rowsRead` through `recordDurableObjectPlatformRowsRead`.
+
+Per-call rows-read points share the ~250 `writeDataPoint` per-invocation budget
+with every other usage event, so they always go through the coalescer
+(`queueDurableObjectRowsRead`) rather than writing one point per query.
+
+### Durable Object duration: estimate vs bill
+
+Cloudflare bills Durable Object duration on wall-clock time an object is active
+and not hibernation-eligible, at 128 MB, against an account-wide include
+(400,000 GB-s/month, then $12.50 per million GB-s). Kody has two per-user views
+of it. Neither is an invoice line.
+
+- **Cloudflare-measured (trustworthy, per object):** the hourly
+  `durable_object_duration_attribution` lane (minute 20;
+  `packages/worker/src/usage/durable-object-duration-attribution.ts`) reads
+  Cloudflare GraphQL `durableObjectsPeriodicGroups.sum.activeTime` per
+  `objectId` for yesterday and today (UTC). It rebuilds `idFromName` for every
+  frozen per-user name (McpClientHub, RunLog, UserMeter, Mailbox,
+  RepoSessionIndex, StripePlanRefresh by stable user id; StorageRunner and
+  RepoSession from `user_storage_buckets`; PackageRealtimeSession from
+  app-bearing `saved_packages`) and writes absolute daily rows to
+  `durable_object_duration_daily`. It writes fleet totals and the attributed
+  share to `durable_object_duration_coverage_daily`. Admin usage shows GB-s
+  (active seconds × 0.128) and gross dollars at list.
+- **Not attributed:** MCP session DOs (named by transport session), JobManager
+  (lives on `kody-jobs`, no origin binding), repo sessions discarded before the
+  lane runs, platform singletons, and objects beyond the top 10,000 by active
+  time on a day (`truncated = 1` on the coverage row). These stay in the day's
+  unattributed total; nothing is guessed. The day's total comes from
+  Cloudflare's account-wide aggregate (a second, dimension-less group in the
+  same query), so truncation never shrinks the denominator. A response with no
+  matching account fails the lane rather than zeroing the day, a day with no
+  objects yet (analytics lag) keeps its last write, and users whose deletion
+  started after the owner snapshot get no rows.
+- **Why it is an estimate:** the include and Cloudflare's rounding apply to the
+  account total, isolate sharing does not change per-object billing, and
+  analytics for the current day are partial until the next day's run.
+- **RPC proxy (`durable_object_gb_seconds`):** caller-side StorageRunner RPC
+  wall clock × 0.128. It misses time an object stays active without an RPC
+  (sockets, alarms) and every other class. Keep it for burst shape only; use the
+  Cloudflare-measured view for cost.
+
+The lane uses the origin `CLOUDFLARE_API_TOKEN` (Account Analytics read, same as
+the Analytics Engine SQL API) and fails the lane loudly if Cloudflare rejects
+the query.
 
 ### `package_static_call`: statically imported package export calls
 
@@ -287,13 +393,16 @@ When modules are not deterministically hashable, the id is a UUID and is not
 reused. Hashable modules still produce a stable id when `userId` is null or
 `APP_COMMIT_SHA` is unset.
 
-Customer-facing monthly overage is unique worker days plus Durable Object
-rows-read, billed on the public ladder at `computeOverageRatesUsd` when
-`compute-overage-charging` is on. Unpaid Free is a soft-block, not a charge.
-Amounts below Stripe's $0.50 USD minimum are not invoiced. Legacy Standard/Pro
-is warned, not billed. Never add durations across different `eventType` values —
-that double counts nested layers. Within one `eventType`, each chokepoint
-records exactly one event per metered unit, so sums are safe.
+The customer-facing monthly meters are unique worker days plus Durable Object
+rows-read. Usage above the include debits a funded purchasable-Pro credit wallet
+(`creditDebitRates`: $0.004 per unique worker day, $0.002 per million rows read)
+in the hourly `usage_aggregation` lane, right after the rollup recompute. On an
+empty purchasable-Pro wallet, the same rollups stop new execute, job, and
+automation runs once either include is used up. Nobody is invoiced for overage.
+See [Entitlements](./entitlements.md#prepaid-credits). Never add durations
+across different `eventType` values — that double counts nested layers. Within
+one `eventType`, each chokepoint records exactly one event per metered unit, so
+sums are safe.
 
 Admin usage and insights convert `dynamic_worker_day` counts to a **gross**
 Cloudflare estimate (`unique days × $0.002`). The 1,000 included unique
@@ -310,20 +419,33 @@ export does not list them.
    `preview` environments in `packages/worker/wrangler.jsonc`). When the binding
    is present, each event is one non-blocking `writeDataPoint` call and nothing
    else — a per-event D1 upsert would serialize every metered request (execute,
-   fetch, email, jobs, ...) on D1's single writer. Data point layout:
-   - `indexes`: `[userId]`
-   - `blobs`:
-     `[userId, eventType, entityId ?? '', outcome, timestamp, surface ?? '', executeShape ?? '', cacheReuse ?? '']`
-     (`surface` is blob6, `executeShape` is blob7, `cacheReuse` is blob8; all
-     empty when unset)
+   fetch, email, jobs, ...) on D1's single writer. Data point layout (see
+   `usageEventBlobIndexes` in `packages/worker/src/usage/record-usage.ts`):
+   - `indexes`: `[userId]` where `userId` is the org billing id
+   - `blobs` (Analytics Engine `blob1` through `blob11`):
+     - blob1: org billing id (same as `UsageEvent.userId`)
+     - blob2: `eventType`
+     - blob3: `entityId ?? ''`
+     - blob4: `outcome`
+     - blob5: event `timestamp` (ISO 8601)
+     - blob6: `surface ?? ''`
+     - blob7: `executeShape ?? ''`
+     - blob8: `cacheReuse ?? ''`
+     - blob9: `packageId ?? ''` (empty means Ad hoc for customer credit
+       attribution on `/account/usage`)
+     - blob10: `actorUserId` (`''` for Automation; otherwise defaults to org
+       billing id when unset on the event)
+     - blob11: `automationSource` (`''` | `webhook` | `schedule` | `email`)
    - `doubles`:
      `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0, codeChars ?? 0, paramsChars ?? 0]`.
-     Coalesced `durable_object_gb_seconds` and `durable_object_rows_read` points
-     store the coalesced unit count in the third double instead of bytes so
-     hourly rollups can recover `event_count`. `codeChars` is double4
-     (module-graph text length on `dynamic_worker_invoke`). `paramsChars` is
-     double5 (key-sorted JSON length of evaluate `params`; **0** when `params`
-     is omitted, `null`, a non-object, an array, or empty `{}`).
+     Coalesced points (`coalescedCountUsageEventTypes`:
+     `durable_object_gb_seconds`, `durable_object_rows_read`,
+     `durable_object_platform_rows_read`) store the coalesced unit count in the
+     third double instead of bytes so hourly rollups can recover `event_count`.
+     `codeChars` is double4 (module-graph text length on
+     `dynamic_worker_invoke`). `paramsChars` is double5 (key-sorted JSON length
+     of evaluate `params`; **0** when `params` is omitted, `null`, a non-object,
+     an array, or empty `{}`).
 
    Analytics Engine is the analysis store (sampling-tolerant, high cardinality).
    Do not build enforcement on it.
@@ -345,9 +467,12 @@ export does not list them.
    Engine samples under load) and batch-upserts absolute values — an idempotent
    recompute, not increments. Analytics Engine retention (~90 days) always
    covers a full month, so month-to-date recompute is complete; prior months
-   already in D1 stay untouched. The aggregation needs `CLOUDFLARE_ACCOUNT_ID`
-   and `CLOUDFLARE_API_TOKEN` and no-ops with a debug log when either (or the
-   `USAGE_EVENTS` binding) is missing.
+   already in D1 stay untouched. Analytics Engine rejects the whole query
+   (HTTP 422) when an `if()` mixes a `doubleN` branch with an Integer literal,
+   so fallbacks in that query are Float literals (`1.0`, `0.0`);
+   `aggregate-rollups.node.test.ts` guards this. The aggregation needs
+   `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` and no-ops with a debug
+   log when either (or the `USAGE_EVENTS` binding) is missing.
 
    **Local-dev direct fallback:** when `USAGE_EVENTS` is absent (local dev,
    tests), `recordUsage` upserts `usage_rollups` directly per event, so local
@@ -356,7 +481,16 @@ export does not list them.
    The rollup is the cheap read path for month-to-date admin and cohort views:
    one point lookup per user, metric, and month.
 
-## Agent package popularity (MCP instructions hint)
+3. **D1 `usage_attribution_daily`** (billable-unit breakdown for
+   `/account/usage`) stores daily units per org billing id, package, and meter.
+   Columns `actor_user_id` and `automation_source` mirror Analytics Engine
+   `blob10` and `blob11`. Local dev upserts them on each billable `recordUsage`
+   write; production recomputes from Analytics Engine in
+   `packages/worker/src/usage/credit-attribution.ts`. Writers should populate
+   attribution on the event (or rely on the `usageEventBlobs()` defaults) so
+   these columns are not left null when actor or automation context exists.
+
+## Agent package conversation uses
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also
 defined in `0001-squashed-init.sql`) tracks **distinct conversations** in which
@@ -368,13 +502,7 @@ attributed to that execute call’s `conversationId`).
   the same package in the same conversation counts once. Stored
   `conversation_id` values are SHA-256 hex digests of the MCP conversation id
   (cardinality only; not reversible to the raw id).
-- Read path: take the user’s last **N** distinct agent conversations
-  (default 40) with `last_used_at` within a hard max age (default 180 days),
-  count how many of those conversations used each package (package rows must
-  also be within max age), join `saved_packages` for `kody_id` + description,
-  top 8 name bullets for `buildMcpServerInstructions`. Cold start (no rows)
-  omits the section. List failures (missing table, transient D1 errors) return
-  `[]` so MCP init stays up.
+- MCP server instructions do **not** inject popularity rankings from this table.
 - Writes are best-effort and never throw into the invoke path (same spirit as
   `recordUsage`). Do **not** widen `usage_rollups` for conversation cardinality.
 
@@ -383,16 +511,25 @@ Helpers live in `packages/worker/src/usage/agent-package-conversation-uses.ts`.
 ## Helper contract
 
 ```ts
-import { recordUsage } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+} from '#worker/usage/record-usage.ts'
 
 await recordUsage(env, {
-	userId,
+	userId: orgBillingId,
+	...usageAttributionFieldsFromRequest(requestContext),
 	eventType: 'job_run',
 	entityId: job.id,
 	durationMs,
 	outcome: execution.ok ? 'success' : 'error',
 })
 ```
+
+`usageAttributionFieldsFromRequest` maps a `RequestContext` to `actorUserId` /
+`automationSource` when the chokepoint has one: interactive requests stamp the
+signed-in actor; Automation requests use `actorUserId: ''` and the closed
+automation source when present.
 
 Guarantees and rules:
 
@@ -456,7 +593,11 @@ Guarantees and rules:
 
 4. **Populate optional fields when cheap.** `bytes` for transfer-shaped metrics,
    `cpuMs` only when the platform exposes it. Leave fields you cannot measure as
-   `undefined` — do not approximate.
+   `undefined` — do not approximate, and never use wall clock as CPU. Worker
+   Loader CPU arrives through the `dynamic_worker_cpu` tail; other chokepoints
+   (host-side execute, jobs, fetch gateway) have no per-call CPU API and leave
+   `cpuMs` unset. Open-source workerd reports `cpuTime` 0, so real values only
+   appear on deployed Workers.
 5. **Do not change behavior.** No new throws, no altered return values, no added
    latency beyond the awaited write (use `ctx.waitUntil` in DOs if needed).
 6. **Test it.** Pick the flavor with the
@@ -604,11 +745,11 @@ GROUP BY stage
 ## Reading the data
 
 - Analytics Engine: query the `kody_usage_events` dataset (SQL API) filtered by
-  the `index1` user id; blob/double positions are listed above. Remember that
-  Analytics Engine samples: count with `sum(_sample_interval)` and sum values
-  with `sum(doubleN * _sample_interval)`. Coalesced `durable_object_gb_seconds`
-  points store the RPC count in `double3`, so that metric's `event_count` is
-  `sum(if(double3 > 0, double3, 1) * _sample_interval)` and `total_bytes`
+  the `index1` org billing id; blob/double positions are listed above. Remember
+  that Analytics Engine samples: count with `sum(_sample_interval)` and sum
+  values with `sum(doubleN * _sample_interval)`. Coalesced points store their
+  unit count (RPCs or rows read) in `double3`, so those metrics' `event_count`
+  is `sum(if(double3 > 0, double3, 1.0) * _sample_interval)` and `total_bytes`
   stays 0.
 - D1: `SELECT * FROM usage_rollups WHERE user_id = ?1 AND month = ?2` gives
   every metric for a user's month in one small scan.
@@ -636,7 +777,7 @@ GROUP BY stage
   $12 /
   $120 and $49 / $480, plus retired list prices) and never calls Stripe
   or pages the user table. `plan`, `stripe_plan`, and overlay-aware
-  `effectivePlan` stay separate so gift/referral Standard does not look like
+  `effectivePlan` stay separate so gift/referral Pro overlays do not look like
   paid MRR. Cost-vs-pay ranks the current month's top unique-worker-day
   consumers (bounded scan) and a Risk panel: catalog-paid accounts over list
   MRR, unpaid accounts at ≥$1 / 500 unique days (50% of the $2 / 1,000
@@ -649,23 +790,27 @@ GROUP BY stage
   snapshot.
 - **Proactive alerts** (`usage_entitlement_alert` scheduled lane in
   `packages/worker/src/app/usage-entitlement-alerts.ts`): hourly sweep of the
-  same ~15-user bound. Emits `fleet.entitlement.crossed` to admin-owned packages
-  once when a swept account first crosses 80% or 100% of a plan-limit resource,
-  when a non-admin account's combined execute, job_run, and workflow_run
-  duration for the month first exceeds `fleetRuntimeDurationAlertThresholdMs`
-  (24h), when a non-admin account's unique Dynamic Worker cost for the month
-  first reaches the plan-aware threshold (Free
-  $2 / 1,000 unique days, Standard
-  $12, Pro $49), or when a non-admin account
-  hits 100% of `execute_calls_per_day` on three of the last seven UTC days.
-  Staying over the same threshold does not emit again. Admin-role dogfooding
-  stays on `/admin/insights` rankings and can still appear as an entitlement
-  crossing, but does not page the runtime-duration, unique-worker-cost, or
-  repeated- execute signals. KV prefix `fleet-entitlement-crossing:v1` claims
-  each crossing. Execute-cap trains also write `fleet-entitlement-hit:v1` day
-  keys so a later drop below 100% the same day does not erase the count. Admin
-  links in the payload are built with `joinAppUrl` so a trailing slash on
-  `APP_BASE_URL` cannot produce `https://host//admin/…`. See
+  same ~15-user bound, scored against each account's **effective** plan
+  (including temporary Pro gift / referral overlays). Inbound
+  `email_receives_per_day` is the exception: inbound mail enforces that cap
+  against the base (manual + Stripe) plan, so the sweep scores it the same way.
+  Emits `fleet.entitlement.crossed` to admin-owned packages once when a swept
+  account first crosses 80% or 100% of a plan-limit resource, when a non-admin
+  account's combined execute, job_run, and workflow_run duration for the month
+  first exceeds `fleetRuntimeDurationAlertThresholdMs` (24h), when a non-admin
+  account's unique Dynamic Worker cost for the month first reaches the
+  plan-aware threshold (Free $2 / 1,000 unique days, Standard
+  $12, Pro $49), or
+  when a non-admin account hits 100% of `execute_calls_per_day` on three of the
+  last seven UTC days. Staying over the same threshold does not emit again.
+  Admin-role dogfooding stays on `/admin/insights` rankings and can still appear
+  as an entitlement crossing, but does not page the runtime-duration,
+  unique-worker-cost, or repeated- execute signals. KV prefix
+  `fleet-entitlement-crossing:v1` claims each crossing. Execute-cap trains also
+  write `fleet-entitlement-hit:v1` day keys so a later drop below 100% the same
+  day does not erase the count. Admin links in the payload are built with
+  `joinAppUrl` so a trailing slash on `APP_BASE_URL` cannot produce
+  `https://host//admin/…`. See
   [Admin events](../../guides/admin-events.md#fleetentitlementcrossed-admins).
 - **Fleet package error rate** (same `usage_aggregation` hour): a second
   Analytics Engine SQL, not grouped by user, totals `package_export`,
@@ -693,15 +838,15 @@ evaluator branches on activation stamps and live reads (paged distinct inbound
 `clientId`s, enabled jobs / last job run, execute-rollup depth, Stripe paid,
 stock entitlement pressure). It is not a fixed week-1/3 calendar drip.
 
-| State                  | Mail                                                                                                                                                                |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                              |
-| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                                     |
-| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Standard gift is still unreceived (`describeSecondAgentStandardGift` status `none`) |
-| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                                       |
-| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                                   |
-| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                           |
-| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                                |
+| State                  | Mail                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VerifiedNoMcp`        | Connect-an-agent template, 2 sends max                                                                                                                   |
+| `ConnectedNoPackage`   | Save-a-package template (personalized with `mcp_client_name` when set), 2 sends                                                                          |
+| `PackagedSingleClient` | Second-agent / portability template, 1–2 sends. Trial CTA only while the 14-day Pro gift is unreceived (`describeSecondAgentStandardGift` status `none`) |
+| `Activated`            | Campaign silence. After ≥7 days, one `advocate_referral_testimonial` mail if not already sent                                                            |
+| `Cooling`              | One “home’s still here” poke, then terminal quiet                                                                                                        |
+| `LimitAware`           | Campaign silence; entitlement-warning mail owns the nudge                                                                                                |
+| `Paid`                 | Campaign silence except the same one-shot advocate mail (1 forever). Billing transactional still owns paid-plan mail                                     |
 
 `last_active_at` does not bump on `job_run`. Enabled jobs and `last_run_at` are
 read separately so a quiet interactive user with a live schedule stays

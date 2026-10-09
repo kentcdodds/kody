@@ -1,4 +1,4 @@
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 
 const defaultUndoTimeoutMs = 8_000
 

@@ -42,6 +42,9 @@ export function classifyDecisionRecordFilename(
 		return null
 	}
 	const { prefix, slug } = match.groups
+	if (prefix === undefined || slug === undefined) {
+		return null
+	}
 	return {
 		filename,
 		prefix,

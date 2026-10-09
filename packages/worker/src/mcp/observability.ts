@@ -8,9 +8,14 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { isSearchRateLimitError } from '#worker/search-rate-limit-error.ts'
+import { PackageNameInputError } from '#worker/package-registry/package-name.ts'
 import { PackageScopeAccessError } from '#worker/package-registry/package-owner.ts'
+import { SavedPackageNotFoundError } from '#worker/package-runtime/package-import-resolution.ts'
 import { isKodyDescriptionLengthMessage } from '#worker/package-registry/types.ts'
-import { isRepoLargeFileMessage } from '#worker/repo/large-file-policy.ts'
+import {
+	isRepoDiffTooLargeMessage,
+	isRepoLargeFileMessage,
+} from '#worker/repo/large-file-policy.ts'
 import {
 	isGitPushNotFastForwardMessage,
 	isRepoDisallowedPathMessage,
@@ -20,6 +25,9 @@ import {
 } from '#worker/repo/repo-session-caller-error.ts'
 import {
 	isDestructiveOverwriteConfirmationMessage,
+	isArtifactsGitReadTimeoutMessage,
+	isArtifactsOpaqueInternalRetryMessage,
+	isArtifactsRepoLookupTimeoutMessage,
 	isPrivateVisibilityChangeConfirmationMessage,
 } from '#worker/repo/source-safety-policy.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
@@ -27,7 +35,7 @@ import { isIntegrationTokenRefreshCallerMessage } from '#worker/integrations/tok
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import { isMcpCallerError } from './caller-error.ts'
 
-export type McpToolKind = 'search' | 'execute' | 'capability' | 'app'
+export type McpToolKind = 'search' | 'execute' | 'api' | 'capability' | 'app'
 
 export type McpFailurePhase = 'parse_input' | 'handler' | 'parse_output'
 
@@ -134,14 +142,36 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	) {
 		return true
 	}
-	// Repo large-file rejections raised inside the RepoSession Durable Object
-	// arrive as plain Errors (subclass identity does not survive RPC); match
-	// on the stable message phrase so caller-fixable size denials stay out of
-	// Sentry.
+	// Empty, mismatched-scope, or invalid package names. Agents must use the
+	// leaf or their own "@owner/…" form. KODY-83.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof PackageNameInputError,
+		)
+	) {
+		return true
+	}
+	// `kody:@scope/pkg` import (or equivalent resolve) for a package the
+	// caller does not have. Agents must fork/install or fix the specifier.
+	// KODY-86.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) => entry instanceof SavedPackageNotFoundError,
+		)
+	) {
+		return true
+	}
+	// Repo large-file and diff-line-limit rejections raised inside the
+	// RepoSession Durable Object arrive as plain Errors (subclass identity
+	// does not survive RPC); match on the stable message phrases (and the
+	// raw `@cloudflare/shell` EFBIG wording) so caller-fixable size denials
+	// stay out of Sentry. KODY-8E.
 	if (
 		getErrorCauseChain(cause).some(
 			(entry) =>
-				entry instanceof Error && isRepoLargeFileMessage(entry.message),
+				entry instanceof Error &&
+				(isRepoLargeFileMessage(entry.message) ||
+					isRepoDiffTooLargeMessage(entry.message)),
 		)
 	) {
 		return true
@@ -150,7 +180,10 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 	// constraints, read-only policy). storageQuery wraps these as
 	// McpCallerError; this message match covers plain Errors that still
 	// arrive via RPC without subclass identity.
+	// Restrict to storageQuery so that D1 errors from other capabilities
+	// (e.g. application database FK/unique violations) still reach Sentry.
 	if (
+		payload.capabilityName === 'storageQuery' &&
 		getErrorCauseChain(cause).some(
 			(entry) =>
 				entry instanceof Error && isUserStorageSqlCallerMessage(entry.message),
@@ -196,6 +229,21 @@ function isCallerFailure(payload: McpObservabilityPayload, cause?: unknown) {
 				entry instanceof Error &&
 				(isDestructiveOverwriteConfirmationMessage(entry.message) ||
 					isPrivateVisibilityChangeConfirmationMessage(entry.message)),
+		)
+	) {
+		return true
+	}
+	// Artifacts REST opaque internal errors remapped by source-safety to a
+	// retry-oriented message (KODY-8F), and Artifacts lookup / git-read
+	// timeouts remapped the same way. Same caller-retryable class — keep
+	// volume on mcp-event lines.
+	if (
+		getErrorCauseChain(cause).some(
+			(entry) =>
+				entry instanceof Error &&
+				(isArtifactsOpaqueInternalRetryMessage(entry.message) ||
+					isArtifactsRepoLookupTimeoutMessage(entry.message) ||
+					isArtifactsGitReadTimeoutMessage(entry.message)),
 		)
 	) {
 		return true

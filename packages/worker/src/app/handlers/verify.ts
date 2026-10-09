@@ -30,6 +30,7 @@ import {
 } from '#app/rate-limit.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
+import { reconcileSignupWelcomeCreditsIfPending } from '#worker/billing/signup-welcome-credits.ts'
 
 export function createVerifyHandler(env: Env) {
 	return {
@@ -182,6 +183,10 @@ export function createTwoFactorVerifyApiHandler(env: Env) {
 
 			await touchLastActiveAt(env.APP_DB, {
 				stableUserId: pendingSession.stableUserId,
+			})
+			await reconcileSignupWelcomeCreditsIfPending({
+				db: env.APP_DB,
+				userId: pendingSession.stableUserId,
 			})
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),

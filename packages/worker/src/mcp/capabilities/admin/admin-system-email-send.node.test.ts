@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -6,7 +7,10 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
+	logAuditEvent: vi.fn<typeof AuditLog.logAuditEvent>(async () => ({
+		persisted: false,
+		failedSinks: [],
+	})),
 	sendSystemEmail: vi.fn(),
 }))
 
@@ -14,7 +18,7 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Array<unknown>) =>
+		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
 			mockModule.logAuditEvent(...args),
 	}
 })
@@ -46,9 +50,12 @@ function createAdminCtx() {
 	return {
 		env: { AUDIT_DB: createD1FromSqlite(auditSqlite) } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: testStableUserIdFromEmail('admin@example.com'),
+				userId: personIdFromStored(
+					testStableUserIdFromEmail('admin@example.com'),
+				),
 				email: 'admin@example.com',
 				displayName: 'Admin',
 				roles: ['admin'],

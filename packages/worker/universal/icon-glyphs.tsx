@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type RemixNode } from 'remix/ui'
+import { type RemixNode } from 'remix/component'
 
 /**
  * Inner paths from Iconic (https://iconic.app) SVG icons.

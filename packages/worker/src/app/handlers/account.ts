@@ -1,5 +1,6 @@
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
+import { loadAccountOrganizationSnapshot } from '#app/account-organizations-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import { loadChecklist } from '#app/handlers/onboarding.ts'
 import { loadOnboardingData } from '#app/onboarding-data.ts'
@@ -16,9 +17,10 @@ export function createAccountHandler(env: Env) {
 				return user
 			}
 
-			const [accountProfile, accountConnections, onboarding] =
+			const [accountProfile, organizations, accountConnections, onboarding] =
 				await Promise.all([
 					loadAccountProfileData(user, env),
+					loadAccountOrganizationSnapshot(env, user, request),
 					loadAccountConnectionsData({ env, userId: user.userId }),
 					loadOnboardingData({
 						env,
@@ -46,7 +48,12 @@ export function createAccountHandler(env: Env) {
 				env,
 				title: 'Account',
 				loaderData: {
-					accountProfile,
+					accountProfile: {
+						...accountProfile,
+						organizations: organizations.organizations,
+						inviteCount: organizations.inviteCount,
+						lastUsedOrganization: organizations.lastUsedOrganization,
+					},
 					accountConnections,
 					onboarding,
 				},

@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { colors, mq, spacing, typography } from '#universal/styles/tokens.ts'
 import { formatIntegerNumber } from '#client/charts/chart-theme.ts'
 import {

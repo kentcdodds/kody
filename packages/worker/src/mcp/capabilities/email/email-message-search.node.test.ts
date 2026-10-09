@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -35,9 +36,10 @@ function createEnv(options: { emailVerifiedAt?: string | null } = {}) {
 
 function createUserContext() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},
@@ -51,6 +53,7 @@ test('emailMessageSearch requires a signed-in, verified user and forwards the qu
 			{
 				env: createEnv(),
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},

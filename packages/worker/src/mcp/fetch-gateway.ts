@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
@@ -24,6 +25,7 @@ import {
 	type ReferencedProviderSecret,
 	type ReferencedSecret,
 } from '#mcp/secrets/placeholders.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
@@ -34,6 +36,7 @@ import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
@@ -56,11 +59,16 @@ import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
 import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { assertIntegrationHostAllowed } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	consumeDailyEntitlement,
 	findCachedUserAccountByStableUserId,
 } from '#worker/entitlements/service.ts'
-import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+	type UsageEnv,
+} from '#worker/usage/record-usage.ts'
 
 type FetchGatewayProps = {
 	baseUrl: string
@@ -72,6 +80,8 @@ type FetchGatewayProps = {
 	 * stable userId so the caller's real plan still binds.
 	 */
 	email: string | null
+	/** The run's request; sealed secret providers inherit it. */
+	request: RequestContext | null
 	storageContext: StorageContext | null
 	/**
 	 * Bundler/host provenance ids that may be named as secret authority
@@ -281,6 +291,7 @@ export async function executeGatewayFetch(input: {
 				entityId: meteredEntityId,
 				durationMs: Date.now() - startedAtMs,
 				outcome,
+				...usageAttributionFieldsFromRequest(input.props.request),
 				...(response ? readResponseContentLengthBytes(response) : {}),
 			}
 			const usagePromise = recordUsage(input.env, usageEvent)
@@ -437,26 +448,42 @@ export async function expandSecretPlaceholders(input: {
 		referencedSecrets.length > 0 ||
 		referencedIntegrationTokens.length > 0 ||
 		referencedProviderSecrets.length > 0
-	const userId = hasReferencedSecrets
+	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
+	// Share-grant package runs: resolve mounted/package secrets as the
+	// package owner (same stamp remap as packageSecrets.get / secret
+	// providers). Do not put owner id in the placeholder — remap from
+	// trusted packageId + share grant at the platform use site.
+	// Remap only for saved-secret placeholders. Integration tokens stay on
+	// the caller; provider secrets do their own owner remap.
+	const secretUserId =
+		callerUserId && authorityPackageId && referencedSecrets.length > 0
+			? await resolvePackageStorageOwner({
+					db: input.env.APP_DB,
+					caller: personIdFromStored(callerUserId),
+					packageId: authorityPackageId,
+				})
+			: callerUserId
 	const resolvedSecretResults = await Promise.all(
 		referencedSecrets.map(async (referenced) => {
-			if (!userId) {
+			if (!secretUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveSecret({
 				env: input.env,
-				userId,
+				userId: secretUserId,
 				name: referenced.name,
 				scope: referenced.scope,
 				storageContext,
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
-				throw new Error(
+				// Missing or scope-unavailable secrets are caller-clearable
+				// (wrong name/runtime). Keep them off Sentry via McpCallerError.
+				throw new McpCallerError(
 					await createUnresolvedSecretMessage({
 						env: input.env,
-						userId,
+						userId: secretUserId,
 						name: referenced.name,
 						scope: referenced.scope,
 						storageContext,
@@ -467,30 +494,33 @@ export async function expandSecretPlaceholders(input: {
 			await assertPackageCanAccessResolvedSecret({
 				env: input.env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: secretUserId,
 				storageContext,
 				authorityPackageId,
 				secretName: referenced.name,
 				resolved,
+				// Share-grant remap resolves as the owner; do not inherit the
+				// owner's implicit self-authored keychain for the guest.
+				allowImplicitUserSecretAccess: secretUserId === callerUserId,
 			})
 			return { referenced, resolved, value: resolved.value }
 		}),
 	)
 	const resolvedIntegrationTokens = await Promise.all(
 		referencedIntegrationTokens.map(async (name) => {
-			if (!userId) {
+			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			await assertCanUseIntegration({
 				env: input.env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: callerUserId,
 				name,
-				packageId: input.props.storageContext?.packageId ?? null,
+				packageId: storageContext.packageId,
 			})
 			const value = await resolveIntegrationAccessToken({
 				env: input.env,
-				userId,
+				userId: callerUserId,
 				name,
 			})
 			if (!value) {
@@ -501,13 +531,15 @@ export async function expandSecretPlaceholders(input: {
 	)
 	const resolvedProviderSecrets = await Promise.all(
 		referencedProviderSecrets.map(async (referenced) => {
-			if (!userId) {
+			const request = input.props.request
+			if (!callerUserId || !request) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveProviderSecretForFetch({
 				env: input.env as Env,
 				baseUrl: input.props.baseUrl,
-				userId,
+				userId: callerUserId,
+				request,
 				provider: referenced.provider,
 				ref: referenced.ref,
 				storageContext,
@@ -607,11 +639,11 @@ export async function expandSecretPlaceholders(input: {
 			),
 			normalizedHost,
 		})
-		if (userId && referencedIntegrationTokens.length > 0) {
+		if (callerUserId && referencedIntegrationTokens.length > 0) {
 			for (const name of referencedIntegrationTokens) {
 				const joined = await getJoinedIntegration({
 					env: input.env,
-					userId,
+					userId: callerUserId,
 					name,
 				})
 				if (!joined) {

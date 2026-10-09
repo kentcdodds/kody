@@ -1,3 +1,4 @@
+import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -27,7 +28,11 @@ import {
 	registerOAuthClient,
 	type AppAuthUser,
 } from './mcp-oauth-client.ts'
-import { buildRoleAssignmentSql } from './seed-sql.ts'
+import {
+	buildRoleAssignmentSql,
+	buildSeedPersonalOrgSql,
+	seedStableUserIdFromEmail,
+} from './seed-sql.ts'
 
 const projectRoot = process.cwd()
 const primaryUserEmail = 'kody@example.com'
@@ -68,10 +73,23 @@ export async function createTestDatabase() {
 	}
 }
 
+type DevServer = {
+	origin: string
+	[Symbol.asyncDispose](): Promise<void>
+}
+
+export function startDevServer(
+	persistDir: string,
+	options: { withCloudflareMock: true },
+): ReturnType<typeof startDevServerWithCloudflareMock>
+export function startDevServer(
+	persistDir: string,
+	options?: { withCloudflareMock?: boolean },
+): Promise<DevServer>
 export async function startDevServer(
 	persistDir: string,
 	options?: { withCloudflareMock?: boolean },
-) {
+): Promise<DevServer> {
 	if (options?.withCloudflareMock) {
 		return startDevServerWithCloudflareMock()
 	}
@@ -205,6 +223,14 @@ async function startDevServerWithCloudflareMock() {
 		const env = await worker.getEnv()
 		return {
 			origin: url.origin,
+			// Seed before /auth. These workers point CLOUDFLARE_API_* at the
+			// mock so package publish can snapshot sources; a configured
+			// sender then tries to deliver the verification email. The mock
+			// Email DO can still 503 / return an empty body after /__mocks/meta
+			// looks ready, and signup rolls the user back.
+			async ensureUser(user: TestUser) {
+				await seedMcpTestUser(env.APP_DB, user)
+			},
 			async markEmailVerified(email: string) {
 				await env.APP_DB.prepare(
 					`UPDATE users
@@ -227,6 +253,47 @@ WHERE email = ?`,
 		await harness.close().catch(() => undefined)
 		await cloudflareMock[Symbol.asyncDispose]()
 		throw error
+	}
+}
+
+export async function seedMcpTestUser(db: D1Database, user: TestUser) {
+	const passwordHash = await createPasswordHash(user.password)
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'free')
+ON CONFLICT(email) DO UPDATE SET
+	username = excluded.username,
+	password_hash = excluded.password_hash,
+	email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
+	stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+	plan = COALESCE(users.plan, excluded.plan),
+	updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(
+			user.username,
+			user.email,
+			passwordHash,
+			seedStableUserIdFromEmail(user.email),
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ? AND r.name = 'user'`,
+		)
+		.bind(user.email)
+		.run()
+	const personalOrgSql = buildSeedPersonalOrgSql({
+		stableUserId: seedStableUserIdFromEmail(user.email),
+		username: user.username,
+	})
+	for (const statement of personalOrgSql.split(';')) {
+		const sql = statement.trim()
+		if (!sql) continue
+		await db.prepare(sql).run()
 	}
 }
 
@@ -347,10 +414,14 @@ export async function createMcpClient(
 		// marked verified in the local D1 database before connecting.
 		persistDir: string
 		extraHeaders?: Record<string, string>
+		ensureUser?: (user: TestUser) => Promise<void>
 		markEmailVerified?: (email: string) => Promise<void>
 	},
 ) {
 	const extraHeaders = options.extraHeaders
+	if (options.ensureUser) {
+		await options.ensureUser(user)
+	}
 	const cookieHeader = await loginToApp(origin, user)
 	if (options.markEmailVerified) {
 		await options.markEmailVerified(user.email)
@@ -455,6 +526,7 @@ export async function createModernMcpClient(
 }
 
 async function applyMigrations(persistDir: string) {
+	// APP_DB, AUDIT_DB, and JOBS_DB all land in persistDir.
 	const proc = spawnProcess({
 		cmd: [
 			nodeBin,
@@ -483,44 +555,6 @@ async function applyMigrations(persistDir: string) {
 				.join('\n\n'),
 		)
 	}
-
-	// The jobs worker (ADR 0016) runs alongside the main worker in local dev
-	// and owns its own D1 database, so its migrations apply too.
-	const jobsProc = spawnProcess({
-		cmd: [
-			nodeBin,
-			'--env-file=packages/worker/.env',
-			'./wrangler-env.ts',
-			'd1',
-			'migrations',
-			'apply',
-			'JOBS_DB',
-			'--local',
-			'--config',
-			'packages/jobs-worker/wrangler.jsonc',
-			'--persist-to',
-			persistDir,
-		],
-		cwd: projectRoot,
-		env: {
-			...process.env,
-			CLOUDFLARE_ENV: 'test',
-		},
-	})
-	const getJobsStdout = captureOutput(jobsProc.stdout)
-	const getJobsStderr = captureOutput(jobsProc.stderr)
-	const jobsExitCode = await jobsProc.exited
-	if (jobsExitCode === 0) return
-
-	throw new Error(
-		[
-			`Failed to apply local jobs D1 migrations (exit ${String(jobsExitCode)}).`,
-			getJobsStdout(),
-			getJobsStderr(),
-		]
-			.filter(Boolean)
-			.join('\n\n'),
-	)
 }
 
 async function waitForHttpReady(input: {

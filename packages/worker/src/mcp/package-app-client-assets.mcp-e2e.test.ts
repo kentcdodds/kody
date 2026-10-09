@@ -40,7 +40,7 @@ function buildPackageFiles(input: { username: string; clientSource: string }) {
 				'MCP e2e smoke package for kody.app.client and kody.app.assets',
 			app: {
 				entry: './src/app.ts',
-				client: { entry: './src/client.ts', externals: ['@remix-run/ui'] },
+				client: { entry: './src/client.ts', externals: ['lit'] },
 				assets: './public',
 			},
 		},
@@ -77,7 +77,7 @@ export default {
 		}
 		const context = packageContext ?? {}
 		const importMap = JSON.stringify({
-			imports: { '@remix-run/ui': \`\${context.assetBasePath}/vendor/ui.js\` },
+			imports: { 'lit': \`\${context.assetBasePath}/vendor/ui.js\` },
 		})
 		const pakConfig = JSON.stringify({ theme: 'dark' })
 		return new Response(
@@ -109,7 +109,7 @@ export default {
 		{
 			path: 'public/vendor/ui.js',
 			content:
-				'export function Button(label) {\n\treturn `<button>${label}</button>`\n}\n',
+				'export function html(label) {\n\treturn `<button>${label}</button>`\n}\n',
 		},
 		{
 			path: 'public/sw.js',
@@ -118,7 +118,7 @@ export default {
 	]
 }
 
-const browserClientSource = `import { Button } from '@remix-run/ui'
+const browserClientSource = `import { html } from 'lit'
 import { formatCount } from './format.ts'
 
 type State = { count: number }
@@ -129,7 +129,7 @@ button.addEventListener('click', () => {
 	button.textContent = formatCount(state.count)
 })
 document.querySelector<HTMLHeadingElement>('#title')!.dataset.hydrated = 'true'
-export const ready = Button('ready')
+export const ready = html('ready')
 `
 
 test('kody.app.client and kody.app.assets publish and serve end-to-end on a real local worker', async () => {
@@ -142,6 +142,7 @@ test('kody.app.client and kody.app.assets publish and serve end-to-end on a real
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user
@@ -157,7 +158,7 @@ export default async function main(input) {
 }
 `,
 				params: {
-					files: buildPackageFiles({ username, kodyId, ...input }),
+					files: buildPackageFiles({ username, ...input }),
 				},
 			},
 		})) as CallToolResult
@@ -246,11 +247,11 @@ export default async function main(input) {
 		expect(clientSource).not.toContain('type State')
 		// The declared external stays a bare import for the page's import map;
 		// the relative graph is inlined so nothing else is left to resolve.
-		expect(clientSource).toMatch(/from\s+"@remix-run\/ui"/)
+		expect(clientSource).toMatch(/from\s+"lit"/)
 		expect(clientSource).not.toMatch(/from\s+["']\.\//)
 		expect(clientSource).toMatch(/export\s*\{/)
 		expect(pageHtml).toContain(
-			`<script type="importmap">{"imports":{"@remix-run/ui":"${appBasePath}/_assets/vendor/ui.js"}}</script>`,
+			`<script type="importmap">{"imports":{"lit":"${appBasePath}/_assets/vendor/ui.js"}}</script>`,
 		)
 		const vendorModule = await authedFetch(`${appOrigin}/_assets/vendor/ui.js`)
 		expect(vendorModule.status).toBe(200)

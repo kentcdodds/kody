@@ -1,5 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { format, type FormatConfig, type OxfmtConfig } from 'oxfmt'
+import oxfmtConfig from '../oxfmt.config.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 export const defaultSnapshotRelativePath = path.join(
@@ -7,7 +9,10 @@ export const defaultSnapshotRelativePath = path.join(
 	'file-size-ratchet.json',
 )
 
-export type FileSizeRatchetGroupId = 'client-routes' | 'node-tests'
+export type FileSizeRatchetGroupId =
+	| 'agents-md'
+	| 'client-routes'
+	| 'node-tests'
 
 export type FileSizeRatchetGroup = {
 	id: FileSizeRatchetGroupId
@@ -16,6 +21,13 @@ export type FileSizeRatchetGroup = {
 }
 
 export const fileSizeRatchetGroups: ReadonlyArray<FileSizeRatchetGroup> = [
+	{
+		id: 'agents-md',
+		description: 'AGENTS.md',
+		// Reversible: raise this deliberately when the map must grow; do not
+		// grandfather AGENTS.md via the snapshot allowlist.
+		maxLines: 20,
+	},
 	{
 		id: 'client-routes',
 		description: 'packages/worker/client/routes/*.tsx',
@@ -51,6 +63,15 @@ export type FileSizeRatchetResult = {
 	}>
 }
 
+/**
+ * Formats source the same way pre-commit / CI expect before line budgets are
+ * counted. Injected in unit tests; production uses repo oxfmt config.
+ */
+export type FormatSourceForRatchet = (
+	relativePath: string,
+	sourceText: string,
+) => Promise<string>
+
 const skipDirectoryNames = new Set([
 	'.git',
 	'.wrangler',
@@ -66,6 +87,36 @@ export function countLines(content: string) {
 	const normalized = content.endsWith('\n') ? content.slice(0, -1) : content
 	if (normalized.length === 0) return 1
 	return normalized.split('\n').length
+}
+
+export function formatOptionsFromOxfmtConfig(
+	config: OxfmtConfig & { $schema?: unknown },
+): FormatConfig {
+	const {
+		ignorePatterns: _ignorePatterns,
+		overrides: _overrides,
+		$schema: _schema,
+		...options
+	} = config
+	return options
+}
+
+const defaultFormatOptions = formatOptionsFromOxfmtConfig(oxfmtConfig)
+
+export async function formatSourceWithRepoOxfmt(
+	relativePath: string,
+	sourceText: string,
+	options: FormatConfig = defaultFormatOptions,
+): Promise<string> {
+	const result = await format(relativePath, sourceText, options)
+	const errors = result.errors.filter((error) => error.severity === 'Error')
+	if (errors.length > 0) {
+		const messages = errors.map((error) => error.message).join('; ')
+		throw new Error(
+			`Oxfmt failed to format ${relativePath} (${messages}). File-size ratchet counts lines after a successful format only.`,
+		)
+	}
+	return result.code
 }
 
 export function parseFileSizeRatchetSnapshot(
@@ -103,7 +154,21 @@ async function collectMatchingFiles(
 	while (stack.length > 0) {
 		const current = stack.pop()
 		if (!current) continue
-		const entries = await readdir(current, { withFileTypes: true })
+		let entries
+		try {
+			entries = await readdir(current, { withFileTypes: true })
+		} catch (error) {
+			if (
+				error &&
+				typeof error === 'object' &&
+				'code' in error &&
+				error.code === 'ENOENT' &&
+				current === root
+			) {
+				return []
+			}
+			throw error
+		}
 		for (const entry of entries) {
 			const absolutePath = path.join(current, entry.name)
 			if (entry.isDirectory()) {
@@ -125,22 +190,31 @@ export async function listRatchetGroupFiles(
 	cwd: string,
 	groupId: FileSizeRatchetGroupId,
 ): Promise<Array<string>> {
-	if (groupId === 'client-routes') {
-		return collectMatchingFiles(
-			cwd,
-			path.join('packages', 'worker', 'client', 'routes'),
-			(relativePath) =>
-				/^packages\/worker\/client\/routes\/[^/]+\.tsx$/.test(relativePath),
-		)
+	switch (groupId) {
+		case 'agents-md':
+			return ['AGENTS.md']
+		case 'client-routes':
+			return collectMatchingFiles(
+				cwd,
+				path.join('packages', 'worker', 'client', 'routes'),
+				(relativePath) =>
+					/^packages\/worker\/client\/routes\/[^/]+\.tsx$/.test(relativePath),
+			)
+		case 'node-tests':
+			return collectMatchingFiles(cwd, '.', (relativePath) =>
+				relativePath.endsWith('.node.test.ts'),
+			)
+		default: {
+			const _exhaustive: never = groupId
+			throw new Error(`unknown file-size ratchet group: ${String(_exhaustive)}`)
+		}
 	}
-	return collectMatchingFiles(cwd, '.', (relativePath) =>
-		relativePath.endsWith('.node.test.ts'),
-	)
 }
 
 export async function checkFileSizeRatchet(
 	cwd: string,
 	snapshot: FileSizeRatchetSnapshot,
+	formatSource: FormatSourceForRatchet = formatSourceWithRepoOxfmt,
 ): Promise<FileSizeRatchetResult> {
 	const issues: Array<FileSizeRatchetIssue> = []
 	const underBudgetSnapshotEntries: FileSizeRatchetResult['underBudgetSnapshotEntries'] =
@@ -152,9 +226,10 @@ export async function checkFileSizeRatchet(
 		const existing = new Set(files)
 
 		for (const relativePath of files) {
-			const lineCount = countLines(
-				await readFile(path.join(cwd, relativePath), 'utf8'),
-			)
+			const raw = await readFile(path.join(cwd, relativePath), 'utf8')
+			// Budget matches CI's formatted tree: count after oxfmt, not the
+			// pre-format working tree (joined lines can expand on commit).
+			const lineCount = countLines(await formatSource(relativePath, raw))
 			if (lineCount <= group.maxLines) {
 				if (allowlist.has(relativePath)) {
 					underBudgetSnapshotEntries.push({
@@ -166,7 +241,8 @@ export async function checkFileSizeRatchet(
 				}
 				continue
 			}
-			if (allowlist.has(relativePath)) continue
+			// AGENTS.md must never be grandfathered via the snapshot allowlist.
+			if (group.id !== 'agents-md' && allowlist.has(relativePath)) continue
 			issues.push({
 				groupId: group.id,
 				file: relativePath,
@@ -201,7 +277,10 @@ function formatIssues(issues: ReadonlyArray<FileSizeRatchetIssue>) {
 			if (issue.kind === 'stale-snapshot') {
 				return `${issue.file} is listed in the ${issue.groupId} snapshot but no longer exists. Remove it from ${defaultSnapshotRelativePath}.`
 			}
-			return `${issue.file} has ${String(issue.lineCount)} lines (budget ${String(issue.maxLines)}). Split it or add it to ${defaultSnapshotRelativePath} only when shrinking an existing grandfathered file is impossible.`
+			if (issue.groupId === 'agents-md') {
+				return `${issue.file} has ${String(issue.lineCount)} lines after formatting (budget ${String(issue.maxLines)}). Keep AGENTS.md a map; put detail in docs/contributing or .agents/skills. Raise the agents-md maxLines in tools/check-file-size-ratchet.ts only when the map must grow on purpose.`
+			}
+			return `${issue.file} has ${String(issue.lineCount)} lines after formatting (budget ${String(issue.maxLines)}). Split it or add it to ${defaultSnapshotRelativePath} only when shrinking an existing grandfathered file is impossible.`
 		})
 		.join('\n')
 }
@@ -222,7 +301,7 @@ export async function main(cwd: string = process.cwd()): Promise<void> {
 		console.error(
 			[
 				`File-size ratchet failed (${String(result.issues.length)} issue(s)).`,
-				'Client routes stay at or under 800 lines unless they are already in the snapshot. Node tests stay at or under 2000 lines unless they are already in the snapshot. The snapshot is an allowlist of existing oversized files; it must not grow except to record a file that was already over budget.',
+				'AGENTS.md stays at or under the agents-md budget after formatting (raise maxLines only on purpose). Client routes stay at or under 800 lines after formatting unless they are already in the snapshot. Node tests stay at or under 2000 lines after formatting unless they are already in the snapshot. The snapshot is an allowlist of existing oversized files; it must not grow except to record a file that was already over budget, and AGENTS.md must not be grandfathered there.',
 				'',
 				formatIssues(result.issues),
 			].join('\n'),

@@ -4,6 +4,8 @@ import {
 	type PlatformFeedbackRecordWithRevision,
 	type PlatformFeedbackRow,
 	type PlatformFeedbackStatus,
+	type PlatformFeedbackSubmitterListItem,
+	type PlatformFeedbackSubmitterRecord,
 } from './types.ts'
 
 const platformFeedbackFullColumns = `id, submitter_user_id, submitter_username,
@@ -12,6 +14,12 @@ const platformFeedbackFullColumns = `id, submitter_user_id, submitter_username,
 
 const platformFeedbackListColumns = `id, submitter_user_id, category, summary,
 	status, reviewed_by_user_id, reviewed_at, created_at, updated_at`
+
+const platformFeedbackSubmitterListColumns = `id, category, summary, status,
+	created_at, updated_at`
+
+const platformFeedbackSubmitterGetColumns = `id, category, summary, details,
+	status, created_at, updated_at`
 
 function mapPlatformFeedbackRow(
 	row: Record<string, unknown>,
@@ -53,6 +61,28 @@ function mapPlatformFeedbackListRow(
 		reviewedAt: row['reviewed_at'] == null ? null : String(row['reviewed_at']),
 		createdAt: String(row['created_at']),
 		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapPlatformFeedbackSubmitterListRow(
+	row: Record<string, unknown>,
+): PlatformFeedbackSubmitterListItem {
+	return {
+		id: String(row['id']),
+		category: String(row['category']) as PlatformFeedbackCategory,
+		summary: String(row['summary']),
+		status: String(row['status']) as PlatformFeedbackStatus,
+		createdAt: String(row['created_at']),
+		updatedAt: String(row['updated_at']),
+	}
+}
+
+function mapPlatformFeedbackSubmitterRecord(
+	row: Record<string, unknown>,
+): PlatformFeedbackSubmitterRecord {
+	return {
+		...mapPlatformFeedbackSubmitterListRow(row),
+		details: String(row['details']),
 	}
 }
 
@@ -172,6 +202,28 @@ export async function getPlatformFeedbackByIdForAdmin(
 	return row ? mapPlatformFeedbackRow(row) : null
 }
 
+/**
+ * Owner-scoped read. Not-owned ids return null (same as missing) so callers
+ * cannot probe another user's feedback by id.
+ */
+export async function getPlatformFeedbackByIdForSubmitter(
+	db: D1Database,
+	input: {
+		feedbackId: string
+		submitterUserId: string
+	},
+): Promise<PlatformFeedbackSubmitterRecord | null> {
+	const row = await db
+		.prepare(
+			`SELECT ${platformFeedbackSubmitterGetColumns}
+			FROM platform_feedback
+			WHERE id = ? AND submitter_user_id = ?`,
+		)
+		.bind(input.feedbackId, input.submitterUserId)
+		.first<Record<string, unknown>>()
+	return row ? mapPlatformFeedbackSubmitterRecord(row) : null
+}
+
 export async function listPlatformFeedbackRowsForAdmin(
 	db: D1Database,
 	input: {
@@ -234,6 +286,62 @@ export async function listPlatformFeedbackPageRowsForAdmin(
 		.bind(...bindings, input.pageSize, (input.page - 1) * input.pageSize)
 		.all<Record<string, unknown>>()
 	return (rows.results ?? []).map(mapPlatformFeedbackListRow)
+}
+
+export async function listPlatformFeedbackRowsForSubmitter(
+	db: D1Database,
+	input: {
+		submitterUserId: string
+		page: number
+		pageSize: number
+		status?: PlatformFeedbackStatus
+	},
+): Promise<{ total: number; items: Array<PlatformFeedbackSubmitterListItem> }> {
+	const filters: Array<string> = ['submitter_user_id = ?']
+	const bindings: Array<unknown> = [input.submitterUserId]
+	if (input.status !== undefined) {
+		filters.push('status = ?')
+		bindings.push(input.status)
+	}
+	const where = `WHERE ${filters.join(' AND ')}`
+	const countRow = await db
+		.prepare(`SELECT COUNT(*) AS total FROM platform_feedback ${where}`)
+		.bind(...bindings)
+		.first<{ total: number }>()
+	const items = await listPlatformFeedbackPageRowsForSubmitter(db, input)
+	return {
+		total: Number(countRow?.total ?? 0),
+		items,
+	}
+}
+
+export async function listPlatformFeedbackPageRowsForSubmitter(
+	db: D1Database,
+	input: {
+		submitterUserId: string
+		page: number
+		pageSize: number
+		status?: PlatformFeedbackStatus
+	},
+): Promise<Array<PlatformFeedbackSubmitterListItem>> {
+	const filters: Array<string> = ['submitter_user_id = ?']
+	const bindings: Array<unknown> = [input.submitterUserId]
+	if (input.status !== undefined) {
+		filters.push('status = ?')
+		bindings.push(input.status)
+	}
+	const where = `WHERE ${filters.join(' AND ')}`
+	const rows = await db
+		.prepare(
+			`SELECT ${platformFeedbackSubmitterListColumns}
+			FROM platform_feedback
+			${where}
+			ORDER BY created_at DESC, id DESC
+			LIMIT ? OFFSET ?`,
+		)
+		.bind(...bindings, input.pageSize, (input.page - 1) * input.pageSize)
+		.all<Record<string, unknown>>()
+	return (rows.results ?? []).map(mapPlatformFeedbackSubmitterListRow)
 }
 
 export async function updatePlatformFeedbackStatusForAdmin(

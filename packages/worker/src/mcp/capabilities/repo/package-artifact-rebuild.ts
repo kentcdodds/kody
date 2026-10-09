@@ -18,6 +18,7 @@ import {
 } from '#worker/repo/isolated-artifact-rebuild.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
+import { isUserCodeError, UserCodeError } from '#worker/user-code-error.ts'
 
 /**
  * Same-session rebuild RPCs hit one Durable Object, which serializes
@@ -117,6 +118,51 @@ function buildRebuildFailureMessage(input: {
 	return `Package source publish succeeded, but bundle artifact rebuild failed for source "${input.sourceId}" at commit "${input.publishedCommit}". Succeeded: ${succeededSummary}. Failed: ${failedSummary}. Re-run the publish capability to repair artifacts.`
 }
 
+/**
+ * Rebuild wrap that keeps undeclared-bare-import (and other UserCodeError)
+ * failures as caller errors for Sentry, while leaving platform rebuild
+ * failures as plain Errors.
+ */
+function throwRebuildFailure(input: {
+	sourceId: string
+	publishedCommit: string
+	succeeded: ReadonlyArray<PublishedPackageArtifactBuildTarget>
+	failed: ReadonlyArray<{
+		target: PublishedPackageArtifactBuildTarget
+		error: unknown
+	}>
+	error?: unknown
+}): never {
+	const message = buildRebuildFailureMessage(input)
+	const causes = [
+		...input.failed.map((entry) => entry.error),
+		...(input.error !== undefined ? [input.error] : []),
+	]
+	const callerOnly =
+		causes.length > 0 && causes.every((cause) => isUserCodeError(cause))
+	if (callerOnly) {
+		throw new UserCodeError(message, { cause: causes[0] })
+	}
+	// Prefer a platform cause so a mixed wave (caller + platform) still
+	// reaches Sentry via isUserCodeError / beforeSend. Attaching a
+	// UserCodeError cause would drop the whole rebuild failure.
+	const platformCause = causes.find((cause) => !isUserCodeError(cause))
+	throw new Error(message, { cause: platformCause ?? causes[0] })
+}
+
+function rebuildFailureFromTargetResult(input: {
+	target: PublishedPackageArtifactBuildTarget
+	message: string
+	callerFailure?: boolean
+}) {
+	return {
+		target: input.target,
+		error: input.callerFailure
+			? new UserCodeError(input.message)
+			: new Error(input.message),
+	}
+}
+
 async function filterTargetsNeedingRebuild(input: {
 	env: Env
 	userId: string
@@ -177,16 +223,13 @@ async function listTargetsOrThrow(input: {
 			userId: input.userId,
 		})
 	} catch (error) {
-		throw new Error(
-			buildRebuildFailureMessage({
-				sourceId: input.sourceId,
-				publishedCommit: input.publishedCommit,
-				succeeded: [],
-				failed: [],
-				error,
-			}),
-			{ cause: error },
-		)
+		throwRebuildFailure({
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			succeeded: [],
+			failed: [],
+			error,
+		})
 	}
 }
 
@@ -251,15 +294,12 @@ async function rebuildPublishedPackageArtifactsOnSession(input: {
 
 	if (failed.length === 0) return
 
-	throw new Error(
-		buildRebuildFailureMessage({
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-			succeeded,
-			failed,
-		}),
-		{ cause: failed[0]?.error },
-	)
+	throwRebuildFailure({
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		succeeded,
+		failed,
+	})
 }
 
 async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
@@ -322,16 +362,13 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 			userId: input.userId,
 		}))
 	} catch (error) {
-		throw new Error(
-			buildRebuildFailureMessage({
-				sourceId: input.sourceId,
-				publishedCommit: input.publishedCommit,
-				succeeded,
-				failed: [],
-				error,
-			}),
-			{ cause: error },
-		)
+		throwRebuildFailure({
+			sourceId: input.sourceId,
+			publishedCommit: input.publishedCommit,
+			succeeded,
+			failed: [],
+			error,
+		})
 	}
 
 	const failed: Array<{
@@ -386,10 +423,13 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 							succeeded.push(targetResult.target)
 							continue
 						}
-						failed.push({
-							target: targetResult.target,
-							error: new Error(targetResult.message),
-						})
+						failed.push(
+							rebuildFailureFromTargetResult({
+								target: targetResult.target,
+								message: targetResult.message,
+								callerFailure: targetResult.callerFailure,
+							}),
+						)
 					}
 					continue
 				}
@@ -408,15 +448,12 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 
 	if (failed.length === 0) return
 
-	throw new Error(
-		buildRebuildFailureMessage({
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-			succeeded,
-			failed,
-		}),
-		{ cause: failed[0]?.error },
-	)
+	throwRebuildFailure({
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		succeeded,
+		failed,
+	})
 }
 
 export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {

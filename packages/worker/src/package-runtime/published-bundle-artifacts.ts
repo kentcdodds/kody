@@ -8,9 +8,11 @@ import {
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
 	type PublishedSourceSnapshot,
+	bundleArtifactVersion,
 	buildPublishedBundleArtifactKvKey,
 	deletePublishedBundleArtifact,
 	hasPublishedRuntimeArtifacts,
+	isDirectBundleDependency,
 	readPublishedBundleArtifact,
 	readPublishedSourceSnapshot,
 	writePublishedBundleArtifact,
@@ -24,10 +26,7 @@ import {
 	updatePublishedBundleArtifactRow,
 	upsertPublishedBundleArtifactRow,
 } from '#worker/repo/published-bundle-artifacts-repo.ts'
-import {
-	getEntitySourceById,
-	getEntitySourceByIdForUser,
-} from '#worker/repo/entity-sources.ts'
+import { listEntitySourcesByIds } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 import {
@@ -155,7 +154,7 @@ export async function persistPublishedBundleArtifact(
 		entryPoint,
 	})
 	const artifact: PublishedBundleArtifact = {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: input.kind,
 		artifactName,
 		sourceId: input.source.id,
@@ -248,10 +247,11 @@ export async function loadPublishedBundleArtifactByIdentity(input: {
 
 /**
  * True when a published bundle artifact already exists for this target
- * identity at `publishedCommit` (row + KV payload) and is not older than the
- * snapshot's `invalidateArtifactsBefore` cutoff. Used to skip rebuild work
- * that would only rewrite the same commit's artifact, while still repairing
- * leftovers after a mismatched already_published snapshot rewrite.
+ * identity at `publishedCommit` (row + KV payload) and the artifact is not
+ * older than the snapshot's `invalidateArtifactsBefore` cutoff. Used to
+ * skip rebuild work that would only rewrite the same commit's artifact,
+ * while still repairing leftovers after a mismatched already_published
+ * snapshot rewrite.
  */
 export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	env: Env
@@ -259,6 +259,7 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	sourceId: string
 	publishedCommit: string
 	target: PublishedPackageArtifactBuildTarget
+	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
 }) {
 	if (!hasPublishedRuntimeArtifacts(input.env)) return false
 	const loaded = await loadPublishedBundleArtifactByIdentity({
@@ -276,10 +277,11 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	) {
 		return false
 	}
-	const snapshot = await readPublishedSourceSnapshot({
+	const snapshot = await readPublishedSourceSnapshotCached({
 		env: input.env,
 		sourceId: input.sourceId,
 		publishedCommit: input.publishedCommit,
+		snapshotCache: input.snapshotCache,
 	})
 	const cutoff = snapshot?.invalidateArtifactsBefore
 	if (
@@ -294,6 +296,15 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 export type PublishedPackageArtifactReuseSnapshotCache = Map<
 	string,
 	Promise<PublishedSourceSnapshot | null>
+>
+
+export type PublishedPackageArtifactDependencySourceCache = Map<
+	string,
+	Promise<{
+		id: string
+		user_id: string
+		published_commit: string | null
+	} | null>
 >
 
 function readPublishedSourceSnapshotCached(input: {
@@ -337,6 +348,7 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	publishedCommit: string
 	target: PublishedPackageArtifactBuildTarget
 	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
+	dependencySourceCache?: PublishedPackageArtifactDependencySourceCache
 }) {
 	if (!hasPublishedRuntimeArtifacts(input.env)) return false
 	const loaded = await loadPublishedBundleArtifactByIdentity({
@@ -387,6 +399,7 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 			env: input.env,
 			userId: input.userId,
 			dependencies: loaded.artifact.dependencies,
+			dependencySourceCache: input.dependencySourceCache,
 		}))
 	) {
 		return false
@@ -444,16 +457,64 @@ async function publishedPackageArtifactDependenciesMatchCurrent(input: {
 	env: Env
 	userId: string
 	dependencies: ReadonlyArray<BundleArtifactDependency>
+	dependencySourceCache?: PublishedPackageArtifactDependencySourceCache
 }) {
+	const directDependencies: Array<BundleArtifactDependency> = []
 	for (const dependency of input.dependencies) {
+		if (!isDirectBundleDependency(dependency)) continue
 		if (!dependency.publishedCommit) return false
-		const source = dependency.platformOwned
-			? await getEntitySourceById(input.env.APP_DB, dependency.sourceId)
-			: await getEntitySourceByIdForUser(input.env.APP_DB, {
-					id: dependency.sourceId,
-					userId: input.userId,
-				})
+		directDependencies.push(dependency)
+	}
+	if (directDependencies.length === 0) return true
+
+	const uniqueIds = [
+		...new Set(directDependencies.map((dependency) => dependency.sourceId)),
+	]
+	const byId = new Map<
+		string,
+		{
+			id: string
+			user_id: string
+			published_commit: string | null
+		}
+	>()
+	const missingIds: Array<string> = []
+	for (const sourceId of uniqueIds) {
+		const cached = input.dependencySourceCache?.get(sourceId)
+		if (cached) {
+			const source = await cached
+			if (source) byId.set(sourceId, source)
+			continue
+		}
+		missingIds.push(sourceId)
+	}
+	if (missingIds.length > 0) {
+		const loaded = await listEntitySourcesByIds(input.env.APP_DB, missingIds)
+		for (const source of loaded) {
+			byId.set(source.id, source)
+			input.dependencySourceCache?.set(
+				source.id,
+				Promise.resolve({
+					id: source.id,
+					user_id: source.user_id,
+					published_commit: source.published_commit,
+				}),
+			)
+		}
+		for (const sourceId of missingIds) {
+			if (byId.has(sourceId)) continue
+			input.dependencySourceCache?.set(sourceId, Promise.resolve(null))
+		}
+	}
+
+	for (const dependency of directDependencies) {
+		const source = byId.get(dependency.sourceId)
 		if (!source?.published_commit) return false
+		// User-owned deps must belong to the publishing user (same as
+		// getEntitySourceByIdForUser). Platform-owned deps are id-only.
+		if (dependency.platformOwned !== true && source.user_id !== input.userId) {
+			return false
+		}
 		if (source.published_commit !== dependency.publishedCommit) return false
 	}
 	return true
@@ -556,6 +617,8 @@ export async function rebuildPublishedPackageArtifacts(
 ) {
 	const publishedCommit = input.source.published_commit
 	const snapshotCache: PublishedPackageArtifactReuseSnapshotCache = new Map()
+	const dependencySourceCache: PublishedPackageArtifactDependencySourceCache =
+		new Map()
 	await mapWithConcurrency(
 		collectPublishedPackageArtifactTargets(input.manifest),
 		publishedPackageArtifactRebuildConcurrency,
@@ -567,6 +630,7 @@ export async function rebuildPublishedPackageArtifacts(
 					sourceId: input.source.id,
 					publishedCommit,
 					target,
+					snapshotCache,
 				})
 				if (alreadyBuilt) return
 				const reused = await reusePublishedPackageArtifactIfUnchanged({
@@ -576,6 +640,7 @@ export async function rebuildPublishedPackageArtifacts(
 					publishedCommit,
 					target,
 					snapshotCache,
+					dependencySourceCache,
 				})
 				if (reused) return
 			}

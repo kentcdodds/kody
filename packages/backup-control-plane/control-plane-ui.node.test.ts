@@ -16,6 +16,7 @@ import {
 	backupPayload,
 	configuredSourceDatabases,
 	objectKeyForBookmark,
+	type SourceDatabase,
 } from './backup-policy.ts'
 import {
 	collectDayStatuses,
@@ -23,13 +24,20 @@ import {
 	renderRestoreStatusPage,
 } from './control-plane-ui.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
+import { type BackupEnvironment } from './backup-types.ts'
 
-test('dashboard renders oversized D1 SQL as not restorable with a warning', async () => {
-	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const day = '2026-07-31'
-	const payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
-	const sql = 'CREATE TABLE t(id INTEGER);\n'
+const day = '2026-07-31'
+const now = new Date(`${day}T12:00:00.000Z`)
+const sql = 'CREATE TABLE t(id INTEGER);\n'
+
+/** Stores one day's SQL export, its stats (`bad` = oversized), and a signed D1 manifest. */
+async function putD1Day(
+	bucket: MemoryBucket,
+	env: BackupEnvironment,
+	source?: SourceDatabase,
+	stats: 'good' | 'bad' = 'good',
+) {
+	const payload = backupPayload(env, now, source)
 	const sqlObjectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
 	const template = manifest({
 		bytes: sql.length,
@@ -37,10 +45,14 @@ test('dashboard renders oversized D1 SQL as not restorable with a warning', asyn
 		r2Etag: createHash('md5').update(sql).digest('hex'),
 	})
 	await bucket.put(sqlObjectKey, sql)
-	await bucket.put(
-		`${sqlObjectKey}.stats.json`,
-		JSON.stringify(badSqlStatsFixture(day, sqlObjectKey)),
-	)
+	if (stats === 'bad') {
+		await bucket.put(
+			`${sqlObjectKey}.stats.json`,
+			JSON.stringify(badSqlStatsFixture(day, sqlObjectKey)),
+		)
+	} else {
+		await putSqlStatsFixture(bucket, day, sqlObjectKey)
+	}
 	await putImmutableManifest(
 		bucket as unknown as R2Bucket,
 		payload.manifestKey,
@@ -55,16 +67,32 @@ test('dashboard renders oversized D1 SQL as not restorable with a warning', asyn
 			sql: { ...template.payload.sql, objectKey: sqlObjectKey },
 		}),
 	)
+	return { payload, sqlObjectKey }
+}
 
-	const now = new Date(`${day}T12:00:00.000Z`)
+function appAndJobsEnv(bucket: MemoryBucket) {
+	const env = environment(bucket)
+	const jobsId = '44444444-4444-4444-8444-444444444444'
+	env.SOURCE_DATABASES = JSON.stringify([
+		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
+		{ id: jobsId, name: 'kody-jobs' },
+	])
+	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${jobsId}`
+	return env
+}
+
+test('dashboard renders oversized D1 SQL as not restorable with a warning', async () => {
+	const bucket = new MemoryBucket()
+	const env = environment(bucket)
+	const { sqlObjectKey } = await putD1Day(bucket, env, undefined, 'bad')
+
 	const [status] = await collectDayStatuses(env, now)
 	assert.equal(status?.d1Restorable, false)
 	assert.ok(
 		status?.warnings.some((warning) => warning.includes('cannot be restored')),
 	)
 
-	const fetcher = vi.spyOn(globalThis, 'fetch')
-	fetcher.mockResolvedValue(identityEnvelope(1_000))
+	vi.spyOn(globalThis, 'fetch').mockResolvedValue(identityEnvelope(1_000))
 	const html = await renderDashboard(env, { now })
 	assert.match(html, /<th>D1 restorable<\/th>/)
 	assert.match(html, /<td class="bad">no<\/td>/)
@@ -101,40 +129,9 @@ test('dashboard renders oversized D1 SQL as not restorable with a warning', asyn
 
 test('dashboard warns when a configured D1 source is missing and marks the day unrestorable', async () => {
 	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const jobsId = '44444444-4444-4444-8444-444444444444'
-	env.SOURCE_DATABASES = JSON.stringify([
-		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
-		{ id: jobsId, name: 'kody-jobs' },
-	])
-	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${jobsId}`
-	const day = '2026-07-31'
-	const payload = backupPayload(env, new Date(`${day}T12:00:00.000Z`))
-	const sql = 'CREATE TABLE t(id INTEGER);\n'
-	const sqlObjectKey = objectKeyForBookmark(payload.objectPrefix, 'bookmark-1')
-	const template = manifest({
-		bytes: sql.length,
-		sha256: createHash('sha256').update(sql).digest('hex'),
-		r2Etag: createHash('md5').update(sql).digest('hex'),
-	})
-	await bucket.put(sqlObjectKey, sql)
-	await putSqlStatsFixture(bucket, day, sqlObjectKey)
-	await putImmutableManifest(
-		bucket as unknown as R2Bucket,
-		payload.manifestKey,
-		signedManifest({
-			...template.payload,
-			export: {
-				...template.payload.export,
-				scheduledAt: `${day}T02:15:00.000Z`,
-				startedAt: `${day}T02:15:01.000Z`,
-				completedAt: `${day}T02:16:00.000Z`,
-			},
-			sql: { ...template.payload.sql, objectKey: sqlObjectKey },
-		}),
-	)
+	const env = appAndJobsEnv(bucket)
+	await putD1Day(bucket, env)
 
-	const now = new Date(`${day}T12:00:00.000Z`)
 	const [status] = await collectDayStatuses(env, now)
 	assert.equal(status?.d1Present, false)
 	assert.equal(status?.d1Verified, false)
@@ -144,8 +141,7 @@ test('dashboard warns when a configured D1 source is missing and marks the day u
 		status?.warnings.join('; '),
 	)
 
-	const fetcher = vi.spyOn(globalThis, 'fetch')
-	fetcher.mockResolvedValue(identityEnvelope(1_000))
+	vi.spyOn(globalThis, 'fetch').mockResolvedValue(identityEnvelope(1_000))
 	const html = await renderDashboard(env, { now })
 	assert.match(html, /kody-jobs: D1 manifest missing/)
 	assert.match(html, /<td class="bad">unverified<\/td>/)
@@ -154,47 +150,13 @@ test('dashboard warns when a configured D1 source is missing and marks the day u
 
 test('an unreadable D1 manifest keeps the day unverified even when a later source verifies', async () => {
 	const bucket = new MemoryBucket()
-	const env = environment(bucket)
-	const jobsId = '44444444-4444-4444-8444-444444444444'
-	env.SOURCE_DATABASES = JSON.stringify([
-		{ id: env.SOURCE_DATABASE_ID, name: env.SOURCE_DATABASE_NAME },
-		{ id: jobsId, name: 'kody-jobs' },
-	])
-	env.ALLOWED_SOURCE_DATABASE_IDS = `${env.SOURCE_DATABASE_ID},${jobsId}`
-	const day = '2026-07-31'
-	const scheduledAt = new Date(`${day}T12:00:00.000Z`)
-	const sql = 'CREATE TABLE t(id INTEGER);\n'
+	const env = appAndJobsEnv(bucket)
 	for (const source of configuredSourceDatabases(env)) {
-		const payload = backupPayload(env, scheduledAt, source)
-		const sqlObjectKey = objectKeyForBookmark(
-			payload.objectPrefix,
-			'bookmark-1',
-		)
-		const template = manifest({
-			bytes: sql.length,
-			sha256: createHash('sha256').update(sql).digest('hex'),
-			r2Etag: createHash('md5').update(sql).digest('hex'),
-		})
-		await bucket.put(sqlObjectKey, sql)
-		await putSqlStatsFixture(bucket, day, sqlObjectKey)
-		await putImmutableManifest(
-			bucket as unknown as R2Bucket,
-			payload.manifestKey,
-			signedManifest({
-				...template.payload,
-				export: {
-					...template.payload.export,
-					scheduledAt: `${day}T02:15:00.000Z`,
-					startedAt: `${day}T02:15:01.000Z`,
-					completedAt: `${day}T02:16:00.000Z`,
-				},
-				sql: { ...template.payload.sql, objectKey: sqlObjectKey },
-			}),
-		)
+		await putD1Day(bucket, env, source)
 	}
-	bucket.failGetFor(backupPayload(env, scheduledAt).manifestKey)
+	bucket.failGetFor(backupPayload(env, now).manifestKey)
 
-	const [status] = await collectDayStatuses(env, scheduledAt)
+	const [status] = await collectDayStatuses(env, now)
 	assert.equal(status?.d1Present, false)
 	assert.equal(status?.d1Verified, false)
 	assert.equal(status?.d1Restorable, false)

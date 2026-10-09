@@ -1,7 +1,8 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import {
 	formatDurationMs,
 	logLevelColor,
+	runAttributionSubtitle,
 	runDisplayName,
 	statusColor,
 	statusLabel,
@@ -34,6 +35,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 
 export function renderActivityRunDetail(detail: AccountActivityRunDetail) {
+	const attribution = runAttributionSubtitle(detail)
 	return (
 		<section
 			mix={css({
@@ -48,6 +50,7 @@ export function renderActivityRunDetail(detail: AccountActivityRunDetail) {
 					displayedName: runDisplayName(detail),
 					idempotencyKey: detail.idempotencyKey,
 				})}
+				{attribution ? <p mix={css(descriptionCss)}>{attribution}</p> : null}
 				<p mix={css(descriptionCss)}>
 					{surfaceLabel(detail.surface)} run with{' '}
 					{detail.logCount === 1
@@ -86,6 +89,18 @@ export function renderActivityRunDetail(detail: AccountActivityRunDetail) {
 					{
 						label: 'Surface',
 						value: surfaceLabel(detail.surface),
+					},
+					{
+						label: 'Entry',
+						value: detail.entry ?? '—',
+					},
+					{
+						label: 'Worker id',
+						value: detail.workerId ? (
+							<IdValue value={detail.workerId} label="worker id" />
+						) : (
+							'—'
+						),
 					},
 					{
 						label: 'Started',

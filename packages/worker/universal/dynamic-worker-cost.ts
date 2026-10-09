@@ -3,13 +3,15 @@ import { type PlanName } from './plans.ts'
 /**
  * Cloudflare Dynamic Worker list price used for operator cost estimates.
  *
- * Cloudflare bills $0.002 per unique worker id per UTC day, with 1,000
- * unique worker-days included per account per month. The included allotment
- * is account-wide, so per-user estimates are always gross (unique days ×
- * list price) and do not subtract a share of the included bucket.
+ * Cloudflare bills $0.002 per unique worker id per UTC day. Fleet-level
+ * estimates still cite Cloudflare's account-wide 1,000 unique worker-day
+ * include. Per-user admin usage passes the account's plan include from
+ * `resolvePlanLimits(...).maxUniqueWorkerDaysPerMonth` instead — the CF
+ * bucket is not a per-user allotment.
  */
 
 const dynamicWorkerUsdPerUniqueDay = 0.002
+/** Cloudflare's account-wide unique-worker-day include (fleet estimates). */
 const dynamicWorkersIncludedPerAccountMonth = 1000
 
 /**
@@ -75,15 +77,28 @@ export function estimateDynamicWorkerUsd(uniqueWorkerDays: number): number {
 	return safeDays * dynamicWorkerUsdPerUniqueDay
 }
 
-export function toAdminDynamicWorkerCost(uniqueWorkerDays: number) {
+/**
+ * Per-user Dynamic Worker cost block for admin usage. Pass
+ * `includedPerAccountMonth` from
+ * `resolvePlanLimits(...).maxUniqueWorkerDaysPerMonth` so the include
+ * matches the user's entitlement. Fleet callers omit it and keep
+ * Cloudflare's account-wide 1,000-day bucket.
+ */
+export function toAdminDynamicWorkerCost(
+	uniqueWorkerDays: number,
+	includedPerAccountMonth: number = dynamicWorkersIncludedPerAccountMonth,
+) {
 	const safeDays = Number.isFinite(uniqueWorkerDays)
 		? Math.max(0, Math.trunc(uniqueWorkerDays))
 		: 0
+	const safeInclude = Number.isFinite(includedPerAccountMonth)
+		? Math.max(0, Math.trunc(includedPerAccountMonth))
+		: dynamicWorkersIncludedPerAccountMonth
 	return {
 		uniqueWorkerDays: safeDays,
 		estimatedGrossUsd: estimateDynamicWorkerUsd(safeDays),
 		usdPerUniqueDay: dynamicWorkerUsdPerUniqueDay,
-		includedPerAccountMonth: dynamicWorkersIncludedPerAccountMonth,
+		includedPerAccountMonth: safeInclude,
 	}
 }
 

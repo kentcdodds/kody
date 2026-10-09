@@ -9,6 +9,7 @@ import {
 } from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
+import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
 import {
@@ -77,6 +78,7 @@ function createCapabilityFromTool(input: {
 			`MCP server tool ${tool.name}.`,
 		keywords: buildKeywords(tool, ref),
 		...annotationHints,
+		orgPermission: 'integration:use',
 		source: 'mcp-server',
 		mcpServer: {
 			serverId: ref.serverId,
@@ -94,13 +96,20 @@ function createCapabilityFromTool(input: {
 					`MCP server capability "${ref.name}:${tool.name}" requires an authenticated user.`,
 				)
 			}
+			// Package exports imported into execute run under the execute
+			// callerContext (no storageContext.packageId). The bundler stamp
+			// installs ALS secret authority for the callee package id; honor
+			// that so mcpServerLock grants still allow the approved package.
+			const { authorityPackageId } = resolveCallerSecretAuthority({
+				storageContext: ctx.callerContext.storageContext,
+			})
 			await assertCanUseMcpServer({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId,
 				serverId: binding.serverId,
 				serverName: ref.name,
-				packageId: ctx.callerContext.storageContext?.packageId,
+				packageId: authorityPackageId,
 			})
 			const hub = createMcpClientHubClient({
 				env: ctx.env,

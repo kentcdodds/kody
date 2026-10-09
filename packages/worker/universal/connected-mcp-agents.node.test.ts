@@ -22,6 +22,16 @@ const iconDirectory = join(
 	'../public/images/icons',
 )
 
+function agent(
+	clientId: string,
+	label: string,
+	kind: ConnectedMcpAgent['kind'],
+	connectedAt: string | null,
+	lastUsedAt: string | null = null,
+): ConnectedMcpAgent {
+	return { clientId, label, kind, connectedAt, lastUsedAt }
+}
+
 test('unique client counting treats two grants for the same client as one', () => {
 	expect(
 		countUniqueOAuthClientIds([
@@ -46,133 +56,177 @@ test('unique client counting treats two grants for the same client as one', () =
 })
 
 test('inbound labels prefer a known kind, then clientName, then hostname, then a truncated clientId', () => {
+	const cursorLocalRedirect = 'cursor://anysphere.cursor-mcp/oauth/callback'
+	const cursorCloudRedirect = 'https://www.cursor.com/agents/mcp/oauth/callback'
+	const inbound: Array<
+		[Parameters<typeof labelInboundMcpClient>[0], string | null, string]
+	> = [
+		[
+			{
+				clientId: 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json',
+				clientName: 'ChatGPT',
+				grantRedirectUri: 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
+			},
+			'chatgpt',
+			'ChatGPT.com',
+		],
+		[
+			{
+				clientId: 'anon-claude',
+				clientName: 'Claude',
+				grantRedirectUri: 'https://claude.ai/api/mcp/auth_callback',
+			},
+			'claude-desktop',
+			'Claude Desktop',
+		],
+		[{ clientId: 'cursor-local', clientName: 'Cursor' }, 'cursor', 'Cursor'],
+		[
+			{
+				clientId: 'cursor-ide',
+				clientName: 'Cursor',
+				grantRedirectUri: cursorLocalRedirect,
+			},
+			'cursor-local',
+			'Cursor Local',
+		],
+		[
+			{
+				clientId: 'cursor-agent',
+				clientName: 'Cursor',
+				grantRedirectUri: cursorCloudRedirect,
+			},
+			'cursor-cloud',
+			'Cursor Cloud',
+		],
+		[
+			{
+				clientId: 'cursor-registered-all',
+				clientName: 'Cursor',
+				redirectUris: [
+					cursorLocalRedirect,
+					cursorCloudRedirect,
+					'http://localhost:8787/callback',
+				],
+				grantRedirectUri: 'http://localhost:8787/callback',
+			},
+			'cursor-local',
+			'Cursor Local',
+		],
+		[
+			{
+				clientId: 'grok-bot-client',
+				clientName: 'Grok Bot',
+				grantRedirectUri: cursorCloudRedirect,
+			},
+			'grok-bot',
+			'Grok Bot',
+		],
+		[
+			{ clientId: 'code-host', clientName: 'Claude Code' },
+			'claude-code',
+			'Claude Code',
+		],
+		[
+			{
+				clientId: 'openmuse-oauth',
+				clientName: 'OpenMuse',
+				clientUri: 'https://openmuse.example/',
+			},
+			'openmuse',
+			'OpenMuse',
+		],
+		[
+			{
+				clientId: 'muse-code-oauth',
+				clientName: 'Muse Code',
+				grantRedirectUri: 'https://dev.meta.ai/oauth/callback',
+			},
+			'muse',
+			'Muse',
+		],
+		[
+			{
+				clientId: 'https://dev.meta.ai/oauth/client.json',
+				grantRedirectUri: 'https://dev.meta.ai/oauth/callback',
+			},
+			'muse',
+			'Muse',
+		],
+		[
+			{
+				clientId: 'https://muse.ai/oauth/client.json',
+				grantRedirectUri: 'https://muse.ai/oauth/callback',
+			},
+			null,
+			'muse.ai',
+		],
+		[
+			{
+				clientId: 'https://meta.ai/oauth/client.json',
+				grantRedirectUri: 'https://www.meta.ai/oauth/callback',
+			},
+			null,
+			'meta.ai',
+		],
+		[
+			{
+				clientId: 'https://unknown.example/oauth/client.json',
+				clientName: 'Acme Agent',
+			},
+			null,
+			'Acme Agent',
+		],
+		[
+			{ clientId: 'https://unknown.example/oauth/client.json' },
+			null,
+			'unknown.example',
+		],
+		[
+			{ clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz' },
+			null,
+			'opaque-c…',
+		],
+	]
 	expect(
-		labelInboundMcpClient({
-			clientId: 'https://chatgpt.com/oauth/vG3-MLZWUV83/client.json',
-			clientName: 'ChatGPT',
-			grantRedirectUri: 'https://chatgpt.com/connector/oauth/vG3-MLZWUV83',
-		}),
-	).toEqual({ kind: 'chatgpt', label: 'ChatGPT.com' })
+		inbound.map(([input]) => [input, labelInboundMcpClient(input)]),
+	).toEqual(inbound.map(([input, kind, label]) => [input, { kind, label }]))
 
-	expect(
-		labelInboundMcpClient({
-			clientId: 'anon-claude',
-			clientName: 'Claude',
-			grantRedirectUri: 'https://claude.ai/api/mcp/auth_callback',
-		}),
-	).toEqual({ kind: 'claude-desktop', label: 'Claude Desktop' })
+	const names: Array<[string | null, string | null, string]> = [
+		['Cursor', 'cursor', 'Cursor'],
+		['Claude Code', 'claude-code', 'Claude Code'],
+		[null, null, 'Unknown'],
+		['Muse Code', 'muse', 'Muse'],
+		['Muse', 'muse', 'Muse'],
+		['muse-code', 'muse', 'Muse'],
+		['OpenMuse', 'openmuse', 'OpenMuse'],
+		['openmuse', 'openmuse', 'OpenMuse'],
+		['Wajo', 'wajo', 'Wajo'],
+		['Cue', 'cue', 'Cue'],
+		['Dots', 'dots', 'Dots'],
+	]
+	expect(names.map(([name]) => [name, classifyMcpClientName(name)])).toEqual(
+		names.map(([name, kind, label]) => [name, { kind, label }]),
+	)
 
-	expect(
-		labelInboundMcpClient({
-			clientId: 'cursor-local',
-			clientName: 'Cursor',
-		}),
-	).toEqual({ kind: 'cursor', label: 'Cursor' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'cursor-ide',
-			clientName: 'Cursor',
-			grantRedirectUri: 'cursor://anysphere.cursor-mcp/oauth/callback',
-		}),
-	).toEqual({ kind: 'cursor-local', label: 'Cursor Local' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'cursor-agent',
-			clientName: 'Cursor',
-			grantRedirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
-		}),
-	).toEqual({ kind: 'cursor-cloud', label: 'Cursor Cloud' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'cursor-registered-all',
-			clientName: 'Cursor',
-			redirectUris: [
-				'cursor://anysphere.cursor-mcp/oauth/callback',
-				'https://www.cursor.com/agents/mcp/oauth/callback',
-				'http://localhost:8787/callback',
-			],
-			grantRedirectUri: 'http://localhost:8787/callback',
-		}),
-	).toEqual({ kind: 'cursor-local', label: 'Cursor Local' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'grok-bot-client',
-			clientName: 'Grok Bot',
-			grantRedirectUri: 'https://www.cursor.com/agents/mcp/oauth/callback',
-		}),
-	).toEqual({ kind: 'grok-bot', label: 'Grok Bot' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'code-host',
-			clientName: 'Claude Code',
-		}),
-	).toEqual({ kind: 'claude-code', label: 'Claude Code' })
-
-	expect(classifyMcpClientName('Cursor')).toEqual({
-		kind: 'cursor',
-		label: 'Cursor',
-	})
-	expect(classifyMcpClientName('Claude Code')).toEqual({
-		kind: 'claude-code',
-		label: 'Claude Code',
-	})
-	expect(classifyMcpClientName(null)).toEqual({
-		kind: null,
-		label: 'Unknown',
-	})
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'https://unknown.example/oauth/client.json',
-			clientName: 'Acme Agent',
-		}),
-	).toEqual({ kind: null, label: 'Acme Agent' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'https://unknown.example/oauth/client.json',
-		}),
-	).toEqual({ kind: null, label: 'unknown.example' })
-
-	expect(
-		labelInboundMcpClient({
-			clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
-		}),
-	).toEqual({
-		kind: null,
-		label: 'opaque-c…',
-	})
 	expect(
 		truncateClientIdLabel('opaque-client-id-abcdefghijklmnopqrstuvwxyz'),
 	).toBe('opaque-c…')
-	expect(
-		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG3/client.json'),
-	).toBe('chatgpt.com · vG3')
-	expect(
-		connectedAgentConnectionLabel(
+	const connectionLabels: Array<[string, string]> = [
+		['https://chatgpt.com/oauth/vG3/client.json', 'chatgpt.com · vG3'],
+		[
 			'https://chatgpt.com/oauth/vG4-MLZWUV83/client.json',
-		),
-	).toBe('chatgpt.com · vG4-MLZWUV83')
-	expect(connectedAgentConnectionLabel('cursor-old')).toBe('cursor-o…')
-	expect(
-		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG3/client.json'),
-	).not.toBe(
-		connectedAgentConnectionLabel('https://chatgpt.com/oauth/vG4/client.json'),
-	)
-	expect(
-		connectedAgentConnectionLabel(
-			'https://chatgpt.com/oauth/vG4-MLZWUV83/client.json',
-		),
-	).not.toBe(
-		connectedAgentConnectionLabel(
+			'chatgpt.com · vG4-MLZWUV83',
+		],
+		[
 			'https://chatgpt.com/oauth/vG4-MLZWUV84/client.json',
-		),
-	)
+			'chatgpt.com · vG4-MLZWUV84',
+		],
+		['https://chatgpt.com/oauth/vG4/client.json', 'chatgpt.com · vG4'],
+		['cursor-old', 'cursor-o…'],
+	]
+	expect(
+		connectionLabels.map(([id]) => [id, connectedAgentConnectionLabel(id)]),
+	).toEqual(connectionLabels)
 })
 
 test('grant createdAt unix seconds become an ISO timestamp', () => {
@@ -185,12 +239,22 @@ test('grant createdAt unix seconds become an ISO timestamp', () => {
 })
 
 test('known inbound kinds map to existing public icon SVGs; unknown kinds have no logo', () => {
-	expect(connectedAgentIconName('chatgpt')).toBe('chatgpt')
-	expect(connectedAgentIconName('claude-desktop')).toBe('claude')
-	expect(connectedAgentIconName('claude-code')).toBe('claudecode')
-	expect(connectedAgentIconName('codex')).toBe('codex')
-	expect(connectedAgentIconName('cursor')).toBe('cursor')
-	expect(connectedAgentIconName('devin')).toBe('devin')
+	const kinds = [
+		'chatgpt',
+		'claude-desktop',
+		'claude-code',
+		'codex',
+		'cursor',
+		'devin',
+	] as const
+	expect(kinds.map(connectedAgentIconName)).toEqual([
+		'chatgpt',
+		'claude',
+		'claudecode',
+		'codex',
+		'cursor',
+		'devin',
+	])
 	for (const tab of mcpClientTabs) {
 		const icon = connectedAgentIconName(tab.id)
 		if (tab.id === 'other') {
@@ -203,7 +267,7 @@ test('known inbound kinds map to existing public icon SVGs; unknown kinds have n
 	expect(connectedAgentIconName(null)).toBeNull()
 })
 
-test('connected agents group by display name and sort newest-first at group and member level', () => {
+test('connected agents group by display name and sort by last-used, then newest-first at group and member level', () => {
 	expect(latestConnectedAt([null, undefined, ''])).toBeNull()
 	expect(
 		latestConnectedAt([
@@ -213,41 +277,31 @@ test('connected agents group by display name and sort newest-first at group and 
 		]),
 	).toBe('2024-01-01T00:00:00.000Z')
 
-	const olderCursor: ConnectedMcpAgent = {
-		clientId: 'cursor-old',
-		label: 'Cursor',
-		kind: 'cursor',
-		connectedAt: '2024-01-01T00:00:00.000Z',
-		lastUsedAt: null,
-	}
-	const newerCursor: ConnectedMcpAgent = {
-		clientId: 'cursor-new',
-		label: 'Cursor',
-		kind: 'cursor',
-		connectedAt: '2024-06-01T00:00:00.000Z',
-		lastUsedAt: null,
-	}
-	const chatgpt: ConnectedMcpAgent = {
-		clientId: 'https://chatgpt.com/oauth/client.json',
-		label: 'ChatGPT.com',
-		kind: 'chatgpt',
-		connectedAt: '2024-03-01T00:00:00.000Z',
-		lastUsedAt: null,
-	}
-	const unknown: ConnectedMcpAgent = {
-		clientId: 'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
-		label: 'Acme Agent',
-		kind: null,
-		connectedAt: '2024-05-01T00:00:00.000Z',
-		lastUsedAt: null,
-	}
-	const undated: ConnectedMcpAgent = {
-		clientId: 'undated',
-		label: 'Acme Agent',
-		kind: null,
-		connectedAt: null,
-		lastUsedAt: null,
-	}
+	const olderCursor = agent(
+		'cursor-old',
+		'Cursor',
+		'cursor',
+		'2024-01-01T00:00:00.000Z',
+	)
+	const newerCursor = agent(
+		'cursor-new',
+		'Cursor',
+		'cursor',
+		'2024-06-01T00:00:00.000Z',
+	)
+	const chatgpt = agent(
+		'https://chatgpt.com/oauth/client.json',
+		'ChatGPT.com',
+		'chatgpt',
+		'2024-03-01T00:00:00.000Z',
+	)
+	const unknown = agent(
+		'opaque-client-id-abcdefghijklmnopqrstuvwxyz',
+		'Acme Agent',
+		null,
+		'2024-05-01T00:00:00.000Z',
+	)
+	const undated = agent('undated', 'Acme Agent', null, null)
 
 	const groups = groupConnectedAgents([
 		olderCursor,
@@ -256,67 +310,59 @@ test('connected agents group by display name and sort newest-first at group and 
 		newerCursor,
 		unknown,
 	])
-	expect(groups.map((group) => group.label)).toEqual([
-		'Cursor',
-		'Acme Agent',
-		'ChatGPT.com',
+	expect(groups).toMatchObject([
+		{
+			label: 'Cursor',
+			kind: 'cursor',
+			icon: 'cursor',
+			connectedAt: '2024-06-01T00:00:00.000Z',
+			lastUsedAt: null,
+			members: [newerCursor, olderCursor],
+		},
+		{
+			label: 'Acme Agent',
+			kind: null,
+			icon: null,
+			connectedAt: '2024-05-01T00:00:00.000Z',
+			lastUsedAt: null,
+			members: [unknown, undated],
+		},
+		{
+			label: 'ChatGPT.com',
+			kind: 'chatgpt',
+			icon: 'chatgpt',
+			connectedAt: '2024-03-01T00:00:00.000Z',
+			lastUsedAt: null,
+			members: [chatgpt],
+		},
 	])
-	expect(groups[0]).toMatchObject({
-		kind: 'cursor',
-		icon: 'cursor',
-		connectedAt: '2024-06-01T00:00:00.000Z',
-		lastUsedAt: null,
-		members: [newerCursor, olderCursor],
-	})
-	expect(groups[1]).toMatchObject({
-		kind: null,
-		icon: null,
-		connectedAt: '2024-05-01T00:00:00.000Z',
-		lastUsedAt: null,
-		members: [unknown, undated],
-	})
-	expect(groups[2]).toMatchObject({
-		kind: 'chatgpt',
-		icon: 'chatgpt',
-		connectedAt: '2024-03-01T00:00:00.000Z',
-		lastUsedAt: null,
-		members: [chatgpt],
-	})
-})
 
-test('connected agents sort last-used first so stale hosts drop below the active one', () => {
-	const staleCursor: ConnectedMcpAgent = {
-		clientId: 'cursor-stale',
-		label: 'Cursor',
-		kind: 'cursor',
-		connectedAt: '2024-06-01T00:00:00.000Z',
-		lastUsedAt: '2024-06-02T00:00:00.000Z',
-	}
-	const activeCursor: ConnectedMcpAgent = {
-		clientId: 'cursor-active',
-		label: 'Cursor',
-		kind: 'cursor',
-		connectedAt: '2024-01-01T00:00:00.000Z',
-		lastUsedAt: '2024-08-01T00:00:00.000Z',
-	}
-	const unusedChatgpt: ConnectedMcpAgent = {
-		clientId: 'chatgpt-idle',
-		label: 'ChatGPT.com',
-		kind: 'chatgpt',
-		connectedAt: '2024-07-01T00:00:00.000Z',
-		lastUsedAt: null,
-	}
-
-	const groups = groupConnectedAgents([
-		unusedChatgpt,
-		staleCursor,
-		activeCursor,
+	// Last-used sorts first so stale hosts drop below the active one.
+	const usedGroups = groupConnectedAgents([
+		agent('chatgpt-idle', 'ChatGPT.com', 'chatgpt', '2024-07-01T00:00:00.000Z'),
+		agent(
+			'cursor-stale',
+			'Cursor',
+			'cursor',
+			'2024-06-01T00:00:00.000Z',
+			'2024-06-02T00:00:00.000Z',
+		),
+		agent(
+			'cursor-active',
+			'Cursor',
+			'cursor',
+			'2024-01-01T00:00:00.000Z',
+			'2024-08-01T00:00:00.000Z',
+		),
 	])
-	expect(groups.map((group) => group.label)).toEqual(['Cursor', 'ChatGPT.com'])
-	expect(groups[0]?.lastUsedAt).toBe('2024-08-01T00:00:00.000Z')
-	expect(groups[0]?.members.map((member) => member.clientId)).toEqual([
-		'cursor-active',
-		'cursor-stale',
+	expect(
+		usedGroups.map((group) => [
+			group.label,
+			group.lastUsedAt,
+			group.members.map((member) => member.clientId),
+		]),
+	).toEqual([
+		['Cursor', '2024-08-01T00:00:00.000Z', ['cursor-active', 'cursor-stale']],
+		['ChatGPT.com', null, ['chatgpt-idle']],
 	])
-	expect(groups[1]?.lastUsedAt).toBeNull()
 })

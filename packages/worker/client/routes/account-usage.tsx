@@ -1,8 +1,7 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { renderIcon } from '#universal/icon.tsx'
 import { adminGrantDiffersFromSubscription } from '#universal/account-plan-display.ts'
 import {
-	type AccountUsageComputeOverage,
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 	type AdminPlanName,
@@ -32,10 +31,22 @@ import {
 } from '#universal/styles/tokens.ts'
 import {
 	descriptionCss,
-	getAccentCalloutCss,
 	hoverMq,
 	primaryLinkCss,
 } from '#universal/styles/style-primitives.ts'
+import {
+	accountCreditsPath,
+	warningOffersCredits,
+} from '#universal/compute-overage.ts'
+import { formatCappedPercent } from '#universal/usage-presentation.ts'
+import { creditsActionForWallet } from '#client/routes/account-usage-shared.ts'
+import { AccountUsageCreditsSection } from '#client/routes/account-usage-credits.tsx'
+import {
+	renderActivityPanel,
+	renderCreditsAlarm,
+	renderIncludedComputePanel,
+} from '#client/routes/account-usage-story.tsx'
+import { WhereItWentPanel } from '#client/routes/account-usage-where-it-went.tsx'
 
 const usageApiPath = '/account/usage.json'
 const billingPath = '/account/billing'
@@ -58,15 +69,13 @@ const entitlementGroupLabels: Record<
 const entitlementGroupNotes: Partial<
 	Record<AccountUsageEntitlementConsumption['group'], string>
 > = {
-	monthly:
-		'Included unique worker days and Durable Object rows-read this UTC month.',
+	monthly: 'Included Worker compute and Rows read this UTC month.',
 	daily:
 		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
 
 function formatUsagePercent(value: number | null) {
-	if (value === null) return '—'
-	return `${Math.round(value * 100)}%`
+	return formatCappedPercent(value)
 }
 
 /** Whichever window is closer to its cap — daily or weekly — is what blocks. */
@@ -78,6 +87,37 @@ export function hotterUsagePercent(
 	)
 	if (percents.length === 0) return null
 	return Math.max(...percents)
+}
+
+/**
+ * True when a hard daily/weekly/stock entitlement is at or over its cap.
+ * Monthly compute includes (`group: 'monthly'`) are not hard caps, so they
+ * never count as a hard "Limit reached."
+ */
+export function hasReachedEntitlementLimit(
+	item: Pick<
+		AccountUsageEntitlementConsumption,
+		'percentOfLimit' | 'week' | 'group'
+	>,
+) {
+	if (item.group === 'monthly') return false
+	return (
+		(item.percentOfLimit !== null && item.percentOfLimit >= 1) ||
+		(item.week?.percentOfLimit != null && item.week.percentOfLimit >= 1)
+	)
+}
+
+export function accountUsageWarningsPanelTitle(
+	warnings: ReadonlyArray<
+		Pick<
+			AccountUsageEntitlementConsumption,
+			'percentOfLimit' | 'week' | 'group'
+		>
+	>,
+) {
+	return warnings.some(hasReachedEntitlementLimit)
+		? 'Limit reached'
+		: 'Approaching limits'
 }
 
 export function formatEntitlementUsedPercent(
@@ -107,48 +147,6 @@ function formatUsageValue(resource: string, value: number) {
 		return formatBytes(value)
 	}
 	return formatIntegerNumber(value)
-}
-
-export function computeAccountUsageOverageNotice(
-	overage: AccountUsageComputeOverage,
-) {
-	const overInclude = overage.meters.some((meter) => meter.percentOfLimit >= 1)
-	const approaching = overage.meters.some(
-		(meter) => meter.overEightyPercent && meter.percentOfLimit < 1,
-	)
-	if (overage.disposition === 'soft_block') {
-		return {
-			title: 'Upgrade to keep using compute overage',
-			body: "You are over this month's unique worker-day or Durable Object rows-read include. Free accounts without a payment method are asked to upgrade instead of being charged.",
-		}
-	}
-	if (overage.legacyUnbilled && (overInclude || approaching)) {
-		return {
-			title: 'Legacy plan compute includes',
-			body: overInclude
-				? "You are over this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed for that overage. Changing plan moves you onto public rates."
-				: "You are approaching this month's unique worker-day or Durable Object rows-read include. Legacy Standard and Pro are not billed if you go over.",
-		}
-	}
-	if (!overage.chargingEnabled && (overInclude || approaching)) {
-		return {
-			title: 'Compute overage billing is paused',
-			body: 'Your compute overage is being recorded, but it is not billed while charging is disabled.',
-		}
-	}
-	if (overage.disposition === 'invoice' && overInclude) {
-		return {
-			title: 'Compute overage this month',
-			body: 'Usage above your unique worker-day and Durable Object rows-read includes is billed at list rates after the UTC month closes.',
-		}
-	}
-	if (approaching) {
-		return {
-			title: 'Approaching compute includes',
-			body: "You are over 80% of this month's unique worker-day or Durable Object rows-read include. Public-ladder overage is billed at list rates when a payment method is on file.",
-		}
-	}
-	return null
 }
 
 function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
@@ -367,6 +365,13 @@ export async function accountUsageRouteLoader(
 }
 
 export function AccountUsageRoute(handle: Handle) {
+	// Saving credit settings returns a fresh payload for the loaded snapshot;
+	// a newer snapshot (navigation, revalidation) replaces it.
+	let savedUsage: {
+		from: AccountUsageLoaderData
+		next: AccountUsageLoaderData
+	} | null = null
+
 	const usageData = createRouteData({
 		key: 'accountUsage',
 		async load(_href, signal) {
@@ -387,21 +392,28 @@ export function AccountUsageRoute(handle: Handle) {
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const snapshot = usageData.read(handle, currentHref)
-		const usage = snapshot.data
+		const usage =
+			snapshot.data && savedUsage?.from === snapshot.data
+				? savedUsage.next
+				: snapshot.data
 		const pending = snapshot.kind === 'pending'
 		const message = snapshot.error?.message ?? null
 		const groupedRows = usage
 			? groupEntitlementRows(usage.entitlementConsumption)
 			: []
-		const computeNotice = usage
-			? computeAccountUsageOverageNotice(usage.computeOverage)
+		const warningAction = usage
+			? creditsActionForWallet(
+					usage.computeOverage.creditWallet,
+					usage.plan,
+					usage.canBuyCredits,
+				)
 			: null
 
 		return (
 			<AccountManagementShell busy={pending && usage !== null}>
 				<AccountPageHeader
 					title="Usage"
-					description="Plan limits, current consumption, and what counts toward each resource."
+					description="Activity, included compute, plan limits, and credits: what counts and how close you are."
 					currentHref={currentHref}
 				/>
 				{message ? (
@@ -456,91 +468,44 @@ export function AccountUsageRoute(handle: Handle) {
 									? ` · Week starts (UTC Monday): ${usage.weekStart}`
 									: ''}
 							</p>
-							<p mix={css({ margin: 0 })}>
+							<p
+								mix={css({
+									margin: 0,
+									display: 'flex',
+									flexWrap: 'wrap',
+									gap: spacing.md,
+								})}
+							>
 								<a href={billingPath} mix={css(primaryLinkCss)}>
 									Manage billing
 								</a>
+								{usage.computeOverage.creditWallet !== 'none' ? (
+									<a href={accountCreditsPath} mix={css(primaryLinkCss)}>
+										Manage credits
+									</a>
+								) : null}
 							</p>
 						</AccountManagementPanel>
-						{computeNotice ? (
-							<div
-								mix={css(
-									getAccentCalloutCss({
-										accentColor:
-											usage.computeOverage.disposition === 'soft_block'
-												? chartColor.amber
-												: colors.primary,
-									}),
-								)}
-							>
-								<p
-									mix={css({
-										margin: 0,
-										fontWeight: typography.fontWeight.semibold,
-										color: colors.text,
-									})}
-								>
-									{computeNotice.title}
-								</p>
-								<p mix={css(descriptionCss)}>{computeNotice.body}</p>
-								<p mix={css({ margin: 0 })}>
-									<a href={billingPath} mix={css(primaryLinkCss)}>
-										{usage.computeOverage.disposition === 'soft_block'
-											? 'Upgrade your plan'
-											: 'Review billing'}
-									</a>
-								</p>
-							</div>
-						) : null}
-						<AccountManagementPanel
-							title="Monthly compute"
-							description="Unique worker-days and Durable Object rows-read against this month's include. Execute and outbound fetches are hard daily and weekly caps. Durable Object duration is unmetered."
-						>
-							<RecordTable
-								mode="none"
-								ariaLabel="Monthly compute usage"
-								scrollHeight="none"
-								columns={[
-									{ key: 'resource', label: 'Resource', primary: true },
-									{ key: 'current', label: 'In use', align: 'end' },
-									{ key: 'include', label: 'Include', align: 'end' },
-									{ key: 'used', label: 'Used', align: 'end' },
-								]}
-								rows={usage.computeOverage.meters.map((item) => ({
-									id: item.resource,
-									cells: {
-										resource: (
-											<UsageResourceName
-												id={item.resource}
-												label={item.label}
-												whatCounts={item.whatCounts}
-												howToReduce={item.howToReduce}
-											/>
-										),
-										current: formatIntegerNumber(item.current),
-										include: formatIntegerNumber(item.include),
-										used: (
-											<span
-												mix={css(
-													item.overEightyPercent
-														? {
-																color: chartColor.amber,
-																fontWeight: typography.fontWeight.semibold,
-															}
-														: {},
-												)}
-											>
-												{formatUsagePercent(item.percentOfLimit)}
-											</span>
-										),
-									},
-								}))}
-							/>
-						</AccountManagementPanel>
+						{renderCreditsAlarm(usage.creditsAlarm, { showAction: true })}
+						{renderActivityPanel(usage.activity, {
+							note:
+								usage.plan === 'free'
+									? 'Free is limited by daily and weekly execute caps, listed under Daily rates.'
+									: undefined,
+						})}
+						{renderIncludedComputePanel({
+							meters: usage.includedCompute,
+							summary: usage.includedComputeSummary,
+						})}
+						<WhereItWentPanel breakdown={usage.whereItWent} />
 						{usage.warnings.length > 0 ? (
 							<AccountManagementPanel
-								title="Approaching limits"
-								description="These resources are above 80% of your plan limit."
+								title={accountUsageWarningsPanelTitle(usage.warnings)}
+								description={
+									usage.warnings.some(hasReachedEntitlementLimit)
+										? 'These resources are at or over your plan limit.'
+										: 'These resources are above 80% of your plan limit.'
+								}
 							>
 								<ul
 									mix={css({
@@ -557,10 +522,18 @@ export function AccountUsageRoute(handle: Handle) {
 											{item.week
 												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
 												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
-											. {item.howToReduce}{' '}
-											<a href={billingPath} mix={css(primaryLinkCss)}>
-												Upgrade your plan
-											</a>
+											. {item.howToReduce}
+											{warningAction && warningOffersCredits(item.resource) ? (
+												<>
+													{' '}
+													<a
+														href={warningAction.href}
+														mix={css(primaryLinkCss)}
+													>
+														{warningAction.label}
+													</a>
+												</>
+											) : null}
 										</li>
 									))}
 								</ul>
@@ -627,6 +600,19 @@ export function AccountUsageRoute(handle: Handle) {
 								/>
 							</AccountManagementPanel>
 						))}
+						{usage.credits ? (
+							<AccountUsageCreditsSection
+								credits={usage.credits}
+								notice={usage.notice}
+								error={usage.error}
+								onUsageChange={(next) => {
+									if (snapshot.data) {
+										savedUsage = { from: snapshot.data, next }
+									}
+									handle.update()
+								}}
+							/>
+						) : null}
 					</>
 				) : null}
 			</AccountManagementShell>

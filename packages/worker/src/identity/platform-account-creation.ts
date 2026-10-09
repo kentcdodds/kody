@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { userExistsByUsername } from '#worker/identity/generated-username.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
@@ -12,6 +13,10 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 export type PlatformAccountCreateErrorCode =
 	| 'invalid_email'
@@ -122,6 +127,13 @@ export async function createPlatformAccount(input: {
 			)
 		}
 		userId = lastRowId
+		await provisionPersonalOrgForSignup(input.db, {
+			stableUserId,
+			username,
+			createdAt: nowIso,
+			accountType: 'platform',
+			plan: 'free',
+		})
 		await claimAccountEmail(input.db, {
 			userId,
 			email,
@@ -135,7 +147,11 @@ export async function createPlatformAccount(input: {
 		} satisfies CreatedPlatformAccount
 	} catch (error) {
 		if (userId != null) {
-			await deleteUserBestEffort(input.db, userId)
+			await deleteUserBestEffort({
+				db: input.db,
+				userId,
+				stableUserId,
+			})
 			if (error instanceof PlatformAccountCreateError) throw error
 			throw new PlatformAccountCreateError(
 				'create_failed',
@@ -160,10 +176,21 @@ export async function createPlatformAccount(input: {
 	}
 }
 
-async function deleteUserBestEffort(db: D1Database, userId: number) {
+async function deleteUserBestEffort(input: {
+	db: D1Database
+	userId: number
+	stableUserId: string
+}) {
+	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
 	try {
-		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
+		await input.db
+			.prepare(`DELETE FROM users WHERE id = ?`)
+			.bind(input.userId)
+			.run()
 	} catch (error) {
 		console.error('Failed to roll back platform account user:', error)
+		return
 	}
+	// Use the known stable id: a post-DELETE SELECT would find nothing.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 }

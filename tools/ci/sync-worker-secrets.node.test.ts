@@ -26,29 +26,19 @@ const baseOptions = {
 	emptyAsSpace: false,
 }
 
-test('parseDotenv unescapes double-quoted PEM newlines', () => {
-	const secrets = parseDotenv(
-		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
-	)
-	expect(secrets.get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(
-		'-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
-	)
-})
-
-test('toDotenv round-trips multiline PEM values', () => {
-	const pem = '-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----'
-	const encoded = toDotenv(new Map([['OIDC_SIGNING_PRIVATE_KEY_PEM', pem]]))
-	expect(encoded).toBe(
-		'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
-	)
-	expect(parseDotenv(encoded).get('OIDC_SIGNING_PRIVATE_KEY_PEM')).toBe(pem)
-})
-
-test('toDotenv round-trips literal backslash-n sequences', () => {
-	const value = '\\n'
-	const encoded = toDotenv(new Map([['LITERAL_ESCAPE', value]]))
-	expect(encoded).toBe('LITERAL_ESCAPE="\\\\n"\n')
-	expect(parseDotenv(encoded).get('LITERAL_ESCAPE')).toBe(value)
+test('toDotenv and parseDotenv round-trip multiline PEM values and literal backslash-n', () => {
+	const cases: Array<[string, string, string]> = [
+		[
+			'OIDC_SIGNING_PRIVATE_KEY_PEM',
+			'-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----',
+			'OIDC_SIGNING_PRIVATE_KEY_PEM="-----BEGIN PRIVATE KEY-----\\nMIIE\\n-----END PRIVATE KEY-----"\n',
+		],
+		['LITERAL_ESCAPE', '\\n', 'LITERAL_ESCAPE="\\\\n"\n'],
+	]
+	for (const [key, value, encoded] of cases) {
+		expect(toDotenv(new Map([[key, value]]))).toBe(encoded)
+		expect(parseDotenv(encoded).get(key)).toBe(value)
+	}
 })
 
 test('buildSpawnEnv preserves optional vars only when they have values', () => {
@@ -56,29 +46,25 @@ test('buildSpawnEnv preserves optional vars only when they have values', () => {
 		...baseOptions,
 		setFromEnvOptional: ['CLOUDFLARE_API_BASE_URL', 'SENTRY_DSN'],
 	}
-	const spawnEnvWithoutOptionalValues = buildSpawnEnv(options, {
+	const withoutOptionalValues = buildSpawnEnv(options, {
 		CLOUDFLARE_API_BASE_URL: '',
 		COOKIE_SECRET: 'cookie',
 		PATH: '/usr/bin',
 		SENTRY_DSN: '',
 	})
-	expect(spawnEnvWithoutOptionalValues.CLOUDFLARE_API_BASE_URL).toBeUndefined()
-	expect(spawnEnvWithoutOptionalValues.COOKIE_SECRET).toBe('cookie')
-	expect(spawnEnvWithoutOptionalValues.PATH).toBe('/usr/bin')
-	expect(spawnEnvWithoutOptionalValues.SENTRY_DSN).toBeUndefined()
+	expect(withoutOptionalValues).toMatchObject({
+		COOKIE_SECRET: 'cookie',
+		PATH: '/usr/bin',
+	})
+	expect(withoutOptionalValues.CLOUDFLARE_API_BASE_URL).toBeUndefined()
+	expect(withoutOptionalValues.SENTRY_DSN).toBeUndefined()
 
-	const spawnEnvWithOptionalValues = buildSpawnEnv(options, {
+	const optionalValues = {
 		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.com',
 		PATH: '/usr/bin',
 		SENTRY_DSN: 'https://examplePublicKey@o0.ingest.sentry.io/0',
-	})
-	expect(spawnEnvWithOptionalValues.CLOUDFLARE_API_BASE_URL).toBe(
-		'https://api.cloudflare.com',
-	)
-	expect(spawnEnvWithOptionalValues.PATH).toBe('/usr/bin')
-	expect(spawnEnvWithOptionalValues.SENTRY_DSN).toBe(
-		'https://examplePublicKey@o0.ingest.sentry.io/0',
-	)
+	}
+	expect(buildSpawnEnv(options, optionalValues)).toMatchObject(optionalValues)
 })
 
 test('NAME=SOURCE specs upload the source variable under the worker secret name', async () => {
@@ -217,78 +203,59 @@ test('secret bulk rejects --env with --name so it cannot target name-env', () =>
 })
 
 test('secret bulk retries a Cloudflare 503 then fails fast on real errors', async () => {
-	const secretBulk503Log = [
-		'🚨 Secrets failed to upload',
-		'',
-		'Received a malformed response from the API',
-		'',
-		'  upstream connect error or disconnect/reset before headers. reset reason: connection termination',
-		'  PATCH /accounts/acct/workers/scripts/kody-runtime/secrets-bulk -> 503 Service Unavailable',
-	].join('\n')
-	const authErrorLog = 'Authentication error [code: 9109]'
-	const delays: Array<number> = []
-	const retries: Array<number> = []
-	let flakeCalls = 0
-	const recovered = await retrySecretBulkUpload(
-		async () => {
-			flakeCalls += 1
-			if (flakeCalls === 1) {
-				return { exitCode: 1, output: secretBulk503Log }
-			}
-			return { exitCode: 0, output: 'Uploaded' }
-		},
-		{
-			attempts: 3,
-			baseDelayMs: 25,
-			sleep: async (ms) => {
-				delays.push(ms)
+	const secretBulk503 = {
+		exitCode: 1,
+		output: [
+			'🚨 Secrets failed to upload',
+			'',
+			'Received a malformed response from the API',
+			'',
+			'  upstream connect error or disconnect/reset before headers. reset reason: connection termination',
+			'  PATCH /accounts/acct/workers/scripts/kody-runtime/secrets-bulk -> 503 Service Unavailable',
+		].join('\n'),
+	}
+	const upload = async (
+		results: Array<{ exitCode: number; output: string }>,
+	) => {
+		let calls = 0
+		const delays: Array<number> = []
+		const retries: Array<number> = []
+		const final = await retrySecretBulkUpload(
+			async () => {
+				const next = results[Math.min(calls, results.length - 1)]
+				calls += 1
+				if (!next) throw new Error('missing upload fixture')
+				return next
 			},
-			onRetry: ({ attempt }) => {
-				retries.push(attempt)
+			{
+				attempts: 3,
+				baseDelayMs: 25,
+				sleep: async (ms) => {
+					delays.push(ms)
+				},
+				onRetry: ({ attempt }) => {
+					retries.push(attempt)
+				},
 			},
-		},
-	)
-	expect(recovered.exitCode).toBe(0)
-	expect(recovered.output).toBe('Uploaded')
-	expect(flakeCalls).toBe(2)
-	expect(delays).toEqual([25])
-	expect(retries).toEqual([1])
+		)
+		return { ...final, calls, delays, retries }
+	}
 
-	let exhaustedCalls = 0
-	const exhausted = await retrySecretBulkUpload(
-		async () => {
-			exhaustedCalls += 1
-			return { exitCode: 1, output: secretBulk503Log }
-		},
-		{
-			attempts: 3,
-			baseDelayMs: 10,
-			sleep: async () => {},
-			onRetry: () => {},
-		},
-	)
-	expect(exhausted.exitCode).toBe(1)
-	expect(exhaustedCalls).toBe(3)
-
-	let authCalls = 0
-	const authFailure = await retrySecretBulkUpload(
-		async () => {
-			authCalls += 1
-			return { exitCode: 1, output: authErrorLog }
-		},
-		{
-			attempts: 3,
-			baseDelayMs: 10,
-			sleep: async () => {
-				throw new Error('should not sleep for non-retryable errors')
-			},
-			onRetry: () => {
-				throw new Error('should not retry non-retryable errors')
-			},
-		},
-	)
-	expect(authFailure.exitCode).toBe(1)
-	expect(authCalls).toBe(1)
+	expect(
+		await upload([secretBulk503, { exitCode: 0, output: 'Uploaded' }]),
+	).toEqual({
+		exitCode: 0,
+		output: 'Uploaded',
+		calls: 2,
+		delays: [25],
+		retries: [1],
+	})
+	expect(await upload([secretBulk503])).toMatchObject({ exitCode: 1, calls: 3 })
+	expect(
+		await upload([
+			{ exitCode: 1, output: 'Authentication error [code: 9109]' },
+		]),
+	).toMatchObject({ exitCode: 1, calls: 1, delays: [], retries: [] })
 })
 
 test('secret bulk output includes stderr that arrives after exit', async () => {

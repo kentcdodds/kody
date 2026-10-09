@@ -43,47 +43,28 @@ test(
 		const waitUntil = (promise: Promise<unknown>) => {
 			pending.push(promise)
 		}
-		registerStorageBucket({
-			env,
-			userId,
-			storageId: bucketA,
-			kind: 'execute',
-			waitUntil,
-		})
-		registerStorageBucket({
-			env,
-			userId,
-			storageId: sessionBucket,
-			kind: 'repo_session',
-			waitUntil,
-		})
-		registerStorageBucket({
-			env,
-			userId,
-			storageId: bucketB,
-			kind: 'package',
-			waitUntil,
-		})
+		const buckets = [
+			[bucketA, 'execute'],
+			[sessionBucket, 'repo_session'],
+			[bucketB, 'package'],
+		] as const
+		for (const [storageId, kind] of buckets) {
+			registerStorageBucket({ env, userId, storageId, kind, waitUntil })
+		}
 		await Promise.all(pending)
+		const expectedRows = (estimate: (storageId: string) => number | null) =>
+			buckets
+				.map(([storageId, kind]) => ({
+					storageId,
+					kind,
+					estimatedBytes: estimate(storageId),
+				}))
+				.sort((a, b) => (a.storageId < b.storageId ? -1 : 1))
 
 		// Registration alone leaves estimates NULL (unmeasured).
 		await expect(
 			listUserStorageBucketEstimates({ env, userId }),
-		).resolves.toEqual(
-			[bucketA, bucketB, sessionBucket]
-				.sort()
-				.map((storageId) => ({
-					storageId,
-					kind: storageId === sessionBucket ? 'repo_session' : undefined,
-					estimatedBytes: null,
-				}))
-				.map((row) => ({
-					...row,
-					kind:
-						row.kind ??
-						(row.storageId.startsWith('exec:') ? 'execute' : 'package'),
-				})),
-		)
+		).resolves.toEqual(expectedRows(() => null))
 
 		// The bound is respected: batchSize 1 measures exactly one bucket.
 		await expect(
@@ -100,19 +81,11 @@ test(
 		await expect(
 			listUserStorageBucketEstimates({ env, userId }),
 		).resolves.toEqual(
-			[bucketA, bucketB, sessionBucket].sort().map((storageId) => ({
-				storageId,
-				kind:
-					storageId === sessionBucket
-						? 'repo_session'
-						: storageId.startsWith('exec:')
-							? 'execute'
-							: 'package',
-				estimatedBytes:
-					storageId === sessionBucket
-						? sessionEstimate
-						: emptyStorageRunnerEstimatedBytes,
-			})),
+			expectedRows((storageId) =>
+				storageId === sessionBucket
+					? sessionEstimate
+					: emptyStorageRunnerEstimatedBytes,
+			),
 		)
 
 		// Converged inventories make the lane a cheap no-op.

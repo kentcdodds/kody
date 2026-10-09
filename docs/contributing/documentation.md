@@ -2,8 +2,12 @@
 
 This repository maintains two audiences:
 
-- **[`docs/use/`](../use/index.md)** — People who connect an agent to Kody over
-  MCP. Progressive disclosure: short pages linked from the usage index.
+- **[`docs/guides/`](../guides/README.md)** — Served catalog at
+  [kody.codes/docs](https://kody.codes/docs). Agents load a page with
+  `search({ entity: "guide:{id}" })` or
+  `curl -fsS https://kody.codes/docs/<slug>.md`.
+- **[`docs/use/`](../use/README.md)** — MCP field reference linked from those
+  guides. A page that only repeats a guide is a stub pointing at the catalog.
 - **`docs/contributing/`** — People who develop Kody (code, kody, infra).
 
 ## Principles
@@ -16,10 +20,20 @@ of narrating a rollout (“Kody now stores…”, “We no longer accept…”).
 
 `npm run docs:check-temporal` checks durable documentation and docs-like MCP
 instructions for common rollout phrases. `npm run docs:check-decisions` rejects
-duplicate decision-record numbers. `npm run mermaid:check` parses fenced mermaid
-in docs and agent skills (and `--stdin` recap blocks) so GitHub's "Unable to
-render rich display" failures fail locally. `npm run slop-ratchet:check` holds
-the client-route and node-test file-size allowlists and rejects decorative
+duplicate decision-record numbers. `npm run docs:check-file-refs` fails when
+markdown points at a repo file that is not in the tree (generated
+`wrangler-*.generated.json` files and local `.env` files are ignored).
+`npm run skills-lock:check` fails when `skills-lock.json` does not match the
+committed skill folders, including a `ship-pr` edit that did not refresh
+`computedHash`. `npm run docs:check-no-hosted-execute` rejects guidance that
+sends agents to the hosted execute tool when local CLI or Open API can run. The
+rule lives in [Local CLI execute](../guides/local-execute.md) and
+[prefer-local-cli-execute](../../.agents/skills/prefer-local-cli-execute/SKILL.md).
+Negations stay allowed. `npm run mermaid:check` parses fenced mermaid in docs
+and agent skills (and `--stdin` recap blocks) so GitHub's "Unable to render rich
+display" failures fail locally. `npm run slop-ratchet:check` holds the
+client-route and node-test file-size allowlists (line budgets counted after
+`oxfmt`), the root `AGENTS.md` line budget (`agents-md`), and rejects decorative
 `========` / `----------` comment banners. `kody-custom/no-tautological-absence`
 rejects vanished-copy `not.toContain` leftovers in tests during `npm run lint`.
 `npm run knip` fails on unused files, exports, and types against the configured

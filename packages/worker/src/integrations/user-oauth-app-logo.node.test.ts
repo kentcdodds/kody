@@ -17,33 +17,21 @@ import {
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
-type StoredObject = {
-	bytes: Uint8Array
+type PutOptions = {
 	httpMetadata?: { contentType?: string; cacheControl?: string }
 	customMetadata?: Record<string, string>
-	httpEtag: string
-	size: number
 }
 
 function createInMemoryR2() {
-	const objects = new Map<string, StoredObject>()
+	const objects = new Map<
+		string,
+		PutOptions & { bytes: Uint8Array; httpEtag: string; size: number }
+	>()
 	const bucket = {
-		async put(
-			key: string,
-			bytes: Uint8Array,
-			options?: {
-				httpMetadata?: { contentType?: string; cacheControl?: string }
-				customMetadata?: Record<string, string>
-			},
-		) {
+		async put(key: string, bytes: Uint8Array, options: PutOptions = {}) {
 			objects.set(key, {
 				bytes,
-				...(options?.httpMetadata
-					? { httpMetadata: options.httpMetadata }
-					: {}),
-				...(options?.customMetadata
-					? { customMetadata: options.customMetadata }
-					: {}),
+				...options,
 				httpEtag: `"etag-${objects.size}"`,
 				size: bytes.byteLength,
 			})
@@ -53,12 +41,8 @@ function createInMemoryR2() {
 			if (!stored) return null
 			return {
 				...stored,
-				body: new Blob([stored.bytes]).stream(),
-				async arrayBuffer() {
-					const copy = new Uint8Array(stored.bytes.byteLength)
-					copy.set(stored.bytes)
-					return copy.buffer
-				},
+				body: new Blob([stored.bytes.slice()]).stream(),
+				arrayBuffer: async () => stored.bytes.slice().buffer,
 			}
 		},
 		async delete(key: string) {
@@ -68,7 +52,7 @@ function createInMemoryR2() {
 	return { bucket, objects }
 }
 
-function createHarness() {
+async function createHarness() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const db = createD1FromSqlite(sqlite)
@@ -79,12 +63,8 @@ function createHarness() {
 		COMMUNITY_ASSETS: r2.bucket,
 		IMAGES: createFakeImagesBinding(),
 	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY' | 'COMMUNITY_ASSETS' | 'IMAGES'>
-	return { sqlite, db, env, r2 }
-}
-
-async function provisionApp(harness: ReturnType<typeof createHarness>) {
-	return upsertOauthAppWithoutConnection({
-		env: harness.env,
+	const app = await upsertOauthAppWithoutConnection({
+		env,
 		userId: 'user-1',
 		config: {
 			name: 'dropbox',
@@ -98,170 +78,64 @@ async function provisionApp(harness: ReturnType<typeof createHarness>) {
 			},
 		},
 	})
-}
-
-test('lazy refit of a favicon logo keeps faviconSourceHost', async () => {
-	const harness = createHarness()
-	const app = await provisionApp(harness)
-	const previousKey = `user-oauth-app-logos/${app.userId}/${app.slug}/aaaaaaaaaaaaaaaa.png`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
+	const { userId, slug } = app
+	const keyPrefix = `user-oauth-app-logos/${userId}/${slug}`
+	const readApp = () => getOauthAppBySlug({ db, userId, slug })
+	const storeLogo = (
+		logoKey: string,
+		contentType: string,
+		source: 'favicon' | 'upload',
+	) =>
+		db
+			.prepare(
+				`UPDATE user_oauth_apps
+				SET logo_key = ?, logo_content_type = ?, logo_source = ?,
+					favicon_source_host = ?, updated_at = ?
+				WHERE user_id = ? AND slug = ?`,
+			)
+			.bind(
+				logoKey,
+				contentType,
+				source,
+				source === 'favicon' ? 'dropbox.com' : null,
+				new Date().toISOString(),
+				userId,
+				slug,
+			)
+			.run()
+	const previousKey = `${keyPrefix}/aaaaaaaaaaaaaaaa.png`
+	await env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
 		httpMetadata: { contentType: 'image/png' },
 	})
-	await harness.db
-		.prepare(
-			`UPDATE user_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'favicon',
-			'dropbox.com',
-			new Date().toISOString(),
-			app.userId,
-			app.slug,
-		)
-		.run()
-	const stale = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
-	})
+	return { db, env, r2, app, keyPrefix, previousKey, readApp, storeLogo }
+}
+
+test('lazy refit of a favicon logo keeps faviconSourceHost, and a lost same-hash refit race keeps the stored logo', async () => {
+	const { db, env, r2, app, previousKey, readApp, storeLogo } =
+		await createHarness()
+	await storeLogo(previousKey, 'image/png', 'favicon')
+	const stale = await readApp()
 	expect(stale?.faviconSourceHost).toBe('dropbox.com')
 
 	const served = await loadFittedUserOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
+		db,
+		env,
 		userId: app.userId,
 		app: stale!,
 	})
 	expect(served?.contentType).toBe('image/webp')
-	const current = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
+	const winner = await readApp()
+	expect(winner).toMatchObject({
+		logoSource: 'favicon',
+		faviconSourceHost: 'dropbox.com',
+		logoContentType: 'image/webp',
+		logoKey: expect.stringMatching(/\.webp$/),
 	})
-	expect(current?.logoSource).toBe('favicon')
-	expect(current?.faviconSourceHost).toBe('dropbox.com')
-	expect(current?.logoContentType).toBe('image/webp')
-	expect(shouldFetchUserOauthAppFavicon(current!)).toBe(false)
-})
-
-test('lazy refit does not overwrite a newer user logo key', async () => {
-	const harness = createHarness()
-	const app = await provisionApp(harness)
-	const previousKey = `user-oauth-app-logos/${app.userId}/${app.slug}/aaaaaaaaaaaaaaaa.png`
-	const newerKey = `user-oauth-app-logos/${app.userId}/${app.slug}/bbbbbbbbbbbbbbbb.webp`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
-		httpMetadata: { contentType: 'image/png' },
-	})
-	await harness.env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
-		httpMetadata: { contentType: 'image/webp' },
-		customMetadata: { iconFitVersion: '2' },
-	})
-	await harness.db
-		.prepare(
-			`UPDATE user_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'upload',
-			null,
-			new Date().toISOString(),
-			app.userId,
-			app.slug,
-		)
-		.run()
-	const stale = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
-	})
-	await harness.db
-		.prepare(
-			`UPDATE user_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
-		)
-		.bind(
-			newerKey,
-			'image/webp',
-			'upload',
-			null,
-			new Date().toISOString(),
-			app.userId,
-			app.slug,
-		)
-		.run()
-
-	const served = await loadFittedUserOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: app.userId,
-		app: stale!,
-	})
-	expect(served?.contentType).toBe('image/webp')
-	const current = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
-	})
-	expect(current?.logoKey).toBe(newerKey)
-	expect(harness.r2.objects.has(newerKey)).toBe(true)
-})
-
-test('lost same-hash refit race keeps the stored user logo', async () => {
-	const harness = createHarness()
-	const app = await provisionApp(harness)
-	const previousKey = `user-oauth-app-logos/${app.userId}/${app.slug}/aaaaaaaaaaaaaaaa.png`
-	await harness.env.COMMUNITY_ASSETS.put(previousKey, tinyPngBytes, {
-		httpMetadata: { contentType: 'image/png' },
-	})
-	await harness.db
-		.prepare(
-			`UPDATE user_oauth_apps
-			SET logo_key = ?, logo_content_type = ?, logo_source = ?,
-				favicon_source_host = ?, updated_at = ?
-			WHERE user_id = ? AND slug = ?`,
-		)
-		.bind(
-			previousKey,
-			'image/png',
-			'favicon',
-			'dropbox.com',
-			new Date().toISOString(),
-			app.userId,
-			app.slug,
-		)
-		.run()
-	const stale = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
-	})
-	await loadFittedUserOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
-		userId: app.userId,
-		app: stale!,
-	})
-	const winner = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
-	})
-	expect(winner?.logoKey).toMatch(/\.webp$/)
+	expect(shouldFetchUserOauthAppFavicon(winner!)).toBe(false)
 
 	await setUserOauthAppLogo({
-		db: harness.db,
-		env: harness.env,
+		db,
+		env,
 		userId: app.userId,
 		slug: app.slug,
 		sourceBytes: tinyPngBytes,
@@ -269,11 +143,29 @@ test('lost same-hash refit race keeps the stored user logo', async () => {
 		faviconSourceHost: 'dropbox.com',
 		replaceLogoKey: previousKey,
 	})
-	const current = await getOauthAppBySlug({
-		db: harness.db,
-		userId: app.userId,
-		slug: app.slug,
+	expect((await readApp())?.logoKey).toBe(winner?.logoKey)
+	expect(r2.objects.has(winner!.logoKey!)).toBe(true)
+})
+
+test('lazy refit does not overwrite a newer user logo key', async () => {
+	const { db, env, r2, app, keyPrefix, previousKey, readApp, storeLogo } =
+		await createHarness()
+	const newerKey = `${keyPrefix}/bbbbbbbbbbbbbbbb.webp`
+	await env.COMMUNITY_ASSETS.put(newerKey, tinyWebpBytes, {
+		httpMetadata: { contentType: 'image/webp' },
+		customMetadata: { iconFitVersion: '2' },
 	})
-	expect(current?.logoKey).toBe(winner?.logoKey)
-	expect(harness.r2.objects.has(winner!.logoKey!)).toBe(true)
+	await storeLogo(previousKey, 'image/png', 'upload')
+	const stale = await readApp()
+	await storeLogo(newerKey, 'image/webp', 'upload')
+
+	const served = await loadFittedUserOauthAppLogo({
+		db,
+		env,
+		userId: app.userId,
+		app: stale!,
+	})
+	expect(served?.contentType).toBe('image/webp')
+	expect((await readApp())?.logoKey).toBe(newerKey)
+	expect(r2.objects.has(newerKey)).toBe(true)
 })

@@ -9,6 +9,7 @@ import {
 	parseJsonc,
 	runWrangler,
 } from './resource-utils.ts'
+import { previewResourceNamePattern } from './preview-resources.ts'
 
 type EnvName = 'production' | 'preview'
 
@@ -20,13 +21,14 @@ type CliOptions = {
 	outConfigPath: string
 	dryRun: boolean
 	d1Location?: string
+	jobsD1Name: string
 }
 
 function parseArgs(argv: Array<string>): CliOptions {
 	const command = argv[0]
 	if (command !== 'ensure') {
 		fail(
-			'Missing or invalid command. Usage: node tools/ci/jobs-worker-resources.ts ensure --env <production|preview> [--worker-name <name> --host-worker-name <name>] --out-config <path>',
+			'Missing or invalid command. Usage: node tools/ci/jobs-worker-resources.ts ensure --env <production|preview> [--worker-name <name> --host-worker-name <name> --jobs-d1-name <name>] --out-config <path>',
 		)
 	}
 
@@ -38,6 +40,7 @@ function parseArgs(argv: Array<string>): CliOptions {
 		outConfigPath: '',
 		dryRun: false,
 		d1Location: undefined,
+		jobsD1Name: '',
 	}
 
 	for (let index = 1; index < argv.length; index += 1) {
@@ -73,6 +76,11 @@ function parseArgs(argv: Array<string>): CliOptions {
 				index += 1
 				break
 			}
+			case '--jobs-d1-name': {
+				options.jobsD1Name = argv[index + 1] ?? ''
+				index += 1
+				break
+			}
 			case '--d1-location': {
 				options.d1Location = argv[index + 1] ?? ''
 				index += 1
@@ -100,6 +108,22 @@ function parseArgs(argv: Array<string>): CliOptions {
 		if (!options.hostWorkerName) {
 			fail('Missing required flag for preview: --host-worker-name <name>')
 		}
+		// Each preview owns its JOBS_DB so a branch's jobs migration can never
+		// touch another preview (or production) jobs data.
+		if (!options.jobsD1Name) {
+			fail(
+				'Missing required flag for preview: --jobs-d1-name <name> (the per-preview `jobs_d1_database_name` from preview-resources.ts ensure).',
+			)
+		}
+		if (!previewResourceNamePattern.test(options.jobsD1Name)) {
+			fail(
+				`--jobs-d1-name "${options.jobsD1Name}" does not match the preview resource naming scheme ${String(previewResourceNamePattern)}.`,
+			)
+		}
+	} else if (options.jobsD1Name) {
+		fail(
+			'--jobs-d1-name is preview-only; production binds the committed JOBS_DB.',
+		)
 	}
 
 	return options
@@ -175,8 +199,11 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 		)
 	}
 
+	const jobsDbName =
+		options.envName === 'preview' ? options.jobsD1Name : jobsDb.database_name
+	jobsDb.database_name = jobsDbName
 	const d1 = ensureD1Database({
-		name: jobsDb.database_name,
+		name: jobsDbName,
 		location: options.d1Location,
 		dryRun: options.dryRun,
 	})
@@ -234,10 +261,8 @@ async function ensureJobsWorkerResources(options: CliOptions) {
 
 	let workerName = baseConfig.name as string
 	if (options.envName === 'preview') {
-		// Preview JOBS_DB stays the shared `kody-preview-jobs` database from
-		// wrangler.jsonc — it is not per-PR. Preview cleanup deletes the
-		// per-preview jobs Worker (`kody-pr-<n>-jobs`) and must never delete
-		// `kody-preview-jobs` or `kody-jobs`.
+		// Preview JOBS_DB is the per-preview `--jobs-d1-name` database; preview
+		// cleanup deletes it with the per-preview jobs Worker.
 		// Per-preview jobs workers are brand new scripts: they cannot run the
 		// production script-transfer migration (from_script "kody-production"),
 		// so the

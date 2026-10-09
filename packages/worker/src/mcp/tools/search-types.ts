@@ -128,6 +128,8 @@ export type SearchPhaseTimings = {
 	candidateGenerationMs: number
 	rerankingMs: number
 	jevRerankMs?: number
+	/** Flag evaluation before ranking; inside `loadAndRankMs`. */
+	featureFlagsMs?: number
 	formattingMs?: number
 	rowAndRegistryLoadMs?: number
 	retrieversMs?: number
@@ -141,6 +143,8 @@ export type SearchPhaseTimings = {
 	memoryAcknowledgementTimedOut?: boolean
 	memoryEnrichmentFailed?: boolean
 	memoryAcknowledgementFailed?: boolean
+	waitingItemsTimedOut?: boolean
+	onboardingNoticeTimedOut?: boolean
 	/**
 	 * Exclusive wall-clock tiles. These do not overlap, so summing them and
 	 * comparing to `durationMs` is how an operator reconciles the published
@@ -148,6 +152,7 @@ export type SearchPhaseTimings = {
 	 * (retrievers, memory, candidate plugins) stay beside them and must not
 	 * be added into `exclusiveMs`.
 	 */
+	rateLimitMs?: number
 	usernameLookupMs?: number
 	identityResolutionMs?: number
 	loadAndRankMs?: number

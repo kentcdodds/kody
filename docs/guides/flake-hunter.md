@@ -34,6 +34,10 @@ Obvious fixes ship through the repo's ship-pr path. A non-obvious flake becomes
 a written recommendation emailed to Kent with a link to the investigating agent.
 Your fork can stop at "scan and notify" if you do not want an agent spawned.
 
+That is the usual split between Kody and an agent: the package does the daily
+watching with no model, and an agent is called only when there is something
+worth reasoning about.
+
 ## Package shape
 
 Declare the schedule in `package.json#kody.jobs` so it travels with the code it

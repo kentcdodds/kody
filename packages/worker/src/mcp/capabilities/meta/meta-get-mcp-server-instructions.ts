@@ -21,8 +21,9 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaGetMcpServerInstructions',
+		orgPermission: 'org:read',
 		description:
-			'Read the signed-in user’s custom MCP server instructions overlay (if any). Empty means none. Same character limit as set. Prefer memories for durable facts and preferences; the overlay is only for rare always-on session policy. Reports assembled_chars and a warning when some clients would truncate the overlay.',
+			'Read the signed-in user’s custom MCP server instructions overlay (if any). Empty means none. Same character limit as set. Put guidance at the right layer: see search({ entity: "guide:agent_guidance" }) (Where agent guidance lives / /docs/agent-guidance). Prefer memories for durable facts and preferences; the overlay is only for rare always-on session policy. Reports assembled_chars and a warning when some clients would truncate the overlay.',
 		keywords: [
 			'instructions',
 			'server',
@@ -31,6 +32,8 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 			'memory',
 			'mcp',
 			'prompt',
+			'agent guidance',
+			'progressive disclosure',
 		],
 		readOnly: true,
 		idempotent: true,
@@ -43,9 +46,7 @@ export const metaGetMcpServerInstructionsCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				user.userId,
 			)
-			const assembly = await describeUserMcpServerInstructionOverlay({
-				env: ctx.env,
-				callerContext: ctx.callerContext,
+			const assembly = describeUserMcpServerInstructionOverlay({
 				overlay: instructions,
 			})
 			return {

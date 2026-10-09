@@ -1,6 +1,5 @@
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { isFeatureEnabled } from '#worker/feature-flags/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 
 export { packageShareGrantsFlagKey }
 
@@ -19,7 +18,7 @@ export async function isPackageShareGrantsEnabled(input: {
 	try {
 		let userId = input.userId ?? null
 		if (userId == null && input.stableUserId) {
-			const stable = normalizeStableUserId(input.stableUserId)
+			const stable = input.stableUserId.trim()
 			if (!stable) return false
 			const row = await input.db
 				.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)

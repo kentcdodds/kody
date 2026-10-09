@@ -41,8 +41,8 @@ export async function getUserRolesAndPermissions(
 	userId: number,
 ): Promise<{ roles: Array<RoleName>; permissions: Array<PermissionString> }> {
 	// LEFT JOIN permissions so role membership still resolves when a role has
-	// no permission rows yet (background package callers only need roles for
-	// admin capability visibility).
+	// no permission rows yet (background package callers need roles for admin
+	// capability discovery and execute-time checks).
 	const result = await db
 		.prepare(
 			`SELECT DISTINCT r.name AS role_name, p.action, p.entity, p.access

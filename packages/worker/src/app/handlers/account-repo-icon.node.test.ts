@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest'
 import { createAccountRepoIconHandler } from './account-repo-icon.ts'
+import type * as IdentityIconResponse from './identity-icon-response.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -23,8 +24,7 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 }))
 
 vi.mock('./identity-icon-response.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('./identity-icon-response.ts')>()
+	const actual = await importOriginal<typeof IdentityIconResponse>()
 	return {
 		...actual,
 		identityIconNotFound: () => new Response('Not found', { status: 404 }),

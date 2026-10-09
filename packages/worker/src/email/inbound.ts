@@ -1,16 +1,12 @@
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
-import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	resolveEffectivePlan,
-	resolvePlanLimit,
-} from '#universal/plans.ts'
+import { resolvePlanLimit } from '#universal/plans.ts'
 import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryBytes,
+	resolveBaseUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { normalizeEmailAddress, normalizeSubject } from './address.ts'
@@ -246,7 +242,7 @@ export async function handleInboundEmail(
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
-				`SELECT plan, stripe_plan, entitlement_ladder, email_verified_at, suspended_at FROM users
+				`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, admin_credits_eligible, email_verified_at, suspended_at FROM users
 			WHERE email = ? AND stable_user_id = ?`,
 			)
 				.bind(identity.email, userId)
@@ -254,18 +250,29 @@ export async function handleInboundEmail(
 					plan: string
 					stripe_plan: string | null
 					entitlement_ladder: string | null
+					stripe_credits_eligible: number | null
+					admin_credits_eligible: number | null
 					email_verified_at: string | null
 					suspended_at: string | null
 				}>()
+			// A scoped miss keeps the existing synthetic-account fallback. A
+			// present row must satisfy the plan storage contract.
+			const accountEntitlement = await resolveBaseUserEntitlement({
+				db: env.APP_DB,
+				stableUserId: userId,
+				row: accountRow ?? {
+					plan: 'max',
+					stripe_plan: null,
+					entitlement_ladder: null,
+					stripe_credits_eligible: 0,
+					admin_credits_eligible: 0,
+				},
+			})
 			const account = {
 				email: identity.email,
-				plan: resolveEffectivePlan(
-					// A scoped miss keeps the existing synthetic-account fallback.
-					// A present row must satisfy the plan storage contract.
-					accountRow ? parseStoredPlanName(accountRow.plan) : 'max',
-					accountRow?.stripe_plan ?? null,
-				),
-				ladder: parseEntitlementLadder(accountRow?.entitlement_ladder),
+				plan: accountEntitlement.plan,
+				ladder: accountEntitlement.ladder,
+				creditWallet: accountEntitlement.creditWallet,
 				emailVerified: Boolean(accountRow?.email_verified_at),
 				suspended: Boolean(accountRow?.suspended_at),
 			}
@@ -298,6 +305,8 @@ export async function handleInboundEmail(
 					bytes: message.rawSize,
 					durationMs: Date.now() - receiveStartedAtMs,
 					outcome: input.outcome,
+					actorUserId: '',
+					automationSource: 'email',
 				})
 			}
 
@@ -394,6 +403,7 @@ export async function handleInboundEmail(
 				account.plan,
 				'email_message_bytes',
 				account.ladder,
+				account.creditWallet,
 			)
 			let prepared
 			try {
@@ -494,6 +504,7 @@ export async function handleInboundEmail(
 						account.plan,
 						'email_receives_per_day',
 						account.ladder,
+						account.creditWallet,
 					)
 					const receivesToday = await readUserInboundReceiveCount({
 						db: env.APP_DB,
@@ -549,6 +560,7 @@ export async function handleInboundEmail(
 							account.plan,
 							'email_receives_per_day',
 							account.ladder,
+							account.creditWallet,
 						),
 						now: quotaNow,
 					})

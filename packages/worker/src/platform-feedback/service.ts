@@ -8,10 +8,13 @@ import {
 } from './errors.ts'
 import {
 	getPlatformFeedbackByIdForAdmin,
+	getPlatformFeedbackByIdForSubmitter,
 	getPlatformFeedbackSubmissionLimitCounts,
 	insertPlatformFeedback,
 	listPlatformFeedbackPageRowsForAdmin,
+	listPlatformFeedbackPageRowsForSubmitter,
 	listPlatformFeedbackRowsForAdmin,
+	listPlatformFeedbackRowsForSubmitter,
 	updatePlatformFeedbackStatusForAdmin,
 } from './repo.ts'
 import {
@@ -22,6 +25,8 @@ import {
 	type PlatformFeedbackRecordWithRevision,
 	type PlatformFeedbackRow,
 	type PlatformFeedbackStatus,
+	type PlatformFeedbackSubmitterListItem,
+	type PlatformFeedbackSubmitterRecord,
 } from './types.ts'
 
 const maxSummaryLength = 200
@@ -290,6 +295,49 @@ export async function getPlatformFeedbackForAdmin(input: {
 		input.feedbackId,
 	)
 	return feedback ? toPlatformFeedbackRecord(feedback) : null
+}
+
+export async function getPlatformFeedbackForSubmitter(input: {
+	db: D1Database
+	feedbackId: string
+	submitterUserId: string
+}): Promise<PlatformFeedbackSubmitterRecord | null> {
+	return getPlatformFeedbackByIdForSubmitter(input.db, {
+		feedbackId: input.feedbackId,
+		submitterUserId: input.submitterUserId,
+	})
+}
+
+export async function listPlatformFeedbackForSubmitter(input: {
+	db: D1Database
+	submitterUserId: string
+	page?: number
+	pageSize?: number
+	status?: PlatformFeedbackStatus
+}): Promise<{
+	total: number
+	page: number
+	pageSize: number
+	items: Array<PlatformFeedbackSubmitterListItem>
+}> {
+	let page = normalizePage(input.page)
+	const pageSize = normalizePageSize(input.pageSize)
+	const query = {
+		submitterUserId: input.submitterUserId,
+		page,
+		pageSize,
+		status: input.status,
+	}
+	const result = await listPlatformFeedbackRowsForSubmitter(input.db, query)
+	const lastPage = Math.ceil(result.total / pageSize)
+	if (result.total > 0 && page > lastPage) {
+		page = lastPage
+		result.items = await listPlatformFeedbackPageRowsForSubmitter(input.db, {
+			...query,
+			page,
+		})
+	}
+	return { ...result, page, pageSize }
 }
 
 export async function updatePlatformFeedbackForAdmin(input: {

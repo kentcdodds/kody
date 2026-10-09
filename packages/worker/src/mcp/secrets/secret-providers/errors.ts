@@ -58,7 +58,7 @@ export function createProviderErrorMessage(providerId: string) {
 }
 
 export function createSealedSecretProviderExportDeniedMessage() {
-	return 'Sealed secret-provider exports can only run at the fetch boundary. Ordinary execute, packages.invoke, and kody:@ imports cannot call them or observe resolved values.'
+	return 'Sealed secret-provider exports can only run at the fetch boundary. Ordinary execute and kody:@ imports cannot call them or observe resolved values.'
 }
 
 export function createSecretProviderGrantRequiresWebsiteMessage(input: {

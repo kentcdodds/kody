@@ -1,6 +1,9 @@
 import { parseModuleSource } from '#worker/module-source.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
-import { isKodyRuntimeModulePath } from './module-graph.ts'
+import {
+	isKodyPublicRuntimeModulePath,
+	isKodyRuntimeModulePath,
+} from './module-graph.ts'
 
 /**
  * Optional `kody:runtime` exports intentionally stay falsy (`undefined` /
@@ -54,6 +57,147 @@ export function parseUnboundRuntimeHelperMessage(message: string) {
 		lateBoundUnavailableExportPattern.exec(message)?.[1] ??
 		null
 	)
+}
+
+/**
+ * Remedies for guard-less access to an optional `kody:runtime` export that
+ * the execution context intentionally left unbound (`undefined` / `null` so
+ * `if (email) { ... }` guards stay falsy). Execute attaches these as
+ * structured `nextStep` values via `getExecutionErrorDetails`; package-app
+ * hosts append the packages entry into the thrown / run-record message
+ * because that path has no structured nextStep channel.
+ */
+export const unboundRuntimeHelperNextSteps: Readonly<Record<string, string>> = {
+	packages:
+		'`packages` is always unbound. Use a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Exactly-once work uses workflows.',
+	events:
+		'`events` is only bound in saved-package runtime contexts that can dispatch package events (package jobs, subscription handlers, and package apps). Ad hoc execute — including a statically imported package export — leaves events unbound; emit from a package job or guard with `if (events) { ... }`.',
+	packageSecrets:
+		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
+	email:
+		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
+}
+
+export function buildUnboundRuntimeHelperNextStep(helperName: string) {
+	const mapped = Object.hasOwn(unboundRuntimeHelperNextSteps, helperName)
+		? unboundRuntimeHelperNextSteps[helperName]
+		: undefined
+	return (
+		mapped ??
+		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as statically importing the owning saved package's export.`
+	)
+}
+
+const nullPackagesInvokePropertyPattern =
+	/Cannot read properties of null \(reading 'invoke'\)/
+
+const packagesUnboundHelperNames = new Set(['packages'])
+
+/**
+ * True when the module graph contains a guard-less `packages.invoke` access
+ * that can produce a null-property TypeError. Same source heuristic execute
+ * uses via `findUnboundRuntimeHelperAccess` — do not rewrite from the bare
+ * TypeError text alone (unrelated `null.invoke` must stay unhinted).
+ */
+export function modulesContainUnboundPackagesInvokeAccess(
+	modules: WorkerLoaderModules,
+) {
+	return (
+		findUnboundRuntimeHelperAccess({
+			errorMessage: "Cannot read properties of null (reading 'invoke')",
+			modules,
+			unboundHelperNames: packagesUnboundHelperNames,
+		})?.helperName === 'packages'
+	)
+}
+
+/**
+ * Package-app workers always bind `packages: null` so leftover
+ * `if (packages)` guards stay falsy. Guard-less `packages.invoke` therefore
+ * throws a bare null-property TypeError with no migration hint. Rewrite that
+ * shape to the same unbound-helper message + packages nextStep execute uses,
+ * without making `packages` truthy. Requires module-graph evidence that the
+ * access is the unbound `packages` helper (not any null `.invoke`).
+ */
+export function rewriteNullPackagesInvokeErrorMessage(input: {
+	originalMessage: string
+	modules: WorkerLoaderModules
+}): string | null {
+	if (!nullPackagesInvokePropertyPattern.test(input.originalMessage)) {
+		return null
+	}
+	if (!modulesContainUnboundPackagesInvokeAccess(input.modules)) return null
+	const packagesNextStep = buildUnboundRuntimeHelperNextStep('packages')
+	if (input.originalMessage.includes(packagesNextStep)) return null
+	const unboundHelper =
+		parseUnboundRuntimeHelperMessage(input.originalMessage) === 'packages'
+			? input.originalMessage
+			: createUnboundRuntimeHelperMessage({
+					originalMessage: input.originalMessage,
+					helperName: 'packages',
+					reference: 'packages.invoke',
+				})
+	const separator = /[.!?]\s*$/.test(unboundHelper) ? ' ' : '. '
+	return `${unboundHelper}${separator}${packagesNextStep}`
+}
+
+/**
+ * Self-contained package-app host helpers that mirror
+ * `rewriteNullPackagesInvokeErrorMessage` for fetch/realtime catch paths
+ * (generated workers cannot import TypeScript modules). `enabled` is precomputed
+ * at worker build from the hydrated module graph via
+ * `modulesContainUnboundPackagesInvokeAccess`.
+ */
+export function createNullPackagesInvokeRewriteHostSource(input: {
+	enabled: boolean
+}) {
+	const packagesNextStep = buildUnboundRuntimeHelperNextStep('packages')
+	const unboundHelperSuffix =
+		'The optional kody:runtime export "packages" is not bound in this execution context, which likely caused `packages.invoke` to fail.'
+	return `
+const __kodyRewriteNullPackagesInvoke = ${input.enabled ? 'true' : 'false'};
+const __kodyPackagesUnboundNextStep = ${JSON.stringify(packagesNextStep)};
+const __kodyPackagesUnboundHelperSuffix = ${JSON.stringify(unboundHelperSuffix)};
+function rewriteNullPackagesInvokeErrorMessage(originalMessage) {
+	if (!__kodyRewriteNullPackagesInvoke) return null;
+	if (
+		!/Cannot read properties of null \\(reading 'invoke'\\)/.test(
+			originalMessage,
+		)
+	) {
+		return null;
+	}
+	if (originalMessage.includes(__kodyPackagesUnboundNextStep)) return null;
+	let unboundHelper = originalMessage;
+	if (
+		!/The optional kody:runtime export "packages" is not bound in this execution context/.test(
+			originalMessage,
+		)
+	) {
+		const helperSeparator = /[.!?]\\s*$/.test(originalMessage) ? ' ' : '. ';
+		unboundHelper =
+			originalMessage + helperSeparator + __kodyPackagesUnboundHelperSuffix;
+	}
+	const nextStepSeparator = /[.!?]\\s*$/.test(unboundHelper) ? ' ' : '. ';
+	return unboundHelper + nextStepSeparator + __kodyPackagesUnboundNextStep;
+}
+function enrichUnboundPackagesInvokeError(error) {
+	const originalMessage =
+		error && typeof error.message === 'string'
+			? error.message
+			: String(error);
+	const rewrittenMessage =
+		rewriteNullPackagesInvokeErrorMessage(originalMessage);
+	if (!rewrittenMessage) return error;
+	const enriched = new Error(rewrittenMessage);
+	enriched.name =
+		error && typeof error.name === 'string' ? error.name : 'Error';
+	if (error && typeof error.stack === 'string') {
+		enriched.stack = error.stack.replace(originalMessage, rewrittenMessage);
+	}
+	return enriched;
+}
+`.trim()
 }
 
 /**
@@ -278,7 +422,11 @@ function isRuntimeModuleSpecifier(specifier: string) {
 	if (specifier === 'kody:runtime') return true
 	// Bundled module graphs rewrite `kody:runtime` to a relative path of the
 	// virtual runtime module (see `rewriteKodyImports` in `module-graph.ts`).
-	return isKodyRuntimeModulePath(specifier.replace(/^(\.\.?\/)+/, ''))
+	const modulePath = specifier.replace(/^(\.\.?\/)+/, '')
+	return (
+		isKodyRuntimeModulePath(modulePath) ||
+		isKodyPublicRuntimeModulePath(modulePath)
+	)
 }
 
 function* iterateModuleSourceTexts(

@@ -6,92 +6,87 @@ import {
 } from './params.ts'
 
 test('params-mode first-arg unwrap and caller Idempotency-Key resolution', () => {
-	expect(resolveWebhookParamsModeFirstArg(null)).toEqual({
-		ok: false,
-		code: 'invalid_params',
-	})
-	expect(resolveWebhookParamsModeFirstArg(['event'])).toEqual({
-		ok: false,
-		code: 'invalid_params',
-	})
-	expect(resolveWebhookParamsModeFirstArg('event')).toEqual({
-		ok: false,
-		code: 'invalid_params',
-	})
-
-	const direct = { messageId: 'm-1', content: 'hello' }
-	expect(resolveWebhookParamsModeFirstArg(direct)).toEqual({
-		ok: true,
-		params: direct,
-	})
-
-	const envelope = {
-		params: { messageId: 'm-2', content: 'invoke' },
-		idempotencyKey: 'evt-2',
-		source: 'discord-gateway',
-		topic: 'discord.message.created',
-	}
-	expect(resolveWebhookParamsModeFirstArg(envelope)).toEqual({
-		ok: true,
-		params: { messageId: 'm-2', content: 'invoke' },
-	})
-	expect(
-		resolveWebhookParamsModeFirstArg({
-			params: { fileSizeBytes: 12 },
-		}),
-	).toEqual({
-		ok: true,
-		params: { fileSizeBytes: 12 },
-	})
 	const routed = {
 		route: 'linkedin/register-video-upload',
+		dryRun: false,
 		params: { fileSizeBytes: 12, confirm: true },
 	}
-	expect(resolveWebhookParamsModeFirstArg(routed)).toEqual({
-		ok: true,
-		params: routed,
-	})
+	const routedWithEnvelopeKeys = {
+		route: 'x',
+		dryRun: true,
+		params: { a: 1 },
+		idempotencyKey: 'evt-1',
+		source: 'promo-scheduler',
+		topic: 'linkedin',
+	}
+	const topicObject = { params: { page: 1 }, topic: { category: 'news' } }
+	const numericIdempotencyKey = { params: { a: 1 }, idempotencyKey: 12 }
+	const blankIdempotencyKey = { params: { a: 1 }, idempotencyKey: '   ' }
+	const unwrapCases: Array<[input: unknown, params: unknown]> = [
+		[null, null],
+		[['event'], null],
+		['event', null],
+		[
+			{ messageId: 'm-1', content: 'hello' },
+			{ messageId: 'm-1', content: 'hello' },
+		],
+		[
+			{
+				params: { messageId: 'm-2', content: 'invoke' },
+				idempotencyKey: 'evt-2',
+				source: 'discord-gateway',
+				topic: 'discord.message.created',
+			},
+			{ messageId: 'm-2', content: 'invoke' },
+		],
+		[{ params: { fileSizeBytes: 12 } }, { fileSizeBytes: 12 }],
+		[routed, routed],
+		[routedWithEnvelopeKeys, routedWithEnvelopeKeys],
+		[topicObject, topicObject],
+		[numericIdempotencyKey, numericIdempotencyKey],
+		[blankIdempotencyKey, blankIdempotencyKey],
+		[
+			{ params: { a: 1 }, idempotencyKey: 'evt-1', source: null, topic: null },
+			{ a: 1 },
+		],
+		[
+			{ params: 'not-an-object', other: true },
+			{ params: 'not-an-object', other: true },
+		],
+	]
 	expect(
-		resolveWebhookParamsModeFirstArg({
-			params: 'not-an-object',
-			other: true,
-		}),
-	).toEqual({
-		ok: true,
-		params: { params: 'not-an-object', other: true },
-	})
+		unwrapCases.map(([input]) => resolveWebhookParamsModeFirstArg(input)),
+	).toEqual(
+		unwrapCases.map(([, params]) =>
+			params === null
+				? { ok: false, code: 'invalid_params' }
+				: { ok: true, params },
+		),
+	)
 
 	const headerRequest = new Request('https://test.kody.dev/hook', {
 		method: 'POST',
 		headers: { 'Idempotency-Key': ' header-key ' },
 		body: JSON.stringify({ idempotencyKey: 'body-key', params: { n: 1 } }),
 	})
-	expect(
-		readWebhookCallerIdempotencyKey({
-			request: headerRequest,
-			json: { idempotencyKey: 'body-key', params: { n: 1 } },
-			allowBodyKey: true,
-		}),
-	).toBe('header-key')
-
 	const bodyRequest = new Request('https://test.kody.dev/hook', {
 		method: 'POST',
 		body: '{}',
 	})
+	const keyCases = [
+		[headerRequest, 'body-key', true, 'header-key'],
+		[bodyRequest, '  body-only  ', true, 'body-only'],
+		[bodyRequest, 'body-only', false, null],
+	] as const
 	expect(
-		readWebhookCallerIdempotencyKey({
-			request: bodyRequest,
-			json: { idempotencyKey: '  body-only  ', params: { n: 1 } },
-			allowBodyKey: true,
-		}),
-	).toBe('body-only')
-	expect(
-		readWebhookCallerIdempotencyKey({
-			request: bodyRequest,
-			json: { idempotencyKey: 'body-only', params: { n: 1 } },
-			allowBodyKey: false,
-		}),
-	).toBeNull()
+		keyCases.map(([request, idempotencyKey, allowBodyKey]) =>
+			readWebhookCallerIdempotencyKey({
+				request,
+				json: { idempotencyKey, params: { n: 1 } },
+				allowBodyKey,
+			}),
+		),
+	).toEqual(keyCases.map(([, , , want]) => want))
 
 	expect(
 		buildWebhookCallerIdempotencyHashParams({

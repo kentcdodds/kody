@@ -1,5 +1,6 @@
 /** Canonical domain id values; descriptions live on each `DomainSpec` (see `coding/domain.ts`, etc.). */
 export const capabilityDomainNames = {
+	access: 'access',
 	account: 'account',
 	admin: 'admin',
 	apps: 'apps',
@@ -7,7 +8,6 @@ export const capabilityDomainNames = {
 	coding: 'coding',
 	email: 'email',
 	integrations: 'integrations',
-	invocationTokens: 'invocationTokens',
 	jobs: 'jobs',
 	mcpServers: 'mcpServers',
 	meta: 'meta',

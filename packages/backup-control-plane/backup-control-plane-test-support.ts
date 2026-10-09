@@ -10,15 +10,65 @@ import {
 	backupSqlStatsSchemaVersion,
 	type BackupSqlStats,
 } from '@kody-internal/shared/backup-sql-stats.ts'
+import { encodeJwtPartForTests } from './access-auth.ts'
 import { type BackupRuntimeStep } from './backup-runtime.ts'
 import { type DurableExportStep } from './durable-export.ts'
 import { BackupError, objectKeyForBookmark } from './backup-policy.ts'
 import { type BackupEnvironment, type BackupManifest } from './backup-types.ts'
 
+/** `assert.rejects` predicate; `retryable` is only checked when provided. */
+export function backupError(code: string, retryable?: boolean) {
+	return (error: unknown) =>
+		error instanceof BackupError &&
+		error.code === code &&
+		(retryable === undefined || error.retryable === retryable)
+}
+
 export function encodeNodeBytesAsBase64(bytes: ArrayBuffer | Uint8Array) {
 	return Buffer.from(
 		bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes,
 	).toString('base64')
+}
+
+/** Self-signed RS256 Access JWKS; `headerKid` overrides the signed header kid. */
+export function accessSigner(kid = 'test-kid') {
+	const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+		modulusLength: 2048,
+	})
+	const jwks = {
+		keys: [
+			{ ...publicKey.export({ format: 'jwk' }), kid, alg: 'RS256', use: 'sig' },
+		],
+	}
+	return {
+		jwks,
+		fetcher: async () => Response.json(jwks),
+		sign(payload: Record<string, unknown>, headerKid = kid) {
+			const encoded = `${encodeJwtPartForTests({ alg: 'RS256', kid: headerKid })}.${encodeJwtPartForTests(payload)}`
+			const signature = signBytes(
+				'RSA-SHA256',
+				Buffer.from(encoded),
+				privateKey,
+			)
+			return `${encoded}.${Buffer.from(signature).toString('base64url')}`
+		},
+	}
+}
+
+/** Access claims that `environment()` accepts, with optional overrides. */
+export function accessClaims(
+	env: BackupEnvironment,
+	overrides: Record<string, unknown> = {},
+) {
+	const now = Math.floor(Date.now() / 1000)
+	return {
+		iss: `https://${env.ACCESS_TEAM_DOMAIN}`,
+		aud: env.ACCESS_APP_AUD,
+		email: env.ACCESS_ALLOWED_EMAIL,
+		iat: now - 10,
+		exp: now + 3600,
+		...overrides,
+	}
 }
 
 class TestDigestStream extends WritableStream<Uint8Array> {
@@ -477,6 +527,38 @@ export class RetryUploadStep implements BackupRuntimeStep {
 		const value = await execute()
 		this.cache.set(name, value)
 		return value
+	}
+
+	async sleep(): Promise<void> {}
+}
+
+/** What a `withNonRetryableBackupErrors` mapper returns in tests; the engine never retries it. */
+export class TestNonRetryableError extends Error {}
+
+/** Workflow engine double that honors `retries.limit` and records every attempt. */
+export class RetryingWorkflowStep implements BackupRuntimeStep {
+	attempts = 0
+	readonly names: string[] = []
+
+	async do<T>(
+		name: string,
+		configOrCallback: unknown,
+		callback?: () => Promise<T>,
+	): Promise<T> {
+		this.names.push(name)
+		const execute = callback ?? (configOrCallback as () => Promise<T>)
+		const retryLimit =
+			(configOrCallback as { retries?: { limit: number } }).retries?.limit ?? 0
+		for (let attempt = 0; ; attempt += 1) {
+			this.attempts += 1
+			try {
+				return await execute()
+			} catch (error) {
+				if (error instanceof TestNonRetryableError || attempt >= retryLimit) {
+					throw error
+				}
+			}
+		}
 	}
 
 	async sleep(): Promise<void> {}

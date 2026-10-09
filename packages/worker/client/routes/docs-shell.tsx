@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode, css, ref } from 'remix/ui'
+import { type Handle, type RemixNode, css, ref } from 'remix/component'
 import { prefetchRouteHrefs, routerEvents } from '#client/client-router.tsx'
 import { type DocSummaryLoaderData } from '#universal/loader-data.ts'
 import {

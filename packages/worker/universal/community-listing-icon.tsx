@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { type PublicCommunityListing } from '#universal/community-public-types.ts'
 import { IdentityIconMark } from '#universal/identity-icon-mark.tsx'
 

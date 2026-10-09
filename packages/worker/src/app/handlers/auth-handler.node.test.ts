@@ -1,15 +1,44 @@
 import { afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
+import type * as signupWelcomeCredits from '#worker/billing/signup-welcome-credits.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
+}))
+
+const welcomeCreditMocks = vi.hoisted(() => ({
+	maybeGrantSignupWelcomeCredits: vi.fn<
+		typeof signupWelcomeCredits.maybeGrantSignupWelcomeCredits
+	>(async () => ({
+		applied: true,
+		entryId: 'signup_welcome:test',
+		balanceMicroUsd: 5_000_000,
+		createdAt: '2026-09-29T00:00:00.000Z',
+	})),
+	reconcileSignupWelcomeCreditsIfPending: vi.fn<
+		typeof signupWelcomeCredits.reconcileSignupWelcomeCreditsIfPending
+	>(async () => null),
 }))
 
 vi.mock('#worker/identity/schedule-user-lifecycle-event.ts', () => ({
 	scheduleUserCreatedEvent: (...args: Array<unknown>) =>
 		lifecycleMocks.scheduleUserCreatedEvent(...args),
 	scheduleUserDeletedEvent: vi.fn(),
+}))
+
+vi.mock('#worker/billing/signup-welcome-credits.ts', () => ({
+	maybeGrantSignupWelcomeCredits: (
+		...args: Parameters<
+			typeof signupWelcomeCredits.maybeGrantSignupWelcomeCredits
+		>
+	) => welcomeCreditMocks.maybeGrantSignupWelcomeCredits(...args),
+	reconcileSignupWelcomeCreditsIfPending: (
+		...args: Parameters<
+			typeof signupWelcomeCredits.reconcileSignupWelcomeCreditsIfPending
+		>
+	) => welcomeCreditMocks.reconcileSignupWelcomeCreditsIfPending(...args),
 }))
 
 const { createAuthHandler } = await import('#app/handlers/auth.ts')
@@ -23,26 +52,18 @@ import {
 	auditEventSummaries,
 	logAuditEventSpy,
 } from '#worker/test-support/audit-log-spy.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
-function createAuthRequest(
-	body: unknown,
-	url: string,
-	handler: ReturnType<typeof createAuthHandler>,
-) {
-	const request = new Request(url, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: typeof body === 'string' ? body : JSON.stringify(body),
-	})
-	const context = new RequestContext(request)
-
-	return {
-		run: () => handler.handler(context),
-	}
+const signupAccepted = {
+	ok: true,
+	mode: 'signup',
+	emailVerificationRequired: true,
+	message: 'Check your email to verify your account.',
+}
+const verificationSendFailed = {
+	error: 'Unable to send the verification email. Please try signing up again.',
 }
 
 function createMemoryKv(initial?: Record<string, string>) {
@@ -84,30 +105,56 @@ function createAuthTestContext(
 			: {}),
 	} as unknown as Parameters<typeof createAuthHandler>[0])
 
+	function request(body: unknown, url = 'http://example.com/auth') {
+		return handler.handler(
+			new RequestContext(
+				new Request(url, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: typeof body === 'string' ? body : JSON.stringify(body),
+				}),
+			),
+		)
+	}
+
 	return {
 		testDb,
-		request(body: unknown, url = 'http://example.com/auth') {
-			return createAuthRequest(body, url, handler).run()
+		request,
+		signup(
+			email: string,
+			username: string | undefined,
+			extra: Record<string, unknown> = {},
+		) {
+			return request({
+				email,
+				username,
+				password: 'password123',
+				mode: 'signup',
+				...extra,
+			})
 		},
 	}
 }
+
+const utmColumns = [
+	'utm_source',
+	'utm_medium',
+	'utm_campaign',
+	'utm_content',
+	'utm_term',
+	'first_touch_landing_path',
+	'first_touch_referrer',
+	'last_active_at',
+] as const
 
 type TestUser = {
 	id: number
 	email: string
 	username: string
 	password_hash: string
-	plan: string
+	plan: string | null
 	stable_user_id: string
-	utm_source: string | null
-	utm_medium: string | null
-	utm_campaign: string | null
-	utm_content: string | null
-	utm_term: string | null
-	first_touch_landing_path: string | null
-	first_touch_referrer: string | null
-	last_active_at: string | null
-}
+} & Record<(typeof utmColumns)[number], string | null>
 
 function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 	let nextId = 1
@@ -117,15 +164,11 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 			return {
 				bind(...params: Array<unknown>) {
-					const readUserByEmail = () => {
-						const email = String(params[0] ?? '').toLowerCase()
-						return users.get(email) ?? null
-					}
-					const readUserByUsername = () => {
-						const username = String(params[0] ?? '').toLowerCase()
+					const findUser = (column: 'email' | 'username') => {
+						const needle = String(params[0] ?? '').toLowerCase()
 						return (
 							Array.from(users.values()).find(
-								(user) => user.username.toLowerCase() === username,
+								(user) => user[column].toLowerCase() === needle,
 							) ?? null
 						)
 					}
@@ -134,8 +177,9 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						const columnMatch = normalizedQuery.match(
 							/insert into "users" \(([^)]+)\)/,
 						)
-						const columns = columnMatch
-							? columnMatch[1]
+						const columnList = columnMatch?.[1]
+						const columns = columnList
+							? columnList
 									.split(',')
 									.map((column) => column.trim().replaceAll('"', ''))
 							: []
@@ -144,85 +188,47 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 						)
 						const username = String(values.username ?? '')
 						const email = String(values.email ?? '')
-						const passwordHash = String(values.password_hash ?? '')
-						const stableUserId = String(values.stable_user_id ?? '')
-						const plan =
-							values.plan === undefined || values.plan === null
-								? null
-								: String(values.plan)
 						const normalizedEmail = email.toLowerCase()
 						if (users.has(normalizedEmail)) {
 							throw new Error('UNIQUE constraint failed: users.email')
 						}
-						if (
-							Array.from(users.values()).some(
-								(user) =>
-									user.username.toLowerCase() === username.toLowerCase(),
-							)
-						) {
+						if (findUserByUsername(username)) {
 							throw new Error('UNIQUE constraint failed: users.username')
 						}
-						const user: TestUser = {
+						const nullable = (value: unknown) =>
+							value == null ? null : String(value)
+						const user = {
 							id: nextId,
 							email,
 							username,
-							password_hash: passwordHash,
-							plan,
-							stable_user_id: stableUserId,
-							utm_source:
-								values.utm_source == null ? null : String(values.utm_source),
-							utm_medium:
-								values.utm_medium == null ? null : String(values.utm_medium),
-							utm_campaign:
-								values.utm_campaign == null
-									? null
-									: String(values.utm_campaign),
-							utm_content:
-								values.utm_content == null ? null : String(values.utm_content),
-							utm_term:
-								values.utm_term == null ? null : String(values.utm_term),
-							first_touch_landing_path:
-								values.first_touch_landing_path == null
-									? null
-									: String(values.first_touch_landing_path),
-							first_touch_referrer:
-								values.first_touch_referrer == null
-									? null
-									: String(values.first_touch_referrer),
-							last_active_at:
-								values.last_active_at == null
-									? null
-									: String(values.last_active_at),
-						}
+							password_hash: String(values.password_hash ?? ''),
+							plan: nullable(values.plan),
+							stable_user_id: String(values.stable_user_id ?? ''),
+							...Object.fromEntries(
+								utmColumns.map((column) => [column, nullable(values[column])]),
+							),
+						} as TestUser
 						nextId += 1
 						users.set(normalizedEmail, user)
 						return user
 					}
 
 					const executeAll = async () => {
+						const empty = { results: [], meta: { changes: 0, last_row_id: 0 } }
 						if (
 							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"email"\s*=/.test(normalizedQuery)
+							normalizedQuery.includes('from "users"')
 						) {
-							const user = readUserByEmail()
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
+							const column = /"email"\s*=/.test(normalizedQuery)
+								? 'email'
+								: /"username"\s*=/.test(normalizedQuery)
+									? 'username'
+									: null
+							if (column) {
+								const user = findUser(column)
+								return { ...empty, results: user ? [{ ...user }] : [] }
 							}
 						}
-						if (
-							normalizedQuery.startsWith('select') &&
-							normalizedQuery.includes('from "users"') &&
-							/"username"\s*=/.test(normalizedQuery)
-						) {
-							const user = readUserByUsername()
-							return {
-								results: user ? [{ ...user }] : [],
-								meta: { changes: 0, last_row_id: 0 },
-							}
-						}
-
 						if (normalizedQuery.includes('insert into "users"')) {
 							const user = insertUser()
 							return {
@@ -230,26 +236,14 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								meta: { changes: 1, last_row_id: user.id },
 							}
 						}
-						if (
-							normalizedQuery.includes('insert into "email_verifications"') ||
-							normalizedQuery.includes('insert into email_verifications')
-						) {
-							return {
-								results: [],
-								meta: { changes: 1, last_row_id: 1 },
-							}
+						if (/insert into "?email_verifications/.test(normalizedQuery)) {
+							return { results: [], meta: { changes: 1, last_row_id: 1 } }
 						}
-
-						return {
-							results: [],
-							meta: { changes: 0, last_row_id: 0 },
-						}
+						return empty
 					}
 
 					return {
-						async all() {
-							return executeAll()
-						},
+						all: executeAll,
 						async first() {
 							const result = await executeAll()
 							return result.results[0] ?? null
@@ -260,10 +254,9 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 								return { meta: { changes: 1, last_row_id: user.id } }
 							}
 							if (
-								normalizedQuery.includes('delete from "email_verifications"') ||
-								normalizedQuery.includes('delete from email_verifications') ||
-								normalizedQuery.includes('insert into "email_verifications"') ||
-								normalizedQuery.includes('insert into email_verifications')
+								/(delete from|insert into) "?email_verifications/.test(
+									normalizedQuery,
+								)
 							) {
 								return { meta: { changes: 1, last_row_id: 1 } }
 							}
@@ -287,7 +280,6 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 										return { meta: { changes: 1, last_row_id: 0 } }
 									}
 								}
-								return { meta: { changes: 0, last_row_id: 0 } }
 							}
 							return { meta: { changes: 0, last_row_id: 0 } }
 						},
@@ -300,24 +292,22 @@ function createTestDb(options: { failRoleAssignment?: boolean } = {}) {
 		},
 	} as unknown as D1Database
 
+	function findUserByUsername(username: string) {
+		return Array.from(users.values()).some(
+			(user) => user.username.toLowerCase() === username.toLowerCase(),
+		)
+	}
+
 	async function addUser(email: string, password: string, username = email) {
-		const passwordHash = await createPasswordHash(password)
-		const user: TestUser = {
+		const user = {
 			id: nextId,
 			email,
 			username,
-			password_hash: passwordHash,
+			password_hash: await createPasswordHash(password),
 			plan: 'free',
-			stable_user_id: await createStableUserIdFromEmail(email),
-			utm_source: null,
-			utm_medium: null,
-			utm_campaign: null,
-			utm_content: null,
-			utm_term: null,
-			first_touch_landing_path: null,
-			first_touch_referrer: null,
-			last_active_at: null,
-		}
+			stable_user_id: testStableUserIdFromEmail(email),
+			...Object.fromEntries(utmColumns.map((column) => [column, null])),
+		} as TestUser
 		nextId += 1
 		users.set(email.toLowerCase(), user)
 		return user
@@ -349,6 +339,12 @@ function stubCloudflareEmailFetch(
 	return fetchStub
 }
 
+function expectAuthAudit(action: string, result: string, extra = {}) {
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({ category: 'auth', action, result, ...extra }),
+	)
+}
+
 test('auth handler login and signup workflow', async () => {
 	// Production signups must actually deliver the verification email, so
 	// the production context gets a (stubbed) configured Cloudflare sender.
@@ -356,102 +352,63 @@ test('auth handler login and signup workflow', async () => {
 	const signupContext = createAuthTestContext()
 	stubCloudflareEmailFetch({ ok: true })
 
-	const invalidJsonResponse = await productionContext.request('{')
-	expect(invalidJsonResponse.status).toBe(400)
-	expect(await invalidJsonResponse.json()).toEqual({
-		error: 'Invalid JSON payload.',
-	})
+	const invalidRequests: Array<[unknown, number, string]> = [
+		['{', 400, 'Invalid JSON payload.'],
+		[{ email: 'a@b.com' }, 400, 'Invalid request body.'],
+		[
+			{ email: 'someone@example.com', password: 'secret', mode: 'login' },
+			401,
+			'Invalid email or password.',
+		],
+	]
+	for (const [body, status, error] of invalidRequests) {
+		const response = await productionContext.request(body)
+		expect([response.status, await response.json()]).toEqual([
+			status,
+			{ error },
+		])
+	}
+	expectAuthAudit('login', 'failure', { reason: 'invalid_credentials' })
 
-	const missingFieldsResponse = await productionContext.request({
-		email: 'a@b.com',
-	})
-	expect(missingFieldsResponse.status).toBe(400)
-	expect(await missingFieldsResponse.json()).toEqual({
-		error: 'Invalid request body.',
-	})
-
-	const unknownUserLoginResponse = await productionContext.request({
-		email: 'someone@example.com',
-		password: 'secret',
-		mode: 'login',
-	})
-	expect(unknownUserLoginResponse.status).toBe(401)
-	expect(await unknownUserLoginResponse.json()).toEqual({
-		error: 'Invalid email or password.',
-	})
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'login',
-			result: 'failure',
-			reason: 'invalid_credentials',
-		}),
+	const openSignupResponse = await productionContext.signup(
+		'new@example.com',
+		'newcomer',
 	)
-
-	const openSignupResponse = await productionContext.request({
-		email: 'new@example.com',
-		username: 'newcomer',
-		password: 'password123',
-		mode: 'signup',
-	})
 	expect(openSignupResponse.status).toBe(200)
-	expect(await openSignupResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
+	expect(await openSignupResponse.json()).toEqual(signupAccepted)
 	expect(productionContext.testDb.users.has('new@example.com')).toBe(true)
 
 	// A registered address gets the accepted body and no session, so the
 	// endpoint does not confirm which addresses hold accounts.
 	await productionContext.testDb.addUser('taken@example.com', 'secret', 'taken')
-	const blockedExistingResponse = await productionContext.request({
-		email: 'taken@example.com',
-		username: 'another-name',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const blockedExistingResponse = await productionContext.signup(
+		'taken@example.com',
+		'another-name',
+	)
 	expect(blockedExistingResponse.status).toBe(200)
-	expect(await blockedExistingResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
+	expect(await blockedExistingResponse.json()).toEqual(signupAccepted)
 
-	const weakPasswordSignupResponse = await signupContext.request({
-		email: 'weak@example.com',
-		username: 'weak-jane',
-		password: 'short',
-		mode: 'signup',
-	})
+	const weakPasswordSignupResponse = await signupContext.signup(
+		'weak@example.com',
+		'weak-jane',
+		{ password: 'short' },
+	)
 	expect(weakPasswordSignupResponse.status).toBe(400)
 	expect(await weakPasswordSignupResponse.json()).toEqual({
 		error: 'Password must be at least 8 characters.',
 	})
 	expect(signupContext.testDb.users.has('weak@example.com')).toBe(false)
 
-	const allowedSignupResponse = await signupContext.request({
-		email: 'allowed@example.com',
-		username: 'allowed-jane',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(allowedSignupResponse.status).toBe(200)
-	expect(await allowedSignupResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
-	expect(signupContext.testDb.users.has('allowed@example.com')).toBe(true)
-	expect(signupContext.testDb.users.get('allowed@example.com')?.plan).toBe(
-		'free',
-	)
-	expect(signupContext.testDb.users.get('allowed@example.com')?.username).toBe(
+	const allowedSignupResponse = await signupContext.signup(
+		'allowed@example.com',
 		'allowed-jane',
 	)
+	expect(allowedSignupResponse.status).toBe(200)
+	expect(await allowedSignupResponse.json()).toEqual(signupAccepted)
+	expect(signupContext.testDb.users.get('allowed@example.com')).toMatchObject({
+		plan: 'free',
+		username: 'allowed-jane',
+	})
 	expect(
 		allowedSignupResponse.headers
 			.getSetCookie()
@@ -473,118 +430,66 @@ test('auth handler login and signup workflow', async () => {
 		'existing-jane',
 	)
 
-	const missingUsernameResponse = await signupContext.request({
-		email: 'missing@example.com',
-		password: 'secret',
-		mode: 'signup',
-	})
-	expect(missingUsernameResponse.status).toBe(400)
-	expect(await missingUsernameResponse.json()).toEqual({
-		error: 'Username is required.',
-	})
-
-	const invalidUsernameResponse = await signupContext.request({
-		email: 'invalid@example.com',
-		username: 'no spaces',
-		password: 'secret',
-		mode: 'signup',
-	})
-	expect(invalidUsernameResponse.status).toBe(400)
-	expect(await invalidUsernameResponse.json()).toEqual({
-		error:
-			'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.',
-	})
-
 	// Reserved usernames double as reserved email local parts
 	// ({username}@<platform domain>), so signup must deny them.
-	for (const reserved of ['kody', 'postmaster', 'kody-r-0123456789abcdef']) {
-		const reservedUsernameResponse = await signupContext.request({
-			email: `${crypto.randomUUID().slice(0, 8)}@example.com`,
-			username: reserved,
-			password: 'password123',
-			mode: 'signup',
-		})
-		expect(reservedUsernameResponse.status).toBe(400)
-		expect(await reservedUsernameResponse.json()).toEqual({
-			error: 'This username is reserved.',
-		})
+	const usernameRejections: Array<[string | undefined, number, string]> = [
+		[undefined, 400, 'Username is required.'],
+		[
+			'no spaces',
+			400,
+			'Username must be 3 to 32 characters, use only letters, numbers, and hyphens, and start and end with a letter or number.',
+		],
+		['kody', 400, 'This username is reserved.'],
+		['postmaster', 400, 'This username is reserved.'],
+		['kody-r-0123456789abcdef', 400, 'This username is reserved.'],
+		['Existing-Jane', 409, 'Username already registered.'],
+	]
+	for (const [username, status, error] of usernameRejections) {
+		const response = await signupContext.signup(
+			`${crypto.randomUUID().slice(0, 8)}@example.com`,
+			username,
+		)
+		expect([username, response.status, await response.json()]).toEqual([
+			username,
+			status,
+			{ error },
+		])
 	}
-
-	const duplicateUsernameResponse = await signupContext.request({
-		email: 'duplicate@example.com',
-		username: 'Existing-Jane',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(duplicateUsernameResponse.status).toBe(409)
-	expect(await duplicateUsernameResponse.json()).toEqual({
-		error: 'Username already registered.',
-	})
 
 	// An already-registered email must be indistinguishable from a fresh
 	// signup in status and body (no account enumeration); only the session
 	// cookie is withheld and nothing is created.
-	const duplicateEmailResponse = await signupContext.request({
-		email: 'existing@example.com',
-		username: 'brand-new-name',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(duplicateEmailResponse.status).toBe(200)
-	expect(await duplicateEmailResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
-	expect(duplicateEmailResponse.headers.get('Set-Cookie')).toBeNull()
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'signup',
-			result: 'failure',
-			reason: 'email_exists',
-		}),
+	const duplicateEmailResponse = await signupContext.signup(
+		'existing@example.com',
+		'brand-new-name',
 	)
+	expect(duplicateEmailResponse.status).toBe(200)
+	expect(await duplicateEmailResponse.json()).toEqual(signupAccepted)
+	expect(duplicateEmailResponse.headers.get('Set-Cookie')).toBeNull()
+	expectAuthAudit('signup', 'failure', { reason: 'email_exists' })
 
 	const email = 'session-user@example.com'
 	await productionContext.testDb.addUser(email, 'secret')
+	const login = (extra = {}, url?: string) =>
+		productionContext.request(
+			{ email, password: 'secret', mode: 'login', ...extra },
+			url,
+		)
 
-	const loginResponse = await productionContext.request({
-		email,
-		password: 'secret',
-		mode: 'login',
-	})
-	expect(loginResponse.status).toBe(200)
-	expect(await loginResponse.json()).toEqual({ ok: true, mode: 'login' })
-	const loginCookie = loginResponse.headers.get('Set-Cookie') ?? ''
-	expect(loginCookie).toContain('kody_session=')
-	expect(loginCookie).toContain('Max-Age=604800')
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'login',
-			result: 'success',
-			email,
-		}),
-	)
+	for (const [extra, maxAge] of [
+		[{}, 'Max-Age=604800'],
+		[{ rememberMe: true }, 'Max-Age=2592000'],
+	] as const) {
+		const response = await login(extra)
+		expect(response.status).toBe(200)
+		expect(await response.json()).toEqual({ ok: true, mode: 'login' })
+		const cookie = response.headers.get('Set-Cookie') ?? ''
+		expect(cookie).toContain('kody_session=')
+		expect(cookie).toContain(maxAge)
+	}
+	expectAuthAudit('login', 'success', { email })
 
-	const rememberMeResponse = await productionContext.request({
-		email,
-		password: 'secret',
-		mode: 'login',
-		rememberMe: true,
-	})
-	expect(rememberMeResponse.status).toBe(200)
-	expect(await rememberMeResponse.json()).toEqual({ ok: true, mode: 'login' })
-	const rememberMeCookie = rememberMeResponse.headers.get('Set-Cookie') ?? ''
-	expect(rememberMeCookie).toContain('kody_session=')
-	expect(rememberMeCookie).toContain('Max-Age=2592000')
-
-	const secureCookieResponse = await productionContext.request(
-		{ email, password: 'secret', mode: 'login' },
-		'https://example.com/auth',
-	)
+	const secureCookieResponse = await login({}, 'https://example.com/auth')
 	expect(secureCookieResponse.headers.get('Set-Cookie') ?? '').toContain(
 		'Secure',
 	)
@@ -599,37 +504,28 @@ test('auth handler login and signup workflow', async () => {
 		'signup:failure',
 		'signup:failure',
 		'signup:success',
-		'signup:failure',
-		'signup:failure',
-		'signup:failure',
-		'signup:failure',
-		'signup:failure',
-		'signup:failure',
-		'signup:failure',
+		...Array.from({ length: 7 }, () => 'signup:failure'),
 		'login:success',
 		'login:success',
 		'login:success',
 	])
 })
 
-test('successful open signup schedules an admin user.created event', async () => {
-	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
+test('password signup schedules user.created with first-touch attribution and persists UTMs once', async () => {
 	const context = createAuthTestContext()
-	const email = 'newbie@example.com'
-	const response = await context.request({
-		email,
-		username: 'newbie',
-		password: 'password123',
-		mode: 'signup',
-	})
-	expect(response.status).toBe(200)
+
+	const plainEmail = 'newbie@example.com'
+	expect((await context.signup(plainEmail, 'newbie')).status).toBe(200)
+	const plainStableUserId = context.testDb.users.get(plainEmail)?.stable_user_id
+	expect(plainStableUserId).toMatch(/^[a-f0-9]{64}$/)
+	expect(plainStableUserId).not.toBe(testStableUserIdFromEmail(plainEmail))
 	expect(lifecycleMocks.scheduleUserCreatedEvent).toHaveBeenCalledWith({
 		env: expect.anything(),
 		source: 'signup',
 		user: {
-			id: await createStableUserIdFromEmail(email),
+			id: plainStableUserId,
 			username: 'newbie',
-			email,
+			email: plainEmail,
 		},
 		attribution: {
 			utmSource: null,
@@ -641,17 +537,15 @@ test('successful open signup schedules an admin user.created event', async () =>
 			referrer: null,
 		},
 	})
-})
+	expect(
+		welcomeCreditMocks.maybeGrantSignupWelcomeCredits,
+	).toHaveBeenCalledWith({
+		db: expect.anything(),
+		userId: plainStableUserId,
+	})
 
-test('password signup persists first-touch UTMs on the account once', async () => {
-	lifecycleMocks.scheduleUserCreatedEvent.mockClear()
-	const context = createAuthTestContext()
 	const email = 'attributed@example.com'
-	const response = await context.request({
-		email,
-		username: 'attributed',
-		password: 'password123',
-		mode: 'signup',
+	const response = await context.signup(email, 'attributed', {
 		utmSource: 'youtube',
 		utmMedium: 'video',
 		utmCampaign: 'bwk-2026-08-27',
@@ -681,50 +575,30 @@ test('password signup persists first-touch UTMs on the account once', async () =
 })
 
 test('signup fails when the default user role cannot be assigned', async () => {
-	const context = createAuthTestContext({
-		failRoleAssignment: true,
-	})
+	const context = createAuthTestContext({ failRoleAssignment: true })
 
-	const response = await context.request({
-		email: 'roleless@example.com',
-		username: 'roleless-jane',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const response = await context.signup('roleless@example.com', 'roleless-jane')
 	expect(response.status).toBe(500)
 	expect(await response.json()).toEqual({ error: 'Unable to create account.' })
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('roleless@example.com')).toBe(false)
 	expect(auditEventSummaries()).toEqual(['signup:failure'])
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'signup',
-			result: 'failure',
-		}),
-	)
+	expectAuthAudit('signup', 'failure')
 })
 
 test('signup rolls back when the verification email cannot be sent', async () => {
 	consoleError.mockImplementation(() => {})
 	consoleWarn.mockImplementation(() => {})
-	const context = createAuthTestContext({
-		emailConfigured: true,
-	})
+	const context = createAuthTestContext({ emailConfigured: true })
 	stubCloudflareEmailFetch({ ok: false, message: 'delivery refused' })
 
-	const response = await context.request({
-		email: 'undeliverable@example.com',
-		username: 'undeliverable-jane',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const response = await context.signup(
+		'undeliverable@example.com',
+		'undeliverable-jane',
+	)
 	expect(response.status).toBe(500)
-	expect(await response.json()).toEqual({
-		error:
-			'Unable to send the verification email. Please try signing up again.',
-	})
+	expect(await response.json()).toEqual(verificationSendFailed)
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	// The created user row is rolled back so signup can be retried.
 	expect(context.testDb.users.has('undeliverable@example.com')).toBe(false)
@@ -745,17 +619,12 @@ test('production signup fails closed when no verification email sender is config
 	consoleError.mockImplementation(() => {})
 	const context = createAuthTestContext({ sentryEnvironment: 'production' })
 
-	const response = await context.request({
-		email: 'no-sender@example.com',
-		username: 'no-sender-jane',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const response = await context.signup(
+		'no-sender@example.com',
+		'no-sender-jane',
+	)
 	expect(response.status).toBe(500)
-	expect(await response.json()).toEqual({
-		error:
-			'Unable to send the verification email. Please try signing up again.',
-	})
+	expect(await response.json()).toEqual(verificationSendFailed)
 	expect(context.testDb.users.has('no-sender@example.com')).toBe(false)
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.any(String),
@@ -779,28 +648,19 @@ test('signup rejects KV-added reserved usernames and accepts unreserved built-in
 	})
 	const context = createAuthTestContext({ kv })
 
-	const addedResponse = await context.request({
-		email: 'brandnew-holder@example.com',
-		username: 'brandnew',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const addedResponse = await context.signup(
+		'brandnew-holder@example.com',
+		'brandnew',
+	)
 	expect(addedResponse.status).toBe(400)
 	expect(await addedResponse.json()).toEqual({
 		error: 'This username is reserved.',
 	})
 
-	const unreservedResponse = await context.request({
-		email: 'faq-holder@example.com',
-		username: 'faq',
-		password: 'password123',
-		mode: 'signup',
-	})
+	const unreservedResponse = await context.signup(
+		'faq-holder@example.com',
+		'faq',
+	)
 	expect(unreservedResponse.status).toBe(200)
-	expect(await unreservedResponse.json()).toEqual({
-		ok: true,
-		mode: 'signup',
-		emailVerificationRequired: true,
-		message: 'Check your email to verify your account.',
-	})
+	expect(await unreservedResponse.json()).toEqual(signupAccepted)
 })

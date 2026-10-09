@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -44,13 +45,14 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	} as unknown as Env
 	const ctx = {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'admin-user-1',
+				userId: personIdFromStored('admin-user-1'),
 				email: 'admin@example.com',
 				displayName: 'Admin',
 				roles: ['admin'],
@@ -112,10 +114,10 @@ test('delete provider mark fails when logo storage is missing', async () => {
 		},
 		ctx,
 	)
-	const missingStorageCtx = {
+	const missingStorageCtx: CapabilityContext = {
 		...ctx,
-		env: { ...env, COMMUNITY_ASSETS: undefined },
-	} as typeof ctx
+		env: { ...env, COMMUNITY_ASSETS: undefined } as unknown as Env,
+	}
 
 	await expect(
 		adminPlatformProviderMarkDeleteCapability.handler(

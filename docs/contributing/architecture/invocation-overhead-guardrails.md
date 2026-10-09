@@ -2,13 +2,12 @@
 
 The static-first package model rests on a performance claim: static
 `kody:@scope/pkg/export` imports cost nothing at invocation time, and **package
-export runs** (HTTP invocation tokens, jobs, subscriptions, apps, and the
-quarantined runtime helper leftover) stay lean enough (tens of milliseconds of
-platform overhead) that agents never route around the contract-checked path.
-Author composition is static import / `import(specifier)` / workflows
-([0037](../decisions/0037-no-author-packages-invoke.md)). This document records
-the guardrails that keep the hot-path claim true. It is about platform overhead
-per call, not about what user code does inside the call.
+export runs** (webhooks, jobs, subscriptions, and apps) stay lean enough (tens
+of milliseconds of platform overhead) that agents never route around the
+contract-checked path. Author composition is static import / `import(specifier)`
+/ workflows ([0037](../decisions/0037-no-author-packages-invoke.md)). This
+document records the guardrails that keep the hot-path claim true. It is about
+platform overhead per call, not about what user code does inside the call.
 
 ## Per-call overhead budgets
 
@@ -38,7 +37,13 @@ per call, not about what user code does inside the call.
   `ok` should not pay tens of milliseconds of platform overhead on a warm
   isolate. The serve path shares the invoke freshness/commit caches, and must
   not await the run-record begin RPC before user `fetch`. Finish already upserts
-  a complete row, so a dropped `running` insert is harmless.
+  a complete row, so a dropped `running` insert is harmless. Hosted serve and
+  package-app origin host setup emit request-scoped `Server-Timing` phases
+  (`owner`, `resolveSavedPackage`, `manifest`, `assertWithinComputeInclude`,
+  `appLoader`, `entrypoint`) via the same helper pages use, so warm overhead can
+  be attributed per phase without a separate benchmark harness. WebSocket
+  upgrades skip `Server-Timing`: Durable Object 101 responses have immutable
+  headers, and rebuilding them without the paired `webSocket` is invalid.
 
 ## Per-isolate caches and their staleness bounds
 
@@ -62,7 +67,17 @@ caches come in two tiers with different correctness arguments (see
   bounds isolate memory.
 - **Registry source lists** — enabled MCP-server refs, per-user TTL **30 s**
   with eager invalidation on mutation, matching the existing MCP hub snapshot
-  bounds.
+  bounds. Package-app entrypoints preload that list only when authored modules
+  statically reference `kody.mcp`; hello-world and other non-MCP apps pass a
+  lazy loader so `listMcpServerNames` runs only if author code first touches
+  `kody.mcp`.
+- **Package-app owner row** — per-`stableUserId` user snapshot for
+  `resolvePackageAppOwnerByStableUserId`, TTL **15 s** (same clock as invoke
+  freshness). Each request still re-applies suspend, deletion-fence, and
+  password-change checks against the cached row; account-state and identity
+  writes invalidate eagerly (admin suspend/unsuspend, deletion fence, password
+  stamp, username/email change, user hard-delete). Cache misses (unknown user)
+  are never retained.
 
 Rules for touching these paths: publish and rebuild flows must keep using the
 uncached row/manifest loaders (`loadPackageManifestBySourceId`,

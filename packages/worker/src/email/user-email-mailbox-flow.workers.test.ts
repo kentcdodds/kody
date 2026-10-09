@@ -10,13 +10,13 @@ import {
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { getOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
@@ -30,16 +30,10 @@ function captureD1Sql(db: D1Database) {
 		statements,
 		db: new Proxy(db, {
 			get(target, property, receiver) {
-				if (property === 'prepare') {
+				if (property === 'prepare' || property === 'exec') {
 					return (sql: string) => {
 						statements.push(sql)
-						return target.prepare(sql)
-					}
-				}
-				if (property === 'exec') {
-					return (sql: string) => {
-						statements.push(sql)
-						return target.exec(sql)
+						return target[property](sql)
 					}
 				}
 				const value = Reflect.get(target, property, receiver)
@@ -196,13 +190,9 @@ function bundleArtifactsKv(bundleKv: Map<string, string>) {
 			if (type === 'json') return JSON.parse(value) as unknown
 			return value
 		},
-		async put() {
-			return undefined
-		},
-		async delete() {
-			return undefined
-		},
-	}
+		async put() {},
+		async delete() {},
+	} as unknown as KVNamespace
 }
 
 test('USER inbound attachment, package event, reply, and provider index stay Mailbox-authoritative', async () => {
@@ -212,7 +202,7 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	const username = `mailbox-flow-${crypto.randomUUID().slice(0, 8)}`
 	const accountEmail = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(accountEmail)
+	const userId = testStableUserIdFromEmail(accountEmail)
 	await seedAccount({
 		db: env.APP_DB,
 		email: accountEmail,
@@ -270,9 +260,7 @@ test('USER inbound attachment, package event, reply, and provider index stay Mai
 	})
 
 	await handleInboundEmail(inbound, flowEnv, ctx)
-	for (let index = 0; index < waitUntilPromises.length; index += 1) {
-		await waitUntilPromises[index]
-	}
+	for (const promise of waitUntilPromises) await promise
 	expect(inbound.rejectedReason).toBeNull()
 
 	const mailbox = mailboxRpc({ env, userId })

@@ -9,326 +9,225 @@ import {
 
 const configPath = 'packages/worker/wrangler.jsonc'
 
-function createConfig(overrides: {
+const platformMailbox = {
+	name: 'MAILBOX',
+	class_name: 'Mailbox',
+	script_name: 'kody-platform',
+}
+
+type ConfigOverrides = {
 	productionDurableObjects?: Array<Record<string, unknown>>
+	productionMain?: string
 	previewMain?: unknown
 	testMain?: unknown
 	topLevelMain?: unknown
 	testDurableObjects?: Array<Record<string, unknown>>
 	previewDurableObjects?: Array<Record<string, unknown>>
-}) {
-	const preview: Record<string, unknown> = {
-		durable_objects: {
-			bindings: overrides.previewDurableObjects ?? [
-				{
-					name: 'MAILBOX',
-					class_name: 'Mailbox',
-					script_name: 'kody-platform',
-				},
-			],
-		},
-	}
-	if (overrides.previewMain !== undefined) preview.main = overrides.previewMain
+}
 
-	const test: Record<string, unknown> = {
-		durable_objects: {
-			bindings: overrides.testDurableObjects ?? [
-				{ name: 'MAILBOX', class_name: 'Mailbox' },
-			],
-		},
-	}
-	if (overrides.testMain !== undefined) test.main = overrides.testMain
-
+function createConfig(overrides: ConfigOverrides) {
+	const withMain = (section: Record<string, unknown>, main: unknown) =>
+		main === undefined ? section : { ...section, main }
 	return {
 		main: overrides.topLevelMain ?? './src/index.ts',
 		env: {
-			production: {
-				durable_objects: {
-					bindings: overrides.productionDurableObjects ?? [
-						{
-							name: 'MAILBOX',
-							class_name: 'Mailbox',
-							script_name: 'kody-platform',
-						},
-					],
+			production: withMain(
+				{
+					durable_objects: {
+						bindings: overrides.productionDurableObjects ?? [platformMailbox],
+					},
 				},
-			},
-			preview,
-			test,
+				overrides.productionMain,
+			),
+			preview: withMain(
+				{
+					durable_objects: {
+						bindings: overrides.previewDurableObjects ?? [platformMailbox],
+					},
+				},
+				overrides.previewMain,
+			),
+			test: withMain(
+				{
+					durable_objects: {
+						bindings: overrides.testDurableObjects ?? [
+							{ name: 'MAILBOX', class_name: 'Mailbox' },
+						],
+					},
+				},
+				overrides.testMain,
+			),
 		},
 	}
 }
 
-const devEntrySource = `
-export {
-	Mailbox,
-	KodyFetchGateway,
-	JobsHost,
+function entry(...names: Array<string>) {
+	return `\nexport { ${names.join(', ')} }\nexport default originWorkerHandler\n`
 }
-export default originWorkerHandler
-`
 
-const productionEntrySource = `
-export { KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`
+const devEntrySource = entry(
+	'Mailbox',
+	'KodyFetchGateway',
+	'DynamicWorkerUsageTail',
+	'JobsHost',
+	'KodyApi',
+)
+const productionEntrySource = entry(
+	'KodyFetchGateway',
+	'DynamicWorkerUsageTail',
+	'JobsHost',
+	'KodyApi',
+)
 
-test('accepts the checked-in production/dev-test-preview split', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(result).toEqual({ ok: true, errors: [] })
-})
-
-test('rejects a production Durable Object binding without script_name', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({
-			productionDurableObjects: [{ name: 'MAILBOX', class_name: 'Mailbox' }],
+test('the origin export guardrail accepts the dev/test/preview split and rejects each drift', () => {
+	const cases: Array<{
+		scenario: string
+		config?: ConfigOverrides
+		dev?: string
+		production?: string
+		error?: string
+	}> = [
+		{ scenario: 'accepts the checked-in production/dev-test-preview split' },
+		{
+			scenario:
+				'rejects a production Durable Object binding without script_name',
+			config: {
+				productionDurableObjects: [{ name: 'MAILBOX', class_name: 'Mailbox' }],
+			},
+			error: 'env.production binds "Mailbox" without a script_name',
+		},
+		{
+			scenario:
+				'rejects the production entry exporting a class outside the allowlist',
+			production: entry(
+				'Mailbox',
+				'KodyFetchGateway',
+				'DynamicWorkerUsageTail',
+				'JobsHost',
+				'KodyApi',
+			),
+			error:
+				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyApi, KodyFetchGateway (unexpected Mailbox)',
+		},
+		{
+			scenario: 'rejects the production entry missing an allowlisted export',
+			production: entry(
+				'KodyFetchGateway',
+				'DynamicWorkerUsageTail',
+				'KodyApi',
+			),
+			error:
+				'must export exactly DynamicWorkerUsageTail, JobsHost, KodyApi, KodyFetchGateway (missing JobsHost)',
+		},
+		{
+			scenario: 'rejects a dev entry missing a class env.test owns locally',
+			dev: entry('KodyFetchGateway', 'JobsHost'),
+			error: 'does not export "Mailbox"',
+		},
+		// Preview uploads the same slim entry as production
+		// (tools/ci/preview-resources.ts), so a locally-owned preview binding
+		// would need a class the slim entry does not export.
+		{
+			scenario: 'rejects a preview Durable Object binding without script_name',
+			config: {
+				previewDurableObjects: [
+					{ name: 'STORAGE_RUNNER', class_name: 'StorageRunner' },
+				],
+			},
+			dev: entry('Mailbox', 'StorageRunner', 'KodyFetchGateway', 'JobsHost'),
+			error: 'env.preview binds "StorageRunner" without a script_name',
+		},
+		{
+			scenario:
+				'does not require the dev entry to export a class env.preview only binds cross-script',
+			config: {
+				testDurableObjects: [],
+				previewDurableObjects: [
+					{
+						name: 'STORAGE_RUNNER',
+						class_name: 'StorageRunner',
+						script_name: 'kody-runtime',
+					},
+				],
+			},
+			dev: entry('KodyFetchGateway', 'JobsHost'),
+		},
+		{
+			scenario: 'rejects env.preview overriding main',
+			config: { previewMain: './src/production-worker.ts' },
+			error: 'env.preview.main is set',
+		},
+		{
+			scenario: 'rejects env.test overriding main',
+			config: { testMain: './src/production-worker.ts' },
+			error: 'env.test.main is set',
+		},
+		{
+			scenario:
+				'rejects a top-level main that does not match the expected dev entry',
+			config: { topLevelMain: './src/other.ts' },
+			error: 'top-level "main" is "./src/other.ts"',
+		},
+		{
+			scenario:
+				'rejects a committed env.production.main because the slim entry is deploy-generated only',
+			config: { productionMain: './src/production-worker.ts' },
+			error: 'env.production.main is set ("./src/production-worker.ts")',
+		},
+		...[
+			'export * from "./index.ts"',
+			'export * as Legacy from "./index.ts"',
+		].map((star) => ({
+			scenario: `rejects a production entry that hides runtime names behind ${star}`,
+			production: `${productionEntrySource}${star}\n`,
+			error: 'must not use export *',
+		})),
+	]
+	const results = cases.map(({ scenario, config, dev, production }) => ({
+		scenario,
+		result: checkOriginProductionExports({
+			configPath,
+			config: createConfig(config ?? {}),
+			devEntrySource: dev ?? devEntrySource,
+			productionEntrySource: production ?? productionEntrySource,
 		}),
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining(
-			'env.production binds "Mailbox" without a script_name',
-		),
-	])
+	}))
+	expect(results).toEqual(
+		cases.map(({ scenario, error }) => ({
+			scenario,
+			result: error
+				? { ok: false, errors: [expect.stringContaining(error)] }
+				: { ok: true, errors: [] },
+		})),
+	)
 })
 
-test('rejects the production entry exporting a class outside the allowlist', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource,
-		productionEntrySource: `
-export { Mailbox, KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining(
-			'must export exactly JobsHost, KodyFetchGateway (unexpected Mailbox)',
-		),
-	])
-})
-
-test('rejects the production entry missing an allowlisted export', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource,
-		productionEntrySource: `
-export { KodyFetchGateway }
-export default originWorkerHandler
-`,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining(
-			'must export exactly JobsHost, KodyFetchGateway (missing JobsHost)',
-		),
-	])
-})
-
-test('rejects a dev entry missing a class env.test owns locally', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource: `
-export { KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`,
-		productionEntrySource,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining('does not export "Mailbox"'),
-	])
-})
-
-test('rejects a preview Durable Object binding without script_name', () => {
-	// Preview uploads the same slim entry as production
-	// (tools/ci/preview-resources.ts), so a locally-owned preview binding
-	// would need a class the slim entry does not export.
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({
-			previewDurableObjects: [
-				{ name: 'STORAGE_RUNNER', class_name: 'StorageRunner' },
-			],
-		}),
-		devEntrySource: `
-export { Mailbox, StorageRunner, KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`,
-		productionEntrySource,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining(
-			'env.preview binds "StorageRunner" without a script_name',
-		),
-	])
-})
-
-test('does not require the dev entry to export a class env.preview only binds cross-script', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({
-			testDurableObjects: [],
-			previewDurableObjects: [
-				{
-					name: 'STORAGE_RUNNER',
-					class_name: 'StorageRunner',
-					script_name: 'kody-runtime',
-				},
-			],
-		}),
-		devEntrySource: `
-export { KodyFetchGateway, JobsHost }
-export default originWorkerHandler
-`,
-		productionEntrySource,
-	})
-	expect(result).toEqual({ ok: true, errors: [] })
-})
-
-test('rejects env.preview or env.test overriding main', () => {
-	const previewResult = checkOriginProductionExports({
-		configPath,
-		config: createConfig({ previewMain: './src/production-worker.ts' }),
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(previewResult.ok).toBe(false)
-	expect(previewResult.errors).toEqual([
-		expect.stringContaining('env.preview.main is set'),
-	])
-
-	const testResult = checkOriginProductionExports({
-		configPath,
-		config: createConfig({ testMain: './src/production-worker.ts' }),
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(testResult.ok).toBe(false)
-	expect(testResult.errors).toEqual([
-		expect.stringContaining('env.test.main is set'),
-	])
-})
-
-test('rejects a top-level main that does not match the expected dev entry', () => {
-	const wrongTopLevel = checkOriginProductionExports({
-		configPath,
-		config: createConfig({ topLevelMain: './src/other.ts' }),
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(wrongTopLevel.ok).toBe(false)
-	expect(wrongTopLevel.errors).toEqual([
-		expect.stringContaining('top-level "main" is "./src/other.ts"'),
-	])
-})
-
-test('rejects a committed env.production.main because the slim entry is deploy-generated only', () => {
-	const configWithMain = createConfig({}) as {
-		env: { production: Record<string, unknown> }
-	}
-	configWithMain.env.production.main = './src/production-worker.ts'
-	const result = checkOriginProductionExports({
-		configPath,
-		config: configWithMain,
-		devEntrySource,
-		productionEntrySource,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining(
-			'env.production.main is set ("./src/production-worker.ts")',
-		),
-	])
-})
-
-test('extractNamedExports handles named blocks, aliases, and declaration exports', () => {
-	expect(
-		extractNamedExports(`
+test('extractNamedExports reads runtime names from the TypeScript AST only', () => {
+	const cases: Array<[string, unknown]> = [
+		[
+			`
 export { A, B as C }
 export const D = 1
 export class E {}
 export function f() {}
 export default E
-`),
-	).toEqual(expect.arrayContaining(['A', 'C', 'D', 'E', 'f']))
-	expect(extractNamedExports('export default handler')).toEqual([])
-})
-
-test('extractNamedExports ignores type-only export declarations and specifiers', () => {
-	expect(
-		extractNamedExports(`
+`,
+			expect.arrayContaining(['A', 'C', 'D', 'E', 'f']),
+		],
+		['export default handler', []],
+		[
+			`
 export type { TypeOnlyName }
 export { type TypeOnlySpecifier, RuntimeName }
 export { JobsHost }
-`),
-	).toEqual(['RuntimeName', 'JobsHost'])
-})
-
-test('hasExportStarDeclaration detects runtime export-star and ignores type-only stars', () => {
-	expect(hasExportStarDeclaration('export * from "./index.ts"')).toBe(true)
-	expect(hasExportStarDeclaration('export * as Legacy from "./index.ts"')).toBe(
-		true,
-	)
-	expect(hasExportStarDeclaration('export type * from "./types.ts"')).toBe(
-		false,
-	)
-	expect(hasExportStarDeclaration('export { JobsHost }')).toBe(false)
-})
-
-test('extractNamedExports ignores default and declare-only declarations', () => {
-	expect(extractNamedExports('export default class JobsHost {}')).toEqual([])
-	expect(extractNamedExports('export declare class JobsHost {}')).toEqual([])
-	expect(extractNamedExports('export class JobsHost {}')).toEqual(['JobsHost'])
-})
-
-test('rejects a production entry that star-exports hidden runtime names', () => {
-	const result = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource,
-		productionEntrySource: `
-export { KodyFetchGateway, JobsHost }
-export * from "./index.ts"
-export default originWorkerHandler
 `,
-	})
-	expect(result.ok).toBe(false)
-	expect(result.errors).toEqual([
-		expect.stringContaining('must not use export *'),
-	])
-
-	const namespaceResult = checkOriginProductionExports({
-		configPath,
-		config: createConfig({}),
-		devEntrySource,
-		productionEntrySource: `
-export { KodyFetchGateway, JobsHost }
-export * as Legacy from "./index.ts"
-export default originWorkerHandler
-`,
-	})
-	expect(namespaceResult.ok).toBe(false)
-	expect(namespaceResult.errors).toEqual([
-		expect.stringContaining('must not use export *'),
-	])
-})
-
-test('extractNamedExports parses with the TypeScript AST, ignoring export-shaped text in comments and strings', () => {
-	const source = `
+			['RuntimeName', 'JobsHost'],
+		],
+		['export default class JobsHost {}', []],
+		['export declare class JobsHost {}', []],
+		['export class JobsHost {}', ['JobsHost']],
+		[
+			`
 // export { ShouldNotCount }
 /**
  * export { AlsoShouldNotCount }
@@ -336,8 +235,25 @@ test('extractNamedExports parses with the TypeScript AST, ignoring export-shaped
 const trap = 'export { StillNotReal }'
 const template = \`export { NeitherIsThis }\`
 export { RealExport }
-`
-	expect(extractNamedExports(source)).toEqual(['RealExport'])
+`,
+			['RealExport'],
+		],
+	]
+	expect(
+		cases.map(([source]) => [source, extractNamedExports(source)]),
+	).toEqual(cases)
+})
+
+test('hasExportStarDeclaration detects runtime export-star and ignores type-only stars', () => {
+	const cases: Array<[string, boolean]> = [
+		['export * from "./index.ts"', true],
+		['export * as Legacy from "./index.ts"', true],
+		['export type * from "./types.ts"', false],
+		['export { JobsHost }', false],
+	]
+	expect(
+		cases.filter(([source, want]) => hasExportStarDeclaration(source) !== want),
+	).toEqual([])
 })
 
 test('current repository origin production/dev-test-preview split passes the guardrail', async () => {

@@ -1133,7 +1133,7 @@ export function isResolveFrameFetchNetworkError(error: unknown) {
 const loopbackHttpUrlPattern =
 	/https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:[/?#]|$)/i
 const viteDevStackTokenPattern =
-	/\/\.vite\/|remix_ui-hmr|callComponentRenderForHmr/i
+	/\/\.vite\/|remix_component-hmr|callComponentRenderForHmr/i
 const frameResolveLoopbackMessagePattern =
 	/^Frame resolve failed \(\d+\) for https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/i
 
@@ -1182,7 +1182,7 @@ function isLocalViteDevSentryEvent(
 	return sentryEventStackFrameFunctions(event).some(
 		(name) =>
 			name.includes('callComponentRenderForHmr') ||
-			name.includes('remix_ui-hmr'),
+			name.includes('remix_component-hmr'),
 	)
 }
 
@@ -1257,50 +1257,29 @@ function filterCloudflareTurnstileClientSentryEvent<
 }
 
 /**
- * Chrome Translate (and similar) rewrites Remix-owned DOM, then reconcile's
- * `moveDomRange` calls `insertBefore` with a stale sibling. Signature from
- * production issue 7732198685 / KODY-7N on `/docs/how-kody-works` (Polish
- * Chrome Translate, click on a translated host select).
+ * Remix reconcile races after DOM desync (Chrome Translate, docs SPA
+ * sidebar nav, etc.): `moveDomRange` calls `insertBefore` with a stale
+ * sibling. Signatures from production issues 7732198685 / KODY-7N
+ * (`/docs/how-kody-works`, Polish Chrome Translate) and 7758139188 /
+ * KODY-8A (docs sidebar SPA nav between `/docs/*`, same session as
+ * KODY-8D Framework invariant).
  *
  * Match is intentionally narrow: `NotFoundError` plus this exact
- * insertBefore wording AND a stack frame attributable to `@remix-run/ui`
- * reconcile (`moveDomRange` / `reconcile`). Never blanket-drop
- * insertBefore NotFoundErrors from app code — KODY-5E was a different
- * HierarchyRequestError on RSS SPA nav.
+ * insertBefore wording on the **same** `exception.values` entry. Do
+ * **not** require `@remix-run/component` / `reconcile` / `moveDomRange`
+ * stack frames at filter time — browser `beforeSend` sees minified
+ * production bundles (`/assets/entry-….js`, functions `go`/`fo`/`io`);
+ * sourcemaps only rewrite those frames on Sentry's server *after*
+ * capture, so a stack gate silently fails to drop real reconcile noise
+ * (KODY-8A). Keep HierarchyRequestError / non-matching insertBefore
+ * messages visible — KODY-5E was a different HierarchyRequestError on RSS
+ * SPA nav.
  */
 const remixReconcileInsertBeforeNotFoundMessage =
 	/^(?:NotFoundError:\s*)?Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node\.?$/
 
 function isRemixReconcileInsertBeforeNotFoundMessage(message: string) {
 	return remixReconcileInsertBeforeNotFoundMessage.test(message.trim())
-}
-
-function isRemixUiReconcileStackUrl(url: string) {
-	const normalized = url.replace(/\\/g, '/')
-	return (
-		normalized.includes('@remix-run/ui') ||
-		normalized.includes('/remix/ui') ||
-		normalized.includes('remix_ui')
-	)
-}
-
-function stackTextLooksLikeRemixUiReconcile(text: string) {
-	const normalized = text.replace(/\\/g, '/')
-	if (!isRemixUiReconcileStackUrl(normalized)) return false
-	return normalized.includes('reconcile') || normalized.includes('moveDomRange')
-}
-
-function isRemixUiReconcileStack(event: SentryErrorEventLike) {
-	if (
-		sentryEventStackFrameFunctions(event).some((name) =>
-			name.includes('moveDomRange'),
-		)
-	) {
-		return true
-	}
-	return sentryEventStackFrameUrls(event).some(
-		stackTextLooksLikeRemixUiReconcile,
-	)
 }
 
 function isNotFoundErrorName(name: string | undefined) {
@@ -1314,10 +1293,7 @@ export function isRemixReconcileInsertBeforeNotFoundError(error: unknown) {
 	if (!isNotFoundErrorName(name)) return false
 	const message =
 		'message' in error && typeof error.message === 'string' ? error.message : ''
-	if (!isRemixReconcileInsertBeforeNotFoundMessage(message)) return false
-	const stack =
-		'stack' in error && typeof error.stack === 'string' ? error.stack : ''
-	return stackTextLooksLikeRemixUiReconcile(stack)
+	return isRemixReconcileInsertBeforeNotFoundMessage(message)
 }
 
 function isRemixReconcileInsertBeforeNotFoundSentryEvent(
@@ -1325,17 +1301,17 @@ function isRemixReconcileInsertBeforeNotFoundSentryEvent(
 	originalException?: unknown,
 ) {
 	if (isRemixReconcileInsertBeforeNotFoundError(originalException)) return true
-	const hasNotFoundType =
-		event.exception?.values?.some((value) => isNotFoundErrorName(value.type)) ??
-		false
-	if (!hasNotFoundType) return false
-	const hasInsertBeforeMessage = sentryEventMessages(event).some(
-		(message) =>
-			typeof message === 'string' &&
-			isRemixReconcileInsertBeforeNotFoundMessage(message),
+	// Type and message must agree on the same exception.values entry — never
+	// pair a NotFoundError type with an insertBefore message from another
+	// value or from untyped event.message.
+	return (
+		event.exception?.values?.some(
+			(value) =>
+				isNotFoundErrorName(value.type) &&
+				typeof value.value === 'string' &&
+				isRemixReconcileInsertBeforeNotFoundMessage(value.value),
+		) ?? false
 	)
-	if (!hasInsertBeforeMessage) return false
-	return isRemixUiReconcileStack(event)
 }
 
 function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
@@ -1344,6 +1320,242 @@ function filterRemixReconcileInsertBeforeNotFoundSentryEvent<
 	if (
 		isRemixReconcileInsertBeforeNotFoundSentryEvent(event, originalException)
 	) {
+		return null
+	}
+	return event
+}
+
+/**
+ * Remix internal after DOM desync: reconcile expects a removed component
+ * to still be in the committed tree. Signature from production issue
+ * 7760649391 / KODY-8D on `/docs/package-apps` — same Chrome session as
+ * KODY-8A insertBefore NotFoundError after docs sidebar SPA nav. Not an
+ * actionable app defect; further nav after the insertBefore failure trips
+ * this invariant inside `@remix-run/component`.
+ *
+ * Match is intentionally narrow: this exact Framework invariant wording
+ * (optional `Error:` preface). Prefer `Error` type when present; do not
+ * require sourcemapped remix stack frames — `beforeSend` only sees minified
+ * bundles (same pitfall as KODY-8A / the insertBefore filter above).
+ */
+const remixReconcileRemovedComponentCommittedMessage =
+	/^(?:Error:\s*)?Framework invariant: Expected removed component to be committed\.?$/
+
+function isRemixReconcileRemovedComponentCommittedMessage(message: string) {
+	return remixReconcileRemovedComponentCommittedMessage.test(message.trim())
+}
+
+export function isRemixReconcileRemovedComponentCommittedError(error: unknown) {
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : ''
+	if (name.length > 0 && name !== 'Error') return false
+	const message =
+		'message' in error && typeof error.message === 'string' ? error.message : ''
+	return isRemixReconcileRemovedComponentCommittedMessage(message)
+}
+
+function isRemixReconcileRemovedComponentCommittedSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isRemixReconcileRemovedComponentCommittedError(originalException)) {
+		return true
+	}
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.some((value) => {
+			if (value.type && value.type !== 'Error') return false
+			return (
+				typeof value.value === 'string' &&
+				isRemixReconcileRemovedComponentCommittedMessage(value.value)
+			)
+		})
+	}
+	return sentryEventMessages(event).some(
+		(message) =>
+			typeof message === 'string' &&
+			isRemixReconcileRemovedComponentCommittedMessage(message),
+	)
+}
+
+function filterRemixReconcileRemovedComponentCommittedSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (
+		isRemixReconcileRemovedComponentCommittedSentryEvent(
+			event,
+			originalException,
+		)
+	) {
+		return null
+	}
+	return event
+}
+
+/**
+ * Sentry Session Replay / rrweb cross-origin iframe instrumentation noise
+ * (getsentry/sentry-javascript#23795 / KODY-8W, issue 7777463624).
+ * `ShadowDomManager.observeAttachShadow` reads `iframeWindow.Element`
+ * without a try/catch. For a cross-origin frame `contentWindow` is a truthy
+ * restricted proxy, so the read throws into the host page via Replay's
+ * iframe `load` listener (`onIframeLoad` → `observeAttachShadow`).
+ *
+ * Primary mitigation is `block: ['iframe']` in `replayIntegration` (see
+ * `sentry-init.ts`). This filter is the residual beforeSend gate for events
+ * that still escape (older clients, race before block applies, TypeError
+ * variant when `Element` is undefined). Match is intentionally narrow:
+ * SecurityError / DOMException "Failed to read a named property 'Element'"
+ * cross-origin wording, or TypeError reading `'prototype'` of undefined,
+ * AND a stack frame named `onIframeLoad` / `observeAttachShadow` /
+ * `patchAttachShadow`. Never blanket-drop SecurityError or prototype
+ * TypeErrors from app code.
+ */
+const sentryReplayCrossOriginIframeElementMessage =
+	/^(?:(?:SecurityError|DOMException):\s*)?Failed to read a named property ['"]Element['"] from ['"]Window['"]:\s*Blocked a frame with origin ["'][^"']+["'] from accessing a cross-origin frame\.?$/i
+
+const sentryReplayCrossOriginIframePrototypeMessage =
+	/^(?:TypeError:\s*)?Cannot read propert(?:y|ies) of undefined \(reading ['"]prototype['"]\)$/
+
+const sentryReplayIframeInstrumentationStackFunctions = [
+	'onIframeLoad',
+	'observeAttachShadow',
+	'patchAttachShadow',
+] as const
+
+function isSentryReplayCrossOriginIframeElementMessage(message: string) {
+	return sentryReplayCrossOriginIframeElementMessage.test(message.trim())
+}
+
+function isSentryReplayCrossOriginIframePrototypeMessage(message: string) {
+	return sentryReplayCrossOriginIframePrototypeMessage.test(message.trim())
+}
+
+function isSentryReplayIframeInstrumentationStackFunction(name: string) {
+	return sentryReplayIframeInstrumentationStackFunctions.some(
+		(token) => name === token || name.endsWith(`.${token}`),
+	)
+}
+
+/**
+ * Parse function names out of an `Error.stack` string (V8 `at name (url)` /
+ * SpiderMonkey `name@url`). Do not substring-match tokens against full stack
+ * text — a URL like `onIframeLoad-helper.js` must not count.
+ */
+function stackTextMentionsReplayIframeInstrumentation(stack: string) {
+	for (const line of stack.split('\n')) {
+		const trimmed = line.trim()
+		const v8 = /^at\s+([^\s(]+)/.exec(trimmed)
+		const spidermonkey = /^([^@\s]+)@/.exec(trimmed)
+		const name = v8?.[1] ?? spidermonkey?.[1]
+		if (name && isSentryReplayIframeInstrumentationStackFunction(name)) {
+			return true
+		}
+	}
+	return false
+}
+
+function framesMentionReplayIframeInstrumentation(
+	frames: Array<SentryStackFrame> | undefined,
+) {
+	if (!frames || frames.length === 0) return false
+	return frames.some(
+		(frame) =>
+			typeof frame.function === 'string' &&
+			isSentryReplayIframeInstrumentationStackFunction(frame.function),
+	)
+}
+
+function isSentryReplayCrossOriginIframeElementType(type: string | undefined) {
+	return (
+		type === undefined || type === 'SecurityError' || type === 'DOMException'
+	)
+}
+
+function isSentryReplayCrossOriginIframePrototypeType(
+	type: string | undefined,
+) {
+	return type === undefined || type === 'TypeError'
+}
+
+function isSentryReplayCrossOriginIframeTypedMessage(
+	type: string | undefined,
+	message: string,
+) {
+	if (
+		isSentryReplayCrossOriginIframeElementType(type) &&
+		isSentryReplayCrossOriginIframeElementMessage(message)
+	) {
+		return true
+	}
+	return (
+		isSentryReplayCrossOriginIframePrototypeType(type) &&
+		isSentryReplayCrossOriginIframePrototypeMessage(message)
+	)
+}
+
+function isSentryReplayCrossOriginIframeError(error: unknown) {
+	if (typeof error === 'string') {
+		return (
+			isSentryReplayCrossOriginIframeElementMessage(error) ||
+			isSentryReplayCrossOriginIframePrototypeMessage(error)
+		)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : undefined
+	const message =
+		'message' in error && typeof error.message === 'string'
+			? error.message
+			: undefined
+	if (!message) return false
+	if (!isSentryReplayCrossOriginIframeTypedMessage(name, message)) return false
+	const stack =
+		'stack' in error && typeof error.stack === 'string' ? error.stack : null
+	return stack ? stackTextMentionsReplayIframeInstrumentation(stack) : false
+}
+
+/**
+ * Drop only when type + message agree on the same exception.values entry
+ * (or on originalException / bare event.message when values are absent) and
+ * that same entry's frames name Replay iframe instrumentation. Never pair a
+ * matching message from one value with an instrumentation frame from another.
+ */
+function isSentryReplayCrossOriginIframeSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	if (isSentryReplayCrossOriginIframeError(originalException)) return true
+
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.some((value) => {
+			if (typeof value.value !== 'string') return false
+			if (
+				!isSentryReplayCrossOriginIframeTypedMessage(value.type, value.value)
+			) {
+				return false
+			}
+			return framesMentionReplayIframeInstrumentation(value.stacktrace?.frames)
+		})
+	}
+
+	if (typeof event.message !== 'string') return false
+	if (
+		!isSentryReplayCrossOriginIframeElementMessage(event.message) &&
+		!isSentryReplayCrossOriginIframePrototypeMessage(event.message)
+	) {
+		return false
+	}
+	return sentryEventStackFrameFunctions(event).some(
+		isSentryReplayIframeInstrumentationStackFunction,
+	)
+}
+
+function filterSentryReplayCrossOriginIframeSentryEvent<
+	T extends SentryErrorEventLike,
+>(event: T, originalException?: unknown): T | null {
+	if (isSentryReplayCrossOriginIframeSentryEvent(event, originalException)) {
 		return null
 	}
 	return event
@@ -1536,7 +1748,21 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 		return null
 	}
 	if (
+		filterRemixReconcileRemovedComponentCommittedSentryEvent(
+			event,
+			originalException,
+		) === null
+	) {
+		return null
+	}
+	if (
 		filterCrabAppleUserAgentSpoofSentryEvent(event, originalException) === null
+	) {
+		return null
+	}
+	if (
+		filterSentryReplayCrossOriginIframeSentryEvent(event, originalException) ===
+		null
 	) {
 		return null
 	}

@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/component'
 import { iconGlyphs, type IconName } from './icon-glyphs.tsx'
 
 export type { IconName } from './icon-glyphs.tsx'

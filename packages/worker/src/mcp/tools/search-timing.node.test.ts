@@ -1,8 +1,36 @@
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import {
 	reconcileSearchPhaseTimings,
+	runWithSearchDeadline,
+	SearchDeadlineError,
 	toSearchServerTiming,
 } from './search-timing.ts'
+
+test('runWithSearchDeadline returns results that finish in time and rejects hung work', async () => {
+	await expect(
+		runWithSearchDeadline(async () => 'ranked', 1_000),
+	).resolves.toBe('ranked')
+
+	vi.useFakeTimers()
+	try {
+		let runSignal: AbortSignal | undefined
+		const settled = runWithSearchDeadline((signal) => {
+			runSignal = signal
+			return new Promise(() => {})
+		}, 1_000).catch((error: unknown) => error)
+		expect(runSignal?.aborted).toBe(false)
+		await vi.advanceTimersByTimeAsync(1_000)
+		const error = await settled
+		expect(error).toBeInstanceOf(SearchDeadlineError)
+		expect(runSignal?.aborted).toBe(true)
+		expect(runSignal?.reason).toBe(error)
+		expect((error as Error).message).toContain(
+			'Search did not finish within 1s, so Kody stopped waiting before the MCP request timed out.',
+		)
+	} finally {
+		vi.useRealTimers()
+	}
+})
 
 test('reconcileSearchPhaseTimings sums exclusive tiles and leaves overlapping detail out of exclusiveMs', () => {
 	const reconciled = reconcileSearchPhaseTimings({

@@ -1,4 +1,4 @@
-import { type Handle, css, ref } from 'remix/ui'
+import { type Handle, css, ref } from 'remix/component'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -173,6 +173,9 @@ export function OnboardingRoute(handle: Handle) {
 	let hasSecondMcpClient = false
 	let secondAgentGiftActive = false
 	let connectedAgents: OnboardingPayload['connectedAgents'] = []
+	let featuredPlatformIntegrations: NonNullable<
+		OnboardingPayload['featuredPlatformIntegrations']
+	> = []
 	let accessWinMemorySubject: string | null = null
 	let persistedPackageName: string | null = null
 	let initializedStep = false
@@ -224,6 +227,7 @@ export function OnboardingRoute(handle: Handle) {
 		mcpServerUrl = payload.mcpServerUrl
 		mcpHighlights = payload.mcpHighlights ?? {}
 		discoveryPrompt = payload.discoveryPrompt
+		featuredPlatformIntegrations = payload.featuredPlatformIntegrations ?? []
 		hasAccessWin =
 			source === 'snapshot'
 				? hasAccessWin || payload.hasAccessWin
@@ -478,7 +482,7 @@ export function OnboardingRoute(handle: Handle) {
 		)
 		const visibleSelectedAgent =
 			activeStep === 3
-				? resolveOnboardingStep3SelectedAgent(selectedAgent, connectedAgents)
+				? resolveOnboardingStep3SelectedAgent(selectedAgent)
 				: selectedAgent
 		if (
 			activeStep === 3 &&
@@ -563,6 +567,7 @@ export function OnboardingRoute(handle: Handle) {
 									hasMcpClient,
 									hasAccessWin,
 									discoveryPrompt,
+									featuredPlatformIntegrations,
 									selectedAgentLabel: connectedAgentLabel,
 									connectedAgents,
 									search: readRouterSearch(handle),

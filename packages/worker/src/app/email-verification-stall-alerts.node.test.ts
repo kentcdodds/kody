@@ -5,7 +5,9 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { userEmailVerificationStalledTopic } from '#worker/identity/email-verification-stalled-subscription-event.ts'
 
 const mocks = vi.hoisted(() => ({
-	dispatchUserEmailVerificationStalledSubscriptionEvent: vi.fn(async () => []),
+	dispatchUserEmailVerificationStalledSubscriptionEvent: vi.fn(
+		async (_input: { event: { user: { username: string } } }) => [],
+	),
 }))
 
 vi.mock(
@@ -21,37 +23,50 @@ const {
 	shouldRunEmailVerificationStallAlertCron,
 } = await import('./email-verification-stall-alerts.ts')
 
-async function seedUser(input: {
-	db: D1Database
+type SeedUser = {
 	username: string
-	email: string
+	email?: string
 	stableUserId: string
 	verifiedAt?: string | null
 	accountType?: 'person' | 'platform'
 	deletingAt?: string | null
 	deliveryStatus?: string | null
 	deliveryAt?: string | null
-}) {
-	await input.db
-		.prepare(
-			`INSERT INTO users (
-				username, email, password_hash, stable_user_id, email_verified_at,
-				account_type, deleting_at, email_verification_delivery_status,
-				email_verification_delivery_at
-			) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?, ?)`,
-		)
-		.bind(
-			input.username,
-			input.email,
-			input.stableUserId,
-			input.verifiedAt ?? null,
-			input.accountType ?? 'person',
-			input.deletingAt ?? null,
-			input.deliveryStatus ?? null,
-			input.deliveryAt ?? null,
-		)
-		.run()
 }
+
+/** Users table with `accepted` verification sends unless overridden. */
+async function createUsersDb(users: Array<SeedUser>) {
+	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
+	await ensureUsersTestSchema({
+		db,
+		columns: ['email_verified_at', 'account_type'],
+	})
+	for (const user of users) {
+		await db
+			.prepare(
+				`INSERT INTO users (
+					username, email, password_hash, stable_user_id, email_verified_at,
+					account_type, deleting_at, email_verification_delivery_status,
+					email_verification_delivery_at
+				) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?, ?)`,
+			)
+			.bind(
+				user.username,
+				user.email ?? `${user.username}@example.com`,
+				user.stableUserId,
+				user.verifiedAt ?? null,
+				user.accountType ?? 'person',
+				user.deletingAt ?? null,
+				user.deliveryStatus ?? 'accepted',
+				user.deliveryAt ?? '2026-09-01T08:00:00.000Z',
+			)
+			.run()
+	}
+	return db
+}
+
+const dispatchStalled =
+	mocks.dispatchUserEmailVerificationStalledSubscriptionEvent
 
 test('hourly stall scan fans accepted sends older than the threshold and skips fresh or resolved rows', async () => {
 	expect(
@@ -65,78 +80,49 @@ test('hourly stall scan fans accepted sends older than the threshold and skips f
 		),
 	).toBe(false)
 
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureUsersTestSchema({
-		db,
-		columns: ['email_verified_at', 'account_type'],
+	const db = await createUsersDb([
+		{
+			username: 'raul',
+			email: 'a.kodycodes@raulg.dev',
+			stableUserId: 'r'.repeat(64),
+			deliveryAt: '2026-09-01T08:45:16.921Z',
+		},
+		{
+			username: 'fresh',
+			stableUserId: 'f'.repeat(64),
+			deliveryAt: '2026-09-01T09:30:00.000Z',
+		},
+		{
+			username: 'verified',
+			stableUserId: 'v'.repeat(64),
+			verifiedAt: '2026-09-01T09:00:00.000Z',
+		},
+		{
+			username: 'bounced',
+			stableUserId: 'b'.repeat(64),
+			deliveryStatus: 'bounced',
+		},
+		{
+			username: 'platform',
+			email: 'ops@kody.codes',
+			stableUserId: 'p'.repeat(64),
+			accountType: 'platform',
+		},
+		{
+			username: 'leaving',
+			stableUserId: 'l'.repeat(64),
+			deletingAt: '2026-09-01T09:00:00.000Z',
+		},
+	])
+	const env = { APP_DB: db, APP_BASE_URL: 'https://kody.codes' }
+	const result = await checkEmailVerificationStallsAndNotify({
+		env,
+		now: new Date('2026-09-01T10:00:00.000Z'),
 	})
-	await seedUser({
-		db,
-		username: 'raul',
-		email: 'a.kodycodes@raulg.dev',
-		stableUserId: 'r'.repeat(64),
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T08:45:16.921Z',
-	})
-	await seedUser({
-		db,
-		username: 'fresh',
-		email: 'fresh@example.com',
-		stableUserId: 'f'.repeat(64),
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T09:30:00.000Z',
-	})
-	await seedUser({
-		db,
-		username: 'verified',
-		email: 'verified@example.com',
-		stableUserId: 'v'.repeat(64),
-		verifiedAt: '2026-09-01T09:00:00.000Z',
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T08:00:00.000Z',
-	})
-	await seedUser({
-		db,
-		username: 'bounced',
-		email: 'bounced@example.com',
-		stableUserId: 'b'.repeat(64),
-		deliveryStatus: 'bounced',
-		deliveryAt: '2026-09-01T08:00:00.000Z',
-	})
-	await seedUser({
-		db,
-		username: 'platform',
-		email: 'ops@kody.codes',
-		stableUserId: 'p'.repeat(64),
-		accountType: 'platform',
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T08:00:00.000Z',
-	})
-	await seedUser({
-		db,
-		username: 'leaving',
-		email: 'leaving@example.com',
-		stableUserId: 'l'.repeat(64),
-		deletingAt: '2026-09-01T09:00:00.000Z',
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T08:00:00.000Z',
-	})
-
-	const env = {
-		APP_DB: db,
-		APP_BASE_URL: 'https://kody.codes',
-	}
-	const now = new Date('2026-09-01T10:00:00.000Z')
-	const result = await checkEmailVerificationStallsAndNotify({ env, now })
 
 	expect(result).toEqual({ scanned: 1, notified: 1, failed: 0 })
-	expect(
-		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent,
-	).toHaveBeenCalledOnce()
-	expect(
-		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent,
-	).toHaveBeenCalledWith({
+	expect(dispatchStalled).toHaveBeenCalledOnce()
+	expect(dispatchStalled).toHaveBeenCalledWith({
 		env,
 		event: expect.objectContaining({
 			event: userEmailVerificationStalledTopic,
@@ -167,54 +153,31 @@ function createMemoryKv() {
 }
 
 test('hourly stall scan advances a watermark so later accepted sends are not starved', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureUsersTestSchema({
-		db,
-		columns: ['email_verified_at', 'account_type'],
-	})
-	await seedUser({
-		db,
-		username: 'older',
-		email: 'older@example.com',
-		stableUserId: 'a'.repeat(64),
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T07:00:00.000Z',
-	})
-	await seedUser({
-		db,
-		username: 'newer',
-		email: 'newer@example.com',
-		stableUserId: 'n'.repeat(64),
-		deliveryStatus: 'accepted',
-		deliveryAt: '2026-09-01T08:00:00.000Z',
-	})
 	const env = {
-		APP_DB: db,
+		APP_DB: await createUsersDb([
+			{
+				username: 'older',
+				stableUserId: 'a'.repeat(64),
+				deliveryAt: '2026-09-01T07:00:00.000Z',
+			},
+			{ username: 'newer', stableUserId: 'n'.repeat(64) },
+		]),
 		APP_BASE_URL: 'https://kody.codes',
 		BUNDLE_ARTIFACTS_KV: createMemoryKv(),
 	}
-	const first = await checkEmailVerificationStallsAndNotify({
-		env,
-		now: new Date('2026-09-01T10:00:00.000Z'),
-		scanLimit: 1,
-	})
-	expect(first).toEqual({ scanned: 1, notified: 1, failed: 0 })
-	expect(
-		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent.mock.calls.at(
-			-1,
-		)?.[0].event.user.username,
-	).toBe('older')
-
-	const second = await checkEmailVerificationStallsAndNotify({
-		env,
-		now: new Date('2026-09-01T11:00:00.000Z'),
-		scanLimit: 1,
-	})
-	expect(second).toEqual({ scanned: 1, notified: 1, failed: 0 })
-	expect(
-		mocks.dispatchUserEmailVerificationStalledSubscriptionEvent.mock.calls.at(
-			-1,
-		)?.[0].event.user.username,
-	).toBe('newer')
+	for (const [now, username] of [
+		['2026-09-01T10:00:00.000Z', 'older'],
+		['2026-09-01T11:00:00.000Z', 'newer'],
+	] as const) {
+		expect(
+			await checkEmailVerificationStallsAndNotify({
+				env,
+				now: new Date(now),
+				scanLimit: 1,
+			}),
+		).toEqual({ scanned: 1, notified: 1, failed: 0 })
+		expect(dispatchStalled.mock.calls.at(-1)?.[0].event.user.username).toBe(
+			username,
+		)
+	}
 })

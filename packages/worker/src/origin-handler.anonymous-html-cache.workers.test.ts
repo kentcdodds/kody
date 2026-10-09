@@ -1,5 +1,4 @@
-import { env, exports } from 'cloudflare:workers'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { anonymousHtmlCacheControl } from '#app/anonymous-html-cache.ts'
 import {
@@ -8,10 +7,7 @@ import {
 } from '#app/anonymous-html-edge-cache.ts'
 
 async function workerFetch(request: Request): Promise<Response> {
-	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, env, ctx)
-	await waitOnExecutionContext(ctx)
-	return response
+	return await exports.default.fetch(request)
 }
 
 function expectCspPresent(response: Response) {
@@ -73,44 +69,46 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 	expect(htmlGuidesHit.headers.get('Vary')).toBe(htmlGuides.headers.get('Vary'))
 	await expect(htmlGuidesHit.text()).resolves.toBe(htmlGuidesBody)
 
-	const session = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { Cookie: 'kody_session=stale' },
-		}),
-	)
-	expect(session.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	expect(session.headers.get('Cache-Control')).toBe('no-store')
-
-	const dismissed = await workerFetch(
-		new Request(pricingUrl, {
-			headers: {
+	const noStore = { cacheControl: 'no-store' }
+	const uncached: Array<
+		[string, HeadersInit, { status?: number; cacheControl?: string }]
+	> = [
+		[pricingUrl, { Cookie: 'kody_session=stale' }, noStore],
+		[
+			pricingUrl,
+			{
 				Cookie: 'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
 			},
-		}),
+			noStore,
+		],
+		[pricingUrl, { Authorization: 'Bearer not-a-token' }, {}],
+		[pricingUrl, { 'Cache-Control': 'no-cache' }, {}],
+		[missingGuideUrl, {}, { status: 404 }],
+		[missingGuideUrl, {}, { status: 404 }],
+	]
+	const outcomes = []
+	for (const [url, headers] of uncached) {
+		const response = await workerFetch(new Request(url, { headers }))
+		outcomes.push({
+			hit: response.headers.get(anonymousHtmlEdgeCacheHeader) === 'HIT',
+			status: response.status,
+			cacheControl: response.headers.get('Cache-Control'),
+		})
+		if (
+			typeof headers === 'object' &&
+			'Cookie' in headers &&
+			String(headers.Cookie).includes('kody_site_banner_dismiss=')
+		) {
+			expect(response.headers.get('Set-Cookie') ?? '').toContain(
+				'kody_site_banner_dismiss=',
+			)
+			expect(response.headers.get('Set-Cookie') ?? '').toContain('Max-Age=0')
+		}
+		await response.body?.cancel()
+	}
+	expect(outcomes).toMatchObject(
+		uncached.map(([, , expected]) => ({ hit: false, ...expected })),
 	)
-	expect(dismissed.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	expect(dismissed.headers.get('Cache-Control')).toBe('no-store')
-
-	const authorized = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { Authorization: 'Bearer not-a-token' },
-		}),
-	)
-	expect(authorized.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-
-	const bypass = await workerFetch(
-		new Request(pricingUrl, {
-			headers: { 'Cache-Control': 'no-cache' },
-		}),
-	)
-	expect(bypass.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-
-	const missing = await workerFetch(new Request(missingGuideUrl))
-	expect(missing.status).toBe(404)
-	expect(missing.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
-	const missingAgain = await workerFetch(new Request(missingGuideUrl))
-	expect(missingAgain.status).toBe(404)
-	expect(missingAgain.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
 
 	const setCookieResponse = new Response('<html>set-cookie</html>', {
 		status: 200,
@@ -125,10 +123,57 @@ test('anonymous marketing HTML is stored in caches.default and replayed as HIT',
 		`https://test.kody.dev/pricing?set-cookie=${probe}`,
 		{ method: 'GET' },
 	)
-	await caches.default
-		.put(setCookieKey, setCookieResponse.clone())
-		.catch(() => {
-			// Cache API rejects Set-Cookie bodies; either path must not store.
-		})
-	expect(await caches.default.match(setCookieKey)).toBeUndefined()
+	const edgeCache = (caches as CacheStorage & { default: Cache }).default
+	await edgeCache.put(setCookieKey, setCookieResponse.clone()).catch(() => {
+		// Cache API rejects Set-Cookie bodies; either path must not store.
+	})
+	expect(await edgeCache.match(setCookieKey)).toBeUndefined()
+})
+
+test('anonymous llms.txt and auth pages are stored in caches.default; cookies stay private', async () => {
+	const probe = crypto.randomUUID()
+	const llmsPaths = ['/llms.txt', '/docs/llms.txt'] as const
+	for (const pathname of llmsPaths) {
+		const url = `https://test.kody.dev${pathname}?edge-cache=${probe}`
+		const miss = await workerFetch(new Request(url))
+		expect(miss.status).toBe(200)
+		expect(miss.headers.get('Content-Type')).toMatch(/text\/plain/i)
+		expect(miss.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		expect(miss.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		const missBody = await miss.text()
+		expect(missBody.startsWith('# Kody')).toBe(true)
+
+		const hit = await workerFetch(new Request(url))
+		expect(hit.status).toBe(200)
+		expect(hit.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		expect(hit.headers.get('Vary')?.toLowerCase()).toContain('cookie')
+		await expect(hit.text()).resolves.toBe(missBody)
+	}
+
+	for (const pathname of ['/login', '/signup'] as const) {
+		const url = `https://test.kody.dev${pathname}?edge-cache=${probe}`
+		const miss = await workerFetch(new Request(url))
+		expect(miss.status).toBe(200)
+		expect(miss.headers.get('Content-Type')).toMatch(/text\/html/i)
+		expect(miss.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		expect(miss.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		expect(miss.headers.get('Vary')?.toLowerCase()).toContain('cookie')
+		const missHtml = await miss.text()
+		expect(missHtml.length).toBeGreaterThan(0)
+		expect(missHtml).not.toMatch(/csrf|nonce=/i)
+
+		const hit = await workerFetch(new Request(url))
+		expect(hit.status).toBe(200)
+		expect(hit.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.headers.get('Cache-Control')).toBe(anonymousHtmlCacheControl)
+		await expect(hit.text()).resolves.toBe(missHtml)
+
+		const withCookie = await workerFetch(
+			new Request(url, { headers: { Cookie: 'kody_session=stale' } }),
+		)
+		expect(withCookie.headers.get(anonymousHtmlEdgeCacheHeader)).not.toBe('HIT')
+		expect(withCookie.headers.get('Cache-Control')).toBe('no-store')
+		await withCookie.body?.cancel()
+	}
 })

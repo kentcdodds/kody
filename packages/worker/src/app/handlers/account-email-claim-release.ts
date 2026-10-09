@@ -208,7 +208,6 @@ export function createAccountEmailClaimReleaseHandler(env: Env) {
 				await createEmailClaimReleaseVerification({
 					env,
 					userId: user.userId,
-					stableUserId: user.mcpUser.userId,
 					currentEmail: user.email,
 					email,
 					requestUrl: url,

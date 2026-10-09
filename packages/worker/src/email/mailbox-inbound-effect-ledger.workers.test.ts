@@ -8,6 +8,33 @@ import {
 } from './mailbox-inbound-ledger.ts'
 import { rpcFor, stubFor, uniqueUserId } from './mailbox-test-helpers.ts'
 
+async function claimAndReceive(
+	mailbox: ReturnType<typeof rpcFor>,
+	ownerId: string,
+	deliveryId: string,
+	now: string,
+) {
+	const claim = await mailbox.claimInboundDeliveryStorage({
+		ownerId,
+		deliveryId,
+		expectedAttachmentCount: 0,
+		now,
+	})
+	if (claim.status !== 'claimed') throw new Error('expected claim')
+	const received = await mailbox.markInboundDeliveryReceived({
+		ownerId,
+		deliveryId,
+		storageLease: claim.delivery.storageLease!,
+		usageDurationMs: 25,
+		usageMonth: '2026-07',
+		usageBytes: 64,
+		now,
+	})
+	if (received.status !== 'received') throw new Error('expected received')
+	expect(received.delivery.finalizationToken).toBeTruthy()
+	return received
+}
+
 async function insertClaimAndReceive(
 	mailbox: ReturnType<typeof rpcFor>,
 	ownerId: string,
@@ -19,26 +46,7 @@ async function insertClaimAndReceive(
 		delivery,
 		now,
 	})
-	const claim = await mailbox.claimInboundDeliveryStorage({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		expectedAttachmentCount: 0,
-		now,
-	})
-	expect(claim.status).toBe('claimed')
-	if (claim.status !== 'claimed') throw new Error('expected claim')
-	const received = await mailbox.markInboundDeliveryReceived({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		storageLease: claim.delivery.storageLease!,
-		usageDurationMs: 25,
-		usageMonth: '2026-07',
-		usageBytes: 64,
-		now,
-	})
-	expect(received.status).toBe('received')
-	if (received.status !== 'received') throw new Error('expected received')
-	return received
+	return await claimAndReceive(mailbox, ownerId, delivery.deliveryId, now)
 }
 
 test('Mailbox inbound usage and subscription effects enforce exactly-once leases, retry, and dead-letter', async () => {
@@ -46,12 +54,7 @@ test('Mailbox inbound usage and subscription effects enforce exactly-once leases
 	const ownerId = uniqueUserId('effect-exactly-once')
 	const mailbox = rpcFor(ownerId)
 	const now = '2026-07-22T00:00:00.000Z'
-	const delivery = insertInput(ownerId, {
-		fingerprint: 'fp-effect-exactly-once',
-		deliveryId: 'email-inbound-delivery:effect-exactly-once',
-		messageId: 'email-inbound-message:effect-exactly-once',
-		threadId: 'email-inbound-thread:effect-exactly-once',
-	})
+	const delivery = insertInput(ownerId)
 	const received = await insertClaimAndReceive(mailbox, ownerId, delivery, now)
 	const finalizationToken = received.delivery.finalizationToken!
 
@@ -153,12 +156,7 @@ test('Mailbox inbound usage and subscription effects support suppression on rece
 	const ownerId = uniqueUserId('effect-suppress')
 	const mailbox = rpcFor(ownerId)
 	const now = '2026-07-22T00:00:00.000Z'
-	const suppressDelivery = insertInput(ownerId, {
-		fingerprint: 'fp-suppress',
-		deliveryId: 'email-inbound-delivery:suppress',
-		messageId: 'email-inbound-message:suppress',
-		threadId: 'email-inbound-thread:suppress',
-	})
+	const suppressDelivery = insertInput(ownerId)
 	const suppressReceived = await insertClaimAndReceive(
 		mailbox,
 		ownerId,
@@ -222,39 +220,15 @@ test('stale effect workers cannot complete or fail after storage reclaim re-fina
 	const ownerId = uniqueUserId('reclaim-fence')
 	const mailbox = rpcFor(ownerId)
 	const now = '2026-07-22T00:00:00.000Z'
-	const delivery = insertInput(ownerId, {
-		fingerprint: 'fp-reclaim-fence',
-		deliveryId: 'email-inbound-delivery:reclaim-fence',
-		messageId: 'email-inbound-message:reclaim-fence',
-		threadId: 'email-inbound-thread:reclaim-fence',
-	})
+	const delivery = insertInput(ownerId)
 
-	await mailbox.insertChargedPendingInboundDelivery({
+	const firstReceived = await insertClaimAndReceive(
+		mailbox,
 		ownerId,
 		delivery,
 		now,
-	})
-	const firstClaim = await mailbox.claimInboundDeliveryStorage({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		expectedAttachmentCount: 0,
-		now,
-	})
-	expect(firstClaim.status).toBe('claimed')
-	if (firstClaim.status !== 'claimed') throw new Error('expected first claim')
-	const firstReceived = await mailbox.markInboundDeliveryReceived({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		storageLease: firstClaim.delivery.storageLease!,
-		usageDurationMs: 5,
-		usageMonth: '2026-07',
-		usageBytes: 8,
-		now,
-	})
-	expect(firstReceived.status).toBe('received')
-	if (firstReceived.status !== 'received') throw new Error('expected received')
+	)
 	const staleToken = firstReceived.delivery.finalizationToken!
-	expect(staleToken).toBeTruthy()
 
 	const staleUsageClaim = await mailbox.claimInboundUsageEffect({
 		ownerId,
@@ -418,29 +392,12 @@ test('stale effect workers cannot complete or fail after storage reclaim re-fina
 		).status,
 	).toBe('complete')
 
-	const terminalReclaim = await mailbox.claimInboundDeliveryStorage({
+	const thirdReceived = await claimAndReceive(
+		mailbox,
 		ownerId,
-		deliveryId: delivery.deliveryId,
-		expectedAttachmentCount: 0,
-		now: '2026-07-22T00:02:00.000Z',
-	})
-	expect(terminalReclaim.status).toBe('claimed')
-	if (terminalReclaim.status !== 'claimed') {
-		throw new Error('expected terminal-state reclaim')
-	}
-	const thirdReceived = await mailbox.markInboundDeliveryReceived({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		storageLease: terminalReclaim.delivery.storageLease!,
-		usageDurationMs: 9,
-		usageMonth: '2026-07',
-		usageBytes: 16,
-		now: '2026-07-22T00:02:01.000Z',
-	})
-	expect(thirdReceived.status).toBe('received')
-	if (thirdReceived.status !== 'received') {
-		throw new Error('expected third received')
-	}
+		delivery.deliveryId,
+		'2026-07-22T00:02:00.000Z',
+	)
 	expect(thirdReceived.delivery.subscriptionEffectState).toBe('pending')
 })
 
@@ -449,39 +406,10 @@ test('legacy received rows with null effect lease timestamps and null subscripti
 	const ownerId = uniqueUserId('null-lease')
 	const mailbox = rpcFor(ownerId)
 	const now = '2026-07-22T00:00:00.000Z'
-	const delivery = insertInput(ownerId, {
-		fingerprint: 'fp-null-lease',
-		deliveryId: 'email-inbound-delivery:null-lease',
-		messageId: 'email-inbound-message:null-lease',
-		threadId: 'email-inbound-thread:null-lease',
-	})
+	const delivery = insertInput(ownerId)
 
-	await mailbox.insertChargedPendingInboundDelivery({
-		ownerId,
-		delivery,
-		now,
-	})
-	const storage = await mailbox.claimInboundDeliveryStorage({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		expectedAttachmentCount: 0,
-		now,
-	})
-	expect(storage.status).toBe('claimed')
-	if (storage.status !== 'claimed') throw new Error('expected claim')
-	const received = await mailbox.markInboundDeliveryReceived({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		storageLease: storage.delivery.storageLease!,
-		usageDurationMs: 5,
-		usageMonth: '2026-07',
-		usageBytes: 8,
-		now,
-	})
-	expect(received.status).toBe('received')
-	if (received.status !== 'received') throw new Error('expected received')
+	const received = await insertClaimAndReceive(mailbox, ownerId, delivery, now)
 	const finalizationToken = received.delivery.finalizationToken!
-	expect(finalizationToken).toBeTruthy()
 
 	// Simulate legacy/imported received row: null leases + null subscription state
 	// in both columns and detail_json (snapshot falls back to detail).
@@ -552,37 +480,9 @@ test('processing subscription rows with null lease_at remain reclaimable and due
 	const ownerId = uniqueUserId('null-sub-lease-at')
 	const mailbox = rpcFor(ownerId)
 	const now = '2026-07-22T00:00:00.000Z'
-	const delivery = insertInput(ownerId, {
-		fingerprint: 'fp-null-sub-lease-at',
-		deliveryId: 'email-inbound-delivery:null-sub-lease-at',
-		messageId: 'email-inbound-message:null-sub-lease-at',
-		threadId: 'email-inbound-thread:null-sub-lease-at',
-	})
+	const delivery = insertInput(ownerId)
 
-	await mailbox.insertChargedPendingInboundDelivery({
-		ownerId,
-		delivery,
-		now,
-	})
-	const storage = await mailbox.claimInboundDeliveryStorage({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		expectedAttachmentCount: 0,
-		now,
-	})
-	expect(storage.status).toBe('claimed')
-	if (storage.status !== 'claimed') throw new Error('expected claim')
-	const received = await mailbox.markInboundDeliveryReceived({
-		ownerId,
-		deliveryId: delivery.deliveryId,
-		storageLease: storage.delivery.storageLease!,
-		usageDurationMs: 5,
-		usageMonth: '2026-07',
-		usageBytes: 8,
-		now,
-	})
-	expect(received.status).toBe('received')
-	if (received.status !== 'received') throw new Error('expected received')
+	const received = await insertClaimAndReceive(mailbox, ownerId, delivery, now)
 	const finalizationToken = received.delivery.finalizationToken!
 
 	await runInDurableObject(stubFor(ownerId), async (_instance, state) => {

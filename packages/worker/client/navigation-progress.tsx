@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { routerEvents } from './client-router.tsx'
 import { colors, transitions } from '#universal/styles/tokens.ts'
 

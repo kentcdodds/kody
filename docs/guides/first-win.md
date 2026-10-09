@@ -49,10 +49,10 @@ Agent notes — for AI agents driving the optional email loop from this page:
 -->
 
 This guide is an optional playbook for exercising stored mail and durable
-memory: the assistant introduces itself over email, the person replies from
-their normal email client, and the answers become memories that follow them into
-every agent they connect later. For the default post-connect climax (run one ad
-hoc request, then persist a package you own), use
+memory: the agent introduces itself over email, the person replies from their
+normal email client, and the answers become memories that follow them into every
+agent they connect later. For the default post-connect climax (run one ad hoc
+request, then persist a package you own), use
 [`quick-example`](./quick-example.md) instead.
 
 Paths below are relative to the same deployment origin this guide was fetched

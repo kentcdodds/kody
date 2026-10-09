@@ -1,4 +1,8 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import {
+	isCloudflareOpaqueInternalError,
+	isCloudflareOpaqueInternalErrorMessage,
+} from '#worker/cloudflare-opaque-internal-error.ts'
 import { loadPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	requiresPrivateVisibilityConfirmation,
@@ -11,6 +15,7 @@ import {
 	resolveArtifactDefaultBranchHead,
 	resolveExistingArtifactSourceRepo,
 } from './artifacts.ts'
+import { isArtifactsGitTimeoutError } from './artifacts-git-retry.ts'
 import { type EntitySourceRow } from './types.ts'
 
 export const productionPackageSourceSafetyPolicy =
@@ -23,7 +28,7 @@ export const destructiveOverwriteConfirmationField =
 	'confirm_destructive_overwrite'
 
 export const destructiveOverwriteConfirmationDescription =
-	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Kody still verifies a restorable backup snapshot before publishing.'
+	'Set to true only when the user explicitly approved destructive overwrite of existing package source history. Promoting publishes replace advertised history with a new root commit (and drop leftover session refs); promotePublished:false stays additive. Restorable backups retain prior content — secret scrub of backups still needs packageDelete or an explicit purge.'
 
 export const privateVisibilityChangeConfirmationField =
 	'confirm_private_visibility_change'
@@ -65,6 +70,171 @@ export function buildPublishedCommitHeadMismatchCallerMessage(
 		'Publish the current Artifacts HEAD with packagePublishExternalPush (or wait for the reconcile job), then retry.',
 		'Repo sessions open from the published commit and refuse to start while unpublished remote commits are present.',
 	].join(' ')
+}
+
+/**
+ * Stable phrase for Artifacts git HEAD / listServerRefs timeouts. Distinct
+ * from repository *lookup* timeouts (`resolveExistingArtifactSourceRepo`),
+ * which never reached the git remote.
+ */
+export const artifactsGitReadTimeoutMessagePhrase =
+	'timed out reading the Artifacts git remote.'
+
+/**
+ * Stable phrase for Artifacts repository lookup timeouts
+ * (`resolveExistingArtifactSourceRepo` / binding `get` / REST). Not a git
+ * protocol failure — do not suggest packageSave as a git-remote fallback.
+ */
+export const artifactsRepoLookupTimeoutMessagePhrase =
+	'timed out looking up the Artifacts repository.'
+
+export function buildArtifactsGitReadTimeoutMessage(input: {
+	operation: string
+	reason: string
+}) {
+	const lines = [
+		`${input.operation} ${artifactsGitReadTimeoutMessagePhrase}`,
+		'Retry the call.',
+	]
+	// packageSave is the authoring fallback for a hung packageGetGitRemote.
+	// repoOpenSession has no overwrite lane, so that sentence would send an
+	// agent away from the session it was opening.
+	if (input.operation === 'packageGetGitRemote') {
+		lines.push(
+			'Package authoring can use packageSave when packageGetGitRemote keeps timing out.',
+		)
+	}
+	lines.push(input.reason)
+	return lines.join(' ')
+}
+
+export function buildArtifactsRepoLookupTimeoutMessage(input: {
+	operation: string
+	reason: string
+}) {
+	return [
+		`${input.operation} ${artifactsRepoLookupTimeoutMessagePhrase}`,
+		'Retry the call.',
+		input.reason,
+	].join(' ')
+}
+
+export function isArtifactsGitReadTimeoutMessage(message: string) {
+	return (
+		message.includes(artifactsGitReadTimeoutMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
+}
+
+export function isArtifactsRepoLookupTimeoutMessage(message: string) {
+	return (
+		message.includes(artifactsRepoLookupTimeoutMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
+}
+
+/**
+ * Stable phrase for Artifacts REST opaque internal errors (KODY-8F). Same
+ * retry-oriented class as `buildArtifactsGitReadTimeoutMessage` — not a
+ * source-recovery problem. Matched by MCP observability and Sentry beforeSend.
+ */
+export const artifactsOpaqueInternalRetryMessagePhrase =
+	'hit a transient Cloudflare Artifacts internal error.'
+
+export function buildArtifactsOpaqueInternalErrorMessage(input: {
+	operation: string
+	reason: string
+}) {
+	const lines = [
+		`${input.operation} ${artifactsOpaqueInternalRetryMessagePhrase}`,
+		'Retry the call.',
+	]
+	if (input.operation === 'packageGetGitRemote') {
+		lines.push(
+			'Package authoring can use packageSave when packageGetGitRemote keeps hitting this Artifacts platform error.',
+		)
+	}
+	lines.push(input.reason)
+	return lines.join(' ')
+}
+
+export function isArtifactsOpaqueInternalRetryMessage(message: string) {
+	return (
+		message.includes(artifactsOpaqueInternalRetryMessagePhrase) &&
+		message.includes('Retry the call.')
+	)
+}
+
+/**
+ * Source-safety recovery wraps whose reason is the bare opaque Cloudflare /
+ * Artifacts internal-error sentence. Real recovery failures (missing
+ * snapshot, HEAD mismatch, repo not found, …) stay unmatched so Sentry still
+ * sees them. Backstop for paths that wrapped before the retry branch existed
+ * (KODY-8F).
+ */
+export function isSourceRecoveryOpaqueInternalErrorMessage(message: string) {
+	if (
+		!message.includes('stopped by the production package source safety policy.')
+	) {
+		return false
+	}
+	if (!message.includes('Stop and report this source recovery problem')) {
+		return false
+	}
+	const match =
+		/at published commit "[^"]*": (.+) Stop and report this source recovery problem/.exec(
+			message,
+		)
+	const reason = match?.[1]
+	return (
+		typeof reason === 'string' && isCloudflareOpaqueInternalErrorMessage(reason)
+	)
+}
+
+function rethrowPublishedPackageSourceRepoArtifactsError(input: {
+	source: EntitySourceRow
+	operation: string
+	error: unknown
+	/**
+	 * `repo-lookup` is `resolveExistingArtifactSourceRepo` (binding/REST).
+	 * `git-head` is default-branch HEAD resolution (git remote / listServerRefs).
+	 * Timeout wording must stay accurate so agents do not treat a lookup stall
+	 * as a hung git remote.
+	 */
+	failure: 'repo-lookup' | 'git-head'
+}): never {
+	if (isArtifactsGitTimeoutError(input.error)) {
+		const reason = getErrorMessage(input.error)
+		throw new Error(
+			input.failure === 'repo-lookup'
+				? buildArtifactsRepoLookupTimeoutMessage({
+						operation: input.operation,
+						reason,
+					})
+				: buildArtifactsGitReadTimeoutMessage({
+						operation: input.operation,
+						reason,
+					}),
+			{ cause: input.error },
+		)
+	}
+	if (isCloudflareOpaqueInternalError(input.error)) {
+		throw new Error(
+			buildArtifactsOpaqueInternalErrorMessage({
+				operation: input.operation,
+				reason: getErrorMessage(input.error),
+			}),
+			{ cause: input.error },
+		)
+	}
+	throw new Error(
+		buildSourceRecoveryProblemMessage({
+			source: input.source,
+			operation: input.operation,
+			reason: getErrorMessage(input.error),
+		}),
+		{ cause: input.error },
+	)
 }
 
 function buildDestructiveOverwriteConfirmationMessage(input: {
@@ -215,15 +385,12 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			input.source.repo_id,
 		)
 	} catch (error) {
-		const message = getErrorMessage(error)
-		throw new Error(
-			buildSourceRecoveryProblemMessage({
-				source: input.source,
-				operation: input.operation,
-				reason: message,
-			}),
-			{ cause: error },
-		)
+		rethrowPublishedPackageSourceRepoArtifactsError({
+			source: input.source,
+			operation: input.operation,
+			error,
+			failure: 'repo-lookup',
+		})
 	}
 	if (!repo) {
 		throw new Error(
@@ -252,15 +419,12 @@ export async function assertPublishedPackageSourceRepoHead(input: {
 			head = await resolveArtifactDefaultBranchHead({ repo })
 		}
 	} catch (error) {
-		const message = getErrorMessage(error)
-		throw new Error(
-			buildSourceRecoveryProblemMessage({
-				source: input.source,
-				operation: input.operation,
-				reason: message,
-			}),
-			{ cause: error },
-		)
+		rethrowPublishedPackageSourceRepoArtifactsError({
+			source: input.source,
+			operation: input.operation,
+			error,
+			failure: 'git-head',
+		})
 	}
 	if (!head) {
 		throw new Error(

@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { bytesToSnapshotString } from '#universal/package-file-media.ts'
 import {
 	buildArtifactsGitAuth,
 	buildAuthenticatedArtifactsRemote,
@@ -41,7 +42,7 @@ function normalizePublishPath(path: string) {
 }
 
 async function collectPublishWorkspaceFiles(input: {
-	workspace: RepoPublishWorkspace
+	filesystem: PublishGitNoteFileSystem
 	dir: string
 	listFiles: () => Promise<Array<string>>
 }) {
@@ -50,13 +51,17 @@ async function collectPublishWorkspaceFiles(input: {
 	for (const relative of await input.listFiles()) {
 		if (relative.split('/').includes('.git')) continue
 		const absolute = `${dirPrefix}/${relative}`.replace(/\/+/g, '/')
-		const content = await input.workspace.readFile(absolute)
-		if (content == null) {
+		let bytes: Uint8Array
+		try {
+			// Raw bytes — UTF-8 `readFile` replaces invalid sequences with
+			// U+FFFD (PNG `0x89` → `0xFD`), which then poisons `/_assets`.
+			bytes = await input.filesystem.readFileBytes(absolute)
+		} catch {
 			throw new Error(
 				`Failed to read published clone file "${absolute}" while refreshing the source snapshot.`,
 			)
 		}
-		files[relative] = content
+		files[relative] = bytesToSnapshotString(bytes, relative)
 	}
 	return files
 }
@@ -209,7 +214,7 @@ export async function cloneExternalPublishWorkspace(input: {
 		filesystem: workspace.filesystem,
 		collectFiles: async () =>
 			await collectPublishWorkspaceFiles({
-				workspace: publishWorkspace,
+				filesystem: workspace.filesystem,
 				dir,
 				listFiles,
 			}),

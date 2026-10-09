@@ -6,12 +6,14 @@ import {
 	CloudflareRestClient,
 } from './cloudflare-rest-client.ts'
 
+type RecordedRequest = Pick<Request, 'method' | 'headers' | 'text'>
+
 test('Cloudflare REST clients read mock responses, enforce API paths, and send JSON bodies', async () => {
 	const token = 'cloudflare-client-env-token'
 	const baseUrl = 'https://api.cloudflare.test'
-	let accountsRequest: Request | null = null
-	let verifyRequest: Request | null = null
-	let patchRequest: Request | null = null
+	let accountsRequest = null as RecordedRequest | null
+	let verifyRequest = null as RecordedRequest | null
+	let patchRequest = null as RecordedRequest | null
 
 	using _server = createMswNodeServer([
 		http.get(`${baseUrl}/client/v4/accounts`, ({ request }) => {

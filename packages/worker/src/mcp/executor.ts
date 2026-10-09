@@ -12,6 +12,10 @@ import {
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { exports as workerExports } from 'cloudflare:workers'
 import {
+	dynamicWorkerUsageTailLoaderIdSuffix,
+	type DynamicWorkerUsageTailProps,
+} from '#worker/usage/dynamic-worker-cpu.ts'
+import {
 	outboundFetchTimeoutMsForExecutor,
 	retrieverOutboundFetchDeniedMessage,
 	type FetchGatewayProps,
@@ -21,7 +25,11 @@ import {
 	type RawFetchHostSink,
 } from '#mcp/raw-fetch-host-nudge.ts'
 import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
-import { recordUsage, type UsageEnv } from '#worker/usage/record-usage.ts'
+import {
+	recordUsage,
+	usageAttributionFieldsFromRequest,
+	type UsageEnv,
+} from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 import {
 	countDynamicWorkerModuleGraphChars,
@@ -70,7 +78,10 @@ import {
 	secretAuthorityHeaderName,
 	takeSecretAuthorityFromCapabilityArgs,
 } from '#mcp/secrets/secret-authority.ts'
-import { parseUnboundRuntimeHelperMessage } from '#worker/package-runtime/unbound-runtime-helpers.ts'
+import {
+	buildUnboundRuntimeHelperNextStep,
+	parseUnboundRuntimeHelperMessage,
+} from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import {
 	getDynamicWorkerEvaluationContext,
@@ -85,6 +96,12 @@ import {
 	executorSandboxTimeoutMessagePrefix,
 	isExecutorSandboxTimeoutMessage,
 } from '#worker/sentry-options.ts'
+import {
+	callerDisconnectedSandboxLog,
+	callerDisconnectedSandboxMessage,
+	createCallerDisconnectedExecutionError,
+	isCallerDisconnectedSandboxMessage,
+} from '#worker/caller-disconnect.ts'
 import { parseStorageEstimateReadErrorMessage } from '#worker/storage-estimate-error.ts'
 import {
 	kodyCallDispatcherName,
@@ -173,6 +190,12 @@ type DynamicWorkerExecutorInput = {
 	timeout: number
 	signal?: AbortSignal
 	globalOutbound: Fetcher | null
+	/**
+	 * Builds the tail worker that records Cloudflare-measured CPU for this
+	 * isolate (`dynamic_worker_cpu`). Omitted when the loopback export is not
+	 * available; the run is unaffected either way.
+	 */
+	createUsageTail?: (props: DynamicWorkerUsageTailProps) => Fetcher
 	modules?: WorkerLoaderModules
 	gatewayProps: FetchGatewayProps
 	usageEnv: UsageEnv & UserMeterEnv
@@ -189,10 +212,21 @@ type DynamicWorkerExecutorInput = {
 	 */
 	surface?: DynamicWorkerDaySurface
 	/**
+	 * Saved package id when this worker belongs to a known package run.
+	 * Falls back to `invocation.packageContext.packageId` at claim time.
+	 * Omit for ad hoc execute; never guess.
+	 */
+	packageId?: string | null
+	/**
 	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
 	 * nested surfaces.
 	 */
 	executeShape?: ExecuteThinGlueClass | null
+	/**
+	 * Called once the stable LOADER worker id is minted (same id unique_worker_days
+	 * meters). Use to stamp run metadata before evaluate finishes.
+	 */
+	onWorkerId?: (workerId: string) => void
 	/**
 	 * When set, unique-worker-day metering and the first-execute activation
 	 * stamp run on `waitUntil` instead of the sandbox critical path. Without
@@ -322,11 +356,14 @@ export async function raceWithHostEvaluationDeadline<T>(
 	}
 	const onExternalAbort = () => {
 		const reason = externalSignal?.reason
-		abortWith(
-			reason instanceof Error
-				? reason
-				: new Error(executorSandboxTimeoutMessage),
-		)
+		// A caller disconnect must not be relabeled as the sandbox wall-clock
+		// timeout. Only a real Error reason (AbortError, or an upstream
+		// timeout) is forwarded; a bare abort is the inbound request ending.
+		if (reason instanceof Error) {
+			abortWith(reason)
+			return
+		}
+		abortWith(new DOMException(callerDisconnectedSandboxMessage, 'AbortError'))
 	}
 	const timeoutPromise = new Promise<never>((_resolve, reject) => {
 		rejectDeadline = reject
@@ -405,6 +442,9 @@ async function settleWithin<T>(
 
 export function createNamedExecutionError(error: unknown) {
 	const message = getErrorMessage(error)
+	if (isCallerDisconnectedSandboxMessage(message)) {
+		return createCallerDisconnectedExecutionError()
+	}
 	const namedError = new Error(message)
 	if (isExecutorSandboxTimeoutMessage(message)) {
 		namedError.name = 'TimeoutError'
@@ -544,10 +584,20 @@ export function createExecuteExecutor(input: {
 	 */
 	surface?: DynamicWorkerDaySurface
 	/**
+	 * Saved package id when this worker belongs to a known package run.
+	 * Omit for ad hoc execute; never guess.
+	 */
+	packageId?: string | null
+	/**
 	 * Host-side thin/glue class for ad-hoc execute usage events. Omit on
 	 * nested surfaces.
 	 */
 	executeShape?: ExecuteThinGlueClass | null
+	/**
+	 * Called once the stable LOADER worker id is minted (same id unique_worker_days
+	 * meters). Use to stamp run metadata before evaluate finishes.
+	 */
+	onWorkerId?: (workerId: string) => void
 	/**
 	 * When false, sandbox `fetch` is rejected. Retriever runs use this to stay
 	 * closed-world. Defaults to true.
@@ -582,13 +632,24 @@ export function createExecuteExecutor(input: {
 		globalOutbound: loopbackExports.KodyFetchGateway({
 			props: gatewayProps,
 		}),
+		// Tails only run where Analytics Engine is bound (deployed Workers).
+		// Open-source workerd reports zero CPU, and a local tail would outlive
+		// the run with a D1 write per invocation.
+		...('DynamicWorkerUsageTail' in loopbackExports && input.env.USAGE_EVENTS
+			? {
+					createUsageTail: (props: DynamicWorkerUsageTailProps) =>
+						loopbackExports.DynamicWorkerUsageTail({ props }),
+				}
+			: {}),
 		modules: input.modules,
 		gatewayProps,
 		usageEnv: input.env,
 		rawFetchHostSink: input.rawFetchHostSink,
 		recordExecuteUsage: input.recordExecuteUsage,
 		surface: input.surface ?? 'execute',
+		packageId: input.packageId,
 		executeShape: input.executeShape,
+		onWorkerId: input.onWorkerId,
 		waitUntil: input.waitUntil,
 	})
 }
@@ -639,11 +700,17 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				storageContext: input.gatewayProps.storageContext,
 				workerOptions,
 			})
+			input.onWorkerId?.(workerId)
+			const attributedPackageId =
+				input.packageId?.trim() ||
+				invocation?.packageContext?.packageId?.trim() ||
+				null
 			const claimedDay = recordUniqueDynamicWorkerDay({
 				env: input.usageEnv,
 				userId: input.gatewayProps.userId,
 				workerId,
 				surface: input.surface ?? 'execute',
+				...(attributedPackageId ? { packageId: attributedPackageId } : {}),
 			})
 			await runExecuteBookkeeping(
 				claimedDay,
@@ -660,8 +727,24 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 			const startedAtMs = Date.now()
 			let outcome: 'success' | 'error' = 'success'
 			try {
+				const usageUserId = input.gatewayProps.userId
+				const usageTail =
+					usageUserId && input.createUsageTail
+						? input.createUsageTail({ userId: usageUserId, workerId })
+						: null
+				// LOADER.get keeps the first WorkerCode cached for an id, so an
+				// isolate loaded without a tail would never gain one under the
+				// same id. Tailed isolates get their own cache id; metering keeps
+				// `workerId`.
+				const loaderId = usageTail
+					? `${workerId}${dynamicWorkerUsageTailLoaderIdSuffix}`
+					: workerId
 				const entrypoint = input.loader
-					.get(workerId, () => workerOptions)
+					.get(loaderId, () =>
+						usageTail
+							? { ...workerOptions, tails: [usageTail] }
+							: workerOptions,
+					)
 					.getEntrypoint() as unknown as DynamicWorkerEntrypoint
 				let response: Awaited<ReturnType<DynamicWorkerEntrypoint['evaluate']>>
 				try {
@@ -669,16 +752,23 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 						async (signal) =>
 							await withDynamicWorkerEvaluationPermit(async () => {
 								throwIfEvaluationDeadlineAborted(signal)
+								// Capture grants into dispatchers: sandbox → host
+								// capability RPC loses AsyncLocalStorage (same gap
+								// as evaluation-budget restore). Without this,
+								// runWithCurrentSecretAuthority reinstalls an empty
+								// grant set and stamped MCP/integration calls fail
+								// closed for package-via-execute.
+								const grantedSecretAuthorityPackageIds =
+									grantedSecretAuthorityPackageIdSet(
+										input.gatewayProps.grantedSecretAuthorityPackageIds,
+									)
 								const dispatchers = createToolDispatchers(
 									[...providers, createHostSideEffectProvider(sideEffects)],
 									executionState,
 									signal,
 									sideEffects,
+									grantedSecretAuthorityPackageIds,
 								)
-								const grantedSecretAuthorityPackageIds =
-									grantedSecretAuthorityPackageIdSet(
-										input.gatewayProps.grantedSecretAuthorityPackageIds,
-									)
 								const evaluate = () =>
 									entrypoint.evaluate(dispatchers, evaluateInvocation)
 								return grantedSecretAuthorityPackageIds
@@ -706,6 +796,17 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 								result: undefined,
 								error: drainedResponse?.error ?? message,
 								logs: drainedResponse?.logs ?? [],
+							},
+							sideEffects,
+						)
+					}
+					if (error instanceof Error && error.name === 'AbortError') {
+						outcome = 'error'
+						return attachHostSideEffects(
+							{
+								result: undefined,
+								error: callerDisconnectedSandboxMessage,
+								logs: [callerDisconnectedSandboxLog],
 							},
 							sideEffects,
 						)
@@ -776,6 +877,9 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 								codeChars,
 								paramsChars,
 								executeShape: input.executeShape,
+								...usageAttributionFieldsFromRequest(
+									input.gatewayProps.request,
+								),
 								waitUntil: input.waitUntil,
 							})
 						}),
@@ -792,6 +896,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 							durationMs,
 							outcome,
 							surface: 'execute',
+							...usageAttributionFieldsFromRequest(input.gatewayProps.request),
 							...(input.executeShape
 								? { executeShape: input.executeShape }
 								: {}),
@@ -849,13 +954,24 @@ function createSandboxRunFetchSource(allowOutboundFetch: boolean) {
 	}
 	return [
 		'    const __kodyRunFetch = (input, init) => {',
+		"      // Capture stamp synchronously while the caller's ALS is still",
+		'      // active. Host `recordFetch` RPC awaits below; reading after',
+		'      // that await can lose ALS (ad-hoc execute has no run packageId',
+		'      // fallback).',
+		'      const __kodyGetSecretAuthority =',
+		'        globalThis[Symbol.for("kody.getSecretAuthority")];',
+		'      const __kodySecretAuthority =',
+		'        typeof __kodyGetSecretAuthority === "function"',
+		'          ? String(__kodyGetSecretAuthority() ?? "").trim()',
+		'          : "";',
 		'      try {',
 		'        let url = "";',
 		'        if (typeof input === "string") url = input;',
 		'        else if (input instanceof URL) url = input.toString();',
 		'        else if (input && typeof input.url === "string") url = input.url;',
 		'        const hostname = new URL(url).hostname.trim().toLowerCase();',
-		'        if (hostname && hostname !== __kodyExcludedFetchHost) {',
+		'        // Stamped package modules are already on the packages-first path.',
+		'        if (hostname && hostname !== __kodyExcludedFetchHost && !__kodySecretAuthority) {',
 		'          __kodyRawFetchHosts.push(hostname);',
 		'        }',
 		'      } catch {',
@@ -867,11 +983,6 @@ function createSandboxRunFetchSource(allowOutboundFetch: boolean) {
 		'          const data = JSON.parse(resJson);',
 		'          if (data.error) throw new Error(data.error);',
 		'        }',
-		'        const __kodyGetSecretAuthority = globalThis[Symbol.for("kody.getSecretAuthority")];',
-		'        const __kodySecretAuthority =',
-		'          typeof __kodyGetSecretAuthority === "function"',
-		'            ? String(__kodyGetSecretAuthority() ?? "").trim()',
-		'            : "";',
 		'        const __kodyFetchHeaders = new Headers(',
 		'          init?.headers ??',
 		'            (input && typeof input === "object" && "headers" in input',
@@ -1027,8 +1138,16 @@ export function createToolDispatchers(
 	executionState: { active: boolean },
 	signal?: AbortSignal,
 	sideEffects?: EvaluationSideEffectTracker,
+	/**
+	 * Provenance grant set captured from gateway props. Reinstalled on every
+	 * dispatcher call because Workers RPC drops the host ALS that wraps
+	 * `evaluate`. Omit (null/undefined) for trusted host callers that are not
+	 * crossing the sandbox boundary.
+	 */
+	grantedSecretAuthorityPackageIds?: ReadonlySet<string> | null,
 ) {
 	const capturedEvaluationContext = getDynamicWorkerEvaluationContext()
+	const capturedGrantedPackageIds = grantedSecretAuthorityPackageIds ?? null
 	const dispatchers: Record<string, ToolDispatcher> = {}
 	for (const provider of providers) {
 		const sanitizedFns: Record<
@@ -1069,10 +1188,17 @@ export function createToolDispatchers(
 						}
 						const invoke = () =>
 							abortSignalToolNames.has(name) ? fn(...args, signal) : fn(...args)
-						return await runWithCurrentSecretAuthority(
-							requestedPackageId,
-							invoke,
-						)
+						// Mirror package-app callCapability: restore grants then
+						// stamp. Without grants, a peeled stamp installs an empty
+						// set and resolveCallerSecretAuthority fails closed.
+						const withStamp = () =>
+							runWithCurrentSecretAuthority(requestedPackageId, invoke)
+						return capturedGrantedPackageIds
+							? await runWithSecretAuthorityScope(
+									capturedGrantedPackageIds,
+									withStamp,
+								)
+							: await withStamp()
 					},
 				)
 			}
@@ -1519,7 +1645,7 @@ export function getExecutionErrorDetails(
 		return {
 			kind: 'secret_required',
 			message,
-			nextStep: `Send the user to /account/secrets/new?name=${encodeURIComponent(missingSecretDetails.secretName)} so they can provide and save this secret, then retry the workflow.`,
+			nextStep: `Send the user to /connect/secret-set?name=${encodeURIComponent(missingSecretDetails.secretName)} so they can provide and save this secret, then retry the workflow.`,
 			secretNames: [missingSecretDetails.secretName],
 			suggestedAction: {
 				type: 'connect_secret',
@@ -1599,31 +1725,6 @@ const kodyRuntimeExportNames = new Set([
 	'packages',
 	'events',
 ])
-
-/**
- * Remedies for guard-less access to an optional `kody:runtime` export that
- * the execution context intentionally left unbound (`undefined` / `null` so
- * `if (email) { ... }` guards stay falsy). The message itself is produced
- * by `createUnboundRuntimeHelperMessage` in
- * `#worker/package-runtime/unbound-runtime-helpers.ts`.
- */
-const unboundRuntimeHelperNextSteps: Record<string, string> = {
-	packages:
-		'`packages` is bound for authenticated ad hoc execute calls, scheduled jobs, and saved-package runtime contexts. Prefer a static `kody:@scope/package/export` import when the name is known, or `import(specifier)` when the name is data. Guard with `if (packages) { ... }` when this helper is optional.',
-	events:
-		"`events` is only bound in saved-package runtime contexts that can dispatch package events; statically import the owning package's export so it runs in that context, or guard with `if (events) { ... }`.",
-	packageSecrets:
-		"`packageSecrets` is bound on stamped saved-package modules (including static `kody:@` imports) and in saved-package runtime contexts. Ad hoc execute entry code stays unbound; import the owning package's export so its stamp reads the mounts, or guard with `'get' in packageSecrets` / `packageContext?.packageId` (the late-bound export is always a proxy).",
-	email:
-		'`email` is only bound for email-triggered runs; guard with `if (email) { ... }` when the code can also run outside an email context.',
-}
-
-function buildUnboundRuntimeHelperNextStep(helperName: string) {
-	return (
-		unboundRuntimeHelperNextSteps[helperName] ??
-		`The optional \`${helperName}\` export of 'kody:runtime' is not provided in this execution context; guard with a falsiness check (for example \`if (${helperName}) { ... }\`) or run the code in a context that binds it, such as statically importing the owning saved package's export.`
-	)
-}
 
 /**
  * workerd throws this when an RPC stub outlives the execution context that

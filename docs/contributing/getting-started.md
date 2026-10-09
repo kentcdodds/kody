@@ -78,6 +78,10 @@ placeholder values that work for local development.
 npm run migrate:local
 ```
 
+This writes `APP_DB`, `AUDIT_DB`, and `JOBS_DB` under `.wrangler/state` (the
+directory `npm run dev` persists) and copies `packages/worker/.env` from
+`.env.example` when the file is missing.
+
 3. Start local development:
 
 ```bash
@@ -122,7 +126,8 @@ alone, so the workflow runs that ensure step before migrations/deploy.
 
 For non-interactive or automated setup:
 
-1. Ensure `packages/worker/.env` exists (copy from `.env.example` if missing).
+1. Ensure `packages/worker/.env` exists. `npm run migrate:local` copies it from
+   `.env.example` when it is missing.
 2. Run migrations and the full validation gate:
 
 ```bash
@@ -132,9 +137,12 @@ npm run validate
 
 `npm run validate` is the single authoritative local gate. It runs format, lint,
 typecheck, unit tests, Playwright E2E, MCP E2E, backup/status/nx-cache/jobs/
-runtime/platform dry-run builds, structure checks, and the production dependency
-audit (`audit:prod`) in parallel. CI runs the same checks as parallel jobs (node
-and workers unit suites on separate runners).
+highlight/api/api-docs/runtime/platform dry-run builds, structure checks
+(including `docs:check-no-hosted-execute`, `docs:check-file-refs`,
+`skills-lock:check`, `slop-ratchet:check`, and `knip`), and the production
+dependency audit (`audit:prod`) in parallel, then `worker-startup-time:check`.
+CI runs the same checks as parallel jobs (node and workers unit suites on
+separate runners).
 
 To seed a deterministic test login after migrations:
 

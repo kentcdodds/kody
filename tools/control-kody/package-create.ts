@@ -7,6 +7,7 @@ import {
 	connectAppMcpClient,
 	usernameFromEmail,
 	type AppAuthUser,
+	type AppMcpOAuthSession,
 	type FetchLike,
 } from '../mcp-oauth-client.ts'
 
@@ -65,6 +66,7 @@ export type PackageCreateReport = {
 	accountPackageUrl: string
 	headAhead: boolean
 	cookieHeader: string
+	oauth?: AppMcpOAuthSession
 }
 
 export type PackageCreateCallToolOptions = {
@@ -85,6 +87,7 @@ const executeCallTimeoutMs = 180_000
 
 export type PackageCreateConnection = {
 	cookieHeader: string
+	oauth?: AppMcpOAuthSession
 	client: { callTool: PackageCreateCallTool }
 	[Symbol.asyncDispose]?: () => Promise<void> | void
 }
@@ -140,6 +143,8 @@ export async function createPreviewPackage(input: {
 	kodyId: string
 	description?: string | null
 	headAhead: boolean
+	cookieHeader?: string
+	oauth?: AppMcpOAuthSession
 	connect?: (
 		origin: string,
 		user: AppAuthUser,
@@ -161,8 +166,12 @@ export async function createPreviewPackage(input: {
 		password: input.password,
 		username: usernameFromEmail(input.email),
 	}
-	const connect = input.connect ?? connectAppMcpClient
-	const connection = await connect(input.origin, user)
+	const connection = input.connect
+		? await input.connect(input.origin, user)
+		: await connectAppMcpClient(input.origin, user, {
+				cookieHeader: input.cookieHeader,
+				oauth: input.oauth,
+			})
 	try {
 		const params: Record<string, unknown> = {
 			kodyId: input.kodyId,
@@ -224,6 +233,7 @@ export async function createPreviewPackage(input: {
 			accountPackageUrl: `${input.origin}${accountPackagePath}`,
 			headAhead: input.headAhead,
 			cookieHeader: connection.cookieHeader,
+			oauth: connection.oauth,
 		}
 	} finally {
 		await connection[Symbol.asyncDispose]?.()

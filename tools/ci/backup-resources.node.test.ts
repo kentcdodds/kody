@@ -56,66 +56,62 @@ test('DR deployment reconciles adhoc policy before Worker deploy when authorized
 	)
 })
 
-test('optional deploy reconciliation skips safely without the admin secret', async () => {
+test('optional deploy reconciliation skips without the admin secret and applies when authorized', async () => {
 	const outputs: Array<string> = []
-	const apply = vi.fn()
-	const result = await reconcileBackupResources({
-		env: {},
-		log: (output) => outputs.push(output),
-		apply,
-	})
-
-	expect(result).toEqual({
-		status: 'skipped',
-		reason: 'dr-backup-admin-token-unavailable',
-	})
-	expect(apply).not.toHaveBeenCalled()
+	const skippedApply = vi.fn()
+	expect(
+		await reconcileBackupResources({
+			env: {},
+			log: (output) => outputs.push(output),
+			apply: skippedApply,
+		}),
+	).toEqual({ status: 'skipped', reason: 'dr-backup-admin-token-unavailable' })
+	expect(skippedApply).not.toHaveBeenCalled()
 	expect(outputs.join('\n')).toContain('reconciliation skipped')
 	expect(outputs.join('\n')).toContain(
 		'Existing bucket policies remain unchanged',
 	)
-})
 
-test('optional deploy reconciliation applies and verifies when authorized', async () => {
-	const outputs: Array<string> = []
+	outputs.length = 0
 	const apply = vi.fn(async () => ({
 		status: 'applied' as const,
 		adhocPolicyProof,
 	}))
-	const result = await reconcileBackupResources({
-		env: {
-			DR_BACKUP_ADMIN_TOKEN: apiToken,
-			BACKUP_DESTINATION_ACCOUNT_ID: destinationAccountId,
-		},
-		log: (output) => outputs.push(output),
-		apply,
-	})
-
-	expect(result).toEqual({
-		status: 'reconciled',
-		adhocPolicyProof,
-	})
+	expect(
+		await reconcileBackupResources({
+			env: {
+				DR_BACKUP_ADMIN_TOKEN: apiToken,
+				BACKUP_DESTINATION_ACCOUNT_ID: destinationAccountId,
+			},
+			log: (output) => outputs.push(output),
+			apply,
+		}),
+	).toEqual({ status: 'reconciled', adhocPolicyProof })
 	expect(apply).toHaveBeenCalledWith(
 		expect.objectContaining({
 			argv: ['apply'],
-			env: expect.objectContaining({
-				CLOUDFLARE_API_TOKEN: apiToken,
-			}),
+			env: expect.objectContaining({ CLOUDFLARE_API_TOKEN: apiToken }),
 		}),
 	)
 	expect(outputs.join('\n')).toContain('reconciliation complete')
 })
 
-function createDesired(): BackupDesiredState {
+const sourceD1Databases = [
+	{ uuid: sourceD1Uuid, name: 'kody-production-database' },
+]
+const destinationApi = `https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets`
+
+function createDesired(
+	overrides: Partial<Parameters<typeof generateBackupDesiredState>[0]> = {},
+): BackupDesiredState {
 	return generateBackupDesiredState({
 		sourceAccountId,
 		destinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
 		workerName: 'kody-d1-backup-writer',
-		sourceD1Databases: [
-			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-		],
+		sourceD1Databases,
 		productionResourceDenylist: ['kody-email-blobs', 'kody-community-assets'],
+		...overrides,
 	})
 }
 
@@ -180,7 +176,10 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	expect(
 		desired.lockPolicy.rules.map((rule) => ({
 			prefix: rule.prefix,
-			maxAgeSeconds: rule.condition.maxAgeSeconds,
+			maxAgeSeconds:
+				rule.condition.type === 'Age'
+					? rule.condition.maxAgeSeconds
+					: undefined,
 			enabled: rule.enabled,
 		})),
 	).toEqual([
@@ -193,7 +192,10 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 	expect(
 		desired.lifecyclePolicy.rules.map((rule) => ({
 			prefix: rule.conditions.prefix,
-			maxAge: rule.deleteObjectsTransition?.condition.maxAge,
+			maxAge:
+				rule.deleteObjectsTransition?.condition?.type === 'Age'
+					? rule.deleteObjectsTransition.condition.maxAge
+					: undefined,
 			enabled: rule.enabled,
 		})),
 	).toEqual([
@@ -206,9 +208,9 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 		sourceAccountId: normalizedSourceAccountId,
 		destinationAccountId: normalizedDestinationAccountId,
 	})
-	expect(desired.runtimeContract.sourceD1DatabaseAllowlist).toEqual([
-		{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-	])
+	expect(desired.runtimeContract.sourceD1DatabaseAllowlist).toEqual(
+		sourceD1Databases,
+	)
 	expect(desired.runtimeContract.r2Binding).toMatchObject({
 		destinationAccountId: normalizedDestinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
@@ -230,61 +232,42 @@ test('backup desired state keeps private prefixes, retention ages, and account i
 })
 
 test('generation and CLI reject non-dedicated resources and invalid D1 allowlists', () => {
-	expect(() =>
-		generateBackupDesiredState({
-			sourceAccountId,
-			destinationAccountId,
-			bucketName: 'kody-email-blobs',
-			workerName: 'kody-d1-backup-writer',
-			sourceD1Databases: [
-				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-			],
-			productionResourceDenylist: ['kody-email-blobs'],
-		}),
-	).toThrow('distinct from production resources')
-	expect(() =>
-		generateBackupDesiredState({
-			sourceAccountId,
-			destinationAccountId,
-			bucketName: 'kody-d1-backup-archive',
-			workerName: 'kody-d1-backup-writer',
-			sourceD1Databases: [{ uuid: 'not-a-uuid', name: 'production-db' }],
-		}),
-	).toThrow('UUID and lower-kebab name pairs')
-	expect(() =>
-		generateBackupDesiredState({
-			sourceAccountId: destinationAccountId.toLowerCase(),
-			destinationAccountId,
-			bucketName: 'kody-d1-backup-archive',
-			workerName: 'kody-d1-backup-writer',
-			sourceD1Databases: [
-				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-			],
-		}),
-	).toThrow('account IDs must be distinct')
-	expect(() =>
-		generateBackupDesiredState({
-			sourceAccountId: 'not-an-account-id',
-			destinationAccountId,
-			bucketName: 'kody-d1-backup-archive',
-			workerName: 'kody-d1-backup-writer',
-			sourceD1Databases: [
-				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-			],
-		}),
-	).toThrow('exactly 32 hexadecimal characters')
-	expect(() =>
-		generateBackupDesiredState({
-			sourceAccountId,
-			destinationAccountId: 'gggggggggggggggggggggggggggggggg',
-			bucketName: 'kody-d1-backup-archive',
-			workerName: 'kody-d1-backup-writer',
-			sourceD1Databases: [
-				{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-			],
-		}),
-	).toThrow('exactly 32 hexadecimal characters')
+	const invalidGeneration: Array<
+		[Parameters<typeof createDesired>[0], string]
+	> = [
+		[
+			{
+				bucketName: 'kody-email-blobs',
+				productionResourceDenylist: ['kody-email-blobs'],
+			},
+			'distinct from production resources',
+		],
+		[
+			{ sourceD1Databases: [{ uuid: 'not-a-uuid', name: 'production-db' }] },
+			'UUID and lower-kebab name pairs',
+		],
+		[
+			{ sourceAccountId: destinationAccountId.toLowerCase() },
+			'account IDs must be distinct',
+		],
+		[
+			{ sourceAccountId: 'not-an-account-id' },
+			'exactly 32 hexadecimal characters',
+		],
+		[
+			{ destinationAccountId: 'g'.repeat(32) },
+			'exactly 32 hexadecimal characters',
+		],
+	]
+	for (const [overrides, error] of invalidGeneration) {
+		expect(() => createDesired(overrides)).toThrow(error)
+	}
 
+	const cliEnv = {
+		BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
+		CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
+		CLOUDFLARE_API_TOKEN: apiToken,
+	}
 	const options = parseBackupCliArgs(
 		[
 			'--source-d1',
@@ -292,21 +275,14 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 			'--deny-production-resource',
 			'kody-email-blobs',
 		],
-		{
-			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
-			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
-			CLOUDFLARE_API_TOKEN: apiToken,
-			BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive',
-		},
+		{ ...cliEnv, BACKUP_R2_BUCKET_NAME: 'kody-d1-backup-archive' },
 	)
 	expect(options).toMatchObject({
 		mode: 'plan',
 		sourceAccountId: normalizedSourceAccountId,
 		destinationAccountId: normalizedDestinationAccountId,
 		bucketName: 'kody-d1-backup-archive',
-		sourceD1Databases: [
-			{ uuid: sourceD1Uuid, name: 'kody-production-database' },
-		],
+		sourceD1Databases,
 		productionResourceDenylist: ['kody-email-blobs'],
 	})
 	expect(
@@ -322,39 +298,34 @@ test('generation and CLI reject non-dedicated resources and invalid D1 allowlist
 				'--provisioner-token-env',
 				'BACKUP_PROVISIONER_TOKEN',
 			],
-			{
-				BACKUP_PROVISIONER_TOKEN: apiToken,
-			},
+			{ BACKUP_PROVISIONER_TOKEN: apiToken },
 		).mode,
 	).toBe('apply')
-	expect(() =>
-		parseBackupCliArgs(['--provisioner-token', apiToken], {
-			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
-			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
-			CLOUDFLARE_API_TOKEN: 'safe-environment-token',
-		}),
-	).toThrow('Unknown backup flag: --provisioner-token')
-	expect(() =>
-		parseBackupCliArgs(['--api-base-url', 'https://example.test'], {
-			BACKUP_SOURCE_ACCOUNT_ID: sourceAccountId,
-			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
-			CLOUDFLARE_API_TOKEN: apiToken,
-		}),
-	).toThrow('Unknown backup flag: --api-base-url')
-	expect(() =>
-		parseBackupCliArgs([], {
-			BACKUP_SOURCE_ACCOUNT_ID: destinationAccountId.toLowerCase(),
-			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
-			CLOUDFLARE_API_TOKEN: apiToken,
-		}),
-	).toThrow('account IDs must be distinct')
-	expect(() =>
-		parseBackupCliArgs([], {
-			BACKUP_SOURCE_ACCOUNT_ID: 'abc123',
-			CLOUDFLARE_ACCOUNT_ID: destinationAccountId,
-			CLOUDFLARE_API_TOKEN: apiToken,
-		}),
-	).toThrow('exactly 32 hexadecimal characters')
+	const invalidCli: Array<[Array<string>, Record<string, string>, string]> = [
+		[
+			['--provisioner-token', apiToken],
+			{ CLOUDFLARE_API_TOKEN: 'safe-environment-token' },
+			'Unknown backup flag: --provisioner-token',
+		],
+		[
+			['--api-base-url', 'https://example.test'],
+			{},
+			'Unknown backup flag: --api-base-url',
+		],
+		[
+			[],
+			{ BACKUP_SOURCE_ACCOUNT_ID: destinationAccountId.toLowerCase() },
+			'account IDs must be distinct',
+		],
+		[
+			[],
+			{ BACKUP_SOURCE_ACCOUNT_ID: 'abc123' },
+			'exactly 32 hexadecimal characters',
+		],
+	]
+	for (const [argv, env, error] of invalidCli) {
+		expect(() => parseBackupCliArgs(argv, { ...cliEnv, ...env })).toThrow(error)
+	}
 })
 
 test('plan and apply converge idempotently without provisioning a Worker', async () => {
@@ -382,14 +353,7 @@ test('plan and apply converge idempotently without provisioning a Worker', async
 		dryRun: false,
 	})
 	expect(applied.appliedActions).toBe(3)
-	expect(applied.adhocPolicyProof).toEqual({
-		prefix: 'adhoc/',
-		lockRuleId: 'adhoc-backups-immutable-35-days',
-		lockMinimumAgeSeconds: 35 * 86_400,
-		lifecycleRuleId: 'expire-adhoc-backups-after-35-days',
-		lifecycleMinimumAgeSeconds: 35 * 86_400,
-		readBackVerified: true,
-	})
+	expect(applied.adhocPolicyProof).toEqual(adhocPolicyProof)
 	expect(fake.writes).toEqual([
 		'create-bucket',
 		'put-lock-policy',
@@ -423,12 +387,17 @@ test('apply preserves unknown legal holds and stronger managed retention', async
 			condition: { type: 'Age', maxAge: 7 * 86_400 },
 		},
 	}
+	const [dailyLock] = desired.lockPolicy.rules
+	const [dailyLifecycle] = desired.lifecyclePolicy.rules
+	if (!dailyLock || !dailyLifecycle) {
+		throw new Error('expected daily lock and lifecycle rules')
+	}
 	const strongerDailyLock = {
-		...desired.lockPolicy.rules[0],
+		...dailyLock,
 		condition: { type: 'Age' as const, maxAgeSeconds: 90 * 86_400 },
 	}
 	const strongerDailyLifecycle = {
-		...desired.lifecyclePolicy.rules[0],
+		...dailyLifecycle,
 		deleteObjectsTransition: {
 			condition: { type: 'Age' as const, maxAge: 90 * 86_400 },
 		},
@@ -490,58 +459,40 @@ test('adhoc policy proof fails closed on missing, disabled, or weak read-back', 
 			lifecyclePolicy: desired.lifecyclePolicy,
 		}),
 	).toMatchObject({ prefix: 'adhoc/', readBackVerified: true })
+	const { lockPolicy, lifecyclePolicy } = desired
+	const lockAdhoc = (patch: Partial<R2LockPolicy['rules'][number]>) => ({
+		rules: lockPolicy.rules.map((rule) =>
+			rule.prefix === 'adhoc/' ? { ...rule, ...patch } : rule,
+		),
+	})
+	const lifecycleAdhoc = (
+		patch: Partial<R2LifecyclePolicy['rules'][number]>,
+	) => ({
+		rules: lifecyclePolicy.rules.map((rule) =>
+			rule.conditions.prefix === 'adhoc/' ? { ...rule, ...patch } : rule,
+		),
+	})
 	for (const input of [
 		{
 			lockPolicy: {
-				rules: desired.lockPolicy.rules.filter(
-					(rule) => rule.prefix !== 'adhoc/',
-				),
+				rules: lockPolicy.rules.filter((rule) => rule.prefix !== 'adhoc/'),
 			},
-			lifecyclePolicy: desired.lifecyclePolicy,
+			lifecyclePolicy,
+		},
+		{ lockPolicy, lifecyclePolicy: lifecycleAdhoc({ enabled: false }) },
+		{
+			lockPolicy: lockAdhoc({
+				condition: { type: 'Age', maxAgeSeconds: 34 * 86_400 },
+			}),
+			lifecyclePolicy,
 		},
 		{
-			lockPolicy: desired.lockPolicy,
-			lifecyclePolicy: {
-				rules: desired.lifecyclePolicy.rules.map((rule) =>
-					rule.conditions.prefix === 'adhoc/'
-						? { ...rule, enabled: false }
-						: rule,
-				),
-			},
-		},
-		{
-			lockPolicy: {
-				rules: desired.lockPolicy.rules.map((rule) =>
-					rule.prefix === 'adhoc/'
-						? {
-								...rule,
-								condition: {
-									type: 'Age' as const,
-									maxAgeSeconds: 34 * 86_400,
-								},
-							}
-						: rule,
-				),
-			},
-			lifecyclePolicy: desired.lifecyclePolicy,
-		},
-		{
-			lockPolicy: desired.lockPolicy,
-			lifecyclePolicy: {
-				rules: desired.lifecyclePolicy.rules.map((rule) =>
-					rule.conditions.prefix === 'adhoc/'
-						? {
-								...rule,
-								deleteObjectsTransition: {
-									condition: {
-										type: 'Age' as const,
-										maxAge: 34 * 86_400,
-									},
-								},
-							}
-						: rule,
-				),
-			},
+			lockPolicy,
+			lifecyclePolicy: lifecycleAdhoc({
+				deleteObjectsTransition: {
+					condition: { type: 'Age', maxAge: 34 * 86_400 },
+				},
+			}),
 		},
 	]) {
 		expect(() => assertAdhocBackupPolicyReadback(input)).toThrow(
@@ -583,35 +534,15 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 		dryRun: false,
 	})
 	expect(result.appliedActions).toBe(3)
+	const testBucket = `https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets`
 	expect(requests.map(({ url, init }) => [init.method, url])).toEqual([
-		[
-			'GET',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
-		],
-		[
-			'POST',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets`,
-		],
-		[
-			'PUT',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
-		],
-		[
-			'PUT',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
-		],
-		[
-			'GET',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
-		],
-		[
-			'GET',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
-		],
-		[
-			'GET',
-			`https://api.example.test/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
-		],
+		['GET', `${testBucket}/kody-d1-backup-archive`],
+		['POST', testBucket],
+		['PUT', `${testBucket}/kody-d1-backup-archive/lock`],
+		['PUT', `${testBucket}/kody-d1-backup-archive/lifecycle`],
+		['GET', `${testBucket}/kody-d1-backup-archive`],
+		['GET', `${testBucket}/kody-d1-backup-archive/lock`],
+		['GET', `${testBucket}/kody-d1-backup-archive/lifecycle`],
 	])
 	expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
 		name: 'kody-d1-backup-archive',
@@ -650,9 +581,9 @@ test('REST adapter uses documented bucket, lock, and lifecycle contracts', async
 	})
 	expect(converged.plan.actions).toEqual([])
 	expect(readRequests).toEqual([
-		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
-		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lock`,
-		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive/lifecycle`,
+		`${destinationApi}/kody-d1-backup-archive`,
+		`${destinationApi}/kody-d1-backup-archive/lock`,
+		`${destinationApi}/kody-d1-backup-archive/lifecycle`,
 	])
 })
 
@@ -677,12 +608,10 @@ test('REST adapter reports authentication, authorization, rate, server, and malf
 			apiToken,
 			fetcher,
 		})
-		let thrown: unknown
-		try {
-			await api.getBucket('kody-d1-backup-archive')
-		} catch (error) {
-			thrown = error
-		}
+		const thrown = await api.getBucket('kody-d1-backup-archive').then(
+			() => null,
+			(error: unknown) => error,
+		)
 		expect(thrown).toBeInstanceOf(Error)
 		expect((thrown as Error).message).toContain(String(status))
 		expect((thrown as Error).message).not.toContain(apiToken)
@@ -741,30 +670,21 @@ test('CLI defaults to plan and never renders its provisioner token', async () =>
 	})
 	expect(result.status).toBe('planned')
 	expect(result.appliedActions).toBe(0)
-	expect(requestUrls).toEqual([
-		`https://api.cloudflare.com/client/v4/accounts/${normalizedDestinationAccountId}/r2/buckets/kody-d1-backup-archive`,
-	])
+	expect(requestUrls).toEqual([`${destinationApi}/kody-d1-backup-archive`])
 	expect(outputs.join('\n')).not.toContain(apiToken)
-	const planned = JSON.parse(outputs[0] ?? '') as {
+	expect(JSON.parse(outputs[0] ?? '')).toMatchObject({
 		plan: {
 			desired: {
 				runtimeContract: {
 					accounts: {
-						sourceAccountId: string
-						destinationAccountId: string
-					}
-					sourceD1DatabaseAllowlist: Array<{ uuid: string }>
-				}
-			}
-		}
-	}
-	expect(planned.plan.desired.runtimeContract.accounts).toEqual({
-		sourceAccountId: normalizedSourceAccountId,
-		destinationAccountId: normalizedDestinationAccountId,
+						sourceAccountId: normalizedSourceAccountId,
+						destinationAccountId: normalizedDestinationAccountId,
+					},
+					sourceD1DatabaseAllowlist: sourceD1Databases,
+				},
+			},
+		},
 	})
-	expect(
-		planned.plan.desired.runtimeContract.sourceD1DatabaseAllowlist,
-	).toEqual([{ uuid: sourceD1Uuid, name: 'kody-production-database' }])
 
 	const redacted = redactBackupOutput({
 		provisionerToken: apiToken,

@@ -14,6 +14,9 @@ This page is the second-agent briefing. People paste one short prompt on
 `/onboarding/step-3`. Agents retrieve this guide with
 `search({ entity: "guide:portability" })`.
 
+> [!WATCH] https://www.youtube.com/watch?v=iGMkgjXc8Ho Watch: Build in Cursor,
+> then run it from Claude Code or ChatGPT
+
 ## Job
 
 Find what already exists on this account. Reuse it once. Stop.

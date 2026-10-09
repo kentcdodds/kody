@@ -12,10 +12,14 @@
  * There is deliberately no uncapped plan: the live registry is finite `max`
  * only.
  *
- * Standard/Pro ceilings have two ladders: {@link planLimits} is the public
- * table (pricing page, new subscribers). {@link legacyPlanLimits} applies
- * only while `users.entitlement_ladder = 'legacy'` and paid access stays
- * continuous.
+ * Standard/Pro ceilings have two ladders: {@link planLimits} is the
+ * 2026-09 table (Standard $12 and Pro $49 subscribers, now retired from
+ * checkout). {@link legacyPlanLimits} applies only while
+ * `users.entitlement_ladder = 'legacy'` and paid access stays continuous.
+ *
+ * The purchasable Pro (Stripe `STRIPE_PRO_PRICE_ID`, $12) uses
+ * {@link proCreditsPlanLimits} and carries the prepaid credit wallet
+ * (`users.stripe_credits_eligible`). See {@link CreditWalletState}.
  */
 
 export const planNames = ['free', 'standard', 'pro', 'max'] as const
@@ -78,6 +82,27 @@ export function isPaidPlan(plan: PlanName): boolean {
 }
 
 /**
+ * Whether a higher plan is available as a self-serve upgrade destination.
+ *
+ * Only Free can upgrade (to purchasable Pro). Retired Standard/Pro are not
+ * destinations; Max is manual-only and never a purchase destination.
+ */
+export function hasHigherPublicPlan(plan: PlanName): boolean {
+	switch (plan) {
+		case 'free':
+			return true
+		case 'standard':
+		case 'pro':
+		case 'max':
+			return false
+		default: {
+			const exhaustive: never = plan
+			throw new Error(`Unknown plan: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
  * Rank order for comparing manual grants vs Stripe subscription plans.
  * Higher rank wins. free(0) < standard(1) < pro(2) < max(3).
  */
@@ -127,7 +152,7 @@ export function resolveEffectivePlan(
  *   interval change, or while a remaining manual Pro grant is already
  *   flagged. Never inferred from join date.
  */
-export const entitlementLadders = ['public', 'legacy'] as const
+const entitlementLadders = ['public', 'legacy'] as const
 
 export type EntitlementLadder = (typeof entitlementLadders)[number]
 
@@ -189,9 +214,49 @@ export function resolveEntitlementLadderAfterPaidAccessChange(input: {
 	return 'legacy'
 }
 
+/**
+ * Prepaid credit wallet state for limit resolution. Purchasable Pro bills
+ * include → credits → free-tier limits: the subscription covers the include,
+ * usage past it runs on credits, and at $0 rate/compute falls back to Free
+ * caps while stock stays on Max ({@link proCreditsEmptyWalletPlanLimits}).
+ *
+ * - `none` — not wallet-eligible (Free, retired Standard/Pro, gift/referral
+ *   Pro overlays, manual grants, `max`). Credits are never used or debited;
+ *   these plans keep their own hard caps.
+ * - `empty` — purchasable Pro with a balance at or below $0. Max stock and
+ *   concurrency stay on {@link proCreditsPlanLimits}; rate/compute/email
+ *   match {@link planLimits.free} until credits are added. Monthly Worker
+ *   compute and Rows read includes stay on the Pro include (they are the
+ *   allotment already burned before the wallet hit zero).
+ * - `funded` — purchasable Pro with a balance above $0. Past the include,
+ *   the rate/compute fields in {@link creditsUnlockedLimitFields} can reach
+ *   {@link creditsUnlockMultiplier}× the include (capped at the `max`
+ *   ceilings), and monthly Worker compute / Rows read past the include
+ *   debit the wallet.
+ */
+const creditWalletStates = ['none', 'empty', 'funded'] as const
+
+export type CreditWalletState = (typeof creditWalletStates)[number]
+
 export type UserEntitlement = {
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+}
+
+/**
+ * Wallet state for an effective plan. Only `pro` granted by the purchasable
+ * Pro Stripe price (`creditsEligible`) is wallet-eligible; gift/referral
+ * overlays, retired Stripe Pro, manual grants, and `max` resolve to `none`.
+ */
+export function resolveCreditWalletState(input: {
+	plan: PlanName
+	creditsEligible: boolean
+	balanceMicroUsd: number | null | undefined
+}): CreditWalletState {
+	if (input.plan !== 'pro' || !input.creditsEligible) return 'none'
+	const balance = input.balanceMicroUsd ?? 0
+	return Number.isFinite(balance) && balance > 0 ? 'funded' : 'empty'
 }
 
 export type PlanLimits = {
@@ -253,27 +318,38 @@ export type PlanLimits = {
 	 */
 	maxJobRunsPerDay: number
 	/**
+	 * Maximum always-on automation invocations per UTC day: inbound
+	 * webhooks, HTTP package-export invocations, package subscriptions,
+	 * and package-backed workflow steps. Sibling of
+	 * {@link PlanLimits.maxExecuteCallsPerDay} (MCP execute only) and
+	 * {@link PlanLimits.maxJobRunsPerDay} (scheduled jobs). Daily only —
+	 * no weekly window. Public Free sits modestly above job runs. Public
+	 * Standard, Pro, and `max` are burst-friendly above job runs. Legacy
+	 * Standard/Pro stay at the earlier job-matched ceilings.
+	 */
+	maxAutomationInvocationsPerDay: number
+	/**
 	 * Fastest allowed recurring job interval on this plan. `0` means no extra
 	 * floor beyond the schedule itself. Enforced when a schedule is created
 	 * or changed — existing faster jobs are grandfathered.
 	 */
 	minJobIntervalMs: number
 	/**
-	 * Included unique Dynamic Worker days per UTC month. Shown on `/pricing`.
-	 * The only customer-facing monthly overage meter besides Durable Object
-	 * rows-read. Not in `entitlementResources` (no hard cut). Public-ladder
-	 * overage is billed at {@link computeOverageRatesUsd}. Approaching and
-	 * reached warning emails cover this allotment. Legacy Standard/Pro is
-	 * not cut and not billed.
+	 * Included unique Dynamic Worker days per UTC month ("Worker compute" on
+	 * customer surfaces). One of the two credit debit meters (with Durable
+	 * Object rows-read). Not in `entitlementResources`. Usage above the
+	 * include debits a funded Pro wallet; an empty Pro wallet falls back to
+	 * Free rate/compute caps instead. Other plans are not charged (their hard
+	 * rate caps bound it). Approaching and reached
+	 * warning emails cover this allotment.
 	 */
 	maxUniqueWorkerDaysPerMonth: number
 	/**
-	 * Included Durable Object SQLite rows read per UTC month. Shown on
-	 * `/pricing`. The other customer-facing monthly overage meter. Not in
-	 * `entitlementResources` (no hard cut). No duration meter. Public-ladder
-	 * overage is billed at {@link computeOverageRatesUsd}. Approaching and
-	 * reached warning emails cover this allotment. Legacy Standard/Pro is
-	 * not cut and not billed.
+	 * Included Durable Object SQLite rows read per UTC month ("Rows read").
+	 * The other credit debit meter, with the same include → credits →
+	 * free-tier limits rule as {@link PlanLimits.maxUniqueWorkerDaysPerMonth}.
+	 * No duration
+	 * meter. Approaching and reached warning emails cover this allotment.
 	 */
 	maxDurableObjectRowsReadPerMonth: number
 }
@@ -293,6 +369,7 @@ export const entitlementResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
+	'automation_invocations_per_day',
 ] as const
 
 export type EntitlementResource = (typeof entitlementResources)[number]
@@ -313,6 +390,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	execute_calls_per_day: 'execute calls per day',
 	outbound_fetches_per_day: 'outbound fetches per day',
 	job_runs_per_day: 'job runs per day',
+	automation_invocations_per_day: 'automation invocations per day',
 }
 
 /**
@@ -387,6 +465,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 1_000,
 		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,
+		// Modestly above job runs (500).
+		maxAutomationInvocationsPerDay: 1_000,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 50,
 		maxDurableObjectRowsReadPerMonth: 500_000_000,
@@ -411,6 +491,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxOutboundFetchesPerDay: 15_000,
 		maxOutboundFetchesPerWeek: 40_000,
 		maxJobRunsPerDay: 1_500,
+		// Burst-friendly above job runs (1_500).
+		maxAutomationInvocationsPerDay: 10_000,
 		minJobIntervalMs: 15 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -427,15 +509,14 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
-		// Execute is a hard daily + weekly cap with no overage.
-		// Unique-worker-day overage is a heavy-tail safety valve
-		// ({@link computeOverageRatesUsd}), not a reason to shrink this
-		// include or the public $49 Pro price.
+		// Retired $49 Pro. Execute is a hard daily + weekly cap.
 		maxExecuteCallsPerDay: 1_500,
 		maxExecuteCallsPerWeek: 4_000,
 		maxOutboundFetchesPerDay: 50_000,
 		maxOutboundFetchesPerWeek: 120_000,
 		maxJobRunsPerDay: 8_000,
+		// Burst-friendly above job runs (8_000).
+		maxAutomationInvocationsPerDay: 50_000,
 		minJobIntervalMs: 5 * 60 * 1000,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -473,6 +554,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// job runs. `max` ceilings stay on that earlier Pro table; they
 		// still dominate every paid plan.
 		maxJobRunsPerDay: 40_000,
+		// Burst-friendly above job runs (40_000).
+		maxAutomationInvocationsPerDay: 200_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 25_000,
 		// Dominates public Pro (20B). Operator cap only.
@@ -485,9 +568,9 @@ export const planLimits: Record<PlanName, PlanLimits> = {
  * `users.entitlement_ladder = 'legacy'` and the effective plan is
  * `standard` or `pro`. Free and `max` always use {@link planLimits}.
  * Unique-worker-day and Durable Object rows-read includes match the
- * public table. Those allotments are not hard-cut and not billed for
- * legacy accounts (`computeMeteringPolicy.legacyMonthlyMeters`). User
- * warning emails do not cover them.
+ * public table. Those allotments are not hard-cut and not charged for
+ * legacy accounts (no credit wallet). Automation daily ceilings stay at
+ * the earlier job-matched values (Standard 10_000, Pro 20_000).
  */
 export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 	standard: {
@@ -507,6 +590,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 20_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 10_000,
+		maxAutomationInvocationsPerDay: 10_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 350,
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
@@ -528,6 +612,7 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxOutboundFetchesPerDay: 40_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 20_000,
+		maxAutomationInvocationsPerDay: 20_000,
 		minJobIntervalMs: 0,
 		maxUniqueWorkerDaysPerMonth: 2_000,
 		maxDurableObjectRowsReadPerMonth: 20_000_000_000,
@@ -535,55 +620,159 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 }
 
 /**
- * Cloudflare compute list prices used to derive the thin user-facing
- * overage margin. Duration stays unmetered; a later duration rate should
- * stay list plus a thin markup (~5% or a small fixed add-on).
+ * Purchasable Pro ($12). Applied when the effective plan is `pro` and the
+ * credit wallet is not `none` (purchasable Pro price or admin eligibility).
+ *
+ * Stock and concurrency match {@link planLimits.max} (repos, packages, jobs,
+ * sessions, secrets, storage, concurrent workflows) — empty or funded.
+ * Rate/compute caps, email, UWD/DO includes (350 unique worker days, 5B
+ * Durable Object rows read), and the job interval floor match the retired
+ * public Standard table: that is the Pro include. Past it, credits carry
+ * the rate/compute fields up to the ceiling from {@link unlockCreditsLimits}.
  */
-export const cloudflareComputeListUsd = {
-	uniqueWorkerDay: 0.002,
-	durableObjectRowsReadPerMillion: 0.001,
-} as const
+export const proCreditsPlanLimits: PlanLimits = {
+	...planLimits.standard,
+	maxRepos: planLimits.max.maxRepos,
+	maxSavedPackages: planLimits.max.maxSavedPackages,
+	maxScheduledJobs: planLimits.max.maxScheduledJobs,
+	maxRepoSessions: planLimits.max.maxRepoSessions,
+	maxSecrets: planLimits.max.maxSecrets,
+	maxStorageBytes: planLimits.max.maxStorageBytes,
+	maxConcurrentWorkflows: planLimits.max.maxConcurrentWorkflows,
+}
 
 /**
- * User-facing compute overage list prices (Cloudflare list + $0.0005).
- * These two keys are the only customer-facing monthly overage meters.
- * Overage is a heavy-tail safety valve only — do not lower included
- * amounts or the public Pro $49 price to monetize via overage. When
- * invoicing is enabled, public-ladder usage above the include is priced
- * at these rates (`computeMeteringPolicy.publicMonthlyMeters`). Execute
- * has no overage (hard daily + weekly cap — an execute overage would
- * double-charge the same burn as unique worker days). Durable Object duration is
- * unmetered. Legacy Standard/Pro is not cut and not billed on these
- * allotments. Who is invoiced is {@link computeOverageBillingPolicy},
- * not this table.
+ * Purchasable Pro at $0: Max stock/concurrency and Pro monthly includes from
+ * {@link proCreditsPlanLimits}, with Free rate/compute/email/job-interval
+ * ceilings (ADR 0065). Monthly UWD/DO includes stay on the Pro allotment so
+ * debit and warning copy keep the seat include the org already burned.
  */
-export const computeOverageRatesUsd = {
-	uniqueWorkerDay: 0.0025,
-	durableObjectRowsReadPerMillion: 0.0015,
-} as const
-
-export const computeMeteringPolicy = {
-	uniqueWorkerDays: 'included_then_overage',
-	durableObjectRowsRead: 'included_then_overage',
-	executeCallsPerDay: 'hard_daily_and_weekly_cap',
-	outboundFetchesPerDay: 'hard_daily_and_weekly_cap',
-	durableObjectDuration: 'unmetered',
-	publicMonthlyMeters: 'charge_list_rates',
-	legacyMonthlyMeters: 'no_cut_no_bill',
-	overageRole: 'heavy_tail_safety_valve',
-} as const
-
-/** 15-minute floor on free (and public Standard) recurring jobs. */
-export const freeMinJobIntervalMs = planLimits.free.minJobIntervalMs
+export const proCreditsEmptyWalletPlanLimits: PlanLimits = {
+	...proCreditsPlanLimits,
+	maxEmailSendsPerDay: planLimits.free.maxEmailSendsPerDay,
+	maxEmailReceivesPerDay: planLimits.free.maxEmailReceivesPerDay,
+	maxStoredEmailMessages: planLimits.free.maxStoredEmailMessages,
+	maxEmailMessageBytes: planLimits.free.maxEmailMessageBytes,
+	maxExecuteCallsPerDay: planLimits.free.maxExecuteCallsPerDay,
+	maxExecuteCallsPerWeek: planLimits.free.maxExecuteCallsPerWeek,
+	maxOutboundFetchesPerDay: planLimits.free.maxOutboundFetchesPerDay,
+	maxOutboundFetchesPerWeek: planLimits.free.maxOutboundFetchesPerWeek,
+	maxJobRunsPerDay: planLimits.free.maxJobRunsPerDay,
+	maxAutomationInvocationsPerDay:
+		planLimits.free.maxAutomationInvocationsPerDay,
+	minJobIntervalMs: planLimits.free.minJobIntervalMs,
+}
 
 /**
- * Resolve the full limit table for a plan. Legacy applies only to
+ * How far credits carry the rate/compute include: up to this multiple of
+ * the Pro include, capped at the `max` operator ceilings (daily only: `max`
+ * has no weekly window). Applies only while the wallet is funded, so an
+ * empty wallet falls back to Free rate/compute (include → credits →
+ * free-tier limits). Stock and concurrency stay on {@link proCreditsPlanLimits}.
+ * Customer copy calls this a ceiling on how
+ * far credits go, never something a balance unlocks.
+ */
+export const creditsUnlockMultiplier = 50
+
+const creditsUnlockedLimitFields = [
+	'maxExecuteCallsPerDay',
+	'maxExecuteCallsPerWeek',
+	'maxOutboundFetchesPerDay',
+	'maxOutboundFetchesPerWeek',
+	'maxJobRunsPerDay',
+	'maxAutomationInvocationsPerDay',
+] as const satisfies ReadonlyArray<keyof PlanLimits>
+
+/** Entitlement resources credits can carry past the include (rates only). */
+export const creditsUnlockedResources = [
+	'execute_calls_per_day',
+	'outbound_fetches_per_day',
+	'job_runs_per_day',
+	'automation_invocations_per_day',
+] as const satisfies ReadonlyArray<EntitlementResource>
+
+export function isCreditsUnlockedResource(
+	resource: EntitlementResource,
+): boolean {
+	return (creditsUnlockedResources as ReadonlyArray<string>).includes(resource)
+}
+
+/**
+ * Counted entry points that start new compute. Historically gated the
+ * include → credits → stop path (0051); ADR 0065 replaced the stop with
+ * Free rate limits via {@link proCreditsEmptyWalletPlanLimits}. Kept for
+ * call-site stability.
+ * Outbound fetches are left out: they happen inside a run that was already
+ * admitted, and failing them mid-run would strand half-done work.
+ */
+const pastIncludeStopResources = [
+	'execute_calls_per_day',
+	'job_runs_per_day',
+	'automation_invocations_per_day',
+] as const satisfies ReadonlyArray<EntitlementResource>
+
+export function isPastIncludeStopResource(
+	resource: EntitlementResource,
+): boolean {
+	return (pastIncludeStopResources as ReadonlyArray<string>).includes(resource)
+}
+
+function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
+	const scale = (value: number, ceiling: number) =>
+		Math.min(value * creditsUnlockMultiplier, ceiling)
+	// A week can never exceed seven capped days, so the weekly ceiling is
+	// bounded by the daily one (otherwise the credits page shows a number
+	// no one can reach).
+	const scaleWeekly = (value: number | null, dailyCeiling: number) =>
+		value === null
+			? null
+			: Math.min(value * creditsUnlockMultiplier, dailyCeiling * 7)
+	const ceiling = planLimits.max
+	return {
+		...limits,
+		maxExecuteCallsPerDay: scale(
+			limits.maxExecuteCallsPerDay,
+			ceiling.maxExecuteCallsPerDay,
+		),
+		maxExecuteCallsPerWeek: scaleWeekly(
+			limits.maxExecuteCallsPerWeek,
+			ceiling.maxExecuteCallsPerDay,
+		),
+		maxOutboundFetchesPerDay: scale(
+			limits.maxOutboundFetchesPerDay,
+			ceiling.maxOutboundFetchesPerDay,
+		),
+		maxOutboundFetchesPerWeek: scaleWeekly(
+			limits.maxOutboundFetchesPerWeek,
+			ceiling.maxOutboundFetchesPerDay,
+		),
+		maxJobRunsPerDay: scale(limits.maxJobRunsPerDay, ceiling.maxJobRunsPerDay),
+		maxAutomationInvocationsPerDay: scale(
+			limits.maxAutomationInvocationsPerDay,
+			ceiling.maxAutomationInvocationsPerDay,
+		),
+	} satisfies Record<(typeof creditsUnlockedLimitFields)[number], unknown> &
+		PlanLimits
+}
+
+const proCreditsUnlockedPlanLimits = unlockCreditsLimits(proCreditsPlanLimits)
+
+/**
+ * Resolve the full limit table for a plan. The purchasable Pro wallet
+ * (`creditWallet` other than `none`) uses {@link proCreditsPlanLimits}
+ * when funded (unlocked rates), {@link proCreditsEmptyWalletPlanLimits}
+ * when empty (Max stock, Free rates), and legacy applies only to retired
  * Standard/Pro; free and `max` always use {@link planLimits}.
  */
 export function resolvePlanLimits(
 	plan: PlanName,
 	ladder: EntitlementLadder = 'public',
+	creditWallet: CreditWalletState = 'none',
 ): PlanLimits {
+	if (plan === 'pro' && creditWallet !== 'none') {
+		if (creditWallet === 'funded') return proCreditsUnlockedPlanLimits
+		return proCreditsEmptyWalletPlanLimits
+	}
 	if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
 		return legacyPlanLimits[plan]
 	}
@@ -630,8 +819,9 @@ export function resolvePlanLimit(
 	plan: PlanName,
 	resource: EntitlementResource,
 	ladder: EntitlementLadder = 'public',
+	creditWallet: CreditWalletState = 'none',
 ): number {
-	const limits = resolvePlanLimits(plan, ladder)
+	const limits = resolvePlanLimits(plan, ladder, creditWallet)
 	switch (resource) {
 		case 'repos':
 			return limits.maxRepos
@@ -661,6 +851,8 @@ export function resolvePlanLimit(
 			return limits.maxOutboundFetchesPerDay
 		case 'job_runs_per_day':
 			return limits.maxJobRunsPerDay
+		case 'automation_invocations_per_day':
+			return limits.maxAutomationInvocationsPerDay
 		default: {
 			const exhaustive: never = resource
 			throw new Error(`Unknown entitlement resource: ${String(exhaustive)}`)
@@ -669,7 +861,7 @@ export function resolvePlanLimit(
 }
 
 /** Daily resources that also have a public-ladder weekly hard cap. */
-export const weeklyComputeWindowResources = [
+const weeklyComputeWindowResources = [
 	'execute_calls_per_day',
 	'outbound_fetches_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
@@ -701,9 +893,10 @@ export function resolveWeeklyPlanLimit(
 	plan: PlanName,
 	resource: EntitlementResource,
 	ladder: EntitlementLadder = 'public',
+	creditWallet: CreditWalletState = 'none',
 ): number | null {
 	if (!isWeeklyComputeWindowResource(resource)) return null
-	const limits = resolvePlanLimits(plan, ladder)
+	const limits = resolvePlanLimits(plan, ladder, creditWallet)
 	switch (resource) {
 		case 'execute_calls_per_day':
 			return limits.maxExecuteCallsPerWeek

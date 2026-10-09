@@ -1,7 +1,8 @@
 import { utf8ToBase64Url } from '@kody-internal/shared/base64.ts'
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import {
+	type ConnectOauthQueryConfig,
 	createCodeChallenge,
 	createCodeVerifier,
 	decodeBase64Payload,
@@ -19,31 +20,92 @@ import {
 	parseScopes,
 	parseSessionConnectOauthConfig,
 	parseStoredIntegrationConfig,
+	type StoredIntegrationConfig,
 	summarizeStoredSetupState,
 } from './connect-oauth-config.ts'
 import { renderSuccessCard } from './connect-oauth-forms.tsx'
 
-test('connect OAuth helpers parse stored integrations, merge reconnect configs, and derive provider defaults', () => {
-	const parsed = parseStoredIntegrationConfig(
-		JSON.stringify({
-			name: 'GitHub',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			apiBaseUrl: 'https://api.github.com/',
-			flow: 'confidential',
-			clientId: 'github-client-id-value',
-			hasClientSecret: true,
-			requiredHosts: ['api.github.com', ' github.com ', 'api.github.com'],
-			authorization: {
-				authorizeUrl: 'ftp://github.com/login/oauth/authorize',
-				scopes: ['repo', 'read:user'],
-				scopeSeparator: null,
-				extraAuthorizeParams: { prompt: 'consent' },
-			},
-		}),
-		null,
-	)
+function makeQuery(
+	provider: string,
+	overrides: Partial<ConnectOauthQueryConfig> = {},
+): ConnectOauthQueryConfig {
+	return {
+		provider,
+		providerKey: provider,
+		authorizeHost: null,
+		authorizeUrl: null,
+		tokenUrl: null,
+		apiBaseUrl: null,
+		scopes: null,
+		flow: null,
+		usePkce: null,
+		tokenExchangeStyle: null,
+		scopeSeparator: null,
+		extraAuthorizeParams: null,
+		providerSetupInstructions: null,
+		dashboardUrl: null,
+		allowedHosts: [],
+		...overrides,
+	}
+}
 
-	expect(parsed).toEqual({
+function merge(
+	queryConfig: ConnectOauthQueryConfig,
+	storedIntegration: StoredIntegrationConfig | null = null,
+) {
+	return mergeConnectOauthConfig({ queryConfig, storedIntegration })
+}
+
+const spotifyQuery = makeQuery('spotify', {
+	authorizeHost: 'accounts.spotify.com',
+	authorizeUrl: 'https://accounts.spotify.com/authorize',
+	tokenUrl: 'https://accounts.spotify.com/api/token',
+	scopes: [],
+	flow: 'pkce',
+	scopeSeparator: ' ',
+	extraAuthorizeParams: {},
+	allowedHosts: ['accounts.spotify.com'],
+})
+
+const googleYoutubeStored = (
+	scopes: Array<string>,
+): StoredIntegrationConfig => ({
+	name: 'google-youtube-brand',
+	tokenUrl: 'https://oauth2.googleapis.com/token',
+	apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
+	flow: 'confidential',
+	clientId: 'google-youtube-brand-client-id-value',
+	hasClientSecret: true,
+	requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
+	authorization: {
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		scopes,
+		scopeSeparator: null,
+		extraAuthorizeParams: { access_type: 'offline', prompt: 'consent' },
+	},
+})
+
+test('connect OAuth helpers parse stored integrations, merge reconnect configs, and derive provider defaults', () => {
+	expect(
+		parseStoredIntegrationConfig(
+			JSON.stringify({
+				name: 'GitHub',
+				tokenUrl: 'https://github.com/login/oauth/access_token',
+				apiBaseUrl: 'https://api.github.com/',
+				flow: 'confidential',
+				clientId: 'github-client-id-value',
+				hasClientSecret: true,
+				requiredHosts: ['api.github.com', ' github.com ', 'api.github.com'],
+				authorization: {
+					authorizeUrl: 'ftp://github.com/login/oauth/authorize',
+					scopes: ['repo', 'read:user'],
+					scopeSeparator: null,
+					extraAuthorizeParams: { prompt: 'consent' },
+				},
+			}),
+			null,
+		),
+	).toEqual({
 		name: 'GitHub',
 		tokenUrl: 'https://github.com/login/oauth/access_token',
 		apiBaseUrl: 'https://api.github.com/',
@@ -55,25 +117,18 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		authorization: null,
 	})
 
-	const githubConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'github',
-			providerKey: 'github',
+	const githubConfig = merge(
+		makeQuery('github', {
 			authorizeHost: 'github.com',
 			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			tokenUrl: null,
-			apiBaseUrl: null,
 			scopes: ['repo', 'read:user'],
-			flow: null,
-			usePkce: null,
-			tokenExchangeStyle: null,
 			scopeSeparator: ' ',
 			extraAuthorizeParams: { prompt: 'consent' },
 			providerSetupInstructions: 'Open the GitHub app settings.',
 			dashboardUrl: 'https://github.com/settings/developers',
 			allowedHosts: ['github.com'],
-		},
-		storedIntegration: {
+		}),
+		{
 			name: 'GitHub',
 			tokenUrl: 'https://github.com/login/oauth/access_token',
 			apiBaseUrl: 'https://api.github.com',
@@ -82,8 +137,7 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			hasClientSecret: true,
 			requiredHosts: ['api.github.com'],
 		},
-	})
-
+	)
 	expect(githubConfig).toMatchObject({
 		provider: 'GitHub',
 		providerKey: 'github',
@@ -104,130 +158,45 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		allowedHosts: ['api.github.com', 'github.com'],
 	})
 
-	const googleReconnectConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google-youtube-brand',
-			providerKey: 'google-youtube-brand',
-			authorizeHost: null,
-			authorizeUrl: null,
-			tokenUrl: null,
-			apiBaseUrl: null,
-			scopes: null,
-			flow: null,
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: null,
-			extraAuthorizeParams: null,
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: [],
-		},
-		storedIntegration: {
-			name: 'google-youtube-brand',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
-			flow: 'confidential',
-			clientId: 'google-youtube-brand-client-id-value',
-			hasClientSecret: true,
-			requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: [
-					'https://www.googleapis.com/auth/youtube',
-					'https://www.googleapis.com/auth/youtube.force-ssl',
-				],
-				scopeSeparator: null,
-				extraAuthorizeParams: {
-					access_type: 'offline',
-					prompt: 'consent',
-				},
-			},
-		},
-	})
-
-	expect(googleReconnectConfig).toMatchObject({
+	const youtubeScopes = [
+		'https://www.googleapis.com/auth/youtube',
+		'https://www.googleapis.com/auth/youtube.force-ssl',
+	]
+	expect(
+		merge(
+			makeQuery('google-youtube-brand'),
+			googleYoutubeStored(youtubeScopes),
+		),
+	).toMatchObject({
 		provider: 'google-youtube-brand',
 		authorizeHost: 'accounts.google.com',
 		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
-		scopes: [
-			'https://www.googleapis.com/auth/youtube',
-			'https://www.googleapis.com/auth/youtube.force-ssl',
-		],
+		scopes: youtubeScopes,
 		scopeSeparator: ' ',
-		extraAuthorizeParams: {
-			access_type: 'offline',
-			prompt: 'consent',
-		},
+		extraAuthorizeParams: { access_type: 'offline', prompt: 'consent' },
 		allowedHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
 	})
 
-	const googleFallbackConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google-youtube-brand',
-			providerKey: 'google-youtube-brand',
-			authorizeHost: null,
-			authorizeUrl: null,
-			tokenUrl: null,
-			apiBaseUrl: null,
-			scopes: [],
-			flow: null,
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: [],
-		},
-		storedIntegration: {
-			name: 'google-youtube-brand',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com/youtube/v3',
-			flow: 'confidential',
-			clientId: 'google-youtube-brand-client-id-value',
-			hasClientSecret: true,
-			requiredHosts: ['oauth2.googleapis.com', 'www.googleapis.com'],
-			authorization: {
-				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
-				scopeSeparator: null,
-				extraAuthorizeParams: {
-					access_type: 'offline',
-					prompt: 'consent',
-				},
-			},
-		},
-	})
-
-	expect(googleFallbackConfig).toMatchObject({
+	// Empty query scopes/params fall back to the stored authorization.
+	expect(
+		merge(
+			makeQuery('google-youtube-brand', {
+				scopes: [],
+				extraAuthorizeParams: {},
+			}),
+			googleYoutubeStored([
+				'https://www.googleapis.com/auth/youtube.force-ssl',
+			]),
+		),
+	).toMatchObject({
 		scopes: ['https://www.googleapis.com/auth/youtube.force-ssl'],
-		extraAuthorizeParams: {
-			access_type: 'offline',
-			prompt: 'consent',
-		},
+		extraAuthorizeParams: { access_type: 'offline', prompt: 'consent' },
 		platformAllowedScopes: [],
 	})
 
-	const platformGoogle = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google',
-			providerKey: 'google',
-			authorizeHost: null,
-			authorizeUrl: null,
-			tokenUrl: null,
-			apiBaseUrl: null,
-			scopes: null,
-			flow: null,
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: null,
-			extraAuthorizeParams: null,
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: [],
-		},
-		storedIntegration: {
+	expect(
+		merge(makeQuery('google'), {
 			name: 'google',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
 			apiBaseUrl: 'https://www.googleapis.com',
@@ -239,41 +208,19 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 			platformAllowedScopes: ['openid', 'email', 'profile'],
 			authorization: {
 				authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-				scopes: ['openid', 'email'],
+				scopes: ['openid', 'email', 'https://www.googleapis.com/auth/drive'],
 				scopeSeparator: null,
 				extraAuthorizeParams: {},
 			},
-		},
-	})
-	expect(platformGoogle).toMatchObject({
+		}),
+	).toMatchObject({
 		scopes: ['openid', 'email'],
-		platformAppSlug: null,
-		platformAllowedScopes: [],
-		clientId: '',
+		platformAppSlug: 'google',
+		platformAllowedScopes: ['openid', 'email', 'profile'],
+		clientId: 'platform-google-client',
 	})
 
-	const spotifyConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'spotify',
-			providerKey: 'spotify',
-			authorizeHost: 'accounts.spotify.com',
-			authorizeUrl: 'https://accounts.spotify.com/authorize',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: null,
-			scopes: [],
-			flow: 'pkce',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ' ',
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['accounts.spotify.com'],
-		},
-		storedIntegration: null,
-	})
-
-	expect(spotifyConfig).toMatchObject({
+	expect(merge(spotifyQuery)).toMatchObject({
 		provider: 'spotify',
 		providerKey: 'spotify',
 		tokenHost: 'accounts.spotify.com',
@@ -285,6 +232,28 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 		hasClientSecret: false,
 	})
 
+	// Slack keeps comma scope separators and extra authorize params.
+	expect(
+		merge(
+			makeQuery('slack', {
+				authorizeHost: 'slack.com',
+				authorizeUrl: 'https://slack.com/oauth/v2/authorize',
+				tokenUrl: 'https://slack.com/api/oauth.v2.access',
+				apiBaseUrl: 'https://slack.com/api',
+				scopes: ['channels:read', 'chat:write'],
+				flow: 'confidential',
+				scopeSeparator: ',',
+				extraAuthorizeParams: { user_scope: 'identify' },
+				allowedHosts: ['slack.com'],
+			}),
+		),
+	).toMatchObject({
+		scopeSeparator: ',',
+		extraAuthorizeParams: { user_scope: 'identify' },
+		usePkce: false,
+		hasClientSecret: false,
+	})
+
 	const confidentialSetup = summarizeStoredSetupState({
 		flow: 'confidential',
 		clientId: 'client-id',
@@ -292,39 +261,31 @@ test('connect OAuth helpers parse stored integrations, merge reconnect configs, 
 	})
 	expect(confidentialSetup.isReady).toBe(false)
 	expect(confidentialSetup.missingFields.length).toBeGreaterThan(0)
-
-	const pkceSetup = summarizeStoredSetupState({
-		flow: 'pkce',
-		clientId: 'client-id',
-		hasStoredClientSecret: false,
-	})
-	expect(pkceSetup.isReady).toBe(true)
-	expect(pkceSetup.missingFields).toEqual([])
+	expect(
+		summarizeStoredSetupState({
+			flow: 'pkce',
+			clientId: 'client-id',
+			hasStoredClientSecret: false,
+		}),
+	).toMatchObject({ isReady: true, missingFields: [] })
 })
 
 test('connect OAuth derives Notion basic-json exchange and surfaces provider failures instead of session expiry', () => {
-	const notionConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'notion',
-			providerKey: 'notion',
-			authorizeHost: 'api.notion.com',
-			authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			apiBaseUrl: 'https://api.notion.com/v1',
-			scopes: [],
-			flow: 'confidential',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ' ',
-			extraAuthorizeParams: { owner: 'user', response_type: 'code' },
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['api.notion.com'],
-		},
-		storedIntegration: null,
-	})
-
-	expect(notionConfig).toMatchObject({
+	expect(
+		merge(
+			makeQuery('notion', {
+				authorizeHost: 'api.notion.com',
+				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
+				tokenUrl: 'https://api.notion.com/v1/oauth/token',
+				apiBaseUrl: 'https://api.notion.com/v1',
+				scopes: [],
+				flow: 'confidential',
+				scopeSeparator: ' ',
+				extraAuthorizeParams: { owner: 'user', response_type: 'code' },
+				allowedHosts: ['api.notion.com'],
+			}),
+		),
+	).toMatchObject({
 		provider: 'notion',
 		tokenUrl: 'https://api.notion.com/v1/oauth/token',
 		flow: 'confidential',
@@ -354,21 +315,15 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 	)
 	expect(storedNotion?.tokenExchangeStyle).toBe('basic-json')
 
-	expect(
-		formatOAuthExchangeFailure({
-			status: 401,
-			data: { ok: false, error: 'Unauthorized.' },
-		}),
-	).toEqual({
+	const unauthorized = {
+		status: 401,
+		data: { ok: false, error: 'Unauthorized.' },
+	}
+	expect(formatOAuthExchangeFailure(unauthorized)).toEqual({
 		treatAsSessionExpired: true,
 		error: 'Session expired.',
 	})
-	expect(
-		isOAuthExchangeSessionExpired({
-			status: 401,
-			data: { ok: false, error: 'Unauthorized.' },
-		}),
-	).toBe(true)
+	expect(isOAuthExchangeSessionExpired(unauthorized)).toBe(true)
 
 	expect(
 		formatOAuthExchangeFailure({
@@ -396,31 +351,20 @@ test('connect OAuth derives Notion basic-json exchange and surfaces provider fai
 })
 
 test('connect OAuth derives Canva confidential + PKCE basic-form defaults and honors explicit overrides', () => {
-	const canvaQueryConfig = {
-		provider: 'canva',
-		providerKey: 'canva',
+	const canvaQuery = makeQuery('canva', {
 		authorizeHost: 'www.canva.com',
 		authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
 		tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
 		apiBaseUrl: 'https://api.canva.com/rest/v1',
 		scopes: ['design:content:read'],
-		flow: null,
-		usePkce: null,
-		tokenExchangeStyle: null,
 		scopeSeparator: ' ',
 		extraAuthorizeParams: {},
-		providerSetupInstructions: null,
-		dashboardUrl: null,
 		allowedHosts: ['api.canva.com'],
-	}
+	})
 
 	// Canva requires BOTH S256 PKCE and a client secret on token exchange, so
 	// the host defaults must combine a confidential flow with PKCE enabled.
-	const canvaConfig = mergeConnectOauthConfig({
-		queryConfig: canvaQueryConfig,
-		storedIntegration: null,
-	})
-	expect(canvaConfig).toMatchObject({
+	expect(merge(canvaQuery)).toMatchObject({
 		provider: 'canva',
 		tokenHost: 'api.canva.com',
 		flow: 'confidential',
@@ -430,24 +374,18 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 	})
 
 	// Explicit query params still win over host defaults.
-	const overriddenConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			...canvaQueryConfig,
-			usePkce: false,
-			tokenExchangeStyle: 'form',
-		},
-		storedIntegration: null,
-	})
-	expect(overriddenConfig).toMatchObject({
+	expect(
+		merge({ ...canvaQuery, usePkce: false, tokenExchangeStyle: 'form' }),
+	).toMatchObject({
 		flow: 'confidential',
 		usePkce: false,
 		tokenExchangeStyle: 'form',
 	})
 
 	// PKCE can be enabled on top of a confidential flow for any provider.
-	const confidentialPkceConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			...canvaQueryConfig,
+	expect(
+		merge({
+			...canvaQuery,
 			provider: 'acme',
 			providerKey: 'acme',
 			authorizeHost: 'auth.acme.test',
@@ -457,10 +395,8 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 			flow: 'confidential',
 			usePkce: true,
 			allowedHosts: ['auth.acme.test'],
-		},
-		storedIntegration: null,
-	})
-	expect(confidentialPkceConfig).toMatchObject({
+		}),
+	).toMatchObject({
 		flow: 'confidential',
 		usePkce: true,
 		tokenExchangeStyle: 'form',
@@ -488,22 +424,24 @@ test('connect OAuth derives Canva confidential + PKCE basic-form defaults and ho
 		}),
 		null,
 	)
-	expect(storedCanva?.usePkce).toBe(true)
-	expect(storedCanva?.tokenExchangeStyle).toBe('basic-form')
-
-	const reconnectConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			...canvaQueryConfig,
-			authorizeHost: null,
-			authorizeUrl: null,
-			tokenUrl: null,
-			apiBaseUrl: null,
-			scopes: null,
-			allowedHosts: [],
-		},
-		storedIntegration: storedCanva,
+	expect(storedCanva).toMatchObject({
+		usePkce: true,
+		tokenExchangeStyle: 'basic-form',
 	})
-	expect(reconnectConfig).toMatchObject({
+	expect(
+		merge(
+			{
+				...canvaQuery,
+				authorizeHost: null,
+				authorizeUrl: null,
+				tokenUrl: null,
+				apiBaseUrl: null,
+				scopes: null,
+				allowedHosts: [],
+			},
+			storedCanva,
+		),
+	).toMatchObject({
 		provider: 'canva',
 		authorizeUrl: 'https://www.canva.com/api/oauth/authorize',
 		tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
@@ -540,53 +478,34 @@ test('shared-app family lookup prefills google-calendar from the google app payl
 	)
 	expect(storedFromFamilyLookup?.clientId).toBe('shared-google-client')
 
-	const config = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google-calendar',
-			providerKey: 'google-calendar',
-			authorizeHost: 'accounts.google.com',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com',
-			scopes: ['calendar.readonly'],
-			flow: 'pkce',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ' ',
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['www.googleapis.com'],
-		},
-		storedIntegration: storedFromFamilyLookup,
+	const calendarQuery = makeQuery('google-calendar', {
+		authorizeHost: 'accounts.google.com',
+		authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
+		tokenUrl: 'https://oauth2.googleapis.com/token',
+		apiBaseUrl: 'https://www.googleapis.com',
+		extraAuthorizeParams: {},
 	})
-	expect(config).toMatchObject({
+	expect(
+		merge(
+			{
+				...calendarQuery,
+				scopes: ['calendar.readonly'],
+				flow: 'pkce',
+				scopeSeparator: ' ',
+				allowedHosts: ['www.googleapis.com'],
+			},
+			storedFromFamilyLookup,
+		),
+	).toMatchObject({
 		provider: 'google-calendar',
 		clientId: 'shared-google-client',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
 	})
 
-	const reconnectWithHint = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google-calendar',
-			providerKey: 'google-calendar',
-			authorizeHost: 'accounts.google.com',
-			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-			tokenUrl: 'https://oauth2.googleapis.com/token',
-			apiBaseUrl: 'https://www.googleapis.com',
-			scopes: null,
-			flow: null,
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: null,
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: [],
-			loginHint: 'kent.c.dodds@gmail.com',
-		},
-		storedIntegration: storedFromFamilyLookup,
-	})
+	const reconnectWithHint = merge(
+		{ ...calendarQuery, loginHint: 'kent.c.dodds@gmail.com' },
+		storedFromFamilyLookup,
+	)
 	expect(reconnectWithHint?.extraAuthorizeParams).toEqual({
 		access_type: 'offline',
 		login_hint: 'kent.c.dodds@gmail.com',
@@ -617,94 +536,22 @@ test('abandoned setup still prefills client id from a connectionless app on a fr
 	)
 	expect(storedFromAppOnlyLookup?.clientId).toBe('spotify-client-from-setup')
 
-	const withPersistedApp = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'spotify',
-			providerKey: 'spotify',
-			authorizeHost: 'accounts.spotify.com',
-			authorizeUrl: 'https://accounts.spotify.com/authorize',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: null,
-			scopes: ['user-read-playback-state'],
-			flow: 'pkce',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ' ',
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['accounts.spotify.com'],
-		},
-		storedIntegration: storedFromAppOnlyLookup,
-	})
-	expect(withPersistedApp?.clientId).toBe('spotify-client-from-setup')
-	expect(
+	const query = { ...spotifyQuery, scopes: ['user-read-playback-state'] }
+	const isReady = (clientId = '') =>
 		summarizeStoredSetupState({
 			flow: 'pkce',
-			clientId: withPersistedApp?.clientId ?? '',
+			clientId,
 			hasStoredClientSecret: false,
-		}).isReady,
-	).toBe(true)
+		}).isReady
+	const withPersistedApp = merge(query, storedFromAppOnlyLookup)
+	expect(withPersistedApp?.clientId).toBe('spotify-client-from-setup')
+	expect(isReady(withPersistedApp?.clientId)).toBe(true)
 
 	// Without the setup-time app persist, a fresh session has no stored
 	// integration and the client id field is empty — the bug this test guards.
-	const withoutPersistedApp = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'spotify',
-			providerKey: 'spotify',
-			authorizeHost: 'accounts.spotify.com',
-			authorizeUrl: 'https://accounts.spotify.com/authorize',
-			tokenUrl: 'https://accounts.spotify.com/api/token',
-			apiBaseUrl: null,
-			scopes: ['user-read-playback-state'],
-			flow: 'pkce',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ' ',
-			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['accounts.spotify.com'],
-		},
-		storedIntegration: null,
-	})
+	const withoutPersistedApp = merge(query)
 	expect(withoutPersistedApp?.clientId).toBe('')
-	expect(
-		summarizeStoredSetupState({
-			flow: 'pkce',
-			clientId: withoutPersistedApp?.clientId ?? '',
-			hasStoredClientSecret: false,
-		}).isReady,
-	).toBe(false)
-})
-
-test('connect OAuth keeps slack comma scope separators and extra authorize params', () => {
-	const slackConfig = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'slack',
-			providerKey: 'slack',
-			authorizeHost: 'slack.com',
-			authorizeUrl: 'https://slack.com/oauth/v2/authorize',
-			tokenUrl: 'https://slack.com/api/oauth.v2.access',
-			apiBaseUrl: 'https://slack.com/api',
-			scopes: ['channels:read', 'chat:write'],
-			flow: 'confidential',
-			usePkce: null,
-			tokenExchangeStyle: null,
-			scopeSeparator: ',',
-			extraAuthorizeParams: { user_scope: 'identify' },
-			providerSetupInstructions: null,
-			dashboardUrl: null,
-			allowedHosts: ['slack.com'],
-		},
-		storedIntegration: null,
-	})
-	expect(slackConfig).toMatchObject({
-		scopeSeparator: ',',
-		extraAuthorizeParams: { user_scope: 'identify' },
-		usePkce: false,
-		hasClientSecret: false,
-	})
+	expect(isReady(withoutPersistedApp?.clientId)).toBe(false)
 })
 
 test('session config parsing is strict: usePkce and clientId are required and stale shapes are rejected', () => {
@@ -728,73 +575,42 @@ test('session config parsing is strict: usePkce and clientId are required and st
 		hasClientSecret: false,
 		allowedHosts: ['accounts.spotify.com'],
 	}
+	const parse = (overrides: Record<string, unknown>) =>
+		parseSessionConnectOauthConfig(
+			JSON.stringify({ ...sessionConfig, ...overrides }),
+		)
 
-	expect(
-		parseSessionConnectOauthConfig(JSON.stringify(sessionConfig)),
-	).toMatchObject({ provider: 'spotify', flow: 'pkce', usePkce: true })
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...sessionConfig,
-				catalogLogoPath:
-					'/integrations/provider-marks/google?v=abcdef0123456789',
-			}),
-		),
-	).toMatchObject({
-		catalogLogoPath: '/integrations/provider-marks/google?v=abcdef0123456789',
+	expect(parse({})).toMatchObject({
+		provider: 'spotify',
+		flow: 'pkce',
+		usePkce: true,
 	})
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...sessionConfig,
-				catalogLogoPath: '/integrations/logos/google',
-			}),
-		),
-	).toMatchObject({ catalogLogoPath: null })
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...sessionConfig,
-				catalogLogoPath: '/account/integrations',
-			}),
-		),
-	).toMatchObject({ catalogLogoPath: null })
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...sessionConfig,
-				flow: 'confidential',
-				usePkce: false,
-			}),
-		),
-	).toMatchObject({ flow: 'confidential', usePkce: false })
+	const providerMark = '/integrations/provider-marks/google?v=abcdef0123456789'
+	expect(parse({ catalogLogoPath: providerMark })).toMatchObject({
+		catalogLogoPath: providerMark,
+	})
+	for (const catalogLogoPath of [
+		'/integrations/logos/google',
+		'/account/integrations',
+	]) {
+		expect(parse({ catalogLogoPath })).toMatchObject({ catalogLogoPath: null })
+	}
+	expect(parse({ flow: 'confidential', usePkce: false })).toMatchObject({
+		flow: 'confidential',
+		usePkce: false,
+	})
 
 	// No back-compat: a snapshot without usePkce (persisted by pre-change code)
-	// is rejected and the user restarts the flow.
-	const { usePkce: _omitted, ...withoutUsePkce } = sessionConfig
+	// is rejected and the user restarts the flow; legacy clientIdValueName
+	// snapshots are also rejected.
+	expect(parse({ usePkce: undefined })).toBeNull()
 	expect(
-		parseSessionConnectOauthConfig(JSON.stringify(withoutUsePkce)),
+		parse({ clientId: undefined, clientIdValueName: 'spotify-client-id' }),
 	).toBeNull()
-
-	// Legacy clientIdValueName snapshots are also rejected.
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({
-				...sessionConfig,
-				clientId: undefined,
-				clientIdValueName: 'spotify-client-id',
-			}),
-		),
-	).toBeNull()
-
+	expect(parse({ flow: 'implicit' })).toBeNull()
 	expect(parseSessionConnectOauthConfig('not json')).toBeNull()
 	expect(
 		parseSessionConnectOauthConfig(JSON.stringify({ provider: 'x' })),
-	).toBeNull()
-	expect(
-		parseSessionConnectOauthConfig(
-			JSON.stringify({ ...sessionConfig, flow: 'implicit' }),
-		),
 	).toBeNull()
 })
 
@@ -805,28 +621,27 @@ test('parseConnectOauthNextSteps accepts the copyable prompt payload', () => {
 		prompt: 'ask the agent what to do next',
 	}
 	expect(parseConnectOauthNextSteps(payload)).toEqual(payload)
-	expect(parseConnectOauthNextSteps(null)).toBeNull()
-	expect(parseConnectOauthNextSteps({ guidance: 'x' })).toBeNull()
+	const rejected = [
+		null,
+		{ guidance: 'x' },
+		{ service: 'google', connectionName: 'google' },
+		{ service: 1, connectionName: 'google', prompt: 'x' },
+	]
 	expect(
-		parseConnectOauthNextSteps({
-			service: 'google',
-			connectionName: 'google',
-		}),
-	).toBeNull()
-	expect(
-		parseConnectOauthNextSteps({
-			service: 1,
-			connectionName: 'google',
-			prompt: 'x',
-		}),
-	).toBeNull()
+		rejected.filter((v) => parseConnectOauthNextSteps(v) !== null),
+	).toEqual([])
 })
 
 test('connect OAuth query helpers decode instructions, scopes, and safe URLs', () => {
-	expect(isSafeExternalUrl('https://example.com/path')).toBe(true)
-	expect(isSafeExternalUrl('http://localhost:8787')).toBe(true)
-	expect(isSafeExternalUrl('javascript:alert(1)')).toBe(false)
-	expect(isSafeExternalUrl('ftp://files.example.com')).toBe(false)
+	const safeUrls: Array<[string, boolean]> = [
+		['https://example.com/path', true],
+		['http://localhost:8787', true],
+		['javascript:alert(1)', false],
+		['ftp://files.example.com', false],
+	]
+	expect(
+		safeUrls.filter(([url, want]) => isSafeExternalUrl(url) !== want),
+	).toEqual([])
 	expect(parseOptionalUrl(null)).toBeNull()
 	expect(parseOptionalUrl('https://example.com/a?b=1')).toBe(
 		'https://example.com/a?b=1',
@@ -845,10 +660,7 @@ test('connect OAuth query helpers decode instructions, scopes, and safe URLs', (
 	expect(parseExtraParams(null)).toEqual({})
 	expect(
 		parseExtraParams('{"prompt":"consent","access_type":"offline"}'),
-	).toEqual({
-		prompt: 'consent',
-		access_type: 'offline',
-	})
+	).toEqual({ prompt: 'consent', access_type: 'offline' })
 	expect(parseExtraParams('{"n":1,"b":true,"x":null}')).toEqual({
 		n: '1',
 		b: 'true',
@@ -893,26 +705,24 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 		'NetworkError when attempting to fetch resource.',
 	)
 	const chromium = new TypeError('Failed to fetch')
-	const chromiumWithOrigin = new TypeError('Failed to fetch (kody.codes)')
-	const webkit = new TypeError('Load failed')
-	expect(isBrowserFetchNetworkError(firefox)).toBe(true)
-	expect(isBrowserFetchNetworkError(chromium)).toBe(true)
-	expect(isBrowserFetchNetworkError(chromiumWithOrigin)).toBe(true)
-	expect(isBrowserFetchNetworkError(webkit)).toBe(true)
-	expect(
-		isBrowserFetchNetworkError(new TypeError('null is not an object')),
-	).toBe(false)
-	expect(isBrowserFetchNetworkError(new Error('Failed to fetch'))).toBe(false)
-	expect(
-		isBrowserFetchNetworkError(new TypeError('TypeError: Failed to fetch')),
-	).toBe(true)
-	expect(
-		isBrowserFetchNetworkError(
+	const cases: Array<[Error, boolean]> = [
+		[firefox, true],
+		[chromium, true],
+		[new TypeError('Failed to fetch (kody.codes)'), true],
+		[new TypeError('Load failed'), true],
+		[new TypeError('TypeError: Failed to fetch'), true],
+		[new TypeError('null is not an object'), false],
+		[new Error('Failed to fetch'), false],
+		[
 			new TypeError(
 				'Failed to fetch dynamically imported module: https://kody.codes/assets/x.js',
 			),
-		),
-	).toBe(false)
+			false,
+		],
+	]
+	expect(
+		cases.filter(([error, want]) => isBrowserFetchNetworkError(error) !== want),
+	).toEqual([])
 
 	const networkStatus = formatConnectOauthCaughtError(firefox, 'fallback')
 	expect(networkStatus).not.toBe('fallback')
@@ -929,54 +739,44 @@ test('browser fetch network TypeErrors map to a stable in-page status (KODY-CLOU
 })
 
 test('success card shows a copyable whats-next prompt for the connected connection', async () => {
-	const config = mergeConnectOauthConfig({
-		queryConfig: {
-			provider: 'google-work',
-			providerKey: 'google-work',
+	const config = merge(
+		makeQuery('google-work', {
 			authorizeHost: 'accounts.google.com',
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 			tokenUrl: 'https://oauth2.googleapis.com/token',
 			apiBaseUrl: 'https://www.googleapis.com',
 			scopes: ['openid'],
 			flow: 'confidential',
-			usePkce: null,
-			tokenExchangeStyle: null,
 			scopeSeparator: ' ',
 			extraAuthorizeParams: {},
-			providerSetupInstructions: null,
-			dashboardUrl: null,
 			allowedHosts: ['www.googleapis.com'],
-		},
-		storedIntegration: null,
-	})
-	const prompt = 'ask the agent about google-work next steps'
-	const html = await renderToString(
-		renderSuccessCard({
-			config,
-			hostApprovalLinks: [],
-			nextSteps: {
-				service: 'google',
-				connectionName: 'google-work',
-				prompt,
-			},
-			approvingAllHosts: false,
-			onApproveAllHosts() {},
 		}),
 	)
+	if (!config) throw new Error('expected a merged OAuth config')
+	const prompt = 'ask the agent about google-work next steps'
+	const render = (
+		nextSteps: Parameters<typeof renderSuccessCard>[0]['nextSteps'],
+	) =>
+		renderToString(
+			renderSuccessCard({
+				config,
+				hostApprovalLinks: [],
+				nextSteps,
+				approvingAllHosts: false,
+				onApproveAllHosts() {},
+			}),
+		)
+	const html = await render({
+		service: 'google',
+		connectionName: 'google-work',
+		prompt,
+	})
 	expect(html).toContain('data-testid="connect-oauth-whats-next"')
 	expect(html).toContain(prompt)
 	expect(html).toContain('/account/integrations/google-work')
 	expect(html).not.toContain('google-work with google-work')
 
-	const fallbackHtml = await renderToString(
-		renderSuccessCard({
-			config,
-			hostApprovalLinks: [],
-			nextSteps: null,
-			approvingAllHosts: false,
-			onApproveAllHosts() {},
-		}),
-	)
+	const fallbackHtml = await render(null)
 	expect(fallbackHtml).toContain('data-testid="connect-oauth-whats-next"')
 	expect(fallbackHtml).toContain('google-work with google-work')
 	expect(fallbackHtml).not.toContain(prompt)

@@ -2,12 +2,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	type PackageWebhooksActionPayload,
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -45,7 +46,7 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: vi.fn(async () => [savedPackage]),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -84,7 +85,18 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 	})),
 }))
 
-function createEnv() {
+const apiUrl =
+	'https://kody.example/profiles/owner/packages/sentry-bridge/webhooks.json'
+const ownerParams = { username: 'owner', kodyId: 'sentry-bridge' }
+const otherParams = { username: 'someone-else', kodyId: 'sentry-bridge' }
+
+async function setup(sessionUsername = 'owner') {
+	const userId = testStableUserIdFromEmail('owner@example.com')
+	mockModule.readAuthenticatedAppUser.mockResolvedValue({
+		email: 'owner@example.com',
+		username: sessionUsername,
+		mcpUser: { userId },
+	})
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE webhook_endpoints (
@@ -94,6 +106,7 @@ function createEnv() {
 			webhook_name TEXT NOT NULL,
 			url_secret_hash TEXT NOT NULL,
 			url_secret_encrypted TEXT,
+			hmac_secret_encrypted TEXT,
 			previous_url_secret_hash TEXT,
 			previous_url_secret_expires_at TEXT,
 			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
@@ -104,50 +117,44 @@ function createEnv() {
 		ON webhook_endpoints(user_id, package_id, webhook_name);
 	`)
 	const db = createD1FromSqlite(sqlite)
-	return {
-		env: {
-			APP_DB: db,
-			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-			SENTRY_ENVIRONMENT: 'test',
-		} as unknown as Env,
-		db,
+	const handler = createCommunityPackageWebhooksApiHandler({
+		APP_DB: db,
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env)
+	const run = (request: Request, params = ownerParams) =>
+		handler.handler({ request, url: new URL(request.url), params } as never)
+	const get = (params = ownerParams) =>
+		run(
+			new Request(apiUrl, { headers: { Accept: 'application/json' } }),
+			params,
+		)
+	const post = (body: unknown, params = ownerParams) =>
+		run(
+			new Request(apiUrl, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(body),
+			}),
+			params,
+		)
+	const act = async (intent: string, webhookName = 'launcher') => {
+		const response = await post({ intent, webhookName })
+		return {
+			status: response.status,
+			body: (await response.json()) as PackageWebhooksActionPayload & {
+				error: string
+			},
+		}
 	}
+	return { db, userId, run, get, post, act }
 }
 
-type Handler = {
-	handler(context: never): Promise<Response>
-}
-
-const ownerParams = { username: 'owner', kodyId: 'sentry-bridge' }
-
-async function runHandler(
-	handler: Handler,
-	request: Request,
-	params: { username: string; kodyId: string } = ownerParams,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params,
-	} as never)
-}
-
-const apiUrl =
-	'https://kody.example/profiles/owner/packages/sentry-bridge/webhooks.json'
-
-function getRequest() {
-	return new Request(apiUrl, { headers: { Accept: 'application/json' } })
-}
-
-function postRequest(body: unknown) {
-	return new Request(apiUrl, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-		},
-		body: JSON.stringify(body),
-	})
+function launcherOf(body: { webhooks: PackageWebhooksLoaderData['webhooks'] }) {
+	return body.webhooks.find((webhook) => webhook.name === 'launcher')!
 }
 
 function urlSecretOf(url: string) {
@@ -155,57 +162,46 @@ function urlSecretOf(url: string) {
 }
 
 test('package webhooks API mints, reveals, rotates, and toggles a declared webhook without leaking the URL from the list', async () => {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: 'owner@example.com',
-		username: 'owner',
-		mcpUser: { userId },
-	})
-	const { env, db } = createEnv()
-	const handler = createCommunityPackageWebhooksApiHandler(env)
+	const { db, userId, get, act } = await setup()
 
-	const listed = await runHandler(handler, getRequest())
+	const listed = await get()
 	expect(listed.status).toBe(200)
 	const listBody = (await listed.json()) as PackageWebhooksLoaderData
-	expect(listBody.ok).toBe(true)
-	expect(listBody.username).toBe('owner')
-	expect(listBody.kodyId).toBe('sentry-bridge')
+	expect(listBody).toMatchObject({
+		ok: true,
+		username: 'owner',
+		kodyId: 'sentry-bridge',
+	})
 	expect(listBody.webhooks.map((webhook) => webhook.id)).toEqual([
 		'sentry-bridge/launcher',
 		'sentry-bridge/sentry',
 	])
-	const launcher = listBody.webhooks[0]!
-	expect(launcher.minted).toBe(false)
-	expect(launcher.urlRecoverable).toBe(false)
-	expect(launcher.inputMode).toBe('params')
-	expect(launcher.rateLimitPerMinute).toBe(600)
-	expect(launcher.verification).toBeNull()
+	expect(listBody.webhooks[0]).toMatchObject({
+		minted: false,
+		urlRecoverable: false,
+		inputMode: 'params',
+		rateLimitPerMinute: 600,
+		verification: null,
+	})
 
-	const minted = await runHandler(
-		handler,
-		postRequest({
-			intent: 'mint',
-			webhookName: 'launcher',
-		}),
-	)
+	const minted = await act('mint')
 	expect(minted.status).toBe(200)
-	const mintBody = (await minted.json()) as PackageWebhooksActionPayload
-	expect(mintBody.revealed?.id).toBe('sentry-bridge/launcher')
-	expect(mintBody.revealed?.handle.startsWith('whh_')).toBe(true)
+	expect(minted.body.revealed?.id).toBe('sentry-bridge/launcher')
+	expect(minted.body.revealed?.handle.startsWith('whh_')).toBe(true)
 	// The URL comes from the request origin so previews show their own host,
 	// and the response reveals it exactly once alongside the refreshed list.
-	expect(mintBody.revealed?.url).toMatch(
+	expect(minted.body.revealed?.url).toMatch(
 		/^https:\/\/kody\.example\/@owner\/webhooks\/sentry-bridge\/launcher\/[A-Za-z0-9_-]+$/,
 	)
-	const mintedUrl = mintBody.revealed!.url
-	const mintedLauncher = mintBody.webhooks.find(
-		(webhook) => webhook.name === 'launcher',
-	)!
-	expect(mintedLauncher.minted).toBe(true)
-	expect(mintedLauncher.enabled).toBe(true)
-	expect(mintedLauncher.urlRecoverable).toBe(true)
-	expect(mintedLauncher.handle).toBe(mintBody.revealed?.handle)
-	expect(JSON.stringify(mintBody.webhooks)).not.toContain(
+	const mintedUrl = minted.body.revealed!.url
+	const mintedHandle = minted.body.revealed!.handle
+	expect(launcherOf(minted.body)).toMatchObject({
+		minted: true,
+		enabled: true,
+		urlRecoverable: true,
+		handle: mintedHandle,
+	})
+	expect(JSON.stringify(minted.body.webhooks)).not.toContain(
 		urlSecretOf(mintedUrl),
 	)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -218,21 +214,13 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 	)
 
 	// GET never carries the credential; only an explicit reveal does.
-	const relisted = await runHandler(handler, getRequest())
-	const relistText = await relisted.text()
+	const relistText = await (await get()).text()
 	expect(relistText).not.toContain(urlSecretOf(mintedUrl))
 	expect(relistText).not.toContain('"url"')
 
-	const revealed = await runHandler(
-		handler,
-		postRequest({
-			intent: 'reveal',
-			webhookName: 'launcher',
-		}),
-	)
+	const revealed = await act('reveal')
 	expect(revealed.status).toBe(200)
-	const revealBody = (await revealed.json()) as PackageWebhooksActionPayload
-	expect(revealBody.revealed?.url).toBe(mintedUrl)
+	expect(revealed.body.revealed?.url).toBe(mintedUrl)
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'account',
@@ -243,45 +231,20 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 
 	// Mint is first-issue only; an existing mint must go through Rotate so a
 	// stray click cannot silently invalidate the provider's URL.
-	const remint = await runHandler(
-		handler,
-		postRequest({
-			intent: 'mint',
-			webhookName: 'launcher',
-		}),
-	)
+	const remint = await act('mint')
 	expect(remint.status).toBe(400)
-	expect(((await remint.json()) as { error: string }).error).toContain('Rotate')
+	expect(remint.body.error).toContain('Rotate')
 
-	const disabled = await runHandler(
-		handler,
-		postRequest({
-			intent: 'disable',
-			webhookName: 'launcher',
-		}),
-	)
+	const disabled = await act('disable')
 	expect(disabled.status).toBe(200)
-	const disableBody = (await disabled.json()) as PackageWebhooksActionPayload
-	expect(disableBody.revealed).toBeUndefined()
-	expect(
-		disableBody.webhooks.find((webhook) => webhook.name === 'launcher')
-			?.enabled,
-	).toBe(false)
+	expect(disabled.body.revealed).toBeUndefined()
+	expect(launcherOf(disabled.body).enabled).toBe(false)
 
-	const rotated = await runHandler(
-		handler,
-		postRequest({
-			intent: 'rotate',
-			webhookName: 'launcher',
-		}),
-	)
+	const rotated = await act('rotate')
 	expect(rotated.status).toBe(200)
-	const rotateBody = (await rotated.json()) as PackageWebhooksActionPayload
-	expect(rotateBody.revealed?.url).not.toBe(mintedUrl)
-	expect(rotateBody.revealed?.handle).toBe(mintBody.revealed?.handle)
-	const rotatedLauncher = rotateBody.webhooks.find(
-		(webhook) => webhook.name === 'launcher',
-	)!
+	expect(rotated.body.revealed?.url).not.toBe(mintedUrl)
+	expect(rotated.body.revealed?.handle).toBe(mintedHandle)
+	const rotatedLauncher = launcherOf(rotated.body)
 	// Rotate keeps the disabled state; only Enable flips it back.
 	expect(rotatedLauncher.enabled).toBe(false)
 	expect(rotatedLauncher.previousUrlActiveUntil).toEqual(expect.any(String))
@@ -290,24 +253,14 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 	expect(overlapUntil).toBeGreaterThan(overlapExpected - 10_000)
 	expect(overlapUntil).toBeLessThan(overlapExpected + 10_000)
 
-	const enabled = await runHandler(
-		handler,
-		postRequest({
-			intent: 'enable',
-			webhookName: 'launcher',
-		}),
-	)
+	const enabled = await act('enable')
 	expect(enabled.status).toBe(200)
-	expect(
-		((await enabled.json()) as PackageWebhooksActionPayload).webhooks.find(
-			(webhook) => webhook.name === 'launcher',
-		)?.enabled,
-	).toBe(true)
+	expect(launcherOf(enabled.body).enabled).toBe(true)
 
+	const whereLauncher = `WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'launcher'`
 	const stored = await db
 		.prepare(
-			`SELECT url_secret_encrypted FROM webhook_endpoints
-			WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'launcher'`,
+			`SELECT url_secret_encrypted FROM webhook_endpoints ${whereLauncher}`,
 		)
 		.bind(userId)
 		.first<{ url_secret_encrypted: string | null }>()
@@ -317,29 +270,15 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 	// with a message that points at Rotate.
 	await db
 		.prepare(
-			`UPDATE webhook_endpoints SET url_secret_encrypted = NULL
-			WHERE user_id = ? AND package_id = 'pkg-1' AND webhook_name = 'launcher'`,
+			`UPDATE webhook_endpoints SET url_secret_encrypted = NULL ${whereLauncher}`,
 		)
 		.bind(userId)
 		.run()
-	const legacyList = (await (
-		await runHandler(handler, getRequest())
-	).json()) as PackageWebhooksLoaderData
-	expect(
-		legacyList.webhooks.find((webhook) => webhook.name === 'launcher')
-			?.urlRecoverable,
-	).toBe(false)
-	const legacyReveal = await runHandler(
-		handler,
-		postRequest({
-			intent: 'reveal',
-			webhookName: 'launcher',
-		}),
-	)
+	const legacyList = (await (await get()).json()) as PackageWebhooksLoaderData
+	expect(launcherOf(legacyList).urlRecoverable).toBe(false)
+	const legacyReveal = await act('reveal')
 	expect(legacyReveal.status).toBe(400)
-	expect(((await legacyReveal.json()) as { error: string }).error).toContain(
-		'not recoverable',
-	)
+	expect(legacyReveal.body.error).toContain('not recoverable')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'webhook_url_reveal',
@@ -349,42 +288,26 @@ test('package webhooks API mints, reveals, rotates, and toggles a declared webho
 })
 
 test('package webhooks API is owner-only: another username or an unknown package is a 404 that names neither', async () => {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: 'owner@example.com',
-		username: 'Owner',
-		mcpUser: { userId },
-	})
-	const { env } = createEnv()
-	const handler = createCommunityPackageWebhooksApiHandler(env)
-
 	// Username matching is case-insensitive, like the `/@username` pages.
-	const ownList = await runHandler(handler, getRequest(), {
-		username: 'owner',
-		kodyId: 'sentry-bridge',
-	})
-	expect(ownList.status).toBe(200)
+	const { get, post } = await setup('Owner')
+	expect((await get()).status).toBe(200)
 
-	const someoneElse = await runHandler(handler, getRequest(), {
-		username: 'someone-else',
-		kodyId: 'sentry-bridge',
-	})
+	const someoneElse = await get(otherParams)
 	expect(someoneElse.status).toBe(404)
 	const someoneElseBody = (await someoneElse.json()) as { error: string }
 	expect(someoneElseBody.error).toBe('Package not found.')
 	expect(JSON.stringify(someoneElseBody)).not.toContain('sentry')
 
-	const someoneElseMint = await runHandler(
-		handler,
-		postRequest({ intent: 'mint', webhookName: 'launcher' }),
-		{ username: 'someone-else', kodyId: 'sentry-bridge' },
+	const someoneElseMint = await post(
+		{ intent: 'mint', webhookName: 'launcher' },
+		otherParams,
 	)
 	expect(someoneElseMint.status).toBe(404)
 	expect(logAuditEventSpy).not.toHaveBeenCalledWith(
 		expect.objectContaining({ action: 'webhook_url_mint' }),
 	)
 
-	const unknownPackage = await runHandler(handler, getRequest(), {
+	const unknownPackage = await get({
 		username: 'owner',
 		kodyId: 'not-a-package',
 	})
@@ -392,76 +315,33 @@ test('package webhooks API is owner-only: another username or an unknown package
 })
 
 test('package webhooks API rejects unknown webhooks, bad bodies, and anonymous callers', async () => {
-	const userId = await createStableUserIdFromEmail('owner@example.com')
-	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		email: 'owner@example.com',
-		username: 'owner',
-		mcpUser: { userId },
-	})
-	const { env, db } = createEnv()
-	const handler = createCommunityPackageWebhooksApiHandler(env)
+	const { db, run, get, act } = await setup()
 
-	const undeclared = await runHandler(
-		handler,
-		postRequest({
-			intent: 'mint',
-			webhookName: 'nope',
-		}),
-	)
+	const undeclared = await act('mint', 'nope')
 	expect(undeclared.status).toBe(400)
-	expect(((await undeclared.json()) as { error: string }).error).toContain(
-		'does not declare webhook',
-	)
+	expect(undeclared.body.error).toContain('does not declare webhook')
 
-	const unminted = await runHandler(
-		handler,
-		postRequest({
-			intent: 'reveal',
-			webhookName: 'sentry',
-		}),
-	)
-	expect(unminted.status).toBe(400)
+	const rejected = [
+		{ name: 'unminted reveal', intent: 'reveal', webhookName: 'sentry' },
+		{ name: 'unknown intent', intent: 'delete', webhookName: 'sentry' },
+		{ name: 'blank webhook name', intent: 'mint', webhookName: ' ' },
+	]
+	for (const { name, intent, webhookName } of rejected) {
+		const { status } = await act(intent, webhookName)
+		expect({ name, status }).toEqual({ name, status: 400 })
+	}
 
-	const badIntent = await runHandler(
-		handler,
-		postRequest({
-			intent: 'delete',
-			webhookName: 'sentry',
-		}),
-	)
-	expect(badIntent.status).toBe(400)
-
-	const blank = await runHandler(
-		handler,
-		postRequest({ intent: 'mint', webhookName: ' ' }),
-	)
-	expect(blank.status).toBe(400)
-
-	const wrongMethod = await runHandler(
-		handler,
-		new Request(apiUrl, { method: 'DELETE' }),
-	)
+	const wrongMethod = await run(new Request(apiUrl, { method: 'DELETE' }))
 	expect(wrongMethod.status).toBe(405)
 	expect(wrongMethod.headers.get('Allow')).toBe('GET, POST')
 
 	// Infrastructure failures are audited with their detail but reach the
 	// browser only as the generic per-intent message.
 	await db.prepare('DROP TABLE webhook_endpoints').run()
-	const consoleError = vi
-		.spyOn(console, 'error')
-		.mockImplementation(() => undefined)
-	const broken = await runHandler(
-		handler,
-		postRequest({
-			intent: 'mint',
-			webhookName: 'sentry',
-		}),
-	)
-	consoleError.mockRestore()
+	consoleError.mockImplementation(() => {})
+	const broken = await act('mint', 'sentry')
 	expect(broken.status).toBe(500)
-	const brokenBody = (await broken.json()) as { error: string }
-	expect(brokenBody.error).toBe('Unable to mint the webhook URL.')
-	expect(brokenBody.error).not.toContain('no such table')
+	expect(broken.body.error).toBe('Unable to mint the webhook URL.')
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			action: 'webhook_url_mint',
@@ -471,6 +351,5 @@ test('package webhooks API rejects unknown webhooks, bad bodies, and anonymous c
 	)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(null)
-	const unauthorized = await runHandler(handler, getRequest())
-	expect(unauthorized.status).toBe(401)
+	expect((await get()).status).toBe(401)
 })

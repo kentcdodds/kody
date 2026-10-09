@@ -55,16 +55,13 @@ const secretSetInputSchema = z
 		}
 	})
 
-const secretSetCapabilityInputJsonSchema = z.toJSONSchema(
-	secretSetInputSchema,
-) as Record<string, unknown>
-
 export const secretSetCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretSet',
+		orgPermission: 'secret:write',
 		description:
-			'Create or update a stored secret reference for the signed-in user. Use this for API keys, PATs, webhook HMAC secrets, and other static credentials already available inside trusted execution. Do not persist OAuth access or refresh tokens here — `/connect/oauth` and `createAuthenticatedFetch` / `integrationTokenRefresh` write those on the connection. Optional expires_at is a UTC ISO timestamp or YYYY-MM-DD; null clears expiry. Updates that only change description or expiry may omit value. Use `/account/secrets/new` for user-provided API key, PAT, and credential entry or rotation. Host use is authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
+			'Create or update a stored secret reference for the signed-in user. Use this for API keys, PATs, webhook HMAC secrets, and other static credentials already available inside trusted execution. Do not persist OAuth access or refresh tokens here — `/connect/oauth` and `createAuthenticatedFetch` / `integrationTokenRefresh` write those on the connection. Optional expires_at is a UTC ISO timestamp or YYYY-MM-DD; null clears expiry. Updates that only change description or expiry may omit value. Use `/connect/secret-set` for user-provided API key, PAT, and credential entry or rotation. Host use is authorized through secret policy approvals. Saved secrets are consumed in outbound `fetch` calls by placeholder, e.g. `{{secret:name}}`, resolved only for approved hosts.',
 		keywords: [
 			'secret',
 			'persist',
@@ -78,10 +75,10 @@ export const secretSetCapability = defineDomainCapability(
 		readOnly: false,
 		idempotent: false,
 		destructive: false,
-		inputSchema: secretSetCapabilityInputJsonSchema,
+		// Zod (not z.toJSONSchema): wrapper parse_input → McpCallerError (KODY-8T).
+		inputSchema: secretSetInputSchema,
 		outputSchema: secretMetadataSchema,
-		async handler(args, ctx: CapabilityContext) {
-			const parsed = secretSetInputSchema.parse(args)
+		async handler(parsed, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
 			const { authorityPackageId, storageContext } =
 				resolveCallerSecretAuthority({

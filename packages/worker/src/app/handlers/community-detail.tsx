@@ -449,7 +449,7 @@ export function createCommunityDetailApiHandler(env: Env) {
 			if (!detail?.listing) {
 				return jsonResponse(
 					request,
-					{ ok: false, error: 'Community listing not found.' },
+					{ ok: false, error: 'Catalog entry not found.' },
 					404,
 				)
 			}
@@ -523,7 +523,7 @@ export function createCommunityPackageApiHandler(env: Env) {
 			if (page.kind === 'not_found') {
 				return jsonResponse(
 					request,
-					{ ok: false, error: 'Community listing not found.' },
+					{ ok: false, error: 'Catalog entry not found.' },
 					404,
 				)
 			}

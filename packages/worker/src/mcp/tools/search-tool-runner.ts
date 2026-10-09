@@ -22,6 +22,8 @@ import {
 	defaultSearchLimit,
 	domainBrowseDefaultLimit,
 	maxChars,
+	SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
+	SEARCH_WAITING_ITEMS_BUDGET_MS,
 } from './search-constants.ts'
 import { resolveEntityDetail } from './search-detail.ts'
 import { buildRecommendedNextStep } from './search-descriptors.ts'
@@ -49,6 +51,8 @@ import {
 import {
 	elapsedMs,
 	reconcileSearchPhaseTimings,
+	runWithSearchDeadline,
+	settleWithBudget,
 	toSearchServerTiming,
 } from './search-timing.ts'
 import { type SearchPhaseTimings } from './search-types.ts'
@@ -186,7 +190,7 @@ export async function runSearchTool(input: {
 		})
 	}
 
-	const searchSpan = async () => {
+	const searchSpan = async (signal: AbortSignal) => {
 		const query = trimmedQuery
 		if (!args.entity) {
 			const execution = await executeSearchList({
@@ -200,10 +204,13 @@ export async function runSearchTool(input: {
 				includeHiddenPackages,
 				memoryContext: args.memoryContext,
 				...(domainFilter ? { domain: domainFilter } : {}),
+				phaseTimings: endToEndPhaseTimings,
+				signal,
 			})
 			username = execution.username
 			warnings = execution.warnings
 			Object.assign(endToEndPhaseTimings, execution.phaseTimings)
+			signal.throwIfAborted()
 			const stampStart = performance.now()
 			await stampFirstSearchIfAuthenticated(agent, userId)
 			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
@@ -226,13 +233,20 @@ export async function runSearchTool(input: {
 				!withinNoticeCooldown &&
 				!onboardingNoticeConversationIds.includes(conversationId)
 			if (considerOnboardingNotice) {
-				const notice = await buildOnboardingSearchNotice({
-					env: agent.getEnv(),
-					userId,
-					baseUrl,
-				})
-				if (notice) {
-					structuredWarnings.push(notice)
+				const settlement = await settleWithBudget(
+					buildOnboardingSearchNotice({
+						env: agent.getEnv(),
+						userId,
+						baseUrl,
+					}),
+					SEARCH_ONBOARDING_NOTICE_BUDGET_MS,
+				)
+				if (settlement.timedOut) {
+					endToEndPhaseTimings.onboardingNoticeTimedOut = true
+				}
+				signal.throwIfAborted()
+				if (settlement.ok && settlement.value) {
+					structuredWarnings.push(settlement.value)
 					if (typeof statefulAgent.setState === 'function') {
 						statefulAgent.setState({
 							...statefulAgent.state,
@@ -259,20 +273,26 @@ export async function runSearchTool(input: {
 			let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
 			if (shouldInjectWaiting) {
 				try {
-					const waitingItems = await deriveWaitingItemsForStableUser({
-						env: agent.getEnv(),
-						stableUserId: userId,
-						email: callerContext.user?.email ?? '',
-					})
-					const origin = baseUrl.replace(/\/+$/, '')
-					waitingMarkdown = formatSearchWaitingMarkdown({
-						items: waitingItems,
-						origin,
-					})
-					waitingStructured = toSearchWaitingStructured({
-						items: waitingItems,
-						origin,
-					})
+					const waiting = await settleWithBudget(
+						deriveWaitingItemsForStableUser({
+							env: agent.getEnv(),
+							stableUserId: userId,
+							email: callerContext.user?.email ?? '',
+						}),
+						SEARCH_WAITING_ITEMS_BUDGET_MS,
+					)
+					if (waiting.timedOut) endToEndPhaseTimings.waitingItemsTimedOut = true
+					if (waiting.ok) {
+						const origin = baseUrl.replace(/\/+$/, '')
+						waitingMarkdown = formatSearchWaitingMarkdown({
+							items: waiting.value,
+							origin,
+						})
+						waitingStructured = toSearchWaitingStructured({
+							items: waiting.value,
+							origin,
+						})
+					}
 				} catch {
 					waitingMarkdown = null
 					waitingStructured = null
@@ -308,6 +328,7 @@ export async function runSearchTool(input: {
 		})
 		const searchRows = await rowsPromise
 		warnings = searchRows.warnings
+		signal.throwIfAborted()
 
 		if (Array.isArray(args.entity)) {
 			const entityResolveStart = performance.now()
@@ -340,6 +361,12 @@ export async function runSearchTool(input: {
 				}),
 			)
 			endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
+			signal.throwIfAborted()
+			if (batchResults.some((entry) => entry.ok)) {
+				const stampStart = performance.now()
+				await stampFirstSearchIfAuthenticated(agent, userId)
+				endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
+			}
 			return {
 				mode: 'entity-batch' as const,
 				results: batchResults,
@@ -355,6 +382,10 @@ export async function runSearchTool(input: {
 			searchRows,
 		})
 		endToEndPhaseTimings.entityResolveMs = elapsedMs(entityResolveStart)
+		signal.throwIfAborted()
+		const stampStart = performance.now()
+		await stampFirstSearchIfAuthenticated(agent, userId)
+		endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
 		return {
 			mode: 'entity' as const,
 			detail,
@@ -397,7 +428,7 @@ export async function runSearchTool(input: {
 					'mcp.tool': 'search',
 				},
 			},
-			searchSpan,
+			() => runWithSearchDeadline(searchSpan),
 		)
 
 		if (outcome.mode === 'entity') {
@@ -405,9 +436,6 @@ export async function runSearchTool(input: {
 				includeBoilerplate: includePreamble,
 			})
 			rememberConversationPreamble()
-			const stampStart = performance.now()
-			await stampFirstSearchIfAuthenticated(agent, userId)
-			endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
 			const timing = finishToolTiming(timingStart)
 			const phaseTimings = reconcileSearchPhaseTimings({
 				durationMs: timing.durationMs,
@@ -499,11 +527,6 @@ export async function runSearchTool(input: {
 				error: entry.error,
 				callerError: entry.callerError,
 			}))
-			if (!allFailed) {
-				const stampStart = performance.now()
-				await stampFirstSearchIfAuthenticated(agent, userId)
-				endToEndPhaseTimings.firstSearchStampMs = elapsedMs(stampStart)
-			}
 			const timing = finishToolTiming(timingStart)
 			const phaseTimings = reconcileSearchPhaseTimings({
 				durationMs: timing.durationMs,

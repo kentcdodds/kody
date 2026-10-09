@@ -26,19 +26,24 @@ const emptySignals: WaitingSignals = {
 }
 
 test('waiting items are a current-state you-queue and skip noise', () => {
-	expect(isWaitingMcpServerState('authenticating')).toBe(true)
-	expect(isWaitingMcpServerState('failed')).toBe(true)
-	expect(isWaitingMcpServerState('disconnected')).toBe(true)
-	expect(isWaitingMcpServerState('ready')).toBe(false)
-	expect(isWaitingMcpServerState('connecting')).toBe(false)
-
-	expect(isElevatedUserErrorRate({ errorCount: 10, eventCount: 10 })).toBe(true)
-	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 20 })).toBe(true)
-	expect(isElevatedUserErrorRate({ errorCount: 4, eventCount: 10 })).toBe(false)
-	expect(isElevatedUserErrorRate({ errorCount: 5, eventCount: 40 })).toBe(false)
-	expect(isElevatedUserErrorRate({ errorCount: 0, eventCount: 162103 })).toBe(
-		false,
-	)
+	expect(
+		['authenticating', 'failed', 'disconnected', 'ready', 'connecting'].map(
+			isWaitingMcpServerState,
+		),
+	).toEqual([true, true, true, false, false])
+	const errorRates: Array<[number, number, boolean]> = [
+		[10, 10, true],
+		[5, 20, true],
+		[4, 10, false],
+		[5, 40, false],
+		[0, 162103, false],
+	]
+	expect(
+		errorRates.filter(
+			([errorCount, eventCount, want]) =>
+				isElevatedUserErrorRate({ errorCount, eventCount }) !== want,
+		),
+	).toEqual([])
 
 	const now = new Date('2026-08-31T00:00:00.000Z')
 	expect(isUnexpiredEpochMs(now.getTime() + 1, now)).toBe(true)
@@ -95,12 +100,6 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		'onboarding:connect-agent',
 	])
 	expect(items.every((item) => item.who === 'you')).toBe(true)
-	expect(items.find((item) => item.id === 'onboarding:verify-email')).toBe(
-		undefined,
-	)
-	expect(items.find((item) => item.id === 'mcp-server:srv-ready')).toBe(
-		undefined,
-	)
 	expect(items.find((item) => item.id === 'error-rate')).toMatchObject({
 		title: 'Error rate is elevated',
 		why: '12 of 20 recent runs failed and still need triage. Activity is where you handle those errors.',
@@ -189,12 +188,6 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		'secret-expired-more',
 	])
 	expect(
-		connectionHealth.find((item) => item.id === 'mcp-server:srv-outage'),
-	).toBeUndefined()
-	expect(
-		connectionHealth.find((item) => item.id === 'integration-auth:spotify'),
-	).toBeUndefined()
-	expect(
 		connectionHealth.find((item) => item.id === 'integration-auth:google'),
 	).toMatchObject({
 		who: 'you',
@@ -229,15 +222,6 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 	])
 	expect(allMissing.every((item) => item.kind === 'first-use')).toBe(true)
 	expect(allMissing.every((item) => item.severity === 'setup')).toBe(true)
-	expect(allMissing.find((item) => item.id === 'onboarding:give-access')).toBe(
-		undefined,
-	)
-	expect(
-		allMissing.find((item) => item.id === 'onboarding:install-starter'),
-	).toBe(undefined)
-	expect(
-		allMissing.find((item) => item.id === 'onboarding:connect-agent'),
-	).toBe(undefined)
 
 	const wizardResume = buildWaitingItems({
 		...emptySignals,
@@ -264,7 +248,6 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 			...emptySignals,
 			firstUseMissing: remaining,
 		})
-		expect(items.find((item) => item.id === `first-use:${id}`)).toBe(undefined)
 		expect(items.map((item) => item.id)).toEqual(
 			remaining.map((candidate) => `first-use:${candidate}`),
 		)

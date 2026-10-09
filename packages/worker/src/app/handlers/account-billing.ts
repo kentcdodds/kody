@@ -24,7 +24,7 @@ import {
 	getPriceIdForPlan,
 	isBillingConfigured,
 	parseBillingInterval,
-	selectPlanRetainingSubscriptions,
+	selectKodyPlanRetainingSubscriptions,
 	subscriptionHasPrice,
 } from '#worker/billing/billing-config.ts'
 import {
@@ -35,6 +35,11 @@ import { enqueuePlatformFeedbackDispatch } from '#worker/platform-feedback/dispa
 import { isPlatformFeedbackDomainError } from '#worker/platform-feedback/errors.ts'
 import { submitPlatformFeedback } from '#worker/platform-feedback/service.ts'
 import { recordCheckoutFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
+import { buildOrgBillingMetadata } from '#worker/billing/org-stripe-metadata.ts'
+import {
+	countLiveSeats,
+	readOrgStripeCustomerId,
+} from '#worker/orgs/billing.ts'
 
 function billingErrorRedirect(request: Request, errorCode: string) {
 	const url = new URL('/account/billing', request.url)
@@ -110,13 +115,9 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				plan?: unknown
 				interval?: unknown
 			} | null
-			const plan =
-				body?.plan === 'standard' || body?.plan === 'pro' ? body.plan : null
+			const plan = body?.plan === 'pro' ? body.plan : null
 			if (!plan) {
-				return jsonResponse(
-					{ ok: false, error: 'Choose Standard or Pro.' },
-					400,
-				)
+				return jsonResponse({ ok: false, error: 'Choose Pro.' }, 400)
 			}
 			const interval = parseBillingInterval(body?.interval)
 			if (!interval) {
@@ -130,18 +131,16 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				return jsonResponse(
 					{
 						ok: false,
-						error: `${plan === 'standard' ? 'Standard' : 'Pro'} checkout is not configured on this deployment.`,
+						error: 'Pro checkout is not configured on this deployment.',
 					},
 					409,
 				)
 			}
 
-			const row = await env.APP_DB.prepare(
-				`SELECT stripe_customer_id FROM users WHERE id = ?`,
-			)
-				.bind(user.userId)
-				.first<{ stripe_customer_id: string | null }>()
-			const customerId = row?.stripe_customer_id?.trim() || undefined
+			const orgId = user.request.org.id
+			const customerId =
+				(await readOrgStripeCustomerId(env.APP_DB, orgId)) || undefined
+			const seatQuantity = Math.max(1, await countLiveSeats(env.APP_DB, orgId))
 			const billingUrl = new URL('/account/billing', request.url).toString()
 			const requestIp = getRequestIp(request) ?? undefined
 			const requestPath = new URL(request.url).pathname
@@ -151,9 +150,13 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					// An existing subscriber must change plans on their current
 					// subscription. A second Checkout Session would create a second
 					// subscription that bills alongside the first (the plan resolver
-					// grants the higher tier across all of them), so route plan
-					// switches through the portal's prorated update flow instead.
-					const planRetaining = selectPlanRetainingSubscriptions(
+					// grants the higher tier across all of them), so route switches
+					// to Pro through the portal's prorated confirm flow, pinned to
+					// the Pro price so a retired price is never offered.
+					// Only Kody subscriptions. Never portal-update a shared-account
+					// product (for example GratiText Premium) onto a Kody price.
+					const planRetaining = selectKodyPlanRetainingSubscriptions(
+						env,
 						await listSubscriptions(env, customerId),
 					)
 					if (planRetaining.length === 1) {
@@ -164,6 +167,17 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 								409,
 							)
 						}
+						const subscriptionItemId = subscription.items.data.find(
+							(item) => item.id,
+						)?.id
+						if (!subscriptionItemId) {
+							const portal = await createBillingPortalSession(env, {
+								customerId,
+								returnUrl: billingUrl,
+								configuration: getBillingPortalConfigurationId(env),
+							})
+							return jsonResponse({ ok: true, url: portal.url, mode: 'portal' })
+						}
 						const updatedUrl = new URL(billingUrl)
 						updatedUrl.searchParams.set('billing', 'updated')
 						const portal = await createBillingPortalSession(env, {
@@ -171,9 +185,12 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 							returnUrl: billingUrl,
 							configuration: getBillingPortalConfigurationId(env),
 							flowData: {
-								type: 'subscription_update',
+								type: 'subscription_update_confirm',
 								subscriptionId: subscription.id,
+								subscriptionItemId,
+								priceId,
 								afterCompletionRedirectUrl: updatedUrl.toString(),
+								quantity: seatQuantity,
 							},
 						})
 						void logAuditEvent({
@@ -217,17 +234,20 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					clientReferenceId,
 					successUrl,
 					cancelUrl: billingUrl,
+					quantity: seatQuantity,
 					...(customerId ? { customerId } : { customerEmail: user.email }),
 					// Lets the Stripe webhook resolve the user without reversing
 					// the HMAC client_reference_id (still verified on link).
+					// Success redirect linking still keys off the signed-in user;
+					// webhook org resolution uses kody_org_id below (team soak).
 					metadata: {
-						kody_stable_user_id: user.mcpUser.userId,
+						...buildOrgBillingMetadata(orgId),
 						kody_plan: plan,
 					},
 				})
 				recordCheckoutFunnelEvent(env, {
 					stage: 'checkout_started',
-					userId: user.mcpUser.userId,
+					userId: orgId,
 					plan,
 				})
 				void logAuditEvent({
@@ -424,12 +444,8 @@ export function createAccountBillingPortalHandler(env: Env) {
 				return billingErrorRedirect(request, 'billing_not_configured')
 			}
 
-			const row = await env.APP_DB.prepare(
-				`SELECT stripe_customer_id FROM users WHERE id = ?`,
-			)
-				.bind(user.userId)
-				.first<{ stripe_customer_id: string | null }>()
-			const customerId = row?.stripe_customer_id?.trim()
+			const orgId = user.request.org.id
+			const customerId = await readOrgStripeCustomerId(env.APP_DB, orgId)
 			if (!customerId) {
 				return billingErrorRedirect(request, 'no_customer')
 			}

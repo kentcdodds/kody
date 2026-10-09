@@ -17,7 +17,13 @@ const successMetric: FeatureFlagSuccessMetric = {
 
 const now = new Date('2026-07-15T12:00:00.000Z')
 
-type ExposureRow = { user_id: string; enabled: number; source: string }
+type ExposureRow = {
+	user_id: string
+	enabled: number
+	source: string
+	last_day: string
+	last_updated: string | null
+}
 type UsageRow = {
 	user_id: string
 	event_count: number
@@ -53,51 +59,72 @@ function createReadoutTestDb(input: {
 	return { db: db as unknown as D1Database, queries }
 }
 
-test('D1 readout splits cohorts and excludes override and mixed users', async () => {
-	const { db, queries } = createReadoutTestDb({
-		exposures: [
-			{ user_id: 'user-on', enabled: 1, source: 'rollout' },
-			{ user_id: 'user-on-quiet', enabled: 1, source: 'rollout' },
-			{ user_id: 'user-off', enabled: 0, source: 'rollout' },
-			{ user_id: 'user-override', enabled: 1, source: 'override' },
-			{ user_id: 'user-mixed', enabled: 1, source: 'rollout' },
-			{ user_id: 'user-mixed', enabled: 0, source: 'rollout' },
-		],
-		usage: [
-			{
-				user_id: 'user-on',
-				event_count: 10,
-				error_count: 2,
-				total_duration_ms: 1000,
-			},
-			{
-				user_id: 'user-off',
-				event_count: 8,
-				error_count: 4,
-				total_duration_ms: 400,
-			},
-			{
-				user_id: 'user-override',
-				event_count: 100,
-				error_count: 0,
-				total_duration_ms: 0,
-			},
-			{
-				user_id: 'user-unexposed',
-				event_count: 50,
-				error_count: 50,
-				total_duration_ms: 0,
-			},
-		],
-	})
+type ReadoutEnv = Parameters<typeof loadFeatureFlagSuccessMetricReadout>[0]
 
-	const readout = await loadFeatureFlagSuccessMetricReadout(
-		{ APP_DB: db },
+const load = (env: ReadoutEnv) =>
+	loadFeatureFlagSuccessMetricReadout(
+		env,
 		{ flagKey: 'metric-test-flag', successMetric },
 		now,
 	)
 
-	expect(readout).toEqual({
+const analyticsEnv = {
+	APP_DB: {} as D1Database,
+	FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+	CLOUDFLARE_ACCOUNT_ID: 'account',
+	CLOUDFLARE_API_TOKEN: 'token',
+}
+
+const exposure = (
+	user_id: string,
+	enabled: number,
+	source: string,
+	last_day: string,
+): ExposureRow => ({
+	user_id,
+	enabled,
+	source,
+	last_day,
+	last_updated: `${last_day}T00:00:00.000Z`,
+})
+
+const usageRow = (
+	user_id: string,
+	event_count: number,
+	error_count: number,
+	total_duration_ms: number,
+): UsageRow => ({ user_id, event_count, error_count, total_duration_ms })
+
+function stubFetch(handler: (query: string) => Response) {
+	const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) =>
+		handler(String(init?.body)),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	return Object.assign(fetchMock, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
+}
+
+test('D1 readout excludes mixed users from on/off and surfaces override usage', async () => {
+	const { db, queries } = createReadoutTestDb({
+		exposures: [
+			exposure('user-on', 1, 'rollout', '2026-07-10'),
+			exposure('user-on-quiet', 1, 'rollout', '2026-07-10'),
+			exposure('user-off', 0, 'rollout', '2026-07-10'),
+			exposure('user-override', 1, 'override', '2026-07-12'),
+			exposure('user-mixed', 0, 'rollout', '2026-07-05'),
+			exposure('user-mixed', 1, 'rollout', '2026-07-12'),
+		],
+		usage: [
+			usageRow('user-on', 10, 2, 1000),
+			usageRow('user-off', 8, 4, 400),
+			usageRow('user-override', 100, 0, 0),
+			usageRow('user-mixed', 20, 1, 200),
+			usageRow('user-unexposed', 50, 50, 0),
+		],
+	})
+
+	expect(await load({ APP_DB: db })).toEqual({
 		status: 'ok',
 		windowStart: '2026-07-01T00:00:00.000Z',
 		windowEnd: '2026-07-15T12:00:00.000Z',
@@ -115,105 +142,71 @@ test('D1 readout splits cohorts and excludes override and mixed users', async ()
 			errorRate: 0.5,
 			avgDurationMs: 50,
 		},
+		override: {
+			users: 1,
+			eventCount: 100,
+			errorCount: 0,
+			errorRate: 0,
+			avgDurationMs: 0,
+		},
 		overrideUsers: 1,
 		mixedUsers: 1,
 	})
-	expect(queries[0]?.params).toEqual([
-		'metric-test-flag',
-		'2026-07-01',
-		'2026-07-15',
+	expect(queries.map((entry) => entry.params)).toEqual([
+		['metric-test-flag', '2026-07-01', '2026-07-15'],
+		['execute', '2026-07'],
 	])
-	expect(queries[1]?.params).toEqual(['execute', '2026-07'])
 })
 
-test('Analytics Engine readout joins exposures and usage by user', async () => {
-	const fetchMock = vi.fn(async (_url: unknown, init: unknown) => {
-		const query = String((init as { body: string }).body)
-		if (query.includes('kody_flag_exposures')) {
-			return new Response(
-				JSON.stringify({
-					data: [
-						{
-							user_id: 'user-on',
-							on_count: 3,
-							off_count: 0,
-							override_count: 0,
-						},
-						{
-							user_id: 'user-off',
-							on_count: 0,
-							off_count: 2,
-							override_count: 0,
-						},
-						{
-							user_id: 'user-override',
-							on_count: 1,
-							off_count: 0,
-							override_count: 4,
-						},
+test('Analytics Engine readout joins exposures and usage; mixed stay excluded', async () => {
+	const aeExposure = (
+		user_id: string,
+		state: string,
+		source: string,
+		day: string,
+	) => ({ user_id, state, source, last_ts: `${day} 00:00:00` })
+	using fetchMock = stubFetch((query) =>
+		Response.json({
+			data: query.includes('kody_flag_exposures')
+				? [
+						aeExposure('user-on', 'on', 'global', '2026-07-10'),
+						aeExposure('user-off', 'off', 'global', '2026-07-10'),
+						aeExposure('user-override', 'on', 'override', '2026-07-12'),
+						aeExposure('user-switched', 'off', 'global', '2026-07-02'),
+						aeExposure('user-switched', 'on', 'global', '2026-07-14'),
+					]
+				: [
+						usageRow('user-on', 4, 1, 800),
+						usageRow('user-off', 5, 5, 500),
+						usageRow('user-switched', 6, 0, 60),
+						usageRow('user-override', 50, 0, 0),
 					],
-				}),
-			)
-		}
-		return new Response(
-			JSON.stringify({
-				data: [
-					{
-						user_id: 'user-on',
-						event_count: 4,
-						error_count: 1,
-						total_duration_ms: 800,
-					},
-					{
-						user_id: 'user-off',
-						event_count: 5,
-						error_count: 5,
-						total_duration_ms: 500,
-					},
-				],
-			}),
-		)
-	})
-	vi.stubGlobal('fetch', fetchMock)
-	try {
-		const readout = await loadFeatureFlagSuccessMetricReadout(
-			{
-				APP_DB: {} as D1Database,
-				FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
-				CLOUDFLARE_ACCOUNT_ID: 'account',
-				CLOUDFLARE_API_TOKEN: 'token',
-			},
-			{ flagKey: 'metric-test-flag', successMetric },
-			now,
-		)
+		}),
+	)
 
-		expect(fetchMock).toHaveBeenCalledTimes(2)
-		expect(readout).toMatchObject({
-			status: 'ok',
-			on: { users: 1, eventCount: 4, errorCount: 1, errorRate: 0.25 },
-			off: { users: 1, eventCount: 5, errorCount: 5, errorRate: 1 },
-			overrideUsers: 1,
-			mixedUsers: 0,
-		})
-	} finally {
-		vi.unstubAllGlobals()
-	}
+	const readout = await load(analyticsEnv)
+
+	expect(fetchMock).toHaveBeenCalledTimes(2)
+	const exposuresQuery = fetchMock.mock.calls
+		.map(([, init]) => String(init?.body))
+		.find((query) => query.includes('kody_flag_exposures'))
+	// Analytics Engine rejects max() over String columns with HTTP 422.
+	expect(exposuresQuery).toContain('max(timestamp) AS last_ts')
+	expect(exposuresQuery).not.toMatch(/max\(blob\d+\)/)
+	expect(readout).toMatchObject({
+		status: 'ok',
+		on: { users: 1, eventCount: 4, errorCount: 1 },
+		off: { users: 1, eventCount: 5, errorCount: 5, errorRate: 1 },
+		override: { users: 1, eventCount: 50, errorCount: 0 },
+		overrideUsers: 1,
+		mixedUsers: 1,
+	})
 })
 
 test('selects D1 locally, stays unavailable without credentials, and degrades on failure', async () => {
 	const local = createReadoutTestDb({ exposures: [], usage: [] })
 	await expect(
-		loadFeatureFlagSuccessMetricReadout(
-			{
-				APP_DB: local.db,
-				FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
-				CLOUDFLARE_ACCOUNT_ID: 'account',
-				CLOUDFLARE_API_TOKEN: 'token',
-				WRANGLER_IS_LOCAL_DEV: 'true',
-			},
-			{ flagKey: 'metric-test-flag', successMetric },
-			now,
-		),
+		load({ ...analyticsEnv, APP_DB: local.db, WRANGLER_IS_LOCAL_DEV: 'true' }),
 	).resolves.toMatchObject({ status: 'ok' })
 	expect(local.queries).toHaveLength(2)
 
@@ -221,14 +214,10 @@ test('selects D1 locally, stays unavailable without credentials, and degrades on
 	// even though exposures were written to Analytics Engine.
 	const missingCredentials = createReadoutTestDb({ exposures: [], usage: [] })
 	await expect(
-		loadFeatureFlagSuccessMetricReadout(
-			{
-				APP_DB: missingCredentials.db,
-				FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
-			},
-			{ flagKey: 'metric-test-flag', successMetric },
-			now,
-		),
+		load({
+			APP_DB: missingCredentials.db,
+			FLAG_EXPOSURES: {} as AnalyticsEngineDataset,
+		}),
 	).resolves.toEqual({
 		status: 'unavailable',
 		reason: expect.stringContaining('credentials'),
@@ -241,38 +230,54 @@ test('selects D1 locally, stays unavailable without credentials, and degrades on
 			throw new Error('d1 down')
 		},
 	} as unknown as D1Database
-	await expect(
-		loadFeatureFlagSuccessMetricReadout(
-			{ APP_DB: failingDb },
-			{ flagKey: 'metric-test-flag', successMetric },
-			now,
-		),
-	).resolves.toEqual({
+	await expect(load({ APP_DB: failingDb })).resolves.toEqual({
 		status: 'unavailable',
-		reason: expect.stringContaining('readout query failed'),
+		reason: expect.stringContaining('failed'),
 	})
 
+	const aeError =
+		'Input was invalid: cannot use the String type as argument 1 in max("blob5")'
+	using _fetch = stubFetch(() => new Response(aeError, { status: 422 }))
+	await expect(load(analyticsEnv)).resolves.toEqual({
+		status: 'unavailable',
+		reason: expect.stringContaining(`(422): ${aeError}`),
+	})
+})
+
+test('resolveFlagExposuresDataset picks preview vs production table names', () => {
 	expect(resolveFlagExposuresDataset({})).toBe('kody_flag_exposures')
 	expect(resolveFlagExposuresDataset({ SENTRY_ENVIRONMENT: 'preview' })).toBe(
 		'kody_flag_exposures_preview',
 	)
 })
 
-test('attachFeatureFlagMetricReadouts only decorates measured registry flags', async () => {
+test('attachFeatureFlagMetricReadouts only fills measured non-stale flags', async () => {
 	const { db } = createReadoutTestDb({ exposures: [], usage: [] })
+	const flag = (overrides: Partial<AdminFeatureFlag>): AdminFeatureFlag => ({
+		key: 'demo-indicator',
+		description: null,
+		defaultEnabled: false,
+		defaultAudience: 'everyone',
+		stale: false,
+		successMetric: null,
+		global: null,
+		overrides: [],
+		...overrides,
+	})
 	const flags = [
-		{
-			key: 'metric-test-flag',
-			stale: false,
-			successMetric,
-		},
-		{ key: 'demo-indicator', stale: false, successMetric: null },
-		{ key: 'retired-flag', stale: true, successMetric: null },
-	] as Array<AdminFeatureFlag>
-
+		flag({ successMetric }),
+		flag({}),
+		flag({
+			key: 'retired-flag',
+			defaultEnabled: null,
+			defaultAudience: null,
+			stale: true,
+		}),
+	]
 	await attachFeatureFlagMetricReadouts({ APP_DB: db }, flags, now)
-
-	expect(flags[0]?.metricReadout).toMatchObject({ status: 'ok' })
-	expect(flags[1]?.metricReadout).toBeUndefined()
-	expect(flags[2]?.metricReadout).toBeUndefined()
+	expect(flags.map((entry) => entry.metricReadout)).toEqual([
+		expect.objectContaining({ status: 'ok' }),
+		undefined,
+		undefined,
+	])
 })

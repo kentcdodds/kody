@@ -1,9 +1,15 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
-import { resolvePackageStorageOwnerUserId } from '#worker/package-registry/share-grants.ts'
+import { resolvePackageStorageOwner } from '#worker/package-registry/share-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
+import {
+	inheritRequest,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { buildSecretProviderPackageApprovalUrl } from './approval-url.ts'
 import {
 	isCanonicalProviderRef,
@@ -20,7 +26,6 @@ import {
 	createProviderPackageNotGrantedMessage,
 	SecretProviderError,
 } from './errors.ts'
-import { assertSecretProvidersEnabled } from './flag.ts'
 import { normalizeProviderHosts } from './hosts.ts'
 import {
 	clearProviderSecretCacheForBinding,
@@ -56,6 +61,7 @@ export type SecretProviderInvoker = (
 		env: Env
 		baseUrl: string
 		ownerUserId: string
+		request: RequestSource
 		savedPackage: SavedPackageRecord
 	},
 ) => Promise<SealedProviderCanonicalizeResult | SealedProviderResolveResult>
@@ -146,10 +152,6 @@ export async function bindSecretProvider(input: {
 	doorSecretName: string
 	config?: Record<string, unknown> | null
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const doorSecretName = input.doorSecretName.trim()
 	if (!doorSecretName) {
@@ -215,10 +217,6 @@ export async function unbindSecretProvider(input: {
 	userId: string
 	providerId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	await deleteSecretProviderBinding(input.env.APP_DB, {
 		userId: input.userId,
@@ -235,10 +233,6 @@ export async function listBoundSecretProviders(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderBindings(input.env.APP_DB, {
 		userId: input.userId,
 	})
@@ -251,10 +245,6 @@ export async function grantSecretProviderToPackage(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	await requireBoundProvider({
@@ -288,10 +278,6 @@ export async function revokeSecretProviderGrant(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	const savedPackage = await requireOwnedPackage({
@@ -314,10 +300,6 @@ export async function inspectSecretProviderPackageGrant(input: {
 	ref: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	const providerId = normalizeProviderId(input.providerId)
 	const canonicalRef = requireLocalCanonicalRef(providerId, input.ref)
 	await requireBoundProvider({
@@ -352,10 +334,6 @@ export async function listSecretProviderGrants(input: {
 	userId: string
 	packageId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderGrantsForPackage(input.env.APP_DB, input)
 }
 
@@ -363,10 +341,6 @@ export async function listAccountSecretProviderGrants(input: {
 	env: Pick<Env, 'APP_DB'>
 	userId: string
 }) {
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: input.userId,
-	})
 	return await listSecretProviderGrantsForUser(input.env.APP_DB, {
 		userId: input.userId,
 	})
@@ -386,6 +360,8 @@ export async function resolveProviderSecret(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	/** The fetching run; the provider export inherits it. */
+	request: RequestContext
 	provider: string
 	ref: string
 	storageContext?: StorageContext | null
@@ -396,16 +372,12 @@ export async function resolveProviderSecret(input: {
 	const rawRef = normalizeProviderRef(input.ref)
 	const authorityPackageId = input.authorityPackageId?.trim() || null
 	const ownerUserId = authorityPackageId
-		? await resolvePackageStorageOwnerUserId({
+		? await resolvePackageStorageOwner({
 				db: input.env.APP_DB,
-				callerUserId: input.userId,
+				caller: personIdFromStored(input.userId),
 				packageId: authorityPackageId,
 			})
 		: input.userId
-	await assertSecretProvidersEnabled({
-		db: input.env.APP_DB,
-		stableUserId: ownerUserId,
-	})
 	const binding = await getSecretProviderBinding(input.env.APP_DB, {
 		userId: ownerUserId,
 		providerId,
@@ -442,6 +414,7 @@ export async function resolveProviderSecret(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		ownerUserId,
+		request: inheritRequest(input.request),
 		providerId,
 		rawRef,
 		binding,
@@ -494,6 +467,7 @@ export async function resolveProviderSecret(input: {
 			env: input.env,
 			baseUrl: input.baseUrl,
 			ownerUserId,
+			request: inheritRequest(input.request),
 			savedPackage: providerPackage,
 			action: 'resolve',
 			providerId,
@@ -534,6 +508,7 @@ async function resolveCanonicalProviderRef(input: {
 	env: Env
 	baseUrl: string
 	ownerUserId: string
+	request: RequestSource
 	providerId: string
 	rawRef: string
 	binding: SecretProviderBindingRecord
@@ -562,6 +537,7 @@ async function resolveCanonicalProviderRef(input: {
 			env: input.env,
 			baseUrl: input.baseUrl,
 			ownerUserId: input.ownerUserId,
+			request: input.request,
 			savedPackage: input.providerPackage,
 			action: 'canonicalize',
 			providerId: input.providerId,

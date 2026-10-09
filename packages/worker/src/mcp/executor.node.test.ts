@@ -1,11 +1,15 @@
 import { expect, test } from 'vitest'
-import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	createPackageSecretAccessDeniedBatchMessage,
 	createSecretScopeUnavailableMessage,
 } from '#mcp/secrets/errors.ts'
+import {
+	getSecretAuthorityScope,
+	resolveCallerSecretAuthority,
+	secretAuthorityArgName,
+} from '#mcp/secrets/secret-authority.ts'
 import { createKodyProviderProxySource } from '#mcp/kody-provider-proxy-source.ts'
 import {
 	kodyCallDispatcherName,
@@ -26,9 +30,7 @@ import {
 	createExecutorSandboxTimeoutMessage,
 	createNamedExecutionError,
 	createToolDispatchers,
-	extractRawContent,
 	formatExecutionOutput,
-	formatLimitedExecutionOutput,
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
@@ -43,14 +45,17 @@ import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
 type FakeWorkerOptions = Record<string, unknown>
+type Dispatchers = Record<string, { call: typeof ToolDispatcherCall }>
+type ExecutorInput = Parameters<typeof createExecuteExecutor>[0]
+type ExecuteArgs = Parameters<
+	ReturnType<typeof createExecuteExecutor>['execute']
+>
 
 function createFakeWorkerLoader() {
 	const ids: Array<string> = []
 	const createdOptions = new Map<string, FakeWorkerOptions>()
-	const evaluations: Array<{
-		dispatchers: Record<string, { call: typeof ToolDispatcherCall }>
-		invocation: unknown
-	}> = []
+	const evaluations: Array<{ dispatchers: Dispatchers; invocation: unknown }> =
+		[]
 	let factoryCallCount = 0
 	const loader = {
 		get(id: string, factory: () => FakeWorkerOptions) {
@@ -64,15 +69,9 @@ function createFakeWorkerLoader() {
 			return {
 				getEntrypoint() {
 					return {
-						async evaluate(
-							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
-							invocation?: unknown,
-						) {
+						async evaluate(dispatchers: Dispatchers, invocation?: unknown) {
 							evaluations.push({ dispatchers, invocation })
-							return {
-								result: id,
-								logs: [],
-							}
+							return { result: id, logs: [] }
 						},
 					}
 				},
@@ -87,18 +86,36 @@ function createFakeWorkerLoader() {
 		get factoryCallCount() {
 			return factoryCallCount
 		},
+		get stats() {
+			return {
+				loads: ids.length,
+				uniqueIds: new Set(ids).size,
+				factoryCalls: factoryCallCount,
+			}
+		},
 	}
+}
+
+function createEvaluateLoader(
+	evaluate: (dispatchers: Dispatchers) => Promise<unknown>,
+) {
+	return {
+		get(_id: string, factory: () => FakeWorkerOptions) {
+			factory()
+			return { getEntrypoint: () => ({ evaluate }) }
+		},
+	} as unknown as Env['LOADER']
 }
 
 async function ToolDispatcherCall(_name: string, _argsJson: string) {
 	return ''
 }
 
-function createExecutorTestEnv(loader: Env['LOADER']) {
-	return {
-		LOADER: loader,
-		APP_COMMIT_SHA: 'commit-for-test',
-	} as Env
+function createExecutorTestEnv(
+	loader: Env['LOADER'],
+	extra: Record<string, unknown> = {},
+) {
+	return { LOADER: loader, APP_COMMIT_SHA: 'commit-for-test', ...extra } as Env
 }
 
 function createExecutorTestExports() {
@@ -118,511 +135,468 @@ function createGatewayProps(
 		baseUrl: 'https://heykody.dev',
 		userId,
 		email: overrides?.email ?? `${userId}@example.com`,
+		request: null,
 		storageContext:
 			overrides?.storageContext === undefined ? null : overrides.storageContext,
 	}
 }
 
-test('kody namespaced proxy dispatches and reports entry/capability errors clearly', async () => {
-	const calls: Array<{ dispatchName: string; args: unknown }> = []
-	const mcp = createKodyRemoteProxy({
-		entries: [
-			{
-				name: 'home',
-				status: {
-					state: 'connected',
-					connected: true,
-					toolCount: 1,
-					message: 'The MCP server "home" is connected.',
-					unavailableMessage: 'The MCP server "home" is connected.',
-				},
-				capabilities: [
-					{
-						name: 'set_pin',
-						dispatchName: 'mcphomeset_pin',
+function runExecutor(
+	input: Omit<ExecutorInput, 'gatewayProps'> & {
+		gatewayProps?: ExecutorInput['gatewayProps']
+	},
+	code = 'async () => "ok"',
+	providers: ExecuteArgs[1] = [{ name: 'kody', fns: {} }],
+	invocation?: ExecuteArgs[2],
+) {
+	return createExecuteExecutor({
+		exports: createExecutorTestExports(),
+		gatewayProps: createGatewayProps('user-1'),
+		...input,
+	}).execute(code, providers, invocation)
+}
+
+function createUsageBindings({ meter = false } = {}) {
+	const dataPoints: Array<AnalyticsEngineDataPoint> = []
+	const rollupWrites: Array<Array<unknown>> = []
+	const activationStampWrites: Array<string> = []
+	const bindings = {
+		...(meter ? createInMemoryUserMeterEnv().env : {}),
+		USAGE_EVENTS: {
+			writeDataPoint(point?: AnalyticsEngineDataPoint) {
+				if (point) dataPoints.push(point)
+			},
+		},
+		APP_DB: {
+			prepare(sql: string) {
+				return {
+					bind(...args: Array<unknown>) {
+						return {
+							async run() {
+								if (sql.includes('usage_rollups')) rollupWrites.push(args)
+								if (sql.includes('first_execute_at')) {
+									activationStampWrites.push(sql)
+								}
+								return {}
+							},
+						}
 					},
-				],
+				}
 			},
-			{
-				name: 'lights',
-				status: {
-					state: 'disconnected',
-					connected: false,
+		},
+	}
+	return { bindings, dataPoints, rollupWrites, activationStampWrites }
+}
+
+const notConnected = (name: string) =>
+	`The MCP server "${name}" is not connected. Kody cannot use this server until it reconnects.`
+
+function mcpServerEntry(
+	name: string,
+	connected: boolean,
+	toolNames: Array<string>,
+) {
+	return {
+		name,
+		status: connected
+			? {
+					state: 'connected' as const,
+					connected,
+					toolCount: toolNames.length,
+					message: `The MCP server "${name}" is connected.`,
+					unavailableMessage: `The MCP server "${name}" is connected.`,
+				}
+			: {
+					state: 'disconnected' as const,
+					connected,
 					toolCount: 0,
-					message: 'The MCP server "lights" is not connected.',
-					unavailableMessage:
-						'The MCP server "lights" is not connected. Kody cannot use this server until it reconnects.',
+					message: `The MCP server "${name}" is not connected.`,
+					unavailableMessage: notConnected(name),
 				},
-				capabilities: [],
-			},
-		],
+		capabilities: toolNames.map((tool) => ({
+			name: tool,
+			dispatchName: `mcp${name}${tool}`,
+		})),
+	}
+}
+
+function createMcpProxy(
+	entries: Array<ReturnType<typeof mcpServerEntry>>,
+	callTool: (dispatchName: string, args: unknown) => Promise<unknown>,
+) {
+	return createKodyRemoteProxy({
+		entries,
 		entityLabel: 'MCP server',
 		shortEntityLabel: 'MCP server',
 		capabilityLabel: 'MCP tool',
-		async callTool(dispatchName, args) {
+		callTool,
+	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+}
+
+test('kody namespaced proxy dispatches, enumerates tools, and reports entry/capability errors clearly', async () => {
+	const calls: Array<{ dispatchName: string; args: unknown }> = []
+	const mcp = createMcpProxy(
+		[
+			mcpServerEntry('home', true, ['set_pin']),
+			mcpServerEntry('lights', false, []),
+		],
+		async (dispatchName, args) => {
 			calls.push({ dispatchName, args })
 			return { ok: true }
 		},
-	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
+	)
 
-	await expect(mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
+	await expect(mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual({
 		ok: true,
 	})
 	expect(calls).toEqual([
-		{
-			dispatchName: 'mcphomeset_pin',
-			args: { pin: '1234' },
-		},
+		{ dispatchName: 'mcphomeset_pin', args: { pin: '1234' } },
 	])
-	expect(() => mcp['missing']).toThrow(
-		'Unknown MCP server "missing". Available MCP servers: "home", "lights".',
-	)
+	for (const name of ['missing', 'toString', 'constructor']) {
+		expect(() => mcp[name]).toThrow(
+			`Unknown MCP server "${name}". Available MCP servers: "home", "lights".`,
+		)
+	}
 	expect(() => mcp['home']?.missing_tool).toThrow(
 		'Unknown MCP tool "missing_tool" for MCP server "home". Available capabilities: "set_pin".',
 	)
-	expect(() => mcp['lights']?.set_pin).toThrow(
-		'The MCP server "lights" is not connected. Kody cannot use this server until it reconnects.',
-	)
+	expect(() => mcp['lights']?.set_pin).toThrow(notConnected('lights'))
 
 	expect('home' in mcp).toBe(true)
 	expect(Object.keys(mcp).sort()).toEqual(['home', 'lights'])
 	const { home } = mcp
-	await expect(home.set_pin({ pin: '9999' })).resolves.toEqual({ ok: true })
+	if (!home) throw new Error('Expected home MCP server proxy')
+	await expect(home.set_pin?.({ pin: '9999' })).resolves.toEqual({ ok: true })
 	expect(Object.keys(home)).toEqual(['set_pin'])
-	expect(() => {
-		const { missing } = mcp
-		return missing
-	}).toThrow(
-		'Unknown MCP server "missing". Available MCP servers: "home", "lights".',
-	)
 	expect(() => {
 		const { missing_tool } = home
 		return missing_tool
 	}).toThrow(
 		'Unknown MCP tool "missing_tool" for MCP server "home". Available capabilities: "set_pin".',
 	)
-	expect(() => mcp.toString).toThrow(
-		'Unknown MCP server "toString". Available MCP servers: "home", "lights".',
-	)
-	expect(() => mcp.constructor).toThrow(
-		'Unknown MCP server "constructor". Available MCP servers: "home", "lights".',
-	)
-})
 
-test('kody namespaced proxy enumerates advertised tools on a disconnected server', async () => {
-	const mcp = createKodyRemoteProxy({
-		entries: [
-			{
-				name: 'home',
-				status: {
-					state: 'disconnected',
-					connected: false,
-					toolCount: 0,
-					message: 'The MCP server "home" is not connected.',
-					unavailableMessage:
-						'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
-				},
-				capabilities: [
-					{
-						name: 'sonos_list_players',
-						dispatchName: 'mcphomesonos_list_players',
-					},
-				],
-			},
-		],
-		entityLabel: 'MCP server',
-		shortEntityLabel: 'MCP server',
-		capabilityLabel: 'MCP tool',
-		async callTool() {
+	// Disconnected servers still enumerate advertised tools but never dispatch.
+	const disconnected = createMcpProxy(
+		[mcpServerEntry('home', false, ['sonos_list_players'])],
+		async () => {
 			throw new Error('disconnected servers must not dispatch')
 		},
-	}) as Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-
-	const home = mcp.home
-	expect(Object.keys(home)).toEqual(['sonos_list_players'])
-	expect(Object.entries(home).map(([name]) => name)).toEqual([
+	)
+	const disconnectedHome = disconnected.home
+	if (!disconnectedHome) throw new Error('Expected home MCP server proxy')
+	expect(Object.keys(disconnectedHome)).toEqual(['sonos_list_players'])
+	expect(Object.entries(disconnectedHome).map(([name]) => name)).toEqual([
 		'sonos_list_players',
 	])
-	await expect(home.sonos_list_players({})).rejects.toThrow(
-		'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
+	await expect(disconnectedHome.sonos_list_players?.({})).rejects.toThrow(
+		notConnected('home'),
 	)
 })
 
-test('generated kody provider and executor module sources stay bundle-safe', () => {
-	const source = createKodyProviderProxySource({
-		providerName: 'kody',
-	})
-	assertGeneratedExecutorSourceIsBundleSafe(source)
+test('generated kody provider and executor module sources stay bundle-safe and gate outbound fetch', () => {
+	assertGeneratedExecutorSourceIsBundleSafe(
+		createKodyProviderProxySource({ providerName: 'kody' }),
+	)
+	const moduleSourceFor = (
+		options: Partial<Parameters<typeof createExecutorModuleSource>[0]> = {},
+	) =>
+		createExecutorModuleSource({
+			code: 'async () => "ok"',
+			providers: [{ name: 'kody', fns: {} }],
+			shadowGlobalThis: false,
+			timeoutMs: 1_000,
+			...options,
+		})
 
-	const moduleSource = createExecutorModuleSource({
-		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'kody',
-				fns: {},
-			},
-		],
-		shadowGlobalThis: false,
-		timeoutMs: 1_000,
-	})
+	const moduleSource = moduleSourceFor()
 	assertGeneratedExecutorSourceIsBundleSafe(moduleSource)
-	expect(moduleSource).toContain('from "node:async_hooks"')
-	expect(moduleSource).toContain('__kodyEvaluateFetchStorage.run')
-	expect(moduleSource).toContain('.call("recordFetch", "[]")')
-	expect(moduleSource).toContain('const __kodyMcp =')
-	expect(moduleSource).toContain('getOwnPropertyDescriptor')
-	expect(moduleSource).toContain(
+	const expectedSnippets = [
+		'from "node:async_hooks"',
+		'__kodyEvaluateFetchStorage.run',
+		'.call("recordFetch", "[]")',
+		'if (hostname && hostname !== __kodyExcludedFetchHost && !__kodySecretAuthority)',
+		'const __kodyMcp =',
+		'getOwnPropertyDescriptor',
 		'async evaluate(__dispatchers = {}, __invocation = {})',
-	)
-	expect(moduleSource).toContain(')(__invocation)')
-	expect(moduleSource).toContain('__invocation.mcpServers')
-	expect(moduleSource).toContain(
+		')(__invocation)',
+		'__invocation.mcpServers',
 		`const ${kodyProviderEvaluateBindingName} = new Proxy`,
+		`const ${kodyCallDispatcherName} = async`,
+	]
+	expect(expectedSnippets.filter((s) => !moduleSource.includes(s))).toEqual([])
+	const authorityIdx = moduleSource.indexOf(
+		'globalThis[Symbol.for("kody.getSecretAuthority")]',
 	)
-	expect(moduleSource).toContain(`const ${kodyCallDispatcherName} = async`)
+	expect(authorityIdx).toBeGreaterThan(-1)
+	expect(authorityIdx).toBeLessThan(
+		moduleSource.indexOf('.call("recordFetch", "[]")'),
+	)
+	expect(moduleSource.indexOf('!__kodySecretAuthority')).toBeGreaterThan(
+		authorityIdx,
+	)
 	expect(moduleSource).not.toMatch(/\b(?:const|let|var) kody\b/)
 	expect(moduleSource).not.toContain(
 		`async (globalThis, self, global, ${kodyCallDispatcherName}`,
 	)
 
-	const oneFileSource = createExecutorModuleSource({
-		code: 'async () => "ok"',
-		providers: [{ name: 'kody', fns: {} }],
-		shadowGlobalThis: true,
-		timeoutMs: 1_000,
-	})
-	expect(oneFileSource).toContain(
+	expect(moduleSourceFor({ shadowGlobalThis: true })).toContain(
 		`async (globalThis, self, global, ${kodyCallDispatcherName}, ${kodyProviderEvaluateBindingName}, __kodyMcp, __kodyCreateRemoteProxy, __dispatchers) => (`,
 	)
-})
 
-test('closed-world executor module rejects fetch in the sandbox before outbound RPC', () => {
-	const denied = createExecutorModuleSource({
-		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'kody',
-				fns: {},
-			},
-		],
-		shadowGlobalThis: false,
-		timeoutMs: 1_000,
-		allowOutboundFetch: false,
-	})
+	// Closed-world modules reject fetch in the sandbox before outbound RPC.
+	const denied = moduleSourceFor({ allowOutboundFetch: false })
 	expect(denied).not.toContain('.call("recordFetch", "[]")')
 	expect(denied).not.toContain('__kodyNativeFetchSymbol](input, init)')
-
-	const allowed = createExecutorModuleSource({
-		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'kody',
-				fns: {},
-			},
-		],
-		shadowGlobalThis: false,
-		timeoutMs: 1_000,
-	})
-	expect(allowed).toContain('.call("recordFetch", "[]")')
 })
 
 test('generated kody provider source wires mcp proxy dispatch', async () => {
 	const calls: Array<{ name: string; argsJson: string }> = []
-	const source = createKodyProviderProxySource({
-		providerName: 'kody',
+	const source = createKodyProviderProxySource({ providerName: 'kody' })
+	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	Object.defineProperty(globalThis, authoritySymbol, {
+		value: () => 'pkg-stamped',
+		configurable: true,
+		writable: true,
 	})
-	const kody = new Function(
-		'__dispatchers',
-		'__invocation',
-		`${source}; return ${kodyProviderEvaluateBindingName};`,
-	)(
-		{
-			kody: {
-				async call(name: string, argsJson: string) {
-					calls.push({ name, argsJson })
-					return JSON.stringify({ result: { ok: true } })
+	try {
+		const kody = new Function(
+			'__dispatchers',
+			'__invocation',
+			`${source}; return ${kodyProviderEvaluateBindingName};`,
+		)(
+			{
+				kody: {
+					async call(name: string, argsJson: string) {
+						calls.push({ name, argsJson })
+						return JSON.stringify({ result: { ok: true } })
+					},
 				},
 			},
-		},
-		{
-			mcpServers: [
-				{
-					name: 'home',
-					status: {
-						connected: true,
-						toolCount: 1,
-						unavailableMessage: 'The MCP server "home" is connected.',
-					},
-					capabilities: [
-						{
-							name: 'set_pin',
-							dispatchName: 'mcphomeset_pin',
+			{
+				mcpServers: [
+					{
+						name: 'home',
+						status: {
+							connected: true,
+							toolCount: 1,
+							unavailableMessage: 'The MCP server "home" is connected.',
 						},
-					],
-				},
-			],
-		},
-	) as {
-		mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-		[key: string]: unknown
+						capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+					},
+				],
+			},
+		) as {
+			mcp: Record<string, Record<string, (args?: unknown) => Promise<unknown>>>
+			[key: string]: unknown
+		}
+
+		await expect(kody.mcp['home']?.set_pin?.({ pin: '1234' })).resolves.toEqual(
+			{ ok: true },
+		)
+		expect(calls).toEqual([
+			{
+				name: 'mcphomeset_pin',
+				argsJson: JSON.stringify({
+					pin: '1234',
+					__kodySecretAuthorityPackageId: 'pkg-stamped',
+				}),
+			},
+		])
+		// Omitted args still carry the stamp (secret-free package exports often
+		// call tools with no object literal).
+		calls.length = 0
+		await expect(kody.mcp['home']?.set_pin?.()).resolves.toEqual({ ok: true })
+		expect(calls).toEqual([
+			{
+				name: 'mcphomeset_pin',
+				argsJson: JSON.stringify({
+					__kodySecretAuthorityPackageId: 'pkg-stamped',
+				}),
+			},
+		])
+		expect(() => kody['mcp:home:set_pin']).toThrow(
+			'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
+		)
+		expect('mcp' in kody).toBe(true)
+		const { home } = kody.mcp
+		if (!home) throw new Error('Expected home MCP server proxy')
+		await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({ ok: true })
+		expect(() => kody.mcp['missing']).toThrow(
+			'Unknown MCP server "missing". Available MCP servers: "home".',
+		)
+	} finally {
+		delete (globalThis as unknown as Record<symbol, unknown>)[authoritySymbol]
 	}
-
-	await expect(kody.mcp['home']?.set_pin({ pin: '1234' })).resolves.toEqual({
-		ok: true,
-	})
-	expect(calls).toEqual([
-		{
-			name: 'mcphomeset_pin',
-			argsJson: JSON.stringify({ pin: '1234' }),
-		},
-	])
-	expect(() => kody['mcp:home:set_pin']).toThrow(
-		'MCP server tool "mcp:home:set_pin" is not available as a flat kody function.',
-	)
-	expect('mcp' in kody).toBe(true)
-	const { home } = kody.mcp
-	await expect(home.set_pin({ pin: '5678' })).resolves.toEqual({ ok: true })
-	expect(() => {
-		const { missing } = kody.mcp
-		return missing
-	}).toThrow('Unknown MCP server "missing". Available MCP servers: "home".')
 })
 
-test('createExecuteExecutor aligns dynamic worker compatibility with shared options', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: createExecutorTestEnv(fakeLoader.loader),
-		exports: createExecutorTestExports(),
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
-
-	const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
-	expect(workerOptions).toMatchObject(createDynamicWorkerCompatibilityOptions())
-})
-
-test('createExecuteExecutor gives the fetch gateway a deadline under the sandbox budget', async () => {
-	const readGatewayProps = async (timeoutMs?: number | null) => {
+test('createExecuteExecutor aligns worker compatibility and gives the fetch gateway a deadline under the sandbox budget', async () => {
+	const readWorkerOptions = async (timeoutMs?: number | null) => {
 		const fakeLoader = createFakeWorkerLoader()
-		await createExecuteExecutor({
+		await runExecutor({
 			env: createExecutorTestEnv(fakeLoader.loader),
-			exports: createExecutorTestExports(),
-			gatewayProps: createGatewayProps('user-1'),
 			timeoutMs,
-		}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
-		const workerOptions = fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
-		return (workerOptions?.globalOutbound as { props?: unknown } | undefined)
-			?.props
+		})
+		return fakeLoader.createdOptions.get(fakeLoader.ids[0]!)
 	}
 
-	await expect(readGatewayProps()).resolves.toMatchObject({
-		outboundFetchTimeoutMs: 60_000,
-	})
-	await expect(readGatewayProps(270_000)).resolves.toMatchObject({
-		outboundFetchTimeoutMs: 240_000,
-	})
-	await expect(readGatewayProps(null)).resolves.toMatchObject({
-		outboundFetchTimeoutMs: 240_000,
-	})
+	expect(await readWorkerOptions()).toMatchObject(
+		createDynamicWorkerCompatibilityOptions(),
+	)
+	for (const [timeoutMs, outboundFetchTimeoutMs] of [
+		[undefined, 60_000],
+		[270_000, 240_000],
+		[null, 240_000],
+	] as const) {
+		const workerOptions = await readWorkerOptions(timeoutMs)
+		expect(
+			(workerOptions?.globalOutbound as { props?: unknown } | undefined)?.props,
+		).toMatchObject({ outboundFetchTimeoutMs })
+	}
 })
 
 test('explicit request budgets cap independent roots at four without blocking separate requests', async () => {
-	type BudgetState = {
-		active: number
-		maxActive: number
-		started: number
-		releases: Array<() => void>
+	const createBudgetState = () => {
+		const state = {
+			active: 0,
+			maxActive: 0,
+			started: 0,
+			releases: [] as Array<() => void>,
+		}
+		const loader = createEvaluateLoader(async () => {
+			state.started += 1
+			state.active += 1
+			state.maxActive = Math.max(state.maxActive, state.active)
+			await new Promise<void>((resolve) => {
+				state.releases.push(() => {
+					state.active -= 1
+					resolve()
+				})
+			})
+			return { result: 'done', logs: [] }
+		})
+		return { state, loader }
 	}
-	const createBudgetState = (): BudgetState => ({
-		active: 0,
-		maxActive: 0,
-		started: 0,
-		releases: [],
-	})
-	const createBlockingLoader = (state: BudgetState) =>
-		({
-			get(_id: string, factory: () => FakeWorkerOptions) {
-				factory()
-				return {
-					getEntrypoint() {
-						return {
-							async evaluate() {
-								state.started += 1
-								state.active += 1
-								state.maxActive = Math.max(state.maxActive, state.active)
-								await new Promise<void>((resolve) => {
-									state.releases.push(() => {
-										state.active -= 1
-										resolve()
-									})
-								})
-								return { result: 'done', logs: [] }
-							},
-						}
-					},
-				}
-			},
-		}) as unknown as Env['LOADER']
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
-	const runFiveRoots = (userId: string, state: BudgetState) =>
+	const runFiveRoots = (
+		userId: string,
+		{ loader }: ReturnType<typeof createBudgetState>,
+	) =>
 		runWithDynamicWorkerEvaluationBudget(
 			async () =>
 				await Promise.all(
-					Array.from({ length: 5 }, async (_, index) => {
-						return await createExecuteExecutor({
-							env: createExecutorTestEnv(createBlockingLoader(state)),
-							exports,
-							gatewayProps: createGatewayProps(userId),
-						}).execute(`async () => ${index}`, providers)
-					}),
+					Array.from({ length: 5 }, (_, index) =>
+						runExecutor(
+							{
+								env: createExecutorTestEnv(loader),
+								gatewayProps: createGatewayProps(userId),
+							},
+							`async () => ${index}`,
+						),
+					),
 				),
 		)
 
-	const firstState = createBudgetState()
-	const firstRequest = runFiveRoots('first-request-user', firstState)
-	await expect.poll(() => firstState.started).toBe(4)
-	expect(firstState.active).toBe(4)
-	expect(firstState.maxActive).toBe(4)
+	const first = createBudgetState()
+	const firstRequest = runFiveRoots('first-request-user', first)
+	await expect.poll(() => first.state.started).toBe(4)
+	expect(first.state).toMatchObject({ active: 4, maxActive: 4 })
 
-	const secondState = createBudgetState()
-	const secondRequest = runFiveRoots('second-request-user', secondState)
-	await expect.poll(() => secondState.started).toBe(4)
-	expect(secondState.active).toBe(4)
-	expect(secondState.maxActive).toBe(4)
+	const second = createBudgetState()
+	const secondRequest = runFiveRoots('second-request-user', second)
+	await expect.poll(() => second.state.started).toBe(4)
+	expect(second.state).toMatchObject({ active: 4, maxActive: 4 })
 
-	firstState.releases.shift()?.()
-	secondState.releases.shift()?.()
-	await expect.poll(() => firstState.started).toBe(5)
-	await expect.poll(() => secondState.started).toBe(5)
-	expect(firstState.active).toBe(4)
-	expect(secondState.active).toBe(4)
+	first.state.releases.shift()?.()
+	second.state.releases.shift()?.()
+	await expect.poll(() => first.state.started).toBe(5)
+	await expect.poll(() => second.state.started).toBe(5)
+	expect(first.state.active).toBe(4)
+	expect(second.state.active).toBe(4)
 
-	for (const release of firstState.releases.splice(0)) release()
-	for (const release of secondState.releases.splice(0)) release()
+	for (const release of first.state.releases.splice(0)) release()
+	for (const release of second.state.releases.splice(0)) release()
 	await expect(firstRequest).resolves.toHaveLength(5)
 	await expect(secondRequest).resolves.toHaveLength(5)
-	expect(firstState.active).toBe(0)
-	expect(secondState.active).toBe(0)
+	expect(first.state.active).toBe(0)
+	expect(second.state.active).toBe(0)
 })
 
-test('createExecuteExecutor returns sandbox timeout when Loader evaluate hangs', async () => {
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							return await new Promise(() => {})
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	const env = createExecutorTestEnv(loader)
+test('createExecuteExecutor enforces the host timeout: hang, late settle, abort-aware dispatch, and queued evaluations', async () => {
+	// A hanging evaluate returns the sandbox timeout promptly.
 	const startedAtMs = Date.now()
-	const result = await createExecuteExecutor({
-		env,
-		exports: createExecutorTestExports(),
+	const hung = await runExecutor({
+		env: createExecutorTestEnv(
+			createEvaluateLoader(async () => await new Promise(() => {})),
+		),
 		gatewayProps: createGatewayProps('hang-user'),
 		timeoutMs: 40,
-	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
-	expect(result.error).toBe(createExecutorSandboxTimeoutMessage(40))
-	expect(result.error).toContain('Execution timed out after 40ms:')
-	expect(result.result).toBeUndefined()
+	})
+	expect(hung.error).toBe(createExecutorSandboxTimeoutMessage(40))
+	expect(hung.error).toContain('Execution timed out after 40ms:')
+	expect(hung.result).toBeUndefined()
 	expect(Date.now() - startedAtMs).toBeLessThan(500)
-})
 
-test('createExecuteExecutor drains logs from an evaluation that settles just after the host timeout', async () => {
+	// Logs from an evaluation that settles just after the timeout are drained.
 	const timeoutMessage = createExecutorSandboxTimeoutMessage(20)
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							await new Promise((resolve) => setTimeout(resolve, 40))
-							return {
-								result: undefined,
-								error: timeoutMessage,
-								logs: ['started context lookup'],
-							}
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-
-	const result = await createExecuteExecutor({
-		env: createExecutorTestEnv(loader),
-		exports: createExecutorTestExports(),
+	const late = await runExecutor({
+		env: createExecutorTestEnv(
+			createEvaluateLoader(async () => {
+				await new Promise((resolve) => setTimeout(resolve, 40))
+				return {
+					result: undefined,
+					error: timeoutMessage,
+					logs: ['started context lookup'],
+				}
+			}),
+		),
 		gatewayProps: createGatewayProps('drain-user'),
 		timeoutMs: 20,
-	}).execute('async () => "never"', [{ name: 'kody', fns: {} }])
-
-	expect(result).toEqual({
+	})
+	expect(late).toEqual({
 		result: undefined,
 		error: timeoutMessage,
 		logs: ['started context lookup'],
-		hostMediatedSideEffects: {
-			dispatcherAttempts: 0,
-			fetchAttempts: 0,
-		},
+		hostMediatedSideEffects: { dispatcherAttempts: 0, fetchAttempts: 0 },
 	})
-	expect(createNamedExecutionError(result.error).name).toBe('TimeoutError')
-})
+	expect(createNamedExecutionError(late.error).name).toBe('TimeoutError')
 
-test('createExecuteExecutor aborts an in-flight abort-aware dispatcher on timeout', async () => {
+	// An in-flight abort-aware dispatcher is aborted.
 	let observedSignal: AbortSignal | undefined
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate(
-							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
-						) {
-							await dispatchers['packageBridge']?.call(
-								'invoke',
-								JSON.stringify([{}]),
-							)
-							return { result: 'unexpected', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	const invoke = async (_input: unknown, signal?: AbortSignal) => {
-		observedSignal = signal
-		await new Promise<never>((_resolve, reject) => {
-			signal?.addEventListener('abort', () => reject(signal.reason), {
-				once: true,
-			})
-		})
-	}
-	const result = await createExecuteExecutor({
-		env: createExecutorTestEnv(loader),
-		exports: createExecutorTestExports(),
-		gatewayProps: createGatewayProps('abort-user'),
-		timeoutMs: 40,
-	}).execute('async () => "never"', [
+	const aborted = await runExecutor(
 		{
-			name: 'packageBridge',
-			fns: { invoke },
-			abortSignalToolNames: ['invoke'],
-		} as never,
-	])
-
-	expect(result.error).toBe(createExecutorSandboxTimeoutMessage(40))
+			env: createExecutorTestEnv(
+				createEvaluateLoader(async (dispatchers) => {
+					await dispatchers['packageBridge']?.call(
+						'invoke',
+						JSON.stringify([{}]),
+					)
+					return { result: 'unexpected', logs: [] }
+				}),
+			),
+			gatewayProps: createGatewayProps('abort-user'),
+			timeoutMs: 40,
+		},
+		'async () => "never"',
+		[
+			{
+				name: 'packageBridge',
+				fns: {
+					invoke: async (_input: unknown, signal?: AbortSignal) => {
+						observedSignal = signal
+						await new Promise<never>((_resolve, reject) => {
+							signal?.addEventListener('abort', () => reject(signal.reason), {
+								once: true,
+							})
+						})
+					},
+				},
+				abortSignalToolNames: ['invoke'],
+			} as never,
+		],
+	)
+	expect(aborted.error).toBe(createExecutorSandboxTimeoutMessage(40))
 	expect(observedSignal?.aborted).toBe(true)
-})
 
-test('createExecuteExecutor drops queued evaluations when the host deadline expires', async () => {
+	// Queued evaluations are dropped once their host deadline expires.
 	let evaluateStarts = 0
 	let releaseHolders: () => void = () => {}
 	const holdersMayFinish = new Promise<void>((resolve) => {
@@ -632,47 +606,29 @@ test('createExecuteExecutor drops queued evaluations when the host deadline expi
 	const allHoldersStarted = new Promise<void>((resolve) => {
 		resolveAllHoldersStarted = resolve
 	})
-	let sharedEnv: Env
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							evaluateStarts += 1
-							if (evaluateStarts === 4) resolveAllHoldersStarted()
-							await holdersMayFinish
-							return { result: 'done', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	sharedEnv = createExecutorTestEnv(loader)
-
+	const sharedEnv = createExecutorTestEnv(
+		createEvaluateLoader(async () => {
+			evaluateStarts += 1
+			if (evaluateStarts === 4) resolveAllHoldersStarted()
+			await holdersMayFinish
+			return { result: 'done', logs: [] }
+		}),
+	)
+	const queueUser = createGatewayProps('queue-user')
 	await runWithDynamicWorkerEvaluationBudget(async () => {
 		const holders = Array.from({ length: 4 }, () =>
-			createExecuteExecutor({
-				env: sharedEnv,
-				exports,
-				gatewayProps: createGatewayProps('queue-user'),
-				timeoutMs: 10_000,
-			}).execute('async () => "holder"', providers),
+			runExecutor(
+				{ env: sharedEnv, gatewayProps: queueUser, timeoutMs: 10_000 },
+				'async () => "holder"',
+			),
 		)
 		await allHoldersStarted
 		expect(evaluateStarts).toBe(4)
 
-		const queuedResult = await createExecuteExecutor({
-			env: sharedEnv,
-			exports,
-			gatewayProps: createGatewayProps('queue-user'),
-			timeoutMs: 40,
-		}).execute('async () => "queued"', providers)
-
+		const queuedResult = await runExecutor(
+			{ env: sharedEnv, gatewayProps: queueUser, timeoutMs: 40 },
+			'async () => "queued"',
+		)
 		expect(queuedResult.error).toBe(createExecutorSandboxTimeoutMessage(40))
 		expect(evaluateStarts).toBe(4)
 
@@ -683,209 +639,160 @@ test('createExecuteExecutor drops queued evaluations when the host deadline expi
 })
 
 test('createExecuteExecutor reuses stable dynamic worker ids until binding context or module graph changes', async () => {
+	const statsFor = (loads: number, uniqueIds: number) => ({
+		loads,
+		uniqueIds,
+		factoryCalls: uniqueIds,
+	})
 	const fakeLoader = createFakeWorkerLoader()
 	const env = createExecutorTestEnv(fakeLoader.loader)
-	const exports = createExecutorTestExports()
-	const providers = [
-		{
-			name: 'kody',
-			fns: {
-				search: async () => ({ ok: true }),
-			},
-		},
-	]
 
-	const first = await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => "ok"', providers)
-	const second = await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps: createGatewayProps('user-1', {
-			email: 'other-address@example.com',
-		}),
-	}).execute('async () => "ok"', [
-		{
-			name: 'kody',
-			fns: {
-				search: async () => ({ ok: 'different dispatcher same worker' }),
-			},
-		},
+	const first = await runExecutor({ env }, 'async () => "ok"', [
+		{ name: 'kody', fns: { search: async () => ({ ok: true }) } },
 	])
-
-	expect(first.result).toBe(second.result)
-	expect(fakeLoader.ids).toHaveLength(2)
-	expect(new Set(fakeLoader.ids).size).toBe(1)
-	expect(fakeLoader.factoryCallCount).toBe(1)
-
-	const scopedProviders = [
+	const second = await runExecutor(
 		{
-			name: 'kody',
-			fns: {},
+			env,
+			gatewayProps: createGatewayProps('user-1', {
+				email: 'other-address@example.com',
+			}),
 		},
-	]
+		'async () => "ok"',
+		[
+			{
+				name: 'kody',
+				fns: {
+					search: async () => ({ ok: 'different dispatcher same worker' }),
+				},
+			},
+		],
+	)
+	expect(first.result).toBe(second.result)
+	expect(fakeLoader.stats).toEqual(statsFor(2, 1))
 
-	await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-		modules: {
-			'helper.js': 'export const value = "one";',
-		},
-	}).execute('async () => "ok"', scopedProviders)
-	await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps: createGatewayProps('user-2'),
-		modules: {
-			'helper.js': 'export const value = "one";',
-		},
-	}).execute('async () => "ok"', scopedProviders)
-	await createExecuteExecutor({
-		env,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-		modules: {
-			'helper.js': 'export const value = "two";',
-		},
-	}).execute('async () => "ok"', scopedProviders)
-
-	expect(fakeLoader.ids).toHaveLength(5)
-	expect(new Set(fakeLoader.ids).size).toBe(4)
-	expect(fakeLoader.factoryCallCount).toBe(4)
+	for (const [userId, value] of [
+		['user-1', 'one'],
+		['user-2', 'one'],
+		['user-1', 'two'],
+	] as const) {
+		await runExecutor({
+			env,
+			gatewayProps: createGatewayProps(userId),
+			modules: { 'helper.js': `export const value = "${value}";` },
+		})
+	}
+	expect(fakeLoader.stats).toEqual(statsFor(5, 4))
 
 	const noUserLoader = createFakeWorkerLoader()
-	const noUserGatewayProps = {
-		...createGatewayProps('user-1'),
-		userId: null,
-	}
 	for (let index = 0; index < 2; index += 1) {
-		await createExecuteExecutor({
+		await runExecutor({
 			env: createExecutorTestEnv(noUserLoader.loader),
-			exports,
-			gatewayProps: noUserGatewayProps,
-		}).execute('async () => "ok"', scopedProviders)
+			gatewayProps: { ...createGatewayProps('user-1'), userId: null },
+		})
 	}
-	expect(noUserLoader.ids).toHaveLength(2)
-	expect(new Set(noUserLoader.ids).size).toBe(1)
-	expect(noUserLoader.factoryCallCount).toBe(1)
+	expect(noUserLoader.stats).toEqual(statsFor(2, 1))
 
 	const commitShaLoader = createFakeWorkerLoader()
 	for (const commitSha of ['commit-aaa', 'commit-bbb', undefined]) {
-		await createExecuteExecutor({
-			env: {
-				...createExecutorTestEnv(commitShaLoader.loader),
+		await runExecutor({
+			env: createExecutorTestEnv(commitShaLoader.loader, {
 				APP_COMMIT_SHA: commitSha,
-			} as Env,
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-		}).execute('async () => "ok"', scopedProviders)
+			}),
+		})
 	}
-	expect(commitShaLoader.ids).toHaveLength(3)
-	expect(new Set(commitShaLoader.ids).size).toBe(1)
-	expect(commitShaLoader.factoryCallCount).toBe(1)
+	expect(commitShaLoader.stats).toEqual(statsFor(3, 1))
 
-	const bundledLoader = createFakeWorkerLoader()
-	for (let index = 0; index < 2; index += 1) {
-		await createExecuteExecutor({
-			env: createExecutorTestEnv(bundledLoader.loader),
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-			modules: {
-				'entry.js': 'export default async function main() { return "ok" }',
-			},
-		}).execute('async () => "ok"', scopedProviders)
+	const entryModules = {
+		'entry.js': 'export default async function main() { return "ok" }',
 	}
-	expect(bundledLoader.ids).toHaveLength(2)
-	expect(new Set(bundledLoader.ids).size).toBe(1)
-	expect(bundledLoader.factoryCallCount).toBe(1)
-
-	const differentUserBundledLoader = createFakeWorkerLoader()
-	for (const userId of ['user-1', 'user-2']) {
-		await createExecuteExecutor({
-			env: createExecutorTestEnv(differentUserBundledLoader.loader),
-			exports,
-			gatewayProps: createGatewayProps(userId),
-			modules: {
-				'entry.js': 'export default async function main() { return "ok" }',
-			},
-		}).execute('async () => "ok"', scopedProviders)
-	}
-	expect(differentUserBundledLoader.ids).toHaveLength(2)
-	expect(new Set(differentUserBundledLoader.ids).size).toBe(2)
-	expect(differentUserBundledLoader.factoryCallCount).toBe(2)
-
-	const differentStorageLoader = createFakeWorkerLoader()
-	const storageContexts = [
-		null,
-		{ sessionId: 'session-1', appId: 'app-1', storageId: 'storage-1' },
-	] as const
-	for (const storageContext of storageContexts) {
-		await createExecuteExecutor({
-			env: createExecutorTestEnv(differentStorageLoader.loader),
-			exports,
-			gatewayProps: createGatewayProps('user-1', { storageContext }),
-			modules: {
-				'entry.js': 'export default async function main() { return "ok" }',
-			},
-		}).execute('async () => "ok"', scopedProviders)
-	}
-	expect(differentStorageLoader.ids).toHaveLength(2)
-	expect(new Set(differentStorageLoader.ids).size).toBe(2)
-	expect(differentStorageLoader.factoryCallCount).toBe(2)
-
-	const nonHashableModuleLoader = createFakeWorkerLoader()
-	for (let index = 0; index < 2; index += 1) {
-		await createExecuteExecutor({
-			env: createExecutorTestEnv(nonHashableModuleLoader.loader),
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-			modules: {
-				'entry.js': {
-					js: 'export default async function main() { return "ok" }',
-					onLoad: async () => 'not-hashable',
+	const bundledRuns: Array<
+		[string, Array<Partial<ExecutorInput>>, ReturnType<typeof statsFor>]
+	> = [
+		['same bundled graph', [{}, {}], statsFor(2, 1)],
+		[
+			'different user',
+			[{}, { gatewayProps: createGatewayProps('user-2') }],
+			statsFor(2, 2),
+		],
+		[
+			'different storage context',
+			[
+				{},
+				{
+					gatewayProps: createGatewayProps('user-1', {
+						storageContext: {
+							sessionId: 'session-1',
+							appId: 'app-1',
+							storageId: 'storage-1',
+						},
+					}),
 				},
-			},
-		}).execute('async () => "ok"', scopedProviders)
+			],
+			statsFor(2, 2),
+		],
+		[
+			'non-hashable module',
+			[
+				{
+					modules: {
+						'entry.js': {
+							js: entryModules['entry.js'],
+							onLoad: async () => 'not-hashable',
+						},
+					} as never,
+				},
+				{
+					modules: {
+						'entry.js': {
+							js: entryModules['entry.js'],
+							onLoad: async () => 'not-hashable',
+						},
+					} as never,
+				},
+			],
+			statsFor(2, 2),
+		],
+	]
+	const bundledStats = []
+	for (const [label, runs] of bundledRuns) {
+		const loader = createFakeWorkerLoader()
+		for (const run of runs) {
+			await runExecutor({
+				env: createExecutorTestEnv(loader.loader),
+				modules: entryModules,
+				...run,
+			})
+		}
+		bundledStats.push([label, loader.stats])
 	}
-	expect(nonHashableModuleLoader.ids).toHaveLength(2)
-	expect(new Set(nonHashableModuleLoader.ids).size).toBe(2)
-	expect(nonHashableModuleLoader.factoryCallCount).toBe(2)
+	expect(bundledStats).toEqual(
+		bundledRuns.map(([label, , stats]) => [label, stats]),
+	)
 
 	const invocationLoader = createFakeWorkerLoader()
 	const invocationEnv = createExecutorTestEnv(invocationLoader.loader)
 	const invocationCode = 'async (__invocation = {}) => __invocation.params'
-	for (const invocation of [
+	const invocations = [
 		{ params: { room: 'office' } },
 		{ params: { room: 'kitchen' } },
 		{
 			params: { room: 'office' },
 			packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
 		},
-	] as const) {
-		await createExecuteExecutor({
-			env: invocationEnv,
-			exports,
-			gatewayProps: createGatewayProps('user-1'),
-		}).execute(invocationCode, scopedProviders, invocation)
+	] as const
+	for (const invocation of invocations) {
+		await runExecutor(
+			{ env: invocationEnv },
+			invocationCode,
+			undefined,
+			invocation,
+		)
 	}
-	expect(invocationLoader.ids).toHaveLength(3)
-	expect(new Set(invocationLoader.ids).size).toBe(1)
-	expect(invocationLoader.factoryCallCount).toBe(1)
+	expect(invocationLoader.stats).toEqual(statsFor(3, 1))
 	expect(invocationLoader.evaluations.map((entry) => entry.invocation)).toEqual(
 		[
-			{
-				params: { room: 'office' },
-				packageContext: null,
-				mcpServers: [],
-			},
-			{
-				params: { room: 'kitchen' },
-				packageContext: null,
-				mcpServers: [],
-			},
+			{ params: { room: 'office' }, packageContext: null, mcpServers: [] },
+			{ params: { room: 'kitchen' }, packageContext: null, mcpServers: [] },
 			{
 				params: { room: 'office' },
 				packageContext: { packageId: 'pkg-1', kodyId: 'bot' },
@@ -894,65 +801,31 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 		],
 	)
 
-	const otherCode = await createExecuteExecutor({
-		env: invocationEnv,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => "other"', scopedProviders)
+	const otherCode = await runExecutor(
+		{ env: invocationEnv },
+		'async () => "other"',
+	)
 	expect(otherCode.result).not.toBe(invocationLoader.ids[0])
 	expect(new Set(invocationLoader.ids).size).toBe(2)
 
 	const mcpStatusLoader = createFakeWorkerLoader()
 	const mcpStatusEnv = createExecutorTestEnv(mcpStatusLoader.loader)
-	const connectedHome = {
-		name: 'home',
-		serverId: 'home',
-		status: {
-			state: 'connected' as const,
-			connected: true,
-			toolCount: 1,
-			message: 'The MCP server "home" is connected.',
-			unavailableMessage: 'The MCP server "home" is connected.',
-		},
-		capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
-	}
-	await createExecuteExecutor({
-		env: mcpStatusEnv,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute(invocationCode, [
-		{
-			name: 'kody',
-			fns: {},
-			kodyMcpServers: [connectedHome],
-		} as never,
-	])
-	await createExecuteExecutor({
-		env: mcpStatusEnv,
-		exports,
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute(invocationCode, [
-		{
-			name: 'kody',
-			fns: {},
-			kodyMcpServers: [
-				{
-					...connectedHome,
-					status: {
-						state: 'disconnected',
-						connected: false,
-						toolCount: 0,
-						message: 'The MCP server "home" is not connected.',
-						unavailableMessage:
-							'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
+	for (const connected of [true, false]) {
+		await runExecutor({ env: mcpStatusEnv }, invocationCode, [
+			{
+				name: 'kody',
+				fns: {},
+				kodyMcpServers: [
+					{
+						...mcpServerEntry('home', connected, ['set_pin']),
+						serverId: 'home',
 					},
-				},
-			],
-		} as never,
-	])
-	expect(mcpStatusLoader.ids).toHaveLength(2)
-	expect(new Set(mcpStatusLoader.ids).size).toBe(1)
-	expect(mcpStatusLoader.factoryCallCount).toBe(1)
+				],
+			} as never,
+		])
+	}
+	expect(mcpStatusLoader.stats).toEqual(statsFor(2, 1))
+	const capabilities = [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }]
 	expect(mcpStatusLoader.evaluations.map((entry) => entry.invocation)).toEqual([
 		{
 			params: undefined,
@@ -965,7 +838,7 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 						toolCount: 1,
 						unavailableMessage: 'The MCP server "home" is connected.',
 					},
-					capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+					capabilities,
 				},
 			],
 		},
@@ -978,10 +851,9 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 					status: {
 						connected: false,
 						toolCount: 0,
-						unavailableMessage:
-							'The MCP server "home" is not connected. Kody cannot use this server until it reconnects.',
+						unavailableMessage: notConnected('home'),
 					},
-					capabilities: [{ name: 'set_pin', dispatchName: 'mcphomeset_pin' }],
+					capabilities,
 				},
 			],
 		},
@@ -989,49 +861,17 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 })
 
 test('createExecuteExecutor records one usage event per sandbox run with duration and outcome', async () => {
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const rollupWrites: Array<Array<unknown>> = []
-	const activationStampWrites: Array<string> = []
-	const usageBindings = {
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
-		},
-		APP_DB: {
-			prepare(sql: string) {
-				return {
-					bind(...args: Array<unknown>) {
-						return {
-							async run() {
-								if (sql.includes('usage_rollups')) {
-									rollupWrites.push(args)
-								}
-								if (sql.includes('first_execute_at')) {
-									activationStampWrites.push(sql)
-								}
-								return {}
-							},
-						}
-					},
-				}
-			},
-		},
-	}
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
+	const { bindings, dataPoints, rollupWrites, activationStampWrites } =
+		createUsageBindings()
+	const envWith = (loader: Env['LOADER']) =>
+		createExecutorTestEnv(loader, bindings)
+	const usageUser = createGatewayProps('usage-user-1')
 
 	// Successful sandbox run: one success event.
-	const successLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(successLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-1'),
-	}).execute('async () => "ok"', providers)
-
+	await runExecutor({
+		env: envWith(createFakeWorkerLoader().loader),
+		gatewayProps: usageUser,
+	})
 	expect(dataPoints).toHaveLength(1)
 	expect(dataPoints[0]?.indexes).toEqual(['usage-user-1'])
 	expect(dataPoints[0]?.blobs?.slice(0, 4)).toEqual([
@@ -1048,32 +888,19 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 	expect(activationStampWrites).toHaveLength(1)
 
 	// Sandbox run returning an error result: one error event.
-	const errorLoader = {
-		get() {
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate() {
-							return { result: undefined, error: 'boom', logs: [] }
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-	const errorResult = await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(errorLoader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-1'),
-	}).execute('async () => "ok"', providers)
-
+	const errorResult = await runExecutor({
+		env: envWith(
+			createEvaluateLoader(async () => ({
+				result: undefined,
+				error: 'boom',
+				logs: [],
+			})),
+		),
+		gatewayProps: usageUser,
+	})
 	expect(errorResult.error).toBe('boom')
 	expect(dataPoints).toHaveLength(2)
 	expect(dataPoints[1]?.blobs?.[3]).toBe('error')
-	expect(rollupWrites).toHaveLength(0)
 
 	// Loader throwing: error event recorded, original error rethrown.
 	const throwingLoader = {
@@ -1082,258 +909,218 @@ test('createExecuteExecutor records one usage event per sandbox run with duratio
 		},
 	} as unknown as Env['LOADER']
 	await expect(
-		createExecuteExecutor({
-			env: {
-				...createExecutorTestEnv(throwingLoader),
-				...usageBindings,
-			} as Env,
-			exports,
-			gatewayProps: createGatewayProps('usage-user-1'),
-		}).execute('async () => "ok"', providers),
+		runExecutor({ env: envWith(throwingLoader), gatewayProps: usageUser }),
 	).rejects.toThrow('loader unavailable')
 	expect(dataPoints).toHaveLength(3)
 	expect(dataPoints[2]?.blobs?.[3]).toBe('error')
 
 	// No signed-in user: nothing recorded.
-	const anonymousLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(anonymousLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: { ...createGatewayProps('usage-user-1'), userId: null },
-	}).execute('async () => "ok"', providers)
+	await runExecutor({
+		env: envWith(createFakeWorkerLoader().loader),
+		gatewayProps: { ...usageUser, userId: null },
+	})
 	expect(dataPoints).toHaveLength(3)
-	expect(rollupWrites).toHaveLength(0)
 
 	// Provider validation failure never reaches the sandbox: nothing recorded.
-	const validationLoader = createFakeWorkerLoader()
-	const validationResult = await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(validationLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-1'),
-	}).execute('async () => "ok"', [{ name: 'class', fns: {} }])
+	const validationResult = await runExecutor(
+		{ env: envWith(createFakeWorkerLoader().loader), gatewayProps: usageUser },
+		'async () => "ok"',
+		[{ name: 'class', fns: {} }],
+	)
 	expect(validationResult.error).toContain('reserved')
 	expect(dataPoints).toHaveLength(3)
-	expect(rollupWrites).toHaveLength(0)
 
 	// Nested surfaces (jobs, package exports) opt out so they do not inflate
 	// the execute-tool metric or stamp first_execute_at.
-	const skippedLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(skippedLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-1'),
+	await runExecutor({
+		env: envWith(createFakeWorkerLoader().loader),
+		gatewayProps: usageUser,
 		recordExecuteUsage: false,
-	}).execute('async () => "ok"', providers)
+	})
 	expect(dataPoints).toHaveLength(3)
 	expect(activationStampWrites).toHaveLength(1)
+	expect(rollupWrites).toHaveLength(0)
 })
 
-test('createExecuteExecutor records one unique Dynamic Worker day per worker id', async () => {
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const meter = createInMemoryUserMeterEnv()
-	const usageBindings = {
-		...meter.env,
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
-		},
+test('createExecuteExecutor records one unique Dynamic Worker day per worker id and defers it with the first-execute stamp via waitUntil', async () => {
+	const perWorker = createUsageBindings({ meter: true })
+	for (let run = 0; run < 2; run += 1) {
+		await runExecutor({
+			env: createExecutorTestEnv(
+				createFakeWorkerLoader().loader,
+				perWorker.bindings,
+			),
+			gatewayProps: createGatewayProps('usage-user-dw'),
+			recordExecuteUsage: false,
+		})
 	}
-	const exports = createExecutorTestExports()
-	const providers = [{ name: 'kody', fns: {} }]
-	const firstLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(firstLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-dw'),
-		recordExecuteUsage: false,
-	}).execute('async () => "ok"', providers)
-
+	const { dataPoints } = perWorker
 	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
 		'dynamic_worker_day',
+		'dynamic_worker_invoke',
 		'dynamic_worker_invoke',
 	])
 	expect(dataPoints[0]?.indexes).toEqual(['usage-user-dw'])
 	expect(dataPoints[0]?.blobs?.[5]).toBe('execute')
 	expect(dataPoints[1]?.blobs?.[7]).toBe('miss')
-
-	const secondLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(secondLoader.loader),
-			...usageBindings,
-		} as Env,
-		exports,
-		gatewayProps: createGatewayProps('usage-user-dw'),
-		recordExecuteUsage: false,
-	}).execute('async () => "ok"', providers)
-
-	expect(dataPoints.map((point) => point.blobs?.[1])).toEqual([
-		'dynamic_worker_day',
-		'dynamic_worker_invoke',
-		'dynamic_worker_invoke',
-	])
 	expect(dataPoints[2]?.blobs?.[7]).toBe('hit')
-})
 
-test('createExecuteExecutor defers unique-worker-day and first-execute stamp via waitUntil', async () => {
-	const dataPoints: Array<AnalyticsEngineDataPoint> = []
-	const activationStampWrites: Array<string> = []
-	const meter = createInMemoryUserMeterEnv()
-	const usageBindings = {
-		...meter.env,
-		USAGE_EVENTS: {
-			writeDataPoint(point?: AnalyticsEngineDataPoint) {
-				if (point) dataPoints.push(point)
-			},
-		},
-		APP_DB: {
-			prepare(sql: string) {
-				return {
-					bind() {
-						return {
-							async run() {
-								if (sql.includes('first_execute_at')) {
-									activationStampWrites.push(sql)
-								}
-								return {}
-							},
-						}
-					},
-				}
-			},
-		},
-	}
+	const deferred = createUsageBindings({ meter: true })
 	const waitUntilTasks: Array<Promise<unknown>> = []
-	const waitUntil = (promise: Promise<unknown>) => {
-		waitUntilTasks.push(promise)
-	}
-	const loader = createFakeWorkerLoader()
-	const result = await createExecuteExecutor({
-		env: {
-			...createExecutorTestEnv(loader.loader),
-			...usageBindings,
-		} as Env,
-		exports: createExecutorTestExports(),
+	const result = await runExecutor({
+		env: createExecutorTestEnv(
+			createFakeWorkerLoader().loader,
+			deferred.bindings,
+		),
 		gatewayProps: createGatewayProps('usage-user-waituntil'),
-		waitUntil,
-	}).execute('async () => "ok"', [{ name: 'kody', fns: {} }])
-
+		waitUntil: (promise: Promise<unknown>) => {
+			waitUntilTasks.push(promise)
+		},
+	})
 	expect(result.error).toBeUndefined()
 	expect(waitUntilTasks.length).toBeGreaterThanOrEqual(2)
 	await Promise.all(waitUntilTasks)
-	expect(activationStampWrites).toHaveLength(1)
-	expect(dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
+	expect(deferred.activationStampWrites).toHaveLength(1)
+	expect(deferred.dataPoints.map((point) => point.blobs?.[1]).sort()).toEqual([
 		'dynamic_worker_day',
 		'dynamic_worker_invoke',
 		'execute',
 	])
 })
 
-test('createExecuteExecutor rejects reserved JavaScript provider names before loading a worker', async () => {
+test('createExecuteExecutor notifies onWorkerId with the stable LOADER id', async () => {
+	const fakeLoader = createFakeWorkerLoader()
+	const workerIds: Array<string> = []
+	const result = await runExecutor({
+		env: createExecutorTestEnv(fakeLoader.loader),
+		onWorkerId: (workerId) => {
+			workerIds.push(workerId)
+		},
+	})
+	expect(workerIds).toHaveLength(1)
+	expect(workerIds[0]).toMatch(/^kody-[A-Za-z0-9_-]{43}$/)
+	expect(fakeLoader.stats.uniqueIds).toBe(1)
+	expect(fakeLoader.ids[0]).toBe(workerIds[0])
+	expect(result.result).toBe(workerIds[0])
+})
+
+test('createExecuteExecutor rejects reserved provider names, keeps side-effect counts on DO reset, and disables dispatchers after completion', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	for (const name of ['class', 'private']) {
-		const result = await createExecuteExecutor({
-			env: createExecutorTestEnv(fakeLoader.loader),
-			exports: createExecutorTestExports(),
-			gatewayProps: createGatewayProps('user-1'),
-		}).execute('async () => "ok"', [
-			{
-				name,
-				fns: {},
-			},
-		])
-
+		const result = await runExecutor(
+			{ env: createExecutorTestEnv(fakeLoader.loader) },
+			'async () => "ok"',
+			[{ name, fns: {} }],
+		)
 		expect(result).toEqual({
 			result: undefined,
 			error: `Provider name "${name}" is a JavaScript reserved word`,
-			hostMediatedSideEffects: {
-				dispatcherAttempts: 0,
-				fetchAttempts: 0,
-			},
+			hostMediatedSideEffects: { dispatcherAttempts: 0, fetchAttempts: 0 },
 		})
 	}
 	expect(fakeLoader.factoryCallCount).toBe(0)
-})
 
-test('createExecuteExecutor keeps host side-effect counts when evaluate throws a Durable Object reset', async () => {
-	const loader = {
-		get(_id: string, factory: () => FakeWorkerOptions) {
-			factory()
-			return {
-				getEntrypoint() {
-					return {
-						async evaluate(
-							dispatchers: Record<string, { call: typeof ToolDispatcherCall }>,
-						) {
-							await dispatchers.kody?.call('search', '{}')
-							throw new Error(durableObjectCodeUpdatedResetMessage)
-						},
-					}
-				},
-			}
-		},
-	} as unknown as Env['LOADER']
-
-	const result = await createExecuteExecutor({
-		env: createExecutorTestEnv(loader),
-		exports: createExecutorTestExports(),
-		gatewayProps: createGatewayProps('reset-user'),
-	}).execute('async () => "ok"', [
+	const searchProvider = [
+		{ name: 'kody', fns: { search: async () => ({ ok: true }) } },
+	]
+	const reset = await runExecutor(
 		{
-			name: 'kody',
-			fns: {
-				search: async () => ({ ok: true }),
-			},
+			env: createExecutorTestEnv(
+				createEvaluateLoader(async (dispatchers) => {
+					await dispatchers.kody?.call('search', '{}')
+					throw new Error(durableObjectCodeUpdatedResetMessage)
+				}),
+			),
+			gatewayProps: createGatewayProps('reset-user'),
 		},
-	])
-
-	expect(result).toEqual({
+		'async () => "ok"',
+		searchProvider,
+	)
+	expect(reset).toEqual({
 		result: undefined,
 		error: durableObjectCodeUpdatedResetMessage,
 		logs: [],
-		hostMediatedSideEffects: {
-			dispatcherAttempts: 1,
-			fetchAttempts: 0,
-		},
+		hostMediatedSideEffects: { dispatcherAttempts: 1, fetchAttempts: 0 },
 	})
-})
 
-test('createExecuteExecutor disables dispatchers after execution completes', async () => {
-	const fakeLoader = createFakeWorkerLoader()
-	await createExecuteExecutor({
-		env: createExecutorTestEnv(fakeLoader.loader),
-		exports: createExecutorTestExports(),
-		gatewayProps: createGatewayProps('user-1'),
-	}).execute('async () => await kody.search({ q: "ok" })', [
-		{
-			name: 'kody',
-			fns: {
-				search: async () => ({ ok: true }),
-			},
-		},
-	])
+	await runExecutor(
+		{ env: createExecutorTestEnv(fakeLoader.loader) },
+		'async () => await kody.search({ q: "ok" })',
+		searchProvider,
+	)
 	const dispatchers = fakeLoader.evaluations[0]?.dispatchers
-	const result = await dispatchers?.kody?.call('search', '{}')
-
-	expect(JSON.parse(result ?? '{}')).toEqual({
+	const afterCompletion = await dispatchers?.kody?.call('search', '{}')
+	expect(JSON.parse(afterCompletion ?? '{}')).toEqual({
 		error: 'Execution has already completed.',
 	})
 })
 
-test('createToolDispatchers counts host-mediated attempts before the awaited call', async () => {
+test('createToolDispatchers restores secret-authority grants after an ALS gap', async () => {
+	// Same Workers-RPC ALS drop as evaluation-budget restore: ambient
+	// runWithSecretAuthorityScope around evaluate does not survive into
+	// ToolDispatcher.call. Grants must be captured into createToolDispatchers.
+	const parseCall = async (result: Promise<string | undefined>) =>
+		JSON.parse((await result) ?? '{}') as {
+			result?: unknown
+			error?: string
+		}
+
+	const granted = new Set(['pkg-approved'])
+	let seenAuthority: string | null | undefined
+	let seenGrantSize: number | undefined
+	const dispatchers = createToolDispatchers(
+		[
+			{
+				name: 'kody',
+				fns: {
+					probe: async () => {
+						const scope = getSecretAuthorityScope()
+						seenGrantSize = scope?.grantedPackageIds.size
+						seenAuthority = resolveCallerSecretAuthority({
+							storageContext: {
+								sessionId: null,
+								appId: null,
+								packageId: null,
+								storageId: null,
+							},
+						}).authorityPackageId
+						return { authority: seenAuthority }
+					},
+				},
+			},
+		],
+		{ active: true },
+		undefined,
+		undefined,
+		granted,
+	)
+	const kodyDispatcher = dispatchers.kody
+	if (!kodyDispatcher) throw new Error('Expected kody dispatcher')
+
+	expect(getSecretAuthorityScope()).toBeNull()
+	const stamped = await parseCall(
+		kodyDispatcher.call(
+			'probe',
+			JSON.stringify({ [secretAuthorityArgName]: 'pkg-approved' }),
+		),
+	)
+	expect(stamped).toEqual({ result: { authority: 'pkg-approved' } })
+	expect(seenAuthority).toBe('pkg-approved')
+	expect(seenGrantSize).toBe(1)
+	expect(getSecretAuthorityScope()).toBeNull()
+
+	const forged = await parseCall(
+		kodyDispatcher.call(
+			'probe',
+			JSON.stringify({ [secretAuthorityArgName]: 'pkg-forged' }),
+		),
+	)
+	expect(forged).toEqual({ result: { authority: null } })
+})
+
+test('createToolDispatchers counts host-mediated attempts, rejects sanitized-name collisions, and forwards rest args', async () => {
+	const parseCall = async (result: Promise<string | undefined>) =>
+		JSON.parse((await result) ?? '{}')
 	const sideEffects = createEvaluationSideEffectTracker()
 	let searchCalls = 0
 	const dispatchers = createToolDispatchers(
@@ -1349,40 +1136,34 @@ test('createToolDispatchers counts host-mediated attempts before the awaited cal
 			},
 			{
 				name: '__kodyStaticCallMeterRuntimeBridge',
-				fns: {
-					record: async () => ({ ok: true }),
-				},
+				fns: { record: async () => ({ ok: true }) },
 			},
 		],
 		{ active: true },
 		undefined,
 		sideEffects,
 	)
-
-	expect(
-		JSON.parse((await dispatchers.kody.call('search', '{}')) ?? '{}'),
-	).toEqual({ error: 'search failed after starting' })
+	const kodyDispatcher = dispatchers.kody
+	const meterDispatcher = dispatchers.__kodyStaticCallMeterRuntimeBridge
+	if (!kodyDispatcher || !meterDispatcher) {
+		throw new Error('Expected kody and static call meter dispatchers')
+	}
+	await expect(parseCall(kodyDispatcher.call('search', '{}'))).resolves.toEqual(
+		{ error: 'search failed after starting' },
+	)
 	expect(searchCalls).toBe(1)
 	expect(sideEffects.snapshot()).toEqual({
 		dispatcherAttempts: 1,
 		fetchAttempts: 0,
 	})
-
-	expect(
-		JSON.parse(
-			(await dispatchers.__kodyStaticCallMeterRuntimeBridge.call(
-				'record',
-				JSON.stringify([{}]),
-			)) ?? '{}',
-		),
-	).toEqual({ result: { ok: true } })
+	await expect(
+		parseCall(meterDispatcher.call('record', JSON.stringify([{}]))),
+	).resolves.toEqual({ result: { ok: true } })
 	expect(sideEffects.snapshot()).toEqual({
 		dispatcherAttempts: 1,
 		fetchAttempts: 0,
 	})
-})
 
-test('createToolDispatchers rejects duplicate sanitized tool names', () => {
 	expect(() =>
 		createToolDispatchers(
 			[
@@ -1399,10 +1180,8 @@ test('createToolDispatchers rejects duplicate sanitized tool names', () => {
 	).toThrow(
 		'Provider "kody" has tool names "remote:home:set_pin" and "remotehomeset_pin" that both sanitize to "remotehomeset_pin".',
 	)
-})
 
-test('createToolDispatchers forwards rest args for codemode ToolDispatcher', async () => {
-	const dispatchers = createToolDispatchers(
+	const state = createToolDispatchers(
 		[
 			{
 				name: 'state',
@@ -1414,39 +1193,21 @@ test('createToolDispatchers forwards rest args for codemode ToolDispatcher', asy
 			},
 		],
 		{ active: true },
-	)
-
-	await expect(
-		JSON.parse(
-			(await dispatchers.state.call(
-				'readFile',
-				JSON.stringify(['/tmp/foo']),
-			)) ?? '{}',
-		),
-	).toEqual({ result: '/tmp/foo' })
-	await expect(
-		JSON.parse(
-			(await dispatchers.state.call('merge', JSON.stringify(['a', 'b']))) ??
-				'{}',
-		),
-	).toEqual({ result: ['a', 'b'] })
-	await expect(
-		JSON.parse(
-			(await dispatchers.state.call('search', JSON.stringify([{ q: 'ok' }]))) ??
-				'{}',
-		),
-	).toEqual({ result: { q: 'ok' } })
+	).state
+	if (!state) throw new Error('Expected state dispatcher')
+	for (const [name, args, result] of [
+		['readFile', ['/tmp/foo'], '/tmp/foo'],
+		['merge', ['a', 'b'], ['a', 'b']],
+		['search', [{ q: 'ok' }], { q: 'ok' }],
+	] as const) {
+		await expect(
+			parseCall(state.call(name, JSON.stringify(args))),
+		).resolves.toEqual({ result })
+	}
 
 	const moduleSource = createExecutorModuleSource({
 		code: 'async () => "ok"',
-		providers: [
-			{
-				name: 'codemode',
-				fns: {
-					search: async () => ({ ok: true }),
-				},
-			},
-		],
+		providers: [{ name: 'codemode', fns: { search: async () => ({}) } }],
 		shadowGlobalThis: false,
 		timeoutMs: 1_000,
 	})
@@ -1454,7 +1215,7 @@ test('createToolDispatchers forwards rest args for codemode ToolDispatcher', asy
 	expect(moduleSource).toContain('JSON.stringify(args)')
 })
 
-test('executor maps secret errors, formats guidance, extracts raw content, and truncates on UTF-8 boundaries', () => {
+test('executor maps secret errors, formats guidance, and truncates on UTF-8 boundaries', () => {
 	const hostBatchError = new Error(
 		createHostSecretAccessDeniedBatchMessage([
 			{
@@ -1475,140 +1236,109 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		kind: 'host_approval_required_batch',
 		bulkApprovalUrl: null,
 		missingApprovals: [
-			{
-				secretName: 'cloudflareToken',
-				host: 'api.cloudflare.com',
-			},
-			{
-				secretName: 'slackToken',
-				host: 'slack.com',
-			},
+			{ secretName: 'cloudflareToken', host: 'api.cloudflare.com' },
+			{ secretName: 'slackToken', host: 'slack.com' },
 		],
-		suggestedAction: {
-			type: 'approve_secret_host',
-		},
+		suggestedAction: { type: 'approve_secret_host' },
 	})
 
-	const packageBatchError = new Error(
-		createPackageSecretAccessDeniedBatchMessage(
-			[
-				{
-					secretName: 'discordBotToken',
-					packageId: 'pkg-1',
-					kodyId: 'release',
-					packageName: 'release',
-					approvalUrl:
-						'https://example.com/account/secrets/user/discordBotToken?package_id=pkg-1',
-				},
-				{
-					secretName: 'xAccessToken',
-					packageId: 'pkg-1',
-					kodyId: 'release',
-					packageName: 'release',
-					approvalUrl:
-						'https://example.com/account/secrets/user/xAccessToken?package_id=pkg-1',
-				},
-			],
-			{
-				bulkApprovalUrl:
-					'https://example.com/account/secrets/approve?package_id=pkg-1&names=discordBotToken,xAccessToken',
-			},
+	const packageApproval = (secretName: string) => ({
+		secretName,
+		packageId: 'pkg-1',
+		kodyId: 'release',
+		packageName: 'release',
+		approvalUrl: `https://example.com/account/secrets/user/${secretName}?package_id=pkg-1`,
+	})
+	const bulkApprovalUrl =
+		'https://example.com/account/secrets/approve?package_id=pkg-1&names=discordBotToken,xAccessToken'
+	expect(
+		getExecutionErrorDetails(
+			new Error(
+				createPackageSecretAccessDeniedBatchMessage(
+					[packageApproval('discordBotToken'), packageApproval('xAccessToken')],
+					{ bulkApprovalUrl },
+				),
+			),
 		),
-	)
-	expect(getExecutionErrorDetails(packageBatchError)).toMatchObject({
+	).toMatchObject({
 		kind: 'secret_package_access_required_batch',
-		bulkApprovalUrl:
-			'https://example.com/account/secrets/approve?package_id=pkg-1&names=discordBotToken,xAccessToken',
+		bulkApprovalUrl,
 		missingApprovals: [
 			{ secretName: 'discordBotToken', packageId: 'pkg-1' },
 			{ secretName: 'xAccessToken', packageId: 'pkg-1' },
 		],
 	})
 
-	const missingSecretError = new Error(
-		createMissingSecretMessage('missingToken'),
-	)
-	expect(getExecutionErrorDetails(missingSecretError)).toMatchObject({
+	expect(
+		getExecutionErrorDetails(
+			new Error(createMissingSecretMessage('missingToken')),
+		),
+	).toMatchObject({
 		kind: 'secret_required',
 		secretNames: ['missingToken'],
-		suggestedAction: {
-			type: 'connect_secret',
-			reason: 'collect_secret',
-		},
+		suggestedAction: { type: 'connect_secret', reason: 'collect_secret' },
 	})
 
+	const reconnectHref =
+		'/connect/oauth?provider=google&loginHint=kent%40gmail.com'
 	const integrationRefreshError = new Error(
-		'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com. (integrationTokenRefresh caller state)',
+		`Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Token has been expired or revoked.). Reconnect at ${reconnectHref}. (integrationTokenRefresh caller state)`,
 	)
 	expect(getExecutionErrorDetails(integrationRefreshError)).toMatchObject({
 		kind: 'integration_auth_failed',
 		integrationName: 'google',
-		reconnectHref: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
-		suggestedAction: {
-			type: 'reconnect_integration',
-		},
+		reconnectHref,
+		suggestedAction: { type: 'reconnect_integration' },
 	})
 	expect(getExecutionErrorDetails(integrationRefreshError)?.nextStep).toContain(
-		'/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+		reconnectHref,
 	)
-
 	const spoofedReconnectError = new Error(
-		'Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Reconnect at https://attacker.example/phish). Reconnect at /connect/oauth?provider=google&loginHint=kent%40gmail.com. (integrationTokenRefresh caller state)',
+		`Token refresh was rejected for integration "google" with HTTP 400 (invalid_grant: Reconnect at https://attacker.example/phish). Reconnect at ${reconnectHref}. (integrationTokenRefresh caller state)`,
 	)
 	expect(getExecutionErrorDetails(spoofedReconnectError)).toMatchObject({
 		kind: 'integration_auth_failed',
 		integrationName: 'google',
-		reconnectHref: '/connect/oauth?provider=google&loginHint=kent%40gmail.com',
+		reconnectHref,
 	})
 	expect(
 		getExecutionErrorDetails(spoofedReconnectError)?.nextStep,
 	).not.toContain('attacker.example')
 
-	const scopeUnavailableError = new Error(
-		createSecretScopeUnavailableMessage([
-			{
-				secretName: 'discordBotToken',
-				scope: 'package',
-				packageId: 'pkg-1',
-				packageName: 'discord-gateway',
-				sessionId: null,
-				editorUrl:
-					'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-			},
-		]),
-	)
-	expect(getExecutionErrorDetails(scopeUnavailableError)).toMatchObject({
+	const editorUrl =
+		'https://example.com/account/secrets/package/pkg-1/discordBotToken'
+	const scopeUnavailable = (packageName: string | null) =>
+		new Error(
+			createSecretScopeUnavailableMessage([
+				{
+					secretName: 'discordBotToken',
+					scope: 'package',
+					packageId: 'pkg-1',
+					packageName,
+					sessionId: null,
+					editorUrl,
+				},
+			]),
+		)
+	expect(
+		getExecutionErrorDetails(scopeUnavailable('discord-gateway')),
+	).toMatchObject({
 		kind: 'secret_scope_unavailable',
 		secretNames: ['discordBotToken'],
 		scope: 'package',
 		packageName: 'discord-gateway',
 		packageId: null,
-		editorUrl:
-			'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-		suggestedAction: {
-			type: 'edit_secret_policy',
-			policyField: 'scope',
-		},
+		editorUrl,
+		suggestedAction: { type: 'edit_secret_policy', policyField: 'scope' },
 	})
-	const packageIdOnlyError = new Error(
-		createSecretScopeUnavailableMessage([
-			{
-				secretName: 'discordBotToken',
-				scope: 'package',
-				packageId: 'pkg-1',
-				packageName: null,
-				sessionId: null,
-				editorUrl:
-					'https://example.com/account/secrets/package/pkg-1/discordBotToken',
-			},
-		]),
-	)
-	expect(getExecutionErrorDetails(packageIdOnlyError)).toMatchObject({
+	expect(getExecutionErrorDetails(scopeUnavailable(null))).toMatchObject({
 		kind: 'secret_scope_unavailable',
 		packageName: null,
 		packageId: 'pkg-1',
 	})
 
+	// Plan-limit errors classify from the typed instance and from the bare
+	// serialized message.
 	const entitlementError = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'pro',
@@ -1616,33 +1346,24 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		current: 3,
 		upgradeHint: 'Remove an old package or upgrade your plan.',
 	})
+	const entitlementDetails = {
+		code: 'entitlement_limit_exceeded',
+		resource: 'saved_packages',
+		plan: 'pro',
+		limit: 3,
+		current: 3,
+		upgradeHint: 'Remove an old package or upgrade your plan.',
+	}
 	expect(getExecutionErrorDetails(entitlementError)).toMatchObject({
 		kind: 'entitlement_limit_exceeded',
-		details: {
-			code: 'entitlement_limit_exceeded',
-			resource: 'saved_packages',
-			plan: 'pro',
-			limit: 3,
-			current: 3,
-			upgradeHint: 'Remove an old package or upgrade your plan.',
-		},
-		suggestedAction: {
-			type: 'review_plan_limit',
-			resource: 'saved_packages',
-		},
+		details: entitlementDetails,
+		suggestedAction: { type: 'review_plan_limit', resource: 'saved_packages' },
 	})
 	expect(
 		getExecutionErrorDetails(new Error(entitlementError.message)),
 	).toMatchObject({
 		kind: 'entitlement_limit_exceeded',
-		details: {
-			code: 'entitlement_limit_exceeded',
-			resource: 'saved_packages',
-			plan: 'pro',
-			limit: 3,
-			current: 3,
-			upgradeHint: 'Remove an old package or upgrade your plan.',
-		},
+		details: entitlementDetails,
 	})
 
 	const computeOverageError = new ComputeOverageLimitError({
@@ -1650,8 +1371,12 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		plan: 'free',
 		limit: 50,
 		current: 60,
-		disposition: 'soft_block',
+		creditsStatus: 'add_credits',
 	})
+	const computeOverageAction = {
+		type: 'review_plan_limit',
+		resource: 'unique_worker_days',
+	}
 	expect(getExecutionErrorDetails(computeOverageError)).toMatchObject({
 		kind: 'compute_overage_include_reached',
 		nextStep: expect.stringMatching(/Keep package code stable/),
@@ -1661,49 +1386,35 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 			plan: 'free',
 			limit: 50,
 			current: 60,
-			disposition: 'soft_block',
+			creditsStatus: 'add_credits',
 		},
-		suggestedAction: {
-			type: 'review_plan_limit',
-			resource: 'unique_worker_days',
-		},
+		suggestedAction: computeOverageAction,
 	})
-	expect(computeOverageError.message).toMatch(/Dynamic Worker isolates/)
+	expect(computeOverageError.message).toMatch(/Worker compute/)
 	expect(
 		getExecutionErrorDetails(new Error(computeOverageError.message)),
 	).toMatchObject({
 		kind: 'compute_overage_include_reached',
-		suggestedAction: {
-			type: 'review_plan_limit',
-			resource: 'unique_worker_days',
-		},
+		suggestedAction: computeOverageAction,
 	})
 
 	const intervalError = new JobIntervalFloorError({
 		plan: 'free',
 		minIntervalMs: 15 * 60 * 1000,
 	})
-	expect(getExecutionErrorDetails(intervalError)).toMatchObject({
-		kind: 'job_interval_floor',
-		nextStep: intervalError.details.upgradeHint,
-		suggestedAction: {
-			type: 'review_plan_limit',
-			resource: 'scheduled_jobs',
-		},
-	})
-	expect(
-		getExecutionErrorDetails(new Error(intervalError.message)),
-	).toMatchObject({
-		kind: 'job_interval_floor',
-		nextStep: intervalError.details.upgradeHint,
-		suggestedAction: {
-			type: 'review_plan_limit',
-			resource: 'scheduled_jobs',
-		},
-	})
+	for (const error of [intervalError, new Error(intervalError.message)]) {
+		expect(getExecutionErrorDetails(error)).toMatchObject({
+			kind: 'job_interval_floor',
+			nextStep: intervalError.details.upgradeHint,
+			suggestedAction: {
+				type: 'review_plan_limit',
+				resource: 'scheduled_jobs',
+			},
+		})
+	}
 
 	// A bare ReferenceError for a kody:runtime export must point at the
-	// missing import instead of leaving the caller to guess.
+	// missing import; unknown identifiers stay unhinted (ordinary user bugs).
 	expect(
 		getExecutionErrorDetails(new Error('kody is not defined')),
 	).toMatchObject({
@@ -1719,14 +1430,10 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		kind: 'runtime_import_missing',
 		exportName: 'secretHeaders',
 	})
-	// Unknown identifiers stay unhinted: they are ordinary user-code bugs.
-	expect(
-		getExecutionErrorDetails(new Error('myHelper is not defined')),
-	).toBeNull()
 
 	// A guard-less access to an imported-but-unbound optional kody:runtime
-	// helper must name the helper and the realistic remedies instead of
-	// leaving the bare TypeError.
+	// helper names the helper instead of leaving the bare TypeError. Wrapped
+	// transports prefix the message; parsing stays prefix-tolerant.
 	const unboundStorageMessage = createUnboundRuntimeHelperMessage({
 		originalMessage: "Cannot read properties of undefined (reading 'sql')",
 		helperName: 'storage',
@@ -1738,88 +1445,52 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		kind: 'runtime_helper_unbound',
 		helperName: 'storage',
 		suggestedAction: { type: 'fix_code' },
+		nextStep: expect.any(String),
 	})
-	expect(
-		getExecutionErrorDetails(new Error(unboundStorageMessage))?.nextStep,
-	).toEqual(expect.any(String))
-	// Wrapped transports prefix the message (for example package invocation
-	// responses); parsing stays prefix-tolerant.
-	expect(
-		getExecutionErrorDetails(
-			new Error(`[execution_failed] ${unboundStorageMessage}`),
-		),
-	).toMatchObject({
-		kind: 'runtime_helper_unbound',
-		helperName: 'storage',
-	})
-	// Helpers without a dedicated remedy get the generic guard guidance.
-	expect(
-		getExecutionErrorDetails(
-			new Error(
-				createUnboundRuntimeHelperMessage({
-					originalMessage:
-						"Cannot read properties of undefined (reading 'basic')",
-					helperName: 'secretHeaders',
-					reference: 'secretHeaders.basic',
-				}),
-			),
-		),
-	).toMatchObject({
-		kind: 'runtime_helper_unbound',
-		helperName: 'secretHeaders',
-	})
-	expect(
-		getExecutionErrorDetails(
-			new Error(
-				'kody:runtime export "packageSecrets" is not available in this execution context.',
-			),
-		),
-	).toMatchObject({
-		kind: 'runtime_helper_unbound',
-		helperName: 'packageSecrets',
-		suggestedAction: { type: 'fix_code' },
-	})
-	// The bare TypeError alone stays unhinted: without the rewrite marker the
-	// undefined value may be any user-code bug.
-	expect(
-		getExecutionErrorDetails(
-			new Error("Cannot read properties of undefined (reading 'sql')"),
-		),
-	).toBeNull()
+	const unboundCases: Array<[string, string]> = [
+		[`[execution_failed] ${unboundStorageMessage}`, 'storage'],
+		// Helpers without a dedicated remedy get the generic guard guidance.
+		[
+			createUnboundRuntimeHelperMessage({
+				originalMessage:
+					"Cannot read properties of undefined (reading 'basic')",
+				helperName: 'secretHeaders',
+				reference: 'secretHeaders.basic',
+			}),
+			'secretHeaders',
+		],
+		[
+			'kody:runtime export "packageSecrets" is not available in this execution context.',
+			'packageSecrets',
+		],
+	]
+	for (const [message, helperName] of unboundCases) {
+		expect(getExecutionErrorDetails(new Error(message))).toMatchObject({
+			kind: 'runtime_helper_unbound',
+			helperName,
+			suggestedAction: { type: 'fix_code' },
+		})
+	}
 
 	// A disposed RPC stub in the sandbox means per-run state leaked into a
-	// cached dynamic worker; the structured hint explains how to escape the
-	// poisoned worker instead of suggesting a futile identical retry.
+	// cached dynamic worker; the hint explains how to escape the poisoned
+	// worker instead of suggesting a futile identical retry.
 	expect(
 		getExecutionErrorDetails(new Error('RPC stub used after being disposed.')),
 	).toMatchObject({
 		kind: 'sandbox_runtime_stale',
 		suggestedAction: { type: 'report_bug' },
 	})
-
-	expect(
-		getExecutionErrorDetails(new Error('Too many concurrent dynamic workers')),
-	).toMatchObject({
-		kind: 'dynamic_worker_capacity_exceeded',
-		limit: 4,
-		suggestedAction: { type: 'retry' },
-	})
-	expect(
-		getExecutionErrorDetails(
-			new Error(
-				'[invocation_failed] Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations. Wait for one to finish before starting another.',
-			),
-		),
-	).toMatchObject({
-		kind: 'dynamic_worker_capacity_exceeded',
-		limit: 4,
-		suggestedAction: { type: 'retry' },
-	})
-	expect(
-		getExecutionErrorDetails(
-			new Error('Too many concurrent dynamic worker requests'),
-		),
-	).toBeNull()
+	for (const message of [
+		'Too many concurrent dynamic workers',
+		'[invocation_failed] Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations. Wait for one to finish before starting another.',
+	]) {
+		expect(getExecutionErrorDetails(new Error(message))).toMatchObject({
+			kind: 'dynamic_worker_capacity_exceeded',
+			limit: 4,
+			suggestedAction: { type: 'retry' },
+		})
+	}
 
 	const storageEstimateError = createStorageEstimateReadError({
 		storageId: 'package:unreadable',
@@ -1840,8 +1511,10 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	})
 
 	// A sandbox timeout is terminal for the identical call: the hint steers
-	// toward durable workflows (or smaller calls) instead of a futile retry,
-	// and reports the budget the executor baked into the message.
+	// toward durable workflows and reports the budget baked into the message.
+	// Legacy budget-less messages (explanation-carrying and bare) still
+	// classify without a parsed budget; nested `[execution_failed]` causes
+	// keep the budget.
 	expect(
 		getExecutionErrorDetails(
 			new Error(createExecutorSandboxTimeoutMessage(90_000)),
@@ -1851,83 +1524,59 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 		timedOutAfterMs: 90_000,
 		suggestedAction: { type: 'fix_code' },
 	})
-	// Legacy budget-less messages (older stored responses, non-Error abort
-	// reasons) still classify, without a parsed budget — both the current
-	// explanation-carrying form and the bare pre-explanation form.
-	expect(getExecutionErrorDetails(executorSandboxTimeoutMessage)).toMatchObject(
-		{ kind: 'execution_timed_out', timedOutAfterMs: null },
-	)
-	expect(getExecutionErrorDetails('Execution timed out')).toMatchObject({
-		kind: 'execution_timed_out',
-		timedOutAfterMs: null,
-	})
-	// Nested package invocations wrap the message with an
-	// `[execution_failed]` prefix in a cause.
-	expect(
-		getExecutionErrorDetails(
+	const timeoutCases: Array<[string | Error, number | null]> = [
+		[executorSandboxTimeoutMessage, null],
+		['Execution timed out', null],
+		[
 			new Error('Nested execute failed.', {
 				cause: new Error(
 					`[execution_failed] ${createExecutorSandboxTimeoutMessage(90_000)}`,
 				),
 			}),
-		),
-	).toMatchObject({ kind: 'execution_timed_out', timedOutAfterMs: 90_000 })
-	// Messages that merely mention timing out mid-sentence stay unhinted.
-	expect(
-		getExecutionErrorDetails(
-			new Error('Upstream reported: Execution timed out unexpectedly'),
-		),
-	).toBeNull()
+			90_000,
+		],
+	]
+	for (const [error, timedOutAfterMs] of timeoutCases) {
+		expect(getExecutionErrorDetails(error)).toMatchObject({
+			kind: 'execution_timed_out',
+			timedOutAfterMs,
+		})
+	}
 
-	const errors = [
+	const unhinted = [
+		'myHelper is not defined',
+		// Without the rewrite marker the undefined value may be any user bug.
+		"Cannot read properties of undefined (reading 'sql')",
+		'Too many concurrent dynamic worker requests',
+		// Messages that merely mention timing out mid-sentence.
+		'Upstream reported: Execution timed out unexpectedly',
+	]
+	expect(
+		unhinted.filter(
+			(message) => getExecutionErrorDetails(new Error(message)) !== null,
+		),
+	).toEqual([])
+
+	for (const error of [
 		hostBatchError,
 		new Error(createMissingSecretMessage('missingToken')),
 		new Error('kody is not defined'),
 		new Error(unboundStorageMessage),
-	]
-	for (const error of errors) {
-		const output = formatExecutionOutput({ error } as const)
+	]) {
+		const output = formatExecutionOutput({
+			result: undefined,
+			error: error.message,
+		})
 		const plainOutput = `Error: ${error.message}`
 		expect(output).toContain(plainOutput)
 		expect(output.length).toBeGreaterThan(plainOutput.length)
 	}
 
-	const content: Array<ContentBlock> = [
-		{
-			type: 'image',
-			data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
-			mimeType: 'image/png',
-		},
-		{
-			type: 'text',
-			text: 'Screenshot of https://example.com',
-		},
-	]
-	expect(
-		extractRawContent({
-			__mcpContent: content,
-		}),
-	).toEqual(content)
-	expect(extractRawContent({ result: 'not raw content' })).toBeNull()
-	expect(
-		extractRawContent({
-			content: [
-				{
-					type: 'image',
-					data: 'AAAA',
-					mimeType: 'image/png',
-				},
-			],
-		}),
-	).toBeNull()
-
-	const oneByteLimit = limitExecutionResultValue('éabc', 1)
-	expect(oneByteLimit).toMatchObject({
+	expect(limitExecutionResultValue('éabc', 1)).toMatchObject({
 		value: '',
 		returnedBytes: 5,
 		truncated: true,
 	})
-
 	const threeByteLimit = limitExecutionResultValue('éabc', 3)
 	expect(threeByteLimit).toMatchObject({
 		value: 'éa',
@@ -1937,63 +1586,4 @@ test('executor maps secret errors, formats guidance, extracts raw content, and t
 	expect(
 		new TextEncoder().encode(String(threeByteLimit.value)).byteLength,
 	).toBe(3)
-})
-
-test('limitExecutionResultValue preserves output for representative small and oversized values', () => {
-	const smallObject = { ok: true, count: 3 }
-	const smallObjectLimited = limitExecutionResultValue(smallObject, 102_400)
-	expect(smallObjectLimited).toMatchObject({
-		value: smallObject,
-		returnedBytes: 21,
-		truncated: false,
-	})
-	expect(smallObjectLimited.displayText).toBe(
-		JSON.stringify(smallObject, null, 2),
-	)
-	expect(
-		formatLimitedExecutionOutput({
-			value: smallObjectLimited.value,
-			truncated: smallObjectLimited.truncated,
-			displayText: smallObjectLimited.displayText,
-		}),
-	).toBe(smallObjectLimited.displayText)
-
-	const oversizedObject = {
-		rows: [{ id: 'message-1', payload: 'abcdef' }],
-	}
-	const oversizedObjectLimited = limitExecutionResultValue(oversizedObject, 10)
-	expect(oversizedObjectLimited).toMatchObject({
-		value: {
-			truncated: true,
-			type: 'object',
-		},
-		returnedBytes: 48,
-		truncated: true,
-		note: 'Returned value was 48 bytes, exceeding responseLimit 10 bytes; output was truncated. Project fields before returning.',
-	})
-	expect(
-		formatLimitedExecutionOutput({
-			value: oversizedObjectLimited.value,
-			truncated: oversizedObjectLimited.truncated,
-			note: oversizedObjectLimited.note,
-			displayText: oversizedObjectLimited.displayText,
-		}),
-	).toBe(
-		`${oversizedObjectLimited.displayText}\n\n--- TRUNCATED ---\n${oversizedObjectLimited.note}`,
-	)
-
-	const oversizedStringLimited = limitExecutionResultValue('hello world', 5)
-	expect(oversizedStringLimited).toMatchObject({
-		value: 'hello',
-		returnedBytes: 11,
-		truncated: true,
-	})
-	expect(oversizedStringLimited.displayText).toBeUndefined()
-	expect(
-		formatLimitedExecutionOutput({
-			value: oversizedStringLimited.value,
-			truncated: oversizedStringLimited.truncated,
-			note: oversizedStringLimited.note,
-		}),
-	).toBe(`hello\n\n--- TRUNCATED ---\n${oversizedStringLimited.note}`)
 })

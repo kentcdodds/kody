@@ -9,190 +9,121 @@ import {
 	resolveAppPageCacheControl,
 } from '#app/anonymous-html-cache.ts'
 
+type PageCacheInput = Parameters<typeof resolveAppPageCacheControl>[0]
+
 function request(url: string, cookie?: string) {
 	return new Request(url, {
 		headers: cookie ? { Cookie: cookie } : undefined,
 	})
 }
 
+/** Anonymous GET of `pathname` on example.com unless overridden. */
+function pageCache(pathname: string, overrides: Partial<PageCacheInput> = {}) {
+	return resolveAppPageCacheControl({
+		pathname,
+		session: null,
+		request: request(`https://example.com${pathname}`),
+		responseSetsCookie: false,
+		...overrides,
+	})
+}
+
+const noStore = { cacheControl: 'no-store' }
+const sharedHtml = { cacheControl: anonymousHtmlCacheControl, vary: 'Cookie' }
+
 test('requestHasSessionCookie matches only the kody_session name', () => {
-	expect(requestHasSessionCookie(request('https://example.com/'))).toBe(false)
-	expect(
-		requestHasSessionCookie(
-			request('https://example.com/', 'theme=dark; other=1'),
-		),
-	).toBe(false)
-	expect(
-		requestHasSessionCookie(
-			request('https://example.com/', 'kody_session=abc; other=1'),
-		),
-	).toBe(true)
-	expect(
-		requestHasSessionCookie(
-			request('https://example.com/', 'not_kody_session=abc'),
-		),
-	).toBe(false)
+	const cases = [
+		[undefined, false],
+		['theme=dark; other=1', false],
+		['kody_session=abc; other=1', true],
+		['not_kody_session=abc', false],
+	] as const
+	for (const [cookie, expected] of cases) {
+		expect(
+			requestHasSessionCookie(request('https://example.com/', cookie)),
+		).toBe(expected)
+	}
 })
 
 test('anonymous marketing HTML is cacheable only without a session', () => {
-	const cached = resolveAppPageCacheControl({
-		pathname: '/',
-		session: null,
-		request: request('https://example.com/'),
-		responseSetsCookie: false,
-	})
-	expect(cached).toEqual({
-		cacheControl: anonymousHtmlCacheControl,
-		vary: 'Cookie',
-	})
-
-	// Local dev: a browser-cached document would be what Vite's post-HMR page
-	// reload shows instead of the edit.
+	const sharedPaths = [
+		'/',
+		'/pricing',
+		'/faq',
+		'/case-studies',
+		'/onboarding',
+		'/onboarding/step-1',
+		'/docs',
+		'/docs/how-kody-works',
+		'/llms.txt',
+		'/docs/llms.txt',
+		'/login',
+		'/signup',
+	]
 	expect(
-		resolveAppPageCacheControl({
-			pathname: '/',
-			session: null,
-			request: request('https://example.com/'),
-			responseSetsCookie: false,
-			localDev: true,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/pricing',
-			session: null,
-			request: request('https://example.com/pricing'),
-			responseSetsCookie: false,
-		}).cacheControl,
-	).toBe(anonymousHtmlCacheControl)
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/faq',
-			session: null,
-			request: request('https://example.com/faq'),
-			responseSetsCookie: false,
-		}).cacheControl,
-	).toBe(anonymousHtmlCacheControl)
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/onboarding',
-			session: null,
-			request: request('https://example.com/onboarding'),
-			responseSetsCookie: false,
-		}),
-	).toEqual({
-		cacheControl: anonymousHtmlCacheControl,
-		vary: 'Cookie',
-	})
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/docs',
-			session: null,
-			request: request('https://example.com/docs'),
-			responseSetsCookie: false,
-		}).cacheControl,
-	).toBe(anonymousHtmlCacheControl)
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/docs/how-kody-works',
-			session: null,
-			request: request('https://example.com/docs/how-kody-works'),
-			responseSetsCookie: false,
-		}).cacheControl,
-	).toBe(anonymousHtmlCacheControl)
+		sharedPaths.map((pathname) => [pathname, pageCache(pathname)]),
+	).toEqual(sharedPaths.map((pathname) => [pathname, sharedHtml]))
 
 	expect(isCacheableAnonymousPath('/docs/how-kody-works.json')).toBe(true)
 	expect(isCacheableAnonymousPath('/docs/connect')).toBe(true)
 	expect(isCacheableAnonymousPath('/docs/nested/path')).toBe(false)
+	expect(isCacheableAnonymousPath('/onboarding/step-2/notion')).toBe(true)
+	// Cookie-bearing auth requests stay private even though the paths are
+	// on the anonymous allowlist.
+	expect(
+		pageCache('/login', {
+			request: request('https://example.com/login', 'kody_session=stale'),
+		}),
+	).toEqual(noStore)
+	expect(
+		pageCache('/signup', {
+			request: request('https://example.com/signup', 'kody_session=stale'),
+		}),
+	).toEqual(noStore)
 
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/community',
-			session: null,
-			request: new Request(
-				'https://kody.codes/community?__frame=community-listings',
-			),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/community',
-			session: null,
-			request: new Request('https://kody.codes/community', {
-				headers: { 'x-remix-target': 'community-listings' },
-			}),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/account',
-			session: null,
-			request: request('https://example.com/account'),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/',
-			session: { id: 'user-1' },
-			request: request('https://example.com/'),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/',
-			session: null,
-			request: request(
-				'https://example.com/',
-				'kody_site_banner_dismiss=11111111-1111-4111-8111-111111111111',
-			),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/',
-			session: null,
-			request: request('https://example.com/', 'kody_session=stale'),
-			responseSetsCookie: false,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/',
-			session: null,
-			request: request('https://example.com/'),
-			responseSetsCookie: true,
-		}),
-	).toEqual({ cacheControl: 'no-store' })
+	const privateCases: Array<[string, Partial<PageCacheInput>]> = [
+		// Local dev: a browser-cached document would be what Vite's post-HMR page
+		// reload shows instead of the edit.
+		['/', { localDev: true }],
+		[
+			'/community',
+			{
+				request: new Request(
+					'https://kody.codes/community?__frame=community-listings',
+				),
+			},
+		],
+		[
+			'/community',
+			{
+				request: new Request('https://kody.codes/community', {
+					headers: { 'x-remix-target': 'community-listings' },
+				}),
+			},
+		],
+		['/account', {}],
+		['/', { session: { id: 'user-1' } }],
+		['/', { request: request('https://example.com/', 'kody_session=stale') }],
+		['/', { responseSetsCookie: true }],
+	]
+	for (const [pathname, overrides] of privateCases) {
+		expect(pageCache(pathname, overrides)).toEqual(noStore)
+	}
 
 	expect(publicSharedJsonCacheHeaders()).toEqual({
 		'Cache-Control': anonymousHtmlCacheControl,
 	})
+	const onboardingJson = request('https://example.com/onboarding.json')
 	expect(
 		anonymousPersonalizedJsonCacheHeaders({
 			personalized: false,
-			request: request('https://example.com/onboarding.json'),
+			request: onboardingJson,
 		}),
-	).toEqual({
-		'Cache-Control': anonymousHtmlCacheControl,
-		Vary: 'Cookie',
-	})
+	).toEqual({ 'Cache-Control': anonymousHtmlCacheControl, Vary: 'Cookie' })
 	expect(
 		anonymousPersonalizedJsonCacheHeaders({
 			personalized: true,
-			request: request('https://example.com/onboarding.json'),
+			request: onboardingJson,
 		}),
 	).toEqual({ 'Cache-Control': 'no-store' })
 	expect(
@@ -204,42 +135,26 @@ test('anonymous marketing HTML is cacheable only without a session', () => {
 			),
 		}),
 	).toEqual({ 'Cache-Control': 'no-store' })
-
-	expect(
-		resolveAppPageCacheControl({
-			pathname: '/onboarding/step-1',
-			session: null,
-			request: request('https://example.com/onboarding/step-1'),
-			responseSetsCookie: false,
-		}),
-	).toEqual({
-		cacheControl: anonymousHtmlCacheControl,
-		vary: 'Cookie',
-	})
-	expect(isCacheableAnonymousPath('/onboarding/step-2/notion')).toBe(true)
 })
 
 test('anonymous package pages are cacheable, but only successful documents', () => {
-	for (const pathname of [
+	const packagePaths = [
 		'/@kentcdodds/sentry',
 		'/@kentcdodds/sentry/tree/main',
 		'/@kentcdodds/sentry/tree/main/src/index.ts',
 		'/community/0e75b90a-1fd7-4a4a-9ae1-167384bbd227',
 		'/community/0e75b90a-1fd7-4a4a-9ae1-167384bbd227/files/src',
-	]) {
-		expect(isCacheableAnonymousPath(pathname), pathname).toBe(true)
-		expect(
-			resolveAppPageCacheControl({
-				pathname,
-				session: null,
-				request: request(`https://example.com${pathname}`),
-				responseSetsCookie: false,
-			}),
-		).toEqual({
-			cacheControl: anonymousVisibilityGatedCacheControl,
-			vary: 'Cookie',
-		})
+	]
+	expect(
+		packagePaths.filter((pathname) => !isCacheableAnonymousPath(pathname)),
+	).toEqual([])
+	const visibilityGated = {
+		cacheControl: anonymousVisibilityGatedCacheControl,
+		vary: 'Cookie',
 	}
+	expect(
+		packagePaths.map((pathname) => [pathname, pageCache(pathname)]),
+	).toEqual(packagePaths.map((pathname) => [pathname, visibilityGated]))
 	expect(
 		anonymousPersonalizedJsonCacheHeaders({
 			personalized: false,
@@ -251,34 +166,28 @@ test('anonymous package pages are cacheable, but only successful documents', () 
 		Vary: 'Cookie',
 	})
 	// Owner-only and JSON shapes stay private.
-	expect(isCacheableAnonymousPath('/@kentcdodds/sentry/settings')).toBe(false)
 	expect(
-		isCacheableAnonymousPath('/profiles/kentcdodds/packages/sentry.json'),
-	).toBe(false)
-	expect(isCacheableAnonymousPath('/account/packages/abc/files')).toBe(false)
+		[
+			'/@kentcdodds/sentry/settings',
+			'/profiles/kentcdodds/packages/sentry.json',
+			'/account/packages/abc/files',
+			'/@kentcdodds/sentry.git',
+			'/@kentcdodds/sentry.git/info/refs',
+			'/@kentcdodds/sentry.git/git-upload-pack',
+		].filter(isCacheableAnonymousPath),
+	).toEqual([])
 
 	// A private package answers 401/404 to strangers; that answer changes the
 	// moment the owner makes it public, so it is never shared.
 	for (const status of [401, 404]) {
-		expect(
-			resolveAppPageCacheControl({
-				pathname: '/@kentcdodds/secret',
-				session: null,
-				request: request('https://example.com/@kentcdodds/secret'),
-				responseSetsCookie: false,
-				status,
-			}),
-		).toEqual({ cacheControl: 'no-store' })
+		expect(pageCache('/@kentcdodds/secret', { status })).toEqual(noStore)
 	}
 	expect(
-		resolveAppPageCacheControl({
-			pathname: '/@kentcdodds/sentry',
-			session: null,
+		pageCache('/@kentcdodds/sentry', {
 			request: request(
 				'https://example.com/@kentcdodds/sentry',
 				'kody_session=x',
 			),
-			responseSetsCookie: false,
 		}),
-	).toEqual({ cacheControl: 'no-store' })
+	).toEqual(noStore)
 })

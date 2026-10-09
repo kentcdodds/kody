@@ -29,6 +29,26 @@ const needsFixReport: SitePerfReport = {
 
 const exampleWebhookUrl = 'https://example.test/webhooks/weekly-site-perf/run'
 
+function invoke(
+	overrides: Partial<Parameters<typeof invokeSitePerfPackage>[0]>,
+) {
+	return invokeSitePerfPackage({
+		report: needsFixReport,
+		webhookUrl: exampleWebhookUrl,
+		repository: 'kentcdodds/kody',
+		startingRef: 'main',
+		runId: '77',
+		fetchImpl: async () => {
+			throw new Error('should not fetch')
+		},
+		...overrides,
+	})
+}
+
+function respondWith(body: unknown, status = 200) {
+	return async () => new Response(JSON.stringify(body), { status })
+}
+
 test('invoke gates on needs-fix and a webhook URL, and builds a params body', async () => {
 	expect(
 		shouldInvokeSitePerfPackage({ ...needsFixReport, verdict: 'ok' }),
@@ -50,79 +70,38 @@ test('invoke gates on needs-fix and a webhook URL, and builds a params body', as
 		idempotencyKey: 'weekly-site-perf:99',
 	})
 
-	const fetchImpl = async () => {
-		throw new Error('should not fetch')
+	const urlCases: Array<
+		[string | undefined, ReturnType<typeof resolveWebhookUrl>]
+	> = [
+		[undefined, { ok: false, skipped: 'missing-webhook-url' }],
+		[
+			'https://example.test/webhooks/run',
+			{ ok: true, url: 'https://example.test/webhooks/run' },
+		],
+		[
+			'  https://example.test/webhooks/run  ',
+			{ ok: true, url: 'https://example.test/webhooks/run' },
+		],
+		['not-a-url', { ok: false, skipped: 'invalid-webhook-url' }],
+		[
+			'ftp://example.test/webhooks/run',
+			{ ok: false, skipped: 'invalid-webhook-url' },
+		],
+	]
+	expect(urlCases.map(([url]) => [url, resolveWebhookUrl(url)])).toEqual(
+		urlCases,
+	)
+
+	const skips: Array<[Partial<Parameters<typeof invoke>[0]>, string]> = [
+		[{ report: { ...needsFixReport, verdict: 'ok' } }, 'ok'],
+		[{ webhookUrl: undefined }, 'missing-webhook-url'],
+		[{ webhookUrl: '' }, 'missing-webhook-url'],
+		[{ webhookUrl: '   ' }, 'missing-webhook-url'],
+		[{ webhookUrl: 'not-a-url' }, 'invalid-webhook-url'],
+	]
+	for (const [overrides, skipped] of skips) {
+		expect(await invoke(overrides)).toEqual({ skipped })
 	}
-	expect(
-		await invokeSitePerfPackage({
-			report: { ...needsFixReport, verdict: 'ok' },
-			webhookUrl: exampleWebhookUrl,
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
-			runId: '1',
-			fetchImpl,
-		}),
-	).toEqual({ skipped: 'ok' })
-	expect(
-		await invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: undefined,
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
-			runId: '1',
-			fetchImpl,
-		}),
-	).toEqual({ skipped: 'missing-webhook-url' })
-	expect(
-		await invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: '',
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
-			runId: '1',
-			fetchImpl,
-		}),
-	).toEqual({ skipped: 'missing-webhook-url' })
-	expect(
-		await invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: '   ',
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
-			runId: '1',
-			fetchImpl,
-		}),
-	).toEqual({ skipped: 'missing-webhook-url' })
-	expect(resolveWebhookUrl(undefined)).toEqual({
-		ok: false,
-		skipped: 'missing-webhook-url',
-	})
-	expect(resolveWebhookUrl('https://example.test/webhooks/run')).toEqual({
-		ok: true,
-		url: 'https://example.test/webhooks/run',
-	})
-	expect(resolveWebhookUrl('  https://example.test/webhooks/run  ')).toEqual({
-		ok: true,
-		url: 'https://example.test/webhooks/run',
-	})
-	expect(resolveWebhookUrl('not-a-url')).toEqual({
-		ok: false,
-		skipped: 'invalid-webhook-url',
-	})
-	expect(resolveWebhookUrl('ftp://example.test/webhooks/run')).toEqual({
-		ok: false,
-		skipped: 'invalid-webhook-url',
-	})
-	expect(
-		await invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: 'not-a-url',
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
-			runId: '1',
-			fetchImpl,
-		}),
-	).toEqual({ skipped: 'invalid-webhook-url' })
 })
 
 test('invoke posts params to the webhook URL, treats replay/in-progress as launched, and surfaces API errors', async () => {
@@ -132,36 +111,25 @@ test('invoke posts params to the webhook URL, treats replay/in-progress as launc
 		idempotencyKey: string | null
 		body: unknown
 	}> = []
-	const fetchImpl: typeof fetch = async (url, init) => {
-		const headers = new Headers(init?.headers)
-		calls.push({
-			url: String(url),
-			auth: headers.get('Authorization'),
-			idempotencyKey: headers.get('Idempotency-Key'),
-			body: JSON.parse(String(init?.body)),
-		})
-		return new Response(
-			JSON.stringify({
+	const agent = {
+		id: 'bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
+		url: 'https://cursor.com/agents/bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
+	}
+	const invoked = await invoke({
+		fetchImpl: async (url, init) => {
+			const headers = new Headers(init?.headers)
+			calls.push({
+				url: String(url),
+				auth: headers.get('Authorization'),
+				idempotencyKey: headers.get('Idempotency-Key'),
+				body: JSON.parse(String(init?.body)),
+			})
+			return respondWith({
 				ok: true,
 				idempotency: { replayed: false },
-				result: {
-					agent: {
-						id: 'bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
-						url: 'https://cursor.com/agents/bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
-					},
-				},
-			}),
-			{ status: 200 },
-		)
-	}
-
-	const invoked = await invokeSitePerfPackage({
-		report: needsFixReport,
-		webhookUrl: exampleWebhookUrl,
-		repository: 'kentcdodds/kody',
-		startingRef: 'main',
-		runId: '77',
-		fetchImpl,
+				result: { agent },
+			})()
+		},
 	})
 	expect(calls).toEqual([
 		{
@@ -180,75 +148,39 @@ test('invoke posts params to the webhook URL, treats replay/in-progress as launc
 	])
 	expect(invoked).toEqual({
 		invoked: true,
-		agentUrl:
-			'https://cursor.com/agents/bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
-		result: {
-			agent: {
-				id: 'bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
-				url: 'https://cursor.com/agents/bc-aaaaaaaa-bbbb-5ccc-8ddd-eeeeeeeeeeee',
-			},
-		},
+		agentUrl: agent.url,
+		result: { agent },
 	})
 
-	const replayed = await invokeSitePerfPackage({
-		report: needsFixReport,
-		webhookUrl: exampleWebhookUrl,
-		repository: 'kentcdodds/kody',
-		startingRef: 'main',
-		runId: '77',
-		fetchImpl: async () =>
-			new Response(
-				JSON.stringify({
-					ok: true,
-					idempotency: { replayed: true },
-					result: { skipped: false },
-				}),
-				{ status: 200 },
+	expect(
+		await invoke({
+			fetchImpl: respondWith({
+				ok: true,
+				idempotency: { replayed: true },
+				result: { skipped: false },
+			}),
+		}),
+	).toMatchObject({ invoked: true, replayed: true })
+	expect(
+		await invoke({
+			fetchImpl: respondWith(
+				{ ok: false, error: { code: 'invocation_in_progress' } },
+				409,
 			),
-	})
-	expect(replayed).toMatchObject({ invoked: true, replayed: true })
-
-	const inProgress = await invokeSitePerfPackage({
-		report: needsFixReport,
-		webhookUrl: exampleWebhookUrl,
-		repository: 'kentcdodds/kody',
-		startingRef: 'main',
-		runId: '77',
-		fetchImpl: async () =>
-			new Response(
-				JSON.stringify({
-					ok: false,
-					error: { code: 'invocation_in_progress' },
-				}),
-				{ status: 409 },
-			),
-	})
-	expect(inProgress).toMatchObject({ invoked: true, inProgress: true })
+		}),
+	).toMatchObject({ invoked: true, inProgress: true })
 
 	await expect(
-		invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: exampleWebhookUrl,
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
+		invoke({
 			runId: '88',
-			fetchImpl: async () =>
-				new Response(
-					JSON.stringify({
-						ok: false,
-						error: { code: 'idempotency_mismatch' },
-					}),
-					{ status: 409 },
-				),
+			fetchImpl: respondWith(
+				{ ok: false, error: { code: 'idempotency_mismatch' } },
+				409,
+			),
 		}),
 	).rejects.toThrow(/Kody webhook idempotency mismatch/)
-
 	await expect(
-		invokeSitePerfPackage({
-			report: needsFixReport,
-			webhookUrl: exampleWebhookUrl,
-			repository: 'kentcdodds/kody',
-			startingRef: 'main',
+		invoke({
 			runId: '88',
 			fetchImpl: async () =>
 				new Response('upstream unavailable', { status: 503 }),

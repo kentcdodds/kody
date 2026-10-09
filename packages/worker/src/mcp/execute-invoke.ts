@@ -10,6 +10,7 @@
  * so one isolate is reused for the UTC day.
  */
 
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { executeToolDescription } from '#mcp/instructions/execute-tool-description.ts'
 import { executeInvokeFlagKey } from '#universal/feature-flags/registry.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
@@ -22,7 +23,7 @@ export { executeInvokeFlagKey }
 
 const invokeLocalName = 'action'
 
-export const executeInvokeUnsupportedSpecifierMessage =
+const executeInvokeUnsupportedSpecifierMessage =
 	'Unsupported execute invoke specifier. Use a kody:@scope/package/export (or @scope/package#export) package import, not a URL.'
 
 export const executeInvokeMutualExclusionMessage =
@@ -53,10 +54,10 @@ function looksLikeUrl(value: string) {
 export function parseExecuteInvokeSpecifier(raw: string): string {
 	const trimmed = raw.trim()
 	if (!trimmed) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 	if (looksLikeUrl(trimmed) && !trimmed.startsWith(packageSpecifierPrefix)) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 
 	let value = trimmed
@@ -68,7 +69,7 @@ export function parseExecuteInvokeSpecifier(raw: string): string {
 			.trim()
 			.replace(/^\.\//, '')
 		if (!before || value.includes('#', hashIndex + 1)) {
-			throw new Error(executeInvokeUnsupportedSpecifierMessage)
+			throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 		}
 		value = after ? `${before}/${after}` : before
 	}
@@ -78,14 +79,14 @@ export function parseExecuteInvokeSpecifier(raw: string): string {
 	}
 
 	if (!value.startsWith(packageSpecifierPrefix)) {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 
 	try {
 		const parsed = parseKodyPackageSpecifier(value)
 		return buildPackageImportSpecifier(parsed.packageName, parsed.exportName)
 	} catch {
-		throw new Error(executeInvokeUnsupportedSpecifierMessage)
+		throw new McpCallerError(executeInvokeUnsupportedSpecifierMessage)
 	}
 }
 
@@ -109,28 +110,75 @@ export function resolveExecuteInvokeCode(invoke: string): string {
 	)
 }
 
+/**
+ * How the execute module source was supplied. Persisted on run metadata so
+ * Activity / `runList` can attribute invoke vs handwritten `code` without
+ * re-classifying the body.
+ */
+export type ExecuteEntry = 'invoke' | 'code'
+
+export type ResolvedExecuteModule = {
+	code: string
+	entry: ExecuteEntry
+	/** Canonical `kody:@…` specifier when `entry` is `invoke`. */
+	invoke?: string
+}
+
+/**
+ * Run-metadata keys for execute attribution. Keep these stable: Activity and
+ * `runList` read them as opaque metadata (forward-only; no backfill).
+ */
+export const executeEntryMetadataKey = 'entry'
+export const executeInvokeMetadataKey = 'invoke'
+export const executeWorkerIdMetadataKey = 'workerId'
+
+export function buildExecuteAttributionMetadata(input: {
+	entry: ExecuteEntry
+	invoke?: string
+}): Record<string, string> {
+	return {
+		[executeEntryMetadataKey]: input.entry,
+		...(input.entry === 'invoke' && input.invoke
+			? { [executeInvokeMetadataKey]: input.invoke }
+			: {}),
+	}
+}
+
+export function resolveExecuteModule(input: {
+	code?: string
+	invoke?: string
+	invokeEnabled: boolean
+}): ResolvedExecuteModule {
+	const code = input.code?.trim() ? input.code : undefined
+	const invoke = input.invoke?.trim() ? input.invoke : undefined
+
+	if (invoke && !input.invokeEnabled) {
+		throw new McpCallerError(executeInvokeFlagOffMessage)
+	}
+	if (code && invoke) {
+		throw new McpCallerError(executeInvokeMutualExclusionMessage)
+	}
+	if (invoke) {
+		const specifier = parseExecuteInvokeSpecifier(invoke)
+		return {
+			code: buildExecuteInvokePassthroughSource(specifier),
+			entry: 'invoke',
+			invoke: specifier,
+		}
+	}
+	if (code) {
+		return { code, entry: 'code' }
+	}
+	if (input.invokeEnabled) {
+		throw new McpCallerError(executeInvokeMissingInputMessage)
+	}
+	throw new McpCallerError(executeInvokeMissingInputMessage)
+}
+
 export function resolveExecuteModuleSource(input: {
 	code?: string
 	invoke?: string
 	invokeEnabled: boolean
 }): string {
-	const code = input.code?.trim() ? input.code : undefined
-	const invoke = input.invoke?.trim() ? input.invoke : undefined
-
-	if (invoke && !input.invokeEnabled) {
-		throw new Error(executeInvokeFlagOffMessage)
-	}
-	if (code && invoke) {
-		throw new Error(executeInvokeMutualExclusionMessage)
-	}
-	if (invoke) {
-		return resolveExecuteInvokeCode(invoke)
-	}
-	if (code) {
-		return code
-	}
-	if (input.invokeEnabled) {
-		throw new Error(executeInvokeMissingInputMessage)
-	}
-	throw new Error(executeInvokeMissingInputMessage)
+	return resolveExecuteModule(input).code
 }

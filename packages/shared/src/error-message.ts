@@ -1,5 +1,20 @@
+/**
+ * Prefer a validated string `message` on Error and Error-shaped objects
+ * (for example Cloudflare Artifacts binding throws that do not survive JSRPC
+ * as `Error`). Fall back to `String(error)` for everything else.
+ */
 export function getErrorMessage(error: unknown) {
-	return error instanceof Error ? error.message : String(error)
+	if (typeof error === 'string') return error
+	if (error instanceof Error) return error.message
+	if (
+		error !== null &&
+		typeof error === 'object' &&
+		'message' in error &&
+		typeof (error as { message: unknown }).message === 'string'
+	) {
+		return (error as { message: string }).message
+	}
+	return String(error)
 }
 
 export function getErrorCause(error: unknown) {

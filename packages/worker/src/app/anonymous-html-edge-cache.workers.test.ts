@@ -10,6 +10,10 @@ import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.
 
 const env = { APP_BASE_URL: 'https://test.kody.dev' }
 const encoder = new TextEncoder()
+
+function defaultCache() {
+	return (caches as CacheStorage & { default: Cache }).default
+}
 const completeDocument =
 	'<!DOCTYPE html><html><body>ok</body></html><!-- rmx:flush document -->'
 
@@ -34,7 +38,7 @@ async function serve(request: Request, upstream: () => Response) {
 	return {
 		response,
 		text,
-		cached: await caches.default.match(
+		cached: await defaultCache().match(
 			buildAnonymousHtmlCacheKey(request, env),
 		),
 	}
@@ -54,6 +58,66 @@ test('a complete anonymous document is stored and replayed', async () => {
 	})
 	expect(hit.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
 	expect(hit.text).toBe(completeDocument)
+})
+
+test('anonymous llms.txt plain text is stored and replayed like marketing HTML', async () => {
+	const body = '# Kody\n\n> viewer-independent docs index\n'
+	function storeablePlain(text: string) {
+		return new Response(text, {
+			status: 200,
+			headers: {
+				'Content-Type': 'text/plain; charset=utf-8',
+				'Cache-Control': anonymousHtmlCacheControl,
+				Vary: 'Cookie',
+			},
+		})
+	}
+	for (const pathname of ['/llms.txt', '/docs/llms.txt'] as const) {
+		const url = `https://test.kody.dev${pathname}?plain=${crypto.randomUUID()}`
+		const miss = await serve(new Request(url), () => storeablePlain(body))
+		expect(miss.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		expect(miss.text).toBe(body)
+		await expect(miss.cached?.text()).resolves.toBe(body)
+
+		const hit = await serve(new Request(url), () => {
+			throw new Error('upstream must not run on a HIT')
+		})
+		expect(hit.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.text).toBe(body)
+	}
+})
+
+test('anonymous auth pages are stored; cookie-bearing requests bypass the shared cache', async () => {
+	for (const pathname of ['/login', '/signup'] as const) {
+		const url = `https://test.kody.dev${pathname}?auth=${crypto.randomUUID()}`
+		const miss = await serve(new Request(url), () =>
+			storeableHtml(completeDocument),
+		)
+		expect(miss.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('MISS')
+		await expect(miss.cached?.text()).resolves.toBe(completeDocument)
+
+		const hit = await serve(new Request(url), () => {
+			throw new Error('upstream must not run on a HIT')
+		})
+		expect(hit.response.headers.get(anonymousHtmlEdgeCacheHeader)).toBe('HIT')
+		expect(hit.text).toBe(completeDocument)
+
+		const withCookie = await serve(
+			new Request(url, { headers: { Cookie: 'kody_session=stale' } }),
+			() =>
+				new Response(completeDocument, {
+					status: 200,
+					headers: {
+						'Content-Type': 'text/html; charset=utf-8',
+						'Cache-Control': 'no-store',
+					},
+				}),
+		)
+		expect(
+			withCookie.response.headers.get(anonymousHtmlEdgeCacheHeader),
+		).toBeNull()
+		expect(withCookie.response.headers.get('Cache-Control')).toBe('no-store')
+	}
 })
 
 test('a 200 whose body stopped after the doctype is served once but never stored', async () => {
@@ -102,7 +166,7 @@ test('a body that errors mid-stream is never stored', async () => {
 	await expect(response.text()).rejects.toThrow('render failed')
 	await waitOnExecutionContext(ctx)
 	expect(
-		await caches.default.match(
+		await defaultCache().match(
 			buildAnonymousHtmlCacheKey(new Request(url), env),
 		),
 	).toBeUndefined()

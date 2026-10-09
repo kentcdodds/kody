@@ -2,6 +2,9 @@ import { defineDomain } from '#mcp/capabilities/define-domain.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { adminAuditLogQueryCapability } from './admin-audit-log-query.ts'
 import { adminCommunityActivityListCapability } from './admin-community-activity-list.ts'
+import { adminCreditEligibilitySetCapability } from './admin-credit-eligibility-set.ts'
+import { adminCreditGrantCapability } from './admin-credit-grant.ts'
+import { adminCreditWalletGetCapability } from './admin-credit-wallet-get.ts'
 import { adminCommunityOrphanForksCleanupCapability } from './admin-community-orphan-forks-cleanup.ts'
 import { adminFeatureFlagListCapability } from './admin-feature-flag-list.ts'
 import { adminFeatureFlagOverrideCapability } from './admin-feature-flag-override.ts'
@@ -24,6 +27,7 @@ import { adminPlatformFeedbackGetCapability } from './admin-platform-feedback-ge
 import { adminPlatformFeedbackListCapability } from './admin-platform-feedback-list.ts'
 import { adminPlatformFeedbackUpdateCapability } from './admin-platform-feedback-update.ts'
 import { adminUserUsageCapability } from './admin-user-usage.ts'
+import { adminSystemEmailDeleteCapability } from './admin-system-email-delete.ts'
 import { adminSystemEmailGetCapability } from './admin-system-email-get.ts'
 import { adminSystemEmailListCapability } from './admin-system-email-list.ts'
 import { adminSystemEmailSendCapability } from './admin-system-email-send.ts'
@@ -34,7 +38,6 @@ import { adminUserCreateCapability } from './admin-user-create.ts'
 import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
-import { adminUserStableIdConflictCapability } from './admin-user-stable-id-conflict.ts'
 import { adminUserVerifyCapability } from './admin-user-verify.ts'
 import { adminAccountDeletionAbortCapability } from './admin-account-deletion-abort.ts'
 import { adminAccountWriteLeaseListCapability } from './admin-account-write-lease-list.ts'
@@ -43,9 +46,6 @@ import { adminUserMeterParityCapability } from './admin-user-meter-parity.ts'
 import { adminRunLogSqlBillingCapability } from './admin-run-log-sql-billing.ts'
 import { adminUserMeterStorageReconcileCapability } from './admin-user-meter-storage-reconcile.ts'
 import { adminMailboxMaintenanceCapability } from './admin-mailbox-maintenance.ts'
-import { adminBannerDeleteCapability } from './admin-banner-delete.ts'
-import { adminBannerListCapability } from './admin-banner-list.ts'
-import { adminBannerSaveCapability } from './admin-banner-save.ts'
 import { adminReservedUsernameAddCapability } from './admin-reserved-username-add.ts'
 import { adminReservedUsernameListCapability } from './admin-reserved-username-list.ts'
 import { adminReservedUsernameRemoveCapability } from './admin-reserved-username-remove.ts'
@@ -90,16 +90,15 @@ export const adminDomain = defineDomain({
 		'retention',
 		'unverified account purge',
 		'reserved username',
-		'banner',
-		'announcement',
-		'site banner',
+		'credits',
+		'credit grant',
+		'credit eligibility',
 	],
 	capabilities: [
 		adminUserListCapability,
 		adminUserGetCapability,
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
-		adminUserStableIdConflictCapability,
 		adminUserVerifyCapability,
 		adminUserMeterParityCapability,
 		adminRunLogSqlBillingCapability,
@@ -125,17 +124,18 @@ export const adminDomain = defineDomain({
 		adminPackageCodemodRevertCapability,
 		adminAuditLogQueryCapability,
 		adminUserUsageCapability,
+		adminCreditWalletGetCapability,
+		adminCreditGrantCapability,
+		adminCreditEligibilitySetCapability,
 		adminFeatureFlagListCapability,
 		adminFeatureFlagSetCapability,
 		adminFeatureFlagOverrideCapability,
-		adminBannerListCapability,
-		adminBannerSaveCapability,
-		adminBannerDeleteCapability,
 		adminReservedUsernameListCapability,
 		adminReservedUsernameAddCapability,
 		adminReservedUsernameRemoveCapability,
 		adminSystemEmailListCapability,
 		adminSystemEmailGetCapability,
+		adminSystemEmailDeleteCapability,
 		adminSystemEmailSendCapability,
 		adminSystemEmailSenderRuleListCapability,
 		adminSystemEmailSenderRuleSetCapability,

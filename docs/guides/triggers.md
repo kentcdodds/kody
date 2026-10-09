@@ -29,6 +29,12 @@ Prefer the event that actually describes the moment — a webhook or a
 subscription — and reach for a schedule when no event exists. Cron is fine; it
 is just not the hero.
 
+> [!WATCH] https://www.youtube.com/watch?v=o5L5OprLhBg Watch: Kody fixes a
+> Stripe webhook after we renamed the domain
+
+Also watch:
+[Shade automation from an INTENT.md — deterministic code, no model in the loop](https://www.youtube.com/watch?v=OZKDO9Pzmo0).
+
 ## Jobs — recurring schedules that travel with the package
 
 A job is declared in the package manifest, so the schedule ships with the
@@ -101,14 +107,19 @@ of MCP tool output). A provider POSTs to it and Kody dispatches the validated
 request to the package export that owns it.
 
 1. Declare it under `package.json#kody.webhooks`: a `name`, the `export` it
-   binds to, and (for vendor senders) `verification` — HMAC header, encoding,
-   and the **name** of the signing secret in your secret store. One webhook name
-   binds one export; there is no wildcard.
-2. Store the signing secret with `secretSet` under that name.
-3. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
-   and register it with `webhookUrlApply`. Treat the URL as a credential; tool
-   output never includes it. For a provider apply does not cover, the owner
-   copies the URL from the package's settings page
+   binds to, and (for vendor senders) `verification` — HMAC header and encoding.
+   Omit `secretName` for GitHub-style hooks so mint stores package-owned HMAC.
+   Set `secretName` only for provider-issued secrets (Sentry, Stripe) and store
+   that value with `secretSet`. Providers that quiz URL ownership (X CRC,
+   WebSub, Meta, Slack) also declare `challenge`; the platform answers that quiz
+   on the minted URL. One webhook name binds one export; there is no wildcard.
+2. Mint a handle with `webhookUrlMint` (returns a `handle`, not the credential)
+   and register it with `webhookUrlApply` (`type: "http"` with `{{webhookUrl}}`
+   after the owner Approves the destination at `/connect/webhook-apply`; GitHub
+   repo hooks use the same path against the Hooks API, with `{{webhookSecret}}`
+   in `config.secret` when HMAC is declared). Treat the URL as a credential;
+   tool output never includes it. When apply does not fit the provider, the
+   owner copies the URL from the package's settings page
    (`/@<username>/<packageKodyId>/settings`, Webhooks section), where they can
    also reveal, rotate, disable, or enable it. Rotate keeps the previous URL
    live for 24 hours, or until the first accepted delivery arrives on the new
@@ -146,8 +157,9 @@ nothing else. See [Email primitives](../use/email-primitives.md).
 - A schedule is optional, not the point. If the person cannot name a time they
   want something to happen, leave the trigger off and let them ask.
 - Test before you enable: import the wrapper from `execute`, smoke-test a
-  subscription from interactive MCP with `packageSubscriptionDispatch`, or send
-  yourself one webhook.
+  subscription from interactive MCP with `packageSubscriptionDispatch`, or
+  smoke-test a minted webhook with `webhookSyntheticDispatch` (not the same as a
+  package-local `dryRun` field on trusted-client POSTs).
 - Keep the wrapper quiet. Notify only when there is news; an empty digest every
   morning trains people to ignore the real one.
 - Failures and recent runs for every trigger live on `/account/activity`.

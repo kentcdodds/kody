@@ -21,6 +21,7 @@ export const metaMemorySearchCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemorySearch',
+		orgPermission: 'memory:read',
 		description:
 			'Search stored memories for the signed-in user. Returned matches are mutable for this signed-in user unless can_mutate is false. If you are considering writing or deleting a memory, prefer metaMemoryVerify first and review the related memories before taking action.',
 		keywords: ['memory', 'search', 'lookup', 'related', 'verify'],

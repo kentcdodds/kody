@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
@@ -18,11 +19,13 @@ function createContext(roles: Array<string>) {
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: 'actor-1',
+				userId: personIdFromStored('actor-1'),
 				username: 'actor',
 				email: 'actor@example.com',
+				displayName: 'Actor',
 				roles,
 			},
 		}),

@@ -1,4 +1,4 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { buildAuthLink } from '#client/auth-links.ts'
 import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { routes } from '#universal/routes.ts'

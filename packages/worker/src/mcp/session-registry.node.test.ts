@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { d1LockRetryBaseDelayMs } from '#worker/d1-retry.ts'
@@ -16,6 +17,7 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 		CREATE TABLE mcp_agent_sessions (
 			do_id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
+			org_id TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		);
 	`)
@@ -94,19 +96,20 @@ test('registerMcpAgentSession retries a transient D1 internal error with an unde
 
 test('cold MCP session owner discovery reads persisted Agents SDK props', async () => {
 	const props = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
 		user: {
-			userId: 'user-a',
+			userId: personIdFromStored('user-a'),
 			email: 'a@example.com',
 			displayName: 'User A',
 		},
 	})
-	const storage = {
-		async get<T>(key: string) {
+	const storage: Pick<DurableObjectStorage, 'get'> = {
+		get: (async (key: string | Array<string>) => {
 			expect(key).toBe('props')
-			return props as T
-		},
+			return props
+		}) as DurableObjectStorage['get'],
 	}
 	await expect(
 		readPersistedMcpAgentOwner({

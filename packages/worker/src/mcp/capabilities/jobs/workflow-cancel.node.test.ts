@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -15,9 +16,10 @@ const { workflowCancelCapability } = await import('./workflow-cancel.ts')
 test('workflowRunCancel maps service outcomes for the signed-in user', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-123',
+			userId: personIdFromStored('user-123'),
 			email: 'user@example.com',
 			displayName: 'User Example',
 		},

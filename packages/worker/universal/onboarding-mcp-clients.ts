@@ -23,6 +23,11 @@ export type McpClientKind =
 	| 'devin'
 	| 'gemini'
 	| 'openclaw'
+	| 'muse'
+	| 'wajo'
+	| 'cue'
+	| 'openmuse'
+	| 'dots'
 	| 'other'
 
 export type OnboardingAgentSurface = 'desktop' | 'mobile'
@@ -51,6 +56,11 @@ export const mcpClientTabs = [
 	{ id: 'devin', label: 'Devin', isNonCodingAgent: false },
 	{ id: 'gemini', label: 'Gemini', isNonCodingAgent: true },
 	{ id: 'openclaw', label: 'OpenClaw', isNonCodingAgent: false },
+	{ id: 'muse', label: 'Muse', isNonCodingAgent: false },
+	{ id: 'wajo', label: 'Wajo', isNonCodingAgent: false },
+	{ id: 'cue', label: 'Cue', isNonCodingAgent: false },
+	{ id: 'openmuse', label: 'OpenMuse', isNonCodingAgent: false },
+	{ id: 'dots', label: 'Dots', isNonCodingAgent: false },
 	{ id: 'other', label: 'Other', isNonCodingAgent: false },
 ] as const satisfies ReadonlyArray<McpClientTab>
 
@@ -58,11 +68,15 @@ export const mcpClientTabs = [
  * Desktop chooser: coding agents first, then the highest-traffic chat hosts
  * that are not already represented. Devin stands in for Devin Desktop
  * (ex-Windsurf). OpenCode is the Cline / OpenCode slot. OpenClaw is the
- * local-first personal-AI slot. ChatGPT.com, Claude Desktop, and Gemini
- * fill the three leftover seats after OpenClaw so the auto-fill desktop
- * grid lands on complete rows with Not listed (12 cards). Grok.com,
- * Grok CLI, and the Copilot app stay under Not listed (Copilot
- * desktop/CLI is already featured; Aider is not a Kody connect path yet).
+ * local-first personal-AI slot. Muse is Meta's Muse Code CLI slot.
+ * ChatGPT.com, Claude Desktop, and Grok Bot fill the leftover seats so
+ * the auto-fill desktop grid lands on complete rows with Not listed
+ * (12 cards). Gemini stays under More on desktop (still featured on
+ * mobile). Wajo, Cue, OpenMuse, and Dots are lower-priority MCP peers: they
+ * stay off the featured 12 and appear under Not listed (and Account →
+ * Connections). Grok.com, Grok CLI, and the Copilot app stay under Not
+ * listed (Copilot desktop/CLI is already featured; Aider is not a Kody
+ * connect path yet).
  */
 export const onboardingDesktopFeaturedAgentIds = [
 	'claude-code',
@@ -72,16 +86,28 @@ export const onboardingDesktopFeaturedAgentIds = [
 	'devin',
 	'opencode',
 	'openclaw',
+	'muse',
 	'chatgpt',
 	'claude-desktop',
-	'gemini',
 	'grok-bot',
 ] as const satisfies ReadonlyArray<McpClientKind>
 
 /**
+ * Lower-priority action agents / MCP peers. Shown under Not listed on
+ * Get started (and on Account → Connections via the full catalog), not in
+ * the featured Step 1 grid. Order: Wajo, Cue, OpenMuse, Dots.
+ */
+const onboardingSecondaryAgentIds = [
+	'wajo',
+	'cue',
+	'openmuse',
+	'dots',
+] as const satisfies ReadonlyArray<McpClientKind>
+
+/**
  * Phone chooser: only hosts with a real mobile app. Desktop-only CLIs and
- * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Cursor)
- * stay off this list and appear under Not listed on a phone.
+ * IDEs (Claude Code, Devin, Codex, Copilot CLI, OpenCode, OpenClaw, Muse,
+ * Cursor) stay off this list and appear under Not listed on a phone.
  */
 export const onboardingMobileFeaturedAgentIds = [
 	'chatgpt',
@@ -243,7 +269,10 @@ export function onboardingNotListedAgentIds(
 	const mobileOnly = chooser.mobileFeatured
 		.filter((id) => !desktopSet.has(id))
 		.map((id) => ({ id, viewport: 'desktop-only' as const }))
-	return [...desktopOnly, ...mobileOnly]
+	const secondary = onboardingSecondaryAgentIds
+		.filter((id) => !desktopSet.has(id) && !mobileSet.has(id))
+		.map((id) => ({ id, viewport: 'both' as const }))
+	return [...desktopOnly, ...mobileOnly, ...secondary]
 }
 
 export function onboardingViewportCss(
@@ -318,6 +347,16 @@ export function onboardingAgentIconName(
 			return 'gemini'
 		case 'openclaw':
 			return 'openclaw'
+		case 'muse':
+			return 'muse'
+		case 'wajo':
+			return 'wajo'
+		case 'cue':
+			return 'cue'
+		case 'openmuse':
+			return 'openmuse'
+		case 'dots':
+			return 'dots'
 		case 'other':
 			return null
 		default: {
@@ -374,7 +413,7 @@ const claudeCustomConnectorsGuideUrl =
 
 /** Long-form host notes when a vendor page is not a better first click. */
 const kodyConnectYourAgentUrl =
-	'https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md'
+	'https://raw.githubusercontent.com/kentcdodds/kody/main/docs/use/connect-your-agent.md'
 
 /** Grok.com UI for adding a custom remote MCP connector. */
 export const grokConnectorsUrl = 'https://grok.com/connectors'
@@ -386,6 +425,27 @@ const grokCliMcpGuideUrl = 'https://docs.x.ai/build/features/mcp-servers'
 
 /** OpenClaw Control UI + CLI docs for adding a remote MCP server. */
 const openClawMcpGuideUrl = 'https://docs.openclaw.ai/tools/mcp'
+
+/**
+ * Muse Code MCP + OAuth docs (`mcp_servers` in settings, `muse mcp login`).
+ * Extending page covers remote streamable_http servers and OAuth sign-in.
+ */
+export const museMcpGuideUrl = 'https://dev.meta.ai/docs/muse-code/extending/'
+
+/** Wajo (Fo action agent) product site — MCP connect is via Wajo sign-in. */
+export const wajoSiteUrl = 'https://wajo.ai'
+
+/** Cue (personal AI agents by Manus) product site. */
+export const cueSiteUrl = 'https://cue.im'
+
+/**
+ * OpenMuse and Kody guide (same-origin docs path — not openmuse.ai).
+ * Distinct from Muse Code (`muse`).
+ */
+export const openMuseGuideUrl = '/docs/openmuse'
+
+/** OpenAI Dots product intro (personal agent / MCP peer). */
+export const dotsIntroUrl = 'https://openai.com/index/introducing-dots/'
 
 /** Cursor Marketplace listing for the official Kody plugin (production). */
 export const kodyCursorMarketplaceUrl = 'https://cursor.com/marketplace/kody'
@@ -435,6 +495,16 @@ function onboardingAgentHelpHref(id: McpClientKind) {
 			return copilotAppCustomizeGuideUrl
 		case 'openclaw':
 			return openClawMcpGuideUrl
+		case 'muse':
+			return museMcpGuideUrl
+		case 'wajo':
+			return wajoSiteUrl
+		case 'cue':
+			return cueSiteUrl
+		case 'openmuse':
+			return openMuseGuideUrl
+		case 'dots':
+			return dotsIntroUrl
 		default: {
 			const exhaustive: never = id
 			return exhaustive
@@ -634,6 +704,27 @@ export function buildOpenClawMcpJson(mcpServerUrl: string) {
 	})
 }
 
+/**
+ * Muse Code user settings (`~/.config/muse/settings.json`). Merge the
+ * `mcp_servers.kody` entry into an existing file; new files need
+ * `schema_version: 1`.
+ */
+export function buildMuseSettingsJson(mcpServerUrl: string) {
+	return prettyJson({
+		schema_version: 1,
+		mcp_servers: {
+			kody: {
+				transport: 'streamable_http',
+				url: mcpServerUrl,
+				mode: 'optional',
+			},
+		},
+	})
+}
+
+/** Muse OAuth for a remote server declared in `mcp_servers`. */
+export const museMcpLoginCommand = 'muse mcp login kody'
+
 /** Codex shared `~/.codex/config.toml` streamable HTTP entry. */
 export function buildCodexMcpToml(mcpServerUrl: string) {
 	return [
@@ -682,6 +773,7 @@ export function collectOnboardingMcpSnippets(mcpServerUrl: string) {
 		{ code: buildCopilotCliAddCommand(mcpServerUrl), lang: 'sh' },
 		{ code: buildVsCodeMcpJson(mcpServerUrl), lang: 'json' },
 		{ code: buildCopilotCliMcpJson(mcpServerUrl), lang: 'json' },
-		{ code: buildKodyCliInstallCommand(mcpServerUrl), lang: 'sh' },
+		{ code: buildMuseSettingsJson(mcpServerUrl), lang: 'json' },
+		{ code: museMcpLoginCommand, lang: 'sh' },
 	]
 }

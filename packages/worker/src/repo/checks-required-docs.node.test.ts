@@ -30,22 +30,11 @@ vi.mock('#worker/package-runtime/module-graph.ts', () => ({
 
 import { runRepoChecks } from './checks.ts'
 
-function createSnapshotFromFiles(files: Map<string, string>) {
-	return {
-		read: vi.fn((path: string) => files.get(path) ?? null),
-	}
-}
-
-function createPackageManifest() {
-	return JSON.stringify({
-		name: '@kody/docs-missing',
-		exports: { '.': './src/index.ts' },
-		kody: {
-			id: 'docs-missing',
-			description: 'Missing required package docs',
-		},
-	})
-}
+const manifest = JSON.stringify({
+	name: '@kody/docs-missing',
+	exports: { '.': './src/index.ts' },
+	kody: { id: 'docs-missing', description: 'Missing required package docs' },
+})
 
 test('runRepoChecks fails publish when root README.md or AGENTS.md is missing or empty', async () => {
 	mockModule.buildKodyAppBundle.mockResolvedValue({
@@ -63,72 +52,53 @@ test('runRepoChecks fails publish when root README.md or AGENTS.md is missing or
 		modules: { 'dist/importable.js': 'export const ready = true' },
 		dependencies: [],
 	})
-	mockModule.createFileSystemSnapshot.mockResolvedValue(
-		createSnapshotFromFiles(new Map()),
-	)
 
-	const missingBoth = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return path === 'package.json'
-					? createPackageManifest()
-					: path === 'src/index.ts'
-						? 'export const ready = true\n'
-						: null
+	const cases: Array<[Record<string, string>, string]> = [
+		[{}, 'README.md and AGENTS.md'],
+		[
+			{
+				'README.md': '   \n',
+				'AGENTS.md': '# Agents\n\nSmoke-test the root export.\n',
 			},
-			async glob() {
-				return [
-					{ path: 'package.json', type: 'file' },
-					{ path: 'src/index.ts', type: 'file' },
-				]
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-	expect(missingBoth.ok).toBe(false)
-	expect(missingBoth.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'docs',
-				ok: false,
-				message: expect.stringContaining('README.md and AGENTS.md'),
+			'README.md is missing or empty',
+		],
+	]
+	for (const [docs, message] of cases) {
+		const files = new Map(
+			Object.entries({
+				'package.json': manifest,
+				...docs,
+				'src/index.ts': 'export const ready = true\n',
 			}),
-		]),
-	)
-
-	const files = new Map<string, string>([
-		['package.json', createPackageManifest()],
-		['README.md', '   \n'],
-		['AGENTS.md', '# Agents\n\nSmoke-test the root export.\n'],
-		['src/index.ts', 'export const ready = true\n'],
-	])
-	mockModule.createFileSystemSnapshot.mockResolvedValue(
-		createSnapshotFromFiles(files),
-	)
-	const emptyReadme = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
+		)
+		mockModule.createFileSystemSnapshot.mockResolvedValue({
+			read: vi.fn((path: string) => files.get(path) ?? null),
+		})
+		const result = await runRepoChecks({
+			workspace: {
+				async readFile(path: string) {
+					return files.get(path) ?? null
+				},
+				async glob() {
+					return Array.from(files.keys()).map((path) => ({
+						path,
+						type: 'file',
+					}))
+				},
 			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({
-					path,
-					type: 'file',
-				}))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-	})
-	expect(emptyReadme.ok).toBe(false)
-	expect(emptyReadme.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'docs',
-				ok: false,
-				message: expect.stringContaining('README.md is missing or empty'),
-			}),
-		]),
-	)
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+		})
+		expect([message, result.ok, result.results]).toEqual([
+			message,
+			false,
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'docs',
+					ok: false,
+					message: expect.stringContaining(message),
+				}),
+			]),
+		])
+	}
 })

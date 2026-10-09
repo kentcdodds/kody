@@ -1,5 +1,7 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -14,11 +16,6 @@ import {
 	createProviderNoWebsitesMessage,
 	createProviderPackageNotGrantedMessage,
 } from './errors.ts'
-import {
-	enableSecretProvidersForTests,
-	isSecretProvidersEnabled,
-	secretProvidersDisabledMessage,
-} from './flag.ts'
 import {
 	bindSecretProvider,
 	grantSecretProviderToPackage,
@@ -37,312 +34,52 @@ const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 const itemId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const canonicalRef = `i/${itemId}/password`
 const providerId = '1password'
-
-async function createHarness() {
-	clearProviderSecretCacheForTests()
-	const sqlite = new DatabaseSync(':memory:')
-	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const env = {
-		APP_DB: createD1FromSqlite(sqlite),
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	} as Env
-	seedUser(sqlite, { id: 1, stableUserId: 'user-owner' })
-	seedUser(sqlite, { id: 2, stableUserId: 'user-guest' })
-	await enableSecretProvidersForTests(env.APP_DB)
-	return { sqlite, env }
+const ownerId = 'user-owner'
+const doorSecretName = 'onePasswordServiceAccountToken'
+const notGrantedMessage = createProviderPackageNotGrantedMessage({
+	providerId,
+	canonicalRef,
+	packageName: 'deploy',
+	approvalUrl:
+		'https://kody.example/account/secret-providers/approve?provider=1password&ref=i%2Fbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb%2Fpassword&package_id=pkg-consumer&package=deploy',
+})
+const grantInput = {
+	providerId,
+	ref: canonicalRef,
+	packageId: 'pkg-consumer',
 }
 
-function seedUser(
-	sqlite: DatabaseSync,
-	input: { id: number; stableUserId: string },
-) {
+function seedUser(sqlite: DatabaseSync, id: number, stableUserId: string) {
 	sqlite
 		.prepare(
 			`INSERT INTO users (
 				id, username, email, stable_user_id, password_hash, email_verified_at
 			) VALUES (?, ?, ?, ?, 'x', CURRENT_TIMESTAMP)`,
 		)
-		.run(
-			input.id,
-			input.stableUserId,
-			`${input.stableUserId}@example.com`,
-			input.stableUserId,
-		)
+		.run(id, stableUserId, `${stableUserId}@example.com`, stableUserId)
 }
 
 function seedPackage(
 	sqlite: DatabaseSync,
-	input: { id: string; userId: string; kodyId: string },
+	id: string,
+	kodyId: string,
+	userId = ownerId,
 ) {
 	sqlite
 		.prepare(
-			`INSERT INTO saved_packages (
-				id, user_id, name, kody_id, description, source_id
-			) VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES (?, ?, ?, ?, '', ?)`,
 		)
-		.run(
-			input.id,
-			input.userId,
-			input.kodyId,
-			input.kodyId,
-			'',
-			`source-${input.id}`,
-		)
+		.run(id, userId, kodyId, kodyId, `source-${id}`)
 }
 
-async function seedDoorSecret(env: Env, userId: string) {
-	await saveSecret({
-		env,
-		userId,
-		scope: 'user',
-		name: 'onePasswordServiceAccountToken',
-		value: 'op-sa-token',
-	})
-}
-
-async function seedBinding(
-	env: Env,
-	input: { userId: string; packageId: string },
-) {
-	await env.APP_DB.prepare(
-		`INSERT INTO secret_provider_bindings (
-			user_id, provider_id, package_id, door_secret_name, config_json
-		) VALUES (?, ?, ?, ?, '{}')`,
-	)
-		.bind(
-			input.userId,
-			providerId,
-			input.packageId,
-			'onePasswordServiceAccountToken',
-		)
-		.run()
-}
-
-test('provider resolve grants, hosts, cache, owner execute, share owner binding, and fail-closed paths', async () => {
-	const { sqlite, env } = await createHarness()
-	const ownerId = 'user-owner'
-	const guestId = 'user-guest'
-	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
-	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
-	await seedDoorSecret(env, ownerId)
-	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-
-	let providerCalls = 0
-	const invokeProvider: SecretProviderInvoker = async (input) => {
-		providerCalls += 1
-		if (input.action === 'canonicalize') {
-			return { canonicalRef }
-		}
-		return {
-			value: 'item-password',
-			hosts: ['https://app.example.com/login'],
-		}
-	}
-
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: `op://Personal/${itemId}/password`,
-			authorityPackageId: 'pkg-consumer',
-			invokeProvider,
-		}),
-	).rejects.toThrow(
-		createProviderPackageNotGrantedMessage({
-			providerId,
-			canonicalRef,
-			packageName: 'deploy',
-			approvalUrl:
-				'https://kody.example/account/secret-providers/approve?provider=1password&ref=i%2Fbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb%2Fpassword&package_id=pkg-consumer&package=deploy',
-		}),
-	)
-	expect(providerCalls).toBe(0)
-
-	const ownerExecute = await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		provider: providerId,
-		ref: `op://Personal/${itemId}/password`,
-		invokeProvider,
-	})
-	expect(ownerExecute).toMatchObject({
-		provider: providerId,
-		canonicalRef,
-		value: 'item-password',
-		hosts: ['app.example.com'],
-	})
-	expect(providerCalls).toBe(1)
-
-	const cached = await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		provider: providerId,
-		ref: `i/${itemId}/password`,
-		invokeProvider,
-	})
-	expect(cached.value).toBe('item-password')
-	expect(providerCalls).toBe(1)
-
-	await grantSecretProviderToPackage({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
-	const granted = await inspectSecretProviderPackageGrant({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: `op://Personal/${itemId}/password`,
-		packageId: 'pkg-consumer',
-	})
-	expect(granted.alreadyGranted).toBe(true)
-
+/**
+ * Seeds the owner + guest accounts, the `op` provider package, the `deploy`
+ * consumer package, the door secret, and a provider binding.
+ */
+async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 	clearProviderSecretCacheForTests()
-	const packageUse = await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		provider: providerId,
-		ref: canonicalRef,
-		authorityPackageId: 'pkg-consumer',
-		invokeProvider,
-	})
-	expect(packageUse.value).toBe('item-password')
-	expect(providerCalls).toBe(2)
-
-	const shareInvoker: SecretProviderInvoker = async (input) => {
-		expect(input.ownerUserId).toBe(ownerId)
-		expect(input.doorSecretValue).toBe('op-sa-token')
-		return {
-			value: 'shared-password',
-			hosts: ['app.example.com'],
-		}
-	}
-	vi.spyOn(shareGrants, 'resolvePackageStorageOwnerUserId').mockResolvedValue(
-		ownerId,
-	)
-	clearProviderSecretCacheForTests()
-	const shared = await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: guestId,
-		provider: providerId,
-		ref: canonicalRef,
-		authorityPackageId: 'pkg-consumer',
-		invokeProvider: shareInvoker,
-	})
-	expect(shared.value).toBe('shared-password')
-
-	clearProviderSecretCacheForTests()
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			invokeProvider: async () => ({ value: 'x', hosts: [] }),
-		}),
-	).rejects.toThrow(createProviderNoWebsitesMessage(providerId))
-
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: 'op://Vault/Item/password',
-			invokeProvider: async () => ({ canonicalRef: 'not-canonical' }),
-		}),
-	).rejects.toThrow(createBrokenProviderRefMessage(providerId))
-
-	await env.APP_DB.prepare(`DELETE FROM secret_entries WHERE name = ?`)
-		.bind('onePasswordServiceAccountToken')
-		.run()
-	clearProviderSecretCacheForTests()
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			invokeProvider,
-		}),
-	).rejects.toThrow(
-		createMissingProviderDoorSecretMessage({
-			providerId,
-			doorSecretName: 'onePasswordServiceAccountToken',
-		}),
-	)
-})
-
-test('revoke drops a package grant before the next resolve', async () => {
-	const { sqlite, env } = await createHarness()
-	const ownerId = 'user-owner'
-	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
-	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
-	await seedDoorSecret(env, ownerId)
-	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-	await grantSecretProviderToPackage({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
-	await revokeSecretProviderGrant({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
-	const granted = await inspectSecretProviderPackageGrant({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
-	expect(granted.alreadyGranted).toBe(false)
-	let providerCalls = 0
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			authorityPackageId: 'pkg-consumer',
-			invokeProvider: async () => {
-				providerCalls += 1
-				return { value: 'should-not-resolve', hosts: ['app.example.com'] }
-			},
-		}),
-	).rejects.toThrow(
-		createProviderPackageNotGrantedMessage({
-			providerId,
-			canonicalRef,
-			packageName: 'deploy',
-			approvalUrl:
-				'https://kody.example/account/secret-providers/approve?provider=1password&ref=i%2Fbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb%2Fpassword&package_id=pkg-consumer&package=deploy',
-		}),
-	)
-	expect(providerCalls).toBe(0)
-})
-
-test('flag off treats provider placeholders as unsupported and never calls the provider', async () => {
-	clearProviderSecretCacheForTests()
+	const userId = input.userId ?? ownerId
 	const sqlite = new DatabaseSync(':memory:')
 	applyRepositoryMigrations(sqlite, migrationsDirectory)
 	const env = {
@@ -350,253 +87,179 @@ test('flag off treats provider placeholders as unsupported and never calls the p
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
 	} as Env
-	const ownerId = 'user-owner'
-	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
-	await seedDoorSecret(env, ownerId)
-	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-	let providerCalls = 0
-	await expect(
-		resolveProviderSecret({
+	seedUser(sqlite, 1, ownerId)
+	seedUser(sqlite, 2, 'user-guest')
+	seedPackage(sqlite, 'pkg-consumer', 'deploy', userId)
+	if (input.bound !== false) {
+		seedPackage(sqlite, 'pkg-provider', 'op', userId)
+		await saveSecret({
 			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			invokeProvider: async () => {
-				providerCalls += 1
-				return { value: 'should-not-resolve', hosts: ['app.example.com'] }
-			},
-		}),
-	).rejects.toThrow(secretProvidersDisabledMessage)
-	expect(providerCalls).toBe(0)
-})
+			userId,
+			scope: 'user',
+			name: doorSecretName,
+			value: 'op-sa-token',
+		})
+		await env.APP_DB.prepare(
+			`INSERT INTO secret_provider_bindings (
+				user_id, provider_id, package_id, door_secret_name, config_json
+			) VALUES (?, ?, 'pkg-provider', ?, '{}')`,
+		)
+			.bind(userId, providerId, doorSecretName)
+			.run()
+	}
+	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
 
-test('flag evaluation is fail-closed when the account cannot be resolved', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	applyRepositoryMigrations(sqlite, migrationsDirectory)
-	const db = createD1FromSqlite(sqlite)
-	await enableSecretProvidersForTests(db)
+	const invokeProvider = vi.fn<SecretProviderInvoker>(async (call) =>
+		call.action === 'canonicalize'
+			? { canonicalRef }
+			: { value: 'item-password', hosts: ['https://app.example.com/login'] },
+	)
+	return {
+		sqlite,
+		env,
+		invokeProvider,
+		resolve: (
+			overrides: Partial<Parameters<typeof resolveProviderSecret>[0]> = {},
+		) =>
+			resolveProviderSecret({
+				env,
+				baseUrl: 'https://kody.example',
+				userId,
+				request: sessionRequestContext(userId),
+				provider: providerId,
+				ref: canonicalRef,
+				invokeProvider,
+				...overrides,
+			}),
+		grant: () => grantSecretProviderToPackage({ env, userId, ...grantInput }),
+		isGranted: async (ref = canonicalRef) =>
+			(
+				await inspectSecretProviderPackageGrant({
+					env,
+					userId,
+					...grantInput,
+					ref,
+				})
+			).alreadyGranted,
+		bind: (packageId: string) =>
+			bindSecretProvider({
+				env,
+				baseUrl: 'https://kody.example',
+				userId,
+				providerId,
+				packageId,
+				doorSecretName,
+			}),
+	}
+}
+
+test('provider resolve grants, hosts, cache, owner execute, share owner binding, and fail-closed paths', async () => {
+	const h = await createHarness()
+	const opRef = `op://Personal/${itemId}/password`
 
 	await expect(
-		isSecretProvidersEnabled({ db, userId: null, stableUserId: null }),
-	).resolves.toBe(false)
-	await expect(
-		isSecretProvidersEnabled({
-			db,
-			stableUserId: 'missing-account',
-		}),
-	).resolves.toBe(false)
+		h.resolve({ ref: opRef, authorityPackageId: 'pkg-consumer' }),
+	).rejects.toThrow(notGrantedMessage)
+	expect(h.invokeProvider).toHaveBeenCalledTimes(0)
 
-	seedUser(sqlite, { id: 10, stableUserId: 'user-owner' })
-	await expect(
-		isSecretProvidersEnabled({
-			db,
-			stableUserId: 'user-owner',
-		}),
-	).resolves.toBe(true)
+	await expect(h.resolve({ ref: opRef })).resolves.toMatchObject({
+		provider: providerId,
+		canonicalRef,
+		value: 'item-password',
+		hosts: ['app.example.com'],
+	})
+	expect(h.invokeProvider).toHaveBeenCalledTimes(1)
+	const cached = await h.resolve()
+	expect(cached.value).toBe('item-password')
+	expect(h.invokeProvider).toHaveBeenCalledTimes(1)
+
+	await h.grant()
+	expect(await h.isGranted(opRef)).toBe(true)
+	clearProviderSecretCacheForTests()
+	const packageUse = await h.resolve({ authorityPackageId: 'pkg-consumer' })
+	expect(packageUse.value).toBe('item-password')
+	expect(h.invokeProvider).toHaveBeenCalledTimes(2)
+
+	vi.spyOn(shareGrants, 'resolvePackageStorageOwner').mockResolvedValue(
+		ownerIdFromStored(ownerId),
+	)
+	clearProviderSecretCacheForTests()
+	const shared = await h.resolve({
+		userId: 'user-guest',
+		authorityPackageId: 'pkg-consumer',
+		invokeProvider: async (call) => {
+			expect(call.ownerUserId).toBe(ownerId)
+			expect(call.doorSecretValue).toBe('op-sa-token')
+			return { value: 'shared-password', hosts: ['app.example.com'] }
+		},
+	})
+	expect(shared.value).toBe('shared-password')
 
 	clearProviderSecretCacheForTests()
-	const env = {
-		APP_DB: db,
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	} as Env
-	seedPackage(sqlite, { id: 'pkg-provider', userId: 'ghost', kodyId: 'op' })
-	await seedDoorSecret(env, 'ghost')
-	await seedBinding(env, { userId: 'ghost', packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-	let providerCalls = 0
 	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: 'ghost',
-			provider: providerId,
-			ref: canonicalRef,
-			invokeProvider: async () => {
-				providerCalls += 1
-				return { value: 'should-not-resolve', hosts: ['app.example.com'] }
-			},
+		h.resolve({ invokeProvider: async () => ({ value: 'x', hosts: [] }) }),
+	).rejects.toThrow(createProviderNoWebsitesMessage(providerId))
+	await expect(
+		h.resolve({
+			ref: 'op://Vault/Item/password',
+			invokeProvider: async () => ({ canonicalRef: 'not-canonical' }),
 		}),
-	).rejects.toThrow(secretProvidersDisabledMessage)
-	expect(providerCalls).toBe(0)
+	).rejects.toThrow(createBrokenProviderRefMessage(providerId))
+
+	h.sqlite
+		.prepare(`DELETE FROM secret_entries WHERE name = ?`)
+		.run(doorSecretName)
+	clearProviderSecretCacheForTests()
+	await expect(h.resolve()).rejects.toThrow(
+		createMissingProviderDoorSecretMessage({ providerId, doorSecretName }),
+	)
+})
+
+test('revoke drops a package grant before the next resolve', async () => {
+	const h = await createHarness()
+	await h.grant()
+	await revokeSecretProviderGrant({
+		env: h.env,
+		userId: ownerId,
+		...grantInput,
+	})
+	expect(await h.isGranted()).toBe(false)
+	await expect(
+		h.resolve({ authorityPackageId: 'pkg-consumer' }),
+	).rejects.toThrow(notGrantedMessage)
+	expect(h.invokeProvider).not.toHaveBeenCalled()
 })
 
 test('rebind to a different package drops grants and the provider cache', async () => {
-	const { sqlite, env } = await createHarness()
-	const ownerId = 'user-owner'
-	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
-	seedPackage(sqlite, { id: 'pkg-provider-2', userId: ownerId, kodyId: 'op-2' })
-	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
-	await seedDoorSecret(env, ownerId)
-	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-	await grantSecretProviderToPackage({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
+	const h = await createHarness()
+	seedPackage(h.sqlite, 'pkg-provider-2', 'op-2')
+	await h.grant()
+	await h.resolve()
+	expect(h.invokeProvider).toHaveBeenCalledTimes(1)
 
-	let providerCalls = 0
-	const invokeProvider: SecretProviderInvoker = async (input) => {
-		providerCalls += 1
-		if (input.action === 'canonicalize') {
-			return { canonicalRef }
-		}
-		return {
-			value: 'item-password',
-			hosts: ['app.example.com'],
-		}
-	}
-	await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		provider: providerId,
-		ref: canonicalRef,
-		invokeProvider,
-	})
-	expect(providerCalls).toBe(1)
+	await h.bind('pkg-provider')
+	expect(await h.isGranted()).toBe(true)
+	await h.resolve()
+	expect(h.invokeProvider).toHaveBeenCalledTimes(2)
 
-	await bindSecretProvider({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		providerId,
-		packageId: 'pkg-provider',
-		doorSecretName: 'onePasswordServiceAccountToken',
-	})
-	expect(
-		(
-			await inspectSecretProviderPackageGrant({
-				env,
-				userId: ownerId,
-				providerId,
-				ref: canonicalRef,
-				packageId: 'pkg-consumer',
-			})
-		).alreadyGranted,
-	).toBe(true)
-	await resolveProviderSecret({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		provider: providerId,
-		ref: canonicalRef,
-		invokeProvider,
-	})
-	expect(providerCalls).toBe(2)
-
-	await bindSecretProvider({
-		env,
-		baseUrl: 'https://kody.example',
-		userId: ownerId,
-		providerId,
-		packageId: 'pkg-provider-2',
-		doorSecretName: 'onePasswordServiceAccountToken',
-	})
-	expect(
-		(
-			await inspectSecretProviderPackageGrant({
-				env,
-				userId: ownerId,
-				providerId,
-				ref: canonicalRef,
-				packageId: 'pkg-consumer',
-			})
-		).alreadyGranted,
-	).toBe(false)
+	await h.bind('pkg-provider-2')
+	expect(await h.isGranted()).toBe(false)
 	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			authorityPackageId: 'pkg-consumer',
-			invokeProvider,
-		}),
-	).rejects.toThrow(
-		createProviderPackageNotGrantedMessage({
-			providerId,
-			canonicalRef,
-			packageName: 'deploy',
-			approvalUrl:
-				'https://kody.example/account/secret-providers/approve?provider=1password&ref=i%2Fbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb%2Fpassword&package_id=pkg-consumer&package=deploy',
-		}),
-	)
-	expect(providerCalls).toBe(2)
+		h.resolve({ authorityPackageId: 'pkg-consumer' }),
+	).rejects.toThrow(notGrantedMessage)
+	expect(h.invokeProvider).toHaveBeenCalledTimes(2)
 })
 
-test('unbind drops grants and refuses the next resolve', async () => {
-	const { sqlite, env } = await createHarness()
-	const ownerId = 'user-owner'
-	seedPackage(sqlite, { id: 'pkg-provider', userId: ownerId, kodyId: 'op' })
-	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
-	await seedDoorSecret(env, ownerId)
-	await seedBinding(env, { userId: ownerId, packageId: 'pkg-provider' })
-	vi.mocked(readDeclaredSecretProviderId).mockResolvedValue(providerId)
-	await grantSecretProviderToPackage({
-		env,
-		userId: ownerId,
-		providerId,
-		ref: canonicalRef,
-		packageId: 'pkg-consumer',
-	})
-	await unbindSecretProvider({
-		env,
-		userId: ownerId,
-		providerId,
-	})
-	await expect(
-		inspectSecretProviderPackageGrant({
-			env,
-			userId: ownerId,
-			providerId,
-			ref: canonicalRef,
-			packageId: 'pkg-consumer',
-		}),
-	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
-	let providerCalls = 0
-	await expect(
-		resolveProviderSecret({
-			env,
-			baseUrl: 'https://kody.example',
-			userId: ownerId,
-			provider: providerId,
-			ref: canonicalRef,
-			invokeProvider: async () => {
-				providerCalls += 1
-				return { value: 'should-not-resolve', hosts: ['app.example.com'] }
-			},
-		}),
-	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
-	expect(providerCalls).toBe(0)
-})
+test('unbind drops grants and refuses the next resolve; grant and inspect require a binding', async () => {
+	const h = await createHarness()
+	await h.grant()
+	await unbindSecretProvider({ env: h.env, userId: ownerId, providerId })
+	const missingBinding = createMissingProviderBindingMessage(providerId)
+	await expect(h.isGranted()).rejects.toThrow(missingBinding)
+	await expect(h.resolve()).rejects.toThrow(missingBinding)
+	expect(h.invokeProvider).not.toHaveBeenCalled()
 
-test('grant and inspect require a binding before offering Allow', async () => {
-	const { sqlite, env } = await createHarness()
-	const ownerId = 'user-owner'
-	seedPackage(sqlite, { id: 'pkg-consumer', userId: ownerId, kodyId: 'deploy' })
-	await expect(
-		grantSecretProviderToPackage({
-			env,
-			userId: ownerId,
-			providerId,
-			ref: canonicalRef,
-			packageId: 'pkg-consumer',
-		}),
-	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
-	await expect(
-		inspectSecretProviderPackageGrant({
-			env,
-			userId: ownerId,
-			providerId,
-			ref: canonicalRef,
-			packageId: 'pkg-consumer',
-		}),
-	).rejects.toThrow(createMissingProviderBindingMessage(providerId))
+	const unbound = await createHarness({ bound: false })
+	await expect(unbound.grant()).rejects.toThrow(missingBinding)
+	await expect(unbound.isGranted()).rejects.toThrow(missingBinding)
 })

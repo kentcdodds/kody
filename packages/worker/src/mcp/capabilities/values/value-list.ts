@@ -11,6 +11,7 @@ export const valueListCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
 		name: 'valueList',
+		orgPermission: 'package:read',
 		description:
 			'List existing persisted leftovers. When scope is omitted, results include every accessible scope in precedence order.',
 		keywords: ['config', 'list', 'metadata'],

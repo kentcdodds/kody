@@ -34,6 +34,8 @@ test('agent discovery documents describe the MCP server and public pages', async
 	)
 	expect(robots).toContain('Disallow: /account')
 	expect(robots).toContain('Disallow: /auth/')
+	expect(robots).toContain('Disallow: /connect/secrets')
+	expect(robots).toContain('Disallow: /connect/secret-set')
 	expect(robots).not.toContain('Disallow: /auth.md')
 	expect(robots).toContain(`Sitemap: ${origin}/sitemap.xml`)
 
@@ -44,6 +46,7 @@ test('agent discovery documents describe the MCP server and public pages', async
 	expect(sitemap).toContain(`<loc>${origin}/</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/discord</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/faq</loc>`)
+	expect(sitemap).toContain(`<loc>${origin}/case-studies</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/support</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs</loc>`)
 	expect(sitemap).toContain(`<loc>${origin}/docs/connect</loc>`)
@@ -101,6 +104,9 @@ test('agent discovery documents describe the MCP server and public pages', async
 	)
 	expect(securityTxt).toContain('Expires: 2027-08-18T20:00:00.000Z')
 	expect(securityTxt).toContain(`Canonical: ${origin}/.well-known/security.txt`)
+	expect(securityTxt).toContain(
+		'Policy: https://raw.githubusercontent.com/kentcdodds/kody/main/SECURITY.md',
+	)
 
 	expect(
 		getAgentSkill('connect-kody')?.body.startsWith('# Connect Kody\n'),

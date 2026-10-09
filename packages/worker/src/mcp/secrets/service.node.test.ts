@@ -1,8 +1,10 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import {
 	createMissingSecretMessage,
@@ -21,535 +23,71 @@ import {
 	updateUserSecretsForPackageAtomically,
 } from './service.ts'
 import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-type SecretBucketRow = {
-	id: string
-	user_id: string
-	scope: 'session' | 'package' | 'user'
-	binding_key: string
-	expires_at: string | null
-	created_at: string
-	updated_at: string
+const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
+const userId = 'user-123'
+const executeContext = ctx()
+
+function ctx(packageId: string | null = null, sessionId: string | null = null) {
+	return { sessionId, appId: null, packageId, storageId: packageId }
 }
 
-type SecretEntryRow = {
-	bucket_id: string
-	name: string
-	description: string
-	encrypted_value: string
-	allowed_hosts: string
-	allowed_packages: string
-	expires_at: string | null
-	created_at: string
-	updated_at: string
-}
-
-function createSecretTestDb(
-	initialRows: {
-		users?: Array<{ email: string; plan: string | null }>
-		/** Pre-seeded secret count for entitlement ceiling tests (avoids loops). */
-		seededSecretCount?: number
-		seededSecretUserId?: string
-	} = {},
+async function createSecretEnv(
+	input: { email?: string; plan?: string; seededSecretCount?: number } = {},
 ) {
-	const buckets = new Map<string, SecretBucketRow>()
-	const entries = new Map<string, SecretEntryRow>()
-	const users = new Map(
-		(initialRows.users ?? []).map((row) => [row.email.toLowerCase(), row.plan]),
-	)
-
-	function getBucketKey(userId: string, scope: string, bindingKey: string) {
-		return `${userId}:${scope}:${bindingKey}`
-	}
-
-	function getEntryKey(bucketId: string, name: string) {
-		return `${bucketId}:${name}`
-	}
-
-	const seededCount = initialRows.seededSecretCount ?? 0
-	const seededUserId = initialRows.seededSecretUserId
-	if (seededCount > 0 && seededUserId) {
-		const now = '2026-04-18T00:00:00.000Z'
-		const bucketId = `seeded-bucket-${seededUserId}`
-		buckets.set(getBucketKey(seededUserId, 'user', ''), {
-			id: bucketId,
-			user_id: seededUserId,
-			scope: 'user',
-			binding_key: '',
-			expires_at: null,
-			created_at: now,
-			updated_at: now,
-		})
-		for (let index = 0; index < seededCount; index += 1) {
-			const name = `seeded-secret-${index}`
-			entries.set(getEntryKey(bucketId, name), {
-				bucket_id: bucketId,
-				name,
-				description: '',
-				encrypted_value: `seeded-value-${index}`,
-				allowed_hosts: '[]',
-				allowed_packages: '[]',
-				expires_at: null,
-				created_at: now,
-				updated_at: now,
-			})
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	if (input.email) {
+		const stableUserId = testStableUserIdFromEmail(input.email)
+		sqlite
+			.prepare(
+				`INSERT INTO users (id, username, email, password_hash, stable_user_id, plan)
+				 VALUES (1, 'planned', ?, 'hash', ?, ?)`,
+			)
+			.run(input.email, stableUserId, input.plan ?? null)
+		if (input.seededSecretCount) {
+			sqlite
+				.prepare(
+					`INSERT INTO secret_buckets (id, user_id, scope, binding_key) VALUES ('seeded', ?, 'user', '')`,
+				)
+				.run(stableUserId)
+			const insertEntry = sqlite.prepare(
+				`INSERT INTO secret_entries (bucket_id, name, encrypted_value) VALUES ('seeded', ?, 'seeded-value')`,
+			)
+			for (let index = 0; index < input.seededSecretCount; index += 1) {
+				insertEntry.run(`seeded-secret-${index}`)
+			}
 		}
 	}
-
-	const db = {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					const statement = {
-						async first<T>() {
-							if (
-								normalizedQuery.includes('select plan, stripe_plan') &&
-								normalizedQuery.includes('from users')
-							) {
-								const [email] = params as Array<string>
-								const plan = users.get(String(email).toLowerCase())
-								if (plan === undefined) return null
-								return {
-									plan,
-									stripe_plan: null,
-									entitlement_ladder: 'public',
-								} as T
-							}
-							if (
-								normalizedQuery.includes('from secret_entries se') &&
-								normalizedQuery.includes('join secret_buckets sb')
-							) {
-								const [userId, now] = params as Array<string>
-								let count = 0
-								for (const entry of entries.values()) {
-									const bucket = Array.from(buckets.values()).find(
-										(candidate) => candidate.id === entry.bucket_id,
-									)
-									if (
-										bucket &&
-										bucket.user_id === userId &&
-										(bucket.expires_at == null || bucket.expires_at > now)
-									) {
-										count += 1
-									}
-								}
-								return { count } as T
-							}
-							if (
-								normalizedQuery.startsWith(
-									'select id, user_id, scope, binding_key',
-								) &&
-								normalizedQuery.includes('from secret_buckets') &&
-								normalizedQuery.includes('binding_key = ?')
-							) {
-								const [userId, scope, bindingKey, now] = params as Array<string>
-								const bucket =
-									buckets.get(getBucketKey(userId, scope, bindingKey)) ?? null
-								if (
-									bucket &&
-									(bucket.expires_at == null || bucket.expires_at > now)
-								) {
-									return { ...bucket } as T
-								}
-								return null
-							}
-							if (
-								normalizedQuery.startsWith(
-									'select bucket_id, name, description',
-								) &&
-								normalizedQuery.includes('from secret_entries') &&
-								normalizedQuery.includes('where bucket_id = ? and name = ?')
-							) {
-								const [bucketId, name] = params as Array<string>
-								const entry = entries.get(getEntryKey(bucketId, name)) ?? null
-								return entry ? ({ ...entry } as T) : null
-							}
-							return null
-						},
-						async all<T>() {
-							if (
-								normalizedQuery.startsWith(
-									'select id, user_id, scope, binding_key',
-								) &&
-								normalizedQuery.includes('from secret_buckets') &&
-								normalizedQuery.includes('order by binding_key')
-							) {
-								const [userId, scope, now] = params as Array<string>
-								const results = Array.from(buckets.values())
-									.filter(
-										(bucket) =>
-											bucket.user_id === userId &&
-											bucket.scope === scope &&
-											(bucket.expires_at == null || bucket.expires_at > now),
-									)
-									.sort((left, right) =>
-										left.binding_key.localeCompare(right.binding_key),
-									)
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								normalizedQuery.includes('from secret_buckets b') &&
-								normalizedQuery.includes('join secret_entries e') &&
-								normalizedQuery.includes('e.name = ?')
-							) {
-								const [userId, name, now] = params as Array<string>
-								const results = Array.from(entries.values())
-									.flatMap((entry) => {
-										const bucket = Array.from(buckets.values()).find(
-											(candidate) => candidate.id === entry.bucket_id,
-										)
-										if (
-											!bucket ||
-											bucket.user_id !== userId ||
-											entry.name !== name
-										) {
-											return []
-										}
-										if (bucket.expires_at != null && bucket.expires_at <= now) {
-											return []
-										}
-										if (entry.expires_at != null && entry.expires_at <= now) {
-											return []
-										}
-										return [
-											{
-												scope: bucket.scope,
-												binding_key: bucket.binding_key,
-												name: entry.name,
-												entry_expires_at: entry.expires_at,
-												bucket_expires_at: bucket.expires_at,
-											},
-										]
-									})
-									.sort(
-										(left, right) =>
-											left.scope.localeCompare(right.scope) ||
-											left.binding_key.localeCompare(right.binding_key),
-									)
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								normalizedQuery.includes('from secret_buckets b') &&
-								normalizedQuery.includes("b.scope = 'user'")
-							) {
-								const [userId, now] = params as Array<string>
-								const results = Array.from(entries.values())
-									.flatMap((entry) => {
-										const bucket = Array.from(buckets.values()).find(
-											(candidate) => candidate.id === entry.bucket_id,
-										)
-										if (
-											!bucket ||
-											bucket.user_id !== userId ||
-											bucket.scope !== 'user'
-										) {
-											return []
-										}
-										if (bucket.expires_at != null && bucket.expires_at <= now) {
-											return []
-										}
-										return [
-											{
-												scope: bucket.scope,
-												binding_key: bucket.binding_key,
-												name: entry.name,
-												description: entry.description,
-												allowed_hosts: entry.allowed_hosts,
-												allowed_packages: entry.allowed_packages,
-												created_at: entry.created_at,
-												updated_at: entry.updated_at,
-												entry_expires_at: entry.expires_at,
-												bucket_expires_at: bucket.expires_at,
-											},
-										]
-									})
-									.sort((left, right) => left.name.localeCompare(right.name))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								normalizedQuery.includes('from secret_buckets b') &&
-								normalizedQuery.includes("b.scope = 'package'")
-							) {
-								const [userId, ...packageIdsAndNow] = params as Array<string>
-								const packageIds = new Set(packageIdsAndNow.slice(0, -1))
-								const results = Array.from(entries.values())
-									.flatMap((entry) => {
-										const bucket = Array.from(buckets.values()).find(
-											(candidate) => candidate.id === entry.bucket_id,
-										)
-										if (
-											!bucket ||
-											bucket.user_id !== userId ||
-											bucket.scope !== 'package' ||
-											!packageIds.has(bucket.binding_key)
-										) {
-											return []
-										}
-										return [
-											{
-												scope: bucket.scope,
-												binding_key: bucket.binding_key,
-												name: entry.name,
-												description: entry.description,
-												allowed_hosts: entry.allowed_hosts,
-												allowed_packages: entry.allowed_packages,
-												created_at: entry.created_at,
-												updated_at: entry.updated_at,
-												entry_expires_at: entry.expires_at,
-												bucket_expires_at: bucket.expires_at,
-											},
-										]
-									})
-									.sort((left, right) => left.name.localeCompare(right.name))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							if (
-								normalizedQuery.startsWith(
-									'select ? as scope, ? as binding_key, name, description, allowed_hosts, allowed_packages, created_at, updated_at, expires_at as entry_expires_at, ? as bucket_expires_at from secret_entries',
-								)
-							) {
-								const [scope, bindingKey, expiresAt, bucketId] =
-									params as Array<string | null>
-								const results = Array.from(entries.values())
-									.filter((entry) => entry.bucket_id === bucketId)
-									.sort((left, right) => left.name.localeCompare(right.name))
-									.map((entry) => ({
-										scope,
-										binding_key: bindingKey,
-										name: entry.name,
-										description: entry.description,
-										allowed_hosts: entry.allowed_hosts,
-										allowed_packages: entry.allowed_packages,
-										created_at: entry.created_at,
-										updated_at: entry.updated_at,
-										entry_expires_at: entry.expires_at,
-										bucket_expires_at: expiresAt,
-									}))
-								return { results: results as Array<T>, meta: { changes: 0 } }
-							}
-							return { results: [] as Array<T>, meta: { changes: 0 } }
-						},
-						async run() {
-							if (
-								normalizedQuery.includes(
-									'update secret_entries set description = case name',
-								)
-							) {
-								// Multi-secret atomic CASE update bind order:
-								// [name, description]*N, [name, encrypted]*N, updatedAt,
-								// names*N, userId, packageId, userId, names*N, packageId, expectedCount
-								const expectedCount = Number(params[params.length - 1])
-								const packageId = String(params[params.length - 2])
-								const namesStart = expectedCount * 4 + 1
-								const names = params
-									.slice(namesStart, namesStart + expectedCount)
-									.map(String)
-								const userId = String(params[namesStart + expectedCount])
-								const updatedAt = String(params[expectedCount * 4])
-								const descriptions = new Map<string, string>()
-								const encryptedValues = new Map<string, string>()
-								for (let index = 0; index < expectedCount; index += 1) {
-									descriptions.set(
-										String(params[index * 2]),
-										String(params[index * 2 + 1]),
-									)
-									encryptedValues.set(
-										String(params[expectedCount * 2 + index * 2]),
-										String(params[expectedCount * 2 + index * 2 + 1]),
-									)
-								}
-								const bucket = buckets.get(getBucketKey(userId, 'user', ''))
-								if (!bucket) return { meta: { changes: 0 } }
-								let approvedCount = 0
-								for (const name of names) {
-									const entry = entries.get(getEntryKey(bucket.id, name))
-									if (!entry) continue
-									const allowedPackages = JSON.parse(
-										entry.allowed_packages,
-									) as Array<string>
-									if (allowedPackages.includes(packageId)) {
-										approvedCount += 1
-									}
-								}
-								if (approvedCount !== expectedCount) {
-									return { meta: { changes: 0 } }
-								}
-								for (const name of names) {
-									const entry = entries.get(getEntryKey(bucket.id, name))
-									if (!entry) continue
-									entry.description =
-										descriptions.get(name) ?? entry.description
-									entry.encrypted_value =
-										encryptedValues.get(name) ?? entry.encrypted_value
-									entry.updated_at = updatedAt
-								}
-								return { meta: { changes: expectedCount } }
-							}
-							if (
-								normalizedQuery.startsWith(
-									'update secret_entries set description = ?',
-								)
-							) {
-								const [
-									description,
-									encryptedValue,
-									updatedAt,
-									name,
-									userId,
-									packageId,
-								] = params as Array<string>
-								const bucket = buckets.get(getBucketKey(userId, 'user', ''))
-								const entry = bucket
-									? entries.get(getEntryKey(bucket.id, name))
-									: null
-								const allowedPackages = entry
-									? (JSON.parse(entry.allowed_packages) as Array<string>)
-									: []
-								if (!entry || !allowedPackages.includes(packageId)) {
-									return { meta: { changes: 0 } }
-								}
-								entry.description = description
-								entry.encrypted_value = encryptedValue
-								entry.updated_at = updatedAt
-								return { meta: { changes: 1 } }
-							}
-							if (normalizedQuery.startsWith('insert into secret_buckets')) {
-								const [
-									id,
-									userId,
-									scope,
-									bindingKey,
-									expiresAt,
-									createdAt,
-									updatedAt,
-								] = params as Array<string | null>
-								const key = getBucketKey(
-									String(userId),
-									String(scope),
-									String(bindingKey),
-								)
-								const existing = buckets.get(key)
-								buckets.set(key, {
-									id: existing?.id ?? String(id),
-									user_id: String(userId),
-									scope: String(scope) as SecretBucketRow['scope'],
-									binding_key: String(bindingKey),
-									expires_at: expiresAt == null ? null : String(expiresAt),
-									created_at: existing?.created_at ?? String(createdAt),
-									updated_at: String(updatedAt),
-								})
-								return { meta: { changes: 1 } }
-							}
-							if (normalizedQuery.startsWith('insert into secret_entries')) {
-								const [
-									bucketId,
-									name,
-									description,
-									encryptedValue,
-									allowedHosts,
-									allowedPackages,
-									expiresAt,
-									createdAt,
-									updatedAt,
-								] = params as Array<string | null>
-								const key = getEntryKey(String(bucketId), String(name))
-								const existing = entries.get(key)
-								entries.set(key, {
-									bucket_id: String(bucketId),
-									name: String(name),
-									description: String(description),
-									encrypted_value: String(encryptedValue),
-									allowed_hosts: String(allowedHosts),
-									allowed_packages: String(allowedPackages),
-									expires_at: expiresAt == null ? null : String(expiresAt),
-									created_at: existing?.created_at ?? String(createdAt),
-									updated_at: String(updatedAt),
-								})
-								return { meta: { changes: 1 } }
-							}
-							return { meta: { changes: 0 } }
-						},
-					}
-					return statement
-				},
-			}
+	return {
+		sqlite,
+		env: {
+			APP_DB: createD1FromSqlite(sqlite),
+			COOKIE_SECRET: 'test-cookie-secret',
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+			...createInMemoryUserMeterEnv().env,
 		},
-		async batch(
-			statements: Array<{ run: () => Promise<{ meta: { changes: number } }> }>,
-		) {
-			const snapshotBuckets = new Map(
-				Array.from(buckets.entries()).map(([key, value]) => [
-					key,
-					{ ...value },
-				]),
-			)
-			const snapshotEntries = new Map(
-				Array.from(entries.entries()).map(([key, value]) => [
-					key,
-					{ ...value },
-				]),
-			)
-			try {
-				const results = []
-				for (const statement of statements) {
-					results.push(await statement.run())
-				}
-				return results
-			} catch (error) {
-				buckets.clear()
-				for (const [key, value] of snapshotBuckets) {
-					buckets.set(key, value)
-				}
-				entries.clear()
-				for (const [key, value] of snapshotEntries) {
-					entries.set(key, value)
-				}
-				throw error
-			}
-		},
-	} as unknown as D1Database
-
-	function corruptUserSecret(userId: string, name: string) {
-		const bucket = buckets.get(getBucketKey(userId, 'user', ''))
-		if (!bucket) throw new Error('user bucket not found')
-		const entry = entries.get(getEntryKey(bucket.id, name))
-		if (!entry) throw new Error('secret entry not found')
-		entry.encrypted_value = 'not-valid-ciphertext'
 	}
-
-	return { db, corruptUserSecret }
 }
 
-test('resolveSecret returns the first scope hit in precedence order', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	const userId = 'user-123'
-	const secretName = 'shared-secret'
-	const storageContext = {
-		sessionId: 'session-abc',
-		appId: null,
-		packageId: 'package-xyz',
-		storageId: 'package-xyz',
-	}
+function rejection(promise: Promise<unknown>) {
+	return promise.then(
+		() => null,
+		(thrown: unknown) => thrown,
+	)
+}
 
-	await saveSecret({
-		env,
-		userId,
-		scope: 'user',
-		name: secretName,
-		value: 'user-value',
-	})
+test('resolveSecret returns the first scope hit in precedence order and ignores a corrupted lower scope', async () => {
+	const { env, sqlite } = await createSecretEnv()
+	const name = 'shared-secret'
+	const storageContext = ctx('package-xyz', 'session-abc')
+	await saveSecret({ env, userId, scope: 'user', name, value: 'user-value' })
 	await saveSecret({
 		env,
 		userId,
 		scope: 'package',
-		name: secretName,
+		name,
 		value: 'package-value',
 		storageContext,
 	})
@@ -557,93 +95,59 @@ test('resolveSecret returns the first scope hit in precedence order', async () =
 		env,
 		userId,
 		scope: 'session',
-		name: secretName,
+		name,
 		value: 'session-value',
 		storageContext,
 		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
 	})
-
-	const resolved = await resolveSecret({
-		env,
-		userId,
-		name: secretName,
-		storageContext,
-	})
-
-	expect(resolved).toEqual({
+	const sessionHit = {
 		found: true,
 		value: 'session-value',
 		scope: 'session',
 		allowedHosts: [],
 		allowedPackages: [],
-	})
+	}
+	await expect(
+		resolveSecret({ env, userId, name, storageContext }),
+	).resolves.toEqual(sessionHit)
+
+	sqlite
+		.prepare(
+			`UPDATE secret_entries SET encrypted_value = 'not-valid-ciphertext'
+			 WHERE name = ? AND bucket_id IN (SELECT id FROM secret_buckets WHERE scope = 'user')`,
+		)
+		.run(name)
+	await expect(
+		resolveSecret({ env, userId, name, scope: 'user' }),
+	).rejects.toThrow('Unable to decrypt secret value.')
+	await expect(
+		resolveSecret({ env, userId, name, storageContext }),
+	).resolves.toEqual(sessionHit)
 })
 
 test('saveSecret rejects unavailable scoped storage as McpCallerError', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	const { env } = await createSecretEnv()
+	for (const scope of ['session', 'package'] as const) {
+		await expect(
+			saveSecret({
+				env,
+				userId,
+				scope,
+				name: 'token',
+				value: `missing-${scope}`,
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			}),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof McpCallerError &&
+				error.message ===
+					`Secret scope "${scope}" is unavailable in this context.`,
+		)
 	}
-
-	await expect(
-		saveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'session',
-			name: 'token',
-			value: 'missing-session',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-			},
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message ===
-				'Secret scope "session" is unavailable in this context.',
-	)
-
-	await expect(
-		saveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'package',
-			name: 'token',
-			value: 'missing-package',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-			},
-		}),
-	).rejects.toSatisfy(
-		(error: unknown) =>
-			error instanceof McpCallerError &&
-			error.message ===
-				'Secret scope "package" is unavailable in this context.',
-	)
 })
 
 test('listSecrets from execute lists caller-owned package metadata without weakening resolve', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	const userId = 'user-123'
-	const otherUserId = 'user-other'
-	const executeContext = {
-		sessionId: null,
-		appId: null,
-		packageId: null,
-		storageId: null,
-	}
+	const { env } = await createSecretEnv()
 	await saveSecret({
 		env,
 		userId,
@@ -651,58 +155,50 @@ test('listSecrets from execute lists caller-owned package metadata without weake
 		name: 'accountToken',
 		value: 'user-value',
 	})
-	await saveSecret({
-		env,
-		userId,
-		scope: 'package',
-		name: 'discordBotToken',
-		value: 'package-only-value',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-discord',
-			storageId: 'pkg-discord',
-		},
-	})
-	await saveSecret({
-		env,
-		userId,
-		scope: 'package',
-		name: 'notesToken',
-		value: 'notes-only-value',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-notes',
-			storageId: 'pkg-notes',
-		},
-	})
+	for (const [packageId, name, value] of [
+		['pkg-discord', 'discordBotToken', 'package-only-value'],
+		['pkg-notes', 'notesToken', 'notes-only-value'],
+	] as const) {
+		await saveSecret({
+			env,
+			userId,
+			scope: 'package',
+			name,
+			value,
+			storageContext: ctx(packageId),
+		})
+	}
 	await saveSecret({
 		env,
 		userId,
 		scope: 'session',
 		name: 'sessionToken',
 		value: 'session-only-value',
-		storageContext: {
-			sessionId: 'session-abc',
-			appId: null,
-			packageId: null,
-			storageId: null,
-		},
+		storageContext: ctx(null, 'session-abc'),
 		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
 	})
 	await saveSecret({
 		env,
-		userId: otherUserId,
+		userId: 'user-other',
 		scope: 'package',
 		name: 'foreignToken',
 		value: 'other-user-value',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-foreign',
-			storageId: 'pkg-foreign',
-		},
+		storageContext: ctx('pkg-foreign'),
+	})
+	const discord = expect.objectContaining({
+		name: 'discordBotToken',
+		scope: 'package',
+		packageId: 'pkg-discord',
+	})
+	const notes = expect.objectContaining({
+		name: 'notesToken',
+		scope: 'package',
+		packageId: 'pkg-notes',
+	})
+	const account = expect.objectContaining({
+		name: 'accountToken',
+		scope: 'user',
+		packageId: null,
 	})
 
 	const listedAll = await listSecrets({
@@ -710,108 +206,76 @@ test('listSecrets from execute lists caller-owned package metadata without weake
 		userId,
 		storageContext: executeContext,
 	})
-	expect(listedAll).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				name: 'accountToken',
-				scope: 'user',
-				packageId: null,
-			}),
-			expect.objectContaining({
-				name: 'discordBotToken',
-				scope: 'package',
-				packageId: 'pkg-discord',
-			}),
-			expect.objectContaining({
-				name: 'notesToken',
-				scope: 'package',
-				packageId: 'pkg-notes',
-			}),
-		]),
-	)
+	expect(listedAll).toEqual(expect.arrayContaining([account, discord, notes]))
 	expect(listedAll.map((secret) => secret.name)).not.toContain('sessionToken')
 	expect(listedAll.map((secret) => secret.name)).not.toContain('foreignToken')
 	expect(
 		listedAll.find((secret) => secret.name === 'discordBotToken'),
 	).not.toHaveProperty('value')
+	await expect(
+		listSecrets({
+			env,
+			userId,
+			scope: 'package',
+			storageContext: executeContext,
+		}),
+	).resolves.toEqual([discord, notes])
+	await expect(
+		listSecrets({
+			env,
+			userId,
+			scope: 'package',
+			storageContext: ctx('pkg-discord'),
+		}),
+	).resolves.toEqual([discord])
+	await expect(listUserSecretsForSearch({ env, userId })).resolves.toEqual([
+		account,
+	])
 
-	const listedPackageScope = await listSecrets({
+	const grouped = await listPackageSecretsByPackageIds({
 		env,
 		userId,
-		scope: 'package',
+		packageIds: ['pkg-discord', 'pkg-missing', 'pkg-foreign'],
+	})
+	expect(grouped.get('pkg-discord')).toEqual([discord])
+	expect(grouped.has('pkg-missing')).toBe(false)
+	expect(grouped.has('pkg-foreign')).toBe(false)
+
+	for (const input of [
+		{ storageContext: executeContext },
+		{ scope: 'package' as const, storageContext: executeContext },
+	]) {
+		await expect(
+			resolveSecret({ env, userId, name: 'discordBotToken', ...input }),
+		).resolves.toMatchObject({ found: false, value: null })
+	}
+	const executeMiss = await createUnresolvedSecretMessage({
+		env,
+		userId,
+		name: 'discordBotToken',
 		storageContext: executeContext,
+		baseUrl: 'https://example.com',
 	})
-	expect(listedPackageScope).toEqual([
-		expect.objectContaining({
-			name: 'discordBotToken',
-			scope: 'package',
-			packageId: 'pkg-discord',
-		}),
-		expect.objectContaining({
-			name: 'notesToken',
-			scope: 'package',
-			packageId: 'pkg-notes',
-		}),
-	])
-
-	const listedOnePackage = await listSecrets({
-		env,
-		userId,
+	expect(parseSecretScopeUnavailableMessage(executeMiss)).toEqual({
+		secretName: 'discordBotToken',
 		scope: 'package',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-discord',
-			storageId: 'pkg-discord',
-		},
+		packageName: null,
+		packageId: 'pkg-discord',
 	})
-	expect(listedOnePackage).toEqual([
-		expect.objectContaining({
-			name: 'discordBotToken',
-			scope: 'package',
-			packageId: 'pkg-discord',
+	await expect(
+		createUnresolvedSecretMessage({
+			env,
+			userId,
+			name: 'noSuchSecret',
+			baseUrl: 'https://example.com',
 		}),
-	])
-
-	const searchRows = await listUserSecretsForSearch({ env, userId })
-	expect(searchRows).toEqual([
-		expect.objectContaining({
-			name: 'accountToken',
-			scope: 'user',
-			packageId: null,
-		}),
-	])
-	expect(searchRows.map((row) => row.name)).not.toContain('discordBotToken')
-	expect(searchRows.map((row) => row.name)).not.toContain('notesToken')
-
+	).resolves.toBe(createMissingSecretMessage('noSuchSecret'))
 	await expect(
 		resolveSecret({
 			env,
 			userId,
 			name: 'discordBotToken',
-			storageContext: executeContext,
-		}),
-	).resolves.toMatchObject({ found: false, value: null })
-	await expect(
-		resolveSecret({
-			env,
-			userId,
-			name: 'discordBotToken',
-			scope: 'package',
-			storageContext: executeContext,
-		}),
-	).resolves.toMatchObject({ found: false, value: null })
-	await expect(
-		resolveSecret({
-			env,
-			userId,
-			name: 'discordBotToken',
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: 'pkg-discord',
-				storageId: 'pkg-discord',
-			},
+			storageContext: ctx('pkg-discord'),
 		}),
 	).resolves.toMatchObject({
 		found: true,
@@ -820,72 +284,31 @@ test('listSecrets from execute lists caller-owned package metadata without weake
 	})
 })
 
-test('listPackageSecretsByPackageIds groups package-owned secrets', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
+test('package writes to user secrets require every package approval and apply atomically', async () => {
+	const { env } = await createSecretEnv()
+	const resolveUser = (name: string) =>
+		resolveSecret({ env, userId, scope: 'user', name })
+	for (const [name, value] of [
+		['shared-token', 'old-value'],
+		['xRefreshToken', 'old-refresh'],
+		['xAccessToken', 'old-access'],
+	] as const) {
+		await saveSecret({ env, userId, scope: 'user', name, value })
 	}
-	const storageContext = {
-		sessionId: null,
-		appId: null,
-		packageId: 'package-1',
-		storageId: null,
+	for (const name of ['shared-token', 'xRefreshToken']) {
+		await setSecretAllowedPackages({
+			env,
+			userId,
+			scope: 'user',
+			name,
+			allowedPackages: ['package-1'],
+		})
 	}
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'package',
-		name: 'package-token',
-		value: 'package-value',
-		storageContext,
-	})
-
-	const grouped = await listPackageSecretsByPackageIds({
-		env,
-		userId: 'user-123',
-		packageIds: ['package-1', 'package-2'],
-	})
-
-	expect(grouped.get('package-1')).toEqual([
-		expect.objectContaining({
-			name: 'package-token',
-			scope: 'package',
-			packageId: 'package-1',
-		}),
-	])
-	expect(grouped.has('package-2')).toBe(false)
-})
-
-test('updateUserSecretForPackage atomically requires an existing package approval', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'shared-token',
-		value: 'old-value',
-	})
-	await setSecretAllowedPackages({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'shared-token',
-		allowedPackages: ['package-1'],
-	})
 
 	await expect(
 		updateUserSecretForPackage({
 			env,
-			userId: 'user-123',
+			userId,
 			packageId: 'package-1',
 			name: 'shared-token',
 			value: 'new-value',
@@ -896,130 +319,25 @@ test('updateUserSecretForPackage atomically requires an existing package approva
 		description: 'Updated by package',
 		allowedPackages: ['package-1'],
 	})
-	await expect(
-		resolveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'shared-token',
-		}),
-	).resolves.toMatchObject({ found: true, value: 'new-value' })
+	await expect(resolveUser('shared-token')).resolves.toMatchObject({
+		found: true,
+		value: 'new-value',
+	})
 	await expect(
 		updateUserSecretForPackage({
 			env,
-			userId: 'user-123',
+			userId,
 			packageId: 'package-2',
 			name: 'shared-token',
 			value: 'unauthorized-value',
 		}),
 	).rejects.toThrow('not approved for package "package-2"')
-})
 
-test('setSecretsAtomically persists refresh then access tokens together for package grants', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xRefreshToken',
-		value: 'old-refresh',
-	})
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xAccessToken',
-		value: 'old-access',
-	})
-	await setSecretAllowedPackages({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xRefreshToken',
-		allowedPackages: ['package-1'],
-	})
-	await setSecretAllowedPackages({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xAccessToken',
-		allowedPackages: ['package-1'],
-	})
-
-	await setSecretsAtomically({
-		env,
-		userId: 'user-123',
-		secrets: [
-			{ name: 'xRefreshToken', value: 'new-refresh', scope: 'user' },
-			{ name: 'xAccessToken', value: 'new-access', scope: 'user' },
-		],
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'package-1',
-			storageId: null,
-		},
-	})
-
-	await expect(
-		resolveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'xRefreshToken',
-		}),
-	).resolves.toMatchObject({ found: true, value: 'new-refresh' })
-	await expect(
-		resolveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'xAccessToken',
-		}),
-	).resolves.toMatchObject({ found: true, value: 'new-access' })
-})
-
-test('updateUserSecretsForPackageAtomically leaves both secrets unchanged when any grant is missing', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xRefreshToken',
-		value: 'old-refresh',
-	})
-	await saveSecret({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xAccessToken',
-		value: 'old-access',
-	})
-	await setSecretAllowedPackages({
-		env,
-		userId: 'user-123',
-		scope: 'user',
-		name: 'xRefreshToken',
-		allowedPackages: ['package-1'],
-	})
-	// Access token deliberately has no package grant.
-
+	// Access token has no package grant yet: neither secret may change.
 	await expect(
 		updateUserSecretsForPackageAtomically({
 			env,
-			userId: 'user-123',
+			userId,
 			packageId: 'package-1',
 			secrets: [
 				{ name: 'xRefreshToken', value: 'new-refresh' },
@@ -1027,123 +345,61 @@ test('updateUserSecretsForPackageAtomically leaves both secrets unchanged when a
 			],
 		}),
 	).rejects.toThrow('not approved for package "package-1"')
+	await expect(resolveUser('xRefreshToken')).resolves.toMatchObject({
+		found: true,
+		value: 'old-refresh',
+	})
+	await expect(resolveUser('xAccessToken')).resolves.toMatchObject({
+		found: true,
+		value: 'old-access',
+	})
 
-	await expect(
-		resolveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'xRefreshToken',
-		}),
-	).resolves.toMatchObject({ found: true, value: 'old-refresh' })
-	await expect(
-		resolveSecret({
-			env,
-			userId: 'user-123',
-			scope: 'user',
-			name: 'xAccessToken',
-		}),
-	).resolves.toMatchObject({ found: true, value: 'old-access' })
-})
-
-test('resolveSecret ignores a corrupted lower-precedence entry when a higher scope resolves', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	const userId = 'user-123'
-	const secretName = 'shared-secret'
-	const storageContext = {
-		sessionId: 'session-abc',
-		appId: null,
-		packageId: 'package-xyz',
-		storageId: 'package-xyz',
-	}
-
-	await saveSecret({
+	await setSecretAllowedPackages({
 		env,
 		userId,
 		scope: 'user',
-		name: secretName,
-		value: 'user-value',
+		name: 'xAccessToken',
+		allowedPackages: ['package-1'],
 	})
-	await saveSecret({
+	await setSecretsAtomically({
 		env,
 		userId,
-		scope: 'session',
-		name: secretName,
-		value: 'session-value',
-		storageContext,
-		sessionExpiresAt: '2099-01-01T00:00:00.000Z',
+		secrets: [
+			{ name: 'xRefreshToken', value: 'new-refresh', scope: 'user' },
+			{ name: 'xAccessToken', value: 'new-access', scope: 'user' },
+		],
+		storageContext: { ...ctx('package-1'), storageId: null },
 	})
-	testDb.corruptUserSecret(userId, secretName)
-
-	const resolved = await resolveSecret({
-		env,
-		userId,
-		name: secretName,
-		storageContext,
+	await expect(resolveUser('xRefreshToken')).resolves.toMatchObject({
+		found: true,
+		value: 'new-refresh',
 	})
-
-	expect(resolved.found).toBe(true)
-	expect(resolved.value).toBe('session-value')
-	expect(resolved.scope).toBe('session')
+	await expect(resolveUser('xAccessToken')).resolves.toMatchObject({
+		found: true,
+		value: 'new-access',
+	})
 })
-
-function buildEntitlementTestSecretEnv(input: {
-	email: string
-	plan: string | null
-	seededSecretCount?: number
-	seededSecretUserId?: string
-}) {
-	const testDb = createSecretTestDb({
-		users: [{ email: input.email, plan: input.plan }],
-		seededSecretCount: input.seededSecretCount,
-		seededSecretUserId: input.seededSecretUserId,
-	})
-	return {
-		testDb,
-		env: {
-			APP_DB: testDb.db,
-			COOKIE_SECRET: 'test-cookie-secret',
-			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-			...createInMemoryUserMeterEnv().env,
-		},
-	}
-}
 
 test('saveSecret enforces plan secret quotas including updates and max ceiling', async () => {
 	const email = 'planned@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	const { env } = buildEntitlementTestSecretEnv({ email, plan: 'pro' })
+	const plannedUserId = testStableUserIdFromEmail(email)
+	const { env } = await createSecretEnv({ email, plan: 'pro' })
 	const limit = planLimits.pro.maxSecrets
 	if (limit === null) throw new Error('Expected a numeric pro secret limit.')
-
-	for (let index = 0; index < limit; index += 1) {
-		await saveSecret({
-			env,
-			userId,
+	const save = (targetEnv: typeof env, name: string, value = 'secret-value') =>
+		saveSecret({
+			env: targetEnv,
+			userId: plannedUserId,
 			userEmail: email,
 			scope: 'user',
-			name: `quota-secret-${index}`,
-			value: `secret-value-${index}`,
+			name,
+			value,
 		})
-	}
 
-	const overLimit = await saveSecret({
-		env,
-		userId,
-		userEmail: email,
-		scope: 'user',
-		name: `quota-secret-${limit}`,
-		value: 'one-too-many',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+	for (let index = 0; index < limit; index += 1) {
+		await save(env, `quota-secret-${index}`)
+	}
+	const overLimit = await rejection(save(env, `quota-secret-${limit}`))
 	if (!isEntitlementLimitError(overLimit)) {
 		throw new Error('Expected an EntitlementLimitError from saveSecret.')
 	}
@@ -1154,56 +410,31 @@ test('saveSecret enforces plan secret quotas including updates and max ceiling',
 		limit,
 		current: limit,
 	})
+	await expect(
+		saveSecret({
+			env,
+			userId: plannedUserId,
+			userEmail: email,
+			scope: 'user',
+			name: 'quota-secret-0',
+			value: 'rotated-value',
+			description: 'rotated',
+		}),
+	).resolves.toMatchObject({ name: 'quota-secret-0', description: 'rotated' })
 
-	const updated = await saveSecret({
-		env,
-		userId,
-		userEmail: email,
-		scope: 'user',
-		name: 'quota-secret-0',
-		value: 'rotated-value',
-		description: 'rotated',
-	})
-	expect(updated).toMatchObject({
-		name: 'quota-secret-0',
-		description: 'rotated',
-	})
-
-	const maxEmail = 'max@example.com'
-	const maxUserId = await createStableUserIdFromEmail(maxEmail)
 	const maxLimit = planLimits.max.maxSecrets
-	const belowMax = buildEntitlementTestSecretEnv({
-		email: maxEmail,
+	const belowMax = await createSecretEnv({
+		email,
 		plan: 'max',
-		seededSecretCount: planLimits.pro.maxSecrets + 1,
-		seededSecretUserId: maxUserId,
+		seededSecretCount: limit + 1,
 	})
-	await saveSecret({
-		env: belowMax.env,
-		userId: maxUserId,
-		userEmail: maxEmail,
-		scope: 'user',
-		name: 'below-max-secret',
-		value: 'secret-value',
-	})
-
-	const atCeiling = buildEntitlementTestSecretEnv({
-		email: maxEmail,
+	await save(belowMax.env, 'below-max-secret')
+	const atCeiling = await createSecretEnv({
+		email,
 		plan: 'max',
-		seededSecretCount: maxLimit,
-		seededSecretUserId: maxUserId,
+		seededSecretCount: maxLimit ?? 0,
 	})
-	const ceilingError = await saveSecret({
-		env: atCeiling.env,
-		userId: maxUserId,
-		userEmail: maxEmail,
-		scope: 'user',
-		name: 'over-max-secret',
-		value: 'secret-value',
-	}).then(
-		() => null,
-		(thrown: unknown) => thrown,
-	)
+	const ceilingError = await rejection(save(atCeiling.env, 'over-max-secret'))
 	if (!isEntitlementLimitError(ceilingError)) {
 		throw new Error(
 			'Expected an EntitlementLimitError at the max secret ceiling.',
@@ -1218,64 +449,50 @@ test('saveSecret enforces plan secret quotas including updates and max ceiling',
 })
 
 test('user secrets persist per-entry expiry, stay listed after expiry, and fail closed on resolve', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	const userId = 'user-123'
-
-	const futureDateOnly = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-		.toISOString()
-		.slice(0, 10)
-	const futureIso = `${futureDateOnly}T00:00:00.000Z`
-
-	const saved = await saveSecret({
-		env,
-		userId,
-		scope: 'user',
-		name: 'githubPat',
-		value: 'ghp_old',
-		expiresAt: futureDateOnly,
-	})
-	expect(saved.expiresAt).toBe(futureIso)
-	expect(saved.ttlMs).toBeGreaterThan(0)
-
-	await expect(
-		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
-	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
-
-	const listed = await listSecrets({ env, userId, scope: 'user' })
-	expect(listed).toEqual([
-		expect.objectContaining({
-			name: 'githubPat',
-			expiresAt: futureIso,
-		}),
-	])
-
-	const past = await saveSecret({
-		env,
-		userId,
-		scope: 'user',
-		name: 'githubPat',
-		value: 'ghp_old',
-		expiresAt: '2020-01-01T00:00:00.000Z',
-	})
-	expect(past.ttlMs).toBe(0)
-	await expect(
-		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
-	).resolves.toMatchObject({ found: false, value: null })
-	await expect(
+	const { env } = await createSecretEnv()
+	const resolvePat = (includeExpired?: boolean) =>
 		resolveSecret({
 			env,
 			userId,
 			name: 'githubPat',
 			scope: 'user',
-			includeExpired: true,
-		}),
-	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
+			...(includeExpired ? { includeExpired } : {}),
+		})
+	const futureDateOnly = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+		.toISOString()
+		.slice(0, 10)
+	const futureIso = `${futureDateOnly}T00:00:00.000Z`
+	const savePat = (expiresAt: string) =>
+		saveSecret({
+			env,
+			userId,
+			scope: 'user',
+			name: 'githubPat',
+			value: 'ghp_old',
+			expiresAt,
+		})
+
+	const saved = await savePat(futureDateOnly)
+	expect(saved.expiresAt).toBe(futureIso)
+	expect(saved.ttlMs).toBeGreaterThan(0)
+	await expect(resolvePat()).resolves.toMatchObject({
+		found: true,
+		value: 'ghp_old',
+	})
+	await expect(listSecrets({ env, userId, scope: 'user' })).resolves.toEqual([
+		expect.objectContaining({ name: 'githubPat', expiresAt: futureIso }),
+	])
+
+	const past = await savePat('2020-01-01T00:00:00.000Z')
+	expect(past.ttlMs).toBe(0)
+	await expect(resolvePat()).resolves.toMatchObject({
+		found: false,
+		value: null,
+	})
+	await expect(resolvePat(true)).resolves.toMatchObject({
+		found: true,
+		value: 'ghp_old',
+	})
 	await expect(listSecrets({ env, userId, scope: 'user' })).resolves.toEqual([
 		expect.objectContaining({
 			name: 'githubPat',
@@ -1293,93 +510,8 @@ test('user secrets persist per-entry expiry, stay listed after expiry, and fail 
 	})
 	expect(cleared.expiresAt).toBeNull()
 	expect(cleared.ttlMs).toBeNull()
-	await expect(
-		resolveSecret({ env, userId, name: 'githubPat', scope: 'user' }),
-	).resolves.toMatchObject({ found: true, value: 'ghp_old' })
-})
-
-test('createUnresolvedSecretMessage explains a package-scoped secret from ad-hoc execute', async () => {
-	const testDb = createSecretTestDb()
-	const env = {
-		APP_DB: testDb.db,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-		...createInMemoryUserMeterEnv().env,
-	}
-	const userId = 'user-123'
-	const secretName = 'discordBotToken'
-	const packageId = 'pkg-discord'
-	await saveSecret({
-		env,
-		userId,
-		scope: 'package',
-		name: secretName,
-		value: 'package-only-value',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId,
-			storageId: packageId,
-		},
-	})
-
-	await expect(
-		resolveSecret({
-			env,
-			userId,
-			name: secretName,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId: null,
-				storageId: null,
-			},
-		}),
-	).resolves.toMatchObject({ found: false, value: null })
-
-	const executeMiss = await createUnresolvedSecretMessage({
-		env,
-		userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: null,
-			storageId: null,
-		},
-		baseUrl: 'https://example.com',
-	})
-	expect(parseSecretScopeUnavailableMessage(executeMiss)).toEqual({
-		secretName,
-		scope: 'package',
-		packageName: null,
-		packageId,
-	})
-
-	await expect(
-		createUnresolvedSecretMessage({
-			env,
-			userId,
-			name: 'noSuchSecret',
-			baseUrl: 'https://example.com',
-		}),
-	).resolves.toBe(createMissingSecretMessage('noSuchSecret'))
-
-	await expect(
-		resolveSecret({
-			env,
-			userId,
-			name: secretName,
-			storageContext: {
-				sessionId: null,
-				appId: null,
-				packageId,
-				storageId: packageId,
-			},
-		}),
-	).resolves.toMatchObject({
+	await expect(resolvePat()).resolves.toMatchObject({
 		found: true,
-		value: 'package-only-value',
-		scope: 'package',
+		value: 'ghp_old',
 	})
 })

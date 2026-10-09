@@ -15,6 +15,7 @@ export type PendingPackageSecretApproval = {
 export type PendingPackageSecretApprovalsSummary = {
 	package_id: string
 	kody_id: string
+	slug: string
 	secrets: Array<PendingPackageSecretApproval>
 	bulk_approval_url: string | null
 }
@@ -64,6 +65,7 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 	return {
 		package_id: input.packageId,
 		kody_id: input.kodyId,
+		slug: input.kodyId,
 		secrets,
 		bulk_approval_url: buildSecretPackageBulkApprovalUrlIfNeeded({
 			baseUrl: input.baseUrl,
@@ -80,7 +82,7 @@ export function formatPendingPackageSecretApprovalsGuidance(
 	const preferredUrl =
 		summary.bulk_approval_url ?? summary.secrets[0]?.approval_url ?? null
 	if (!preferredUrl) return ''
-	const adoptOption = `either review the forked package source and call \`communityForkAdopt\` with a \`review_summary\` (user-secret read/use then works like a self-authored package), or`
+	const adoptOption = `either review the forked package source and call \`communityForkAdopt\` for a website adoption link the user must open to adopt it (user-secret read/use then works like a self-authored package), or`
 	if (summary.secrets.length === 1) {
 		return `Before treating this community-forked package as ready to run, ${adoptOption} send the user this package secret approval link and wait for approval: ${preferredUrl}. An ad hoc execute smoke test does not grant package secret access.`
 	}

@@ -4,7 +4,11 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { inheritRequest } from '#worker/request-context/request-context.ts'
 import {
 	buildEmailReceiptSubscriptionEnvelope,
 	inboundEmailReceiptTopic,
@@ -36,7 +40,7 @@ import {
 } from '#worker/package-registry/package-owner.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 
@@ -111,6 +115,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: packageSubscriptionDispatchCapabilityName,
+		orgPermission: 'package:execute',
 		description:
 			'Interactive-MCP post-publish smoke test for one declared package.json#kody.subscriptions handler on an owner-scoped saved package. Real-surface run with real side effects; does not wait for a production event and is unavailable from package jobs, subscriptions, webhooks, or other package runtimes. Package composition is a static kody:@scope/pkg/export import (plus kody.dependencies), not this capability. Pass params for a fixture envelope or email_message_id to replay stored inbound mail. The platform marks the run synthetic.',
 		keywords: [
@@ -197,7 +202,8 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			}),
 		outputSchema: z.object({
 			package_id: z.string(),
-			kody_id: z.string(),
+			kody_id: z.string().describe('Package name leaf (same value as `slug`).'),
+			slug: z.string().describe('Package name leaf (same value as `kody_id`).'),
 			topic: z.string(),
 			idempotency_key: z.string(),
 			source: z.literal('synthetic'),
@@ -240,9 +246,10 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 							userId: owner.ownerUserId,
 							packageId: args.package_id,
 						})
-					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
+					: await resolveSavedPackageRef(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: requestedKodyId ?? '',
+							ref: requestedKodyId ?? '',
+							match: 'slug',
 						})
 			if (!savedPackage) {
 				const missingId = args.package_id ?? args.kody_id
@@ -322,6 +329,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				idempotencyKey,
 				trustedSyntheticDispatch: trustedSyntheticSubscriptionDispatch,
 				actorTokenId: internalSyntheticSubscriptionTokenId,
+				request: inheritRequest(requireMcpRequest(ctx.callerContext)),
 			})
 			const retryableCode =
 				readPreExecutionPackageInvocationInfrastructureCode(response)
@@ -338,6 +346,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 			return {
 				package_id: savedPackage.id,
 				kody_id: savedPackage.kodyId,
+				slug: savedPackage.kodyId,
 				topic,
 				idempotency_key: idempotencyKey,
 				source: 'synthetic' as const,

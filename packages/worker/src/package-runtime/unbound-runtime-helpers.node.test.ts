@@ -1,8 +1,12 @@
 import { expect, test } from 'vitest'
 import {
+	createNullPackagesInvokeRewriteHostSource,
 	createUnboundRuntimeHelperMessage,
 	findUnboundRuntimeHelperAccess,
+	modulesContainUnboundPackagesInvokeAccess,
 	parseUnboundRuntimeHelperMessage,
+	rewriteNullPackagesInvokeErrorMessage,
+	buildUnboundRuntimeHelperNextStep,
 } from './unbound-runtime-helpers.ts'
 
 const allOptionalHelperNames = new Set([
@@ -17,258 +21,278 @@ const allOptionalHelperNames = new Set([
 	'events',
 ])
 
-test('findUnboundRuntimeHelperAccess matches guard-less reads, calls, aliases, namespaces, and inlined helpers', () => {
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
-				'entry.js': `import { storage } from 'kody:runtime'
+const readSql = "Cannot read properties of undefined (reading 'sql')"
+const packageSecretsUnavailable =
+	'kody:runtime export "packageSecrets" is not available in this execution context.'
+const storageEntry = {
+	'entry.js': `import { storage } from 'kody:runtime'
+export default async () => (await storage.sql('select 1')).rows`,
+}
+const packageSecretsEntry = {
+	'entry.js': `import { packageSecrets } from 'kody:runtime'
+export default async () => await packageSecrets.get('token')`,
+}
 
-export default async function main() {
-	const result = await storage.sql('select 1')
-	return result.rows
+// Real bundles inline the virtual runtime module into the entry module,
+// so helpers are top-level declarations rather than import bindings.
+const inlinedBundle = {
+	'bundle.js': `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);
+var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
+async function main() {
+	const result = await storage.sql("select 1");
+	return result.rows;
 }`,
-			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'storage',
-		reference: 'storage.sql',
-	})
+}
 
-	// Helpers with a `null` absent value fail the same way.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage:
-				"TypeError: Cannot read properties of null (reading 'getMessage')",
-			modules: {
+type Modules = Parameters<typeof findUnboundRuntimeHelperAccess>[0]['modules']
+
+function find(
+	errorMessage: string,
+	modules: Modules,
+	unboundHelperNames = allOptionalHelperNames,
+) {
+	return findUnboundRuntimeHelperAccess({
+		errorMessage,
+		modules,
+		unboundHelperNames,
+	})
+}
+
+test('findUnboundRuntimeHelperAccess matches guard-less reads, calls, aliases, namespaces, and inlined helpers', () => {
+	const cases: Array<[string, Modules, string, string]> = [
+		[readSql, storageEntry, 'storage', 'storage.sql'],
+		// Helpers with a `null` absent value fail the same way.
+		[
+			"TypeError: Cannot read properties of null (reading 'getMessage')",
+			{
 				'entry.js': `import { email } from 'kody:runtime'
 export default async () => await email.getMessage('m-1')`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'email',
-		reference: 'email.getMessage',
-	})
-
-	// Bundled saved-package modules import the virtual runtime module through
-	// a rewritten relative path and may alias the binding.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
+			'email',
+			'email.getMessage',
+		],
+		// Bundled saved-package modules import the virtual runtime module through
+		// a rewritten relative path and may alias the binding.
+		[
+			readSql,
+			{
 				'entry.js': {
 					js: `import { storage as db } from '../.__kody_virtual__/runtime.js'
 export default async () => (await db.sql('select 1')).rows`,
 				},
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'storage',
-		reference: 'storage.sql',
-	})
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
+			'storage',
+			'storage.sql',
+		],
+		[
+			readSql,
+			{
 				'entry.js': `import * as runtime from 'kody:runtime'
 export default async () => await runtime.storage.sql('select 1')`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'storage',
-		reference: 'storage.sql',
-	})
-
-	// Real bundles inline the virtual runtime module into the entry module,
-	// so helpers are top-level declarations rather than import bindings.
-	const inlinedSource = `var storage = __kodyOptionalRuntimeObjectExport("storage", void 0);
-var createAuthenticatedFetch = __kodyOptionalRuntimeFunctionExport("createAuthenticatedFetch");
-async function main() {
-	const result = await storage.sql("select 1");
-	return result.rows;
-}`
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: { 'bundle.js': inlinedSource },
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'storage',
-		reference: 'storage.sql',
-	})
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: 'createAuthenticatedFetch is not a function',
-			modules: { 'bundle.js': inlinedSource },
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'createAuthenticatedFetch',
-		reference: 'createAuthenticatedFetch',
-	})
-
-	// A declaration initialized by an unrelated factory is not a helper.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
-				'bundle.js': `var storage = createMyStorage("storage");
-async function main() { return (await storage.sql("select 1")).rows }`,
-			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toBeNull()
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: 'TypeError: createAuthenticatedFetch is not a function',
-			modules: {
+			'storage',
+			'storage.sql',
+		],
+		[readSql, inlinedBundle, 'storage', 'storage.sql'],
+		[
+			'createAuthenticatedFetch is not a function',
+			inlinedBundle,
+			'createAuthenticatedFetch',
+			'createAuthenticatedFetch',
+		],
+		[
+			'TypeError: createAuthenticatedFetch is not a function',
+			{
 				'entry.js': `import { createAuthenticatedFetch } from 'kody:runtime'
 export default async () => await createAuthenticatedFetch('google-personal')`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'createAuthenticatedFetch',
-		reference: 'createAuthenticatedFetch',
-	})
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: 'runtime.oauthClientCredentials is not a function',
-			modules: {
+			'createAuthenticatedFetch',
+			'createAuthenticatedFetch',
+		],
+		[
+			'runtime.oauthClientCredentials is not a function',
+			{
 				'entry.js': `import * as runtime from 'kody:runtime'
 export default async () => await runtime.oauthClientCredentials({})`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'oauthClientCredentials',
-		reference: 'oauthClientCredentials',
-	})
-
-	// Late-bound optional exports (packageSecrets) throw this instead of a
-	// null-property TypeError when the evaluate store omits the helper.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage:
-				'kody:runtime export "packageSecrets" is not available in this execution context.',
-			modules: {
-				'entry.js': `import { packageSecrets } from 'kody:runtime'
-export default async () => await packageSecrets.get('token')`,
-			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toEqual({
-		helperName: 'packageSecrets',
-		reference: 'packageSecrets',
-	})
+			'oauthClientCredentials',
+			'oauthClientCredentials',
+		],
+		// Late-bound optional exports (packageSecrets) throw this instead of a
+		// null-property TypeError when the evaluate store omits the helper.
+		[
+			packageSecretsUnavailable,
+			packageSecretsEntry,
+			'packageSecrets',
+			'packageSecrets',
+		],
+	]
+	for (const [errorMessage, modules, helperName, reference] of cases) {
+		expect(find(errorMessage, modules)).toEqual({ helperName, reference })
+	}
 })
 
 test('findUnboundRuntimeHelperAccess leaves unrelated errors and bound helpers unhinted', () => {
-	const modules = {
-		'entry.js': `import { storage } from 'kody:runtime'
-export default async () => (await storage.sql('select 1')).rows`,
-	}
-
-	// The helper is bound in this run, so the TypeError is a user-code bug.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules,
-			unboundHelperNames: new Set(['email']),
-		}),
-	).toBeNull()
-
-	// The failed property read does not appear on any runtime helper binding.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'rows')",
-			modules,
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toBeNull()
-
-	// Optional chaining short-circuits instead of throwing, so guarded access
-	// must not be treated as the source of the TypeError.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
+	const cases: Array<[string, Modules, Set<string>?]> = [
+		// The helper is bound in this run, so the TypeError is a user-code bug.
+		[readSql, storageEntry, new Set(['email'])],
+		[packageSecretsUnavailable, packageSecretsEntry, new Set(['email'])],
+		// The failed property read does not appear on any runtime helper binding.
+		["Cannot read properties of undefined (reading 'rows')", storageEntry],
+		// Optional chaining short-circuits instead of throwing, so guarded access
+		// must not be treated as the source of the TypeError.
+		[
+			readSql,
+			{
 				'entry.js': `import { storage } from 'kody:runtime'
 export default async () => (await storage?.sql('select 1')) ?? null`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toBeNull()
-
-	// A same-named binding from another module is not a runtime helper.
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: "Cannot read properties of undefined (reading 'sql')",
-			modules: {
+		],
+		// A same-named binding from another module is not a runtime helper.
+		[
+			readSql,
+			{
 				'entry.js': `import { storage } from './my-storage.js'
 export default async () => (await storage.sql('select 1')).rows`,
 			},
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toBeNull()
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage: 'Execution timed out',
-			modules,
-			unboundHelperNames: allOptionalHelperNames,
-		}),
-	).toBeNull()
-
-	expect(
-		findUnboundRuntimeHelperAccess({
-			errorMessage:
-				'kody:runtime export "packageSecrets" is not available in this execution context.',
-			modules: {
-				'entry.js': `import { packageSecrets } from 'kody:runtime'
-export default async () => await packageSecrets.get('token')`,
+		],
+		// A declaration initialized by an unrelated factory is not a helper.
+		[
+			readSql,
+			{
+				'bundle.js': `var storage = createMyStorage("storage");
+async function main() { return (await storage.sql("select 1")).rows }`,
 			},
-			unboundHelperNames: new Set(['email']),
-		}),
-	).toBeNull()
+		],
+		['Execution timed out', storageEntry],
+	]
+	for (const [errorMessage, modules, unboundHelperNames] of cases) {
+		expect(find(errorMessage, modules, unboundHelperNames)).toBeNull()
+	}
 })
 
 test('createUnboundRuntimeHelperMessage round-trips through parseUnboundRuntimeHelperMessage', () => {
 	const message = createUnboundRuntimeHelperMessage({
-		originalMessage: "Cannot read properties of undefined (reading 'sql')",
+		originalMessage: readSql,
 		helperName: 'storage',
 		reference: 'storage.sql',
 	})
-	expect(message).toContain(
-		"Cannot read properties of undefined (reading 'sql')",
+	expect(message).toContain(readSql)
+	for (const [input, expected] of [
+		[message, 'storage'],
+		// Wrapped transports (for example package invocation responses) prefix
+		// the message; parsing must stay prefix-tolerant.
+		[`[execution_failed] ${message}`, 'storage'],
+		[readSql, null],
+		[packageSecretsUnavailable, 'packageSecrets'],
+	] as const) {
+		expect(parseUnboundRuntimeHelperMessage(input)).toBe(expected)
+	}
+})
+
+test('buildUnboundRuntimeHelperNextStep ignores inherited Object keys', () => {
+	expect(buildUnboundRuntimeHelperNextStep('packages')).toContain(
+		'`packages` is always unbound',
 	)
-	expect(parseUnboundRuntimeHelperMessage(message)).toBe('storage')
+	expect(buildUnboundRuntimeHelperNextStep('toString')).not.toContain(
+		'`packages` is always unbound',
+	)
+	expect(buildUnboundRuntimeHelperNextStep('toString')).toContain('`toString`')
+})
 
-	// Wrapped transports (for example package invocation responses) prefix
-	// the message; parsing must stay prefix-tolerant.
-	expect(
-		parseUnboundRuntimeHelperMessage(`[execution_failed] ${message}`),
-	).toBe('storage')
+test('events next step names package-owned runtimes, not execute static imports', () => {
+	const nextStep = buildUnboundRuntimeHelperNextStep('events')
+	expect(nextStep).toContain('package jobs')
+	expect(nextStep).toContain('subscription handlers')
+	expect(nextStep).toContain('package apps')
+	expect(nextStep).toContain('statically imported package export')
+	expect(nextStep).not.toContain(
+		"statically import the owning package's export so it runs in that context",
+	)
+})
 
+test('rewriteNullPackagesInvokeErrorMessage requires packages.invoke source evidence', () => {
+	const bare = "Cannot read properties of null (reading 'invoke')"
+	const packagesInvokeModules = {
+		'entry.js': `import { packages } from 'kody:runtime'
+export default async () => await packages.invoke('kody:@owner/pkg/export', { params: {} })`,
+	}
+	const unrelatedInvokeModules = {
+		'entry.js': `export default async () => {
+	const client = null
+	return client.invoke()
+}`,
+	}
+	const rewritten = rewriteNullPackagesInvokeErrorMessage({
+		originalMessage: bare,
+		modules: packagesInvokeModules,
+	})
+	expect(rewritten).toContain(bare)
+	expect(parseUnboundRuntimeHelperMessage(rewritten ?? '')).toBe('packages')
+	expect(rewritten).toContain('packages.invoke')
 	expect(
-		parseUnboundRuntimeHelperMessage(
-			"Cannot read properties of undefined (reading 'sql')",
-		),
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: rewritten ?? '',
+			modules: packagesInvokeModules,
+		}),
 	).toBeNull()
-
 	expect(
-		parseUnboundRuntimeHelperMessage(
-			'kody:runtime export "packageSecrets" is not available in this execution context.',
-		),
-	).toBe('packageSecrets')
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: bare,
+			modules: unrelatedInvokeModules,
+		}),
+	).toBeNull()
+	expect(
+		rewriteNullPackagesInvokeErrorMessage({
+			originalMessage: "Cannot read properties of null (reading 'getMessage')",
+			modules: packagesInvokeModules,
+		}),
+	).toBeNull()
+	expect(modulesContainUnboundPackagesInvokeAccess(packagesInvokeModules)).toBe(
+		true,
+	)
+	expect(
+		modulesContainUnboundPackagesInvokeAccess(unrelatedInvokeModules),
+	).toBe(false)
+})
+
+test('createNullPackagesInvokeRewriteHostSource mirrors rewrite when enabled', () => {
+	const packagesInvokeModules = {
+		'entry.js': `import { packages } from 'kody:runtime'
+export default async () => await packages.invoke('kody:@owner/pkg/export', { params: {} })`,
+	}
+	const hostSource = createNullPackagesInvokeRewriteHostSource({
+		enabled: modulesContainUnboundPackagesInvokeAccess(packagesInvokeModules),
+	})
+	const runner = new Function(
+		'exports',
+		`${hostSource}\nexports.rewrite = rewriteNullPackagesInvokeErrorMessage;\nexports.enrich = enrichUnboundPackagesInvokeError;`,
+	)
+	const exports: {
+		rewrite?: (message: string) => string | null
+		enrich?: (error: unknown) => Error
+	} = {}
+	runner(exports)
+	const bare = "Cannot read properties of null (reading 'invoke')"
+	const rewritten = exports.rewrite?.(bare) ?? ''
+	expect(parseUnboundRuntimeHelperMessage(rewritten)).toBe('packages')
+	expect(rewritten).toContain(bare)
+	expect(rewritten).toContain('packages.invoke')
+	const enriched = exports.enrich?.(new TypeError(bare))
+	expect(enriched).toBeInstanceOf(Error)
+	expect(parseUnboundRuntimeHelperMessage(enriched?.message ?? '')).toBe(
+		'packages',
+	)
+	expect(enriched?.message).toContain(bare)
+	const disabledHost = createNullPackagesInvokeRewriteHostSource({
+		enabled: false,
+	})
+	const disabledExports: {
+		rewrite?: (message: string) => string | null
+	} = {}
+	new Function(
+		'exports',
+		`${disabledHost}\nexports.rewrite = rewriteNullPackagesInvokeErrorMessage;`,
+	)(disabledExports)
+	expect(disabledExports.rewrite?.(bare)).toBeNull()
 })

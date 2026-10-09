@@ -50,7 +50,11 @@ export type UserOwnedKvKeyScheme = {
 		| 'package_retriever_manifest'
 		| 'package_retriever_index_entry'
 		| 'package_retriever_index_prefix'
+		| 'package_skills_index'
 		| 'webhook_dispatch_payload'
+		| 'package_codemod_revert'
+		| 'mcp_oauth_refresh_family_snapshot'
+		| 'mcp_oauth_refresh_family_replay'
 	binding: 'BUNDLE_ARTIFACTS_KV'
 	sourceTable?: string
 	sourceColumn?: string
@@ -72,6 +76,13 @@ export type UserOwnedR2Surface = {
 	keyTemplate?: string
 	export: 'chunked_bytes'
 	notes?: string
+}
+
+export type UserOwnedWorkflowSurface = {
+	id: 'dynamic_callable_workflow'
+	binding: 'DYNAMIC_CALLABLE_WORKFLOWS'
+	retention: string
+	notes: string
 }
 
 export type UserOwnedArtifactSurface = {
@@ -135,7 +146,7 @@ export const accountUserOwnedDurableObjectSurfaces: ReadonlyArray<UserOwnedDurab
 			deletionResultKey: 'userMeters',
 			export: 'include',
 			notes:
-				'Per-user daily entitlement counters, storage-byte state, deletion-fence/write-lease state, and inbound MCP OAuth last-used stamps (one DO per stable userId). Daily counters and storage bytes are authoritative in UserMeter; users has no d1_storage_bytes mirror columns, and the reconcile lane sweeps users by stable_user_id keyset from the platform-owned d1_storage_reconcile_cursor row. UserMeter is the sole lease authority: all callers (including email paths) supply USER_METER via env; acquireWriteLease writes to the DO only and countActiveWriteLeases is a direct DO COUNT (no paging). There is no D1 account_write_leases table; D1 users.deleting_at remains the permanent point gate and account_write_lease_repairs remains the admin repair audit log. inbound_mcp_connection_last_used is keyed by inbound OAuth clientId and updated from successful /mcp bearer validation (5-minute debounce); Account → Connections joins it as last-used, and revoke deletes the row. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage-byte state, write leases, and inbound last-used while preserving an existing deleting tombstone during cleanup, then origin drops that tombstone after the D1 user row is deleted so the email-derived stable_user_id can be reused; account export pages counters through the user_meter section via exportCounters and includes authoritative storageBytesState, sanitized deletionState without raw lease token/holder, and inboundConnectionLastUsed on the first page only.',
+				'Per-user daily entitlement counters, storage-byte state, deletion-fence/write-lease state, and inbound MCP OAuth last-used stamps (one DO per stable userId). Daily counters and storage bytes are authoritative in UserMeter; users has no d1_storage_bytes mirror columns, and the reconcile lane sweeps users by stable_user_id keyset from the platform-owned d1_storage_reconcile_cursor row. UserMeter is the sole lease authority: all callers (including email paths) supply USER_METER via env; acquireWriteLease writes to the DO only and countActiveWriteLeases is a direct DO COUNT (no paging). There is no D1 account_write_leases table; D1 users.deleting_at remains the permanent point gate and account_write_lease_repairs remains the admin repair audit log. inbound_mcp_connection_last_used is keyed by inbound OAuth clientId and updated from successful /mcp bearer validation (5-minute debounce); Account → Connections joins it as last-used, and revoke deletes the row. Self-prunes stale UTC-day rows inside the DO rather than through a retention cron lane; account deletion purge clears counters, storage-byte state, write leases, and inbound last-used while preserving an existing deleting tombstone during cleanup, then origin drops that tombstone after the D1 user row is deleted so the purged object keeps no state; account export pages counters through the user_meter section via exportCounters and includes authoritative storageBytesState, sanitized deletionState without raw lease token/holder, and inboundConnectionLastUsed on the first page only.',
 		},
 		{
 			id: 'stripe_plan_refresh',
@@ -260,6 +271,12 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 			notes: 'Deleted by deleteAllPackageRetrieverCacheEntriesForUser.',
 		},
 		{
+			id: 'package_skills_index',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'package-skills-index:v1:{userId}:{packageId}:',
+			notes: 'Deleted by deleteAllPackageSkillsIndexEntriesForUser.',
+		},
+		{
 			id: 'webhook_dispatch_payload',
 			binding: 'BUNDLE_ARTIFACTS_KV',
 			prefixTemplate: 'webhook-dispatch-payload:v1:{userId}:',
@@ -267,6 +284,31 @@ export const accountUserOwnedKvKeySchemes: ReadonlyArray<UserOwnedKvKeyScheme> =
 				'Expires through the KV expirationTtl written at store time; retention is 24 hours.',
 			notes:
 				'Short-lived ack-mode webhook body spill so Cloudflare Queue messages stay under 128 KB. Immediate account-deletion cleanup is optional because KV enforces the TTL. The consumer deletes the key after a terminal delivery.',
+		},
+		{
+			id: 'package_codemod_revert',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'package-codemod-revert:{userId}:',
+			retention: 'Expires through the KV expirationTtl written at apply time.',
+			notes: 'Account deletion prefix-deletes the user namespace.',
+		},
+		{
+			id: 'mcp_oauth_refresh_family_snapshot',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:mcp-oauth-refresh-family:{userId}:',
+			retention:
+				'Expires through the KV expirationTtl written at refresh time (two hours).',
+			notes:
+				'Encrypted MCP OAuth token snapshot. Account deletion prefix-deletes the user namespace; the TTL backstops a refresh racing deletion.',
+		},
+		{
+			id: 'mcp_oauth_refresh_family_replay',
+			binding: 'BUNDLE_ARTIFACTS_KV',
+			prefixTemplate: 'derived-cache:v1:mcp-oauth-refresh-replay:{userId}:',
+			retention:
+				'Expires through the KV expirationTtl written at refresh time (one hour).',
+			notes:
+				'Encrypted MCP OAuth token replay copy. Account deletion prefix-deletes the user namespace; the TTL backstops a refresh racing deletion.',
 		},
 	] as const
 
@@ -330,6 +372,18 @@ export const accountUserOwnedArtifactSurfaces: ReadonlyArray<UserOwnedArtifactSu
 		},
 	] as const
 
+export const accountUserOwnedWorkflowSurfaces: ReadonlyArray<UserOwnedWorkflowSurface> =
+	[
+		{
+			id: 'dynamic_callable_workflow',
+			binding: 'DYNAMIC_CALLABLE_WORKFLOWS',
+			retention:
+				'Cloudflare retains finished instance params and step output for the 30-day successRetention/errorRetention set at create; there is no API to delete a finished instance early.',
+			notes:
+				'RunLog workflow_projections is the only per-user index. Account deletion terminates every active instance through cancelActiveWorkflowRunsForUser before clearing RunLog. Instance ids hash the owner stable id, so a later account never reattaches to a retained instance.',
+		},
+	] as const
+
 const accountExportExcludedDurableObjectDisplayNames: Readonly<
 	Record<
 		'mcp' | 'repo_session' | 'package_realtime_session' | 'stripe_plan_refresh',
@@ -381,6 +435,7 @@ export function getAccountUserOwnedSurfaceCoverage(): {
 	kvSchemeIds: ReadonlySet<string>
 	r2SurfaceIds: ReadonlySet<string>
 	artifactSurfaceIds: ReadonlySet<string>
+	workflowSurfaceIds: ReadonlySet<string>
 } {
 	return {
 		durableObjectIds: new Set(
@@ -397,6 +452,9 @@ export function getAccountUserOwnedSurfaceCoverage(): {
 		),
 		artifactSurfaceIds: new Set(
 			accountUserOwnedArtifactSurfaces.map((surface) => surface.id),
+		),
+		workflowSurfaceIds: new Set(
+			accountUserOwnedWorkflowSurfaces.map((surface) => surface.id),
 		),
 	}
 }

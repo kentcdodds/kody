@@ -23,6 +23,17 @@ export class PlatformOauthAppValidationError extends Error {
 	}
 }
 
+export const platformOauthAppVisibilityValues = ['draft', 'published'] as const
+
+/**
+ * Catalog visibility, independent of `enabled`. Only apps that are both
+ * enabled and published are discoverable: offered on onboarding, account
+ * integrations, and the /connect/oauth chooser, and accepted for new
+ * connects. Draft apps stay hidden but keep serving existing connections.
+ */
+export type PlatformOauthAppVisibility =
+	(typeof platformOauthAppVisibilityValues)[number]
+
 /**
  * Operator-provisioned built-in OAuth apps shared across every user.
  *
@@ -30,9 +41,9 @@ export class PlatformOauthAppValidationError extends Error {
  * deliberately outside the user secret store: no `{{secret:...}}` placeholder
  * can reference it, so sandboxed code has no resolution path to the shared
  * credential. `getPlatformOauthAppClientSecret` is the only decrypt accessor;
- * its remaining caller is host-side token refresh
- * (`integrationTokenRefresh`). Never expose the decrypted value in capability
- * outputs, loader payloads, or logs.
+ * its callers are host-side token-exchange paths (the /connect/oauth exchange
+ * for discoverable apps and `integrationTokenRefresh`). Never expose the
+ * decrypted value in capability outputs, loader payloads, or logs.
  */
 export type PlatformOauthApp = {
 	slug: string
@@ -54,6 +65,7 @@ export type PlatformOauthApp = {
 	defaultScopes: Array<string>
 	requiredHosts: Array<string>
 	enabled: boolean
+	visibility: PlatformOauthAppVisibility
 	/** R2 key of the operator-uploaded logo asset, or null. */
 	logoKey: string | null
 	logoContentType: string | null
@@ -80,6 +92,7 @@ export type PlatformOauthAppRow = {
 	default_scopes_json: string
 	required_hosts_json: string
 	enabled: number
+	visibility: PlatformOauthAppVisibility
 	logo_key: string | null
 	logo_content_type: string | null
 	created_at: string
@@ -91,8 +104,10 @@ const platformAppSelectColumns = `
 	token_url, authorize_url, api_base_url, flow, use_pkce,
 	token_exchange_style, scope_separator, extra_authorize_params_json,
 	allowed_scopes_json, default_scopes_json, required_hosts_json, enabled,
-	logo_key, logo_content_type, created_at, updated_at
+	visibility, logo_key, logo_content_type, created_at, updated_at
 `
+
+const discoverableWhereClause = `enabled = 1 AND visibility = 'published'`
 
 export async function listPlatformOauthApps(input: {
 	db: D1Database
@@ -105,30 +120,47 @@ export async function listPlatformOauthApps(input: {
 	return (result.results ?? []).map(mapPlatformOauthAppRow)
 }
 
-/**
- * Enabled platform apps ordered by adoption (user connection count), for
- * surfaces that highlight the most-used built-ins first. Ties fall back to
- * creation order so a fresh deployment shows a stable list.
- */
-export async function listTopPlatformAppsByUse(input: {
+export function isPlatformOauthAppDiscoverable(
+	app: Pick<PlatformOauthApp, 'enabled' | 'visibility'>,
+): boolean {
+	return app.enabled && app.visibility === 'published'
+}
+
+/** Enabled + published apps: the only ones discovery surfaces may offer. */
+export async function listDiscoverablePlatformOauthApps(input: {
 	db: D1Database
-	limit: number
 }): Promise<Array<PlatformOauthApp>> {
 	const result = await input.db
 		.prepare(
-			`SELECT ${platformAppSelectColumns},
-				(
-					SELECT count(*) FROM user_integrations
-					WHERE user_integrations.platform_app_slug = platform_oauth_apps.slug
-				) AS connection_count
-			FROM platform_oauth_apps
-			WHERE enabled = 1
-			ORDER BY connection_count DESC, created_at ASC, slug ASC
-			LIMIT ?`,
+			`SELECT ${platformAppSelectColumns} FROM platform_oauth_apps
+			WHERE ${discoverableWhereClause}
+			ORDER BY slug ASC`,
 		)
-		.bind(input.limit)
 		.all<PlatformOauthAppRow>()
 	return (result.results ?? []).map(mapPlatformOauthAppRow)
+}
+
+/**
+ * The enabled + published app for `slug`, or null. New platform-lane
+ * connects (connect_oauth / oauth_exchange) resolve through this so a draft
+ * app never accepts a connect even when a caller knows its slug.
+ */
+export async function getDiscoverablePlatformOauthApp(input: {
+	db: D1Database
+	slug: string
+}): Promise<PlatformOauthApp | null> {
+	const slug = canonicalIntegrationName(input.slug)
+	if (!slug) return null
+	const row = await input.db
+		.prepare(
+			`SELECT ${platformAppSelectColumns}
+			FROM platform_oauth_apps
+			WHERE slug = ? AND ${discoverableWhereClause}
+			LIMIT 1`,
+		)
+		.bind(slug)
+		.first<PlatformOauthAppRow>()
+	return row ? mapPlatformOauthAppRow(row) : null
 }
 
 export async function getPlatformOauthAppBySlug(input: {
@@ -179,6 +211,8 @@ export type PlatformOauthAppSaveInput = {
 	defaultScopes?: Array<string>
 	requiredHosts?: Array<string>
 	enabled?: boolean
+	/** Defaults to draft on create; omit to keep the stored value. */
+	visibility?: PlatformOauthAppVisibility
 }
 
 export async function upsertPlatformOauthApp(input: {
@@ -232,6 +266,9 @@ export async function upsertPlatformOauthApp(input: {
 		)
 	}
 
+	const visibility =
+		input.app.visibility ?? existing?.visibility ?? ('draft' as const)
+
 	const now = new Date().toISOString()
 	const defaultScopes =
 		input.app.defaultScopes === undefined
@@ -258,9 +295,9 @@ export async function upsertPlatformOauthApp(input: {
 				client_secret_encrypted, token_url, authorize_url, api_base_url,
 				flow, use_pkce, token_exchange_style, scope_separator,
 				extra_authorize_params_json, allowed_scopes_json,
-				default_scopes_json, required_hosts_json, enabled, created_at,
-				updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				default_scopes_json, required_hosts_json, enabled, visibility,
+				created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(slug)
 			DO UPDATE SET
 				provider = excluded.provider,
@@ -280,6 +317,7 @@ export async function upsertPlatformOauthApp(input: {
 				default_scopes_json = excluded.default_scopes_json,
 				required_hosts_json = excluded.required_hosts_json,
 				enabled = excluded.enabled,
+				visibility = excluded.visibility,
 				updated_at = excluded.updated_at`,
 		)
 		.bind(
@@ -317,6 +355,7 @@ export async function upsertPlatformOauthApp(input: {
 				? (existing?.required_hosts_json ?? '[]')
 				: JSON.stringify(input.app.requiredHosts),
 			enabled,
+			visibility,
 			existing?.created_at ?? now,
 			now,
 		)
@@ -402,16 +441,16 @@ export async function renamePlatformOauthApp(input: {
 					client_secret_encrypted, token_url, authorize_url, api_base_url,
 					flow, use_pkce, token_exchange_style, scope_separator,
 					extra_authorize_params_json, allowed_scopes_json,
-					default_scopes_json, required_hosts_json, enabled, logo_key,
-					logo_content_type, created_at, updated_at
+					default_scopes_json, required_hosts_json, enabled, visibility,
+					logo_key, logo_content_type, created_at, updated_at
 				)
 				SELECT
 					?, provider, label, description, client_id,
 					?, token_url, authorize_url, api_base_url,
 					flow, use_pkce, token_exchange_style, scope_separator,
 					extra_authorize_params_json, allowed_scopes_json,
-					default_scopes_json, required_hosts_json, enabled, logo_key,
-					logo_content_type, created_at, ?
+					default_scopes_json, required_hosts_json, enabled, visibility,
+					logo_key, logo_content_type, created_at, ?
 				FROM platform_oauth_apps WHERE slug = ?`,
 			)
 			.bind(newSlug, reboundSecret, new Date().toISOString(), slug),
@@ -533,6 +572,7 @@ export function mapPlatformOauthAppRow(
 		defaultScopes: parseJsonStringArray(row.default_scopes_json),
 		requiredHosts: parseJsonStringArray(row.required_hosts_json),
 		enabled: row.enabled === 1,
+		visibility: row.visibility === 'published' ? 'published' : 'draft',
 		logoKey: row.logo_key ?? null,
 		logoContentType: row.logo_content_type ?? null,
 		createdAt: row.created_at,

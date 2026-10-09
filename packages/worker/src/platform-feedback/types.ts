@@ -78,3 +78,22 @@ export type PlatformFeedbackListItem = Omit<
 	PlatformFeedbackRecord,
 	'details' | 'adminNote' | 'submitterUsername' | 'submitterEmail'
 >
+
+/**
+ * Submitter-facing feedback fields. Matches the account-export columns that
+ * survive reviewer redaction (`reviewed_by_user_id`, `reviewed_at`,
+ * `admin_note`), minus the submitter's own identity columns.
+ */
+export type PlatformFeedbackSubmitterListItem = {
+	id: string
+	category: PlatformFeedbackCategory
+	summary: string
+	status: PlatformFeedbackStatus
+	createdAt: string
+	updatedAt: string
+}
+
+export type PlatformFeedbackSubmitterRecord =
+	PlatformFeedbackSubmitterListItem & {
+		details: string
+	}

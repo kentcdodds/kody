@@ -85,6 +85,7 @@ export async function deriveOnboardingChecklist(input: {
 	hasMcpClient: boolean
 	hasAccessWin?: boolean
 	hasSecondMcpClient?: boolean
+	savedPackageCount?: number
 	now?: Date
 }): Promise<OnboardingChecklist> {
 	const { env, userId } = input
@@ -93,13 +94,14 @@ export async function deriveOnboardingChecklist(input: {
 		input.hasAccessWin === undefined
 			? loadOnboardingAccessWin(env, userId)
 			: input.hasAccessWin,
-		readCurrentEntitlementResourceUsage({
-			db: env.APP_DB,
-			env,
-			userId,
-			resource: 'saved_packages',
-			now,
-		}).catch(() => 0),
+		input.savedPackageCount ??
+			readCurrentEntitlementResourceUsage({
+				db: env.APP_DB,
+				env,
+				userId,
+				resource: 'saved_packages',
+				now,
+			}).catch(() => 0),
 	])
 
 	const items: Array<OnboardingChecklistItem> = [

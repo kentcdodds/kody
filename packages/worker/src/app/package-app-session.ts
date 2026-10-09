@@ -1,6 +1,6 @@
 import { createCookie } from 'remix/cookie'
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
-import { isStableUserId } from '#worker/user-id.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * Host-scoped session for one user's package-app subdomain.
@@ -114,7 +114,7 @@ function isStoredPackageAppSession(
 	const record = value as Record<string, unknown>
 	return (
 		record.v === 2 &&
-		isStableUserId(record.stableUserId) &&
+		parsePersonId(record.stableUserId) !== null &&
 		typeof record.pkgUsername === 'string' &&
 		record.pkgUsername.length > 0 &&
 		typeof record.issuedAt === 'number' &&

@@ -11,7 +11,6 @@ import {
 	visibleDocsNav,
 	type DocsNavSection,
 } from '#universal/docs-nav.ts'
-import accountPackageInvocationTokenSetup from '../../../../docs/guides/account-package-invocation-token-setup.md'
 import accountSecretSetup from '../../../../docs/guides/account-secret-setup.md'
 import adminEvents from '../../../../docs/guides/admin-events.md'
 import connectYourAgent from '../../../../docs/guides/connect-your-agent.md'
@@ -27,6 +26,7 @@ import kodyFactory from '../../../../docs/guides/kody-factory.md'
 import localMcpTunnels from '../../../../docs/guides/local-mcp-tunnels.md'
 import heavyWorkOffload from '../../../../docs/guides/heavy-work-offload.md'
 import memory from '../../../../docs/guides/memory.md'
+import agentGuidance from '../../../../docs/guides/agent-guidance.md'
 import quickExample from '../../../../docs/guides/quick-example.md'
 import integrationBootstrap from '../../../../docs/guides/integration-bootstrap.md'
 import lockedGmailDrafts from '../../../../docs/guides/locked-gmail-drafts.md'
@@ -35,14 +35,20 @@ import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
 import packageSharing from '../../../../docs/guides/package-sharing.md'
+import packageSkills from '../../../../docs/guides/package-skills.md'
 import packageApps from '../../../../docs/guides/package-apps.md'
 import packageLifecycle from '../../../../docs/guides/package-lifecycle.md'
 import platformEfficiency from '../../../../docs/guides/platform-efficiency.md'
+import localExecute from '../../../../docs/guides/local-execute.md'
+import openApi from '../../../../docs/guides/open-api.md'
 import packagesIntegrationsMcp from '../../../../docs/guides/packages-integrations-mcp.md'
 import packageSubscriptions from '../../../../docs/guides/package-subscriptions.md'
+import mcpEvents from '../../../../docs/guides/mcp-events.md'
 import textYourAgent from '../../../../docs/guides/text-your-agent.md'
+import openmuse from '../../../../docs/guides/openmuse.md'
 import platformFriction from '../../../../docs/guides/platform-friction.md'
 import providerDiscord from '../../../../docs/guides/providers/discord.md'
+import providerFigma from '../../../../docs/guides/providers/figma.md'
 import providerGithub from '../../../../docs/guides/providers/github.md'
 import providerGoogle from '../../../../docs/guides/providers/google.md'
 import providerNotion from '../../../../docs/guides/providers/notion.md'
@@ -80,12 +86,16 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'portability', raw: portability },
 	{ slug: 'first-win', raw: firstWin },
 	{ slug: 'memory', raw: memory },
+	{ slug: 'agent-guidance', raw: agentGuidance },
 	{ slug: 'secrets', raw: secrets },
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
 	{ slug: 'text-your-agent', raw: textYourAgent },
+	{ slug: 'openmuse', raw: openmuse },
 	{ slug: 'triggers', raw: triggers },
 	{ slug: 'platform-efficiency', raw: platformEfficiency },
+	{ slug: 'local-execute', raw: localExecute },
+	{ slug: 'open-api', raw: openApi },
 	{ slug: 'flake-hunter', raw: flakeHunter },
 	{ slug: 'sentry-issues', raw: sentryIssues },
 	{ slug: 'agent-inbox', raw: agentInbox },
@@ -93,8 +103,10 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'package-lifecycle', raw: packageLifecycle },
 	{ slug: 'package-authoring', raw: packageAuthoring },
 	{ slug: 'package-sharing', raw: packageSharing },
+	{ slug: 'package-skills', raw: packageSkills },
 	{ slug: 'package-apps', raw: packageApps },
 	{ slug: 'package-subscriptions', raw: packageSubscriptions },
+	{ slug: 'mcp-events', raw: mcpEvents },
 	{ slug: 'heavy-work-offload', raw: heavyWorkOffload },
 	{ slug: 'integration-bootstrap', raw: integrationBootstrap },
 	{ slug: 'oauth', raw: oauth },
@@ -106,6 +118,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'locked-mcp-server', raw: lockedMcpServer },
 	{ slug: 'locked-gmail-drafts', raw: lockedGmailDrafts },
 	{ slug: 'discord', raw: providerDiscord },
+	{ slug: 'figma', raw: providerFigma },
 	{ slug: 'github', raw: providerGithub },
 	{ slug: 'google', raw: providerGoogle },
 	{ slug: 'notion', raw: providerNotion },
@@ -116,10 +129,6 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'platform-friction', raw: platformFriction },
 	{ slug: 'admin-events', raw: adminEvents },
 	{ slug: 'values', raw: values },
-	{
-		slug: 'account-package-invocation-token-setup',
-		raw: accountPackageInvocationTokenSetup,
-	},
 ]
 
 function buildCatalog(): ReadonlyArray<Guide> {

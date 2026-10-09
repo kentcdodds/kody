@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
-import { resetDataCacheForTests } from '#app/data-cache.ts'
+import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import { testOidcSigningEnv } from '#worker/test-support/oidc-signing-env.ts'
@@ -57,7 +57,7 @@ function createAnonymousTestDb() {
 }
 
 test('renderAppPage renders the redesigned pricing page', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = {
 		COOKIE_SECRET: testCookieSecret,
@@ -78,17 +78,33 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html).toContain('Standard')
+	expect(html).not.toContain('Standard')
+	expect(html).not.toMatch(/\bMax\b/)
 	expect(html).toContain('Pro')
+	expect(html).toContain('$12')
+	expect(html).toContain(
+		'More room for jobs, workflows, and daily volume, with a monthly include. Need more? Add prepaid credits.',
+	)
+	expect(html).toContain('Prepaid credits')
+	// Customer story: Free hard-capped; Pro seat + include; credits until
+	// gone; small print on how far credits go and the stop.
+	expect(html).toContain(
+		'Pro includes the usage in the table. Need more? Add prepaid credits and keep going until they run out. Free stops at its limits.',
+	)
+	expect(html).toContain(
+		'Usage past the include is charged from credits (Worker compute and Rows read). Daily and weekly limits can go up to 50× Pro’s included limits on credits. When credits run out, rate and compute limits match Free until you top up. No overage invoices.',
+	)
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
-	expect(html).toContain('Unique worker days per month')
 	expect(html).toContain('Durable Object rows read per month')
 	expect(html).toContain('Execute calls per week')
 	expect(html).toContain('Outbound fetches per week')
-	expect(html).toContain('1,500')
-	expect(html).toContain('4,000')
-	expect(html).toContain('50,000')
-	expect(html).toContain('120,000')
+	expect(html).toContain('1,200')
+	expect(html).toContain('Automation invocations per day')
+	expect(html).toContain('1,000')
+	expect(html).toContain('10,000')
+	expect(html).toContain('15,000')
+	expect(html).toContain('40,000')
+	expect(html).not.toContain('120,000')
 	expect(html).toMatch(/<a[^>]*href="\/docs\/kody-factory"[^>]*>factory<\/a>/)
 })

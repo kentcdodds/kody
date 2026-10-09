@@ -11,15 +11,12 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: mockModule.getEntitySourceById,
 }))
 
 vi.mock('#worker/repo/published-source.ts', () => ({
-	loadPublishedEntitySource: (...args: Array<unknown>) =>
-		mockModule.loadPublishedEntitySource(...args),
-	loadPublishedEntityManifest: (...args: Array<unknown>) =>
-		mockModule.loadPublishedEntityManifest(...args),
+	loadPublishedEntitySource: mockModule.loadPublishedEntitySource,
+	loadPublishedEntityManifest: mockModule.loadPublishedEntityManifest,
 }))
 
 const {
@@ -28,18 +25,31 @@ const {
 	loadPackageSourceFromFiles,
 } = await import('./source.ts')
 
-function createPackageSourceRow(input: {
-	id: string
-	publishedCommit: string | null
-}) {
+const manifest = {
+	name: '@kentcdodds/example-package',
+	exports: { '.': './index.js' },
+	kody: {
+		id: 'example-package',
+		description: 'Example package',
+		app: { entry: 'app.js' },
+	},
+}
+
+const packageFiles = {
+	'package.json': JSON.stringify(manifest),
+	'app.js': 'export default { async fetch() { return new Response("ok") } }',
+	'index.js': 'export const value = "ok"',
+}
+
+function createPackageSourceRow(id: string, publishedCommit: string | null) {
 	return {
-		id: input.id,
+		id,
 		user_id: 'user-1',
 		entity_kind: 'package' as const,
-		entity_id: `package-${input.id}`,
-		repo_id: `repo-${input.id}`,
-		published_commit: input.publishedCommit,
-		indexed_commit: input.publishedCommit,
+		entity_id: `package-${id}`,
+		repo_id: `repo-${id}`,
+		published_commit: publishedCommit,
+		indexed_commit: publishedCommit,
 		manifest_path: 'package.json',
 		source_root: '/',
 		created_at: '2026-04-20T00:00:00.000Z',
@@ -47,46 +57,23 @@ function createPackageSourceRow(input: {
 	}
 }
 
-function createBundleKv() {
-	return {
-		get: vi.fn(async () => null),
-		put: vi.fn(async () => undefined),
-		delete: vi.fn(async () => undefined),
-	} as unknown as KVNamespace
-}
-
 function createPublishedSourcePayload(sourceId: string, commit: string) {
 	return {
-		source: createPackageSourceRow({
-			id: sourceId,
-			publishedCommit: commit,
-		}),
-		files: {
-			'package.json': JSON.stringify({
-				name: '@kentcdodds/example-package',
-				exports: {
-					'.': './index.js',
-				},
-				kody: {
-					id: 'example-package',
-					description: 'Example package',
-					app: {
-						entry: 'app.js',
-					},
-				},
-			}),
-			'app.js':
-				'export default { async fetch() { return new Response("ok") } }',
-			'index.js': 'export const value = "ok"',
-		},
+		source: createPackageSourceRow(sourceId, commit),
+		files: packageFiles,
+		snapshotCreatedAt: '2026-04-20T00:05:00.000Z',
 	}
 }
 
-function createLoadSourceInput(sourceId: string, bundleKv: KVNamespace) {
+function createLoadSourceInput(sourceId: string) {
 	return {
 		env: {
 			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: bundleKv,
+			BUNDLE_ARTIFACTS_KV: {
+				get: vi.fn(async () => null),
+				put: vi.fn(async () => undefined),
+				delete: vi.fn(async () => undefined),
+			} as unknown as KVNamespace,
 		} as Env,
 		baseUrl: 'https://heykody.dev',
 		userId: 'user-1',
@@ -94,95 +81,47 @@ function createLoadSourceInput(sourceId: string, bundleKv: KVNamespace) {
 	}
 }
 
-test('loadPackageSourceBySourceId caches published sources, shares in-flight loads, evicts failures, and skips cache for unpublished sources', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntitySource.mockReset()
-	const bundleKv = createBundleKv()
-
+test('loadPackageSourceBySourceId caches published sources', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-published-1',
-			publishedCommit: 'commit-1',
-		}),
+		createPackageSourceRow('source-published-1', 'commit-1'),
 	)
 	mockModule.loadPublishedEntitySource.mockResolvedValue(
 		createPublishedSourcePayload('source-published-1', 'commit-1'),
 	)
 
-	const cachedInput = createLoadSourceInput('source-published-1', bundleKv)
-	const first = await loadPackageSourceBySourceId(cachedInput)
-	const second = await loadPackageSourceBySourceId(cachedInput)
+	const input = createLoadSourceInput('source-published-1')
+	const first = await loadPackageSourceBySourceId(input)
+	const second = await loadPackageSourceBySourceId(input)
 
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 	expect(first).toStrictEqual(second)
-	expect(first.files).toEqual({
-		'app.js': 'export default { async fetch() { return new Response("ok") } }',
-		'index.js': 'export const value = "ok"',
-		'package.json': JSON.stringify({
-			name: '@kentcdodds/example-package',
-			exports: {
-				'.': './index.js',
-			},
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-				app: {
-					entry: 'app.js',
-				},
-			},
-		}),
-	})
+	expect(first.files).toEqual(packageFiles)
+	expect(first.snapshotCreatedAt).toBe('2026-04-20T00:05:00.000Z')
+})
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntitySource.mockReset()
-	const concurrentKv = createBundleKv()
-	type PublishedSourcePayload = ReturnType<typeof createPublishedSourcePayload>
-	let resolveFiles: ((value: PublishedSourcePayload) => void) | null = null
-	const filesPromise = new Promise<PublishedSourcePayload>((resolve) => {
-		resolveFiles = resolve
-	})
-
+test('loadPackageSourceBySourceId shares in-flight loads', async () => {
+	const sourceId = 'source-published-concurrent'
+	const commit = 'commit-concurrent-1'
+	const { promise, resolve } =
+		Promise.withResolvers<ReturnType<typeof createPublishedSourcePayload>>()
 	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-published-concurrent',
-			publishedCommit: 'commit-concurrent-1',
-		}),
+		createPackageSourceRow(sourceId, commit),
 	)
-	mockModule.loadPublishedEntitySource.mockImplementation(
-		async () => await filesPromise,
-	)
+	mockModule.loadPublishedEntitySource.mockImplementation(() => promise)
 
-	const concurrentInput = createLoadSourceInput(
-		'source-published-concurrent',
-		concurrentKv,
-	)
-	const firstPromise = loadPackageSourceBySourceId(concurrentInput)
-	const secondPromise = loadPackageSourceBySourceId(concurrentInput)
-
-	resolveFiles?.(
-		createPublishedSourcePayload(
-			'source-published-concurrent',
-			'commit-concurrent-1',
-		),
-	)
-
-	const [concurrentFirst, concurrentSecond] = await Promise.all([
-		firstPromise,
-		secondPromise,
-	])
+	const input = createLoadSourceInput(sourceId)
+	const firstPromise = loadPackageSourceBySourceId(input)
+	const secondPromise = loadPackageSourceBySourceId(input)
+	resolve(createPublishedSourcePayload(sourceId, commit))
+	const [first, second] = await Promise.all([firstPromise, secondPromise])
 
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
-	expect(concurrentFirst).toBe(concurrentSecond)
+	expect(first).toBe(second)
+})
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntitySource.mockReset()
-	const failureKv = createBundleKv()
-
+test('loadPackageSourceBySourceId evicts failures and skips cache for unpublished sources', async () => {
 	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-published-failure',
-			publishedCommit: 'commit-failure-1',
-		}),
+		createPackageSourceRow('source-published-failure', 'commit-failure-1'),
 	)
 	mockModule.loadPublishedEntitySource
 		.mockRejectedValueOnce(new Error('repo load failed'))
@@ -192,12 +131,7 @@ test('loadPackageSourceBySourceId caches published sources, shares in-flight loa
 				'commit-failure-1',
 			),
 		)
-
-	const failureInput = createLoadSourceInput(
-		'source-published-failure',
-		failureKv,
-	)
-
+	const failureInput = createLoadSourceInput('source-published-failure')
 	await expect(loadPackageSourceBySourceId(failureInput)).rejects.toThrow(
 		'repo load failed',
 	)
@@ -205,117 +139,54 @@ test('loadPackageSourceBySourceId caches published sources, shares in-flight loa
 		loadPackageSourceBySourceId(failureInput),
 	).resolves.toMatchObject({
 		files: {
-			'app.js':
-				'export default { async fetch() { return new Response("ok") } }',
-			'index.js': 'export const value = "ok"',
+			'app.js': packageFiles['app.js'],
+			'index.js': packageFiles['index.js'],
 		},
 	})
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(2)
 
-	mockModule.getEntitySourceById.mockReset()
 	mockModule.loadPublishedEntitySource.mockReset()
-	const unpublishedKv = createBundleKv()
-
 	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-unpublished-1',
-			publishedCommit: null,
-		}),
+		createPackageSourceRow('source-unpublished-1', null),
 	)
 	mockModule.loadPublishedEntitySource.mockRejectedValue(
 		new Error('Source "source-unpublished-1" has no published commit.'),
 	)
-
 	await expect(
-		loadPackageSourceBySourceId(
-			createLoadSourceInput('source-unpublished-1', unpublishedKv),
-		),
+		loadPackageSourceBySourceId(createLoadSourceInput('source-unpublished-1')),
 	).rejects.toThrow('Source "source-unpublished-1" has no published commit.')
 	expect(mockModule.loadPublishedEntitySource).toHaveBeenCalledTimes(1)
 })
 
-test('loadPackageManifestBySourceId reads manifest-only sources with D1 retry, and loadPackageSourceFromFiles parses caller files with ownership checks', async () => {
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntityManifest.mockReset()
-	mockModule.loadPublishedEntitySource.mockReset()
-	const manifestKv = createBundleKv()
-
-	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-manifest-only-1',
-			publishedCommit: 'commit-manifest-only-1',
-		}),
+test('loadPackageManifestBySourceId reads and caches manifest-only sources', async () => {
+	const source = createPackageSourceRow(
+		'source-manifest-only-1',
+		'commit-manifest-only-1',
 	)
+	mockModule.getEntitySourceById.mockResolvedValue(source)
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
-		source: createPackageSourceRow({
-			id: 'source-manifest-only-1',
-			publishedCommit: 'commit-manifest-only-1',
-		}),
-		content: JSON.stringify({
-			name: '@kentcdodds/example-package',
-			exports: {
-				'.': './index.js',
-			},
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-				app: {
-					entry: 'app.js',
-				},
-			},
-		}),
-		manifest: {
-			name: '@kentcdodds/example-package',
-			exports: {
-				'.': './index.js',
-			},
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-				app: {
-					entry: 'app.js',
-				},
-			},
-		},
+		source,
+		content: JSON.stringify(manifest),
+		manifest,
 	})
 
-	const manifestInput = {
-		env: {
-			APP_DB: {},
-			BUNDLE_ARTIFACTS_KV: manifestKv,
-		} as Env,
-		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
-		sourceId: 'source-manifest-only-1',
-	}
-	const firstManifest = await loadPackageManifestBySourceId(manifestInput)
-	const secondManifest = await loadPackageManifestBySourceId(manifestInput)
+	const input = createLoadSourceInput('source-manifest-only-1')
+	const first = await loadPackageManifestBySourceId(input)
+	const second = await loadPackageManifestBySourceId(input)
 
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
-	expect(firstManifest).toStrictEqual(secondManifest)
-	expect(firstManifest.manifest).toMatchObject({
+	expect(first).toStrictEqual(second)
+	expect(first.manifest).toMatchObject({
 		name: '@kentcdodds/example-package',
-		kody: {
-			id: 'example-package',
-		},
+		kody: { id: 'example-package' },
 	})
+})
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntityManifest.mockReset()
-	const retryKv = createBundleKv()
-	const source = createPackageSourceRow({
-		id: 'source-retry-export',
-		publishedCommit: 'commit-retry-1',
-	})
-	const manifest = {
-		name: '@kentcdodds/example-package',
-		exports: { '.': './index.js' },
-		kody: {
-			id: 'example-package',
-			description: 'Example package',
-		},
-	}
+test('loadPackageManifestBySourceId retries a transient D1 export error', async () => {
+	const source = createPackageSourceRow('source-retry-export', 'commit-retry-1')
+	const { app: _app, ...kody } = manifest.kody
+	const retryManifest = { ...manifest, kody }
 	mockModule.getEntitySourceById
 		.mockRejectedValueOnce(
 			new Error(`D1_ERROR: ${d1LongRunningExportMessage}.`),
@@ -323,21 +194,15 @@ test('loadPackageManifestBySourceId reads manifest-only sources with D1 retry, a
 		.mockResolvedValueOnce(source)
 	mockModule.loadPublishedEntityManifest.mockResolvedValue({
 		source,
-		content: JSON.stringify(manifest),
-		manifest,
+		content: JSON.stringify(retryManifest),
+		manifest: retryManifest,
 	})
 
 	vi.useFakeTimers()
 	try {
-		const resultPromise = loadPackageManifestBySourceId({
-			env: {
-				APP_DB: {},
-				BUNDLE_ARTIFACTS_KV: retryKv,
-			} as Env,
-			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
-			sourceId: 'source-retry-export',
-		})
+		const resultPromise = loadPackageManifestBySourceId(
+			createLoadSourceInput('source-retry-export'),
+		)
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
 		await expect(resultPromise).resolves.toMatchObject({
 			manifest: {
@@ -351,61 +216,35 @@ test('loadPackageManifestBySourceId reads manifest-only sources with D1 retry, a
 
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(2)
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
+})
 
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.loadPublishedEntitySource.mockReset()
-	mockModule.getEntitySourceById.mockResolvedValue(
-		createPackageSourceRow({
-			id: 'source-from-files',
-			publishedCommit: 'commit-fork-1',
-		}),
-	)
+test('loadPackageSourceFromFiles parses caller files with ownership checks', async () => {
+	const source = createPackageSourceRow('source-from-files', 'commit-fork-1')
 	const files = {
 		'package.json': JSON.stringify({
 			name: '@kentcdodds/example-package',
 			exports: { '.': './index.js' },
-			kody: {
-				id: 'example-package',
-				description: 'Example package',
-			},
+			kody: { id: 'example-package', description: 'Example package' },
 		}),
 		'index.js': 'export default async function main() { return "ok" }\n',
 	}
-
-	const loaded = await loadPackageSourceFromFiles({
-		env: { APP_DB: {} } as Env,
-		userId: 'user-1',
-		sourceId: 'source-from-files',
-		files,
-	})
-
-	expect(loaded.files).toEqual(files)
-	expect(loaded.manifest.kody.id).toBe('example-package')
-	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
-
-	mockModule.getEntitySourceById.mockReset()
-	mockModule.getEntitySourceById.mockResolvedValue({
-		...createPackageSourceRow({
-			id: 'source-from-files',
-			publishedCommit: 'commit-fork-1',
-		}),
-		user_id: 'user-2',
-	})
-	await expect(
+	const load = () =>
 		loadPackageSourceFromFiles({
 			env: { APP_DB: {} } as Env,
 			userId: 'user-1',
 			sourceId: 'source-from-files',
-			files: {
-				'package.json': JSON.stringify({
-					name: '@kentcdodds/example-package',
-					exports: { '.': './index.js' },
-					kody: {
-						id: 'example-package',
-						description: 'Example package',
-					},
-				}),
-			},
-		}),
-	).rejects.toThrow('was not found')
+			files,
+		})
+
+	mockModule.getEntitySourceById.mockResolvedValue(source)
+	const loaded = await load()
+	expect(loaded.files).toEqual(files)
+	expect(loaded.manifest.kody.id).toBe('example-package')
+	expect(mockModule.loadPublishedEntitySource).not.toHaveBeenCalled()
+
+	mockModule.getEntitySourceById.mockResolvedValue({
+		...source,
+		user_id: 'user-2',
+	})
+	await expect(load()).rejects.toThrow('was not found')
 })

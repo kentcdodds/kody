@@ -1,65 +1,93 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import type * as accessControl from '#mcp/capabilities/access-control.ts'
+import type * as capabilityRegistry from '#mcp/capabilities/registry.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as secretsService from '#mcp/secrets/service.ts'
+import type * as memoryToolContext from '#mcp/tools/memory-tool-context.ts'
+import type * as valuesService from '#mcp/values/service.ts'
 import {
 	featureFlagKeys,
 	jevSearchRerankFlagKey,
 } from '#universal/feature-flags/registry.ts'
+import type * as entitlementsService from '#worker/entitlements/service.ts'
+import type * as integrationsService from '#worker/integrations/service.ts'
+import type * as packageRepo from '#worker/package-registry/repo.ts'
+import type * as packageRetrievers from '#worker/package-retrievers/service.ts'
+import type * as searchRateLimit from '#worker/search-rate-limit.ts'
+import { type CapabilityContext } from '../types.ts'
 
 const mockModule = vi.hoisted(() => ({
-	getCapabilityRegistryForContext: vi.fn(async () => ({
-		capabilityDomains: [
-			{
-				name: 'meta',
-				description: 'Search and registry metadata.',
+	getCapabilityRegistryForContext: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof capabilityRegistry.getCapabilityRegistryForContext
+			>
+		) => ({
+			capabilityDomains: [
+				{
+					name: 'meta',
+					description: 'Search and registry metadata.',
+				},
+			],
+			capabilitySpecs: {
+				search_docs: {
+					name: 'search_docs',
+					description: 'Search docs capability',
+					domain: 'meta',
+					keywords: [],
+					inputFields: [],
+					requiredInputFields: [],
+					outputFields: [],
+					readOnly: true,
+					idempotent: true,
+					destructive: false,
+					inputSchema: { type: 'object', properties: {} },
+				},
 			},
-		],
-		capabilitySpecs: {
-			search_docs: {
-				name: 'search_docs',
-				description: 'Search docs capability',
-				domain: 'meta',
-				keywords: [],
-				inputFields: [],
-				requiredInputFields: [],
-				outputFields: [],
-				readOnly: true,
-				idempotent: true,
-				destructive: false,
-				inputSchema: { type: 'object', properties: {} },
-			},
-		},
-	})),
-	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
-	listSavedPackagesByUserId: vi.fn(async () => []),
-	listUserSecretsForSearch: vi.fn(async () => []),
-	listValues: vi.fn(async () => []),
-	listJoinedIntegrations: vi.fn(async () => []),
-	loadRelevantMemoriesForTool: vi.fn(async () => null),
-	acknowledgeToolMemories: vi.fn(async () => undefined),
-	buildMemoryRetrievalQuery: vi.fn(
-		(
-			input?: {
-				task?: string
-				query?: string
-				entities?: Array<string>
-				constraints?: Array<string>
-			} | null,
-		) =>
-			[
-				input?.task,
-				input?.query,
-				...(input?.entities ?? []),
-				...(input?.constraints ?? []),
-			]
-				.filter(Boolean)
-				.join('\n'),
+		}),
 	),
-	runPackageRetrievers: vi.fn(async () => ({ results: [], warnings: [] })),
+	getSavedPackageById: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
+	listSavedPackagesByUserId: vi.fn<
+		typeof packageRepo.listSavedPackagesByUserId
+	>(async () => []),
+	listUserSecretsForSearch: vi.fn<
+		typeof secretsService.listUserSecretsForSearch
+	>(async () => []),
+	listValues: vi.fn<typeof valuesService.listValues>(async () => []),
+	listJoinedIntegrations: vi.fn<
+		typeof integrationsService.listJoinedIntegrations
+	>(async () => []),
+	loadRelevantMemoriesForTool: vi.fn<
+		typeof memoryToolContext.loadRelevantMemoriesForTool
+	>(async () => null),
+	acknowledgeToolMemories: vi.fn<
+		typeof memoryToolContext.acknowledgeToolMemories
+	>(async () => undefined),
+	buildMemoryRetrievalQuery: vi.fn<
+		typeof memoryToolContext.buildMemoryRetrievalQuery
+	>((input) =>
+		[
+			input?.task,
+			input?.query,
+			...(input?.entities ?? []),
+			...(input?.constraints ?? []),
+		]
+			.filter(Boolean)
+			.join('\n'),
+	),
+	runPackageRetrievers: vi.fn<typeof packageRetrievers.runPackageRetrievers>(
+		async () => ({ results: [], warnings: [] }),
+	),
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
-		mockModule.getCapabilityRegistryForContext(...args),
+	getCapabilityRegistryForContext: (
+		...args: Parameters<
+			typeof capabilityRegistry.getCapabilityRegistryForContext
+		>
+	) => mockModule.getCapabilityRegistryForContext(...args),
 }))
 
 vi.mock('#worker/package-registry/platform-packages.ts', () => ({
@@ -78,44 +106,53 @@ vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
-	listSavedPackagesByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
-	listSavedPackagesWithCommunityProvenanceByUserId: (...args: Array<unknown>) =>
-		mockModule.listSavedPackagesByUserId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
+	listSavedPackagesByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
+	listSavedPackagesWithCommunityProvenanceByUserId: (
+		...args: Parameters<typeof packageRepo.listSavedPackagesByUserId>
+	) => mockModule.listSavedPackagesByUserId(...args),
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	listUserSecretsForSearch: (...args: Array<unknown>) =>
-		mockModule.listUserSecretsForSearch(...args),
+	listUserSecretsForSearch: (
+		...args: Parameters<typeof secretsService.listUserSecretsForSearch>
+	) => mockModule.listUserSecretsForSearch(...args),
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
+	listValues: (...args: Parameters<typeof valuesService.listValues>) =>
+		mockModule.listValues(...args),
 }))
 
 vi.mock('#worker/integrations/service.ts', () => ({
-	listJoinedIntegrations: (...args: Array<unknown>) =>
-		mockModule.listJoinedIntegrations(...args),
+	listJoinedIntegrations: (
+		...args: Parameters<typeof integrationsService.listJoinedIntegrations>
+	) => mockModule.listJoinedIntegrations(...args),
 }))
 
 vi.mock('#mcp/tools/memory-tool-context.ts', () => ({
-	loadRelevantMemoriesForTool: (...args: Array<unknown>) =>
-		mockModule.loadRelevantMemoriesForTool(...args),
-	acknowledgeToolMemories: (...args: Array<unknown>) =>
-		mockModule.acknowledgeToolMemories(...args),
-	buildMemoryRetrievalQuery: (...args: Array<unknown>) =>
-		mockModule.buildMemoryRetrievalQuery(...args),
+	loadRelevantMemoriesForTool: (
+		...args: Parameters<typeof memoryToolContext.loadRelevantMemoriesForTool>
+	) => mockModule.loadRelevantMemoriesForTool(...args),
+	acknowledgeToolMemories: (
+		...args: Parameters<typeof memoryToolContext.acknowledgeToolMemories>
+	) => mockModule.acknowledgeToolMemories(...args),
+	buildMemoryRetrievalQuery: (
+		...args: Parameters<typeof memoryToolContext.buildMemoryRetrievalQuery>
+	) => mockModule.buildMemoryRetrievalQuery(...args),
 }))
 
 vi.mock('#worker/package-retrievers/service.ts', () => ({
-	runPackageRetrievers: (...args: Array<unknown>) =>
-		mockModule.runPackageRetrievers(...args),
+	runPackageRetrievers: (
+		...args: Parameters<typeof packageRetrievers.runPackageRetrievers>
+	) => mockModule.runPackageRetrievers(...args),
 }))
 
 const mockFeatureFlags = vi.hoisted(() => ({
@@ -127,8 +164,7 @@ const mockUserPlan = vi.hoisted(() => ({
 }))
 
 vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#mcp/capabilities/access-control.ts')>()
+	const actual = await importOriginal<typeof accessControl>()
 	return {
 		...actual,
 		resolveCallerFeatureFlags: async (
@@ -137,12 +173,26 @@ vi.mock('#mcp/capabilities/access-control.ts', async (importOriginal) => {
 			if (mockFeatureFlags.override) return mockFeatureFlags.override
 			return actual.resolveCallerFeatureFlags(...args)
 		},
+		resolveCallerFeatureFlagEvaluations: async (
+			...args: Parameters<typeof actual.resolveCallerFeatureFlagEvaluations>
+		) => {
+			if (mockFeatureFlags.override) {
+				return Object.fromEntries(
+					Object.entries(mockFeatureFlags.override).map(([key, enabled]) => [
+						key,
+						{ enabled, source: 'global' as const },
+					]),
+				) as Awaited<
+					ReturnType<typeof actual.resolveCallerFeatureFlagEvaluations>
+				>
+			}
+			return actual.resolveCallerFeatureFlagEvaluations(...args)
+		},
 	}
 })
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/entitlements/service.ts')>()
+	const actual = await importOriginal<typeof entitlementsService>()
 	return {
 		...actual,
 		getUserPlan: async () => mockUserPlan.plan,
@@ -150,11 +200,10 @@ vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 })
 
 vi.mock('#worker/search-rate-limit.ts', async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import('#worker/search-rate-limit.ts')>()
+	const actual = await importOriginal<typeof searchRateLimit>()
 	return {
 		...actual,
-		consumeSearchRateLimit: vi.fn(async () => undefined),
+		consumeSearchRateLimit: vi.fn(async () => mockUserPlan.plan),
 	}
 })
 
@@ -162,24 +211,26 @@ const { searchCapability } = await import('./search.ts')
 
 const packageId = '550e8400-e29b-41d4-a716-446655440000'
 
-function createContext(user: { userId: string; username: string } | null) {
+function createContext(
+	user: { userId: string; username: string } | null,
+): CapabilityContext {
 	return {
 		env: {
 			APP_DB: {},
 			WRANGLER_IS_LOCAL_DEV: 'true',
 		} as unknown as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: user
 				? {
 						...user,
+						userId: personIdFromStored(user.userId),
 						email: 'user@example.com',
 						displayName: 'User',
 					}
 				: null,
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 
@@ -205,7 +256,7 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		.mockResolvedValueOnce(createSavedPackage())
 		.mockResolvedValueOnce(createSavedPackage(true))
 		.mockResolvedValueOnce(createSavedPackage(true))
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(createSavedPackage())
+	mockModule.resolveSavedPackageRef.mockResolvedValueOnce(createSavedPackage())
 	const context = createContext({ userId: 'user-1', username: 'user' })
 
 	const byAccountUrl = await searchCapability.handler(
@@ -287,11 +338,12 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 	})
 	expect(naturalLanguage.phaseTimings?.jevRerankMs).toEqual(expect.any(Number))
 
-	const unauthenticated = await searchCapability.handler(
-		{ query: packageId, conversationId: 'meta-unauthenticated' },
-		createContext(null),
-	)
-	expect(unauthenticated.matches).toEqual([])
+	await expect(
+		searchCapability.handler(
+			{ query: packageId, conversationId: 'meta-unauthenticated' },
+			createContext(null),
+		),
+	).rejects.toThrow(/Authenticated MCP user is required/)
 
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},
@@ -300,11 +352,12 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			packageId,
 		},
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
 		{},
 		{
 			userId: 'user-1',
-			kodyId: 'daily-notes',
+			ref: 'daily-notes',
+			match: 'slug',
 		},
 	)
 	expect(mockModule.getCapabilityRegistryForContext).toHaveBeenCalledTimes(1)
@@ -341,6 +394,19 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 			'fallback-error',
 		]).toContain(jevEnabled.telemetry?.jevRerank?.outcome)
 		expect(jevEntry?.durationMs).toBe(jevEnabled.phaseTimings?.jevRerankMs)
+		const timingNames = jevEnabled.serverTiming?.map((entry) => entry.name)
+		expect(timingNames).toEqual(
+			expect.arrayContaining([
+				'rateLimit',
+				'usernameLookup',
+				'identityResolution',
+				'rowAndRegistryLoad',
+				'featureFlags',
+				'loadAndRank',
+				'retrievers',
+				'unaccounted',
+			]),
+		)
 	} finally {
 		mockFeatureFlags.override = null
 		mockUserPlan.plan = 'free'

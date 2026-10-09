@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 
 import { runDurableExport } from './durable-export.ts'
-import { BackupError } from './backup-policy.ts'
 import {
 	ReplayStep,
+	backupError,
 	environment,
 	exportEnvelope,
 } from './backup-control-plane-test-support.ts'
@@ -39,11 +39,13 @@ test('durable orchestration polls immediately then resumes numbered polls after 
 		1,
 	)
 	assert.equal(bodies.length, 3, 'cached start must not call the API on replay')
-	assert.deepEqual(JSON.parse(bodies[0]!), { output_format: 'polling' })
-	assert.deepEqual(JSON.parse(bodies[1]!), {
-		output_format: 'polling',
-		current_bookmark: 'bookmark-1',
-	})
+	assert.deepEqual(
+		bodies.slice(0, 2).map((body) => JSON.parse(body)),
+		[
+			{ output_format: 'polling' },
+			{ output_format: 'polling', current_bookmark: 'bookmark-1' },
+		],
+	)
 	// Immediate first poll (no wait before poll-1); wait only after a pending poll.
 	assert.deepEqual(step.sleeps, ['wait-d1-export-1'])
 })
@@ -60,10 +62,7 @@ test('durable polling hard-fails after its bounded numbered poll steps', async (
 				sleep: async () => undefined,
 			},
 		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'export-poll-limit' &&
-			error.retryable === false,
+		backupError('export-poll-limit', false),
 	)
 	assert.deepEqual(step.calls, [
 		'start-d1-export',
@@ -95,14 +94,8 @@ test('expired poll result restarts the export with a new bookmark', async () => 
 	assert.equal(result.bookmark, 'bookmark-new')
 	assert.deepEqual(bodies, [
 		{ output_format: 'polling' },
-		{
-			output_format: 'polling',
-			current_bookmark: 'bookmark-old',
-		},
+		{ output_format: 'polling', current_bookmark: 'bookmark-old' },
 		{ output_format: 'polling' },
-		{
-			output_format: 'polling',
-			current_bookmark: 'bookmark-new',
-		},
+		{ output_format: 'polling', current_bookmark: 'bookmark-new' },
 	])
 })

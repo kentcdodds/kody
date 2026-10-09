@@ -1,12 +1,15 @@
 /**
  * Homepage testimonials. Keep this list data-only — the carousel scales to
  * about eight entries without a layout rewrite. Do not invent quotes or fill
- * empty slots; add real cleared quotes only. Opt a card into the early-users
- * post with `storyAnchor` matching that heading id (accents strip to ASCII).
+ * empty slots; add real cleared quotes only. Opt a card into a longer story
+ * with `storyAnchor` matching that heading id (accents strip to ASCII). Omit
+ * `storyPath` to use the case-studies blog post; set it only when the longer
+ * note lives elsewhere (for example a temporary surface).
  */
 
 import { routes } from '#universal/routes.ts'
 
+/** Blog slug for longer case-study notes linked from the carousel. */
 export const landingTestimonialsStorySlug = 'early-kody-users'
 
 export type LandingTestimonial = {
@@ -20,8 +23,13 @@ export type LandingTestimonial = {
 	title?: string
 	/** Verified public employer — omit if unsure. */
 	company?: string
-	/** Heading id on the shared early-users post. Omit when there is no vignette. */
+	/** Heading id on the story page. Omit when there is no longer note. */
 	storyAnchor?: string
+	/**
+	 * Path for the longer story (no hash). Defaults to the case-studies blog
+	 * post when omitted.
+	 */
+	storyPath?: string
 }
 
 export const landingTestimonials = [
@@ -73,12 +81,13 @@ export const landingTestimonials = [
 	},
 	{
 		quote:
-			"Kody gives my agents one entry point with all my context and tools behind it. I've got into the habit of saying hey kody, so whatever agent I'm in knows to reach for it right away. It's changed how I work with agents day to day.",
+			'Before Kody, every new agent meant rebuilding the same setup. Instructions, memory, MCP servers, and skills stayed scattered, and something always got left behind. Now I connect one MCP, bring my packages with me, and say “Hey Kody…” wherever I’m working. Portability plus a feedback loop that shipped three of my bug reports in under an hour.',
 		name: 'Maciek Sitkowski',
 		photo: '/images/testimonials/maciek-sitkowski.webp',
 		href: 'https://macieksitkowski.com',
 		title: 'Frontend Developer',
 		company: 'Keto-Mojo',
+		storyAnchor: 'maciek-sitkowski',
 	},
 	{
 		quote:
@@ -131,10 +140,14 @@ export function testimonialAttribution(entry: {
 	return parts.join(', ')
 }
 
-/** Early-users post + heading when this person has a vignette; otherwise no link. */
+/** Story page + heading when this person has a longer note; otherwise no link. */
 export function testimonialStoryHref(entry: {
 	storyAnchor?: string
+	storyPath?: string
 }): string | null {
 	if (!entry.storyAnchor) return null
-	return `${routes.blogPost.href({ slug: landingTestimonialsStorySlug })}#${entry.storyAnchor}`
+	const path =
+		entry.storyPath ??
+		routes.blogPost.href({ slug: landingTestimonialsStorySlug })
+	return `${path}#${entry.storyAnchor}`
 }

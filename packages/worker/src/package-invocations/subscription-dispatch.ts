@@ -3,18 +3,20 @@ import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-sche
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	requestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
+import { fanOutPackageEventToMcpSubscriptions } from '#mcp/events/fan-out.ts'
 import {
 	type PackageEventDispatchInput,
 	type PackageEventTools,
 } from '#mcp/run-kody-registry.ts'
 import { type RunRecordContext } from '#worker/run-records/types.ts'
-import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
-import {
-	listPackageEmittedEvents,
-	listPackageSubscriptions,
-} from '#worker/package-registry/manifest.ts'
+import { listPackageEmittedEvents } from '#worker/package-registry/manifest.ts'
 import { type PackageEventsDispatchQueueMessage } from '#worker/package-events/dispatch-queue-producer.ts'
 import {
 	buildPackageSubscriptionArtifactName,
@@ -39,6 +41,7 @@ import {
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
 import { buildJsonErrorResponse } from './responses.ts'
+import { loadMatchingPackageSubscriptions } from './admin-package-subscriptions.ts'
 
 /**
  * Package event payloads ride inside a Queue message (128 KiB limit), so
@@ -139,39 +142,25 @@ async function loadMatchingPackageEventSubscriptions(input: {
 	topic: string
 	payload: Record<string, unknown>
 }) {
-	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
-	})
-	const settled = await Promise.all(
-		savedPackages.map(async (savedPackage) => {
-			const loaded = await loadPackageManifestBySourceId({
-				env: input.env,
-				baseUrl: input.baseUrl,
-				userId: input.userId,
-				sourceId: savedPackage.sourceId,
-			}).catch((error) => {
-				throw new Error(
-					`Failed to load package manifest for package event dispatch: ${savedPackage.kodyId} (${savedPackage.id}).`,
-					{ cause: error },
-				)
-			})
-			const subscription = listPackageSubscriptions(loaded.manifest).find(
-				(candidate) =>
-					candidate.topic === input.topic &&
-					packageEventFiltersMatchPayload({
-						filters: candidate.filters,
-						payload: input.payload,
-					}),
-			)
-			if (!subscription) return null
-			return {
-				savedPackage,
-				subscription,
-			}
-		}),
-	)
-	return settled.filter(
-		(entry): entry is LoadedPackageEventSubscription => entry !== null,
+	const { subscriptions, discoveryErrors } =
+		await loadMatchingPackageSubscriptions({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			topic: input.topic,
+		})
+	if (discoveryErrors.length > 0) {
+		throw new Error(
+			`Failed to load package manifest for package event dispatch: ${String(discoveryErrors[0])}`,
+			{ cause: discoveryErrors[0] },
+		)
+	}
+	return subscriptions.filter(
+		(entry): entry is LoadedPackageEventSubscription =>
+			packageEventFiltersMatchPayload({
+				filters: entry.subscription.filters,
+				payload: input.payload,
+			}),
 	)
 }
 
@@ -206,13 +195,41 @@ export async function deliverPackageEventWithToolFactories(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<PackageEventDeliveryResult> {
 	const message = input.message
-	const subscriptions = await loadMatchingPackageEventSubscriptions({
-		env: input.env,
-		baseUrl: input.baseUrl,
-		userId: message.userId,
-		topic: message.topic,
-		payload: message.payload,
-	})
+	// MCP fan-out is independent of package-subscriber discovery: a broken
+	// package manifest must not hold webhook delivery hostage (queue retries
+	// and inline dispatch both reach this path).
+	const fanOutMcp = async () => {
+		try {
+			await fanOutPackageEventToMcpSubscriptions({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				message,
+			})
+		} catch (error) {
+			console.error('mcp-events-fan-out-failed', {
+				topic: message.topic,
+				sourcePackageId: message.source.packageId,
+				error,
+			})
+		}
+	}
+
+	let subscriptions: Awaited<
+		ReturnType<typeof loadMatchingPackageEventSubscriptions>
+	>
+	try {
+		subscriptions = await loadMatchingPackageEventSubscriptions({
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: message.userId,
+			topic: message.topic,
+			payload: message.payload,
+		})
+	} catch (discoveryError) {
+		await fanOutMcp()
+		throw discoveryError
+	}
+
 	const envelope = stripUntrustedSubscriptionEnvelopeFields({
 		event: message.topic,
 		source: {
@@ -241,6 +258,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 				}),
 				source: `package:${message.source.kodyId}`,
 				actorTokenId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
+				request: packageEventRequestSource(message),
 				runtimeInvokeDepth: message.invokeDepth,
 				toolFactories: input.toolFactories,
 				waitUntil: input.waitUntil,
@@ -274,6 +292,10 @@ export async function deliverPackageEventWithToolFactories(input: {
 			})
 		}
 	})
+	// Runs before the incomplete-dispatch throw so MCP subscribers are not
+	// held hostage by a package subscriber's infrastructure retry; a queue
+	// redelivery re-sends with the same eventId for receiver dedupe.
+	await fanOutMcp()
 	if (retryableInfrastructureErrors.length > 0) {
 		throw new Error('Package event dispatch was incomplete.', {
 			cause: retryableInfrastructureErrors[0],
@@ -294,6 +316,21 @@ export async function deliverPackageEventWithToolFactories(input: {
 		delivered: subscribers.length - failed,
 		failed,
 	}
+}
+
+/**
+ * Messages enqueued before they carried lineage run as Automation, which has
+ * no actor and so can only narrow what the emitter could do.
+ */
+function packageEventRequestSource(
+	message: PackageEventsDispatchQueueMessage,
+): RequestSource {
+	return message.lineage
+		? { kind: 'inherited', lineage: message.lineage }
+		: {
+				kind: 'platform-event',
+				sourceId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
+			}
 }
 
 export function createPackageEventToolsWithToolFactories(input: {
@@ -370,6 +407,11 @@ export function createPackageEventToolsWithToolFactories(input: {
 					kodyId: packageContext.kodyId,
 				},
 				invokeDepth: packageInvokeDepth + 1,
+				...(declaredEvent.mcp ? { mcp: true as const } : {}),
+				emittedAt: new Date().toISOString(),
+				...(input.callerContext.request
+					? { lineage: requestLineage(input.callerContext.request) }
+					: {}),
 			}
 			const queue = (input.env as Partial<Env>).PACKAGE_EVENTS_DISPATCH_QUEUE
 			let enqueued = false
@@ -433,6 +475,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	source?: string | null
 	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
+	request: RequestSource
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -463,8 +506,9 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
-			userId: input.savedPackage.userId,
+			sourceId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
+			orgId: ownerIdFromStored(input.savedPackage.userId),
+			request: input.request,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),

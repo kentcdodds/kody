@@ -12,8 +12,7 @@ import {
 } from './artifacts-git-retry.ts'
 import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
 import {
-	bytesToLatin1String,
-	shouldStoreArtifactBlobAsLatin1,
+	bytesToSnapshotString,
 	snapshotStringToBytes,
 } from '#universal/package-file-media.ts'
 import { loadIsomorphicGit } from './isomorphic-git-lazy.ts'
@@ -226,10 +225,7 @@ function decodeArtifactBlob(content: Uint8Array | string, filePath: string) {
 	// (latin1) so a later `/raw/` preview can recover the original bytes.
 	// The publish diff still skips a text patch when the decoded string
 	// includes `\0`.
-	if (content.includes(0) || shouldStoreArtifactBlobAsLatin1(filePath)) {
-		return bytesToLatin1String(content)
-	}
-	return new TextDecoder().decode(content)
+	return bytesToSnapshotString(content, filePath)
 }
 
 function isMissingArtifactFileError(error: unknown) {

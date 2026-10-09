@@ -1,6 +1,9 @@
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
-import { runRepoChecks, type RepoCheckResult } from '#worker/repo/checks.ts'
-import { normalizeRepoWorkspacePath } from '#worker/repo/manifest.ts'
+import {
+	createSnapshotFilesWorkspace,
+	runRepoChecks,
+	type RepoCheckResult,
+} from '#worker/repo/checks.ts'
 import {
 	persistPreparedCommunityFork,
 	prepareCommunityFork,
@@ -57,20 +60,6 @@ export type InstallCommunityListingResult =
 			failedChecks: Array<RepoCheckResult>
 			crossScopeReferences: Array<CrossScopeReference>
 	  })
-
-function createSnapshotFilesWorkspace(files: Record<string, string>) {
-	return {
-		async readFile(path: string) {
-			return files[normalizeRepoWorkspacePath(path)] ?? null
-		},
-		async glob() {
-			return Object.keys(files).map((path) => ({
-				path,
-				type: 'file' as const,
-			}))
-		},
-	}
-}
 
 /**
  * One-click install: fork a community listing into the caller's scope and,
@@ -188,7 +177,22 @@ export async function installCommunityListing(input: {
 		throw checksSettled.reason
 	}
 	const fork = persistSettled.value
-	const checks = checksSettled.value
+	// Overlapped checks used the prepared pin snapshot. When Artifacts dest
+	// clone fallback syncs a newer dest-HEAD tree, re-check that tree before
+	// projecting so install does not publish different contents than the fork.
+	let checks = checksSettled.value
+	if (fork.files !== prepared.files) {
+		checks = await runRepoChecks({
+			workspace: createSnapshotFilesWorkspace(fork.files),
+			manifestPath: 'package.json',
+			sourceRoot: '/',
+			env: input.env,
+			baseUrl: input.baseUrl,
+			userId: input.userId,
+			expectedPackageScope: input.expectedPackageScope,
+			requirePackageDocs: false,
+		})
+	}
 	const summary: InstallForkSummary = {
 		forkId: fork.forkId,
 		packageId: fork.packageId,
@@ -232,7 +236,7 @@ export async function installCommunityListing(input: {
 		userEmail: input.userEmail,
 		packageId: fork.packageId,
 		sourceId: fork.sourceId,
-		sourceFiles: prepared.files,
+		sourceFiles: fork.files,
 		waitUntil: input.waitUntil,
 	})
 	logInstallPhaseTiming({

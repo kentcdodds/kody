@@ -1,9 +1,10 @@
 # Connect your agent
 
 Kody is an MCP server. You use it from Cursor, ChatGPT, Codex, Claude Desktop,
-Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Devin, Gemini,
-GitHub Copilot (VS Code or CLI), the GitHub Copilot app, or any other AI agent
-that supports MCP — not from a separate Kody chat app.
+Grok.com, Grok CLI, Grok Bot, Claude Code, OpenCode, OpenClaw, Muse, Wajo, Cue,
+OpenMuse, Dots, Devin, Gemini, GitHub Copilot (VS Code or CLI), the GitHub
+Copilot app, or any other AI agent that supports MCP — not from a separate Kody
+chat app.
 
 The three-step Get started flow lives in
 [Connect your agent](../guides/connect-your-agent.md) and on `/onboarding`. This
@@ -24,10 +25,12 @@ block and MCP URL, and `/.well-known/mcp/server-card.json` for the server card.
    account — not a limited permission set.
 
 Once signed in, Account → Connections (`/account/connections`) is the durable
-home for this: it lists every agent that has authorized (with revoke), shows the
-MCP URL with a copy button, and **Add connection** opens
-`/account/connections/new` with the same per-host steps as Get started for every
-agent Kody knows how to connect.
+home for this: it lists every agent that has authorized (with revoke and **View
+connect steps** for known hosts), shows the MCP URL with a copy button, and
+**Add connection** opens `/account/connections/new` with the same per-host steps
+as Get started for every agent Kody knows how to connect — including hosts that
+are already connected, so you can re-view install steps for a second login, new
+machine, or reinstall.
 
 Your account email must be verified before authorize can finish or MCP can run.
 If authorize asks you to verify, keep that tab open, finish verification (from
@@ -135,6 +138,24 @@ you only have the MCP URL.
   live connection. Or in the Control UI: Settings → MCP → Add server, choose
   Streamable HTTP, and paste the MCP URL. See OpenClaw's
   [MCP docs](https://docs.openclaw.ai/tools/mcp).
+- **Muse** — [Muse Code](https://dev.meta.ai/docs/muse-code/) reads MCP from
+  `~/.config/muse/settings.json` under `mcp_servers`. Add a remote
+  `streamable_http` server with this deployment’s MCP URL (see
+  [Muse extending docs](https://dev.meta.ai/docs/muse-code/extending/)), then
+  run `muse mcp login kody`. Do not paste `npx @kodycodes/cli install` into Muse
+  chat — that runs in Muse's Linux VM and cannot configure Muse. After OAuth
+  succeeds, headless Muse may ask you to paste a localhost URL into the Muse
+  chat.
+- **Wajo** — [Wajo](https://wajo.ai) (Fo) connects ChatGPT and Claude through
+  Wajo sign-in. Paste the MCP URL where Wajo asks for a custom MCP server, then
+  complete OAuth.
+- **Cue** — [Cue](https://cue.im) (personal AI agents by Manus). When Cue
+  exposes a custom MCP connector, paste the MCP URL and complete OAuth.
+- **OpenMuse** — CopilotKit's self-hosted personal agent (not Muse Code).
+  OpenMuse does not ship a one-click Kody connector; wire Kody into the harness
+  behind your fork. See [OpenMuse and Kody](/docs/openmuse).
+- **Dots** — [OpenAI Dots](https://openai.com/index/introducing-dots/). When
+  Dots exposes a custom MCP connector, paste the MCP URL and complete OAuth.
 - **Open WebUI** — Add an MCP Streamable HTTP connection to this deployment’s
   MCP URL and use **OAuth 2.1** (dynamic registration) first. Enabling the tool
   in a chat must open the Kody authorize window. If that window never opens on

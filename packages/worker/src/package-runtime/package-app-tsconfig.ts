@@ -24,7 +24,7 @@ export type PackageAppJsxBundleOptions = {
 /**
  * esbuild JSX options taken from the package's root `tsconfig.json`.
  * The host does not sniff the module graph; a package that wants
- * `remix/ui`, `preact`, or another runtime sets `compilerOptions.jsx`
+ * `remix/component`, `preact`, or another runtime sets `compilerOptions.jsx`
  * / `jsxImportSource` itself.
  */
 export function createPackageAppJsxBundleOptions(

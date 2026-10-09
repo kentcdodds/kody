@@ -11,6 +11,7 @@ export const valueGetCapability = defineDomainCapability(
 	capabilityDomainNames.values,
 	{
 		name: 'valueGet',
+		orgPermission: 'package:read',
 		description:
 			'Read an existing persisted leftover by name. When scope is omitted, Kody checks accessible scopes in precedence order.',
 		keywords: ['config', 'read', 'lookup'],

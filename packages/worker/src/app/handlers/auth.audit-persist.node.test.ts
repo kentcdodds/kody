@@ -8,7 +8,8 @@ import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.unmock('#worker/audit-log.ts')
 
@@ -39,7 +40,7 @@ async function seedUser(
 	input: { id: number; email: string; username: string; password: string },
 ) {
 	const passwordHash = await createPasswordHash(input.password)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id,
@@ -57,6 +58,10 @@ async function seedUser(
 			CURRENT_TIMESTAMP
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: input.username,
+	})
 }
 
 function createHandler(appDb: D1Database, auditDb: D1Database) {

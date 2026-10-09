@@ -17,6 +17,7 @@ export const emailReplyCapability = defineDomainCapability(
 	capabilityDomainNames.email,
 	{
 		name: 'emailReply',
+		orgPermission: 'email:send',
 		description:
 			'Reply to a stored inbound email from your platform-assigned {username}@<platform domain> address, preserving thread headers and optionally attaching files (base64 content). The recipient always comes from the stored message.',
 		keywords: ['email', 'reply', 'thread', 'message', 'attachment'],
@@ -53,6 +54,7 @@ export const emailReplyCapability = defineDomainCapability(
 			const result = await sendOutboundEmail({
 				env: ctx.env,
 				userId: user.userId,
+				request: ctx.callerContext.request,
 				accountEmail: user.email,
 				recipientPolicy: 'reply',
 				replyToMessageId: original.id,

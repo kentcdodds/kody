@@ -24,12 +24,38 @@
  * GROUP BY lane, client_name
  * ORDER BY requests DESC
  * ```
+ *
+ * Package identity param readout (evidence for retiring the public MCP
+ * `kody_id` input alias; blob8 is empty for non-`tools/call` traffic):
+ *
+ * ```sql
+ * SELECT blob8 AS package_identity_param, SUM(_sample_interval) AS requests
+ * FROM kody_mcp_protocol_events
+ * WHERE timestamp > NOW() - INTERVAL '30' DAY
+ *   AND blob2 = 'tools/call'
+ *   AND blob8 != ''
+ * GROUP BY package_identity_param
+ * ORDER BY requests DESC
+ * ```
  */
 
 import type * as McpServerModule from '@modelcontextprotocol/server'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 export type McpProtocolLane = 'legacy' | 'modern'
+
+/**
+ * How a `tools/call` identified a package (top-level or nested `target`).
+ * Empty string for non-`tools/call` requests. Used as AE blob8 evidence for
+ * retiring the public MCP `kody_id` input alias (#1909).
+ */
+export type McpPackageIdentityParam =
+	| ''
+	| 'kody_id'
+	| 'package_id'
+	| 'name'
+	| 'both'
+	| 'none'
 
 export type McpProtocolEventEnv = {
 	MCP_PROTOCOL_EVENTS?: AnalyticsEngineDataset
@@ -44,6 +70,11 @@ export type McpProtocolClassification = {
 	clientName: string
 	clientVersion: string
 	/**
+	 * Package identity param used on `tools/call` (empty for other methods).
+	 * See {@link McpPackageIdentityParam}.
+	 */
+	packageIdentityParam: McpPackageIdentityParam
+	/**
 	 * Parsed JSON body for POST requests, when parseable. Callers forward it
 	 * to the stateless handler so the body is parsed at most once per request.
 	 */
@@ -52,6 +83,52 @@ export type McpProtocolClassification = {
 
 function readString(value: unknown): string {
 	return typeof value === 'string' ? value : ''
+}
+
+function hasNonEmptyString(value: unknown, key: string): boolean {
+	if (!isRecord(value)) return false
+	const field = value[key]
+	return typeof field === 'string' && field.trim().length > 0
+}
+
+/**
+ * Classify which package-identity input a tools/call used. Nested `target`
+ * covers repo tools that wrap package identity; nested `params` covers the MCP
+ * `api` tool only (`arguments.params.kody_id`). `execute` also has a `params`
+ * bag for arbitrary user-code input — that must not count as package-alias
+ * use. `name` is counted only when it looks like a scoped package name
+ * (`@scope/leaf`); bare names are usually plain repos or person names and are
+ * not package-identity evidence.
+ */
+export function classifyMcpPackageIdentityParam(
+	toolArguments: unknown,
+	options?: { toolName?: string },
+): McpPackageIdentityParam {
+	const bags: Array<unknown> = [toolArguments]
+	if (isRecord(toolArguments)) {
+		if (isRecord(toolArguments['target'])) {
+			bags.push(toolArguments['target'])
+		}
+		if (options?.toolName === 'api' && isRecord(toolArguments['params'])) {
+			bags.push(toolArguments['params'])
+		}
+	}
+	let hasKodyId = false
+	let hasPackageId = false
+	let hasScopedName = false
+	for (const bag of bags) {
+		if (hasNonEmptyString(bag, 'kody_id')) hasKodyId = true
+		if (hasNonEmptyString(bag, 'package_id')) hasPackageId = true
+		if (hasNonEmptyString(bag, 'name')) {
+			const name = isRecord(bag) ? readString(bag['name']).trim() : ''
+			if (name.startsWith('@') && name.includes('/')) hasScopedName = true
+		}
+	}
+	if (hasKodyId && hasPackageId) return 'both'
+	if (hasKodyId) return 'kody_id'
+	if (hasPackageId) return 'package_id'
+	if (hasScopedName) return 'name'
+	return 'none'
 }
 
 /** First JSON-RPC message of a body (batch arrays classify by their first entry). */
@@ -117,6 +194,7 @@ export async function classifyMcpProtocolRequest(
 			protocolVersion: readString(request.headers.get('mcp-protocol-version')),
 			clientName: '',
 			clientVersion: '',
+			packageIdentityParam: '',
 		}
 	}
 
@@ -141,6 +219,19 @@ export async function classifyMcpProtocolRequest(
 			? params?.['clientInfo']
 			: undefined
 
+	const toolName =
+		method === 'tools/call' && isRecord(params)
+			? readString(params['name'])
+			: ''
+	const toolArguments =
+		method === 'tools/call' && isRecord(params)
+			? params['arguments']
+			: undefined
+	const packageIdentityParam =
+		method === 'tools/call'
+			? classifyMcpPackageIdentityParam(toolArguments, { toolName })
+			: ''
+
 	return {
 		lane,
 		method,
@@ -149,6 +240,7 @@ export async function classifyMcpProtocolRequest(
 		clientVersion: isRecord(clientInfo)
 			? readString(clientInfo['version'])
 			: '',
+		packageIdentityParam,
 		...(hasParsedBody ? { parsedBody } : {}),
 	}
 }
@@ -179,6 +271,9 @@ export function recordMcpProtocolEvent(
 				// blob7: request host, so domain migrations can measure which
 				// users still connect through a legacy hostname.
 				input.requestHost ?? '',
+				// blob8: package identity param on tools/call (kody_id vs
+				// package_id vs scoped name) for the public MCP param gate.
+				input.packageIdentityParam,
 			],
 			doubles: [1],
 		})

@@ -4,14 +4,13 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { secretProvidersFlagKey } from '#mcp/secrets/secret-providers/flag.ts'
 import { bindSecretProvider } from '#mcp/secrets/secret-providers/service.ts'
 
 export const secretProviderBindCapability = defineDomainCapability(
 	capabilityDomainNames.secrets,
 	{
 		name: 'secretProviderBind',
-		featureFlag: secretProvidersFlagKey,
+		orgPermission: 'secret:write',
 		description:
 			'Pin which saved package serves an external secret provider id for this account, plus which user secret holds the door key. Declaring kody.secretProvider on a package does not bind it. Owner-controlled; does not return secret values.',
 		keywords: ['secret', 'provider', '1password', 'bind', 'service account'],

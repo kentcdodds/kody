@@ -10,15 +10,20 @@ import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
 const mockModule = vi.hoisted(() => ({
 	/** Physical D1 payload recompute; the minimal test DB has no payload tables. */
-	calculateUserD1StorageBytes: vi.fn(async () => 0),
+	calculateUserD1StorageBytes: vi.fn<
+		typeof EntitlementsService.calculateUserD1StorageBytes
+	>(async () => 0),
 }))
 
 vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementsService>()
 	return {
 		...actual,
-		calculateUserD1StorageBytes: (...args: Array<unknown>) =>
-			mockModule.calculateUserD1StorageBytes(...args),
+		calculateUserD1StorageBytes: (
+			...args: Parameters<
+				typeof EntitlementsService.calculateUserD1StorageBytes
+			>
+		) => mockModule.calculateUserD1StorageBytes(...args),
 	}
 })
 
@@ -98,6 +103,8 @@ test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state
 			email_receives_per_day: 5,
 			execute_calls_per_day: 11,
 			outbound_fetches_per_day: 7,
+			job_runs_per_day: 0,
+			automation_invocations_per_day: 0,
 		},
 	})
 	await meterStub.initializeStorageBytes({
@@ -142,6 +149,7 @@ test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state
 		['execute_calls_per_day', 11],
 		['outbound_fetches_per_day', 7],
 		['job_runs_per_day', 0],
+		['automation_invocations_per_day', 0],
 	])
 	assertNoLeaseSecrets(report)
 })

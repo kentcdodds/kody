@@ -1,0 +1,356 @@
+import {
+	grantPresets,
+	resolveGrantPermissions,
+	type GrantPreset,
+} from '@kody-internal/shared/grant-presets.ts'
+import {
+	isOrgPermission,
+	type OrgPermission,
+	type OrgResourceType,
+} from '@kody-internal/shared/org-permissions.ts'
+import { sha256Hex } from '@kody-internal/shared/sha256.ts'
+import { toHex } from '@kody-internal/shared/hex.ts'
+import { z } from 'zod'
+import { McpCallerError } from '#mcp/caller-error.ts'
+import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import {
+	authorize,
+	computeEffectivePermissions,
+} from '#worker/authorization/authorize.ts'
+import {
+	getUsernameFormatValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
+import { normalizeEmailAddress } from '#worker/email/address.ts'
+import {
+	isGrantResourceType,
+	type GrantResourceType,
+	type GrantView,
+	grantResourceTypes,
+} from '#worker/orgs/access-writes.ts'
+
+export const grantPresetSchema = z.enum(grantPresets)
+
+export const grantResourceTypeSchema = z.enum(grantResourceTypes)
+
+export const orgRoleSchema = z.enum(['owner', 'member', 'billing'])
+
+export const accessGrantSchema = z.object({
+	id: z.string(),
+	resource_type: grantResourceTypeSchema,
+	resource_id: z.string(),
+	subject_type: z.enum(['user', 'team']),
+	subject_id: z.string(),
+	preset: grantPresetSchema.nullable(),
+	permissions: z.array(z.string()),
+})
+
+export const inviteSchema = z.object({
+	id: z.string(),
+	org_id: z.string(),
+	org_slug: z.string(),
+	kind: z.enum(['membership', 'grant']),
+	role: orgRoleSchema.nullable(),
+	team_ids: z.array(z.string()),
+	resource_type: grantResourceTypeSchema.nullable(),
+	resource_id: z.string().nullable(),
+	preset: grantPresetSchema.nullable(),
+	permissions: z.array(z.string()).nullable(),
+	invitee_email: z.string().nullable(),
+	invitee_username: z.string().nullable(),
+	status: z.enum(['pending', 'accepted', 'revoked', 'expired']),
+	expires_at: z.string(),
+})
+
+function readStoredPreset(
+	value: string | null,
+	grantId: string,
+): GrantPreset | null {
+	if (value === null) return null
+	if (value === 'use' || value === 'contribute' || value === 'manage') {
+		return value
+	}
+	throw new Error(`Grant ${grantId} has preset ${value}.`)
+}
+
+export function toAccessGrantPayload(grant: GrantView) {
+	if (!isGrantResourceType(grant.resourceType)) {
+		throw new Error(
+			`Grant ${grant.id} has resource type ${grant.resourceType}.`,
+		)
+	}
+	const preset = readStoredPreset(grant.preset, grant.id)
+	return {
+		id: grant.id,
+		resource_type: grant.resourceType,
+		resource_id: grant.resourceId,
+		subject_type: grant.subjectType,
+		subject_id: grant.subjectId,
+		preset,
+		permissions: grant.permissions,
+	}
+}
+
+export function rethrowAccessError(error: unknown): never {
+	if (error instanceof McpCallerError) throw error
+	if (error instanceof Error) {
+		if (
+			/UNIQUE constraint failed: (handles\.handle|orgs\.slug)/.test(
+				error.message,
+			)
+		) {
+			throw new McpCallerError('That organization slug is already taken.')
+		}
+		if (/UNIQUE constraint failed: teams/.test(error.message)) {
+			throw new McpCallerError(
+				'That team slug is already taken in this organization.',
+			)
+		}
+		throw new McpCallerError(error.message)
+	}
+	throw new McpCallerError('Access change failed.')
+}
+
+export async function requireOrgPermission(
+	ctx: CapabilityContext,
+	permission: OrgPermission,
+) {
+	const user = requireMcpUser(ctx.callerContext)
+	const request = requireMcpRequest(ctx.callerContext)
+	await authorize({ env: ctx.env, request }, permission)
+	return { user, request, db: ctx.env.APP_DB }
+}
+
+function manageAccessPermission(resourceType: OrgResourceType): OrgPermission {
+	switch (resourceType) {
+		case 'package':
+			return 'package:manage_access'
+		case 'app':
+			return 'app:manage_access'
+		case 'job':
+			return 'job:manage_access'
+		case 'secret':
+			return 'secret:manage_access'
+		case 'integration':
+			return 'integration:manage_access'
+		case 'memory':
+			return 'memory:manage_access'
+		case 'email':
+			return 'email:manage_access'
+		default: {
+			const exhaustive: never = resourceType
+			throw new Error(`Unhandled resource type: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/**
+ * The permission that allows changing who can use `resourceType`.
+ * Organization grants use member:write. Every other type uses manage_access
+ * on that resource.
+ */
+export async function authorizeGrantTarget(
+	ctx: CapabilityContext,
+	resourceType: GrantResourceType,
+	resourceId: string,
+) {
+	const user = requireMcpUser(ctx.callerContext)
+	const request = requireMcpRequest(ctx.callerContext)
+	if (resourceType === 'org') {
+		if (resourceId !== request.org.id) {
+			throw new McpCallerError(
+				'An org grant uses this organization id as resource_id.',
+			)
+		}
+		await authorize({ env: ctx.env, request }, 'member:write')
+		return { user, request, db: ctx.env.APP_DB }
+	}
+	await authorize(
+		{ env: ctx.env, request },
+		manageAccessPermission(resourceType),
+		{
+			type: resourceType,
+			id: resourceId,
+			orgId: request.org.id,
+		},
+	)
+	return { user, request, db: ctx.env.APP_DB }
+}
+
+/** Org:delete (and org:write) on an org grant would let a delegate elevate past Owner. */
+const ownerOnlyOrgGrantPermissions = new Set<OrgPermission>([
+	'org:delete',
+	'org:write',
+])
+
+/**
+ * Resolve grant permissions for a resource, and require an Owner when the list
+ * includes org:delete or org:write on an organization grant.
+ */
+export async function resolveAuthorizedGrantPermissions(
+	ctx: CapabilityContext,
+	input: {
+		resourceType: GrantResourceType
+		preset?: GrantPreset | null
+		permissions: Array<OrgPermission> | null
+	},
+) {
+	let permissions: ReadonlyArray<OrgPermission>
+	try {
+		permissions = resolveGrantPermissions({
+			resourceType: input.resourceType,
+			preset: input.preset ?? null,
+			permissions: input.permissions,
+		})
+	} catch (error) {
+		throw new McpCallerError(
+			error instanceof Error ? error.message : 'Invalid grant permissions.',
+		)
+	}
+	if (input.resourceType !== 'org') return permissions
+	const needsOwner = permissions.some((permission) =>
+		ownerOnlyOrgGrantPermissions.has(permission),
+	)
+	if (!needsOwner) return permissions
+	const request = requireMcpRequest(ctx.callerContext)
+	const access = await computeEffectivePermissions({
+		env: ctx.env,
+		request,
+	})
+	if (!access.isOwner) {
+		throw new McpCallerError('Only an Owner can grant org:write or org:delete.')
+	}
+	return permissions
+}
+
+export function readPermissionList(values: Array<string> | undefined) {
+	if (!values) return null
+	return values.map((value) => {
+		if (!isOrgPermission(value)) {
+			throw new McpCallerError(`Unknown permission "${value}".`)
+		}
+		return value
+	})
+}
+
+export function requirePresetOrPermissions(input: {
+	preset?: 'use' | 'contribute' | 'manage'
+	permissions: Array<OrgPermission> | null
+}) {
+	if (input.preset && input.permissions && input.permissions.length > 0) {
+		throw new McpCallerError('Pass a preset or a permission list, not both.')
+	}
+	if (!input.preset && (!input.permissions || input.permissions.length === 0)) {
+		throw new McpCallerError('Pass a preset or a permission list.')
+	}
+}
+
+export async function requireLiveOrg(db: D1Database, orgId: string) {
+	const row = await db
+		.prepare(
+			`SELECT id, slug, display_name
+			 FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
+		)
+		.bind(orgId)
+		.first<{ id: string; slug: string; display_name: string | null }>()
+	if (!row) throw new McpCallerError('Organization was not found.')
+	return row
+}
+
+export async function resolvePersonId(
+	db: D1Database,
+	input: { userId?: string | null; username?: string | null },
+) {
+	const userId = input.userId?.trim() ?? ''
+	const username = input.username?.trim() ?? ''
+	if (userId && username) {
+		throw new McpCallerError('Pass user_id or username, not both.')
+	}
+	if (userId) return userId
+	if (!username) throw new McpCallerError('Pass user_id or username.')
+	const normalized = normalizeUsername(username)
+	const formatError = getUsernameFormatValidationError(normalized)
+	if (formatError) throw new McpCallerError(formatError)
+	const row = await db
+		.prepare(`SELECT stable_user_id FROM users WHERE username = ?`)
+		.bind(normalized)
+		.first<{ stable_user_id: string }>()
+	if (!row?.stable_user_id) {
+		throw new McpCallerError(`No user named "${normalized}".`)
+	}
+	return row.stable_user_id
+}
+
+export async function resolveTeamId(
+	db: D1Database,
+	orgId: string,
+	input: { teamId?: string | null; teamSlug?: string | null },
+) {
+	const teamId = input.teamId?.trim() ?? ''
+	const teamSlug = input.teamSlug?.trim() ?? ''
+	if (teamId && teamSlug) {
+		throw new McpCallerError('Pass team_id or team_slug, not both.')
+	}
+	if (teamId) {
+		const row = await db
+			.prepare(
+				`SELECT id FROM teams
+				 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(teamId, orgId)
+			.first<{ id: string }>()
+		if (!row) {
+			throw new McpCallerError('Team was not found in this organization.')
+		}
+		return row.id
+	}
+	if (!teamSlug) throw new McpCallerError('Pass team_id or team_slug.')
+	const slug = normalizeUsername(teamSlug)
+	const formatError = getUsernameFormatValidationError(slug)
+	if (formatError) throw new McpCallerError(formatError)
+	const row = await db
+		.prepare(
+			`SELECT id FROM teams
+			 WHERE org_id = ? AND slug = ? AND deleted_at IS NULL`,
+		)
+		.bind(orgId, slug)
+		.first<{ id: string }>()
+	if (!row) {
+		throw new McpCallerError('Team was not found in this organization.')
+	}
+	return row.id
+}
+
+export function generateInviteToken() {
+	const bytes = new Uint8Array(32)
+	crypto.getRandomValues(bytes)
+	return toHex(bytes)
+}
+
+export async function hashInviteToken(token: string) {
+	return await sha256Hex(token.trim())
+}
+
+export function inviteAcceptPrompt(input: { orgSlug: string; token: string }) {
+	return `You are invited to the ${input.orgSlug} organization. Call inviteAccept with this token: ${input.token}. The token is shown once and cannot be looked up later.`
+}
+
+export function optionalInviteeEmail(value: string | undefined) {
+	if (!value) return null
+	const email = normalizeEmailAddress(value)
+	if (!email) throw new McpCallerError('Email must be a valid email address.')
+	return email
+}
+
+export function optionalInviteeUsername(value: string | undefined) {
+	if (!value) return null
+	const username = normalizeUsername(value)
+	const formatError = getUsernameFormatValidationError(username)
+	if (formatError) throw new McpCallerError(formatError)
+	return username
+}

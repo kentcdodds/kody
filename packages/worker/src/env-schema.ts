@@ -250,7 +250,6 @@ export const EnvSchema = object({
 	USAGE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	FLAG_EXPOSURES: optionalAnalyticsEngineDatasetSchema,
 	MCP_PROTOCOL_EVENTS: optionalAnalyticsEngineDatasetSchema,
-	PACKAGE_INVOKE_SPECIFIER_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	EXECUTE_INTERPRETABLE_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	MCP_SEARCH_EVENTS: optionalAnalyticsEngineDatasetSchema,
 	ONBOARDING_FUNNEL_EVENTS: optionalAnalyticsEngineDatasetSchema,
@@ -266,8 +265,7 @@ export const EnvSchema = object({
 	// `none` disables playlists. Unset means no playlist fetch (tests).
 	YOUTUBE_ALLOWED_PLAYLIST_IDS: optionalNonEmptyStringSchema,
 	// Comma-separated extra YouTube video ids allowed by the overlay and
-	// first-party thumbnail proxy, in addition to playlist items and ids
-	// extracted from enabled banner hrefs.
+	// first-party thumbnail proxy, in addition to playlist items.
 	YOUTUBE_ALLOWED_VIDEO_IDS: optionalNonEmptyStringSchema,
 	// Optional YouTube Data API key for the homepage hero playlist (playlist
 	// order). When unset, the Worker reads the same unlisted playlist through
@@ -298,6 +296,10 @@ export const EnvSchema = object({
 	// stand-in that serves whole repo trees by commit. The dev CLI sets it; the
 	// real API has no such endpoint, so production leaves it unset.
 	CLOUDFLARE_API_SOURCE_SNAPSHOTS: optionalNonEmptyStringSchema,
+	// Optional Artifacts REST token when CLOUDFLARE_API_TOKEN is a mock
+	// credential for CLOUDFLARE_API_BASE_URL (PR previews). Mint/fork against
+	// the real Artifacts API with this token while email still uses the mock.
+	CLOUDFLARE_ARTIFACTS_API_TOKEN: optionalNonEmptyStringSchema,
 	ARTIFACTS_NAMESPACE: optionalNonEmptyStringSchema,
 	// Worker-to-Worker Artifacts binding. Present in production/preview when
 	// wrangler `artifacts` is configured; local/tests fall back to REST.
@@ -319,8 +321,7 @@ export const EnvSchema = object({
 	STRIPE_WEBHOOK_SECRET: optionalNonEmptyStringSchema,
 	// Override for tests/mocks; defaults to https://api.stripe.com.
 	STRIPE_API_BASE_URL: optionalUrlStringSchema,
-	STRIPE_STANDARD_PRICE_ID: optionalNonEmptyStringSchema,
-	STRIPE_STANDARD_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
+	// Purchasable Pro ($12 / $120) with the prepaid credit wallet.
 	STRIPE_PRO_PRICE_ID: optionalNonEmptyStringSchema,
 	STRIPE_PRO_YEARLY_PRICE_ID: optionalNonEmptyStringSchema,
 	// Stripe Billing Portal configuration (`bpc_...`) used for Manage

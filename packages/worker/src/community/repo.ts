@@ -1019,7 +1019,8 @@ export async function markCommunityForkAdopted(
 		.prepare(
 			`UPDATE community_forks
 			SET adopted_at = ?, adoption_note = ?
-			WHERE forked_package_id = ? AND forker_user_id = ?`,
+			WHERE forked_package_id = ? AND forker_user_id = ?
+				AND adopted_at IS NULL`,
 		)
 		.bind(
 			input.adoptedAt,
@@ -1050,6 +1051,22 @@ export async function listCommunityForksByListingAndUser(
 			ORDER BY created_at ASC`,
 		)
 		.bind(input.listingId, input.userId)
+		.all<Record<string, unknown>>()
+	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
+}
+
+export async function listCommunityForksByListingId(
+	db: D1Database,
+	input: { listingId: string },
+): Promise<Array<CommunityForkRecord>> {
+	const result = await db
+		.prepare(
+			`SELECT ${communityForkSelectColumns}
+			FROM community_forks
+			WHERE listing_id = ?
+			ORDER BY created_at ASC`,
+		)
+		.bind(input.listingId)
 		.all<Record<string, unknown>>()
 	return (result.results ?? []).map((row) => mapCommunityForkRow(row))
 }

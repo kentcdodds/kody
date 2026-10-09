@@ -27,7 +27,7 @@ const publicRoutes: RouteScenario[] = [
 		exclude: 'a[aria-pressed]',
 		ready: async (page) => {
 			await expect(page.getByLabel('Email')).toBeVisible()
-			await expect(page.getByLabel('Password')).toBeVisible()
+			await expect(page.getByLabel('Password', { exact: true })).toBeVisible()
 		},
 	},
 	{
@@ -39,7 +39,7 @@ const publicRoutes: RouteScenario[] = [
 			).toBeVisible()
 			await expect(page.getByLabel('Username')).toBeVisible()
 			await expect(page.getByLabel('Email')).toBeVisible()
-			await expect(page.getByLabel('Password')).toBeVisible()
+			await expect(page.getByLabel('Password', { exact: true })).toBeVisible()
 		},
 	},
 	{

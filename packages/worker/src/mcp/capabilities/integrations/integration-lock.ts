@@ -18,6 +18,7 @@ export const integrationLockCapability = defineDomainCapability(
 	capabilityDomainNames.integrations,
 	{
 		name: 'integrationLock',
+		orgPermission: 'integration:use',
 		description:
 			'Lock an OAuth integration connection to a package so only that package (and any previously granted packages) can call createAuthenticatedFetch / token refresh. Execute and other packages are denied. Agents can lock; unlocking or removing a grant is website-only at /account/integrations/:name. This capability cannot loosen usage. integrationSave still cannot change usageMode.',
 		keywords: [

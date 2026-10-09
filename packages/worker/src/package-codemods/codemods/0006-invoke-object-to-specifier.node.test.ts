@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { getPackageCodemodById } from '../registry.ts'
 import {
-	invokeObjectToSpecifierCodemod,
+	invokeObjectToSpecifierCodemod as codemod,
 	invokeObjectToSpecifierCodemodId,
 } from './0006-invoke-object-to-specifier.ts'
 
@@ -18,6 +18,32 @@ function manifest(name = '@user/demo') {
 		null,
 		'\t',
 	)}\n`
+}
+
+function findings(entries: Array<[path: string, snippet: string]>) {
+	return entries.map(([path, snippet]) => ({
+		path,
+		message: expect.stringContaining(snippet),
+	}))
+}
+
+function expectUnchangedWithManual(
+	files: Record<string, string>,
+	manual: Array<[path: string, snippet: string]>,
+) {
+	expect(codemod.detect(files)).toEqual(findings(manual))
+	const result = codemod.transform(files)
+	expect(result.changed).toBe(false)
+	expect(result.files).toEqual(files)
+	expect(result.needsManual).toEqual(findings(manual))
+}
+
+function expectIdempotent(files: Record<string, string>) {
+	const rerun = codemod.transform(files)
+	expect(rerun.changed).toBe(false)
+	expect(rerun.changedPaths).toEqual([])
+	expect(rerun.needsManual).toEqual([])
+	expect(rerun.files).toEqual(files)
 }
 
 test('0006 rewrites safe object-only invokes to owner-scoped string-first calls', () => {
@@ -41,17 +67,15 @@ test('0006 rewrites safe object-only invokes to owner-scoped string-first calls'
 		].join('\n'),
 	}
 
-	expect(invokeObjectToSpecifierCodemod.detect(files)).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('removed object-only'),
-		},
-	])
-
-	const result = invokeObjectToSpecifierCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['index.ts'])
-	expect(result.needsManual).toEqual([])
+	expect(codemod.detect(files)).toEqual(
+		findings([['index.ts', 'removed object-only']]),
+	)
+	const result = codemod.transform(files)
+	expect(result).toMatchObject({
+		changed: true,
+		changedPaths: ['index.ts'],
+		needsManual: [],
+	})
 	expect(result.files['index.ts']).toContain(
 		'packages.invoke("kody:@kentcdodds/github", { exportName:',
 	)
@@ -60,19 +84,11 @@ test('0006 rewrites safe object-only invokes to owner-scoped string-first calls'
 	)
 	expect(result.files['index.ts']).not.toContain("kodyId: '")
 	expect(result.files['already-migrated.ts']).toBe(files['already-migrated.ts'])
-
-	const rerun = invokeObjectToSpecifierCodemod.transform(result.files)
-	expect(rerun.changed).toBe(false)
-	expect(rerun.changedPaths).toEqual([])
-	expect(rerun.needsManual).toEqual([])
-	expect(rerun.files).toEqual(result.files)
+	expectIdempotent(result.files)
 })
 
 test('0006 partially migrates safe files and reports ambiguous calls for review', () => {
-	const files = {
-		'package.json': manifest(),
-		'safe.ts':
-			"await packages.invoke({ exportName: './run', kodyId: 'worker', topic: 'jobs' })\n",
+	const unsafe = {
 		'package-id.ts':
 			"await packages.invoke({ packageId: 'pkg-123', exportName: './run' })\n",
 		'dynamic.ts':
@@ -85,60 +101,32 @@ test('0006 partially migrates safe files and reports ambiguous calls for review'
 			"await packages.invoke({ kodyId: 'worker', exportName: './run', ...options })\n",
 		'commented.ts':
 			"await packages.invoke({ kodyId: 'worker' /* target */, exportName: './run' })\n",
-		'broken.ts':
-			"export default async function run( { return packages.invoke({ kodyId: 'worker', exportName: './run' })\n",
+	}
+	const broken =
+		"export default async function run( { return packages.invoke({ kodyId: 'worker', exportName: './run' })\n"
+	const files = {
+		'package.json': manifest(),
+		'safe.ts':
+			"await packages.invoke({ exportName: './run', kodyId: 'worker', topic: 'jobs' })\n",
+		'broken.ts': broken,
+		...unsafe,
 	}
 
-	const result = invokeObjectToSpecifierCodemod.transform(files)
+	const result = codemod.transform(files)
 	expect(result.changed).toBe(true)
 	expect(result.changedPaths).toEqual(['safe.ts'])
 	expect(result.files['safe.ts']).toContain(
 		'packages.invoke("kody:@user/worker", { exportName:',
 	)
-	expect(result.needsManual).toEqual([
-		{
-			path: 'broken.ts',
-			message: expect.stringContaining('could not be parsed'),
-		},
-		{
-			path: 'commented.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'dynamic.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'missing-export-options.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'missing-export.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'package-id.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'spread.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-		{
-			path: 'variable.ts',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-	])
-	expect(result.files['package-id.ts']).toBe(files['package-id.ts'])
-	expect(result.files['dynamic.ts']).toBe(files['dynamic.ts'])
-	expect(result.files['missing-export.ts']).toBe(files['missing-export.ts'])
-	expect(result.files['missing-export-options.ts']).toBe(
-		files['missing-export-options.ts'],
+	expect(result.needsManual).toEqual(
+		findings([
+			['broken.ts', 'could not be parsed'],
+			...Object.keys(unsafe)
+				.sort()
+				.map((path): [string, string] => [path, 'cannot be migrated safely']),
+		]),
 	)
-	expect(result.files['variable.ts']).toBe(files['variable.ts'])
-	expect(result.files['spread.ts']).toBe(files['spread.ts'])
-	expect(result.files['commented.ts']).toBe(files['commented.ts'])
-	expect(result.files['broken.ts']).toBe(files['broken.ts'])
+	expect(result.files).toMatchObject({ ...unsafe, 'broken.ts': broken })
 })
 
 test('0006 migrates JavaScript and TypeScript examples in Markdown', () => {
@@ -158,29 +146,23 @@ test('0006 migrates JavaScript and TypeScript examples in Markdown', () => {
 		].join('\n'),
 	}
 
-	expect(invokeObjectToSpecifierCodemod.detect(files)).toEqual([
-		{
-			path: 'README.md',
-			message: expect.stringContaining('removed object-only'),
-		},
-	])
-	const result = invokeObjectToSpecifierCodemod.transform(files)
-	expect(result.changed).toBe(true)
-	expect(result.changedPaths).toEqual(['README.md'])
-	expect(result.needsManual).toEqual([])
-	expect(result.files['README.md']).toContain(
+	expect(codemod.detect(files)).toEqual(
+		findings([['README.md', 'removed object-only']]),
+	)
+	const result = codemod.transform(files)
+	expect(result).toMatchObject({
+		changed: true,
+		changedPaths: ['README.md'],
+		needsManual: [],
+	})
+	for (const snippet of [
 		'packages.invoke("kody:@docs-owner/github", { exportName:',
-	)
-	expect(result.files['README.md']).toContain(
 		'`packages.invoke("kody:@docs-owner/inbox", { exportName:',
-	)
-	expect(result.files['README.md']).toContain(
 		'packages.invoke("kody:@docs-owner/calendar/list", { params: {} })',
-	)
-
-	const rerun = invokeObjectToSpecifierCodemod.transform(result.files)
-	expect(rerun.changed).toBe(false)
-	expect(rerun.files).toEqual(result.files)
+	]) {
+		expect(result.files['README.md']).toContain(snippet)
+	}
+	expectIdempotent(result.files)
 
 	const ambiguous = {
 		'package.json': manifest(),
@@ -193,109 +175,66 @@ test('0006 migrates JavaScript and TypeScript examples in Markdown', () => {
 			'',
 		].join('\n'),
 	}
-	const ambiguousResult = invokeObjectToSpecifierCodemod.transform(ambiguous)
+	const ambiguousResult = codemod.transform(ambiguous)
 	expect(ambiguousResult.changed).toBe(false)
 	expect(ambiguousResult.files).toEqual(ambiguous)
-	expect(ambiguousResult.needsManual).toEqual([
-		{
-			path: 'README.md',
-			message: expect.stringContaining('cannot be migrated safely'),
-		},
-	])
+	expect(ambiguousResult.needsManual).toEqual(
+		findings([['README.md', 'cannot be migrated safely']]),
+	)
 })
 
 test('0006 requires a scoped manifest and is registered for admin runs', () => {
-	const invalidManifestFiles = {
-		'package.json': manifest('demo'),
-		'index.ts':
-			"await packages.invoke({ kodyId: 'worker', exportName: './run' })\n",
-	}
-	expect(invokeObjectToSpecifierCodemod.detect(invalidManifestFiles)).toEqual([
-		{
-			path: 'package.json',
-			message: expect.stringContaining('scope could not be read'),
-		},
-	])
-	const invalidResult =
-		invokeObjectToSpecifierCodemod.transform(invalidManifestFiles)
-	expect(invalidResult.changed).toBe(false)
-	expect(invalidResult.files).toEqual(invalidManifestFiles)
-	expect(invalidResult.needsManual).toEqual([
-		{
-			path: 'package.json',
-			message: expect.stringContaining('scope could not be read'),
-		},
-	])
-
-	const platformFiles = {
-		'package.json': manifest('@kody/demo'),
-		'index.ts':
-			"await packages.invoke({ kodyId: 'worker', exportName: './run' })\n",
-		'README.md': [
+	const workerInvoke =
+		"await packages.invoke({ kodyId: 'worker', exportName: './run' })\n"
+	const docsInvoke = (kodyId: string, exportName: string) =>
+		[
 			'# Usage',
 			'',
 			'```ts',
-			"await packages.invoke({ kodyId: 'github', exportName: './request', params: {} })",
+			`await packages.invoke({ kodyId: '${kodyId}', exportName: '${exportName}', params: {} })`,
 			'```',
 			'',
-		].join('\n'),
+		].join('\n')
+
+	expectUnchangedWithManual(
+		{ 'package.json': manifest('demo'), 'index.ts': workerInvoke },
+		[['package.json', 'scope could not be read']],
+	)
+
+	const platformFiles = {
+		'package.json': manifest('@kody/demo'),
+		'index.ts': workerInvoke,
+		'README.md': docsInvoke('github', './request'),
 	}
-	expect(invokeObjectToSpecifierCodemod.detect(platformFiles)).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('runtime caller'),
-		},
-		{
-			path: 'README.md',
-			message: expect.stringContaining('removed object-only'),
-		},
-	])
-	const platformResult = invokeObjectToSpecifierCodemod.transform(platformFiles)
-	expect(platformResult.changed).toBe(true)
-	expect(platformResult.changedPaths).toEqual(['README.md'])
-	expect(platformResult.files['index.ts']).toBe(platformFiles['index.ts'])
+	expect(codemod.detect(platformFiles)).toEqual(
+		findings([
+			['index.ts', 'runtime caller'],
+			['README.md', 'removed object-only'],
+		]),
+	)
+	const platformResult = codemod.transform(platformFiles)
+	expect(platformResult).toMatchObject({
+		changed: true,
+		changedPaths: ['README.md'],
+		needsManual: findings([['index.ts', 'runtime caller']]),
+	})
+	expect(platformResult.files['index.ts']).toBe(workerInvoke)
 	expect(platformResult.files['README.md']).toContain(
 		'packages.invoke("kody:@kody/github", { exportName:',
 	)
-	expect(platformResult.needsManual).toEqual([
-		{
-			path: 'index.ts',
-			message: expect.stringContaining('runtime caller'),
-		},
-	])
 
 	for (const packageName of [
 		'@kody/notify',
 		'@kody/personal-capture',
 		'@kody/stash',
 	]) {
-		const forkOwnedDocs = {
-			'package.json': manifest(packageName),
-			'README.md': [
-				'# Usage',
-				'',
-				'```ts',
-				"await packages.invoke({ kodyId: 'helper', exportName: './run', params: {} })",
-				'```',
-				'',
-			].join('\n'),
-		}
-		expect(invokeObjectToSpecifierCodemod.detect(forkOwnedDocs)).toEqual([
+		expectUnchangedWithManual(
 			{
-				path: 'README.md',
-				message: expect.stringContaining('user-fork owner'),
+				'package.json': manifest(packageName),
+				'README.md': docsInvoke('helper', './run'),
 			},
-		])
-		const forkOwnedDocsResult =
-			invokeObjectToSpecifierCodemod.transform(forkOwnedDocs)
-		expect(forkOwnedDocsResult.changed).toBe(false)
-		expect(forkOwnedDocsResult.files).toEqual(forkOwnedDocs)
-		expect(forkOwnedDocsResult.needsManual).toEqual([
-			{
-				path: 'README.md',
-				message: expect.stringContaining('user-fork owner'),
-			},
-		])
+			[['README.md', 'user-fork owner']],
+		)
 	}
 
 	const unrelated = {
@@ -307,12 +246,8 @@ test('0006 requires a scoped manifest and is registered for admin runs', () => {
 			'',
 		].join('\n'),
 	}
-	expect(invokeObjectToSpecifierCodemod.detect(unrelated)).toEqual([])
-	expect(invokeObjectToSpecifierCodemod.transform(unrelated).changed).toBe(
-		false,
-	)
+	expect(codemod.detect(unrelated)).toEqual([])
+	expect(codemod.transform(unrelated).changed).toBe(false)
 
-	expect(getPackageCodemodById(invokeObjectToSpecifierCodemodId)).toBe(
-		invokeObjectToSpecifierCodemod,
-	)
+	expect(getPackageCodemodById(invokeObjectToSpecifierCodemodId)).toBe(codemod)
 })

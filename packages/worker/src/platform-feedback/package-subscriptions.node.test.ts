@@ -56,31 +56,19 @@ const openFeedback = {
 	updatedAt: '2026-07-19T00:00:00.000Z',
 } satisfies PlatformFeedbackRecord
 
-function buildExpectedEvent(feedback: PlatformFeedbackRecord = openFeedback) {
-	return buildPlatformFeedbackSubmittedEvent({
-		baseUrl: 'https://heykody.dev',
-		feedback,
-	})
-}
+type SavedPackage = ReturnType<typeof pkg>
 
-function mockResolvedFeedback(feedback: PlatformFeedbackRecord = openFeedback) {
-	mocks.getPlatformFeedbackForAdmin.mockResolvedValue(feedback)
-}
-
-function createSavedPackage(input: {
-	id: string
-	userId: string
-	sourceId: string
-}) {
+function pkg(name: string, userId = 'admin-stable-1') {
+	const id = `package-${name}`
 	return {
-		id: input.id,
-		userId: input.userId,
-		name: `@admin/${input.id}`,
-		kodyId: input.id,
-		description: `${input.id} notifier`,
+		id,
+		userId,
+		name: `@admin/${id}`,
+		kodyId: id,
+		description: `${id} notifier`,
 		tags: [],
 		searchText: null,
-		sourceId: input.sourceId,
+		sourceId: `source-${name}`,
 		hasApp: false,
 		hidden: false,
 		isPrivate: false,
@@ -89,7 +77,7 @@ function createSavedPackage(input: {
 	}
 }
 
-function createManifest(packageId: string, subscribed = true) {
+function createManifest(packageId: string, subscribed: boolean) {
 	return {
 		manifest: {
 			name: `@admin/${packageId}`,
@@ -111,24 +99,65 @@ function createManifest(packageId: string, subscribed = true) {
 	}
 }
 
-function createDispatchEnv() {
-	return {
-		APP_DB: {} as D1Database,
-		BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
-		APP_BASE_URL: 'https://heykody.dev',
-	}
+function seedAdminPackages(
+	byUser: Record<string, Array<SavedPackage>>,
+	manifests: {
+		unsubscribed?: Array<SavedPackage>
+		broken?: Array<SavedPackage>
+	} = {},
+) {
+	const all = Object.values(byUser).flat()
+	mocks.listAdminStableUserIds.mockResolvedValue(Object.keys(byUser))
+	mocks.listSavedPackagesByUserId.mockImplementation(
+		async (_db: D1Database, input: { userId: string }) =>
+			byUser[input.userId] ?? [],
+	)
+	mocks.loadPackageManifestBySourceId.mockImplementation(
+		async (input: { sourceId: string }) => {
+			const match = all.find((entry) => entry.sourceId === input.sourceId)
+			if (!match) throw new Error(`Unexpected source id: ${input.sourceId}`)
+			if (manifests.broken?.includes(match)) {
+				throw new Error('manifest unavailable')
+			}
+			return createManifest(match.id, !manifests.unsubscribed?.includes(match))
+		},
+	)
+}
+
+const ok = { status: 200, body: { ok: true } }
+
+function stubInvocations(results: Record<string, unknown>) {
+	mocks.invokePackageSubscription.mockImplementation(
+		async (input: { savedPackage: { id: string } }) => {
+			const result = results[input.savedPackage.id] ?? ok
+			if (result instanceof Error) throw result
+			return result
+		},
+	)
+}
+
+function dispatch(feedbackId = openFeedback.id) {
+	return dispatchPlatformFeedbackSubmittedSubscriptionEvent({
+		env: {
+			APP_DB: {} as D1Database,
+			BUNDLE_ARTIFACTS_KV: {} as KVNamespace,
+			APP_BASE_URL: 'https://heykody.dev',
+		},
+		feedbackId,
+	})
+}
+
+function invokedIds() {
+	return mocks.invokePackageSubscription.mock.calls
+		.map(([input]) => input.savedPackage.id as string)
+		.sort()
 }
 
 test('platform feedback submitted payload contains exactly the approved event fields and encoded admin URL', () => {
-	const feedback = {
-		...openFeedback,
-		id: 'feedback /?#1',
-	}
 	const payload = buildPlatformFeedbackSubmittedEvent({
 		baseUrl: 'https://kody.example.com',
-		feedback,
+		feedback: { ...openFeedback, id: 'feedback /?#1' },
 	})
-
 	expect(payload).toEqual({
 		event: 'platform.feedback.submitted',
 		content_warning: platformFeedbackContentWarning,
@@ -149,7 +178,12 @@ test('platform feedback submitted payload contains exactly the approved event fi
 			email: 'feedback-author@example.com',
 		},
 	})
-	expect(Object.keys(payload.feedback).sort()).toEqual(
+	expect(
+		[payload, payload.feedback, payload.submitter].map((value) =>
+			Object.keys(value).sort(),
+		),
+	).toEqual([
+		['admin_url', 'content_warning', 'event', 'feedback', 'submitter'],
 		[
 			'category',
 			'created_at',
@@ -157,58 +191,26 @@ test('platform feedback submitted payload contains exactly the approved event fi
 			'id',
 			'status',
 			'summary_untrusted',
-		].sort(),
-	)
-	expect(payload.feedback).not.toHaveProperty('summary')
-	expect(payload.feedback).not.toHaveProperty('details')
-	for (const deniedField of [
-		'admin_note',
-		'reviewed_by_user_id',
-		'reviewed_at',
-		'revision',
-		'updated_at',
-		'roles',
-		'plan',
-		'packages',
-	]) {
-		expect(payload).not.toHaveProperty(deniedField)
-		expect(payload.feedback).not.toHaveProperty(deniedField)
-		expect(payload.submitter).not.toHaveProperty(deniedField)
-	}
+		],
+		['email', 'user_id', 'username'],
+	])
 })
 
 test('platform feedback dispatch isolates terminal handler failures and rejects after retryable or discovery failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mockResolvedFeedback()
-
-	const terminalOnly = createSavedPackage({
-		id: 'package-terminal',
-		userId: 'admin-stable-1',
-		sourceId: 'source-terminal',
-	})
-	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
-	mocks.listSavedPackagesByUserId.mockResolvedValue([terminalOnly])
-	mocks.loadPackageManifestBySourceId.mockResolvedValue(
-		createManifest(terminalOnly.id),
-	)
+	mocks.getPlatformFeedbackForAdmin.mockResolvedValue(openFeedback)
 	const executionFailure = {
 		status: 500,
 		body: {
 			ok: false,
-			error: {
-				code: 'execution_failed',
-				message: 'Handler failed.',
-			},
+			error: { code: 'execution_failed', message: 'Handler failed.' },
 		},
 	}
-	mocks.invokePackageSubscription.mockResolvedValue(executionFailure)
 
-	await expect(
-		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-			env: createDispatchEnv(),
-			feedbackId: openFeedback.id,
-		}),
-	).resolves.toEqual([executionFailure])
+	const terminalOnly = pkg('terminal')
+	seedAdminPackages({ 'admin-stable-1': [terminalOnly] })
+	stubInvocations({ [terminalOnly.id]: executionFailure })
+	await expect(dispatch()).resolves.toEqual([executionFailure])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-package-subscription-handler-failed',
 		{
@@ -220,86 +222,40 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 
 	consoleWarn.mockClear()
 	mocks.invokePackageSubscription.mockClear()
-	const first = createSavedPackage({
-		id: 'package-first',
-		userId: 'admin-stable-1',
-		sourceId: 'source-first',
-	})
-	const second = createSavedPackage({
-		id: 'package-second',
-		userId: 'admin-stable-1',
-		sourceId: 'source-second',
-	})
-	const broken = createSavedPackage({
-		id: 'package-broken',
-		userId: 'admin-stable-2',
-		sourceId: 'source-broken',
-	})
-	const unrelated = createSavedPackage({
-		id: 'package-unrelated',
-		userId: 'admin-stable-2',
-		sourceId: 'source-unrelated',
-	})
-	mocks.listAdminStableUserIds.mockResolvedValue([
-		'admin-stable-1',
-		'admin-stable-2',
-	])
-	mocks.listSavedPackagesByUserId.mockImplementation(
-		async (_db: D1Database, input: { userId: string }) =>
-			input.userId === 'admin-stable-1' ? [first, second] : [broken, unrelated],
-	)
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (input.sourceId === first.sourceId) return createManifest(first.id)
-			if (input.sourceId === second.sourceId) return createManifest(second.id)
-			if (input.sourceId === broken.sourceId) {
-				throw new Error('manifest unavailable')
-			}
-			if (input.sourceId === unrelated.sourceId) {
-				return createManifest(unrelated.id, false)
-			}
-			throw new Error(`Unexpected source id: ${input.sourceId}`)
+	const first = pkg('first')
+	const second = pkg('second')
+	const broken = pkg('broken', 'admin-stable-2')
+	const unrelated = pkg('unrelated', 'admin-stable-2')
+	seedAdminPackages(
+		{
+			'admin-stable-1': [first, second],
+			'admin-stable-2': [broken, unrelated],
 		},
+		{ unsubscribed: [unrelated], broken: [broken] },
 	)
-	mocks.invokePackageSubscription.mockImplementation(
-		async (input: { savedPackage: { id: string } }) => {
-			if (input.savedPackage.id === first.id) {
-				return executionFailure
-			}
-			return { status: 200, body: { ok: true } }
-		},
+	stubInvocations({ [first.id]: executionFailure })
+	await expect(dispatch()).rejects.toThrow(
+		'Admin package subscription discovery failed.',
 	)
-
-	await expect(
-		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-			env: createDispatchEnv(),
-			feedbackId: openFeedback.id,
-		}),
-	).rejects.toThrow('Admin package subscription discovery failed.')
-	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
+	expect(invokedIds()).toEqual([first.id, second.id])
 	expect(
 		mocks.invokePackageSubscription.mock.calls.map(([input]) => input),
 	).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				savedPackage: first,
-				topic: platformFeedbackSubmittedTopic,
-				params: buildExpectedEvent(),
-				idempotencyKey:
-					'platform-feedback:feedback-1:package-first:platform.feedback.submitted',
-				source: 'platform-feedback',
-				actorTokenId: 'internal:platform-feedback-subscriptions',
-			}),
-			expect.objectContaining({
-				savedPackage: second,
-				topic: platformFeedbackSubmittedTopic,
-				params: buildExpectedEvent(),
-				idempotencyKey:
-					'platform-feedback:feedback-1:package-second:platform.feedback.submitted',
-				source: 'platform-feedback',
-				actorTokenId: 'internal:platform-feedback-subscriptions',
-			}),
-		]),
+		expect.arrayContaining(
+			[first, second].map((savedPackage) =>
+				expect.objectContaining({
+					savedPackage,
+					topic: platformFeedbackSubmittedTopic,
+					params: buildPlatformFeedbackSubmittedEvent({
+						baseUrl: 'https://heykody.dev',
+						feedback: openFeedback,
+					}),
+					idempotencyKey: `platform-feedback:feedback-1:${savedPackage.id}:platform.feedback.submitted`,
+					source: 'platform-feedback',
+					actorTokenId: 'internal:platform-feedback-subscriptions',
+				}),
+			),
+		),
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-package-subscription-manifest-load-failed',
@@ -314,62 +270,22 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 
 	consoleWarn.mockClear()
 	mocks.invokePackageSubscription.mockClear()
-	const retryable = createSavedPackage({
-		id: 'package-retryable',
-		userId: 'admin-stable-1',
-		sourceId: 'source-retryable',
-	})
-	const successfulSibling = createSavedPackage({
-		id: 'package-successful',
-		userId: 'admin-stable-1',
-		sourceId: 'source-successful',
-	})
-	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
-	mocks.listSavedPackagesByUserId.mockResolvedValue([
-		retryable,
-		successfulSibling,
-	])
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (input.sourceId === retryable.sourceId) {
-				return createManifest(retryable.id)
-			}
-			if (input.sourceId === successfulSibling.sourceId) {
-				return createManifest(successfulSibling.id)
-			}
-			throw new Error(`Unexpected source id: ${input.sourceId}`)
+	const retryable = pkg('retryable')
+	const successfulSibling = pkg('successful')
+	seedAdminPackages({ 'admin-stable-1': [retryable, successfulSibling] })
+	stubInvocations({
+		[retryable.id]: {
+			status: 409,
+			body: {
+				ok: false,
+				error: { code: 'invocation_in_progress', message: 'Please retry.' },
+			},
 		},
-	)
-	mocks.invokePackageSubscription.mockImplementation(
-		async (input: { savedPackage: { id: string } }) =>
-			input.savedPackage.id === retryable.id
-				? {
-						status: 409,
-						body: {
-							ok: false,
-							error: {
-								code: 'invocation_in_progress',
-								message: 'Please retry.',
-							},
-						},
-					}
-				: { status: 200, body: { ok: true } },
-	)
-
-	await expect(
-		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-			env: createDispatchEnv(),
-			feedbackId: openFeedback.id,
-		}),
-	).rejects.toThrow(
+	})
+	await expect(dispatch()).rejects.toThrow(
 		'Admin package subscription dispatch encountered retryable package invocation infrastructure errors.',
 	)
-	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
-	expect(
-		mocks.invokePackageSubscription.mock.calls.map(
-			([{ savedPackage }]) => savedPackage.id,
-		),
-	).toEqual(expect.arrayContaining([retryable.id, successfulSibling.id]))
+	expect(invokedIds()).toEqual([retryable.id, successfulSibling.id])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-package-subscription-handler-failed',
 		{
@@ -381,81 +297,28 @@ test('platform feedback dispatch isolates terminal handler failures and rejects 
 })
 
 test('platform feedback skips lazy enrichment without admins and cancels permanently when the row is deleted', async () => {
-	mocks.getPlatformFeedbackForAdmin.mockClear()
-	mocks.invokePackageSubscription.mockClear()
 	mocks.listAdminStableUserIds.mockResolvedValue([])
-
-	await expect(
-		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-			env: createDispatchEnv(),
-			feedbackId: openFeedback.id,
-		}),
-	).resolves.toEqual([])
+	await expect(dispatch()).resolves.toEqual([])
 	expect(mocks.getPlatformFeedbackForAdmin).not.toHaveBeenCalled()
 
-	const subscribed = createSavedPackage({
-		id: 'package-subscriber',
-		userId: 'admin-stable-1',
-		sourceId: 'source-subscriber',
-	})
-	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
-	mocks.listSavedPackagesByUserId.mockResolvedValue([subscribed])
-	mocks.loadPackageManifestBySourceId.mockResolvedValue(
-		createManifest(subscribed.id),
-	)
+	seedAdminPackages({ 'admin-stable-1': [pkg('subscriber')] })
 	mocks.getPlatformFeedbackForAdmin.mockResolvedValue(null)
-
-	await expect(
-		dispatchPlatformFeedbackSubmittedSubscriptionEvent({
-			env: createDispatchEnv(),
-			feedbackId: 'deleted-feedback',
-		}),
-	).rejects.toBeInstanceOf(PlatformFeedbackDispatchCancelledError)
+	await expect(dispatch('deleted-feedback')).rejects.toBeInstanceOf(
+		PlatformFeedbackDispatchCancelledError,
+	)
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 })
 
 test('generic admin fan-out defaults to skipping manifest and invocation failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const successful = createSavedPackage({
-		id: 'package-successful',
-		userId: 'admin-stable-1',
-		sourceId: 'source-successful',
-	})
-	const broken = createSavedPackage({
-		id: 'package-broken',
-		userId: 'admin-stable-1',
-		sourceId: 'source-broken',
-	})
-	const thrown = createSavedPackage({
-		id: 'package-thrown',
-		userId: 'admin-stable-1',
-		sourceId: 'source-thrown',
-	})
-	mocks.listAdminStableUserIds.mockResolvedValue(['admin-stable-1'])
-	mocks.listSavedPackagesByUserId.mockResolvedValue([
-		successful,
-		thrown,
-		broken,
-	])
-	mocks.loadPackageManifestBySourceId.mockImplementation(
-		async (input: { sourceId: string }) => {
-			if (input.sourceId === successful.sourceId) {
-				return createManifest(successful.id)
-			}
-			if (input.sourceId === thrown.sourceId) {
-				return createManifest(thrown.id)
-			}
-			throw new Error('manifest unavailable')
-		},
+	const successful = pkg('successful')
+	const broken = pkg('broken')
+	const thrown = pkg('thrown')
+	seedAdminPackages(
+		{ 'admin-stable-1': [successful, thrown, broken] },
+		{ broken: [broken] },
 	)
-	mocks.invokePackageSubscription.mockImplementation(
-		async (input: { savedPackage: { id: string } }) => {
-			if (input.savedPackage.id === thrown.id) {
-				throw new Error('invocation unavailable')
-			}
-			return { status: 200, body: { ok: true } }
-		},
-	)
+	stubInvocations({ [thrown.id]: new Error('invocation unavailable') })
 
 	await expect(
 		dispatchAdminPackageSubscriptionEvent({
@@ -469,9 +332,8 @@ test('generic admin fan-out defaults to skipping manifest and invocation failure
 			source: 'test',
 			buildIdempotencyKey: (savedPackage) => `test:${savedPackage.id}`,
 		}),
-	).resolves.toEqual([{ status: 200, body: { ok: true } }, null])
-
-	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
+	).resolves.toEqual([ok, null])
+	expect(invokedIds()).toEqual([successful.id, thrown.id])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'admin-package-subscription-manifest-load-failed',
 		expect.objectContaining({ packageId: broken.id }),

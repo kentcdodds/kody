@@ -21,6 +21,7 @@ D1 saved_packages.is_private = 0 + community_listings row
         ▼
 Public /community + /@username/:name + /tree/:ref + /settings
         │
+        │   also: /@username/:name.git  (read-only smart HTTP → Artifacts)
         ▼
 Visitor forks ──► communityFork ──► entity_sources (no saved_packages row)
         │                              copy of HEAD, inert until publish
@@ -67,6 +68,25 @@ Activity actor columns store the MCP **stable user id**
 Active community listings backfill to public; leftover `"private": false`
 teasers stay private.
 
+### Public `.git` smart HTTP
+
+`/@owner/kody-id.git` is a **read-only** Git smart HTTP proxy for active public
+listings (`packages/worker/src/repo/public-package-git-http.ts`). The origin
+Worker handles it before the anonymous HTML edge cache and Remix. Flow:
+
+1. Resolve the listing via `resolveCommunityPackageUrl` (404 when missing /
+   private / delisted — same non-leak posture as package pages).
+2. Load `entity_sources` + mint an Artifacts **read** token server-side.
+3. Advertise only the immutable published snapshot commit (`published_commit`,
+   else listing `pinned_commit`) on `HEAD` / `refs/heads/<defaultBranch>`.
+4. Proxy `git-upload-pack` to Artifacts with `Authorization: Bearer …`. Strip
+   `Location` / `WWW-Authenticate` / `Set-Cookie` so the Artifacts host and
+   credentials never reach the client.
+5. Reject `git-receive-pack` and `?service=git-receive-pack` with 403.
+
+Owner authoring remotes remain `packageGetGitRemote` (signed-in). See
+[Public packages (usage)](../use/community-packages.md#clone-a-public-package-read-only-git).
+
 Profile activity reads stored `community_activity_events` plus public forks from
 `community_forks`. Forks appear only while the forker's saved package copy has
 `is_private = 0`. Ratings are never projected into profile activity.
@@ -112,9 +132,12 @@ connect a second agent — see [Onboarding process](./architecture/onboarding.md
 Official `@kody/*` listings are catalog and fork source — person accounts run
 the owned copy, not the platform package. One-click install on listing detail
 puts a fork icon beside the name for official `@kody/*` packages. Listings from
-another account use the same fork icon and `createDoubleCheck` (first click arms
-**Confirm fork**; the second click sends `acknowledged: true`; the endpoint
-responds `409` without it). User-facing install UX:
+another account use the same fork icon and `createDoubleCheck` (the tooltip is
+“This was built by another user. Verify it before using. Click again to confirm
+fork.”; the first click arms that control; the second click sends
+`acknowledged: true`; clicking elsewhere, navigating, or leaving the control
+clears the armed state; the endpoint responds `409` without the flag).
+User-facing install UX:
 [Public packages](../use/community-packages.md#one-click-install). `/community`
 cards overlay a per-request `viewerInstall` when the viewer already has a
 matching slug saved package or a `community_forks` row, so those cards show
@@ -193,18 +216,19 @@ source.
 
 Core logic: `packages/worker/src/community/`
 
-| Module               | Role                                                                |
-| -------------------- | ------------------------------------------------------------------- |
-| `service.ts`         | Publish, unpublish, search, fork, rate, report, admin resolution    |
-| `profile-service.ts` | Profiles, profile activity, public package lists                    |
-| `profile-repo.ts`    | D1 for profiles, activity events, and public package lists          |
-| `install.ts`         | One-click install: fork + publish checks + projection publish       |
-| `repo.ts`            | D1 queries                                                          |
-| `activity-*`         | Admin activity feed and durable admin subscription dispatch         |
-| `snapshot.ts`        | KV snapshot I/O                                                     |
-| `fork-scan.ts`       | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan |
-| `og-image.ts`        | Community listing 1200×630 PNG on the shared `#worker/og` pipeline  |
-| `types.ts`           | Shared record types                                                 |
+| Module                  | Role                                                                              |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| `service.ts`            | Publish, unpublish, search, fork, rate, report, admin resolution                  |
+| `allocate-fork-leaf.ts` | Next free `leaf-N` when the default listing leaf is taken by an unrelated package |
+| `profile-service.ts`    | Profiles, profile activity, public package lists                                  |
+| `profile-repo.ts`       | D1 for profiles, activity events, and public package lists                        |
+| `install.ts`            | One-click install: fork + publish checks + projection publish                     |
+| `repo.ts`               | D1 queries                                                                        |
+| `activity-*`            | Admin activity feed and durable admin subscription dispatch                       |
+| `snapshot.ts`           | KV snapshot I/O                                                                   |
+| `fork-scan.ts`          | Manifest rewrite + cross-scope `kody:@…` / `kody.dependencies` scan               |
+| `og-image.ts`           | Community listing 1200×630 PNG on the shared `#worker/og` pipeline                |
+| `types.ts`              | Shared record types                                                               |
 
 `publishCommunityListing` has no MIT, logo, Intent, or personal-content gates.
 Visibility is separate from package publish checks, which require non-empty root
@@ -217,28 +241,33 @@ SHA-keyed source snapshot.
 
 `forkCommunityListing` reads the KV snapshot for rewrite/scan (Worker), then
 copies the origin Artifacts repo with `POST .../repos/{source}/fork` so the tree
-never enters a RepoSession isolate as `Record<path, string>` edits. Persist
-stamps dest `published_commit` to dest HEAD (the default-branch tip the fork
-copied) and records that SHA on `community_forks.origin_commit`. When dest HEAD
-matches the listing pin used in prepare, only rewritten files (`package.json`
-and self-reference text) are applied. When dest HEAD is ahead of that pin,
-persist re-derives the `package.json` rewrite from dest HEAD instead of applying
+never enters a RepoSession isolate as `Record<path, string>` edits. When the
+caller omits an explicit leaf and the listing leaf is already taken by an
+unrelated saved package (no `community_forks` row for this listing at that
+leaf), it picks the next free `leaf-N` (`allocate-fork-leaf.ts`). An explicit
+leaf errors if that name is taken. A repeat fork of the same listing errors with
+the existing fork instead of allocating another leaf. Persist stamps dest
+`published_commit` to dest HEAD (the default-branch tip the fork copied) and
+records that SHA on `community_forks.origin_commit`. When dest HEAD matches the
+listing pin used in prepare, only rewritten files (`package.json` and
+self-reference text) are applied. When dest HEAD is ahead of that pin, persist
+re-derives the `package.json` rewrite from dest HEAD instead of applying
 pin-relative edits that would revert later origin commits. When the origin
-Artifacts repo is missing, persist falls back to the older full-tree snapshot
-sync. Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
+Artifacts repo is missing, persist falls back to the full-tree snapshot sync.
+Isolate memory / Artifacts `MEMORY_LIMIT` failures surface as
 `CommunityForkResourceLimitError` (honest UI/MCP copy; fork count does not
 increment). Records `community_forks` — **without** inserting `saved_packages`.
 Failed persist cleanup deletes the dest Artifacts repo, the inert entity source,
-any `package_kody_id_redirects` for the allocated package id, and the matching
+any slug redirects for the allocated package id, and the matching
 `community_forks` row so a leftover metadata row cannot inflate `fork_count` or
 block a retry.
 
 `communityFork` returns request-scoped `serverTiming` entries
 (`{ name, durationMs }`), the same shape as `execute`. They are not written to
 D1 or Analytics Engine. The storage-layer path records `artifacts-fork`. The
-legacy full-tree fallback may still include nested `bootstrap-*` phases from the
-RepoSession Durable Object; `bootstrap-source` is the RPC wall clock, including
-isolate startup. Subtract the nested bootstrap phases from `bootstrap-source` to
+full-tree fallback may include nested `bootstrap-*` phases from the RepoSession
+Durable Object; `bootstrap-source` is the RPC wall clock, including isolate
+startup. Subtract the nested bootstrap phases from `bootstrap-source` to
 estimate cold start. `Date.now()` in Workers only advances across I/O, so
 CPU-only steps may report `0`.
 
@@ -283,7 +312,8 @@ Capabilities:
 - `communitySearch`
 - `communityGet`
 - `communityFork`
-- `communityForkAdopt` (interactive MCP only; package runtimes cannot adopt)
+- `communityForkAdopt` (read-only: returns the website adoption link; only the
+  signed-in account session adopts via `POST /account/packages.json`)
 - `communityRate`
 - `communityProfileGet` / `communityProfileUpdate`
 - `communityReport`
@@ -312,9 +342,10 @@ Client routes: `packages/worker/client/routes/community*`
   unfiltered browse page (`?category=` filters to one category). Empty
   categories omit their chip; an empty catalog hides the facet and sort row.
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
-  plus the listing slug (JSON companion:
-  `/profiles/:username/packages/:kodyId.json`). `username_redirects` and
-  `package_kody_id_redirects` map prior owner usernames and package slugs to a
+  plus the package slug (the saved package by name leaf, then its listing by
+  `package_id`; JSON companion: `/profiles/:username/packages/:kodyId.json`).
+  The listing slug stays the public pair until republish. `username_redirects`
+  and `package_slug_redirects` map prior owner usernames and package slugs to a
   redirect at that URL
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
   (default-branch name from git, SHA, or another branch). `HEAD` and leftover
@@ -332,9 +363,9 @@ Client routes: `packages/worker/client/routes/community*`
   or JavaScript.
 - `/community/:listingId` — the same page by listing id; redirects to the
   canonical URL. Metadata, ratings, README, one-click install (login required;
-  other-account listings arm **Confirm fork** via `createDoubleCheck`; official
-  `@kody/*` install on first click), fork prompt, and report link (report
-  requires login)
+  other-account listings arm via `createDoubleCheck` and fork on the second
+  click; official `@kody/*` install on first click), fork prompt, and report
+  link (report requires login)
 - `/community/:listingId/icon/:iconCommit` — cached package icon or generated
   fallback; serves the current icon commit or the pinned snapshot commit, and
   rejects stale commit URLs
@@ -381,6 +412,18 @@ enqueue this topic. Enqueue failures are logged and never fail
 `communityPublish`. See
 [the admin events guide](../guides/admin-events.md#communitylistingpublished-admins)
 for the handler payload.
+
+A republish whose pinned commit differs from the stored listing enqueues a
+`{ kind: 'fork_upstream_updated', eventId, listingId, previous, current, publishedAt }`
+message on the same queue. `previous` and `current` are
+`{ pinnedCommit, packageVersion }`. Change detection lives in
+`publishCommunityListing` (`hasCommunityListingReleaseChanged`); the consumer is
+`dispatchCommunityForkUpstreamUpdatedSubscriptionEvents`. It lists every
+`community_forks` row for the listing, skips forks already at the new pin, and
+invokes `community.fork.upstream_updated` on each forker's own subscribed
+packages, one event per fork. Forking is required: there is no listing watch.
+Payload:
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
 
 ## Inert fork mechanism
 

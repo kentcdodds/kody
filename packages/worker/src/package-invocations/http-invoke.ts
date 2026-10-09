@@ -1,20 +1,16 @@
-import { recordAgentPackageConversationUse } from '#worker/usage/agent-package-conversation-uses.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildSavedPackageNotFoundMessage,
-	internalExecuteRuntimeInvokeTokenId,
-	internalPackageRuntimeInvokeTokenId,
 	normalizeExportName,
 	normalizeNullableString,
 	packageInvocationScopeWildcard,
 	type PackageInvocationRequest,
 	type PackageInvocationResponse,
 	type PackageInvocationTokenScope,
-	type PackageRuntimeContext,
 	type PackageRuntimeToolFactories,
 } from './common.ts'
 import { invokeSavedPackageModule } from './idempotent-module-invocation.ts'
 import { runSavedPackageModuleEphemeral } from './module-execution.ts'
-import { type PackageInvokeCheckPreloads } from './invoke-check.ts'
 import { resolveSavedPackage } from './module-artifacts.ts'
 import { buildJsonErrorResponse } from './responses.ts'
 import {
@@ -41,168 +37,6 @@ function tokenAllowsExport(input: {
 	)
 }
 
-export async function invokePackageExportForExecuteRuntime(input: {
-	env: Env
-	baseUrl: string
-	caller: {
-		userId: string
-	}
-	request: PackageInvocationRequest
-	runtimeInvokeDepth?: number
-	conversationId?: string | null
-	toolFactories: PackageRuntimeToolFactories
-	waitUntil?: (promise: Promise<unknown>) => void
-	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
-	preloads?: PackageInvokeCheckPreloads | null
-	signal?: AbortSignal
-}): Promise<PackageInvocationResponse> {
-	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
-	if (!packageIdOrKodyId) {
-		return buildJsonErrorResponse({
-			status: 400,
-			code: 'invalid_package',
-			message: 'Package id or kody id is required.',
-		})
-	}
-	const exportName = normalizeExportName(input.request.exportName)
-	if (isSealedSecretProviderExport(exportName)) {
-		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
-	}
-	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
-	const savedPackage =
-		input.preloads?.savedPackage ??
-		(await resolveSavedPackage({
-			db: input.env.APP_DB,
-			userId: input.caller.userId,
-			packageIdOrKodyId,
-		}))
-	if (!savedPackage) {
-		return buildJsonErrorResponse({
-			status: 404,
-			code: 'package_not_found',
-			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
-			idempotencyKey: idempotencyKey ?? undefined,
-		})
-	}
-	const conversationId = input.conversationId?.trim()
-	if (conversationId) {
-		// Best-effort; must not affect invoke. Conversation-unique upsert.
-		void recordAgentPackageConversationUse(input.env, {
-			userId: input.caller.userId,
-			packageId: savedPackage.id,
-			conversationId,
-		})
-	}
-	const actor = {
-		tokenId: internalExecuteRuntimeInvokeTokenId,
-		userId: input.caller.userId,
-	}
-	const shared = {
-		env: input.env,
-		baseUrl: input.baseUrl,
-		actor,
-		savedPackage,
-		invocationName: exportName,
-		moduleSelector: {
-			kind: 'export',
-			exportName,
-		},
-		params: input.request.params,
-		source: 'execute',
-		topic: normalizeNullableString(input.request.topic),
-		notFoundCode: 'export_not_found',
-		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
-		toolFactories: input.toolFactories,
-		waitUntil: input.waitUntil,
-		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
-		signal: input.signal,
-	} satisfies Omit<
-		Parameters<typeof invokeSavedPackageModule>[0],
-		'idempotencyKey'
-	>
-	if (!idempotencyKey) {
-		return await runSavedPackageModuleEphemeral(shared)
-	}
-	return await invokeSavedPackageModule({ ...shared, idempotencyKey })
-}
-
-export async function invokePackageExportForPackageRuntime(input: {
-	env: Env
-	baseUrl: string
-	caller: {
-		userId: string
-		packageContext: PackageRuntimeContext
-	}
-	request: PackageInvocationRequest
-	runtimeInvokeDepth?: number
-	toolFactories: PackageRuntimeToolFactories
-	waitUntil?: (promise: Promise<unknown>) => void
-	/** Check-phase loads from the `packages.invoke` contract check; see invoke-check.ts. */
-	preloads?: PackageInvokeCheckPreloads | null
-	signal?: AbortSignal
-}): Promise<PackageInvocationResponse> {
-	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
-	if (!packageIdOrKodyId) {
-		return buildJsonErrorResponse({
-			status: 400,
-			code: 'invalid_package',
-			message: 'Package id or kody id is required.',
-		})
-	}
-	const exportName = normalizeExportName(input.request.exportName)
-	if (isSealedSecretProviderExport(exportName)) {
-		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
-	}
-	const idempotencyKey = normalizeNullableString(input.request.idempotencyKey)
-	const savedPackage =
-		input.preloads?.savedPackage ??
-		(await resolveSavedPackage({
-			db: input.env.APP_DB,
-			userId: input.caller.userId,
-			packageIdOrKodyId,
-		}))
-	if (!savedPackage) {
-		return buildJsonErrorResponse({
-			status: 404,
-			code: 'package_not_found',
-			message: buildSavedPackageNotFoundMessage(packageIdOrKodyId),
-			idempotencyKey: idempotencyKey ?? undefined,
-		})
-	}
-	const shared = {
-		env: input.env,
-		baseUrl: input.baseUrl,
-		actor: {
-			tokenId: `${internalPackageRuntimeInvokeTokenId}:${input.caller.packageContext.packageId}`,
-			userId: input.caller.userId,
-		},
-		savedPackage,
-		invocationName: exportName,
-		moduleSelector: {
-			kind: 'export',
-			exportName,
-		},
-		params: input.request.params,
-		source:
-			normalizeNullableString(input.request.source) ??
-			`package:${input.caller.packageContext.kodyId}`,
-		topic: normalizeNullableString(input.request.topic),
-		notFoundCode: 'export_not_found',
-		runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
-		toolFactories: input.toolFactories,
-		waitUntil: input.waitUntil,
-		preloadedModuleArtifact: input.preloads?.moduleArtifact ?? null,
-		signal: input.signal,
-	} satisfies Omit<
-		Parameters<typeof invokeSavedPackageModule>[0],
-		'idempotencyKey'
-	>
-	if (!idempotencyKey) {
-		return await runSavedPackageModuleEphemeral(shared)
-	}
-	return await invokeSavedPackageModule({ ...shared, idempotencyKey })
-}
-
 export async function invokePackageExportWithToolFactories(input: {
 	env: Env
 	baseUrl: string
@@ -217,6 +51,8 @@ export async function invokePackageExportWithToolFactories(input: {
 	 */
 	ephemeral?: boolean
 	executorTimeoutMs?: number | null
+	/** Inbound request abort. Caller disconnect finishes the keyed run. */
+	signal?: AbortSignal
 }): Promise<PackageInvocationResponse> {
 	const packageIdOrKodyId = input.request.packageIdOrKodyId.trim()
 	if (!packageIdOrKodyId) {
@@ -230,7 +66,7 @@ export async function invokePackageExportWithToolFactories(input: {
 	if (isSealedSecretProviderExport(exportName)) {
 		return buildJsonErrorResponse(sealedSecretProviderExportDeniedResponse())
 	}
-	// External HTTP token invocations stay keyed-only: providers retry
+	// External webhook invocations stay keyed-only: providers retry
 	// deliveries, so exactly-once is the point of this surface. Workflow
 	// step retries pass ephemeral: true and run key-less instead.
 	const idempotencyKey = input.ephemeral
@@ -279,8 +115,9 @@ export async function invokePackageExportWithToolFactories(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: input.token.tokenId,
-			userId: input.token.userId,
+			sourceId: input.token.tokenId,
+			orgId: ownerIdFromStored(input.token.userId),
+			request: input.token.request,
 		},
 		savedPackage,
 		invocationName: exportName,
@@ -296,6 +133,7 @@ export async function invokePackageExportWithToolFactories(input: {
 		toolFactories: input.toolFactories,
 		waitUntil: input.waitUntil,
 		executorTimeoutMs: input.executorTimeoutMs,
+		signal: input.signal,
 	}
 
 	if (!idempotencyKey) {

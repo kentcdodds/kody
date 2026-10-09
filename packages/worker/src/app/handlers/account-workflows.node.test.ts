@@ -1,4 +1,8 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const listedWorkflow = {
 	id: 'dynwf-1',
@@ -21,19 +25,26 @@ const listedWorkflow = {
 }
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
 		sessionUserId: '42',
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',
 		},
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	listWorkflowRunsForUser: vi.fn(),
 	cancelWorkflowRunForUser: vi.fn(),
@@ -41,8 +52,9 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
@@ -76,9 +88,11 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 	resetList()
 	const handler = createAccountWorkflowsApiHandler(createEnv())
 
-	const listResponse = await handler.handler({
-		request: new Request('https://example.com/account/workflows.json'),
-	})
+	const listResponse = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account/workflows.json'),
+		),
+	)
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	await expect(listResponse.json()).resolves.toMatchObject({
@@ -96,11 +110,13 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 	})
 
 	resetList()
-	const detailResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/workflows.json?selected=dynwf-1',
+	const detailResponse = await handler.handler(
+		new RequestContext(
+			new Request(
+				'https://example.com/account/workflows.json?selected=dynwf-1',
+			),
 		),
-	})
+	)
 	expect(detailResponse.status).toBe(200)
 	await expect(detailResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -116,13 +132,15 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 		outcome: 'cancelled',
 		run: { ...listedWorkflow, status: 'cancelled' },
 	})
-	const cancelResponse = await handler.handler({
-		request: new Request('https://example.com/account/workflows.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'cancel', id: 'dynwf-1' }),
-		}),
-	})
+	const cancelResponse = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account/workflows.json', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'cancel', id: 'dynwf-1' }),
+			}),
+		),
+	)
 	expect(cancelResponse.status).toBe(200)
 	expect(mockModule.cancelWorkflowRunForUser).toHaveBeenCalledWith({
 		env: expect.anything(),
@@ -139,9 +157,11 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 	})
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null)
-	const unauthorized = await handler.handler({
-		request: new Request('https://example.com/account/workflows.json'),
-	})
+	const unauthorized = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account/workflows.json'),
+		),
+	)
 	expect(unauthorized.status).toBe(401)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
@@ -149,29 +169,38 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',
 		},
+		request: sessionRequestContext('stable-user-1'),
 	})
-	const methodNotAllowed = await handler.handler({
-		request: new Request('https://example.com/account/workflows.json', {
-			method: 'PUT',
-		}),
-	})
+	const methodNotAllowed = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account/workflows.json', {
+				method: 'PUT',
+			}),
+		),
+	)
 	expect(methodNotAllowed.status).toBe(405)
 
-	const invalidAction = await handler.handler({
-		request: new Request('https://example.com/account/workflows.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'nope' }),
-		}),
-	})
+	const invalidAction = await handler.handler(
+		new RequestContext(
+			new Request('https://example.com/account/workflows.json', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action: 'nope' }),
+			}),
+		),
+	)
 	expect(invalidAction.status).toBe(400)
 	await expect(invalidAction.json()).resolves.toEqual({
 		ok: false,

@@ -1,7 +1,10 @@
+import type git from 'isomorphic-git'
 import { expect, test, vi } from 'vitest'
 
 const mockGit = vi.hoisted(() => ({
-	addNote: vi.fn(async () => 'note-commit-1'),
+	addNote: vi.fn(
+		async (..._args: Parameters<typeof git.addNote>) => 'note-commit-1',
+	),
 	push: vi.fn(async () => ({ ok: true, refs: {} })),
 	init: vi.fn(async () => undefined),
 	addRemote: vi.fn(async () => undefined),
@@ -9,12 +12,11 @@ const mockGit = vi.hoisted(() => ({
 	readNote: vi.fn(async () => new TextEncoder().encode('{"v":1}\n')),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: mockGit,
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: mockGit,
+		http: {},
+	}),
 }))
 
 vi.mock('@sentry/cloudflare', () => ({

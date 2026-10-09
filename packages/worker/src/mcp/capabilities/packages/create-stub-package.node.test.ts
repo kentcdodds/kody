@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
@@ -60,67 +64,65 @@ function resetMocks() {
 }
 
 const owner: PackageOwnerContext = {
-	ownerUserId: 'user-1',
+	ownerUserId: ownerIdFromStored('user-1'),
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
-	actorUserId: 'user-1',
+	actorUserId: personIdFromStored('user-1'),
 	delegated: false,
 }
 
-test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
+function create(
+	args: Partial<Parameters<typeof createStubSavedPackage>[0]> & {
+		kodyId: string
+	},
+) {
 	resetMocks()
-	await expect(
-		createStubSavedPackage({
-			env: { APP_DB: {} } as Env,
-			baseUrl: 'https://heykody.dev',
-			owner,
-			kodyId: 'Not_A_Valid_Id',
-		}),
-	).rejects.toThrow(/lower-kebab-case/)
-	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
-	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
-
-	resetMocks()
-	const tooLongDescription = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
-	const oversizeError = await createStubSavedPackage({
+	return createStubSavedPackage({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://heykody.dev',
 		owner,
-		kodyId: 'my-package',
-		description: tooLongDescription,
-	}).catch((error: unknown) => error)
-	expect(oversizeError).toBeInstanceOf(McpCallerError)
-	expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
-	expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
-
-	resetMocks()
-	await expect(
-		createStubSavedPackage({
-			env: { APP_DB: {} } as Env,
-			baseUrl: 'https://heykody.dev',
-			owner,
-			kodyId: '@other/my-package',
-		}),
-	).rejects.toThrow(/does not match the acting owner "@kentcdodds"/)
-	expect(mockModule.assertWithinEntitlement).not.toHaveBeenCalled()
-
-	resetMocks()
-	const scopedResult = await createStubSavedPackage({
-		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://heykody.dev',
-		owner,
-		kodyId: '@kentcdodds/mailchimp',
+		...args,
 	})
-	expect(scopedResult).toMatchObject({
+}
+
+test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
+	const rejections = [
+		{
+			args: { kodyId: 'Not_A_Valid_Id' },
+			error: /lower-kebab-case/,
+			checksEntitlement: false,
+		},
+		{
+			args: {
+				kodyId: 'my-package',
+				description: 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1),
+			},
+			error: McpCallerError,
+			checksEntitlement: true,
+		},
+		{
+			args: { kodyId: '@other/my-package' },
+			error: /does not match the acting owner "@kentcdodds"/,
+			checksEntitlement: false,
+		},
+	]
+	for (const { args, error, checksEntitlement } of rejections) {
+		await expect(create(args)).rejects.toThrow(error)
+		expect(mockModule.assertWithinEntitlement).toHaveBeenCalledTimes(
+			checksEntitlement ? 1 : 0,
+		)
+		expect(mockModule.ensureEntitySource).not.toHaveBeenCalled()
+		expect(mockModule.insertSavedPackage).not.toHaveBeenCalled()
+	}
+
+	await expect(
+		create({ kodyId: '@kentcdodds/mailchimp' }),
+	).resolves.toMatchObject({
 		kodyId: 'mailchimp',
 		name: '@kentcdodds/mailchimp',
 	})
 
-	resetMocks()
-	const result = await createStubSavedPackage({
-		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://heykody.dev',
-		owner,
+	const result = await create({
 		kodyId: 'my-package',
 		description: 'Does the thing.',
 	})
@@ -164,19 +166,15 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for ow
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalled()
 
 	// Delegated grants must persist under the platform owner, not the actor.
-	resetMocks()
-	const delegatedOwner: PackageOwnerContext = {
-		ownerUserId: 'platform-owner',
-		ownerScope: 'kody',
-		ownerEmail: 'kody@example.com',
-		actorUserId: 'actor-1',
-		delegated: true,
-	}
-	await createStubSavedPackage({
-		env: { APP_DB: {} } as Env,
-		baseUrl: 'https://heykody.dev',
-		owner: delegatedOwner,
+	await create({
 		kodyId: 'official-tool',
+		owner: {
+			ownerUserId: ownerIdFromStored('platform-owner'),
+			ownerScope: 'kody',
+			ownerEmail: 'kody@example.com',
+			actorUserId: personIdFromStored('actor-1'),
+			delegated: true,
+		},
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({

@@ -11,6 +11,11 @@ import {
 	isMcpClientKind,
 	mcpClientTabs,
 } from '#universal/onboarding-mcp-clients.ts'
+import {
+	accountAliasPath,
+	orgResourcePath,
+	orgSlugFromPathname,
+} from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 
 export type AccountConnectionsView =
@@ -33,7 +38,26 @@ export function isAccountConnectionAgent(
 	return isMcpClientKind(value) && value !== 'other'
 }
 
-export function accountConnectionsNewHref(agent: McpClientKind | null) {
+/**
+ * List and add URLs stay under `/@slug/…` when the person is already on an
+ * org resource page, so Add / View steps / back do not bounce through
+ * `/account/…` redirects (or stay on `/account` after a client navigation).
+ */
+export function accountConnectionsListHref(pathname?: string | null) {
+	const slug = pathname ? orgSlugFromPathname(pathname) : null
+	return slug
+		? orgResourcePath(slug, 'connections')
+		: routes.accountConnections.href()
+}
+
+export function accountConnectionsNewHref(
+	agent: McpClientKind | null,
+	pathname?: string | null,
+) {
+	const slug = pathname ? orgSlugFromPathname(pathname) : null
+	if (slug) {
+		return orgResourcePath(slug, 'connections', agent ? `new/${agent}` : 'new')
+	}
 	if (!agent) return routes.accountConnectionNew.href()
 	return routes.accountConnectionNewAgent.href({ agent })
 }
@@ -42,6 +66,7 @@ export function accountConnectionsNewHref(agent: McpClientKind | null) {
 export function parseAccountConnectionsPathname(
 	pathname: string,
 ): AccountConnectionsView | null {
+	pathname = accountAliasPath(pathname)
 	const base = routes.accountConnections.href()
 	if (pathname === base || pathname === `${base}/`) return { kind: 'list' }
 	const newBase = routes.accountConnectionNew.href()

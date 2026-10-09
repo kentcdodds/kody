@@ -1,3 +1,5 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { readPagination } from '#worker/query-params.ts'
@@ -16,7 +18,10 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
+import {
+	resolveAdminPlanOverlay,
+	type AdminPlanOverlayType,
+} from '#universal/referral-program.ts'
 import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
 import {
 	chunkArray,
@@ -32,12 +37,12 @@ import {
 	emailVerificationStallCutoffIso,
 	emailVerificationStallSqlConditions,
 } from '#worker/identity/email-verification-stall.ts'
-import { normalizeEmail } from '#worker/identity/normalize-email.ts'
+import { forgiveCreditUsageBeforeUnlock } from '#worker/billing/credit-wallet.ts'
 import {
-	createStableUserIdFromEmail,
-	isStableUserId,
-	normalizeStableUserId,
-} from '#worker/user-id.ts'
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
+import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
 				email_outbound_paused_at, email_verification_delivery_status, email_verification_delivery_at, email_verification_delivery_detail, email_verification_delivery_class,
@@ -55,6 +60,11 @@ export const adminUserListItemFieldNames = [
 	'manualPlan',
 	'stripePlan',
 	'effectivePlan',
+	'secondAgentGiftExpiresAt',
+	'referralCreditExpiresAt',
+	'overlayExpiresAt',
+	'isProOverlay',
+	'overlayType',
 	'entitlementLadder',
 	'stripeCustomerLinked',
 	'suspended_at',
@@ -92,6 +102,11 @@ export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
 	manualPlan: PlanName
 	stripePlan: PlanName | null
 	effectivePlan: PlanName
+	secondAgentGiftExpiresAt: string | null
+	referralCreditExpiresAt: string | null
+	overlayExpiresAt: string | null
+	isProOverlay: boolean
+	overlayType: AdminPlanOverlayType | null
 	entitlementLadder: EntitlementLadder
 	stripeCustomerLinked: boolean
 	suspended_at: string | null
@@ -164,8 +179,7 @@ function decodePathSegment(value: string) {
 function parseSelectedStableUserId(
 	value: string | null | undefined,
 ): string | null {
-	const stableUserId = normalizeStableUserId(value)
-	return isStableUserId(stableUserId) ? stableUserId : null
+	return parsePersonId(value)
 }
 
 /** Read the `q`, `role`, and `verification` filter query params. */
@@ -231,7 +245,7 @@ export async function adminUserMatchesListFilters(
 	requestUrl: string,
 	stableUserId: string,
 ): Promise<boolean> {
-	if (!isStableUserId(stableUserId)) return false
+	if (!parsePersonId(stableUserId)) return false
 	const url = new URL(requestUrl, 'http://localhost')
 	const filters = readAdminUserListFilters(url)
 	const { whereClause, params } = buildAdminUserListWhereClause(
@@ -317,10 +331,10 @@ export async function loadAdminUserByTarget(
 	db: D1Database,
 	input: AdminUserTarget,
 ): Promise<AdminUserListItem | null> {
-	const stableUserId = normalizeStableUserId(input.stableUserId)
+	const stableUserId = parsePersonId(input.stableUserId)
 	const email = input.email?.trim() ?? ''
 	const username = input.username?.trim() ?? ''
-	if (input.stableUserId !== undefined && !isStableUserId(stableUserId)) {
+	if (input.stableUserId !== undefined && !stableUserId) {
 		return null
 	}
 	const userRow = stableUserId
@@ -360,12 +374,13 @@ export async function loadAdminUserByTarget(
 /**
  * Set the manual entitlement grant on one user account (`users.plan`).
  * Nullish inputs map to `free`, the normal default; writers never persist
- * NULL. Stripe subscriptions stay on `users.stripe_plan`. Returns the
- * updated account metadata record, or null when no user matches the target.
+ * NULL. Stripe subscriptions stay on `users.stripe_plan`. A change that unlocks
+ * an admin-eligible credit wallet forgives locked-period usage first. Returns
+ * the updated account metadata record, or null when no user matches the target.
  */
 export async function updateAdminUserPlan(
 	db: D1Database,
-	input: AdminUserTarget & { plan: PlanName | null },
+	input: AdminUserTarget & { plan: PlanName | null; now?: Date },
 ): Promise<AdminUserListItem | null> {
 	const existing = await loadAdminUserByTarget(db, input)
 	if (!existing) return null
@@ -375,6 +390,7 @@ export async function updateAdminUserPlan(
 	)
 	if (!existingRow) return null
 
+	const now = input.now ?? new Date()
 	const nextPlan = resolvePlanWrite(input.plan)
 	const stripePlan = parseStripePlanName(existingRow.stripe_plan)
 	const nextLadder = resolveEntitlementLadderAfterPaidAccessChange({
@@ -383,12 +399,35 @@ export async function updateAdminUserPlan(
 		previousStripePlan: stripePlan,
 		nextStripePlan: stripePlan,
 	})
-	await db
-		.prepare(
-			`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
-		)
-		.bind(nextPlan, nextLadder, utcSqliteTimestamp(), existingRow.id)
-		.run()
+	const entitlementRow = await db
+		.prepare(`SELECT ${userEntitlementColumnsSql()} FROM users WHERE id = ?`)
+		.bind(existingRow.id)
+		.first<UserEntitlementRow>()
+	if (entitlementRow) {
+		await forgiveCreditUsageBeforeUnlock({
+			db,
+			userId: existing.stableUserId,
+			current: entitlementRow,
+			next: {
+				...entitlementRow,
+				plan: nextPlan,
+				entitlement_ladder: nextLadder,
+			},
+			now,
+		})
+	}
+	const updatedAt = utcSqliteTimestamp(now)
+	await batchUsersAndPersonalOrgBillingUpdate({
+		db,
+		stableUserId: existing.stableUserId,
+		usersStatement: db
+			.prepare(
+				`UPDATE users SET plan = ?, entitlement_ladder = ?, updated_at = ? WHERE id = ?`,
+			)
+			.bind(nextPlan, nextLadder, updatedAt, existingRow.id),
+		orgSetClause: 'plan = ?, entitlement_ladder = ?, updated_at = ?',
+		orgValues: [nextPlan, nextLadder, updatedAt],
+	})
 
 	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
 }
@@ -411,6 +450,8 @@ export async function updateAdminUserSuspension(
 		.prepare(`UPDATE users SET suspended_at = ?, updated_at = ? WHERE id = ?`)
 		.bind(input.suspended ? now : null, now, existing.id)
 		.run()
+
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 
 	return loadAdminUserByTarget(db, { stableUserId: input.stableUserId })
 }
@@ -513,6 +554,12 @@ function toAdminUserListItem(
 ): AdminUserListItem {
 	const manualPlan = parseStoredPlanName(row.plan)
 	const stripePlan = parseStripePlanName(row.stripe_plan)
+	const overlay = resolveAdminPlanOverlay({
+		manualPlan,
+		stripePlan: row.stripe_plan,
+		secondAgentGiftExpiresAt: row.second_agent_standard_gift_expires_at,
+		referralCreditExpiresAt: row.referral_standard_credit_expires_at,
+	})
 	return {
 		stableUserId: row.stable_user_id,
 		username: row.username,
@@ -525,11 +572,13 @@ function toAdminUserListItem(
 		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
 			manualPlan,
 			row.stripe_plan,
-			laterIsoTimestamp(
-				row.second_agent_standard_gift_expires_at,
-				row.referral_standard_credit_expires_at,
-			),
+			overlay.overlayExpiresAt,
 		),
+		secondAgentGiftExpiresAt: overlay.secondAgentGiftExpiresAt,
+		referralCreditExpiresAt: overlay.referralCreditExpiresAt,
+		overlayExpiresAt: overlay.overlayExpiresAt,
+		isProOverlay: overlay.isProOverlay,
+		overlayType: overlay.overlayType,
 		entitlementLadder: parseEntitlementLadder(row.entitlement_ladder),
 		stripeCustomerLinked: Boolean(row.stripe_customer_id),
 		suspended_at: row.suspended_at,
@@ -564,7 +613,7 @@ export async function loadAdminUserRowByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<AdminUserRow | null> {
-	if (!isStableUserId(stableUserId)) return null
+	if (!parsePersonId(stableUserId)) return null
 	return await db
 		.prepare(
 			`SELECT ${adminUserRowSelectSql}
@@ -573,44 +622,6 @@ export async function loadAdminUserRowByStableUserId(
 		)
 		.bind(stableUserId)
 		.first<AdminUserRow>()
-}
-
-export type StableUserIdConflict = {
-	stableUserId: string
-	username: string
-	created_at: string
-	email_verified: boolean
-}
-
-export async function findStableUserIdConflictByEmail(
-	db: D1Database,
-	email: string,
-): Promise<StableUserIdConflict | null> {
-	const normalizedEmail = normalizeEmail(email)
-	if (!normalizedEmail) return null
-	const stableUserId = await createStableUserIdFromEmail(normalizedEmail)
-	const row = await db
-		.prepare(
-			`SELECT stable_user_id, username, email, created_at, email_verified_at
-			 FROM users
-			 WHERE stable_user_id = ?`,
-		)
-		.bind(stableUserId)
-		.first<{
-			stable_user_id: string
-			username: string
-			email: string
-			created_at: string
-			email_verified_at: string | null
-		}>()
-	if (!row) return null
-	if (normalizeEmail(row.email) === normalizedEmail) return null
-	return {
-		stableUserId: row.stable_user_id,
-		username: row.username,
-		created_at: row.created_at,
-		email_verified: Boolean(row.email_verified_at),
-	}
 }
 
 function isRoleName(value: string): value is RoleName {

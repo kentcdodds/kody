@@ -38,6 +38,7 @@ export const workflowListCapability = defineDomainCapability(
 	capabilityDomainNames.jobs,
 	{
 		name: 'workflowRunList',
+		orgPermission: 'job:read',
 		description:
 			'List recent Cloudflare Workflow runs created through kody:runtime workflows.create for durable work that may outlive execute timeouts, including source, status, and completion/error metadata.',
 		keywords: [

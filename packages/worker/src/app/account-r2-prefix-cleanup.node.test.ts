@@ -4,6 +4,20 @@ import {
 	deleteAccountEmailBlobPrefixes,
 } from './account-r2-prefix-cleanup.ts'
 
+type PrefixBucket = Pick<R2Bucket, 'list' | 'delete'>
+
+type FakeR2ListResult = {
+	objects: Array<{ key: string }>
+	delimitedPrefixes: Array<string>
+} & ({ truncated: true; cursor: string } | { truncated: false })
+
+function createPrefixBucket(fake: {
+	list: (options?: R2ListOptions) => Promise<FakeR2ListResult>
+	delete: (keys: string | Array<string>) => Promise<void>
+}) {
+	return fake as PrefixBucket
+}
+
 test('community asset prefix cleanup paginates and preserves other users', async () => {
 	const keys = new Set([
 		'user-avatars/user-aaa/current.png',
@@ -37,7 +51,7 @@ test('community asset prefix cleanup paginates and preserves other users', async
 	})
 	const deleted: Array<string> = []
 	const count = await deleteAccountCommunityAssetPrefixes({
-		bucket: {
+		bucket: createPrefixBucket({
 			list,
 			async delete(value: string | Array<string>) {
 				for (const key of Array.isArray(value) ? value : [value]) {
@@ -45,7 +59,7 @@ test('community asset prefix cleanup paginates and preserves other users', async
 					keys.delete(key)
 				}
 			},
-		},
+		}),
 		stableUserId: 'user-aaa',
 		listingIds: ['listing-a'],
 		repoIds: ['repo-a'],
@@ -74,12 +88,12 @@ test('community asset prefix cleanup paginates and preserves other users', async
 test('community asset prefix cleanup fails closed on listing or deletion errors', async () => {
 	await expect(
 		deleteAccountCommunityAssetPrefixes({
-			bucket: {
+			bucket: createPrefixBucket({
 				async list() {
 					throw new Error('list unavailable')
 				},
 				delete: vi.fn(),
-			},
+			}),
 			stableUserId: 'user-aaa',
 			listingIds: [],
 		}),
@@ -87,7 +101,7 @@ test('community asset prefix cleanup fails closed on listing or deletion errors'
 
 	await expect(
 		deleteAccountCommunityAssetPrefixes({
-			bucket: {
+			bucket: createPrefixBucket({
 				async list() {
 					return {
 						objects: [{ key: 'user-avatars/user-aaa/old.png' }],
@@ -98,7 +112,7 @@ test('community asset prefix cleanup fails closed on listing or deletion errors'
 				async delete() {
 					throw new Error('delete unavailable')
 				},
-			},
+			}),
 			stableUserId: 'user-aaa',
 			listingIds: [],
 		}),
@@ -112,7 +126,7 @@ test('email prefix cleanup removes orphan raw MIME and attachment objects', asyn
 		'email-raw:v1:user-bbb/other',
 	])
 	const count = await deleteAccountEmailBlobPrefixes({
-		bucket: {
+		bucket: createPrefixBucket({
 			async list(options?: { prefix?: string }) {
 				return {
 					objects: [...keys]
@@ -127,7 +141,7 @@ test('email prefix cleanup removes orphan raw MIME and attachment objects', asyn
 					keys.delete(key)
 				}
 			},
-		},
+		}),
 		stableUserId: 'user-aaa',
 	})
 	expect(count).toBe(2)

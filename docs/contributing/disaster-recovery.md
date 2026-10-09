@@ -1,5 +1,21 @@
 # Disaster recovery
 
+## Contents
+
+- [Prevention](#prevention)
+- [Live evidence log](#live-evidence-log)
+- [Objectives](#objectives)
+- [Architecture](#architecture)
+- [Credentials and Access](#credentials-and-access)
+- [Secret escrow](#secret-escrow)
+- [Admin UI](#admin-ui)
+- [Schedules and freshness](#schedules-and-freshness)
+- [Maintenance mode (edge)](#maintenance-mode-edge)
+- [Offline CLI fallback](#offline-cli-fallback)
+- [Solo enablement checklist](#solo-enablement-checklist)
+- [Explicit exclusions](#explicit-exclusions)
+- [Provider references](#provider-references)
+
 Solo-operator runbook for Kody production data. One operator (Kent) owns
 enablement, escrow, drills, and restore. The engineering invariants stay
 fail-closed: immutable R2 objects, Ed25519-signed manifests, checked-in trust
@@ -366,8 +382,10 @@ Admin UI auth is dual-layer:
 The control-plane Worker deploys to the DR account from GitHub Actions
 (`.github/workflows/deploy.yml` → `deploy-backup-control-plane`) using
 `DR_DEPLOY_TOKEN`, when `packages/backup-control-plane/` or shared backup
-contracts change on `main` (or on manual `workflow_dispatch`). Local Wrangler
-against the DR account remains available for emergencies
+contracts change on `main` inside the 15-commit path-filter lookback (or on
+manual `workflow_dispatch`). A longer Validate gap can skip that job while
+`main` still has the change; dispatch Deploy on current `main` HEAD to force it.
+Local Wrangler against the DR account remains available for emergencies
 (`npm run backup:deploy`). Production restore requires the DR Worker to hold the
 production-account D1 token as above; Access + JWT guard every UI action that
 could use it.
@@ -704,6 +722,11 @@ staged progress returns `"reason": "no-staged-progress"` instead of starting a
 fresh export for a past day. After the summary exists, the next hourly
 control-plane seal covers the day if it is within the 16-day seal lookback;
 otherwise seal it from the admin UI (`POST /actions/seal-day`).
+
+From Kody MCP `execute`, pass `"maxTicks": 1` and loop until `summaryWritten` or
+`already-complete`. Each tick can use the full ~20 s export budget; `maxTicks`
+2+ holds the MCP request open past the client timeout (~60 s). Shell `curl` can
+keep the default of 5.
 
 Hourly freshness does not SHA-256 the SQL bytes; drills do. Page yourself on
 `freshness-unrestorable` (the SQL contains statements D1 cannot import),

@@ -21,10 +21,12 @@ import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { type routes } from '#universal/routes.ts'
+import { isUsernameClaimedInIdentity } from '#worker/identity/generated-username.ts'
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { createDb, usersTable } from '#worker/db.ts'
 import { upgradePasswordHashIfNeeded } from '#worker/password-upgrade.ts'
 import { resolvePlanWrite } from '#universal/plans.ts'
@@ -38,7 +40,7 @@ import {
 	allocateSignupIdentity,
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import {
 	createPasswordHash,
@@ -58,7 +60,15 @@ import {
 } from '#universal/referral-cookie.ts'
 import { touchLastActiveAt } from '#worker/identity/activation-stamps.ts'
 import { scheduleUserCreatedEvent } from '#worker/identity/schedule-user-lifecycle-event.ts'
+import {
+	maybeGrantSignupWelcomeCredits,
+	reconcileSignupWelcomeCreditsIfPending,
+} from '#worker/billing/signup-welcome-credits.ts'
 import { attributeReferralAtSignup } from '#worker/entitlements/referral-program.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 const authModes = ['login', 'signup'] as const
 type AuthMode = (typeof authModes)[number]
@@ -233,10 +243,7 @@ export function createAuthHandler(env: Env) {
 			}
 
 			if (normalizedMode === 'signup') {
-				const existingUsername = await db.findOne(usersTable, {
-					where: { username: normalizedUsername },
-				})
-				if (existingUsername) {
+				if (await isUsernameClaimedInIdentity(env.APP_DB, normalizedUsername)) {
 					void logAuditEvent({
 						db: auditDatabaseFromEnv(env),
 						category: 'auth',
@@ -319,9 +326,10 @@ export function createAuthHandler(env: Env) {
 				}
 
 				let record: { id: number; stableUserId: string } | null = null
+				const signupCreatedAt = new Date().toISOString()
 				try {
 					const stableUserId = allocated.stableUserId
-					const createdAt = new Date().toISOString()
+					const createdAt = signupCreatedAt
 					const createdUser = await db.create(
 						usersTable,
 						{
@@ -330,6 +338,10 @@ export function createAuthHandler(env: Env) {
 							stable_user_id: stableUserId,
 							password_hash: passwordHash,
 							plan: resolvePlanWrite(null),
+							// Set with the insert so a later D1 blip during the
+							// grant cannot erase the retry signal (default 0
+							// still grandfathering pre-ship rows).
+							signup_welcome_credits_pending: 1,
 							...firstTouchAttributionCreateFields(signupAttribution),
 							last_active_at: createdAt,
 						},
@@ -390,6 +402,64 @@ export function createAuthHandler(env: Env) {
 					)
 				}
 
+				const signupUser = record
+				try {
+					await provisionPersonalOrgForSignup(env.APP_DB, {
+						stableUserId: signupUser.stableUserId,
+						username: normalizedUsername,
+						createdAt: signupCreatedAt,
+						accountType: 'person',
+						plan: resolvePlanWrite(null),
+						signupWelcomeCreditsPending: 1,
+					})
+				} catch (error) {
+					console.error('Failed to provision personal org at signup:', error)
+					invalidatePackageAppOwnerCache({
+						stableUserId: signupUser.stableUserId,
+					})
+					try {
+						await rollbackPersonalOrgAfterFailedSignup(
+							env.APP_DB,
+							signupUser.stableUserId,
+						)
+						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+							.bind(signupUser.id)
+							.run()
+					} catch (deleteError) {
+						console.error(
+							'Failed to remove user row after org provision failure:',
+							deleteError,
+						)
+					}
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'signup',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'org_provision_failed',
+					})
+					return Response.json(
+						{ error: 'Unable to create account.' },
+						{ status: 500 },
+					)
+				}
+
+				async function removeFailedSignupUser() {
+					invalidatePackageAppOwnerCache({
+						stableUserId: signupUser.stableUserId,
+					})
+					await rollbackPersonalOrgAfterFailedSignup(
+						env.APP_DB,
+						signupUser.stableUserId,
+					)
+					await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
+						.bind(signupUser.id)
+						.run()
+				}
+
 				// INSERT OR IGNORE affects zero rows when the seeded `user` role is
 				// missing (partial migration). Fail loudly rather than creating an
 				// account with no roles or permissions.
@@ -408,9 +478,7 @@ export function createAuthHandler(env: Env) {
 					// otherwise the email/username would be stuck as "already
 					// registered" on an account that has no roles.
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (error) {
 						console.error(
 							'Failed to remove user row after role assignment failure:',
@@ -441,9 +509,7 @@ export function createAuthHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to claim signup email:', error)
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (deleteError) {
 						console.error(
 							'Failed to remove user row after email claim failure:',
@@ -477,9 +543,7 @@ export function createAuthHandler(env: Env) {
 				} catch (error) {
 					console.error('Failed to create email verification at signup:', error)
 					try {
-						await env.APP_DB.prepare(`DELETE FROM users WHERE id = ?`)
-							.bind(record.id)
-							.run()
+						await removeFailedSignupUser()
 					} catch (deleteError) {
 						console.error(
 							'Failed to remove user row after verification setup failure:',
@@ -545,6 +609,10 @@ export function createAuthHandler(env: Env) {
 					},
 					source: 'signup',
 					attribution: signupAttribution,
+				})
+				await maybeGrantSignupWelcomeCredits({
+					db: env.APP_DB,
+					userId: record.stableUserId,
 				})
 				try {
 					await attributeReferralAtSignup({
@@ -640,7 +708,7 @@ export function createAuthHandler(env: Env) {
 				const secure = isSecureRequest(request)
 				const verifyCookie = await createVerifySessionCookie(
 					{
-						stableUserId: resolveUserStableId(userRecord),
+						stableUserId: personIdFromStored(userRecord.stable_user_id),
 						email: normalizedEmail,
 						rememberMe,
 					},
@@ -666,16 +734,21 @@ export function createAuthHandler(env: Env) {
 				)
 			}
 
+			const stableUserId = personIdFromStored(userRecord.stable_user_id)
 			const cookie = await createAuthCookie(
 				{
-					stableUserId: resolveUserStableId(userRecord),
+					stableUserId,
 					email: normalizedEmail,
 					rememberMe,
 				},
 				isSecureRequest(request),
 			)
 			await touchLastActiveAt(env.APP_DB, {
-				stableUserId: resolveUserStableId(userRecord),
+				stableUserId,
+			})
+			await reconcileSignupWelcomeCreditsIfPending({
+				db: env.APP_DB,
+				userId: stableUserId,
 			})
 			void logAuditEvent({
 				db: auditDatabaseFromEnv(env),

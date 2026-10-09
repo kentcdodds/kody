@@ -9,7 +9,7 @@ import {
 } from './repo.ts'
 import { cleanupOrphanedCommunityForks } from './service.ts'
 
-function createOrphanForkDb() {
+async function createSeededDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
 		CREATE TABLE saved_packages (
@@ -53,97 +53,61 @@ function createOrphanForkDb() {
 			actor TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		);
-		${communityForksDeleteCascadeStatements.join(';\n')}
+		${communityForksDeleteCascadeStatements.join(';\n')};
+		INSERT INTO community_listings (
+			id, owner_user_id, package_id, source_id, kody_id, name, pinned_commit
+		) VALUES ('listing-plaid', 'owner-1', 'origin-package', 'origin-source',
+			'plaid', '@kody/plaid', 'commit-origin');
+		INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
+		VALUES ('source-inert', 'user-kent', 'package', 'package-inert'),
+			('source-live', 'user-kent', 'package', 'package-live');
+		INSERT INTO saved_packages (id, user_id, name, kody_id, source_id)
+		VALUES ('package-live', 'user-kent', '@kentcdodds/plaid', 'plaid', 'source-live');
 	`)
-	return { sqlite, db: createD1FromSqlite(sqlite) }
-}
-
-async function seedListingAndForks(db: D1Database) {
-	await db
-		.prepare(
-			`INSERT INTO community_listings (
-				id, owner_user_id, package_id, source_id, kody_id, name, pinned_commit
-			) VALUES ('listing-plaid', 'owner-1', 'origin-package', 'origin-source',
-				'plaid', '@kody/plaid', 'commit-origin')`,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id)
-			VALUES ('source-inert', 'user-kent', 'package', 'package-inert'),
-				('source-live', 'user-kent', 'package', 'package-live')`,
-		)
-		.run()
-	await db
-		.prepare(
-			`INSERT INTO saved_packages (id, user_id, name, kody_id, source_id)
-			VALUES ('package-live', 'user-kent', '@kentcdodds/plaid', 'plaid',
-				'source-live')`,
-		)
-		.run()
-	await insertCommunityFork(db, {
-		id: 'fork-inert',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-origin',
-		forked_package_id: 'package-inert',
-		forked_source_id: 'source-inert',
-		target_kody_id: 'plaid-inert',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
-	await insertCommunityFork(db, {
-		id: 'fork-live',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-origin',
-		forked_package_id: 'package-live',
-		forked_source_id: 'source-live',
-		target_kody_id: 'plaid',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
-	await insertCommunityFork(db, {
-		id: 'fork-orphan',
-		listing_id: 'listing-plaid',
-		forker_user_id: 'user-kent',
-		origin_commit: 'commit-origin',
-		forked_package_id: 'package-missing',
-		forked_source_id: 'source-missing',
-		target_kody_id: 'plaid-fork-test-cleanup',
-		listing_name: '@kody/plaid',
-		listing_kody_id: 'plaid',
-	})
+	const db = createD1FromSqlite(sqlite)
+	for (const [id, packageId, sourceId, targetKodyId] of [
+		['fork-inert', 'package-inert', 'source-inert', 'plaid-inert'],
+		['fork-live', 'package-live', 'source-live', 'plaid'],
+		[
+			'fork-orphan',
+			'package-missing',
+			'source-missing',
+			'plaid-fork-test-cleanup',
+		],
+	] as const) {
+		await insertCommunityFork(db, {
+			id,
+			listing_id: 'listing-plaid',
+			forker_user_id: 'user-kent',
+			origin_commit: 'commit-origin',
+			forked_package_id: packageId,
+			forked_source_id: sourceId,
+			target_kody_id: targetKodyId,
+			listing_name: '@kody/plaid',
+			listing_kody_id: 'plaid',
+		})
+	}
+	return db
 }
 
 test('orphan fork cleanup and package delete drop leftover community_forks without touching healthy forks', async () => {
-	const { db } = createOrphanForkDb()
-	await seedListingAndForks(db)
+	const db = await createSeededDb()
 	const env = { APP_DB: db } as Env
+	const forkCount = async () =>
+		(await countCommunityForksByListingIds(db, ['listing-plaid']))[
+			'listing-plaid'
+		]
+	const noop = { applied: true, deletedCount: 0, orphans: [] }
 
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 3,
-	})
+	expect(await forkCount()).toBe(3)
+	await expect(
+		cleanupOrphanedCommunityForks({ env, apply: true, forkIds: [] }),
+	).resolves.toEqual(noop)
+	expect(await forkCount()).toBe(3)
 
-	const emptyFilter = await cleanupOrphanedCommunityForks({
-		env,
-		apply: true,
-		forkIds: [],
-	})
-	expect(emptyFilter).toEqual({
-		applied: true,
-		deletedCount: 0,
-		orphans: [],
-	})
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 3,
-	})
-
-	const preview = await cleanupOrphanedCommunityForks({
-		env,
-		apply: false,
-	})
-	expect(preview).toMatchObject({
+	await expect(
+		cleanupOrphanedCommunityForks({ env, apply: false }),
+	).resolves.toMatchObject({
 		applied: false,
 		deletedCount: 0,
 		orphans: [
@@ -155,41 +119,29 @@ test('orphan fork cleanup and package delete drop leftover community_forks witho
 			}),
 		],
 	})
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 3,
-	})
+	expect(await forkCount()).toBe(3)
 
-	const skippedHealthy = await cleanupOrphanedCommunityForks({
-		env,
-		apply: true,
-		forkIds: ['fork-inert', 'fork-live'],
-	})
-	expect(skippedHealthy).toEqual({
-		applied: true,
-		deletedCount: 0,
-		orphans: [],
-	})
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 3,
-	})
+	await expect(
+		cleanupOrphanedCommunityForks({
+			env,
+			apply: true,
+			forkIds: ['fork-inert', 'fork-live'],
+		}),
+	).resolves.toEqual(noop)
+	expect(await forkCount()).toBe(3)
 
-	const applied = await cleanupOrphanedCommunityForks({
-		env,
-		apply: true,
-		forkIds: ['fork-orphan'],
-	})
-	expect(applied).toMatchObject({
+	await expect(
+		cleanupOrphanedCommunityForks({
+			env,
+			apply: true,
+			forkIds: ['fork-orphan'],
+		}),
+	).resolves.toMatchObject({
 		applied: true,
 		deletedCount: 1,
-		orphans: [
-			expect.objectContaining({
-				forkId: 'fork-orphan',
-			}),
-		],
+		orphans: [expect.objectContaining({ forkId: 'fork-orphan' })],
 	})
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 2,
-	})
+	expect(await forkCount()).toBe(2)
 
 	expect(
 		await deleteCommunityForksForPackage(db, {
@@ -198,10 +150,6 @@ test('orphan fork cleanup and package delete drop leftover community_forks witho
 			sourceId: 'source-live',
 		}),
 	).toBe(1)
-	expect(await countCommunityForksByListingIds(db, ['listing-plaid'])).toEqual({
-		'listing-plaid': 1,
-	})
-
 	const remaining = await db
 		.prepare(`SELECT id, target_kody_id FROM community_forks`)
 		.all<{ id: string; target_kody_id: string }>()

@@ -1,6 +1,6 @@
 // remix-skill: Handle-based files explorer (tree + blob). Must be a Handle
 // component so Remix can mount it from the shared /files route.
-import { type Handle, type RemixNode, css, ref } from 'remix/ui'
+import { type Handle, type RemixNode, css, ref } from 'remix/component'
 import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
 import { CopyTextButton } from '#client/copy-text-button.tsx'
 import { on } from '#client/event-mixin.ts'

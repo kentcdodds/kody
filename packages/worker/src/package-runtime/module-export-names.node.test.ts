@@ -1,5 +1,8 @@
 import { expect, test } from 'vitest'
-import { collectModuleExportNames } from './module-export-names.ts'
+import {
+	collectModuleExportNames,
+	moduleSourceDeclaresDefaultExport,
+} from './module-export-names.ts'
 
 test('collects value exports across declarations, re-exports, and artifact JS', () => {
 	expect(
@@ -104,4 +107,46 @@ test('follows export-star chains and tolerates cycles and parse failures', () =>
 			modulePath: 'pkg/missing.ts',
 		}),
 	).toEqual([])
+})
+
+test('detects runtime default exports and leaves unparseable sources to the bundler', () => {
+	for (const source of [
+		'export default function run() {}',
+		'export default async () => ({ ok: true })',
+		'export default class Tool {}',
+		'const value = 1\nexport default value',
+		'const run = () => {}\nexport { run as default }',
+		"export { default } from './impl.ts'",
+		"export { run as default } from './impl.ts'",
+		"export * as default from './impl.ts'",
+		"import run from './impl.ts'\nexport { run as default }",
+		'interface Tool { name: string }\nconst Tool = { name: "tool" }\nexport { Tool as default }',
+		'export default function run() {}\nexport function double(value: number) { return value * 2 }',
+	]) {
+		expect({
+			source,
+			declaresDefault: moduleSourceDeclaresDefaultExport(source),
+		}).toEqual({ source, declaresDefault: true })
+	}
+	for (const source of [
+		'export function double(value: number) { return value * 2 }',
+		'export const answer = 42\nexport class Tool {}',
+		"export * from './impl.ts'",
+		'export default interface Config { value: number }\nexport const value = 1',
+		'type Local = { value: number }\nexport type { Local as default }',
+		'interface Shape { value: number }\nexport { Shape as default }\nexport function double(value: number) { return value * 2 }',
+		"import type { Shape } from './shape.ts'\nexport { Shape as default }",
+		"import { type Shape } from './shape.ts'\nexport { Shape as default }",
+		'declare const ambient: number\nexport { ambient as default }',
+		'export {}',
+		'',
+	]) {
+		expect({
+			source,
+			declaresDefault: moduleSourceDeclaresDefaultExport(source),
+		}).toEqual({ source, declaresDefault: false })
+	}
+	expect(
+		moduleSourceDeclaresDefaultExport('export const = not parseable {{{'),
+	).toBeNull()
 })

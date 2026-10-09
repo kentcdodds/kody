@@ -1,3 +1,4 @@
+import { loadAccountOrganizationSnapshot } from '#app/account-organizations-data.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { buildUserAvatarUrl } from '#app/community-public.ts'
 import { loadResolvedRequestAuth } from '#app/request-auth-cache.ts'
@@ -6,6 +7,7 @@ import {
 	type EvaluatedFeatureFlags,
 } from '#app/request-feature-flags-cache.ts'
 import { type EmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
+import { type AccountOrganizationSummary } from '#universal/loader-data.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 
 export type SessionInfo = {
@@ -17,6 +19,9 @@ export type SessionInfo = {
 	roles: Array<RoleName>
 	permissions: Array<PermissionString>
 	featureFlags: EvaluatedFeatureFlags
+	organizations: Array<AccountOrganizationSummary>
+	inviteCount: number
+	lastUsedOrganization: string | null
 }
 
 export type LoadedSessionResult = {
@@ -49,6 +54,11 @@ export async function loadSessionInfo(
 		userId: resolved.user.userId,
 		stableUserId: resolved.user.mcpUser.userId,
 	})
+	const organizations = await loadAccountOrganizationSnapshot(
+		env,
+		resolved.user,
+		request,
+	)
 
 	return {
 		session: {
@@ -63,6 +73,9 @@ export async function loadSessionInfo(
 			roles: resolved.user.roles,
 			permissions: resolved.user.permissions,
 			featureFlags,
+			organizations: organizations.organizations,
+			inviteCount: organizations.inviteCount,
+			lastUsedOrganization: organizations.lastUsedOrganization,
 		},
 		setCookie: resolved.setCookie,
 	}

@@ -1,6 +1,6 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { renderIcon, type IconName } from '#universal/icon.tsx'
 import { colors } from '#universal/styles/tokens.ts'
 

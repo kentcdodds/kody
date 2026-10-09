@@ -3,10 +3,12 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
-	deletePackageKodyIdRedirects,
-	releasePackageKodyIdRedirect,
-	retirePackageKodyId,
+	deletePackageSlugRedirects,
+	listPackageSlugRedirects,
+	releasePackageSlugRedirect,
+	retirePackageSlug,
 } from '#worker/community/package-url.ts'
 import {
 	deleteCommunityForksForPackage,
@@ -15,6 +17,7 @@ import {
 import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { buildSavedPackageEmbedText } from './embed.ts'
 import { buildPackageSearchProjection } from './manifest.ts'
+import { getPackageNameLeaf } from './package-name.ts'
 import {
 	deleteSavedPackage,
 	getSavedPackageById,
@@ -33,16 +36,25 @@ import {
 } from './types.ts'
 import { deleteSavedPackageVector } from './vectorize.ts'
 import { scheduleSavedPackageSearchIndexUpsert } from './search-index-debt.ts'
-import { deletePackageInvocationTokensForPackage } from '#worker/package-invocations/repo.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { scheduleKitSubscriberSync } from '#worker/kit/subscriber-sync.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import { rebuildPublishedPackageArtifacts } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import { type PreparedKodyGraphCache } from '#worker/package-runtime/module-graph.ts'
 import {
 	refreshPackageRetrieverManifestCache,
 	removePackageRetrieverManifestCacheEntries,
 } from '#worker/package-retrievers/manifest-cache.ts'
+import {
+	buildPackageSkillsIndex,
+	collectPackageSkills,
+} from '#worker/package-registry/package-skills.ts'
+import {
+	removePackageSkillsIndexEntries,
+	writePackageSkillsIndex,
+} from '#worker/package-registry/skills-index-cache.ts'
 import { invalidateInvokeContractFreshness } from '#worker/package-invocations/invoke-contract-cache.ts'
+import { refreshPackageSubscriptionTopicMap } from '#worker/package-invocations/subscription-topic-cache.ts'
 import { cleanupArtifactReposForPackage } from '#worker/repo/artifact-repo-cleanup.ts'
 import { deleteEntitySource } from '#worker/repo/entity-sources.ts'
 import {
@@ -77,6 +89,29 @@ function logPackageRetrieverProjectionError(input: {
 	Sentry.captureException(input.error, {
 		tags: {
 			scope: 'package-retriever-projection',
+			action: input.action,
+		},
+		extra: {
+			packageId: input.packageId,
+		},
+	})
+}
+
+function logPackageSkillsProjectionError(input: {
+	action: 'refresh' | 'delete'
+	packageId: string
+	error: unknown
+}) {
+	console.error(
+		JSON.stringify({
+			message: 'package skills projection update failed',
+			action: input.action,
+			packageId: input.packageId,
+		}),
+	)
+	Sentry.captureException(input.error, {
+		tags: {
+			scope: 'package-skills-projection',
 			action: input.action,
 		},
 		extra: {
@@ -180,6 +215,7 @@ function toSavedPackageInsertRow(input: {
 	userId: string
 	sourceId: string
 	manifest: AuthoredPackageJson
+	hasSkills?: boolean
 }): Omit<SavedPackageRow, 'created_at' | 'updated_at' | 'locked_at'> {
 	const projection = buildPackageSearchProjection(input.manifest)
 	return {
@@ -192,6 +228,7 @@ function toSavedPackageInsertRow(input: {
 		search_text: projection.searchText,
 		source_id: input.sourceId,
 		has_app: projection.hasApp ? 1 : 0,
+		has_skills: input.hasSkills ? 1 : 0,
 		hidden: 0,
 		is_private: 1,
 	}
@@ -238,15 +275,30 @@ export async function refreshSavedPackageProjection(input: {
 							userId: input.userId,
 							sourceId: input.sourceId,
 						})
+			const existing = await getSavedPackageById(input.env.APP_DB, {
+				userId: input.userId,
+				packageId: input.packageId,
+			})
+			const loadedFilesForSkills: Record<string, string> | null =
+				input.sourceFiles ??
+				('files' in loaded ? (loaded.files as Record<string, string>) : null)
+			const collectedSkills = loadedFilesForSkills
+				? await collectPackageSkills({
+						files: loadedFilesForSkills,
+						// Scoped package.json name (`@owner/slug`), not the leaf kody.id.
+						kodyId: loaded.manifest.name,
+					})
+				: null
+			const hasSkills =
+				collectedSkills !== null
+					? collectedSkills.length > 0
+					: (existing?.hasSkills ?? false)
 			const row = toSavedPackageInsertRow({
 				packageId: input.packageId,
 				userId: input.userId,
 				sourceId: input.sourceId,
 				manifest: loaded.manifest,
-			})
-			const existing = await getSavedPackageById(input.env.APP_DB, {
-				userId: input.userId,
-				packageId: input.packageId,
+				hasSkills,
 			})
 			await assertWithinStorageBytesEntitlement({
 				db: input.env.APP_DB,
@@ -291,17 +343,18 @@ export async function refreshSavedPackageProjection(input: {
 					searchText: row.search_text,
 					sourceId: row.source_id,
 					hasApp: row.has_app === 1,
+					hasSkills: row.has_skills === 1,
 				})
-				// `kody.id` is the second half of the package's canonical URL, so
-				// editing it in the manifest moves that URL. Retire the old id here
-				// rather than in the community layer: the id belongs to the package
-				// whether or not it is published.
-				await retirePackageKodyId({
+				// The name leaf is the second half of the package's canonical URL,
+				// so renaming the package moves that URL. Retire the old slug here
+				// rather than in the community layer: the slug belongs to the
+				// package whether or not it is published.
+				await retirePackageSlug({
 					db: input.env.APP_DB,
 					userId: input.userId,
 					packageId: input.packageId,
-					oldKodyId: existing.kodyId,
-					newKodyId: row.kody_id,
+					oldSlug: getPackageNameLeaf(existing.name),
+					newSlug: getPackageNameLeaf(row.name),
 				})
 			} else {
 				await assertWithinEntitlement({
@@ -330,12 +383,12 @@ export async function refreshSavedPackageProjection(input: {
 						email: input.userEmail,
 					})
 				}
-				// A brand new package claims its id outright, so an earlier package's
-				// retirement row must not keep forwarding it elsewhere.
-				await releasePackageKodyIdRedirect({
+				// A brand new package claims its slug outright, so an earlier
+				// package's retirement row must not keep forwarding it elsewhere.
+				await releasePackageSlugRedirect({
 					db: input.env.APP_DB,
 					userId: input.userId,
-					kodyId: row.kody_id,
+					slug: getPackageNameLeaf(row.name),
 				})
 			}
 			const refreshedAt = new Date().toISOString()
@@ -349,6 +402,7 @@ export async function refreshSavedPackageProjection(input: {
 				searchText: row.search_text ?? null,
 				sourceId: row.source_id,
 				hasApp: row.has_app === 1,
+				hasSkills: row.has_skills === 1,
 				// Preserve visibility across projection refresh / re-save.
 				hidden: existing?.hidden ?? false,
 				// Visibility is a repo setting, not a manifest field.
@@ -365,6 +419,7 @@ export async function refreshSavedPackageProjection(input: {
 			if (loadedFiles) {
 				// Artifacts stay on the hot path: invoke needs them immediately
 				// and there is no safe cold-build substitute for a fresh publish.
+				const prepareCache: PreparedKodyGraphCache = new Map()
 				await rebuildPublishedPackageArtifacts({
 					env: input.env,
 					userId: input.userId,
@@ -382,6 +437,7 @@ export async function refreshSavedPackageProjection(input: {
 							entryPoint,
 							rootPackageId: savedPackage.id,
 							cacheKey: null,
+							prepareCache,
 						})
 					},
 					buildAppClientBundle: async ({ entryPoint }) => {
@@ -402,6 +458,7 @@ export async function refreshSavedPackageProjection(input: {
 							sourceFiles: loadedFiles,
 							entryPoint,
 							rootPackageId: savedPackage.id,
+							prepareCache,
 						})
 					},
 					buildImportableModuleBundle: async ({ entryPoint }) => {
@@ -414,6 +471,7 @@ export async function refreshSavedPackageProjection(input: {
 							sourceFiles: loadedFiles,
 							entryPoint,
 							rootPackageId: savedPackage.id,
+							prepareCache,
 						})
 					},
 				})
@@ -441,10 +499,33 @@ export async function refreshSavedPackageProjection(input: {
 					error,
 				})
 			})
+			const skillsIndexTask = (async () => {
+				if (collectedSkills === null) return
+				const publishedCommit = loaded.source?.published_commit
+				if (!publishedCommit) return
+				await writePackageSkillsIndex({
+					env: input.env,
+					userId: input.userId,
+					index: buildPackageSkillsIndex({
+						packageId: input.packageId,
+						// Scoped package.json name (`@owner/slug`) for skill:// URIs.
+						kodyId: savedPackage.name,
+						publishedCommit,
+						skills: collectedSkills,
+					}),
+				})
+			})().catch((error: unknown) => {
+				logPackageSkillsProjectionError({
+					action: 'refresh',
+					packageId: input.packageId,
+					error,
+				})
+			})
 			if (input.waitUntil) {
 				input.waitUntil(retrieverCacheTask)
+				input.waitUntil(skillsIndexTask)
 			} else {
-				await retrieverCacheTask
+				await Promise.all([retrieverCacheTask, skillsIndexTask])
 			}
 			const { syncPackageJobsForPackage } =
 				await import('#worker/jobs/service.ts')
@@ -464,6 +545,11 @@ export async function refreshSavedPackageProjection(input: {
 			}
 			// Same-isolate invoke paths must observe this refresh immediately;
 			// other isolates converge within the freshness-cache TTL.
+			const retiredPackageAppSlugs = await listPackageSlugRedirects({
+				db: input.env.APP_DB,
+				userId: input.userId,
+				packageId: input.packageId,
+			})
 			invalidateInvokeContractFreshness({
 				userId: input.userId,
 				packageIdOrKodyIds: [
@@ -477,8 +563,34 @@ export async function refreshSavedPackageProjection(input: {
 						? [`kody:${existing.name}`]
 						: []),
 				],
+				// Package-app slug cache is keyed by name leaf, not package id /
+				// kody:@ refs. Include every retired redirect leaf (multi-hop
+				// renames) so a warm isolate cannot keep serving an older path
+				// after an intermediate slug is reclaimed.
+				packageAppSlugs: [
+					getPackageNameLeaf(savedPackage.name),
+					...(existing ? [getPackageNameLeaf(existing.name)] : []),
+					...retiredPackageAppSlugs,
+				],
 				sourceId: input.sourceId,
 			})
+			// Prefer a normalized source of truth (manifests) plus this KV cache of
+			// computed topic→package ids. Delete-then-recompute so a failed rewrite
+			// cannot leave wakes matching a pre-publish map (no TTL).
+			try {
+				await refreshPackageSubscriptionTopicMap({
+					env: input.env,
+					baseUrl: input.baseUrl,
+					userId: input.userId,
+				})
+			} catch (error) {
+				console.warn('package-subscription-topic-map-refresh-failed', {
+					userId: input.userId,
+					packageId: input.packageId,
+					action: 'publish',
+					error,
+				})
+			}
 			return {
 				record: savedPackage,
 				manifest: loaded.manifest,
@@ -617,11 +729,6 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
-			await deletePackageInvocationTokensForPackage({
-				db: input.env.APP_DB,
-				userId: input.userId,
-				packageId: input.packageId,
-			})
 			await removeAllSecretApprovalsForPackage({
 				env: input.env,
 				userId: input.userId,
@@ -645,10 +752,20 @@ export async function deleteSavedPackageProjection(input: {
 				userId: input.userId,
 				packageId: input.packageId,
 			})
-			// Retired `kody.id`s only mean something while the package they point
-			// at exists; leaving them behind would hand a later package another
+			// Capture retired leaves before deleting redirect rows so the
+			// package-app slug cache can be cleared for every path that still
+			// pointed here (not only the current name leaf).
+			const retiredPackageAppSlugs = savedPackage
+				? await listPackageSlugRedirects({
+						db: input.env.APP_DB,
+						userId: input.userId,
+						packageId: input.packageId,
+					})
+				: []
+			// Retired slugs only mean something while the package they point at
+			// exists; leaving them behind would hand a later package another
 			// package's redirect history.
-			await deletePackageKodyIdRedirects({
+			await deletePackageSlugRedirects({
 				db: input.env.APP_DB,
 				userId: input.userId,
 				packageId: input.packageId,
@@ -666,6 +783,19 @@ export async function deleteSavedPackageProjection(input: {
 					error,
 				})
 			}
+			try {
+				await removePackageSkillsIndexEntries({
+					env: input.env,
+					userId: input.userId,
+					packageId: input.packageId,
+				})
+			} catch (error) {
+				logPackageSkillsProjectionError({
+					action: 'delete',
+					packageId: input.packageId,
+					error,
+				})
+			}
 			await deleteSavedPackageVector(input.env, input.packageId)
 			invalidateInvokeContractFreshness({
 				userId: input.userId,
@@ -675,8 +805,26 @@ export async function deleteSavedPackageProjection(input: {
 						? [savedPackage.kodyId, `kody:${savedPackage.name}`]
 						: []),
 				],
+				packageAppSlugs: [
+					...(savedPackage ? [getPackageNameLeaf(savedPackage.name)] : []),
+					...retiredPackageAppSlugs,
+				],
 				sourceId: savedPackage?.sourceId ?? null,
 			})
+			try {
+				await refreshPackageSubscriptionTopicMap({
+					env: input.env,
+					baseUrl: getAppBaseUrl({ env: input.env }),
+					userId: input.userId,
+				})
+			} catch (error) {
+				console.warn('package-subscription-topic-map-refresh-failed', {
+					userId: input.userId,
+					packageId: input.packageId,
+					action: 'unpublish',
+					error,
+				})
+			}
 			if (packageJobsRemoved) {
 				await syncJobManagerAlarm({
 					env: input.env,

@@ -6,6 +6,7 @@ import {
 	type UserMeterEnv,
 	type UserMeterRpc,
 } from '#worker/entitlements/user-meter-client.ts'
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
 
 export class AccountDeletionInProgressError extends Error {
@@ -201,6 +202,9 @@ export async function markAccountDeleting(input: {
 	if (!stableUserId || !deletingAt) {
 		throw new Error('Account could not be marked for deletion.')
 	}
+	// Invalidate before the UserMeter RPC so same-isolate package-app serve
+	// cannot keep using the pre-fence cached row for the duration of that call.
+	invalidatePackageAppOwnerCache({ stableUserId })
 	try {
 		const env = requireUserMeterEnv(input.env)
 		const marked = await runUserMeterRpc({
@@ -223,6 +227,7 @@ export async function markAccountDeleting(input: {
 				)
 				.bind(now, input.dbUserId, now)
 				.run()
+			invalidatePackageAppOwnerCache({ stableUserId })
 		}
 		throw error
 	}
@@ -289,16 +294,15 @@ export async function abortAccountDeleting(input: {
 					: undefined,
 			),
 	})
+	invalidatePackageAppOwnerCache({ stableUserId })
 }
 
 /**
  * Drop a UserMeter deletion tombstone without touching D1 `users.deleting_at`.
  *
  * Completed account deletion deletes the D1 user row but `UserMeter.purge()`
- * restores the tombstone so in-flight cleanup stays fenced. The next signup
- * with the same email reuses `createStableUserIdFromEmail` and would inherit
- * that fence unless this clear runs (after the user row is gone, or when a
- * live row collides with a leftover DO tombstone).
+ * restores the tombstone so in-flight cleanup stays fenced. This clear runs
+ * after the user row is gone so the purged object holds no state.
  */
 export async function clearUserMeterDeletionTombstone(input: {
 	env: UserMeterEnv
@@ -464,7 +468,8 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 	let acquired = await acquire()
 	if (!acquired.acquired) {
 		// Live D1 + meter tombstone is a leftover fence (completed deletion
-		// restored the tombstone; the same email signed up again). Re-check D1
+		// restored the tombstone; before random ids, the same email signed up
+		// again with the same email-hash id). Re-check D1
 		// before clearing so a deletion that started after the first acquire
 		// keeps its tombstone, then re-check after the clear so a deletion that
 		// landed in that window cannot acquire a write lease.

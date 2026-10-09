@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { type EmailNotificationDestination } from '#universal/email-destinations.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'

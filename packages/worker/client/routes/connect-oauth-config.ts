@@ -365,9 +365,19 @@ export function mergeConnectOauthConfig(input: {
 		input.queryConfig.usePkce ??
 		input.storedIntegration?.usePkce ??
 		defaultConnectOauthUsePkce({ flow, tokenUrl })
-	// Platform connect is retired: never clamp to an operator-verified menu
-	// or skip client-credential setup. Existing platform tokens still refresh.
-	const scopes = resolveConnectOauthScopes(input)
+	const platformAppSlug = input.storedIntegration?.platformAppSlug ?? null
+	const platformAllowedScopes = platformAppSlug
+		? (input.storedIntegration?.platformAllowedScopes ?? [])
+		: null
+	// Platform apps clamp requested scopes to the operator-verified menu, so
+	// query-supplied scopes can never widen the authorize request. The server
+	// re-validates before persisting anything.
+	const scopes =
+		platformAllowedScopes === null
+			? resolveConnectOauthScopes(input)
+			: resolveConnectOauthScopes(input).filter((scope) =>
+					platformAllowedScopes.includes(scope),
+				)
 	const extraAuthorizeParams = {
 		...resolveConnectOauthExtraAuthorizeParams(input),
 	}
@@ -382,13 +392,17 @@ export function mergeConnectOauthConfig(input: {
 	])
 	if (allowedHosts.length === 0) return null
 	return {
-		platformAppSlug: null,
-		platformLogoPath: null,
+		platformAppSlug,
+		platformLogoPath: platformAppSlug
+			? parsePlatformLogoPath(input.storedIntegration?.platformLogoPath)
+			: null,
 		logoPath: input.storedIntegration?.logoPath?.trim() || null,
 		autoLogoPath: input.storedIntegration?.autoLogoPath?.trim() || null,
 		catalogLogoPath: input.storedIntegration?.catalogLogoPath?.trim() || null,
-		platformDescription: null,
-		platformAllowedScopes: [],
+		platformDescription: platformAppSlug
+			? input.storedIntegration?.platformDescription?.trim() || null
+			: null,
+		platformAllowedScopes: platformAllowedScopes ?? [],
 		provider,
 		providerKey,
 		authorizeHost,
@@ -412,9 +426,7 @@ export function mergeConnectOauthConfig(input: {
 		extraAuthorizeParams,
 		providerSetupInstructions: input.queryConfig.providerSetupInstructions,
 		dashboardUrl: input.queryConfig.dashboardUrl,
-		clientId: input.storedIntegration?.platformAppSlug
-			? ''
-			: input.storedIntegration?.clientId?.trim() || '',
+		clientId: input.storedIntegration?.clientId?.trim() || '',
 		hasClientSecret: input.storedIntegration?.hasClientSecret === true,
 		allowedHosts,
 	}

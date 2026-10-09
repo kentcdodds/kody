@@ -3,7 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 } from '#worker/package-registry/repo.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
@@ -60,9 +60,10 @@ export async function resolveOwnedPackageSource(input: {
 					userId: input.userId,
 					packageId: input.args.package_id,
 				})
-			: await getSavedPackageByKodyId(input.db, {
+			: await resolveSavedPackageRef(input.db, {
 					userId: input.userId,
-					kodyId: requestedKodyId ?? '',
+					ref: requestedKodyId ?? '',
+					match: 'slug',
 				})
 	if (!savedPackage) {
 		const missingId = input.args.package_id ?? input.args.kody_id

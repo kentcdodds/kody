@@ -1,0 +1,246 @@
+name: 🧪 Preview Rehearsal
+
+# Operator/CI-only tooling for the migration rehearsal on a dedicated branch
+# preview (docs/contributing/preview-migration-rehearsal.md). Uses the CI
+# Cloudflare token so agents never hold Cloudflare or admin credentials.
+# Artifacts and logs on this public repo are world-readable: credentials leave
+# only as an envelope sealed to `recipient_public_key`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_name:
+        description: Branch preview worker name (kody-branch-<slug>)
+        required: true
+        type: string
+      action:
+        description: What to run
+        required: true
+        type: choice
+        default: snapshot
+        options:
+          - snapshot
+          - seed
+          - restore
+          - credentials
+          - reindex
+      recipient_public_key:
+        description:
+          seed / credentials — base64 SPKI public key from `node
+          tools/preview-rehearsal/seal.ts keygen`
+        required: false
+        type: string
+      token_lifetime:
+        description:
+          credentials — CLI token lifetime (short = 1h idle / 24h max)
+        required: false
+        type: choice
+        default: short
+        options:
+          - short
+          - long
+      snapshot_run_id:
+        description:
+          restore — run id of the snapshot (or seed) run whose D1 bookmarks to
+          restore
+        required: false
+        type: string
+      confirm:
+        description: restore — type the preview name again
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: preview-rehearsal-${{ inputs.preview_name }}
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    name: 🧪 ${{ inputs.action }} ${{ inputs.preview_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      REHEARSAL_PASSWORD_KEY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      PREVIEW_NAME: ${{ inputs.preview_name }}
+      ACTION: ${{ inputs.action }}
+      RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
+      OUT_DIR: rehearsal-out
+    steps:
+      - name: 🛂 Check inputs
+        shell: bash
+        env:
+          SNAPSHOT_RUN_ID: ${{ inputs.snapshot_run_id }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PREVIEW_NAME" =~ ^kody-branch-[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
+            echo "preview_name must be a branch preview (kody-branch-<slug>), got '$PREVIEW_NAME'." >&2
+            exit 1
+          fi
+          case "$ACTION" in
+            seed|credentials)
+              if [ -z "$RECIPIENT_PUBLIC_KEY" ]; then
+                echo "$ACTION needs recipient_public_key (node tools/preview-rehearsal/seal.ts keygen)." >&2
+                exit 1
+              fi
+              ;;
+            restore)
+              if [ -z "$SNAPSHOT_RUN_ID" ]; then
+                echo "restore needs snapshot_run_id." >&2
+                exit 1
+              fi
+              if [ "$CONFIRM" != "$PREVIEW_NAME" ]; then
+                echo "restore needs confirm to equal preview_name." >&2
+                exit 1
+              fi
+              ;;
+            snapshot|reindex) ;;
+            *)
+              echo "Unknown action $ACTION." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: 📦 Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: 🟢 Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install Dependencies
+        run: npm ci
+
+      - name: 📸 Snapshot (Kody JSON APIs, then D1 counts + bookmarks)
+        if: inputs.action == 'snapshot'
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          # A failed JSON check still gets its D1 bookmark and counts; the step
+          # fails afterwards.
+          json_status=0
+          node tools/preview-rehearsal/run.ts json-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/json-snapshot.json" || json_status=$?
+          node tools/preview-rehearsal/run.ts d1-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/d1-snapshot.json" --summary "$OUT_DIR/d1-snapshot.md"
+          exit "$json_status"
+
+      - name: 🌱 Seed (pre-seed bookmark first)
+        if: inputs.action == 'seed'
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          # Check the roster before bookmarking. A snapshot of an already-seeded
+          # preview is not a pre-seed restore point, and a second seed must not
+          # overwrite the last successful seed run's bookmarks.
+          state="$(node tools/preview-rehearsal/run.ts seed-status --worker "$PREVIEW_NAME" --out "$OUT_DIR/seed-status.json")"
+          echo "Rehearsal seed status: $state"
+          if [ "$state" = "complete" ]; then
+            echo "Already seeded. Skipping snapshot and seed so this run does not overwrite the pre-seed D1 bookmark with the live (seeded) state."
+            echo "To start over: restore from the last successful seed run, then seed again."
+            exit 0
+          fi
+          if [ "$state" != "empty" ]; then
+            echo "Partial rehearsal roster. Restore the last successful seed run's pre-seed snapshot, then seed again." >&2
+            exit 1
+          fi
+          node tools/preview-rehearsal/run.ts d1-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/d1-snapshot.json" --summary "$OUT_DIR/d1-snapshot.md"
+          node tools/preview-rehearsal/run.ts seed --worker "$PREVIEW_NAME" --out-dir "$OUT_DIR" --recipient-public-key "$RECIPIENT_PUBLIC_KEY"
+
+      - name: 📥 Download the snapshot to restore
+        if: inputs.action == 'restore'
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.snapshot_run_id }}
+          github-token: ${{ github.token }}
+          pattern: preview-rehearsal-*
+          merge-multiple: true
+          path: restore-source
+
+      - name: ⏪ Restore D1 to the snapshot bookmarks
+        if: inputs.action == 'restore'
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          node tools/preview-rehearsal/run.ts d1-restore --worker "$PREVIEW_NAME" --snapshot restore-source/d1-snapshot.json --confirm "$CONFIRM" | tee "$OUT_DIR/restore-result.json"
+          node tools/preview-rehearsal/run.ts d1-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/post-restore-d1-snapshot.json" --summary "$OUT_DIR/d1-snapshot.md"
+
+      - name: 🔑 Mint per-user CLI tokens (sealed)
+        if: inputs.action == 'credentials'
+        env:
+          TOKEN_LIFETIME: ${{ inputs.token_lifetime }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          node tools/preview-rehearsal/run.ts credentials --worker "$PREVIEW_NAME" --lifetime "$TOKEN_LIFETIME" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credentials.sealed.json"
+
+      # The preview's maintenance secret exists only inside its deploy run, so
+      # rotate it on the app worker (a new version of that worker only) and
+      # run a full forced sweep: capabilities, memories, jobs, packages.
+      - name: 🔁 Full Vectorize reindex
+        if: inputs.action == 'reindex'
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          APP_URL="$(node tools/preview-rehearsal/run.ts origins --worker "$PREVIEW_NAME" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).app))')"
+          CAPABILITY_REINDEX_SECRET="$(openssl rand -hex 32)"
+          echo "::add-mask::$CAPABILITY_REINDEX_SECRET"
+          export CAPABILITY_REINDEX_SECRET
+          node tools/ci/sync-worker-secrets.ts --env "" --name "$PREVIEW_NAME" --set "CAPABILITY_REINDEX_SECRET=$CAPABILITY_REINDEX_SECRET"
+          node tools/ci/reindex-capabilities.ts --url "$APP_URL" --force --max-sweeps 40 --auth-retry-seconds 90 | tee "$OUT_DIR/reindex.log"
+
+      - name: 🧾 Summary
+        if: always()
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## 🧪 Preview rehearsal: \`$ACTION\` on \`$PREVIEW_NAME\`"
+            echo ""
+            echo "Artifact: \`preview-rehearsal-$ACTION\` (run $RUN_ID)."
+            if [ -f "$OUT_DIR/d1-snapshot.json" ]; then
+              echo "Restore to this run's D1 bookmarks with action \`restore\`, \`snapshot_run_id=$RUN_ID\`."
+            elif [ "$ACTION" = "seed" ]; then
+              echo "This seed run did not take a pre-seed bookmark (roster was already complete or the snapshot step did not run)."
+            fi
+            if [ -f "$OUT_DIR/seed-status.json" ]; then
+              echo ""
+              echo "Seed status:"
+              echo '```json'
+              cat "$OUT_DIR/seed-status.json"
+              echo '```'
+            fi
+            if [ -f "$OUT_DIR/credentials.sealed.json" ]; then
+              echo ""
+              echo "Credentials are sealed to the recipient key. Open with \`node tools/preview-rehearsal/seal.ts open --private-key <key> --in credentials.sealed.json --out credentials.json\`."
+            fi
+            if [ -f "$OUT_DIR/restore-result.json" ]; then
+              echo ""
+              echo '```json'
+              cat "$OUT_DIR/restore-result.json"
+              echo '```'
+            fi
+            if [ -f "$OUT_DIR/d1-snapshot.md" ]; then
+              echo ""
+              cat "$OUT_DIR/d1-snapshot.md"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-rehearsal-${{ inputs.action }}
+          path: rehearsal-out
+          if-no-files-found: ignore
+          retention-days: 30

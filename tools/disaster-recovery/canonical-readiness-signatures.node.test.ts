@@ -63,6 +63,17 @@ const restoreProvenance = {
 	trustedBaselineId: 'production-baseline-2026',
 	trustedBaselineSha256: '4'.repeat(64),
 }
+const jobsRestoreProvenance = {
+	...restoreProvenance,
+	backupManifestSha256: '5'.repeat(64),
+	sourceDatabaseName: 'kody-jobs',
+	sqlSha256: '6'.repeat(64),
+	trustedBaselineId: 'jobs-baseline-2026',
+}
+type SizeDetails = EvidenceDetailsByKind['d1-size-ceiling-check']
+type RestoreDetails = EvidenceDetailsByKind['d1-restore-drill']
+type Artifact = Record<string, unknown>
+type Evidence = Array<Record<string, unknown>>
 
 function detailsFor(
 	kind: AppKind,
@@ -134,100 +145,6 @@ function signEnvelope(
 	}
 }
 
-const jobsRestoreProvenance = {
-	...restoreProvenance,
-	backupManifestSha256: '5'.repeat(64),
-	sourceDatabaseName: 'kody-jobs',
-	sqlSha256: '6'.repeat(64),
-	trustedBaselineId: 'jobs-baseline-2026',
-}
-
-async function createFixture(
-	directory: string,
-	privateKey: KeyObject,
-): Promise<{
-	evidence: Array<Record<string, unknown>>
-	envelopes: Array<SignedEvidenceEnvelope>
-	evidencePath: string
-}> {
-	const envelopes: Array<SignedEvidenceEnvelope> = []
-	async function writeResource(input: {
-		changeId: string
-		prefix: string
-		resourceId: 'APP_DB' | 'JOBS_DB'
-		identity: { accountId: string; resourceId: string }
-		provenance: typeof restoreProvenance
-	}): Promise<Record<string, unknown>> {
-		const artifacts: Array<Record<string, unknown>> = []
-		for (const kind of appKinds) {
-			const uri = `${input.prefix}${kind}.json`
-			const content: EvidenceContent = {
-				changeId: input.changeId,
-				destinationIdentity: destinationFor(kind),
-				details: detailsFor(kind, input.identity, input.provenance),
-				expiresAt,
-				kind,
-				outcome: 'passed',
-				performedAt,
-				resourceId: input.resourceId,
-				sourceIdentity: input.identity,
-				systemVersion: 'kody-build-2026.07.22',
-				uri,
-				verifierIdentity: 'recovery-verifier@example.test',
-			}
-			const envelope = signEnvelope(content, privateKey)
-			const bytes = Buffer.from(JSON.stringify(envelope))
-			await writeFile(path.join(directory, uri), bytes)
-			envelopes.push(envelope)
-			artifacts.push({
-				changeId: content.changeId,
-				destinationIdentity: content.destinationIdentity,
-				expiresAt: content.expiresAt,
-				kind: content.kind,
-				outcome: content.outcome,
-				performedAt: content.performedAt,
-				sha256: sha256(bytes),
-				sourceIdentity: content.sourceIdentity,
-				systemVersion: content.systemVersion,
-				type: 'application/vnd.kody.readiness-evidence+json',
-				uri: content.uri,
-				verifierIdentity: content.verifierIdentity,
-			})
-		}
-		return {
-			artifacts,
-			changeId: input.changeId,
-			expiresAt,
-			performedAt,
-			resourceId: input.resourceId,
-			schemaVersion: 1,
-			systemVersion: 'kody-build-2026.07.22',
-			verifierIdentity: 'recovery-verifier@example.test',
-		}
-	}
-	const evidence = [
-		await writeResource({
-			changeId: 'CHG-APP-DB-RESTORE',
-			prefix: '',
-			resourceId: 'APP_DB',
-			identity: sourceIdentity,
-			provenance: restoreProvenance,
-		}),
-		await writeResource({
-			changeId: 'CHG-JOBS-DB-RESTORE',
-			prefix: 'jobs-db-',
-			resourceId: 'JOBS_DB',
-			identity: jobsSourceIdentity,
-			provenance: jobsRestoreProvenance,
-		}),
-	]
-	return {
-		evidence,
-		envelopes,
-		evidencePath: path.join(directory, 'evidence.json'),
-	}
-}
-
 function registryFor(publicKey: KeyObject): TrustedPublicKeyRegistry {
 	return {
 		schemaVersion: 1,
@@ -244,13 +161,30 @@ function registryFor(publicKey: KeyObject): TrustedPublicKeyRegistry {
 	}
 }
 
-async function isD1Ready(
+/** The APP_DB record's artifacts (the first evidence record). */
+function appArtifacts(evidence: Evidence): Array<Artifact> {
+	const record = evidence[0]
+	if (!record || !Array.isArray(record.artifacts)) {
+		throw new Error('fixture is malformed')
+	}
+	return record.artifacts as Array<Artifact>
+}
+
+function artifactOf(evidence: Evidence, kind: string): Artifact {
+	const artifact = appArtifacts(evidence).find((a) => a.kind === kind)
+	if (!artifact) throw new Error(`fixture lacks ${kind} artifact`)
+	return artifact
+}
+
+async function assessD1(
 	evidence: unknown,
 	evidencePath: string,
 	registry: TrustedPublicKeyRegistry,
-	trustedSource = sourceIdentity,
-	trustedBaselineSource = sourceIdentity,
-	assessmentTime = now,
+	{
+		trustedSource = sourceIdentity,
+		trustedBaselineSource = sourceIdentity,
+		at = now,
+	} = {},
 ): Promise<boolean> {
 	const verified = await verifyLocalArtifactFiles(
 		evidence,
@@ -259,7 +193,7 @@ async function isD1Ready(
 	)
 	return assessCanonicalReadiness(
 		evidence,
-		assessmentTime,
+		at,
 		verified,
 		[
 			{
@@ -306,651 +240,454 @@ async function isD1Ready(
 	).levels['d1-only'].ready
 }
 
+/**
+ * Writes signed APP_DB + JOBS_DB evidence into a temp directory and returns
+ * helpers to assess it or re-sign APP_DB envelopes.
+ */
+async function createFixture(keys = generateKeyPairSync('ed25519')) {
+	const directory = await mkdtemp(path.join(os.tmpdir(), 'readiness-'))
+	const envelopes: Array<SignedEvidenceEnvelope> = []
+	async function writeResource(input: {
+		changeId: string
+		prefix: string
+		resourceId: 'APP_DB' | 'JOBS_DB'
+		identity: { accountId: string; resourceId: string }
+		provenance: typeof restoreProvenance
+	}): Promise<Record<string, unknown>> {
+		const artifacts: Array<Artifact> = []
+		for (const kind of appKinds) {
+			const content: EvidenceContent = {
+				changeId: input.changeId,
+				destinationIdentity: destinationFor(kind),
+				details: detailsFor(kind, input.identity, input.provenance),
+				expiresAt,
+				kind,
+				outcome: 'passed',
+				performedAt,
+				resourceId: input.resourceId,
+				sourceIdentity: input.identity,
+				systemVersion: 'kody-build-2026.07.22',
+				uri: `${input.prefix}${kind}.json`,
+				verifierIdentity: 'recovery-verifier@example.test',
+			}
+			const envelope = signEnvelope(content, keys.privateKey)
+			const bytes = Buffer.from(JSON.stringify(envelope))
+			await writeFile(path.join(directory, content.uri), bytes)
+			envelopes.push(envelope)
+			const { details: _details, resourceId: _resourceId, ...indexed } = content
+			artifacts.push({
+				...indexed,
+				sha256: sha256(bytes),
+				type: 'application/vnd.kody.readiness-evidence+json',
+			})
+		}
+		return {
+			artifacts,
+			changeId: input.changeId,
+			expiresAt,
+			performedAt,
+			resourceId: input.resourceId,
+			schemaVersion: 1,
+			systemVersion: 'kody-build-2026.07.22',
+			verifierIdentity: 'recovery-verifier@example.test',
+		}
+	}
+	const evidence: Evidence = [
+		await writeResource({
+			changeId: 'CHG-APP-DB-RESTORE',
+			prefix: '',
+			resourceId: 'APP_DB',
+			identity: sourceIdentity,
+			provenance: restoreProvenance,
+		}),
+		await writeResource({
+			changeId: 'CHG-JOBS-DB-RESTORE',
+			prefix: 'jobs-db-',
+			resourceId: 'JOBS_DB',
+			identity: jobsSourceIdentity,
+			provenance: jobsRestoreProvenance,
+		}),
+	]
+	const evidencePath = path.join(directory, 'evidence.json')
+	const registry = registryFor(keys.publicKey)
+	const appEnvelope = (kind: AppKind) => {
+		const envelope = envelopes.find(
+			(e) => e.content.resourceId === 'APP_DB' && e.content.kind === kind,
+		)
+		if (!envelope) throw new Error(`fixture lacks ${kind} evidence`)
+		return envelope
+	}
+	return {
+		directory,
+		evidence,
+		envelopes,
+		evidencePath,
+		registry,
+		privateKey: keys.privateKey,
+		appEnvelope,
+		appContents: () =>
+			envelopes
+				.filter((e) => e.content.resourceId === 'APP_DB')
+				.map((e) => structuredClone(e.content)),
+		ready: (
+			value: unknown = evidence,
+			options?: Parameters<typeof assessD1>[3],
+		) => assessD1(value, evidencePath, registry, options),
+		/** Overwrites the file at `uri` and returns the new bytes' digest. */
+		async overwrite(uri: string, value: unknown) {
+			const bytes = Buffer.from(
+				typeof value === 'string' ? value : JSON.stringify(value),
+			)
+			await writeFile(path.join(directory, uri), bytes)
+			return sha256(bytes)
+		},
+		/**
+		 * Re-signs APP_DB contents with the fixture key and returns cloned
+		 * evidence whose index matches the new digests and identities.
+		 */
+		async resign(contents: Array<EvidenceContent>) {
+			const next = structuredClone(evidence)
+			for (const content of contents) {
+				const artifact = artifactOf(next, content.kind)
+				artifact.sha256 = await this.overwrite(
+					content.uri,
+					signEnvelope(content, keys.privateKey),
+				)
+				artifact.sourceIdentity = content.sourceIdentity
+				artifact.destinationIdentity = content.destinationIdentity
+			}
+			return next
+		},
+		[Symbol.asyncDispose]: () =>
+			rm(directory, { recursive: true, force: true }),
+	}
+}
+
 test('signed expiry rejects index-only extension, invalid timestamps, and code-age limits even when re-signed', async () => {
 	expect(
 		Object.keys(
 			JSON.parse(
-				canonicalJson({
-					é: 1,
-					Z: 2,
-					a: 3,
-					A: 4,
-					'\uE000': 5,
-					'😀': 6,
-				}),
+				canonicalJson({ é: 1, Z: 2, a: 3, A: 4, '\uE000': 5, '😀': 6 }),
 			) as Record<string, unknown>,
 		),
 	).toEqual(['A', 'Z', 'a', 'é', '😀', '\uE000'])
 
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-signed-expiry-'),
-	)
-	try {
-		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-		const content: EvidenceContent = {
-			changeId: 'CHG-APP-DB-RESTORE',
-			destinationIdentity: null,
-			details: detailsFor('inventory'),
-			expiresAt,
-			kind: 'inventory',
-			outcome: 'passed',
-			performedAt,
-			resourceId: 'APP_DB',
-			sourceIdentity,
-			systemVersion: 'kody-build-2026.07.22',
-			uri: 'inventory.json',
-			verifierIdentity: 'recovery-verifier@example.test',
-		}
+	await using fixture = await createFixture()
+	const inventory = fixture.appEnvelope('inventory').content
+	expect(
+		parseSignedEvidenceEnvelope(signEnvelope(inventory, fixture.privateKey)),
+	).toBeDefined()
+	for (const invalidExpiresAt of [
+		performedAt,
+		'2026-07-22T09:59:59.999Z',
+		'2026-08-22T10:00:00Z',
+		'2026-08-22T10:00:00.000+00:00',
+	]) {
 		expect(
-			parseSignedEvidenceEnvelope(signEnvelope(content, privateKey)),
-		).toBeDefined()
-		for (const invalidExpiresAt of [
-			performedAt,
-			'2026-07-22T09:59:59.999Z',
-			'2026-08-22T10:00:00Z',
-			'2026-08-22T10:00:00.000+00:00',
-		]) {
-			expect(
-				parseSignedEvidenceEnvelope(
-					signEnvelope({ ...content, expiresAt: invalidExpiresAt }, privateKey),
+			parseSignedEvidenceEnvelope(
+				signEnvelope(
+					{ ...inventory, expiresAt: invalidExpiresAt },
+					fixture.privateKey,
 				),
-			).toBeUndefined()
-		}
-
-		const fixture = await createFixture(directory, privateKey)
-		const registry = registryFor(publicKey)
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
-		).toBe(true)
-		expect(
-			await isD1Ready(
-				fixture.evidence,
-				fixture.evidencePath,
-				registry,
-				sourceIdentity,
-				sourceIdentity,
-				new Date('2026-08-23T10:00:00.000Z'),
 			),
-		).toBe(false)
-
-		const extendedExpiresAt = '2027-07-22T10:00:00.000Z'
-		const indexOnlyExtension = structuredClone(fixture.evidence)
-		const indexOnlyRecord = indexOnlyExtension[0]
-		if (!indexOnlyRecord || !Array.isArray(indexOnlyRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		indexOnlyRecord.expiresAt = extendedExpiresAt
-		for (const artifact of indexOnlyRecord.artifacts) {
-			;(artifact as Record<string, unknown>).expiresAt = extendedExpiresAt
-		}
-		expect(
-			await isD1Ready(indexOnlyExtension, fixture.evidencePath, registry),
-		).toBe(false)
-
-		const reSignedExtension = structuredClone(fixture.evidence)
-		const reSignedRecord = reSignedExtension[0]
-		if (!reSignedRecord || !Array.isArray(reSignedRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		reSignedRecord.expiresAt = extendedExpiresAt
-		for (const envelope of fixture.envelopes) {
-			if (envelope.content.resourceId !== 'APP_DB') continue
-			const extendedEnvelope = signEnvelope(
-				{ ...envelope.content, expiresAt: extendedExpiresAt },
-				privateKey,
-			)
-			const bytes = Buffer.from(JSON.stringify(extendedEnvelope))
-			await writeFile(path.join(directory, extendedEnvelope.content.uri), bytes)
-			const artifact = reSignedRecord.artifacts.find(
-				(candidate) =>
-					(candidate as Record<string, unknown>).kind ===
-					extendedEnvelope.content.kind,
-			) as Record<string, unknown> | undefined
-			if (!artifact) {
-				throw new Error(
-					`fixture lacks ${extendedEnvelope.content.kind} artifact`,
-				)
-			}
-			artifact.expiresAt = extendedExpiresAt
-			artifact.sha256 = sha256(bytes)
-		}
-		expect(
-			await isD1Ready(reSignedExtension, fixture.evidencePath, registry),
-		).toBe(true)
-		expect(
-			await isD1Ready(
-				reSignedExtension,
-				fixture.evidencePath,
-				registry,
-				sourceIdentity,
-				sourceIdentity,
-				new Date('2026-08-27T10:00:00.000Z'),
-			),
-		).toBe(false)
-	} finally {
-		await rm(directory, { recursive: true, force: true })
+		).toBeUndefined()
 	}
+
+	expect(await fixture.ready()).toBe(true)
+	expect(
+		await fixture.ready(fixture.evidence, {
+			at: new Date('2026-08-23T10:00:00.000Z'),
+		}),
+	).toBe(false)
+
+	const extendedExpiresAt = '2027-07-22T10:00:00.000Z'
+	const indexOnlyExtension = structuredClone(fixture.evidence)
+	indexOnlyExtension[0]!.expiresAt = extendedExpiresAt
+	for (const artifact of appArtifacts(indexOnlyExtension)) {
+		artifact.expiresAt = extendedExpiresAt
+	}
+	expect(await fixture.ready(indexOnlyExtension)).toBe(false)
+
+	const contents = fixture
+		.appContents()
+		.map((content) => ({ ...content, expiresAt: extendedExpiresAt }))
+	const reSignedExtension = await fixture.resign(contents)
+	reSignedExtension[0]!.expiresAt = extendedExpiresAt
+	for (const artifact of appArtifacts(reSignedExtension)) {
+		artifact.expiresAt = extendedExpiresAt
+	}
+	expect(await fixture.ready(reSignedExtension)).toBe(true)
+	expect(
+		await fixture.ready(reSignedExtension, {
+			at: new Date('2026-08-27T10:00:00.000Z'),
+		}),
+	).toBe(false)
 })
 
 test('minimal D1 readiness requires every kind-specific signed envelope', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-signatures-'),
-	)
-	try {
-		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, privateKey)
-		const registry = registryFor(publicKey)
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, registry),
-		).toBe(true)
-		expect(
-			assessCanonicalReadiness(
+	await using fixture = await createFixture()
+	expect(await fixture.ready()).toBe(true)
+	expect(
+		assessCanonicalReadiness(
+			fixture.evidence,
+			now,
+			await verifyLocalArtifactFiles(
 				fixture.evidence,
-				now,
-				await verifyLocalArtifactFiles(
-					fixture.evidence,
-					fixture.evidencePath,
-					registry,
-				),
-			).levels['canonical-data'].ready,
-		).toBe(false)
+				fixture.evidencePath,
+				fixture.registry,
+			),
+		).levels['canonical-data'].ready,
+	).toBe(false)
 
-		for (const kind of appKinds) {
-			const record = fixture.evidence[0]
-			if (!record || !Array.isArray(record.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			const withoutKind = [
-				{
-					...record,
-					artifacts: record.artifacts.filter(
-						(artifact) => (artifact as Record<string, unknown>).kind !== kind,
-					),
-				},
-			]
-			expect(await isD1Ready(withoutKind, fixture.evidencePath, registry)).toBe(
-				false,
-			)
-		}
-		const sizeEnvelope = fixture.envelopes.find(
-			(envelope) => envelope.content.kind === 'd1-size-ceiling-check',
+	for (const kind of appKinds) {
+		const withoutKind = structuredClone(fixture.evidence).slice(0, 1)
+		withoutKind[0]!.artifacts = appArtifacts(withoutKind).filter(
+			(artifact) => artifact.kind !== kind,
 		)
-		const evidenceRecord = fixture.evidence[0]
-		if (
-			!sizeEnvelope ||
-			!evidenceRecord ||
-			!Array.isArray(evidenceRecord.artifacts)
-		) {
-			throw new Error('fixture lacks size-ceiling evidence')
-		}
-		const unsupportedCeiling = signEnvelope(
+		expect(await fixture.ready(withoutKind)).toBe(false)
+	}
+
+	const size = fixture.appEnvelope('d1-size-ceiling-check').content
+	for (const detailsPatch of [
+		{ ceilingBytes: 5 * 1024 * 1024 * 1024 },
+		{ measuredBytes: 0 },
+	]) {
+		const evidence = await fixture.resign([
 			{
-				...sizeEnvelope.content,
-				details: {
-					...(sizeEnvelope.content
-						.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
-					ceilingBytes: 5 * 1024 * 1024 * 1024,
-				},
+				...size,
+				details: { ...(size.details as SizeDetails), ...detailsPatch },
 			},
-			privateKey,
-		)
-		const unsupportedBytes = Buffer.from(JSON.stringify(unsupportedCeiling))
-		await writeFile(
-			path.join(directory, unsupportedCeiling.content.uri),
-			unsupportedBytes,
-		)
-		const unsupportedEvidence = structuredClone(fixture.evidence)
-		const unsupportedRecord = unsupportedEvidence[0]
-		if (!unsupportedRecord || !Array.isArray(unsupportedRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		const sizeArtifact = unsupportedRecord.artifacts.find(
-			(artifact) =>
-				(artifact as Record<string, unknown>).kind === 'd1-size-ceiling-check',
-		) as Record<string, unknown> | undefined
-		if (!sizeArtifact) throw new Error('fixture lacks size artifact')
-		sizeArtifact.sha256 = sha256(unsupportedBytes)
-		expect(
-			await isD1Ready(unsupportedEvidence, fixture.evidencePath, registry),
-		).toBe(false)
-		const zeroMeasurement = signEnvelope(
-			{
-				...sizeEnvelope.content,
-				details: {
-					...(sizeEnvelope.content
-						.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
-					measuredBytes: 0,
-				},
-			},
-			privateKey,
-		)
-		const zeroBytes = Buffer.from(JSON.stringify(zeroMeasurement))
-		await writeFile(
-			path.join(directory, zeroMeasurement.content.uri),
-			zeroBytes,
-		)
-		const zeroEvidence = structuredClone(fixture.evidence)
-		const zeroRecord = zeroEvidence[0]
-		if (!zeroRecord || !Array.isArray(zeroRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		const zeroArtifact = zeroRecord.artifacts.find(
-			(artifact) =>
-				(artifact as Record<string, unknown>).kind === 'd1-size-ceiling-check',
-		) as Record<string, unknown> | undefined
-		if (!zeroArtifact) throw new Error('fixture lacks size artifact')
-		zeroArtifact.sha256 = sha256(zeroBytes)
-		expect(await isD1Ready(zeroEvidence, fixture.evidencePath, registry)).toBe(
-			false,
-		)
-	} finally {
-		await rm(directory, { recursive: true, force: true })
+		])
+		expect(await fixture.ready(evidence)).toBe(false)
 	}
 })
 
 test('signed D1 provenance, restore isolation, and account identities fail closed', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-provenance-'),
+	await using fixture = await createFixture()
+	const verified = await verifyLocalArtifactFiles(
+		fixture.evidence,
+		fixture.evidencePath,
+		fixture.registry,
 	)
-	try {
-		const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, privateKey)
-		const registry = registryFor(publicKey)
-		const verified = await verifyLocalArtifactFiles(
-			fixture.evidence,
-			fixture.evidencePath,
-			registry,
-		)
+	expect(
+		assessCanonicalReadiness(fixture.evidence, now, verified).levels['d1-only']
+			.ready,
+	).toBe(false)
+	const otherSource = {
+		...sourceIdentity,
+		resourceId: jobsSourceIdentity.resourceId,
+	}
+	expect(
+		await fixture.ready(fixture.evidence, { trustedSource: otherSource }),
+	).toBe(false)
+	expect(
+		await fixture.ready(fixture.evidence, {
+			trustedBaselineSource: otherSource,
+		}),
+	).toBe(false)
+
+	// Positive control: re-signing unchanged content stays ready.
+	expect(await fixture.ready(await fixture.resign(fixture.appContents()))).toBe(
+		true,
+	)
+	const restore = fixture.appEnvelope('d1-restore-drill').content
+	const restoreDetails = restore.details as RestoreDetails
+	const restoreWith = (patch: Partial<RestoreDetails>): EvidenceContent => ({
+		...restore,
+		details: { ...restoreDetails, ...patch },
+	})
+	for (const [key, mismatch] of [
+		['backupManifestSha256', 'f'.repeat(64)],
+		['sqlSha256', 'f'.repeat(64)],
+		['trustedBaselineId', 'different-trusted-baseline'],
+		['trustedBaselineSha256', 'f'.repeat(64)],
+		['schemaSha256', 'f'.repeat(64)],
+		['migrationSetSha256', 'f'.repeat(64)],
+		['isolationBaselineSha256', 'f'.repeat(64)],
+		['restoredDatabaseUuid', '33333333-3333-4333-8333-333333333333'],
+	] as const) {
 		expect(
-			assessCanonicalReadiness(fixture.evidence, now, verified).levels[
-				'd1-only'
-			].ready,
-		).toBe(false)
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, registry, {
-				...sourceIdentity,
-				resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-			}),
-		).toBe(false)
-		expect(
-			await isD1Ready(
-				fixture.evidence,
-				fixture.evidencePath,
-				registry,
-				sourceIdentity,
-				{
-					...sourceIdentity,
-					resourceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
-				},
+			await fixture.ready(
+				await fixture.resign([restoreWith({ [key]: mismatch })]),
 			),
 		).toBe(false)
+	}
 
-		const restoreEnvelope = fixture.envelopes.find(
-			(envelope) => envelope.content.kind === 'd1-restore-drill',
-		)
-		if (!restoreEnvelope) throw new Error('fixture lacks restore evidence')
-		for (const [key, mismatch] of [
-			['backupManifestSha256', 'f'.repeat(64)],
-			['sqlSha256', 'f'.repeat(64)],
-			['trustedBaselineId', 'different-trusted-baseline'],
-			['trustedBaselineSha256', 'f'.repeat(64)],
-			['schemaSha256', 'f'.repeat(64)],
-			['migrationSetSha256', 'f'.repeat(64)],
-			['isolationBaselineSha256', 'f'.repeat(64)],
-		] as const) {
-			const content = structuredClone(restoreEnvelope.content)
-			const details =
-				content.details as EvidenceDetailsByKind['d1-restore-drill']
-			details[key] = mismatch
-			const signed = signEnvelope(content, privateKey)
-			const bytes = Buffer.from(JSON.stringify(signed))
-			await writeFile(path.join(directory, content.uri), bytes)
-			const evidence = structuredClone(fixture.evidence)
-			const record = evidence[0]
-			if (!record || !Array.isArray(record.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			const artifact = record.artifacts.find(
-				(candidate) =>
-					(candidate as Record<string, unknown>).kind === 'd1-restore-drill',
-			) as Record<string, unknown> | undefined
-			if (!artifact) throw new Error('fixture lacks restore artifact')
-			artifact.sha256 = sha256(bytes)
-			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
-				false,
-			)
-		}
-
-		async function expectRestoreContentNotReady(
-			content: EvidenceContent,
-		): Promise<void> {
-			const signed = signEnvelope(content, privateKey)
-			const bytes = Buffer.from(JSON.stringify(signed))
-			await writeFile(path.join(directory, content.uri), bytes)
-			const evidence = structuredClone(fixture.evidence)
-			const record = evidence[0]
-			if (!record || !Array.isArray(record.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			const artifact = record.artifacts.find(
-				(candidate) =>
-					(candidate as Record<string, unknown>).kind === 'd1-restore-drill',
-			) as Record<string, unknown> | undefined
-			if (!artifact) throw new Error('fixture lacks restore artifact')
-			artifact.sha256 = sha256(bytes)
-			artifact.sourceIdentity = content.sourceIdentity
-			artifact.destinationIdentity = content.destinationIdentity
-			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
-				false,
-			)
-		}
-
-		async function expectDestinationNotReady(
-			destination: typeof destinationIdentity,
-		): Promise<void> {
-			const evidence = structuredClone(fixture.evidence)
-			const record = evidence[0]
-			if (!record || !Array.isArray(record.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			for (const envelope of fixture.envelopes) {
-				if (envelope.content.resourceId !== 'APP_DB') continue
-				if (envelope.content.destinationIdentity === null) continue
-				const content: EvidenceContent =
-					envelope.content.kind === 'd1-restore-drill'
-						? {
-								...envelope.content,
-								destinationIdentity: destination,
-								details: {
-									...(envelope.content
-										.details as EvidenceDetailsByKind['d1-restore-drill']),
-									restoredDatabaseUuid: destination.resourceId,
-								},
-							}
-						: {
-								...envelope.content,
-								destinationIdentity: destination,
-							}
-				const signed = signEnvelope(content, privateKey)
-				const bytes = Buffer.from(JSON.stringify(signed))
-				await writeFile(path.join(directory, content.uri), bytes)
-				const artifact = record.artifacts.find(
-					(candidate) =>
-						(candidate as Record<string, unknown>).kind === content.kind,
-				) as Record<string, unknown> | undefined
-				if (!artifact) throw new Error(`fixture lacks ${content.kind} artifact`)
-				artifact.sha256 = sha256(bytes)
-				artifact.destinationIdentity = destination
-			}
-			expect(await isD1Ready(evidence, fixture.evidencePath, registry)).toBe(
-				false,
-			)
-		}
-
-		await expectRestoreContentNotReady({
-			...restoreEnvelope.content,
-			details: {
-				...(restoreEnvelope.content
-					.details as EvidenceDetailsByKind['d1-restore-drill']),
-				restoredDatabaseUuid: '33333333-3333-4333-8333-333333333333',
-			},
-		})
-		await expectDestinationNotReady({
-			...destinationIdentity,
-			accountId: sourceIdentity.accountId,
-		})
-		await expectDestinationNotReady({
-			...destinationIdentity,
-			resourceId: sourceIdentity.resourceId,
-		})
-		await expectDestinationNotReady({
+	// Every destination-bearing APP_DB envelope re-signed to a destination that
+	// overlaps the source (same account, same database, or case variants).
+	for (const destination of [
+		{ ...destinationIdentity, accountId: sourceIdentity.accountId },
+		{ ...destinationIdentity, resourceId: sourceIdentity.resourceId },
+		{
 			...destinationIdentity,
 			accountId: sourceIdentity.accountId.toUpperCase(),
-		})
-		await expectDestinationNotReady({
+		},
+		{
 			...destinationIdentity,
 			resourceId: sourceIdentity.resourceId.toUpperCase(),
-		})
+		},
+	]) {
+		const contents = fixture
+			.appContents()
+			.filter((content) => content.destinationIdentity !== null)
+			.map((content) =>
+				content.kind === 'd1-restore-drill'
+					? {
+							...content,
+							destinationIdentity: destination,
+							details: {
+								...(content.details as RestoreDetails),
+								restoredDatabaseUuid: destination.resourceId,
+							},
+						}
+					: { ...content, destinationIdentity: destination },
+			)
+		expect(await fixture.ready(await fixture.resign(contents))).toBe(false)
+	}
 
-		async function expectAccountIdNotReady(
-			identity: 'source' | 'destination',
-			accountId: string,
-		): Promise<void> {
-			const evidence = structuredClone(fixture.evidence)
-			const record = evidence[0]
-			if (!record || !Array.isArray(record.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			let affectedEnvelopeCount = 0
-			for (const envelope of fixture.envelopes) {
-				if (envelope.content.resourceId !== 'APP_DB') continue
-				const content = structuredClone(envelope.content)
-				let affected = false
+	const invalidAccountIds = [
+		` ${sourceIdentity.accountId}`,
+		`${sourceIdentity.accountId} `,
+		`${sourceIdentity.accountId.slice(0, 16)} ${sourceIdentity.accountId.slice(16)}`,
+		sourceIdentity.accountId.toUpperCase(),
+		sourceIdentity.accountId.slice(1),
+		`${sourceIdentity.accountId.slice(0, -1)}g`,
+		`${sourceIdentity.accountId.slice(0, -1)}\u0430`,
+	]
+	for (const accountId of invalidAccountIds) {
+		for (const identity of ['source', 'destination'] as const) {
+			let affectedCount = 0
+			const contents = fixture.appContents().map((content) => {
 				if (identity === 'source') {
 					content.sourceIdentity.accountId = accountId
 					if (content.kind === 'd1-size-ceiling-check') {
 						content.details = {
-							...(content.details as EvidenceDetailsByKind['d1-size-ceiling-check']),
+							...(content.details as SizeDetails),
 							sourceAccountId: accountId,
 						}
 					}
-					affected = true
 				} else if (content.destinationIdentity !== null) {
 					content.destinationIdentity.accountId = accountId
-					affected = true
+				} else {
+					expect(
+						parseSignedEvidenceEnvelope(
+							signEnvelope(content, fixture.privateKey),
+						),
+					).toBeDefined()
+					return content
 				}
-				const signed = signEnvelope(content, privateKey)
-				expect(parseSignedEvidenceEnvelope(signed) !== undefined).toBe(
-					!affected,
-				)
-				const bytes = Buffer.from(JSON.stringify(signed))
-				await writeFile(path.join(directory, content.uri), bytes)
-				const artifact = record.artifacts.find(
-					(candidate) =>
-						(candidate as Record<string, unknown>).kind === content.kind,
-				) as Record<string, unknown> | undefined
-				if (!artifact) throw new Error(`fixture lacks ${content.kind} artifact`)
-				artifact.sha256 = sha256(bytes)
-				artifact.sourceIdentity = content.sourceIdentity
-				artifact.destinationIdentity = content.destinationIdentity
-				if (affected) affectedEnvelopeCount += 1
-			}
+				affectedCount += 1
+				expect(
+					parseSignedEvidenceEnvelope(
+						signEnvelope(content, fixture.privateKey),
+					),
+				).toBeUndefined()
+				return content
+			})
+			const evidence = await fixture.resign(contents)
 			const nextVerified = await verifyLocalArtifactFiles(
 				evidence,
 				fixture.evidencePath,
-				registry,
+				fixture.registry,
 			)
-			expect(nextVerified.size).toBe(
-				fixture.envelopes.length - affectedEnvelopeCount,
-			)
+			expect(nextVerified.size).toBe(fixture.envelopes.length - affectedCount)
 			expect(
 				assessCanonicalReadiness(evidence, now, nextVerified).levels['d1-only'],
 			).toMatchObject({ ready: false })
 		}
-
-		const invalidAccountIds = [
-			` ${sourceIdentity.accountId}`,
-			`${sourceIdentity.accountId} `,
-			`${sourceIdentity.accountId.slice(0, 16)} ${sourceIdentity.accountId.slice(16)}`,
-			sourceIdentity.accountId.toUpperCase(),
-			sourceIdentity.accountId.slice(1),
-			`${sourceIdentity.accountId.slice(0, -1)}g`,
-			`${sourceIdentity.accountId.slice(0, -1)}\u0430`,
-		]
-		for (const accountId of invalidAccountIds) {
-			await expectAccountIdNotReady('source', accountId)
-			await expectAccountIdNotReady('destination', accountId)
-		}
-	} finally {
-		await rm(directory, { recursive: true, force: true })
 	}
 })
 
 test('unsigned, forged, untrusted, and duplicate evidence fail closed', async () => {
-	const directory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-forgeries-'),
-	)
-	try {
-		const trusted = generateKeyPairSync('ed25519')
-		const untrusted = generateKeyPairSync('ed25519')
-		const fixture = await createFixture(directory, trusted.privateKey)
-		const registry = registryFor(trusted.publicKey)
-		const firstEnvelope = fixture.envelopes[0]
-		const firstRecord = fixture.evidence[0]
-		if (
-			!firstEnvelope ||
-			!firstRecord ||
-			!Array.isArray(firstRecord.artifacts)
-		) {
-			throw new Error('fixture is malformed')
-		}
-		const firstArtifact = firstRecord.artifacts[0] as Record<string, unknown>
-		const firstPath = path.join(directory, firstEnvelope.content.uri)
+	await using fixture = await createFixture()
+	const untrusted = generateKeyPairSync('ed25519')
+	const firstEnvelope = fixture.envelopes[0]!
+	const firstUri = firstEnvelope.content.uri
 
-		async function expectEnvelopeNotReady(value: unknown): Promise<void> {
-			const bytes = Buffer.from(
-				typeof value === 'string' ? value : JSON.stringify(value),
-			)
-			await writeFile(firstPath, bytes)
-			const indexedEvidence = structuredClone(fixture.evidence)
-			const indexedRecord = indexedEvidence[0]
-			if (!indexedRecord || !Array.isArray(indexedRecord.artifacts)) {
-				throw new Error('fixture is malformed')
-			}
-			const indexedArtifact = indexedRecord.artifacts[0] as Record<
-				string,
-				unknown
-			>
-			indexedArtifact.sha256 = sha256(bytes)
-			expect(
-				await isD1Ready(indexedEvidence, fixture.evidencePath, registry),
-			).toBe(false)
-		}
-
-		await expectEnvelopeNotReady('synthetic arbitrary artifact bytes')
-
-		const { signature: omittedSignature, ...unsigned } = firstEnvelope
-		expect(omittedSignature.algorithm).toBe('Ed25519')
-		await expectEnvelopeNotReady(unsigned)
-
-		await expectEnvelopeNotReady(
-			signEnvelope(firstEnvelope.content, untrusted.privateKey),
-		)
-
-		const forged = structuredClone(firstEnvelope)
-		forged.content.changeId = 'FORGED-CHANGE'
-		await expectEnvelopeNotReady(forged)
-
-		const signedMismatches: Array<EvidenceContent> = [
-			{ ...firstEnvelope.content, resourceId: 'EMAIL_BLOBS' },
-			{
-				...firstEnvelope.content,
-				details: {
-					credentialId: 'source-edit-token',
-					scope: 'Account D1 Edit',
-				},
-				kind: 'source-credential-check',
-			},
-			{
-				...firstEnvelope.content,
-				sourceIdentity: {
-					...firstEnvelope.content.sourceIdentity,
-					accountId: 'different-account',
-				},
-			},
-			{
-				...firstEnvelope.content,
-				performedAt: '2026-07-22T09:59:59.000Z',
-			},
-			{ ...firstEnvelope.content, uri: 'different-uri.json' },
-			{
-				...firstEnvelope.content,
-				systemVersion: 'different-build',
-			},
-		]
-		for (const content of signedMismatches) {
-			await expectEnvelopeNotReady(signEnvelope(content, trusted.privateKey))
-		}
-
-		await expectEnvelopeNotReady({
-			...firstEnvelope,
-			content: { ...firstEnvelope.content, outcome: 'failed' },
-		})
-		await expectEnvelopeNotReady({ ...firstEnvelope, schemaVersion: 2 })
-
-		await writeFile(firstPath, JSON.stringify(firstEnvelope))
-		const digestMismatch = structuredClone(fixture.evidence)
-		const digestRecord = digestMismatch[0]
-		if (!digestRecord || !Array.isArray(digestRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		;(digestRecord.artifacts[0] as Record<string, unknown>).sha256 = '0'.repeat(
-			64,
-		)
-		expect(
-			await isD1Ready(digestMismatch, fixture.evidencePath, registry),
-		).toBe(false)
-
-		const duplicateUri = structuredClone(fixture.evidence)
-		const duplicateRecord = duplicateUri[0]
-		if (!duplicateRecord || !Array.isArray(duplicateRecord.artifacts)) {
-			throw new Error('fixture is malformed')
-		}
-		const secondArtifact = duplicateRecord.artifacts[1] as Record<
-			string,
-			unknown
-		>
-		secondArtifact.uri = firstArtifact.uri
-		expect(await isD1Ready(duplicateUri, fixture.evidencePath, registry)).toBe(
-			false,
-		)
-
-		const checkedRegistry = parseTrustedPublicKeyRegistry(
-			JSON.parse(
-				await readFile(
-					new URL('./trusted-readiness-public-keys.json', import.meta.url),
-					'utf8',
-				),
-			) as unknown,
-		)
-		expect(checkedRegistry.keys).toEqual([])
-		expect(
-			await isD1Ready(fixture.evidence, fixture.evidencePath, checkedRegistry),
-		).toBe(false)
-	} finally {
-		await rm(directory, { recursive: true, force: true })
+	async function expectEnvelopeNotReady(value: unknown) {
+		const evidence = structuredClone(fixture.evidence)
+		appArtifacts(evidence)[0]!.sha256 = await fixture.overwrite(firstUri, value)
+		expect(await fixture.ready(evidence)).toBe(false)
 	}
+
+	await expectEnvelopeNotReady('synthetic arbitrary artifact bytes')
+	const { signature: _omittedSignature, ...unsigned } = firstEnvelope
+	await expectEnvelopeNotReady(unsigned)
+	await expectEnvelopeNotReady(
+		signEnvelope(firstEnvelope.content, untrusted.privateKey),
+	)
+	const forged = structuredClone(firstEnvelope)
+	forged.content.changeId = 'FORGED-CHANGE'
+	await expectEnvelopeNotReady(forged)
+
+	const signedMismatches: Array<EvidenceContent> = [
+		{ ...firstEnvelope.content, resourceId: 'EMAIL_BLOBS' },
+		{
+			...firstEnvelope.content,
+			details: { credentialId: 'source-edit-token', scope: 'Account D1 Edit' },
+			kind: 'source-credential-check',
+		},
+		{
+			...firstEnvelope.content,
+			sourceIdentity: {
+				...firstEnvelope.content.sourceIdentity,
+				accountId: 'different-account',
+			},
+		},
+		{ ...firstEnvelope.content, performedAt: '2026-07-22T09:59:59.000Z' },
+		{ ...firstEnvelope.content, uri: 'different-uri.json' },
+		{ ...firstEnvelope.content, systemVersion: 'different-build' },
+	]
+	for (const content of signedMismatches) {
+		await expectEnvelopeNotReady(signEnvelope(content, fixture.privateKey))
+	}
+	await expectEnvelopeNotReady({
+		...firstEnvelope,
+		content: { ...firstEnvelope.content, outcome: 'failed' },
+	})
+	await expectEnvelopeNotReady({ ...firstEnvelope, schemaVersion: 2 })
+
+	await fixture.overwrite(firstUri, firstEnvelope)
+	const digestMismatch = structuredClone(fixture.evidence)
+	appArtifacts(digestMismatch)[0]!.sha256 = '0'.repeat(64)
+	expect(await fixture.ready(digestMismatch)).toBe(false)
+
+	const duplicateUri = structuredClone(fixture.evidence)
+	appArtifacts(duplicateUri)[1]!.uri = firstUri
+	expect(await fixture.ready(duplicateUri)).toBe(false)
+
+	const checkedRegistry = parseTrustedPublicKeyRegistry(
+		JSON.parse(
+			await readFile(
+				new URL('./trusted-readiness-public-keys.json', import.meta.url),
+				'utf8',
+			),
+		) as unknown,
+	)
+	expect(checkedRegistry.keys).toEqual([])
+	expect(
+		await assessD1(fixture.evidence, fixture.evidencePath, checkedRegistry),
+	).toBe(false)
 })
 
 test('readiness artifact URIs cannot escape the evidence directory', async () => {
-	const evidenceDirectory = await mkdtemp(
-		path.join(os.tmpdir(), 'readiness-evidence-root-'),
-	)
+	await using evidenceRoot = await createFixture()
 	const outsideDirectory = await mkdtemp(
 		path.join(os.tmpdir(), 'readiness-evidence-outside-'),
 	)
 	try {
 		const outsideFile = path.join(outsideDirectory, 'outside.json')
 		await writeFile(outsideFile, '{}')
-		const { publicKey } = generateKeyPairSync('ed25519')
-		const registry = registryFor(publicKey)
-		const evidencePath = path.join(evidenceDirectory, 'evidence.json')
-		await expect(
-			verifyLocalArtifactFiles(
-				[{ artifacts: [{ uri: '../outside.json' }] }],
-				evidencePath,
-				registry,
-			),
-		).rejects.toThrow('escapes the evidence directory')
-		await expect(
-			verifyLocalArtifactFiles(
-				[{ artifacts: [{ uri: pathToFileURL(outsideFile).href }] }],
-				evidencePath,
-				registry,
-			),
-		).rejects.toThrow('escapes the evidence directory')
+		for (const uri of ['../outside.json', pathToFileURL(outsideFile).href]) {
+			await expect(
+				verifyLocalArtifactFiles(
+					[{ artifacts: [{ uri }] }],
+					evidenceRoot.evidencePath,
+					evidenceRoot.registry,
+				),
+			).rejects.toThrow('escapes the evidence directory')
+		}
 	} finally {
-		await rm(evidenceDirectory, { recursive: true, force: true })
 		await rm(outsideDirectory, { recursive: true, force: true })
 	}
 })

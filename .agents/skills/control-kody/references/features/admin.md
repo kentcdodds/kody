@@ -5,7 +5,7 @@ Operator tools. Seed and preview users are **not** admin.
 ## How to get there
 
 `/admin` and its children (`/admin/users`, `/admin/roles`,
-`/admin/reserved-usernames`, `/admin/feature-flags`, `/admin/banners`,
+`/admin/reserved-usernames`, `/admin/feature-flags`,
 `/admin/platform-integrations`, `/admin/provider-marks`, `/admin/codemods`,
 `/admin/community-reports`, `/admin/insights`, `/admin/platform-feedback`,
 `/admin/system-email`). `/admin/insights` shows launch MRR, paid mix, the
@@ -18,7 +18,12 @@ panel for catalog-paid accounts over list MRR, unpaid users at
 (50% of the $2 included-bucket alert), and Standard/Pro
 rows whose `stripe_price_id` is missing or not in the catalog.
 `/admin/users/:stableUserId` shows the same cost-vs-pay estimate for one
-account.
+account, plus Durable Object duration (Cloudflare-measured GB-s beside the
+StorageRunner RPC wall-clock proxy), the shared usage metric series (including
+observe-only Dynamic Worker CPU), and a Credits panel: balance, credit
+eligibility (purchasable Pro or admin eligibility), a grant form (dollars plus
+an optional note; works on the signed-in admin too), and the recent ledger with
+the granting admin for grants (`/admin/users/credits.json`).
 
 ## Drive it
 
@@ -43,3 +48,7 @@ JSON siblings under `/admin/*.json`. Same 403 for the preview seed.
 - `/admin/feature-flags` Audience is `everyone` or `experiments_opt_in`. That
   audience only includes users who opted in at `/account/experiments`. Per-user
   overrides win over the audience gate.
+- `/admin/platform-integrations` rows have `enabled` (hard kill) and
+  `visibility` (`draft` | `published`). Only enabled + published apps are
+  discoverable. Moving a live app to draft hides it without breaking existing
+  connections.

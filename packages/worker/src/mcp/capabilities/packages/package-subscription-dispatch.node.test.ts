@@ -1,14 +1,18 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
+import type * as PackageInvocations from '#worker/package-invocations/service.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({
+	invokePackageSubscription: vi.fn<
+		typeof PackageInvocations.invokePackageSubscription
+	>(async () => ({
 		status: 200,
 		body: { result: { ok: true } },
 	})),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	resolvePackageOwnerContext: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	getInternalEmailMessageById: vi.fn(),
@@ -37,7 +41,7 @@ vi.mock('#worker/package-invocations/service.ts', () => ({
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: mocks.getSavedPackageById,
-	getSavedPackageByKodyId: mocks.getSavedPackageByKodyId,
+	resolveSavedPackageRef: mocks.resolveSavedPackageRef,
 }))
 
 vi.mock('#worker/package-registry/package-owner.ts', () => ({
@@ -58,23 +62,22 @@ vi.mock('#worker/email/mailbox-internal-read.ts', () => ({
 const { packageSubscriptionDispatchCapability } =
 	await import('./package-subscription-dispatch.ts')
 
-function createSavedPackage() {
-	return {
-		id: 'pkg-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'demo',
-		name: '@user/demo',
-		description: 'Demo package',
-		tags: [],
-		searchText: null,
-		hasApp: false,
-		hidden: false,
-		isPrivate: false,
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	}
+const savedPackage = {
+	id: 'pkg-1',
+	userId: 'user-1',
+	sourceId: 'source-1',
+	kodyId: 'demo',
+	name: '@user/demo',
+	description: 'Demo package',
+	tags: [],
+	searchText: null,
+	hasApp: false,
+	hidden: false,
+	isPrivate: false,
+	createdAt: '2026-01-01T00:00:00.000Z',
+	updatedAt: '2026-01-01T00:00:00.000Z',
 }
+const syntheticIdempotencyKey = /^synthetic:[0-9a-f-]{36}$/
 
 function createCtx(
 	overrides?: Partial<{
@@ -105,78 +108,95 @@ function createCtx(
 			},
 			storageContext: overrides?.storageContext ?? null,
 			repoContext: null,
+			request: sessionRequestContext('user-1'),
 		},
 	}
 }
 
+function dispatch(
+	args: Record<string, unknown> = {},
+	ctx: ReturnType<typeof createCtx> = createCtx(),
+) {
+	return packageSubscriptionDispatchCapability.handler(
+		{
+			kody_id: 'demo',
+			topic: 'repo.pushed',
+			params: { event: 'repo.pushed' },
+			...args,
+		},
+		ctx as never,
+	)
+}
+
 function mockDeclaredSubscription(topic = inboundEmailReceiptTopic) {
-	mocks.getSavedPackageByKodyId.mockResolvedValue(createSavedPackage())
+	mocks.resolveSavedPackageRef.mockResolvedValue(savedPackage)
 	mocks.loadPackageManifestBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@user/demo',
 			kody: {
 				id: 'demo',
 				description: 'Demo',
-				subscriptions: {
-					[topic]: {
-						handler: './src/on-email.ts',
-					},
-				},
+				subscriptions: { [topic]: { handler: './src/on-email.ts' } },
 			},
 		},
 	})
 }
 
+function mockStoredEmail(
+	id: string,
+	classification: 'accepted' | 'quarantined',
+) {
+	mocks.getInternalEmailMessageById.mockResolvedValue({
+		id,
+		inboxId: 'inbox-1',
+		fromAddress: 'sender@example.com',
+		envelopeFrom: 'sender@example.com',
+		toAddresses: ['user@inbox.example.com'],
+		ccAddresses: [],
+		replyToAddresses: [],
+		subject: 'Hello',
+		messageIdHeader: `<${id}@example.com>`,
+		inReplyToHeader: null,
+		references: [],
+		processingStatus: 'received',
+		classification,
+		classificationReason: classification === 'accepted' ? null : 'test',
+		receivedAt: '2026-01-01T00:00:00.000Z',
+		createdAt: '2026-01-01T00:00:00.000Z',
+	})
+}
+
 test('packageSubscriptionDispatch sends synthetic params envelopes to one package', async () => {
 	mockDeclaredSubscription('repo.pushed')
-	const ctx = createCtx()
 
-	const result = await packageSubscriptionDispatchCapability.handler(
-		{
-			kody_id: 'demo',
-			topic: 'repo.pushed',
-			params: {
-				event: 'repo.pushed',
-				synthetic: true,
-				replay_of: 'forged',
-			},
-		},
-		ctx as never,
-	)
+	const result = await dispatch({
+		params: { event: 'repo.pushed', synthetic: true, replay_of: 'forged' },
+	})
 
 	expect(result).toMatchObject({
 		package_id: 'pkg-1',
 		kody_id: 'demo',
+		slug: 'demo',
 		topic: 'repo.pushed',
 		source: 'synthetic',
 		synthetic: true,
 		replay_of: null,
 		status: 200,
 	})
-	expect(result.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
+	expect(result.idempotency_key).toMatch(syntheticIdempotencyKey)
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
-			savedPackage: createSavedPackage(),
+			savedPackage,
 			topic: 'repo.pushed',
 			trustedSyntheticDispatch: expect.any(Object),
 			actorTokenId: 'internal:synthetic-subscriptions',
-			params: {
-				event: 'repo.pushed',
-				synthetic: true,
-			},
+			params: { event: 'repo.pushed', synthetic: true },
 			idempotencyKey: result.idempotency_key,
 		}),
 	)
 
-	const second = await packageSubscriptionDispatchCapability.handler(
-		{
-			kody_id: 'demo',
-			topic: 'repo.pushed',
-			params: { event: 'repo.pushed' },
-		},
-		ctx as never,
-	)
-	expect(second.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
+	const second = await dispatch()
+	expect(second.idempotency_key).toMatch(syntheticIdempotencyKey)
 	expect(second.idempotency_key).not.toBe(result.idempotency_key)
 })
 
@@ -187,42 +207,16 @@ test('packageSubscriptionDispatch bounds oversized handler results', async () =>
 		body: { result: { blob: 'x'.repeat(102_400) } },
 	})
 
-	const result = await packageSubscriptionDispatchCapability.handler(
-		{
-			kody_id: 'demo',
-			topic: 'repo.pushed',
-			params: { event: 'repo.pushed' },
-		},
-		createCtx() as never,
-	)
-
-	expect(result.result).toEqual({
+	expect((await dispatch()).result).toEqual({
 		truncated: true,
 		message:
 			'Subscription result exceeded 102400 bytes and was omitted. Inspect the subscription run for details.',
 	})
 })
 
-test('packageSubscriptionDispatch replays stored inbound email envelopes', async () => {
+test('packageSubscriptionDispatch replays stored inbound email envelopes and rejects topic mismatches', async () => {
 	mockDeclaredSubscription()
-	mocks.getInternalEmailMessageById.mockResolvedValue({
-		id: 'message-1',
-		inboxId: 'inbox-1',
-		fromAddress: 'sender@example.com',
-		envelopeFrom: 'sender@example.com',
-		toAddresses: ['user@inbox.example.com'],
-		ccAddresses: [],
-		replyToAddresses: [],
-		subject: 'Hello',
-		messageIdHeader: '<msg@example.com>',
-		inReplyToHeader: null,
-		references: [],
-		processingStatus: 'received',
-		classification: 'accepted',
-		classificationReason: null,
-		receivedAt: '2026-01-01T00:00:00.000Z',
-		createdAt: '2026-01-01T00:00:00.000Z',
-	})
+	mockStoredEmail('message-1', 'accepted')
 	mocks.listInternalEmailAttachmentsForMessage.mockResolvedValue([
 		{
 			id: 'attachment-1',
@@ -236,23 +230,16 @@ test('packageSubscriptionDispatch replays stored inbound email envelopes', async
 			createdAt: '2026-01-01T00:00:00.000Z',
 		},
 	])
-	const ctx = createCtx()
+	const replay = { topic: inboundEmailReceiptTopic, params: undefined }
 
-	const result = await packageSubscriptionDispatchCapability.handler(
-		{
-			kody_id: 'demo',
-			topic: inboundEmailReceiptTopic,
-			email_message_id: 'message-1',
-		},
-		ctx as never,
-	)
+	const result = await dispatch({ ...replay, email_message_id: 'message-1' })
 
 	expect(result).toMatchObject({
 		source: 'synthetic',
 		synthetic: true,
 		replay_of: 'message-1',
 	})
-	expect(result.idempotency_key).toMatch(/^synthetic:[0-9a-f-]{36}$/)
+	expect(result.idempotency_key).toMatch(syntheticIdempotencyKey)
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
 			params: expect.objectContaining({
@@ -266,38 +253,11 @@ test('packageSubscriptionDispatch replays stored inbound email envelopes', async
 			}),
 		}),
 	)
-})
 
-test('packageSubscriptionDispatch rejects replay when the stored message topic differs', async () => {
-	mockDeclaredSubscription()
-	mocks.getInternalEmailMessageById.mockResolvedValue({
-		id: 'message-quarantined',
-		inboxId: 'inbox-1',
-		fromAddress: 'sender@example.com',
-		envelopeFrom: 'sender@example.com',
-		toAddresses: ['user@inbox.example.com'],
-		ccAddresses: [],
-		replyToAddresses: [],
-		subject: 'Quarantined',
-		messageIdHeader: '<quarantined@example.com>',
-		inReplyToHeader: null,
-		references: [],
-		processingStatus: 'received',
-		classification: 'quarantined',
-		classificationReason: 'test',
-		receivedAt: '2026-01-01T00:00:00.000Z',
-		createdAt: '2026-01-01T00:00:00.000Z',
-	})
-
+	mocks.invokePackageSubscription.mockClear()
+	mockStoredEmail('message-quarantined', 'quarantined')
 	await expect(
-		packageSubscriptionDispatchCapability.handler(
-			{
-				kody_id: 'demo',
-				topic: inboundEmailReceiptTopic,
-				email_message_id: 'message-quarantined',
-			},
-			createCtx() as never,
-		),
+		dispatch({ ...replay, email_message_id: 'message-quarantined' }),
 	).rejects.toThrow(
 		'would dispatch on topic "email.message.quarantined", not "email.message.received"',
 	)
@@ -306,49 +266,23 @@ test('packageSubscriptionDispatch rejects replay when the stored message topic d
 
 test('packageSubscriptionDispatch rejects runtime callers and undeclared topics', async () => {
 	mockDeclaredSubscription('repo.pushed')
-
-	await expect(
-		packageSubscriptionDispatchCapability.handler(
-			{
-				kody_id: 'demo',
-				topic: 'repo.pushed',
-				params: { event: 'repo.pushed' },
+	for (const ctx of [
+		createCtx({
+			storageContext: {
+				packageId: 'pkg-1',
+				appId: null,
+				storageId: 'package:pkg-1',
 			},
-			createCtx({
-				storageContext: {
-					packageId: 'pkg-1',
-					appId: null,
-					storageId: 'package:pkg-1',
-				},
-			}) as never,
-		),
-	).rejects.toThrow(
-		'packageSubscriptionDispatch is unavailable from package runtime contexts.',
-	)
-	await expect(
-		packageSubscriptionDispatchCapability.handler(
-			{
-				kody_id: 'demo',
-				topic: 'repo.pushed',
-				params: { event: 'repo.pushed' },
-			},
-			createCtx({ executionOrigin: 'background' }) as never,
-		),
-	).rejects.toThrow(
-		'packageSubscriptionDispatch is unavailable from package runtime contexts.',
-	)
+		}),
+		createCtx({ executionOrigin: 'background' }),
+	]) {
+		await expect(dispatch({}, ctx)).rejects.toThrow(
+			'packageSubscriptionDispatch is unavailable from package runtime contexts.',
+		)
+	}
 
 	mockDeclaredSubscription()
-	await expect(
-		packageSubscriptionDispatchCapability.handler(
-			{
-				kody_id: 'demo',
-				topic: 'repo.pushed',
-				params: { event: 'repo.pushed' },
-			},
-			createCtx() as never,
-		),
-	).rejects.toThrow(/packageSubscriptionDispatch/)
+	await expect(dispatch()).rejects.toThrow(/packageSubscriptionDispatch/)
 })
 
 test('packageSubscriptionDispatch resolves delegated package scope like packageGet', async () => {
@@ -362,23 +296,16 @@ test('packageSubscriptionDispatch resolves delegated package scope like packageG
 		delegated: true,
 	})
 
-	await packageSubscriptionDispatchCapability.handler(
-		{
-			kody_id: 'demo',
-			topic: 'repo.pushed',
-			package_scope: 'kody',
-			params: { event: 'repo.pushed' },
-		},
-		ctx as never,
-	)
+	await dispatch({ package_scope: 'kody' }, ctx)
 
 	expect(mocks.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		ctx.env,
 		ctx.callerContext.user,
 		'kody',
 	)
-	expect(mocks.getSavedPackageByKodyId).toHaveBeenCalledWith(ctx.env.APP_DB, {
+	expect(mocks.resolveSavedPackageRef).toHaveBeenCalledWith(ctx.env.APP_DB, {
 		userId: 'platform-user',
-		kodyId: 'demo',
+		ref: 'demo',
+		match: 'slug',
 	})
 })

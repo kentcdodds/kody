@@ -3,9 +3,6 @@ import { routes } from '#universal/routes.ts'
 /** Public invite for the Kody community Discord. */
 export const kodyDiscordInviteUrl = 'https://kcd.im/kody-discord'
 
-/** Kent's public issue-triage package — linked from user error-rate mail. */
-export const kodyIssueTriageListingPath = '/@kentcdodds/kody-issue-triage'
-
 const scopedPackageNamePattern = /^@([a-z0-9][a-z0-9._-]*)\//
 
 /** Platform account that owns official first-party `@kody/*` listings. */
@@ -46,6 +43,21 @@ export function getCommunityPackageHrefFromName(name: string) {
 		username: ownerUsername,
 		kodyId,
 	})
+}
+
+/**
+ * Read-only smart HTTP clone URL for a public listing: `/@owner/kody-id.git`.
+ * Append `.git` to the canonical package href. Private packages 404 on this
+ * route; push is rejected.
+ */
+export function getCommunityPackageGitHref(input: {
+	username: string
+	kodyId: string
+}) {
+	return `${routes.communityPackage.href({
+		username: input.username,
+		kodyId: input.kodyId,
+	})}.git`
 }
 
 /**

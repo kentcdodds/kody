@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest'
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { App, appMainOwnsItsGutters } from './app.tsx'
 import * as clientRouter from './client-router.tsx'
 import { RouterLocationProvider } from './router-location.tsx'
@@ -15,12 +15,12 @@ const signedInSession: session.SessionInfo = {
 	permissions: [],
 	featureFlags: {
 		'demo-indicator': false,
-		'compact-mcp-server-instructions': false,
-		'compute-overage-charging': true,
 		'package-share-grants': false,
-		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
+		'connection-profiles': false,
+		'mcp-skills-extension': false,
+		'mcp-events-extension': false,
 	},
 }
 
@@ -147,62 +147,44 @@ test('App skips the post-hydration /session fetch when the document embedded a s
 	}
 })
 
-test('navigating away from a 404 restores main gutters on pages that still use them', () => {
-	// SSR 404: the shared not-found page owns its padding, so `<main>`
-	// must not add another inset.
+test('error pages own main gutters on the SSR URL and at explicit /404 and /500; other pages restore them after SPA navigation', () => {
+	// SSR 404/500: the shared error page owns its padding, so `<main>` must not
+	// add another inset. After SPA navigation the document still has
+	// notFound/internalError, but a matched route like Support relies on
+	// `<main>` padding again.
+	const cases: Array<[Parameters<typeof appMainOwnsItsGutters>[0], boolean]> = [
+		[{ pathname: '/missing-page', notFound: true, onSsrUrl: true }, true],
+		[{ pathname: '/support', notFound: true, onSsrUrl: false }, false],
+		[
+			{
+				pathname: '/account',
+				notFound: false,
+				internalError: true,
+				onSsrUrl: true,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/support',
+				notFound: false,
+				internalError: true,
+				onSsrUrl: false,
+			},
+			false,
+		],
+		[{ pathname: '/404', notFound: false, onSsrUrl: false }, true],
+		[
+			{
+				pathname: '/500',
+				notFound: false,
+				internalError: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+	]
 	expect(
-		appMainOwnsItsGutters({
-			pathname: '/missing-page',
-			notFound: true,
-			onSsrUrl: true,
-		}),
-	).toBe(true)
-
-	// Support is a matched route that still relies on `<main>` padding.
-	// After SPA navigation the document still has notFound: true, but we
-	// are no longer on the URL the server rendered.
-	expect(
-		appMainOwnsItsGutters({
-			pathname: '/support',
-			notFound: true,
-			onSsrUrl: false,
-		}),
-	).toBe(false)
-})
-
-test('SSR 500 pages own main gutters the same way 404s do', () => {
-	expect(
-		appMainOwnsItsGutters({
-			pathname: '/account',
-			notFound: false,
-			internalError: true,
-			onSsrUrl: true,
-		}),
-	).toBe(true)
-	expect(
-		appMainOwnsItsGutters({
-			pathname: '/support',
-			notFound: false,
-			internalError: true,
-			onSsrUrl: false,
-		}),
-	).toBe(false)
-})
-
-test('explicit /404 and /500 pages own main gutters after SPA navigation', () => {
-	expect(
-		appMainOwnsItsGutters({
-			pathname: '/404',
-			notFound: false,
-			onSsrUrl: false,
-		}),
-	).toBe(true)
-	expect(
-		appMainOwnsItsGutters({
-			pathname: '/500',
-			notFound: false,
-			internalError: false,
-			onSsrUrl: false,
-		}),
-	).toBe(true)
+		cases.filter(([input, want]) => appMainOwnsItsGutters(input) !== want),
+	).toEqual([])
 })

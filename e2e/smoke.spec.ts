@@ -1,4 +1,4 @@
-import { expect, test } from './playwright-utils.ts'
+import { expect, test, waitForClientHydration } from './playwright-utils.ts'
 import { ensurePrimaryUserExists, primaryTestUser } from './auth-test-user.ts'
 import { clearAuthRateLimitsInE2eDatabase } from './d1-utils.ts'
 
@@ -20,12 +20,30 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 
 	await page.goto('/account')
 	await expect(page).toHaveURL(/\/login\?redirectTo=%2Faccount$/)
+	await waitForClientHydration(page)
 	await expect(page.getByLabel('Email')).toBeVisible()
-	await expect(page.getByLabel('Password')).toBeVisible()
+	// exact: the Show password toggle's aria-label also contains "password".
+	const passwordField = page.getByLabel('Password', { exact: true })
+	await expect(passwordField).toBeVisible()
+	const showPassword = page.getByRole('button', {
+		name: 'Show password',
+		exact: true,
+	})
+	await expect(showPassword).toBeVisible()
+	await expect(showPassword).toHaveAttribute('aria-pressed', 'false')
+	await expect(passwordField).toHaveAttribute('type', 'password')
 
 	clearAuthRateLimitsInE2eDatabase()
 	await page.getByLabel('Email').fill(primaryTestUser.email)
-	await page.getByLabel('Password').fill(primaryTestUser.password)
+	await passwordField.fill(primaryTestUser.password)
+	await showPassword.click()
+	await expect(
+		page.getByRole('button', { name: 'Hide password', exact: true }),
+	).toHaveAttribute('aria-pressed', 'true')
+	await expect(passwordField).toHaveAttribute('type', 'text')
+	await expect(passwordField).toHaveValue(primaryTestUser.password)
+	await page.getByRole('button', { name: 'Hide password', exact: true }).click()
+	await expect(passwordField).toHaveAttribute('type', 'password')
 	await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 
 	await expect(page).toHaveURL(/\/account$/)
@@ -50,7 +68,9 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// SPA-navigate to secrets: the client refetch must hit the same origin
 	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
 	await page.getByRole('link', { name: 'Secrets', exact: true }).click()
-	await expect(page).toHaveURL(/\/account\/secrets$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${primaryTestUser.username}/secrets$`),
+	)
 	// The list is a named region; it replaced the sidebar heading that used to
 	// carry this name, and it is present whether or not the account has rows.
 	await expect(
@@ -105,10 +125,13 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('heading', { name: 'Free', exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Standard', exact: true }),
+		page.getByRole('heading', { name: 'Pro', exact: true }),
 	).toBeVisible()
 	await expect(
-		page.getByRole('heading', { name: 'Pro', exact: true }),
+		page.getByRole('heading', { name: 'Standard', exact: true }),
+	).toHaveCount(0)
+	await expect(
+		page.getByRole('heading', { name: 'Prepaid credits', exact: true }),
 	).toBeVisible()
 	await expect(
 		page.getByRole('heading', { name: 'Teams / Enterprise', exact: true }),

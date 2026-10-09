@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -145,11 +145,11 @@ export function TermsRoute(_handle: Handle) {
 			<section mix={css(cardCss)}>
 				<h2 mix={css(cardTitleCss)}>Content and packages</h2>
 				<p mix={css(descriptionCss)}>
-					You retain rights to content you create. Community listings you
-					publish are visible to other users under the community rules. Hosted
-					package apps run author-supplied code; review packages before
-					installing or adopting them. Do not publish secrets or other
-					people&apos;s private data.
+					You retain rights to content you create. Public packages you publish
+					are visible to other users under the community rules. Hosted package
+					apps run author-supplied code; review packages before installing or
+					adopting them. Do not publish secrets or other people&apos;s private
+					data.
 				</p>
 			</section>
 
@@ -168,8 +168,7 @@ export function TermsRoute(_handle: Handle) {
 				<h2 mix={css(cardTitleCss)}>Copyright and DMCA notices</h2>
 				<p mix={css(descriptionCss)}>
 					Kody responds to notices of claimed copyright infringement under 17
-					U.S.C. §512 concerning public community packages and profiles. Send
-					notices to{' '}
+					U.S.C. §512 concerning public packages and profiles. Send notices to{' '}
 					<a href="mailto:dmca@kody.codes" mix={css(mutedLinkCss)}>
 						dmca@kody.codes
 					</a>

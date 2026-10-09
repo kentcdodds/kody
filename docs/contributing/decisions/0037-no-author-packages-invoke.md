@@ -18,18 +18,21 @@ a named export and do not use the `kody:runtime` helper.
 Authors do not get `packages.invoke`.
 
 - Name known at write time → static `import` from `kody:@scope/package/export`.
-- Name is data → `import(specifier)` (caller-owned / forks). Computed specifiers
-  load through a runtime helper that still uses the quarantined invoke path
-  until that helper is deleted
+- Name is data → `import(specifier)` (caller-owned / forks). Computed `kody:@`
+  imports load through a host library-load bridge that does not use
+  author-facing `packages.invoke`
   ([#1750](https://github.com/kentcdodds/kody/issues/1750)).
 - Exactly-once → workflows. Do not keep a keyed invoke beside them.
 - External callers → inbound webhooks. HTTP invocation tokens
-  (`POST /@:user/api/package-invocations/…`) remain only as an unadvertised
-  drain. That path is not `packages.invoke`. See
+  (`POST /@:user/api/package-invocations/…`) were an unadvertised drain and are
+  now fully removed. That path was not `packages.invoke`. See
   [0048](./0048-webhooks-replace-invocation-tokens.md).
 
-The `kody:runtime` helper stays quarantined for a soak so already-published
-packages do not break, then the folder is deleted.
+The `kody:runtime` helper is deleted and no longer bound. `packages` remains an
+exported name that is always `null` so leftover `if (packages)` guards still
+typecheck and bundle; unguarded `packages.invoke(...)` fails with a message that
+names the static import, `import(specifier)`, and workflows. Computed
+`import(specifier)` does not depend on the helper.
 
 ## Consequences
 
@@ -42,5 +45,10 @@ invokes stay `needsManual` for workflows). Interactive MCP
 ([0013](./0013-synthetic-package-requests.md)), not a replacement for
 `packages.invoke`.
 
-Revisit only if the computed `import(specifier)` facade cannot stand in for
-caller-owned name-as-data loads after the quarantined helper is deleted.
+Revisit only if computed `import(specifier)` cannot stand in for caller-owned
+name-as-data loads now that the helper is deleted.
+
+## LATER-NOTE (2026-10-08)
+
+The unadvertised HTTP invocation-token drain is gone. External HTTP is webhooks
+only ([0048](./0048-webhooks-replace-invocation-tokens.md)).

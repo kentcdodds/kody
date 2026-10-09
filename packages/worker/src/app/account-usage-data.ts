@@ -1,47 +1,49 @@
+import { parseStoredPlanName, parseStripePlanName } from '#universal/plans.ts'
 import {
-	parseEntitlementLadder,
-	parseStoredPlanName,
-	parseStripePlanName,
-} from '#universal/plans.ts'
-import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+	canBuyCreditsForUser,
+	loadAccountUsageCredits,
+} from '#app/account-credits-data.ts'
+import { loadAccountUsageStory } from '#app/account-usage-story.ts'
+import { isBillingConfigured } from '#worker/billing/billing-config.ts'
+import { readCreditWallet } from '#worker/billing/credit-wallet.ts'
+import { reconcileSignupWelcomeCreditsIfPending } from '#worker/billing/signup-welcome-credits.ts'
+import { readAccountComputeOverage } from '#worker/billing/compute-overage-account.ts'
 import {
-	computeOverageUsageWarningRows,
-	readAccountComputeOverage,
-} from '#worker/billing/compute-overage-account.ts'
+	resolveUserEntitlementFromRow,
+	resolveUserPlanFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from '#worker/entitlements/service.ts'
 import { readEntitlementUsageSnapshot } from '#worker/entitlements/usage-snapshot.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type AccountUsageEntitlementConsumption,
 	type AccountUsageLoaderData,
 	type AccountUsageWeekWindow,
 } from '#universal/loader-data.ts'
+import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
 
-type UsageUserRow = {
+type UsageUserRow = UserEntitlementRow & {
 	id: number
-	plan: string
-	stripe_plan: string | null
-	entitlement_ladder: string | null
 	stable_user_id: string
+	username: string
 	stripe_customer_id: string | null
-	second_agent_standard_gift_expires_at: string | null
-	referral_standard_credit_expires_at: string | null
 }
 
 /**
- * Signed-in user's plan and current entitlement consumption. One account only;
- * cost does not grow with the user base.
+ * Signed-in user's plan, current entitlement consumption, and the Credits
+ * section. One account only; cost does not grow with the user base.
  */
 export async function loadAccountUsageData(input: {
 	env: Env
 	userId: number
 	now?: Date
+	notice?: string
+	error?: string
 }): Promise<AccountUsageLoaderData | null> {
 	const now = input.now ?? new Date()
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, plan, stripe_plan, entitlement_ladder, stable_user_id,
-			stripe_customer_id, second_agent_standard_gift_expires_at,
-			referral_standard_credit_expires_at
+		`SELECT id, stable_user_id, username, stripe_customer_id, ${userEntitlementColumnsSql()}
 		 FROM users WHERE id = ?`,
 	)
 		.bind(input.userId)
@@ -49,33 +51,75 @@ export async function loadAccountUsageData(input: {
 	if (!row) return null
 
 	const manualPlan = parseStoredPlanName(row.plan)
-	const plan = resolveEffectivePlanWithSecondAgentGift(
-		manualPlan,
-		row.stripe_plan,
-		laterIsoTimestamp(
-			row.second_agent_standard_gift_expires_at,
-			row.referral_standard_credit_expires_at,
-		),
+	const usageUserId = ownerIdFromStored(row.stable_user_id)
+	// Best-effort: retry a creation-time welcome grant that failed earlier.
+	// No-ops unless signup_welcome_credits_pending is set (no pre-ship backfill).
+	await reconcileSignupWelcomeCreditsIfPending({
+		db: input.env.APP_DB,
+		userId: usageUserId,
 		now,
-	)
-	const ladder = parseEntitlementLadder(row.entitlement_ladder)
-	const usageUserId = resolveUserStableId(row)
+	})
+	const { creditsEligible } = resolveUserPlanFromRow(row, now)
+	// One credit_wallets read for entitlement balance + Credits section.
+	const wallet = creditsEligible
+		? await readCreditWallet(input.env.APP_DB, usageUserId)
+		: null
+	const entitlement = await resolveUserEntitlementFromRow({
+		db: input.env.APP_DB,
+		stableUserId: usageUserId,
+		row,
+		now,
+		...(wallet ? { balanceMicroUsd: wallet.balanceMicroUsd } : {}),
+	})
 	const [snapshot, computeOverage] = await Promise.all([
 		readEntitlementUsageSnapshot({
 			db: input.env.APP_DB,
 			env: input.env,
 			usageUserId,
-			plan,
-			ladder,
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now,
 		}),
 		readAccountComputeOverage({
 			db: input.env.APP_DB,
-			userId: row.id,
 			stableUserId: usageUserId,
-			plan,
-			ladder,
-			hasStripeCustomer: Boolean(row.stripe_customer_id?.trim()),
+			plan: entitlement.plan,
+			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
+			now,
+		}),
+	])
+	const canBuyCredits = canBuyCreditsForUser({
+		row,
+		entitlement,
+		stripeCustomerId: row.stripe_customer_id?.trim() || null,
+	})
+	const { credits, wallet: creditsWallet } = await loadAccountUsageCredits({
+		env: input.env,
+		stableUserId: usageUserId,
+		entitlement,
+		canBuyCredits,
+		computeOverage,
+		now,
+		...(wallet ? { wallet } : {}),
+	})
+	const [story, whereItWent] = await Promise.all([
+		loadAccountUsageStory({
+			db: input.env.APP_DB,
+			stableUserId: usageUserId,
+			plan: entitlement.plan,
+			creditWallet: entitlement.creditWallet,
+			canBuyCredits: canBuyCredits && isBillingConfigured(input.env),
+			computeOverage,
+			now,
+			...(creditsWallet ? { wallet: creditsWallet } : {}),
+		}),
+		loadCreditAttributionBreakdown({
+			db: input.env.APP_DB,
+			stableUserId: usageUserId,
+			username: row.username,
+			computeOverage,
 			now,
 		}),
 	])
@@ -88,11 +132,16 @@ export async function loadAccountUsageData(input: {
 		today: snapshot.today,
 		weekStart: snapshot.weekStart,
 		entitlementConsumption: snapshot.resources.map(toAccountUsageRow),
-		warnings: [
-			...computeOverageUsageWarningRows(computeOverage).map(toAccountUsageRow),
-			...snapshot.warnings.map(toAccountUsageRow),
-		],
+		// Monthly include pressure is the credits alarm (`creditsAlarm`), not a
+		// warning row, so the page raises it once.
+		warnings: snapshot.warnings.map(toAccountUsageRow),
 		computeOverage,
+		canBuyCredits,
+		...story,
+		whereItWent,
+		credits,
+		...(input.notice ? { notice: input.notice } : {}),
+		...(input.error ? { error: input.error } : {}),
 	}
 }
 

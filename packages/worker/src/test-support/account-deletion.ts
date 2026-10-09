@@ -521,7 +521,7 @@ export function createJobsBindingStub(
 
 export function createSuccessfulDeletionEnv(
 	db: D1Database,
-	overrides: Partial<Env> & {
+	overrides: { [Key in keyof Env]?: unknown } & {
 		OAUTH_PROVIDER?: {
 			listUserGrants: (
 				userId: string,
@@ -552,6 +552,10 @@ export function createSuccessfulDeletionEnv(
 			get: () => ({
 				clearAll: async () => ({ ok: true as const }),
 				listStorageIds: async () => [] as Array<string>,
+				listWorkflowProjections: async () => ({
+					projections: [],
+					nextCursor: null,
+				}),
 			}),
 		},
 		USER_METER: userMeter.env.USER_METER,

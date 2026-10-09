@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { RequestContext } from 'remix/router'
 import {
 	collectHealthComponents,
 	createHealthComponentsHandler,
@@ -9,180 +8,167 @@ import {
 import { fleetExecuteLastSuccessKvKey } from '#worker/execute-health-heartbeat.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
-function createHealthyBindings() {
+function d1(first: () => Promise<unknown>, onPrepare = () => {}) {
 	return {
-		APP_COMMIT_SHA: 'abc123',
-		APP_DB: {
-			prepare: () => ({ first: async () => ({ 1: 1 }) }),
-		} as unknown as D1Database,
-		AUDIT_DB: {
-			prepare: () => ({ first: async () => ({ 1: 1 }) }),
-		} as unknown as D1Database,
-		OAUTH_KV: { get: async () => null } as unknown as KVNamespace,
+		prepare: () => {
+			onPrepare()
+			return { first }
+		},
+	} as unknown as D1Database
+}
+
+function kv(get: (key: string) => Promise<unknown>) {
+	return { get } as unknown as KVNamespace
+}
+
+const healthyQuery = async () => ({ 1: 1 })
+
+function createHealthyBindings(overrides: Record<string, unknown> = {}) {
+	return {
+		APP_COMMIT_SHA: 'abc123' as string | undefined,
+		APP_DB: d1(healthyQuery),
+		AUDIT_DB: d1(healthyQuery),
+		OAUTH_KV: kv(async () => null),
 		COMMUNITY_ASSETS: { head: async () => null } as unknown as R2Bucket,
+		...overrides,
 	}
 }
 
-function createRequestContext() {
-	return new RequestContext(
-		new Request('https://example.com/health/components'),
-	)
+function component(report: HealthComponentsReport, id: string) {
+	return report.components.find((entry) => entry.id === id)
+}
+
+function fetchComponents(
+	handler: ReturnType<typeof createHealthComponentsHandler>,
+) {
+	return handler.handler()
 }
 
 test('collectHealthComponents reports healthy, failed, and unavailable bindings', async () => {
 	const healthy = await collectHealthComponents(createHealthyBindings())
 	expect(healthy.ok).toBe(true)
 	expect(healthy.commitSha).toBe('abc123')
-	expect(healthy.components.map((component) => component.id)).toEqual([
+	expect(healthy.components.map((entry) => entry.id)).toEqual([
 		...healthComponentIds,
 	])
 	expect(healthy.executeEvidence).toEqual({ lastSuccessAt: null })
+	for (const entry of healthy.components) {
+		expect(entry.ok).toBe(true)
+		expect(entry.latencyMs).toBeGreaterThanOrEqual(0)
+		expect(entry.error).toBeUndefined()
+	}
 
 	const lastSuccessAt = '2026-09-07T17:00:00.000Z'
-	const withEvidence = createHealthyBindings()
-	;(
-		withEvidence as typeof withEvidence & { BUNDLE_ARTIFACTS_KV: KVNamespace }
-	).BUNDLE_ARTIFACTS_KV = {
-		get: async (key: string) =>
-			key === fleetExecuteLastSuccessKvKey
-				? JSON.stringify({ at: Date.parse(lastSuccessAt) })
-				: null,
-	} as unknown as KVNamespace
-	const evidenced = await collectHealthComponents(withEvidence)
+	const evidenced = await collectHealthComponents(
+		createHealthyBindings({
+			BUNDLE_ARTIFACTS_KV: kv(async (key) =>
+				key === fleetExecuteLastSuccessKvKey
+					? JSON.stringify({ at: Date.parse(lastSuccessAt) })
+					: null,
+			),
+		}),
+	)
 	expect(evidenced.ok).toBe(true)
 	expect(evidenced.executeEvidence).toEqual({ lastSuccessAt })
-	for (const component of healthy.components) {
-		expect(component.ok).toBe(true)
-		expect(component.latencyMs).toBeGreaterThanOrEqual(0)
-		expect(component.error).toBeUndefined()
-	}
 
 	consoleWarn.mockImplementation(() => {})
-	const bindings = createHealthyBindings()
-	bindings.APP_DB = {
-		prepare: () => ({
-			first: async () => {
+	const failed = await collectHealthComponents(
+		createHealthyBindings({
+			APP_DB: d1(async () => {
 				throw new Error('database is unavailable')
-			},
+			}),
 		}),
-	} as unknown as D1Database
-	const failed = await collectHealthComponents(bindings)
+	)
 	expect(failed.ok).toBe(false)
+	expect(component(failed, 'app_db')).toMatchObject({
+		ok: false,
+		error: 'error',
+	})
 	expect(
-		failed.components.find((component) => component.id === 'app_db'),
-	).toMatchObject({ ok: false, error: 'error' })
-	for (const component of failed.components.filter(
-		(entry) => entry.id !== 'app_db',
-	)) {
-		expect(component.ok).toBe(true)
-	}
+		failed.components.filter((entry) => entry.id !== 'app_db' && !entry.ok),
+	).toEqual([])
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'health-component-failed',
 		expect.any(String),
 	)
 
-	const missing = await collectHealthComponents({
-		APP_COMMIT_SHA: undefined,
-	})
+	const missing = await collectHealthComponents({ APP_COMMIT_SHA: undefined })
 	expect(missing.ok).toBe(false)
 	expect(missing.commitSha).toBeNull()
-	for (const component of missing.components) {
-		expect(component).toMatchObject({ ok: false, error: 'unavailable' })
+	for (const entry of missing.components) {
+		expect(entry).toMatchObject({ ok: false, error: 'unavailable' })
 	}
 })
 
-test('D1 checks retry transient blips but fail fast on other errors', async () => {
-	let auditAttempts = 0
-	const bindings = createHealthyBindings()
-	bindings.AUDIT_DB = {
-		prepare: () => ({
-			first: async () => {
-				auditAttempts += 1
-				if (auditAttempts === 1) {
-					throw new Error('D1_ERROR: Network connection lost.')
-				}
-				return { 1: 1 }
-			},
-		}),
-	} as unknown as D1Database
-	const recovered = await collectHealthComponents(bindings)
-	expect(auditAttempts).toBe(2)
-	expect(recovered.ok).toBe(true)
-	expect(
-		recovered.components.find((component) => component.id === 'audit_db'),
-	).toMatchObject({ ok: true })
-
-	consoleWarn.mockImplementation(() => {})
-	let appAttempts = 0
-	const failingBindings = createHealthyBindings()
-	failingBindings.APP_DB = {
-		prepare: () => ({
-			first: async () => {
-				appAttempts += 1
+test('D1 checks retry transient blips (including hangs) but fail fast on other errors', async () => {
+	const networkLost = () => {
+		throw new Error('D1_ERROR: Network connection lost.')
+	}
+	const cases: Array<{
+		name: string
+		binding: 'APP_DB' | 'AUDIT_DB'
+		attempt: (n: number) => Promise<unknown>
+		attempts: number
+		ok: boolean
+	}> = [
+		{
+			name: 'one network blip recovers',
+			binding: 'AUDIT_DB',
+			attempt: async (n) => (n === 1 ? networkLost() : { 1: 1 }),
+			attempts: 2,
+			ok: true,
+		},
+		{
+			name: 'a hung first attempt recovers',
+			binding: 'AUDIT_DB',
+			attempt: async (n) => (n === 1 ? await new Promise(() => {}) : { 1: 1 }),
+			attempts: 2,
+			ok: true,
+		},
+		{
+			name: 'persistent network loss gives up after three tries',
+			binding: 'AUDIT_DB',
+			attempt: async () => networkLost(),
+			attempts: 3,
+			ok: false,
+		},
+		{
+			name: 'non-transient errors fail fast',
+			binding: 'APP_DB',
+			attempt: async () => {
 				throw new Error('no such table: users')
 			},
-		}),
-	} as unknown as D1Database
-	const failed = await collectHealthComponents(failingBindings)
-	expect(appAttempts).toBe(1)
-	expect(failed.ok).toBe(false)
-	expect(
-		failed.components.find((component) => component.id === 'app_db'),
-	).toMatchObject({ ok: false, error: 'error' })
-
-	let persistentAttempts = 0
-	const persistentBindings = createHealthyBindings()
-	persistentBindings.AUDIT_DB = {
-		prepare: () => ({
-			first: async () => {
-				persistentAttempts += 1
-				throw new Error('D1_ERROR: Network connection lost.')
-			},
-		}),
-	} as unknown as D1Database
-	const persistent = await collectHealthComponents(persistentBindings)
-	expect(persistentAttempts).toBe(3)
-	expect(persistent.ok).toBe(false)
-	expect(
-		persistent.components.find((component) => component.id === 'audit_db'),
-	).toMatchObject({ ok: false, error: 'error' })
-
-	let hungAttempts = 0
-	const hungBindings = createHealthyBindings()
-	hungBindings.AUDIT_DB = {
-		prepare: () => ({
-			first: async () => {
-				hungAttempts += 1
-				if (hungAttempts === 1) {
-					await new Promise(() => {})
-				}
-				return { 1: 1 }
-			},
-		}),
-	} as unknown as D1Database
-	const recoveredFromHang = await collectHealthComponents(hungBindings)
-	expect(hungAttempts).toBe(2)
-	expect(recoveredFromHang.ok).toBe(true)
-	expect(
-		recoveredFromHang.components.find(
-			(component) => component.id === 'audit_db',
-		),
-	).toMatchObject({ ok: true })
+			attempts: 1,
+			ok: false,
+		},
+	]
+	// Recovering cases run first, before failure warnings are allowed.
+	for (const { name, binding, attempt, attempts, ok } of cases) {
+		if (!ok) consoleWarn.mockImplementation(() => {})
+		let count = 0
+		const report = await collectHealthComponents(
+			createHealthyBindings({ [binding]: d1(() => attempt(++count)) }),
+		)
+		const entry = component(
+			report,
+			binding === 'APP_DB' ? 'app_db' : 'audit_db',
+		)
+		expect({ name, count, ok: report.ok, entry }).toMatchObject({
+			name,
+			count: attempts,
+			ok,
+			entry: ok ? { ok: true } : { ok: false, error: 'error' },
+		})
+	}
 })
 
 test('health components handler memoizes, coalesces in-flight work, and returns 503 on failure', async () => {
 	let prepareCalls = 0
-	const bindings = createHealthyBindings()
-	bindings.APP_DB = {
-		prepare: () => {
-			prepareCalls += 1
-			return { first: async () => ({ 1: 1 }) }
-		},
-	} as unknown as D1Database
-	const handler = createHealthComponentsHandler(bindings)
-
-	const first = await handler.handler(createRequestContext())
-	const second = await handler.handler(createRequestContext())
+	const handler = createHealthComponentsHandler(
+		createHealthyBindings({ APP_DB: d1(healthyQuery, () => prepareCalls++) }),
+	)
+	const first = await fetchComponents(handler)
+	const second = await fetchComponents(handler)
 	expect(first.status).toBe(200)
 	expect(first.headers.get('Cache-Control')).toBe('no-store')
 	expect(second.status).toBe(200)
@@ -192,50 +178,46 @@ test('health components handler memoizes, coalesces in-flight work, and returns 
 	expect(body.checkedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 	expect(body.executeEvidence.lastSuccessAt).toBeNull()
 
-	let releaseFirst: (() => void) | undefined
-	const gate = new Promise<void>((resolve) => {
-		releaseFirst = resolve
-	})
+	let releaseFirst = () => {}
+	const gate = new Promise<void>((resolve) => (releaseFirst = resolve))
 	prepareCalls = 0
-	const concurrentBindings = createHealthyBindings()
-	concurrentBindings.APP_DB = {
-		prepare: () => {
-			prepareCalls += 1
-			return {
-				first: async () => {
+	const concurrentHandler = createHealthComponentsHandler(
+		createHealthyBindings({
+			APP_DB: d1(
+				async () => {
 					await gate
 					return { 1: 1 }
 				},
-			}
-		},
-	} as unknown as D1Database
-	const concurrentHandler = createHealthComponentsHandler(concurrentBindings)
-	const firstInFlight = concurrentHandler.handler(createRequestContext())
-	const secondInFlight = concurrentHandler.handler(createRequestContext())
-	releaseFirst?.()
-	const [firstResponse, secondResponse] = await Promise.all([
-		firstInFlight,
-		secondInFlight,
-	])
-	expect(firstResponse.status).toBe(200)
-	expect(secondResponse.status).toBe(200)
+				() => prepareCalls++,
+			),
+		}),
+	)
+	const inFlight = [
+		fetchComponents(concurrentHandler),
+		fetchComponents(concurrentHandler),
+	]
+	releaseFirst()
+	const statuses = (await Promise.all(inFlight)).map((r) => r.status)
+	expect(statuses).toEqual([200, 200])
 	expect(prepareCalls).toBe(1)
 
 	consoleWarn.mockImplementation(() => {})
-	const failingBindings = createHealthyBindings()
-	failingBindings.OAUTH_KV = {
-		get: async () => {
-			throw new Error('kv is down')
-		},
-	} as unknown as KVNamespace
-	const failingHandler = createHealthComponentsHandler(failingBindings)
-	const response = await failingHandler.handler(createRequestContext())
+	const response = await fetchComponents(
+		createHealthComponentsHandler(
+			createHealthyBindings({
+				OAUTH_KV: kv(async () => {
+					throw new Error('kv is down')
+				}),
+			}),
+		),
+	)
 	expect(response.status).toBe(503)
 	const failedBody = (await response.json()) as HealthComponentsReport
 	expect(failedBody.ok).toBe(false)
-	expect(
-		failedBody.components.find((component) => component.id === 'kv'),
-	).toMatchObject({ ok: false, error: 'error' })
+	expect(component(failedBody, 'kv')).toMatchObject({
+		ok: false,
+		error: 'error',
+	})
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'health-component-failed',
 		expect.any(String),
@@ -244,13 +226,11 @@ test('health components handler memoizes, coalesces in-flight work, and returns 
 
 test('hung execute-evidence KV read fails open as unknown and does not block components', async () => {
 	consoleWarn.mockImplementation(() => {})
-	const bindings = createHealthyBindings()
-	;(
-		bindings as typeof bindings & { BUNDLE_ARTIFACTS_KV: KVNamespace }
-	).BUNDLE_ARTIFACTS_KV = {
-		get: async () => await new Promise(() => {}),
-	} as unknown as KVNamespace
-	const report = await collectHealthComponents(bindings)
+	const report = await collectHealthComponents(
+		createHealthyBindings({
+			BUNDLE_ARTIFACTS_KV: kv(async () => await new Promise(() => {})),
+		}),
+	)
 	expect(report.ok).toBe(true)
 	expect(report.executeEvidence).toEqual({ lastSuccessAt: null })
 	expect(consoleWarn).toHaveBeenCalledWith('health-execute-evidence-timeout')

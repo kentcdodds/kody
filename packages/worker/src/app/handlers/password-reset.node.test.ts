@@ -1,5 +1,8 @@
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as CloudflareEmail from '#app/email/cloudflare-email.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import { honeypotFieldName } from '#universal/public-form-protection.ts'
 
@@ -24,7 +27,11 @@ const mockModule = vi.hoisted(() => ({
 			}
 		},
 	),
-	sendCloudflareEmail: vi.fn(async () => ({ ok: true })),
+	sendCloudflareEmail: vi.fn(
+		async (
+			..._args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+		) => ({ ok: true }),
+	),
 }))
 
 vi.mock('#worker/db.ts', () => ({
@@ -51,210 +58,146 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 })
 
 vi.mock('#app/email/cloudflare-email.ts', () => ({
-	sendCloudflareEmail: (...args: Array<unknown>) =>
-		mockModule.sendCloudflareEmail(...args),
+	sendCloudflareEmail: (
+		...args: Parameters<typeof CloudflareEmail.sendCloudflareEmail>
+	) => mockModule.sendCloudflareEmail(...args),
 }))
 
 const { createPasswordResetRequestHandler, createPasswordResetConfirmHandler } =
 	await import('./password-reset.ts')
 const { runWithDeferredWork } = await import('#worker/deferred-work.ts')
 
-// The request handler defers token creation and the email send past the
-// response so latency cannot reveal whether the address is registered; tests
-// collect the deferred work the way `ctx.waitUntil` does in the worker.
-async function requestResetAndFlush(
-	handler: ReturnType<typeof createPasswordResetRequestHandler>,
-	args: { request: Request; url: URL },
-) {
-	const deferred = new Array<Promise<unknown>>()
-	const response = await runWithDeferredWork(
-		(promise) => deferred.push(promise),
-		() => handler.handler({ ...args, params: {} }),
-	)
-	return { response, flush: () => Promise.all(deferred) }
-}
-
-function createPasswordResetD1Mock() {
-	return {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind() {
-					return {
-						async run() {
-							if (
-								normalizedQuery.startsWith('delete from password_resets') ||
-								normalizedQuery.startsWith('insert into password_resets')
-							) {
-								return { meta: { changes: 1, last_row_id: 1 } }
-							}
-							return { meta: { changes: 0, last_row_id: 0 } }
-						},
-					}
-				},
-			}
-		},
-		async exec() {
-			return
-		},
-	} as unknown as D1Database
-}
-
 function createEnv(overrides: Record<string, unknown> = {}) {
 	return {
-		APP_DB: createPasswordResetD1Mock(),
+		APP_DB: {
+			prepare: (query: string) => ({
+				bind: () => ({
+					// Only token writes succeed; 2FA/passkey/provider deletes report 0 rows.
+					run: async () => {
+						const hit = /^(delete from|insert into) password_resets/i.test(
+							query.replace(/\s+/g, ' ').trim(),
+						)
+						return { meta: { changes: hit ? 1 : 0, last_row_id: hit ? 1 : 0 } }
+					},
+				}),
+			}),
+			exec: async () => undefined,
+		},
 		CLOUDFLARE_ACCOUNT_ID: 'account-id',
 		CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
 		CLOUDFLARE_API_TOKEN: 'api-token',
 		...overrides,
-	} as Env
+	} as unknown as Env
 }
 
-function createResetRequest() {
-	return new Request('https://request-origin.test/password-reset', {
-		method: 'POST',
-		body: JSON.stringify({ email: 'user@example.com' }),
-	})
+function post(url: string, body: Record<string, unknown>) {
+	return new RequestContext(
+		new Request(url, { method: 'POST', body: JSON.stringify(body) }),
+	)
+}
+
+// The request handler defers token creation and the email send past the
+// response so latency cannot reveal whether the address is registered; tests
+// collect the deferred work the way `ctx.waitUntil` does in the worker.
+async function requestReset(
+	env: Record<string, unknown>,
+	url: string,
+	body: Record<string, unknown> = { email: 'user@example.com' },
+) {
+	const handler = createPasswordResetRequestHandler(createEnv(env))
+	const deferred = new Array<Promise<unknown>>()
+	const response = await runWithDeferredWork(
+		(promise) => deferred.push(promise),
+		() => handler.handler(post(url, body)),
+	)
+	return { response, flush: () => Promise.all(deferred) }
+}
+
+function sentMessage() {
+	return mockModule.sendCloudflareEmail.mock.calls[0]![1] as {
+		from: string
+		to: string
+		text: string
+		html: string
+	}
 }
 
 const hexTokenPattern = /[0-9a-f]{64}/i
+const kodyCodes = {
+	APP_BASE_URL: 'https://kody.codes',
+	SYSTEM_EMAIL_DOMAIN: 'kody.codes',
+}
 
 test('password reset request ignores leftover website autofill and rejects the honeypot', async () => {
-	vi.clearAllMocks()
-	const handler = createPasswordResetRequestHandler(
-		createEnv({
-			APP_BASE_URL: 'https://kody.codes',
-			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
-		}),
-	)
-
-	const autofilledWebsite = await requestResetAndFlush(handler, {
-		request: new Request('https://kody.codes/password-reset', {
-			method: 'POST',
-			body: JSON.stringify({
-				email: 'user@example.com',
-				website: 'https://kody.codes',
-			}),
-		}),
-		url: new URL('https://kody.codes/password-reset'),
+	const url = 'https://kody.codes/password-reset'
+	const autofilled = await requestReset(kodyCodes, url, {
+		email: 'user@example.com',
+		website: 'https://kody.codes',
 	})
-	expect(autofilledWebsite.response.status).toBe(200)
-	expect(await autofilledWebsite.response.json()).toEqual({
+	expect(autofilled.response.status).toBe(200)
+	expect(await autofilled.response.json()).toEqual({
 		ok: true,
 		message: 'If the account exists, a reset email has been sent.',
 	})
-	await autofilledWebsite.flush()
+	await autofilled.flush()
 
-	const filledHoneypot = await requestResetAndFlush(handler, {
-		request: new Request('https://kody.codes/password-reset', {
-			method: 'POST',
-			body: JSON.stringify({
-				email: 'user@example.com',
-				[honeypotFieldName]: 'https://spam.example',
-			}),
-		}),
-		url: new URL('https://kody.codes/password-reset'),
+	const honeypot = await requestReset(kodyCodes, url, {
+		email: 'user@example.com',
+		[honeypotFieldName]: 'https://spam.example',
 	})
-	expect(filledHoneypot.response.status).toBe(400)
-	expect(await filledHoneypot.response.json()).toEqual({
+	expect(honeypot.response.status).toBe(400)
+	expect(await honeypot.response.json()).toEqual({
 		error: 'Unable to submit this form.',
 	})
 })
 
-test('password reset keeps local action links on the request origin', async () => {
-	vi.clearAllMocks()
-	const handler = createPasswordResetRequestHandler(
-		createEnv({
-			APP_BASE_URL: 'https://kody.codes',
-			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
-			WRANGLER_IS_LOCAL_DEV: 'true',
-		}),
-	)
-
-	const { response, flush } = await requestResetAndFlush(handler, {
-		request: createResetRequest(),
-		url: new URL('http://localhost:3742/password-reset'),
-	})
-
-	expect(response.status).toBe(200)
-	expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
-	await flush()
-	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
-	expect((message as { from: string }).from).toBe('kody@kody.codes')
-	expect((message as { text: string }).text).toContain(
-		'http://localhost:3742/reset-password?token=',
-	)
-})
-
-test('password reset sends from the sending domain when SYSTEM_EMAIL_DOMAIN overrides a legacy APP_BASE_URL', async () => {
-	vi.clearAllMocks()
-	const handler = createPasswordResetRequestHandler(
-		createEnv({
-			APP_BASE_URL: 'https://heykody.dev',
-			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
-		}),
-	)
-
-	const { response, flush } = await requestResetAndFlush(handler, {
-		request: createResetRequest(),
-		url: new URL('https://heykody.dev/password-reset'),
-	})
-	await flush()
-
-	expect(response.status).toBe(200)
-	expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
+test('password reset sends from the configured domain with a link on the right origin, after the response, without logging the token', async () => {
+	const cases = [
 		{
-			accountId: 'account-id',
-			apiBaseUrl: 'https://api.cloudflare.test',
-			apiToken: 'api-token',
-		},
-		expect.objectContaining({
+			name: 'local dev keeps the link on the request origin',
+			env: { ...kodyCodes, WRANGLER_IS_LOCAL_DEV: 'true' },
+			url: 'http://localhost:3742/password-reset',
 			from: 'kody@kody.codes',
-			to: 'user@example.com',
-		}),
-	)
-	const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
-	expect((message as { text: string }).text).toContain(
-		'https://kody.codes/reset-password?token=',
-	)
-	expect((message as { html: string }).html).not.toContain('heykody.dev')
-})
-
-test('password reset sends from the APP_BASE_URL hostname without logging the token', async () => {
-	vi.clearAllMocks()
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const handler = createPasswordResetRequestHandler(
-		createEnv({ APP_BASE_URL: 'https://app.example.com/path' }),
-	)
-
-	try {
-		const { response, flush } = await requestResetAndFlush(handler, {
-			request: createResetRequest(),
-			url: new URL('https://request-origin.test/password-reset'),
-		})
+			link: 'http://localhost:3742/reset-password?token=',
+		},
+		{
+			name: 'SYSTEM_EMAIL_DOMAIN overrides a legacy APP_BASE_URL',
+			env: { ...kodyCodes, APP_BASE_URL: 'https://heykody.dev' },
+			url: 'https://heykody.dev/password-reset',
+			from: 'kody@kody.codes',
+			link: 'https://kody.codes/reset-password?token=',
+			htmlOmits: 'heykody.dev',
+		},
+		{
+			name: 'APP_BASE_URL hostname is the sender without a domain override',
+			env: { APP_BASE_URL: 'https://app.example.com/path' },
+			url: 'https://request-origin.test/password-reset',
+			from: 'kody@app.example.com',
+			link: 'https://app.example.com/reset-password?token=',
+		},
+	]
+	for (const { name, env, url, from, link, htmlOmits } of cases) {
+		mockModule.sendCloudflareEmail.mockClear()
+		logAuditEventSpy.mockClear()
+		consoleWarn.mockImplementation(() => {})
+		const { response, flush } = await requestReset(env, url)
+		expect({ name, status: response.status }).toEqual({ name, status: 200 })
+		expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
 		await flush()
 
-		expect(response.status).toBe(200)
 		expect(mockModule.sendCloudflareEmail).toHaveBeenCalledWith(
 			{
 				accountId: 'account-id',
 				apiBaseUrl: 'https://api.cloudflare.test',
 				apiToken: 'api-token',
 			},
-			expect.objectContaining({
-				from: 'kody@app.example.com',
-				to: 'user@example.com',
-			}),
+			expect.objectContaining({ from, to: 'user@example.com' }),
 		)
-		const [, message] = mockModule.sendCloudflareEmail.mock.calls[0]!
-		expect((message as { text: string }).text).toContain(
-			'https://app.example.com/reset-password?token=',
-		)
-		for (const args of warnSpy.mock.calls) {
-			const joined = args.map(String).join(' ')
-			expect(joined).not.toContain('token=')
-			expect(joined).not.toMatch(hexTokenPattern)
-		}
+		expect(sentMessage().text).toContain(link)
+		if (htmlOmits) expect(sentMessage().html).not.toContain(htmlOmits)
+		const warned = consoleWarn.mock.calls.map((args) => args.join(' '))
+		expect(warned.filter((line) => line.includes('token='))).toEqual([])
+		expect(warned.filter((line) => hexTokenPattern.test(line))).toEqual([])
 		expect(logAuditEventSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
 				category: 'auth',
@@ -262,51 +205,36 @@ test('password reset sends from the APP_BASE_URL hostname without logging the to
 				result: 'success',
 			}),
 		)
-	} finally {
-		warnSpy.mockRestore()
 	}
 })
 
 test('password reset skips sending when APP_BASE_URL is missing and logs a redacted payload', async () => {
-	vi.clearAllMocks()
-	const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-	const handler = createPasswordResetRequestHandler(
-		createEnv({ APP_BASE_URL: '' }),
+	consoleWarn.mockImplementation(() => {})
+	const { response, flush } = await requestReset(
+		{ APP_BASE_URL: '' },
+		'https://request-origin.test/password-reset',
 	)
+	await flush()
 
-	try {
-		const { response, flush } = await requestResetAndFlush(handler, {
-			request: createResetRequest(),
-			url: new URL('https://request-origin.test/password-reset'),
-		})
-		await flush()
-
-		expect(response.status).toBe(200)
-		expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
-		expect(warnSpy).toHaveBeenCalledWith(
-			'password-reset-email-sender-unconfigured',
-			expect.any(String),
-		)
-
-		const warnCalls = warnSpy.mock.calls
-		const emailMissingCall = warnCalls.find(
-			(args) => args[0] === 'password-reset-email-sender-unconfigured',
-		)
-		expect(emailMissingCall).toBeDefined()
-
-		const logPayload = emailMissingCall![1] as string
-		expect(logPayload).not.toContain('token=')
-		expect(logPayload).not.toMatch(hexTokenPattern)
-		expect(logPayload).not.toContain('user@example.com')
-		expect(logPayload).not.toContain('<html')
-		expect(logPayload).not.toContain('reset-password')
-
-		const parsed = JSON.parse(logPayload) as Record<string, unknown>
-		expect(parsed).toHaveProperty('subject')
-		expect(parsed.to).toBe('***@example.com')
-	} finally {
-		warnSpy.mockRestore()
+	expect(response.status).toBe(200)
+	expect(mockModule.sendCloudflareEmail).not.toHaveBeenCalled()
+	const emailMissingCall = consoleWarn.mock.calls.find(
+		(args) => args[0] === 'password-reset-email-sender-unconfigured',
+	)
+	const logPayload = emailMissingCall?.[1] as string
+	expect(typeof logPayload).toBe('string')
+	for (const leaked of [
+		'token=',
+		'user@example.com',
+		'<html',
+		'reset-password',
+	]) {
+		expect(logPayload).not.toContain(leaked)
 	}
+	expect(logPayload).not.toMatch(hexTokenPattern)
+	const parsed = JSON.parse(logPayload) as Record<string, unknown>
+	expect(parsed).toHaveProperty('subject')
+	expect(parsed.to).toBe('***@example.com')
 })
 
 function createTrackingGrantHelpers(
@@ -330,31 +258,24 @@ function createTrackingGrantHelpers(
 	}
 }
 
+function confirm(oauthProvider: unknown) {
+	const handler = createPasswordResetConfirmHandler(
+		createEnv({ OAUTH_PROVIDER: oauthProvider, ...kodyCodes }),
+	)
+	return handler.handler(
+		post('https://example.com/password-reset/confirm', {
+			token: 'a'.repeat(64),
+			password: 'new-password-123',
+		}),
+	)
+}
+
 test('password reset confirm revokes MCP grants before stamping password_changed_at', async () => {
-	vi.clearAllMocks()
 	const { helpers, revokedGrantIds } = createTrackingGrantHelpers([
 		{ id: 'grant-1', clientId: 'client-a' },
 		{ id: 'grant-2', clientId: 'client-b' },
 	])
-	const handler = createPasswordResetConfirmHandler(
-		createEnv({
-			OAUTH_PROVIDER: helpers,
-			APP_BASE_URL: 'https://kody.codes',
-			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
-		}),
-	)
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/password-reset/confirm', {
-			method: 'POST',
-			body: JSON.stringify({
-				token: 'a'.repeat(64),
-				password: 'new-password-123',
-			}),
-		}),
-		url: new URL('https://example.com/password-reset/confirm'),
-		params: {},
-	})
+	const response = await confirm(helpers)
 
 	expect(response.status).toBe(200)
 	expect(await response.json()).toEqual({ ok: true })
@@ -365,9 +286,7 @@ test('password reset confirm revokes MCP grants before stamping password_changed
 	expect(mockModule.update).toHaveBeenCalledWith(
 		{},
 		123,
-		expect.objectContaining({
-			password_changed_at: expect.any(String),
-		}),
+		expect.objectContaining({ password_changed_at: expect.any(String) }),
 	)
 	expect(mockModule.deleteMany).toHaveBeenCalled()
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
@@ -378,41 +297,23 @@ test('password reset confirm revokes MCP grants before stamping password_changed
 			reason: 'two_factor=0;passkeys=0;oauth_connections=0',
 		}),
 	)
-	const [, confirmMessage] = mockModule.sendCloudflareEmail.mock.calls[0]!
-	expect((confirmMessage as { to: string }).to).toBe('user@example.com')
-	expect((confirmMessage as { from: string }).from).toBe('kody@kody.codes')
-	expect((confirmMessage as { text: string }).text).toContain(
+	expect(sentMessage()).toMatchObject({
+		to: 'user@example.com',
+		from: 'kody@kody.codes',
+	})
+	expect(sentMessage().text).toContain(
 		'Two-factor authentication, passkeys, and linked sign-in providers were removed',
 	)
 })
 
 test('password reset confirm revokes a grant created between first revoke and password_changed_at', async () => {
-	vi.clearAllMocks()
 	const { helpers, revokedGrantIds, liveGrants } = createTrackingGrantHelpers([
 		{ id: 'grant-a', clientId: 'client-a' },
 	])
 	mockModule.update.mockImplementationOnce(async () => {
 		liveGrants.push({ id: 'grant-raced', clientId: 'client-b' })
 	})
-	const handler = createPasswordResetConfirmHandler(
-		createEnv({
-			OAUTH_PROVIDER: helpers,
-			APP_BASE_URL: 'https://kody.codes',
-			SYSTEM_EMAIL_DOMAIN: 'kody.codes',
-		}),
-	)
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/password-reset/confirm', {
-			method: 'POST',
-			body: JSON.stringify({
-				token: 'a'.repeat(64),
-				password: 'new-password-123',
-			}),
-		}),
-		url: new URL('https://example.com/password-reset/confirm'),
-		params: {},
-	})
+	const response = await confirm(helpers)
 
 	expect(response.status).toBe(200)
 	expect(revokedGrantIds).toEqual(['grant-a', 'grant-raced'])
@@ -421,30 +322,13 @@ test('password reset confirm revokes a grant created between first revoke and pa
 })
 
 test('password reset confirm fails closed when MCP grants cannot be revoked', async () => {
-	vi.clearAllMocks()
-	const handler = createPasswordResetConfirmHandler(
-		createEnv({
-			OAUTH_PROVIDER: {
-				listUserGrants: async () => ({
-					items: [{ id: 'grant-1', clientId: 'client-a' }],
-				}),
-				revokeGrant: async () => {
-					throw new Error('kv unavailable')
-				},
-			},
+	const response = await confirm({
+		listUserGrants: async () => ({
+			items: [{ id: 'grant-1', clientId: 'client-a' }],
 		}),
-	)
-
-	const response = await handler.handler({
-		request: new Request('https://example.com/password-reset/confirm', {
-			method: 'POST',
-			body: JSON.stringify({
-				token: 'a'.repeat(64),
-				password: 'new-password-123',
-			}),
-		}),
-		url: new URL('https://example.com/password-reset/confirm'),
-		params: {},
+		revokeGrant: async () => {
+			throw new Error('kv unavailable')
+		},
 	})
 
 	expect(response.status).toBe(500)

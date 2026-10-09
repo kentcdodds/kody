@@ -34,57 +34,52 @@ function input(overrides: Partial<EmailPolicyInput> = {}): EmailPolicyInput {
 }
 
 test('status email policy covers open, pause, reminder, all-clear, and the daily cap', () => {
-	expect(decideStatusEmail(input())).toBeNull()
-	expect(decideStatusEmail(input({ openIncidents: [openIncident()] }))).toEqual(
-		{ kind: 'incident_opened' },
-	)
-	expect(
-		decideStatusEmail(
-			input({
+	const hour = 60 * 60 * 1000
+	const capped = { emailsSentToday: defaultDailyEmailLimit }
+	const cases: Array<[Partial<EmailPolicyInput>, string | null]> = [
+		[{}, null],
+		[{ openIncidents: [openIncident()] }, 'incident_opened'],
+		[
+			{
 				openIncidents: [openIncident(), openIncident({ component: 'kv' })],
 				lastNotifiedState: 'incident',
-				lastEmailSentAt: baseNow - 60 * 60 * 1000,
+				lastEmailSentAt: baseNow - hour,
 				emailsSentToday: 1,
-			}),
-		),
-	).toBeNull()
-	expect(
-		decideStatusEmail(
-			input({
+			},
+			null,
+		],
+		[
+			{
 				openIncidents: [openIncident()],
 				lastNotifiedState: 'incident',
 				lastEmailSentAt: baseNow - reminderIntervalMs,
-			}),
-		),
-	).toEqual({ kind: 'daily_reminder' })
-	expect(
-		decideStatusEmail(
-			input({
+			},
+			'daily_reminder',
+		],
+		[
+			{
 				lastNotifiedState: 'incident',
-				lastEmailSentAt: baseNow - 30 * 60 * 1000,
+				lastEmailSentAt: baseNow - hour / 2,
 				emailsSentToday: 1,
-			}),
-		),
-	).toEqual({ kind: 'all_clear' })
-
-	const capped = { emailsSentToday: defaultDailyEmailLimit }
-	expect(
-		decideStatusEmail(input({ ...capped, openIncidents: [openIncident()] })),
-	).toBeNull()
-	expect(
-		decideStatusEmail(input({ ...capped, lastNotifiedState: 'incident' })),
-	).toBeNull()
-	// While capped, lastNotifiedState stays 'incident'. Next day the counter
-	// resets and the pending all-clear goes out.
-	expect(
-		decideStatusEmail(
-			input({
+			},
+			'all_clear',
+		],
+		[{ ...capped, openIncidents: [openIncident()] }, null],
+		[{ ...capped, lastNotifiedState: 'incident' }, null],
+		// While capped, lastNotifiedState stays 'incident'. Next day the counter
+		// resets and the pending all-clear goes out.
+		[
+			{
 				lastNotifiedState: 'incident',
-				lastEmailSentAt: baseNow - 6 * 60 * 60 * 1000,
+				lastEmailSentAt: baseNow - 6 * hour,
 				emailsSentToday: 0,
-			}),
-		),
-	).toEqual({ kind: 'all_clear' })
+			},
+			'all_clear',
+		],
+	]
+	expect(
+		cases.map(([overrides]) => decideStatusEmail(input(overrides))),
+	).toEqual(cases.map(([, kind]) => (kind ? { kind } : null)))
 })
 
 test('composed emails carry component names, status page link, and escape html', () => {
@@ -126,35 +121,21 @@ test('outage emails annotate active relevant Cloudflare incidents', () => {
 			affectedComponents: ['R2'],
 		},
 	]
-	const opened = composeStatusEmail({
-		kind: 'incident_opened',
-		openIncidents: [openIncident()],
-		statusPageUrl: 'https://status.kody.codes',
-		now: baseNow,
-		providerIncidents,
-	})
-	expect(opened.text).toContain(
-		'Possibly related Cloudflare incident: R2 Availability Issues (investigating)',
-	)
+	const annotation =
+		'Possibly related Cloudflare incident: R2 Availability Issues (investigating)'
+	const compose = (kind: 'incident_opened' | 'daily_reminder' | 'all_clear') =>
+		composeStatusEmail({
+			kind,
+			openIncidents: kind === 'all_clear' ? [] : [openIncident()],
+			statusPageUrl: 'https://status.kody.codes',
+			now: baseNow,
+			providerIncidents,
+		})
+	const opened = compose('incident_opened')
+	expect(opened.text).toContain(annotation)
 	expect(opened.html).toContain('Possibly related Cloudflare incident')
-
-	const reminder = composeStatusEmail({
-		kind: 'daily_reminder',
-		openIncidents: [openIncident()],
-		statusPageUrl: 'https://status.kody.codes',
-		now: baseNow,
-		providerIncidents,
-	})
-	expect(reminder.text).toContain(
-		'Possibly related Cloudflare incident: R2 Availability Issues (investigating)',
+	expect(compose('daily_reminder').text).toContain(annotation)
+	expect(compose('all_clear').text).not.toContain(
+		'Possibly related Cloudflare incident',
 	)
-
-	const allClear = composeStatusEmail({
-		kind: 'all_clear',
-		openIncidents: [],
-		statusPageUrl: 'https://status.kody.codes',
-		now: baseNow,
-		providerIncidents,
-	})
-	expect(allClear.text).not.toContain('Possibly related Cloudflare incident')
 })

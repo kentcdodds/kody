@@ -1,4 +1,4 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle, ref } from 'remix/component'
 import { stageParallax } from '#client/hero-stage.tsx'
 import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import {
@@ -240,20 +240,33 @@ function tetherFollow(agents: ReadonlyArray<LandingHeroAgent>) {
 				)
 				if (!track || lights.length === 0) continue
 				track.setAttribute('d', d)
-				const length = track.getTotalLength()
-				for (const light of lights) {
-					const direction = light.dataset.direction === 'out' ? 'out' : 'in'
-					const at = landingHeroLightAt(agent, seconds, direction)
-					if (!at) {
-						light.setAttribute('opacity', '0')
-						continue
+				const hideLights = () => {
+					for (const light of lights) light.setAttribute('opacity', '0')
+				}
+				// Runtime type: the SVGPathElement querySelector cast is compile-time only.
+				if (!(track instanceof SVGGeometryElement)) {
+					hideLights()
+					continue
+				}
+				try {
+					const length = track.getTotalLength()
+					for (const light of lights) {
+						const direction = light.dataset.direction === 'out' ? 'out' : 'in'
+						const at = landingHeroLightAt(agent, seconds, direction)
+						if (!at) {
+							light.setAttribute('opacity', '0')
+							continue
+						}
+						const point = track.getPointAtLength(at.progress * length)
+						light.setAttribute(
+							'transform',
+							`translate(${point.x} ${point.y}) scale(${at.scale})`,
+						)
+						light.setAttribute('opacity', String(at.opacity))
 					}
-					const point = track.getPointAtLength(at.progress * length)
-					light.setAttribute(
-						'transform',
-						`translate(${point.x} ${point.y}) scale(${at.scale})`,
-					)
-					light.setAttribute('opacity', String(at.opacity))
+				} catch {
+					hideLights()
+					continue
 				}
 			}
 		}

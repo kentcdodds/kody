@@ -1,4 +1,4 @@
-import { type RemixNode, css } from 'remix/ui'
+import { type RemixNode, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import {
 	type PackageShareGrantLoaderView,

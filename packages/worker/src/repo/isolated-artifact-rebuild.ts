@@ -84,6 +84,12 @@ export function isolatedArtifactRebuildStagingKeyBelongsToUser(input: {
 export type IsolatedArtifactRebuildTargetResult = {
 	ok: boolean
 	message: string
+	/**
+	 * True when the failure is a caller-fixable package mistake (for example
+	 * undeclared bare imports). Orchestrators rehydrate as UserCodeError so
+	 * Sentry drops the event after the DO serializes the error to a string.
+	 */
+	callerFailure?: boolean
 	skipped?: boolean
 	kvKey?: string | null
 	target: PublishedPackageArtifactBuildTarget

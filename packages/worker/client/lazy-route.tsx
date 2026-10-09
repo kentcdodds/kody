@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -123,7 +123,7 @@ type LazyRouteRenderProps<TModule> = {
 }
 
 /**
- * Builds a remix/ui component bound to one lazy area. Closing over `area`
+ * Builds a remix/component component bound to one lazy area. Closing over `area`
  * keeps `TModule` in the `render` callback (JSX generics on `Handle` props
  * do not infer through `<LazyRoute area={...} />`).
  *
@@ -298,6 +298,22 @@ registerPreloadPatterns(
 		routePattern(routes.accountEmail),
 		routePattern(routes.accountEmailDetail),
 		routePattern(routes.accountTwoFactor),
+		routePattern(routes.accountOrganizationsNew),
+		routePattern(routes.accountInvites),
+		routePattern(routes.orgActivity),
+		routePattern(routes.orgConnections),
+		routePattern(routes.orgEmail),
+		routePattern(routes.orgIntegrations),
+		routePattern(routes.orgJobs),
+		routePattern(routes.orgMcpServers),
+		routePattern(routes.orgMemories),
+		routePattern(routes.orgSecretProviders),
+		routePattern(routes.orgSecrets),
+		routePattern(routes.orgShared),
+		routePattern(routes.orgValues),
+		routePattern(routes.orgWaiting),
+		routePattern(routes.orgWebhooks),
+		routePattern(routes.orgWorkflows),
 	],
 	{
 		name: 'account-area',
@@ -313,7 +329,6 @@ registerPreloadPatterns(
 		routePattern(routes.adminUserDetail),
 		routePattern(routes.adminReservedUsernames),
 		routePattern(routes.adminFeatureFlags),
-		routePattern(routes.adminBanners),
 		routePattern(routes.adminPlatformIntegrations),
 		routePattern(routes.adminPlatformIntegrationNew),
 		routePattern(routes.adminPlatformIntegrationDetail),
@@ -364,6 +379,8 @@ registerPreloadPatterns(
 		routePattern(routes.onboardingStep3Agent),
 		routePattern(routes.connectOauth),
 		routePattern(routes.connectSecrets),
+		routePattern(routes.connectSecretSet),
+		routePattern(routes.connectWebhookApply),
 		oauthPaths.authorize,
 	],
 	{
@@ -393,6 +410,7 @@ registerPreloadPatterns(
 	[
 		routePattern(routes.pricing),
 		routePattern(routes.faq),
+		routePattern(routes.caseStudies),
 		routePattern(routes.support),
 		routePattern(routes.privacy),
 		routePattern(routes.terms),

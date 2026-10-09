@@ -8,10 +8,13 @@ for the other setup pages.
 - Follow [Documentation principles](../documentation.md) for usage docs, MCP
   instruction text, and contributing guides (lightweight pages, current
   behavior, post-tool detail in responses).
-- Update `docs/use/` when end-user MCP behavior or guidance changes; update
-  `docs/contributing` when contributor workflows, architecture notes, or
-  verification guidance change.
+- Update `docs/guides/` when a served docs page changes. Update `docs/use/` when
+  MCP field-reference behavior changes. A `docs/use` stub only points at the
+  guide. Update `docs/contributing` when contributor workflows, architecture
+  notes, or verification guidance change.
 - Treat docs updates as part of done work.
-- Keep `AGENTS.md` concise and index-like; put details in focused docs.
+- Keep `AGENTS.md` concise and index-like; put details in focused docs. The
+  `agents-md` file-size ratchet (`npm run file-size-ratchet:check`) holds the
+  line budget.
 - When failures repeat, promote lessons from docs into tests, lint rules, or
   scripts.

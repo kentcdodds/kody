@@ -17,7 +17,7 @@ Prefer [`control-kody`](../control-kody/SKILL.md) when you also need `doctor`,
 local login, Feature Map lookup, or a `/health` SHA check:
 
 ```bash
-npm run control-kody -- preview -- --request 'GET /onboarding.json' --check /onboarding/step-2
+npm run control-kody -- preview --pr 42 --request 'GET /onboarding.json' --check /onboarding/step-2
 ```
 
 ## Command
@@ -38,11 +38,16 @@ npm run preview:manual-test -- \
   --check /onboarding/step-2
 ```
 
-`--request` spec: `METHOD /path [status] [json-body]` (default success: 2xx).
-Use the JSON APIs the UI uses (`/account/*.json` in
-`packages/worker/universal/routes.ts`). For more authenticated HTTP after login,
-use `control-kody request` (`--dump` / `--contains` for HTML). Do not cat the
-session cookie into `curl` or Python.
+`--request` spec:
+`METHOD /path [status] [json-body] [--dump] [--contains <text>]` (default
+success: 2xx). `--dump` / `--contains` match `control-kody request`, e.g.
+`--request 'GET /pricing --dump --contains Worker compute'`. Use the JSON APIs
+the UI uses (`/account/*.json` in `packages/worker/universal/routes.ts`).
+`GET /account/export.json` is a metadata manifest only — do not `--contains`
+user data there; verify rows with MCP `accountExportSection` via
+`control-kody execute` (see the contributing doc). For more authenticated HTTP
+after login, use `control-kody request` (`--dump` / `--contains` for HTML). Do
+not cat the session cookie into `curl` or Python.
 
 `--pr`, `--url`, `--no-wait`, `--skip-login`, `--help` as documented.
 
@@ -57,11 +62,25 @@ This does not replace `npm run validate`.
 
 ## After the scripted session
 
-1. Open the printed URL. On Cloud Agents, use the `computerUse` subagent.
-2. Sign in at `/login` with the seed credentials. Button label is **Sign in**.
-3. Confirm the data you created and exercise the UI this PR changes. Stay on the
-   preview origin.
+Default: prove behavior via MCP/API/`control-kody` `request` / `execute`. Open a
+browser only when UI is under test.
+
+When UI is under test:
+
+1. Prefer `npm run control-kody -- browse --origin <preview> --path <path>` so
+   Chromium opens already signed in (reuses `.tmp/control-kody-cookie`).
+   Optional `--record` writes video under `.tmp/control-kody-browse`.
+2. Cursor `computerUse` cannot drive that Playwright window. For computerUse,
+   open `/login?redirectTo=<path>` (seed email `me@kentcdodds.com` / password
+   `ilikecode`, button **Sign in**) and stay on the preview origin.
+3. Confirm the data you created and exercise the UI this PR changes.
 4. Record what you saw on the PR.
 
 `GET /mcp` is 401 without OAuth; `/admin` is 403 (seed account is not admin).
-Neither is a regression.
+Neither is a regression. Admin-gated states (suspension, outbound-email pause,
+account deletion) cannot be set on preview; use the local admin seed plus
+Workers or unit tests. For MCP `execute` / `search` fixtures, use
+`control-kody execute` / `search` — do not hand-roll OAuth. Two `packageSave`
+packages on the seed account share implicit user-secret read; locked-secret
+denial needs an unadopted community fork. See
+[preview-manual-testing.md](../../../docs/contributing/preview-manual-testing.md).

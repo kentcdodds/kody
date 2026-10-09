@@ -20,12 +20,17 @@ import {
 	parseKodyPackageSpecifier,
 	packageSpecifierPrefix,
 	resolveSavedPackageImport,
+	SavedPackageNotFoundError,
 } from './package-import-resolution.ts'
 import {
 	collectStaticKodyPackageImportsFromFiles,
 	isTypeDeclarationFilePath,
 } from './static-kody-imports.ts'
-import { collectLiteralImportNodes } from './import-specifiers.ts'
+import {
+	collectModuleImportNodesCached,
+	type ModuleImportNodesCache,
+} from './import-specifiers.ts'
+import { type BundleArtifactDependency } from './published-runtime-artifacts.ts'
 import {
 	dirname,
 	joinPath,
@@ -94,6 +99,12 @@ export function collectReachableSourceFilePaths(input: {
 		manifest: AuthoredPackageJson
 		prefix: string
 	} | null
+	includeTypeOnly?: boolean
+	/**
+	 * Optional request-scoped AST cache so prepare can reuse the same parse
+	 * when rewriting the same source files.
+	 */
+	importNodesCache?: ModuleImportNodesCache
 }) {
 	const reachable = new Set<string>()
 	const stack = [
@@ -114,7 +125,13 @@ export function collectReachableSourceFilePaths(input: {
 		const source = input.files[filePath]
 		if (source == null) continue
 		reachable.add(filePath)
-		for (const node of collectLiteralImportNodes(source)) {
+		for (const node of collectModuleImportNodesCached(
+			input.importNodesCache,
+			source,
+			{
+				includeTypeOnly: input.includeTypeOnly,
+			},
+		).literalImports) {
 			if (
 				node.kind === 'static' &&
 				node.specifier.startsWith(packageSpecifierPrefix)
@@ -147,23 +164,144 @@ export function collectReachableSourceFilePaths(input: {
 	return reachable
 }
 
-export async function resolveDirectKodyDependenciesForEntryPoint(input: {
+type LoadedDependencyPackage = LoadedPackageSource & {
+	row: SavedPackageRecord
+	prefix: string
+	sourceOwnerUserId: string
+	platformScope: string | null
+	shareOwned?: boolean
+	storageOwnerUserId?: string
+}
+
+function createBundleArtifactDependency(input: {
+	row: SavedPackageRecord
+	sourceId: string
+	publishedCommit: string
+	platformScope: string | null
+	shareOwned?: boolean
+	storageOwnerUserId?: string
+	sourceOwnerUserId: string
+}): BundleArtifactDependency {
+	return {
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		kodyId: input.row.kodyId,
+		packageName: input.row.name,
+		packageId: input.row.id,
+		// Platform-owned dependency ids never become caller-side
+		// packageStorage grants; see collectPackageStorageGrantIds.
+		...(input.platformScope ? { platformOwned: true } : {}),
+		...(input.shareOwned
+			? {
+					shareOwned: true,
+					storageOwnerUserId:
+						input.storageOwnerUserId ?? input.sourceOwnerUserId,
+				}
+			: {}),
+	}
+}
+
+/**
+ * Saved packages reached only through another saved package's static
+ * `kody:@` imports, walked from each direct import's export entry over the
+ * package sources `prepareKodyGraphFiles` already loaded. Their stamped
+ * modules are inlined into this bundle, so they need the same host-side
+ * provenance as direct imports. Only files reachable from the imported
+ * export count, so a dependency's unrelated exports never widen the set.
+ */
+function collectTransitiveKodyDependencies(input: {
+	directSpecifiers: Array<string>
+	directPackageIds: ReadonlySet<string>
+	rootPackageName: string | undefined
+	loadedPackages: Map<string, LoadedDependencyPackage>
+}): Array<BundleArtifactDependency> {
+	const transitive = new Map<string, BundleArtifactDependency>()
+	const visitedExports = new Set<string>()
+	const pending: Array<{
+		specifier: string
+		importer: LoadedDependencyPackage | null
+	}> = input.directSpecifiers.map((specifier) => ({
+		specifier,
+		importer: null,
+	}))
+	while (pending.length > 0) {
+		const next = pending.pop()
+		if (!next) continue
+		const parsed = parseKodyPackageSpecifier(next.specifier)
+		if (parsed.packageName === input.rootPackageName) continue
+		// Mirrors ensurePackageResolved: imports inside a share-owned package
+		// resolve under the share owner, keyed `${name}#${ownerUserId}`.
+		const nestedShareOwnerUserId =
+			next.importer?.shareOwned === true
+				? (next.importer.storageOwnerUserId ?? next.importer.sourceOwnerUserId)
+				: undefined
+		const loaded = input.loadedPackages.get(
+			nestedShareOwnerUserId
+				? `${parsed.packageName}#${nestedShareOwnerUserId}`
+				: parsed.packageName,
+		)
+		if (!loaded) continue
+		const exportEntryPoint = resolvePackageExportSourcePath({
+			files: loaded.files,
+			manifest: loaded.manifest,
+			exportName: parsed.exportName,
+		})
+		const visitKey = `${loaded.row.id}\0${exportEntryPoint}`
+		if (visitedExports.has(visitKey)) continue
+		visitedExports.add(visitKey)
+		const publishedCommit = loaded.source.published_commit
+		if (
+			next.importer &&
+			publishedCommit &&
+			!input.directPackageIds.has(loaded.row.id) &&
+			!transitive.has(loaded.row.id)
+		) {
+			transitive.set(loaded.row.id, {
+				...createBundleArtifactDependency({
+					row: loaded.row,
+					sourceId: loaded.source.id,
+					publishedCommit,
+					platformScope: loaded.platformScope,
+					shareOwned: loaded.shareOwned,
+					storageOwnerUserId: loaded.storageOwnerUserId,
+					sourceOwnerUserId: loaded.sourceOwnerUserId,
+				}),
+				transitive: true,
+			})
+		}
+		const reachable = collectReachableSourceFilePaths({
+			files: loaded.files,
+			entryPoint: exportEntryPoint,
+			rootPackage: { manifest: loaded.manifest, prefix: '' },
+		})
+		const reachableFiles = Object.fromEntries(
+			Object.entries(loaded.files).filter(([filePath]) =>
+				reachable.has(filePath),
+			),
+		)
+		for (const imported of collectStaticKodyPackageImportsFromFiles(
+			reachableFiles,
+		)) {
+			if (imported.packageName === loaded.manifest.name) continue
+			pending.push({ specifier: imported.specifier, importer: loaded })
+		}
+	}
+	return [...transitive.values()]
+}
+
+/**
+ * Bundle dependency metadata for one entry point: every saved package the
+ * entry statically imports, plus packages those dependencies statically
+ * import (marked `transitive`). Grants for `packageStorage()` and
+ * stamp-aligned secret authority derive from this list.
+ */
+export async function resolveKodyDependenciesForEntryPoint(input: {
 	env: Env
 	baseUrl: string
 	userId: string
 	sourceFiles: Record<string, string>
 	entryPoint: string
-	loadedPackages?: Map<
-		string,
-		LoadedPackageSource & {
-			row: SavedPackageRecord
-			prefix: string
-			sourceOwnerUserId: string
-			platformScope: string | null
-			shareOwned?: boolean
-			storageOwnerUserId?: string
-		}
-	>
+	loadedPackages?: Map<string, LoadedDependencyPackage>
 	allowPlatformScopes?: boolean
 }) {
 	const rootPackage = readRootPackage(input.sourceFiles)
@@ -183,11 +321,13 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 		),
 	)
 	const importedPackages = new Map<string, string>()
+	const importedSpecifiers = new Set<string>()
 	for (const imported of collectStaticKodyPackageImportsFromFiles(
 		reachableFiles,
 	)) {
 		if (imported.packageName === rootPackage?.manifest.name) continue
 		importedPackages.set(imported.packageName, imported.specifier)
+		importedSpecifiers.add(imported.specifier)
 	}
 	const sortedSpecifiers = [...importedPackages.values()].sort((left, right) =>
 		left.localeCompare(right),
@@ -221,11 +361,12 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 					userId: input.userId,
 					packageIdOrKodyId: parsed.packageName,
 				})
-				throw new Error(
-					plainRepo
-						? buildPlainRepoPromotionErrorMessage(parsed.packageName)
-						: `Saved package "${parsed.packageName}" was not found for this user.`,
-				)
+				if (plainRepo) {
+					throw new Error(
+						buildPlainRepoPromotionErrorMessage(parsed.packageName),
+					)
+				}
+				throw new SavedPackageNotFoundError(parsed.packageName)
 			}
 			const { row } = resolution
 			const loaded =
@@ -241,26 +382,32 @@ export async function resolveDirectKodyDependenciesForEntryPoint(input: {
 					`Saved package "${row.name}" source "${row.sourceId}" has no published commit.`,
 				)
 			}
-			return {
+			return createBundleArtifactDependency({
+				row,
 				sourceId: loaded.source.id,
 				publishedCommit: loaded.source.published_commit,
-				kodyId: row.kodyId,
-				packageName: row.name,
-				packageId: row.id,
-				// Platform-owned dependency ids never become caller-side
-				// packageStorage grants; see collectPackageStorageGrantIds.
-				...(resolution.platformScope ? { platformOwned: true } : {}),
-				...(resolution.shareOwned
-					? {
-							shareOwned: true,
-							storageOwnerUserId:
-								resolution.storageOwnerUserId ?? resolution.sourceOwnerUserId,
-						}
-					: {}),
-			}
+				platformScope: resolution.platformScope,
+				shareOwned: resolution.shareOwned,
+				storageOwnerUserId: resolution.storageOwnerUserId,
+				sourceOwnerUserId: resolution.sourceOwnerUserId,
+			})
 		}),
 	)
-	return dependencies.sort(
+	const transitiveDependencies = input.loadedPackages
+		? collectTransitiveKodyDependencies({
+				directSpecifiers: [...importedSpecifiers].sort((left, right) =>
+					left.localeCompare(right),
+				),
+				directPackageIds: new Set(
+					dependencies
+						.map((dependency) => dependency.packageId)
+						.filter((packageId): packageId is string => Boolean(packageId)),
+				),
+				rootPackageName: rootPackage?.manifest.name,
+				loadedPackages: input.loadedPackages,
+			})
+		: []
+	return [...dependencies, ...transitiveDependencies].sort(
 		(left, right) =>
 			left.kodyId.localeCompare(right.kodyId) ||
 			left.sourceId.localeCompare(right.sourceId),

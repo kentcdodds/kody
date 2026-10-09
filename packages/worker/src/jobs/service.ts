@@ -2,7 +2,15 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { createMcpCallerContext, parseMcpCallerContext } from '#mcp/context.ts'
+import {
+	parseRequestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
+import {
+	createMcpCallerContext,
+	createMcpCallerContextWire,
+	parseMcpCallerContextWire,
+} from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
 import { runBundledModuleWithRegistry } from '#mcp/run-kody-registry.ts'
@@ -53,17 +61,21 @@ import {
 	isEntitlementLimitError,
 	JobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
+import { orgBudgetForJobExecution } from '#worker/entitlements/budget-gate.ts'
 import {
 	assertWithinEntitlement,
 	consumeDailyEntitlement,
 	getCachedUserEntitlement,
 } from '#worker/entitlements/service.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	resolvePlanLimits,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
 	normalizePackageWorkspacePath,
@@ -96,6 +108,7 @@ import {
 import {
 	deletePublishedSourceSnapshot,
 	type PublishedBundleArtifact,
+	bundleArtifactVersion,
 } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import {
 	logJobSchedulerError,
@@ -114,11 +127,25 @@ export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
 ): PersistedJobCallerContext {
-	const parsed = parseMcpCallerContext(callerContext)
-	if (!parsed.user) {
+	const wire = parseMcpCallerContextWire(callerContext)
+	if (!wire.user) {
 		throw new Error('Authenticated MCP user is required for job operations.')
 	}
-	return parsed as PersistedJobCallerContext
+	return { ...wire, user: wire.user }
+}
+
+/**
+ * The clicker's request reaches run-now through the jobs worker RPC, so its
+ * lineage is re-validated, not trusted. A caller deployed before the request
+ * context existed sends none; the run then executes as the schedule would,
+ * which has no actor and so can only narrow what the clicker could do.
+ */
+function runNowRequestSource(
+	callerContext: McpCallerContext,
+	jobId: string,
+): RequestSource {
+	const lineage = parseRequestLineage(callerContext.request)
+	return lineage ? { kind: 'inherited', lineage } : { kind: 'schedule', jobId }
 }
 
 function serializeCallerContext(callerContext: PersistedJobCallerContext) {
@@ -209,7 +236,7 @@ async function persistPublishedJobBundleArtifact(input: {
 		rootPackageId: input.packageContext?.packageId ?? null,
 	})
 	const artifact: PublishedBundleArtifact = {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: 'job',
 		artifactName: input.artifactName ?? null,
 		sourceId: input.sourceId,
@@ -349,6 +376,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	artifactName?: string | null
@@ -385,6 +413,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 		env: input.env,
 		job: input.job,
 		callerContext: input.callerContext,
+		source: input.source,
 		artifact,
 		bypassLogs: [],
 		waitUntil: input.waitUntil,
@@ -397,6 +426,7 @@ async function executePublishedJobArtifact(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	artifact:
 		| PublishedBundleArtifact
 		| Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
@@ -411,8 +441,9 @@ async function executePublishedJobArtifact(input: {
 	).catch((error: unknown) => {
 		throw markPreExecutionTransientError(error)
 	})
-	const callerContext = {
+	const callerContext = createMcpCallerContext({
 		...input.callerContext,
+		source: input.source,
 		repoContext: source
 			? {
 					sourceId: source.id,
@@ -426,7 +457,7 @@ async function executePublishedJobArtifact(input: {
 					entityId: source.entity_id,
 				}
 			: null,
-	}
+	})
 	const packageContext = input.artifact.packageContext ?? null
 	const runRecord = {
 		surface: 'job' as const,
@@ -444,36 +475,22 @@ async function executePublishedJobArtifact(input: {
 			: {}),
 	}
 	// Avoid a top-level jobs -> package-invocations cycle during capability
-	// registry initialization. Standalone jobs use the execute invoke path
-	// (same as inline workflows without package context); package-owned jobs
-	// keep package-runtime provenance so nested invoke/events stay in-package.
-	const {
-		createExecutePackageInvokeTools,
-		createPackageEventTools,
-		createPackageRuntimeInvokeTools,
-	} = await import('#worker/package-invocations/service.ts')
-	const sharedInvokeInput = {
-		env: input.env,
-		baseUrl: input.callerContext.baseUrl,
-		callerContext,
-		parentRunRecord: runRecord,
-		packageInvokeDepth: 0,
-		waitUntil: input.waitUntil,
-	}
+	// registry initialization.
+	const { createPackageEventTools } =
+		await import('#worker/package-invocations/service.ts')
 	const packageRuntimeTools = packageContext
 		? {
-				packageInvokeTools: createPackageRuntimeInvokeTools({
-					...sharedInvokeInput,
-					packageContext,
-				}),
 				packageEventTools: createPackageEventTools({
-					...sharedInvokeInput,
+					env: input.env,
+					baseUrl: input.callerContext.baseUrl,
+					callerContext,
+					parentRunRecord: runRecord,
+					packageInvokeDepth: 0,
+					waitUntil: input.waitUntil,
 					packageContext,
 				}),
 			}
-		: {
-				packageInvokeTools: createExecutePackageInvokeTools(sharedInvokeInput),
-			}
+		: {}
 	return await runBundledModuleWithRegistry(
 		input.env,
 		callerContext,
@@ -630,7 +647,7 @@ async function createPackageJobCallerContext(input: {
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
 	const user = await resolveBackgroundMcpUser(input.db, input.userId)
-	return createMcpCallerContext({
+	const wire = createMcpCallerContextWire({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user,
@@ -641,7 +658,8 @@ async function createPackageJobCallerContext(input: {
 			storageId: null,
 		},
 		repoContext: null,
-	}) as PersistedJobCallerContext
+	})
+	return { ...wire, user }
 }
 
 async function resolveJobRuntimeCallerContext(input: {
@@ -745,6 +763,7 @@ export async function syncPackageJobsForPackage(input: {
 					assertJobScheduleIntervalFloor({
 						plan,
 						ladder: entitlement.ladder,
+						creditWallet: entitlement.creditWallet,
 						schedule,
 						timezone,
 					})
@@ -793,6 +812,7 @@ export async function syncPackageJobsForPackage(input: {
 						assertJobScheduleIntervalFloor({
 							plan,
 							ladder: entitlement.ladder,
+							creditWallet: entitlement.creditWallet,
 							schedule,
 							timezone,
 						})
@@ -823,6 +843,7 @@ export async function syncPackageJobsForPackage(input: {
 				assertJobScheduleIntervalFloor({
 					plan,
 					ladder: entitlement.ladder,
+					creditWallet: entitlement.creditWallet,
 					schedule,
 					timezone,
 				})
@@ -895,12 +916,14 @@ function packageJobNeedsIntervalFloor(input: {
 function assertJobScheduleIntervalFloor(input: {
 	plan: PlanName
 	ladder?: EntitlementLadder
+	creditWallet?: CreditWalletState
 	schedule: JobSchedule
 	timezone?: string | null
 }) {
 	const minIntervalMs = resolvePlanLimits(
 		input.plan,
 		input.ladder ?? 'public',
+		input.creditWallet ?? 'none',
 	).minJobIntervalMs
 	if (minIntervalMs <= 0) return
 	const intervalMs = estimateScheduleMinIntervalMs({
@@ -1246,6 +1269,8 @@ export async function executeJobOnce(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext | null
+	/** A schedule tick, or the person who pressed "run now". */
+	source: RequestSource
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
 	runRecordHandle?: RunRecordHandle | null
@@ -1285,6 +1310,9 @@ export async function executeJobOnce(input: {
 						callerContext: input.callerContext,
 						backgroundUser,
 					})
+					const orgRecord = await getOrgById(input.env.APP_DB, input.job.userId)
+					const orgSlug =
+						orgRecord?.slug?.trim() || backgroundUser.username?.trim() || null
 					// Daily job-run quota before sandbox work so over-limit
 					// ticks cost nothing. Failed attempts still count.
 					await consumeDailyEntitlement({
@@ -1293,11 +1321,17 @@ export async function executeJobOnce(input: {
 						userId: input.job.userId,
 						email: backgroundUser.email,
 						resource: 'job_runs_per_day',
+						orgBudget: orgBudgetForJobExecution({
+							orgId: input.job.userId,
+							orgSlug,
+							source: input.source,
+						}),
 					})
 					const result = await runRepoBackedJob({
 						env: input.env,
 						job: input.job,
 						callerContext: runtimeCallerContext,
+						source: input.source,
 						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 						waitUntil: input.waitUntil,
 						runRecordHandle: input.runRecordHandle,
@@ -1356,13 +1390,14 @@ export async function executeJobOnce(input: {
 					error: formatJobError(error),
 					logs: [],
 				}
-				// Daily job-run quota denials happen before sandbox work.
-				// Still return an error outcome so schedules advance, but do
-				// not emit job_run usage or else every post-limit tick
-				// inflates rollups while the UserMeter counter stays capped.
+				// Daily job-run quota denials and account suspension happen
+				// before sandbox work. Still return an error outcome so
+				// schedules advance, but do not emit job_run usage or else
+				// every denied tick inflates rollups.
 				if (
 					!isEntitlementLimitError(error) &&
-					!isComputeOverageLimitError(error)
+					!isComputeOverageLimitError(error) &&
+					!isAccountSuspendedError(error)
 				) {
 					completedOccurrence = true
 				}
@@ -1377,6 +1412,8 @@ export async function executeJobOnce(input: {
 						entityId: input.job.id,
 						durationMs,
 						outcome,
+						actorUserId: '',
+						automationSource: 'schedule',
 					})
 				}
 			}
@@ -1394,6 +1431,7 @@ async function runRepoBackedJob(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
 	runRecordHandle?: RunRecordHandle | null
@@ -1440,6 +1478,7 @@ async function runRepoBackedJob(input: {
 			env: input.env,
 			job: input.job,
 			callerContext: input.callerContext,
+			source: input.source,
 			artifact: loadedArtifact.artifact,
 			bypassLogs: [],
 			waitUntil: input.waitUntil,
@@ -1451,6 +1490,7 @@ async function runRepoBackedJob(input: {
 		env: input.env,
 		job: input.job,
 		callerContext: input.callerContext,
+		source: input.source,
 		sourceFiles: resolved.files,
 		entryPoint: resolved.entryPoint,
 		artifactName: resolved.artifactName,
@@ -1493,6 +1533,9 @@ export async function runJobNow(input: {
 				env: input.env,
 				job: row.record,
 				callerContext: activeCallerContext,
+				source: input.callerContext
+					? runNowRequestSource(input.callerContext, row.record.id)
+					: { kind: 'schedule', jobId: row.record.id },
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 				waitUntil: input.waitUntil,
 			})
@@ -1613,6 +1656,7 @@ async function executeClaimedScheduledJob(input: {
 				executeJobOnce({
 					env: input.env,
 					job: input.row.record,
+					source: { kind: 'schedule', jobId: input.row.record.id },
 					callerContext: resolveScheduledJobCallerContext({
 						rowUserId: input.row.record.userId,
 						callerContext: input.row.callerContext,

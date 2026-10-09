@@ -41,8 +41,8 @@ package-app surfaces:
    from `@kody-internal/shared/password-policy.ts` wherever a password is set.
 6. **OAuth PKCE stays S256-only.** Keep the `getPkceValidationError` check in
    `oauth-handlers.ts` (reject `code_challenge_method` other than S256 when a
-   challenge is present). Do not set the provider's `allowPlainPKCE: true` — see
-   the OAuth section below.
+   challenge is present). `@cloudflare/workers-oauth-provider` is S256-only (no
+   `allowPlainPKCE`); see the OAuth section below.
 7. **Every data path is `userId`-scoped.** New D1 queries, Durable Object names,
    and Vectorize filters must include `userId`. Prefer parameterized SQL
    (`.prepare(...).bind(...)`); never interpolate user input into SQL.
@@ -89,9 +89,9 @@ package-app surfaces:
     address from Account settings — never leaking the current email). The owner
     re-verifies the former address (`POST /account/email-claim-release.json`
     plus `/verify-email-claim-release`) to drop the claim; that path is rate
-    limited. Operators inspect leftover implicit sha256 collisions with
-    `adminUserStableIdConflict` (metadata only). `users.stable_user_id` is never
-    recomputed for an existing account.
+    limited. New accounts get random `stable_user_id` values. Only `users.email`
+    and active `user_email_claims` rows reserve an address; a legacy email-hash
+    `stable_user_id` reserves nothing and is never recomputed from an email.
 12. **Unverified accounts are reclaimed on a provider-verified social match.**
     When a social login profile presents a verified email that matches
     `users.email` and `email_verified_at` is null, treat the row as a possible
@@ -120,7 +120,7 @@ package-app surfaces:
     addresses redacted and bounded to 200 characters) and a Sentry event tagged
     `scheduled.lane`, so a lane that fails every hour is visible without Workers
     Logs. Both are best-effort: an `AUDIT_DB` or Sentry outage is logged and
-    skipped, not fatal. Operators run one pass interactively with the admin-only
+    skipped, not fatal. Operators run one pass on demand with the admin-only
     `adminUnverifiedAccountPurgeRun` MCP capability (`dryRun` previews the next
     claim page; results carry stable user ids, never emails or usernames).
     Password signups are the only unverified path; social-login accounts are
@@ -130,13 +130,16 @@ package-app surfaces:
     `POST /password-reset/confirm` disables TOTP, deletes passkeys and
     `oauth_connections`, and tells the owner in the confirmation email.
     Signed-in `POST /account/password.json` leaves those factors in place.
-15. **User-secret trust grants are never applied by package runtimes.**
+15. **User-secret trust grants are never applied by MCP or package runtimes.**
     `secretLock` returns a website approval URL and does not write
-    `allowed_packages`. `communityForkAdopt` widens implicit user-secret
-    read/use for a fork and is restricted to an interactive MCP caller with
-    empty package/app/storage context (same class of gate as `packageAppFetch`
-    and platform-feedback submit). Package apps, jobs, webhooks, and other
-    package runtimes cannot adopt or grant themselves secrets.
+    `allowed_packages`. Community fork adoption widens implicit user-secret
+    read/use for a fork, so only the signed-in account session writes it
+    (`adopt-community-fork` on `POST /account/packages.json`, from the package
+    settings page). `communityForkAdopt` is read-only and returns that link.
+    Interactive `execute` runs imported package code with the agent's caller
+    context, so no `kody.*` capability may adopt: an unadopted fork would adopt
+    itself. Package apps, jobs, webhooks, and other package runtimes cannot
+    adopt or grant themselves secrets.
 
 ## First-party HTTP security headers
 
@@ -149,13 +152,14 @@ package-app surfaces:
   external script; its image pageview beacon is allowed in `img-src` and its
   `sendBeacon` duration/event pings are allowed in `connect-src`; the
   scroll-restoration restore script is an inline classic script allowed only by
-  its sha256 hash), `frame-ancestors 'none'`, `base-uri 'self'`,
-  `object-src 'none'`, `form-action 'self'`, `worker-src 'self' blob:` (for
-  Sentry Session Replay), and `connect-src` limited to `'self'` plus the Fathom,
-  Cloudflare Web Analytics, and Turnstile beacon hosts. The client bundle loads
-  as an external module. `style-src` allows `'unsafe-inline'` because
-  SSR-streamed styles arrive as inline `<style>` tags; style injection is far
-  lower risk than script injection.
+  its sha256 hash), `img-src` also allowlists `https://static.scarf.sh` for the
+  Scarf page pixel on public marketing and docs, `frame-ancestors 'none'`,
+  `base-uri 'self'`, `object-src 'none'`, `form-action 'self'`,
+  `worker-src 'self' blob:` (for Sentry Session Replay), and `connect-src`
+  limited to `'self'` plus the Fathom, Cloudflare Web Analytics, and Turnstile
+  beacon hosts. The client bundle loads as an external module. `style-src`
+  allows `'unsafe-inline'` because SSR-streamed styles arrive as inline
+  `<style>` tags; style injection is far lower risk than script injection.
 - `X-Frame-Options: DENY` plus `frame-ancestors 'none'` — stops clickjacking of
   the OAuth consent screen and account pages.
 - `X-Content-Type-Options: nosniff`.
@@ -277,12 +281,11 @@ in the Worker `fetch` handler:
 - **Package-app apex** (`kody.run`): serves no package code. `/` redirects to
   the app origin. Legacy path-based URLs (`/@{username}/packages/*`) redirect
   (`302`/`307`) to the owning user's subdomain. Everything else — including
-  `/account/*`, `/login`, `/mcp`, and the
-  `/@{username}/api/package-invocations/*` and `/webhooks/*` machine APIs — is
-  `404`. Those APIs stay on the app origin on purpose: they are authenticated by
-  their own bearer tokens or URL secrets, they are never called by package
-  browser code, and hosting them on the package-app domain would only widen its
-  surface. Retired `/@{username}/connectors/*` paths also 404.
+  `/account/*`, `/login`, `/mcp`, and the `/webhooks/*` machine API — is `404`.
+  Webhook ingress stays on the app origin on purpose: it is authenticated by its
+  own URL secret, it is never called by package browser code, and hosting it on
+  the package-app domain would only widen its surface. Retired
+  `/@{username}/connectors/*` paths also 404.
 - **Per-user package-app subdomain** (`{username}.kody.run`): serves only
   `/packages/{kodyId}/*` for that hostname's username label. `/` redirects to
   the app origin; every other path is `404`.
@@ -448,9 +451,8 @@ re-check length, so existing accounts are never locked out.
   (`packages/worker/src/oauth-handlers.ts`) rejects an authorize request whose
   `code_challenge_method` is anything other than `S256` when a `code_challenge`
   is present. Plain PKCE offers no protection against code interception.
-  `@cloudflare/workers-oauth-provider` 0.10+ defaults `allowPlainPKCE` to false
-  (S256-only) while allowing confidential clients to omit PKCE. Keep the
-  app-layer check; do not set `allowPlainPKCE: true`.
+  `@cloudflare/workers-oauth-provider` is S256-only (no `allowPlainPKCE`). Keep
+  the app-layer check; plain PKCE cannot be re-enabled.
 - Dynamic client registration (`/oauth/register`) is intentionally **open**: the
   MCP OAuth spec requires it, and clients (including native/public clients using
   PKCE) rely on it. This is a deliberate acceptance, not a gap. Do not add
@@ -592,10 +594,18 @@ blast radius:
   Enforced fail-closed at every chokepoint: browser session resolution
   (`readAuthenticatedAppUser` / `loadSessionInfo` treat a suspended session as
   signed out), MCP bearer auth (`handleMcpRequest` returns a 403
-  `account_suspended` response, mirroring the email-verification gate), and both
-  email directions (inbound storage rejects with a bounded `account-suspension`
-  rejection event; outbound send throws). Set and cleared through the audited
-  `suspend_user` / `unsuspend_user` actions on `POST /admin/users.json`.
+  `account_suspended` response, mirroring the email-verification gate),
+  package-app owner resolution, webhook ingress (403 `account_suspended`,
+  recorded as a rejected delivery), background work, and both email directions
+  (inbound storage rejects with a bounded `account-suspension` rejection event;
+  outbound send throws). Background lanes — jobs, package invocations and
+  subscriptions, workflows, retrievers, and realtime hooks — share one choke
+  point: `resolveBackgroundMcpUser` throws `AccountSuspendedError`, which
+  package invocations surface as 403 `account_suspended` and workflow steps
+  raise as a non-retryable failure. That resolver caches identities per isolate
+  for 60 seconds, so a new suspension can take up to that long to stop
+  background work already warm in an isolate. Set and cleared through the
+  audited `suspend_user` / `unsuspend_user` actions on `POST /admin/users.json`.
 - **Automatic outbound-email pause (`users.email_outbound_paused_at`).** The
   delivery queue evaluates provider delivery events
   (`packages/worker/src/email/outbound-abuse.ts`): one spam complaint, or five
@@ -683,6 +693,23 @@ change to these decisions here so future agents do not relitigate them.
   platform `/__platform/health`, and runtime `/__runtime/health` answer on the
   workers.dev trigger so deploy and status probes can hit the script directly.
   The rest of those hostnames return `404`.
+- **Admin roles apply to package code running as an admin owner — including
+  mutations with cross-user / fleet blast.** Jobs, inbound webhook handlers,
+  package subscriptions, and other background package invocations resolve the
+  owner's current roles (`packages/worker/src/identity/background-mcp-user.ts`),
+  and admin capability checks do not require an interactive session. That reach
+  is not read-only: admin-owned package, job, and webhook code can invoke admin
+  mutations (anything that uses `adminMutationCapabilityAccess`, plus other
+  admin-gated write paths). The concrete cross-user blast includes
+  `adminPackageCodemodApply` (fleet-applies a codemod and republishes other
+  users' published package trees), and the same unattended path can call other
+  high-blast mutations such as `adminUserCreate`, `adminFeatureFlagSet`, and
+  `adminSystemEmailSend`. Installing an untrusted package on an admin account
+  therefore carries that blast radius. This is accepted residual, not a silent
+  interactive-only mutation gate. Deferred alternatives include gating admin
+  mutations on `executionOrigin: 'interactive'`, and/or separate service
+  principals ([#2393](https://github.com/kentcdodds/kody/issues/2393)). See
+  [Background and package callers](./architecture/authorization.md#background-and-package-callers).
 - **Package inbound webhook replay protection is opt-in.** HMAC over the raw
   body without a `replay` declaration does not bind a timestamp or delivery id,
   so a captured signed payload can be replayed until the URL secret is rotated.

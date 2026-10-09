@@ -1,4 +1,4 @@
-import { post, route } from 'remix/routes'
+import { get, post, route } from 'remix/routes'
 
 export const routes = route({
 	home: '/',
@@ -16,6 +16,8 @@ export const routes = route({
 	openaiAppsChallenge: '/.well-known/openai-apps-challenge',
 	connectOauth: '/connect/oauth',
 	connectSecrets: '/connect/secrets',
+	connectSecretSet: '/connect/secret-set',
+	connectWebhookApply: '/connect/webhook-apply',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	providerMarkLogo: '/integrations/provider-marks/:slug',
 	accountIntegrations: '/account/integrations',
@@ -80,6 +82,10 @@ export const routes = route({
 	// which is where mint / reveal / rotate / enable-disable live.
 	accountWebhooks: '/account/webhooks',
 	accountWebhooksApi: '/account/webhooks.json',
+	accountWebhooksApproveApplyApi: '/account/webhooks/approve-apply.json',
+	accountWebhooksApproveApplyApiPost: post(
+		'/account/webhooks/approve-apply.json',
+	),
 	accountActivity: '/account/activity',
 	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
@@ -134,6 +140,9 @@ export const routes = route({
 	),
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
+	accountCredits: '/account/credits',
+	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
+	accountCreditsSettingsPost: post('/account/credits/settings.json'),
 	accountUsage: '/account/usage',
 	accountUsageApi: '/account/usage.json',
 	accountEmailChange: post('/account/email-change.json'),
@@ -156,10 +165,6 @@ export const routes = route({
 	adminFeatureFlags: '/admin/feature-flags',
 	adminFeatureFlagsApi: '/admin/feature-flags.json',
 	adminFeatureFlagsApiPost: post('/admin/feature-flags.json'),
-	adminBanners: '/admin/banners',
-	adminBannersApi: '/admin/banners.json',
-	adminBannersApiPost: post('/admin/banners.json'),
-	siteBannerDismissPost: post('/site-banner-dismiss.json'),
 	youtubeThumb: '/youtube-thumb/:videoId',
 	adminPlatformIntegrations: '/admin/platform-integrations',
 	adminPlatformIntegrationNew: '/admin/platform-integrations/new',
@@ -177,12 +182,15 @@ export const routes = route({
 	adminCommunityReportsApi: '/admin/community-reports.json',
 	adminCommunityReportsApiPost: post('/admin/community-reports.json'),
 	adminUserUsageApi: '/admin/users/usage.json',
+	adminUserCreditsApi: '/admin/users/credits.json',
+	adminUserCreditsApiPost: post('/admin/users/credits.json'),
 	adminInsights: '/admin/insights',
 	adminInsightsApi: '/admin/insights.json',
 	adminPlatformFeedback: '/admin/platform-feedback',
 	adminPlatformFeedbackApi: '/admin/platform-feedback.json',
 	adminSystemEmail: '/admin/system-email',
 	adminSystemEmailApi: '/admin/system-email.json',
+	adminSystemEmailApiPost: post('/admin/system-email.json'),
 	blog: '/blog',
 	blogApi: '/blog.json',
 	blogRss: '/blog/rss.xml',
@@ -207,8 +215,10 @@ export const routes = route({
 	docDetailOgImage: '/docs/:slug/og.png',
 	// Signed-in opt-in for the package-share-grants flag from the sharing docs.
 	packageSharingOptInPost: post('/docs/package-sharing/opt-in'),
-	// Signed-in opt-in for the secret-providers flag from the usage docs.
-	secretProvidersOptInPost: post('/docs/secret-providers/opt-in'),
+	// Signed-in opt-in for the mcp-skills-extension flag from the package skills docs.
+	packageSkillsOptInPost: post('/docs/package-skills/opt-in'),
+	// Signed-in opt-in for the mcp-events-extension flag from the MCP Events docs.
+	mcpEventsOptInPost: post('/docs/mcp-events/opt-in'),
 	llmsTxt: '/llms.txt',
 	// The docs used to live under `/guides`. Everything there 308s to `/docs`
 	// (see `#app/handlers/legacy-guides-redirect.ts`).
@@ -230,9 +240,26 @@ export const routes = route({
 	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	communityFeatureApiPost: post('/community/:listingId/feature.json'),
 	communityInstallApiPost: post('/community/:listingId/install.json'),
+	// Organization resource pages. Static sections outrank `/@:username/:kodyId`.
+	// `packages` and `webhooks` are index-only so package apps and ingress stay put.
+	orgActivity: get('/@:orgSlug/activity(/*rest)'),
+	orgConnections: get('/@:orgSlug/connections(/*rest)'),
+	orgEmail: get('/@:orgSlug/email(/*rest)'),
+	orgIntegrations: get('/@:orgSlug/integrations(/*rest)'),
+	orgJobs: get('/@:orgSlug/jobs(/*rest)'),
+	orgMcpServers: get('/@:orgSlug/mcp-servers(/*rest)'),
+	orgMemories: get('/@:orgSlug/memories(/*rest)'),
+	orgPackages: get('/@:orgSlug/packages'),
+	orgSecretProviders: get('/@:orgSlug/secret-providers(/*rest)'),
+	orgSecrets: get('/@:orgSlug/secrets(/*rest)'),
+	orgShared: get('/@:orgSlug/shared'),
+	orgValues: get('/@:orgSlug/values(/*rest)'),
+	orgWaiting: get('/@:orgSlug/waiting(/*rest)'),
+	orgWebhooks: get('/@:orgSlug/webhooks'),
+	orgWorkflows: get('/@:orgSlug/workflows(/*rest)'),
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
-	// package name leaf (`/@kentcdodds/devin`) rather than the listing uuid. Deeper
+	// package name leaf (`/@acme/devin`) rather than the listing uuid. Deeper
 	// package routes use a third-segment noun (`/files`) so they do not collide
 	// with `/@:username/{packages,connectors,webhooks,api}` ingress.
 	communityPackage: '/@:username/:kodyId',
@@ -286,6 +313,7 @@ export const routes = route({
 	ogPageImage: '/og/:page.png',
 	pricing: '/pricing',
 	faq: '/faq',
+	caseStudies: '/case-studies',
 	support: '/support',
 	privacy: '/privacy',
 	terms: '/terms',
@@ -311,6 +339,10 @@ export const routes = route({
 	pendingVerification: '/pending-verification',
 	signup: '/signup',
 	account: '/account',
+	accountOrganizationsNew: '/account/organizations/new',
+	accountOrganizationsNewPost: post('/account/organizations/new'),
+	accountInvites: '/account/invites',
+	accountInvitesApi: '/account/invites.json',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
 	authProvidersApi: '/auth/providers.json',

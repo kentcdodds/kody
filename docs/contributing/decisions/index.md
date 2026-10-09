@@ -5,8 +5,9 @@ surface, or storage home. Architecture docs and code describe how the system
 works today; this folder records product-shaped decisions **already made**,
 usually a no with a revisit-if.
 
-Linked from [AGENTS.md](../../../AGENTS.md) for that check — not as homework and
-not as a museum.
+Linked from the [contributor map](../index.md) (and the short
+[AGENTS.md](../../../AGENTS.md) window into it) for that check — not as homework
+and not as a museum.
 
 A good record is half a page: context, the decision, consequences. See
 [0025](./0025-no-package-services-primitive.md) for the shape that actually
@@ -57,12 +58,11 @@ Open these before proposing a new primitive, surface, or storage home.
   — supersedes 0035 and the remaining execute-live half of 0014; fork, then use
   the copy
 - [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
-  — static import, `import(specifier)`, or workflows; HTTP-token ingress is
+  — static import, `import(specifier)`, or workflows; external HTTP is
   [0048](./0048-webhooks-replace-invocation-tokens.md)
 - [0048 — Inbound HTTP is webhooks; invocation tokens drain](./0048-webhooks-replace-invocation-tokens.md)
-  — no `*` webhook URLs; token surfaces unadvertise after the soak; the HTTP
-  token path drains until leftover rows are 0
-- [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
+  — no `*` webhook URLs; HTTP invocation tokens fully removed (rows purged;
+  table drop follows after deploy)
 - [0017 — Hosted package apps use per-user subdomains; same-owner isolation deferred](./0017-per-user-package-app-subdomains.md)
 - [0020 — Repo sessions spill Workspace objects to R2; do not adopt `@cloudflare/computer`](./0020-repo-session-workspace-r2-not-computer.md)
 - [0021 — Publish-gated packages; no in-process composition runtime](./0021-publish-gated-package-composition.md)
@@ -73,8 +73,6 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0032 — No unattached jobs; schedules belong to packages or workflows](./0032-no-unattached-jobs.md)
 - [0033 — No user-as-conversation, MCP session, or user-global memory hide](./0033-no-user-as-conversation.md)
   ([lab](./0033-memory-auto-surface-lab.md))
-- [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
-- [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
 - [0034 — Origin owns no Durable Object classes](./0034-origin-owns-no-durable-objects.md)
   — platform classes live on `kody-platform`; do not put them on origin,
   runtime, or jobs, and do not add a second origin-facing content worker
@@ -106,12 +104,71 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
   — person-to-person `package_share_grants` stay separate from admin-minted
   platform `package_scope_grants`; grant `pin` is not an import specifier pin
+- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
+  at $0, usage past the include stops; no customer-facing fund-to-unlock rates
+  and no free past-include burn; 50× is a credits ceiling, not a tier
+- [0052 — OAuth refresh expectation comes from the token response](./0052-oauth-refresh-policy-from-token-response.md)
+  — no app/adapter refresh defaults and no blanket `missing_refresh_token`
+  Waiting suppression; wait only when the connect response implied refresh
+- [0053 — Scoped API tokens are a separate credential class, not MCP OAuth scopes](./0053-scoped-api-tokens-are-not-mcp-oauth-scopes.md)
+  — `kody_at_` tokens authenticate the Open API and CapabilityProxy; MCP OAuth
+  stays one full grant; amended by 0055 for CLI login on local-execute HTTP, by
+  0056 for explicit session→CLI bootstrap codes, and by Teams P4 so token scopes
+  are org permissions
+- [0054 — No vendor-specific platform logic](./0054-no-vendor-specific-platform-logic.md)
+  — capabilities stay generic; third parties configure via params/presets, not
+  `foo-hub`-style type forks in platform schema or handlers
+- [0055 — CLI MCP OAuth may authenticate local-execute HTTP only](./0055-cli-mcp-oauth-local-execute-http.md)
+  — `kody login` Bearer on CapabilityProxy + package-graph (full MCP grant);
+  other Open API routes stay `kody_at_`-only; amended by 0056 for headless/agent
+  bootstrap without a second interactive OAuth
+- [0056 — Explicit MCP/API session → CLI credential bootstrap](./0056-cli-credential-bootstrap.md)
+  (amended 2026-10-06: required lifetimes, 500-token cap, reclaim by soonest
+  expiry; 2026-10-09 Teams P4: default scopes `org:execute` + `org:read` +
+  `package:execute`) — one-shot `kody_bc_…` code from `cliCredentialBootstrap`
+  (capability + Open API); CLI redeems for `kody_at_…` without chat-facing
+  secrets or host-token scavenging
+- [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
+  — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
+  TanStack, Preact, or any other framework; packages bring frameworks themselves
+- [0058 — Skills over MCP ship as a flagged progressive enhancement](./0058-skills-over-mcp-progressive-enhancement.md)
+  — `mcp-skills-extension` (default off, `experiments_opt_in`), modern lane
+  only; packages stay the source of truth at `skills/<name>/SKILL.md`; no
+  `kody.skills` manifest key; tools stay search/execute/api; supersedes 0015
+- [0059 — MCP Events extension (webhook profile) behind a flag](./0059-mcp-events-extension-behind-flag.md)
+  — `kody.emits` topics with `mcp: true` reach ChatGPT-style webhook subscribers
+  through the existing package events consumer; flag plus client capability
+  gate; Workers-limited SSRF guard documented
+- [0060 — Owner ids and person ids are separate types; storage stays keyed as-is](./0060-owner-and-person-ids.md)
+  — `OwnerId` (owning org) vs `PersonId` (actor), `personalOrgId` is the only
+  conversion; no `orgs` tables, column renames, or storage re-keying yet
+- [0061 — One request context for every request source](./0061-one-request-context.md)
+  — every caller context names its `RequestSource`; `RequestContext` (org,
+  actor, attribution, credential, membership) is derived, never persisted;
+  Automation has no actor; downstream runs inherit lineage
+- [0062 — One org access check, declared by every surface](./0062-one-access-check.md)
+  — `authorize` is the one org check; every capability declares `orgPermission`
+  and every Open API operation publishes `x-kody-permission`; site admin stays
+  separate. Teams P4 removed the leftover `x-kody-scope` check
+- [0063 — Teams P3 expand adds org rows without moving storage keys](./0063-teams-expand-orgs.md)
+  — `orgs` / `org_memberships` / `handles` land; personal orgs reuse
+  `users.stable_user_id` as `orgs.id` so storage keys do not move; entitlements
+  dual-write; soft-delete columns are additive
+- [0064 — OAuth consent binds a grant to one org](./0064-oauth-org-binding.md) —
+  stamp `orgId` on grant props and metadata; `?org=` plus consent picker (no
+  flag; one org = no picker); connection profiles stay org-bound narrowing, not
+  OAuth scopes; `userId` fallback until P9
+- [0065 — Org seats, prepaid credits, and Free-tier fallback at $0](./0065-org-seats-and-free-tier-fallback.md)
+  — org-billed seats and credits; empty wallet uses Free rate/compute limits
+  (supersedes 0051 hard stop); Stripe writes stay Kody-only
 
 ## Historical / UI / implementation
 
 Accepted or superseded records that do **not** change the next product proposal.
 Do not treat this list as homework. History stays; it is not silently deleted.
 
+- [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
+  — superseded by 0058; Skills over MCP now ship behind a flag
 - [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
   — superseded by 0036; execute-live half is gone
 - [0014 — Platform scopes resolve live; person-account imports stay caller-owned](./0014-platform-live-packages.md)
@@ -134,6 +191,10 @@ Do not treat this list as homework. History stays; it is not silently deleted.
   — superseded by 0040
 - [0040 — Same-repo writers may PUT the Nx cache; fork PRs may not](./0040-same-repo-writers-may-put-nx-cache.md)
   — push access already implies the local write token
+- [0026 — Invocation tokens belong to one package; no account-level wildcard bearer](./0026-package-owned-invocation-tokens.md)
+  — superseded by 0048; HTTP tokens fully removed
+- [0027 — No invocation-token source allowlist](./0027-no-invocation-token-source-allowlist.md)
+  — superseded by 0048; HTTP tokens fully removed
 - [0028 — List/detail records expand inside the table](./0028-list-detail-expand.md)
   — UI mode assignment (supersedes 0010)
 - [0029 — Discord social login and official guild role](./0029-discord-social-login-and-guild-role.md)

@@ -51,6 +51,9 @@ jobs:
     runs-on: ubuntu-latest
     name: 🧹 Static
     timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
     if: >-
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
@@ -108,8 +111,20 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run highlight:build
 
+      - name: 🔌 API build
+        if: ${{ !cancelled() }}
+        run: npm run api:build
+
+      - name: 📚 API docs build
+        if: ${{ !cancelled() }}
+        run: npm run api-docs:build
+
       - name: 📦 Worker startup bundles
         if: ${{ !cancelled() }}
+        env:
+          # Main pushes may open/update a tracking issue when a reviewed
+          # startup byte budget is exceeded. Overage never fails this step.
+          GH_TOKEN: ${{ github.token }}
         run: npm run worker-startup-bundles:check
 
       - name: ⏱️ Worker startup time
@@ -142,9 +157,17 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
+      - name: 🔒 Lockfile peer drift
+        if: ${{ !cancelled() }}
+        run: npm run lockfile:check
+
       - name: 🛡️ Deploy guardrails
         if: ${{ !cancelled() }}
         run: npm run deploy-guardrails:check
+
+      - name: 🧾 Workflow refs
+        if: ${{ !cancelled() }}
+        run: npm run workflows:check
 
       - name: 📚 Docs (temporal)
         if: ${{ !cancelled() }}
@@ -154,9 +177,25 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run docs:check-decisions
 
+      - name: 📚 Docs (file refs)
+        if: ${{ !cancelled() }}
+        run: npm run docs:check-file-refs
+
+      - name: 🧷 Skills lock
+        if: ${{ !cancelled() }}
+        run: npm run skills-lock:check
+
+      - name: 📚 Docs (no hosted execute fallback)
+        if: ${{ !cancelled() }}
+        run: npm run docs:check-no-hosted-execute
+
       - name: 🧜 Mermaid
         if: ${{ !cancelled() }}
         run: npm run mermaid:check
+
+      - name: 🩹 Dependency overrides
+        if: ${{ !cancelled() }}
+        run: npm run overrides:check
 
       - name: 🔐 Production dependency audit
         if: ${{ !cancelled() }}
@@ -170,6 +209,13 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
+      # Self-driving test-time budget: this job fails itself when wall-clock
+      # exceeds 360s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
+      # baseline with headroom; cache hit or miss does not change it. Setup +
+      # tests both count; do not delete tests to stay under.
+      - name: ⏱️ Mark job start
+        run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
@@ -190,6 +236,12 @@ jobs:
             ${{ github.event.pull_request.base.sha || github.event.before || ''
             }}
 
+      - name: ⏱️ Unit job budget (≤360s)
+        if: success()
+        run: >-
+          node tools/ci/enforce-unit-job-budget.ts --leg node --start-epoch
+          "$UNIT_JOB_START_EPOCH"
+
   workers:
     runs-on: ubuntu-latest
     name: ☁️ Workers
@@ -198,6 +250,13 @@ jobs:
       github.event_name != 'pull_request' || github.event.pull_request.draft ==
       false
     steps:
+      # Self-driving test-time budget: this job fails itself when wall-clock
+      # exceeds 720s (tools/ci/enforce-unit-job-budget.ts). Cap is a cold-run
+      # baseline with headroom; cache hit or miss does not change it. Setup +
+      # tests both count; do not delete tests to stay under.
+      - name: ⏱️ Mark job start
+        run: echo "UNIT_JOB_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
         with:
@@ -211,6 +270,12 @@ jobs:
 
       - name: ☁️ Workers unit tests
         run: npm run test:workers
+
+      - name: ⏱️ Unit job budget (≤720s)
+        if: success()
+        run: >-
+          node tools/ci/enforce-unit-job-budget.ts --leg workers --start-epoch
+          "$UNIT_JOB_START_EPOCH"
 
   mcp:
     runs-on: ubuntu-latest
@@ -255,9 +320,12 @@ jobs:
       # Wrangler's local workerd occasionally crashes mid-suite ("Broken
       # pipe" → "Network connection lost"), which kills the Playwright
       # webServer and fails every remaining test with ECONNREFUSED /
-      # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Retry the
-      # whole suite once with a fresh server, but only when the failure
-      # matches that crash signature — genuine test failures never retry.
+      # E2eWebServerDeadError (see e2e/web-server-liveness.ts). Vite +
+      # @cloudflare/vite-plugin can also die on first start with
+      # `ReferenceError: __LOAD__ is not defined` during live export-type
+      # inspection (Validate #36669175020). Retry the whole suite once
+      # with a fresh server, but only when the failure matches that
+      # crash signature — genuine test failures never retry.
       - name: 🎭 Playwright E2E
         run: |
           # No pipefail: the runner's implicit `bash -e` would abort on the
@@ -269,13 +337,10 @@ jobs:
           if [ "$status" -eq 0 ]; then
             exit 0
           fi
-          # Anchor connection-refused matches to the e2e webServer origin
-          # (port 3847, see playwright.config.ts) so an unrelated test
-          # failure that merely mentions a refused connection never retries.
-          if ! grep -qE 'E2eWebServerDeadError|ECONNREFUSED (127\.0\.0\.1|localhost):3847|ERR_CONNECTION_REFUSED at https?://(127\.0\.0\.1|localhost):3847' e2e-attempt-1.log; then
+          if ! node tools/ci/is-retryable-e2e-failure.ts e2e-attempt-1.log; then
             exit "$status"
           fi
-          echo "::warning::Playwright webServer (wrangler) died mid-suite; retrying the E2E suite once with a fresh server."
+          echo "::warning::Playwright webServer died on start or mid-suite; retrying the E2E suite once with a fresh server."
           npm run test:e2e:run
 
       # Wrangler writes fatal mid-suite exits under WRANGLER_LOG_PATH

@@ -15,7 +15,6 @@ interface __BaseEnv_Env {
 	FLAG_EXPOSURES: AnalyticsEngineDataset;
 	EMAIL_EVENTS: AnalyticsEngineDataset;
 	MCP_PROTOCOL_EVENTS: AnalyticsEngineDataset;
-	PACKAGE_INVOKE_SPECIFIER_EVENTS: AnalyticsEngineDataset;
 	EXECUTE_INTERPRETABLE_EVENTS: AnalyticsEngineDataset;
 	MCP_SEARCH_EVENTS: AnalyticsEngineDataset;
 	ONBOARDING_FUNNEL_EVENTS: AnalyticsEngineDataset;
@@ -39,10 +38,8 @@ interface __BaseEnv_Env {
 	USER_EMAIL_DOMAIN: "inbox.kody.codes";
 	SYSTEM_EMAIL_DOMAIN: "kody.codes";
 	FATHOM_SITE_ID: "WKKSDJGN";
-	STRIPE_STANDARD_PRICE_ID: "price_1U3sg6LAQpAnsYszGeL2nc8O";
-	STRIPE_STANDARD_YEARLY_PRICE_ID: "price_1U3sg6LAQpAnsYszqq9abwIY";
-	STRIPE_PRO_PRICE_ID: "price_1UChg1LAQpAnsYszAYn6eGgt";
-	STRIPE_PRO_YEARLY_PRICE_ID: "price_1UChg2LAQpAnsYszKAFCR778";
+	STRIPE_PRO_PRICE_ID: "price_1UKHxZLAQpAnsYszwwqZTCCT";
+	STRIPE_PRO_YEARLY_PRICE_ID: "price_1UKHxaLAQpAnsYszlsVHHXjK";
 	STRIPE_BILLING_PORTAL_CONFIGURATION_ID: "bpc_1UBzc8LAQpAnsYszyBkO2N3F";
 	DR_EXPORT_ENABLED: "true";
 	DR_BACKUP_ACCOUNT_ID: "a41d50ecaf0ae0f86dd1824ef6729cb2";
@@ -84,9 +81,6 @@ interface Env extends __BaseEnv_Env {}
 type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
-declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "SENTRY_ENVIRONMENT" | "SENTRY_TRACES_SAMPLE_RATE" | "ARTIFACTS_NAMESPACE" | "PACKAGE_APP_BASE_URL" | "USER_EMAIL_DOMAIN" | "SYSTEM_EMAIL_DOMAIN" | "FATHOM_SITE_ID" | "STRIPE_STANDARD_PRICE_ID" | "STRIPE_STANDARD_YEARLY_PRICE_ID" | "STRIPE_PRO_PRICE_ID" | "STRIPE_PRO_YEARLY_PRICE_ID" | "STRIPE_BILLING_PORTAL_CONFIGURATION_ID" | "DR_EXPORT_ENABLED" | "DR_BACKUP_ACCOUNT_ID" | "DR_BACKUP_BUCKET_NAME" | "BACKUP_MANIFEST_SIGNING_KEY_ID" | "BACKUP_MANIFEST_VERIFYING_PUBLIC_KEY_SPKI_BASE64" | "COOKIE_SECRET" | "SECRET_STORE_KEY" | "APP_BASE_URL" | "GITHUB_CLIENT_ID" | "GITHUB_CLIENT_SECRET" | "GOOGLE_CLIENT_ID" | "GOOGLE_CLIENT_SECRET" | "X_CLIENT_ID" | "X_CLIENT_SECRET">> {}
-}
 declare module "*.md" {
 	const value: string;
 	export default value;

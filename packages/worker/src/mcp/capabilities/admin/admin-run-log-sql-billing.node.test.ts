@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
 import type * as RunRecordsService from '#worker/run-records/service.ts'
@@ -5,7 +6,10 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
+	logAuditEvent: vi.fn<typeof AuditLog.logAuditEvent>(async () => ({
+		persisted: false,
+		failedSinks: [],
+	})),
 	inspectRunLogSqlBilling: vi.fn(),
 	loadAdminUserByTarget: vi.fn(),
 }))
@@ -14,7 +18,7 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Array<unknown>) =>
+		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
 			mockModule.logAuditEvent(...args),
 	}
 })
@@ -89,11 +93,12 @@ function createCtx(roles: Array<'admin' | 'user'>) {
 	return {
 		env: { APP_DB: {} } as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: roles.includes('admin')
-					? adminStableUserId
-					: targetStableUserId,
+				userId: personIdFromStored(
+					roles.includes('admin') ? adminStableUserId : targetStableUserId,
+				),
 				email: roles.includes('admin')
 					? 'admin@example.com'
 					: 'kent@example.com',

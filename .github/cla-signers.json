@@ -15,6 +15,11 @@
 			"github": "gravitinos",
 			"signedAt": "2026-08-22",
 			"cla": "individual"
+		},
+		{
+			"github": "tannerlinsley",
+			"signedAt": "2026-10-08",
+			"cla": "individual"
 		}
 	]
 }

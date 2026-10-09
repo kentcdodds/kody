@@ -5,6 +5,8 @@ import { metaMemoryGetCapability } from './meta-memory-get.ts'
 import { metaMemorySearchCapability } from './meta-memory-search.ts'
 import { metaMemoryUpsertCapability } from './meta-memory-upsert.ts'
 import { metaMemoryVerifyCapability } from './meta-memory-verify.ts'
+import { metaPlatformFeedbackGetCapability } from './meta-platform-feedback-get.ts'
+import { metaPlatformFeedbackListCapability } from './meta-platform-feedback-list.ts'
 import { metaPlatformFeedbackSubmitCapability } from './meta-platform-feedback-submit.ts'
 import { metaGetCurrentUserCapability } from './meta-get-current-user.ts'
 import { metaGetMcpServerInstructionsCapability } from './meta-get-mcp-server-instructions.ts'
@@ -12,6 +14,7 @@ import { executeCapability } from './execute.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
 import { metaSetMcpServerInstructionsCapability } from './meta-set-mcp-server-instructions.ts'
 import { searchCapability } from './search.ts'
+import { cliCredentialBootstrapCapability } from './cli-credential-bootstrap.ts'
 
 export const metaDomain = defineDomain({
 	name: capabilityDomainNames.meta,
@@ -27,6 +30,9 @@ export const metaDomain = defineDomain({
 		'friction',
 		'bug report',
 		'suggestion',
+		'feedback status',
+		'cli',
+		'bootstrap',
 	],
 	capabilities: [
 		searchCapability,
@@ -41,5 +47,8 @@ export const metaDomain = defineDomain({
 		metaMemoryUpsertCapability,
 		metaMemoryDeleteCapability,
 		metaPlatformFeedbackSubmitCapability,
+		metaPlatformFeedbackGetCapability,
+		metaPlatformFeedbackListCapability,
+		cliCredentialBootstrapCapability,
 	],
 })

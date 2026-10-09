@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 
 import { test, vi } from 'vitest'
 
-import { type BackupRuntimeStep } from './backup-runtime.ts'
-import { BackupError, workflowBackupErrorMessage } from './backup-policy.ts'
-import { environment } from './backup-control-plane-test-support.ts'
+import { workflowBackupErrorMessage } from './backup-policy.ts'
+import {
+	RetryingWorkflowStep,
+	TestNonRetryableError,
+	backupError,
+	environment,
+} from './backup-control-plane-test-support.ts'
 import {
 	completeSealDay,
 	describeSealStatus,
@@ -14,75 +18,31 @@ import {
 } from './seal-day-run.ts'
 import { withNonRetryableBackupErrors } from './workflow-step-boundary.ts'
 
-class TestNonRetryableError extends Error {}
-
-class RetryingWorkflowStep implements BackupRuntimeStep {
-	attempts = 0
-
-	async do<T>(
-		name: string,
-		config: unknown,
-		callback: () => Promise<T>,
-	): Promise<T>
-	async do<T>(name: string, callback: () => Promise<T>): Promise<T>
-	async do<T>(
-		name: string,
-		configOrCallback: unknown,
-		callback?: () => Promise<T>,
-	): Promise<T> {
-		assert.equal(name, sealDayStepName)
-		const execute =
-			typeof configOrCallback === 'function'
-				? (configOrCallback as () => Promise<T>)
-				: callback!
-		const retryLimit =
-			typeof configOrCallback === 'object' &&
-			configOrCallback !== null &&
-			'retries' in configOrCallback
-				? Number(
-						(configOrCallback as { retries: { limit: number } }).retries.limit,
-					)
-				: 0
-		for (let attempt = 0; ; attempt += 1) {
-			this.attempts += 1
-			try {
-				return await execute()
-			} catch (error) {
-				if (error instanceof TestNonRetryableError || attempt >= retryLimit) {
-					throw error
-				}
-			}
-		}
-	}
-
-	async sleep(): Promise<void> {}
-}
-
 test('seal workflow step returns a sealed day and does not retry an incomplete day', async () => {
 	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 	const env = environment()
 	const day = '2026-09-22'
 	const engine = new RetryingWorkflowStep()
-	const step = withNonRetryableBackupErrors(engine, (error) => {
-		return new TestNonRetryableError(workflowBackupErrorMessage(error))
+	const step = withNonRetryableBackupErrors(
+		engine,
+		(error) => new TestNonRetryableError(workflowBackupErrorMessage(error)),
+	)
+	const manifestKey = `daily/full/${day}/manifest.json`
+	const sealedDay = (alreadySealed: boolean) => async () => ({
+		kind: 'sealed' as const,
+		day,
+		manifestKey,
+		alreadySealed,
 	})
 
-	const sealed = await runSealDay(env, day, step, async () => ({
-		kind: 'sealed',
-		day,
-		manifestKey: `daily/full/${day}/manifest.json`,
-		alreadySealed: true,
-	}))
+	const sealed = await runSealDay(env, day, step, sealedDay(true))
 	assert.equal(sealed.alreadySealed, true)
 	assert.equal(engine.attempts, 1)
 
-	const fresh = await completeSealDay(env, day, async () => ({
-		kind: 'sealed',
-		day,
-		manifestKey: `daily/full/${day}/manifest.json`,
-		alreadySealed: false,
-	}))
-	assert.equal(fresh.alreadySealed, false)
+	assert.equal(
+		(await completeSealDay(env, day, sealedDay(false))).alreadySealed,
+		false,
+	)
 
 	engine.attempts = 0
 	await assert.rejects(
@@ -93,15 +53,10 @@ test('seal workflow step returns a sealed day and does not retry an incomplete d
 				'[d1-manifest-missing] Day 2026-09-22 is not ready to seal (d1-manifest-missing).',
 	)
 	assert.equal(engine.attempts, 1)
-	const failureLogs = consoleError.mock.calls.map(
-		(call) =>
-			JSON.parse(String(call[0])) as {
-				event: string
-				status: string
-				errorCode: string
-			},
-	)
-	const operatorFailure = failureLogs.find((log) => log.event === 'ui-seal-day')
+	assert.deepEqual(engine.names, [sealDayStepName, sealDayStepName])
+	const operatorFailure = consoleError.mock.calls
+		.map((call) => JSON.parse(String(call[0])))
+		.find((log) => log.event === 'ui-seal-day')
 	assert.equal(operatorFailure?.status, 'failure')
 	assert.equal(operatorFailure?.errorCode, 'd1-manifest-missing')
 
@@ -109,10 +64,7 @@ test('seal workflow step returns a sealed day and does not retry an incomplete d
 		completeSealDay(env, 'not-a-day', async () => {
 			throw new Error('seal should not run')
 		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'invalid-day' &&
-			error.retryable === false,
+		backupError('invalid-day', false),
 	)
 
 	const incomplete = describeSealStatus({
@@ -130,16 +82,11 @@ test('seal workflow step returns a sealed day and does not retry an incomplete d
 
 	const alreadySealed = describeSealStatus({
 		status: 'complete',
-		output: {
-			kind: 'sealed',
-			day,
-			manifestKey: `daily/full/${day}/manifest.json`,
-			alreadySealed: true,
-		},
+		output: { kind: 'sealed', day, manifestKey, alreadySealed: true },
 	})
 	assert.deepEqual(alreadySealed, {
 		kind: 'sealed',
-		manifestKey: `daily/full/${day}/manifest.json`,
+		manifestKey,
 		alreadySealed: true,
 	})
 	assert.equal(sealStatusResponseStatus(alreadySealed), 200)

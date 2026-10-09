@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -19,6 +19,7 @@ import {
 	AgentPickerGrid,
 	AgentSurfaceInstructions,
 } from '#client/routes/onboarding-mcp-client-tabs.tsx'
+import { createConnectionProfiles } from '#client/routes/connection-profiles-panel.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -26,11 +27,13 @@ import {
 import {
 	type AccountConnectionsView,
 	accountConnectionAgentIds,
+	accountConnectionsListHref,
 	accountConnectionsNewHref,
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
+import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import {
 	type McpClientKind,
 	onboardingAgentLabel,
@@ -93,6 +96,9 @@ export function AccountConnectionsRoute(handle: Handle) {
 	const connectedAgents = createAccountConnectedAgents(handle)
 	let mcpServerUrl = ''
 	let message: string | null = null
+	const connectionProfiles = createConnectionProfiles(handle, {
+		onSaved: applyPayload,
+	})
 	/** Payload last applied to the closure state above. */
 	let appliedPayload: AccountConnectedAgentsLoaderData | null = null
 	let appliedError: Error | null = null
@@ -109,6 +115,7 @@ export function AccountConnectionsRoute(handle: Handle) {
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
 		connectedAgents.applyPayload(payload)
 		mcpServerUrl = payload.mcpServerUrl
+		connectionProfiles.applyPayload(payload)
 		message = null
 	}
 
@@ -156,6 +163,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 							view,
 							connectedAgents,
 							mcpServerUrl,
+							connectionProfiles,
+							pathname: new URL(currentHref, 'http://localhost').pathname,
 						})
 					: null}
 			</AccountManagementShell>
@@ -163,10 +172,10 @@ export function AccountConnectionsRoute(handle: Handle) {
 	}
 }
 
-function renderBackToConnections() {
+function renderBackToConnections(pathname: string) {
 	return (
 		<a
-			href={routes.accountConnections.href()}
+			href={accountConnectionsListHref(pathname)}
 			data-testid="account-connections-back"
 			mix={css(backLinkCss)}
 		>
@@ -179,12 +188,14 @@ function renderReadyView(input: {
 	view: AccountConnectionsView | null
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
 	mcpServerUrl: string
+	connectionProfiles: ReturnType<typeof createConnectionProfiles>
+	pathname: string
 }) {
 	if (input.view === null) {
 		return (
 			<>
-				{renderBackToConnections()}
-				{renderUnknownAgent()}
+				{renderBackToConnections(input.pathname)}
+				{renderUnknownAgent(input.pathname)}
 			</>
 		)
 	}
@@ -193,9 +204,10 @@ function renderReadyView(input: {
 			return (
 				<>
 					{input.connectedAgents.render({
+						pathname: input.pathname,
 						actions: (
 							<a
-								href={accountConnectionsNewHref(null)}
+								href={accountConnectionsNewHref(null, input.pathname)}
 								data-testid="account-connections-add"
 								mix={css(primaryButtonCss)}
 							>
@@ -204,18 +216,26 @@ function renderReadyView(input: {
 						),
 					})}
 					{renderMcpUrlPanel({ mcpServerUrl: input.mcpServerUrl })}
+					{input.connectionProfiles.render({
+						agents: input.connectedAgents.listAgents(),
+					})}
 					{renderAdvancedPanel()}
 				</>
 			)
 		case 'new':
 			return (
 				<>
-					{renderBackToConnections()}
+					{renderBackToConnections(input.pathname)}
 					{input.view.agent === null
-						? renderAgentGrid({ mcpServerUrl: input.mcpServerUrl })
+						? renderAgentGrid({
+								mcpServerUrl: input.mcpServerUrl,
+								connectedAgents: input.connectedAgents.listAgents(),
+								pathname: input.pathname,
+							})
 						: renderAgentInstructions({
 								agent: input.view.agent,
 								mcpServerUrl: input.mcpServerUrl,
+								pathname: input.pathname,
 							})}
 				</>
 			)
@@ -283,11 +303,18 @@ function renderMcpUrlPanel(input: { mcpServerUrl: string }) {
 	)
 }
 
-function renderAgentGrid(input: { mcpServerUrl: string }) {
+function renderAgentGrid(input: {
+	mcpServerUrl: string
+	connectedAgents: AccountConnectedAgentsLoaderData['agents']
+	pathname: string
+}) {
+	const connectedMark = onboardingSecondAgentGreyedPresentation(
+		input.connectedAgents,
+	)
 	return (
 		<AccountManagementPanel
 			title="Add connection"
-			description="Pick the agent you want to connect. Every agent Kody knows how to connect is listed here, on every device; the next step shows that host's install path."
+			description="Pick the agent you want to connect — including ones already connected, when you need the steps again for a second login, new machine, or reinstall. Every agent Kody knows how to connect is listed here, on every device; the next step shows that host's install path."
 			ariaLabel="Add connection"
 		>
 			{input.mcpServerUrl ? (
@@ -304,7 +331,12 @@ function renderAgentGrid(input: { mcpServerUrl: string }) {
 							viewport: 'both' as const,
 						}))}
 						labelledBy="account-connections-add-title"
-						agentHref={(agent) => accountConnectionsNewHref(agent)}
+						agentHref={(agent) =>
+							accountConnectionsNewHref(agent, input.pathname)
+						}
+						greyedAgents={connectedMark.greyedAgents}
+						greyedReasons={connectedMark.greyedReasons}
+						greyedTitles={connectedMark.greyedTitles}
 					/>
 					<div mix={css({ display: 'grid', gap: spacing.sm })}>
 						<p mix={css({ color: colors.textMuted, margin: 0 })}>
@@ -328,6 +360,7 @@ function renderAgentGrid(input: { mcpServerUrl: string }) {
 function renderAgentInstructions(input: {
 	agent: McpClientKind
 	mcpServerUrl: string
+	pathname: string
 }) {
 	const label = onboardingAgentLabel(input.agent)
 	return (
@@ -338,7 +371,7 @@ function renderAgentInstructions(input: {
 		>
 			<div mix={css(accountActionsCss)}>
 				<a
-					href={accountConnectionsNewHref(null)}
+					href={accountConnectionsNewHref(null, input.pathname)}
 					data-testid="account-connections-change-agent"
 					mix={css(compactGhostButtonCss)}
 				>
@@ -363,7 +396,7 @@ function renderAgentInstructions(input: {
 	)
 }
 
-function renderUnknownAgent() {
+function renderUnknownAgent(pathname: string) {
 	return (
 		<AccountManagementPanel
 			title="Unknown agent"
@@ -371,7 +404,7 @@ function renderUnknownAgent() {
 		>
 			<div mix={css(accountActionsCss)}>
 				<a
-					href={accountConnectionsNewHref(null)}
+					href={accountConnectionsNewHref(null, pathname)}
 					mix={css(compactGhostButtonCss)}
 				>
 					Choose an agent

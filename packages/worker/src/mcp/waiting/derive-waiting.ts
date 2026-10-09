@@ -52,7 +52,6 @@ export async function deriveWaitingItems(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
-	fetchImpl?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WaitingItem>> {
 	const signals = await collectWaitingSignals(input)
@@ -102,7 +101,6 @@ export async function collectWaitingSignals(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
 	now?: Date
-	fetchImpl?: typeof fetch
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WaitingSignals> {
 	const now = input.now ?? new Date()
@@ -118,9 +116,7 @@ export async function collectWaitingSignals(input: {
 		pendingEmailChange,
 		errorRate,
 		entitlementCaps,
-		firstSearch,
-		firstExecute,
-		firstPackageStamp,
+		activationStamps,
 		firstMemory,
 		firstJob,
 		discordJoined,
@@ -147,23 +143,31 @@ export async function collectWaitingSignals(input: {
 		collectPendingEmailChange(env, user.userId, now),
 		collectErrorRate(env, user.stableUserId, now),
 		collectEntitlementCaps(env, user, now),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'search'),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'execute'),
-		probeActivationStamp(env.APP_DB, user.stableUserId, 'package'),
+		probeActivationStamps(env.APP_DB, user.stableUserId),
 		probeHasMemory(env.APP_DB, user.stableUserId),
 		probeHasJob(env, user.stableUserId),
 		readOfficialDiscordMembershipForUser({
 			env,
 			userId: user.userId,
-			fetchImpl: input.fetchImpl,
 		}),
 	])
 
+	// A failed package probe leaves both inputs unknown so the checklist
+	// re-derives them itself.
 	const checklist = await deriveOnboardingChecklist({
 		env,
 		userId: user.stableUserId,
 		emailVerified: user.emailVerified,
 		hasMcpClient,
+		...(packagesProbe.ok && {
+			hasAccessWin: !!(
+				activationStamps?.first_search_at ||
+				activationStamps?.first_execute_at ||
+				firstMemory ||
+				packagesProbe.value.length
+			),
+			savedPackageCount: packagesProbe.value.length,
+		}),
 		now,
 	}).catch(() => ({
 		items: [],
@@ -191,10 +195,13 @@ export async function collectWaitingSignals(input: {
 		errorRate,
 		entitlementCaps,
 		firstUseMissing: collectFirstUseMissing({
-			search: firstSearch,
+			search: activationStamp(activationStamps, 'first_search_at'),
 			memory: firstMemory,
-			execute: firstExecute,
-			package: combineFirstPackage(firstPackageStamp, packagesProbe),
+			execute: activationStamp(activationStamps, 'first_execute_at'),
+			package: combineFirstPackage(
+				activationStamp(activationStamps, 'first_saved_package_at'),
+				packagesProbe,
+			),
 			job: firstJob,
 			integration: integrationsProbe.ok
 				? integrationsProbe.value.length > 0
@@ -327,44 +334,34 @@ function lockedSavedPackages(
 		}))
 }
 
-type ActivationStamp = 'search' | 'execute' | 'package'
-
-function activationStampColumn(stamp: ActivationStamp) {
-	switch (stamp) {
-		case 'search':
-			return 'first_search_at'
-		case 'execute':
-			return 'first_execute_at'
-		case 'package':
-			return 'first_saved_package_at'
-		default: {
-			const exhaustive: never = stamp
-			throw new Error(`Unknown activation stamp: ${String(exhaustive)}`)
-		}
-	}
+type ActivationStampRow = {
+	first_search_at: string | null
+	first_execute_at: string | null
+	first_saved_package_at: string | null
 }
 
-async function probeActivationStamp(
-	db: D1Database,
-	userId: string,
-	stamp: ActivationStamp,
-): Promise<boolean | null> {
-	const column = activationStampColumn(stamp)
+/** `null` (missing row or read failure) means every stamp is unknown. */
+async function probeActivationStamps(db: D1Database, userId: string) {
 	try {
-		const row = await db
+		return await db
 			.prepare(
-				`SELECT ${column}
+				`SELECT first_search_at, first_execute_at, first_saved_package_at
 				 FROM users
 				 WHERE stable_user_id = ?
 				 LIMIT 1`,
 			)
 			.bind(userId)
-			.first<Record<string, string | null>>()
-		if (!row) return null
-		return Boolean(row[column])
+			.first<ActivationStampRow>()
 	} catch {
 		return null
 	}
+}
+
+function activationStamp(
+	row: ActivationStampRow | null,
+	column: keyof ActivationStampRow,
+) {
+	return row ? Boolean(row[column]) : null
 }
 
 async function probeHasMemory(db: D1Database, userId: string) {
@@ -443,6 +440,7 @@ async function collectEntitlementCaps(
 			usageUserId: user.stableUserId,
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
+			creditWallet: entitlement.creditWallet,
 			now,
 		})
 		return snapshot.resources

@@ -29,10 +29,18 @@ meter.
   run: the same user and published graph reuse one isolate; a different graph or
   a different user is a different isolate.
 
-Each plan includes a monthly unique-worker-day allotment. Public-ladder overage
-uses the published unique-worker-day rate on
-[Pricing](https://kody.codes/pricing). Account usage (`/account/usage` and
-`usageGet`) reports the meter with what counts.
+Account usage (`/account/usage` and `usageGet`) shows this meter as **Worker
+compute**, next to **Rows read** and the execute caps. The $12 Pro plan includes
+a monthly amount of both. Past the include, usage is charged from prepaid
+credits until they run out, and then usage past the include stops. Free, and Pro
+accounts without prepaid credits (retired plans or gifted months), keep their
+daily and weekly caps instead — see [Pricing](https://kody.codes/pricing).
+Nobody is invoiced for overage.
+
+On Free, Worker compute past the include is informational: it never charges the
+account or stops runs, and Kody does not email about it. Execute caps are the
+Free limit. Do not spend execute calls diagnosing a high Worker compute count on
+Free; move repeated ad hoc work into packages or triggers instead.
 
 ## Surfaces
 

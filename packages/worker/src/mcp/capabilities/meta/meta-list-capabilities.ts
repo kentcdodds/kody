@@ -76,6 +76,7 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaListCapabilities',
+		orgPermission: 'none',
 		description:
 			'Browse the current runtime capability registry, including dynamic capabilities from connected MCP servers. Without a domain, returns a compact domain index. Pass a domain for exact capability names and optional TypeScript call shapes.',
 		keywords: [
@@ -112,10 +113,29 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 			// Avoid a module cycle: registry -> builtin domains -> meta domain -> this file.
 			const { getCapabilityRegistryForContext } =
 				await import('#mcp/capabilities/registry.ts')
-			const registry = await getCapabilityRegistryForContext({
+			const { filterCapabilityRegistryMcpServersForCaller } =
+				await import('#mcp/capabilities/access-control.ts')
+			const { listVisibleEnabledMcpServerRefsCached } =
+				await import('#worker/mcp-client/settings-service.ts')
+			const runtimeRegistry = await getCapabilityRegistryForContext({
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
+			const userId = ctx.callerContext.user?.userId ?? null
+			const registry = userId
+				? filterCapabilityRegistryMcpServersForCaller(
+						runtimeRegistry,
+						new Set(
+							(
+								await listVisibleEnabledMcpServerRefsCached({
+									env: ctx.env,
+									userId,
+									packageId: ctx.callerContext.storageContext?.packageId,
+								}).catch(() => [])
+							).map((ref) => ref.serverId),
+						),
+					)
+				: runtimeRegistry
 			if (!args.domain) {
 				const domains = buildDomainIndexMatches({
 					capabilityDomains: registry.capabilityDomains ?? [],

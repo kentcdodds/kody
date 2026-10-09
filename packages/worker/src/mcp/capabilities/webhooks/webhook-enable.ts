@@ -9,6 +9,7 @@ export const webhookEnableCapability = defineDomainCapability(
 	capabilityDomainNames.webhooks,
 	{
 		name: 'webhookEnable',
+		orgPermission: 'package:write',
 		description:
 			'Enable a disabled package webhook so ingress accepts deliveries again.',
 		keywords: ['webhook', 'enable', 'activate'],

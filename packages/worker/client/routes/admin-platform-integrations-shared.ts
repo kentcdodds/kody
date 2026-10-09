@@ -20,6 +20,7 @@ export type ActionState =
 	| 'idle'
 	| 'saving-form'
 	| 'toggling-enabled'
+	| 'toggling-visibility'
 	| 'deleting'
 export type TokenExchangeStyleOption =
 	| 'default'

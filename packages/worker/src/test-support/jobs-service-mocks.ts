@@ -1,30 +1,62 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { vi } from 'vitest'
+import type * as backgroundMcpUserModule from '#worker/identity/background-mcp-user.ts'
+import type * as managerClientModule from '#worker/jobs/manager-client.ts'
+import type * as artifactRepoCleanupModule from '#worker/repo/artifact-repo-cleanup.ts'
+import { type RepoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
+import type * as repoSessionsModule from '#worker/repo/repo-sessions.ts'
+import type * as sourceServiceModule from '#worker/repo/source-service.ts'
+import type * as sourceSyncModule from '#worker/repo/source-sync.ts'
+import {
+	type StorageClearResult,
+	type StorageEstimateResult,
+} from '#worker/storage-runner.ts'
+
+type CleanupSessionBranchInput = Parameters<
+	RepoSessionRpc['cleanupSessionBranch']
+>[0]
 
 export const repoMockModule = {
-	ensureEntitySource: vi.fn(),
-	syncArtifactSourceSnapshot: vi.fn(),
-	cleanupArtifactReposForSource: vi.fn(async () => ({
+	ensureEntitySource: vi.fn<typeof sourceServiceModule.ensureEntitySource>(),
+	syncArtifactSourceSnapshot:
+		vi.fn<typeof sourceSyncModule.syncArtifactSourceSnapshot>(),
+	cleanupArtifactReposForSource: vi.fn<
+		typeof artifactRepoCleanupModule.cleanupArtifactReposForSource
+	>(async () => ({
 		deleted: 0,
 		artifactAccessUnavailable: false,
 	})),
-	listRepoSessionsBySource: vi.fn(async () => []),
-	deleteRepoSessionsBySourceForUser: vi.fn(async () => 0),
-	cleanupSessionBranch: vi.fn(async () => ({ ok: true })),
+	listRepoSessionsBySource: vi.fn<
+		typeof repoSessionsModule.listRepoSessionsBySource
+	>(async () => []),
+	deleteRepoSessionsBySourceForUser: vi.fn<
+		typeof repoSessionsModule.deleteRepoSessionsBySourceForUser
+	>(async () => 0),
+	cleanupSessionBranch: vi.fn(async (_payload: CleanupSessionBranchInput) => ({
+		ok: true,
+	})),
 }
 
 export const jobManagerMockModule = {
-	syncJobManagerAlarm: vi.fn(),
-	getJobManagerDebugState: vi.fn(),
+	syncJobManagerAlarm: vi.fn<typeof managerClientModule.syncJobManagerAlarm>(),
+	getJobManagerDebugState:
+		vi.fn<typeof managerClientModule.getJobManagerDebugState>(),
 }
 
 export const storageRunnerMockModule = {
-	clearStorage: vi.fn(async () => ({ ok: true as const })),
-	getEstimatedBytes: vi.fn(async () => ({ estimatedBytes: 0 })),
+	clearStorage: vi.fn<() => Promise<StorageClearResult>>(async () => ({
+		ok: true,
+	})),
+	getEstimatedBytes: vi.fn<() => Promise<StorageEstimateResult>>(async () => ({
+		estimatedBytes: 0,
+	})),
 }
 
 export const identityMockModule = {
-	resolveBackgroundMcpUser: vi.fn(async (_db: D1Database, userId: string) => ({
-		userId,
+	resolveBackgroundMcpUser: vi.fn<
+		typeof backgroundMcpUserModule.resolveBackgroundMcpUser
+	>(async (_db, userId) => ({
+		userId: personIdFromStored(userId),
 		email: `${userId}@example.com`,
 		username: userId,
 		displayName: userId,
@@ -33,58 +65,70 @@ export const identityMockModule = {
 
 export function sourceServiceMock() {
 	return {
-		ensureEntitySource: (...args: Array<unknown>) =>
-			repoMockModule.ensureEntitySource(...args),
+		ensureEntitySource: (
+			...args: Parameters<typeof sourceServiceModule.ensureEntitySource>
+		) => repoMockModule.ensureEntitySource(...args),
 	}
 }
 
 export function sourceSyncMock() {
 	return {
-		syncArtifactSourceSnapshot: (...args: Array<unknown>) =>
-			repoMockModule.syncArtifactSourceSnapshot(...args),
+		syncArtifactSourceSnapshot: (
+			...args: Parameters<typeof sourceSyncModule.syncArtifactSourceSnapshot>
+		) => repoMockModule.syncArtifactSourceSnapshot(...args),
 	}
 }
 
 export function artifactRepoCleanupMock() {
 	return {
-		cleanupArtifactReposForSource: (...args: Array<unknown>) =>
-			repoMockModule.cleanupArtifactReposForSource(...args),
+		cleanupArtifactReposForSource: (
+			...args: Parameters<
+				typeof artifactRepoCleanupModule.cleanupArtifactReposForSource
+			>
+		) => repoMockModule.cleanupArtifactReposForSource(...args),
 	}
 }
 
 export function repoSessionsMock() {
 	return {
-		listRepoSessionsBySource: (...args: Array<unknown>) =>
-			repoMockModule.listRepoSessionsBySource(...args),
-		deleteRepoSessionsBySourceForUser: (...args: Array<unknown>) =>
-			repoMockModule.deleteRepoSessionsBySourceForUser(...args),
+		listRepoSessionsBySource: (
+			...args: Parameters<typeof repoSessionsModule.listRepoSessionsBySource>
+		) => repoMockModule.listRepoSessionsBySource(...args),
+		deleteRepoSessionsBySourceForUser: (
+			...args: Parameters<
+				typeof repoSessionsModule.deleteRepoSessionsBySourceForUser
+			>
+		) => repoMockModule.deleteRepoSessionsBySourceForUser(...args),
 	}
 }
 
 export function repoSessionDoMock() {
 	return {
 		repoSessionRpc: () => ({
-			cleanupSessionBranch: (...args: Array<unknown>) =>
-				repoMockModule.cleanupSessionBranch(...args),
+			cleanupSessionBranch: (payload: CleanupSessionBranchInput) =>
+				repoMockModule.cleanupSessionBranch(payload),
 		}),
 	}
 }
 
 export function managerClientMock() {
 	return {
-		syncJobManagerAlarm: (...args: Array<unknown>) =>
-			jobManagerMockModule.syncJobManagerAlarm(...args),
-		getJobManagerDebugState: (...args: Array<unknown>) =>
-			jobManagerMockModule.getJobManagerDebugState(...args),
+		syncJobManagerAlarm: (
+			...args: Parameters<typeof managerClientModule.syncJobManagerAlarm>
+		) => jobManagerMockModule.syncJobManagerAlarm(...args),
+		getJobManagerDebugState: (
+			...args: Parameters<typeof managerClientModule.getJobManagerDebugState>
+		) => jobManagerMockModule.getJobManagerDebugState(...args),
 	}
 }
 
 export function backgroundMcpUserMock() {
 	return {
-		resolveBackgroundMcpUser: (...args: Array<unknown>) =>
-			identityMockModule.resolveBackgroundMcpUser(
-				...(args as [D1Database, string]),
-			),
+		resolveBackgroundMcpUser: (
+			...args: Parameters<
+				typeof backgroundMcpUserModule.resolveBackgroundMcpUser
+			>
+		) => identityMockModule.resolveBackgroundMcpUser(...args),
 	}
 }
 
@@ -92,10 +136,8 @@ export function storageRunnerMock(actual: Record<string, unknown>) {
 	return {
 		...actual,
 		storageRunnerRpc: () => ({
-			clearStorage: (...args: Array<unknown>) =>
-				storageRunnerMockModule.clearStorage(...args),
-			getEstimatedBytes: (...args: Array<unknown>) =>
-				storageRunnerMockModule.getEstimatedBytes(...args),
+			clearStorage: () => storageRunnerMockModule.clearStorage(),
+			getEstimatedBytes: () => storageRunnerMockModule.getEstimatedBytes(),
 			getValue: async () => ({ ok: true, key: '', value: null }),
 			setValue: async ({ key }: { key: string }) => ({ ok: true, key }),
 			deleteValue: async ({ key }: { key: string }) => ({
@@ -161,7 +203,7 @@ export function resetJobServiceMocks() {
 	identityMockModule.resolveBackgroundMcpUser.mockReset()
 	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
 		async (_db: D1Database, userId: string) => ({
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			username: userId,
 			displayName: userId,

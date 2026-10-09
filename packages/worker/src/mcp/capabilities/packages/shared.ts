@@ -21,7 +21,16 @@ export const packageFileSchema = z.object({
 
 export const packageSummarySchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	kody_id: z
+		.string()
+		.describe(
+			'Package name leaf (same value as `slug`). Kept as a compatibility alias; prefer `slug` or `name`.',
+		),
+	slug: z
+		.string()
+		.describe(
+			'Package name leaf (the path segment after the scope). Same value as `kody_id`.',
+		),
 	name: z.string(),
 	description: z.string(),
 	tags: z.array(z.string()),
@@ -49,19 +58,19 @@ export const packageSummaryWithCommunityProvenanceSchema =
 			.string()
 			.nullable()
 			.describe(
-				'Community listing id this package was forked from, or null for a self-authored package.',
+				'Catalog entry id this package was forked from, or null for a self-authored package.',
 			),
 		listing_current: z
 			.boolean()
 			.nullable()
 			.describe(
-				'Whether the source community listing id currently resolves to an active listing, or null for a self-authored package.',
+				'Whether the source catalog entry currently resolves to an active public package, or null for a self-authored package.',
 			),
 		listing_kody_id: z
 			.string()
 			.nullable()
 			.describe(
-				'Original community listing package name leaf recorded when this package was forked, or null for a self-authored package.',
+				'Original public package name leaf recorded when this package was forked, or null for a self-authored package.',
 			),
 		listing_name: z
 			.string()
@@ -98,7 +107,12 @@ export const packageSummaryWithCommunityProvenanceSchema =
 export const pendingPackageSecretApprovalsSchema = z
 	.object({
 		package_id: z.string().describe('Saved package id that needs approvals.'),
-		kody_id: z.string().describe('Package name leaf that needs approvals.'),
+		kody_id: z
+			.string()
+			.describe(
+				'Package name leaf that needs approvals (same value as `slug`).',
+			),
+		slug: z.string().describe('Package name leaf that needs approvals.'),
 		secrets: z
 			.array(
 				z.object({
@@ -125,6 +139,7 @@ export function toPackageSummary(savedPackage: SavedPackageRecord) {
 	return {
 		package_id: savedPackage.id,
 		kody_id: savedPackage.kodyId,
+		slug: savedPackage.kodyId,
 		name: savedPackage.name,
 		description: savedPackage.description,
 		tags: savedPackage.tags,
@@ -221,31 +236,6 @@ export const packageExportSurfaceSchema = z.object({
 		),
 })
 
-export const packageInvocationTokenMetadataSchema = z.object({
-	token_id: z
-		.string()
-		.describe(
-			'Package invocation token record id. This is not a bearer token.',
-		),
-	name: z.string().describe('Human-readable token record name.'),
-	package_id: z.string().describe('Saved package id this token belongs to.'),
-	export_names: z
-		.array(z.string())
-		.describe(
-			'Normalized package export scopes allowed by this token record, including * when all exports on this package are allowed.',
-		),
-	created_at: z.string(),
-	updated_at: z.string(),
-	last_used_at: z
-		.string()
-		.nullable()
-		.describe('Most recent successful bearer-token use, when tracked.'),
-	revoked_at: z
-		.string()
-		.nullable()
-		.describe('Revocation timestamp, or null when the token record is active.'),
-})
-
 export const packageDetailSchema =
 	packageSummaryWithCommunityProvenanceSchema.extend({
 		exports: z.array(packageExportSurfaceSchema),
@@ -255,25 +245,3 @@ export const packageDetailSchema =
 				'FYI metadata for package-scoped secrets owned by this package, including package_id. Never plaintext values. These are not execute-usable via search; using them still requires package context.',
 			),
 	})
-
-export function toPackageInvocationTokenMetadata(token: {
-	id: string
-	name: string
-	package_id: string
-	exportNames: Array<string>
-	created_at: string
-	updated_at: string
-	last_used_at: string | null
-	revoked_at: string | null
-}) {
-	return {
-		token_id: token.id,
-		name: token.name,
-		package_id: token.package_id,
-		export_names: token.exportNames,
-		created_at: token.created_at,
-		updated_at: token.updated_at,
-		last_used_at: token.last_used_at,
-		revoked_at: token.revoked_at,
-	}
-}

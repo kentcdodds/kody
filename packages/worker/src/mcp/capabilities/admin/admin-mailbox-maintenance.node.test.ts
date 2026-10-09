@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -12,7 +13,10 @@ import {
 import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
-	logAuditEvent: vi.fn(async () => undefined),
+	logAuditEvent: vi.fn<typeof AuditLog.logAuditEvent>(async () => ({
+		persisted: false,
+		failedSinks: [],
+	})),
 	loadAdminMailboxMaintenanceStatus: vi.fn(),
 	runAdminMailboxMaintenanceRetention: vi.fn(),
 	runAdminMailboxMaintenanceDeleteMessage: vi.fn(),
@@ -22,7 +26,7 @@ vi.mock('#worker/audit-log.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof AuditLog>()
 	return {
 		...actual,
-		logAuditEvent: (...args: Array<unknown>) =>
+		logAuditEvent: (...args: Parameters<typeof AuditLog.logAuditEvent>) =>
 			mockModule.logAuditEvent(...args),
 	}
 })
@@ -150,9 +154,12 @@ function createAdminCtx() {
 			AUDIT_DB: createD1FromSqlite(auditSqlite),
 		} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId: testStableUserIdFromEmail('admin@example.com'),
+				userId: personIdFromStored(
+					testStableUserIdFromEmail('admin@example.com'),
+				),
 				email: 'admin@example.com',
 				displayName: 'Admin',
 				roles: ['admin'],
@@ -178,6 +185,7 @@ test('adminMailboxMaintenance routes final status, retention, and delete with au
 		ctx,
 	)
 	expect(status).toMatchObject({ action: 'status', status: emptyStatus })
+	if (status.action !== 'status') throw new Error('Expected status result')
 	expect(status.status.systemEmail).toEqual(emptyStatus.systemEmail)
 	expect(mockModule.logAuditEvent).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -228,34 +236,23 @@ test('adminMailboxMaintenance routes final status, retention, and delete with au
 		/@example|secret body|email-raw:|email-attachment:/,
 	)
 
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{ action: 'reconcile', batch_size: 101 },
-			ctx,
-		),
-	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
-				action: 'retention',
-				limit: adminMailboxMaintenanceRetentionMaxLimit + 1,
-			},
-			ctx,
-		),
-	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
-	await expect(
-		adminMailboxMaintenanceCapability.handler({ action: 'seed' }, ctx),
-	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
-	await expect(
-		adminMailboxMaintenanceCapability.handler(
-			{
-				action: 'delete_message',
-				stable_user_id: 'not-a-stable-id',
-				message_id: messageId,
-			},
-			ctx,
-		),
-	).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
+	for (const invalid of [
+		{ action: 'reconcile', batch_size: 101 },
+		{
+			action: 'retention',
+			limit: adminMailboxMaintenanceRetentionMaxLimit + 1,
+		},
+		{ action: 'seed' },
+		{
+			action: 'delete_message',
+			stable_user_id: 'not-a-stable-id',
+			message_id: messageId,
+		},
+	]) {
+		await expect(
+			adminMailboxMaintenanceCapability.handler(invalid as never, ctx),
+		).rejects.toThrow('Invalid input for capability "adminMailboxMaintenance"')
+	}
 
 	const notFound = new AdminMailboxMessageNotFoundError({
 		stableUserId,

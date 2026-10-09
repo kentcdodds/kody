@@ -4,9 +4,12 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { upsertMemory } from '#mcp/memory/service.ts'
 import {
+	memoryDetailsField,
 	memoryRecordSchema,
 	memorySourceUrisField,
-	memoryTagInputSchema,
+	memorySubjectField,
+	memorySummaryField,
+	memoryTagsField,
 } from '#mcp/capabilities/meta/meta-memory-shared.ts'
 import { requireMcpUser } from './require-user.ts'
 
@@ -25,26 +28,10 @@ const inputSchema = z.object({
 		.describe(
 			'Optional freeform category string. Suggested examples include preference, profile, workflow, relationship, or identifier.',
 		),
-	subject: z
-		.string()
-		.min(1)
-		.max(200)
-		.describe('Short durable subject/title for the memory.'),
-	summary: z
-		.string()
-		.min(1)
-		.max(500)
-		.describe('Compact durable memory summary.'),
-	details: z
-		.string()
-		.max(2_000)
-		.optional()
-		.describe('Optional additional durable detail for the memory record.'),
-	tags: z
-		.array(memoryTagInputSchema)
-		.max(12)
-		.optional()
-		.describe('Optional tags for retrieval and filtering.'),
+	subject: memorySubjectField,
+	summary: memorySummaryField,
+	details: memoryDetailsField,
+	tags: memoryTagsField,
 	source_uris: memorySourceUrisField,
 	dedupe_key: z
 		.string()
@@ -81,8 +68,9 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryUpsert',
+		orgPermission: 'memory:write',
 		description:
-			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification.',
+			'Create a new memory when `memory_id` is omitted, or update an existing memory when `memory_id` is provided. Agents must run `metaMemoryVerify` first and decide the next action themselves. Do not blindly write durable memory without verification. If the candidate is really package- or export-scoped guidance, do not upsert — update package docs or JSDoc instead (see search({ entity: "guide:agent_guidance" }), Where agent guidance lives / /docs/agent-guidance).',
 		keywords: [
 			'memory',
 			'upsert',
@@ -90,6 +78,9 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			'update',
 			'verify-first',
 			'long-term memory',
+			'agent guidance',
+			'package docs',
+			'jsdoc',
 		],
 		readOnly: false,
 		idempotent: false,

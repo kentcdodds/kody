@@ -7,7 +7,8 @@ import { loadPackageManifestBySourceId } from '#worker/package-registry/source.t
 
 const packageSubscriptionSchema = z.object({
 	package_id: z.string(),
-	kody_id: z.string(),
+	kody_id: z.string().describe('Package name leaf (same value as `slug`).'),
+	slug: z.string().describe('Package name leaf (same value as `kody_id`).'),
 	name: z.string(),
 	topic: z.string(),
 	handler: z.string(),
@@ -19,8 +20,9 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageSubscriptionsList',
+		orgPermission: 'package:read',
 		description:
-			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, integration.auth.failed / integration.auth.succeeded reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected connection episodes, admin platform-feedback, admin community-activity, admin community-listing-published, admin status-incident, admin fleet.package_error_rate.elevated, admin fleet.entitlement.crossed, admin auth.denial.burst, admin email.delivery.burst, admin user.created / user.deleted, admin user.email_verification.failed, admin user.email_verification.stalled, admin user.email_outbound.paused, or admin email.system-message.sent notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented payload, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
+			'List package.json#kody.subscriptions entries for the signed-in user, optionally filtered by exact event topic. Use this to discover package event handlers such as email receipt, delivery-update, repo.pushed / repo.created / repo.deleted Artifacts lifecycle notifiers, run.error.recorded activity notifiers, integration.auth.failed / integration.auth.succeeded reconnect notifiers, mcp.server.disconnected / mcp.server.reconnected connection episodes, community.fork.upstream_updated fork notifiers, admin platform-feedback, admin community-activity, admin community-listing-published, admin status-incident, admin fleet.package_error_rate.elevated, admin fleet.entitlement.crossed, admin auth.denial.burst, admin email.delivery.burst, admin user.created / user.deleted, admin user.email_verification.failed, admin user.email_verification.stalled, admin user.email_outbound.paused, or admin email.system-message.sent notification subscribers before debugging dispatch or building fan-out. Admin-only topics carry only their documented payload, and declaring one does not grant delivery; dispatch checks the package owner role fresh at delivery time.',
 		keywords: [
 			'package',
 			'package.json#kody.subscriptions',
@@ -50,7 +52,11 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 			'community.activity.recorded',
 			'community activity recorded',
 			'community.listing.published',
+			'public package published',
 			'community listing published',
+			'community.fork.upstream_updated',
+			'fork upstream updated',
+			'forked package updated',
 			'status.incident.opened',
 			'status incident opened',
 			'status.incident.resolved',
@@ -95,7 +101,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 				.min(1)
 				.optional()
 				.describe(
-					'Optional exact event topic filter such as "email.message.received", "repo.pushed", "run.error.recorded", "integration.auth.failed", "integration.auth.succeeded", "mcp.server.disconnected", "platform.feedback.submitted", "community.activity.recorded", "community.listing.published", "status.incident.opened", "fleet.package_error_rate.elevated", "fleet.entitlement.crossed", "auth.denial.burst", "email.delivery.burst", "user.created", "user.deleted", "user.email_verification.failed", "user.email_verification.stalled", "user.email_outbound.paused", or "email.system-message.sent".',
+					'Optional exact event topic filter such as "email.message.received", "repo.pushed", "run.error.recorded", "integration.auth.failed", "integration.auth.succeeded", "mcp.server.disconnected", "community.fork.upstream_updated", "platform.feedback.submitted", "community.activity.recorded", "community.listing.published", "status.incident.opened", "fleet.package_error_rate.elevated", "fleet.entitlement.crossed", "auth.denial.burst", "email.delivery.burst", "user.created", "user.deleted", "user.email_verification.failed", "user.email_verification.stalled", "user.email_outbound.paused", or "email.system-message.sent".',
 				),
 		}),
 		outputSchema: z.object({
@@ -133,6 +139,7 @@ export const listPackageSubscriptionsCapability = defineDomainCapability(
 					subscriptions.push({
 						package_id: savedPackage.id,
 						kody_id: savedPackage.kodyId,
+						slug: savedPackage.kodyId,
 						name: savedPackage.name,
 						topic,
 						handler: definition.handler,

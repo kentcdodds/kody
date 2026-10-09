@@ -6,12 +6,13 @@ import { test } from 'vitest'
 import {
 	ACCOUNT_ID,
 	MemoryBucket,
+	backupError,
 	badSqlStatsFixture,
 	environment,
 	manifest,
 	signedManifest,
 } from './backup-control-plane-test-support.ts'
-import { BackupError, backupPayload } from './backup-policy.ts'
+import { backupPayload } from './backup-policy.ts'
 import { putImmutableManifest } from './immutable-storage.ts'
 import { assertDrillAccountIsolated, runRestoreDrill } from './restore-drill.ts'
 
@@ -20,9 +21,7 @@ test('restore drill refuses same account and accepts an isolated account', () =>
 	env.DRILL_ACCOUNT_ID = ACCOUNT_ID
 	assert.throws(
 		() => assertDrillAccountIsolated(env),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'drill-account-not-isolated',
+		backupError('drill-account-not-isolated'),
 	)
 	assert.doesNotThrow(() => assertDrillAccountIsolated(environment()))
 })
@@ -67,9 +66,7 @@ test('restore drill refuses SQL with oversized statement stats before import', a
 				throw new Error('import should not start')
 			},
 		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'backup-unrestorable-statements',
+		backupError('backup-unrestorable-statements'),
 	)
 	assert.equal(fetchCalls, 0)
 })
@@ -78,7 +75,6 @@ test('restore drill rejects an unknown --database selector', async () => {
 	const env = environment()
 	await assert.rejects(
 		runRestoreDrill(env, '2026-07-31', { database: 'kody-jobs' }),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'unknown-source-database',
+		backupError('unknown-source-database'),
 	)
 })

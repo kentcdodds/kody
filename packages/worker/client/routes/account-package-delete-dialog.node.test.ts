@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { AccountPackageDeleteDialog } from './account-package-delete-dialog.tsx'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
@@ -24,8 +24,8 @@ const packageDetail: AccountPackageDetail = {
 	forkAhead: null,
 	searchText: null,
 	exports: null,
-	tokens: [],
 	publishedCommit: null,
+	communityFork: null,
 }
 
 test('package delete dialog puts a tooltip-only copy icon next to the confirm name', async () => {

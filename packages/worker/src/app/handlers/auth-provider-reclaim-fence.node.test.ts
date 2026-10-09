@@ -1,6 +1,7 @@
 import { HttpResponse, http } from 'msw'
 import { afterAll, afterEach, beforeAll, expect, test, vi } from 'vitest'
 import { createAuthCookie, setAuthSessionSecret } from '#app/auth-session.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const lifecycleMocks = vi.hoisted(() => ({
 	scheduleUserCreatedEvent: vi.fn(),
@@ -25,7 +26,6 @@ import {
 	testCookieSecret,
 } from '#worker/test-support/auth-provider-harness.ts'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 
 const msw = createMswNodeServer()
 
@@ -41,306 +41,182 @@ afterAll(() => {
 	msw.close()
 })
 
-function withDeletingAtAfterWritableCheck(
+type PurgeRace = 'after-writable-check' | 'before-connection-insert'
+
+function withRacingPurge(
 	db: D1Database,
 	deletingAt: string,
+	race: PurgeRace,
 ): D1Database {
 	const originalPrepare = db.prepare.bind(db)
+	const stamp = (query: string, ...params: Array<unknown>) =>
+		originalPrepare(query)
+			.bind(...params)
+			.run()
 	return {
 		...db,
 		prepare(query: string) {
 			const statement = originalPrepare(query)
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
-			if (
-				!normalized.includes('select deleting_at from users') ||
-				!normalized.includes('stable_user_id')
-			) {
-				return statement
+			const isWritableCheck =
+				normalized.includes('select deleting_at from users') &&
+				normalized.includes('stable_user_id')
+			const isConnectionInsert = normalized.includes(
+				'insert into oauth_connections',
+			)
+			if (race === 'after-writable-check' && isWritableCheck) {
+				return {
+					...statement,
+					bind(...params: Array<unknown>) {
+						const bound = statement.bind(...params)
+						return {
+							...bound,
+							async first<T>() {
+								const row = await bound.first<T>()
+								await stamp(
+									`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
+									deletingAt,
+									params[0],
+								)
+								return row
+							},
+						}
+					},
+				}
 			}
-			return {
-				...statement,
-				bind(...params: Array<unknown>) {
-					const bound = statement.bind(...params)
-					return {
-						...bound,
-						async first<T>() {
-							const row = await bound.first<T>()
-							await originalPrepare(
-								`UPDATE users SET deleting_at = ? WHERE stable_user_id = ?`,
-							)
-								.bind(deletingAt, params[0])
-								.run()
-							return row
-						},
-					}
-				},
+			if (race === 'before-connection-insert' && isConnectionInsert) {
+				return {
+					...statement,
+					bind(...params: Array<unknown>) {
+						const bound = statement.bind(...params)
+						return {
+							...bound,
+							async run() {
+								await stamp(
+									`UPDATE users SET deleting_at = ? WHERE deleting_at IS NULL`,
+									deletingAt,
+								)
+								return bound.run()
+							},
+						}
+					},
+				}
 			}
+			return statement
 		},
 	} as D1Database
 }
 
-function withDeletingAtBeforeOauthConnectionInsert(
-	db: D1Database,
-	deletingAt: string,
-): D1Database {
-	const originalPrepare = db.prepare.bind(db)
-	return {
-		...db,
-		prepare(query: string) {
-			const statement = originalPrepare(query)
-			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
-			if (!normalized.includes('insert into oauth_connections')) {
-				return statement
-			}
-			return {
-				...statement,
-				bind(...params: Array<unknown>) {
-					const bound = statement.bind(...params)
-					return {
-						...bound,
-						async run() {
-							await originalPrepare(
-								`UPDATE users SET deleting_at = ? WHERE deleting_at IS NULL`,
-							)
-								.bind(deletingAt)
-								.run()
-							return bound.run()
-						},
-					}
-				},
-			}
-		},
-	} as D1Database
+function countConnections(
+	sqlite: ReturnType<typeof createMigratedDb>['sqlite'],
+	userId: number,
+) {
+	return sqlite
+		.prepare(
+			`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = ?`,
+		)
+		.get(userId)
 }
 
-test('google sign-in does not reclaim a fenced unverified account', async () => {
-	const { sqlite, db } = createMigratedDb()
-	const env = createAppEnv(db, {
-		OAUTH_PROVIDER: {
-			listUserGrants: async () => ({ items: [] }),
-			revokeGrant: async () => undefined,
-		},
-	})
-	await seedUser(sqlite, {
-		id: 9,
-		email: 'fenced-squat@example.com',
-		username: 'fenced-squat',
-		emailVerified: false,
-	})
-	sqlite.exec(
-		`UPDATE users SET deleting_at = '2026-09-01 12:00:00' WHERE id = 9`,
-	)
-
-	msw.use(
-		http.post('https://oauth2.googleapis.com/token', () =>
-			HttpResponse.json({ access_token: 'google-access-token' }),
+async function sessionCookieFor(email: string) {
+	return getCookiePair(
+		await createAuthCookie(
+			{
+				stableUserId: testStableUserIdFromEmail(email),
+				email,
+				rememberMe: false,
+			},
+			false,
 		),
-		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
-			HttpResponse.json({
-				sub: 'google-fenced-sub',
-				email: 'fenced-squat@example.com',
-				email_verified: true,
-				name: 'Real Owner',
+	)
+}
+
+test('google sign-in does not reclaim a fenced unverified account, including purge races', async () => {
+	const cases: Array<{ fence: 'preexisting' | PurgeRace; deletingAt: string }> =
+		[
+			{ fence: 'preexisting', deletingAt: '2026-09-01 12:00:00' },
+			{ fence: 'after-writable-check', deletingAt: '2026-09-02 12:00:00' },
+			{ fence: 'before-connection-insert', deletingAt: '2026-09-02 12:00:00' },
+		]
+	for (const { fence, deletingAt } of cases) {
+		logAuditEventSpy.mockClear()
+		const { sqlite, db: rawDb } = createMigratedDb()
+		const db =
+			fence === 'preexisting'
+				? rawDb
+				: withRacingPurge(rawDb, deletingAt, fence)
+		const env = createAppEnv(db, {
+			OAUTH_PROVIDER: {
+				listUserGrants: async () => ({ items: [] }),
+				revokeGrant: async () => undefined,
+			},
+		})
+		await seedUser(sqlite, {
+			id: 9,
+			email: 'fenced-squat@example.com',
+			username: 'fenced-squat',
+			emailVerified: false,
+		})
+		if (fence === 'preexisting') {
+			sqlite.exec(`UPDATE users SET deleting_at = '${deletingAt}' WHERE id = 9`)
+		}
+		msw.use(
+			http.post('https://oauth2.googleapis.com/token', () =>
+				HttpResponse.json({ access_token: 'google-access-token' }),
+			),
+			http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
+				HttpResponse.json({
+					sub: 'google-fenced-sub',
+					email: 'fenced-squat@example.com',
+					email_verified: true,
+					name: 'Real Owner',
+				}),
+			),
+		)
+
+		const start = await startProviderFlow(
+			env,
+			'google',
+			'http://example.com/auth/google',
+		)
+		const callbackResponse = await runHandler(
+			createAuthProviderCallbackHandler(env),
+			new Request(
+				`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
+				{ headers: { Cookie: start.stateCookie } },
+			),
+			{ provider: 'google' },
+		)
+		const user = sqlite
+			.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 9`)
+			.get()
+		expect({
+			fence,
+			status: callbackResponse.status,
+			location: callbackResponse.headers.get('Location'),
+			sessionCookie: callbackResponse.headers
+				.getSetCookie()
+				.some((cookie) => cookie.startsWith('kody_session=')),
+			user,
+			connections: countConnections(sqlite, 9),
+		}).toEqual({
+			fence,
+			status: 302,
+			location: '/login?oauthError=email-unavailable',
+			sessionCookie: false,
+			user: { email_verified_at: null, deleting_at: deletingAt },
+			connections: { count: 0 },
+		})
+		expect(logAuditEventSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: 'auth',
+				action: 'oauth_login',
+				result: 'failure',
+				reason: 'account_deleting',
 			}),
-		),
-	)
-
-	const start = await startProviderFlow(
-		env,
-		'google',
-		'http://example.com/auth/google',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'google' },
-	)
-	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=email-unavailable',
-	)
-	expect(
-		callbackResponse.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(false)
-
-	const user = sqlite
-		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 9`)
-		.get() as { email_verified_at: string | null; deleting_at: string | null }
-	expect(user.email_verified_at).toBeNull()
-	expect(user.deleting_at).toBe('2026-09-01 12:00:00')
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 9`,
-			)
-			.get(),
-	).toEqual({ count: 0 })
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'oauth_login',
-			result: 'failure',
-			reason: 'account_deleting',
-		}),
-	)
-})
-
-test('google sign-in does not reclaim when a purge claim lands between the writable check and the stamp', async () => {
-	const { sqlite, db: rawDb } = createMigratedDb()
-	const db = withDeletingAtAfterWritableCheck(rawDb, '2026-09-02 12:00:00')
-	const env = createAppEnv(db, {
-		OAUTH_PROVIDER: {
-			listUserGrants: async () => ({ items: [] }),
-			revokeGrant: async () => undefined,
-		},
-	})
-	await seedUser(sqlite, {
-		id: 10,
-		email: 'race-squat@example.com',
-		username: 'race-squat',
-		emailVerified: false,
-	})
-
-	msw.use(
-		http.post('https://oauth2.googleapis.com/token', () =>
-			HttpResponse.json({ access_token: 'google-access-token' }),
-		),
-		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
-			HttpResponse.json({
-				sub: 'google-race-sub',
-				email: 'race-squat@example.com',
-				email_verified: true,
-				name: 'Real Owner',
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(
-		env,
-		'google',
-		'http://example.com/auth/google',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'google' },
-	)
-	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=email-unavailable',
-	)
-	expect(
-		callbackResponse.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(false)
-
-	const user = sqlite
-		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 10`)
-		.get() as { email_verified_at: string | null; deleting_at: string | null }
-	expect(user.email_verified_at).toBeNull()
-	expect(user.deleting_at).toBe('2026-09-02 12:00:00')
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 10`,
-			)
-			.get(),
-	).toEqual({ count: 0 })
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'oauth_login',
-			result: 'failure',
-			reason: 'account_deleting',
-		}),
-	)
-})
-
-test('google sign-in does not reclaim when a purge claim lands before the oauth connection insert', async () => {
-	const { sqlite, db: rawDb } = createMigratedDb()
-	const db = withDeletingAtBeforeOauthConnectionInsert(
-		rawDb,
-		'2026-09-02 12:00:00',
-	)
-	const env = createAppEnv(db, {
-		OAUTH_PROVIDER: {
-			listUserGrants: async () => ({ items: [] }),
-			revokeGrant: async () => undefined,
-		},
-	})
-	await seedUser(sqlite, {
-		id: 13,
-		email: 'race-insert-squat@example.com',
-		username: 'race-insert-squat',
-		emailVerified: false,
-	})
-
-	msw.use(
-		http.post('https://oauth2.googleapis.com/token', () =>
-			HttpResponse.json({ access_token: 'google-access-token' }),
-		),
-		http.get('https://openidconnect.googleapis.com/v1/userinfo', () =>
-			HttpResponse.json({
-				sub: 'google-race-insert-sub',
-				email: 'race-insert-squat@example.com',
-				email_verified: true,
-				name: 'Real Owner',
-			}),
-		),
-	)
-
-	const start = await startProviderFlow(
-		env,
-		'google',
-		'http://example.com/auth/google',
-	)
-	const callbackResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(
-			`http://example.com/auth/google/callback?code=google-auth-code&state=${start.state}`,
-			{ headers: { Cookie: start.stateCookie } },
-		),
-		{ provider: 'google' },
-	)
-	expect(callbackResponse.status).toBe(302)
-	expect(callbackResponse.headers.get('Location')).toBe(
-		'/login?oauthError=email-unavailable',
-	)
-	expect(
-		callbackResponse.headers
-			.getSetCookie()
-			.some((cookie) => cookie.startsWith('kody_session=')),
-	).toBe(false)
-
-	const user = sqlite
-		.prepare(`SELECT email_verified_at, deleting_at FROM users WHERE id = 13`)
-		.get() as { email_verified_at: string | null; deleting_at: string | null }
-	expect(user.email_verified_at).toBeNull()
-	expect(user.deleting_at).toBe('2026-09-02 12:00:00')
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 13`,
-			)
-			.get(),
-	).toEqual({ count: 0 })
-	expect(logAuditEventSpy).toHaveBeenCalledWith(
-		expect.objectContaining({
-			category: 'auth',
-			action: 'oauth_login',
-			result: 'failure',
-			reason: 'account_deleting',
-		}),
-	)
+		)
+		msw.resetHandlers()
+	}
 })
 
 test('signed-in unverified accounts cannot link a provider; verified accounts still can', async () => {
@@ -361,44 +237,29 @@ test('signed-in unverified accounts cannot link a provider; verified accounts st
 		username: 'verified-linker',
 		emailVerified: true,
 	})
+	const linkGithub = async (email: string) => {
+		const start = await startProviderFlow(
+			env,
+			'github',
+			'http://example.com/auth/github',
+		)
+		return runHandler(
+			createAuthProviderCallbackHandler(env),
+			new Request(start.location, {
+				headers: {
+					Cookie: `${start.stateCookie}; ${await sessionCookieFor(email)}`,
+				},
+			}),
+			{ provider: 'github' },
+		)
+	}
 
-	const unverifiedSessionCookie = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail(
-					'squat-linker@example.com',
-				),
-				email: 'squat-linker@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	)
-	const unverifiedStart = await startProviderFlow(
-		env,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const unverifiedResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(unverifiedStart.location, {
-			headers: {
-				Cookie: `${unverifiedStart.stateCookie}; ${unverifiedSessionCookie}`,
-			},
-		}),
-		{ provider: 'github' },
-	)
+	const unverifiedResponse = await linkGithub('squat-linker@example.com')
 	expect(unverifiedResponse.status).toBe(302)
 	expect(unverifiedResponse.headers.get('Location')).toBe(
 		'/account?oauthError=email-unverified',
 	)
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 31`,
-			)
-			.get(),
-	).toEqual({ count: 0 })
+	expect(countConnections(sqlite, 31)).toEqual({ count: 0 })
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'auth',
@@ -408,32 +269,7 @@ test('signed-in unverified accounts cannot link a provider; verified accounts st
 		}),
 	)
 
-	const verifiedSessionCookie = getCookiePair(
-		await createAuthCookie(
-			{
-				stableUserId: await createStableUserIdFromEmail(
-					'verified-linker@example.com',
-				),
-				email: 'verified-linker@example.com',
-				rememberMe: false,
-			},
-			false,
-		),
-	)
-	const verifiedStart = await startProviderFlow(
-		env,
-		'github',
-		'http://example.com/auth/github',
-	)
-	const verifiedResponse = await runHandler(
-		createAuthProviderCallbackHandler(env),
-		new Request(verifiedStart.location, {
-			headers: {
-				Cookie: `${verifiedStart.stateCookie}; ${verifiedSessionCookie}`,
-			},
-		}),
-		{ provider: 'github' },
-	)
+	const verifiedResponse = await linkGithub('verified-linker@example.com')
 	expect(verifiedResponse.status).toBe(302)
 	expect(verifiedResponse.headers.get('Location')).toBe(
 		'/account?oauthLinked=github',

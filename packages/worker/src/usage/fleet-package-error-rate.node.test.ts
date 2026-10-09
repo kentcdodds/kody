@@ -11,119 +11,66 @@ import {
 	toWindowSnapshot,
 } from './fleet-package-error-rate.ts'
 
-function windowOf(input: {
-	kind: 'hour' | 'day'
-	recentEvents: number
-	recentErrors: number
-	previousEvents: number
-	previousErrors: number
-}) {
+function windowOf(
+	kind: 'hour' | 'day',
+	[recentEvents, recentErrors, previousEvents, previousErrors]: [
+		number,
+		number,
+		number,
+		number,
+	],
+) {
 	const recentStart = new Date('2026-08-22T18:00:00.000Z')
-	const recentEnd = new Date('2026-08-22T19:00:00.000Z')
-	const previousStart = new Date('2026-08-22T17:00:00.000Z')
+	const snapshot = (start: Date, end: Date, events: number, errors: number) =>
+		toWindowSnapshot({
+			start,
+			end,
+			byMetric: {
+				package_export: countsOf(events, errors),
+				package_static_call: countsOf(0, 0),
+				job_run: countsOf(0, 0),
+				workflow_run: countsOf(0, 0),
+			},
+		})
 	return {
-		kind: input.kind,
-		recent: toWindowSnapshot({
-			start: recentStart,
-			end: recentEnd,
-			byMetric: {
-				package_export: countsOf(input.recentEvents, input.recentErrors),
-				package_static_call: countsOf(0, 0),
-				job_run: countsOf(0, 0),
-				workflow_run: countsOf(0, 0),
-			},
-		}),
-		previous: toWindowSnapshot({
-			start: previousStart,
-			end: recentStart,
-			byMetric: {
-				package_export: countsOf(input.previousEvents, input.previousErrors),
-				package_static_call: countsOf(0, 0),
-				job_run: countsOf(0, 0),
-				workflow_run: countsOf(0, 0),
-			},
-		}),
+		kind,
+		recent: snapshot(
+			recentStart,
+			new Date('2026-08-22T19:00:00.000Z'),
+			recentEvents,
+			recentErrors,
+		),
+		previous: snapshot(
+			new Date('2026-08-22T17:00:00.000Z'),
+			recentStart,
+			previousEvents,
+			previousErrors,
+		),
 	}
 }
 
 test('fleet package error-rate detection stays anonymous and prefers day rises', () => {
-	expect(
-		detectFleetPackageErrorRateElevation({
-			comparison: windowOf({
-				kind: 'day',
-				recentEvents: 10,
-				recentErrors: 10,
-				previousEvents: 100,
-				previousErrors: 0,
-			}),
+	const detectionCases: Array<
+		[[number, number, number, number], Record<string, string> | null]
+	> = [
+		[[10, 10, 100, 0], null],
+		[[100, 4, 100, 1], null],
+		[[100, 12, 100, 4], { reason: 'absolute_delta', kind: 'day' }],
+		[[100, 8, 100, 4], { reason: 'relative_factor' }],
+		[[80, 8, 80, 0], { reason: 'from_zero' }],
+	]
+	for (const [counts, want] of detectionCases) {
+		const detected = detectFleetPackageErrorRateElevation({
+			comparison: windowOf('day', counts),
 			minEvents: fleetPackageErrorRateMinDayEvents,
-		}),
-	).toBeNull()
-	expect(
-		detectFleetPackageErrorRateElevation({
-			comparison: windowOf({
-				kind: 'day',
-				recentEvents: 100,
-				recentErrors: 4,
-				previousEvents: 100,
-				previousErrors: 1,
-			}),
-			minEvents: fleetPackageErrorRateMinDayEvents,
-		}),
-	).toBeNull()
-	expect(
-		detectFleetPackageErrorRateElevation({
-			comparison: windowOf({
-				kind: 'day',
-				recentEvents: 100,
-				recentErrors: 12,
-				previousEvents: 100,
-				previousErrors: 4,
-			}),
-			minEvents: fleetPackageErrorRateMinDayEvents,
-		}),
-	).toMatchObject({ reason: 'absolute_delta', kind: 'day' })
-	expect(
-		detectFleetPackageErrorRateElevation({
-			comparison: windowOf({
-				kind: 'day',
-				recentEvents: 100,
-				recentErrors: 8,
-				previousEvents: 100,
-				previousErrors: 4,
-			}),
-			minEvents: fleetPackageErrorRateMinDayEvents,
-		}),
-	).toMatchObject({ reason: 'relative_factor' })
-	expect(
-		detectFleetPackageErrorRateElevation({
-			comparison: windowOf({
-				kind: 'day',
-				recentEvents: 80,
-				recentErrors: 8,
-				previousEvents: 80,
-				previousErrors: 0,
-			}),
-			minEvents: fleetPackageErrorRateMinDayEvents,
-		}),
-	).toMatchObject({ reason: 'from_zero' })
+		})
+		expect(detected).toEqual(want && expect.objectContaining(want))
+	}
 
 	expect(
 		chooseFleetPackageErrorRateElevation({
-			day: windowOf({
-				kind: 'day',
-				recentEvents: 80,
-				recentErrors: 16,
-				previousEvents: 80,
-				previousErrors: 2,
-			}),
-			hour: windowOf({
-				kind: 'hour',
-				recentEvents: 40,
-				recentErrors: 20,
-				previousEvents: 40,
-				previousErrors: 1,
-			}),
+			day: windowOf('day', [80, 16, 80, 2]),
+			hour: windowOf('hour', [40, 20, 40, 1]),
 		})?.kind,
 	).toBe('day')
 
@@ -139,10 +86,7 @@ test('fleet package error-rate detection stays anonymous and prefers day rises',
 	expect(query).toContain("toDateTime('2026-08-21 19:00:00')")
 	expect(query).not.toContain('blob1')
 	expect(query).not.toContain('user_id')
-	expect(query).not.toContain('GROUP BY blob1')
 
-	const start = new Date('2026-08-22T18:00:00.000Z')
-	const end = new Date('2026-08-22T19:00:00.000Z')
 	const snapshot = foldAnalyticsWindowRows(
 		[
 			{
@@ -151,14 +95,13 @@ test('fleet package error-rate detection stays anonymous and prefers day rises',
 				event_count: 10,
 				error_count: 2,
 			},
-			{
-				window: 'previous',
-				metric: 'job_run',
-				event_count: 5,
-				error_count: 1,
-			},
+			{ window: 'previous', metric: 'job_run', event_count: 5, error_count: 1 },
 		],
-		{ window: 'recent', start, end },
+		{
+			window: 'recent',
+			start: new Date('2026-08-22T18:00:00.000Z'),
+			end: new Date('2026-08-22T19:00:00.000Z'),
+		},
 	)
 	expect(snapshot.combined).toEqual(countsOf(10, 2))
 	expect(snapshot.by_metric.find((row) => row.metric === 'job_run')).toEqual({
@@ -168,34 +111,23 @@ test('fleet package error-rate detection stays anonymous and prefers day rises',
 		rate: null,
 	})
 
+	const snapshotHeader = {
+		version: 1,
+		updatedAt: '2026-08-22T19:00:00.000Z',
+		environment: 'production',
+	}
 	expect(parseFleetPackageErrorRateSnapshot({ version: 2 })).toBeNull()
 	expect(
 		parseFleetPackageErrorRateSnapshot({
-			version: 1,
-			updatedAt: '2026-08-22T19:00:00.000Z',
-			environment: 'production',
+			...snapshotHeader,
 			user_id: 'should-not-matter',
 		}),
 	).toBeNull()
 	expect(
 		parseFleetPackageErrorRateSnapshot({
-			version: 1,
-			updatedAt: '2026-08-22T19:00:00.000Z',
-			environment: 'production',
-			day: windowOf({
-				kind: 'day',
-				recentEvents: 80,
-				recentErrors: 16,
-				previousEvents: 80,
-				previousErrors: 2,
-			}),
-			hour: windowOf({
-				kind: 'hour',
-				recentEvents: 40,
-				recentErrors: 2,
-				previousEvents: 40,
-				previousErrors: 1,
-			}),
+			...snapshotHeader,
+			day: windowOf('day', [80, 16, 80, 2]),
+			hour: windowOf('hour', [40, 2, 40, 1]),
 			concentration: {
 				kind: 'one_account',
 				recent_errors: 90,

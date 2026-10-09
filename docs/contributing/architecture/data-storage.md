@@ -1,5 +1,25 @@
 # Data storage
 
+## Contents
+
+- [Per-user isolation invariant](#per-user-isolation-invariant)
+- [Account deletion inventory](#account-deletion-inventory)
+- [Account export inventory](#account-export-inventory)
+- [D1 (`APP_DB`)](#d1-app_db)
+- [D1 (`JOBS_DB`)](#d1-jobs_db)
+- [Analytics Engine reporting](#analytics-engine-reporting)
+- [KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)](#kv-oauth_kv-bundle_artifacts_kv)
+- [R2 (`COMMUNITY_ASSETS`, `EMAIL_BLOBS`, `REPO_SESSION_BLOBS`)](#r2-community_assets-email_blobs-repo_session_blobs)
+- [Durable Objects (`MCP_OBJECT`)](#durable-objects-mcp_object)
+- [Durable Objects (`JobManager` and `StorageRunner`)](#durable-objects-jobmanager-and-storagerunner)
+- [Durable Objects (`UserMeter`)](#durable-objects-usermeter)
+- [Durable Objects (`Mailbox`)](#durable-objects-mailbox)
+- [Per-user Durable Object naming](#per-user-durable-object-naming)
+- [Per-user runtime context (no shared `globalThis`)](#per-user-runtime-context-no-shared-globalthis)
+- [Configuration reference](#configuration-reference)
+- [Repo-backed source and Artifacts](#repo-backed-source-and-artifacts)
+- [Frozen storage contract inventory](#frozen-storage-contract-inventory)
+
 This project uses several Cloudflare storage systems for different purposes.
 
 ## Per-user isolation invariant
@@ -164,10 +184,13 @@ Deletion must cover these user-owned surfaces:
   (`repo-session:{durableObjectId}/`). Account deletion enumerates session ids
   and each `purgeSession` prefix-purges that object's keys after `deleteAll`.
 - **KV:** published bundle artifact keys, source/manifest snapshot keys,
-  community listing snapshots, and per-user package retriever cache/index keys
-  in `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed.
-  OAuth token/grant KV is owned by the OAuth provider and is handled through
-  provider grant revocation rather than app-level key scans.
+  community listing snapshots, per-user package retriever cache/index keys,
+  package-skills index keys, package codemod revert keys, and MCP OAuth
+  refresh-family snapshot/replay keys
+  (`derived-cache:v1:mcp-oauth-refresh-{family,replay}:{userId}:`) in
+  `BUNDLE_ARTIFACTS_KV` are deleted before D1 projection rows are removed. OAuth
+  token/grant KV is owned by the OAuth provider and is handled through provider
+  grant revocation rather than app-level key scans.
 - **Cloudflare Artifacts:** source repos referenced by `entity_sources` and the
   per-user `RepoSessionIndex` catalog are deleted through the REST client in
   `packages/worker/src/repo/artifacts.ts`.
@@ -180,8 +203,8 @@ same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account/data-targets.ts` (`accountUserDataTargets`,
 `buildUserScopedTargetMatch`); export redaction columns also live there.
 Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
-declared in `account-user-owned-surfaces.ts` and consumed by both deletion and
-export. Growth-table retention dispositions are linked in
+declared in `user-owned-surfaces.ts` and consumed by both deletion and export.
+Growth-table retention dispositions are linked in
 `account-retention-dispositions.ts`.
 `packages/worker/src/account/export.node.test.ts` applies the live migrations to
 SQLite and fails if a `user_id` / `*_user_id` column is not covered by the
@@ -220,10 +243,9 @@ Secret values are **never** exported. `secret_entries` rows are metadata-only:
 name, description, bucket, allowed hosts, allowed kody, allowed packages, and
 timestamps. The encrypted payload (`encrypted_value`) and lookup hash
 (`lookup_hash`) are omitted. The same redaction rule is applied to other
-credential-equivalent fields such as password hashes, password/email reset token
-hashes, and package invocation token hashes. The manifest states these
-redactions explicitly so a partial or intentionally redacted export is not
-mistaken for a complete secret backup.
+credential-equivalent fields such as password hashes and password/email reset
+token hashes. The manifest states these redactions explicitly so a partial or
+intentionally redacted export is not mistaken for a complete secret backup.
 
 The browser route `GET /account/export.json` downloads a bounded metadata
 manifest for the signed-in user and identifies the MCP capabilities required for
@@ -283,7 +305,7 @@ Durable Object export behavior:
   `deletionState`, and `inboundConnectionLastUsed` on the first page only
   (`startAfter` absent; `null` on later pages). Section totals count each state
   inventory once when present. The storage-byte counter lives only in UserMeter.
-  Retention is self-enforced inside the DO (seven UTC days of counter and
+  Retention is self-enforced inside the DO (fourteen UTC days of counter and
   inbound-delivery-claim rows); storage-byte state is not time-pruned. See
   [Entitlements](./entitlements.md#usermeter).
 - `Mailbox` is the sole authoritative USER email graph export. It exports
@@ -323,25 +345,33 @@ destination account before importing D1 projections or republishing packages.
 
 Relational app data lives in D1.
 
+TEXT `user_id` (and `owner_user_id`) columns hold an `OwnerId`: the org that
+owns the row. Every owner is a personal org whose id is the person's
+`stable_user_id`, so the column names stay as they are. Columns that record who
+acted hold a `PersonId`. Both types come from
+`@kody-internal/shared/owner-person-ids.ts`; see
+[decision 0060](../decisions/0060-owner-and-person-ids.md).
+
 The schema is defined by migrations in `packages/worker/migrations/`:
 
 - `users`: login identity and password hash, plus the persisted stable MCP
   `userId` (`stable_user_id`, with a NOT NULL unique index in
-  `0001-squashed-init.sql`; initially SHA-256 of the normalized email at signup
-  via `createStableUserIdFromEmail`, then preserved across email changes).
-  Emails are claims on that identity (`user_email_claims`): changing email keeps
-  the previous verified address claimed so it cannot open a second account until
-  the owner re-verifies and releases it. A released address can sign up as a new
-  account with a newly minted unique `stable_user_id`; the original account's id
-  is never reminted. Email change requires a verified current address
+  `0001-squashed-init.sql`). Signup mints it as 32 random bytes in hex
+  (`mintPersonId`); it is opaque, never derived from the email, and never
+  reminted. Accounts created before random minting carry SHA-256 of their signup
+  email, so a stored id can reveal or confirm an email address: never expose
+  stable ids publicly, and never recompute one from an email. Emails are claims
+  on that identity (`user_email_claims`): changing email keeps the previous
+  verified address claimed so it cannot open a second account until the owner
+  re-verifies and releases it. A released address can sign up as a new account
+  with its own new random id. Email change requires a verified current address
   (`users.email_verified_at` is non-null). A former-email claim collision at
   signup is a controlled 409 (`former_email_claimed`) that does not leak the
-  account's current email; operators inspect leftover implicit sha256 collisions
-  with `adminUserStableIdConflict` (returns stable user id, username,
-  `created_at`, and email-verified state — never content). Optional community
-  profile fields are `display_name`, `bio`, and `profile_visibility` (default
-  `public`). `experiments_opt_in` is the account preference for the feature-flag
-  `experiments_opt_in` audience, edited at `/account/experiments`.
+  account's current email. Only `users.email` and active `user_email_claims`
+  rows reserve an address; a legacy email-hash id reserves nothing. Optional
+  community profile fields are `display_name`, `bio`, and `profile_visibility`
+  (default `public`). `experiments_opt_in` is the account preference for the
+  feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
   `account_type` (`'person'` default or `'platform'`) distinguishes normal
   signups from operator-provisioned platform accounts that own official package
   scopes (see [Platform accounts](./platform-accounts.md)). First-touch
@@ -352,19 +382,18 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
   support product metrics; email verification delivery columns track the latest
   transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
-  the write-once ledger for the 14-day Standard overlay granted when unique
-  inbound MCP OAuth `clientId`s first reach 2;
-  `second_agent_standard_gift_expires_at` is set only when that overlay actually
-  raises a free account (NULL means already paid / no-op). See
-  [Entitlements](./entitlements.md#second-agent-standard-gift).
+  the write-once ledger for the 14-day Pro overlay granted when known connected
+  agent ecosystems first reach 2; `second_agent_standard_gift_expires_at` is set
+  only when that overlay actually raises a free account (NULL means already paid
+  / no-op). See [Entitlements](./entitlements.md#second-agent-pro-gift).
   `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
-  Standard overlay from the uncapped referral program. Pre-signup attribution
-  lives in the last-wins one-week `kody_ref` cookie. `referrals` stores the
+  Pro overlay from the uncapped referral program. Pre-signup attribution lives
+  in the last-wins one-week `kody_ref` cookie. `referrals` stores the
   signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
   invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
   fields while email is unverified). See
-  [Entitlements](./entitlements.md#referral-standard-credit). The
+  [Entitlements](./entitlements.md#referral-pro-credit). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
   `storage_bytes_state` (schema v4) drives storage-byte enforcement; see
@@ -386,6 +415,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   on pre-cleanup failures (active writers or inventory); a partial-cleanup
   failure leaves the fence for retry. Never-attempted rows are processed before
   retries, and in-backoff fences are skipped.
+- `orgs` (`0086-teams-orgs-tables.sql`, `0087-teams-soft-delete-columns.sql`,
+  `0088-teams-actor-columns.sql`, `0089-teams-orgs-backfill.sql`): one row per
+  org. Personal orgs reuse `users.stable_user_id` as `orgs.id`. Billing,
+  profile, gift, and budget columns live on the org row. Soft-delete and actor
+  columns exist on the row. See
+  [decision 0063](../decisions/0063-teams-expand-orgs.md).
+- `handles` (0086): the username namespace. A personal org slug stays on the
+  original handle; a live username rename adds a new handle row.
+- `org_memberships` (0086): `(org_id, user_id)` with role `owner`, `member`, or
+  `billing`. Signup writes the person as Owner of their personal org.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage
   state. Submitter identity remains on the row; optional reviewer attribution is
   cleared if that admin account is deleted. Open and triaged rows remain until
@@ -423,10 +462,16 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `package.json` source, plus a user-scoped `hidden` flag (0/1) that excludes
   the package from default ranked search while leaving list/get/execute paths
   intact, `is_private` (0/1) for repo visibility (default private; not
-  `package.json#private`) used by public-profile catalog filters, and
-  `locked_at` (nullable ISO timestamp) that blocks agent and reconcile promotion
-  of `published_commit` until the owner approves a specific commit in the
-  account UI
+  `package.json#private`) used by public-profile catalog filters, `locked_at`
+  (nullable ISO timestamp) that blocks agent and reconcile promotion of
+  `published_commit` until the owner approves a specific commit in the account
+  UI, and `has_skills` (0/1) set at publish when the package ships one or more
+  `skills/<name>/SKILL.md` trees (Skills-over-MCP index lookup)
+- `mcp_event_subscriptions` (`0083-mcp-event-subscriptions.sql`): user-owned MCP
+  Events webhook subscriptions (event name, callback URL, encrypted `whsec_`
+  secrets). Deleted and exported with the account; secret columns are redacted
+  from export. See [MCP Events](../../guides/mcp-events.md) and
+  [0059](../decisions/0059-mcp-events-extension-behind-flag.md).
 - `community_listings`, `community_forks`, `community_ratings`,
   `community_reports`, `community_bans`: public package listings and moderation
   (see [Public packages](../community-packages.md)). `community_forks` rows for
@@ -446,8 +491,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   require package context. Search ranks user-scoped secret references only. User
   secrets are auto-granted for read/use to self-authored packages (no
   `community_forks` row for that `saved_packages.id` + `userId`) and adopted
-  forks (`community_forks.adopted_at` set via `communityForkAdopt`). Person
-  accounts do not run official platform packages
+  forks (`community_forks.adopted_at`, set only by the signed-in owner on the
+  package settings page). Person accounts do not run official platform packages
   ([0036](../decisions/0036-platform-packages-fork-only.md)). Unadopted
   community forks (`community_forks.forked_package_id`, indexed in the squashed
   baseline) still require an explicit `allowed_packages` grant on every package
@@ -460,11 +505,13 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `(user_id, slug)`. Holds shared client id, client-secret ciphertext, provider
   endpoints, and flow options. See [OAuth integrations](./integrations.md).
 - `platform_oauth_apps` (`0004-platform-oauth-apps.sql`): operator-provisioned
-  built-in OAuth apps that remaining connections still refresh against. New
-  connects and reconnects are bring-your-own only. Global operator config with
-  **no `user_id`** (like feature flags, not user data). Keyed by `slug`; holds
-  the inline non-secret `client_id`, provider endpoints, flow options, the
-  allowed/default scope menu, `required_hosts_json`, and `enabled`.
+  built-in OAuth apps. Global operator config with **no `user_id`** (like
+  feature flags, not user data). Keyed by `slug`; holds the inline non-secret
+  `client_id`, provider endpoints, flow options, the allowed/default scope menu,
+  `required_hosts_json`, `enabled` (hard kill), and `visibility`
+  (`0075-platform-oauth-app-visibility.sql`; `draft` | `published`, default
+  `draft`). Only enabled + published apps are discoverable and accept new
+  connects; draft apps keep serving existing connections.
   `client_secret_encrypted` is the one credential ciphertext stored outside
   `secret_entries` (AES-GCM with a dedicated purpose, so no `{{secret:…}}`
   placeholder can name it); `getPlatformOauthAppClientSecret` in
@@ -475,15 +522,6 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   `platform-oauth-app-logos/{slug}/` keys; uploads are fitted to 256px WebP
   before storage). See
   [OAuth integrations](./integrations.md#platform-built-in-oauth-apps).
-- `site_banners` (`0055-site-banners.sql`): operator-owned site announcement
-  banners. Global config with **no `user_id`** (like feature flags). Holds copy,
-  look, severity, page targeting, audience, schedule, and dismiss settings.
-  `created_by` / `updated_by` are integer FKs to `users.id` and SET NULL on
-  account deletion. See [Site banners](./site-banners.md).
-- `site_banner_dismissals` (`0055-site-banners.sql`): per-user forever-dismiss
-  rows keyed by `(banner_id, user_id)` with `user_id` as an integer `users.id`
-  FK. Covered by account export/deletion as `db_user_id`. Anonymous dismissals
-  live only in the `kody_site_banner_dismiss` cookie.
 - `platform_provider_marks` (`0035-platform-provider-marks.sql`): operator-owned
   brand marks for saved integrations, keyed by `slug`, with no `user_id`.
   `aliases_json` holds extra provider keys and authorize hosts. `logo_key` /
@@ -574,11 +612,11 @@ Two D1 reporting projections deliberately remain:
   stay drip-silent except that one-shot advocate mail. LimitAware shares the
   existing entitlement-warning mail. Kit stays exist-only tags. See
   [Usage metering](./usage-metering.md#usage-campaign).
-- `agent_package_conversation_uses` is read while building MCP server
-  instructions to provide popular-package hints. That request path is
-  latency-sensitive, so Analytics Engine SQL is not a suitable replacement. A
-  per-user meter Durable Object is a possible future home if D1 write contention
-  requires another move.
+- `agent_package_conversation_uses` records per-user package conversation
+  cardinality from MCP `execute` package paths. That path stays on D1 because it
+  is latency-sensitive relative to Analytics Engine SQL. A per-user meter
+  Durable Object is a possible future home if D1 write contention requires
+  another move. MCP server instructions do not read this table.
 
 ## KV (`OAUTH_KV`, `BUNDLE_ARTIFACTS_KV`)
 
@@ -716,7 +754,7 @@ Jobs use two Durable Object roles across workers:
   jobs, and dedicated storage inspection capabilities
 
 Each `JobManager` alarm processes at most `maxDueJobsPerAlarm` due jobs
-(`packages/worker/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
+(`packages/shared/src/jobs/repo.ts`, oldest `next_run_at` first). When more due
 jobs remain after a run, the post-run alarm resync arms a near-immediate
 follow-up alarm so large backlogs drain across multiple short invocations
 instead of one Durable Object wake.
@@ -765,9 +803,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 **12**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
-  `email_receives_per_day`, `execute_calls_per_day`, and
-  `outbound_fetches_per_day` (`resource`, `day`, `count`, monotonic `revision`,
-  `updated_at`).
+  `email_receives_per_day`, `execute_calls_per_day`, `outbound_fetches_per_day`,
+  `job_runs_per_day`, and `automation_invocations_per_day` (`resource`, `day`,
+  `count`, monotonic `revision`, `updated_at`).
 - `inbound_delivery_claims` — idempotency ledger keyed by inbound `delivery_id`
   (scoped by DO identity, so the primary key is delivery id alone). Records the
   claim's resource/day, post-charge counter, revision, and `claimed_at` so
@@ -788,9 +826,9 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   supply `USER_METER`. D1 `account_write_lease_repairs` is the repair audit log
   and `users.deleting_at` remains the permanent point gate. `purge()` preserves
   an existing deleting tombstone across `deleteAll` while cleanup still has a D1
-  user row. After that row is deleted, origin clears the tombstone so the
-  email-derived `stable_user_id` can be reused by a later signup. Account export
-  emits a sanitized `deletionState` without raw token/holder.
+  user row. After that row is deleted, origin clears the tombstone so the purged
+  object keeps no state. Account export emits a sanitized `deletionState`
+  without raw token/holder.
 - `dynamic_worker_days` — first-seen Dynamic Worker ids per UTC day
   (`worker_id`, `day`, `created_at`; PK `(day, worker_id)`). Used to emit one
   `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
@@ -805,14 +843,17 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
 
 Retention is self-enforced inside the DO: every read/write path
 opportunistically deletes counter, inbound-claim, and unique-worker-day rows
-older than seven UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
+older than fourteen UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
 only needs the current day; the window covers timezone edge cases, recent
 account exports, and inbound retries. Storage-byte state is not time-pruned.
 Write-lease rows clear on release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
-or day index. `adminUserMeterParity` reports meter-only daily counts. See
+or day index. `adminUserMeterParity` reports meter-only daily counts.
+`readDailyTrend` returns one compact RPC of daily counters and unique-worker-day
+counts for that retention window; `readAccountUsageTrend` / `usageTrendGet`
+zero-fill missing days and attach a cheap `usage_rollups` monthly series. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns
@@ -823,8 +864,9 @@ D1 for enforcement.
 Account deletion calls `UserMeter.purge()` (one RPC per user, no D1 id scan;
 `deleteAll` clears counters, claims, storage bytes, write leases, and inbound
 MCP last-used rows while preserving an existing deleting tombstone during
-cleanup). After the D1 user row is removed, origin drops that tombstone so a
-later signup with the same email can use the hashed `stable_user_id` again.
+cleanup). After the D1 user row is removed, origin drops that tombstone so the
+purged object keeps no state. A later signup with the same email gets a new
+random `stable_user_id` and never reattaches to the deleted account's storage.
 Account export pages `UserMeter.exportCounters` through the `user_meter`
 manifest section / `accountExportSection` (daily counters plus authoritative
 `storageBytesState`, sanitized `deletionState`, and `inboundConnectionLastUsed`
@@ -1178,8 +1220,9 @@ script owns no Durable Object classes.
   stable user id and read only through role-gated platform aggregates)
 - `MCP_PROTOCOL_EVENTS` (Analytics Engine dataset, production/preview only; one
   point per authenticated `/mcp` request recording which protocol lane served it
-  — legacy sessionful vs stateless 2026-07-28 — for legacy-lane retirement; see
-  `packages/worker/src/mcp/protocol-metrics.ts`)
+  (sessionful Durable Object vs stateless SDK) and, on `tools/call`, blob8
+  package-identity param class (`kody_id` / `package_id` / `name` / `both` /
+  `none`); see `packages/worker/src/mcp/protocol-metrics.ts`)
 - `EXECUTE_INTERPRETABLE_EVENTS` (Analytics Engine dataset, production/preview
   only; one point per MCP execute-tool module classifying whether it is
   interpretable pure glue for fleet `q`; see
@@ -1322,21 +1365,21 @@ Artifacts tokens.
 Reconcile runs through the registry in
 `packages/worker/src/scheduled/scheduled-lanes.ts`, alongside repo-session
 cleanup, system-email retention, general retention, job retention, hourly
-usage-rollup aggregation, and bounded USER inbound Mailbox reconciliation
-(active-user discovery from the users/config index followed by owner-point
-Mailbox due-work RPCs; no shared graph scan). Each production queue message
-preserves `scheduled_lane_failed` / D1 lock-contention log and Sentry context.
-D1 lock contention is replay-safe (the write did not commit) and retries on
-`kody-scheduled-dispatch` with bounded backoff (`max_retries` 3, then the
-dedicated DLQ plus a `scheduled_lane_retry_exhausted` alert). Other handled lane
-failures are acknowledged as terminal so partial external side effects are not
-replayed; the next eligible cron cadence is the next automatic attempt. A failed
-enqueue is reported and runs through the inline fallback after all sibling
-enqueue attempts finish; multiple failed enqueues fall back sequentially to
-avoid D1 lock contention. Inline fallback is one-shot and logs a non-completed
-outcome; it does not invent extra retries. Consumer transport failures retain
-the configured retry/DLQ behavior. No failure can abort or mask a sibling
-invocation.
+usage-rollup aggregation, hourly Durable Object duration attribution, and
+bounded USER inbound Mailbox reconciliation (active-user discovery from the
+users/config index followed by owner-point Mailbox due-work RPCs; no shared
+graph scan). Each production queue message preserves `scheduled_lane_failed` /
+D1 lock-contention log and Sentry context. D1 lock contention is replay-safe
+(the write did not commit) and retries on `kody-scheduled-dispatch` with bounded
+backoff (`max_retries` 3, then the dedicated DLQ plus a
+`scheduled_lane_retry_exhausted` alert). Other handled lane failures are
+acknowledged as terminal so partial external side effects are not replayed; the
+next eligible cron cadence is the next automatic attempt. A failed enqueue is
+reported and runs through the inline fallback after all sibling enqueue attempts
+finish; multiple failed enqueues fall back sequentially to avoid D1 lock
+contention. Inline fallback is one-shot and logs a non-completed outcome; it
+does not invent extra retries. Consumer transport failures retain the configured
+retry/DLQ behavior. No failure can abort or mask a sibling invocation.
 
 Production note:
 
@@ -1375,7 +1418,7 @@ on write unless a migration backfills existing rows.
 - `jobs.params_json`, `jobs.schedule_json`, `jobs.caller_context_json`, and
   `jobs.repo_check_policy_json`
   (`packages/jobs-worker/migrations/0001-jobs-init.sql`,
-  `packages/worker/src/jobs/repo.ts`) rely on parser and normalizer
+  `packages/shared/src/jobs/repo.ts`) rely on parser and normalizer
   compatibility. Package jobs persist both `storageContext.appId` for value
   scope and `storageContext.packageId` for package-owned secret scope.
 - `saved_packages.tags_json` and `community_listings.tags_json`
@@ -1392,21 +1435,20 @@ on write unless a migration backfills existing rows.
 - `published_bundle_artifacts.dependencies_json` (`0001-squashed-init.sql`)
   stores package dependency pointers queried with SQLite JSON functions in
   `packages/worker/src/repo/published-bundle-artifacts-repo.ts`.
-- `package_invocation_tokens.export_names_json`
-  (`0019-drop-invocation-token-sources.sql`) stores per-package invocation-token
-  export-scope projections. Each token row also has a required `package_id`.
-  Request JSON `source` is an optional log label, not a stored allowlist. Keyed
-  invocation replay lives in the RunLog Durable Object ledger (see
-  [Run records](./run-records.md)); the current D1 schema has no
-  `package_invocations` table.
+- Keyed invocation replay lives in the RunLog Durable Object ledger (see
+  [Run records](./run-records.md)). D1 has no `package_invocations` or
+  `package_invocation_tokens` table.
 - `webhook_endpoints` (`0001-squashed-init.sql`,
-  `0057-webhook-url-secret-encrypted.sql`) stores per-user minted URL state for
+  `0057-webhook-url-secret-encrypted.sql`,
+  `0072-webhook-hmac-secret-encrypted.sql`) stores per-user minted URL state for
   `package.json#kody.webhooks`, keyed by `(user_id, package_id, webhook_name)`.
   URL secrets are SHA-256 hashed for ingress and AES-GCM encrypted
-  (`url_secret_encrypted`) for server-side apply. MCP capabilities never return
-  the plaintext URL. Verification secrets stay in the secrets primitive
-  (`secretName` at delivery time). Delivery history is recorded as `webhook`
-  surface run records (see [Run records](./run-records.md) and
+  (`url_secret_encrypted`) for server-side apply. Package-owned HMAC signing
+  material lives on the same row (`hmac_secret_encrypted`) when verification
+  omits `secretName`; provider-issued secrets use the secrets primitive via
+  optional `verification.secretName`. MCP capabilities never return the
+  plaintext URL or HMAC. Delivery history is recorded as `webhook` surface run
+  records (see [Run records](./run-records.md) and
   [Inbound webhooks](./webhooks.md)), not as D1 rows.
 - `system_email_daily_counters` (`0001-squashed-init.sql`) stores fixed
   per-local daily receive counters for operator-owned system inboxes. These
@@ -1439,8 +1481,7 @@ on write unless a migration backfills existing rows.
   canonical `(provider, ref)`. Declaring `kody.secretProvider` is not a binding.
   Owners revoke grants on `/account/secret-providers`. Unbind, and rebind to a
   different provider package, drop grants (`ON DELETE CASCADE` from the
-  binding). The surface is gated by the `secret-providers` feature flag (default
-  off). See [secret providers](../secret-providers.md). Official OAuth token
+  binding). See [secret providers](../secret-providers.md). Official OAuth token
   rotation persists host-side and does not use that write grant. Authorship and
   adoption never imply a host allowlist. Package-scoped secrets are owned
   exclusively by the package id in their bucket binding.
@@ -1510,13 +1551,17 @@ app-owned keys in it. App-owned `BUNDLE_ARTIFACTS_KV` keys are:
 - `package-retriever-manifest:v1:{userId}:{packageId}:{revision}`.
 - `package-retriever-index-entry:v1:{userId}:{scope}:{packageId}:{retrieverKey}`
   for per-entry retriever index rows.
+- `package-skills-index:v1:{userId}:{packageId}:{publishedCommit}` — per-version
+  Agent Skills index (frontmatter + digests, no file contents) written at
+  publish; served by Skills-over-MCP when `mcp-skills-extension` is on.
 - `derived-cache:v1:mcp-oauth-refresh-family:{userId}:{grantId}` and
   `derived-cache:v1:mcp-oauth-refresh-replay:{userId}:{grantId}:{tokenHash}` —
   encrypted MCP OAuth refresh-family snapshots used so concurrent hosts sharing
   one client can reuse the previous refresh token without invalidating siblings
   (`packages/worker/src/oauth-refresh-family.ts`). Written with KV
-  `expirationTtl` (two hours / one hour). Retention is the TTL, so
-  account-deletion cleanup is not required.
+  `expirationTtl` (two hours / one hour). Registered as user-owned KV surfaces
+  and prefix-deleted by account deletion; the TTL covers a refresh that races
+  deletion.
 - `derived-cache:v1:usage-rollups:user:{userId}:asof:{YYYY-MM}` — derived
   per-user usage read model written with KV `expirationTtl`; retention is five
   minutes, so immediate account-deletion cleanup is not required.
@@ -1733,7 +1778,7 @@ Current retention policies:
   threads. Derived provider-index cleanup is separately idempotent.
   `system:email` stays on the dedicated D1 retention job and has no
   provider-index rows.
-- UserMeter daily counter rows keep seven UTC days
+- UserMeter daily counter rows keep fourteen UTC days
   (`userMeterDailyCounterRetentionDays`); `adminUserMeterParity` reports
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
@@ -1744,11 +1789,21 @@ Current retention policies:
   until deletion; no TTL.
 - `user_tips_email_opt_outs`: Kody tips opt-out stamp keyed by `stable_user_id`.
   Deleted and exported with the account. Durable until deletion; no TTL.
-- `compute_overage_invoices`: one ledger row per user per UTC month for unique
-  worker-day and Durable Object rows-read overage. Status is the disposition
-  (`invoice`, `soft_block`, `dry_run`, `skip_legacy`, and the other skips) or
-  `failed`. Stripe invoice ids stay null on non-invoice rows. Durable forever
-  until account deletion/export; `user_id` is the stable user id.
+- `durable_object_duration_daily`: per-user, per-DO-class, per-UTC-day
+  Cloudflare-measured active milliseconds (absolute; the hourly attribution lane
+  rewrites yesterday and today). Deleted and exported with the account.
+  `durable_object_duration_coverage_daily` is the fleet-level attributed vs
+  total companion (no user data).
+- `credit_wallets`: one prepaid credit wallet per `stable_user_id` (balance in
+  micro-USD, auto-refill settings and saved card id, notice opt-outs).
+- `credit_ledger_entries`: append-only top-ups, auto-refills, admin grants (with
+  `granted_by_user_id` and `note`), and debits. `stripe_reference` is unique for
+  idempotent Stripe credits. Deleting an admin anonymizes `granted_by_user_id`
+  to `deleted-user` on recipients' rows.
+- `credit_debit_progress`: per user, UTC month, and debit meter, the billable
+  units above the include already debited or forgiven, so hourly debits stay
+  idempotent. All three credit tables are durable forever until account
+  deletion/export.
 - `feature_flag_exposure_rollups`: local-dev/test flag exposure rollups keep 90
   days by `day` key, matching Analytics Engine retention for the production
   `FLAG_EXPOSURES` exposure stream; the admin metric readout window is the
@@ -1765,10 +1820,10 @@ Current retention policies:
 - `stripe_webhook_events`: platform Stripe webhook idempotency rows keep 30 days
   by `processed_at`. They are not user-owned and remain independent of account
   deletion/export.
-- `agent_package_conversation_uses`: per-user package popularity rows keep 180
-  days by `last_used_at`, matching the query-time window used to hint popular
-  packages in MCP server instructions. The prune orders by the existing
-  `(user_id, last_used_at)` time index via `last_used_at` then `rowid`.
+- `agent_package_conversation_uses`: per-user package conversation-use rows keep
+  180 days by `last_used_at` (`agentPackagePopularityMaxAgeDays`). The prune
+  orders by the existing `(user_id, last_used_at)` time index via `last_used_at`
+  then `rowid`.
 - Unverified person accounts: password signups that stay unverified
   (`users.email_verified_at` is null) for seven days and have no
   `oauth_connections` row are deleted by the hourly `unverified_account_purge`

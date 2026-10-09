@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import { clearOnboardingPayloadCache } from './onboarding-payload.ts'
 import { homeRouteLoader } from './home.tsx'
+import { isRouteLoaderRedirect } from '#client/route-loader.ts'
 import { routes } from '#universal/routes.ts'
 
 test('homeRouteLoader fail-opens when the hero JSON fetch throws', async () => {
@@ -48,6 +49,9 @@ test('homeRouteLoader fail-opens when the hero JSON fetch throws', async () => {
 			new URL('http://localhost/'),
 			new AbortController().signal,
 		)
+		if (isRouteLoaderRedirect(result)) {
+			throw new Error('expected home loader data, not a redirect')
+		}
 		expect(result.landingHeroVideos).toEqual([])
 		expect(result.onboarding).toMatchObject({ ok: true, loggedIn: false })
 	} finally {

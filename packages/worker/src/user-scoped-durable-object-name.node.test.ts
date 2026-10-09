@@ -19,40 +19,35 @@ const identityModuleRelativePath =
 	'packages/worker/src/user-scoped-durable-object-name.ts'
 
 test('user-scoped Durable Object name helpers preserve frozen idFromName contracts', () => {
-	expect(jobManagerDurableObjectName('user-aaa')).toBe('user-aaa')
-	// JobManager historically does not trim; keep that wire format frozen.
-	expect(jobManagerDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
-
-	expect(runLogDurableObjectName('user-aaa')).toBe('user-aaa')
-	expect(runLogDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
-
-	expect(userMeterDurableObjectName('user-aaa')).toBe('user-aaa')
-	// UserMeter matches RunLog: untrimmed userId is the frozen idFromName.
-	expect(userMeterDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
-
-	expect(mailboxDurableObjectName('user-aaa')).toBe('user-aaa')
-	// Mailbox matches RunLog: untrimmed userId is the frozen idFromName.
-	expect(mailboxDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
-
-	expect(repoSessionIndexDurableObjectName('user-aaa')).toBe('user-aaa')
-	expect(repoSessionIndexDurableObjectName('  user-aaa  ')).toBe('  user-aaa  ')
-
-	expect(mcpClientHubDurableObjectName('  user-aaa  ')).toBe('user-aaa')
-
-	expect(storageRunnerDurableObjectName('user-aaa', 'job:1')).toBe(
-		'["user-aaa","job:1"]',
-	)
+	// JobManager, RunLog, UserMeter, Mailbox, and RepoSessionIndex historically
+	// do not trim; the untrimmed userId is the frozen idFromName wire format.
+	const untrimmed = [
+		jobManagerDurableObjectName,
+		runLogDurableObjectName,
+		userMeterDurableObjectName,
+		mailboxDurableObjectName,
+		repoSessionIndexDurableObjectName,
+	]
 	expect(
+		untrimmed.map((name) => [name('user-aaa'), name('  user-aaa  ')]),
+	).toEqual(untrimmed.map(() => ['user-aaa', '  user-aaa  ']))
+
+	expect([
+		mcpClientHubDurableObjectName('  user-aaa  '),
+		storageRunnerDurableObjectName('user-aaa', 'job:1'),
 		packageRealtimeSessionDurableObjectName({
 			userId: 'user-aaa',
 			packageId: 'pkg-1',
 		}),
-	).toBe('["user-aaa","pkg-1"]')
-	expect(repoSessionDurableObjectName('session-1')).toBe('session-1')
-
-	expect(durableObjectNameFromParts(['user-aaa', 'a/b'])).toBe(
+		repoSessionDurableObjectName('session-1'),
+		durableObjectNameFromParts(['user-aaa', 'a/b']),
+	]).toEqual([
+		'user-aaa',
+		'["user-aaa","job:1"]',
+		'["user-aaa","pkg-1"]',
+		'session-1',
 		'["user-aaa","a/b"]',
-	)
+	])
 	expect(durableObjectNameFromParts(['user-aaa', 'a'])).not.toBe(
 		durableObjectNameFromParts(['user-aaa', 'a/b']),
 	)

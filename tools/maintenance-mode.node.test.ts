@@ -14,6 +14,15 @@ import {
 const zoneId = 'zone-kody'
 const rulesetId = 'ruleset-redirects'
 const ruleId = 'rule-maintenance'
+const zones = `${cloudflareApiBaseUrl}/zones`
+const zoneLookupUrl = `${zones}?name=${defaultMaintenanceZone}&status=active`
+const entrypointUrl = `${zones}/${zoneId}/rulesets/phases/http_request_dynamic_redirect/entrypoint`
+const ruleUrl = `${zones}/${zoneId}/rulesets/${rulesetId}/rules/${ruleId}`
+const maintenanceRule = buildMaintenanceRedirectRule({
+	zone: defaultMaintenanceZone,
+	target: defaultMaintenanceTarget,
+	enabled: true,
+})
 
 function jsonResponse(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -26,11 +35,7 @@ function envelope<T>(result: T, status = 200) {
 	return jsonResponse({ success: true, result, errors: [] }, status)
 }
 
-function zoneLookup() {
-	return envelope([{ id: zoneId, name: defaultMaintenanceZone }])
-}
-
-function redirectRule(enabled: boolean) {
+function redirectRule(enabled: boolean, target = defaultMaintenanceTarget) {
 	return {
 		id: ruleId,
 		ref: maintenanceRuleMarker,
@@ -40,7 +45,7 @@ function redirectRule(enabled: boolean) {
 		action: 'redirect',
 		action_parameters: {
 			from_value: {
-				target_url: { value: defaultMaintenanceTarget },
+				target_url: { value: target },
 				status_code: 302,
 				preserve_query_string: false,
 			},
@@ -58,16 +63,40 @@ function entrypoint(rules: Array<ReturnType<typeof redirectRule>>) {
 	})
 }
 
-function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
+/** Every write answers with the maintenance rule in the state the command asked for. */
+async function runLive(
+	argv: Array<string>,
+	entrypointResponse: () => Response,
+) {
 	const calls: Array<{ method: string; url: string; body: unknown }> = []
-	const fetchImpl: typeof fetch = async (input, init) => {
-		const url = String(input)
-		const method = init?.method ?? 'GET'
-		const body = init?.body ? JSON.parse(String(init.body)) : undefined
-		calls.push({ method, url, body })
-		return handler(url, init)
+	const result = await runMaintenanceMode(parseArgs(argv), {
+		env: { CLOUDFLARE_API_TOKEN: 'token' },
+		fetch: async (input, init) => {
+			const url = String(input)
+			const method = init?.method ?? 'GET'
+			calls.push({
+				method,
+				url,
+				body: init?.body ? JSON.parse(String(init.body)) : undefined,
+			})
+			if (url === zoneLookupUrl) {
+				return envelope([{ id: zoneId, name: defaultMaintenanceZone }])
+			}
+			if (url === entrypointUrl) return entrypointResponse()
+			if (method === 'GET') throw new Error(`Unexpected GET ${url}`)
+			return envelope({
+				id: rulesetId,
+				phase: 'http_request_dynamic_redirect',
+				rules: [redirectRule(argv[0] !== 'off')],
+			})
+		},
+		log: () => {},
+	})
+	return {
+		result,
+		requests: calls.map((call) => `${call.method} ${call.url}`),
+		lastBody: calls.at(-1)?.body,
 	}
-	return { fetchImpl, calls }
 }
 
 test('dry-run without a token prints command-specific Rulesets API calls', async () => {
@@ -79,9 +108,9 @@ test('dry-run without a token prints command-specific Rulesets API calls', async
 	expect(
 		on.requests.map((request) => `${request.method} ${request.url}`),
 	).toEqual([
-		`GET ${cloudflareApiBaseUrl}/zones?name=${defaultMaintenanceZone}&status=active`,
-		`GET ${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets/phases/http_request_dynamic_redirect/entrypoint`,
-		`POST ${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets`,
+		`GET ${zoneLookupUrl}`,
+		`GET ${zones}/{zone_id}/rulesets/phases/http_request_dynamic_redirect/entrypoint`,
+		`POST ${zones}/{zone_id}/rulesets`,
 	])
 	expect(on.requests[2]?.body).toMatchObject({
 		phase: 'http_request_dynamic_redirect',
@@ -94,7 +123,7 @@ test('dry-run without a token prints command-specific Rulesets API calls', async
 	})
 	expect(off.requests.at(-1)).toMatchObject({
 		method: 'PATCH',
-		url: `${cloudflareApiBaseUrl}/zones/{zone_id}/rulesets/{ruleset_id}/rules/{rule_id}`,
+		url: `${zones}/{zone_id}/rulesets/{ruleset_id}/rules/{rule_id}`,
 		body: { enabled: false },
 	})
 
@@ -139,13 +168,7 @@ test('parseArgs reads command, zone, target, dry-run, and json', () => {
 })
 
 test('buildMaintenanceRedirectRule uses a static 302 to the status page', () => {
-	expect(
-		buildMaintenanceRedirectRule({
-			zone: defaultMaintenanceZone,
-			target: defaultMaintenanceTarget,
-			enabled: true,
-		}),
-	).toEqual({
+	expect(maintenanceRule).toEqual({
 		ref: maintenanceRuleMarker,
 		description: maintenanceRuleMarker,
 		expression: `(http.host eq "${defaultMaintenanceZone}" and not starts_with(http.request.uri.path, "/__maintenance/") and http.request.uri.path ne "/health")`,
@@ -161,207 +184,95 @@ test('buildMaintenanceRedirectRule uses a static 302 to the status page', () => 
 	})
 })
 
-test('on creates the dynamic-redirect entrypoint when the zone has none', async () => {
-	const { fetchImpl, calls } = mockFetch((url, init) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) {
-			return jsonResponse(
-				{ success: false, errors: [{ message: 'not found' }] },
-				404,
-			)
-		}
-		if ((init?.method ?? 'GET') === 'POST' && url.endsWith('/rulesets')) {
-			return envelope({
-				id: rulesetId,
-				phase: 'http_request_dynamic_redirect',
-				rules: [redirectRule(true)],
-			})
-		}
-		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['on']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
-	expect(result.exists).toBe(true)
-	expect(result.enabled).toBe(true)
-	expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
-		`GET ${cloudflareApiBaseUrl}/zones?name=${defaultMaintenanceZone}&status=active`,
-		`GET ${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/phases/http_request_dynamic_redirect/entrypoint`,
-		`POST ${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets`,
-	])
-	expect(calls[2]?.body).toEqual({
-		name: 'Redirect rules ruleset',
-		kind: 'zone',
-		phase: 'http_request_dynamic_redirect',
-		rules: [
-			buildMaintenanceRedirectRule({
-				zone: defaultMaintenanceZone,
-				target: defaultMaintenanceTarget,
-				enabled: true,
-			}),
-		],
-	})
-})
-
-test('on adds the maintenance rule to an existing redirect ruleset', async () => {
-	const { fetchImpl, calls } = mockFetch((url, init) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) return entrypoint([])
-		if (
-			(init?.method ?? 'GET') === 'POST' &&
-			url.endsWith(`/${rulesetId}/rules`)
-		) {
-			return envelope({
-				id: rulesetId,
-				rules: [redirectRule(true)],
-			})
-		}
-		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['on']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
-	expect(result.enabled).toBe(true)
-	expect(calls.at(-1)).toMatchObject({
-		method: 'POST',
-		url: `${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/${rulesetId}/rules`,
-		body: buildMaintenanceRedirectRule({
-			zone: defaultMaintenanceZone,
-			target: defaultMaintenanceTarget,
-			enabled: true,
-		}),
-	})
-})
-
-test('on enables an existing disabled maintenance rule', async () => {
-	const { fetchImpl, calls } = mockFetch((url, init) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) return entrypoint([redirectRule(false)])
-		if ((init?.method ?? 'GET') === 'PATCH' && url.endsWith(`/${ruleId}`)) {
-			return envelope({
-				id: rulesetId,
-				rules: [redirectRule(true)],
-			})
-		}
-		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['on']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
-	expect(result.enabled).toBe(true)
-	expect(calls.at(-1)).toMatchObject({
-		method: 'PATCH',
-		url: `${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/${rulesetId}/rules/${ruleId}`,
-		body: { enabled: true, ref: maintenanceRuleMarker },
-	})
-})
-
-test('on patches an enabled rule when the target differs', async () => {
-	const staleTarget = 'https://status.kody.codes/old-maintenance'
-	const { fetchImpl, calls } = mockFetch((url, init) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) {
-			return envelope({
-				id: rulesetId,
+test('on and off make exactly one write: create, add, enable, retarget, or disable without deleting', async () => {
+	const cases = [
+		{
+			scenario:
+				'on creates the dynamic-redirect entrypoint when the zone has none',
+			argv: ['on'],
+			entrypoint: () =>
+				jsonResponse(
+					{ success: false, errors: [{ message: 'not found' }] },
+					404,
+				),
+			write: `POST ${zones}/${zoneId}/rulesets`,
+			body: {
 				name: 'Redirect rules ruleset',
 				kind: 'zone',
 				phase: 'http_request_dynamic_redirect',
-				rules: [
-					{
-						...redirectRule(true),
-						action_parameters: {
-							from_value: {
-								target_url: { value: staleTarget },
-								status_code: 302,
-								preserve_query_string: false,
-							},
-						},
-					},
-				],
-			})
-		}
-		if ((init?.method ?? 'GET') === 'PATCH' && url.endsWith(`/${ruleId}`)) {
-			return envelope({
-				id: rulesetId,
-				rules: [redirectRule(true)],
-			})
-		}
-		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['on']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
-	expect(result.target).toBe(defaultMaintenanceTarget)
-	expect(calls.at(-1)).toMatchObject({
-		method: 'PATCH',
-		url: `${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/${rulesetId}/rules/${ruleId}`,
-		body: {
-			enabled: true,
-			action_parameters: {
-				from_value: { target_url: { value: defaultMaintenanceTarget } },
+				rules: [maintenanceRule],
 			},
+			result: { exists: true, enabled: true },
 		},
-	})
-})
-
-test('off disables the existing rule and does not delete it', async () => {
-	const { fetchImpl, calls } = mockFetch((url, init) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) return entrypoint([redirectRule(true)])
-		if ((init?.method ?? 'GET') === 'PATCH' && url.endsWith(`/${ruleId}`)) {
-			return envelope({
-				id: rulesetId,
-				rules: [redirectRule(false)],
-			})
-		}
-		throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['off']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
-	expect(result.exists).toBe(true)
-	expect(result.enabled).toBe(false)
-	expect(calls.some((call) => call.method === 'DELETE')).toBe(false)
-	expect(calls.at(-1)).toMatchObject({
-		method: 'PATCH',
-		url: `${cloudflareApiBaseUrl}/zones/${zoneId}/rulesets/${rulesetId}/rules/${ruleId}`,
-		body: { enabled: false },
-	})
+		{
+			scenario: 'on adds the maintenance rule to an existing redirect ruleset',
+			argv: ['on'],
+			entrypoint: () => entrypoint([]),
+			write: `POST ${zones}/${zoneId}/rulesets/${rulesetId}/rules`,
+			body: maintenanceRule,
+			result: { enabled: true },
+		},
+		{
+			scenario: 'on enables an existing disabled maintenance rule',
+			argv: ['on'],
+			entrypoint: () => entrypoint([redirectRule(false)]),
+			write: `PATCH ${ruleUrl}`,
+			body: expect.objectContaining({
+				enabled: true,
+				ref: maintenanceRuleMarker,
+			}),
+			result: { enabled: true },
+		},
+		{
+			scenario: 'on patches an enabled rule when the target differs',
+			argv: ['on'],
+			entrypoint: () =>
+				entrypoint([
+					redirectRule(true, 'https://status.kody.codes/old-maintenance'),
+				]),
+			write: `PATCH ${ruleUrl}`,
+			body: expect.objectContaining({
+				enabled: true,
+				action_parameters: expect.objectContaining({
+					from_value: expect.objectContaining({
+						target_url: { value: defaultMaintenanceTarget },
+					}),
+				}),
+			}),
+			result: { target: defaultMaintenanceTarget },
+		},
+		{
+			scenario: 'off disables the existing rule and does not delete it',
+			argv: ['off'],
+			entrypoint: () => entrypoint([redirectRule(true)]),
+			write: `PATCH ${ruleUrl}`,
+			body: expect.objectContaining({ enabled: false }),
+			result: { exists: true, enabled: false },
+		},
+	]
+	for (const {
+		scenario,
+		argv,
+		entrypoint: respond,
+		write,
+		body,
+		result,
+	} of cases) {
+		const live = await runLive(argv, respond)
+		expect({ scenario, requests: live.requests, body: live.lastBody }).toEqual({
+			scenario,
+			requests: [`GET ${zoneLookupUrl}`, `GET ${entrypointUrl}`, write],
+			body,
+		})
+		expect(live.result).toMatchObject(result)
+	}
 })
 
 test('status reports whether the rule exists and is enabled', async () => {
-	const { fetchImpl } = mockFetch((url) => {
-		if (url.includes('/zones?name=')) return zoneLookup()
-		if (url.includes('/entrypoint')) return entrypoint([redirectRule(true)])
-		throw new Error(`Unexpected GET ${url}`)
-	})
-
-	const result = await runMaintenanceMode(parseArgs(['status', '--json']), {
-		env: { CLOUDFLARE_API_TOKEN: 'token' },
-		fetch: fetchImpl,
-		log: () => {},
-	})
-
+	const { result, requests } = await runLive(['status', '--json'], () =>
+		entrypoint([redirectRule(true)]),
+	)
+	expect(requests).toEqual([`GET ${zoneLookupUrl}`, `GET ${entrypointUrl}`])
 	expect(result).toMatchObject({
 		command: 'status',
 		exists: true,
@@ -374,17 +285,14 @@ test('status reports whether the rule exists and is enabled', async () => {
 })
 
 test('403 responses name the required Zone:Read and Single Redirect scopes', async () => {
-	const { fetchImpl } = mockFetch(() =>
-		jsonResponse(
-			{ success: false, errors: [{ message: 'Authentication error' }] },
-			403,
-		),
-	)
-
 	await expect(
 		runMaintenanceMode(parseArgs(['status']), {
 			env: { CLOUDFLARE_API_TOKEN: 'bad-token' },
-			fetch: fetchImpl,
+			fetch: async () =>
+				jsonResponse(
+					{ success: false, errors: [{ message: 'Authentication error' }] },
+					403,
+				),
 			log: () => {},
 		}),
 	).rejects.toThrow(requiredTokenScopesMessage)

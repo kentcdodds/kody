@@ -1,62 +1,100 @@
-import { expect, test } from 'vitest'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import {
+	featureFlagKeys,
+	type FeatureFlagKey,
+} from '#universal/feature-flags/registry.ts'
+import type * as FeatureFlagExposure from '#worker/feature-flags/exposure.ts'
+import type * as FeatureFlagService from '#worker/feature-flags/service.ts'
+import { type FeatureFlagEvaluation } from '#worker/feature-flags/service.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
 	assertCallerCanAccessCapability,
 	callerCanAccessCapability,
 	filterCapabilityRegistryForCaller,
+	filterCapabilityRegistryMcpServersForCaller,
+	resolveCallerFeatureFlags,
 	type CallerFeatureFlags,
 } from './access-control.ts'
 import { type BuiltCapabilityRegistry } from './build-capability-registry.ts'
 import { type Capability } from './types.ts'
 
+const flagMocks = vi.hoisted(() => ({
+	getFeatureFlagEvaluationsForUser:
+		vi.fn<typeof FeatureFlagService.getFeatureFlagEvaluationsForUser>(),
+	recordFeatureFlagExposures: vi.fn<
+		typeof FeatureFlagExposure.recordFeatureFlagExposures
+	>(async () => undefined),
+}))
+
+vi.mock('#worker/feature-flags/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof FeatureFlagService>()
+	return {
+		...actual,
+		getFeatureFlagEvaluationsForUser: (
+			...args: Parameters<typeof actual.getFeatureFlagEvaluationsForUser>
+		) => flagMocks.getFeatureFlagEvaluationsForUser(...args),
+	}
+})
+
+vi.mock('#worker/feature-flags/exposure.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof FeatureFlagExposure>()
+	return {
+		...actual,
+		recordFeatureFlagExposures: (
+			...args: Parameters<typeof actual.recordFeatureFlagExposures>
+		) => flagMocks.recordFeatureFlagExposures(...args),
+	}
+})
+
 function createFlagMap(enabled: boolean): CallerFeatureFlags {
 	return {
 		'demo-indicator': enabled,
-		'compact-mcp-server-instructions': false,
-		'compute-overage-charging': true,
 		'package-share-grants': false,
-		'secret-providers': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
+		'connection-profiles': false,
+		'mcp-skills-extension': false,
+		'mcp-events-extension': false,
 	}
 }
 
-function createFlaggedCapability(name = 'example_flagged'): Capability {
+function createCapability(
+	name: string,
+	featureFlag?: Capability['featureFlag'],
+): Capability {
 	return {
 		name,
 		domain: 'meta',
-		description: 'Flagged capability for access-control tests.',
+		description: 'Capability for access-control tests.',
 		keywords: [],
 		readOnly: true,
 		idempotent: true,
 		destructive: false,
-		featureFlag: 'demo-indicator',
+		orgPermission: 'none',
+		...(featureFlag ? { featureFlag } : {}),
 		source: 'builtin',
 		inputSchema: { type: 'object', properties: {} },
-		inputTypeDefinition: 'type ExampleFlaggedInput = Record<string, never>',
+		inputTypeDefinition: 'type ExampleInput = Record<string, never>',
 		async handler() {
 			return { ok: true }
 		},
 	}
 }
 
-function createOpenCapability(name = 'example_open'): Capability {
-	return {
-		name,
-		domain: 'meta',
-		description: 'Ungated capability for access-control tests.',
-		keywords: [],
-		readOnly: true,
-		idempotent: true,
-		destructive: false,
-		source: 'builtin',
-		inputSchema: { type: 'object', properties: {} },
-		inputTypeDefinition: 'type ExampleOpenInput = Record<string, never>',
-		async handler() {
-			return { ok: true }
-		},
-	}
-}
+const flagged = createCapability('example_flagged', 'demo-indicator')
+const open = createCapability('example_open')
+const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
+	baseUrl: 'https://example.com',
+	user: {
+		userId: personIdFromStored('user-1'),
+		email: 'user@example.com',
+		displayName: 'user',
+		roles: ['user'],
+	},
+})
 
 function createRegistry(
 	capabilities: Array<Capability>,
@@ -87,6 +125,7 @@ function createRegistry(
 					readOnly: capability.readOnly,
 					idempotent: capability.idempotent,
 					destructive: capability.destructive,
+					orgPermission: capability.orgPermission,
 					...(capability.featureFlag
 						? { featureFlag: capability.featureFlag }
 						: {}),
@@ -107,17 +146,6 @@ function createRegistry(
 }
 
 test('featureFlag-gated capabilities are denied and hidden when the flag is off', async () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
-	const open = createOpenCapability()
 	const disabledFlags = createFlagMap(false)
 
 	expect(callerCanAccessCapability(callerContext, flagged, disabledFlags)).toBe(
@@ -143,16 +171,6 @@ test('featureFlag-gated capabilities are denied and hidden when the flag is off'
 })
 
 test('featureFlag-gated capabilities are allowed when the flag is on', async () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
 	const enabledFlags = createFlagMap(true)
 
 	expect(callerCanAccessCapability(callerContext, flagged, enabledFlags)).toBe(
@@ -173,25 +191,15 @@ test('featureFlag-gated capabilities are allowed when the flag is on', async () 
 })
 
 test('featureFlag-gated capabilities fail closed when the flag map is missing', () => {
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-			roles: ['user'],
-		},
-	})
-	const flagged = createFlaggedCapability()
 	expect(callerCanAccessCapability(callerContext, flagged)).toBe(false)
 	expect(callerCanAccessCapability(callerContext, flagged, null)).toBe(false)
 })
 
 test('featureFlag-gated capabilities require an authenticated caller', async () => {
 	const anonymousContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 	})
-	const flagged = createFlaggedCapability()
 	const enabledFlags = createFlagMap(true)
 
 	expect(
@@ -204,10 +212,137 @@ test('featureFlag-gated capabilities require an authenticated caller', async () 
 	).rejects.toThrow(/Authenticated MCP user is required/)
 
 	const filtered = filterCapabilityRegistryForCaller(
-		createRegistry([flagged, createOpenCapability()]),
+		createRegistry([flagged, open]),
 		anonymousContext,
 		enabledFlags,
 	)
 	expect(filtered.capabilityMap.example_flagged).toBeUndefined()
 	expect(filtered.capabilityMap.example_open).toBeTruthy()
+})
+
+test('discovery filter hides package-locked MCP server capabilities by server id', () => {
+	const locked: Capability = {
+		...createCapability('mcp:notion:search'),
+		domain: 'mcp:notion',
+		source: 'mcp-server',
+		mcpServer: {
+			serverId: 'server-notion',
+			serverName: 'notion',
+			kodyName: 'notion',
+			mcpToolName: 'search',
+			toolName: 'search',
+		},
+	}
+	const anyContext: Capability = {
+		...createCapability('mcp:linear:list'),
+		domain: 'mcp:linear',
+		source: 'mcp-server',
+		mcpServer: {
+			serverId: 'server-linear',
+			serverName: 'linear',
+			kodyName: 'linear',
+			mcpToolName: 'list',
+			toolName: 'list',
+		},
+	}
+	const registry = createRegistry([locked, anyContext, open])
+	const filtered = filterCapabilityRegistryMcpServersForCaller(
+		registry,
+		new Set(['server-linear']),
+	)
+	expect(filtered.capabilityMap['mcp:notion:search']).toBeUndefined()
+	expect(filtered.capabilityMap['mcp:linear:list']).toBeTruthy()
+	expect(filtered.capabilityMap.example_open).toBeTruthy()
+})
+
+function createEvaluations(
+	enabledByKey: Partial<Record<FeatureFlagKey, boolean>> = {},
+): Record<FeatureFlagKey, FeatureFlagEvaluation> {
+	return Object.fromEntries(
+		featureFlagKeys.map((key) => [
+			key,
+			{
+				enabled: enabledByKey[key] === true,
+				source: 'default' as const,
+			},
+		]),
+	) as Record<FeatureFlagKey, FeatureFlagEvaluation>
+}
+
+function createFlagResolveEnv(numericUserId: number) {
+	return {
+		APP_DB: {
+			prepare() {
+				return {
+					bind() {
+						return {
+							async first() {
+								return { id: numericUserId }
+							},
+						}
+					},
+				}
+			},
+		},
+	} as unknown as Env
+}
+
+test('one MCP request records flag exposures once and reuses the request evaluation', async () => {
+	const stableUserId = testStableUserIdFromEmail('flags@example.com')
+	const requestContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(stableUserId),
+			email: 'flags@example.com',
+			displayName: 'flags',
+			roles: ['user'],
+		},
+	})
+	const evaluations = createEvaluations({ 'execute-invoke': true })
+	flagMocks.getFeatureFlagEvaluationsForUser.mockReset()
+	flagMocks.recordFeatureFlagExposures.mockClear()
+	flagMocks.getFeatureFlagEvaluationsForUser.mockResolvedValue(evaluations)
+
+	const env = createFlagResolveEnv(42)
+
+	// Same request call sites as a tools/call: registerExecuteTool, live
+	// kill-switch re-read, and registry filtering (serial + overlapping).
+	const [registered, live, filtered] = await Promise.all([
+		resolveCallerFeatureFlags(env, requestContext),
+		resolveCallerFeatureFlags(env, requestContext),
+		resolveCallerFeatureFlags(env, requestContext),
+	])
+	const fourth = await resolveCallerFeatureFlags(env, requestContext)
+
+	expect(registered['execute-invoke']).toBe(true)
+	expect(live).toBe(registered)
+	expect(filtered).toBe(registered)
+	expect(fourth).toBe(registered)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(1)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledWith(
+		env.APP_DB,
+		42,
+	)
+	expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledTimes(1)
+	expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledWith(env, {
+		stableUserId,
+		evaluations,
+	})
+
+	// A distinct caller context (next HTTP request) must evaluate and record
+	// again — no cross-request cache.
+	const nextRequestContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://example.com',
+		user: {
+			userId: personIdFromStored(stableUserId),
+			email: 'flags@example.com',
+			displayName: 'flags',
+			roles: ['user'],
+		},
+	})
+	await resolveCallerFeatureFlags(env, nextRequestContext)
+	expect(flagMocks.getFeatureFlagEvaluationsForUser).toHaveBeenCalledTimes(2)
+	expect(flagMocks.recordFeatureFlagExposures).toHaveBeenCalledTimes(2)
 })

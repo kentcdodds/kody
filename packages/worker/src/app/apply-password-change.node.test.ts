@@ -5,15 +5,15 @@ import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createDb } from '#worker/db.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { applyPasswordChange } from './apply-password-change.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 async function seedUserWithFactors() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const email = 'factors@example.com'
 	const passwordHash = await createPasswordHash('old-password-ok')
-	const stableUserId = await createStableUserIdFromEmail(email)
+	const stableUserId = testStableUserIdFromEmail(email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id, username, email, stable_user_id, password_hash, email_verified_at
@@ -103,4 +103,33 @@ test('factors are cleared before password_changed_at is stamped', async () => {
 			)
 			.get(),
 	).toEqual({ count: 0 })
+})
+
+test('password change drops every MCP event subscription for the user with the grants', async () => {
+	const { sqlite, d1, db, stableUserId } = await seedUserWithFactors()
+	const insertSubscription = sqlite.prepare(
+		`INSERT INTO mcp_event_subscriptions (
+			id, user_id, oauth_client_id, event_name, arguments_json,
+			callback_url, secret_encrypted
+		) VALUES (?, ?, ?, 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
+	)
+	insertSubscription.run('sub_one', stableUserId, 'client-a')
+	insertSubscription.run('sub_two', stableUserId, 'client-b')
+	insertSubscription.run('sub_someone_else', 'someone-else', 'client-a')
+
+	const result = await applyPasswordChange({
+		db,
+		d1,
+		helpers,
+		userId: 1,
+		stableUserId,
+		password: 'brand-new-password',
+	})
+	expect(result.ok).toBe(true)
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions ORDER BY id`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_someone_else'])
 })

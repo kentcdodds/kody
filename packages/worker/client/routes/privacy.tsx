@@ -1,4 +1,4 @@
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -11,6 +11,10 @@ import {
 	sectionTitleCss,
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
+import {
+	privacyRetentionPeriods,
+	privacySubprocessors,
+} from '#universal/privacy-retention.ts'
 import { privacyLastUpdated } from './legal-last-updated.ts'
 
 export function PrivacyRoute(_handle: Handle) {
@@ -64,12 +68,12 @@ export function PrivacyRoute(_handle: Handle) {
 					name when known, last-active day stamps used for return metrics,
 					secrets, memories, packages and their source, jobs, email inboxes and
 					messages, durable storage, MCP server configuration, OAuth grants,
-					package invocation tokens, short-lived execution history, stored
-					community activity events, and any platform feedback you approve for
-					submission. All of this remains scoped to your account except for
-					content you deliberately make public (community listings and a public
-					profile), the narrow admin review of approved platform feedback, and
-					the community activity metadata described below.
+					short-lived execution history, stored community activity events, and
+					any platform feedback you approve for submission. All of this remains
+					scoped to your account except for content you deliberately make public
+					(public packages published to Community and a public profile), the
+					narrow admin review of approved platform feedback, and the community
+					activity metadata described below.
 				</p>
 				<p mix={css(descriptionCss)}>
 					When profile visibility is <strong>public</strong>, display name, bio,
@@ -103,13 +107,13 @@ export function PrivacyRoute(_handle: Handle) {
 					the search query, plus indexed text for builtin capabilities, saved
 					packages (manifest search fields, not full source), memories (subject,
 					summary, details, and tags), jobs (name, description, and schedule),
-					and public community listings (name, description, tags, and a short
-					readme snippet). Ranked search can send that query plus candidate
-					cards (type, id, title, and summary) to Workers AI for scoring. Secret
-					values and OAuth tokens are never sent to those models.
-					Connected-account provider content is embedded or scored only if it
-					was first saved as one of those indexed records or appears on a search
-					candidate card.
+					and public packages published to Community (name, description, tags,
+					and a short readme snippet). Ranked search can send that query plus
+					candidate cards (type, id, title, and summary) to Workers AI for
+					scoring. Secret values and OAuth tokens are never sent to those
+					models. Connected-account provider content is embedded or scored only
+					if it was first saved as one of those indexed records or appears on a
+					search candidate card.
 				</p>
 				<p mix={css(descriptionCss)}>
 					<strong>Share, transfer, and disclose.</strong> Provider data leaves
@@ -159,15 +163,15 @@ export function PrivacyRoute(_handle: Handle) {
 					exception.
 				</p>
 				<p mix={css(descriptionCss)}>
-					Admins also moderate public community listings and community reports.
-					Reporting a listing requires a signed-in user; reports are not
-					anonymous — the reporter identity is attached. Admins can see who
-					forked or rated a public listing, when, and the rating scores.
-					One-click installs appear as forks because both use the same activity
-					record. This activity view never includes private package source,
-					rating notes, email, stable user ids, private profiles, secrets, or
-					unrelated account content. Admin-configured notification packages may
-					receive the same community metadata, and a metadata-only{' '}
+					Admins also moderate public packages in the Community catalog and
+					community reports. Reporting a listing requires a signed-in user;
+					reports are not anonymous — the reporter identity is attached. Admins
+					can see who forked or rated a public listing, when, and the rating
+					scores. One-click installs appear as forks because both use the same
+					activity record. This activity view never includes private package
+					source, rating notes, email, stable user ids, private profiles,
+					secrets, or unrelated account content. Admin-configured notification
+					packages may receive the same community metadata, and a metadata-only{' '}
 					<code>user.created</code> or <code>user.deleted</code> event when a
 					person account is created or self-deleted (stable user id, username,
 					email, the create source and <code>created_at</code> or delete
@@ -275,7 +279,6 @@ export function PrivacyRoute(_handle: Handle) {
 				</p>
 				<ul mix={css(listCss)}>
 					<li>Secret values or secret metadata (names, scopes, allowlists)</li>
-					<li>Package invocation tokens</li>
 					<li>Memories</li>
 					<li>Private packages and their source</li>
 					<li>Jobs</li>
@@ -332,31 +335,9 @@ export function PrivacyRoute(_handle: Handle) {
 					operational records have fixed cleanup periods:
 				</p>
 				<ul mix={css(listCss)}>
-					<li>Email delivery events: 90 days</li>
-					<li>Email messages and their attachments: 365 days</li>
-					<li>
-						Completed workflow runs and conversation-suppression records: 90
-						days
-					</li>
-					<li>
-						Resolved or dismissed platform feedback: 365 days after its last
-						update; open or triaged feedback remains until it is resolved,
-						dismissed, or the account is deleted
-					</li>
-					<li>Audit events: 180 days</li>
-					<li>Feature-flag exposure records: 90 days</li>
-					<li>Daily entitlement counters: 400 days</li>
-					<li>Monthly usage rollups: 24 months</li>
-					<li>Stripe webhook event records: 30 days</li>
-					<li>
-						Non-current published bundle artifacts: at least 30 days, then
-						eligible for removal when no active source or repo session needs
-						them
-					</li>
-					<li>
-						Unverified person accounts: seven days after signup when the email
-						is still unverified and no sign-in provider is linked
-					</li>
+					{privacyRetentionPeriods.map((period) => (
+						<li key={period}>{period}</li>
+					))}
 				</ul>
 				<p mix={css(descriptionCss)}>
 					Deletion from a subprocessor&apos;s backups or logs follows that
@@ -373,20 +354,9 @@ export function PrivacyRoute(_handle: Handle) {
 					only the data needed for their role:
 				</p>
 				<ul mix={css(listCss)}>
-					<li>
-						Cloudflare — application hosting, database, object storage, email
-						delivery, security, network infrastructure, and Workers AI
-						embeddings and ranked-search scoring
-					</li>
-					<li>Stripe — paid subscriptions, billing, and payment records</li>
-					<li>
-						Kit — product email subscriptions when you submit your email for
-						those purposes
-					</li>
-					<li>
-						Sentry — application error reporting and operational diagnostics
-					</li>
-					<li>Fathom — privacy-focused website traffic analytics</li>
+					{privacySubprocessors.map((provider) => (
+						<li key={provider}>{provider}</li>
+					))}
 				</ul>
 				<p mix={css(descriptionCss)}>
 					The only cookies are the session cookie (<code>kody_session</code>),
@@ -396,9 +366,9 @@ export function PrivacyRoute(_handle: Handle) {
 					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
 					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
 					two-factor verification, passkey challenges, and OAuth login.
-					Analytics (Fathom) is cookieless. The browser uses sessionStorage for
-					first-touch signup attribution and scroll restoration, not tracking
-					cookies.
+					Analytics (Fathom and Scarf) are cookieless. The browser uses
+					sessionStorage for first-touch signup attribution and scroll
+					restoration, not tracking cookies.
 				</p>
 			</section>
 

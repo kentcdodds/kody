@@ -1,22 +1,34 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
+import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import type * as valuesService from '#mcp/values/service.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn(async () => ({
+	readAuthenticatedAppUser: vi.fn<
+		typeof authenticatedUserModule.readAuthenticatedAppUser
+	>(async () => ({
 		sessionUserId: '42',
 		userId: 42,
 		username: 'test-user',
 		email: 'user@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		displayName: 'user',
+		roles: ['user'],
+		permissions: [],
 		artifactOwnerIds: [],
 		mcpUser: {
-			userId: 'stable-user-1',
+			userId: personIdFromStored('stable-user-1'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'user',
 		},
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
-	listValues: vi.fn(async () => [
+	listValues: vi.fn<typeof valuesService.listValues>(async () => [
 		{
 			name: 'theme',
 			scope: 'user' as const,
@@ -38,18 +50,18 @@ const mockModule = vi.hoisted(() => ({
 			ttlMs: null,
 		},
 	]),
-	getValue: vi.fn(async () => null),
-	deleteValue: vi.fn(async () => true),
+	getValue: vi.fn<typeof valuesService.getValue>(async () => null),
+	deleteValue: vi.fn<typeof valuesService.deleteValue>(async () => true),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#app/auth-session.ts', () => ({
-	readAuthSessionResult: (...args: Array<unknown>) =>
-		mockModule.readAuthSessionResult(...args),
+	readAuthSessionResult: () => mockModule.readAuthSessionResult(),
 }))
 
 vi.mock('#app/auth-redirect.ts', () => ({
@@ -61,25 +73,42 @@ vi.mock('#app/ssr-render.tsx', () => ({
 }))
 
 vi.mock('#mcp/values/service.ts', () => ({
-	listValues: (...args: Array<unknown>) => mockModule.listValues(...args),
-	getValue: (...args: Array<unknown>) => mockModule.getValue(...args),
-	deleteValue: (...args: Array<unknown>) => mockModule.deleteValue(...args),
+	listValues: (...args: Parameters<typeof valuesService.listValues>) =>
+		mockModule.listValues(...args),
+	getValue: (...args: Parameters<typeof valuesService.getValue>) =>
+		mockModule.getValue(...args),
+	deleteValue: (...args: Parameters<typeof valuesService.deleteValue>) =>
+		mockModule.deleteValue(...args),
 }))
 
 const { createAccountValuesApiHandler } = await import('./account-values.ts')
 
-function createEnv() {
-	return {
+const valuesUrl = 'https://example.com/account/values.json'
+
+function createValuesClient() {
+	const { handler } = createAccountValuesApiHandler({
 		APP_DB: {} as D1Database,
-	} as Env
+	} as Env)
+	return {
+		get: (search = '') =>
+			handler(new RequestContext(new Request(valuesUrl + search))),
+		post: (body: Record<string, unknown>) =>
+			handler(
+				new RequestContext(
+					new Request(valuesUrl, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(body),
+					}),
+				),
+			),
+	}
 }
 
 test('values API lists, selects, and deletes leftover user-scoped rows', async () => {
-	const handler = createAccountValuesApiHandler(createEnv())
+	const { get, post } = createValuesClient()
 
-	const listResponse = await handler.handler({
-		request: new Request('https://example.com/account/values.json'),
-	})
+	const listResponse = await get()
 	expect(listResponse.status).toBe(200)
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	await expect(listResponse.json()).resolves.toEqual({
@@ -113,11 +142,7 @@ test('values API lists, selects, and deletes leftover user-scoped rows', async (
 		}),
 	)
 
-	const selectedResponse = await handler.handler({
-		request: new Request(
-			'https://example.com/account/values.json?selected=theme',
-		),
-	})
+	const selectedResponse = await get('?selected=theme')
 	expect(selectedResponse.status).toBe(200)
 	await expect(selectedResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -130,16 +155,7 @@ test('values API lists, selects, and deletes leftover user-scoped rows', async (
 	})
 
 	mockModule.listValues.mockResolvedValueOnce([])
-	const deleteResponse = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				name: 'theme',
-			}),
-		}),
-	})
+	const deleteResponse = await post({ action: 'delete', name: 'theme' })
 	expect(deleteResponse.status).toBe(200)
 	expect(mockModule.deleteValue).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -157,53 +173,27 @@ test('values API lists, selects, and deletes leftover user-scoped rows', async (
 })
 
 test('values API rejects save, missing deletes, invalid actions, and unauthenticated requests', async () => {
-	const handler = createAccountValuesApiHandler(createEnv())
-	mockModule.deleteValue.mockClear()
+	const { get, post } = createValuesClient()
 
-	const saveRejected = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'save',
-				name: 'locale',
-				value: 'en-US',
-			}),
-		}),
-	})
-	expect(saveRejected.status).toBe(400)
-	await expect(saveRejected.json()).resolves.toMatchObject({
-		ok: false,
-		error: 'Invalid action.',
-	})
-
-	mockModule.deleteValue.mockResolvedValueOnce(false)
-	const missingDelete = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				action: 'delete',
-				name: 'missing',
-			}),
-		}),
-	})
-	expect(missingDelete.status).toBe(404)
-	await expect(missingDelete.json()).resolves.toMatchObject({ ok: false })
-
-	const invalid = await handler.handler({
-		request: new Request('https://example.com/account/values.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ action: 'nope' }),
-		}),
-	})
-	expect(invalid.status).toBe(400)
-	await expect(invalid.json()).resolves.toMatchObject({ ok: false })
+	const rejections = [
+		[
+			{ action: 'save', name: 'locale', value: 'en-US' },
+			400,
+			{ ok: false, error: 'Invalid action.' },
+		],
+		[{ action: 'delete', name: 'missing' }, 404, { ok: false }],
+		[{ action: 'nope' }, 400, { ok: false }],
+	] as const
+	for (const [body, status, want] of rejections) {
+		if (status === 404) mockModule.deleteValue.mockResolvedValueOnce(false)
+		const response = await post(body)
+		expect([body, response.status, await response.json()]).toEqual([
+			body,
+			status,
+			expect.objectContaining(want),
+		])
+	}
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null)
-	const unauthorized = await handler.handler({
-		request: new Request('https://example.com/account/values.json'),
-	})
-	expect(unauthorized.status).toBe(401)
+	expect((await get()).status).toBe(401)
 })

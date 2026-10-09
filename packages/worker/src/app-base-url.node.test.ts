@@ -9,41 +9,58 @@ import {
 	parsePackageAppRequestHost,
 } from './app-base-url.ts'
 
-test('getAppBaseUrl prefers the request origin when present', () => {
-	expect(
-		getAppBaseUrl({
-			env: { APP_BASE_URL: 'https://heykody.dev' },
-			requestUrl: 'https://kody-production.kody-a99.workers.dev/mcp',
-		}),
-	).toBe('https://kody-production.kody-a99.workers.dev')
+type BaseUrlEnv = Parameters<typeof getAppBaseUrl>[0]['env']
 
+test('app base URLs prefer the request origin, fall back to APP_BASE_URL then kody.codes, and joinAppUrl strips trailing slashes', () => {
+	const packageAppEnv = {
+		APP_BASE_URL: 'https://heykody.dev',
+		PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
+	}
+	const appBaseUrlCases: Array<
+		[env: BaseUrlEnv, requestUrl: string | null | undefined, expected: string]
+	> = [
+		[
+			{ APP_BASE_URL: 'https://heykody.dev' },
+			'https://kody-production.kody-a99.workers.dev/mcp',
+			'https://kody-production.kody-a99.workers.dev',
+		],
+		[
+			{ APP_BASE_URL: 'https://configured.example' },
+			'https://heykody.dev/mcp',
+			'https://heykody.dev',
+		],
+		[
+			{ APP_BASE_URL: 'https://configured.example/path' },
+			undefined,
+			'https://configured.example',
+		],
+		[{ APP_BASE_URL: '' }, undefined, 'https://kody.codes'],
+		[{}, null, 'https://kody.codes'],
+		// Package runtime callbacks and first-party links resolved while serving a
+		// package app must point at the app origin, never at the package-app host —
+		// neither the bare origin nor a per-user subdomain.
+		[
+			packageAppEnv,
+			'https://kodyapps.dev/@me/packages/x',
+			'https://heykody.dev',
+		],
+		[
+			packageAppEnv,
+			'https://user-me.kodyapps.dev/packages/x',
+			'https://heykody.dev',
+		],
+		[
+			packageAppEnv,
+			'https://heykody.dev/@me/packages/x',
+			'https://heykody.dev',
+		],
+	]
 	expect(
-		getAppBaseUrl({
-			env: { APP_BASE_URL: 'https://configured.example' },
-			requestUrl: 'https://heykody.dev/mcp',
-		}),
-	).toBe('https://heykody.dev')
-})
-
-test('getAppBaseUrl falls back to APP_BASE_URL then kody.codes, and joinAppUrl strips trailing slashes', () => {
-	expect(
-		getAppBaseUrl({
-			env: { APP_BASE_URL: 'https://configured.example/path' },
-		}),
-	).toBe('https://configured.example')
-
-	expect(
-		getAppBaseUrl({
-			env: { APP_BASE_URL: '' },
-		}),
-	).toBe('https://kody.codes')
-
-	expect(
-		getAppBaseUrl({
-			env: {},
-			requestUrl: null,
-		}),
-	).toBe('https://kody.codes')
+		appBaseUrlCases.filter(
+			([env, requestUrl, expected]) =>
+				getAppBaseUrl({ env, requestUrl }) !== expected,
+		),
+	).toEqual([])
 
 	expect(
 		joinAppUrl({
@@ -57,9 +74,7 @@ test('getAppBaseUrl falls back to APP_BASE_URL then kody.codes, and joinAppUrl s
 			path: 'admin/users',
 		}),
 	).toBe('https://heykody.dev/admin/users')
-})
 
-test('getCanonicalAppBaseUrl prefers the configured origin over the request origin', () => {
 	// A page dual-served from a legacy host must emit canonical URLs on the
 	// configured canonical origin, not the host it happened to be served from.
 	expect(
@@ -68,7 +83,6 @@ test('getCanonicalAppBaseUrl prefers the configured origin over the request orig
 			requestUrl: 'https://heykody.dev/blog',
 		}),
 	).toBe('https://heykody.app')
-
 	// Local dev and preview leave APP_BASE_URL unset; the request origin is
 	// the only origin those deployments can serve.
 	expect(
@@ -77,119 +91,100 @@ test('getCanonicalAppBaseUrl prefers the configured origin over the request orig
 			requestUrl: 'http://localhost:3742/blog',
 		}),
 	).toBe('http://localhost:3742')
-
 	expect(getCanonicalAppBaseUrl({ env: {} })).toBe('https://kody.codes')
 })
 
-test('the package-app origin is configurable and never resolves as the app origin', () => {
-	expect(getPackageAppBaseUrl({ env: {} })).toBeNull()
+test('the package-app origin is configurable and ignored by local dev unless it is servable', () => {
+	const packageAppCases: Array<
+		[
+			packageAppBaseUrl: string | undefined,
+			localDevFlag: string | undefined,
+			expected: string | null,
+		]
+	> = [
+		[undefined, undefined, null],
+		['  ', undefined, null],
+		['not-a-url', undefined, null],
+		['https://kodyapps.dev/ignored', undefined, 'https://kodyapps.dev'],
+		// `npm run dev` runs the production Wrangler env, so local dev sees the
+		// committed production value and must ignore an origin it cannot serve.
+		['https://kodyapps.dev', 'true', null],
+		[
+			'http://packages.localhost:3742',
+			'true',
+			'http://packages.localhost:3742',
+		],
+		// Only the literal 'true' means local dev, so a stray value cannot pull
+		// package apps back onto the app origin in a real deployment.
+		...['false', '0', 'no', ' '].map(
+			(flag) =>
+				['https://kodyapps.dev', flag, 'https://kodyapps.dev'] as [
+					string,
+					string,
+					string,
+				],
+		),
+	]
 	expect(
-		getPackageAppBaseUrl({ env: { PACKAGE_APP_BASE_URL: '  ' } }),
-	).toBeNull()
-	expect(
-		getPackageAppBaseUrl({ env: { PACKAGE_APP_BASE_URL: 'not-a-url' } }),
-	).toBeNull()
-	expect(
-		getPackageAppBaseUrl({
-			env: { PACKAGE_APP_BASE_URL: 'https://kodyapps.dev/ignored' },
-		}),
-	).toBe('https://kodyapps.dev')
-
-	// `npm run dev` runs the production Wrangler env, so local dev sees the
-	// committed production value and must ignore an origin it cannot serve.
-	expect(
-		getPackageAppBaseUrl({
-			env: {
-				PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
-				WRANGLER_IS_LOCAL_DEV: 'true',
-			},
-		}),
-	).toBeNull()
-	expect(
-		getPackageAppBaseUrl({
-			env: {
-				PACKAGE_APP_BASE_URL: 'http://packages.localhost:3742',
-				WRANGLER_IS_LOCAL_DEV: 'true',
-			},
-		}),
-	).toBe('http://packages.localhost:3742')
-	// Only the literal 'true' means local dev, so a stray value cannot pull
-	// package apps back onto the app origin in a real deployment.
-	for (const localDevFlag of ['false', '0', 'no', ' ']) {
-		expect(
-			getPackageAppBaseUrl({
-				env: {
-					PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
-					WRANGLER_IS_LOCAL_DEV: localDevFlag,
-				},
-			}),
-		).toBe('https://kodyapps.dev')
-	}
-
-	const env = {
-		APP_BASE_URL: 'https://heykody.dev',
-		PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
-	}
-	// Package runtime callbacks and first-party links resolved while serving a
-	// package app must point at the app origin, never at the package-app host —
-	// neither the bare origin nor a per-user subdomain.
-	expect(
-		getAppBaseUrl({ env, requestUrl: 'https://kodyapps.dev/@me/packages/x' }),
-	).toBe('https://heykody.dev')
-	expect(
-		getAppBaseUrl({
-			env,
-			requestUrl: 'https://user-me.kodyapps.dev/packages/x',
-		}),
-	).toBe('https://heykody.dev')
-	expect(
-		getAppBaseUrl({ env, requestUrl: 'https://heykody.dev/@me/packages/x' }),
-	).toBe('https://heykody.dev')
+		packageAppCases.filter(
+			([PACKAGE_APP_BASE_URL, WRANGLER_IS_LOCAL_DEV, expected]) =>
+				getPackageAppBaseUrl({
+					env: { PACKAGE_APP_BASE_URL, WRANGLER_IS_LOCAL_DEV },
+				}) !== expected,
+		),
+	).toEqual([])
 })
 
 test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects everything else', () => {
 	const env = { PACKAGE_APP_BASE_URL: 'https://kodyapps.dev' }
-	const parse = (url: string) =>
-		parsePackageAppRequestHost({ env, url: new URL(url) })
-
-	expect(parse('https://kodyapps.dev/anything')).toEqual({
-		kind: 'apex',
-		role: 'canonical',
-	})
-	expect(parse('https://kentcdodds.kodyapps.dev/packages/demo')).toEqual({
-		kind: 'user-subdomain',
-		username: 'kentcdodds',
-		role: 'canonical',
-	})
-	// Hostnames the wildcard route still delivers, but that no user can own.
-	for (const url of [
-		// Nested labels.
-		'https://a.b.kodyapps.dev/',
-		// Not a valid username label (too short / invalid characters).
-		'https://xy.kodyapps.dev/',
-		'https://bad_label.kodyapps.dev/',
-		// Wrong scheme for the configured origin.
-		'http://kentcdodds.kodyapps.dev/',
+	const legacyEnv = {
+		PACKAGE_APP_BASE_URL: 'https://kody.run',
+		PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
+	}
+	const unrecognized = { kind: 'unrecognized-subdomain', role: 'canonical' }
+	const cases: Array<[env: typeof env | typeof legacyEnv, string, unknown]> = [
+		[env, 'https://kodyapps.dev/anything', { kind: 'apex', role: 'canonical' }],
+		[
+			env,
+			'https://kentcdodds.kodyapps.dev/packages/demo',
+			{ kind: 'user-subdomain', username: 'kentcdodds', role: 'canonical' },
+		],
+		// Hostnames the wildcard route still delivers, but that no user can own:
+		// nested labels, invalid username labels, and the wrong scheme.
+		[env, 'https://a.b.kodyapps.dev/', unrecognized],
+		[env, 'https://xy.kodyapps.dev/', unrecognized],
+		[env, 'https://bad_label.kodyapps.dev/', unrecognized],
+		[env, 'http://kentcdodds.kodyapps.dev/', unrecognized],
 		// Trailing DNS dots resolve to the same host but survive in
 		// URL.hostname; letting them fall through would route them first-party.
-		'https://kodyapps.dev./',
-		'https://kentcdodds.kodyapps.dev./',
-	]) {
-		expect(parse(url)).toEqual({
-			kind: 'unrecognized-subdomain',
-			role: 'canonical',
-		})
-	}
-	// Not the package-app domain at all.
-	for (const url of [
-		'https://heykody.dev/',
-		'https://evil-kodyapps.dev/',
-		'https://kodyapps.dev.attacker.example/',
-		// Same hostname on another scheme/port is another local service.
-		'http://kodyapps.dev/',
-	]) {
-		expect(parse(url)).toBeNull()
-	}
+		[env, 'https://kodyapps.dev./', unrecognized],
+		[env, 'https://kentcdodds.kodyapps.dev./', unrecognized],
+		// Not the package-app domain at all. Same hostname on another
+		// scheme/port is another local service.
+		[env, 'https://heykody.dev/', null],
+		[env, 'https://evil-kodyapps.dev/', null],
+		[env, 'https://kodyapps.dev.attacker.example/', null],
+		[env, 'http://kodyapps.dev/', null],
+		[
+			legacyEnv,
+			'https://alice.kody.run/packages/demo',
+			{ kind: 'user-subdomain', username: 'alice', role: 'canonical' },
+		],
+		[
+			legacyEnv,
+			'https://alice.kodyapps.dev/packages/demo',
+			{ kind: 'user-subdomain', username: 'alice', role: 'legacy' },
+		],
+		[legacyEnv, 'https://kodyapps.dev/', { kind: 'apex', role: 'legacy' }],
+		[legacyEnv, 'https://kody.run/', { kind: 'apex', role: 'canonical' }],
+		[legacyEnv, 'https://kody.codes/', null],
+	]
+	expect(
+		cases.map(([caseEnv, url]) => [
+			url,
+			parsePackageAppRequestHost({ env: caseEnv, url: new URL(url) }),
+		]),
+	).toEqual(cases.map(([, url, expected]) => [url, expected]))
 	// No configured package-app origin: nothing classifies.
 	expect(
 		parsePackageAppRequestHost({
@@ -197,95 +192,46 @@ test('parsePackageAppRequestHost classifies apex, user subdomains, and rejects e
 			url: new URL('https://kentcdodds.kodyapps.dev/'),
 		}),
 	).toBeNull()
-
-	const legacyEnv = {
-		PACKAGE_APP_BASE_URL: 'https://kody.run',
-		PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
-	}
-	const parseLegacy = (url: string) =>
-		parsePackageAppRequestHost({ env: legacyEnv, url: new URL(url) })
-	expect(parseLegacy('https://alice.kody.run/packages/demo')).toEqual({
-		kind: 'user-subdomain',
-		username: 'alice',
-		role: 'canonical',
-	})
-	expect(parseLegacy('https://alice.kodyapps.dev/packages/demo')).toEqual({
-		kind: 'user-subdomain',
-		username: 'alice',
-		role: 'legacy',
-	})
-	expect(parseLegacy('https://kodyapps.dev/')).toEqual({
-		kind: 'apex',
-		role: 'legacy',
-	})
-	expect(parseLegacy('https://kody.run/')).toEqual({
-		kind: 'apex',
-		role: 'canonical',
-	})
-	expect(parseLegacy('https://kody.codes/')).toBeNull()
 })
 
 test('production package-app origin configuration requires a separate registrable domain', () => {
+	const production = (
+		appBaseUrl: string,
+		packageAppBaseUrl?: string,
+		legacyHosts?: string,
+	) => ({
+		APP_BASE_URL: appBaseUrl,
+		PACKAGE_APP_BASE_URL: packageAppBaseUrl,
+		PACKAGE_APP_LEGACY_HOSTS: legacyHosts,
+		SENTRY_ENVIRONMENT: 'production',
+	})
+	const cases: Array<
+		[env: Parameters<typeof getPackageAppOriginConfigurationError>[0], boolean]
+	> = [
+		[
+			{ APP_BASE_URL: 'https://heykody.dev', SENTRY_ENVIRONMENT: 'preview' },
+			false,
+		],
+		[production('https://heykody.dev'), true],
+		[production('https://heykody.dev', 'https://heykody.dev'), true],
+		[production('https://heykody.dev', 'https://apps.heykody.dev'), true],
+		[production('https://heykody.dev', 'https://kodyapps.dev'), false],
+		[production('https://kody.codes', 'https://kody.run'), false],
+		[
+			production('https://kody.codes', 'https://kody.run', 'kodyapps.dev'),
+			false,
+		],
+		[
+			production('https://kody.codes', 'https://kody.run', 'apps.kody.codes'),
+			true,
+		],
+	]
 	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://heykody.dev',
-			SENTRY_ENVIRONMENT: 'preview',
-		}),
-	).toBeNull()
-
-	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://heykody.dev',
-			SENTRY_ENVIRONMENT: 'production',
-		}),
-	).not.toBeNull()
-
-	for (const packageAppBaseUrl of [
-		'https://heykody.dev',
-		'https://apps.heykody.dev',
-	]) {
-		expect(
-			getPackageAppOriginConfigurationError({
-				APP_BASE_URL: 'https://heykody.dev',
-				PACKAGE_APP_BASE_URL: packageAppBaseUrl,
-				SENTRY_ENVIRONMENT: 'production',
-			}),
-		).not.toBeNull()
-	}
-
-	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://heykody.dev',
-			PACKAGE_APP_BASE_URL: 'https://kodyapps.dev',
-			SENTRY_ENVIRONMENT: 'production',
-		}),
-	).toBeNull()
-
-	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://kody.codes',
-			PACKAGE_APP_BASE_URL: 'https://kody.run',
-			SENTRY_ENVIRONMENT: 'production',
-		}),
-	).toBeNull()
-
-	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://kody.codes',
-			PACKAGE_APP_BASE_URL: 'https://kody.run',
-			PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
-			SENTRY_ENVIRONMENT: 'production',
-		}),
-	).toBeNull()
-
-	expect(
-		getPackageAppOriginConfigurationError({
-			APP_BASE_URL: 'https://kody.codes',
-			PACKAGE_APP_BASE_URL: 'https://kody.run',
-			PACKAGE_APP_LEGACY_HOSTS: 'apps.kody.codes',
-			SENTRY_ENVIRONMENT: 'production',
-		}),
-	).not.toBeNull()
+		cases.filter(
+			([env, isError]) =>
+				(getPackageAppOriginConfigurationError(env) !== null) !== isError,
+		),
+	).toEqual([])
 })
 
 test('legacy package-app subdomain redirect is opt-in GET/HEAD only', () => {
@@ -294,65 +240,35 @@ test('legacy package-app subdomain redirect is opt-in GET/HEAD only', () => {
 		PACKAGE_APP_LEGACY_HOSTS: 'kodyapps.dev',
 		PACKAGE_APP_LEGACY_REDIRECT: 'true',
 	}
-	const legacyHost = parsePackageAppRequestHost({
-		env,
-		url: new URL('https://alice.kodyapps.dev/packages/demo?tab=1'),
-	})
-	expect(legacyHost).toEqual({
-		kind: 'user-subdomain',
-		username: 'alice',
-		role: 'legacy',
-	})
+	const redirectFor = (
+		url: string,
+		init?: RequestInit,
+		redirectEnv: typeof env = env,
+	) => {
+		const requestHost = parsePackageAppRequestHost({ env, url: new URL(url) })
+		if (!requestHost) throw new Error(`Expected a package-app host for ${url}`)
+		return getPackageAppLegacySubdomainRedirect({
+			request: new Request(url, init),
+			env: redirectEnv,
+			requestHost,
+		})
+	}
 
-	const response = getPackageAppLegacySubdomainRedirect({
-		request: new Request('https://alice.kodyapps.dev/packages/demo?tab=1'),
-		env,
-		requestHost: legacyHost!,
-	})
+	const response = redirectFor('https://alice.kodyapps.dev/packages/demo?tab=1')
 	expect(response?.status).toBe(308)
 	expect(response?.headers.get('location')).toBe(
 		'https://alice.kody.run/packages/demo?tab=1',
 	)
 
 	expect(
-		getPackageAppLegacySubdomainRedirect({
-			request: new Request('https://alice.kodyapps.dev/packages/demo', {
-				method: 'POST',
-			}),
-			env,
-			requestHost: legacyHost!,
-		}),
+		redirectFor('https://alice.kodyapps.dev/packages/demo', { method: 'POST' }),
 	).toBeNull()
-
-	const apexHost = parsePackageAppRequestHost({
-		env,
-		url: new URL('https://kodyapps.dev/'),
-	})
+	expect(redirectFor('https://kodyapps.dev/')).toBeNull()
+	expect(redirectFor('https://alice.kody.run/packages/demo')).toBeNull()
 	expect(
-		getPackageAppLegacySubdomainRedirect({
-			request: new Request('https://kodyapps.dev/'),
-			env,
-			requestHost: apexHost!,
-		}),
-	).toBeNull()
-
-	const canonicalHost = parsePackageAppRequestHost({
-		env,
-		url: new URL('https://alice.kody.run/packages/demo'),
-	})
-	expect(
-		getPackageAppLegacySubdomainRedirect({
-			request: new Request('https://alice.kody.run/packages/demo'),
-			env,
-			requestHost: canonicalHost!,
-		}),
-	).toBeNull()
-
-	expect(
-		getPackageAppLegacySubdomainRedirect({
-			request: new Request('https://alice.kodyapps.dev/packages/demo'),
-			env: { ...env, PACKAGE_APP_LEGACY_REDIRECT: 'false' },
-			requestHost: legacyHost!,
+		redirectFor('https://alice.kodyapps.dev/packages/demo', undefined, {
+			...env,
+			PACKAGE_APP_LEGACY_REDIRECT: 'false',
 		}),
 	).toBeNull()
 })

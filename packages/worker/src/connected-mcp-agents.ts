@@ -17,9 +17,12 @@ import {
 	type OAuthGrantListHelpers,
 	type OAuthGrantListItem,
 } from '#worker/oauth-grants.ts'
+import { readConnectionProfileNameFromGrantMetadata } from '#worker/connection-profiles/oauth.ts'
 
 export type ConnectedMcpAgentListItem = ConnectedMcpAgent & {
 	grantIds: Array<string>
+	/** Named connection profile, or null for the unlimited default connection. */
+	connectionProfileName: string | null
 }
 
 export type InboundMcpConnectionState = {
@@ -108,6 +111,7 @@ async function labelInboundMcpGrants(
 			kind: labeled.kind,
 			connectedAt: earliestGrantCreatedAt(clientGrants),
 			lastUsedAt: lastUsedByClientId.get(clientId) ?? null,
+			connectionProfileName: connectionProfileNameForGrants(clientGrants),
 		})
 	}
 
@@ -143,6 +147,17 @@ function firstGrantRedirectUri(grants: Array<OAuthGrantListItem>) {
 		if (grant.redirectUri) return grant.redirectUri
 	}
 	return undefined
+}
+
+function connectionProfileNameForGrants(grants: Array<OAuthGrantListItem>) {
+	let found: string | null = null
+	for (const grant of grants) {
+		const name = readConnectionProfileNameFromGrantMetadata(grant.metadata)
+		if (!name) continue
+		if (found === null) found = name
+		else if (found !== name) return null
+	}
+	return found
 }
 
 function earliestGrantCreatedAt(grants: Array<OAuthGrantListItem>) {

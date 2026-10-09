@@ -4,7 +4,7 @@ import {
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { createUndoableAction } from '#client/undoable-action.ts'
@@ -61,6 +61,9 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	let integrations: Array<AccountIntegrationListItem> = []
 	let apps: Array<AccountOauthAppListItem> = []
 	let savedPackages: Array<{ id: string; kodyId: string }> = []
+	let platformCatalog: NonNullable<
+		AccountIntegrationsLoaderData['platformCatalog']
+	> = []
 	let approval: AccountIntegrationsLoaderData['approval'] = null
 	let usageDrafts = new Map<string, IntegrationUsageDraft>()
 	let usageSavingName: string | null = null
@@ -146,6 +149,11 @@ export function AccountIntegrationsRoute(handle: Handle) {
 
 	function finishOptimisticRemoval() {
 		holdingOptimisticRemoval = false
+		// The server-filtered "Connect with Kody" catalog hides built-ins whose
+		// slug any connection holds, so every removal can re-offer one. List and
+		// detail share one data latch key, so navigating between them never
+		// refetches on its own; queue the reload before either branch.
+		integrationsData.reload(handle, getCurrentHref())
 		if (currentSelectionMissing()) {
 			navigate(listHref())
 			return
@@ -374,6 +382,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 		integrations = payload.integrations
 		apps = payload.apps ?? []
 		savedPackages = payload.savedPackages ?? []
+		platformCatalog = payload.platformCatalog ?? []
 		approval = payload.approval ?? null
 		message = null
 	}
@@ -542,7 +551,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				) : null}
 
 				{status === 'ready'
-					? renderIntegrationsSetupSections(setupIntro)
+					? renderIntegrationsSetupSections(setupIntro, platformCatalog)
 					: null}
 
 				<p mix={css({ margin: 0 })}>

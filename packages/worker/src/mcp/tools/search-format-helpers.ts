@@ -37,7 +37,7 @@ export function buildCapabilityUsage(spec: {
 	source?: CapabilitySpec['source']
 	mcpServer?: CapabilitySpec['mcpServer']
 }) {
-	return `execute with ${buildKodyCapabilityAccessor(spec)}(args)`
+	return `execute with ${buildKodyCapabilityAccessor(spec)}(params)`
 }
 
 export const inlineCapabilityInputTypeMaxLength = 500

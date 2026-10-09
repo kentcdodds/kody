@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	isActiveWorkflowStatus,
@@ -5,7 +6,9 @@ import {
 	loadAccountWorkflowsData,
 	readAccountWorkflowsSelectedWorkflowId,
 } from '#app/account-workflows-data.ts'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type WorkflowRunInspection } from '#worker/package-runtime/package-workflows.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listWorkflowRunsForUser: vi.fn(),
@@ -13,28 +16,30 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/package-runtime/package-workflows.ts', () => ({
-	listWorkflowRunsForUser: (...args: Array<unknown>) =>
-		mockModule.listWorkflowRunsForUser(...args),
+	listWorkflowRunsForUser: mockModule.listWorkflowRunsForUser,
 }))
-
 vi.mock('#worker/run-records/service.ts', () => ({
-	getWorkflowProjection: (...args: Array<unknown>) =>
-		mockModule.getWorkflowProjection(...args),
+	getWorkflowProjection: mockModule.getWorkflowProjection,
 }))
 
-const user = {
+const user: AuthenticatedAppUser = {
 	sessionUserId: '42',
 	userId: 42,
 	username: 'test-user',
 	email: 'user@example.com',
+	emailVerified: true,
+	emailVerificationDelivery: null,
 	displayName: 'user',
+	roles: [],
+	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'user@example.com',
 		username: 'test-user',
 		displayName: 'user',
 	},
+	request: sessionRequestContext('stable-user-1'),
 }
 
 function makeWorkflow(
@@ -130,15 +135,9 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 	})
 
 	mockModule.listWorkflowRunsForUser.mockResolvedValueOnce([])
-	mockModule.getWorkflowProjection.mockResolvedValueOnce({
+	const { userId: _userId, ...projection } = makeWorkflow({
 		id: 'dynwf-old',
-		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-		sourceType: 'inline',
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
 		workflowName: 'Stale run',
-		exportName: null,
 		idempotencyKey: 'idem-old',
 		runAt: '2026-07-20T12:00:00.000Z',
 		planDate: null,
@@ -148,6 +147,7 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 		completedAt: '2026-07-20T12:01:00.000Z',
 		lastError: 'boom',
 	})
+	mockModule.getWorkflowProjection.mockResolvedValueOnce(projection)
 
 	const projectionPayload = await loadAccountWorkflowsData({
 		env: {} as Env,

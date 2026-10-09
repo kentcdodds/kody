@@ -1,229 +1,269 @@
 import { expect, test } from 'vitest'
 import { resolveViewerListingInstalls } from './viewer-install.ts'
 
-test('resolveViewerListingInstalls prefers kody matches, then forks, and classifies outdated vs ahead from ancestry', () => {
-	const listings = [
-		{ id: 'listing-github', kodyId: 'github' },
-		{ id: 'listing-cloudflare', kodyId: 'cloudflare' },
-		{ id: 'listing-notion', kodyId: 'notion' },
-		{ id: 'listing-slack', kodyId: 'slack' },
-		{ id: 'listing-dropbox', kodyId: 'dropbox' },
-	]
+type ResolveInput = Parameters<typeof resolveViewerListingInstalls>[0]
+type Fork = ResolveInput['forks'][number]
 
+function fork(
+	listingId: string,
+	targetKodyId: string,
+	forkedPackageId: string,
+	forkedSourceId: string,
+	createdAt: string,
+	originCommit?: string,
+): Fork {
+	return {
+		listingId,
+		targetKodyId,
+		forkedPackageId,
+		forkedSourceId,
+		createdAt,
+		...(originCommit ? { originCommit } : {}),
+	}
+}
+
+function install(
+	targetKodyId: string,
+	sourceId: string,
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		status: 'installed',
+		targetName: `@burhan/${targetKodyId}`,
+		sourceId,
+		packageId: null,
+		listingAhead: false,
+		forkAhead: false,
+		originCommit: null,
+		listingPinnedCommit: null,
+		...overrides,
+	}
+}
+
+const githubPackage = {
+	id: 'pkg-github',
+	kodyId: 'github',
+	name: '@burhan/github',
+	sourceId: 'src-github',
+}
+
+test('resolveViewerListingInstalls requires a fork row; same-leaf alone is not installed', () => {
 	const resolved = resolveViewerListingInstalls({
-		listings,
+		listings: [
+			'github',
+			'cloudflare',
+			'notion',
+			'slack',
+			'dropbox',
+			'discord',
+		].map((kodyId) => ({ id: `listing-${kodyId}`, kodyId })),
 		packageScope: 'burhan',
 		savedPackages: [
-			{
-				id: 'pkg-github',
-				kodyId: 'github',
-				name: '@burhan/github',
-				sourceId: 'src-github',
-			},
+			githubPackage,
 			{
 				id: 'pkg-notion-custom',
 				kodyId: 'my-notion',
 				name: '@burhan/my-notion',
 				sourceId: 'src-notion',
 			},
+			{
+				id: 'pkg-discord-own',
+				kodyId: 'discord',
+				name: '@burhan/discord',
+				sourceId: 'src-discord-own',
+			},
 		],
 		forks: [
-			{
-				listingId: 'listing-cloudflare',
-				targetKodyId: 'cloudflare',
-				forkedPackageId: 'pkg-cf-inert',
-				forkedSourceId: 'src-cf',
-				createdAt: '2026-08-01T00:00:00.000Z',
-			},
-			{
-				listingId: 'listing-notion',
-				targetKodyId: 'my-notion',
-				forkedPackageId: 'pkg-notion-custom',
-				forkedSourceId: 'src-notion',
-				createdAt: '2026-08-02T00:00:00.000Z',
-			},
-			{
-				listingId: 'listing-notion',
-				targetKodyId: 'older-notion',
-				forkedPackageId: 'pkg-notion-old',
-				forkedSourceId: 'src-notion-old',
-				createdAt: '2026-07-01T00:00:00.000Z',
-			},
-			{
-				listingId: 'listing-dropbox',
-				targetKodyId: 'older-dropbox',
-				forkedPackageId: 'pkg-dropbox-old',
-				forkedSourceId: 'src-dropbox-old',
-				createdAt: '2026-06-01T00:00:00.000Z',
-			},
-			{
-				listingId: 'listing-dropbox',
-				targetKodyId: 'my-dropbox',
-				forkedPackageId: 'pkg-dropbox-new',
-				forkedSourceId: 'src-dropbox-new',
-				createdAt: '2026-08-03T00:00:00.000Z',
-			},
+			fork(
+				'listing-cloudflare',
+				'cloudflare',
+				'pkg-cf-inert',
+				'src-cf',
+				'2026-08-01T00:00:00.000Z',
+			),
+			fork(
+				'listing-notion',
+				'my-notion',
+				'pkg-notion-custom',
+				'src-notion',
+				'2026-08-02T00:00:00.000Z',
+			),
+			fork(
+				'listing-notion',
+				'older-notion',
+				'pkg-notion-old',
+				'src-notion-old',
+				'2026-07-01T00:00:00.000Z',
+			),
+			fork(
+				'listing-dropbox',
+				'older-dropbox',
+				'pkg-dropbox-old',
+				'src-dropbox-old',
+				'2026-06-01T00:00:00.000Z',
+			),
+			fork(
+				'listing-dropbox',
+				'my-dropbox',
+				'pkg-dropbox-new',
+				'src-dropbox-new',
+				'2026-08-03T00:00:00.000Z',
+			),
+			fork(
+				'listing-github',
+				'github',
+				'pkg-github',
+				'src-github',
+				'2026-08-01T00:00:00.000Z',
+				'commit-same',
+			),
 		],
 	})
-
-	expect(resolved.get('listing-github')).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		sourceId: 'src-github',
-		packageId: 'pkg-github',
-		listingAhead: false,
-		forkAhead: false,
-		originCommit: null,
-		listingPinnedCommit: null,
+	expect(Object.fromEntries(resolved)).toEqual({
+		'listing-github': install('github', 'src-github', {
+			packageId: 'pkg-github',
+			originCommit: 'commit-same',
+		}),
+		'listing-cloudflare': install('cloudflare', 'src-cf', {
+			status: 'adaptation_required',
+		}),
+		'listing-notion': install('my-notion', 'src-notion', {
+			packageId: 'pkg-notion-custom',
+		}),
+		'listing-dropbox': install('my-dropbox', 'src-dropbox-new', {
+			status: 'adaptation_required',
+		}),
 	})
-	expect(resolved.get('listing-cloudflare')).toEqual({
-		status: 'adaptation_required',
-		targetName: '@burhan/cloudflare',
-		sourceId: 'src-cf',
-		packageId: null,
-		listingAhead: false,
-		forkAhead: false,
-		originCommit: null,
-		listingPinnedCommit: null,
-	})
-	expect(resolved.get('listing-notion')).toEqual({
-		status: 'installed',
-		targetName: '@burhan/my-notion',
-		sourceId: 'src-notion',
-		packageId: 'pkg-notion-custom',
-		listingAhead: false,
-		forkAhead: false,
-		originCommit: null,
-		listingPinnedCommit: null,
-	})
+	expect(resolved.has('listing-discord')).toBe(false)
 	expect(resolved.has('listing-slack')).toBe(false)
-	expect(resolved.get('listing-dropbox')).toEqual({
-		status: 'adaptation_required',
-		targetName: '@burhan/my-dropbox',
-		sourceId: 'src-dropbox-new',
-		packageId: null,
+
+	const discordListing = {
+		id: 'listing-discord',
+		kodyId: 'discord',
+		pinnedCommit: 'pin-1',
+	}
+	const discordOwn = {
+		id: 'pkg-discord-own',
+		kodyId: 'discord',
+		name: '@burhan/discord',
+		sourceId: 'src-discord-own',
+	}
+	const discordForked = {
+		id: 'pkg-forked-discord',
+		kodyId: 'discord',
+		name: '@burhan/discord-from-community',
+		sourceId: 'src-forked-discord',
+	}
+	expect(
+		resolveViewerListingInstalls({
+			listings: [discordListing],
+			packageScope: 'burhan',
+			savedPackages: [discordOwn, discordForked],
+			forks: [
+				fork(
+					'listing-discord',
+					'discord',
+					discordForked.id,
+					discordForked.sourceId,
+					'2026-08-01T00:00:00.000Z',
+					'pin-1',
+				),
+			],
+		}).get('listing-discord'),
+	).toEqual({
+		status: 'installed',
+		targetName: discordForked.name,
+		sourceId: discordForked.sourceId,
+		packageId: discordForked.id,
 		listingAhead: false,
 		forkAhead: false,
-		originCommit: null,
-		listingPinnedCommit: null,
+		originCommit: 'pin-1',
+		listingPinnedCommit: 'pin-1',
 	})
 
-	const outdated = resolveViewerListingInstalls({
-		listings: [
-			{
-				id: 'listing-github',
-				kodyId: 'github',
-				pinnedCommit: 'commit-new',
-			},
-		],
-		packageScope: 'burhan',
-		savedPackages: [
-			{
-				id: 'pkg-github',
-				kodyId: 'github',
-				name: '@burhan/github',
-				sourceId: 'src-github',
-			},
-		],
-		forks: [
-			{
-				listingId: 'listing-github',
-				targetKodyId: 'github',
-				forkedPackageId: 'pkg-github',
-				forkedSourceId: 'src-github',
-				createdAt: '2026-08-01T00:00:00.000Z',
+	const githubCases: Array<{
+		name: string
+		pinnedCommit: string
+		fork: Fork
+		pinIsAncestor?: boolean
+		expected: Record<string, unknown>
+	}> = [
+		{
+			name: 'outdated',
+			pinnedCommit: 'commit-new',
+			fork: fork(
+				'listing-github',
+				'github',
+				'pkg-github',
+				'src-github',
+				'2026-08-01T00:00:00.000Z',
+				'commit-old',
+			),
+			pinIsAncestor: false,
+			expected: { listingAhead: true, originCommit: 'commit-old' },
+		},
+		{
+			name: 'ahead',
+			pinnedCommit: 'commit-pin',
+			fork: fork(
+				'listing-github',
+				'github',
+				'pkg-github',
+				'src-github',
+				'2026-08-01T00:00:00.000Z',
+				'commit-tip',
+			),
+			pinIsAncestor: true,
+			expected: { forkAhead: true, originCommit: 'commit-tip' },
+		},
+		{
+			name: 'renamed-fork-wins-over-same-leaf-non-fork',
+			pinnedCommit: 'commit-new',
+			fork: fork(
+				'listing-github',
+				'github-custom',
+				'pkg-github-custom',
+				'src-github-custom',
+				'2026-08-02T00:00:00.000Z',
+				'commit-old',
+			),
+			expected: {
+				status: 'adaptation_required',
+				targetName: '@burhan/github-custom',
+				sourceId: 'src-github-custom',
+				packageId: null,
+				forkAhead: true,
 				originCommit: 'commit-old',
 			},
-		],
-		listingPinIsAncestorByListingId: new Map([['listing-github', false]]),
-	})
-	expect(outdated.get('listing-github')).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		sourceId: 'src-github',
-		packageId: 'pkg-github',
-		listingAhead: true,
-		forkAhead: false,
-		originCommit: 'commit-old',
-		listingPinnedCommit: 'commit-new',
-	})
-
-	const ahead = resolveViewerListingInstalls({
-		listings: [
-			{
-				id: 'listing-github',
-				kodyId: 'github',
-				pinnedCommit: 'commit-pin',
-			},
-		],
-		packageScope: 'burhan',
-		savedPackages: [
-			{
-				id: 'pkg-github',
-				kodyId: 'github',
-				name: '@burhan/github',
-				sourceId: 'src-github',
-			},
-		],
-		forks: [
-			{
-				listingId: 'listing-github',
-				targetKodyId: 'github',
-				forkedPackageId: 'pkg-github',
-				forkedSourceId: 'src-github',
-				createdAt: '2026-08-01T00:00:00.000Z',
-				originCommit: 'commit-tip',
-			},
-		],
-		listingPinIsAncestorByListingId: new Map([['listing-github', true]]),
-	})
-	expect(ahead.get('listing-github')).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		sourceId: 'src-github',
-		packageId: 'pkg-github',
-		listingAhead: false,
-		forkAhead: true,
-		originCommit: 'commit-tip',
-		listingPinnedCommit: 'commit-pin',
-	})
-
-	const selfAuthored = resolveViewerListingInstalls({
-		listings: [
-			{
-				id: 'listing-github',
-				kodyId: 'github',
-				pinnedCommit: 'commit-new',
-			},
-		],
-		packageScope: 'burhan',
-		savedPackages: [
-			{
-				id: 'pkg-github',
-				kodyId: 'github',
-				name: '@burhan/github',
-				sourceId: 'src-github',
-			},
-		],
-		forks: [
-			{
-				listingId: 'listing-github',
-				targetKodyId: 'github-custom',
-				forkedPackageId: 'pkg-github-custom',
-				forkedSourceId: 'src-github-custom',
-				createdAt: '2026-08-02T00:00:00.000Z',
-				originCommit: 'commit-old',
-			},
-		],
-	})
-	expect(selfAuthored.get('listing-github')).toEqual({
-		status: 'installed',
-		targetName: '@burhan/github',
-		sourceId: 'src-github',
-		packageId: 'pkg-github',
-		listingAhead: false,
-		forkAhead: false,
-		originCommit: null,
-		listingPinnedCommit: 'commit-new',
-	})
+		},
+	]
+	for (const {
+		name,
+		pinnedCommit,
+		fork: githubFork,
+		pinIsAncestor,
+		expected,
+	} of githubCases) {
+		const githubResolved = resolveViewerListingInstalls({
+			listings: [{ id: 'listing-github', kodyId: 'github', pinnedCommit }],
+			packageScope: 'burhan',
+			savedPackages: [githubPackage],
+			forks: [githubFork],
+			...(pinIsAncestor === undefined
+				? {}
+				: {
+						listingPinIsAncestorByListingId: new Map([
+							['listing-github', pinIsAncestor],
+						]),
+					}),
+		})
+		expect({ name, install: githubResolved.get('listing-github') }).toEqual({
+			name,
+			install: install('github', 'src-github', {
+				packageId: 'pkg-github',
+				listingPinnedCommit: pinnedCommit,
+				...expected,
+			}),
+		})
+	}
 })

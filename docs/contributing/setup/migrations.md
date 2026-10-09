@@ -14,16 +14,27 @@ in [Seed test account](./seeding.md).
   `0076-my-change.sql`).
 - If your branch is behind `main` and a new migration has landed upstream with
   the prefix you picked, rebase and renumber your file to a new unused prefix.
-  Do not introduce new duplicate prefixes.
+  Do not introduce new duplicate prefixes. PR preview D1s that already applied
+  the old filename are healed by
+  `tools/ci/rewrite-renamed-preview-migrations.ts` (sha256 match) before preview
+  `d1 migrations apply`; see
+  [PR preview deployments](./preview-deploys.md#migration-renumber-race-on-an-existing-preview-d1)
+  for the reset-preview-D1 fallback when rewrite is unsafe.
 - Do not edit migration files that have already landed in `main` and been
   deployed. New migration files that only exist on your branch can be revised
   freely until they land in `main`; once deployed, any schema correction should
   ship as a new migration instead.
-- `npm run migrations:check` (also run by `npm run validate` and the pre-commit
-  hook) enforces the naming rules above against the checked-in, append-only
-  `tools/migration-ledger.json`. When adding a migration, append its filename
-  and SHA-256 digest to the ledger; never edit or remove an existing ledger
-  entry. The check compares historical entries and SQL contents with a
+- `npm run migrations:check` (also run by `npm run validate`, and by the
+  pre-commit hook when the staged diff is not docs-only) enforces the naming
+  rules above against the checked-in, append-only `tools/migration-ledger.json`.
+  It also flags `NNNN-kebab.sql` references in `docs/` and
+  `packages/worker/src|universal` (including `.tsx`) that do not name a file in
+  `packages/worker/migrations` (or the jobs/audit migration directories), so a
+  renumber cannot leave a dangling docs or test name. Instructional placeholders
+  such as `0076-my-change.sql` are allowed. Decision records and dated audits
+  are exempt because they are point-in-time. When adding a migration, append its
+  filename and SHA-256 digest to the ledger; never edit or remove an existing
+  ledger entry. The check compares historical entries and SQL contents with a
   pre-change Git commit: CI supplies the PR base or push-before SHA, local
   branches use their `main` merge base, and main/detached checkouts fall back to
   the first parent. `HEAD` itself is never trusted. CI fetches complete history;

@@ -1,5 +1,7 @@
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
+import type * as Artifacts from './artifacts.ts'
+import type * as IdentityIcon from './identity-icon.ts'
 
 const mocks = vi.hoisted(() => ({
 	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
@@ -13,13 +15,17 @@ const mocks = vi.hoisted(() => ({
 		skipped: false,
 	})),
 	getArtifactsNamespace: vi.fn(() => 'production'),
-	resolveArtifactSourceHead: vi.fn(async () => ({
-		branch: 'main',
-		commit: 'def789ghi012def789ghi012def789ghi012def7',
-	})),
+	resolveArtifactSourceHead: vi.fn<typeof Artifacts.resolveArtifactSourceHead>(
+		async () => ({
+			branch: 'main',
+			commit: 'def789ghi012def789ghi012def789ghi012def7',
+		}),
+	),
 	applyArtifactSourcePushToHeadCache: vi.fn(async () => {}),
 	isDeletedArtifactRefCommit: (commit: string) => /^0+$/.test(commit),
-	refreshIdentityIconForSource: vi.fn(async () => {}),
+	refreshIdentityIconForSource: vi.fn<
+		typeof IdentityIcon.refreshIdentityIconForSource
+	>(async () => {}),
 }))
 
 vi.mock('#worker/package-invocations/service.ts', () => ({
@@ -114,6 +120,32 @@ const pushedEvent = {
 	},
 }
 
+const userRepo = {
+	id: 'user-repo-1',
+	userId: 'user-1',
+	name: 'skills',
+	description: null,
+	createdAt: '2026-05-18T00:00:00.000Z',
+	updatedAt: '2026-05-18T00:00:00.000Z',
+}
+
+const env = {
+	APP_DB: {},
+	BUNDLE_ARTIFACTS_KV: {},
+	APP_BASE_URL: 'https://example.com',
+	ARTIFACTS_NAMESPACE: 'production',
+} as Env
+
+function pushEvent(payload: Partial<typeof pushedEvent.payload> = {}) {
+	return { ...pushedEvent, payload: { ...pushedEvent.payload, ...payload } }
+}
+
+function seedMatchedSource() {
+	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
+	mocks.getUserRepoById.mockResolvedValueOnce(userRepo)
+}
+
 test('repo.pushed fans out only to the owning user packages', async () => {
 	const savedPackage = {
 		id: 'package-1',
@@ -135,19 +167,7 @@ test('repo.pushed fans out only to the owning user packages', async () => {
 			},
 		},
 	})
-	mocks.getUserRepoById.mockResolvedValueOnce({
-		id: 'user-repo-1',
-		userId: 'user-1',
-		name: 'skills',
-		description: null,
-		createdAt: '2026-05-18T00:00:00.000Z',
-		updatedAt: '2026-05-18T00:00:00.000Z',
-	})
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-	} as Env
+	mocks.getUserRepoById.mockResolvedValueOnce(userRepo)
 
 	await dispatchRepoSubscriptionEvents({
 		env,
@@ -184,58 +204,28 @@ test('repo.pushed fans out only to the owning user packages', async () => {
 })
 
 test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by entity_sources lookup', async () => {
-	mocks.getArtifactsNamespace.mockReturnValue('production')
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-		ARTIFACTS_NAMESPACE: 'production',
-	} as Env
-
-	const wrongNamespace = await processCloudflareArtifactsRepoEvent({
-		env,
-		body: {
+	const ignoredBodies = [
+		{
 			...pushedEvent,
 			source: { ...pushedEvent.source, namespace: 'preview' },
 		},
-	})
-	expect(wrongNamespace.outcome).toBe('ignored')
-
-	const session = await processCloudflareArtifactsRepoEvent({
-		env,
-		body: {
+		{
 			...pushedEvent,
-			source: {
-				...pushedEvent.source,
-				repoName: 'package-abc-session-def',
-			},
+			source: { ...pushedEvent.source, repoName: 'package-abc-session-def' },
 		},
-	})
-	expect(session.outcome).toBe('ignored')
-
-	const sessionBranch = await processCloudflareArtifactsRepoEvent({
-		env,
-		body: {
-			...pushedEvent,
-			payload: {
-				...pushedEvent.payload,
-				ref: 'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
-			},
-		},
-	})
-	expect(sessionBranch.outcome).toBe('ignored')
-
-	const publishNotes = await processCloudflareArtifactsRepoEvent({
-		env,
-		body: {
-			...pushedEvent,
-			payload: {
-				...pushedEvent.payload,
-				ref: 'refs/notes/commits',
-			},
-		},
-	})
-	expect(publishNotes.outcome).toBe('ignored')
+		pushEvent({
+			ref: 'refs/heads/sessions/f3da2ca724024325b290a21318c6b353-14bcbfbb49c94cf782dc0ebc5971a4cd',
+		}),
+		pushEvent({ ref: 'refs/notes/commits' }),
+	]
+	for (const body of ignoredBodies) {
+		const result = await processCloudflareArtifactsRepoEvent({ env, body })
+		expect([body.source, body.payload.ref, result.outcome]).toEqual([
+			body.source,
+			body.payload.ref,
+			'ignored',
+		])
+	}
 	// Ignored events never touch the cached HEAD.
 	expect(mocks.applyArtifactSourcePushToHeadCache).not.toHaveBeenCalled()
 
@@ -252,16 +242,7 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 		after: 'def789ghi012def789ghi012def789ghi012def7',
 	})
 
-	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mocks.getUserRepoById.mockResolvedValueOnce({
-		id: 'user-repo-1',
-		userId: 'user-1',
-		name: 'skills',
-		description: null,
-		createdAt: '2026-05-18T00:00:00.000Z',
-		updatedAt: '2026-05-18T00:00:00.000Z',
-	})
+	seedMatchedSource()
 	const dispatched = await processCloudflareArtifactsRepoEvent({
 		env,
 		body: pushedEvent,
@@ -281,94 +262,73 @@ test('processCloudflareArtifactsRepoEvent ignores, unmatched, and dispatches by 
 })
 
 test('repo.pushed refreshes identity icons only for the current default-branch HEAD', async () => {
-	mocks.getArtifactsNamespace.mockReturnValue('production')
-	const env = {
-		APP_DB: {},
-		BUNDLE_ARTIFACTS_KV: {},
-		APP_BASE_URL: 'https://example.com',
-		ARTIFACTS_NAMESPACE: 'production',
-	} as Env
 	const after = pushedEvent.payload.after
 	const featureAfter = 'aaa111bbb222aaa111bbb222aaa111bbb222aaa1'
 	const deletedAfter = '0000000000000000000000000000000000000000'
-
-	async function processPush(input: {
+	const cases: Array<{
+		name: string
 		ref?: string
 		after?: string
 		head: { branch: string; commit: string | null }
-	}) {
+		iconCommit: string | null
+	}> = [
+		{
+			name: 'matching',
+			head: { branch: 'main', commit: after },
+			iconCommit: after,
+		},
+		{
+			name: 'default branch named develop',
+			ref: 'refs/heads/develop',
+			after: featureAfter,
+			head: { branch: 'develop', commit: featureAfter },
+			iconCommit: featureAfter,
+		},
+		{
+			name: 'unresolved head',
+			head: { branch: 'main', commit: null },
+			iconCommit: null,
+		},
+		{
+			name: 'non-default branch',
+			ref: 'refs/heads/feature',
+			after: featureAfter,
+			head: { branch: 'main', commit: after },
+			iconCommit: null,
+		},
+		{
+			name: 'deleted ref',
+			after: deletedAfter,
+			head: { branch: 'main', commit: after },
+			iconCommit: null,
+		},
+		{
+			name: 'stale push',
+			after: featureAfter,
+			head: { branch: 'main', commit: after },
+			iconCommit: null,
+		},
+	]
+	for (const { name, ref, after: pushAfter, head, iconCommit } of cases) {
 		mocks.refreshIdentityIconForSource.mockClear()
-		mocks.resolveArtifactSourceHead.mockResolvedValueOnce(input.head)
-		mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
-		mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
-		mocks.getUserRepoById.mockResolvedValueOnce({
-			id: 'user-repo-1',
-			userId: 'user-1',
-			name: 'skills',
-			description: null,
-			createdAt: '2026-05-18T00:00:00.000Z',
-			updatedAt: '2026-05-18T00:00:00.000Z',
-		})
+		mocks.resolveArtifactSourceHead.mockResolvedValueOnce(head)
+		seedMatchedSource()
 		const result = await processCloudflareArtifactsRepoEvent({
 			env,
-			body: {
-				...pushedEvent,
-				payload: {
-					...pushedEvent.payload,
-					ref: input.ref ?? pushedEvent.payload.ref,
-					after: input.after ?? after,
-				},
-			},
+			body: pushEvent({
+				ref: ref ?? pushedEvent.payload.ref,
+				after: pushAfter ?? after,
+			}),
 		})
-		expect(result.outcome).toBe('dispatched')
-		return mocks.refreshIdentityIconForSource
+		const refreshed = mocks.refreshIdentityIconForSource.mock.calls.map(
+			([input]) => [input.source, input.iconCommit, input.indexLiveHead],
+		)
+		expect([name, result.outcome, refreshed]).toEqual([
+			name,
+			'dispatched',
+			iconCommit ? [[source, iconCommit, true]] : [],
+		])
 	}
-
-	const matching = await processPush({
-		head: { branch: 'main', commit: after },
-	})
-	expect(matching).toHaveBeenCalledWith(
-		expect.objectContaining({
-			source,
-			iconCommit: after,
-			indexLiveHead: true,
-		}),
-	)
-
-	const defaultNamedDevelop = await processPush({
-		ref: 'refs/heads/develop',
-		after: featureAfter,
-		head: { branch: 'develop', commit: featureAfter },
-	})
-	expect(defaultNamedDevelop).toHaveBeenCalledWith(
-		expect.objectContaining({
-			iconCommit: featureAfter,
-		}),
-	)
-
-	const unresolvedHead = await processPush({
-		head: { branch: 'main', commit: null },
-	})
-	expect(unresolvedHead).not.toHaveBeenCalled()
-
-	const feature = await processPush({
-		ref: 'refs/heads/feature',
-		after: featureAfter,
-		head: { branch: 'main', commit: after },
-	})
-	expect(feature).not.toHaveBeenCalled()
-
-	const deleted = await processPush({
-		after: deletedAfter,
-		head: { branch: 'main', commit: after },
-	})
-	expect(deleted).not.toHaveBeenCalled()
-
-	const stale = await processPush({
-		after: featureAfter,
-		head: { branch: 'main', commit: after },
-	})
-	expect(stale).not.toHaveBeenCalled()
 
 	mocks.refreshIdentityIconForSource.mockClear()
 	consoleError.mockImplementation(() => {})
@@ -377,16 +337,7 @@ test('repo.pushed refreshes identity icons only for the current default-branch H
 			'Artifacts repo "repo-user-repo-1" is importing. Retry after 5s.',
 		),
 	)
-	mocks.getEntitySourceByRepoId.mockResolvedValueOnce(source)
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([])
-	mocks.getUserRepoById.mockResolvedValueOnce({
-		id: 'user-repo-1',
-		userId: 'user-1',
-		name: 'skills',
-		description: null,
-		createdAt: '2026-05-18T00:00:00.000Z',
-		updatedAt: '2026-05-18T00:00:00.000Z',
-	})
+	seedMatchedSource()
 	const lookupFailed = await processCloudflareArtifactsRepoEvent({
 		env,
 		body: pushedEvent,

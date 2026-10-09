@@ -20,6 +20,9 @@ export const usersTable = table({
 		stripe_customer_id: c.text(),
 		stripe_plan: c.text(),
 		stripe_price_id: c.text(),
+		stripe_credits_eligible: c.integer(),
+		admin_credits_eligible: c.integer(),
+		signup_welcome_credits_pending: c.integer(),
 		stripe_plan_refreshed_at: c.text(),
 		deleting_at: c.text(),
 		suspended_at: c.text(),
@@ -159,6 +162,68 @@ export const oauthConnectionsTable = table({
 		updated_at: c.text(),
 	},
 	primaryKey: 'id',
+})
+
+export const orgsTable = table({
+	name: 'orgs',
+	columns: {
+		id: c.text(),
+		slug: c.text(),
+		display_name: c.text(),
+		bio: c.text(),
+		avatar_key: c.text(),
+		profile_visibility: c.text(),
+		plan: c.text(),
+		entitlement_ladder: c.text(),
+		stripe_customer_id: c.text(),
+		stripe_plan: c.text(),
+		stripe_price_id: c.text(),
+		stripe_plan_refreshed_at: c.text(),
+		stripe_credits_eligible: c.integer(),
+		admin_credits_eligible: c.integer(),
+		second_agent_standard_gift_granted_at: c.text(),
+		second_agent_standard_gift_expires_at: c.text(),
+		referral_standard_credit_expires_at: c.text(),
+		signup_welcome_credits_pending: c.integer(),
+		default_user_budget_micro_usd: c.integer(),
+		automation_budget_micro_usd: c.integer(),
+		access_epoch: c.integer(),
+		job_retention_success_once_days: c.integer(),
+		job_retention_failed_once_days: c.integer(),
+		job_retention_disabled_recurring_days: c.integer(),
+		email_outbound_paused_at: c.text(),
+		suspended_at: c.text(),
+		deleted_at: c.text(),
+		deleting_at: c.text(),
+		created_by_user_id: c.text(),
+		created_at: c.text(),
+		updated_at: c.text(),
+	},
+	primaryKey: 'id',
+})
+
+export const orgMembershipsTable = table({
+	name: 'org_memberships',
+	columns: {
+		org_id: c.text(),
+		user_id: c.text(),
+		role: c.text(),
+		invited_by_user_id: c.text(),
+		created_at: c.text(),
+		deleted_at: c.text(),
+	},
+	primaryKey: ['org_id', 'user_id'],
+})
+
+export const handlesTable = table({
+	name: 'handles',
+	columns: {
+		handle: c.text(),
+		user_id: c.text(),
+		org_id: c.text(),
+		created_at: c.text(),
+	},
+	primaryKey: 'handle',
 })
 
 export function createDb(db: D1Database) {

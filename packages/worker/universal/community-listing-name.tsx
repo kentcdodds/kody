@@ -1,4 +1,4 @@
-/** @jsxImportSource remix/ui */
+/** @jsxImportSource remix/component */
 /** @jsxRuntime automatic */
 
 /**
@@ -6,7 +6,7 @@
  * where it reads best instead of overflowing a narrow card or feed row.
  *
  * Its own module (rather than living beside the listings grid) because
- * `community-listings-content.tsx` pulls in `remix/ui/server` for its frame
+ * `community-listings-content.tsx` pulls in `remix/component/server` for its frame
  * rendering, and this name helper is shared with client-rendered surfaces.
  */
 export function renderCommunityListingName(name: string) {

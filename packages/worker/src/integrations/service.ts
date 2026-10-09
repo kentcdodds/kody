@@ -13,8 +13,9 @@ import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstIntegration } from '#worker/identity/activation-stamps.ts'
 import {
+	getDiscoverablePlatformOauthApp,
 	getPlatformOauthAppBySlug,
-	listPlatformOauthApps,
+	listDiscoverablePlatformOauthApps,
 	type PlatformOauthApp,
 } from './platform-apps.ts'
 import {
@@ -488,9 +489,7 @@ export async function upsertPlatformIntegration(input: {
 				input.description === undefined
 					? (existing?.connection.description ?? '')
 					: (input.description?.trim() ?? ''),
-			scopes_json: JSON.stringify(
-				scopes.length > 0 ? scopes : app.defaultScopes,
-			),
+			scopes_json: JSON.stringify(scopes),
 			required_hosts_json: JSON.stringify(requiredHosts),
 			connected_at: now,
 			token_refreshed_at: existing?.connection.tokenRefreshedAt ?? null,
@@ -551,17 +550,22 @@ export function assertScopesAllowedForPlatformApp(
 	return scopes
 }
 
+/**
+ * Platform apps users may discover and newly connect: enabled + published.
+ * Draft apps keep serving existing connections (refresh, fetch) but never
+ * appear here.
+ */
 export async function listAvailablePlatformApps(input: {
 	env: Pick<Env, 'APP_DB'>
 }): Promise<Array<PlatformOauthApp>> {
-	return listPlatformOauthApps({ db: input.env.APP_DB })
+	return listDiscoverablePlatformOauthApps({ db: input.env.APP_DB })
 }
 
 export async function getAvailablePlatformApp(input: {
 	env: Pick<Env, 'APP_DB'>
 	slug: string
 }): Promise<PlatformOauthApp | null> {
-	return getPlatformOauthAppBySlug({
+	return getDiscoverablePlatformOauthApp({
 		db: input.env.APP_DB,
 		slug: input.slug,
 	})

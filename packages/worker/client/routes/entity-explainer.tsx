@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
 import { renderIcon } from '#universal/icon.tsx'
@@ -206,6 +206,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		match: accountSection(routes.accountUsage.href()),
 		paragraphs: [
 			'Usage is how much of your plan you have consumed — stored email, job slots, workflow concurrency, and other finite entitlements. Limits are per signed-in user.',
+			'On Pro, the Credits section holds your prepaid balance: usage past the monthly include runs on credits. When credits run out, rate and compute limits match Free until you top up.',
 		],
 		learnMore: [
 			{

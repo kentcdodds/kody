@@ -16,9 +16,15 @@ A memory is a durable fact or preference attached to your Kody account. Say it
 once in one agent and every other agent connected to the same account can use
 it. That is the whole point: memory follows the person, not the product.
 
-Facts saved only inside a host — Claude's memory, Codex notes, Cursor rules that
-are not also Kody memories — are invisible to your other agents. Kody is the
-system of record for the assistant state you want to keep.
+Your agents have their own memory too: Claude's memory, Codex notes, Cursor
+rules, a personal agent's notes on your machine. Those are good at what that one
+host needs, and you can keep using them. They are also invisible to every other
+agent you connect. Put the facts you want every agent to know in Kody memory;
+Kody is the system of record for the state that should follow you.
+
+Watch:
+[How Kody Gives Your Agents a Shared Home](https://www.youtube.com/watch?v=h5G8uaZHrVI).
+The written loop is [How Kody works](./how-kody-works.md).
 
 ## What a memory is for
 
@@ -45,7 +51,8 @@ Kody has a home for each kind of state, and memory is only one of them:
 | An OAuth login                         | An integration                        |
 
 If the fact is about a package's job rather than about you, it does not belong
-in memory.
+in memory. Choosing among MCP server instructions, package docs, export JSDoc,
+and memory is covered in [Where agent guidance lives](./agent-guidance.md).
 
 ## How memories surface
 
@@ -97,6 +104,8 @@ included only when you turn on **Include deleted**.
 
 ## Where to go next
 
+- [Where agent guidance lives](./agent-guidance.md) — choose among MCP
+  instructions, package docs, JSDoc, and memory before writing guidance.
 - [Connect your agent](./connect-your-agent.md) — Step 3 is a second agent
   reusing a memory the first one saved.
 - [Email and memories](./first-win.md) — an optional playbook that turns a

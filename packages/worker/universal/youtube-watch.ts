@@ -191,24 +191,6 @@ export function mergeYoutubeWatchAllowlist(input: {
 	])
 }
 
-export function resolveSiteBannerImageUrl(banner: {
-	imageUrl: string | null
-	ctaHref: string | null
-	secondaryHref: string | null
-}): string | null {
-	if (banner.imageUrl) {
-		const fromImage = parseYoutubeVideoId(banner.imageUrl)
-		if (fromImage && isYoutubeHostedUrl(banner.imageUrl)) {
-			return youtubeThumbPath(fromImage)
-		}
-		return banner.imageUrl
-	}
-	const fromHref =
-		parseYoutubeVideoId(banner.ctaHref ?? '') ??
-		parseYoutubeVideoId(banner.secondaryHref ?? '')
-	return fromHref ? youtubeThumbPath(fromHref) : null
-}
-
 function readVideoIdParam(value: string | null): string | null {
 	if (!value) return null
 	return isYoutubeVideoId(value) ? value : null
@@ -231,13 +213,6 @@ function parseAbsoluteOrRelativeUrl(value: string): URL | null {
 
 function isYoutubeFamilyHost(hostname: string): boolean {
 	return youtubeHostSuffixes.some((suffix) => isYoutubeHost(hostname, suffix))
-}
-
-function isYoutubeHostedUrl(value: string): boolean {
-	if (isAppRelativeHref(value)) return false
-	const url = parseAbsoluteOrRelativeUrl(value)
-	if (!url) return false
-	return isYoutubeFamilyHost(url.hostname)
 }
 
 function readYoutubeThumbPathId(pathname: string): string | null {

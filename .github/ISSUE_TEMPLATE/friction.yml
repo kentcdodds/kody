@@ -8,7 +8,9 @@ body:
       value: >
         Search open `friction` issues before filing. One papercut per issue.
         This is not Kody product feedback — use platform friction for that. Omit
-        secrets, tokens, and unrelated private content.
+        secrets, tokens, and unrelated private content. Include a short
+        preliminary investigation (what you already looked at). List relevant
+        files only when you know some. Do not invent a root cause.
   - type: textarea
     id: happened
     attributes:
@@ -38,3 +40,20 @@ body:
         Time lost, how often this happens, who it hits, and the workaround.
     validations:
       required: true
+  - type: textarea
+    id: preliminary
+    attributes:
+      label: Preliminary investigation
+      description: >
+        What you already looked at. Keep it short. Do not invent a root cause.
+        Do not paste a full issue thread.
+    validations:
+      required: true
+  - type: textarea
+    id: relevant-files
+    attributes:
+      label: Relevant files
+      description: >
+        Paths that look relevant, one per line. Leave blank when none are known.
+    validations:
+      required: false

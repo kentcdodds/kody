@@ -1,4 +1,4 @@
-import { css, type Handle, type RemixNode } from 'remix/ui'
+import { css, type Handle, type RemixNode } from 'remix/component'
 import { shouldRouterHandleClick } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
 import {
@@ -186,11 +186,31 @@ const defaultScrollHeight = '22rem'
  * Columns drop one priority at a time as the container narrows, then the
  * whole table becomes cards. Each threshold is its own class so a cell can
  * carry exactly one.
+ *
+ * Hide with zero-width + `visibility: hidden` rather than `display: none`.
+ * Under `table-layout: fixed`, `display: none` removes the column from the
+ * track count while an expand row still uses `colSpan={columns.length}`,
+ * which invents a phantom track and squeezes the visible columns (#2780).
+ * Zero width keeps the column in the track model so colspan stays honest.
+ * Card mode removes dropped cells via `data-drop` in `cardFallbackCss`
+ * (higher specificity than these cell classes against the card `td` rules).
  */
+const dropHiddenTableCss = {
+	width: 0,
+	minWidth: 0,
+	maxWidth: 0,
+	paddingInline: 0,
+	border: 'none',
+	overflow: 'hidden',
+	visibility: 'hidden',
+	fontSize: 0,
+	lineHeight: 0,
+} as const
+
 const dropCss = {
-	1: css({ '@container (max-width: 680px)': { display: 'none' } }),
-	2: css({ '@container (max-width: 780px)': { display: 'none' } }),
-	3: css({ '@container (max-width: 900px)': { display: 'none' } }),
+	1: css({ '@container (max-width: 680px)': dropHiddenTableCss }),
+	2: css({ '@container (max-width: 780px)': dropHiddenTableCss }),
+	3: css({ '@container (max-width: 900px)': dropHiddenTableCss }),
 } as const
 
 const numericCss = css({
@@ -307,6 +327,10 @@ const cardFallbackCss = {
 			gap: spacing.sm,
 			alignItems: 'baseline',
 		},
+		// Higher specificity than `& td` above so drop cells leave the card
+		// entirely. A same-element `display: none` on the drop class loses to
+		// these descendant `td` rules and left invisible full-width rows.
+		'& td[data-drop]': { display: 'none' },
 		'& td::before': {
 			content: 'attr(data-label)',
 			flex: 'none',
@@ -452,6 +476,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 							<th
 								key={column.key}
 								scope="col"
+								data-drop={column.drop ? String(column.drop) : undefined}
 								mix={[css(headCellCss), ...columnCss(column)]}
 							>
 								{column.label}
@@ -521,6 +546,7 @@ export function RecordTable(handle: Handle<RecordTableProps>) {
 											key={column.key}
 											data-label={column.label}
 											data-primary={column.primary ? 'true' : undefined}
+											data-drop={column.drop ? String(column.drop) : undefined}
 											mix={[
 												css(column.primary ? primaryCellCss : cellCss),
 												...columnCss(column),

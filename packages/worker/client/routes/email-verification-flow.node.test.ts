@@ -16,34 +16,23 @@ test('email verification redirect helpers preserve safe targets and reject open 
 	const oauthResume =
 		'/oauth/authorize?response_type=code&client_id=demo&redirect_uri=https%3A%2F%2Fexample.com%2Fcallback&scope=profile&state=abc'
 
+	// Ready sessions trust the session flag; before ready, the info payload.
+	const emailVerifiedCases: Array<[boolean, boolean, boolean, boolean]> = [
+		[true, false, true, false],
+		[true, true, false, true],
+		[false, false, true, true],
+		[false, true, false, false],
+	]
 	expect(
-		resolveAuthorizeEmailVerified({
-			isSessionReady: true,
-			sessionEmailVerified: false,
-			infoEmailVerified: true,
-		}),
-	).toBe(false)
-	expect(
-		resolveAuthorizeEmailVerified({
-			isSessionReady: true,
-			sessionEmailVerified: true,
-			infoEmailVerified: false,
-		}),
-	).toBe(true)
-	expect(
-		resolveAuthorizeEmailVerified({
-			isSessionReady: false,
-			sessionEmailVerified: false,
-			infoEmailVerified: true,
-		}),
-	).toBe(true)
-	expect(
-		resolveAuthorizeEmailVerified({
-			isSessionReady: false,
-			sessionEmailVerified: true,
-			infoEmailVerified: false,
-		}),
-	).toBe(false)
+		emailVerifiedCases.filter(
+			([isSessionReady, sessionEmailVerified, infoEmailVerified, want]) =>
+				resolveAuthorizeEmailVerified({
+					isSessionReady,
+					sessionEmailVerified,
+					infoEmailVerified,
+				}) !== want,
+		),
+	).toEqual([])
 
 	const unverifiedUser: SessionInfo = {
 		email: 'user@example.com',
@@ -53,15 +42,7 @@ test('email verification redirect helpers preserve safe targets and reject open 
 		avatarUrl: null,
 		roles: ['user'],
 		permissions: [],
-		featureFlags: {
-			'demo-indicator': false,
-			'compact-mcp-server-instructions': false,
-			'compute-overage-charging': true,
-			'package-share-grants': false,
-			'secret-providers': false,
-			'jev-search-rerank': false,
-			'execute-invoke': false,
-		},
+		featureFlags: {} as SessionInfo['featureFlags'],
 	}
 	const verifiedUser: SessionInfo = {
 		...unverifiedUser,
@@ -72,50 +53,24 @@ test('email verification redirect helpers preserve safe targets and reject open 
 		email: 'other@example.com',
 		username: 'other-user',
 	}
-	expect(
-		resolveAuthorizeSession({
-			shared: { session: unverifiedUser, status: 'ready' },
-			override: verifiedUser,
-			overrideBaseline: unverifiedUser,
-		}),
-	).toEqual({
-		session: verifiedUser,
-		status: 'ready',
-		clearOverride: false,
-	})
-	expect(
-		resolveAuthorizeSession({
-			shared: { session: verifiedUser, status: 'ready' },
-			override: verifiedUser,
-			overrideBaseline: unverifiedUser,
-		}),
-	).toEqual({
-		session: verifiedUser,
-		status: 'ready',
-		clearOverride: true,
-	})
-	expect(
-		resolveAuthorizeSession({
-			shared: { session: otherUser, status: 'ready' },
-			override: verifiedUser,
-			overrideBaseline: unverifiedUser,
-		}),
-	).toEqual({
-		session: otherUser,
-		status: 'ready',
-		clearOverride: true,
-	})
-	expect(
-		resolveAuthorizeSession({
-			shared: { session: null, status: 'ready' },
-			override: verifiedUser,
-			overrideBaseline: unverifiedUser,
-		}),
-	).toEqual({
-		session: null,
-		status: 'ready',
-		clearOverride: true,
-	})
+	// The verified override wins until the shared session catches up, changes
+	// user, or signs out; then the override clears.
+	const sessionCases: Array<[SessionInfo | null, SessionInfo | null, boolean]> =
+		[
+			[unverifiedUser, verifiedUser, false],
+			[verifiedUser, verifiedUser, true],
+			[otherUser, otherUser, true],
+			[null, null, true],
+		]
+	for (const [shared, session, clearOverride] of sessionCases) {
+		expect(
+			resolveAuthorizeSession({
+				shared: { session: shared, status: 'ready' },
+				override: verifiedUser,
+				overrideBaseline: unverifiedUser,
+			}),
+		).toEqual({ session, status: 'ready', clearOverride })
+	}
 
 	expect(buildOnboardingPath(null)).toBe(onboardingPath)
 	expect(buildOnboardingPath(oauthResume)).toBe(
@@ -149,54 +104,65 @@ test('email verification redirect helpers preserve safe targets and reject open 
 		'/pending-verification',
 	)
 
+	const passwordRedirects: Array<
+		[Parameters<typeof resolvePasswordAuthRedirect>[0], string]
+	> = [
+		[
+			{
+				mode: 'signup',
+				requiresTwoFactor: true,
+				emailVerificationRequired: true,
+				redirectTo: '/onboarding',
+			},
+			'/verify?redirectTo=%2Fonboarding',
+		],
+		[
+			{
+				mode: 'signup',
+				emailVerificationRequired: true,
+				redirectTo: '/account',
+			},
+			'/pending-verification?redirectTo=%2Faccount',
+		],
+		[
+			{
+				mode: 'signup',
+				emailVerificationRequired: true,
+				redirectTo: oauthResume,
+			},
+			`/pending-verification?redirectTo=${encodeURIComponent(oauthResume)}`,
+		],
+		[
+			{
+				mode: 'signup',
+				emailVerificationRequired: true,
+				redirectTo: 'https://evil.example/phish',
+			},
+			'/pending-verification',
+		],
+		[
+			{
+				mode: 'login',
+				emailVerificationRequired: true,
+				redirectTo: '/onboarding',
+			},
+			'/onboarding',
+		],
+		[{ mode: 'login' }, '/account'],
+		[
+			{
+				mode: 'signup',
+				emailVerificationRequired: false,
+				redirectTo: '/secrets',
+			},
+			'/secrets',
+		],
+	]
 	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'signup',
-			requiresTwoFactor: true,
-			emailVerificationRequired: true,
-			redirectTo: '/onboarding',
-		}),
-	).toBe('/verify?redirectTo=%2Fonboarding')
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'signup',
-			emailVerificationRequired: true,
-			redirectTo: '/account',
-		}),
-	).toBe('/pending-verification?redirectTo=%2Faccount')
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'signup',
-			emailVerificationRequired: true,
-			redirectTo: oauthResume,
-		}),
-	).toBe(`/pending-verification?redirectTo=${encodeURIComponent(oauthResume)}`)
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'signup',
-			emailVerificationRequired: true,
-			redirectTo: 'https://evil.example/phish',
-		}),
-	).toBe('/pending-verification')
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'login',
-			emailVerificationRequired: true,
-			redirectTo: '/onboarding',
-		}),
-	).toBe('/onboarding')
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'login',
-		}),
-	).toBe('/account')
-	expect(
-		resolvePasswordAuthRedirect({
-			mode: 'signup',
-			emailVerificationRequired: false,
-			redirectTo: '/secrets',
-		}),
-	).toBe('/secrets')
+		passwordRedirects.filter(
+			([input, want]) => resolvePasswordAuthRedirect(input) !== want,
+		),
+	).toEqual([])
 })
 
 test('continue-after-verify feedback reflects session state without pinning copy', () => {

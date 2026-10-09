@@ -73,8 +73,30 @@ function setupBundleMocks() {
 	})
 }
 
-async function runChecks(files: Map<string, string>) {
+const baseFiles: Array<[string, string]> = [
+	['src/index.ts', 'export default async () => ({ ready: true })\n'],
+	[
+		'src/app.ts',
+		'export default { async fetch() { return new Response("ok") } }\n',
+	],
+	['src/client.ts', 'document.body.textContent = "hi"\n'],
+	['public/styles.css', 'body { color: red }\n'],
+]
+
+async function runChecks(
+	app: Record<string, string>,
+	extraFiles: Array<[string, string]> = [],
+	clientError?: Error,
+) {
 	setupBundleMocks()
+	if (clientError) {
+		mockModule.buildKodyAppClientBundle.mockRejectedValue(clientError)
+	}
+	const files = new Map([
+		['package.json', createAppManifest(app)],
+		...baseFiles,
+		...extraFiles,
+	])
 	withRequiredPackageDocs(files)
 	const snapshot = {
 		read: vi.fn((path: string) => files.get(path) ?? null),
@@ -104,31 +126,10 @@ async function runChecks(files: Map<string, string>) {
 	})
 }
 
-const baseFiles: Array<[string, string]> = [
-	['src/index.ts', 'export default async () => ({ ready: true })\n'],
-	[
-		'src/app.ts',
-		'export default { async fetch() { return new Response("ok") } }\n',
-	],
-	['src/client.ts', 'document.body.textContent = "hi"\n'],
-	['public/styles.css', 'body { color: red }\n'],
-]
+const appWithClient = { entry: './src/app.ts', client: './src/client.ts' }
 
 test('runRepoChecks bundles kody.app.client for the browser alongside the Worker entry', async () => {
-	const result = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({
-					entry: './src/app.ts',
-					client: './src/client.ts',
-					assets: './public',
-				}),
-			],
-			...baseFiles,
-		]),
-	)
-
+	const result = await runChecks({ ...appWithClient, assets: './public' })
 	expect(result.ok).toBe(true)
 	expect(result.results).toEqual(
 		expect.arrayContaining([
@@ -142,258 +143,119 @@ test('runRepoChecks bundles kody.app.client for the browser alongside the Worker
 		expect.objectContaining({ entryPoint: 'src/client.ts' }),
 	)
 	expect(mockModule.buildKodyAppClientBundle).toHaveBeenCalledTimes(1)
-})
-
-test('runRepoChecks reports a missing kody.app.client entry as a bundle failure', async () => {
-	const result = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({
-					entry: './src/app.ts',
-					client: './src/missing-client.ts',
-				}),
-			],
-			...baseFiles,
-		]),
-	)
-
-	expect(result.ok).toBe(false)
-	const bundle = result.results.find((entry) => entry.kind === 'bundle')
-	expect(bundle?.ok).toBe(false)
-	expect(bundle?.message).toContain('src/missing-client.ts')
-	expect(mockModule.buildKodyAppClientBundle).not.toHaveBeenCalled()
-})
-
-test('runRepoChecks surfaces browser bundle errors from the client build', async () => {
-	setupBundleMocks()
-	const files = new Map([
-		[
-			'package.json',
-			createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
-		],
-		...baseFiles,
-	])
-	withRequiredPackageDocs(files)
-	const snapshot = {
-		read: vi.fn((path: string) => files.get(path) ?? null),
-	}
-	mockModule.createFileSystemSnapshot.mockResolvedValue(snapshot)
-	mockModule.createTypescriptLanguageService.mockResolvedValue({
-		fileSystem: { ...snapshot, write: vi.fn() },
-		languageService: {
-			dispose: vi.fn(),
-			getSemanticDiagnostics: vi.fn(() => []),
-		},
-	})
-	mockModule.buildKodyAppClientBundle.mockRejectedValue(
-		new Error(
-			'Saved package app client "src/client.ts" bundle imports server-only modules that cannot run in the browser (src/client.ts: "kody:runtime").',
-		),
-	)
-
-	const result = await runRepoChecks({
-		workspace: {
-			async readFile(path: string) {
-				return files.get(path) ?? null
-			},
-			async glob() {
-				return Array.from(files.keys()).map((path) => ({ path, type: 'file' }))
-			},
-		},
-		manifestPath: 'package.json',
-		sourceRoot: '/',
-		env: {} as Env,
-		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
-	})
-
-	expect(result.ok).toBe(false)
-	const bundle = result.results.find((entry) => entry.kind === 'bundle')
-	expect(bundle?.ok).toBe(false)
-	expect(bundle?.message).toContain('src/client.ts: ')
-	expect(bundle?.message).toContain('kody:runtime')
-})
-
-test('runRepoChecks rejects a kody.app.assets directory with no files or an unsafe root', async () => {
-	const empty = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', assets: './static' }),
-			],
-			...baseFiles,
-		]),
-	)
-	expect(empty.ok).toBe(false)
-	expect(empty.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining('no files exist under that directory'),
-			}),
-		]),
-	)
-	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
-
-	const root = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', assets: '.' }),
-			],
-			...baseFiles,
-		]),
-	)
-	expect(root.ok).toBe(false)
-	expect(root.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining('must name a subdirectory'),
-			}),
-		]),
-	)
-})
-
-test('runRepoChecks keeps the Worker and client graphs separate', async () => {
-	const importsClient = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
-			],
-			...baseFiles,
-			[
-				'src/app.ts',
-				[
-					"import './client.ts'",
-					'export default { async fetch() { return new Response("ok") } }',
-				].join('\n'),
-			],
-		]),
-	)
-	expect(importsClient.ok).toBe(false)
-	expect(importsClient.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining(
-					'imports the browser client entry "src/client.ts"',
-				),
-			}),
-		]),
-	)
-	expect(mockModule.buildKodyAppBundle).not.toHaveBeenCalled()
-
-	const viaHelper = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
-			],
-			...baseFiles,
-			[
-				'src/app.ts',
-				[
-					"import { render } from './render.ts'",
-					'export default { async fetch() { return new Response(render()) } }',
-				].join('\n'),
-			],
-			[
-				'src/render.ts',
-				"import './client.ts'\nexport const render = () => 'x'\n",
-			],
-		]),
-	)
-	expect(viaHelper.ok).toBe(false)
-
-	const sameEntry = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', client: './src/app.ts' }),
-			],
-			...baseFiles,
-		]),
-	)
-	expect(sameEntry.ok).toBe(false)
-	expect(sameEntry.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining('both point at "src/app.ts"'),
-			}),
-		]),
-	)
 
 	// Shared helpers imported from both sides are fine; only the client entry
 	// itself is off limits to the Worker graph.
-	const sharedHelper = await runChecks(
-		new Map([
+	const sharedHelper = await runChecks(appWithClient, [
+		[
+			'src/app.ts',
 			[
-				'package.json',
-				createAppManifest({ entry: './src/app.ts', client: './src/client.ts' }),
-			],
-			...baseFiles,
-			[
-				'src/app.ts',
-				[
-					"import { formatCount } from './format.ts'",
-					'export default { async fetch() { return new Response(formatCount(1)) } }',
-				].join('\n'),
-			],
-			[
-				'src/client.ts',
-				"import { formatCount } from './format.ts'\ndocument.body.textContent = formatCount(2)\n",
-			],
-			['src/format.ts', 'export const formatCount = (n: number) => `${n}`\n'],
-		]),
-	)
+				"import { formatCount } from './format.ts'",
+				'export default { async fetch() { return new Response(formatCount(1)) } }',
+			].join('\n'),
+		],
+		[
+			'src/client.ts',
+			"import { formatCount } from './format.ts'\ndocument.body.textContent = formatCount(2)\n",
+		],
+		['src/format.ts', 'export const formatCount = (n: number) => `${n}`\n'],
+	])
 	expect(sharedHelper.ok).toBe(true)
 })
 
-test('runRepoChecks rejects assets that would be shadowed by platform-served names', async () => {
-	const shadowed = await runChecks(
-		new Map([
-			[
-				'package.json',
-				createAppManifest({
-					entry: './src/app.ts',
-					client: './src/client.ts',
-					assets: './public',
-				}),
-			],
-			...baseFiles,
-			['public/__version.json', '{"stale": true}'],
-		]),
-	)
-	expect(shadowed.ok).toBe(false)
-	expect(shadowed.results).toEqual(
-		expect.arrayContaining([
-			expect.objectContaining({
-				kind: 'bundle',
-				ok: false,
-				message: expect.stringContaining('"public/__version.json"'),
-			}),
-		]),
-	)
-	expect(mockModule.buildKodyAppClientBundle).not.toHaveBeenCalled()
-})
-
 test('runRepoChecks leaves apps without kody.app.client on the Worker-only path', async () => {
-	const result = await runChecks(
-		new Map([
-			['package.json', createAppManifest({ entry: './src/app.ts' })],
-			...baseFiles,
-		]),
-	)
-
+	const result = await runChecks({ entry: './src/app.ts' })
 	expect(result.ok).toBe(true)
 	expect(mockModule.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 	expect(mockModule.buildKodyAppClientBundle).not.toHaveBeenCalled()
+})
+
+test('runRepoChecks reports kody.app client, asset, and graph problems as bundle failures', async () => {
+	const importsClient = [
+		"import './client.ts'",
+		'export default { async fetch() { return new Response("ok") } }',
+	].join('\n')
+	const cases: Array<{
+		name: string
+		app: Record<string, string>
+		files?: Array<[string, string]>
+		clientError?: Error
+		messages: Array<string>
+		notBuilt?: typeof mockModule.buildKodyAppBundle
+	}> = [
+		{
+			name: 'missing client entry',
+			app: { entry: './src/app.ts', client: './src/missing-client.ts' },
+			messages: ['src/missing-client.ts'],
+			notBuilt: mockModule.buildKodyAppClientBundle,
+		},
+		{
+			name: 'browser bundle error',
+			app: appWithClient,
+			clientError: new Error(
+				'Saved package app client "src/client.ts" bundle imports server-only modules that cannot run in the browser (src/client.ts: "kody:runtime").',
+			),
+			messages: ['src/client.ts: ', 'kody:runtime'],
+		},
+		{
+			name: 'empty assets directory',
+			app: { entry: './src/app.ts', assets: './static' },
+			messages: ['no files exist under that directory'],
+			notBuilt: mockModule.buildKodyAppBundle,
+		},
+		{
+			name: 'assets at package root',
+			app: { entry: './src/app.ts', assets: '.' },
+			messages: ['must name a subdirectory'],
+		},
+		{
+			name: 'worker imports client entry',
+			app: appWithClient,
+			files: [['src/app.ts', importsClient]],
+			messages: ['imports the browser client entry "src/client.ts"'],
+			notBuilt: mockModule.buildKodyAppBundle,
+		},
+		{
+			name: 'worker imports client entry via helper',
+			app: appWithClient,
+			files: [
+				[
+					'src/app.ts',
+					[
+						"import { render } from './render.ts'",
+						'export default { async fetch() { return new Response(render()) } }',
+					].join('\n'),
+				],
+				[
+					'src/render.ts',
+					"import './client.ts'\nexport const render = () => 'x'\n",
+				],
+			],
+			messages: [],
+		},
+		{
+			name: 'worker and client share an entry',
+			app: { entry: './src/app.ts', client: './src/app.ts' },
+			messages: ['both point at "src/app.ts"'],
+		},
+		{
+			name: 'asset shadowed by platform-served name',
+			app: { ...appWithClient, assets: './public' },
+			files: [['public/__version.json', '{"stale": true}']],
+			messages: ['"public/__version.json"'],
+			notBuilt: mockModule.buildKodyAppClientBundle,
+		},
+	]
+	for (const { name, app, files, clientError, messages, notBuilt } of cases) {
+		const result = await runChecks(app, files, clientError)
+		const bundle = result.results.find((entry) => entry.kind === 'bundle')
+		expect([name, result.ok, bundle?.ok]).toEqual([name, false, false])
+		for (const message of messages) {
+			expect([name, bundle?.message]).toEqual([
+				name,
+				expect.stringContaining(message),
+			])
+		}
+		expect(notBuilt?.mock.calls ?? []).toEqual([])
+	}
 })

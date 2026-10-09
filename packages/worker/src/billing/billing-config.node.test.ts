@@ -5,8 +5,14 @@ import {
 	getMatchingPriceIdsForPlan,
 	getPriceIdForPlan,
 	getPurchasablePlans,
+	isCreditsEligiblePriceId,
+	isKodySubscription,
+	isPurchasableProSubscription,
 	parseBillingInterval,
+	retiredProPriceIds,
+	retiredStandardPriceIds,
 	resolveSubscriptionPlan,
+	selectKodyPlanRetainingSubscriptions,
 	selectPlanRetainingSubscriptions,
 	subscriptionHasPrice,
 } from './billing-config.ts'
@@ -23,9 +29,15 @@ function subscription(input: {
 		id: input.id ?? 'sub_test',
 		status: input.status,
 		cancel_at: input.cancel_at ?? null,
+		current_period_end: undefined,
 		metadata: input.metadata,
 		items: {
-			data: (input.priceIds ?? []).map((id) => ({ price: { id } })),
+			data: (input.priceIds ?? []).map((id) => ({
+				id: undefined,
+				quantity: undefined,
+				price: { id },
+				current_period_end: undefined,
+			})),
 		},
 	}
 }
@@ -46,92 +58,59 @@ test('createBillingLinkReference is stable per user and not the raw stable id', 
 	expect(first).toMatch(/^[0-9a-f]{64}$/)
 })
 
-test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {
-	const env = {
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
+const env = {
+	STRIPE_PRO_PRICE_ID: 'price_pro',
+	STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
+}
+const retiredStandardMonthly = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
+const retiredStandardYearly = 'price_1U3sg6LAQpAnsYszqq9abwIY'
+const retiredProMonthly = 'price_1UChg1LAQpAnsYszAYn6eGgt'
+const retiredProYearly = 'price_1UChg2LAQpAnsYszKAFCR778'
+
+type Subscriptions = Array<StripeSubscription>
+type ResolvedPlan = ReturnType<typeof resolveSubscriptionPlan>
+
+const active = (...priceIds: Array<string>) =>
+	subscription({ status: 'active', priceIds })
+const resolve = (subscriptions: Subscriptions) =>
+	resolveSubscriptionPlan(subscriptions, env)
+const noPlan = {
+	stripePlan: null,
+	creditsEligible: false,
+	stripeInterval: null,
+	stripePriceId: null,
+	cancelAt: null,
+}
+
+function planTable(cases: Array<[Subscriptions, Partial<ResolvedPlan>]>) {
+	return {
+		actual: cases.map(([subscriptions]) => resolve(subscriptions)),
+		expected: cases.map(([, plan]) => plan),
 	}
+}
 
-	expect(
-		resolveSubscriptionPlan(
+test('resolveSubscriptionPlan maps active price and metadata plans with soonest cancel_at', () => {
+	const sooner = 1_700_000_000
+	const exact = planTable([
+		[
 			[
-				subscription({
-					status: 'canceled',
-					priceIds: ['price_pro'],
-				}),
-				subscription({
-					status: 'incomplete',
-					priceIds: ['price_pro'],
-				}),
+				subscription({ status: 'canceled', priceIds: ['price_pro'] }),
+				subscription({ status: 'incomplete', priceIds: ['price_pro'] }),
 			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		stripeInterval: null,
-		stripePriceId: null,
-		cancelAt: null,
-		subscriptionStatus: 'incomplete',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_standard'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'standard',
-		stripeInterval: 'month',
-		stripePriceId: 'price_standard',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_pro'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: 'month',
-		stripePriceId: 'price_pro',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'trialing',
-					priceIds: ['price_pro'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: 'month',
-		stripePriceId: 'price_pro',
-		cancelAt: null,
-		subscriptionStatus: 'trialing',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
+			{ ...noPlan, subscriptionStatus: 'incomplete' },
+		],
+		[
+			[subscription({ status: 'trialing', priceIds: ['price_pro'] })],
+			{
+				stripePlan: 'pro',
+				creditsEligible: true,
+				stripeInterval: 'month',
+				stripePriceId: 'price_pro',
+				cancelAt: null,
+				subscriptionStatus: 'trialing',
+			},
+		],
+		[
 			[
 				subscription({
 					status: 'active',
@@ -139,63 +118,30 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 					metadata: { kody_plan: 'pro' },
 				}),
 			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: null,
-		stripePriceId: null,
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
+			{ ...noPlan, stripePlan: 'pro', subscriptionStatus: 'active' },
+		],
+	])
+	expect(exact.actual).toEqual(exact.expected)
 
-	// Retired plan names in metadata do not override configured price ids.
-	expect(
-		resolveSubscriptionPlan(
+	const partial = planTable([
+		// Retired plan names in metadata do not override known price ids.
+		[
 			[
 				subscription({
 					status: 'active',
-					priceIds: ['price_standard'],
+					priceIds: [retiredStandardMonthly],
 					metadata: { kody_plan: 'partner' },
 				}),
 			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'standard',
-		stripeInterval: 'month',
-		stripePriceId: 'price_standard',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_unknown'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		stripeInterval: null,
-		stripePriceId: null,
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	const sooner = 1_700_000_000
-	const later = 1_800_000_000
-	expect(
-		resolveSubscriptionPlan(
+			{ stripePlan: 'standard', creditsEligible: false },
+		],
+		[[active('price_unknown')], { stripePlan: null, creditsEligible: false }],
+		[
 			[
 				subscription({
 					status: 'active',
 					priceIds: ['price_pro'],
-					cancel_at: later,
+					cancel_at: 1_800_000_000,
 				}),
 				subscription({
 					status: 'trialing',
@@ -208,275 +154,219 @@ test('resolveSubscriptionPlan maps active price and metadata plans with soonest 
 					cancel_at: 1,
 				}),
 			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: 'month',
-		stripePriceId: 'price_pro',
-		cancelAt: new Date(sooner * 1000).toISOString(),
-		subscriptionStatus: 'active',
-	})
+			{
+				stripePlan: 'pro',
+				creditsEligible: true,
+				cancelAt: new Date(sooner * 1000).toISOString(),
+				subscriptionStatus: 'active',
+			},
+		],
+		[
+			[subscription({ status: 'past_due', priceIds: ['price_pro'] })],
+			{ stripePlan: 'pro', subscriptionStatus: 'past_due' },
+		],
+		[
+			[subscription({ status: 'unpaid', priceIds: ['price_pro'] })],
+			{ stripePlan: null, creditsEligible: false },
+		],
+		[
+			[active('price_pro_yearly')],
+			{
+				stripePlan: 'pro',
+				creditsEligible: true,
+				stripeInterval: 'year',
+				stripePriceId: 'price_pro_yearly',
+			},
+		],
+	])
+	expect(partial.actual).toMatchObject(partial.expected)
 
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'canceled',
-					priceIds: ['price_pro'],
-				}),
-				subscription({
-					status: 'past_due',
-					priceIds: ['price_pro'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: 'month',
-		stripePriceId: 'price_pro',
-		cancelAt: null,
-		subscriptionStatus: 'past_due',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'unpaid',
-					priceIds: ['price_pro'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: null,
-		stripeInterval: null,
-		stripePriceId: null,
-		cancelAt: null,
-		subscriptionStatus: 'unpaid',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_standard_yearly'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'standard',
-		stripeInterval: 'year',
-		stripePriceId: 'price_standard_yearly',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_pro_yearly'],
-				}),
-			],
-			env,
-		),
-	).toEqual({
-		stripePlan: 'pro',
-		stripeInterval: 'year',
-		stripePriceId: 'price_pro_yearly',
-		cancelAt: null,
-		subscriptionStatus: 'active',
-	})
-
-	expect(getPurchasablePlans(env)).toEqual(['standard', 'pro'])
+	expect(getPurchasablePlans(env)).toEqual(['pro'])
 	expect(getPurchasablePlans({})).toEqual([])
+	expect(
+		[undefined, null, '', 'weekly'].map((value) => parseBillingInterval(value)),
+	).toEqual(['month', 'month', 'month', null])
+	expect([
+		getPriceIdForPlan(env, 'pro'),
+		getPriceIdForPlan(env, 'pro', 'year'),
+		getPriceIdForPlan({}, 'pro', 'year'),
+	]).toEqual(['price_pro', 'price_pro_yearly', null])
+})
 
-	expect(parseBillingInterval(undefined)).toBe('month')
-	expect(parseBillingInterval(null)).toBe('month')
-	expect(parseBillingInterval('')).toBe('month')
-	expect(parseBillingInterval('weekly')).toBeNull()
+test('credit wallet eligibility keys off the purchasable Pro price, not plan or list price', () => {
+	const eligibility: Array<
+		[Parameters<typeof isCreditsEligiblePriceId>, boolean]
+	> = [
+		[[env, 'price_pro'], true],
+		[[env, ' price_pro_yearly '], true],
+		[[env, retiredStandardMonthly], false],
+		[[env, retiredProMonthly], false],
+		[[env, null], false],
+		[[{}, 'price_pro'], false],
+	]
+	expect(
+		eligibility.map(([args]) => isCreditsEligiblePriceId(...args)),
+	).toEqual(eligibility.map(([, want]) => want))
 
-	expect(getPriceIdForPlan(env, 'standard')).toBe('price_standard')
-	expect(getPriceIdForPlan(env, 'standard', 'year')).toBe(
-		'price_standard_yearly',
-	)
-	expect(getPriceIdForPlan(env, 'pro', 'year')).toBe('price_pro_yearly')
-	expect(getPriceIdForPlan({}, 'standard', 'year')).toBeNull()
+	// Retired Standard at the same $12 list price: plan kept, no wallet.
+	expect(resolve([active(retiredStandardMonthly)])).toEqual({
+		...noPlan,
+		stripePlan: 'standard',
+		stripePriceId: retiredStandardMonthly,
+		subscriptionStatus: 'active',
+	})
+	const partial = planTable([
+		[
+			[active(retiredStandardYearly)],
+			{ stripePlan: 'standard', creditsEligible: false },
+		],
+		// Retired $49 / $480 Pro: plan kept, no wallet.
+		...[retiredProMonthly, retiredProYearly].map(
+			(priceId): [Subscriptions, Partial<ResolvedPlan>] => [
+				[active(priceId)],
+				{
+					stripePlan: 'pro',
+					creditsEligible: false,
+					stripeInterval: null,
+					stripePriceId: priceId,
+				},
+			],
+		),
+		// A retired Pro beside the purchasable Pro surfaces the wallet.
+		[
+			[active(retiredProMonthly), active('price_pro')],
+			{ stripePlan: 'pro', creditsEligible: true, stripePriceId: 'price_pro' },
+		],
+	])
+	expect(partial.actual).toMatchObject(partial.expected)
 })
 
 test('resolveSubscriptionPlan reports the interval of the subscription that granted the plan', () => {
-	const env = {
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly',
-	}
-
-	// Legacy double subscription: the higher plan's interval wins, and a
-	// lower-ranked sibling does not overwrite it.
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({ status: 'active', priceIds: ['price_standard'] }),
-				subscription({ status: 'active', priceIds: ['price_pro_yearly'] }),
-			],
-			env,
-		),
-	).toMatchObject({
+	const yearlyPro = {
 		stripePlan: 'pro',
 		stripeInterval: 'year',
 		stripePriceId: 'price_pro_yearly',
-	})
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({ status: 'active', priceIds: ['price_pro_yearly'] }),
-				subscription({ status: 'active', priceIds: ['price_standard'] }),
-			],
-			env,
-		),
-	).toMatchObject({
-		stripePlan: 'pro',
-		stripeInterval: 'year',
-		stripePriceId: 'price_pro_yearly',
-	})
+	} as const
+	const partial = planTable([
+		[[active(retiredStandardMonthly), active('price_pro_yearly')], yearlyPro],
+		[[active('price_pro_yearly'), active(retiredStandardMonthly)], yearlyPro],
+	])
+	expect(partial.actual).toMatchObject(partial.expected)
 })
 
 test('selectPlanRetainingSubscriptions and subscriptionHasPrice drive the checkout guard', () => {
-	const active = subscription({
+	const activeSub = subscription({
 		id: 'sub_active',
 		status: 'active',
-		priceIds: ['price_standard'],
-	})
-	const pastDue = subscription({
-		id: 'sub_past_due',
-		status: 'past_due',
-		priceIds: ['price_pro'],
+		priceIds: [retiredStandardMonthly],
 	})
 	const trialing = subscription({ id: 'sub_trial', status: 'trialing' })
 	expect(
 		selectPlanRetainingSubscriptions([
 			subscription({ id: 'sub_canceled', status: 'canceled' }),
-			active,
+			activeSub,
 			subscription({ id: 'sub_unpaid', status: 'unpaid' }),
-			pastDue,
+			subscription({
+				id: 'sub_past_due',
+				status: 'past_due',
+				priceIds: ['price_pro'],
+			}),
 			subscription({ id: 'sub_incomplete', status: 'incomplete' }),
 			trialing,
 		]).map((entry) => entry.id),
 	).toEqual(['sub_active', 'sub_past_due', 'sub_trial'])
 
-	expect(subscriptionHasPrice(active, 'price_standard')).toBe(true)
-	expect(subscriptionHasPrice(active, 'price_standard_yearly')).toBe(false)
-	expect(subscriptionHasPrice(trialing, 'price_standard')).toBe(false)
+	expect([
+		subscriptionHasPrice(activeSub, retiredStandardMonthly),
+		subscriptionHasPrice(activeSub, 'price_pro'),
+		subscriptionHasPrice(trialing, retiredStandardMonthly),
+	]).toEqual([true, false, false])
 
-	expect(getBillingPortalConfigurationId({})).toBeNull()
 	expect(
-		getBillingPortalConfigurationId({
-			STRIPE_BILLING_PORTAL_CONFIGURATION_ID: '  ',
-		}),
-	).toBeNull()
-	expect(
-		getBillingPortalConfigurationId({
-			STRIPE_BILLING_PORTAL_CONFIGURATION_ID: ' bpc_kody ',
-		}),
-	).toBe('bpc_kody')
+		[undefined, '  ', ' bpc_kody '].map((id) =>
+			getBillingPortalConfigurationId(
+				id === undefined ? {} : { STRIPE_BILLING_PORTAL_CONFIGURATION_ID: id },
+			),
+		),
+	).toEqual([null, null, 'bpc_kody'])
 })
 
-test('resolveSubscriptionPlan maps retired Pro list prices after checkout ids rotate', () => {
-	const env = {
-		STRIPE_PRO_PRICE_ID: 'price_pro_current',
-		STRIPE_PRO_YEARLY_PRICE_ID: 'price_pro_yearly_current',
-	}
-
-	// Retired prices resolve the plan but not a configured interval.
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1U3sg6LAQpAnsYszlVpEIFGx'],
-				}),
-			],
-			env,
-		),
-	).toMatchObject({
-		stripePlan: 'pro',
-		stripeInterval: null,
-		stripePriceId: 'price_1U3sg6LAQpAnsYszlVpEIFGx',
+test('isKodySubscription requires a Kody price or Kody metadata', () => {
+	const gratitext = subscription({
+		id: 'sub_gratitext',
+		status: 'active',
+		priceIds: ['price_gratitext_premium_15'],
 	})
+	const purchasablePro = subscription({
+		id: 'sub_pro',
+		status: 'active',
+		priceIds: ['price_pro'],
+	})
+	const retiredStandard = subscription({
+		id: 'sub_retired_standard',
+		status: 'active',
+		priceIds: [retiredStandardMonthly],
+	})
+	const metadataOnly = subscription({
+		id: 'sub_meta',
+		status: 'active',
+		priceIds: ['price_rotated_unknown'],
+		metadata: { kody_plan: 'pro' },
+	})
+	expect(isKodySubscription(env, gratitext)).toBe(false)
+	expect(isKodySubscription(env, purchasablePro)).toBe(true)
+	expect(isKodySubscription(env, retiredStandard)).toBe(true)
+	expect(isKodySubscription(env, metadataOnly)).toBe(true)
+	expect(isPurchasableProSubscription(env, purchasablePro)).toBe(true)
+	expect(isPurchasableProSubscription(env, retiredStandard)).toBe(false)
 	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1U3sg7LAQpAnsYszpozAEFUi'],
-				}),
-			],
-			env,
-		).stripePlan,
-	).toBe('pro')
+		selectKodyPlanRetainingSubscriptions(env, [
+			gratitext,
+			purchasablePro,
+			retiredStandard,
+			subscription({
+				id: 'sub_canceled_pro',
+				status: 'canceled',
+				priceIds: ['price_pro'],
+			}),
+		]).map((entry) => entry.id),
+	).toEqual(['sub_pro', 'sub_retired_standard'])
+	// Unmapped products never grant a Kody plan, even when plan-retaining.
+	expect(resolveSubscriptionPlan([gratitext], env)).toMatchObject({
+		stripePlan: null,
+		stripePriceId: null,
+		creditsEligible: false,
+	})
+	// A Kody sub beside an unmapped product still resolves the Kody plan only.
 	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1U1AISLAQpAnsYszIQvRJNhl'],
-				}),
-			],
-			env,
-		).stripePlan,
-	).toBe('pro')
+		resolveSubscriptionPlan([gratitext, retiredStandard], env),
+	).toMatchObject({
+		stripePlan: 'standard',
+		stripePriceId: retiredStandardMonthly,
+		creditsEligible: false,
+	})
 })
 
-test('resolveSubscriptionPlan maps public $49 and $480 Pro checkout prices', () => {
-	const env = {
-		STRIPE_PRO_PRICE_ID: 'price_1UChg1LAQpAnsYszAYn6eGgt',
-		STRIPE_PRO_YEARLY_PRICE_ID: 'price_1UChg2LAQpAnsYszKAFCR778',
-	}
-
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1UChg1LAQpAnsYszAYn6eGgt'],
-				}),
-			],
-			env,
-		),
-	).toMatchObject({
-		stripePlan: 'pro',
-		stripeInterval: 'month',
-		stripePriceId: 'price_1UChg1LAQpAnsYszAYn6eGgt',
-	})
-	expect(
-		resolveSubscriptionPlan(
-			[
-				subscription({
-					status: 'active',
-					priceIds: ['price_1UChg2LAQpAnsYszKAFCR778'],
-				}),
-			],
-			env,
-		),
-	).toMatchObject({
-		stripePlan: 'pro',
-		stripeInterval: 'year',
-		stripePriceId: 'price_1UChg2LAQpAnsYszKAFCR778',
-	})
+test('retired Standard and Pro price ids keep resolving their plans', () => {
+	expect(getMatchingPriceIdsForPlan(env, 'standard').sort()).toEqual(
+		[...retiredStandardPriceIds].sort(),
+	)
 	expect(getMatchingPriceIdsForPlan(env, 'pro').sort()).toEqual(
-		[
-			'price_1UChg1LAQpAnsYszAYn6eGgt',
-			'price_1UChg2LAQpAnsYszKAFCR778',
-			'price_1U1AISLAQpAnsYszIQvRJNhl',
+		['price_pro', 'price_pro_yearly', ...retiredProPriceIds].sort(),
+	)
+	const partial = planTable([
+		...[
 			'price_1U3sg6LAQpAnsYszlVpEIFGx',
 			'price_1U3sg7LAQpAnsYszpozAEFUi',
-		].sort(),
-	)
+			'price_1U1AISLAQpAnsYszIQvRJNhl',
+		].map((priceId): [Subscriptions, Partial<ResolvedPlan>] => [
+			[active(priceId)],
+			{ stripePlan: 'pro', creditsEligible: false },
+		]),
+		[
+			[active('price_1Tv3W2LAQpAnsYszSr4PGBkE')],
+			{ stripePlan: 'standard', creditsEligible: false },
+		],
+	])
+	expect(partial.actual).toMatchObject(partial.expected)
 })

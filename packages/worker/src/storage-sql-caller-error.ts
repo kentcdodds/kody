@@ -10,7 +10,7 @@
  * contention is not mislabeled as a caller mistake.
  */
 const userStorageSqliteErrorPattern =
-	/:\s*SQLITE_(?!BUSY\b|LOCKED\b)[A-Z0-9_]+\s*$/
+	/:\s*SQLITE_(?!BUSY\b|LOCKED\b)[A-Z0-9_]+(\s*\(extended:[^)]+\))?\s*$/
 
 export function isUserStorageSqlCallerMessage(message: string) {
 	if (userStorageSqliteErrorPattern.test(message)) return true

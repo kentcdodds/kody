@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { metaListCapabilitiesCapability } from './meta-list-capabilities.ts'
@@ -10,9 +11,10 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 				user: {
-					userId: 'user-1',
+					userId: personIdFromStored('user-1'),
 					email: 'user-1@example.com',
 					displayName: 'user-1',
 				},
@@ -37,6 +39,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},
@@ -51,6 +54,21 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 			(capability) => capability.name === 'metaListCapabilities',
 		),
 	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackGet',
+		),
+	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackList',
+		),
+	).toBe(true)
+	expect(
+		metaOnly.capabilities?.some(
+			(capability) => capability.name === 'metaPlatformFeedbackSubmit',
+		),
+	).toBe(true)
 
 	const packagesOnly = await metaListCapabilitiesCapability.handler(
 		{
@@ -59,6 +77,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},
@@ -79,6 +98,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},

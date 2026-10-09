@@ -7,6 +7,23 @@ import { rootDir, sharedProjectConfig } from './vitest-shared.ts'
 // "Using secrets defined in packages/worker/.env" at the default log level.
 process.env.WRANGLER_LOG ??= 'warn'
 
+// Full `npm run validate` runs workers-unit beside Playwright, MCP e2e, and
+// many builds on the same machine. Under that load, cold DO RPCs can stretch
+// past the shared 20s budget (#2939). `KODY_VALIDATE_LOAD=1` (set on
+// validate's test-workers leg only) raises the workers-unit budget and lowers
+// maxWorkers. Kept here — not in sharedProjectConfig — so node-unit /
+// mcp-e2e never inherit the flag and Nx test/test-node caches stay keyed to
+// the 20s default. Does not change production startup CPU budgets.
+const underValidateLoad =
+	process.env.KODY_VALIDATE_LOAD === '1' ||
+	process.env.KODY_VALIDATE_LOAD === 'true'
+const workersTestTimeout = underValidateLoad ? 40_000 : 20_000
+const workersMaxWorkers = process.env.CI
+	? underValidateLoad
+		? 2
+		: 3
+	: undefined
+
 export default mergeConfig(
 	sharedProjectConfig,
 	defineProject({
@@ -47,6 +64,9 @@ export default mergeConfig(
 		test: {
 			name: 'workers-unit',
 			include: ['**/*.workers.test.ts'],
+			testTimeout: workersTestTimeout,
+			hookTimeout: workersTestTimeout,
+			maxWorkers: workersMaxWorkers,
 			globalSetup: [
 				resolve(rootDir, 'tools/vitest-global-setup-worker-bundler-modules.ts'),
 				resolve(rootDir, 'tools/vitest-global-setup-guide-catalog-modules.ts'),

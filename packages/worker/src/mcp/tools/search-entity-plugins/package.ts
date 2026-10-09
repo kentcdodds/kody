@@ -611,9 +611,14 @@ export const packageSearchEntityPlugin = {
 		}
 
 		// Lean search rows omit exports until hydrate. Bound hydrate to the
-		// recall window so strong exports can enter the first-pass pool without
-		// loading every package source.
-		const hydrateBudget = Math.min(packageCandidates.length, input.limit)
+		// requested page so strong exports can enter the first-pass pool
+		// without loading every package source. Jev wide recall (50) must not
+		// multiply source loads and export AST parses for rows that rarely
+		// reach the returned page.
+		const hydrateBudget = Math.min(
+			packageCandidates.length,
+			input.pageLimit ?? input.limit,
+		)
 		const hydrateTargets = [...packageCandidates]
 			.sort(
 				(left, right) => right.scoreComponents.base - left.scoreComponents.base,
@@ -795,6 +800,7 @@ export const packageSearchEntityPlugin = {
 				webhook.rateLimitPerMinute ?? webhookDefaultRateLimitPerMinute,
 			replay: webhook.replay ?? null,
 			signedPayload: webhook.verification?.signedPayload ?? null,
+			challenge: webhook.challenge ?? null,
 		}))
 		const appEntry = detail.manifest.kody.app?.entry ?? null
 		const readmeIntent = buildPackageReadmeIntent({
@@ -824,12 +830,29 @@ export const packageSearchEntityPlugin = {
 			`- Package name: \`${detail.record.name}\``,
 			`- Tags: ${detail.record.tags.length > 0 ? detail.record.tags.map((tag) => `\`${tag}\``).join(', ') : 'none'}`,
 			`- Has app: ${detail.record.hasApp ? 'yes' : 'no'}`,
+			`- Has skills: ${detail.record.hasSkills ? 'yes' : 'no'}`,
 			`- Hidden: ${detail.record.hidden ? 'yes' : 'no'}`,
 			...(detail.hostedUrl ? [`- Hosted URL: \`${detail.hostedUrl}\``] : []),
 			...(listingAhead
 				? [`- Listing ahead: yes — ${listingAheadSearchNotice}`]
 				: []),
 		]
+		const skillManifestPaths = Object.keys(detail.files)
+			.filter((path) => /^skills\/[^/]+\/SKILL\.md$/u.test(path))
+			.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
+		if (skillManifestPaths.length > 0) {
+			lines.push(
+				'',
+				'## Skills',
+				'',
+				'Agent Skills shipped in this package (`skills/<name>/SKILL.md`). Open a skill file with search entity detail, or use Skills-over-MCP when the client and `mcp-skills-extension` flag support it.',
+				'',
+				...skillManifestPaths.map((path) => {
+					const skillName = path.slice('skills/'.length, -'/SKILL.md'.length)
+					return `- \`${skillName}\` — \`search({ entity: "package:${detail.record.kodyId}#${path}" })\``
+				}),
+			)
+		}
 		if (exportDetails.length > 0) {
 			lines.push('', '## Exports', '', '| Subpath | Purpose |', '| --- | --- |')
 			for (const exportDetail of exportDetails) {
@@ -871,6 +894,7 @@ export const packageSearchEntityPlugin = {
 						webhook.replay?.deliveryIdHeader
 							? `delivery ${webhook.replay.deliveryIdHeader}`
 							: null,
+						webhook.challenge ? `challenge ${webhook.challenge.type}` : null,
 					].filter((value): value is string => value != null)
 					const replaySuffix =
 						replayParts.length > 0 ? ` (${replayParts.join(', ')})` : ''

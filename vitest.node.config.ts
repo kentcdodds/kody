@@ -9,9 +9,12 @@ export default mergeConfig(
 			// Inline so the `cloudflare:workers` alias below applies inside these
 			// packages; the OAuth provider (aliased below from its generated
 			// deferred module) imports `WorkerEntrypoint` at module top.
+			// isomorphic-git is aliased from its generated additional module to
+			// the thin re-export entry for the same reason.
 			noExternal: [
 				'@cloudflare/codemode',
 				'@cloudflare/workers-oauth-provider',
+				'isomorphic-git',
 			],
 		},
 		resolve: {
@@ -72,6 +75,13 @@ export default mergeConfig(
 						'packages/worker/src/test-support/cloudflare-workers-stub.ts',
 					),
 				},
+				{
+					find: 'cloudflare:workflows',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/test-support/cloudflare-workflows-stub.ts',
+					),
+				},
 				// The generated deferred module lives under a `node_modules/`
 				// path, which vite-node would externalize (so the
 				// `cloudflare:workers` alias above would not reach it). Point node
@@ -80,6 +90,20 @@ export default mergeConfig(
 				{
 					find: './node_modules/.kody-generated/oauth-provider.mjs',
 					replacement: '@cloudflare/workers-oauth-provider',
+				},
+				{
+					find: './node_modules/.kody-generated/local-execute-runtime-support.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+					),
+				},
+				{
+					find: './node_modules/.kody-generated/isomorphic-git.mjs',
+					replacement: resolve(
+						rootDir,
+						'packages/worker/src/repo/isomorphic-git-module.ts',
+					),
 				},
 			],
 		},

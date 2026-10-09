@@ -1,4 +1,4 @@
-import { Frame, type Handle, css } from 'remix/ui'
+import { Frame, type Handle, css } from 'remix/component'
 import { landingArtAttrs } from '#universal/landing-images.ts'
 import { routes } from '#universal/routes.ts'
 import { COMMUNITY_LISTINGS_TARGET } from '#universal/community-frame-constants.ts'

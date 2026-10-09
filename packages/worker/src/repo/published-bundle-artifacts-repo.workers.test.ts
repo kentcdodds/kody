@@ -32,6 +32,7 @@ async function ensurePublishedBundleArtifactDependencySchema() {
 		search_text TEXT,
 		source_id TEXT NOT NULL,
 		has_app INTEGER NOT NULL DEFAULT 0 CHECK (has_app IN (0, 1)),
+		has_skills INTEGER NOT NULL DEFAULT 0 CHECK (has_skills IN (0, 1)),
 		hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1)),
 		is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
 		locked_at TEXT,
@@ -134,123 +135,82 @@ test('static dependent summary runs JSON dependency queries against D1', async (
 	await ensurePublishedBundleArtifactDependencySchema()
 	const unique = crypto.randomUUID()
 	const userId = `user-${unique}`
-	const sourceA = `source-a-${unique}`
-	const sourceB = `source-b-${unique}`
-	const sourceC = `source-c-${unique}`
-	const sourceD = `source-d-${unique}`
-	await insertPackage({
-		userId,
-		packageId: `package-a-${unique}`,
-		kodyId: `package-a-${unique}`,
-		name: `@kentcdodds/package-a-${unique}`,
-		sourceId: sourceA,
-		publishedCommit: 'commit-a-new',
-	})
-	await insertPackage({
-		userId,
-		packageId: `package-b-${unique}`,
-		kodyId: `package-b-${unique}`,
-		name: `@kentcdodds/package-b-${unique}`,
-		sourceId: sourceB,
-		publishedCommit: 'commit-b',
-	})
-	await insertPackage({
-		userId,
-		packageId: `package-c-${unique}`,
-		kodyId: `package-c-${unique}`,
-		name: `@kentcdodds/package-c-${unique}`,
-		sourceId: sourceC,
-		publishedCommit: 'commit-c',
-	})
-	await insertPackage({
-		userId,
-		packageId: `package-d-${unique}`,
-		kodyId: `package-d-${unique}`,
-		name: `@kentcdodds/package-d-${unique}`,
-		sourceId: sourceD,
-		publishedCommit: 'commit-d-current',
-	})
-	for (let index = 0; index < 5; index += 1) {
-		await insertArtifact({
+	const sourceOf = (letter: string) => `source-${letter}-${unique}`
+	const packages = [
+		['a', 'commit-a-new'],
+		['b', 'commit-b'],
+		['c', 'commit-c'],
+		['d', 'commit-d-current'],
+	] as const
+	for (const [letter, publishedCommit] of packages) {
+		await insertPackage({
 			userId,
-			sourceId: sourceB,
-			publishedCommit: 'commit-b',
-			artifactName: `a-current-${index}`,
-			entryPoint: `src/current-${index}.ts`,
-			dependencies: [
-				{
-					sourceId: sourceA,
-					publishedCommit: 'commit-a-new',
-					kodyId: `package-a-${unique}`,
-					packageName: `@kentcdodds/package-a-${unique}`,
-				},
-			],
+			packageId: `package-${letter}-${unique}`,
+			kodyId: `package-${letter}-${unique}`,
+			name: `@kentcdodds/package-${letter}-${unique}`,
+			sourceId: sourceOf(letter),
+			publishedCommit,
 		})
 	}
-	await insertArtifact({
-		userId,
-		sourceId: sourceB,
-		publishedCommit: 'commit-b',
-		artifactName: 'a-current-0-importable',
-		entryPoint: 'src/current-0.ts',
-		dependencies: [
-			{
-				sourceId: sourceA,
-				publishedCommit: 'commit-a-new',
-				kodyId: `package-a-${unique}`,
-				packageName: `@kentcdodds/package-a-${unique}`,
-			},
+	const dependsOnA = (publishedCommit?: string) => [
+		{
+			sourceId: sourceOf('a'),
+			...(publishedCommit ? { publishedCommit } : {}),
+			kodyId: `package-a-${unique}`,
+			packageName: `@kentcdodds/package-a-${unique}`,
+		},
+	]
+	const artifacts: Array<
+		[letter: string, commit: string, name: string, entry: string, dep?: string]
+	> = [
+		...[0, 1, 2, 3, 4].map(
+			(index) =>
+				[
+					'b',
+					'commit-b',
+					`a-current-${index}`,
+					`src/current-${index}.ts`,
+					'commit-a-new',
+				] as [string, string, string, string, string],
+		),
+		[
+			'b',
+			'commit-b',
+			'a-current-0-importable',
+			'src/current-0.ts',
+			'commit-a-new',
 		],
-	})
-	await insertArtifact({
-		userId,
-		sourceId: sourceB,
-		publishedCommit: 'commit-b',
-		artifactName: 'z-stale',
-		entryPoint: 'src/stale.ts',
-		dependencies: [
-			{
-				sourceId: sourceA,
-				publishedCommit: 'commit-a-old',
-				kodyId: `package-a-${unique}`,
-				packageName: `@kentcdodds/package-a-${unique}`,
-			},
+		['b', 'commit-b', 'z-stale', 'src/stale.ts', 'commit-a-old'],
+		['c', 'commit-c', 'missing-commit', 'src/missing.ts'],
+		[
+			'd',
+			'commit-d-obsolete',
+			'removed-import',
+			'src/removed-import.ts',
+			'commit-a-old',
 		],
-	})
-	await insertArtifact({
-		userId,
-		sourceId: sourceC,
-		publishedCommit: 'commit-c',
-		artifactName: 'missing-commit',
-		entryPoint: 'src/missing.ts',
-		dependencies: [
-			{
-				sourceId: sourceA,
-				kodyId: `package-a-${unique}`,
-				packageName: `@kentcdodds/package-a-${unique}`,
-			},
-		],
-	})
-	await insertArtifact({
-		userId,
-		sourceId: sourceD,
-		publishedCommit: 'commit-d-obsolete',
-		artifactName: 'removed-import',
-		entryPoint: 'src/removed-import.ts',
-		dependencies: [
-			{
-				sourceId: sourceA,
-				publishedCommit: 'commit-a-old',
-				kodyId: `package-a-${unique}`,
-				packageName: `@kentcdodds/package-a-${unique}`,
-			},
-		],
-	})
+	]
+	for (const [
+		letter,
+		publishedCommit,
+		artifactName,
+		entryPoint,
+		dep,
+	] of artifacts) {
+		await insertArtifact({
+			userId,
+			sourceId: sourceOf(letter),
+			publishedCommit,
+			artifactName,
+			entryPoint,
+			dependencies: dependsOnA(dep),
+		})
+	}
 
 	const summary = await getStaticPackageDependentsSummary({
 		db: env.APP_DB,
 		userId,
-		sourceId: sourceA,
+		sourceId: sourceOf('a'),
 		currentDependencyCommit: 'commit-a-new',
 	})
 

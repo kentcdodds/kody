@@ -1,4 +1,4 @@
-import { renderToString } from 'remix/ui/server'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import {
 	decideCommunityInstallClick,
@@ -13,62 +13,27 @@ import {
 } from './community-detail-sections.tsx'
 
 test('decideCommunityInstallClick starts a fork from idle or error and ignores an in-flight install', () => {
+	const cases = [
+		// [installState, alreadyInstalled, requiresConfirm, confirmed, decision]
+		['idle', false, false, false, 'submit'],
+		['submitting', false, false, false, 'ignore'],
+		['idle', true, false, false, 'ignore'],
+		['error', false, false, false, 'submit'],
+		['idle', false, true, false, 'arm'],
+		['idle', false, true, true, 'submit'],
+		['submitting', false, true, true, 'ignore'],
+	] as const
 	expect(
-		decideCommunityInstallClick({
-			installState: 'idle',
-			alreadyInstalled: false,
-			requiresConfirm: false,
-			confirmed: false,
-		}),
-	).toBe('submit')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'submitting',
-			alreadyInstalled: false,
-			requiresConfirm: false,
-			confirmed: false,
-		}),
-	).toBe('ignore')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'idle',
-			alreadyInstalled: true,
-			requiresConfirm: false,
-			confirmed: false,
-		}),
-	).toBe('ignore')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'error',
-			alreadyInstalled: false,
-			requiresConfirm: false,
-			confirmed: false,
-		}),
-	).toBe('submit')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'idle',
-			alreadyInstalled: false,
-			requiresConfirm: true,
-			confirmed: false,
-		}),
-	).toBe('arm')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'idle',
-			alreadyInstalled: false,
-			requiresConfirm: true,
-			confirmed: true,
-		}),
-	).toBe('submit')
-	expect(
-		decideCommunityInstallClick({
-			installState: 'submitting',
-			alreadyInstalled: false,
-			requiresConfirm: true,
-			confirmed: true,
-		}),
-	).toBe('ignore')
+		cases.filter(
+			([installState, alreadyInstalled, requiresConfirm, confirmed, want]) =>
+				decideCommunityInstallClick({
+					installState,
+					alreadyInstalled,
+					requiresConfirm,
+					confirmed,
+				}) !== want,
+		),
+	).toEqual([])
 })
 
 test('other-account confirm paints Confirm fork and stays armed only for that listing', () => {
@@ -98,59 +63,39 @@ test('other-account confirm paints Confirm fork and stays armed only for that li
 	expect(attributes.get('aria-label')).toBe('Fork')
 	expect(tooltip.textContent).toBe('This listing is from another account.')
 
-	expect(
-		isCommunityInstallConfirmArmed({
-			confirmed: true,
-			confirmedListingId: 'listing-a',
-			listingId: 'listing-a',
-		}),
-	).toBe(true)
-	expect(
-		isCommunityInstallConfirmArmed({
-			confirmed: true,
-			confirmedListingId: 'listing-a',
-			listingId: 'listing-b',
-		}),
-	).toBe(false)
-	expect(
-		shouldResetInstallConfirm({
-			confirmedListingId: 'listing-a',
-			listingId: 'listing-a',
-		}),
-	).toBe(false)
-	expect(
-		shouldResetInstallConfirm({
-			confirmedListingId: 'listing-a',
-			listingId: 'listing-b',
-		}),
-	).toBe(true)
+	for (const [listingId, sameListing] of [
+		['listing-a', true],
+		['listing-b', false],
+	] as const) {
+		expect(
+			isCommunityInstallConfirmArmed({
+				confirmed: true,
+				confirmedListingId: 'listing-a',
+				listingId,
+			}),
+		).toBe(sameListing)
+		expect(
+			shouldResetInstallConfirm({ confirmedListingId: 'listing-a', listingId }),
+		).toBe(!sameListing)
+	}
 })
 
 test('a same-listing shell snapshot keeps an in-flight install', () => {
+	const cases = [
+		['submitting', false, false],
+		['submitting', true, true],
+		['idle', false, true],
+		['error', false, true],
+	] as const
 	expect(
-		shouldResetInstallOnShellSnapshot({
-			installState: 'submitting',
-			releasedProgress: false,
-		}),
-	).toBe(false)
-	expect(
-		shouldResetInstallOnShellSnapshot({
-			installState: 'submitting',
-			releasedProgress: true,
-		}),
-	).toBe(true)
-	expect(
-		shouldResetInstallOnShellSnapshot({
-			installState: 'idle',
-			releasedProgress: false,
-		}),
-	).toBe(true)
-	expect(
-		shouldResetInstallOnShellSnapshot({
-			installState: 'error',
-			releasedProgress: false,
-		}),
-	).toBe(true)
+		cases.filter(
+			([installState, releasedProgress, want]) =>
+				shouldResetInstallOnShellSnapshot({
+					installState,
+					releasedProgress,
+				}) !== want,
+		),
+	).toEqual([])
 })
 
 test('install strip shows next steps after a successful install', async () => {
@@ -164,8 +109,6 @@ test('install strip shows next steps after a successful install', async () => {
 				packageId: 'pkg-1',
 				failedChecks: [],
 			},
-			onConfirmInstall: () => {},
-			onCancelInstall: () => {},
 		}),
 	)
 	expect(html).toContain('data-testid="community-install-next-steps"')

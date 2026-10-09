@@ -1,12 +1,15 @@
+import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	isDailyEntitlementResource,
+	userMeterDailyCounterRetentionDays,
 	userMeterMirrorUpdatedAtToken,
 	type DailyEntitlementResource,
+	type UserMeterDailyTrendCounterRow,
+	type UserMeterDailyTrendUniqueWorkerDayRow,
 	type UserMeterDeletionStateExport,
 	type UserMeterStorageBytesState,
 	type UserMeterWriteLeaseEntry,
 } from '#worker/entitlements/user-meter-do.ts'
-import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
 type MeterRow = { count: number; revision: number }
 type StorageRow = { bytes: number; revision: number; updatedAt: string }
@@ -252,6 +255,41 @@ export function createInMemoryUserMeterEnv() {
 				if (!existing) return { outcome: 'needs_bootstrap' as const }
 				return ready(existing)
 			},
+			async readUsageSnapshot(input: {
+				day: string
+				weekStart: string
+				dailyResources: ReadonlyArray<string>
+				weeklyResources: ReadonlyArray<string>
+				includeStorageBytes?: boolean
+			}) {
+				const daily = input.dailyResources.map((resource) => {
+					if (!isDailyEntitlementResource(resource)) {
+						throw new Error(`Invalid daily resource: ${resource}`)
+					}
+					const existing = readRow(resource, input.day)
+					return existing
+						? { resource, ...ready(existing) }
+						: { resource, outcome: 'needs_bootstrap' as const }
+				})
+				const weekly = input.weeklyResources.map((resource) => {
+					if (!isDailyEntitlementResource(resource)) {
+						throw new Error(`Invalid daily resource: ${resource}`)
+					}
+					return {
+						resource,
+						outcome: 'ready' as const,
+						count: sumRange(resource, input.weekStart, input.day),
+					}
+				})
+				const storageBytes = input.includeStorageBytes
+					? (() => {
+							const existing = storageByUser.get(userId)
+							if (!existing) return { outcome: 'needs_bootstrap' as const }
+							return storageReady(existing)
+						})()
+					: null
+				return { daily, weekly, storageBytes }
+			},
 			async readRange(input: {
 				resource: string
 				startDay: string
@@ -263,6 +301,58 @@ export function createInMemoryUserMeterEnv() {
 				return {
 					outcome: 'ready' as const,
 					count: sumRange(input.resource, input.startDay, input.endDay),
+				}
+			},
+			async readDailyTrend(input?: { now?: string }) {
+				const now = input?.now ? new Date(input.now) : new Date()
+				const safeNow = Number.isNaN(now.valueOf()) ? new Date() : now
+				const endDay = utcDayKey(safeNow)
+				const start = new Date(safeNow)
+				start.setUTCDate(
+					start.getUTCDate() - (userMeterDailyCounterRetentionDays - 1),
+				)
+				const startDay = utcDayKey(start)
+				const counters: Array<UserMeterDailyTrendCounterRow> = []
+				for (const [entryKey, row] of rows) {
+					const separator = entryKey.indexOf('\0')
+					if (separator < 0) continue
+					const resource = entryKey.slice(0, separator)
+					const day = entryKey.slice(separator + 1)
+					if (!isDailyEntitlementResource(resource)) continue
+					if (day < startDay || day > endDay) continue
+					counters.push({
+						resource,
+						day,
+						count: row.count,
+					})
+				}
+				counters.sort((left, right) => {
+					const byDay = left.day.localeCompare(right.day)
+					if (byDay !== 0) return byDay
+					return left.resource.localeCompare(right.resource)
+				})
+				const uniqueWorkerDayCounts = new Map<string, number>()
+				for (const key of dynamicWorkerDays) {
+					const separator = key.indexOf('\0')
+					if (separator < 0) continue
+					const day = key.slice(0, separator)
+					if (day < startDay || day > endDay) continue
+					uniqueWorkerDayCounts.set(
+						day,
+						(uniqueWorkerDayCounts.get(day) ?? 0) + 1,
+					)
+				}
+				const uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow> = [
+					...uniqueWorkerDayCounts.entries(),
+				]
+					.map(([day, count]) => ({ day, count }))
+					.sort((left, right) => left.day.localeCompare(right.day))
+				return {
+					retentionDays: userMeterDailyCounterRetentionDays,
+					startDay,
+					endDay,
+					counters,
+					uniqueWorkerDays,
 				}
 			},
 			async claimDynamicWorkerDay(input: {
@@ -567,7 +657,7 @@ export function createInMemoryUserMeterEnv() {
 			idFromName: (name: string) => ({ name, toString: () => name }),
 			get: (id: { name: string }) => meterFor(id.name),
 		},
-	} as unknown as UserMeterEnv
+	} as unknown as { USER_METER: Env['USER_METER'] }
 
 	return {
 		env,

@@ -7,7 +7,6 @@ import {
 	parseYoutubeVideoId,
 	parseYoutubeVideoIdList,
 	parseYoutubeWatchSearch,
-	resolveSiteBannerImageUrl,
 	stripYoutubeWatchSearch,
 	youtubeNocookieEmbedUrl,
 	youtubeThumbPath,
@@ -18,49 +17,34 @@ import {
 
 const videoId = 'QA0xYMAMjEg'
 
-test('parseYoutubeVideoId accepts watch, short, embed, thumb, and raw ids', () => {
-	expect(parseYoutubeVideoId(videoId)).toBe(videoId)
-	expect(
-		parseYoutubeVideoId(
-			`https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`,
-		),
-	).toBe(videoId)
-	expect(parseYoutubeVideoId(`https://youtu.be/${videoId}`)).toBe(videoId)
-	expect(parseYoutubeVideoId(`https://www.youtube.com/embed/${videoId}`)).toBe(
+test('parseYoutubeVideoId accepts watch, short, embed, thumb, and raw ids and ignores non-YouTube hosts', () => {
+	const accepted = [
 		videoId,
-	)
+		`https://www.youtube.com/watch?v=${videoId}&list=PLV5CVI1eNcJhP4nrJt85L7PxHjebFpDfY`,
+		`https://youtu.be/${videoId}`,
+		`https://www.youtube.com/embed/${videoId}`,
+		`https://www.youtube-nocookie.com/embed/${videoId}?rel=0`,
+		`https://www.youtube.com/shorts/${videoId}`,
+		`/?youtubeId=${videoId}`,
+		`/blog?youtubeId=${videoId}`,
+		youtubeThumbPath(videoId),
+		`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+	]
 	expect(
-		parseYoutubeVideoId(
-			`https://www.youtube-nocookie.com/embed/${videoId}?rel=0`,
-		),
-	).toBe(videoId)
-	expect(parseYoutubeVideoId(`https://www.youtube.com/shorts/${videoId}`)).toBe(
-		videoId,
-	)
-	expect(parseYoutubeVideoId(`/?youtubeId=${videoId}`)).toBe(videoId)
-	expect(parseYoutubeVideoId(`/blog?youtubeId=${videoId}`)).toBe(videoId)
-	expect(parseYoutubeVideoId(youtubeThumbPath(videoId))).toBe(videoId)
+		accepted.filter((input) => parseYoutubeVideoId(input) !== videoId),
+	).toEqual([])
+	const rejected = [
+		'https://example.com/watch?v=nope',
+		'not-a-video-id',
+		`https://example.test/?video=${videoId}`,
+		`https://example.test/?youtubeId=${videoId}`,
+		`https://notyoutube.com/watch?v=${videoId}`,
+		`https://kody.codes/?youtubeId=${videoId}`,
+		`/?video=${videoId}`,
+	]
 	expect(
-		parseYoutubeVideoId(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`),
-	).toBe(videoId)
-	expect(parseYoutubeVideoId('https://example.com/watch?v=nope')).toBeNull()
-	expect(parseYoutubeVideoId('not-a-video-id')).toBeNull()
-})
-
-test('parseYoutubeVideoId ignores video ids on non-YouTube hosts', () => {
-	expect(
-		parseYoutubeVideoId(`https://example.test/?video=${videoId}`),
-	).toBeNull()
-	expect(
-		parseYoutubeVideoId(`https://example.test/?youtubeId=${videoId}`),
-	).toBeNull()
-	expect(
-		parseYoutubeVideoId(`https://notyoutube.com/watch?v=${videoId}`),
-	).toBeNull()
-	expect(
-		parseYoutubeVideoId(`https://kody.codes/?youtubeId=${videoId}`),
-	).toBeNull()
-	expect(parseYoutubeVideoId(`/?video=${videoId}`)).toBeNull()
+		rejected.filter((input) => parseYoutubeVideoId(input) !== null),
+	).toEqual([])
 })
 
 test('watch search helpers read and strip only the youtubeId param', () => {
@@ -96,7 +80,7 @@ test('playlist Atom feed parser reads yt:videoId entries', () => {
 	).toEqual([videoId, 'abcdefghijk'])
 })
 
-test('allowlist merge includes playlist, extra ids, and banner hrefs', () => {
+test('allowlist merge includes playlist, extra ids, and YouTube hrefs', () => {
 	expect(
 		mergeYoutubeWatchAllowlist({
 			playlistVideoIds: [videoId],
@@ -113,28 +97,7 @@ test('allowlist merge includes playlist, extra ids, and banner hrefs', () => {
 	).toEqual([videoId])
 })
 
-test('banner images rewrite YouTube hosts to first-party thumb paths', () => {
-	expect(
-		resolveSiteBannerImageUrl({
-			imageUrl: null,
-			ctaHref: youtubeWatchHref(videoId),
-			secondaryHref: null,
-		}),
-	).toBe(`/youtube-thumb/${videoId}`)
-	expect(
-		resolveSiteBannerImageUrl({
-			imageUrl: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-			ctaHref: null,
-			secondaryHref: null,
-		}),
-	).toBe(`/youtube-thumb/${videoId}`)
-	expect(
-		resolveSiteBannerImageUrl({
-			imageUrl: '/brand/launch.png',
-			ctaHref: youtubeWatchHref(videoId),
-			secondaryHref: null,
-		}),
-	).toBe('/brand/launch.png')
+test('youtube thumbnail and embed helpers', () => {
 	expect(youtubeThumbnailSourceUrl(videoId)).toBe(
 		`https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
 	)

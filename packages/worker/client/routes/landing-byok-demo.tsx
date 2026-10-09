@@ -1,4 +1,4 @@
-import { type Handle, ref } from 'remix/ui'
+import { type Handle, ref } from 'remix/component'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { renderIcon } from '#universal/icon.tsx'
 import {

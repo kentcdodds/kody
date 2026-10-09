@@ -1,6 +1,6 @@
 import { buildAuthLink } from '#client/auth-links.ts'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
-import { type Handle } from 'remix/ui'
+import { type Handle } from 'remix/component'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
 import {
 	readRouterPathname,

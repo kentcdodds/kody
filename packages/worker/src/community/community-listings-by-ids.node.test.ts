@@ -25,19 +25,15 @@ async function createListingsDb() {
 
 async function insertListing(
 	db: D1Database,
-	input: {
-		id: string
-		status?: CommunityListingStatus
-		ownerUserId?: string
-		kodyId?: string
-	},
+	id: string,
+	kodyId: string,
+	input: { status?: CommunityListingStatus; ownerUserId?: string } = {},
 ) {
-	const kodyId = input.kodyId ?? input.id
 	await insertCommunityListing(db, {
-		id: input.id,
+		id,
 		owner_user_id: input.ownerUserId ?? 'owner-1',
-		package_id: `pkg-${input.id}`,
-		source_id: `src-${input.id}`,
+		package_id: `pkg-${id}`,
+		source_id: `src-${id}`,
 		kody_id: kodyId,
 		name: `@owner/${kodyId}`,
 		description: `${kodyId} helpers`,
@@ -60,17 +56,13 @@ test('getCommunityListingsByIds returns public listings in input order with batc
 	).toEqual([])
 	expect(queries).toEqual([])
 
-	await insertListing(db, { id: 'listing-a', kodyId: 'alpha' })
-	await insertListing(db, { id: 'listing-b', kodyId: 'beta' })
-	await insertListing(db, { id: 'listing-c', kodyId: 'gamma' })
-	await insertListing(db, {
-		id: 'listing-delisted',
-		kodyId: 'retired',
+	await insertListing(db, 'listing-a', 'alpha')
+	await insertListing(db, 'listing-b', 'beta')
+	await insertListing(db, 'listing-c', 'gamma')
+	await insertListing(db, 'listing-delisted', 'retired', {
 		status: 'delisted',
 	})
-	await insertListing(db, {
-		id: 'listing-banned-owner',
-		kodyId: 'banned-pkg',
+	await insertListing(db, 'listing-banned-owner', 'banned-pkg', {
 		ownerUserId: 'owner-banned',
 	})
 	await insertCommunityBan(db, {
@@ -86,52 +78,32 @@ test('getCommunityListingsByIds returns public listings in input order with batc
 		adaptation_effort: 2,
 		note: null,
 	})
-	await insertCommunityFork(db, {
-		id: 'fork-b-1',
-		listing_id: 'listing-b',
-		forker_user_id: 'forker-1',
-		origin_commit: 'commit-1',
-		forked_package_id: 'pkg-fork-b-1',
-		forked_source_id: 'src-fork-b-1',
-		target_kody_id: 'beta',
-		listing_name: '@owner/beta',
-		listing_kody_id: 'beta',
-	})
-	await insertCommunityFork(db, {
-		id: 'fork-b-2',
-		listing_id: 'listing-b',
-		forker_user_id: 'forker-2',
-		origin_commit: 'commit-1',
-		forked_package_id: 'pkg-fork-b-2',
-		forked_source_id: 'src-fork-b-2',
-		target_kody_id: 'beta',
-		listing_name: '@owner/beta',
-		listing_kody_id: 'beta',
-	})
+	for (const index of [1, 2]) {
+		await insertCommunityFork(db, {
+			id: `fork-b-${index}`,
+			listing_id: 'listing-b',
+			forker_user_id: `forker-${index}`,
+			origin_commit: 'commit-1',
+			forked_package_id: `pkg-fork-b-${index}`,
+			forked_source_id: `src-fork-b-${index}`,
+			target_kody_id: 'beta',
+			listing_name: '@owner/beta',
+			listing_kody_id: 'beta',
+		})
+	}
 
-	expect(
-		await getCommunityListingById(db, {
-			listingId: 'listing-delisted',
-			includeDelisted: false,
-		}),
-	).toBeNull()
-	expect(
-		await getCommunityListingById(db, {
-			listingId: 'missing',
-			includeDelisted: false,
-		}),
-	).toBeNull()
-	expect(
-		await getCommunityListingById(db, {
-			listingId: 'listing-banned-owner',
-			includeDelisted: false,
-		}),
-	).toEqual(
-		expect.objectContaining({
-			id: 'listing-banned-owner',
-			status: 'active',
-		}),
-	)
+	const getById = (listingId: string, includeDelisted: boolean) =>
+		getCommunityListingById(db, { listingId, includeDelisted })
+	expect(await getById('listing-delisted', false)).toBeNull()
+	expect(await getById('missing', false)).toBeNull()
+	expect(await getById('listing-banned-owner', false)).toMatchObject({
+		id: 'listing-banned-owner',
+		status: 'active',
+	})
+	expect(await getById('listing-delisted', true)).toMatchObject({
+		id: 'listing-delisted',
+		status: 'delisted',
+	})
 
 	queries.length = 0
 	const publicRows = await getCommunityListingsByIds(
@@ -152,15 +124,13 @@ test('getCommunityListingsByIds returns public listings in input order with batc
 		'listing-b',
 		'listing-banned-owner',
 	])
-	expect(publicRows.find((listing) => listing.id === 'listing-b')).toEqual(
-		expect.objectContaining({
-			id: 'listing-b',
-			averageStars: 4,
-			ratingCount: 1,
-			averageAdaptationEffort: 2,
-			forkCount: 2,
-		}),
-	)
+	const listingB = publicRows.find((listing) => listing.id === 'listing-b')
+	expect(listingB).toMatchObject({
+		averageStars: 4,
+		ratingCount: 1,
+		averageAdaptationEffort: 2,
+		forkCount: 2,
+	})
 	expect(queries).toHaveLength(3)
 	expect(queries.filter((query) => query.includes(' IN ('))).toHaveLength(3)
 
@@ -173,21 +143,12 @@ test('getCommunityListingsByIds returns public listings in input order with batc
 		'listing-delisted',
 		'listing-a',
 	])
-	expect(
-		await getCommunityListingById(db, {
-			listingId: 'listing-delisted',
-			includeDelisted: true,
-		}),
-	).toEqual(
-		expect.objectContaining({ id: 'listing-delisted', status: 'delisted' }),
-	)
 
-	const single = await getCommunityListingWithAggregates({
-		env: { APP_DB: db } as Env,
-		listingId: 'listing-b',
-		includeDelisted: false,
-	})
-	expect(publicRows.find((listing) => listing.id === 'listing-b')).toEqual(
-		single,
-	)
+	expect(
+		await getCommunityListingWithAggregates({
+			env: { APP_DB: db } as Env,
+			listingId: 'listing-b',
+			includeDelisted: false,
+		}),
+	).toEqual(listingB)
 })

@@ -27,6 +27,7 @@ export const mcpServerAddCapability = defineDomainCapability(
 	capabilityDomainNames.mcpServers,
 	{
 		name: 'mcpServerAdd',
+		orgPermission: 'integration:create',
 		description:
 			'Add a remote MCP server for the signed-in user and connect to it. Servers that require OAuth return an authUrl the user must open to authorize Kody; other servers connect immediately. Pass bearerToken for servers that authenticate with a static Authorization header instead of (or in addition to) OAuth. Connected server tools become kody.mcp["server-name"].tool_name(...) capabilities. When OAuth fails with origin or redirect URI errors, the remote authorization server must allow Kody\'s oauthClientOrigin, oauthCallbackUrl, and oauthClientMetadataUrl (CIMD client_id) when present.',
 		keywords: [

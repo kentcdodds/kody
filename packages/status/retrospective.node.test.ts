@@ -33,26 +33,20 @@ function validInput() {
 }
 
 test('retrospective parse, store mapping, and schema upgrade keep probe incidents valid without a narrative', () => {
-	expect(parseIncidentRetrospectiveInput(null).ok).toBe(false)
-	expect(parseIncidentRetrospectiveInput('nope').ok).toBe(false)
-	expect(
-		parseIncidentRetrospectiveInput({ ...validInput(), whatHappened: '' }).ok,
-	).toBe(false)
-	expect(
-		parseIncidentRetrospectiveInput({
+	const invalid = [
+		null,
+		'nope',
+		{ ...validInput(), whatHappened: '' },
+		{
 			...validInput(),
 			whatHappened: 'x'.repeat(retrospectiveFieldMaxChars + 1),
-		}).ok,
-	).toBe(false)
+		},
+		{ ...validInput(), timeline: [] },
+		{ ...validInput(), timeline: [{ at: '  ', note: 'note' }] },
+	]
 	expect(
-		parseIncidentRetrospectiveInput({ ...validInput(), timeline: [] }).ok,
-	).toBe(false)
-	expect(
-		parseIncidentRetrospectiveInput({
-			...validInput(),
-			timeline: [{ at: '  ', note: 'note' }],
-		}).ok,
-	).toBe(false)
+		invalid.map((value) => parseIncidentRetrospectiveInput(value).ok),
+	).toEqual(invalid.map(() => false))
 
 	const parsed = parseIncidentRetrospectiveInput({
 		...validInput(),
@@ -61,32 +55,29 @@ test('retrospective parse, store mapping, and schema upgrade keep probe incident
 	})
 	if (!parsed.ok) throw new Error(parsed.message)
 	expect(parsed.retrospective.whatHappened).toBe('trimmed')
-	const publishedAtMs = Date.parse('2026-09-02T22:00:00.000Z')
 	const stamped = stampIncidentRetrospective(
 		parsed.retrospective,
-		publishedAtMs,
+		Date.parse('2026-09-02T22:00:00.000Z'),
 	)
 	expect(stamped.publishedAt).toBe('2026-09-02T22:00:00.000Z')
 
-	const stored = parseStoredIncidentRetrospective(
-		serializeIncidentRetrospective(stamped),
-	)
-	expect(stored).toEqual(stamped)
-	expect(parseStoredIncidentRetrospective(null)).toBeNull()
-	expect(parseStoredIncidentRetrospective('{')).toBeNull()
-	expect(
-		parseStoredIncidentRetrospective(JSON.stringify(validInput())),
-	).toBeNull()
+	const serialized = serializeIncidentRetrospective(stamped)
+	expect(parseStoredIncidentRetrospective(serialized)).toEqual(stamped)
+	for (const stored of [null, '{', JSON.stringify(validInput())]) {
+		expect(parseStoredIncidentRetrospective(stored)).toBeNull()
+	}
 
-	const withoutNarrative = incidentRowToView({
+	const startedAt = Date.parse('2026-09-02T21:57:54.765Z')
+	const resolvedAt = Date.parse('2026-09-02T22:00:51.866Z')
+	const jobsRow = (retrospective: string | null) => ({
 		id: 10,
 		component: 'jobs',
-		started_at: Date.parse('2026-09-02T21:57:54.765Z'),
-		resolved_at: Date.parse('2026-09-02T22:00:51.866Z'),
+		started_at: startedAt,
+		resolved_at: resolvedAt,
 		detail: 'error',
-		retrospective: null,
+		retrospective,
 	})
-	expect(withoutNarrative).toEqual({
+	expect(incidentRowToView(jobsRow(null))).toEqual({
 		id: 10,
 		component: 'jobs',
 		componentName: 'Jobs',
@@ -96,25 +87,9 @@ test('retrospective parse, store mapping, and schema upgrade keep probe incident
 		retrospective: null,
 	})
 	expect(
-		incidentRowToView({
-			id: 99,
-			component: 'audit_db',
-			started_at: 1,
-			resolved_at: 2,
-			detail: 'retired',
-			retrospective: null,
-		}),
+		incidentRowToView({ ...jobsRow(null), id: 99, component: 'audit_db' }),
 	).toBeNull()
-
-	const withNarrative = incidentRowToView({
-		id: 10,
-		component: 'jobs',
-		started_at: Date.parse('2026-09-02T21:57:54.765Z'),
-		resolved_at: Date.parse('2026-09-02T22:00:51.866Z'),
-		detail: 'error',
-		retrospective: serializeIncidentRetrospective(stamped),
-	})
-	expect(withNarrative?.retrospective).toEqual(stamped)
+	expect(incidentRowToView(jobsRow(serialized))?.retrospective).toEqual(stamped)
 
 	const db = new DatabaseSync(':memory:')
 	db.exec(`
@@ -126,36 +101,28 @@ test('retrospective parse, store mapping, and schema upgrade keep probe incident
 			detail TEXT
 		)
 	`)
-	const before = db.prepare('PRAGMA table_info(incidents)').all() as Array<{
-		name: string
-	}>
-	expect(incidentsTableHasRetrospectiveColumn(before)).toBe(false)
+	const hasColumn = () =>
+		incidentsTableHasRetrospectiveColumn(
+			db.prepare('PRAGMA table_info(incidents)').all() as Array<{
+				name: string
+			}>,
+		)
+	expect(hasColumn()).toBe(false)
 	db.exec(addIncidentRetrospectiveColumnSql)
-	const after = db.prepare('PRAGMA table_info(incidents)').all() as Array<{
-		name: string
-	}>
-	expect(incidentsTableHasRetrospectiveColumn(after)).toBe(true)
+	expect(hasColumn()).toBe(true)
 
 	db.prepare(
 		`INSERT INTO incidents (id, component, started_at, resolved_at, detail)
 		VALUES (10, 'jobs', ?, ?, 'error')`,
-	).run(
-		Date.parse('2026-09-02T21:57:54.765Z'),
-		Date.parse('2026-09-02T22:00:51.866Z'),
-	)
+	).run(startedAt, resolvedAt)
 	db.prepare(
 		`INSERT INTO incidents (id, component, started_at, resolved_at, detail)
 		VALUES (11, 'jobs', ?, NULL, 'error')`,
 	).run(Date.parse('2026-09-02T23:00:00.000Z'))
 
-	const resolvedUpdate = db
-		.prepare(updateIncidentRetrospectiveSql)
-		.run(serializeIncidentRetrospective(stamped), 10)
-	expect(resolvedUpdate.changes).toBe(1)
-	const openUpdate = db
-		.prepare(updateIncidentRetrospectiveSql)
-		.run(serializeIncidentRetrospective(stamped), 11)
-	expect(openUpdate.changes).toBe(0)
+	const update = db.prepare(updateIncidentRetrospectiveSql)
+	expect(update.run(serialized, 10).changes).toBe(1)
+	expect(update.run(serialized, 11).changes).toBe(0)
 
 	const loaded = db.prepare(selectIncidentByIdSql).get(10) as {
 		retrospective: string

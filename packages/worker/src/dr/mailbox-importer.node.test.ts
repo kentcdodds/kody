@@ -48,31 +48,29 @@ const emptyCounts = {
 	attachments: 0,
 	deliveryEvents: 0,
 }
-const threadCounts = {
-	threads: 2,
-	messages: 0,
-	attachments: 0,
-	deliveryEvents: 0,
+const threadCounts = { ...emptyCounts, threads: 2 }
+const replace = {
+	conflictPolicy: 'replace' as const,
+	replaceConfirmation: mailboxImportReplaceConfirmation,
 }
 
-function restoreStatus(counts: typeof emptyCounts, hiddenRows = 0) {
+function restoreStatus(counts: typeof emptyCounts) {
 	return {
 		counts,
-		hiddenRows,
+		hiddenRows: 0,
 		restorePending: false,
-		empty:
-			hiddenRows === 0 && Object.values(counts).every((count) => count === 0),
+		empty: Object.values(counts).every((count) => count === 0),
 	}
 }
 
-function createMemoryS3(seed: Record<string, string | Uint8Array>) {
+function createMemoryS3(seed: Record<string, string>) {
 	const objects = new Map<string, Uint8Array>()
-	for (const [key, value] of Object.entries(seed)) {
+	const put = (key: string, body: string | Uint8Array) =>
 		objects.set(
 			key,
-			typeof value === 'string' ? new TextEncoder().encode(value) : value,
+			typeof body === 'string' ? new TextEncoder().encode(body) : body,
 		)
-	}
+	for (const [key, value] of Object.entries(seed)) put(key, value)
 	const client: DrBackupS3Client = {
 		async head(key) {
 			return {
@@ -91,10 +89,7 @@ function createMemoryS3(seed: Record<string, string | Uint8Array>) {
 			return objects.get(key) ?? null
 		},
 		async put(key, body, _options?: DrBackupS3PutOptions) {
-			objects.set(
-				key,
-				typeof body === 'string' ? new TextEncoder().encode(body) : body,
-			)
+			put(key, body)
 			return { etag: '"etag"' }
 		},
 	}
@@ -128,17 +123,16 @@ async function createBackup(
 		)
 		.map((line) => `${line}\n`)
 		.join('')
-	const dumpKey = stagingMailboxDumpKey(
-		day,
-		options.indexDumpOwnerId ?? ownerId,
-	)
 	const index: MailboxIndex = {
 		schemaVersion: backupStagingSchemaVersion,
 		day,
 		entries: [
 			{
 				ownerId,
-				objectKey: dumpKey,
+				objectKey: stagingMailboxDumpKey(
+					day,
+					options.indexDumpOwnerId ?? ownerId,
+				),
 				entryCount: 2,
 				bytes: new TextEncoder().encode(dump).byteLength,
 				sha256: await sha256Hex(dump),
@@ -146,8 +140,14 @@ async function createBackup(
 		],
 	}
 	const indexBody = JSON.stringify(index)
+	const prefix = sealedFullPrefix(day)
+	const file = (name: string, sha: string) => ({
+		objectKey: `${prefix}${name}`,
+		bytes: 0,
+		sha256: sha.repeat(64),
+	})
 	const mailboxIndex = {
-		objectKey: `${sealedFullPrefix(day)}mailbox-index.json`,
+		objectKey: `${prefix}mailbox-index.json`,
 		bytes: new TextEncoder().encode(indexBody).byteLength,
 		sha256: await sha256Hex(indexBody),
 	}
@@ -159,28 +159,13 @@ async function createBackup(
 		d1ManifestKey: `daily/d1/${day}/manifest.json`,
 		d1ManifestSha256: 'a'.repeat(64),
 		mailboxIndex,
-		runLogIndex: {
-			objectKey: `${sealedFullPrefix(day)}run-log-index.json`,
-			bytes: 0,
-			sha256: 'b'.repeat(64),
-		},
-		storageIndex: {
-			objectKey: `${sealedFullPrefix(day)}storage-index.json`,
-			bytes: 0,
-			sha256: 'c'.repeat(64),
-		},
+		runLogIndex: file('run-log-index.json', 'b'),
+		storageIndex: file('storage-index.json', 'c'),
 		r2Indexes: {},
-		artifactsIndex: {
-			objectKey: `${sealedFullPrefix(day)}artifacts-index.json`,
-			bytes: 0,
-			sha256: 'd'.repeat(64),
-		},
+		artifactsIndex: file('artifacts-index.json', 'd'),
 		sealedAt: options.sealedAt ?? '2026-08-02T06:00:00.000Z',
 		buildCommit: 'node-test',
-		signing: {
-			algorithm: backupFullManifestSignatureAlgorithm,
-			keyId,
-		},
+		signing: { algorithm: backupFullManifestSignatureAlgorithm, keyId },
 	}
 	const manifest: BackupFullManifest = {
 		schemaVersion: backupFullManifestSchemaVersion,
@@ -198,8 +183,7 @@ async function createBackup(
 	const s3 = createMemoryS3({
 		[sealedFullManifestKey(day)]: serializeBackupFullManifest(manifest),
 		[mailboxIndex.objectKey]: indexBody,
-		[`${sealedFullPrefix(day)}mailbox/${encodeURIComponent(ownerId)}.ndjson`]:
-			dump,
+		[`${prefix}mailbox/${encodeURIComponent(ownerId)}.ndjson`]: dump,
 	})
 	const env = {
 		DR_RESTORE_SECRET: 'node-test-restore-secret',
@@ -212,19 +196,26 @@ async function createBackup(
 			.export({ format: 'der', type: 'spki' })
 			.toString('base64'),
 	} as unknown as Env
-	return { day, ownerId, dumpKey, manifest, mailboxIndex, s3, env }
+	return {
+		day,
+		ownerId,
+		manifest,
+		s3,
+		env,
+		tick(input: Partial<Parameters<typeof runMailboxImportTick>[0]> = {}) {
+			return runMailboxImportTick({
+				env,
+				day,
+				owners: [ownerId],
+				s3: s3.client,
+				...input,
+			})
+		},
+	}
 }
 
 function resetMailboxMocks() {
-	mailboxMocks.countMailbox.mockReset()
-	mailboxMocks.inspectRestoreState.mockReset()
-	mailboxMocks.beginRestore.mockReset()
-	mailboxMocks.finalizeRestore.mockReset()
-	mailboxMocks.readDrillResult.mockReset()
-	mailboxMocks.completeDrill.mockReset()
-	mailboxMocks.purge.mockReset()
-	mailboxMocks.upsertMessageGraph.mockReset()
-	mailboxMocks.upsertDeliveryEvents.mockReset()
+	for (const mock of Object.values(mailboxMocks)) mock.mockReset()
 	mailboxMocks.purge.mockResolvedValue({ ok: true })
 	mailboxMocks.inspectRestoreState.mockResolvedValue(restoreStatus(emptyCounts))
 	mailboxMocks.finalizeRestore.mockResolvedValue({ ok: true })
@@ -238,41 +229,41 @@ function resetMailboxMocks() {
 	mailboxMocks.upsertDeliveryEvents.mockResolvedValue({ results: [] })
 }
 
-test('mailbox import endpoint is secret-gated and replace needs exact confirmation', async () => {
-	const missing = await handleMailboxImportRequest(
-		new Request('https://example.com/__maintenance/dr-mailbox-import', {
-			method: 'POST',
-			body: JSON.stringify({ day: '2026-08-01', owners: ['owner-a'] }),
-		}),
-		{} as Env,
-	)
-	expect(missing.status).toBe(503)
+/** Lets the first `freeTicks` Date.now reads see t=0, then jumps past a 1ms budget. */
+function exhaustBudgetAfter(freeTicks: number) {
+	const now = vi.spyOn(Date, 'now')
+	for (let index = 0; index < freeTicks; index += 1) now.mockReturnValueOnce(0)
+	now.mockReturnValue(2)
+	return { [Symbol.dispose]: () => now.mockRestore() }
+}
 
-	const wrong = await handleMailboxImportRequest(
+test('mailbox import endpoint is secret-gated and replace needs exact confirmation', async () => {
+	const request = (headers: Record<string, string>, body: object) =>
 		new Request('https://example.com/__maintenance/dr-mailbox-import', {
 			method: 'POST',
-			headers: { Authorization: 'Bearer wrong' },
-			body: JSON.stringify({ day: '2026-08-01', owners: ['owner-a'] }),
-		}),
-		{ DR_RESTORE_SECRET: 'correct' } as Env,
-	)
-	expect(wrong.status).toBe(401)
+			headers,
+			body: JSON.stringify({ day: '2026-08-01', owners: ['owner-a'], ...body }),
+		})
+	const configured = { DR_RESTORE_SECRET: 'correct' } as Env
+
+	expect(
+		(await handleMailboxImportRequest(request({}, {}), {} as Env)).status,
+	).toBe(503)
+	expect(
+		(
+			await handleMailboxImportRequest(
+				request({ Authorization: 'Bearer wrong' }, {}),
+				configured,
+			)
+		).status,
+	).toBe(401)
 
 	const unconfirmed = await handleMailboxImportRequest(
-		new Request('https://example.com/__maintenance/dr-mailbox-import', {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer correct',
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({
-				day: '2026-08-01',
-				owners: ['owner-a'],
-				conflictPolicy: 'replace',
-				replaceConfirmation: 'almost',
-			}),
-		}),
-		{ DR_RESTORE_SECRET: 'correct' } as Env,
+		request(
+			{ Authorization: 'Bearer correct', 'Content-Type': 'application/json' },
+			{ conflictPolicy: 'replace', replaceConfirmation: 'almost' },
+		),
+		configured,
 	)
 	expect(unconfirmed.status).toBe(500)
 	expect(await unconfirmed.json()).toMatchObject({
@@ -285,171 +276,75 @@ test('mailbox importer verifies sealed media before writes', async () => {
 	// Occupied-target and tampered-dump fail-closed paths are covered by the
 	// workers DO workflow; keep node-only signature/schema guards here.
 	const invalidSignature = await createBackup()
-	const manifest = {
-		...invalidSignature.manifest,
-		signature: {
-			...invalidSignature.manifest.signature,
-			value: Buffer.alloc(64).toString('base64'),
-		},
-	}
 	invalidSignature.s3.objects.set(
 		sealedFullManifestKey(invalidSignature.day),
-		new TextEncoder().encode(serializeBackupFullManifest(manifest)),
+		new TextEncoder().encode(
+			serializeBackupFullManifest({
+				...invalidSignature.manifest,
+				signature: {
+					...invalidSignature.manifest.signature,
+					value: Buffer.alloc(64).toString('base64'),
+				},
+			}),
+		),
 	)
-	await expect(
-		runMailboxImportTick({
-			env: invalidSignature.env,
-			day: invalidSignature.day,
-			owners: [invalidSignature.ownerId],
-			s3: invalidSignature.s3.client,
-		}),
-	).rejects.toThrow(/signature is invalid/)
+	await expect(invalidSignature.tick()).rejects.toThrow(/signature is invalid/)
 	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
 
 	const swappedOwnerKey = await createBackup({ indexDumpOwnerId: 'owner-b' })
-	await expect(
-		runMailboxImportTick({
-			env: swappedOwnerKey.env,
-			day: swappedOwnerKey.day,
-			owners: [swappedOwnerKey.ownerId],
-			s3: swappedOwnerKey.s3.client,
-		}),
-	).rejects.toThrow(/invalid owner entry/)
+	await expect(swappedOwnerKey.tick()).rejects.toThrow(/invalid owner entry/)
 	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
 
 	resetMailboxMocks()
 	const unknownField = await createBackup({
 		threadRowExtra: { unexpected: true },
 	})
-	await expect(
-		runMailboxImportTick({
-			env: unknownField.env,
-			day: unknownField.day,
-			owners: [unknownField.ownerId],
-			s3: unknownField.s3.client,
-		}),
-	).rejects.toThrow(/missing or unknown fields/)
+	await expect(unknownField.tick()).rejects.toThrow(/missing or unknown fields/)
 	expect(mailboxMocks.inspectRestoreState).not.toHaveBeenCalled()
 })
 
 test('mailbox importer rejects a cursor from a different sealed generation', async () => {
 	resetMailboxMocks()
 	const original = await createBackup()
-	const first = await runMailboxImportTick({
-		env: original.env,
-		day: original.day,
-		owners: [original.ownerId],
-		timeBudgetMs: 0,
-		s3: original.s3.client,
-	})
+	const first = await original.tick({ timeBudgetMs: 0 })
 	expect(first.nextCursor).toBeTruthy()
 
 	const replacement = await createBackup({
 		sealedAt: '2026-08-02T07:00:00.000Z',
 	})
-	original.s3.objects.clear()
-	for (const [key, value] of replacement.s3.objects) {
-		original.s3.objects.set(key, value)
-	}
 	await expect(
-		runMailboxImportTick({
-			env: replacement.env,
-			day: replacement.day,
-			owners: [replacement.ownerId],
-			cursor: first.nextCursor,
-			timeBudgetMs: 60_000,
-			s3: original.s3.client,
-		}),
+		replacement.tick({ cursor: first.nextCursor, timeBudgetMs: 60_000 }),
 	).rejects.toThrow(/cursor does not match this import request/)
 })
 
 test('drill cleanup stays idempotent across lost responses for success and mismatch', async () => {
-	resetMailboxMocks()
-	const backup = await createBackup()
-	const now = vi
-		.spyOn(Date, 'now')
-		.mockReturnValueOnce(0)
-		.mockReturnValueOnce(0)
-		.mockReturnValueOnce(0)
-		.mockReturnValue(2)
-	const beforeVerify = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		drill: true,
-		timeBudgetMs: 1,
-		s3: backup.s3.client,
-	})
-	now.mockRestore()
-	expect(beforeVerify.progress.phase).toBe('verify')
+	for (const [counts, verified] of [
+		[threadCounts, true],
+		[emptyCounts, false],
+	] as const) {
+		resetMailboxMocks()
+		const backup = await createBackup()
+		let beforeVerify
+		{
+			using _clock = exhaustBudgetAfter(3)
+			beforeVerify = await backup.tick({ drill: true, timeBudgetMs: 1 })
+		}
+		expect(beforeVerify.progress.phase).toBe('verify')
+		const resume = () =>
+			backup.tick({
+				drill: true,
+				cursor: beforeVerify.nextCursor,
+				timeBudgetMs: 60_000,
+			})
 
-	mailboxMocks.countMailbox.mockResolvedValueOnce(threadCounts)
-	const completed = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		drill: true,
-		cursor: beforeVerify.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
-	})
-	expect(completed.verified).toBe(true)
-	const cleanupCalls = mailboxMocks.completeDrill.mock.calls.length
+		mailboxMocks.countMailbox.mockResolvedValueOnce(counts)
+		expect((await resume()).verified).toBe(verified)
+		const cleanupCalls = mailboxMocks.completeDrill.mock.calls.length
 
-	mailboxMocks.readDrillResult.mockResolvedValueOnce(threadCounts)
-	const replayedSuccess = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		drill: true,
-		cursor: beforeVerify.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
-	})
-	expect(replayedSuccess.verified).toBe(true)
-	expect(mailboxMocks.completeDrill.mock.calls.length).toBe(cleanupCalls)
-
-	resetMailboxMocks()
-	const mismatchBackup = await createBackup()
-	const mismatchNow = vi
-		.spyOn(Date, 'now')
-		.mockReturnValueOnce(0)
-		.mockReturnValueOnce(0)
-		.mockReturnValueOnce(0)
-		.mockReturnValue(2)
-	const mismatchBeforeVerify = await runMailboxImportTick({
-		env: mismatchBackup.env,
-		day: mismatchBackup.day,
-		owners: [mismatchBackup.ownerId],
-		drill: true,
-		timeBudgetMs: 1,
-		s3: mismatchBackup.s3.client,
-	})
-	mismatchNow.mockRestore()
-
-	mailboxMocks.countMailbox.mockResolvedValueOnce(emptyCounts)
-	const mismatch = await runMailboxImportTick({
-		env: mismatchBackup.env,
-		day: mismatchBackup.day,
-		owners: [mismatchBackup.ownerId],
-		drill: true,
-		cursor: mismatchBeforeVerify.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: mismatchBackup.s3.client,
-	})
-	expect(mismatch.verified).toBe(false)
-
-	mailboxMocks.readDrillResult.mockResolvedValueOnce(emptyCounts)
-	const replayedMismatch = await runMailboxImportTick({
-		env: mismatchBackup.env,
-		day: mismatchBackup.day,
-		owners: [mismatchBackup.ownerId],
-		drill: true,
-		cursor: mismatchBeforeVerify.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: mismatchBackup.s3.client,
-	})
-	expect(replayedMismatch.verified).toBe(false)
+		mailboxMocks.readDrillResult.mockResolvedValueOnce(counts)
+		expect((await resume()).verified).toBe(verified)
+		expect(mailboxMocks.completeDrill).toHaveBeenCalledTimes(cleanupCalls)
+	}
 })
 
 test('mailbox importer resumes replacement idempotently and reports count mismatch', async () => {
@@ -460,21 +355,11 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 		.mockResolvedValueOnce(restoreStatus(emptyCounts))
 		.mockResolvedValue(restoreStatus(threadCounts))
 	mailboxMocks.countMailbox.mockResolvedValue(threadCounts)
-	const now = vi
-		.spyOn(Date, 'now')
-		.mockReturnValueOnce(0)
-		.mockReturnValueOnce(0)
-		.mockReturnValue(2)
-	const first = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		conflictPolicy: 'replace',
-		replaceConfirmation: mailboxImportReplaceConfirmation,
-		timeBudgetMs: 1,
-		s3: backup.s3.client,
-	})
-	now.mockRestore()
+	let first
+	{
+		using _clock = exhaustBudgetAfter(2)
+		first = await backup.tick({ ...replace, timeBudgetMs: 1 })
+	}
 	expect(first.done).toBe(false)
 	expect(first.progress.phase).toBe('preflight-threads')
 	expect(mailboxMocks.purge).not.toHaveBeenCalled()
@@ -491,29 +376,16 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 		}),
 	)
 	await expect(
-		runMailboxImportTick({
-			env: backup.env,
-			day: backup.day,
-			owners: [backup.ownerId],
-			conflictPolicy: 'replace',
-			replaceConfirmation: mailboxImportReplaceConfirmation,
+		backup.tick({
+			...replace,
 			cursor: `${forgedPayload}.${signature}`,
 			timeBudgetMs: 60_000,
-			s3: backup.s3.client,
 		}),
 	).rejects.toThrow(/cursor signature is invalid/)
 
-	const completed = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		conflictPolicy: 'replace',
-		replaceConfirmation: mailboxImportReplaceConfirmation,
-		cursor: first.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
-	})
-	expect(completed).toMatchObject({
+	const resume = () =>
+		backup.tick({ ...replace, cursor: first.nextCursor, timeBudgetMs: 60_000 })
+	expect(await resume()).toMatchObject({
 		done: true,
 		verified: true,
 		progress: { ownersPassed: 1, ownersMismatched: 0, ownersReplaced: 1 },
@@ -526,53 +398,30 @@ test('mailbox importer resumes replacement idempotently and reports count mismat
 			message: null,
 		}),
 	)
-
-	const replayed = await runMailboxImportTick({
-		env: backup.env,
-		day: backup.day,
-		owners: [backup.ownerId],
-		conflictPolicy: 'replace',
-		replaceConfirmation: mailboxImportReplaceConfirmation,
-		cursor: first.nextCursor,
-		timeBudgetMs: 60_000,
-		s3: backup.s3.client,
-	})
-	expect(replayed.verified).toBe(true)
+	expect((await resume()).verified).toBe(true)
 
 	resetMailboxMocks()
-	const rejectedBackup = await createBackup()
 	mailboxMocks.upsertMessageGraph.mockResolvedValue({
 		ok: true,
 		accepted: false,
 	})
 	await expect(
-		runMailboxImportTick({
-			env: rejectedBackup.env,
-			day: rejectedBackup.day,
-			owners: [rejectedBackup.ownerId],
-			timeBudgetMs: 60_000,
-			s3: rejectedBackup.s3.client,
-		}),
+		(await createBackup()).tick({ timeBudgetMs: 60_000 }),
 	).rejects.toThrow(/rejected restored thread/)
 	expect(mailboxMocks.countMailbox).not.toHaveBeenCalled()
 
 	resetMailboxMocks()
-	const mismatchBackup = await createBackup()
 	mailboxMocks.countMailbox.mockResolvedValue(emptyCounts)
-	const mismatch = await runMailboxImportTick({
-		env: mismatchBackup.env,
-		day: mismatchBackup.day,
-		owners: 'all-from-index',
-		timeBudgetMs: 60_000,
-		s3: mismatchBackup.s3.client,
-	})
+	const mismatch = await (
+		await createBackup()
+	).tick({ owners: 'all-from-index', timeBudgetMs: 60_000 })
 	expect(mismatch).toMatchObject({
 		done: true,
 		verified: false,
 		progress: { ownersPassed: 0, ownersMismatched: 1 },
 		ownerResults: [
 			{
-				sourceOwnerId: mismatchBackup.ownerId,
+				sourceOwnerId: backup.ownerId,
 				expected: threadCounts,
 				actual: emptyCounts,
 				matches: false,

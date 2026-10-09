@@ -133,16 +133,28 @@ export type RepoSessionRpc = {
 		edits: Array<Exclude<RepoSessionEdit, { kind: 'delete' | 'move' }>>
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
+		requirePackageDocs?: boolean
+		runPublishChecks?: boolean
+		expectedPackageScope?: string
 	}) => Promise<RepoSourceBootstrapResult>
 	runChecks: (payload: {
 		sessionId: string
 		userId: string
 		expectedPackageScope?: string
+		requirePackageDocs?: boolean
 	}) => Promise<RepoSessionCheckRun>
 	runIsolatedCheckPhase: (
 		payload: IsolatedCheckPhaseRequest,
 	) => Promise<IsolatedCheckPhaseOutcome>
 	getCheckStatus: (payload: {
+		sessionId: string
+		userId: string
+	}) => Promise<RepoSessionCheckStatus>
+	/**
+	 * Trusted opt-out: stamp ok check-status for the current tree without
+	 * running validators so publishSession can proceed without force.
+	 */
+	acceptCurrentTreeForPublish: (payload: {
 		sessionId: string
 		userId: string
 	}) => Promise<RepoSessionCheckStatus>

@@ -1,17 +1,25 @@
+import { DatabaseSync } from 'node:sqlite'
 import { vi } from 'vitest'
+import type * as runKodyRegistryModule from '#mcp/run-kody-registry.ts'
+import type * as packageInvocationsServiceModule from '#worker/package-invocations/service.ts'
 import { terminalWorkflowStatusValues } from '#worker/package-runtime/workflow-statuses.ts'
 import { creatingWorkflowProjectionStatus } from '#worker/run-records/workflow-projection.ts'
+import type * as runRecordsServiceModule from '#worker/run-records/service.ts'
 import {
 	type WorkflowProjectionRecord,
 	type WorkflowProjectionUpsertInput,
 } from '#worker/run-records/service.ts'
-import { dynamicCallableWorkflowsBindingName } from './package-workflows.ts'
+import { dynamicCallableWorkflowsBindingName } from '#worker/package-runtime/package-workflows.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+
+const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 export const packageWorkflowsInvocationMocks = (() => ({
-	invokePackageExport: vi.fn(),
-	runModuleWithRegistry: vi.fn(),
-	createExecutePackageInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
-	createPackageRuntimeInvokeTools: vi.fn(() => ({ invoke: vi.fn() })),
+	invokePackageExport:
+		vi.fn<typeof packageInvocationsServiceModule.invokePackageExport>(),
+	runModuleWithRegistry:
+		vi.fn<typeof runKodyRegistryModule.runModuleWithRegistry>(),
 }))()
 
 export const packageWorkflowsRunRecordMocks = (() => {
@@ -126,14 +134,20 @@ export const packageWorkflowsRunRecordMocks = (() => {
 		listForUser(userId: string) {
 			return [...(projectionsByUser.get(userId)?.values() ?? [])]
 		},
-		beginRunRecord: vi.fn(() => ({
-			id: 'run-1',
-			userId: 'user-1',
-			startedAt: '2026-05-03T12:34:56.000Z',
-			persistence: 'eager' as const,
-			context: { surface: 'workflow' as const },
-		})),
-		finishRunRecord: vi.fn(async () => {}),
+		beginRunRecord: vi.fn<typeof runRecordsServiceModule.beginRunRecord>(
+			() => ({
+				id: 'run-1',
+				userId: 'user-1',
+				startedAt: '2026-05-03T12:34:56.000Z',
+				persistence: 'eager' as const,
+				context: { surface: 'workflow' as const },
+			}),
+		),
+		finishRunRecord: vi.fn(
+			async (
+				_input: Parameters<typeof runRecordsServiceModule.finishRunRecord>[0],
+			) => {},
+		),
 		upsertWorkflowProjection,
 		getWorkflowProjection: vi.fn(
 			async (input: { env: Env; userId: string; id: string }) =>
@@ -320,7 +334,7 @@ export function createWorkflowBinding(options?: {
 }
 
 export function createStatefulWorkflowBinding() {
-	const instances = new Map<string, WorkflowInstanceCreateOptions>()
+	const instances = new Map<string | undefined, WorkflowInstanceCreateOptions>()
 	const create = vi.fn(async (input: WorkflowInstanceCreateOptions) => {
 		if (instances.has(input.id)) {
 			throw new Error('Workflow instance already exists')
@@ -350,9 +364,12 @@ export function createStatefulWorkflowBinding() {
 	}
 }
 
-/** APP_DB stub for entitlement plan lookup and saved-package ownership only. */
+/**
+ * Migrated APP_DB for workflow tests that only need plan lookup and/or a
+ * saved-package ownership row. Prefer this over SQL-substring D1 stubs so
+ * package-ref / entitlement query reshapes do not break unrelated suites.
+ */
 export function createWorkflowRunsDatabase(options?: {
-	activeCount?: number
 	savedPackage?: Record<string, unknown> | null
 	users?: Array<{
 		email: string
@@ -360,7 +377,30 @@ export function createWorkflowRunsDatabase(options?: {
 		stable_user_id?: string
 	}>
 }) {
-	const savedPackage = options?.savedPackage ?? {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const now = '2026-05-03T00:00:00.000Z'
+	const usernames = new Set<string>()
+	for (const [index, user] of (options?.users ?? []).entries()) {
+		const stableUserId = user.stable_user_id ?? `user-${index + 1}`
+		const baseUsername =
+			user.email.split('@')[0]?.replace(/[^a-z0-9_-]/gi, '') ||
+			`user${index + 1}`
+		let username = baseUsername
+		let suffix = 2
+		while (usernames.has(username)) {
+			username = `${baseUsername}-${suffix++}`
+		}
+		usernames.add(username)
+		sqlite
+			.prepare(
+				`INSERT INTO users (
+					username, email, password_hash, email_verified_at, plan, stable_user_id
+				) VALUES (?, ?, 'x', ?, ?, ?)`,
+			)
+			.run(username, user.email, now, user.plan ?? 'free', stableUserId)
+	}
+	const defaultSavedPackage: Record<string, unknown> = {
 		id: 'pkg-1',
 		user_id: 'user-1',
 		name: 'Shade automation',
@@ -370,62 +410,41 @@ export function createWorkflowRunsDatabase(options?: {
 		search_text: null,
 		source_id: 'source-1',
 		has_app: 0,
-		created_at: '2026-05-03T00:00:00.000Z',
-		updated_at: '2026-05-03T00:00:00.000Z',
+		created_at: now,
+		updated_at: now,
 	}
-	const db = {
-		prepare(query: string) {
-			if (query.includes('workflow_runs')) {
-				throw new Error(
-					`Unexpected workflow_runs SQL after RunLog-only retirement: ${query}`,
-				)
-			}
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first() {
-							if (query.includes('COUNT(*) AS count')) {
-								return { count: options?.activeCount ?? 0 }
-							}
-							if (query.includes('SELECT plan, stripe_plan')) {
-								if (query.includes('email = ?')) {
-									const email = String(params[0] ?? '')
-									const stableUserId = String(params[1] ?? '')
-									const user = (options?.users ?? []).find(
-										(row) =>
-											row.email === email &&
-											row.stable_user_id === stableUserId,
-									)
-									return user ? { plan: user.plan } : null
-								}
-								const stableUserId = String(params[0] ?? '')
-								const user = (options?.users ?? []).find(
-									(row) => row.stable_user_id === stableUserId,
-								)
-								return user ? { plan: user.plan } : null
-							}
-							if (query.includes('FROM saved_packages')) {
-								if (!savedPackage) return null
-								const userMatches = savedPackage['user_id'] === params[1]
-								const idMatches =
-									savedPackage['id'] === params[0] ||
-									savedPackage['kody_id'] === params[0]
-								return userMatches && idMatches ? savedPackage : null
-							}
-							return null
-						},
-						async all() {
-							return { results: [] }
-						},
-						async run() {
-							// Entitlement/usage helpers may touch APP_DB; only
-							// workflow_runs lifecycle SQL is retired.
-							return { success: true }
-						},
-					}
-				},
-			}
-		},
+	const savedPackage: Record<string, unknown> | null =
+		options?.savedPackage === null
+			? null
+			: {
+					...defaultSavedPackage,
+					...options?.savedPackage,
+				}
+	if (savedPackage) {
+		sqlite
+			.prepare(
+				`INSERT INTO saved_packages (
+					id, user_id, name, kody_id, description, tags_json, search_text,
+					source_id, has_app, hidden, is_private, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				String(savedPackage['id']),
+				String(savedPackage['user_id']),
+				String(savedPackage['name']),
+				String(savedPackage['kody_id']),
+				String(savedPackage['description'] ?? ''),
+				String(savedPackage['tags_json'] ?? '[]'),
+				savedPackage['search_text'] == null
+					? null
+					: String(savedPackage['search_text']),
+				String(savedPackage['source_id']),
+				Number(savedPackage['has_app'] ?? 0),
+				Number(savedPackage['hidden'] ?? 0),
+				Number(savedPackage['is_private'] ?? 1),
+				String(savedPackage['created_at'] ?? now),
+				String(savedPackage['updated_at'] ?? now),
+			)
 	}
-	return db as unknown as D1Database
+	return createD1FromSqlite(sqlite)
 }

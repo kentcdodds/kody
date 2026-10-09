@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -7,7 +8,7 @@ import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getValue: vi.fn(),
 	getJoinedIntegration: vi.fn(),
 	loadPackageSourceBySourceId: vi.fn(),
@@ -30,12 +31,12 @@ vi.mock('#worker/package-registry/platform-packages.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageWithCommunityProvenanceById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageWithCommunityProvenanceByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRefWithCommunityProvenance: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/package-registry/source.ts', () => ({
@@ -65,17 +66,29 @@ vi.mock('./integration-package-suggestions.ts', () => ({
 
 const { resolveEntityDetail } = await import('./search-detail.ts')
 
-function createAgent() {
+function createAgent({
+	userId = 'user-1',
+	roles,
+	baseUrl = 'https://example.com',
+	env = {},
+}: {
+	userId?: string
+	roles?: Array<string>
+	baseUrl?: string
+	env?: Record<string, unknown>
+} = {}) {
 	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
+		source: { kind: 'mcp-oauth' },
+		baseUrl,
 		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
+			userId: personIdFromStored(userId),
+			email: `${userId}@example.com`,
+			displayName: userId,
+			...(roles ? { roles } : {}),
 		},
 	})
 	return {
-		getEnv: () => ({ APP_DB: {} }) as Env,
+		getEnv: () => ({ APP_DB: {}, ...env }) as Env,
 		getCallerContext: () => callerContext,
 	} as unknown as McpRegistrationAgent
 }
@@ -90,6 +103,24 @@ function emptySearchRows() {
 		warnings: [],
 	}
 }
+
+function resolve(
+	entity: string,
+	overrides: Partial<Parameters<typeof resolveEntityDetail>[0]> = {},
+) {
+	const agent = overrides.agent ?? createAgent()
+	return resolveEntityDetail({
+		agent,
+		callerContext: agent.getCallerContext(),
+		userId: 'user-1',
+		username: 'user',
+		entity,
+		searchRows: emptySearchRows() as never,
+		...overrides,
+	})
+}
+
+const anonymous = { userId: null, username: null }
 
 function createJoinedIntegration(name: string): JoinedIntegration {
 	const now = '2026-01-01T00:00:00.000Z'
@@ -133,39 +164,24 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 }
 
 test('resolveEntityDetail reports unresolvable entity refs as caller errors', async () => {
-	mockModule.getValue.mockReset()
 	mockModule.getValue.mockResolvedValue(null)
-	mockModule.getJoinedIntegration.mockReset()
 	mockModule.getJoinedIntegration.mockResolvedValue(null)
-
-	const agent = createAgent()
-	const callerContext = agent.getCallerContext()
-	const searchRows = emptySearchRows() as never
-	const resolve = (entity: string) =>
-		resolveEntityDetail({
-			agent,
-			callerContext,
-			userId: 'user-1',
-			username: 'user',
-			entity,
-			searchRows,
-		})
-
+	const badType =
+		'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.'
 	const expected = [
 		['capability:nope', 'Capability not found.'],
-		[
-			'user:missing-value:value',
-			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
-		],
+		['user:missing-value:value', badType],
 		['integration:notion', 'Saved integration not found for this user.'],
 		['secret:API_KEY', 'Secret not found for this user.'],
 		[
 			'not-a-ref',
 			'Entity must use the format "{type}:{id}" where type is capability, guide, integration, mcp-server, package, or secret.',
 		],
+		['thing:widget', badType],
+		['mcp-server:missing', 'MCP server not found.'],
 		[
-			'thing:widget',
-			'Entity type must be one of: capability, guide, integration, mcp-server, package, or secret.',
+			'capability:search_docs#repo.pushed',
+			/Section fragments are only supported on guide and package entities/,
 		],
 	] as const
 
@@ -177,13 +193,7 @@ test('resolveEntityDetail reports unresolvable entity refs as caller errors', as
 })
 
 test('resolveEntityDetail lists MCP server tools from the synthesized registry', async () => {
-	const agent = createAgent()
-	const detail = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: 'user-1',
-		username: 'user',
-		entity: 'mcp-server:home',
+	const detail = await resolve('mcp-server:home', {
 		searchRows: {
 			...emptySearchRows(),
 			registry: {
@@ -233,30 +243,10 @@ test('resolveEntityDetail lists MCP server tools from the synthesized registry',
 			}),
 		],
 	})
-
-	await expect(
-		resolveEntityDetail({
-			agent,
-			callerContext: agent.getCallerContext(),
-			userId: 'user-1',
-			username: 'user',
-			entity: 'mcp-server:missing',
-			searchRows: emptySearchRows() as never,
-		}),
-	).rejects.toThrow('MCP server not found.')
 })
 
-test('resolveEntityDetail loads official guides without a signed-in user', async () => {
-	const agent = createAgent()
-	const detail = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: null,
-		username: null,
-		entity: 'guide:package_authoring',
-		searchRows: emptySearchRows() as never,
-	})
-
+test('resolveEntityDetail loads official guides without a signed-in user and gates admin guides', async () => {
+	const detail = await resolve('guide:package_authoring', anonymous)
 	expect(detail).toMatchObject({
 		type: 'guide',
 		id: 'package_authoring',
@@ -269,100 +259,82 @@ test('resolveEntityDetail loads official guides without a signed-in user', async
 	expect(detail.body.startsWith('#')).toBe(true)
 	expect(detail.title.length).toBeGreaterThan(0)
 
-	const sectionDetail = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: null,
-		username: null,
-		entity: 'guide:package_subscriptions#repo.pushed',
-		searchRows: emptySearchRows() as never,
-	})
-	expect(sectionDetail).toMatchObject({
+	expect(
+		await resolve('guide:package_subscriptions#repo.pushed', anonymous),
+	).toMatchObject({
 		type: 'guide',
 		id: 'package_subscriptions',
 		section: 'repo.pushed',
 	})
 
-	await expect(
-		resolveEntityDetail({
-			agent,
-			callerContext: agent.getCallerContext(),
-			userId: null,
-			username: null,
-			entity: 'capability:search_docs#repo.pushed',
-			searchRows: emptySearchRows() as never,
-		}),
-	).rejects.toThrow(
-		/Section fragments are only supported on guide and package entities/,
+	for (const entity of ['guide:not_a_real_guide', 'guide:admin_events']) {
+		await expect(resolve(entity, anonymous)).rejects.toThrow('Guide not found.')
+	}
+	await expect(resolve('guide:not_a_real_guide', anonymous)).rejects.toThrow(
+		/^Guide not found\.$/,
+	)
+	await expect(resolve('guide:search', anonymous)).rejects.toThrow(
+		'Did you mean `guide:search_and_execute`?',
 	)
 
-	await expect(
-		resolveEntityDetail({
-			agent,
-			callerContext: agent.getCallerContext(),
-			userId: null,
-			username: null,
-			entity: 'guide:not_a_real_guide',
-			searchRows: emptySearchRows() as never,
-		}),
-	).rejects.toThrow('Guide not found.')
+	expect(await resolve('guide:package-authoring', anonymous)).toMatchObject({
+		type: 'guide',
+		id: 'package_authoring',
+		slug: 'package-authoring',
+	})
+	expect(await resolve('guide:what_can_kody_do', anonymous)).toMatchObject({
+		type: 'guide',
+		id: 'what_is_kody',
+		slug: 'what-is-kody',
+	})
+	expect(
+		await resolve('guide:integration_backed_app', anonymous),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'after-an-integration-smoke-test',
+	})
+	expect(
+		await resolve('guide:integration-backed-app-happy-path', anonymous),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'after-an-integration-smoke-test',
+	})
+	expect(
+		await resolve(
+			'guide:integration-backed-app-happy-path#session-handoff',
+			anonymous,
+		),
+	).toMatchObject({
+		type: 'guide',
+		id: 'package_apps',
+		section: 'session-handoff',
+	})
 
-	await expect(
-		resolveEntityDetail({
-			agent,
-			callerContext: agent.getCallerContext(),
-			userId: null,
-			username: null,
-			entity: 'guide:admin_events',
-			searchRows: emptySearchRows() as never,
-		}),
-	).rejects.toThrow('Guide not found.')
-
-	const adminCaller = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
+	expect(
+		await resolve('guide:admin_events', {
+			agent: createAgent({ userId: 'admin-1', roles: ['admin'] }),
 			userId: 'admin-1',
-			email: 'admin@example.com',
-			displayName: 'admin',
-			roles: ['admin'],
-		},
-	})
-	const adminAgent = {
-		getEnv: () => ({ APP_DB: {} }) as Env,
-		getCallerContext: () => adminCaller,
-	} as unknown as McpRegistrationAgent
-	const adminGuide = await resolveEntityDetail({
-		agent: adminAgent,
-		callerContext: adminCaller,
-		userId: 'admin-1',
-		username: 'admin',
-		entity: 'guide:admin_events',
-		searchRows: emptySearchRows() as never,
-	})
-	expect(adminGuide).toMatchObject({
+			username: 'admin',
+		}),
+	).toMatchObject({
 		type: 'guide',
 		id: 'admin_events',
 		slug: 'admin-events',
 	})
 })
 
-test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', async () => {
-	const joined = createJoinedIntegration('github')
-	mockModule.getJoinedIntegration.mockReset()
-	mockModule.getJoinedIntegration.mockResolvedValue(joined)
-	mockModule.collectIntegrationPackageSuggestions.mockReset()
+test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, isolated by userId', async () => {
+	mockModule.getJoinedIntegration.mockImplementation(
+		async (input: { userId: string; name: string }) => {
+			if (input.userId !== 'user-1' || input.name !== 'github') return null
+			return createJoinedIntegration('github')
+		},
+	)
 	mockModule.collectIntegrationPackageSuggestions.mockResolvedValue([])
 
-	const agent = createAgent()
-	const detail = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: 'user-1',
-		username: 'user',
-		entity: 'integration:github',
-		searchRows: emptySearchRows() as never,
-	})
-
+	const detail = await resolve('integration:github')
 	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
 		env: { APP_DB: {} },
 		userId: 'user-1',
@@ -380,31 +352,11 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration', as
 		},
 	})
 	expect(detail).not.toHaveProperty('row')
-})
 
-test('resolveEntityDetail keeps integrations isolated by userId', async () => {
-	mockModule.getJoinedIntegration.mockReset()
-	mockModule.getJoinedIntegration.mockImplementation(
-		async (input: { userId: string; name: string }) => {
-			if (input.userId !== 'user-1' || input.name !== 'github') return null
-			return createJoinedIntegration('github')
-		},
-	)
-	mockModule.collectIntegrationPackageSuggestions.mockResolvedValue([])
-
-	const agent = createAgent()
 	await expect(
-		resolveEntityDetail({
-			agent,
-			callerContext: agent.getCallerContext(),
-			userId: 'user-2',
-			username: 'other',
-			entity: 'integration:github',
-			searchRows: emptySearchRows() as never,
-		}),
+		resolve('integration:github', { userId: 'user-2', username: 'other' }),
 	).rejects.toThrow('Saved integration not found for this user.')
-
-	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
+	expect(mockModule.getJoinedIntegration).toHaveBeenLastCalledWith({
 		env: { APP_DB: {} },
 		userId: 'user-2',
 		name: 'github',
@@ -412,8 +364,7 @@ test('resolveEntityDetail keeps integrations isolated by userId', async () => {
 })
 
 test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', async () => {
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.getSavedPackageByKodyId.mockResolvedValue({
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		packageId: 'pkg-1',
 		kodyId: 'demo',
 		name: '@user/demo',
@@ -422,38 +373,18 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 		sourceId: 'source-1',
 	})
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest: { kody: {} },
 		files: {},
 	})
 
-	const callerContext = createMcpCallerContext({
-		baseUrl: 'https://heykody.dev',
-		user: {
-			userId: 'user-1',
-			email: 'user@example.com',
-			displayName: 'user',
-		},
-	})
-	const agent = {
-		getEnv: () =>
-			({
-				APP_DB: {},
-				PACKAGE_APP_BASE_URL: 'https://kody.run',
-			}) as Env,
-		getCallerContext: () => callerContext,
-	} as unknown as McpRegistrationAgent
-
-	const detail = await resolveEntityDetail({
-		agent,
-		callerContext,
-		userId: 'user-1',
+	const detail = await resolve('package:demo', {
+		agent: createAgent({
+			baseUrl: 'https://heykody.dev',
+			env: { PACKAGE_APP_BASE_URL: 'https://kody.run' },
+		}),
 		username: 'kentcdodds',
-		entity: 'package:demo',
-		searchRows: emptySearchRows() as never,
 	})
-
 	expect(detail).toMatchObject({
 		type: 'package',
 		hostedUrl: 'https://kentcdodds.kody.run/packages/demo',
@@ -463,7 +394,7 @@ test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', 
 })
 
 test('resolveEntityDetail passes package export fragments and hidden known-id packages', async () => {
-	const hiddenRecord = {
+	mockModule.resolveSavedPackageRef.mockResolvedValue({
 		id: 'pkg-hidden',
 		packageId: 'pkg-hidden',
 		kodyId: 'home-controls',
@@ -478,11 +409,8 @@ test('resolveEntityDetail passes package export fragments and hidden known-id pa
 		isPrivate: false,
 		createdAt: '2026-03-20T00:00:00.000Z',
 		updatedAt: '2026-03-20T00:00:00.000Z',
-	}
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.getSavedPackageByKodyId.mockResolvedValue(hiddenRecord)
+	})
 	mockModule.getSavedPackageById.mockResolvedValue(null)
-	mockModule.loadPackageSourceBySourceId.mockReset()
 	mockModule.loadPackageSourceBySourceId.mockResolvedValue({
 		manifest: {
 			name: '@user/home-controls',
@@ -495,32 +423,15 @@ test('resolveEntityDetail passes package export fragments and hidden known-id pa
 		},
 	})
 
-	const agent = createAgent()
-	const hashed = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: 'user-1',
-		username: 'user',
-		entity: 'package:home-controls#bond-area-shades',
-		searchRows: emptySearchRows() as never,
-	})
-	expect(hashed).toMatchObject({
-		type: 'package',
-		id: 'home-controls',
-		section: 'bond-area-shades',
-		record: expect.objectContaining({ hidden: true }),
-	})
-
-	const dotted = await resolveEntityDetail({
-		agent,
-		callerContext: agent.getCallerContext(),
-		userId: 'user-1',
-		username: 'user',
-		entity: 'package:home-controls#./bond-area-shades',
-		searchRows: emptySearchRows() as never,
-	})
-	expect(dotted).toMatchObject({
-		type: 'package',
-		section: './bond-area-shades',
-	})
+	expect(await resolve('package:home-controls#bond-area-shades')).toMatchObject(
+		{
+			type: 'package',
+			id: 'home-controls',
+			section: 'bond-area-shades',
+			record: expect.objectContaining({ hidden: true }),
+		},
+	)
+	expect(
+		await resolve('package:home-controls#./bond-area-shades'),
+	).toMatchObject({ type: 'package', section: './bond-area-shades' })
 })

@@ -8,6 +8,7 @@ export const communityReportCapability = defineDomainCapability(
 	capabilityDomainNames.community,
 	{
 		name: 'communityReport',
+		orgPermission: 'org:read',
 		description:
 			'Report a public package to deployment admins. Reports include the reporter identity and are not anonymous.',
 		keywords: ['community', 'report', 'abuse', 'moderation', 'listing'],

@@ -31,7 +31,7 @@ type ReservedUsernamesEnv = Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 
 type ReservedUsernamesWriteEnv = Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 
-let cacheGeneration = 0
+const cacheGeneration = 0
 const memos = new WeakMap<
 	object,
 	{
@@ -40,10 +40,6 @@ const memos = new WeakMap<
 		generation: number
 	}
 >()
-
-export function clearReservedUsernameSettingsCacheForTests() {
-	cacheGeneration += 1
-}
 
 function uniqueSorted(names: Iterable<string>) {
 	return [...new Set(names)].sort((left, right) => left.localeCompare(right))

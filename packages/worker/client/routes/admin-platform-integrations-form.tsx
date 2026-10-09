@@ -1,5 +1,6 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
+import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
 	type ActionState,
 	formatExtraAuthorizeParams,
@@ -40,6 +41,7 @@ export function renderIntegrationForm(input: {
 	onLogoFileChange: (event: Event) => void
 	onRemoveLogoChange: (checked: boolean) => void
 	onToggleEnabled: (app: AdminPlatformIntegrationApp) => void
+	onToggleVisibility: (app: AdminPlatformIntegrationApp) => void
 	onDelete: (app: AdminPlatformIntegrationApp) => void
 	onCancel: () => void
 }) {
@@ -80,6 +82,15 @@ export function renderIntegrationForm(input: {
 						Save creates or updates a platform OAuth app. Omitted write-only
 						fields retain stored values.
 					</p>
+					{isEditing && editingApp ? (
+						<p mix={css(descriptionCss)}>
+							{editingApp.visibility === 'published'
+								? editingApp.enabled
+									? 'Published: offered on onboarding, account integrations, and the connect chooser.'
+									: 'Published, but disabled: hidden and rejecting new connects until enabled.'
+								: 'Draft: hidden from discovery. Existing connections keep working.'}
+						</p>
+					) : null}
 				</div>
 				{isEditing && editingApp ? (
 					<div
@@ -103,6 +114,22 @@ export function renderIntegrationForm(input: {
 								: editingApp.enabled
 									? 'Disable'
 									: 'Enable'}
+						</button>
+						<button
+							type="button"
+							disabled={actionState !== 'idle'}
+							data-testid="platform-integration-toggle-visibility"
+							mix={[
+								on('click', () => input.onToggleVisibility(editingApp)),
+								css(secondaryButtonCss),
+							]}
+						>
+							{actionState === 'toggling-visibility' &&
+							pendingSlug === editingApp.slug
+								? 'Saving…'
+								: editingApp.visibility === 'published'
+									? 'Move to draft'
+									: 'Publish'}
 						</button>
 						<button
 							type="button"
@@ -195,18 +222,21 @@ export function renderIntegrationForm(input: {
 							mix={css(accountInputCss)}
 						/>
 					</label>
-					<label mix={css(fieldCss)}>
-						<span mix={css(fieldLabelCss)}>Client secret</span>
-						<input
+					<div mix={css(fieldCss)}>
+						<label for="admin-platform-client-secret" mix={css(fieldLabelCss)}>
+							Client secret
+						</label>
+						<PasswordRevealInput
+							id="admin-platform-client-secret"
 							data-field-ring
 							name="clientSecret"
-							type="password"
 							autoComplete="new-password"
 							placeholder="unchanged when empty"
 							disabled={actionState !== 'idle'}
+							revealNoun="client secret"
 							mix={css(accountInputCss)}
 						/>
-					</label>
+					</div>
 					<label mix={css(fieldCss)}>
 						<span mix={css(fieldLabelCss)}>Flow</span>
 						<select

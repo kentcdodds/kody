@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -37,9 +38,10 @@ function createContext(options: { emailVerifiedAt?: string | null } = {}) {
 			),
 		} as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User Example',
 			},
@@ -57,6 +59,28 @@ const inboundMessage = {
 	references: [],
 	threadId: 'thread-1',
 	inboxId: 'inbox-1',
+}
+
+function outboundMessage(overrides: Record<string, unknown>) {
+	return {
+		direction: 'outbound',
+		inboxId: 'inbox-1',
+		threadId: 'thread-1',
+		fromAddress: 'user@heykody.dev',
+		envelopeFrom: 'user@heykody.dev',
+		toAddresses: ['sender@example.com'],
+		subject: 'Re: Hello',
+		messageIdHeader: '<outbound@heykody.dev>',
+		classification: 'accepted',
+		classificationReason: null,
+		providerMessageId: null,
+		error: null,
+		receivedAt: null,
+		sentAt: null,
+		createdAt: '2026-05-13T07:30:16.000Z',
+		updatedAt: '2026-05-13T07:30:16.000Z',
+		...overrides,
+	}
 }
 
 test('emailReply gates unverified accounts, surfaces failed delivery, and forwards attachments', async () => {
@@ -77,26 +101,11 @@ test('emailReply gates unverified accounts, surfaces failed delivery, and forwar
 		status: 'failed',
 		error: 'Invalid email address: Invalid input',
 		providerMessageId: null,
-		message: {
+		message: outboundMessage({
 			id: 'outbound-1',
-			direction: 'outbound',
-			inboxId: 'inbox-1',
-			threadId: 'thread-1',
-			fromAddress: 'user@heykody.dev',
-			envelopeFrom: 'user@heykody.dev',
-			toAddresses: ['sender@example.com'],
-			subject: 'Re: Hello',
-			messageIdHeader: '<outbound@heykody.dev>',
 			processingStatus: 'failed',
-			classification: 'accepted',
-			classificationReason: null,
-			providerMessageId: null,
 			error: 'Invalid email address: Invalid input',
-			receivedAt: null,
-			sentAt: null,
-			createdAt: '2026-05-13T07:30:16.000Z',
-			updatedAt: '2026-05-13T07:30:16.000Z',
-		},
+		}),
 	})
 
 	await expect(
@@ -127,26 +136,12 @@ test('emailReply gates unverified accounts, surfaces failed delivery, and forwar
 		status: 'sent',
 		error: null,
 		providerMessageId: 'provider-1',
-		message: {
+		message: outboundMessage({
 			id: 'outbound-2',
-			direction: 'outbound',
-			inboxId: 'inbox-1',
-			threadId: 'thread-1',
-			fromAddress: 'user@heykody.dev',
-			envelopeFrom: 'user@heykody.dev',
-			toAddresses: ['sender@example.com'],
-			subject: 'Re: Hello',
-			messageIdHeader: '<outbound@heykody.dev>',
 			processingStatus: 'sent',
-			classification: 'accepted',
-			classificationReason: null,
 			providerMessageId: 'provider-1',
-			error: null,
-			receivedAt: null,
 			sentAt: '2026-05-13T07:30:16.000Z',
-			createdAt: '2026-05-13T07:30:16.000Z',
-			updatedAt: '2026-05-13T07:30:16.000Z',
-		},
+		}),
 	})
 
 	await emailReplyCapability.handler(

@@ -70,19 +70,15 @@ const defaultFilters = {
 	dir: 'desc',
 } as const
 
+type ProfileFilters = Parameters<typeof filterProfilePackages>[1]
+
 test('profile package filter hrefs omit defaults and ignore owner-only params for guests', () => {
 	expect(buildProfileHref({ username: 'kody' })).toBe('/@kody')
 	expect(
 		buildProfileHref({
+			...defaultFilters,
 			username: 'kody',
 			query: '  notes  ',
-			visibility: 'all',
-			listing: 'all',
-			hidden: 'all',
-			app: 'all',
-			package: 'all',
-			sort: 'updated',
-			dir: 'desc',
 		}),
 	).toBe('/@kody?q=notes')
 	expect(
@@ -100,12 +96,9 @@ test('profile package filter hrefs omit defaults and ignore owner-only params fo
 	).toBe(
 		'/@kody?q=notes&visibility=private&listing=unpublished&hidden=yes&app=yes&package=no&sort=name&dir=desc',
 	)
-	expect(
-		buildProfileHref({
-			username: 'kody',
-			listing: 'ahead',
-		}),
-	).toBe('/@kody?listing=ahead')
+	expect(buildProfileHref({ username: 'kody', listing: 'ahead' })).toBe(
+		'/@kody?listing=ahead',
+	)
 	expect(
 		buildProfileHref({
 			username: 'kody',
@@ -129,375 +122,134 @@ test('profile package filter hrefs omit defaults and ignore owner-only params fo
 		sort: 'name',
 		dir: 'desc',
 	})
+	// Guest reads: owner-only params drop; sort picks its own default dir.
+	const guestReads: Array<[string, Partial<ProfileFilters>]> = [
+		['/@kody?visibility=private&listing=ahead&hidden=yes', {}],
+		['/@kody?listing=published', { listing: 'published' }],
+		['/@kody?app=yes', { app: 'yes' }],
+		['/@kody?package=no', { package: 'no' }],
+		['/@kody?sort=name', { sort: 'name', dir: 'asc' }],
+		['/@kody?sort=created', { sort: 'created', dir: 'desc' }],
+		['/@kody?sort=updated&dir=asc', { sort: 'updated', dir: 'asc' }],
+		['/@kody?sort=bogus', {}],
+	]
 	expect(
-		readProfilePackageFiltersFromHref(
-			'/@kody?visibility=private&listing=ahead&hidden=yes',
-		),
-	).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'all',
-		sort: 'updated',
-		dir: 'desc',
-	})
-	expect(readProfilePackageFiltersFromHref('/@kody?listing=published')).toEqual(
-		{
-			query: '',
-			visibility: 'all',
-			listing: 'published',
-			hidden: 'all',
-			app: 'all',
-			package: 'all',
-			sort: 'updated',
-			dir: 'desc',
-		},
+		guestReads.map(([href]) => [href, readProfilePackageFiltersFromHref(href)]),
+	).toEqual(
+		guestReads.map(([href, overrides]) => [
+			href,
+			{ ...defaultFilters, ...overrides },
+		]),
 	)
-	expect(readProfilePackageFiltersFromHref('/@kody?app=yes')).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'yes',
-		package: 'all',
-		sort: 'updated',
-		dir: 'desc',
-	})
-	expect(readProfilePackageFiltersFromHref('/@kody?package=no')).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'no',
-		sort: 'updated',
-		dir: 'desc',
-	})
-	expect(readProfilePackageFiltersFromHref('/@kody?sort=name')).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'all',
-		sort: 'name',
-		dir: 'asc',
-	})
-	expect(readProfilePackageFiltersFromHref('/@kody?sort=created')).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'all',
-		sort: 'created',
-		dir: 'desc',
-	})
-	expect(
-		readProfilePackageFiltersFromHref('/@kody?sort=updated&dir=asc'),
-	).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'all',
-		sort: 'updated',
-		dir: 'asc',
-	})
-	expect(readProfilePackageFiltersFromHref('/@kody?sort=bogus')).toEqual({
-		query: '',
-		visibility: 'all',
-		listing: 'all',
-		hidden: 'all',
-		app: 'all',
-		package: 'all',
-		sort: 'updated',
-		dir: 'desc',
-	})
 	expect(readProfileSearchQueryFromHref('/@kody?q=obsidian')).toBe('obsidian')
+
+	const activeFilters: Array<[Partial<ProfileFilters>, boolean]> = [
+		[{ query: 'notes' }, false],
+		[{ sort: 'name' }, false],
+		[{ visibility: 'private' }, true],
+		[{ app: 'yes' }, true],
+		[{ package: 'no' }, true],
+	]
 	expect(
-		profilePackageFiltersAreActive({
-			query: 'notes',
-			...defaultFilters,
-		}),
-	).toBe(false)
+		activeFilters.filter(
+			([overrides, want]) =>
+				profilePackageFiltersAreActive({ ...defaultFilters, ...overrides }) !==
+				want,
+		),
+	).toEqual([])
+	const activeSorts = [
+		['updated', 'desc', false],
+		['name', 'asc', true],
+		['updated', 'asc', true],
+		['created', 'desc', true],
+	] as const
 	expect(
-		profilePackageFiltersAreActive({
-			...defaultFilters,
-			visibility: 'private',
-		}),
-	).toBe(true)
-	expect(
-		profilePackageFiltersAreActive({
-			...defaultFilters,
-			app: 'yes',
-		}),
-	).toBe(true)
-	expect(
-		profilePackageFiltersAreActive({ ...defaultFilters, sort: 'name' }),
-	).toBe(false)
-	expect(profilePackageSortIsActive({ sort: 'updated', dir: 'desc' })).toBe(
-		false,
-	)
-	expect(profilePackageSortIsActive({ sort: 'name', dir: 'asc' })).toBe(true)
-	expect(profilePackageSortIsActive({ sort: 'updated', dir: 'asc' })).toBe(true)
-	expect(profilePackageSortIsActive({ sort: 'created', dir: 'desc' })).toBe(
-		true,
-	)
-	expect(
-		profilePackageFiltersAreActive({
-			...defaultFilters,
-			package: 'no',
-		}),
-	).toBe(true)
+		activeSorts.filter(
+			([sort, dir, want]) => profilePackageSortIsActive({ sort, dir }) !== want,
+		),
+	).toEqual([])
 })
 
 test('chip and search profile href changes skip the loader', () => {
+	const cases: Array<[string, string, boolean]> = [
+		['/@kody', '/@kody?visibility=private', true],
+		['/@kody?q=notes', '/@kody?q=notes&listing=published&app=yes', true],
+		['/@kody?visibility=private', '/@kody?listing=unpublished', true],
+		['/@kody', '/@kody?sort=name', true],
+		['/@kody', '/@kody?package=no', true],
+		['/@kody', '/@kody?dir=asc', true],
+		['/@kody', '/@kody?q=notes', true],
+		['/@kody?q=notes', '/@kody?q=obsidian&visibility=private', true],
+		['/@kody?q=notes', '/@kody?q=notes&limit=10', false],
+		['/@kody?limit=10', '/@kody?q=notes&limit=10', false],
+		['/@kody', '/@other?visibility=private', false],
+		['/community', '/community?visibility=private', false],
+		['/@kody', '/@kody', false],
+	]
 	expect(
-		isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody?visibility=private'),
-	).toBe(true)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody?q=notes',
-			'/@kody?q=notes&listing=published&app=yes',
+		cases.filter(
+			([from, to, want]) =>
+				isProfilePackageFilterOnlyHrefChange(from, to) !== want,
 		),
-	).toBe(true)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody?visibility=private',
-			'/@kody?listing=unpublished',
-		),
-	).toBe(true)
-	expect(
-		isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody?sort=name'),
-	).toBe(true)
-	expect(
-		isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody?package=no'),
-	).toBe(true)
-	expect(isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody?dir=asc')).toBe(
-		true,
-	)
-	expect(isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody?q=notes')).toBe(
-		true,
-	)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody?q=notes',
-			'/@kody?q=obsidian&visibility=private',
-		),
-	).toBe(true)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody?q=notes',
-			'/@kody?q=notes&limit=10',
-		),
-	).toBe(false)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody?limit=10',
-			'/@kody?q=notes&limit=10',
-		),
-	).toBe(false)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/@kody',
-			'/@other?visibility=private',
-		),
-	).toBe(false)
-	expect(
-		isProfilePackageFilterOnlyHrefChange(
-			'/community',
-			'/community?visibility=private',
-		),
-	).toBe(false)
-	expect(isProfilePackageFilterOnlyHrefChange('/@kody', '/@kody')).toBe(false)
+	).toEqual([])
 })
 
-test('profile package chips filter the already-loaded list', () => {
+test('profile package chips, search, and sort filter the already-loaded list', () => {
 	const packages = [listedApp, privateNoApp]
-	expect(filterProfilePackages(packages, defaultFilters)).toEqual(packages)
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			visibility: 'private',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			listing: 'published',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			listing: 'ahead',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			hidden: 'yes',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			app: 'yes',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			app: 'no',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			package: 'yes',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			package: 'no',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			listing: 'unpublished',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
 	const inventory = [listedApp, privateNoApp, privateListed]
-	expect(
-		filterProfilePackages(inventory, {
-			...defaultFilters,
-			listing: 'unpublished',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(inventory, {
-			...defaultFilters,
-			listing: 'published',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app', 'secret-app'])
-})
-
-test('profile search filters the already-loaded list by name, description, tags, and kody id', () => {
-	const packages = [listedApp, privateNoApp]
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'notes',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'NOTES UI',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'secret',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'private helper',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'notes',
-			visibility: 'private',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual([])
-	expect(
-		filterProfilePackages([listedApp, privateNoApp, privateListed], {
-			...defaultFilters,
-			query: 'secret',
-			visibility: 'private',
-			listing: 'unpublished',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'zzzz-no-match',
-		}),
-	).toEqual([])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: 'notes helper',
-		}),
-	).toEqual([])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			query: '   ',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app', 'secret'])
-})
-
-test('profile package sort reorders the already-loaded list without changing default order', () => {
-	const packages = [listedApp, privateNoApp]
-	expect(
-		filterProfilePackages(packages, defaultFilters).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app', 'secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			sort: 'name',
-			dir: 'asc',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret', 'notes-app'])
-	expect(
-		filterProfilePackages([privateNoApp, listedApp], {
-			...defaultFilters,
-			sort: 'name',
-			dir: 'asc',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret', 'notes-app'])
-	expect(
-		filterProfilePackages([privateNoApp, listedApp], defaultFilters).map(
+	const ids = (
+		list: Array<PublicProfilePackageItem>,
+		overrides: Partial<ProfileFilters>,
+	) =>
+		filterProfilePackages(list, { ...defaultFilters, ...overrides }).map(
 			(pkg) => pkg.kodyId,
-		),
-	).toEqual(['notes-app', 'secret'])
+		)
+	expect(filterProfilePackages(packages, defaultFilters)).toEqual(packages)
+
+	const cases: Array<
+		[Array<PublicProfilePackageItem>, Partial<ProfileFilters>, Array<string>]
+	> = [
+		// Chips.
+		[packages, { visibility: 'private' }, ['secret']],
+		[packages, { listing: 'published' }, ['notes-app']],
+		[packages, { listing: 'ahead' }, ['notes-app']],
+		[packages, { hidden: 'yes' }, ['secret']],
+		[packages, { app: 'yes' }, ['notes-app']],
+		[packages, { app: 'no' }, ['secret']],
+		[packages, { package: 'yes' }, ['notes-app']],
+		[packages, { package: 'no' }, ['secret']],
+		[packages, { listing: 'unpublished' }, ['secret']],
+		[inventory, { listing: 'unpublished' }, ['secret']],
+		[inventory, { listing: 'published' }, ['notes-app', 'secret-app']],
+		// Search by name, description, tags, and kody id.
+		[packages, { query: 'notes' }, ['notes-app']],
+		[packages, { query: 'NOTES UI' }, ['notes-app']],
+		[packages, { query: 'secret' }, ['secret']],
+		[packages, { query: 'private helper' }, ['secret']],
+		[packages, { query: 'notes', visibility: 'private' }, []],
+		[
+			inventory,
+			{ query: 'secret', visibility: 'private', listing: 'unpublished' },
+			['secret'],
+		],
+		[packages, { query: 'zzzz-no-match' }, []],
+		[packages, { query: 'notes helper' }, []],
+		[packages, { query: '   ' }, ['notes-app', 'secret']],
+		// Sort without changing the default order.
+		[packages, {}, ['notes-app', 'secret']],
+		[[privateNoApp, listedApp], {}, ['notes-app', 'secret']],
+		[packages, { sort: 'name', dir: 'asc' }, ['secret', 'notes-app']],
+		[
+			[privateNoApp, listedApp],
+			{ sort: 'name', dir: 'asc' },
+			['secret', 'notes-app'],
+		],
+		[packages, { sort: 'name', dir: 'desc' }, ['notes-app', 'secret']],
+		[packages, { sort: 'created' }, ['notes-app', 'secret']],
+		[packages, { sort: 'created', dir: 'asc' }, ['secret', 'notes-app']],
+		[packages, { sort: 'updated', dir: 'asc' }, ['secret', 'notes-app']],
+	]
 	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			sort: 'created',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app', 'secret'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			sort: 'created',
-			dir: 'asc',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret', 'notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			sort: 'updated',
-			dir: 'asc',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['secret', 'notes-app'])
-	expect(
-		filterProfilePackages(packages, {
-			...defaultFilters,
-			sort: 'name',
-			dir: 'desc',
-		}).map((pkg) => pkg.kodyId),
-	).toEqual(['notes-app', 'secret'])
+		cases.map(([list, overrides]) => [overrides, ids(list, overrides)]),
+	).toEqual(cases.map(([, overrides, want]) => [overrides, want]))
 })

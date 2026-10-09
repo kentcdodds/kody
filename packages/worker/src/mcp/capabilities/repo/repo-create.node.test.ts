@@ -1,9 +1,10 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
 	ensureEntitySource: vi.fn(),
@@ -33,7 +34,29 @@ function createDatabase(
 				bind(...params: Array<unknown>) {
 					return {
 						async first<T>() {
-							if (query.includes('SELECT plan, stripe_plan')) {
+							if (query.includes('SELECT 1 AS present FROM users')) {
+								const email = params[0]
+								const stableUserId = params[1]
+								const user = tables
+									.get('users')
+									?.find(
+										(row) =>
+											row['email'] === email &&
+											row['stable_user_id'] === stableUserId,
+									)
+								return user ? ({ present: 1 } as T) : null
+							}
+							if (
+								query.includes('FROM orgs') &&
+								(query.includes('SELECT plan, stripe_plan') ||
+									query.includes('entitlement_ladder'))
+							) {
+								return null
+							}
+							if (
+								query.includes('SELECT plan, stripe_plan') ||
+								query.includes('entitlement_ladder')
+							) {
 								const email = params[0]
 								const stableUserId = params[1]
 								const user = tables
@@ -102,7 +125,7 @@ function createDatabase(
 }
 
 const userEmail = 'repo-create@test.invalid'
-const stableUserId = createStableUserIdFromEmail(userEmail)
+const stableUserId = testStableUserIdFromEmail(userEmail)
 
 test('repoCreate creates within entitlement, rejects duplicates, and gates side effects at the repos ceiling', async () => {
 	mockModule.ensureEntitySource.mockResolvedValue({
@@ -115,7 +138,12 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ctx = {
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail },
+			source: { kind: 'mcp-oauth' },
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: userEmail,
+				displayName: 'User',
+			},
 			baseUrl: 'https://kody.test',
 		}),
 	}
@@ -150,7 +178,12 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ceilingCtx = {
 		env: { APP_DB: atCeiling } as Env,
 		callerContext: createMcpCallerContext({
-			user: { userId: stableUserId, email: userEmail },
+			source: { kind: 'mcp-oauth' },
+			user: {
+				userId: personIdFromStored(stableUserId),
+				email: userEmail,
+				displayName: 'User',
+			},
 			baseUrl: 'https://kody.test',
 		}),
 	}

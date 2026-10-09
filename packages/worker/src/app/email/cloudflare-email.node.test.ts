@@ -6,17 +6,38 @@ import { startCloudflareMock } from '#worker/test-support/cloudflare-mock-server
 import { sendCloudflareEmail } from './cloudflare-email.ts'
 
 const mockAccountId = 'cf_account_mock_123'
+const testApiConfig = {
+	accountId: mockAccountId,
+	apiBaseUrl: 'https://api.cloudflare.test',
+	apiToken: 'test-token',
+}
+
+type EmailMessage = Parameters<typeof sendCloudflareEmail>[1]
+
+function message(
+	subject: string,
+	overrides: Partial<EmailMessage> = {},
+): EmailMessage {
+	return {
+		to: 'recipient@example.com',
+		from: 'reset@kody.dev',
+		subject,
+		html: '<p>body</p>',
+		text: undefined,
+		...overrides,
+	}
+}
 
 test('sendCloudflareEmail delivers through the mock API and handles configuration and transport failures', async () => {
 	const token = 'cloudflare-email-mock-token'
 	await using mock = await startCloudflareMock(token)
-	const clearResponse = await fetch(
-		`${mock.origin}/__mocks/clear?token=${token}`,
-		{
-			method: 'POST',
-		},
-	)
-	expect(clearResponse.status).toBe(200)
+	expect(
+		(
+			await fetch(`${mock.origin}/__mocks/clear?token=${token}`, {
+				method: 'POST',
+			})
+		).status,
+	).toBe(200)
 
 	const sendResult = await sendCloudflareEmail(
 		{
@@ -24,19 +45,15 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 			apiBaseUrl: mock.origin,
 			apiToken: mock.token,
 		},
-		{
-			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
-			subject: 'Reset your kody password',
+		message('Reset your kody password', {
 			html: '<p>Reset link</p>',
 			text: 'Reset link',
-		},
+		}),
 	)
-
 	expect(sendResult).toMatchObject({
 		ok: true,
+		messageId: expect.stringMatching(/^email_/),
 	})
-	expect(sendResult.messageId).toMatch(/^email_/)
 
 	const response = await fetch(`${mock.origin}/__mocks/messages?token=${token}`)
 	expect(response.status).toBe(200)
@@ -55,7 +72,7 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		text: 'Reset link',
 	})
 
-	const defaultBaseUrlRequests: Array<Request> = []
+	const defaultBaseUrlRequests: Array<{ url: string }> = []
 	using _defaultBaseUrlServer = createMswNodeServer(
 		[
 			http.post(
@@ -73,41 +90,27 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 				},
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
-	const defaultBaseUrlResult = await sendCloudflareEmail(
-		{
-			accountId: mockAccountId,
-			apiToken: 'test-token',
-		},
-		{
-			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
-			subject: 'Default base URL',
-			html: '<p>body</p>',
-			text: 'body',
-		},
-	)
-	expect(defaultBaseUrlResult).toMatchObject({ ok: true })
-	expect(defaultBaseUrlRequests).toHaveLength(1)
-	expect(defaultBaseUrlRequests[0]?.url).toBe(
+	expect(
+		await sendCloudflareEmail(
+			{ accountId: mockAccountId, apiToken: 'test-token' },
+			message('Default base URL', { text: 'body' }),
+		),
+	).toMatchObject({ ok: true })
+	expect(defaultBaseUrlRequests.map((request) => request.url)).toEqual([
 		`https://api.cloudflare.com/client/v4/accounts/${mockAccountId}/email/sending/send`,
-	)
+	])
 
-	const skippedResult = await sendCloudflareEmail(
-		{},
-		{
-			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
-			subject: 'Skipped email',
-			html: '<p>secret body</p>',
-			text: 'secret text',
-		},
-	)
-	expect(skippedResult).toEqual({
-		ok: false,
-		skipped: true,
-	})
+	expect(
+		await sendCloudflareEmail(
+			{},
+			message('Skipped email', {
+				html: '<p>secret body</p>',
+				text: 'secret text',
+			}),
+		),
+	).toEqual({ ok: false, skipped: true })
 	expect(consoleInfo).toHaveBeenCalledTimes(1)
 	const [skipReason, skipPayload] = consoleInfo.mock.calls[0]!
 	expect(skipReason).toBe('cloudflare-email-unconfigured')
@@ -122,25 +125,11 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	consoleWarn.mockImplementation(() => {})
 	using _networkFailureServer = createMswNodeServer(
 		[http.post('https://api.cloudflare.test/*', () => HttpResponse.error())],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
-	const networkFailure = await sendCloudflareEmail(
-		{
-			accountId: mockAccountId,
-			apiBaseUrl: 'https://api.cloudflare.test',
-			apiToken: 'test-token',
-		},
-		{
-			to: 'recipient@example.com',
-			from: 'reset@kody.dev',
-			subject: 'Request failure',
-			html: '<p>body</p>',
-		},
-	)
-	expect(networkFailure).toEqual({
-		ok: false,
-		error: 'Failed to fetch',
-	})
+	expect(
+		await sendCloudflareEmail(testApiConfig, message('Request failure')),
+	).toEqual({ ok: false, error: 'fetch failed' })
 	// Exactly the one expected warning; anything else the mock swallowed
 	// would be a regression hidden by the opt-in above.
 	expect(consoleWarn).toHaveBeenCalledTimes(1)
@@ -157,22 +146,10 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 				}),
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
 	await expect(
-		sendCloudflareEmail(
-			{
-				accountId: mockAccountId,
-				apiBaseUrl: 'https://api.cloudflare.test',
-				apiToken: 'test-token',
-			},
-			{
-				to: 'recipient@example.com',
-				from: 'reset@kody.dev',
-				subject: 'Invalid JSON',
-				html: '<p>body</p>',
-			},
-		),
+		sendCloudflareEmail(testApiConfig, message('Invalid JSON')),
 	).rejects.toThrow('not valid JSON')
 	// The parse failure throws before any operator warning, so the silenced
 	// consoleWarn must not have picked up anything new.
@@ -195,59 +172,36 @@ test('sendCloudflareEmail defaults Reply-To to support@ when From is kody@ unles
 				},
 			),
 		],
-		{ onUnhandledRequest: 'bypass' },
+		{ onUnhandledFrame: 'bypass' },
 	)
-	const config = {
-		accountId: mockAccountId,
-		apiBaseUrl: 'https://api.cloudflare.test',
-		apiToken: 'test-token',
+	const sends = [
+		['kody@kody.codes', 'Verify your email', undefined],
+		['kody@kody.codes', 'Operator override', 'abuse@kody.codes'],
+		['support@kody.codes', 'Support sender', undefined],
+		['alice@inbox.kody.codes', 'User mail', undefined],
+	] as const
+	for (const [from, subject, replyTo] of sends) {
+		await sendCloudflareEmail(testApiConfig, {
+			to: 'user@example.com',
+			from,
+			subject,
+			html: `<p>${subject}</p>`,
+			text: subject,
+			...(replyTo ? { replyTo } : {}),
+		})
 	}
 
-	await sendCloudflareEmail(config, {
-		to: 'user@example.com',
-		from: 'kody@kody.codes',
-		subject: 'Verify your email',
-		html: '<p>Verify</p>',
-		text: 'Verify',
-	})
-	await sendCloudflareEmail(config, {
-		to: 'user@example.com',
-		from: 'kody@kody.codes',
-		subject: 'Operator override',
-		html: '<p>Override</p>',
-		text: 'Override',
-		replyTo: 'abuse@kody.codes',
-	})
-	await sendCloudflareEmail(config, {
-		to: 'user@example.com',
-		from: 'support@kody.codes',
-		subject: 'Support sender',
-		html: '<p>Support</p>',
-		text: 'Support',
-	})
-	await sendCloudflareEmail(config, {
-		to: 'me@example.com',
-		from: 'alice@inbox.kody.codes',
-		subject: 'User mail',
-		html: '<p>User</p>',
-		text: 'User',
-	})
-
-	expect(payloads).toHaveLength(4)
-	expect(payloads[0]).toMatchObject({
-		from: 'kody@kody.codes',
-		reply_to: 'support@kody.codes',
-	})
-	expect(payloads[0]).not.toHaveProperty('replyTo')
-	expect(payloads[1]).toMatchObject({
-		from: 'kody@kody.codes',
-		reply_to: 'abuse@kody.codes',
-	})
-	expect(payloads[1]).not.toHaveProperty('replyTo')
-	expect(payloads[2]).toMatchObject({ from: 'support@kody.codes' })
-	expect(payloads[2]).not.toHaveProperty('replyTo')
-	expect(payloads[2]).not.toHaveProperty('reply_to')
-	expect(payloads[3]).toMatchObject({ from: 'alice@inbox.kody.codes' })
-	expect(payloads[3]).not.toHaveProperty('replyTo')
-	expect(payloads[3]).not.toHaveProperty('reply_to')
+	expect(
+		payloads.map((payload) => [
+			payload.from,
+			payload.reply_to,
+			Object.hasOwn(payload, 'reply_to'),
+			Object.hasOwn(payload, 'replyTo'),
+		]),
+	).toEqual([
+		['kody@kody.codes', 'support@kody.codes', true, false],
+		['kody@kody.codes', 'abuse@kody.codes', true, false],
+		['support@kody.codes', undefined, false, false],
+		['alice@inbox.kody.codes', undefined, false, false],
+	])
 })

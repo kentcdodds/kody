@@ -32,26 +32,16 @@ test('decision record helpers reject duplicates, orphan labs, and heading mismat
 	expect(classifyDecisionRecordFilename('0000-template.md')).toBeNull()
 	expect(classifyDecisionRecordFilename('index.md')).toBeNull()
 
+	const record = (filename: string) => {
+		const classified = classifyDecisionRecordFilename(filename)
+		if (!classified) throw new Error(`fixture ${filename} is not a record`)
+		return classified
+	}
 	expect(
 		findDuplicatePrimaryPrefixes([
-			{
-				filename: '0022-retire-values-primitive.md',
-				prefix: '0022',
-				slug: 'retire-values-primitive',
-				kind: 'primary',
-			},
-			{
-				filename: '0022-progressive-search-disclosure.md',
-				prefix: '0022',
-				slug: 'progressive-search-disclosure',
-				kind: 'primary',
-			},
-			{
-				filename: '0033-memory-auto-surface-lab.md',
-				prefix: '0033',
-				slug: 'memory-auto-surface-lab',
-				kind: 'lab',
-			},
+			record('0022-retire-values-primitive.md'),
+			record('0022-progressive-search-disclosure.md'),
+			record('0033-memory-auto-surface-lab.md'),
 		]),
 	).toEqual([
 		expect.stringContaining(
@@ -59,14 +49,7 @@ test('decision record helpers reject duplicates, orphan labs, and heading mismat
 		),
 	])
 	expect(
-		findOrphanLabCompanions([
-			{
-				filename: '0033-memory-auto-surface-lab.md',
-				prefix: '0033',
-				slug: 'memory-auto-surface-lab',
-				kind: 'lab',
-			},
-		]),
+		findOrphanLabCompanions([record('0033-memory-auto-surface-lab.md')]),
 	).toEqual([
 		'Lab companion 0033-memory-auto-surface-lab.md has no primary 0033-*.md record.',
 	])
@@ -139,69 +122,48 @@ test('decision record helpers reject duplicates, orphan labs, and heading mismat
 	])
 })
 
+async function decisionsTree(files: Record<string, string>) {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), 'decision-record-numbers-'))
+	const dir = path.join(cwd, 'docs', 'contributing', 'decisions')
+	await mkdir(dir, { recursive: true })
+	for (const [filename, content] of Object.entries(files)) {
+		await writeFile(path.join(dir, filename), content)
+	}
+	return {
+		cwd,
+		[Symbol.asyncDispose]: () => rm(cwd, { recursive: true, force: true }),
+	}
+}
+
 test('checkDecisionRecordNumbers accepts unique primaries and reports colliding primaries', async () => {
-	const okCwd = await mkdtemp(
-		path.join(os.tmpdir(), 'decision-record-numbers-'),
-	)
-	const okDir = path.join(okCwd, 'docs', 'contributing', 'decisions')
-	try {
-		await mkdir(okDir, { recursive: true })
-		await Promise.all([
-			writeFile(
-				path.join(okDir, '0000-template.md'),
-				'# NNNN: Short decision title\n',
-			),
-			writeFile(
-				path.join(okDir, '0022-retire-values-primitive.md'),
+	{
+		await using tree = await decisionsTree({
+			'0000-template.md': '# NNNN: Short decision title\n',
+			'0022-retire-values-primitive.md':
 				'# 0022: Retire the values primitive\n',
-			),
-			writeFile(
-				path.join(okDir, '0033-no-user-as-conversation.md'),
-				'# 0033: No user-as-conversation\n',
-			),
-			writeFile(
-				path.join(okDir, '0033-memory-auto-surface-lab.md'),
-				'# 0033 lab: memory auto-surface\n',
-			),
-			writeFile(
-				path.join(okDir, 'index.md'),
-				[
-					'- [0022 — Retire values](./0022-retire-values-primitive.md)',
-					'- [0033 — No user-as-conversation](./0033-no-user-as-conversation.md)',
-					'  ([lab](./0033-memory-auto-surface-lab.md))',
-					'',
-				].join('\n'),
-			),
-		])
-		await expect(checkDecisionRecordNumbers(okCwd)).resolves.toEqual({
+			'0033-no-user-as-conversation.md': '# 0033: No user-as-conversation\n',
+			'0033-memory-auto-surface-lab.md': '# 0033 lab: memory auto-surface\n',
+			'index.md': [
+				'- [0022 — Retire values](./0022-retire-values-primitive.md)',
+				'- [0033 — No user-as-conversation](./0033-no-user-as-conversation.md)',
+				'  ([lab](./0033-memory-auto-surface-lab.md))',
+				'',
+			].join('\n'),
+		})
+		await expect(checkDecisionRecordNumbers(tree.cwd)).resolves.toEqual({
 			ok: true,
 			errors: [],
 		})
-	} finally {
-		await rm(okCwd, { recursive: true, force: true })
 	}
 
-	const dupCwd = await mkdtemp(path.join(os.tmpdir(), 'decision-record-dup-'))
-	const dupDir = path.join(dupCwd, 'docs', 'contributing', 'decisions')
-	try {
-		await mkdir(dupDir, { recursive: true })
-		await Promise.all([
-			writeFile(
-				path.join(dupDir, '0022-retire-values-primitive.md'),
-				'# 0022: Retire the values primitive\n',
-			),
-			writeFile(
-				path.join(dupDir, '0022-progressive-search-disclosure.md'),
-				'# 0022: Progressive search disclosure\n',
-			),
-			writeFile(path.join(dupDir, 'index.md'), '- list\n'),
-		])
-		const result = await checkDecisionRecordNumbers(dupCwd)
-		expect(result.ok).toBe(false)
-		expect(result.errors).toEqual([
-			expect.stringContaining('Duplicate decision number 0022'),
-		])
-	} finally {
-		await rm(dupCwd, { recursive: true, force: true })
-	}
+	await using duplicates = await decisionsTree({
+		'0022-retire-values-primitive.md': '# 0022: Retire the values primitive\n',
+		'0022-progressive-search-disclosure.md':
+			'# 0022: Progressive search disclosure\n',
+		'index.md': '- list\n',
+	})
+	await expect(checkDecisionRecordNumbers(duplicates.cwd)).resolves.toEqual({
+		ok: false,
+		errors: [expect.stringContaining('Duplicate decision number 0022')],
+	})
 })

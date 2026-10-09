@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { honeypotFieldName } from '#universal/public-form-protection.ts'
 

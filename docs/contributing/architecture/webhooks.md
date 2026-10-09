@@ -6,13 +6,11 @@ bound saved-package export. End-user setup lives in
 
 ## Why this exists
 
-Package-invocation HTTP endpoints require `Authorization: Bearer`. Many webhook
-providers cannot set custom Authorization headers. Webhook endpoints are the
-external HTTP knock: credential-in-URL sibling of per-user
+Many webhook providers cannot set custom Authorization headers. Webhook
+endpoints are the external HTTP knock: credential-in-URL sibling of per-user
 [email](../../use/email-primitives.md) inboxes, declared alongside other package
 surfaces in `package.json#kody.webhooks` (same family as `kody.subscriptions`).
-First-party trusted clients use the same path (URL secret, no Bearer).
-Invocation tokens are an unadvertised drain; see
+First-party trusted clients use the same path (URL secret, no Bearer). See
 [0048](../decisions/0048-webhooks-replace-invocation-tokens.md).
 
 ## Manifest contract
@@ -21,11 +19,24 @@ Packages declare webhooks as an array under `kody.webhooks`. Each entry has a
 slug `name`, an `export` that must exist in `package.json#exports` (one name ↔
 one export; no `*`), optional `responseMode` (`ack` default / `sync`), optional
 `inputMode` (`request` default / `params`), optional `rateLimitPerMinute`
-(default 60, max 600), optional HMAC `verification` that references a
-secret-store name (`secretName`) — never an inline secret — and optional
-`replay` for timestamp windows and delivery-id dedupe. Parsing and export
-existence checks live in `parseAuthoredPackageJson` / `listPackageWebhooks`
-(`packages/worker/src/package-registry/`).
+(default 60, max 600), optional HMAC `verification` (algorithm / header /
+encoding; optional `secretName` only for provider-issued secrets in the secret
+store — omit `secretName` for package-owned HMAC minted onto the webhook URL
+record), optional `challenge` for platform-handled ownership quizzes on the same
+minted URL, and optional `replay` for timestamp windows and delivery-id dedupe.
+Parsing and export existence checks live in `parseAuthoredPackageJson` /
+`listPackageWebhooks` (`packages/worker/src/package-registry/`).
+
+`challenge` is answered entirely by the ingress worker
+(`packages/worker/src/webhooks/challenge.ts`). The only supported type is
+`subscription-challenge` with knobs for method, where the token arrives, how the
+subscriber proves itself, and how success is echoed. Do not add vendor-named
+type ids ([0054](../decisions/0054-no-vendor-specific-platform-logic.md));
+configure providers with documented presets under the generic type. Challenge
+requests never call `invokePackageExport`, never write delivery/run history, and
+never perform outbound fetch or MCP. They may resolve a named secret for HMAC or
+verify-token compare. After the quiz succeeds, later provider POSTs still use
+the normal URL-secret + optional HMAC path.
 
 HMAC `verification` signs the raw body by default (`signedPayload` omitted or
 `'body'`). Set `signedPayload` to `'timestamp.body'` when the provider HMAC
@@ -52,9 +63,11 @@ is rotated.
 
 `inputMode: "params"` is the first-party trusted-client contract. The bound
 export's first argument is the parsed JSON object. When that object is the
-invoke-token envelope (`params` plus optional `idempotencyKey`, `source`, and
-`topic`), the platform unwraps `params`. An application payload that happens to
-include a nested `params` object next to other keys stays intact.
+invoke envelope (`params` plus optional `idempotencyKey`, `source`, and
+`topic`), the platform unwraps `params`. `idempotencyKey` counts only as a
+non-empty string, and `source` / `topic` only as a string or null. An
+application payload that includes a nested `params` object next to other keys
+(`route`, `dryRun`, or a reserved key with a non-metadata value) stays intact.
 `Idempotency-Key` (or JSON `idempotencyKey` in params mode) maps to the same
 package-invocation ledger with payload hashing (`include`): same key + same
 first argument replays. On `sync`, mismatch and in-progress are **409**. `ack`
@@ -71,11 +84,12 @@ Declaring a webhook does **not** open ingress. A minted URL secret in D1 does.
 
 ## Ingress path
 
-Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
+Route: `GET|POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
 
 1. Worker `fetch` in `packages/worker/src/index.ts` matches the path early. The
-   path is also registered in `routes.ts` / `router.ts`, and `/@*/webhooks/*` is
-   in `run_worker_first` for all Wrangler environments.
+   path is also registered in `routes.ts` / `router.ts` (POST action), and
+   `/@*/webhooks/*` is in `run_worker_first` for all Wrangler environments. GET
+   challenges are handled by the early Worker path (not the Remix POST action).
 2. Resolve username → user; resolve `packageKodyId` to a saved package owned by
    that user; load minted row keyed by `(user_id, package_id, webhook_name)`.
 3. Unminted, disabled, missing declaration (after republish rename/remove), or
@@ -86,24 +100,30 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    during rotate overlap, the previous hash. The previous URL stays active for
    24 hours or until the first POST on the new URL that is accepted for dispatch
    (ack enqueue or sync invoke), whichever comes first. HMAC, rate limit,
-   payload, and declaration rejects do not retire the previous URL. An expired
-   previous hash is treated as unknown.
+   payload, declaration rejects, and challenge quizzes do not retire the
+   previous URL. An expired previous hash is treated as unknown.
 5. After a matching URL secret, enforce per-webhook rate limit (declared
    `rateLimitPerMinute` when the name is still live, otherwise the default 60,
    max 600) → **429** (no delivery history on the limited path). Missing
    declaration after republish rename/remove still **404**s and records a
-   rejected delivery, but only after that limit. Payload cap 1 MB → **413**.
-6. When verification is declared, resolve `secretName` from the owner's secret
-   store (user/package scope via package storage context). Missing secret or
-   HMAC mismatch → **401**, with a clear delivery-log error for missing secrets.
-   When `replay.timestampHeader` is declared, a missing, unparseable, or stale
-   timestamp is rejected with the same generic **401** before dispatch (and
-   before any run record that implies acceptance). When
-   `replay.deliveryIdHeader` is declared, a missing id is rejected the same way;
-   present ids become the invocation idempotency key.
-7. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
+   rejected delivery, but only after that limit.
+6. When `challenge` is declared and the request matches that quiz (GET for CRC /
+   hub types; Slack `url_verification` POST), answer via
+   `handleWebhookSubscriptionChallenge` and return — no package invoke, no
+   delivery row. Non-matching POSTs continue. GET without a matching challenge
+   declaration → **405**.
+7. Payload cap 1 MB → **413**. When verification is declared, resolve
+   package-owned HMAC from `webhook_endpoints.hmac_secret_encrypted`, or
+   `verification.secretName` in the secret store (user/package scope via package
+   storage context). Missing secret or HMAC mismatch → **401**, with a clear
+   delivery-log error for missing secrets. When `replay.timestampHeader` is
+   declared, a missing, unparseable, or stale timestamp is rejected with the
+   same generic **401** before dispatch (and before any run record that implies
+   acceptance). When `replay.deliveryIdHeader` is declared, a missing id is
+   rejected the same way; present ids become the invocation idempotency key.
+8. Dispatch via `invokePackageExport` with a synthetic internal token scoped to
    the owning user / package / export, `source: 'webhook'`.
-8. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
+9. `ack`: await enqueue to `kody-webhook-dispatch`, then return **202**. The
    queue consumer owns the full invocation and its terminal writes, so work is
    not tied to the post-response `waitUntil` window. A failed enqueue returns
    **503** so the provider can retry. Queue messages omit reconstructed
@@ -112,10 +132,18 @@ Route: `POST /@:username/webhooks/:packageKodyId/:webhookName/:urlSecret`
    `webhook-dispatch-payload:v1:{userId}:{deliveryId}` when the serialized
    message would exceed a conservative 120 KB ceiling beneath Cloudflare Queues'
    128 KB limit. `sync`: await (30s) and return export JSON, **502** on failure.
-9. Authenticated deliveries (and post-auth rejects such as HMAC / size / missing
-   declaration) record a `webhook` surface run record (no payload body). See
-   [Run records](./run-records.md). URL-secret mismatches and pre-auth rate
-   limits still write no delivery history.
+10. Authenticated deliveries (and post-auth rejects such as HMAC / size /
+    missing declaration) record a `webhook` surface run record (no payload
+    body). See [Run records](./run-records.md). URL-secret mismatches, pre-auth
+    rate limits, and subscription challenges still write no delivery history.
+    Ack delivery `startedAt` is the queue-consumer dispatch start (not ingress
+    `receivedAt`); ingress time is retained under metadata `receivedAt` so
+    Activity duration measures export/dispatch work, not provider→queue lag.
+    Failed ack deliveries attach diagnostic logs and the underlying invocation
+    error code (`metadata.invocationErrorCode`). Pre-execution claim releases
+    finish the companion `export` run as an error with logs instead of deleting
+    it, so a failed delivery is never a silent `log_count: 0` with no export
+    row.
 
 Ack messages carry the accepted delivery id, idempotency key, scoped endpoint
 identity, export name, and already-authenticated payload (inline `body`, or a
@@ -123,9 +151,14 @@ user-scoped KV key when the body was spilled). Queue retries reuse that exact
 idempotency key. Request-mode caller `Idempotency-Key` messages set
 `callerIdempotency` so the consumer hashes the JSON body (same as sync).
 Unique-key ack claims omit that flag and hash the `{ webhook, request }`
-envelope. Transient ledger lookup/terminal-persistence failures and
-still-in-progress replays are retried; terminal package errors are recorded and
-acknowledged. A missing spilled body is a terminal failure
+envelope. Transient ledger lookup/terminal-persistence failures,
+still-in-progress replays, and other pre-execution infrastructure codes
+(`idempotency_conflict_unresolved`, `artifact_preparation_failed`, … — see
+`readPreExecutionPackageInvocationInfrastructureCode`) are retried. On the last
+consumer attempt (`max_retries`, currently 10) those retries record
+`invocation_retry_exhausted` (with diagnostic logs) and ack instead of falling
+through to the dead-letter queue. Terminal package errors are recorded with logs
+and acknowledged. A missing spilled body is a terminal failure
 (`ack_queue_payload_missing`). The package export sandbox retains its normal
 ~90s budget, so genuinely longer package work ends as an explicit timeout rather
 than an unknown interrupted outcome.
@@ -146,8 +179,17 @@ consumer's 15-minute wall-clock limit before later messages are acknowledged.
   `previous_url_secret_hash`.
 - Plaintext URL secrets and verification secrets are never logged. URL secrets
   are hashed for ingress and stored encrypted for `webhookUrlApply` and the
-  owner reveal in package settings. MCP mint, rotate, list, and apply never
-  return the credential URL. Verification secrets stay in the secrets primitive.
+  owner reveal in package settings. MCP mint, rotate, list, apply, and synthetic
+  dispatch never return the credential URL. Verification secrets stay in the
+  secrets primitive.
+
+`webhookSyntheticDispatch` is the interactive-MCP smoke test for one minted
+webhook. It skips the public URL and HMAC path, invokes the bound export with a
+caller fixture, marks the Activity webhook run `synthetic: true`, and counts
+against automation usage like a normal delivery. Side effects are real.
+Owner-only; unavailable from package jobs, subscriptions, webhooks, or other
+package runtimes. End-user call shape:
+[`docs/use/webhooks.md`](../../use/webhooks.md#synthetic-smoke-test).
 
 ## Owner UI
 
@@ -184,15 +226,28 @@ binding, or apply result may return the credential URL.
 
 Minted endpoint state lives in the D1 `webhook_endpoints` table defined by
 `packages/worker/migrations/0001-squashed-init.sql`, with `url_secret_encrypted`
-added in `0057-webhook-url-secret-encrypted.sql` and rotate-overlap columns in
-`0062-webhook-url-rotation-grace.sql`. Rotate copies the outgoing hash to
+added in `0057-webhook-url-secret-encrypted.sql`, rotate-overlap columns in
+`0062-webhook-url-rotation-grace.sql`, and package-owned `hmac_secret_encrypted`
+in `0072-webhook-hmac-secret-encrypted.sql`. Rotate copies the outgoing hash to
 `previous_url_secret_hash` with `previous_url_secret_expires_at` 24 hours out.
 The previous ciphertext is not stored: reveal and apply always rebuild the
-current URL. `webhookUrlMint` / `webhookUrlRotate` return an opaque `handle`
-(`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle inside Kody
-and registers the URL through a first-class destination adapter (GitHub
-repository hooks via the user GitHub integration or a host-approved GitHub
-token). The credential is injected into the provider API field; apply does not
-accept an arbitrary outbound URL. Delivery history is in the per-user `RunLog`
-Durable Object (`webhook` surface), not in D1. See
-[Data storage](./data-storage.md) and [Run records](./run-records.md).
+current URL. Package-owned HMAC is preserved across URL rotate (independent of
+the path secret). `webhookUrlMint` / `webhookUrlRotate` return an opaque
+`handle` (`whh_<id>`) and `url_host`. `webhookUrlApply` resolves the handle
+inside Kody and registers the URL through an outbound HTTPS request
+(`type: "http"` with server-side `{{webhookUrl}}` substitution, and optional
+`{{webhookSecret}}` from package-owned HMAC on the endpoint — copied from
+`verification.secretName` at mint/rotate when present). HMAC injection is not a
+user-secrets host Allow (unlike destination Bearer `secretName`). Apply is
+interactive-only and reuses the account owner approval flow (same family as
+`/connect/secrets` host approval, secret package grants, and locked-package
+publish approval): deny with `approval_url` to `/connect/webhook-apply`, owner
+Allow writes a durable destination fingerprint grant, then retry. Silent
+model-chosen apply is rejected. GitHub repository hooks use the same `http` path
+against `https://api.github.com/repos/{owner}/{repo}/hooks` with
+`{{webhookSecret}}` in `config.secret` when HMAC is declared (prefer omitting
+`verification.secretName` so mint stores package-owned HMAC). The credential and
+signing secret are injected server-side and never returned to the model.
+Delivery history is in the per-user `RunLog` Durable Object (`webhook` surface),
+not in D1. See [Data storage](./data-storage.md) and
+[Run records](./run-records.md).

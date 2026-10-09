@@ -1,5 +1,5 @@
 import { formatNullableTimestamp } from '#client/format-timestamp.ts'
-import { type Handle, css } from 'remix/ui'
+import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -397,8 +397,15 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 														),
 													},
 													{
+														label: 'Override (excluded)',
+														value: summarizeMetricCohort(
+															flag.successMetric.measure,
+															flag.metricReadout.override,
+														),
+													},
+													{
 														label: 'Excluded',
-														value: `${flag.metricReadout.overrideUsers} override user(s) · ${flag.metricReadout.mixedUsers} mixed-exposure user(s)`,
+														value: `${flag.metricReadout.overrideUsers} override · ${flag.metricReadout.mixedUsers} mixed-exposure`,
 													},
 												]}
 											/>
@@ -411,9 +418,11 @@ export function AdminFeatureFlagsRoute(handle: Handle) {
 											>
 												Window: {flag.metricReadout.windowStart.slice(0, 10)} to{' '}
 												{flag.metricReadout.windowEnd.slice(0, 10)} (current
-												month to date). Override users are excluded because they
-												are hand-picked; mixed users saw both values inside the
-												window.
+												month to date). Override users are excluded from on/off
+												because they are hand-picked (their usage is still shown
+												above). Mixed-exposure users saw both fair values inside
+												the window and are excluded so month-level usage is not
+												mis-attributed across the switch.
 											</p>
 										</>
 									) : flag.metricReadout?.status === 'unavailable' ? (

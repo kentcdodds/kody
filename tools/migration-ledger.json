@@ -267,6 +267,102 @@
 		{
 			"filename": "0066-users-first-activation-stamps.sql",
 			"sha256": "21d202ce5e1bd4f2db70f9e148710df1dd7d5ad5eedf2b427948e5bc6fe552d5"
+		},
+		{
+			"filename": "0067-webhook-apply-destination-approvals.sql",
+			"sha256": "a95ff1e06ac1b6439927be2c15ebd4b4b4967ce492671fa4107dc7d21c05efeb"
+		},
+		{
+			"filename": "0068-durable-object-duration-daily.sql",
+			"sha256": "38d50bbc96f0f2815aa3b83123ae11118209488213de6091ba9c10c0f7a4c94a"
+		},
+		{
+			"filename": "0069-prepaid-credits.sql",
+			"sha256": "e4df1f18023e93f165a2a5ba40f0ec64a369736f6126d3f4da09d1aad657ba69"
+		},
+		{
+			"filename": "0070-admin-credits-eligible.sql",
+			"sha256": "e154002b1f91c160031b1818a66137f2864322858367361b8cedbb56cd35edda"
+		},
+		{
+			"filename": "0071-drop-compute-overage-invoices.sql",
+			"sha256": "0ded331875afe2d1adc89a9fd2b6100019707c9f2939f156b0f4d12c3a2c177b"
+		},
+		{
+			"filename": "0072-webhook-hmac-secret-encrypted.sql",
+			"sha256": "2592bfe5abde38660709516f82d52e43faade226283d828a5ae2bbdb56fd188f"
+		},
+		{
+			"filename": "0073-integration-refresh-policy.sql",
+			"sha256": "d78cd06a261188255524e86e7c3805d4184b81509adf0428116a49852517de41"
+		},
+		{
+			"filename": "0074-api-tokens.sql",
+			"sha256": "8765e566ba22b689f6f9d536d0f93b3583d2c375884532487d5804503454e144"
+		},
+		{
+			"filename": "0075-platform-oauth-app-visibility.sql",
+			"sha256": "a1bd5dbbed71909f1c8b3f72194a61819d32c6783a99be439b99a3e43eaa8514"
+		},
+		{
+			"filename": "0076-cli-credential-bootstrap-codes.sql",
+			"sha256": "9134c8ab8ee1a14043a79494753d22f7a400a69be11c0c287332f99fb20d53fc"
+		},
+		{
+			"filename": "0077-usage-attribution-daily.sql",
+			"sha256": "2fe2d5406363f6a97d298128afb4ef4995ca794c57c51035bec4d691d9bb04fe"
+		},
+		{
+			"filename": "0078-drop-site-banners.sql",
+			"sha256": "5c2e70e9668f9c61a4e3608b70f6c4518cae8c8cb364b9c9cabe7717b9d2b733"
+		},
+		{
+			"filename": "0079-connection-profiles.sql",
+			"sha256": "28ca4ece3c90b7e39995712784642dc31ba3c550c078f724ae999d352cb23478"
+		},
+		{
+			"filename": "0080-signup-welcome-credits-pending.sql",
+			"sha256": "b52fd72db87e6083dd27114bea2bd16386affcefb1958a3dc6cf445e3e661515"
+		},
+		{
+			"filename": "0081-package-slug-redirects.sql",
+			"sha256": "fa0c471687d9cdbfe15b9afbd2c4a015f7855ff3df4c0b70adae162eb7e36cc7"
+		},
+		{
+			"filename": "0082-saved-packages-has-skills.sql",
+			"sha256": "5959ee6480f8a7c2cd557c08e5dc7d856e524b56a467385dcf65712349f099b5"
+		},
+		{
+			"filename": "0083-mcp-event-subscriptions.sql",
+			"sha256": "b08ca0deacf3b0b3225b60d5b6979dfce0ed4ffee86af3a1819e09283c9c9aff"
+		},
+		{
+			"filename": "0084-purge-package-invocation-tokens.sql",
+			"sha256": "511e40ba0254f1c7ffd121c0956ff63bd912261fcf35dd7192dff6c64a92ce84"
+		},
+		{
+			"filename": "0085-drop-package-invocation-tokens.sql",
+			"sha256": "dce13ccc023c9b518e57b7875d62370a2aab78907ec86d14f5641638f7299274"
+		},
+		{
+			"filename": "0086-teams-orgs-tables.sql",
+			"sha256": "615a6a029138636d330fb00adcc62d0e9861953724e81360428a724f5d44c29d"
+		},
+		{
+			"filename": "0087-teams-soft-delete-columns.sql",
+			"sha256": "611213895a54d1735536d0c1838943a09c42b7ba97cf3a56c777fa19b96baaae"
+		},
+		{
+			"filename": "0088-teams-actor-columns.sql",
+			"sha256": "c6607cec887773590bfe1589e10565fe7d7c2e3b0cfc3734228fbd72add6327e"
+		},
+		{
+			"filename": "0089-teams-orgs-backfill.sql",
+			"sha256": "898e71ae22a3ceaa4d94e1a233c31c93e093bc8b3d967ea86a27060c424011ee"
+		},
+		{
+			"filename": "0090-teams-credential-org-binding.sql",
+			"sha256": "fd50a37c2fdb47f1b47e890f7371031fc445cce29c00b3be401a9d3b8d13b4ac"
 		}
 	]
 }

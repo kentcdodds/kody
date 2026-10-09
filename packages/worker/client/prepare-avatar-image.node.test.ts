@@ -30,6 +30,27 @@ function createHost(input: {
 	}
 }
 
+async function encodeRequestsFor(
+	file: File,
+	width: number,
+	height: number,
+	type: string,
+) {
+	const calls: Array<EncodeAvatarImageInput> = []
+	await prepareAvatarImage(
+		file,
+		createHost({
+			width,
+			height,
+			encode: (request) => {
+				calls.push(request)
+				return new Blob([Uint8Array.from([1])], { type })
+			},
+		}),
+	)
+	return calls
+}
+
 test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos', async () => {
 	const readyJpeg = new File([Uint8Array.from([1, 2, 3, 4])], 'ready.jpg', {
 		type: 'image/jpeg',
@@ -67,17 +88,11 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 	const oversized = new File([new Uint8Array(2000)], 'huge.jpg', {
 		type: 'image/jpeg',
 	})
-	const encodeCalls: Array<EncodeAvatarImageInput> = []
-	await prepareAvatarImage(
+	const encodeCalls = await encodeRequestsFor(
 		oversized,
-		createHost({
-			width: 8000,
-			height: 4000,
-			encode: (request) => {
-				encodeCalls.push(request)
-				return new Blob([Uint8Array.from([1])], { type: 'image/webp' })
-			},
-		}),
+		8000,
+		4000,
+		'image/webp',
 	)
 	expect(encodeCalls[0]?.width).toBe(userAvatarBrowserEncodeMaxDimension)
 	expect(encodeCalls[0]?.height).toBe(userAvatarBrowserEncodeMaxDimension / 2)
@@ -86,18 +101,7 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 	const panorama = new File([new Uint8Array(2000)], 'wide.jpg', {
 		type: 'image/jpeg',
 	})
-	const cropCalls: Array<EncodeAvatarImageInput> = []
-	await prepareAvatarImage(
-		panorama,
-		createHost({
-			width: 900,
-			height: 100,
-			encode: (request) => {
-				cropCalls.push(request)
-				return new Blob([Uint8Array.from([1])], { type: 'image/jpeg' })
-			},
-		}),
-	)
+	const cropCalls = await encodeRequestsFor(panorama, 900, 100, 'image/jpeg')
 	expect(cropCalls[0]).toMatchObject({
 		sourceX: 300,
 		sourceY: 0,
@@ -110,18 +114,7 @@ test('prepareAvatarImage converts, resizes, crops, and rejects unusable photos',
 	const banner = new File([new Uint8Array(2000)], 'wide-banner.png', {
 		type: 'image/png',
 	})
-	const bannerCalls: Array<EncodeAvatarImageInput> = []
-	await prepareAvatarImage(
-		banner,
-		createHost({
-			width: 2400,
-			height: 400,
-			encode: (request) => {
-				bannerCalls.push(request)
-				return new Blob([Uint8Array.from([1])], { type: 'image/png' })
-			},
-		}),
-	)
+	const bannerCalls = await encodeRequestsFor(banner, 2400, 400, 'image/png')
 	expect(bannerCalls[0]).toMatchObject({
 		sourceX: 600,
 		sourceY: 0,

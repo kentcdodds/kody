@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -21,29 +22,42 @@ const reuseEnv = {
 
 function createCaller(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: `${userId}@example.com`,
 			displayName: 'Console Capture',
 		},
 	})
 }
 
-async function buildEntryBundle(input: {
-	env: Env
-	userId: string
-	source: string
-}) {
+async function bundleLines(runEnv: Env, userId: string, lines: Array<string>) {
 	return await buildKodyModuleBundle({
-		env: input.env,
+		env: runEnv,
 		baseUrl: 'https://kody.dev',
-		userId: input.userId,
-		sourceFiles: {
-			'entry.ts': input.source,
-		},
+		userId,
+		sourceFiles: { 'entry.ts': lines.join('\n') },
 		entryPoint: 'entry.ts',
 	})
+}
+
+async function runBundle(
+	runEnv: Env,
+	userId: string,
+	bundle: Awaited<ReturnType<typeof bundleLines>>,
+	additionalTools?: Record<string, () => Promise<unknown>>,
+) {
+	return await runBundledModuleWithRegistry(
+		runEnv,
+		createCaller(userId),
+		bundle,
+		undefined,
+		{
+			skipCapabilityRegistry: true,
+			...(additionalTools ? { additionalTools } : {}),
+		},
+	)
 }
 
 test(
@@ -52,87 +66,66 @@ test(
 	async () => {
 		silenceIncidentalRuntimeWarnings()
 		const userId = 'user-console-capture-contract'
-
-		// log/warn/error levels are captured with the correct prefix on success.
-		const levelsBundle = await buildEntryBundle({
-			env,
-			userId,
-			source: [
+		const cases = [
+			{
+				label: 'log/warn/error levels are captured with the correct prefix',
+				lines: [
+					"\tconsole.log('alpha')",
+					"\tconsole.log('beta')",
+					"\tconsole.warn('heads up')",
+					"\tconsole.error('boom line')",
+					"\treturn 'ok'",
+				],
+				expected: {
+					error: undefined,
+					result: 'ok',
+					logs: ['alpha', 'beta', '[warn] heads up', '[error] boom line'],
+				},
+			},
+			{
+				label: 'logs emitted before a throw are still captured',
+				lines: [
+					"\tconsole.log('before throw')",
+					"\tconsole.warn('about to fail')",
+					"\tthrow new Error('sandbox boom')",
+				],
+				expected: {
+					error: 'sandbox boom',
+					result: undefined,
+					logs: ['before throw', '[warn] about to fail'],
+				},
+			},
+			{
+				// Unshimmed console methods (table, dir, count, time, …) do not
+				// throw; only console.log output is included in the captured logs.
+				label: 'unshimmed console methods',
+				lines: [
+					"\tconsole.log('before table')",
+					'\tconsole.table({ ok: true })',
+					'\tconsole.dir({ ok: true })',
+					"\tconsole.count('label')",
+					"\tconsole.countReset('label')",
+					"\tconsole.time('t')",
+					"\tconsole.timeEnd('t')",
+					"\treturn 'ok'",
+				],
+				expected: { error: undefined, result: 'ok', logs: ['before table'] },
+			},
+		]
+		for (const { label, lines, expected } of cases) {
+			const bundle = await bundleLines(env, userId, [
 				'export default async function main() {',
-				"\tconsole.log('alpha')",
-				"\tconsole.log('beta')",
-				"\tconsole.warn('heads up')",
-				"\tconsole.error('boom line')",
-				"\treturn 'ok'",
+				...lines,
 				'}',
-			].join('\n'),
-		})
-		const levelsResult = await runBundledModuleWithRegistry(
-			env,
-			createCaller(userId),
-			levelsBundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(levelsResult.error).toBeUndefined()
-		expect(levelsResult.result).toBe('ok')
-		expect(levelsResult.logs).toEqual([
-			'alpha',
-			'beta',
-			'[warn] heads up',
-			'[error] boom line',
-		])
-
-		// Logs emitted before a throw are still captured in the result.
-		const throwBundle = await buildEntryBundle({
-			env,
-			userId,
-			source: [
-				'export default async function main() {',
-				"\tconsole.log('before throw')",
-				"\tconsole.warn('about to fail')",
-				"\tthrow new Error('sandbox boom')",
-				'}',
-			].join('\n'),
-		})
-		const throwResult = await runBundledModuleWithRegistry(
-			env,
-			createCaller(userId),
-			throwBundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(throwResult.error).toBe('sandbox boom')
-		expect(throwResult.logs).toEqual(['before throw', '[warn] about to fail'])
-
-		// Unshimmed console methods (table, dir, count, time, …) do not throw;
-		// only console.log output is included in the captured logs.
-		const unshimmedBundle = await buildEntryBundle({
-			env,
-			userId,
-			source: [
-				'export default async function main() {',
-				"\tconsole.log('before table')",
-				'\tconsole.table({ ok: true })',
-				'\tconsole.dir({ ok: true })',
-				"\tconsole.count('label')",
-				"\tconsole.countReset('label')",
-				"\tconsole.time('t')",
-				"\tconsole.timeEnd('t')",
-				"\treturn 'ok'",
-				'}',
-			].join('\n'),
-		})
-		const unshimmedResult = await runBundledModuleWithRegistry(
-			env,
-			createCaller(userId),
-			unshimmedBundle,
-			undefined,
-			{ skipCapabilityRegistry: true },
-		)
-		expect(unshimmedResult.error).toBeUndefined()
-		expect(unshimmedResult.result).toBe('ok')
-		expect(unshimmedResult.logs).toEqual(['before table'])
+			])
+			const run = await runBundle(env, userId, bundle)
+			expect({
+				label,
+				error: run.error,
+				result: run.result,
+				logs: run.logs,
+			}).toEqual({ label, ...expected })
+		}
 	},
 )
 
@@ -144,43 +137,21 @@ test(
 		const userId = 'user-console-capture-reuse'
 		// Identical code + modules + acting user => same dynamic-worker id.
 		// Per-run labels arrive through RPC dispatchers, not baked code.
-		const bundle = await buildEntryBundle({
-			env: reuseEnv,
-			userId,
-			source: [
-				"import { kody } from 'kody:runtime'",
-				'export default async function main() {',
-				'\tconst { label } = await kody.ping_capability({})',
-				'\tconsole.log(label)',
-				'\tconsole.log(`${label}-tail`)',
-				'\treturn label',
-				'}',
-			].join('\n'),
-		})
-
-		const runOnce = async (label: string) =>
-			await runBundledModuleWithRegistry(
-				reuseEnv,
-				createCaller(userId),
-				bundle,
-				undefined,
-				{
-					skipCapabilityRegistry: true,
-					additionalTools: {
-						ping_capability: async () => ({ label }),
-					},
-				},
-			)
-
-		const first = await runOnce('first-run')
-		expect(first.error).toBeUndefined()
-		expect(first.logs).toEqual(['first-run', 'first-run-tail'])
-
-		const second = await runOnce('second-run')
-		expect(second.error).toBeUndefined()
-		expect(second.logs).toEqual(['second-run', 'second-run-tail'])
-		expect(second.logs).not.toEqual(
-			expect.arrayContaining(['first-run', 'first-run-tail']),
-		)
+		const bundle = await bundleLines(reuseEnv, userId, [
+			"import { kody } from 'kody:runtime'",
+			'export default async function main() {',
+			'\tconst { label } = await kody.ping_capability({})',
+			'\tconsole.log(label)',
+			'\tconsole.log(`${label}-tail`)',
+			'\treturn label',
+			'}',
+		])
+		for (const label of ['first-run', 'second-run']) {
+			const run = await runBundle(reuseEnv, userId, bundle, {
+				ping_capability: async () => ({ label }),
+			})
+			expect(run.error).toBeUndefined()
+			expect(run.logs).toEqual([label, `${label}-tail`])
+		}
 	},
 )

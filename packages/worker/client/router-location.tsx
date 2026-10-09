@@ -1,4 +1,4 @@
-import { type Handle, type RemixNode } from 'remix/ui'
+import { type Handle, type RemixNode } from 'remix/component'
 import { routerEvents } from './client-router.tsx'
 
 export type RouterLocationValue = {

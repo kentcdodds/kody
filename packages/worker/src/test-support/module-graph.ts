@@ -3,13 +3,16 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { vi } from 'vitest'
+import type * as scopeGrantsModule from '#worker/package-registry/scope-grants.ts'
 import { type WorkerLoaderModules } from '#worker/worker-loader-types.ts'
 
 export const moduleGraphMockModule = {
 	createWorker: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
-	getPlatformAccountByUsername: vi.fn(async () => null),
+	getPlatformAccountByUsername: vi.fn<
+		typeof scopeGrantsModule.getPlatformAccountByUsername
+	>(async () => null),
 	loadPackageSourceBySourceId: vi.fn(),
 	loadPublishedBundleArtifactByIdentity: vi.fn(),
 }
@@ -81,11 +84,12 @@ export function createModuleBundleInput(input?: {
 	}
 }
 
-export async function createTemporaryModuleGraph(
-	files: Record<string, string>,
-) {
+export async function createTemporaryModuleGraph(files: WorkerLoaderModules) {
 	const root = await mkdtemp(join(tmpdir(), 'kody-module-graph-'))
 	for (const [filePath, source] of Object.entries(files)) {
+		if (typeof source !== 'string') {
+			throw new Error(`Expected string module source for ${filePath}.`)
+		}
 		const destination = join(root, filePath)
 		await mkdir(dirname(destination), { recursive: true })
 		await writeFile(destination, source, 'utf8')

@@ -7,55 +7,41 @@ const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
-	loadPublicTreeFiles: vi.fn(async () => ({
-		files: {},
+	loadPublicTreeFiles: vi.fn(async (_input: { commit: string | null }) => ({
+		files: {} as Record<string, string>,
 		fromListingSnapshot: false,
 	})),
-	readArtifactTreeAtCommit: vi.fn(async () => ({})),
-	getAppBaseUrl: () => 'https://example.com',
+	readArtifactTreeAtCommit: vi.fn(
+		async (_input: { commit: string }): Promise<Record<string, string>> => ({}),
+	),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	getSavedPackageById: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageById(...args),
-	setSavedPackageLockedAt: (...args: Array<unknown>) =>
-		mockModule.setSavedPackageLockedAt(...args),
+	getSavedPackageById: mockModule.getSavedPackageById,
+	setSavedPackageLockedAt: mockModule.setSavedPackageLockedAt,
 }))
-
 vi.mock('#app/account-packages-data.ts', () => ({
-	loadAccountPackagesData: (...args: Array<unknown>) =>
-		mockModule.loadAccountPackagesData(...args),
+	loadAccountPackagesData: mockModule.loadAccountPackagesData,
 }))
-
 vi.mock('#worker/repo/entity-sources.ts', () => ({
-	getEntitySourceById: (...args: Array<unknown>) =>
-		mockModule.getEntitySourceById(...args),
+	getEntitySourceById: mockModule.getEntitySourceById,
 }))
-
 vi.mock('#worker/repo/artifacts.ts', () => ({
-	resolveArtifactSourceHead: (...args: Array<unknown>) =>
-		mockModule.resolveArtifactSourceHead(...args),
+	resolveArtifactSourceHead: mockModule.resolveArtifactSourceHead,
 }))
-
 vi.mock('#app/package-files-data.ts', () => ({
-	loadPublicTreeFiles: (...args: Array<unknown>) =>
-		mockModule.loadPublicTreeFiles(...args),
+	loadPublicTreeFiles: mockModule.loadPublicTreeFiles,
 }))
-
 vi.mock('#worker/repo/artifact-file.ts', () => ({
-	readArtifactTreeAtCommit: (...args: Array<unknown>) =>
-		mockModule.readArtifactTreeAtCommit(...args),
+	readArtifactTreeAtCommit: mockModule.readArtifactTreeAtCommit,
 }))
-
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
 	repoSessionRpc: () => ({
-		publishFromExternalRef: (...args: Array<unknown>) =>
-			mockModule.publishFromExternalRef(...args),
+		publishFromExternalRef: mockModule.publishFromExternalRef,
 	}),
 }))
-
 vi.mock('#worker/app-base-url.ts', () => ({
-	getAppBaseUrl: (...args: Array<unknown>) => mockModule.getAppBaseUrl(...args),
+	getAppBaseUrl: () => 'https://example.com',
 }))
 
 const {
@@ -63,6 +49,9 @@ const {
 	loadAccountPackageApprovePublishData,
 } = await import('./account-package-publish-lock.ts')
 
+type ActionInput = Parameters<typeof handleAccountPackagePublishLockAction>[0]
+
+const env = { APP_DB: {} as D1Database } as Env
 const user = {
 	email: 'user@example.com',
 	username: 'user',
@@ -72,7 +61,7 @@ const user = {
 		username: 'user',
 		displayName: 'User',
 	},
-}
+} as ActionInput['user']
 
 const unlockedPackage = {
 	id: 'pkg-1',
@@ -90,102 +79,95 @@ const unlockedPackage = {
 	createdAt: '2026-08-01T00:00:00.000Z',
 	updatedAt: '2026-08-01T00:00:00.000Z',
 }
-
 const lockedPackage = {
 	...unlockedPackage,
 	lockedAt: '2026-08-28T12:00:00.000Z',
 }
 
-const packagesPayload = {
-	ok: true,
-	email: 'user@example.com',
-	username: 'user',
-	invocationUrlOrigin: 'https://example.com',
-	packages: [],
-	selectedPackage: null,
-	page: 1,
-	pageSize: 20,
-	total: 0,
-	query: '',
-	appFilter: 'all',
-	sort: 'updated',
-}
-
-function createRequest() {
-	return new Request('https://example.com/account/packages.json', {
-		method: 'POST',
-	})
-}
-
-test('website lock and unlock write locked_at and approve-publish promotes a named commit without unlocking', async () => {
-	mockModule.loadAccountPackagesData.mockResolvedValue(packagesPayload)
-	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
-	mockModule.setSavedPackageLockedAt.mockResolvedValue(true)
-
-	const ignored = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: { action: 'absorb-listing', packageId: 'pkg-1' },
-	})
-	expect(ignored).toBeNull()
-	expect(mockModule.setSavedPackageLockedAt).not.toHaveBeenCalled()
-
-	const lockResponse = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: { action: 'lock', packageId: 'pkg-1' },
-	})
-	expect(lockResponse?.status).toBe(200)
-	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledWith(
-		{},
-		expect.objectContaining({
-			userId: 'user-1',
-			packageId: 'pkg-1',
-		}),
-	)
-	const lockInput = mockModule.setSavedPackageLockedAt.mock.calls[0]?.[1] as {
-		lockedAt: string | null
-	}
-	expect(lockInput.lockedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-
-	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
-	const alreadyLocked = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: { action: 'lock', packageId: 'pkg-1' },
-	})
-	expect(alreadyLocked?.status).toBe(200)
-	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(1)
-
-	const unlockResponse = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: { action: 'unlock', packageId: 'pkg-1' },
-	})
-	expect(unlockResponse?.status).toBe(200)
-	expect(mockModule.setSavedPackageLockedAt).toHaveBeenLastCalledWith(
-		{},
-		{
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			lockedAt: null,
-		},
-	)
-
-	mockModule.getEntitySourceById.mockResolvedValue({
+function sourceRow(publishedCommit: string) {
+	return {
 		id: 'source-1',
 		user_id: 'user-1',
 		entity_kind: 'package',
 		entity_id: 'pkg-1',
 		repo_id: 'repo-1',
-		published_commit: 'commit-old',
+		published_commit: publishedCommit,
 		manifest_path: 'package.json',
 		source_root: '/',
+	}
+}
+
+function act(body: ActionInput['body']) {
+	return handleAccountPackagePublishLockAction({
+		env,
+		request: new Request('https://example.com/account/packages.json', {
+			method: 'POST',
+		}),
+		user,
+		body,
 	})
+}
+
+function loadApprove(commit?: string) {
+	const query = commit ? `?commit=${commit}` : ''
+	return loadAccountPackageApprovePublishData({
+		env,
+		request: new Request(
+			`https://example.com/@test-user/discord-gateway/approve-publish${query}`,
+		),
+		user,
+		packageId: 'pkg-1',
+	})
+}
+
+async function loadApproveOk(commit?: string) {
+	const loaded = await loadApprove(commit)
+	if (!loaded.ok) throw new Error('expected loader success')
+	return loaded
+}
+
+test('website lock and unlock write locked_at and approve-publish promotes a named commit without unlocking', async () => {
+	mockModule.loadAccountPackagesData.mockResolvedValue({
+		ok: true,
+		email: 'user@example.com',
+		username: 'user',
+		invocationUrlOrigin: 'https://example.com',
+		packages: [],
+		selectedPackage: null,
+		page: 1,
+		pageSize: 20,
+		total: 0,
+		query: '',
+		appFilter: 'all',
+		sort: 'updated',
+	})
+	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
+	mockModule.setSavedPackageLockedAt.mockResolvedValue(true)
+
+	expect(await act({ action: 'absorb-listing', packageId: 'pkg-1' })).toBeNull()
+	expect(mockModule.setSavedPackageLockedAt).not.toHaveBeenCalled()
+
+	const lockResponse = await act({ action: 'lock', packageId: 'pkg-1' })
+	expect(lockResponse?.status).toBe(200)
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledWith(env.APP_DB, {
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		lockedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+	})
+
+	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
+	expect((await act({ action: 'lock', packageId: 'pkg-1' }))?.status).toBe(200)
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(1)
+
+	expect((await act({ action: 'unlock', packageId: 'pkg-1' }))?.status).toBe(
+		200,
+	)
+	expect(mockModule.setSavedPackageLockedAt).toHaveBeenLastCalledWith(
+		env.APP_DB,
+		{ userId: 'user-1', packageId: 'pkg-1', lockedAt: null },
+	)
+
+	mockModule.getEntitySourceById.mockResolvedValue(sourceRow('commit-old'))
 	mockModule.publishFromExternalRef.mockResolvedValue({
 		status: 'published',
 		previous_commit: 'commit-old',
@@ -193,17 +175,12 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		manifest: {},
 		checks: [],
 	})
-	const approveResponse = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: {
-			action: 'approve-publish',
-			packageId: 'pkg-1',
-			commit: 'abc1234',
-		},
-	})
-	expect(approveResponse?.status).toBe(200)
+	const approveBody = {
+		action: 'approve-publish',
+		packageId: 'pkg-1',
+		commit: 'abc1234',
+	} as const
+	expect((await act(approveBody))?.status).toBe(200)
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
@@ -215,52 +192,28 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledTimes(2)
 
 	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
-	const unlockedApprove = await handleAccountPackagePublishLockAction({
-		env: { APP_DB: {} } as Env,
-		request: createRequest(),
-		user: user as never,
-		body: {
-			action: 'approve-publish',
-			packageId: 'pkg-1',
-			commit: 'abc1234',
-		},
+	expect((await act(approveBody))?.status).toBe(200)
+	const unlockedPublish =
+		mockModule.publishFromExternalRef.mock.calls.at(-1)?.[0]
+	expect(unlockedPublish).toMatchObject({
+		sourceId: 'source-1',
+		userId: 'user-1',
+		newCommit: 'abc1234',
 	})
-	expect(unlockedApprove?.status).toBe(200)
-	expect(mockModule.publishFromExternalRef).toHaveBeenLastCalledWith(
-		expect.objectContaining({
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'abc1234',
-		}),
-	)
-	expect(
-		mockModule.publishFromExternalRef.mock.calls.at(-1)?.[0],
-	).not.toHaveProperty('allowLockedPublish')
-	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
+	expect(unlockedPublish).not.toHaveProperty('allowLockedPublish')
 
 	mockModule.getSavedPackageById.mockResolvedValue(lockedPackage)
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({
 		branch: 'main',
 		commit: 'deadbeef',
 	})
-	const loaded = await loadAccountPackageApprovePublishData({
-		env: { APP_DB: {} } as Env,
-		request: new Request(
-			'https://example.com/@test-user/discord-gateway/approve-publish?commit=abc1234',
-		),
-		user: user as never,
-		packageId: 'pkg-1',
-	})
-	expect(loaded).toMatchObject({
+	expect(await loadApprove('abc1234')).toMatchObject({
 		ok: true,
 		publishedCommit: 'commit-old',
 		pendingCommit: 'abc1234',
 		alreadyPublished: false,
 		packageHref: '/@user/notes',
-		package: {
-			id: 'pkg-1',
-			lockedAt: '2026-08-28T12:00:00.000Z',
-		},
+		package: { id: 'pkg-1', lockedAt: '2026-08-28T12:00:00.000Z' },
 		diff: { files: [], omittedCount: 0 },
 	})
 })
@@ -268,51 +221,27 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {
 	const publishedCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const pendingCommit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
-	mockModule.getEntitySourceById.mockResolvedValue({
-		id: 'source-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'pkg-1',
-		repo_id: 'repo-1',
-		published_commit: publishedCommit,
-		manifest_path: 'package.json',
-		source_root: '/',
+	const emptyDiff = { files: [], omittedCount: 0 }
+	const publishedReadmeTree = async (input: {
+		commit: string | null
+	}): Promise<{
+		files: Record<string, string>
+		fromListingSnapshot: boolean
+	}> => ({
+		files:
+			input.commit === publishedCommit ? { 'README.md': '# published\n' } : {},
+		fromListingSnapshot: false,
 	})
-	mockModule.loadPublicTreeFiles.mockImplementation(
-		async (input: { commit: string | null }) => {
-			if (input.commit === publishedCommit) {
-				return {
-					files: { 'README.md': '# published\n' },
-					fromListingSnapshot: false,
-				}
-			}
-			return { files: {}, fromListingSnapshot: false }
-		},
-	)
+	mockModule.getSavedPackageById.mockResolvedValue(unlockedPackage)
+	mockModule.getEntitySourceById.mockResolvedValue(sourceRow(publishedCommit))
+	mockModule.loadPublicTreeFiles.mockImplementation(publishedReadmeTree)
 	mockModule.readArtifactTreeAtCommit.mockImplementation(
-		async (input: { commit: string }) => {
-			if (input.commit === pendingCommit) {
-				return { 'README.md': '# head\n' }
-			}
-			return {}
-		},
+		async (input: { commit: string }): Promise<Record<string, string>> =>
+			input.commit === pendingCommit ? { 'README.md': '# head\n' } : {},
 	)
 
-	const fromArtifacts = await loadAccountPackageApprovePublishData({
-		env: { APP_DB: {} } as Env,
-		request: new Request(
-			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
-		),
-		user: user as never,
-		packageId: 'pkg-1',
-	})
-	expect(fromArtifacts).toMatchObject({
-		ok: true,
-		publishedCommit,
-		pendingCommit,
-	})
-	if (!fromArtifacts.ok) throw new Error('expected loader success')
+	const fromArtifacts = await loadApproveOk(pendingCommit)
+	expect(fromArtifacts).toMatchObject({ publishedCommit, pendingCommit })
 	expect(fromArtifacts.diff.files).toEqual([
 		{
 			path: 'README.md',
@@ -321,27 +250,14 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 		},
 	])
 	expect(mockModule.readArtifactTreeAtCommit).toHaveBeenCalledWith(
-		expect.objectContaining({
-			repoId: 'repo-1',
-			commit: pendingCommit,
-		}),
+		expect.objectContaining({ repoId: 'repo-1', commit: pendingCommit }),
 	)
 
 	mockModule.readArtifactTreeAtCommit.mockRejectedValue(
 		new Error('fetch failed'),
 	)
-	const failedPending = await loadAccountPackageApprovePublishData({
-		env: { APP_DB: {} } as Env,
-		request: new Request(
-			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
-		),
-		user: user as never,
-		packageId: 'pkg-1',
-	})
-	if (!failedPending.ok) throw new Error('expected loader success')
-	expect(failedPending.diff).toEqual({ files: [], omittedCount: 0 })
+	expect((await loadApproveOk(pendingCommit)).diff).toEqual(emptyDiff)
 
-	mockModule.readArtifactTreeAtCommit.mockReset()
 	mockModule.readArtifactTreeAtCommit.mockImplementation(
 		async (input: { commit: string }) => {
 			if (input.commit === publishedCommit) {
@@ -354,38 +270,11 @@ test('approve-publish resolves HEAD, missing published, and missing HEAD diffs',
 		files: {},
 		fromListingSnapshot: false,
 	})
-	const unresolvedPublished = await loadAccountPackageApprovePublishData({
-		env: { APP_DB: {} } as Env,
-		request: new Request(
-			`https://example.com/@test-user/discord-gateway/approve-publish?commit=${pendingCommit}`,
-		),
-		user: user as never,
-		packageId: 'pkg-1',
-	})
-	if (!unresolvedPublished.ok) throw new Error('expected loader success')
-	expect(unresolvedPublished.diff).toEqual({ files: [], omittedCount: 0 })
+	expect((await loadApproveOk(pendingCommit)).diff).toEqual(emptyDiff)
 
 	mockModule.resolveArtifactSourceHead.mockResolvedValue({ commit: null })
-	mockModule.loadPublicTreeFiles.mockImplementation(
-		async (input: { commit: string | null }) => {
-			if (input.commit === publishedCommit) {
-				return {
-					files: { 'README.md': '# published\n' },
-					fromListingSnapshot: false,
-				}
-			}
-			return { files: {}, fromListingSnapshot: false }
-		},
-	)
-	const missingHead = await loadAccountPackageApprovePublishData({
-		env: { APP_DB: {} } as Env,
-		request: new Request(
-			'https://example.com/@test-user/discord-gateway/approve-publish',
-		),
-		user: user as never,
-		packageId: 'pkg-1',
-	})
-	if (!missingHead.ok) throw new Error('expected loader success')
+	mockModule.loadPublicTreeFiles.mockImplementation(publishedReadmeTree)
+	const missingHead = await loadApproveOk()
 	expect(missingHead.pendingCommit).toBeNull()
-	expect(missingHead.diff).toEqual({ files: [], omittedCount: 0 })
+	expect(missingHead.diff).toEqual(emptyDiff)
 })

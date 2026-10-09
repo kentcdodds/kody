@@ -1,25 +1,76 @@
 import { expect, test, vi } from 'vitest'
+import * as packageRegistrySource from '#worker/package-registry/source.ts'
 import {
 	createAccountExport,
 	createAccountExportManifest,
 	readAccountExportSection,
 } from './export.ts'
 import {
-	createMigratedDb,
 	createMailboxBinding,
+	createMigratedDb,
+	createMigratedDbWithUser,
 	createSignedR2Cursor,
+	createStubNamespace,
+	insertTestUser,
+	rawMimeReference,
 } from '#worker/test-support/account-export.ts'
+
+type SectionInput = Parameters<typeof readAccountExportSection>[0]
+
+function sectionReader(env: Env, mcpUserId = 'user-aaa') {
+	return (
+		section: SectionInput['section'],
+		input: Partial<Omit<SectionInput, 'startAfter'>> & {
+			startAfter?: string | null
+		} = {},
+	) =>
+		readAccountExportSection({
+			env,
+			dbUserId: 1,
+			mcpUserId,
+			section,
+			...input,
+			startAfter: input.startAfter ?? undefined,
+		})
+}
+
+const exportUserA = (env: Env) =>
+	createAccountExport({ env, dbUserId: 1, mcpUserId: 'user-aaa' })
+
+async function readAllStorageRunnerIds(
+	read: ReturnType<typeof sectionReader>,
+	pageSize: number,
+) {
+	const seen = new Set<string>()
+	let startAfter: string | null = null
+	for (;;) {
+		const page = await read('durable_object_summaries', {
+			kind: 'storage_runner',
+			pageSize,
+			startAfter,
+		})
+		for (const item of page.items as Array<{ storageId: string }>) {
+			expect(Array.isArray(item.storageId)).toBe(false)
+			seen.add(item.storageId)
+		}
+		if (!page.truncated) return seen
+		startAfter = page.nextStartAfter
+	}
+}
 
 test('R2 export pages owned payloads in bounded chunks and reports missing objects', async () => {
 	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id, avatar_key
-		) VALUES
-			(1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'),
-			(2, 'user-b', 'b@example.com', 'hash', '2026-07-05', '2026-07-05', '2026-07-05', 'user-bbb', 'user-avatars/user-bbb/avatar.png');
-	`)
+	for (const [id, stableUserId] of [
+		[1, 'user-aaa'],
+		[2, 'user-bbb'],
+	] as const) {
+		insertTestUser(sqlite, {
+			id,
+			username: `user-${id}`,
+			stableUserId,
+			avatarKey: `user-avatars/${stableUserId}/avatar.png`,
+		})
+	}
 	const mimeBytes = new TextEncoder().encode('Subject: A\r\n\r\nbody')
 	const getEmailBlob = vi.fn(async (key: string) => {
 		if (key === 'email-raw:v1:user-aaa/mail-z') {
@@ -33,35 +84,20 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			arrayBuffer: async () => mimeBytes.buffer,
 		}
 	})
-	const env = {
+	const read = sectionReader({
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get: getEmailBlob },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
 		MAILBOX: createMailboxBinding({
 			blobReferences: () => [
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-a',
-					messageId: 'mail-a',
-					attachmentId: null,
-				},
-				{
-					kind: 'raw_mime',
-					key: 'email-raw:v1:user-aaa/mail-z',
-					messageId: 'mail-z',
-					attachmentId: null,
-				},
+				rawMimeReference('mail-a'),
+				rawMimeReference('mail-z'),
 			],
 		}),
-	} as unknown as Env
+	} as unknown as Env)
 
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-	})
+	const first = await read('r2_object')
 	expect(first.items).toEqual([
 		expect.objectContaining({
 			surfaceId: 'user_avatar',
@@ -72,13 +108,7 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 	const firstCursor = first.nextStartAfter!
 	const tamperedCursor = `${firstCursor.slice(0, -1)}${firstCursor.endsWith('a') ? 'b' : 'a'}`
 	await expect(
-		readAccountExportSection({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'r2_object',
-			startAfter: tamperedCursor,
-		}),
+		read('r2_object', { startAfter: tamperedCursor }),
 	).rejects.toThrow('Invalid or unsupported r2_object cursor')
 	const legacyCursor = await createSignedR2Cursor({
 		secret: 'test-cookie-secret',
@@ -88,22 +118,11 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 			state: { stage: 'email_raw_mime', afterRowid: 1 },
 		},
 	})
-	await expect(
-		readAccountExportSection({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'r2_object',
-			startAfter: legacyCursor,
-		}),
-	).rejects.toThrow('restart without startAfter')
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-		startAfter: first.nextStartAfter ?? undefined,
-	})
+	await expect(read('r2_object', { startAfter: legacyCursor })).rejects.toThrow(
+		'restart without startAfter',
+	)
+
+	const second = await read('r2_object', { startAfter: first.nextStartAfter })
 	expect(second.items).toEqual([
 		expect.objectContaining({
 			surfaceId: 'email_raw_mime',
@@ -113,13 +132,7 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 		}),
 	])
 	expect(second.truncated).toBe(true)
-	const third = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-		startAfter: second.nextStartAfter ?? undefined,
-	})
+	const third = await read('r2_object', { startAfter: second.nextStartAfter })
 	expect(third.items).toEqual([
 		expect.objectContaining({
 			key: 'email-raw:v1:user-aaa/mail-z',
@@ -130,13 +143,7 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 	expect(third.warnings).toEqual([
 		expect.stringContaining('R2 object export failed'),
 	])
-	const done = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-		startAfter: third.nextStartAfter ?? undefined,
-	})
+	const done = await read('r2_object', { startAfter: third.nextStartAfter })
 	expect(done.items).toEqual([])
 	expect(done.truncated).toBe(false)
 	expect(getEmailBlob).not.toHaveBeenCalledWith(
@@ -147,41 +154,21 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 
 test('R2 export performs bounded keyset work independent of mailbox size', async () => {
 	const queries: Array<string> = []
-	const { sqlite, db } = createMigratedDb({
+	const { db } = createMigratedDbWithUser({
 		onQuery: (query) => queries.push(query),
 	})
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		) VALUES (
-			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
-			'2026-07-05', 'user-aaa'
-		);
-	`)
-	const page = await readAccountExportSection({
-		env: {
-			APP_DB: db,
-			COOKIE_SECRET: 'test-cookie-secret',
-			EMAIL_BLOBS: { get: vi.fn(async () => null) },
-			COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
-			MAILBOX: createMailboxBinding({
-				blobReferences: () =>
-					Array.from({ length: 502 }, (_, index) => {
-						const messageId = `mail-${String(index).padStart(4, '0')}`
-						return {
-							kind: 'raw_mime' as const,
-							key: `email-raw:v1:user-aaa/${messageId}`,
-							messageId,
-							attachmentId: null,
-						}
-					}),
-			}),
-		} as unknown as Env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-	})
+	const page = await sectionReader({
+		APP_DB: db,
+		COOKIE_SECRET: 'test-cookie-secret',
+		EMAIL_BLOBS: { get: vi.fn(async () => null) },
+		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
+		MAILBOX: createMailboxBinding({
+			blobReferences: () =>
+				Array.from({ length: 502 }, (_, index) =>
+					rawMimeReference(`mail-${String(index).padStart(4, '0')}`),
+				),
+		}),
+	} as unknown as Env)('r2_object')
 	expect(page.items).toEqual([
 		expect.objectContaining({
 			key: 'email-raw:v1:user-aaa/mail-0000',
@@ -189,24 +176,16 @@ test('R2 export performs bounded keyset work independent of mailbox size', async
 		}),
 	])
 	expect(queries.length).toBeLessThanOrEqual(4)
-	expect(
-		queries.some(
-			(query) => query === 'SELECT id FROM email_messages WHERE user_id = ?',
-		),
-	).toBe(false)
 })
 
 test('R2 export cursor detects object overwrite before continuing bytes', async () => {
 	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id, avatar_key
-		) VALUES (
-			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
-			'2026-07-05', 'user-aaa', 'user-avatars/user-aaa/avatar.png'
-		);
-	`)
+	insertTestUser(sqlite, {
+		id: 1,
+		username: 'user-a',
+		stableUserId: 'user-aaa',
+		avatarKey: 'user-avatars/user-aaa/avatar.png',
+	})
 	const bytes = new Uint8Array(300 * 1024).fill(1)
 	let etag = '"v1"'
 	const get = vi.fn(
@@ -225,22 +204,15 @@ test('R2 export cursor detects object overwrite before continuing bytes', async 
 			}
 		},
 	)
-	const head = vi.fn(async () => ({
-		size: bytes.byteLength,
-		httpEtag: etag,
-	}))
-	const env = {
+	const head = vi.fn(async () => ({ size: bytes.byteLength, httpEtag: etag }))
+	const read = sectionReader({
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		COMMUNITY_ASSETS: { get, head },
 		EMAIL_BLOBS: { get: vi.fn(async () => null), head },
-	} as unknown as Env
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-	})
+	} as unknown as Env)
+
+	const first = await read('r2_object')
 	expect(first.items).toEqual([
 		expect.objectContaining({
 			offset: 0,
@@ -249,13 +221,7 @@ test('R2 export cursor detects object overwrite before continuing bytes', async 
 		}),
 	])
 	etag = '"v2"'
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-		startAfter: first.nextStartAfter ?? undefined,
-	})
+	const second = await read('r2_object', { startAfter: first.nextStartAfter })
 	expect(second.items).toEqual([
 		expect.objectContaining({
 			changed: true,
@@ -268,19 +234,8 @@ test('R2 export cursor detects object overwrite before continuing bytes', async 
 })
 
 test('R2 export cursor keeps stable row identity when inventory mutates', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		) VALUES (
-			1, 'user-a', 'a@example.com', 'hash', '2026-07-05', '2026-07-05',
-			'2026-07-05', 'user-aaa'
-		);
-	`)
-	const requestedKeys: Array<string> = []
+	const { db } = createMigratedDbWithUser()
 	const get = vi.fn(async (key: string) => {
-		requestedKeys.push(key)
 		const bytes = new TextEncoder().encode(key)
 		return {
 			size: bytes.byteLength,
@@ -289,51 +244,24 @@ test('R2 export cursor keeps stable row identity when inventory mutates', async 
 		}
 	})
 	const blobReferences = [
-		{
-			kind: 'raw_mime' as const,
-			key: 'email-raw:v1:user-aaa/mail-a',
-			messageId: 'mail-a',
-			attachmentId: null,
-		},
-		{
-			kind: 'raw_mime' as const,
-			key: 'email-raw:v1:user-aaa/mail-b',
-			messageId: 'mail-b',
-			attachmentId: null,
-		},
+		rawMimeReference('mail-a'),
+		rawMimeReference('mail-b'),
 	]
-	const env = {
+	const read = sectionReader({
 		APP_DB: db,
 		COOKIE_SECRET: 'test-cookie-secret',
 		EMAIL_BLOBS: { get },
 		COMMUNITY_ASSETS: { get: vi.fn(async () => null) },
-		MAILBOX: createMailboxBinding({
-			blobReferences: () => blobReferences,
-		}),
-	} as unknown as Env
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-	})
-	blobReferences.unshift({
-		kind: 'raw_mime',
-		key: 'email-raw:v1:user-aaa/mail-00',
-		messageId: 'mail-00',
-		attachmentId: null,
-	})
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'r2_object',
-		startAfter: first.nextStartAfter ?? undefined,
-	})
+		MAILBOX: createMailboxBinding({ blobReferences: () => blobReferences }),
+	} as unknown as Env)
+
+	const first = await read('r2_object')
+	blobReferences.unshift(rawMimeReference('mail-00'))
+	const second = await read('r2_object', { startAfter: first.nextStartAfter })
 	expect(second.items).toEqual([
 		expect.objectContaining({ key: 'email-raw:v1:user-aaa/mail-b' }),
 	])
-	expect(requestedKeys).toEqual([
+	expect(get.mock.calls.map(([key]) => key)).toEqual([
 		'email-raw:v1:user-aaa/mail-a',
 		'email-raw:v1:user-aaa/mail-b',
 	])
@@ -374,192 +302,37 @@ test('durable object discovery pages high-cardinality storage ids without nested
 			}
 		},
 	} as unknown as D1Database
-	const seen = new Set<string>()
-	let startAfter: string | undefined
-	for (;;) {
-		const page = await readAccountExportSection({
-			env: {
-				APP_DB: db,
-				JOBS: { listJobStorageIdsForUser: async () => [] },
-			} as unknown as Env,
-			dbUserId: 1,
-			mcpUserId: 'user-a',
-			section: 'durable_object_summaries',
-			kind: 'storage_runner',
-			pageSize: 100,
-			startAfter,
-		})
-		for (const item of page.items as Array<{ storageId: string }>) {
-			expect(Array.isArray(item.storageId)).toBe(false)
-			seen.add(item.storageId)
-		}
-		if (!page.truncated) break
-		startAfter = page.nextStartAfter ?? undefined
-	}
-	expect(seen.size).toBe(502)
+	const read = sectionReader(
+		{
+			APP_DB: db,
+			JOBS: { listJobStorageIdsForUser: async () => [] },
+		} as unknown as Env,
+		'user-a',
+	)
+
+	expect((await readAllStorageRunnerIds(read, 100)).size).toBe(502)
 	expect(maxRows).toBeLessThanOrEqual(101)
 })
 
-test('account export includes run_records section with runs, ledger, and dedicated state', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
-	const run = {
-		id: 'run-export-1',
-		surface: 'job' as const,
-		status: 'success' as const,
-		name: 'nightly',
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
-		publishedCommit: null,
-		storageId: 'job:nightly',
-		jobId: 'job-1',
-		workflowId: null,
-		invocationId: null,
-		sessionId: null,
-		idempotencyKey: null,
-		parentRunId: null,
-		startedAt: '2026-07-26T00:00:00.000Z',
-		finishedAt: '2026-07-26T00:00:01.000Z',
-		durationMs: 1000,
-		errorName: null,
-		errorMessage: null,
-		metadata: {},
-		logCount: 2,
-	}
+test('run_records section exports runs, ledger, and dedicated state and pages across phases', async () => {
+	const { db } = createMigratedDbWithUser()
+	// RunLog rows pass through unchanged; only ids and runId joins matter.
+	const run = { id: 'run-export-1', status: 'success' }
 	const logs = [
-		{
-			runId: 'run-export-1',
-			sequence: 0,
-			level: 'log' as const,
-			message: 'starting',
-			fields: null,
-		},
-		{
-			runId: 'run-export-1',
-			sequence: 1,
-			level: 'info' as const,
-			message: 'done',
-			fields: { ok: true },
-		},
+		{ runId: 'run-export-1', sequence: 0, message: 'starting' },
+		{ runId: 'run-export-1', sequence: 1, message: 'done' },
 	]
 	// Keyed package-invocation idempotency ledger row stored in the same
 	// RunLog DO; exported through the same run_records section.
-	const packageInvocation = {
-		id: 'invocation-export-1',
-		tokenId: 'token-1',
-		packageId: 'pkg-1',
-		packageKodyId: 'pkg-one',
-		exportName: './send-message',
-		idempotencyKey: 'evt-1',
-		requestHash: 'hash-1',
-		source: 'webhook',
-		topic: null,
-		status: 'completed' as const,
-		responseJson: '{"status":200,"body":{"ok":true}}',
-		createdAt: '2026-07-26T00:00:00.000Z',
-		updatedAt: '2026-07-26T00:00:01.000Z',
-	}
-	const workflowProjection = {
-		id: 'wf-export-1',
-		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-		sourceType: 'inline' as const,
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
-		workflowName: 'export-wf',
-		exportName: null,
-		idempotencyKey: 'idem-export',
-		runAt: '2026-07-31T00:00:00.000Z',
-		planDate: null,
-		status: 'complete',
-		createdAt: '2026-07-31T00:00:00.000Z',
-		updatedAt: '2026-07-31T00:00:01.000Z',
-		completedAt: '2026-07-31T00:00:01.000Z',
-		lastError: null,
-	}
-	const jobRunObservability = {
-		jobId: 'job-export-1',
-		lastRunAt: '2026-07-31T00:00:00.000Z',
-		lastRunStatus: 'success' as const,
-		lastRunError: null,
-		lastDurationMs: 12,
-		runCount: 1,
-		successCount: 1,
-		errorCount: 0,
-		updatedAt: '2026-07-31T00:00:01.000Z',
-	}
-	const packageRunSuccess = {
-		packageId: 'pkg-1',
-		successCount: 2,
-		updatedAt: '2026-07-31T00:00:01.000Z',
-	}
+	const packageInvocation = { id: 'invocation-export-1', idempotencyKey: 'e' }
+	const workflowProjection = { id: 'wf-export-1', status: 'complete' }
+	const jobRunObservability = { jobId: 'job-export-1', runCount: 1 }
+	const packageRunSuccess = { packageId: 'pkg-1', successCount: 2 }
 	const activationMilestone = {
-		milestone: 'package_activated' as const,
-		reachedAt: '2026-07-31T00:00:01.000Z',
+		milestone: 'package_activated',
 		packageId: 'pkg-1',
 	}
-	const env = {
-		APP_DB: db,
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				exportStorage: async () => ({
-					entries: [],
-					truncated: false,
-					nextStartAfter: null,
-					pageSize: 100,
-				}),
-			}),
-		},
-		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				exportRuns: async () => ({
-					runs: [run],
-					logs,
-					packageInvocations: [packageInvocation],
-					workflowProjections: [workflowProjection],
-					jobRunObservability: [jobRunObservability],
-					packageRunSuccesses: [packageRunSuccess],
-					activationMilestones: [activationMilestone],
-					nextStartAfter: null,
-					truncated: false,
-				}),
-				listStorageIds: async () => ['job:nightly'],
-				summarize: async () => ({
-					since: '1970-01-01T00:00:00.000Z',
-					total: 1,
-					errors: 0,
-					ignored: 0,
-					resolved: 0,
-					running: 0,
-					bySurface: [],
-				}),
-			}),
-		},
-		JOBS: {
-			exportUser: async () => ({ userId: 'user-aaa' }),
-		},
-	} as unknown as Env
-
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
-	// One run plus one row from each RunLog export phase.
-	expect(accountExport.manifest.sections.run_records?.count).toBe(6)
-	expect(accountExport.durableObjects.runRecords).toEqual({
+	const fullPage = {
 		runs: [run],
 		logs,
 		packageInvocations: [packageInvocation],
@@ -567,77 +340,94 @@ test('account export includes run_records section with runs, ledger, and dedicat
 		jobRunObservability: [jobRunObservability],
 		packageRunSuccesses: [packageRunSuccess],
 		activationMilestones: [activationMilestone],
-		nextStartAfter: null,
+		nextStartAfter: null as string | null,
 		truncated: false,
-	})
+	}
+	const exportRuns = vi.fn(async () => fullPage)
+	const env = {
+		APP_DB: db,
+		STORAGE_RUNNER: createStubNamespace({
+			exportStorage: async () => ({
+				entries: [],
+				truncated: false,
+				nextStartAfter: null,
+			}),
+		}),
+		RUN_LOG: createStubNamespace({
+			exportRuns,
+			listStorageIds: async () => ['job:nightly'],
+			summarize: async () => ({
+				since: '1970-01-01T00:00:00.000Z',
+				total: 1,
+				errors: 0,
+				ignored: 0,
+				resolved: 0,
+				running: 0,
+				bySurface: [],
+			}),
+		}),
+		JOBS: { exportUser: async () => ({ userId: 'user-aaa' }) },
+	} as unknown as Env
+	const read = sectionReader(env)
 
-	const section = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'run_records',
-	})
+	const accountExport = await exportUserA(env)
+	// One run plus one row from each RunLog export phase.
+	expect(accountExport.manifest.sections.run_records?.count).toBe(6)
+	expect(accountExport.durableObjects.runRecords).toEqual(fullPage)
+
+	const section = await read('run_records')
 	expect(section.truncated).toBe(false)
 	expect(section.items).toEqual([
-		{
-			run,
-			logs,
-		},
-		{
-			packageInvocation,
-		},
-		{
-			workflowProjection,
-		},
-		{
-			jobRunObservability,
-		},
-		{
-			packageRunSuccess,
-		},
-		{
-			activationMilestone,
-		},
+		{ run, logs },
+		{ packageInvocation },
+		{ workflowProjection },
+		{ jobRunObservability },
+		{ packageRunSuccess },
+		{ activationMilestone },
 	])
+
+	const empty = {
+		...fullPage,
+		runs: [],
+		logs: [],
+		packageInvocations: [],
+		workflowProjections: [],
+		jobRunObservability: [],
+		packageRunSuccesses: [],
+		activationMilestones: [],
+	}
+	exportRuns
+		.mockResolvedValueOnce({
+			...empty,
+			runs: [run],
+			nextStartAfter: 'invocation-ledger:',
+			truncated: true,
+		})
+		.mockResolvedValueOnce({
+			...empty,
+			workflowProjections: [workflowProjection],
+		})
+	const pageOne = await read('run_records', { pageSize: 1 })
+	expect(pageOne.items).toEqual([{ run, logs: [] }])
+	expect(pageOne.truncated).toBe(true)
+	expect(pageOne.nextStartAfter).toBe('invocation-ledger:')
+	const pageTwo = await read('run_records', {
+		pageSize: 1,
+		startAfter: pageOne.nextStartAfter,
+	})
+	expect(pageTwo.items).toEqual([{ workflowProjection }])
+	expect(pageTwo.truncated).toBe(false)
+	expect(exportRuns).toHaveBeenLastCalledWith(
+		expect.objectContaining({ pageSize: 1, startAfter: 'invocation-ledger:' }),
+	)
 })
 
 test('account export includes user_meter counters, pages them, and warns on truncation', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
+	const { db } = createMigratedDbWithUser()
 	const counters = [
-		{
-			resource: 'email_sends_per_day' as const,
-			day: '2026-07-30',
-			count: 2,
-			revision: 2,
-			updatedAt: '2026-07-30T01:00:00.000Z',
-			mirrorUpdatedAt: 'r/00000000000000000002',
-		},
-		{
-			resource: 'execute_calls_per_day' as const,
-			day: '2026-07-30',
-			count: 5,
-			revision: 5,
-			updatedAt: '2026-07-30T02:00:00.000Z',
-			mirrorUpdatedAt: 'r/00000000000000000005',
-		},
-		{
-			resource: 'outbound_fetches_per_day' as const,
-			day: '2026-07-31',
-			count: 1,
-			revision: 1,
-			updatedAt: '2026-07-31T00:00:00.000Z',
-			mirrorUpdatedAt: 'r/00000000000000000001',
-		},
+		{ resource: 'email_sends_per_day', day: '2026-07-30', count: 2 },
+		{ resource: 'execute_calls_per_day', day: '2026-07-30', count: 5 },
+		{ resource: 'outbound_fetches_per_day', day: '2026-07-31', count: 1 },
 	]
 	const storageBytesState = {
 		bytes: 4_096,
@@ -646,13 +436,9 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		mirrorUpdatedAt: 'r/00000000000000000003',
 	}
 	const deletionState = {
-		deletingAt: '2026-07-31 03:10:00' as string | null,
+		deletingAt: '2026-07-31 03:10:00',
 		activeWriteLeaseCount: 1,
-		writeLeases: [
-			{
-				acquiredAt: '2026-07-31 03:00:00',
-			},
-		],
+		writeLeases: [{ acquiredAt: '2026-07-31 03:00:00' }],
 	}
 	const exportCounters = vi.fn(
 		async (input: { pageSize?: number; startAfter?: string | null }) => {
@@ -664,8 +450,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 				: 0
 			const page = counters.slice(startIndex, startIndex + pageSize)
 			const truncated = startIndex + pageSize < counters.length
-			const isFirstPage =
-				typeof input.startAfter !== 'string' || input.startAfter.length === 0
+			const isFirstPage = !input.startAfter
 			return {
 				counters: page,
 				storageBytesState: isFirstPage ? storageBytesState : null,
@@ -681,17 +466,11 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
 	const env = {
 		APP_DB: db,
-		USER_METER: {
-			idFromName,
-			get: () => ({ exportCounters }),
-		},
+		USER_METER: { idFromName, get: () => ({ exportCounters }) },
 	} as unknown as Env
+	const read = sectionReader(env)
 
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	const accountExport = await exportUserA(env)
 	expect(idFromName).toHaveBeenCalledWith('user-aaa')
 	// 3 counters + storage state + deletingAt + 1 lease
 	expect(accountExport.manifest.sections.user_meter?.count).toBe(6)
@@ -709,34 +488,27 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		]),
 	)
 
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'user_meter',
-		pageSize: 2,
+	const first = await read('user_meter', { pageSize: 2 })
+	expect(first).toMatchObject({
+		items: counters.slice(0, 2),
+		storageBytesState,
+		deletionState,
+		inboundConnectionLastUsed: [],
+		truncated: true,
+		nextStartAfter: '2026-07-30:execute_calls_per_day',
 	})
-	expect(first.items).toEqual(counters.slice(0, 2))
-	expect(first.storageBytesState).toEqual(storageBytesState)
-	expect(first.deletionState).toEqual(deletionState)
-	expect(first.inboundConnectionLastUsed).toEqual([])
-	expect(first.truncated).toBe(true)
-	expect(first.nextStartAfter).toBe('2026-07-30:execute_calls_per_day')
-
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'user_meter',
+	const second = await read('user_meter', {
 		pageSize: 2,
-		startAfter: first.nextStartAfter ?? undefined,
+		startAfter: first.nextStartAfter,
 	})
-	expect(second.items).toEqual(counters.slice(2))
-	expect(second.storageBytesState).toBeNull()
-	expect(second.deletionState).toBeNull()
-	expect(second.inboundConnectionLastUsed).toBeNull()
-	expect(second.truncated).toBe(false)
-	expect(second.nextStartAfter).toBeNull()
+	expect(second).toMatchObject({
+		items: counters.slice(2),
+		storageBytesState: null,
+		deletionState: null,
+		inboundConnectionLastUsed: null,
+		truncated: false,
+		nextStartAfter: null,
+	})
 	expect(exportCounters).toHaveBeenCalledWith(
 		expect.objectContaining({
 			pageSize: 2,
@@ -752,11 +524,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		nextStartAfter: 'cursor-more',
 		truncated: true,
 	}))
-	const truncatedExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	const truncatedExport = await exportUserA(env)
 	expect(truncatedExport.durableObjects.userMeter?.truncated).toBe(true)
 	expect(truncatedExport.manifest.sections.user_meter?.count).toBe(1)
 	expect(truncatedExport.manifest.warnings).toContain(
@@ -765,76 +533,12 @@ test('account export includes user_meter counters, pages them, and warns on trun
 })
 
 test('account export includes mailbox rows, pages them, and warns on truncation', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
+	const { db } = createMigratedDbWithUser()
+	// Mailbox DO rows pass through unchanged.
 	const rows = [
-		{
-			kind: 'thread' as const,
-			row: {
-				id: 'thread-1',
-				inboxId: 'inbox-1',
-				subjectNormalized: 'hello',
-				rootMessageIdHeader: null,
-				lastMessageAt: '2026-07-30T00:00:00.000Z',
-				createdAt: '2026-07-30T00:00:00.000Z',
-				updatedAt: '2026-07-30T00:00:00.000Z',
-			},
-		},
-		{
-			kind: 'message' as const,
-			row: {
-				id: 'message-1',
-				threadId: 'thread-1',
-				inboxId: 'inbox-1',
-				direction: 'inbound' as const,
-				processingStatus: 'received' as const,
-				deliveryStatus: 'delivered' as const,
-				classification: 'personal' as const,
-				subject: 'hello',
-				fromAddress: 'a@example.com',
-				toAddresses: ['b@example.com'],
-				ccAddresses: [],
-				bccAddresses: [],
-				replyToAddresses: [],
-				messageIdHeader: null,
-				inReplyToHeader: null,
-				referencesHeader: null,
-				sentAt: '2026-07-30T00:00:00.000Z',
-				receivedAt: '2026-07-30T00:00:00.000Z',
-				rawMimeKey: null,
-				rawMimeStorageKind: 'unavailable' as const,
-				bodyText: 'hi',
-				bodyHtml: null,
-				snippet: 'hi',
-				hasAttachments: false,
-				createdAt: '2026-07-30T00:00:00.000Z',
-				updatedAt: '2026-07-30T00:00:00.000Z',
-			},
-		},
-		{
-			kind: 'attachment' as const,
-			row: {
-				id: 'attachment-1',
-				messageId: 'message-1',
-				filename: 'file.txt',
-				contentType: 'text/plain',
-				sizeBytes: 3,
-				storageKey: null,
-				storageKind: 'unavailable' as const,
-				contentId: null,
-				isInline: false,
-				createdAt: '2026-07-30T00:00:00.000Z',
-			},
-		},
+		{ kind: 'thread', row: { id: 'thread-1', subjectNormalized: 'hello' } },
+		{ kind: 'message', row: { id: 'message-1', threadId: 'thread-1' } },
+		{ kind: 'attachment', row: { id: 'attachment-1', messageId: 'message-1' } },
 	]
 	const exportMailbox = vi.fn(
 		async (input: { pageSize?: number; startAfter?: string | null }) => {
@@ -860,17 +564,11 @@ test('account export includes mailbox rows, pages them, and warns on truncation'
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
 	const env = {
 		APP_DB: db,
-		MAILBOX: {
-			idFromName,
-			get: () => ({ exportMailbox, countMailbox }),
-		},
+		MAILBOX: { idFromName, get: () => ({ exportMailbox, countMailbox }) },
 	} as unknown as Env
+	const read = sectionReader(env)
 
-	const accountExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	const accountExport = await exportUserA(env)
 	expect(idFromName).toHaveBeenCalledWith('user-aaa')
 	expect(accountExport.manifest.sections.mailbox?.count).toBe(3)
 	expect(accountExport.durableObjects.mailbox).toEqual({
@@ -888,173 +586,37 @@ test('account export includes mailbox rows, pages them, and warns on truncation'
 		expect(accountExport.manifest.sections).not.toHaveProperty(`d1.${table}`)
 	}
 
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'mailbox',
-		pageSize: 2,
+	const first = await read('mailbox', { pageSize: 2 })
+	expect(first).toMatchObject({
+		items: rows.slice(0, 2),
+		truncated: true,
+		nextStartAfter: 'message-1',
 	})
-	expect(first.items).toEqual(rows.slice(0, 2))
-	expect(first.truncated).toBe(true)
-	expect(first.nextStartAfter).toBe('message-1')
-
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'mailbox',
+	const second = await read('mailbox', {
 		pageSize: 2,
-		startAfter: first.nextStartAfter ?? undefined,
+		startAfter: first.nextStartAfter,
 	})
-	expect(second.items).toEqual(rows.slice(2))
-	expect(second.truncated).toBe(false)
-	expect(second.nextStartAfter).toBeNull()
-	expect(exportMailbox).toHaveBeenCalled()
+	expect(second).toMatchObject({
+		items: rows.slice(2),
+		truncated: false,
+		nextStartAfter: null,
+	})
 
 	exportMailbox.mockImplementation(async () => ({
 		rows: [rows[0]!],
 		nextStartAfter: 'cursor-more',
 		truncated: true,
 	}))
-	const truncatedExport = await createAccountExport({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-	})
+	const truncatedExport = await exportUserA(env)
 	expect(truncatedExport.durableObjects.mailbox?.truncated).toBe(true)
 	expect(truncatedExport.manifest.warnings).toContain(
 		'Mailbox rows were truncated in the full export; use accountExportSection with section "mailbox" to retrieve additional pages.',
 	)
 })
 
-test('run_records section paging preserves exportRuns cursor across dedicated phases', async () => {
-	const { sqlite, db } = createMigratedDb()
+test('storage_runners count matches ids enumerable by discovery paging, including RunLog-only ids', async () => {
+	const { sqlite, db } = createMigratedDbWithUser()
 	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
-	const run = {
-		id: 'run-page-1',
-		surface: 'job' as const,
-		status: 'success' as const,
-		name: 'page',
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
-		publishedCommit: null,
-		storageId: null,
-		jobId: 'job-page',
-		workflowId: null,
-		invocationId: null,
-		sessionId: null,
-		idempotencyKey: null,
-		parentRunId: null,
-		startedAt: '2026-07-26T00:00:00.000Z',
-		finishedAt: '2026-07-26T00:00:01.000Z',
-		durationMs: 1000,
-		errorName: null,
-		errorMessage: null,
-		metadata: {},
-		logCount: 0,
-	}
-	const workflowProjection = {
-		id: 'wf-page-1',
-		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
-		sourceType: 'inline' as const,
-		packageId: null,
-		kodyId: null,
-		sourceId: null,
-		workflowName: 'page-wf',
-		exportName: null,
-		idempotencyKey: 'idem-page',
-		runAt: '2026-07-31T00:00:00.000Z',
-		planDate: null,
-		status: 'complete',
-		createdAt: '2026-07-31T00:00:00.000Z',
-		updatedAt: '2026-07-31T00:00:01.000Z',
-		completedAt: '2026-07-31T00:00:01.000Z',
-		lastError: null,
-	}
-	const exportRuns = vi
-		.fn()
-		.mockResolvedValueOnce({
-			runs: [run],
-			logs: [],
-			packageInvocations: [],
-			workflowProjections: [],
-			jobRunObservability: [],
-			packageRunSuccesses: [],
-			activationMilestones: [],
-			nextStartAfter: 'invocation-ledger:',
-			truncated: true,
-		})
-		.mockResolvedValueOnce({
-			runs: [],
-			logs: [],
-			packageInvocations: [],
-			workflowProjections: [workflowProjection],
-			jobRunObservability: [],
-			packageRunSuccesses: [],
-			activationMilestones: [],
-			nextStartAfter: null,
-			truncated: false,
-		})
-	const env = {
-		APP_DB: db,
-		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ exportRuns }),
-		},
-	} as unknown as Env
-
-	const first = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'run_records',
-		pageSize: 1,
-	})
-	expect(first.items).toEqual([{ run, logs: [] }])
-	expect(first.truncated).toBe(true)
-	expect(first.nextStartAfter).toBe('invocation-ledger:')
-
-	const second = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'run_records',
-		pageSize: 1,
-		startAfter: first.nextStartAfter ?? undefined,
-	})
-	expect(second.items).toEqual([{ workflowProjection }])
-	expect(second.truncated).toBe(false)
-	expect(exportRuns).toHaveBeenNthCalledWith(
-		2,
-		expect.objectContaining({
-			pageSize: 1,
-			startAfter: 'invocation-ledger:',
-		}),
-	)
-})
-
-test('storage_runners count matches ids enumerable by discovery paging', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
 		INSERT INTO jobs (
 			id, user_id, name, source_id, storage_id, schedule_json, timezone,
 			caller_context_json, created_at, updated_at, next_run_at
@@ -1075,19 +637,15 @@ test('storage_runners count matches ids enumerable by discovery paging', async (
 			'src-1', 1, 0, 1, '2026-07-05', '2026-07-05'
 		);
 	`)
-
 	const env = {
 		APP_DB: db,
-		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				listStorageIds: async () => [
-					'exec:adhoc',
-					'exec:runlog-only',
-					'job:job-1',
-				],
-			}),
-		},
+		RUN_LOG: createStubNamespace({
+			listStorageIds: async () => [
+				'exec:adhoc',
+				'exec:runlog-only',
+				'job:job-1',
+			],
+		}),
 	} as unknown as Env
 	const manifest = await createAccountExportManifest({
 		env,
@@ -1097,60 +655,24 @@ test('storage_runners count matches ids enumerable by discovery paging', async (
 	const expectedCount = manifest.sections.storage_runners?.count
 	expect(expectedCount).toBeGreaterThan(0)
 
-	const seen = new Set<string>()
-	let startAfter: string | undefined
-	for (;;) {
-		const page = await readAccountExportSection({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'durable_object_summaries',
-			kind: 'storage_runner',
-			pageSize: 2,
-			startAfter,
-		})
-		for (const item of page.items as Array<{ storageId: string }>) {
-			seen.add(item.storageId)
-		}
-		if (!page.truncated) break
-		startAfter = page.nextStartAfter ?? undefined
-	}
+	const seen = await readAllStorageRunnerIds(sectionReader(env), 2)
 	expect(seen.size).toBe(expectedCount)
 	expect(seen.has('exec:runlog-only')).toBe(true)
 })
 
 test('storage_runner section exports a RunLog-only storage id', async () => {
-	const { sqlite, db } = createMigratedDb()
-	sqlite.exec(`
-		INSERT INTO users (
-			id, username, email, password_hash, created_at, updated_at,
-			email_verified_at, stable_user_id
-		)
-		VALUES (
-			1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-			'2026-07-05', '2026-07-05', 'user-aaa'
-		);
-	`)
-
+	const { db } = createMigratedDbWithUser()
 	const exportStorage = vi.fn(async () => ({
 		entries: [{ key: 'runlog', value: { ok: true } }],
 		truncated: false,
 		nextStartAfter: null,
-		pageSize: 100,
-		estimatedBytes: 8,
 	}))
 	const env = {
 		APP_DB: db,
-		STORAGE_RUNNER: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ exportStorage }),
-		},
-		RUN_LOG: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({
-				listStorageIds: async () => ['exec:runlog-export-only'],
-			}),
-		},
+		STORAGE_RUNNER: createStubNamespace({ exportStorage }),
+		RUN_LOG: createStubNamespace({
+			listStorageIds: async () => ['exec:runlog-export-only'],
+		}),
 	} as unknown as Env
 
 	const manifest = await createAccountExportManifest({
@@ -1160,11 +682,7 @@ test('storage_runner section exports a RunLog-only storage id', async () => {
 	})
 	expect(manifest.sections.storage_runners?.count).toBe(1)
 
-	const section = await readAccountExportSection({
-		env,
-		dbUserId: 1,
-		mcpUserId: 'user-aaa',
-		section: 'storage_runner',
+	const section = await sectionReader(env)('storage_runner', {
 		storageId: 'exec:runlog-export-only',
 	})
 	expect(section.items).toEqual([{ key: 'runlog', value: { ok: true } }])
@@ -1173,21 +691,13 @@ test('storage_runner section exports a RunLog-only storage id', async () => {
 
 test('storage_runner section reads do not load manifests for D1-known rows', async () => {
 	const loadManifest = vi.spyOn(
-		await import('#worker/package-registry/source.ts'),
+		packageRegistrySource,
 		'loadPackageManifestBySourceId',
 	)
 	loadManifest.mockRejectedValue(new Error('manifest should not be loaded'))
 	try {
-		const { sqlite, db } = createMigratedDb()
+		const { sqlite, db } = createMigratedDbWithUser()
 		sqlite.exec(`
-			INSERT INTO users (
-				id, username, email, password_hash, created_at, updated_at,
-				email_verified_at, stable_user_id
-			)
-			VALUES (
-				1, 'user-a', 'a@example.com', 'password-hash-a', '2026-07-05',
-				'2026-07-05', '2026-07-05', 'user-aaa'
-			);
 			INSERT INTO user_storage_buckets (
 				user_id, storage_id, kind, created_at, last_seen_at
 			) VALUES (
@@ -1195,29 +705,16 @@ test('storage_runner section reads do not load manifests for D1-known rows', asy
 				'2026-07-05', '2026-07-05'
 			);
 		`)
-
 		const exportStorage = vi.fn(async () => ({
 			entries: [],
 			truncated: false,
 			nextStartAfter: null,
-			pageSize: 100,
-			estimatedBytes: 0,
 		}))
-		const env = {
+		await sectionReader({
 			APP_DB: db,
-			STORAGE_RUNNER: {
-				idFromName: (name: string) => name as unknown as DurableObjectId,
-				get: () => ({ exportStorage }),
-			},
-		} as unknown as Env
-
-		await readAccountExportSection({
-			env,
-			dbUserId: 1,
-			mcpUserId: 'user-aaa',
-			section: 'storage_runner',
-			storageId: 'exec:section-only',
-		})
+			STORAGE_RUNNER: createStubNamespace({ exportStorage }),
+		} as unknown as Env)('storage_runner', { storageId: 'exec:section-only' })
+		expect(exportStorage).toHaveBeenCalledTimes(1)
 		expect(loadManifest).not.toHaveBeenCalled()
 	} finally {
 		loadManifest.mockRestore()

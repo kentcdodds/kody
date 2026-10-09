@@ -8,11 +8,13 @@ import {
 	type BundleArtifactDynamicDependency,
 	type BundleArtifactKind,
 	type PublishedBundleArtifact,
+	bundleArtifactVersion,
 } from './published-runtime-artifacts.ts'
 import {
 	parseKodyPackageSpecifier,
 	packageSpecifierPrefix,
 } from './package-import-resolution.ts'
+import { throwUnresolvedBarePackageImportsError } from './bare-package-import-declarations.ts'
 import {
 	collectLiteralImportSpecifiers,
 	isBarePackageImportSpecifier,
@@ -65,6 +67,13 @@ export function assertBundleHasNoUnresolvedBareImports(input: {
 	modules: WorkerLoaderModules
 	bundleLabel: string
 	resolutionHint?: string
+	/**
+	 * Package snapshot used to decide whether unresolved bare imports are a
+	 * caller-fixable missing declaration (UserCodeError) or a declared dep
+	 * that failed to install/resolve (platform Error). Omit only when the
+	 * caller has no snapshot (tests asserting the message phrase alone).
+	 */
+	sourceFiles?: Record<string, string>
 }) {
 	const unresolved = collectUnresolvedBareImports(input.modules)
 	if (unresolved.length === 0) return
@@ -76,9 +85,16 @@ export function assertBundleHasNoUnresolvedBareImports(input: {
 					.join(', ')}`,
 		)
 		.join('; ')
-	throw new Error(
-		`${input.bundleLabel} still contains unresolved bare package imports after bundling (${details}). ${input.resolutionHint ?? 'Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.'}`,
-	)
+	const message = `${input.bundleLabel} still contains unresolved bare package imports after bundling (${details}). ${input.resolutionHint ?? 'Declare supported runtime dependencies in package.json and ensure checks/publish can resolve them before execution.'}`
+	const unresolvedSpecifiers = unresolved.flatMap((entry) => entry.specifiers)
+	if (input.sourceFiles) {
+		throwUnresolvedBarePackageImportsError({
+			message,
+			unresolvedSpecifiers,
+			sourceFiles: input.sourceFiles,
+		})
+	}
+	throw new Error(message)
 }
 
 function materializeArtifactModuleSource(input: {
@@ -263,7 +279,7 @@ export function createPublishedBundleArtifact(input: {
 	} | null
 }): PublishedBundleArtifact {
 	return {
-		version: 1,
+		version: bundleArtifactVersion,
 		kind: input.kind,
 		artifactName: input.artifactName?.trim() || null,
 		sourceId: input.sourceId,

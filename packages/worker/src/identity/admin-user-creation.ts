@@ -1,3 +1,4 @@
+import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
@@ -18,6 +19,11 @@ import {
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
 import { unusablePasswordHash } from '#worker/identity/usable-password.ts'
+import { maybeGrantSignupWelcomeCredits } from '#worker/billing/signup-welcome-credits.ts'
+import {
+	provisionPersonalOrgForSignup,
+	rollbackPersonalOrgAfterFailedSignup,
+} from '#worker/orgs/signup-provision.ts'
 
 export type AdminCreateUserErrorCode =
 	| 'invalid_email'
@@ -74,12 +80,23 @@ async function resolveUsername(input: {
 	return explicitUsername
 }
 
-async function deleteUserBestEffort(db: D1Database, userId: number) {
+async function deleteUserBestEffort(input: {
+	db: D1Database
+	userId: number
+	stableUserId: string
+}) {
+	await rollbackPersonalOrgAfterFailedSignup(input.db, input.stableUserId)
 	try {
-		await db.prepare(`DELETE FROM users WHERE id = ?`).bind(userId).run()
+		await input.db
+			.prepare(`DELETE FROM users WHERE id = ?`)
+			.bind(input.userId)
+			.run()
 	} catch (error) {
 		console.error('Failed to roll back admin-created user:', error)
+		return
 	}
+	// Use the known stable id: a post-DELETE SELECT would find nothing.
+	invalidatePackageAppOwnerCache({ stableUserId: input.stableUserId })
 }
 
 function buildSetupLink(input: { origin: string; token: string }) {
@@ -127,8 +144,10 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	try {
 		const result = await input.db
 			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-				 VALUES (?, ?, ?, ?, ?, 'free')`,
+				`INSERT INTO users (
+					username, email, password_hash, email_verified_at, stable_user_id,
+					plan, signup_welcome_credits_pending
+				) VALUES (?, ?, ?, ?, ?, 'free', 1)`,
 			)
 			.bind(
 				username,
@@ -146,7 +165,22 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			)
 		}
 		userId = lastRowId
+		await provisionPersonalOrgForSignup(input.db, {
+			stableUserId,
+			username,
+			createdAt: nowIso,
+			accountType: 'person',
+			plan: 'free',
+			signupWelcomeCreditsPending: 1,
+		})
 	} catch (error) {
+		if (userId != null) {
+			await deleteUserBestEffort({
+				db: input.db,
+				userId,
+				stableUserId,
+			})
+		}
 		const uniqueField = getUniqueConstraintField(error)
 		if (uniqueField === 'email') {
 			throw new AdminCreateUserError(
@@ -169,7 +203,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		roleName: 'user',
 	})
 	if (!assigned) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'default_role_assignment_failed',
 			'Unable to create account.',
@@ -179,7 +217,11 @@ export async function adminCreateUserWithPasswordSetup(input: {
 	try {
 		await claimAccountEmail(input.db, { userId, email, now })
 	} catch (error) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'create_failed',
 			error instanceof Error ? error.message : 'Unable to create account.',
@@ -195,12 +237,22 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			expiresAt: setupTokenExpiresAt,
 		})
 	} catch (error) {
-		await deleteUserBestEffort(input.db, userId)
+		await deleteUserBestEffort({
+			db: input.db,
+			userId,
+			stableUserId,
+		})
 		throw new AdminCreateUserError(
 			'setup_token_failed',
 			error instanceof Error ? error.message : 'Unable to create setup link.',
 		)
 	}
+
+	await maybeGrantSignupWelcomeCredits({
+		db: input.db,
+		userId: stableUserId,
+		now,
+	})
 
 	return {
 		userId,

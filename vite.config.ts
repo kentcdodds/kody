@@ -9,8 +9,10 @@ import {
 	collectLocalOriginDevVars,
 	writeLocalOriginDevConfig,
 } from './tools/local-origin-dev-config.ts'
+import { writeLocalAuxiliaryDevConfig } from './tools/local-auxiliary-dev-config.ts'
 import { writeLocalPlatformDevConfig } from './tools/local-platform-dev-config.ts'
 import { writeLocalRuntimeDevConfig } from './tools/local-runtime-dev-config.ts'
+import { resolveLocalD1PersistPath } from './tools/local-d1-persist.ts'
 import { ensureGuideCatalogModules } from './tools/build-guide-catalog-modules.ts'
 import { ensureWorkerBundlerModules } from './tools/build-worker-bundler-modules.ts'
 import { markdownAsText } from './tools/vite-markdown-as-text.ts'
@@ -26,7 +28,7 @@ const envName = process.env.CLOUDFLARE_ENV?.trim() || 'production'
 if (!process.env.CLOUDFLARE_ENV?.trim()) {
 	process.env.CLOUDFLARE_ENV = envName
 }
-const persistPath = process.env.WRANGLER_PERSIST_TO ?? '.wrangler/state'
+const persistPath = resolveLocalD1PersistPath()
 const wranglerConfigPath =
 	process.env.KODY_WRANGLER_CONFIG ?? 'packages/worker/wrangler.jsonc'
 const isOriginDeployBuild = Boolean(process.env.KODY_WRANGLER_CONFIG)
@@ -67,14 +69,27 @@ export default defineConfig(async ({ command }) => {
 			vars: collectLocalOriginDevVars(process.env, process.env.PORT),
 		})
 		// Jobs + highlight stay attached in the test env (Playwright e2e).
-		// Platform/runtime have no test env and stay skipped there.
+		// Platform/runtime have no test env and stay skipped there. Pin the
+		// registered names so origin `service: "kody-jobs"` / `kody-highlight`
+		// resolve under `--env production` (otherwise wrangler registers
+		// `kody-jobs-production`).
+		const jobsDevConfigPath = await writeLocalAuxiliaryDevConfig({
+			configPath: 'packages/jobs-worker/wrangler.jsonc',
+			envName,
+			mainWorkerDevName: `kody-${envName}`,
+		})
+		const highlightDevConfigPath = await writeLocalAuxiliaryDevConfig({
+			configPath: 'packages/highlight-worker/wrangler.jsonc',
+			envName,
+			mainWorkerDevName: `kody-${envName}`,
+		})
 		auxiliaryWorkers.push(
 			{
-				configPath: 'packages/jobs-worker/wrangler.jsonc',
+				configPath: jobsDevConfigPath,
 				devOnly: true,
 			},
 			{
-				configPath: 'packages/highlight-worker/wrangler.jsonc',
+				configPath: highlightDevConfigPath,
 				devOnly: true,
 			},
 		)
@@ -147,7 +162,7 @@ export default defineConfig(async ({ command }) => {
 		oxc: {
 			jsx: {
 				runtime: 'automatic',
-				importSource: 'remix/ui',
+				importSource: 'remix/component',
 			},
 		},
 	}

@@ -1,8 +1,13 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
+import type * as serviceModule from '#worker/package-invocations/service.ts'
 
 const mocks = vi.hoisted(() => ({
-	invokePackageSubscription: vi.fn(async () => ({ status: 200, body: {} })),
+	invokePackageSubscription: vi.fn(
+		async (
+			_input: Parameters<typeof serviceModule.invokePackageSubscription>[0],
+		) => ({ status: 200, body: {} }),
+	),
 	listSavedPackagesByUserId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 }))
@@ -80,15 +85,19 @@ function subscribedManifest(input: {
 	}
 }
 
-test('run.error.recorded fans out only to owning-user packages with a lean payload', async () => {
-	const savedPackage = {
-		id: 'package-1',
+function savedPackage(index: number, kodyId: string) {
+	return {
+		id: `package-${index}`,
 		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'error-notifier',
-		name: '@user/error-notifier',
+		sourceId: `source-${index}`,
+		kodyId,
+		name: `@user/${kodyId}`,
 	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([savedPackage])
+}
+
+test('run.error.recorded fans out only to owning-user packages with a lean payload', async () => {
+	const notifier = savedPackage(1, 'error-notifier')
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([notifier])
 	mocks.loadPackageManifestBySourceId.mockResolvedValueOnce(
 		subscribedManifest({
 			name: '@user/error-notifier',
@@ -110,7 +119,7 @@ test('run.error.recorded fans out only to owning-user packages with a lean paylo
 	})
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
-			savedPackage,
+			savedPackage: notifier,
 			topic: runErrorRecordedTopic,
 			idempotencyKey: `run-error:run-1:package-1:${runErrorRecordedTopic}`,
 			source: 'run-records',
@@ -150,42 +159,26 @@ test('run.error.recorded fans out only to owning-user packages with a lean paylo
 
 test('run.error.recorded skips recursion/non-errors and never throws on handler failures', async () => {
 	consoleWarn.mockImplementation(() => {})
-	mocks.invokePackageSubscription.mockReset()
-	mocks.listSavedPackagesByUserId.mockReset()
-	mocks.loadPackageManifestBySourceId.mockReset()
-	const env = createEnv()
+	const dispatch = (run: ReturnType<typeof errorRun>) =>
+		dispatchRunErrorSubscriptionEvents({
+			env: createEnv(),
+			userId: 'user-1',
+			run: run as never,
+		})
 
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env,
-			userId: 'user-1',
-			run: errorRun({ surface: 'subscription' }) as never,
-		}),
-	).resolves.toEqual([])
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env,
-			userId: 'user-1',
-			run: errorRun({
-				status: 'success',
-				errorName: null,
-				errorMessage: null,
-			}) as never,
-		}),
-	).resolves.toEqual([])
+	for (const run of [
+		errorRun({ surface: 'subscription' }),
+		errorRun({ status: 'success', errorName: null, errorMessage: null }),
+	]) {
+		await expect(dispatch(run)).resolves.toEqual([])
+	}
 	expect(mocks.listSavedPackagesByUserId).not.toHaveBeenCalled()
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 
 	mocks.listSavedPackagesByUserId.mockRejectedValueOnce(
 		new Error('D1 unavailable'),
 	)
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env,
-			userId: 'user-1',
-			run: errorRun() as never,
-		}),
-	).resolves.toEqual([])
+	await expect(dispatch(errorRun())).resolves.toEqual([])
 	expect(mocks.invokePackageSubscription).not.toHaveBeenCalled()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run.error.recorded package subscription discovery incomplete',
@@ -201,32 +194,11 @@ test('run.error.recorded skips recursion/non-errors and never throws on handler 
 	)?.[1] as Record<string, unknown> | undefined
 	expect(discoveryWarn).not.toHaveProperty('userId')
 
-	const matchingPackage = {
-		id: 'package-1',
-		userId: 'user-1',
-		sourceId: 'source-1',
-		kodyId: 'error-notifier',
-		name: '@user/error-notifier',
-	}
-	const brokenPackage = {
-		id: 'package-2',
-		userId: 'user-1',
-		sourceId: 'source-2',
-		kodyId: 'broken',
-		name: '@user/broken',
-	}
-	const sibling = {
-		id: 'package-3',
-		userId: 'user-1',
-		sourceId: 'source-3',
-		kodyId: 'notifier-b',
-		name: '@user/notifier-b',
-	}
-	mocks.listSavedPackagesByUserId.mockResolvedValueOnce([
-		matchingPackage,
-		brokenPackage,
-		sibling,
-	])
+	mocks.listSavedPackagesByUserId.mockResolvedValueOnce(
+		(['error-notifier', 'broken', 'notifier-b'] as const).map((kodyId, i) =>
+			savedPackage(i + 1, kodyId),
+		),
+	)
 	mocks.loadPackageManifestBySourceId
 		.mockResolvedValueOnce(
 			subscribedManifest({
@@ -236,29 +208,23 @@ test('run.error.recorded skips recursion/non-errors and never throws on handler 
 		)
 		.mockRejectedValueOnce(new Error('manifest unavailable'))
 		.mockResolvedValueOnce(
-			subscribedManifest({
-				name: '@user/notifier-b',
-				kodyId: 'notifier-b',
-			}),
+			subscribedManifest({ name: '@user/notifier-b', kodyId: 'notifier-b' }),
 		)
 	mocks.invokePackageSubscription
 		.mockRejectedValueOnce(new Error('handler boom'))
 		.mockResolvedValueOnce({ status: 200, body: { ok: true } })
 
-	await expect(
-		dispatchRunErrorSubscriptionEvents({
-			env,
-			userId: 'user-1',
-			run: errorRun() as never,
-		}),
-	).resolves.toEqual([null, { status: 200, body: { ok: true } }])
+	await expect(dispatch(errorRun())).resolves.toEqual([
+		null,
+		{ status: 200, body: { ok: true } },
+	])
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledTimes(2)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'run.error.recorded package subscription invoke failed',
 		expect.objectContaining({ runId: 'run-1', error: expect.any(Error) }),
 	)
 	expect(consoleWarn).toHaveBeenCalledWith(
-		'Failed to load package manifest for run.error.recorded subscription',
+		'admin-package-subscription-manifest-load-failed',
 		expect.objectContaining({ packageId: 'package-2' }),
 	)
 })

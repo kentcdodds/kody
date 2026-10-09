@@ -38,14 +38,10 @@ function createHarness() {
 				const stored = objects.get(key)
 				if (!stored) return null
 				return {
-					body: new Blob([stored]).stream(),
+					body: new Blob([stored.slice()]).stream(),
 					size: stored.byteLength,
 					httpEtag: `"etag-${key}"`,
-					async arrayBuffer() {
-						const copy = new Uint8Array(stored.byteLength)
-						copy.set(stored)
-						return copy.buffer
-					},
+					arrayBuffer: async () => stored.slice().buffer,
 				}
 			},
 			async delete(key: string) {
@@ -53,8 +49,26 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
+	}
 	return { env, objects }
+}
+
+function makeMark(
+	slug: string,
+	{
+		aliases = [] as Array<string>,
+		logoKey = `platform-provider-marks/${slug}/abc.webp` as string | null,
+	} = {},
+) {
+	return {
+		slug,
+		label: slug,
+		aliases,
+		logoKey,
+		logoContentType: logoKey ? 'image/webp' : null,
+		createdAt: '2026-01-01T00:00:00.000Z',
+		updatedAt: '2026-01-01T00:00:00.000Z',
+	}
 }
 
 test('provider mark matching prefers exact slug then family then host aliases', () => {
@@ -62,58 +76,37 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 		slug: 'google',
 		aliases: ['accounts.google.com', 'googleapis.com', 'oauth2.googleapis.com'],
 	}
-	const x = {
-		slug: 'x',
-		aliases: ['twitter', 'x.com', 'twitter.com'],
-	}
+	const x = { slug: 'x', aliases: ['twitter', 'x.com', 'twitter.com'] }
+	const github = { slug: 'github', aliases: [] }
+	const matchCases = [
+		{ mark: google, providerKey: 'google', expected: true },
+		{ mark: google, providerKey: 'google-youtube-brand', expected: true },
+		{ mark: google, host: 'accounts.google.com', expected: true },
+		{ mark: google, providerKey: 'dropbox', expected: false },
+		{ mark: x, providerKey: 'example', expected: false },
+		{ mark: x, providerKey: 'x-kodykoala', expected: true },
+		{ mark: x, providerKey: 'twitter', expected: true },
+		{ mark: github, host: 'api.github.com', expected: true },
+		{ mark: github, providerKey: 'github-platform', expected: true },
+	]
 	expect(
-		providerMarkMatches({
-			mark: google,
-			providerKey: 'google',
-		}),
-	).toBe(true)
+		matchCases.filter(
+			({ expected, ...input }) => providerMarkMatches(input) !== expected,
+		),
+	).toEqual([])
+	const hostTokenCases = [
+		{ host: 'accounts.google.com', token: 'google', expected: true },
+		{ host: 'github.com', token: 'git', expected: false },
+		{ host: 'example.com', token: 'x', expected: false },
+		{ host: 'login.example.app', token: 'app', expected: false },
+		{ host: 'example.ai', token: 'ai', expected: false },
+	]
 	expect(
-		providerMarkMatches({
-			mark: google,
-			providerKey: 'google-youtube-brand',
-		}),
-	).toBe(true)
-	expect(
-		providerMarkMatches({
-			mark: google,
-			host: 'accounts.google.com',
-		}),
-	).toBe(true)
-	expect(
-		providerMarkMatches({
-			mark: google,
-			providerKey: 'dropbox',
-		}),
-	).toBe(false)
-	expect(providerMarkMatches({ mark: x, providerKey: 'example' })).toBe(false)
-	expect(providerMarkMatches({ mark: x, providerKey: 'x-kodykoala' })).toBe(
-		true,
-	)
-	expect(providerMarkMatches({ mark: x, providerKey: 'twitter' })).toBe(true)
-	expect(
-		providerMarkMatches({
-			mark: { slug: 'github', aliases: [] },
-			host: 'api.github.com',
-		}),
-	).toBe(true)
-	expect(
-		providerMarkMatches({
-			mark: { slug: 'github', aliases: [] },
-			providerKey: 'github-platform',
-		}),
-	).toBe(true)
-	expect(hostMatchesProviderMarkToken('accounts.google.com', 'google')).toBe(
-		true,
-	)
-	expect(hostMatchesProviderMarkToken('github.com', 'git')).toBe(false)
-	expect(hostMatchesProviderMarkToken('example.com', 'x')).toBe(false)
-	expect(hostMatchesProviderMarkToken('login.example.app', 'app')).toBe(false)
-	expect(hostMatchesProviderMarkToken('example.ai', 'ai')).toBe(false)
+		hostTokenCases.filter(
+			({ host, token, expected }) =>
+				hostMatchesProviderMarkToken(host, token) !== expected,
+		),
+	).toEqual([])
 	expect(providerMarkAliasTokens({ slug: 'youtube', aliases: [] })).toEqual(
 		expect.arrayContaining([
 			'google-youtube-brand',
@@ -123,131 +116,40 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 	)
 
 	const marks = [
+		makeMark('google', { aliases: google.aliases }),
+		makeMark('x', { aliases: x.aliases, logoKey: null }),
+	]
+	const resolveCases = [
+		{ marks, providerKey: 'google-youtube-brand', expected: 'google' },
 		{
-			slug: 'google',
-			label: 'Google',
-			aliases: google.aliases,
-			logoKey: 'platform-provider-marks/google/abc.webp',
-			logoContentType: 'image/webp',
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
+			marks: [...marks, makeMark('youtube')],
+			providerKey: 'google-youtube-brand',
+			host: 'www.youtube.com',
+			expected: 'youtube',
 		},
 		{
-			slug: 'x',
-			label: 'X',
-			aliases: x.aliases,
-			logoKey: null,
-			logoContentType: null,
-			createdAt: '2026-01-01T00:00:00.000Z',
-			updatedAt: '2026-01-01T00:00:00.000Z',
+			marks: [makeMark('nodedotjs')],
+			providerKey: 'nodejs',
+			host: 'nodejs.org',
+			expected: 'nodedotjs',
+		},
+		{
+			marks: ['google', 'google-calendar', 'gmail'].map((s) => makeMark(s)),
+			host: 'calendar.google.com',
+			expected: 'google-calendar',
+		},
+		{
+			marks: ['google', 'gmail'].map((s) => makeMark(s)),
+			host: 'mail.google.com',
+			expected: 'gmail',
 		},
 	]
 	expect(
-		resolveProviderMark({
-			marks,
-			providerKey: 'google-youtube-brand',
-		})?.slug,
-	).toBe('google')
-	expect(
-		resolveProviderMark({
-			marks: [
-				...marks,
-				{
-					slug: 'youtube',
-					label: 'YouTube',
-					aliases: [],
-					logoKey: 'platform-provider-marks/youtube/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-			],
-			providerKey: 'google-youtube-brand',
-			host: 'www.youtube.com',
-		})?.slug,
-	).toBe('youtube')
-	expect(
-		resolveProviderMark({
-			marks: [
-				{
-					slug: 'nodedotjs',
-					label: 'Node.js',
-					aliases: [],
-					logoKey: 'platform-provider-marks/nodedotjs/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-			],
-			providerKey: 'nodejs',
-			host: 'nodejs.org',
-		})?.slug,
-	).toBe('nodedotjs')
-	expect(
-		resolveProviderMark({
-			marks: [
-				{
-					slug: 'google',
-					label: 'Google',
-					aliases: [],
-					logoKey: 'platform-provider-marks/google/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-				{
-					slug: 'google-calendar',
-					label: 'Google Calendar',
-					aliases: [],
-					logoKey: 'platform-provider-marks/google-calendar/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-				{
-					slug: 'gmail',
-					label: 'Gmail',
-					aliases: [],
-					logoKey: 'platform-provider-marks/gmail/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-			],
-			host: 'calendar.google.com',
-		})?.slug,
-	).toBe('google-calendar')
-	expect(
-		resolveProviderMark({
-			marks: [
-				{
-					slug: 'google',
-					label: 'Google',
-					aliases: [],
-					logoKey: 'platform-provider-marks/google/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-				{
-					slug: 'gmail',
-					label: 'Gmail',
-					aliases: [],
-					logoKey: 'platform-provider-marks/gmail/abc.webp',
-					logoContentType: 'image/webp',
-					createdAt: '2026-01-01T00:00:00.000Z',
-					updatedAt: '2026-01-01T00:00:00.000Z',
-				},
-			],
-			host: 'mail.google.com',
-		})?.slug,
-	).toBe('gmail')
-	expect(
-		resolveProviderMarkLogoPath({
-			marks,
-			providerKey: 'x',
-		}),
-	).toBeNull()
+		resolveCases.filter(
+			({ expected, ...input }) => resolveProviderMark(input)?.slug !== expected,
+		),
+	).toEqual([])
+	expect(resolveProviderMarkLogoPath({ marks, providerKey: 'x' })).toBeNull()
 	expect(normalizeProviderMarkAliases([' Gmail ', 'gmail', ''])).toEqual([
 		'gmail',
 	])
@@ -260,38 +162,24 @@ test('provider mark matching prefers exact slug then family then host aliases', 
 })
 
 test('catalog attachment resolves MCP servers by name and host', () => {
-	const linear = {
-		slug: 'linear',
-		label: 'Linear',
-		aliases: [],
+	const linear = makeMark('linear', {
 		logoKey: 'platform-provider-marks/linear/abcdef0123456789.webp',
-		logoContentType: 'image/webp',
-		createdAt: '2026-01-01T00:00:00.000Z',
-		updatedAt: '2026-01-01T00:00:00.000Z',
-	}
-	expect(
-		attachCatalogLogoPath(
-			{ name: 'linear', url: 'https://mcp.linear.app/mcp' },
-			[linear],
-		).catalogLogoPath,
-	).toBe('/integrations/provider-marks/linear?v=abcdef0123456789')
-	expect(
-		attachCatalogLogoPath({ name: 'work', url: 'https://mcp.linear.app/mcp' }, [
-			linear,
-		]).catalogLogoPath,
-	).toBe('/integrations/provider-marks/linear?v=abcdef0123456789')
-	expect(
-		attachCatalogLogoPath(
-			{ name: 'notes', url: 'https://mcp.example.com/mcp' },
-			[linear],
-		).catalogLogoPath,
-	).toBeNull()
+	})
+	const logoPathFor = (name: string, url: string) =>
+		attachCatalogLogoPath({ name, url }, [linear]).catalogLogoPath
+	const linearPath = '/integrations/provider-marks/linear?v=abcdef0123456789'
+	expect(logoPathFor('linear', 'https://mcp.linear.app/mcp')).toBe(linearPath)
+	expect(logoPathFor('work', 'https://mcp.linear.app/mcp')).toBe(linearPath)
+	expect(logoPathFor('notes', 'https://mcp.example.com/mcp')).toBeNull()
 })
 
 test('upsert, logo write, and delete persist operator provider marks', async () => {
 	const { env, objects } = createHarness()
+	const db = env.APP_DB
+	const setLogo = (sourceBytes: Uint8Array | null) =>
+		setPlatformProviderMarkLogo({ db, env, slug: 'google', sourceBytes })
 	const created = await upsertPlatformProviderMark({
-		db: env.APP_DB,
+		db,
 		slug: 'Google',
 		label: 'Google',
 		aliases: ['accounts.google.com', 'googleapis.com', 'my-google-work'],
@@ -300,55 +188,32 @@ test('upsert, logo write, and delete persist operator provider marks', async () 
 	expect(created.aliases).toEqual(['my-google-work'])
 	expect(created.logoKey).toBeNull()
 
-	const withLogo = await setPlatformProviderMarkLogo({
-		db: env.APP_DB,
-		env,
-		slug: 'google',
-		sourceBytes: tinyPngBytes,
-	})
+	const withLogo = await setLogo(tinyPngBytes)
 	expect(withLogo.logoKey).toMatch(/^platform-provider-marks\/google\//)
 	expect(objects.has(withLogo.logoKey!)).toBe(true)
-	const cleared = await setPlatformProviderMarkLogo({
-		db: env.APP_DB,
-		env,
-		slug: 'google',
-		sourceBytes: null,
-	})
-	expect(cleared.logoKey).toBeNull()
+	expect((await setLogo(null)).logoKey).toBeNull()
 	expect(objects.has(withLogo.logoKey!)).toBe(false)
-	const restored = await setPlatformProviderMarkLogo({
-		db: env.APP_DB,
-		env,
-		slug: 'google',
-		sourceBytes: tinyPngBytes,
-	})
+	const restored = await setLogo(tinyPngBytes)
 	expect(restored.logoKey).toMatch(/^platform-provider-marks\/google\//)
 	expect(objects.has(restored.logoKey!)).toBe(true)
 	expect(
 		resolveProviderMarkLogoPath({
-			marks: await listPlatformProviderMarks({ db: env.APP_DB }),
+			marks: await listPlatformProviderMarks({ db }),
 			providerKey: 'google-work',
 			host: 'accounts.google.com',
 		}),
 	).toContain('/integrations/provider-marks/google')
 
 	await upsertPlatformProviderMark({
-		db: env.APP_DB,
+		db,
 		slug: 'google',
 		aliases: ['accounts.google.com', 'workspace-google'],
 	})
-	const updated = await getPlatformProviderMarkBySlug({
-		db: env.APP_DB,
-		slug: 'google',
-	})
+	const updated = await getPlatformProviderMarkBySlug({ db, slug: 'google' })
 	expect(updated?.label).toBe('Google')
 	expect(updated?.aliases).toEqual(['workspace-google'])
 	expect(updated?.logoKey).toBe(withLogo.logoKey)
 
-	expect(
-		await deletePlatformProviderMark({ db: env.APP_DB, slug: 'google' }),
-	).toBe(true)
-	expect(
-		await getPlatformProviderMarkBySlug({ db: env.APP_DB, slug: 'google' }),
-	).toBeNull()
+	expect(await deletePlatformProviderMark({ db, slug: 'google' })).toBe(true)
+	expect(await getPlatformProviderMarkBySlug({ db, slug: 'google' })).toBeNull()
 })

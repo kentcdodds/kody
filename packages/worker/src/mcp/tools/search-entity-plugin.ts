@@ -17,7 +17,13 @@ import { type SearchableEntityDescriptor } from './understand-search-query.ts'
 export type SearchEntityCandidateInput = {
 	env: Env
 	query: string
+	/** Recall width; Jev-eligible searches widen this past the page size. */
 	limit: number
+	/**
+	 * Caller's requested result count. Per-candidate enrichment (package
+	 * hydration) scales with this, not with widened recall.
+	 */
+	pageLimit?: number
 	offline: boolean
 	userId?: string
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>

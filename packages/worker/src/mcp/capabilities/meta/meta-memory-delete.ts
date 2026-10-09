@@ -24,6 +24,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 	capabilityDomainNames.meta,
 	{
 		name: 'metaMemoryDelete',
+		orgPermission: 'memory:delete',
 		description:
 			'Soft-delete a stored memory by default, or hard-delete it when `force` is true. Always run `metaMemoryVerify` before deleting memory. Do not delete memory blindly. Review related memories first, decide the correct action, then delete.',
 		keywords: [

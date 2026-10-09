@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest'
+import { expect, test } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
 	fleetExecuteHeartbeatCoalesceMs,
@@ -37,7 +37,7 @@ function kv(
 			if (hooks?.putError) throw hooks.putError
 			store.set(key, value)
 		},
-	}
+	} as FleetExecuteHeartbeatKv & { store: Map<string, string> }
 }
 
 test('heartbeat coalesces writes and stays fail-open so customer execute is not broken', async () => {
@@ -50,21 +50,9 @@ test('heartbeat coalesces writes and stays fail-open so customer execute is not 
 	const shared = memory()
 	const now = Date.parse('2026-09-07T17:00:00.000Z')
 
-	await recordFleetExecuteLastSuccess({
-		kv: store,
-		now,
-		memory: shared,
-	})
-	await recordFleetExecuteLastSuccess({
-		kv: store,
-		now: now + 1_000,
-		memory: shared,
-	})
-	await recordFleetExecuteLastSuccess({
-		kv: store,
-		now: now + fleetExecuteHeartbeatCoalesceMs,
-		memory: shared,
-	})
+	for (const at of [now, now + 1_000, now + fleetExecuteHeartbeatCoalesceMs]) {
+		await recordFleetExecuteLastSuccess({ kv: store, now: at, memory: shared })
+	}
 	expect(writes).toHaveLength(2)
 	await expect(readFleetExecuteLastSuccess({ kv: store })).resolves.toEqual({
 		at: now + fleetExecuteHeartbeatCoalesceMs,
@@ -73,11 +61,7 @@ test('heartbeat coalesces writes and stays fail-open so customer execute is not 
 	consoleWarn.mockImplementation(() => {})
 	const failing = kv(null, { putError: new Error('kv unavailable') })
 	await expect(
-		recordFleetExecuteLastSuccess({
-			kv: failing,
-			now,
-			memory: memory(),
-		}),
+		recordFleetExecuteLastSuccess({ kv: failing, now, memory: memory() }),
 	).resolves.toBeUndefined()
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'fleet-execute-heartbeat-failed',
@@ -113,24 +97,16 @@ test('heartbeat coalesces writes and stays fail-open so customer execute is not 
 })
 
 test('public evidence reads stay cheap and treat missing or invalid telemetry as unknown', async () => {
-	await expect(readFleetExecuteLastSuccess({})).resolves.toBeNull()
-	await expect(
-		readFleetExecuteLastSuccess({
-			kv: kv('{"nope":true}'),
-		}),
-	).resolves.toBeNull()
-	const broken = kv(null, { getError: new Error('read failed') })
-	await expect(readFleetExecuteLastSuccess({ kv: broken })).resolves.toBeNull()
-
-	const store = kv(JSON.stringify({ at: 1_725_000_000_000 }))
-	await expect(readFleetExecuteLastSuccess({ kv: store })).resolves.toEqual({
-		at: 1_725_000_000_000,
-	})
-	await expect(
-		readFleetExecuteLastSuccess({
-			kv: kv(JSON.stringify({ at: 8_640_000_000_000_001 })),
-		}),
-	).resolves.toBeNull()
+	const reads = await Promise.all(
+		[
+			undefined,
+			kv('{"nope":true}'),
+			kv(null, { getError: new Error('read failed') }),
+			kv(JSON.stringify({ at: 1_725_000_000_000 })),
+			kv(JSON.stringify({ at: 8_640_000_000_000_001 })),
+		].map((store) => readFleetExecuteLastSuccess({ kv: store })),
+	)
+	expect(reads).toEqual([null, null, null, { at: 1_725_000_000_000 }, null])
 })
 
 test('concurrent heartbeat calls in one isolate write once', async () => {

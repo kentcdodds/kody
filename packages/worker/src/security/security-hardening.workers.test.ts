@@ -1,5 +1,4 @@
-import { env, exports } from 'cloudflare:workers'
-import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
+import { exports } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { firstPartySecurityHeaders } from '#worker/app/security-headers.ts'
 
@@ -11,10 +10,7 @@ function createRequest(
 }
 
 async function workerFetch(request: Request): Promise<Response> {
-	const ctx = createExecutionContext()
-	const response = await exports.default.fetch(request, env, ctx)
-	await waitOnExecutionContext(ctx)
-	return response
+	return await exports.default.fetch(request)
 }
 
 test('first-party HTML shell carries security headers', async () => {

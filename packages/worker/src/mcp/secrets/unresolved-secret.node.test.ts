@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import type * as SecretsRepo from './repo.ts'
 import {
 	parseMissingSecretMessage,
 	parseSecretScopeUnavailableMessage,
@@ -10,7 +11,7 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('./repo.ts', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('./repo.ts')>()
+	const actual = await importOriginal<typeof SecretsRepo>()
 	return {
 		...actual,
 		listSecretLocationsByNameForUser: (...args: Array<unknown>) =>
@@ -25,23 +26,31 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 
 const { createUnresolvedSecretMessage } = await import('./unresolved-secret.ts')
 
-test('unresolved secret errors distinguish inaccessible scopes from a true miss', async () => {
-	const env = { APP_DB: {} as D1Database }
-	const userId = 'user-1'
-	const baseUrl = 'https://example.com'
-	const secretName = 'discordBotToken'
+const env = { APP_DB: {} as D1Database }
+const userId = 'user-1'
+const secretName = 'discordBotToken'
+const noPackage = {
+	sessionId: null,
+	appId: null,
+	packageId: null,
+	storageId: null,
+}
 
+function unresolved(
+	input: Partial<Parameters<typeof createUnresolvedSecretMessage>[0]> = {},
+) {
+	return createUnresolvedSecretMessage({
+		env,
+		userId,
+		name: secretName,
+		baseUrl: 'https://example.com',
+		...input,
+	})
+}
+
+test('unresolved secret errors distinguish inaccessible scopes from a true miss', async () => {
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([])
-	expect(
-		parseMissingSecretMessage(
-			await createUnresolvedSecretMessage({
-				env,
-				userId,
-				name: secretName,
-				baseUrl,
-			}),
-		),
-	).toEqual({ secretName })
+	expect(parseMissingSecretMessage(await unresolved())).toEqual({ secretName })
 
 	mockModule.listSecretLocationsByNameForUser.mockResolvedValue([
 		{
@@ -56,18 +65,7 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		kodyId: 'discord-gateway',
 		name: '@user/discord-gateway',
 	})
-	const packageMiss = await createUnresolvedSecretMessage({
-		env,
-		userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: null,
-			storageId: null,
-		},
-		baseUrl,
-	})
+	const packageMiss = await unresolved({ storageContext: noPackage })
 	expect(parseMissingSecretMessage(packageMiss)).toBeNull()
 	expect(parseSecretScopeUnavailableMessage(packageMiss)).toEqual({
 		secretName,
@@ -80,17 +78,8 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 		packageId: 'pkg-1',
 	})
 
-	const visibleInPackageRuntime = await createUnresolvedSecretMessage({
-		env,
-		userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: 'pkg-1',
-			storageId: 'pkg-1',
-		},
-		baseUrl,
+	const visibleInPackageRuntime = await unresolved({
+		storageContext: { ...noPackage, packageId: 'pkg-1', storageId: 'pkg-1' },
 	})
 	expect(parseMissingSecretMessage(visibleInPackageRuntime)).toEqual({
 		secretName,
@@ -104,18 +93,9 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 			expires_at: null,
 		},
 	])
-	const pinnedPackageMiss = await createUnresolvedSecretMessage({
-		env,
-		userId,
-		name: secretName,
+	const pinnedPackageMiss = await unresolved({
 		scope: 'package',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: null,
-			storageId: null,
-		},
-		baseUrl,
+		storageContext: noPackage,
 	})
 	expect(parseSecretScopeUnavailableMessage(pinnedPackageMiss)).toEqual({
 		secretName,
@@ -136,17 +116,10 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 			expires_at: null,
 		},
 	])
-	const dottedMiss = await createUnresolvedSecretMessage({
-		env,
-		userId,
+	const dottedMiss = await unresolved({
 		name: dottedSecretName,
 		scope: 'package',
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: null,
-			storageId: null,
-		},
+		storageContext: noPackage,
 		baseUrl: 'https://kody.codes',
 	})
 	expect(dottedMiss).toContain(
@@ -159,14 +132,5 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 	mockModule.listSecretLocationsByNameForUser.mockRejectedValue(
 		new Error('d1 unavailable'),
 	)
-	expect(
-		parseMissingSecretMessage(
-			await createUnresolvedSecretMessage({
-				env,
-				userId,
-				name: secretName,
-				baseUrl,
-			}),
-		),
-	).toEqual({ secretName })
+	expect(parseMissingSecretMessage(await unresolved())).toEqual({ secretName })
 })

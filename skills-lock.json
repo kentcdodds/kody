@@ -2,10 +2,9 @@
 	"version": 1,
 	"skills": {
 		"ship-pr": {
-			"source": "kentcdodds/kcd-skills",
-			"sourceType": "github",
-			"skillPath": "skills/ship-pr/SKILL.md",
-			"computedHash": "42c12c9440db693abd17b1fa46cddc36c6d5d5c30bb6779b7985726eb7c51b37"
+			"source": "./.agents/skills/ship-pr",
+			"sourceType": "local",
+			"computedHash": "3ec42e5a7604b9aeb06d6c8ef4ca7456acf1f4e03d9d2d7bdd26a3e1cdd032b8"
 		}
 	}
 }

@@ -142,8 +142,8 @@ window asks you to verify, keep it open, finish verification, then continue. You
 do not need to add the server again.
 
 After the connection works, ask your Claw to `search` Kody before it `execute`s
-anything. Get started Step 3 copies a prompt that does one ad hoc request, then
-persists that working code as a
+anything. Get started Step 2 gives you one prompt that has your Claw offer a few
+concrete first wins, then make one of them in your account, often a
 [package you own](https://github.com/kentcdodds/kody/blob/main/docs/use/packages.md).
 That's the moment a useful Claw workflow stops being a chat and starts being a
 home.

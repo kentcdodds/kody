@@ -42,6 +42,7 @@ test('runExecuteSmokeCheck executes trivial code through the origin gateway and 
 				baseUrl: 'https://example.com',
 				userId: null,
 				email: null,
+				request: null,
 				storageContext: null,
 			},
 		}),

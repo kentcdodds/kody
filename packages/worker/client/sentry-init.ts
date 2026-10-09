@@ -21,6 +21,16 @@ export function initBrowserSentry(config: SentryClientConfig) {
 			Sentry.replayIntegration({
 				maskAllText: true,
 				blockAllMedia: true,
+				// blockAllMedia's MEDIA_SELECTORS omit iframe. Cross-origin
+				// embeds (landing/docs YouTube lite player →
+				// youtube-nocookie.com, Turnstile challenge frames, etc.)
+				// still fire rrweb onIframeLoad → observeAttachShadow, which
+				// reads iframeWindow.Element unguarded and throws into the
+				// page (getsentry/sentry-javascript#23795 / KODY-8W). Blocking
+				// iframes skips that path (needBlock / isBlocked). Fixed
+				// upstream in @sentry/replay 11.5.0 via rrweb 2.44.1; stay on
+				// 10.x until a deliberate v11 migration.
+				block: ['iframe'],
 			}),
 		],
 		// Error-only replays: nothing is recorded to Sentry for normal
@@ -44,17 +54,20 @@ export function initBrowserSentry(config: SentryClientConfig) {
 		// TypeErrors, injected unguarded `meta[property='og:type']` probes
 		// from `global code`, and optional Shiki `syntax-highlight-core`
 		// dynamic import fetch failures, and resolveFrame fetch network
-		// TypeErrors, and local Vite / wrangler HMR loopback sessions)
+		// TypeErrors, and local Vite / wrangler HMR loopback sessions,
+		// and residual Replay onIframeLoad / observeAttachShadow
+		// SecurityError|TypeError after cross-origin iframe Element reads
+		// (KODY-8W; primary mitigation is block:['iframe'] above))
 		// — see filterBrowserSentryEvent /
 		// KODY-CLOUDFLARE-23 / KODY-CLOUDFLARE-3Q / KODY-CLOUDFLARE-3S /
 		// KODY-CLOUDFLARE-3X / KODY-CLOUDFLARE-43 / KODY-CLOUDFLARE-46 /
 		// KODY-CLOUDFLARE-4F / KODY-CLOUDFLARE-5C / KODY-CLOUDFLARE-5K /
 		// KODY-CLOUDFLARE-5W / KODY-CLOUDFLARE-5X / KODY-CLOUDFLARE-5Y /
-		// KODY-CLOUDFLARE-64 / KODY-6Z /
+		// KODY-CLOUDFLARE-64 / KODY-6Z / KODY-8W /
 		// issues 7639685398, 7648833360, 7648833403, 7653117289, 7655189301,
 		// 7658961865, 7659616372, 7660258027, 7662064169, 7677729361,
 		// 7682968915, 7687920474, 7689579030, 7690163947, 7696001937,
-		// 7717003182.
+		// 7717003182, 7777463624.
 		beforeSend(event, hint) {
 			return filterBrowserSentryEvent(event, hint.originalException)
 		},

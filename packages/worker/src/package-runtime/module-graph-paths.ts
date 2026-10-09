@@ -1,7 +1,21 @@
 import { normalizePackageExportKey } from '#worker/package-registry/manifest.ts'
 import { parseKodyPackageSpecifier } from './package-import-resolution.ts'
+import {
+	dirname,
+	joinPath,
+	normalizeWorkspaceModulePath,
+} from './module-graph-path-basics.ts'
 
-export const runtimeModulePath = '.__kody_virtual__/runtime.js'
+export {
+	createRelativeImportSpecifier,
+	dirname,
+	joinPath,
+	normalizeWorkspaceModulePath,
+	relativePath,
+	runtimeModulePath,
+} from './module-graph-path-basics.ts'
+
+export const publicRuntimeModulePath = '.__kody_virtual__/public-runtime.js'
 export const packageRuntimeModulePrefix = '.__kody_virtual__/package-runtime'
 export const packageManifestPath = 'package.json'
 export const wranglerConfigPaths = [
@@ -18,48 +32,6 @@ export const dynamicPackageImportArtifactSegment = '.__kody_current__'
 export const dynamicPackageImportSpecifierExportName =
 	'__kodyDynamicPackageSpecifier'
 export const dynamicPackageImportResolvedMarker = '__kodyDynamicPackageResolved'
-
-export function joinPath(...parts: Array<string>) {
-	return parts
-		.join('/')
-		.replace(/\/+/g, '/')
-		.replace(/\/\.\//g, '/')
-}
-
-export function dirname(filePath: string) {
-	const normalized = filePath.replace(/\/+/g, '/')
-	const separator = normalized.lastIndexOf('/')
-	return separator === -1 ? '.' : normalized.slice(0, separator) || '.'
-}
-
-export function relativePath(fromDir: string, toPath: string) {
-	const fromParts = fromDir.split('/').filter(Boolean)
-	const toParts = toPath.split('/').filter(Boolean)
-	let sharedIndex = 0
-	while (
-		sharedIndex < fromParts.length &&
-		sharedIndex < toParts.length &&
-		fromParts[sharedIndex] === toParts[sharedIndex]
-	) {
-		sharedIndex += 1
-	}
-	const upward = fromParts.slice(sharedIndex).map(() => '..')
-	const downward = toParts.slice(sharedIndex)
-	return [...upward, ...downward].join('/')
-}
-
-export function createRelativeImportSpecifier(
-	fromPath: string,
-	targetPath: string,
-) {
-	const fromDir = dirname(fromPath)
-	const relative = relativePath(fromDir, targetPath)
-	const normalized =
-		relative === '.' || relative.startsWith('./') || relative.startsWith('../')
-			? relative
-			: `./${relative}`
-	return normalized.replaceAll('\\', '/')
-}
 
 export function resolveRelativeModulePath(fromPath: string, specifier: string) {
 	if (!specifier.startsWith('./') && !specifier.startsWith('../')) {
@@ -122,17 +94,60 @@ export function createPackageSpecifierFromProxyPath(modulePath: string) {
 	return `capabilities:${packageName}${exportSuffix}`
 }
 
-export function normalizeWorkspaceModulePath(path: string) {
-	const parts: Array<string> = []
-	for (const segment of path.replace(/\\/g, '/').split('/')) {
-		if (!segment || segment === '.') continue
-		if (segment === '..') {
-			parts.pop()
-			continue
-		}
-		parts.push(segment)
+const kodyVirtualModulePattern = /__kody_virtual__/i
+
+function unescapeStringLiteralText(text: string) {
+	return text.replace(
+		/\\(?:u\{([0-9a-f]+)\}|u([0-9a-f]{4})|x([0-9a-f]{2})|\r\n|[\s\S])/gi,
+		(match, braced?: string, unicode?: string, hex?: string) => {
+			const code = braced ?? unicode ?? hex
+			if (code != null) {
+				const codePoint = Number.parseInt(code, 16)
+				return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : ''
+			}
+			const escaped = match.slice(1)
+			return /^(?:\r\n|[\n\r\u2028\u2029])$/.test(escaped) ? '' : escaped
+		},
+	)
+}
+
+function percentDecodeText(text: string) {
+	return text.replace(/%([0-9a-f]{2})/gi, (_match, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
+/**
+ * Whether one resolved module specifier addresses a bundler-generated virtual
+ * module. The shared runtime exports stamp helpers that enter secret
+ * authority for an arbitrary package id, so package imports must never reach
+ * it. Callers pass parser-decoded specifier values (JS string escapes already
+ * resolved); percent-encoding is decoded too so the check fails closed.
+ */
+export function specifierTargetsKodyVirtualModule(specifier: string) {
+	return (
+		kodyVirtualModulePattern.test(specifier) ||
+		(specifier.includes('%') &&
+			kodyVirtualModulePattern.test(percentDecodeText(specifier)))
+	)
+}
+
+/**
+ * Cheap pre-filter: whether file text names the virtual directory at all,
+ * including JS/JSON string-escaped and percent-encoded spellings. Callers
+ * treat a hit as "inspect the resolved specifiers", or as a rejection when
+ * the file cannot be inspected precisely.
+ */
+export function textMentionsKodyVirtualModule(text: string) {
+	if (kodyVirtualModulePattern.test(text)) return true
+	const unescaped = text.includes('\\') ? unescapeStringLiteralText(text) : text
+	if (unescaped !== text && kodyVirtualModulePattern.test(unescaped)) {
+		return true
 	}
-	return parts.join('/')
+	return (
+		unescaped.includes('%') &&
+		kodyVirtualModulePattern.test(percentDecodeText(unescaped))
+	)
 }
 
 export function resolveWorkspaceSourceFilePath(input: {

@@ -1,3 +1,4 @@
+import { accountConnectionAgentIds } from '../packages/worker/universal/account-connections.ts'
 import {
 	collectJsonRequests,
 	expectSingleCommitTransition,
@@ -61,6 +62,7 @@ test('account section switches keep the current page on screen (no loading flash
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/jobs')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/jobs$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Jobs' }),
@@ -90,6 +92,38 @@ test('account section switches keep the current page on screen (no loading flash
 	).toHaveAttribute('href', `/@${user.username}`)
 })
 
+test('credits live on the usage page: /account/credits redirects there', async ({
+	page,
+	seedE2eUser,
+	login,
+}) => {
+	test.setTimeout(process.env.CI ? 90_000 : 60_000)
+	const runId = Date.now()
+	const user = await seedE2eUser({
+		email: `account-credits-${runId}@example.com`,
+		username: `account-credits-${runId}`,
+		password: 'account-credits-password',
+	})
+	await login({ email: user.email, password: user.password, mode: 'login' })
+	await page.goto('/account/credits')
+	await expect(page).toHaveURL(/\/account\/usage#credits$/)
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Usage' }),
+	).toBeVisible()
+	await expect(
+		page
+			.locator('#credits')
+			.getByRole('heading', { level: 2, name: 'Credits' }),
+	).toBeVisible()
+	await expect(page.locator('[data-credits-balance]')).toHaveCount(0)
+	await expect(page.getByLabel('Custom amount ($)')).toHaveCount(0)
+
+	const rail = page.getByRole('navigation', { name: 'Account sections' })
+	await expect(
+		rail.getByRole('link', { name: 'Usage', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+})
+
 test('Add connection opens its own page with the client wall, then a host step (no loading flash, no double fetch)', async ({
 	page,
 	seedE2eUser,
@@ -104,6 +138,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/connections')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/connections$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Connections' }),
@@ -119,7 +154,9 @@ test('Add connection opens its own page with the client wall, then a host step (
 	const requests = collectJsonRequests(page)
 	await observeMainTransitions(page)
 	await page.getByTestId('account-connections-add').click()
-	await expect(page).toHaveURL(/\/account\/connections\/new$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/connections/new$`),
+	)
 	const grid = page.getByTestId('account-connections-agent-grid')
 	await expect(grid).toBeVisible()
 	await expect(page.getByTestId('account-connections-back')).toBeVisible()
@@ -138,14 +175,20 @@ test('Add connection opens its own page with the client wall, then a host step (
 	// route never asks for the same payload a second time.
 	expect(requests.duplicates(), requests.paths.join(', ')).toEqual([])
 	requests.reset()
-	// Every named client is a card and none is greyed or hidden by viewport.
-	await expect(grid.getByRole('link')).toHaveCount(16)
-	await expect(grid.locator('[data-greyed="true"]')).toHaveCount(0)
+	// Every named client is a card link. Connected marks (if any) stay on
+	// those links — never a dead-end span — and none is hidden by viewport.
+	await expect(grid.getByRole('link')).toHaveCount(
+		accountConnectionAgentIds.length,
+	)
+	await expect(grid.locator('[data-greyed="true"]:not(a)')).toHaveCount(0)
 	await expect(page.getByTestId('onboarding-agent-claude-code')).toBeVisible()
 	await expect(page.getByTestId('onboarding-agent-grok')).toBeVisible()
+	await expect(page.getByTestId('onboarding-agent-muse')).toBeVisible()
 
 	await page.getByTestId('onboarding-agent-claude-code').click()
-	await expect(page).toHaveURL(/\/account\/connections\/new\/claude-code$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/connections/new/claude-code$`),
+	)
 	await expect(
 		page.getByRole('heading', { level: 2, name: 'Connect Claude Code' }),
 	).toBeVisible()
@@ -171,7 +214,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	requests.reset()
 
 	await page.getByTestId('account-connections-back').click()
-	await expect(page).toHaveURL(/\/account\/connections$/)
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/connections$`))
 	await expect(page.getByTestId('account-connections-add')).toBeVisible()
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),
@@ -230,6 +273,7 @@ test('account live search keeps the same focused input while the list filters', 
 	expect(betaSecret.ok()).toBe(true)
 
 	await page.goto('/account/secrets')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/secrets$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Secrets' }),
@@ -248,6 +292,7 @@ test('account live search keeps the same focused input while the list filters', 
 	await expect(page.getByText(`betaSecret${runId}`)).toHaveCount(0)
 
 	await page.goto('/account/jobs')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/jobs$`))
 	await waitForClientHydration(page)
 	const jobsSearch = page.getByRole('searchbox', { name: 'Search jobs' })
 	await jobsSearch.click()

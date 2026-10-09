@@ -12,7 +12,8 @@ When you connect Google or GitHub to Kody, there's no one-click "Sign in with
 Google" button that just works. Instead, you go to the provider, create your own
 OAuth app, register the redirect URI, and then connect it at
 [kody.codes/connect/oauth](https://kody.codes/connect/oauth). The product's own
-copy is upfront about the cost: "a few minutes of setup instead of one click."
+copy is upfront about the cost: "Bring-your-own takes a few minutes of setup;
+your agent does the tedious parts."
 
 I want to explain why it works that way, because it looks like a missing feature
 and it's actually a design decision. One I'd make again.
@@ -68,7 +69,7 @@ Flip every one of those. Create the OAuth app yourself and:
 
 The same principle covers plain API keys and personal access tokens. Those go
 into the server-side secret store via
-[a prefilled secrets page](https://kody.codes/account/secrets/new), never pasted
+[a prefilled secrets page](https://kody.codes/connect/secret-set), never pasted
 into chat. They're encrypted, referenced in code as `{{secret:name}}`
 placeholders, and resolved only for hosts you've approved, so the plaintext
 never enters a prompt. The

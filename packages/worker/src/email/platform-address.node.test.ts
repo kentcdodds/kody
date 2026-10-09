@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	buildPlatformEmailAddress,
@@ -11,63 +10,72 @@ import {
 	getSystemEmailDomain,
 	resolveUserPlatformSender,
 } from './platform-address.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-test('getPlatformEmailDomain derives inbox.<hostname> from APP_BASE_URL', () => {
-	expect(getPlatformEmailDomain({ APP_BASE_URL: 'https://heykody.dev' })).toBe(
-		'inbox.heykody.dev',
+test('getPlatformEmailDomain derives inbox.<hostname> and prefers a valid USER_EMAIL_DOMAIN override', () => {
+	const cases: Array<
+		[Parameters<typeof getPlatformEmailDomain>[0], string | null]
+	> = [
+		[{ APP_BASE_URL: 'https://heykody.dev' }, 'inbox.heykody.dev'],
+		[
+			{ APP_BASE_URL: 'https://Staging.Example.COM/' },
+			'inbox.staging.example.com',
+		],
+		[{}, null],
+		[{ APP_BASE_URL: 'not a url' }, null],
+		[
+			{
+				APP_BASE_URL: 'https://heykody.dev',
+				USER_EMAIL_DOMAIN: 'Mail.Example.COM.',
+			},
+			'mail.example.com',
+		],
+		// The override works without APP_BASE_URL too.
+		[{ USER_EMAIL_DOMAIN: 'inbox.heykody.dev' }, 'inbox.heykody.dev'],
+		// A malformed override falls back to the derived default.
+		[
+			{
+				APP_BASE_URL: 'https://heykody.dev',
+				USER_EMAIL_DOMAIN: 'not a hostname',
+			},
+			'inbox.heykody.dev',
+		],
+		[{ USER_EMAIL_DOMAIN: 'user@host' }, null],
+	]
+	expect(cases.map(([input]) => getPlatformEmailDomain(input))).toEqual(
+		cases.map(([, expected]) => expected),
 	)
-	expect(
-		getPlatformEmailDomain({ APP_BASE_URL: 'https://Staging.Example.COM/' }),
-	).toBe('inbox.staging.example.com')
-	expect(getPlatformEmailDomain({})).toBeNull()
-	expect(getPlatformEmailDomain({ APP_BASE_URL: 'not a url' })).toBeNull()
-})
-
-test('getPlatformEmailDomain prefers a valid USER_EMAIL_DOMAIN override', () => {
-	expect(
-		getPlatformEmailDomain({
-			APP_BASE_URL: 'https://heykody.dev',
-			USER_EMAIL_DOMAIN: 'Mail.Example.COM.',
-		}),
-	).toBe('mail.example.com')
-	// The override works without APP_BASE_URL too.
-	expect(
-		getPlatformEmailDomain({ USER_EMAIL_DOMAIN: 'inbox.heykody.dev' }),
-	).toBe('inbox.heykody.dev')
-	// A malformed override falls back to the derived default.
-	expect(
-		getPlatformEmailDomain({
-			APP_BASE_URL: 'https://heykody.dev',
-			USER_EMAIL_DOMAIN: 'not a hostname',
-		}),
-	).toBe('inbox.heykody.dev')
-	expect(getPlatformEmailDomain({ USER_EMAIL_DOMAIN: 'user@host' })).toBeNull()
 })
 
 test('getSystemEmailDomain prefers a valid SYSTEM_EMAIL_DOMAIN override', () => {
-	// The migration lock: APP_BASE_URL moves to heykody.app but system mail
-	// (kody@..., operator inboxes) stays on the verified heykody.dev zone.
-	expect(
-		getSystemEmailDomain({
-			APP_BASE_URL: 'https://heykody.app',
-			SYSTEM_EMAIL_DOMAIN: 'heykody.dev',
-		}),
-	).toBe('heykody.dev')
-	expect(getSystemEmailDomain({ SYSTEM_EMAIL_DOMAIN: 'HeyKody.DEV.' })).toBe(
-		'heykody.dev',
+	const cases: Array<
+		[Parameters<typeof getSystemEmailDomain>[0], string | null]
+	> = [
+		// The migration lock: APP_BASE_URL moves to heykody.app but system mail
+		// (kody@..., operator inboxes) stays on the verified heykody.dev zone.
+		[
+			{
+				APP_BASE_URL: 'https://heykody.app',
+				SYSTEM_EMAIL_DOMAIN: 'heykody.dev',
+			},
+			'heykody.dev',
+		],
+		[{ SYSTEM_EMAIL_DOMAIN: 'HeyKody.DEV.' }, 'heykody.dev'],
+		// Without the override the domain derives from APP_BASE_URL as before.
+		[{ APP_BASE_URL: 'https://heykody.dev' }, 'heykody.dev'],
+		// A malformed override falls back to the derived default.
+		[
+			{
+				APP_BASE_URL: 'https://heykody.dev',
+				SYSTEM_EMAIL_DOMAIN: 'not a hostname',
+			},
+			'heykody.dev',
+		],
+		[{}, null],
+	]
+	expect(cases.map(([input]) => getSystemEmailDomain(input))).toEqual(
+		cases.map(([, expected]) => expected),
 	)
-	// Without the override the domain derives from APP_BASE_URL as before.
-	expect(getSystemEmailDomain({ APP_BASE_URL: 'https://heykody.dev' })).toBe(
-		'heykody.dev',
-	)
-	// A malformed override falls back to the derived default.
-	expect(
-		getSystemEmailDomain({
-			APP_BASE_URL: 'https://heykody.dev',
-			SYSTEM_EMAIL_DOMAIN: 'not a hostname',
-		}),
-	).toBe('heykody.dev')
-	expect(getSystemEmailDomain({})).toBeNull()
 })
 
 test('accepted inbound domains are canonical first plus legacy lists', () => {
@@ -117,44 +125,30 @@ test('resolveUserPlatformSender sends from an unreserved built-in username and b
 	await ensureUsersTestSchema({ db, columns: ['email_verified_at'] })
 	const env = { APP_BASE_URL: 'https://kody.example.com' }
 
-	const blogEmail = 'blog-holder@example.com'
-	const blogUserId = await createStableUserIdFromEmail(blogEmail)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			 VALUES ('blog', ?, 'hash', ?, ?, 'max')`,
-		)
-		.bind(blogEmail, new Date().toISOString(), blogUserId)
-		.run()
+	const seedUser = async (username: string) => {
+		const email = `${username}-holder@example.com`
+		const userId = testStableUserIdFromEmail(email)
+		await db
+			.prepare(
+				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
+				 VALUES (?, ?, 'hash', ?, ?, 'max')`,
+			)
+			.bind(username, email, new Date().toISOString(), userId)
+			.run()
+		return { accountEmail: email, userId }
+	}
+
+	const blog = await seedUser('blog')
 	await expect(
-		resolveUserPlatformSender({
-			db,
-			env,
-			accountEmail: blogEmail,
-			userId: blogUserId,
-		}),
+		resolveUserPlatformSender({ db, env, ...blog }),
 	).resolves.toEqual({
 		from: 'blog@inbox.kody.example.com',
-		accountEmail: blogEmail,
+		accountEmail: blog.accountEmail,
 		username: 'blog',
 		domain: 'inbox.kody.example.com',
 	})
-
-	const kodyEmail = 'kody-holder@example.com'
-	const kodyUserId = await createStableUserIdFromEmail(kodyEmail)
-	await db
-		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			 VALUES ('kody', ?, 'hash', ?, ?, 'max')`,
-		)
-		.bind(kodyEmail, new Date().toISOString(), kodyUserId)
-		.run()
-	await expect(
-		resolveUserPlatformSender({
-			db,
-			env,
-			accountEmail: kodyEmail,
-			userId: kodyUserId,
-		}),
-	).rejects.toThrow('Reserved usernames cannot send email')
+	const kody = await seedUser('kody')
+	await expect(resolveUserPlatformSender({ db, env, ...kody })).rejects.toThrow(
+		'Reserved usernames cannot send email',
+	)
 })

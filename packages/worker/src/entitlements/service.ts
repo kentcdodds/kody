@@ -1,9 +1,13 @@
 import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import {
+	isPastIncludeStopResource,
 	isWeeklyComputeWindowResource,
 	parseEntitlementLadder,
 	parseStoredPlanName,
+	parseStripePlanName,
+	resolveCreditWalletState,
+	resolveEffectivePlan,
 	resolvePlanLimit,
 	resolveWeeklyPlanLimit,
 	type EntitlementResource,
@@ -11,17 +15,26 @@ import {
 	type UserEntitlement,
 } from '#universal/plans.ts'
 import { laterIsoTimestamp } from '#universal/referral-program.ts'
-import { resolveEffectivePlanWithSecondAgentGift } from '#universal/second-agent-standard-gift.ts'
+import { resolvePlanOverlay } from '#universal/second-agent-standard-gift.ts'
 import { countInternalUserEmailMessages } from '#worker/email/mailbox-internal-read.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client.ts'
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
-import { EntitlementLimitError, buildEntitlementUpgradeHint } from './errors.ts'
+import {
+	EntitlementLimitError,
+	buildEntitlementUpgradeHint,
+	isBudgetLimitError,
+} from './errors.ts'
+import {
+	assertWithinOrgBudget,
+	orgBudgetFromGateContext,
+	type OrgBudgetGateContext,
+} from './budget-gate.ts'
 import {
 	isDailyEntitlementResource,
 	type DailyEntitlementResource,
+	type UserMeterUsageSnapshotResult,
 } from './user-meter-do.ts'
 import {
 	userMeterNamespace,
@@ -39,13 +52,198 @@ const stableUserIdPattern = /^[a-f0-9]{64}$/i
 const publicFreeEntitlement: UserEntitlement = {
 	plan: 'free',
 	ladder: 'public',
+	creditWallet: 'none',
 }
 
 /**
- * Resolve the effective plan and entitlement ladder for a user. Missing
- * userId, invalid stable ids, and no matching row resolve to public `free`
- * without warning. Stored plan values go through strict
- * {@link parseStoredPlanName}; the ladder goes through
+ * `users` columns every entitlement resolution reads. Select these (with a
+ * `u.` prefix via {@link userEntitlementColumnsSql}) wherever a sweep
+ * already has the row, then call {@link resolveUserEntitlementFromRow}.
+ */
+export const userEntitlementColumns = [
+	'plan',
+	'stripe_plan',
+	'entitlement_ladder',
+	'stripe_credits_eligible',
+	'admin_credits_eligible',
+	'second_agent_standard_gift_expires_at',
+	'referral_standard_credit_expires_at',
+] as const
+
+export function userEntitlementColumnsSql(alias?: string) {
+	const prefix = alias ? `${alias}.` : ''
+	return userEntitlementColumns.map((column) => `${prefix}${column}`).join(', ')
+}
+
+export type UserEntitlementRow = {
+	plan: string
+	stripe_plan: string | null
+	entitlement_ladder: string | null
+	/** Absent on rows selected before the credits migration (fixtures). */
+	stripe_credits_eligible?: number | null
+	/** Absent on rows selected before the admin eligibility migration (fixtures). */
+	admin_credits_eligible?: number | null
+	second_agent_standard_gift_expires_at: string | null
+	referral_standard_credit_expires_at: string | null
+}
+
+/**
+ * Stored credit eligibility, independent of the effective plan: the
+ * purchasable Pro Stripe price (`stripe_credits_eligible`, rewritten by every
+ * Stripe refresh) or an admin decision (`admin_credits_eligible`, never
+ * touched by Stripe). Only an effective `pro` plan uses it.
+ */
+export function hasStoredCreditsEligibility(
+	row: Pick<
+		UserEntitlementRow,
+		'stripe_credits_eligible' | 'admin_credits_eligible'
+	>,
+): boolean {
+	return (
+		Number(row.stripe_credits_eligible) === 1 ||
+		Number(row.admin_credits_eligible) === 1
+	)
+}
+
+/**
+ * Effective plan, ladder, and credit eligibility for a `users` row, without
+ * the wallet balance. Eligible means an effective `pro` with the purchasable
+ * Pro Stripe price or admin eligibility ({@link hasStoredCreditsEligibility}).
+ * Second-agent / referral Pro overlays raise Free to the retired Pro table
+ * without a credit wallet, so they keep pre-credits Pro ceilings. A manual
+ * `max` grant outranks all of them.
+ */
+export function resolveUserPlanFromRow(
+	row: UserEntitlementRow,
+	now?: Date,
+): {
+	plan: PlanName
+	ladder: UserEntitlement['ladder']
+	creditsEligible: boolean
+} {
+	const { plan } = resolvePlanOverlay(
+		parseStoredPlanName(row.plan),
+		row.stripe_plan,
+		laterIsoTimestamp(
+			row.second_agent_standard_gift_expires_at,
+			row.referral_standard_credit_expires_at,
+		),
+		now,
+	)
+	return {
+		plan,
+		ladder: parseEntitlementLadder(row.entitlement_ladder),
+		creditsEligible: plan === 'pro' && hasStoredCreditsEligibility(row),
+	}
+}
+
+/**
+ * Subscribed on the purchasable Pro Stripe price (not a gift or referral
+ * overlay). Only these accounts can buy credits or use auto-refill.
+ */
+export function isPayingForCreditsPro(row: UserEntitlementRow): boolean {
+	return (
+		parseStripePlanName(row.stripe_plan) === 'pro' &&
+		Number(row.stripe_credits_eligible) === 1
+	)
+}
+
+/**
+ * Read the prepaid credit balance (micro-USD). Missing wallet rows are a
+ * zero balance.
+ */
+export async function readCreditWalletBalanceMicroUsd(
+	db: D1Database,
+	stableUserId: string,
+): Promise<number> {
+	const row = await db
+		.prepare(`SELECT balance_micro_usd FROM credit_wallets WHERE user_id = ?`)
+		.bind(stableUserId)
+		.first<{ balance_micro_usd: number }>()
+	return Number(row?.balance_micro_usd ?? 0)
+}
+
+/**
+ * Entitlement from the manual grant and Stripe only, without gift or
+ * referral overlays (inbound email scores the base plan so gifted Pro
+ * cannot inflate receive caps). It resolves the plan itself so an overlay
+ * plan can never be paired with Stripe-only eligibility. Overlay-aware
+ * callers (live gating, user warnings, fleet entitlement sweeps) use
+ * {@link resolveUserEntitlementFromRow}.
+ */
+export async function resolveBaseUserEntitlement(input: {
+	db: D1Database
+	stableUserId: string
+	row: Pick<
+		UserEntitlementRow,
+		| 'plan'
+		| 'stripe_plan'
+		| 'entitlement_ladder'
+		| 'stripe_credits_eligible'
+		| 'admin_credits_eligible'
+	>
+}): Promise<UserEntitlement> {
+	const plan = resolveEffectivePlan(
+		parseStoredPlanName(input.row.plan),
+		input.row.stripe_plan,
+	)
+	const creditsEligible =
+		plan === 'pro' && hasStoredCreditsEligibility(input.row)
+	return {
+		plan,
+		ladder: parseEntitlementLadder(input.row.entitlement_ladder),
+		creditWallet: creditsEligible
+			? resolveCreditWalletState({
+					plan,
+					creditsEligible,
+					balanceMicroUsd: await readCreditWalletBalanceMicroUsd(
+						input.db,
+						input.stableUserId,
+					),
+				})
+			: 'none',
+	}
+}
+
+/**
+ * Full {@link UserEntitlement} for a `users` row. Reads the wallet balance
+ * only for wallet-eligible Pro accounts, so every other account costs no
+ * extra query. Pass {@link balanceMicroUsd} when the caller already loaded
+ * the wallet (for example `/account/usage`) so the balance is not read twice.
+ */
+export async function resolveUserEntitlementFromRow(input: {
+	db: D1Database
+	stableUserId: string
+	row: UserEntitlementRow
+	now?: Date
+	/** When set, skip the credit_wallets balance query. */
+	balanceMicroUsd?: number
+}): Promise<UserEntitlement> {
+	const { plan, ladder, creditsEligible } = resolveUserPlanFromRow(
+		input.row,
+		input.now,
+	)
+	const balanceMicroUsd = !creditsEligible
+		? 0
+		: input.balanceMicroUsd !== undefined
+			? input.balanceMicroUsd
+			: await readCreditWalletBalanceMicroUsd(input.db, input.stableUserId)
+	return {
+		plan,
+		ladder,
+		creditWallet: resolveCreditWalletState({
+			plan,
+			creditsEligible,
+			balanceMicroUsd,
+		}),
+	}
+}
+
+/**
+ * Resolve the effective plan, entitlement ladder, and credit wallet state
+ * for a user. Missing userId, invalid stable ids, and no matching row
+ * resolve to public `free` without warning. Stored plan values go through
+ * strict {@link parseStoredPlanName}; the ladder goes through
  * {@link parseEntitlementLadder}.
  *
  * The MCP `userId` is the account's stored `users.stable_user_id`. Lookup
@@ -55,12 +253,59 @@ const publicFreeEntitlement: UserEntitlement = {
  * invalid stable ids still fail closed to public `free` without touching D1.
  *
  * Effective plan = f(manual users.plan, users.stripe_plan, unexpired
- * Standard overlays): the higher-ranked of the manual grant and Stripe
- * subscription plan, then a public Standard overlay when the later of the
+ * Pro overlays): the higher-ranked of the manual grant and Stripe
+ * subscription plan, then a public Pro overlay when the later of the
  * second-agent gift and stacked referral credit is still active and the
- * base plan is still free. `legacy` ceilings apply only while that marker
- * stays set and paid access remains continuous.
+ * base plan is still free. Overlay Pro uses the retired Pro table (no
+ * wallet). `legacy` ceilings apply only while that marker stays set and
+ * paid access remains continuous. The credit wallet is `funded` only for
+ * the purchasable Pro with a positive balance.
  */
+async function loadEntitlementRowForStableUserId(
+	db: D1Database,
+	input: { stableUserId: string; email: string | null | undefined },
+): Promise<UserEntitlementRow | null> {
+	const orgColumns = userEntitlementColumnsSql('o')
+	const userColumns = userEntitlementColumnsSql('u')
+	const email = input.email?.trim().toLowerCase()
+
+	// When email is provided, require a live users row for (email, stable id)
+	// before reading org billing — a mismatched caller context must not inherit
+	// another account's plan. Prefer orgs; fall back to users columns.
+	if (email) {
+		const orgRow = await db
+			.prepare(
+				`SELECT ${orgColumns}
+				 FROM users u
+				 INNER JOIN orgs o ON o.id = u.stable_user_id
+				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL`,
+			)
+			.bind(email, input.stableUserId)
+			.first<UserEntitlementRow>()
+		if (orgRow) return orgRow
+
+		return await db
+			.prepare(
+				`SELECT ${userColumns}
+				 FROM users u
+				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL`,
+			)
+			.bind(email, input.stableUserId)
+			.first<UserEntitlementRow>()
+	}
+
+	const orgRow = await db
+		.prepare(`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?`)
+		.bind(input.stableUserId)
+		.first<UserEntitlementRow>()
+	if (orgRow) return orgRow
+
+	return await db
+		.prepare(`SELECT ${userColumns} FROM users u WHERE u.stable_user_id = ?`)
+		.bind(input.stableUserId)
+		.first<UserEntitlementRow>()
+}
+
 export async function getUserEntitlement(
 	db: D1Database,
 	input: { userId: string; email: string | null | undefined },
@@ -68,33 +313,16 @@ export async function getUserEntitlement(
 	const email = input.email?.trim().toLowerCase()
 	if (!input.userId) return publicFreeEntitlement
 	if (!stableUserIdPattern.test(input.userId)) return publicFreeEntitlement
-	const row = await db
-		.prepare(
-			email
-				? `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users WHERE email = ? AND stable_user_id = ?`
-				: `SELECT plan, stripe_plan, entitlement_ladder, second_agent_standard_gift_expires_at, referral_standard_credit_expires_at FROM users WHERE stable_user_id = ?`,
-		)
-		.bind(...(email ? [email, input.userId] : [input.userId]))
-		.first<{
-			plan: string
-			stripe_plan: string | null
-			entitlement_ladder: string | null
-			second_agent_standard_gift_expires_at: string | null
-			referral_standard_credit_expires_at: string | null
-		}>()
+	const row = await loadEntitlementRowForStableUserId(db, {
+		stableUserId: input.userId,
+		email,
+	})
 	if (!row) return publicFreeEntitlement
-	const plan = resolveEffectivePlanWithSecondAgentGift(
-		parseStoredPlanName(row.plan),
-		row.stripe_plan,
-		laterIsoTimestamp(
-			row.second_agent_standard_gift_expires_at,
-			row.referral_standard_credit_expires_at,
-		),
-	)
-	return {
-		plan,
-		ladder: parseEntitlementLadder(row.entitlement_ladder),
-	}
+	return await resolveUserEntitlementFromRow({
+		db,
+		stableUserId: input.userId,
+		row,
+	})
 }
 
 /**
@@ -217,7 +445,7 @@ export async function findCachedUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<StableUserAccount | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	return await cachedStableUserAccounts.getOrCreate(
 		db,
@@ -238,7 +466,7 @@ export async function findUserAccountByStableUserId(
 	db: D1Database,
 	stableUserId: string,
 ): Promise<StableUserAccount | null> {
-	const trimmed = normalizeStableUserId(stableUserId)
+	const trimmed = stableUserId.trim()
 	if (!trimmed) return null
 	const row = await db
 		.prepare(
@@ -356,6 +584,134 @@ export async function readWeeklyEntitlementResourceUsage(input: {
 		now: now.toISOString(),
 	})
 	return result.count
+}
+
+/**
+ * Authoritative UserMeter slice for an entitlement usage snapshot: every
+ * requested daily counter, weekly window, and optional storage bytes in one
+ * Durable Object hop (cold keys still bootstrap then re-read once). Point
+ * readers keep {@link readDailyEntitlementResourceUsage},
+ * {@link readWeeklyEntitlementResourceUsage}, and
+ * {@link readStorageBytesFromUserMeter}.
+ */
+export type UserMeterEntitlementUsageCounts = {
+	daily: Partial<Record<DailyEntitlementResource, number>>
+	weekly: Partial<Record<DailyEntitlementResource, number>>
+	storageBytes: number | null
+}
+
+export async function readUserMeterEntitlementUsageSnapshot(input: {
+	db: D1Database
+	env: EntitlementUsageEnv
+	userId: string
+	now: Date
+	dailyResources: ReadonlyArray<DailyEntitlementResource>
+	weeklyResources: ReadonlyArray<DailyEntitlementResource>
+	includeStorageBytes: boolean
+}): Promise<UserMeterEntitlementUsageCounts> {
+	const day = utcDayKey(input.now)
+	const weekStart = utcWeekStart(input.now)
+	const updatedAt = input.now.toISOString()
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	const request = {
+		day,
+		weekStart,
+		dailyResources: input.dailyResources,
+		weeklyResources: input.weeklyResources,
+		includeStorageBytes: input.includeStorageBytes,
+		now: updatedAt,
+	}
+
+	let snapshot = await meter.readUsageSnapshot(request)
+	const missingDaily = snapshot.daily
+		.filter((entry) => entry.outcome === 'needs_bootstrap')
+		.map((entry) => entry.resource)
+	const storageNeedsBootstrap =
+		input.includeStorageBytes &&
+		snapshot.storageBytes?.outcome === 'needs_bootstrap'
+	let storageBootstrapSkipped = false
+
+	if (missingDaily.length > 0 || storageNeedsBootstrap) {
+		const accountExists = storageNeedsBootstrap
+			? await userAccountRowExists({
+					db: input.db,
+					userId: input.userId,
+				})
+			: false
+		storageBootstrapSkipped = Boolean(storageNeedsBootstrap && !accountExists)
+		const shouldInitializeStorage = Boolean(
+			storageNeedsBootstrap && accountExists,
+		)
+		await Promise.all([
+			...missingDaily.map((resource) =>
+				ensureUserMeterCounterInitializedAtZero({
+					env: input.env,
+					userId: input.userId,
+					resource,
+					day,
+					updatedAt,
+				}),
+			),
+			shouldInitializeStorage
+				? meter.initializeStorageBytes({ bytes: 0, updatedAt })
+				: Promise.resolve(),
+		])
+		if (missingDaily.length > 0 || shouldInitializeStorage) {
+			snapshot = await meter.readUsageSnapshot(request)
+		}
+	}
+
+	return countsFromUserMeterUsageSnapshot({
+		snapshot,
+		dailyResources: input.dailyResources,
+		weeklyResources: input.weeklyResources,
+		includeStorageBytes: input.includeStorageBytes,
+		storageBootstrapSkipped,
+	})
+}
+
+function countsFromUserMeterUsageSnapshot(input: {
+	snapshot: UserMeterUsageSnapshotResult
+	dailyResources: ReadonlyArray<DailyEntitlementResource>
+	weeklyResources: ReadonlyArray<DailyEntitlementResource>
+	includeStorageBytes: boolean
+	storageBootstrapSkipped: boolean
+}): UserMeterEntitlementUsageCounts {
+	const daily: Partial<Record<DailyEntitlementResource, number>> = {}
+	for (const resource of input.dailyResources) {
+		const entry = input.snapshot.daily.find((row) => row.resource === resource)
+		if (!entry || entry.outcome === 'needs_bootstrap') {
+			throw new Error(
+				`UserMeter usage snapshot daily read still needs bootstrap for ${resource}.`,
+			)
+		}
+		daily[resource] = entry.count
+	}
+
+	const weekly: Partial<Record<DailyEntitlementResource, number>> = {}
+	for (const resource of input.weeklyResources) {
+		const entry = input.snapshot.weekly.find((row) => row.resource === resource)
+		if (!entry) {
+			throw new Error(
+				`UserMeter usage snapshot omitted weekly count for ${resource}.`,
+			)
+		}
+		weekly[resource] = entry.count
+	}
+
+	if (!input.includeStorageBytes) {
+		return { daily, weekly, storageBytes: null }
+	}
+	if (input.storageBootstrapSkipped) {
+		return { daily, weekly, storageBytes: 0 }
+	}
+	const storage = input.snapshot.storageBytes
+	if (!storage || storage.outcome === 'needs_bootstrap') {
+		throw new Error(
+			'UserMeter usage snapshot storage bytes still need bootstrap after initialize.',
+		)
+	}
+	return { daily, weekly, storageBytes: storage.bytes }
 }
 
 async function countRows(db: D1Database, sql: string, params: Array<unknown>) {
@@ -757,6 +1113,7 @@ export async function readEntitlementResourceUsage(input: {
 		case 'execute_calls_per_day':
 		case 'outbound_fetches_per_day':
 		case 'job_runs_per_day':
+		case 'automation_invocations_per_day':
 			// Authoritative daily counters live in UserMeter. Callers must use
 			// consumeDailyEntitlement / readDailyEntitlementResourceUsage /
 			// readCurrentEntitlementResourceUsage. There is no D1 daily-counter
@@ -955,7 +1312,12 @@ export async function assertWithinStorageBytesEntitlement(input: {
 		email: input.email,
 	})
 	const plan = entitlement.plan
-	const limit = resolvePlanLimit(plan, 'storage_bytes', entitlement.ladder)
+	const limit = resolvePlanLimit(
+		plan,
+		'storage_bytes',
+		entitlement.ladder,
+		entitlement.creditWallet,
+	)
 	const requested = Math.max(0, input.requested ?? 1)
 	const updatedAt = new Date().toISOString()
 
@@ -981,7 +1343,11 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					plan,
 					limit,
 					current,
-					upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+					upgradeHint: buildEntitlementUpgradeHint(
+						'storage_bytes',
+						plan,
+						entitlement.creditWallet,
+					),
 				})
 			}
 			// Real user with no DO row: zero-initialize, then retry. The
@@ -999,7 +1365,11 @@ export async function assertWithinStorageBytesEntitlement(input: {
 				plan,
 				limit,
 				current: result.bytes,
-				upgradeHint: buildEntitlementUpgradeHint('storage_bytes'),
+				upgradeHint: buildEntitlementUpgradeHint(
+					'storage_bytes',
+					plan,
+					entitlement.creditWallet,
+				),
 			})
 		}
 
@@ -1046,7 +1416,12 @@ export async function assertWithinEntitlement(
 		email: input.email,
 	})
 	const plan = entitlement.plan
-	const limit = resolvePlanLimit(plan, input.resource, entitlement.ladder)
+	const limit = resolvePlanLimit(
+		plan,
+		input.resource,
+		entitlement.ladder,
+		entitlement.creditWallet,
+	)
 	const now = input.now ?? new Date()
 	const requested = input.requested ?? 1
 	const current = input.getCurrent
@@ -1063,7 +1438,11 @@ export async function assertWithinEntitlement(
 			plan,
 			limit,
 			current,
-			upgradeHint: buildEntitlementUpgradeHint(input.resource),
+			upgradeHint: buildEntitlementUpgradeHint(
+				input.resource,
+				plan,
+				entitlement.creditWallet,
+			),
 		})
 	}
 }
@@ -1076,6 +1455,8 @@ export type ConsumeDailyEntitlementInput = {
 	email: string | null | undefined
 	resource: EntitlementResource
 	now?: Date
+	/** Org budget context for team orgs (defaults to personal org id = userId). */
+	orgBudget?: OrgBudgetGateContext
 }
 
 /**
@@ -1098,10 +1479,31 @@ export async function consumeDailyEntitlement(
 		userId: input.userId,
 		email: input.email,
 	})
+	// Before the counter so a stopped attempt does not spend daily quota.
+	if (isPastIncludeStopResource(resource)) {
+		await assertWithinPastIncludeCredits({
+			db: input.db,
+			env: input.env,
+			userId: input.userId,
+			entitlement,
+			now,
+			orgBudget: input.orgBudget,
+		})
+	}
 	const plan = entitlement.plan
-	const limit = resolvePlanLimit(plan, resource, entitlement.ladder)
+	const limit = resolvePlanLimit(
+		plan,
+		resource,
+		entitlement.ladder,
+		entitlement.creditWallet,
+	)
 	const weekLimit = isWeeklyComputeWindowResource(resource)
-		? resolveWeeklyPlanLimit(plan, resource, entitlement.ladder)
+		? resolveWeeklyPlanLimit(
+				plan,
+				resource,
+				entitlement.ladder,
+				entitlement.creditWallet,
+			)
 		: null
 	const weekStart = weekLimit === null ? undefined : utcWeekStart(now)
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
@@ -1137,7 +1539,11 @@ export async function consumeDailyEntitlement(
 				limit: weekLimit,
 				current: result.weekCount ?? 0,
 				window: 'week',
-				upgradeHint: buildEntitlementUpgradeHint(resource),
+				upgradeHint: buildEntitlementUpgradeHint(
+					resource,
+					plan,
+					entitlement.creditWallet,
+				),
 			})
 		}
 		throw new EntitlementLimitError({
@@ -1145,10 +1551,71 @@ export async function consumeDailyEntitlement(
 			plan,
 			limit,
 			current: result.count,
-			upgradeHint: buildEntitlementUpgradeHint(resource),
+			upgradeHint: buildEntitlementUpgradeHint(
+				resource,
+				plan,
+				entitlement.creditWallet,
+			),
 		})
 	}
 }
+
+/**
+ * Former include → credits → stop gate (0051). ADR 0065: an empty purchasable
+ * Pro wallet falls back to Free rate/compute via {@link resolvePlanLimits}
+ * instead of throwing here. Kept so {@link consumeDailyEntitlement} and
+ * {@link assertWithinComputeInclude} call sites stay stable.
+ */
+async function assertWithinPastIncludeCredits(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+	entitlement: UserEntitlement
+	now: Date
+	orgBudget?: OrgBudgetGateContext
+}) {
+	const budget = orgBudgetFromGateContext(input.userId, input.orgBudget)
+	await assertWithinOrgBudget({
+		db: input.db,
+		env: input.env,
+		orgId: budget.orgId,
+		orgSlug: budget.orgSlug,
+		actorUserId: budget.actorUserId,
+		automationSource: budget.automationSource,
+		actorUsername: budget.actorUsername,
+		estimatedDeltaMicroUsd: 0,
+		now: input.now,
+	})
+}
+
+/**
+ * Legacy hook for compute without a daily counter (hosted package apps,
+ * realtime). ADR 0065 removed the empty-wallet hard stop; limits come from
+ * {@link resolvePlanLimits}. Counted entry points use the same no-op inside
+ * {@link consumeDailyEntitlement}.
+ */
+export async function assertWithinComputeInclude(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: string
+	now?: Date
+	orgBudget?: OrgBudgetGateContext
+}) {
+	const entitlement = await getCachedUserEntitlement(input.db, {
+		userId: input.userId,
+		email: null,
+	})
+	await assertWithinPastIncludeCredits({
+		db: input.db,
+		env: input.env,
+		userId: input.userId,
+		entitlement,
+		now: input.now ?? new Date(),
+		orgBudget: input.orgBudget,
+	})
+}
+
+export { isBudgetLimitError }
 
 export type RefundDailyEntitlementInput = {
 	env: UserMeterEnv

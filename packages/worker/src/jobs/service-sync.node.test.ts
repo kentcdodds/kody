@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -6,7 +7,6 @@ import {
 	isJobIntervalFloorError,
 } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { saveValue } from '#mcp/values/service.ts'
 import { syncPackageJobsForPackage, updateJob } from './service.ts'
 import {
@@ -14,7 +14,6 @@ import {
 	refreshPackageJobRowIdentity,
 } from '@kody-internal/shared/jobs/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
-import { type PersistedJobCallerContext } from './types.ts'
 import {
 	identityMockModule,
 	resetJobServiceMocks,
@@ -24,7 +23,9 @@ import {
 	insertPublishedEntitySource,
 	insertLeftoverJob,
 	syncSinglePackageJob,
+	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.mock('#worker/repo/source-service.ts', async () =>
 	(
@@ -75,10 +76,114 @@ afterEach(() => {
 	resetJobServiceMocks()
 })
 
-test('package job sync reports scheduler changes for add, update, and remove only', async () => {
-	const env = createJobServiceTestEnv({
-		APP_DB: createDatabase(),
+function packageManifest(input: {
+	name: string
+	kodyId: string
+	jobs: Record<string, unknown>
+}) {
+	return parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: input.name,
+			exports: { '.': './index.ts' },
+			kody: {
+				id: input.kodyId,
+				description: `${input.kodyId} package`,
+				jobs: input.jobs,
+			},
+		}),
 	})
+}
+
+function cloudflareManifest(jobs: Record<string, unknown>) {
+	return packageManifest({
+		name: '@kentcdodds/cloudflare',
+		kodyId: 'cloudflare',
+		jobs,
+	})
+}
+
+function seedPackageSource(input: {
+	env: Env
+	userId: string
+	packageId: string
+	sourceId: string
+	publishedCommit: string
+}) {
+	return insertPublishedEntitySource({
+		db: input.env.APP_DB as ReturnType<typeof createDatabase>,
+		userId: input.userId,
+		sourceId: input.sourceId,
+		entityKind: 'package',
+		entityId: input.packageId,
+		publishedCommit: input.publishedCommit,
+		manifestPath: 'package.json',
+	})
+}
+
+/** Background identity resolves each seeded user id to its account email. */
+function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
+	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
+		async (_db: D1Database, id: string) => ({
+			userId: personIdFromStored(id),
+			email: emailsByUserId[id] ?? `${id}@example.com`,
+			username: id,
+			displayName: id,
+		}),
+	)
+}
+
+function createPlanUserCallerContext(input: { userId: string; email: string }) {
+	return withCallerUser(
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			user: {
+				userId: personIdFromStored(input.userId),
+				email: input.email,
+				displayName: 'Plan User',
+			},
+			storageContext: {
+				sessionId: null,
+				appId: 'app-123',
+				packageId: null,
+				storageId: null,
+			},
+		}),
+	)
+}
+
+function syncQuotaJob(input: {
+	env: Env
+	userId: string
+	packageId: string
+	schedule?: Record<string, unknown>
+}) {
+	return syncSinglePackageJob({
+		...input,
+		baseUrl: 'https://example.com',
+		sourceId: `${input.packageId}-source`,
+		jobName: 'quota-job',
+	})
+}
+
+function expectScheduledJobLimit(
+	error: unknown,
+	details: { plan: string; limit: number; current: number },
+) {
+	if (!isEntitlementLimitError(error)) {
+		throw new Error('Expected a scheduled_jobs EntitlementLimitError.')
+	}
+	expect(error.details).toMatchObject({
+		code: 'entitlement_limit_exceeded',
+		resource: 'scheduled_jobs',
+		...details,
+	})
+}
+
+const isIntervalFloorError = (error: unknown) => isJobIntervalFloorError(error)
+
+test('package job sync reports scheduler changes for add, update, and remove only', async () => {
+	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
 		userId: 'user-1',
@@ -86,116 +191,66 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 		packageId: 'package-1',
 		sourceId: 'source-1',
 	}
-	const createManifest = (jobs: Record<string, unknown>) =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/cloudflare',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'cloudflare',
-					description: 'Cloudflare package',
-					jobs,
-				},
-			}),
-		})
-	await insertPublishedEntitySource({
-		db: env.APP_DB as ReturnType<typeof createDatabase>,
-		userId: input.userId,
-		sourceId: input.sourceId,
-		entityKind: 'package',
-		entityId: input.packageId,
+	const sync = (jobs: Record<string, unknown>) =>
+		syncPackageJobsForPackage({ ...input, manifest: cloudflareManifest(jobs) })
+	const listRows = () => listJobRowsByUserId(env.APP_DB, input.userId)
+	await seedPackageSource({
+		...input,
 		publishedCommit: 'package-published-commit',
-		manifestPath: 'package.json',
 	})
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest({}),
-		}),
-	).toBe(false)
+	expect(await sync({})).toBe(false)
 
-	const intervalJob = {
-		'event-runner': {
-			entry: './src/jobs/event-runner.ts',
-			schedule: { type: 'interval', every: '15m' },
-			timezone: 'America/Denver',
-			enabled: true,
-		},
+	const eventRunner = {
+		entry: './src/jobs/event-runner.ts',
+		schedule: { type: 'interval', every: '15m' },
+		timezone: 'America/Denver',
+		enabled: true,
 	}
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest(intervalJob),
-		}),
-	).toBe(true)
-	const rowsAfterAdd = await listJobRowsByUserId(env.APP_DB, input.userId)
-	expect(rowsAfterAdd).toHaveLength(1)
-	expect(rowsAfterAdd[0]?.record.publishedCommit).toBe(
-		'package-published-commit',
-	)
-	const nextRunAtAfterAdd = rowsAfterAdd[0]?.record.nextRunAt
+	expect(await sync({ 'event-runner': eventRunner })).toBe(true)
+	const [added] = await listRows()
+	if (!added) throw new Error('Expected an added job row.')
+	expect(await listRows()).toHaveLength(1)
+	expect(added.record.publishedCommit).toBe('package-published-commit')
+	// Drift the stored identity so the no-op sync must repair it in place.
 	await refreshPackageJobRowIdentity({
 		db: env.APP_DB,
 		userId: input.userId,
-		jobId: rowsAfterAdd[0]!.record.id,
+		jobId: added.record.id,
 		sourceId: input.sourceId,
 		publishedCommit: null,
 		callerContextJson: JSON.stringify({
-			...rowsAfterAdd[0]!.callerContext,
-			user: {
-				...rowsAfterAdd[0]!.callerContext?.user,
-				email: '',
-			},
+			...added.callerContext,
+			user: { ...added.callerContext?.user, email: '' },
 		}),
-		updatedAt: rowsAfterAdd[0]!.record.updatedAt,
+		updatedAt: added.record.updatedAt,
 	})
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest(intervalJob),
-		}),
-	).toBe(false)
-	const rowsAfterNoOp = await listJobRowsByUserId(env.APP_DB, input.userId)
-	expect(rowsAfterNoOp[0]?.record.nextRunAt).toBe(nextRunAtAfterAdd)
-	expect(rowsAfterNoOp[0]?.record.publishedCommit).toBe(
-		'package-published-commit',
-	)
-	expect(rowsAfterNoOp[0]?.callerContext?.user.email).toBe('user-1@example.com')
+	expect(await sync({ 'event-runner': eventRunner })).toBe(false)
+	const [afterNoOp] = await listRows()
+	expect(afterNoOp?.record.nextRunAt).toBe(added.record.nextRunAt)
+	expect(afterNoOp?.record.publishedCommit).toBe('package-published-commit')
+	expect(afterNoOp?.callerContext?.user.email).toBe('user-1@example.com')
 
 	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest({
-				'event-runner': {
-					...intervalJob['event-runner'],
-					schedule: { type: 'interval', every: '30m' },
-				},
-			}),
+		await sync({
+			'event-runner': {
+				...eventRunner,
+				schedule: { type: 'interval', every: '30m' },
+			},
 		}),
 	).toBe(true)
-	const rowsAfterUpdate = await listJobRowsByUserId(env.APP_DB, input.userId)
-	expect(rowsAfterUpdate[0]?.record.schedule).toEqual({
+	expect((await listRows())[0]?.record.schedule).toEqual({
 		type: 'interval',
 		every: '30m',
 	})
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest({}),
-		}),
-	).toBe(true)
-	expect(await listJobRowsByUserId(env.APP_DB, input.userId)).toEqual([])
+	expect(await sync({})).toBe(true)
+	expect(await listRows()).toEqual([])
 })
 
 test('package job sync preserves a runtime-enabled job when the manifest still says disabled', async () => {
-	const env = createJobServiceTestEnv({
-		APP_DB: createDatabase(),
-	})
+	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
 		userId: 'user-1',
@@ -203,70 +258,41 @@ test('package job sync preserves a runtime-enabled job when the manifest still s
 		packageId: 'package-1',
 		sourceId: 'source-1',
 	}
-	const createManifest = (enabled: boolean) =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/cloudflare',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'cloudflare',
-					description: 'Cloudflare package',
-					jobs: {
-						sweep: {
-							entry: './src/jobs/sweep.ts',
-							schedule: { type: 'interval', every: '15m' },
-							timezone: 'UTC',
-							enabled,
-						},
-					},
+	const sync = (enabled: boolean) =>
+		syncPackageJobsForPackage({
+			...input,
+			manifest: cloudflareManifest({
+				sweep: {
+					entry: './src/jobs/sweep.ts',
+					schedule: { type: 'interval', every: '15m' },
+					timezone: 'UTC',
+					enabled,
 				},
 			}),
 		})
-	await insertPublishedEntitySource({
-		db: env.APP_DB as ReturnType<typeof createDatabase>,
-		userId: input.userId,
-		sourceId: input.sourceId,
-		entityKind: 'package',
-		entityId: input.packageId,
+	const firstRow = async () =>
+		(await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	await seedPackageSource({
+		...input,
 		publishedCommit: 'package-published-commit',
-		manifestPath: 'package.json',
 	})
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest(false),
-		}),
-	).toBe(true)
-	const created = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
-	expect(created?.record.enabled).toBe(false)
+	expect(await sync(false)).toBe(true)
+	expect((await firstRow())?.record.enabled).toBe(false)
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest(true),
-		}),
-	).toBe(true)
-	const turnedOn = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	expect(await sync(true)).toBe(true)
+	const turnedOn = await firstRow()
 	expect(turnedOn?.record.enabled).toBe(true)
-	const nextRunAtAfterEnable = turnedOn?.record.nextRunAt
 
-	expect(
-		await syncPackageJobsForPackage({
-			...input,
-			manifest: createManifest(false),
-		}),
-	).toBe(false)
-	const preserved = (await listJobRowsByUserId(env.APP_DB, input.userId))[0]
+	expect(await sync(false)).toBe(false)
+	const preserved = await firstRow()
 	expect(preserved?.record.enabled).toBe(true)
-	expect(preserved?.record.nextRunAt).toBe(nextRunAtAfterEnable)
+	expect(preserved?.record.nextRunAt).toBe(turnedOn?.record.nextRunAt)
 })
 
 test('package job sync preflights the full addition set without partial inserts', async () => {
 	const email = 'package-sync-free@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const now = '2026-08-08T12:00:00.000Z'
 	const existingJobCount = planLimits.free.maxScheduledJobs - 1
 	const db = createDatabase({
@@ -297,50 +323,33 @@ test('package job sync preflights the full addition set without partial inserts'
 		})),
 	})
 	const env = createJobServiceTestEnv({ APP_DB: db })
-	await insertPublishedEntitySource({
-		db,
+	const target = {
 		userId,
+		packageId: 'new-package',
 		sourceId: 'new-package-source',
-		entityKind: 'package',
-		entityId: 'new-package',
+	}
+	await seedPackageSource({
+		env,
+		...target,
 		publishedCommit: 'new-package-commit',
-		manifestPath: 'package.json',
 	})
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@owner/new-package',
-			exports: { '.': './index.ts' },
-			kody: {
-				id: 'new-package',
-				description: 'Package entitlement test',
-				jobs: {
-					first: {
-						entry: './first.ts',
-						schedule: { type: 'interval', every: '1h' },
-					},
-					second: {
-						entry: './second.ts',
-						schedule: { type: 'interval', every: '1h' },
-					},
-				},
-			},
-		}),
-	})
+	const hourly = { type: 'interval', every: '1h' }
 
 	const error = await syncPackageJobsForPackage({
 		env,
-		userId,
+		...target,
 		baseUrl: 'https://heykody.dev',
-		packageId: 'new-package',
-		sourceId: 'new-package-source',
-		manifest,
+		manifest: packageManifest({
+			name: '@owner/new-package',
+			kodyId: 'new-package',
+			jobs: {
+				first: { entry: './first.ts', schedule: hourly },
+				second: { entry: './second.ts', schedule: hourly },
+			},
+		}),
 	}).catch((caught: unknown) => caught)
-	expect(isEntitlementLimitError(error)).toBe(true)
-	if (!isEntitlementLimitError(error)) {
-		throw new Error('Expected package sync to enforce the scheduled job limit.')
-	}
-	expect(error.details).toMatchObject({
-		resource: 'scheduled_jobs',
+
+	expectScheduledJobLimit(error, {
 		plan: 'free',
 		limit: planLimits.free.maxScheduledJobs,
 		current: existingJobCount,
@@ -348,28 +357,29 @@ test('package job sync preflights the full addition set without partial inserts'
 	expect(await listJobRowsByUserId(db, userId)).toHaveLength(existingJobCount)
 })
 
-test('free plan rejects new or changed schedules faster than 15 minutes and grandfathers existing jobs', async () => {
+test('free and public Standard plans reject new or changed schedules faster than 15 minutes, preflight whole manifests, and grandfather existing jobs', async () => {
 	const email = 'interval-floor@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
+	const publicStandardEmail = 'public-standard-interval@example.com'
+	const publicStandardUserId = testStableUserIdFromEmail(publicStandardEmail)
 	const paidEmail = 'interval-floor-paid@example.com'
-	const paidUserId = await createStableUserIdFromEmail(paidEmail)
-	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
-		async (_db: D1Database, id: string) => ({
-			userId: id,
-			email:
-				id === paidUserId
-					? paidEmail
-					: id === userId
-						? email
-						: `${id}@example.com`,
-			username: id,
-			displayName: id,
-		}),
-	)
+	const paidUserId = testStableUserIdFromEmail(paidEmail)
+	mockBackgroundEmails({
+		[userId]: email,
+		[publicStandardUserId]: publicStandardEmail,
+		[paidUserId]: paidEmail,
+	})
 	const env = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [
 				{ email, plan: 'free', stable_user_id: userId },
+				{
+					email: publicStandardEmail,
+					plan: 'free',
+					stripe_plan: 'standard',
+					entitlement_ladder: 'public',
+					stable_user_id: publicStandardUserId,
+				},
 				{
 					email: paidEmail,
 					plan: 'standard',
@@ -380,31 +390,61 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 			],
 		}),
 	})
-	const callerContext = createPlanUserCallerContext({ userId, email })
 
-	await expect(
-		syncSinglePackageJob({
+	for (const floorUserId of [userId, publicStandardUserId]) {
+		await expect(
+			syncQuotaJob({
+				env,
+				userId: floorUserId,
+				packageId: `too-fast-${floorUserId}`,
+				schedule: { type: 'interval', every: '5m' },
+			}),
+		).rejects.toSatisfy(isIntervalFloorError)
+		const created = await syncQuotaJob({
 			env,
-			userId,
-			baseUrl: 'https://example.com',
-			packageId: 'too-fast-package',
-			sourceId: 'too-fast-package-source',
-			jobName: 'quota-job',
-			schedule: { type: 'interval', every: '5m' },
-		}),
-	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+			userId: floorUserId,
+			packageId: `ok-interval-${floorUserId}`,
+			schedule: { type: 'interval', every: '15m' },
+		})
+		expect(created.schedule).toEqual({ type: 'interval', every: '15m' })
+	}
 
-	const created = await syncSinglePackageJob({
-		env,
+	// A later too-fast job in the same manifest means nothing is written.
+	const mixed = {
 		userId,
-		baseUrl: 'https://example.com',
-		packageId: 'ok-interval-package',
-		sourceId: 'ok-interval-package-source',
-		jobName: 'ok-job',
-		schedule: { type: 'interval', every: '15m' },
+		packageId: 'mixed-interval-package',
+		sourceId: 'mixed-interval-source',
+	}
+	await seedPackageSource({
+		env,
+		...mixed,
+		publishedCommit: 'mixed-interval-commit',
 	})
-	expect(created.schedule).toEqual({ type: 'interval', every: '15m' })
+	const before = await listJobRowsByUserId(env.APP_DB, userId)
+	await expect(
+		syncPackageJobsForPackage({
+			env,
+			...mixed,
+			baseUrl: 'https://example.com',
+			manifest: packageManifest({
+				name: '@owner/mixed-interval-package',
+				kodyId: 'mixed-interval-package',
+				jobs: {
+					'ok-job': {
+						entry: './ok.ts',
+						schedule: { type: 'interval', every: '15m' },
+					},
+					'too-fast-job': {
+						entry: './fast.ts',
+						schedule: { type: 'interval', every: '5m' },
+					},
+				},
+			}),
+		}),
+	).rejects.toSatisfy(isIntervalFloorError)
+	expect(await listJobRowsByUserId(env.APP_DB, userId)).toEqual(before)
 
+	const callerContext = createPlanUserCallerContext({ userId, email })
 	const grandfathered = await insertLeftoverJob({
 		env,
 		callerContext,
@@ -414,210 +454,42 @@ test('free plan rejects new or changed schedules faster than 15 minutes and gran
 			sourceId: 'legacy-5m-source',
 		},
 	})
+	const updateGrandfathered = (body: Record<string, unknown>) =>
+		updateJob({ env, callerContext, body: { id: grandfathered.id, ...body } })
+	await expect(updateGrandfathered({ enabled: false })).resolves.toMatchObject({
+		enabled: false,
+	})
 	await expect(
-		updateJob({
-			env,
-			callerContext,
-			body: { id: grandfathered.id, enabled: false },
-		}),
-	).resolves.toMatchObject({ enabled: false })
+		updateGrandfathered({ schedule: { type: 'interval', every: '1m' } }),
+	).rejects.toSatisfy(isIntervalFloorError)
 	await expect(
-		updateJob({
-			env,
-			callerContext,
-			body: {
-				id: grandfathered.id,
-				schedule: { type: 'interval', every: '1m' },
-			},
-		}),
-	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
-	await expect(
-		updateJob({
-			env,
-			callerContext,
-			body: {
-				id: grandfathered.id,
-				timezone: 'America/Denver',
-			},
-		}),
-	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
+		updateGrandfathered({ timezone: 'America/Denver' }),
+	).rejects.toSatisfy(isIntervalFloorError)
 
-	const paidCreated = await syncSinglePackageJob({
+	const paidCreated = await syncQuotaJob({
 		env,
 		userId: paidUserId,
-		baseUrl: 'https://example.com',
 		packageId: 'paid-fast-package',
-		sourceId: 'paid-fast-package-source',
-		jobName: 'fast-job',
 		schedule: { type: 'interval', every: '1m' },
 	})
 	expect(paidCreated.schedule).toEqual({ type: 'interval', every: '1m' })
 })
 
-test('public Standard rejects new schedules faster than 15 minutes', async () => {
-	const email = 'public-standard-interval@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
-		async (_db: D1Database, id: string) => ({
-			userId: id,
-			email: id === userId ? email : `${id}@example.com`,
-			username: id,
-			displayName: id,
-		}),
-	)
-	const env = createJobServiceTestEnv({
-		APP_DB: createDatabase({
-			users: [
-				{
-					email,
-					plan: 'free',
-					stripe_plan: 'standard',
-					entitlement_ladder: 'public',
-					stable_user_id: userId,
-				},
-			],
-		}),
-	})
-	await expect(
-		syncSinglePackageJob({
-			env,
-			userId,
-			baseUrl: 'https://example.com',
-			packageId: 'public-standard-fast',
-			sourceId: 'public-standard-fast-source',
-			jobName: 'fast-job',
-			schedule: { type: 'interval', every: '5m' },
-		}),
-	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
-	const created = await syncSinglePackageJob({
-		env,
-		userId,
-		baseUrl: 'https://example.com',
-		packageId: 'public-standard-ok',
-		sourceId: 'public-standard-ok-source',
-		jobName: 'ok-job',
-		schedule: { type: 'interval', every: '15m' },
-	})
-	expect(created.schedule).toEqual({ type: 'interval', every: '15m' })
-})
-
-test('package job sync preflights interval floors so a later invalid job writes nothing', async () => {
-	const email = 'interval-preflight@example.com'
-	const userId = await createStableUserIdFromEmail(email)
-	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
-		async (_db: D1Database, id: string) => ({
-			userId: id,
-			email: id === userId ? email : `${id}@example.com`,
-			username: id,
-			displayName: id,
-		}),
-	)
-	const env = createJobServiceTestEnv({
-		APP_DB: createDatabase({
-			users: [{ email, plan: 'free', stable_user_id: userId }],
-		}),
-	})
-	await insertPublishedEntitySource({
-		db: env.APP_DB as ReturnType<typeof createDatabase>,
-		userId,
-		sourceId: 'mixed-interval-source',
-		entityKind: 'package',
-		entityId: 'mixed-interval-package',
-		publishedCommit: 'mixed-interval-commit',
-		manifestPath: 'package.json',
-	})
-	const before = await listJobRowsByUserId(env.APP_DB, userId)
-	await expect(
-		syncPackageJobsForPackage({
-			env,
-			userId,
-			baseUrl: 'https://example.com',
-			packageId: 'mixed-interval-package',
-			sourceId: 'mixed-interval-source',
-			manifest: parseAuthoredPackageJson({
-				content: JSON.stringify({
-					name: '@owner/mixed-interval-package',
-					exports: { '.': './index.ts' },
-					kody: {
-						id: 'mixed-interval-package',
-						description: 'Mixed interval jobs',
-						jobs: {
-							'ok-job': {
-								entry: './ok.ts',
-								schedule: { type: 'interval', every: '15m' },
-							},
-							'too-fast-job': {
-								entry: './fast.ts',
-								schedule: { type: 'interval', every: '5m' },
-							},
-						},
-					},
-				}),
-			}),
-		}),
-	).rejects.toSatisfy((error: unknown) => isJobIntervalFloorError(error))
-	expect(await listJobRowsByUserId(env.APP_DB, userId)).toEqual(before)
-})
-
-function createPlanUserCallerContext(input: { userId: string; email: string }) {
-	return createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		user: {
-			userId: input.userId,
-			email: input.email,
-			displayName: 'Plan User',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'app-123',
-		},
-	}) as PersistedJobCallerContext
-}
-
-async function trySyncQuotaPackageJob(input: {
-	env: Env
-	userId: string
-	packageId: string
-}) {
-	return syncSinglePackageJob({
-		env: input.env,
-		userId: input.userId,
-		baseUrl: 'https://example.com',
-		packageId: input.packageId,
-		sourceId: `${input.packageId}-source`,
-		jobName: 'quota-job',
-	}).then(
-		(job) => job,
-		(thrown: unknown) => thrown,
-	)
-}
-
 test('syncPackageJobsForPackage enforces scheduled job entitlements for plan users and denies at the max plan ceiling', async () => {
 	const plannedEmail = 'planned@example.com'
-	const plannedUserId = await createStableUserIdFromEmail(plannedEmail)
+	const plannedUserId = testStableUserIdFromEmail(plannedEmail)
 	const maxEmail = 'max@example.com'
-	const maxUserId = await createStableUserIdFromEmail(maxEmail)
-	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
-		async (_db: D1Database, userId: string) => ({
-			userId,
-			email:
-				userId === plannedUserId
-					? plannedEmail
-					: userId === maxUserId
-						? maxEmail
-						: `${userId}@example.com`,
-			username: userId,
-			displayName: userId,
-		}),
-	)
+	const maxUserId = testStableUserIdFromEmail(maxEmail)
+	mockBackgroundEmails({
+		[plannedUserId]: plannedEmail,
+		[maxUserId]: maxEmail,
+	})
+	const trySync = (env: Env, userId: string, packageId: string) =>
+		syncQuotaJob({ env, userId, packageId }).catch((caught: unknown) => caught)
 	const plannedEnv = createJobServiceTestEnv({
 		APP_DB: createDatabase({
 			users: [
-				{
-					email: plannedEmail,
-					plan: 'free',
-					stable_user_id: plannedUserId,
-				},
+				{ email: plannedEmail, plan: 'free', stable_user_id: plannedUserId },
 			],
 		}),
 	})
@@ -626,93 +498,54 @@ test('syncPackageJobsForPackage enforces scheduled job entitlements for plan use
 		email: plannedEmail,
 	})
 	const freeLimit = planLimits.free.maxScheduledJobs
-
 	for (let index = 0; index < freeLimit; index += 1) {
 		await insertLeftoverJob({
 			env: plannedEnv,
 			callerContext: plannedCallerContext,
 			body: {
 				name: `Quota job ${index}`,
-				schedule: {
-					type: 'interval',
-					every: '15m',
-				},
+				schedule: { type: 'interval', every: '15m' },
 			},
 		})
 	}
 
-	const freeError = await trySyncQuotaPackageJob({
-		env: plannedEnv,
-		userId: plannedUserId,
-		packageId: 'free-quota-package',
-	})
-	if (!isEntitlementLimitError(freeError)) {
-		throw new Error(
-			'Expected an EntitlementLimitError from syncPackageJobsForPackage.',
-		)
-	}
-	expect(freeError.details).toMatchObject({
-		code: 'entitlement_limit_exceeded',
-		resource: 'scheduled_jobs',
-		plan: 'free',
-		limit: freeLimit,
-		current: freeLimit,
-	})
+	expectScheduledJobLimit(
+		await trySync(plannedEnv, plannedUserId, 'free-quota-package'),
+		{ plan: 'free', limit: freeLimit, current: freeLimit },
+	)
 
-	const maxLimit = planLimits.max.maxScheduledJobs
-	const belowMaxEnv = createJobServiceTestEnv({
-		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
-			jobs: Array.from(
-				{ length: planLimits.pro.maxScheduledJobs },
-				(_, index) => ({
-					id: `below-max-job-${index}`,
+	const maxEnvWithJobs = (count: number, prefix: string) =>
+		createJobServiceTestEnv({
+			APP_DB: createDatabase({
+				users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
+				jobs: Array.from({ length: count }, (_, index) => ({
+					id: `${prefix}-${index}`,
 					user_id: maxUserId,
-				}),
-			),
-		}),
-	})
-	const belowMaxJob = await trySyncQuotaPackageJob({
-		env: belowMaxEnv,
-		userId: maxUserId,
-		packageId: 'below-max-package',
-	})
-	if (isEntitlementLimitError(belowMaxJob)) {
-		throw new Error(
-			'Expected package job sync below the max ceiling to succeed.',
-		)
-	}
+				})),
+			}),
+		})
+	const belowMaxJob = await trySync(
+		maxEnvWithJobs(planLimits.pro.maxScheduledJobs, 'below-max-job'),
+		maxUserId,
+		'below-max-package',
+	)
+	expect(isEntitlementLimitError(belowMaxJob)).toBe(false)
 	expect(belowMaxJob).toMatchObject({ name: 'quota-job' })
 
-	const atCeilingEnv = createJobServiceTestEnv({
-		APP_DB: createDatabase({
-			users: [{ email: maxEmail, plan: 'max', stable_user_id: maxUserId }],
-			jobs: Array.from({ length: maxLimit }, (_, index) => ({
-				id: `max-job-${index}`,
-				user_id: maxUserId,
-			})),
-		}),
-	})
-	const maxError = await trySyncQuotaPackageJob({
-		env: atCeilingEnv,
-		userId: maxUserId,
-		packageId: 'max-quota-package',
-	})
-	if (!isEntitlementLimitError(maxError)) {
-		throw new Error('Expected an EntitlementLimitError at the max job ceiling.')
-	}
-	expect(maxError.details).toMatchObject({
-		code: 'entitlement_limit_exceeded',
-		resource: 'scheduled_jobs',
-		plan: 'max',
-		limit: maxLimit,
-		current: maxLimit,
-	})
+	const maxLimit = planLimits.max.maxScheduledJobs
+	expectScheduledJobLimit(
+		await trySync(
+			maxEnvWithJobs(maxLimit, 'max-job'),
+			maxUserId,
+			'max-quota-package',
+		),
+		{ plan: 'max', limit: maxLimit, current: maxLimit },
+	)
 })
 
 test('blank-email package context uses the max plan for storage writes and nested job scheduling', async () => {
 	const email = 'package-owner@example.com'
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	const meter = createInMemoryUserMeterEnv()
 	const db = createDatabase({
 		users: [{ email, plan: 'max', stable_user_id: userId }],
@@ -730,21 +563,25 @@ test('blank-email package context uses the max plan for storage writes and neste
 		userId,
 		bytes: planLimits.free.maxStorageBytes + 1,
 	})
-	const stalePackageContext = createMcpCallerContext({
-		baseUrl: 'https://example.com',
-		executionOrigin: 'background',
-		user: {
-			userId,
-			email: '',
-			displayName: 'Package Owner',
-		},
-		storageContext: {
-			sessionId: null,
-			appId: 'package-1',
-			packageId: 'package-1',
-			storageId: 'job:package-job:package-1:parent',
-		},
-	}) as PersistedJobCallerContext
+	const stalePackageStorageContext = {
+		sessionId: null,
+		appId: 'package-1',
+		packageId: 'package-1',
+		storageId: 'job:package-job:package-1:parent',
+	}
+	const stalePackageContext = withCallerUser(
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+			executionOrigin: 'background',
+			user: {
+				userId: personIdFromStored(userId),
+				email: '',
+				displayName: 'Package Owner',
+			},
+			storageContext: stalePackageStorageContext,
+		}),
+	)
 
 	await expect(
 		saveValue({
@@ -754,23 +591,16 @@ test('blank-email package context uses the max plan for storage writes and neste
 			scope: 'app',
 			name: 'checkpoint',
 			value: 'stored above the free-plan byte limit',
-			storageContext: stalePackageContext.storageContext,
+			storageContext: stalePackageStorageContext,
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
 	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
-		userId,
+		userId: personIdFromStored(userId),
 		email,
 		username: userId,
 		displayName: 'Package Owner',
 	})
 	await expect(
-		syncSinglePackageJob({
-			env,
-			userId,
-			baseUrl: stalePackageContext.baseUrl,
-			packageId: 'nested-schedule-package',
-			sourceId: 'nested-schedule-source',
-			jobName: 'quota-job',
-		}),
+		syncQuotaJob({ env, userId, packageId: 'nested-schedule-package' }),
 	).resolves.toMatchObject({ name: 'quota-job' })
 })

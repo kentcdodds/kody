@@ -22,6 +22,7 @@ import { type DomainSpec } from './types.ts'
  * is a real `DomainSpec` with bundled `Capability` handlers.
  */
 const builtinDomainLoaders: ReadonlyArray<() => Promise<DomainSpec>> = [
+	() => import('./access/domain.ts').then((m) => m.accessDomain),
 	() => import('./account/domain.ts').then((m) => m.accountDomain),
 	() => import('./admin/domain.ts').then((m) => m.adminDomain),
 	() => import('./apps/domain.ts').then((m) => m.appsDomain),
@@ -29,10 +30,6 @@ const builtinDomainLoaders: ReadonlyArray<() => Promise<DomainSpec>> = [
 	() => import('./coding/domain.ts').then((m) => m.codingDomain),
 	() => import('./email/domain.ts').then((m) => m.emailDomain),
 	() => import('./integrations/domain.ts').then((m) => m.integrationsDomain),
-	() =>
-		import('./invocation-tokens/domain.ts').then(
-			(m) => m.invocationTokensDomain,
-		),
 	() => import('./jobs/domain.ts').then((m) => m.jobsDomain),
 	() => import('./mcp-servers/domain.ts').then((m) => m.mcpServersDomain),
 	() => import('./meta/domain.ts').then((m) => m.metaDomain),

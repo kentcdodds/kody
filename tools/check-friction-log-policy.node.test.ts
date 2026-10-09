@@ -21,22 +21,52 @@ test('friction-log policy rejects HTML skip marker and requires label gate', () 
 		]),
 	})
 
-	const good = [
+	const goodLines = [
 		'# Friction log',
 		'',
 		'| `friction-skipped` | Daily sweep will not re-investigate until this label is removed. |',
 		'',
 		'This repository does not define labels in-tree (no `.github/labels.yml`).',
 		'',
-		'Daily sweep eligibility is: open + `friction` + NOT',
-		'`friction-skipped`. Eligibility does not scrape issue comments.',
+		'Daily sweep eligibility is: open',
+		'+ `friction` + NOT `friction-skipped`.',
+		'Eligibility does not scrape issue comments.',
 		'',
-		'apply the GitHub label `friction-skipped`. Unskip by removing',
+		'apply the GitHub label',
+		'`friction-skipped`. Unskip by removing',
 		'`friction-skipped`. When acting, remove `friction-skipped` if present.',
-	].join('\n')
+		'',
+		'Daily agent instructions (outcomes, skip/unskip, record-outcome) come from the',
+		'package when spawned.',
+		'',
+		'https://kody.codes/@kentcdodds/friction-log',
+	]
+	const good = goodLines.join('\n')
 	expect(checkFrictionLogPolicyContent(good)).toEqual({
 		ok: true,
 		errors: [],
+	})
+
+	const withoutOwnershipPhrase = goodLines
+		.filter((line) => !line.startsWith('Daily agent instructions'))
+		.join('\n')
+	expect(checkFrictionLogPolicyContent(withoutOwnershipPhrase)).toEqual({
+		ok: false,
+		errors: expect.arrayContaining([
+			expect.stringContaining('daily agent instructions come from the package'),
+		]),
+	})
+
+	const withoutPackageUrl = goodLines
+		.filter((line) => line !== 'https://kody.codes/@kentcdodds/friction-log')
+		.join('\n')
+	expect(checkFrictionLogPolicyContent(withoutPackageUrl)).toEqual({
+		ok: false,
+		errors: expect.arrayContaining([
+			expect.stringContaining(
+				'point at https://kody.codes/@kentcdodds/friction-log',
+			),
+		]),
 	})
 })
 

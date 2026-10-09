@@ -65,7 +65,7 @@ type LaunchTotalsRow = {
 	ladder_public: number
 	ladder_legacy: number
 	ladder_legacy_paid: number
-	overlay_standard: number
+	overlay_pro: number
 }
 
 function toCount(value: number | null | undefined) {
@@ -151,7 +151,7 @@ export async function loadAdminLaunchSignals(input: {
 									(second_agent_standard_gift_expires_at IS NOT NULL AND second_agent_standard_gift_expires_at > ?)
 									OR (referral_standard_credit_expires_at IS NOT NULL AND referral_standard_credit_expires_at > ?)
 								)
-							THEN 1 ELSE 0 END) AS overlay_standard
+							THEN 1 ELSE 0 END) AS overlay_pro
 					 FROM users
 					 WHERE deleting_at IS NULL`,
 				)
@@ -190,7 +190,7 @@ export async function loadAdminLaunchSignals(input: {
 							WHEN (
 								(second_agent_standard_gift_expires_at IS NOT NULL AND second_agent_standard_gift_expires_at > ?)
 								OR (referral_standard_credit_expires_at IS NOT NULL AND referral_standard_credit_expires_at > ?)
-							) THEN 'standard'
+							) THEN 'pro'
 							ELSE COALESCE(plan, 'free')
 						END AS name,
 						COUNT(*) AS n
@@ -250,7 +250,7 @@ export async function loadAdminLaunchSignals(input: {
 				(left, right) =>
 					right.count - left.count || left.plan.localeCompare(right.plan),
 			),
-		overlayStandard: toCount(totals?.overlay_standard),
+		overlayPro: toCount(totals?.overlay_pro),
 		entitlementLadders: {
 			public: ladderPublic,
 			legacy: ladderLegacy,

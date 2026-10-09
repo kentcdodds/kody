@@ -1,8 +1,10 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	CloudflareApiError,
+	CloudflareRestClient,
 	createCloudflareRestClient,
 } from '#mcp/cloudflare/cloudflare-rest-client.ts'
+import { createArtifactsGitHttp } from './artifacts-git-http.ts'
 import {
 	runArtifactsGitWithRetry,
 	wrapArtifactsGitHttpError,
@@ -459,11 +461,37 @@ function adaptNativeArtifactsBinding(
 
 function createArtifactsRestBinding(env: Env, namespace: string) {
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
-	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
+	const artifactsApiToken = env.CLOUDFLARE_ARTIFACTS_API_TOKEN?.trim()
+	const apiToken = artifactsApiToken || env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!accountId || !apiToken) {
 		return null
 	}
-	const client = createCloudflareRestClient(env)
+	// When the Worker binds real Artifacts (production/preview), createToken
+	// and fork mint via REST. Preview also sets CLOUDFLARE_API_BASE_URL to a
+	// per-PR mock for email/analytics — that mock does not hold the binding's
+	// repos, so create vs restore disagreed (#2749). Prefer the real Cloudflare
+	// API whenever the native binding is present, using CLOUDFLARE_ARTIFACTS_API_TOKEN
+	// when the shared CLOUDFLARE_API_TOKEN is the mock credential.
+	const native = readNativeArtifactsBinding(env)
+	const configuredBaseUrl = env.CLOUDFLARE_API_BASE_URL?.trim()
+	const usingNonDefaultApiBase = Boolean(
+		configuredBaseUrl &&
+		!configuredBaseUrl
+			.replace(/\/$/, '')
+			.startsWith('https://api.cloudflare.com'),
+	)
+	const client =
+		native && usingNonDefaultApiBase
+			? artifactsApiToken
+				? new CloudflareRestClient({
+						apiToken: artifactsApiToken,
+						baseUrl: 'https://api.cloudflare.com',
+					})
+				: null
+			: createCloudflareRestClient(env)
+	if (!client) {
+		return null
+	}
 	const basePath = `/client/v4/accounts/${accountId}/artifacts/namespaces/${namespace}`
 	const getRepoInfo = async (
 		name: string,
@@ -868,13 +896,20 @@ export async function listArtifactServerRefs(input: {
 		remote: input.remote,
 		token: input.token,
 	})
-	const { git, http } = await loadIsomorphicGit()
+	const { git } = await loadIsomorphicGit()
+	// Protocol v2 follows info/refs with an ls-refs POST. Clone and push
+	// already use protocol v1, which returns the ref list in that single
+	// advertisement. The extra POST can stall with no HTTP status, and
+	// package repos are small enough that client-side prefix filtering is
+	// enough. The bounded HTTP client aborts a stalled advertisement so
+	// retries can finish inside a normal MCP tool timeout.
 	return runArtifactsGitWithRetry(() =>
 		git.listServerRefs({
-			http,
+			http: createArtifactsGitHttp(),
 			url,
 			prefix: input.prefix,
 			symrefs: true,
+			protocolVersion: 1,
 		}),
 	)
 }
@@ -985,8 +1020,12 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 	maxAttempts?: number
 	delayMs?: number
 }): Promise<ArtifactRepoReadyResult> {
-	const maxAttempts = input.maxAttempts ?? 5
-	const delayMs = input.delayMs ?? 50
+	// Cloudflare can return ALREADY_EXISTS from create while get still reports
+	// not_found (post-delete ghost reservation, or fork provision lag). Retry
+	// create when get stays absent so callers that need bootstrapAccess (community
+	// fork fallback) are not stuck with a permanent not_found conflict.
+	const maxAttempts = input.maxAttempts ?? 10
+	const delayMs = input.delayMs ?? 100
 	let lastStatus = 'not_found'
 	for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
 		const result = await input.binding.get(input.repoId)
@@ -998,6 +1037,27 @@ async function waitForArtifactRepoReadyAfterCreateConflict(input: {
 			throw new Error(
 				`Artifacts repo "${input.repoId}" is importing. Retry after ${result.retryAfter}s.`,
 			)
+		}
+		if (result.status === 'not_found') {
+			try {
+				const created = await input.binding.create(input.repoId, {
+					readOnly: false,
+				})
+				return {
+					recreated: true,
+					bootstrapAccess: {
+						defaultBranch: created.defaultBranch,
+						remote: created.remote,
+						token: created.token,
+						expiresAt: created.expiresAt,
+					},
+					repo: input.binding.repo(created.name),
+				}
+			} catch (error) {
+				if (!isArtifactRepoAlreadyExistsError(error)) {
+					throw error
+				}
+			}
 		}
 		if (attempt < maxAttempts) {
 			await waitForArtifactRepoCheck(delayMs)

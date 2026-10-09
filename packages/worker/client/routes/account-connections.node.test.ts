@@ -1,5 +1,5 @@
-import { jsx } from 'remix/ui/jsx-runtime'
-import { renderToString } from 'remix/ui/server'
+import { jsx } from 'remix/component/jsx-runtime'
+import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
 import { AppSessionProvider } from '#client/app-session-context.tsx'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
@@ -8,10 +8,12 @@ import { AccountConnectionsRoute } from '#client/routes/account-connections.tsx'
 import {
 	accountNavItemsFor,
 	accountPackagesNavHref,
+	accountRailOrgSlug,
 } from '#client/routes/account-management-components.tsx'
 import { type SessionInfo } from '#client/session.ts'
 import {
 	accountConnectionAgentIds,
+	accountConnectionsListHref,
 	accountConnectionsNewHref,
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
@@ -55,6 +57,7 @@ const connectedCursor: AccountConnectedAgentsLoaderData = {
 		{
 			clientId: 'cursor-client',
 			grantIds: ['grant-1'],
+			connectionProfileName: null,
 			label: 'Cursor',
 			kind: 'cursor',
 			connectedAt: '2026-01-01T00:00:00.000Z',
@@ -72,6 +75,8 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toContain('aria-label="Connected agents"')
 	expect(html).toContain('data-agent-label="Cursor"')
 	expect(html).toContain('aria-label="Revoke Cursor"')
+	expect(html).toContain('data-testid="connected-agent-view-steps"')
+	expect(html).toContain('href="/account/connections/new/cursor"')
 	expect(html).toMatch(/Last used <span[^>]*>unknown<\/span>/)
 	expect(html).toMatch(
 		/data-testid="account-connections-add"[^>]*>Add connection</,
@@ -88,12 +93,12 @@ test('connections page renders the connected list with Add connection, the MCP U
 	// No cold-path loading copy when the SSR payload is present.
 	expect(html).not.toContain('Loading connections')
 	// The rail marks this page current and links Repositories to the profile.
-	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
 	expect(html).toMatch(/href="\/@jane"[^>]*>[\s\S]*?Repositories<\/a>/)
 	expect(html).toContain('data-icon="box"')
 })
 
-test('Add connection shows every named client on every viewport with none greyed or folded away', async () => {
+test('Add connection shows every named client on every viewport; already-connected hosts stay links with a Connected mark', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
 		routes.accountConnectionNew.href(),
@@ -117,6 +122,14 @@ test('Add connection shows every named client on every viewport with none greyed
 			),
 		)
 	}
+	// Already-connected Cursor keeps a Connected mark and remains a link.
+	expect(html).toMatch(
+		/href="\/account\/connections\/new\/cursor"[^>]*data-greyed="true"/,
+	)
+	expect(html).toContain('data-greyed-reason="connected"')
+	expect(html).toContain(
+		'Already connected. Select to view connect steps again.',
+	)
 	// No card is hidden behind the onboarding phone/desktop media query: every
 	// card `<li>` shares one class whose rules never reach `display: none`.
 	const cards = [
@@ -164,7 +177,7 @@ test('picking a client shows that host’s install steps with a way back to the 
 	)
 	expect(html).not.toContain('aria-label="Connected agents"')
 	// Connections stays the current rail item on the add views.
-	expect(html).toMatch(/href="\/account\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
 })
 
 test('an unknown agent segment renders the fallback instead of instructions', async () => {
@@ -181,32 +194,49 @@ test('an unknown agent segment renders the fallback instead of instructions', as
 })
 
 test('connections views parse from the pathname', () => {
-	expect(parseAccountConnectionsPathname('/account/connections')).toEqual({
-		kind: 'list',
-	})
-	expect(parseAccountConnectionsPathname('/account/connections/new')).toEqual({
-		kind: 'new',
-		agent: null,
-	})
+	const cases = [
+		['/account/connections', { kind: 'list' }],
+		['/account/connections/new', { kind: 'new', agent: null }],
+		['/account/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/account/connections/new/other', null],
+		['/account/connections/new/nope', null],
+		['/account/connections/new/cursor/x', null],
+		['/account/connections/nope', null],
+		['/@jane/connections', { kind: 'list' }],
+		['/@jane/connections/new', { kind: 'new', agent: null }],
+		['/@jane/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/@jane/connections/new/nope', null],
+	] as const
 	expect(
-		parseAccountConnectionsPathname('/account/connections/new/cursor'),
-	).toEqual({ kind: 'new', agent: 'cursor' })
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/other'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/nope'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/new/cursor/x'),
-	).toBeNull()
-	expect(
-		parseAccountConnectionsPathname('/account/connections/nope'),
-	).toBeNull()
+		cases.map(([pathname]) => [
+			pathname,
+			parseAccountConnectionsPathname(pathname),
+		]),
+	).toEqual(cases)
 	expect(accountConnectionsNewHref(null)).toBe('/account/connections/new')
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
 		'/account/connections/new/grok-cli',
 	)
+	expect(accountConnectionsListHref('/@jane/connections')).toBe(
+		'/@jane/connections',
+	)
+	expect(accountConnectionsNewHref(null, '/@jane/connections')).toBe(
+		'/@jane/connections/new',
+	)
+	expect(accountConnectionsNewHref('cursor', '/@jane/connections')).toBe(
+		'/@jane/connections/new/cursor',
+	)
+})
+
+test('connections list under /@slug keeps Add and View steps on org paths', async () => {
+	const html = await renderConnectionsPage(
+		connectedCursor,
+		'/@jane/connections',
+	)
+	expect(html).toContain('href="/@jane/connections/new"')
+	expect(html).toContain('href="/@jane/connections/new/cursor"')
+	expect(html).not.toContain('href="/account/connections/new"')
+	expect(html).not.toContain('href="/account/connections/new/cursor"')
 })
 
 test('connections page swaps the copy card for a verify note while the email is unverified', async () => {
@@ -222,24 +252,125 @@ test('connections page swaps the copy card for a verify note while the email is 
 	expect(html).toContain('No agents have authorized yet.')
 })
 
+test('connection profiles list only granted packages and add more through a package combobox', async () => {
+	const packageOptions = Array.from({ length: 40 }, (_, index) => ({
+		id: `pkg-${index}`,
+		name: `tool-${index}`,
+		kodyId: `@jane/tool-${String(index).padStart(2, '0')}`,
+	}))
+	const html = await renderConnectionsPage({
+		...connectedCursor,
+		connectionProfilesEnabled: true,
+		connectionProfilePackageOptions: packageOptions,
+		connectionProfiles: [
+			{
+				id: 'profile-ci',
+				name: 'ci',
+				grants: [
+					{ resourceType: 'package', resourceId: 'pkg-3', actions: ['read'] },
+					{
+						resourceType: 'package',
+						resourceId: 'pkg-gone',
+						actions: ['execute', 'read'],
+					},
+				],
+				mcpServerUrl: 'https://kody.example/mcp?profile=ci',
+				createdAt: '2026-01-01T00:00:00.000Z',
+				updatedAt: '2026-01-01T00:00:00.000Z',
+			},
+		],
+	})
+
+	expect(html).toContain('data-testid="connection-profiles"')
+	expect(html).toContain('>https://kody.example/mcp?profile=ci<')
+	const profileCard = html.slice(
+		html.indexOf('data-testid="connection-profile-profile-ci"'),
+		html.indexOf('data-testid="connection-profile-create"'),
+	)
+	// The profile card lists only its grants (a deleted package stays visible
+	// so it can still be removed), not one row per account package.
+	expect(profileCard).toContain('aria-label="Packages granted to ci"')
+	expect(profileCard).toContain('>@jane/tool-03<')
+	expect(profileCard).toContain('>read<')
+	expect(profileCard).toContain('>read · execute<')
+	expect(profileCard).toContain('>Unknown package<code>pkg-gone</code>')
+	expect(profileCard).not.toContain('@jane/tool-04')
+	expect(profileCard).toContain('aria-label="Edit packages for ci"')
+
+	const createForm = html.slice(
+		html.indexOf('data-testid="connection-profile-create"'),
+	)
+	// A new profile starts with no packages; every saved package is
+	// reachable through the combobox instead of a grant-scoped list.
+	expect(createForm).toContain('No packages yet')
+	expect(createForm).toMatch(
+		/<label[^>]*for="connection-profile-create-add-package"[^>]*>Add package</,
+	)
+	expect(createForm).toContain('placeholder="Search saved packages"')
+	expect(createForm.match(/role="option"/g)).toHaveLength(40)
+	expect(createForm).not.toContain('pkg-3"')
+})
+
 test('account rail lists Connections and Repositories at the same level as the other sections', () => {
 	const items = accountNavItemsFor({
-		username: 'jane',
+		orgSlug: 'jane',
+		personal: true,
 		showShared: true,
-		showSecretProviders: false,
 	})
 	expect(items.map((item) => item.label)).toContain('Shared')
+	expect(items.map((item) => item.label)).toContain('Secret providers')
+	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
+		'/@jane/secret-providers',
+	)
 	expect(items.map((item) => item.label)).toContain('Experiments')
 	expect(items.find((item) => item.label === 'Experiments')?.href).toBe(
 		'/account/experiments',
 	)
 	expect(items.find((item) => item.label === 'Connections')?.href).toBe(
-		'/account/connections',
+		'/@jane/connections',
 	)
 	// Repositories is the profile page — the canonical repo list — not the
 	// `/account/packages` redirect, unless the session has no username yet.
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
 		'/@jane',
 	)
-	expect(accountPackagesNavHref(null)).toBe('/account/packages')
+	expect(accountPackagesNavHref({ orgSlug: null, personal: true })).toBe(
+		'/account/packages',
+	)
+})
+
+test('account rail keeps the selected organization slug for section links', () => {
+	const items = accountNavItemsFor({
+		orgSlug: 'acme',
+		personal: false,
+		showShared: false,
+	})
+	expect(items.find((item) => item.label === 'Secrets')?.href).toBe(
+		'/@acme/secrets',
+	)
+	expect(items.find((item) => item.label === 'Jobs')?.href).toBe('/@acme/jobs')
+	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
+		'/@acme/packages',
+	)
+})
+
+test('account rail org slug prefers the path org over username', () => {
+	const organizations = [
+		{ slug: 'ada-old', personal: true },
+		{ slug: 'acme', personal: false },
+	]
+	expect(
+		accountRailOrgSlug({
+			pathname: '/@acme/jobs',
+			organizations,
+			username: 'ada-new',
+		}),
+	).toBe('acme')
+	expect(
+		accountRailOrgSlug({
+			pathname: '/account',
+			organizations,
+			username: 'ada-new',
+		}),
+	).toBe('ada-old')
 })

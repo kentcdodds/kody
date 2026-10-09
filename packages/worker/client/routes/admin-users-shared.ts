@@ -18,6 +18,7 @@ import {
 
 const adminUsersApiPath = '/admin/users.json'
 export const adminUserUsageApiPath = '/admin/users/usage.json'
+export const adminUserCreditsApiPath = '/admin/users/credits.json'
 
 const { getSelection, buildDetailHref } = createListDetailRoute('/admin/users')
 

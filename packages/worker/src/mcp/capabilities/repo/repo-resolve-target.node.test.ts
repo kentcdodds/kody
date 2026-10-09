@@ -5,7 +5,7 @@ import { mismatchedPackageScopeMessage } from '#worker/package-registry/package-
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -16,8 +16,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 const { resolveRepoSourceReference } = await import('./repo-resolve-target.ts')
@@ -57,23 +57,34 @@ function createPackageSourceRow() {
 }
 
 function resetMocks() {
-	mockModule.getEntitySourceByIdForUser.mockReset()
-	mockModule.getSavedPackageById.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
+	for (const fn of Object.values(mockModule)) fn.mockReset()
+}
+
+function resolve(
+	args: Parameters<typeof resolveRepoSourceReference>[0]['args'],
+	ownerScope?: string,
+) {
+	return resolveRepoSourceReference({
+		db: {} as D1Database,
+		userId: 'user-1',
+		ownerScope,
+		args,
+	})
+}
+
+async function expectCallerError(promise: Promise<unknown>, message: string) {
+	const error = await promise.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(McpCallerError)
+	expect(error).toHaveProperty('message', message)
 }
 
 test('resolveRepoSourceReference throws McpCallerError for missing source and package', async () => {
 	resetMocks()
-
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(null)
-	const missingSource = resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		args: { source_id: 'source-missing' },
-	})
+	mockModule.getSavedPackageById.mockResolvedValue(null)
 
-	await expect(missingSource).rejects.toThrow(McpCallerError)
-	await expect(missingSource).rejects.toThrow(
+	await expectCallerError(
+		resolve({ source_id: 'source-missing' }),
 		'Repo source was not found for this user.',
 	)
 	// The user predicate belongs in the query, not in a post-read comparison.
@@ -81,53 +92,31 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 		expect.anything(),
 		{ id: 'source-missing', userId: 'user-1' },
 	)
-
-	mockModule.getSavedPackageById.mockResolvedValue(null)
-	const missingPackage = resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		args: { target: { kind: 'package', package_id: 'pkg-missing' } },
-	})
-
-	await expect(missingPackage).rejects.toThrow(McpCallerError)
-	await expect(missingPackage).rejects.toThrow(
+	await expectCallerError(
+		resolve({ target: { kind: 'package', package_id: 'pkg-missing' } }),
 		'Saved package "pkg-missing" was not found.',
 	)
-
-	const missingIdentity = resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		args: {},
-	})
-
-	await expect(missingIdentity).rejects.toThrow(McpCallerError)
-	await expect(missingIdentity).rejects.toThrow(
-		'Repo source identity is required.',
-	)
+	await expectCallerError(resolve({}), 'Repo source identity is required.')
 })
 
 test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and rejects unknown scoped names', async () => {
 	resetMocks()
 	const savedPackage = createSavedPackageRow()
 	const source = createPackageSourceRow()
-	mockModule.getSavedPackageByKodyId.mockImplementation(
-		async (_db: D1Database, input: { kodyId: string }) =>
-			input.kodyId === 'travel-map' ? savedPackage : null,
+	mockModule.resolveSavedPackageRef.mockImplementation(
+		async (_db: D1Database, input: { ref: string }) =>
+			input.ref === 'travel-map' ? savedPackage : null,
 	)
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue(source)
 
-	const scoped = await resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		ownerScope: 'kentcdodds',
-		args: { target: { kind: 'package', kody_id: '@kentcdodds/travel-map' } },
-	})
-	const leaf = await resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		ownerScope: 'kentcdodds',
-		args: { target: { kind: 'package', kody_id: 'travel-map' } },
-	})
+	const scoped = await resolve(
+		{ target: { kind: 'package', kody_id: '@kentcdodds/travel-map' } },
+		'kentcdodds',
+	)
+	const leaf = await resolve(
+		{ target: { kind: 'package', kody_id: 'travel-map' } },
+		'kentcdodds',
+	)
 
 	expect(scoped.resolvedTarget).toEqual({
 		kind: 'package',
@@ -138,47 +127,33 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 	})
 	expect(leaf.resolvedTarget).toEqual(scoped.resolvedTarget)
 	expect(scoped.source).toEqual(source)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
-		1,
-		expect.anything(),
-		{ userId: 'user-1', kodyId: 'travel-map' },
-	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenNthCalledWith(
-		2,
-		expect.anything(),
-		{ userId: 'user-1', kodyId: 'travel-map' },
-	)
+	expect(mockModule.resolveSavedPackageRef.mock.calls).toEqual([
+		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
+		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
+	])
 
-	const unknownScoped = resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		ownerScope: 'kentcdodds',
-		args: {
-			target: { kind: 'package', kody_id: '@kentcdodds/does-not-exist' },
-		},
-	})
-	await expect(unknownScoped).rejects.toThrow(McpCallerError)
-	await expect(unknownScoped).rejects.toThrow(
+	await expectCallerError(
+		resolve(
+			{ target: { kind: 'package', kody_id: '@kentcdodds/does-not-exist' } },
+			'kentcdodds',
+		),
 		'Saved package "@kentcdodds/does-not-exist" was not found.',
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenLastCalledWith(
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenLastCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', kodyId: 'does-not-exist' },
+		{ userId: 'user-1', ref: 'does-not-exist', match: 'slug' },
 	)
 
-	const foreignScope = resolveRepoSourceReference({
-		db: {} as D1Database,
-		userId: 'user-1',
-		ownerScope: 'kentcdodds',
-		args: { target: { kind: 'package', kody_id: '@other/travel-map' } },
-	})
-	await expect(foreignScope).rejects.toThrow(McpCallerError)
-	await expect(foreignScope).rejects.toThrow(
+	await expectCallerError(
+		resolve(
+			{ target: { kind: 'package', kody_id: '@other/travel-map' } },
+			'kentcdodds',
+		),
 		mismatchedPackageScopeMessage({
 			value: '@other/travel-map',
 			requestedScope: 'other',
 			ownerScope: 'kentcdodds',
 		}),
 	)
-	expect(mockModule.getSavedPackageByKodyId).toHaveBeenCalledTimes(3)
+	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(3)
 })

@@ -33,7 +33,7 @@ import {
 import { injectDefaultPrivateField } from '#worker/package-registry/package-private.ts'
 import {
 	getSavedPackageById,
-	getSavedPackageByKodyId,
+	resolveSavedPackageRef,
 	getSavedPackageByName,
 	insertSavedPackage,
 } from '#worker/package-registry/repo.ts'
@@ -190,6 +190,7 @@ export const savePackageCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageSave',
+		orgPermission: 'package:write',
 		description: `Create or replace a saved package by writing a complete UTF-8 text file set (no binary assets). Coding agents with local filesystem/git access should prefer packageGetGitRemote (pass create: true for new packages) to clone, edit, push, and publish with packagePublishExternalPush; tool-only agents use packageSave or repo sessions. The package repo is rooted at package.json and package.json#kody is the Kody-specific metadata block. Publish requires non-empty root README.md (human-focused: what it does, prerequisites, setup, done-when, plus a concise Intent section) and AGENTS.md (agent-focused: imports, smoke tests, edge cases). Ask the user if intent is unclear. ${defaultPackagePrivateGuidance} ${productionPackageSourceSafetyPolicy}`,
 		keywords: [
 			'package',
@@ -238,14 +239,16 @@ export const savePackageCapability = defineDomainCapability(
 							userId: owner.ownerUserId,
 							packageId: args.package_id,
 						})
-					: await getSavedPackageByKodyId(ctx.env.APP_DB, {
+					: await resolveSavedPackageRef(ctx.env.APP_DB, {
 							userId: owner.ownerUserId,
-							kodyId: lookupManifest.kody.id,
+							ref: lookupManifest.kody.id,
+							match: 'slug',
 						})
 			if (!existing && args.package_id !== undefined) {
-				const byKodyId = await getSavedPackageByKodyId(ctx.env.APP_DB, {
+				const byKodyId = await resolveSavedPackageRef(ctx.env.APP_DB, {
 					userId: owner.ownerUserId,
-					kodyId: lookupManifest.kody.id,
+					ref: lookupManifest.kody.id,
+					match: 'slug',
 				})
 				if (byKodyId) {
 					throw new McpCallerError(
@@ -407,6 +410,7 @@ export const savePackageCapability = defineDomainCapability(
 							search_text: manifest.kody.searchText ?? null,
 							source_id: ensuredSource.id,
 							has_app: manifest.kody.app ? 1 : 0,
+							has_skills: 0,
 							hidden: 0,
 							is_private: 1,
 							created_at: now,
@@ -481,6 +485,7 @@ export const savePackageCapability = defineDomainCapability(
 			return {
 				package_id: saved.id,
 				kody_id: saved.kodyId,
+				slug: saved.kodyId,
 				name: saved.name,
 				description: saved.description,
 				tags: saved.tags,

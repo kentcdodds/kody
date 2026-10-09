@@ -113,8 +113,8 @@ document.
 Register the component and its loader in
 `packages/worker/client/routes/index.tsx` under the same `routePattern(...)`
 key; the loader is what lets the router load-before-commit. Reuse one component
-for sibling patterns (list and detail, `/docs` and `/docs/:slug`) so remix/ui
-keeps the instance and its last-good payload across the switch.
+for sibling patterns (list and detail, `/docs` and `/docs/:slug`) so
+remix/component keeps the instance and its last-good payload across the switch.
 
 ### Routes that own state (account, admin)
 

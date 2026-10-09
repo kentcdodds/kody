@@ -8,26 +8,42 @@ const mockModule = vi.hoisted(() => ({
 }))
 
 vi.mock('./service.ts', () => ({
-	prepareCommunityFork: (...args: Array<unknown>) =>
-		mockModule.prepareCommunityFork(...args),
-	persistPreparedCommunityFork: (...args: Array<unknown>) =>
-		mockModule.persistPreparedCommunityFork(...args),
+	prepareCommunityFork: mockModule.prepareCommunityFork,
+	persistPreparedCommunityFork: mockModule.persistPreparedCommunityFork,
 }))
 
-vi.mock('#worker/repo/checks.ts', () => ({
-	runRepoChecks: (...args: Array<unknown>) => mockModule.runRepoChecks(...args),
-}))
+vi.mock('#worker/repo/checks.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('#worker/repo/checks.ts')>()
+	return {
+		...actual,
+		runRepoChecks: mockModule.runRepoChecks,
+	}
+})
 
 vi.mock('#worker/package-registry/service.ts', () => ({
-	refreshSavedPackageProjection: (...args: Array<unknown>) =>
-		mockModule.refreshSavedPackageProjection(...args),
+	refreshSavedPackageProjection: mockModule.refreshSavedPackageProjection,
 }))
 
 import { installCommunityListing } from './install.ts'
 
 const env = { APP_DB: {} as D1Database } as Env
+const files = {
+	'package.json': '{"name":"@userb/demo"}',
+	'src/index.ts': 'export default async function main() {}',
+}
+const crossScopeReferences = [
+	{ file: 'src/index.ts', specifier: 'kody:@usera/' },
+]
+const forkFields = {
+	forkId: 'fork-1',
+	packageId: 'package-1',
+	sourceId: 'source-1',
+	targetKodyId: 'demo',
+	targetName: '@userb/demo',
+	originCommit: 'commit-1',
+}
 
-function preparedFork() {
+function preparedFork(overrides: { crossScopeReferences?: unknown } = {}) {
 	return {
 		env,
 		baseUrl: 'https://kody.test',
@@ -40,30 +56,31 @@ function preparedFork() {
 		packageId: 'package-1',
 		targetKodyId: 'demo',
 		targetName: '@userb/demo',
-		files: {
-			'package.json': '{"name":"@userb/demo"}',
-			'src/index.ts': 'export default async function main() {}',
-		},
+		files,
 		crossScopeReferences: [],
+		...overrides,
 	}
 }
 
-function forkResult() {
+function forkResult(
+	overrides: {
+		crossScopeReferences?: unknown
+		files?: Record<string, string>
+		filesCount?: number
+		originCommit?: string
+	} = {},
+) {
 	return {
-		forkId: 'fork-1',
-		packageId: 'package-1',
-		sourceId: 'source-1',
-		targetKodyId: 'demo',
-		targetName: '@userb/demo',
-		originCommit: 'commit-1',
+		...forkFields,
 		crossScopeReferences: [],
 		filesCount: 2,
-		files: preparedFork().files,
+		files,
+		...overrides,
 	}
 }
 
-function installInput() {
-	return {
+function install(overrides: { waitUntil?: () => void } = {}) {
+	return installCommunityListing({
 		env,
 		baseUrl: 'https://kody.test',
 		userId: 'user-b',
@@ -71,28 +88,32 @@ function installInput() {
 		expectedPackageScope: 'userb',
 		listingId: 'listing-1',
 		expectedPinnedCommit: 'commit-1',
-	}
+		...overrides,
+	})
 }
 
-test('install publishes clean forks, keeps failed checks inert, and propagates errors', async () => {
-	const prepared = preparedFork()
-	mockModule.prepareCommunityFork.mockResolvedValue(prepared)
+function mockCleanInstall() {
+	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
 	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
 	})
 	mockModule.refreshSavedPackageProjection.mockResolvedValue(undefined)
+}
 
-	const installed = await installCommunityListing(installInput())
-	expect(installed).toEqual({
+async function waitFor(condition: () => boolean) {
+	for (let attempt = 0; attempt < 50 && !condition(); attempt += 1) {
+		await new Promise((resolve) => setTimeout(resolve, 0))
+	}
+	expect(condition()).toBe(true)
+}
+
+test('install publishes clean forks, keeps failed checks inert, and propagates errors', async () => {
+	mockCleanInstall()
+	await expect(install()).resolves.toEqual({
 		status: 'installed',
-		forkId: 'fork-1',
-		packageId: 'package-1',
-		sourceId: 'source-1',
-		targetKodyId: 'demo',
-		targetName: '@userb/demo',
-		originCommit: 'commit-1',
+		...forkFields,
 	})
 	// The user's trust/acknowledgement decision is pinned to the commit they
 	// saw, so a concurrent republish cannot swap in unreviewed content.
@@ -113,10 +134,10 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	// The checks workspace serves the fork's rewritten snapshot files.
 	const workspace = mockModule.runRepoChecks.mock.calls[0]?.[0]?.workspace
 	await expect(workspace.readFile('package.json')).resolves.toBe(
-		'{"name":"@userb/demo"}',
+		files['package.json'],
 	)
 	await expect(workspace.readFile('/src/index.ts')).resolves.toBe(
-		'export default async function main() {}',
+		files['src/index.ts'],
 	)
 	await expect(workspace.readFile('missing.ts')).resolves.toBeNull()
 	await expect(workspace.glob('**/*')).resolves.toEqual([
@@ -130,116 +151,79 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 		userEmail: 'userb@example.com',
 		packageId: 'package-1',
 		sourceId: 'source-1',
-		sourceFiles: prepared.files,
+		sourceFiles: files,
 		waitUntil: undefined,
 	})
 
 	const waitUntil = vi.fn()
-	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
-	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-	})
-	mockModule.refreshSavedPackageProjection.mockClear()
-	await installCommunityListing({ ...installInput(), waitUntil })
-	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
-		expect.objectContaining({ waitUntil, sourceFiles: prepared.files }),
+	await install({ waitUntil })
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenLastCalledWith(
+		expect.objectContaining({ waitUntil, sourceFiles: files }),
 	)
 
-	mockModule.prepareCommunityFork.mockResolvedValue({
-		...preparedFork(),
-		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
-	})
-	mockModule.persistPreparedCommunityFork.mockResolvedValue({
-		...forkResult(),
-		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
-	})
+	mockModule.prepareCommunityFork.mockResolvedValue(
+		preparedFork({ crossScopeReferences }),
+	)
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(
+		forkResult({ crossScopeReferences }),
+	)
+	const failedCheck = {
+		kind: 'bundle',
+		ok: false,
+		message: 'unresolved kody import',
+	}
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: false,
-		results: [
-			{ kind: 'manifest', ok: true, message: 'ok' },
-			{ kind: 'bundle', ok: false, message: 'unresolved kody import' },
-		],
+		results: [{ kind: 'manifest', ok: true, message: 'ok' }, failedCheck],
 	})
 	mockModule.refreshSavedPackageProjection.mockClear()
-
-	const adaptationRequired = await installCommunityListing(installInput())
-	expect(adaptationRequired).toEqual({
+	await expect(install()).resolves.toEqual({
 		status: 'adaptation_required',
-		forkId: 'fork-1',
-		packageId: 'package-1',
-		sourceId: 'source-1',
-		targetKodyId: 'demo',
-		targetName: '@userb/demo',
-		originCommit: 'commit-1',
-		failedChecks: [
-			{ kind: 'bundle', ok: false, message: 'unresolved kody import' },
-		],
-		crossScopeReferences: [{ file: 'src/index.ts', specifier: 'kody:@usera/' }],
+		...forkFields,
+		failedChecks: [failedCheck],
+		crossScopeReferences,
 	})
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
 
 	mockModule.prepareCommunityFork.mockRejectedValueOnce(
 		new Error('banned from community participation'),
 	)
-	await expect(installCommunityListing(installInput())).rejects.toThrow(
-		'banned from community participation',
-	)
+	await expect(install()).rejects.toThrow('banned from community participation')
 
-	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
-	mockModule.persistPreparedCommunityFork.mockResolvedValue(forkResult())
-	mockModule.runRepoChecks.mockResolvedValue({ ok: true, results: [] })
+	mockCleanInstall()
 	mockModule.refreshSavedPackageProjection.mockRejectedValue(
 		new Error('saved_packages entitlement exceeded'),
 	)
-	await expect(installCommunityListing(installInput())).rejects.toThrow(
-		'saved_packages entitlement exceeded',
-	)
+	await expect(install()).rejects.toThrow('saved_packages entitlement exceeded')
 })
 
 test('install overlaps Artifacts persist with publish checks', async () => {
-	let resolvePersist: (() => void) | undefined
-	const persistGate = new Promise<void>((resolve) => {
-		resolvePersist = resolve
-	})
-	let resolveChecks: (() => void) | undefined
-	const checksGate = new Promise<void>((resolve) => {
-		resolveChecks = resolve
-	})
+	mockCleanInstall()
+	const persistGate = Promise.withResolvers<void>()
+	const checksGate = Promise.withResolvers<void>()
 	const started: Array<string> = []
-	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
 	mockModule.persistPreparedCommunityFork.mockImplementation(async () => {
 		started.push('persist')
-		await persistGate
+		await persistGate.promise
 		return forkResult()
 	})
 	mockModule.runRepoChecks.mockImplementation(async () => {
 		started.push('checks')
-		await checksGate
+		await checksGate.promise
 		return { ok: true, results: [] }
 	})
-	mockModule.refreshSavedPackageProjection.mockResolvedValue(undefined)
-
-	const installPromise = installCommunityListing(installInput())
-	for (let attempt = 0; attempt < 50; attempt += 1) {
-		if (started.includes('persist') && started.includes('checks')) break
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
-	expect(started).toEqual(expect.arrayContaining(['persist', 'checks']))
-	resolvePersist?.()
-	resolveChecks?.()
+	const installPromise = install()
+	await waitFor(() => started.includes('persist') && started.includes('checks'))
+	persistGate.resolve()
+	checksGate.resolve()
 	await expect(installPromise).resolves.toMatchObject({ status: 'installed' })
 
-	let persistFinished = false
+	const checksFailPersistGate = Promise.withResolvers<void>()
 	let persistStarted = false
-	const checksFailPersistGate = new Promise<void>((resolve) => {
-		resolvePersist = resolve
-	})
-	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	let persistFinished = false
 	mockModule.persistPreparedCommunityFork.mockImplementation(async () => {
 		persistStarted = true
-		await checksFailPersistGate
+		await checksFailPersistGate.promise
 		persistFinished = true
 		return forkResult()
 	})
@@ -247,43 +231,61 @@ test('install overlaps Artifacts persist with publish checks', async () => {
 		new Error('isolated check isolate reset'),
 	)
 	mockModule.refreshSavedPackageProjection.mockClear()
-	const checksThrowPromise = installCommunityListing(installInput())
-	for (let attempt = 0; attempt < 50; attempt += 1) {
-		if (persistStarted) break
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
-	expect(persistStarted).toBe(true)
+	const checksThrowPromise = install()
+	await waitFor(() => persistStarted)
 	expect(persistFinished).toBe(false)
-	resolvePersist?.()
+	checksFailPersistGate.resolve()
 	await expect(checksThrowPromise).rejects.toThrow(
 		'isolated check isolate reset',
 	)
 	expect(persistFinished).toBe(true)
 	expect(mockModule.refreshSavedPackageProjection).not.toHaveBeenCalled()
 
-	let checksFinished = false
+	const persistFailChecksGate = Promise.withResolvers<void>()
 	let checksStarted = false
-	const persistFailChecksGate = new Promise<void>((resolve) => {
-		resolveChecks = resolve
-	})
-	mockModule.prepareCommunityFork.mockResolvedValue(preparedFork())
+	let checksFinished = false
 	mockModule.persistPreparedCommunityFork.mockRejectedValue(
 		new Error('artifact bootstrap failed'),
 	)
 	mockModule.runRepoChecks.mockImplementation(async () => {
 		checksStarted = true
-		await persistFailChecksGate
+		await persistFailChecksGate.promise
 		checksFinished = true
 		return { ok: true, results: [] }
 	})
-	const persistThrowPromise = installCommunityListing(installInput())
-	for (let attempt = 0; attempt < 50; attempt += 1) {
-		if (checksStarted) break
-		await new Promise((resolve) => setTimeout(resolve, 0))
-	}
-	expect(checksStarted).toBe(true)
+	const persistThrowPromise = install()
+	await waitFor(() => checksStarted)
 	expect(checksFinished).toBe(false)
-	resolveChecks?.()
+	persistFailChecksGate.resolve()
 	await expect(persistThrowPromise).rejects.toThrow('artifact bootstrap failed')
 	expect(checksFinished).toBe(true)
+})
+
+test('install re-checks and projects the synced fork files when fallback differs from prepare', async () => {
+	mockCleanInstall()
+	const syncedFiles = {
+		'package.json': '{"name":"@userb/demo","version":"2.0.0"}',
+		'src/index.ts': 'export default async function main() { return 2 }',
+		'README.md': '# dest HEAD',
+	}
+	mockModule.persistPreparedCommunityFork.mockResolvedValue(
+		forkResult({
+			files: syncedFiles,
+			filesCount: Object.keys(syncedFiles).length,
+			originCommit: 'commit-dest-head',
+		}),
+	)
+	mockModule.runRepoChecks
+		.mockResolvedValueOnce({ ok: true, results: [] })
+		.mockResolvedValueOnce({ ok: true, results: [] })
+
+	await expect(install()).resolves.toMatchObject({
+		status: 'installed',
+		originCommit: 'commit-dest-head',
+	})
+
+	expect(mockModule.runRepoChecks).toHaveBeenCalledTimes(2)
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
+		expect.objectContaining({ sourceFiles: syncedFiles }),
+	)
 })

@@ -1,4 +1,5 @@
 import { loadLandingHeroVideos } from '#app/landing-hero-videos.ts'
+import { listDocWatchEmbeds } from '#universal/doc-youtube.ts'
 import { landingHeroSourcePlaylistId } from '#universal/landing-hero-copy.ts'
 import {
 	mergeYoutubeWatchAllowlist,
@@ -9,31 +10,15 @@ import {
 	youtubePlaylistFeedUrl,
 	youtubeWatchSampleVideoId,
 } from '#universal/youtube-watch.ts'
-import { type SiteBannerRecord } from '#universal/site-banners.ts'
-import { listEnabledSiteBanners } from '#worker/site-banners/service.ts'
-
-type YoutubeWatchFetch = (
-	input: string,
-	init?: { signal?: AbortSignal },
-) => Promise<Response>
-
-export type YoutubeWatchBannerHrefs = Pick<
-	SiteBannerRecord,
-	'ctaHref' | 'secondaryHref' | 'imageUrl'
->
+import { guides } from '#worker/guides/catalog.ts'
 
 export async function resolveYoutubeWatchAllowedVideoIds(input: {
 	env: Env
-	fetchImpl?: YoutubeWatchFetch
 	cache?: Cache
-	/** Reuse the SSR banner list so / does not query `site_banners` twice. */
-	listedBanners?:
-		| Promise<ReadonlyArray<YoutubeWatchBannerHrefs>>
-		| ReadonlyArray<YoutubeWatchBannerHrefs>
 	/**
 	 * Playlist Atom fetch plus the homepage hero chooser ids. Default true
-	 * for thumbs and `?youtubeId=` SSR. Plain documents skip both: env extras,
-	 * the sample id, and banner hrefs still allow Watch CTAs and look-preview.
+	 * for thumbs and `?youtubeId=` SSR. Plain documents skip both: env extras
+	 * and the sample id still allow Watch CTAs.
 	 */
 	loadPlaylists?: boolean
 }): Promise<Array<string>> {
@@ -44,15 +29,13 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		input.env.YOUTUBE_ALLOWED_VIDEO_IDS,
 	)
 	const loadPlaylists = input.loadPlaylists !== false
-	const [playlistVideoIds, hrefs, heroVideos] = await Promise.all([
+	const [playlistVideoIds, heroVideos] = await Promise.all([
 		loadPlaylists
 			? loadPlaylistVideoIds({
 					playlistIds,
-					fetchImpl: input.fetchImpl ?? fetch,
 					cache: input.cache ?? readDefaultCache(),
 				})
 			: Promise.resolve([]),
-		listEnabledBannerWatchHrefs(input.env, input.listedBanners),
 		loadPlaylists
 			? loadLandingHeroVideos({
 					env: input.env,
@@ -65,15 +48,30 @@ export async function resolveYoutubeWatchAllowedVideoIds(input: {
 		extraVideoIds: [
 			...extraVideoIds,
 			youtubeWatchSampleVideoId,
+			...bundledDocWatchVideoIds(),
 			...heroVideos.map((video) => video.videoId),
 		],
-		hrefs,
+		hrefs: [],
 	})
+}
+
+/**
+ * Video ids from first-party `> [!WATCH]` blocks. Unlisted docs films are
+ * often missing from the public playlist Atom feed, and the thumb proxy
+ * 404s without an allowlist hit.
+ */
+export function bundledDocWatchVideoIds(): Array<string> {
+	const ids: Array<string> = []
+	for (const guide of guides) {
+		for (const embed of listDocWatchEmbeds(guide.body)) {
+			ids.push(embed.videoId)
+		}
+	}
+	return ids
 }
 
 export async function loadPlaylistVideoIds(input: {
 	playlistIds: ReadonlyArray<string>
-	fetchImpl: YoutubeWatchFetch
 	cache?: Cache
 }): Promise<Array<string>> {
 	if (input.playlistIds.length === 0) return []
@@ -81,7 +79,6 @@ export async function loadPlaylistVideoIds(input: {
 		input.playlistIds.map((playlistId) =>
 			loadOnePlaylistVideoIds({
 				playlistId,
-				fetchImpl: input.fetchImpl,
 				cache: input.cache,
 			}),
 		),
@@ -91,7 +88,6 @@ export async function loadPlaylistVideoIds(input: {
 
 async function loadOnePlaylistVideoIds(input: {
 	playlistId: string
-	fetchImpl: YoutubeWatchFetch
 	cache?: Cache
 }): Promise<Array<string>> {
 	const cacheRequest = new Request(
@@ -106,10 +102,10 @@ async function loadOnePlaylistVideoIds(input: {
 	}
 
 	try {
-		const response = await input.fetchImpl(
-			youtubePlaylistFeedUrl(input.playlistId),
-			{ signal: AbortSignal.timeout(2_500) },
-		)
+		// workerd's `fetch` is not a bound function; call the global.
+		const response = await fetch(youtubePlaylistFeedUrl(input.playlistId), {
+			signal: AbortSignal.timeout(2_500),
+		})
 		if (!response.ok) return []
 		const xml = await response.text()
 		if (input.cache) {
@@ -129,43 +125,6 @@ async function loadOnePlaylistVideoIds(input: {
 	} catch {
 		return []
 	}
-}
-
-async function listEnabledBannerWatchHrefs(
-	env: Env,
-	listedBanners?:
-		| Promise<ReadonlyArray<YoutubeWatchBannerHrefs>>
-		| ReadonlyArray<YoutubeWatchBannerHrefs>,
-): Promise<Array<string | null>> {
-	if (listedBanners) {
-		const banners = await listedBanners
-		return bannerWatchHrefs(banners)
-	}
-	if (typeof env.APP_DB?.prepare !== 'function') return []
-	try {
-		const banners = await listEnabledSiteBanners(env.APP_DB)
-		return bannerWatchHrefs(banners)
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error)
-		if (
-			message.includes('no such table: site_banners') ||
-			message.includes('db.prepare is not a function')
-		) {
-			return []
-		}
-		console.error('youtube watch banner href load failed', error)
-		return []
-	}
-}
-
-function bannerWatchHrefs(
-	banners: ReadonlyArray<YoutubeWatchBannerHrefs>,
-): Array<string | null> {
-	return banners.flatMap((banner) => [
-		banner.ctaHref,
-		banner.secondaryHref,
-		banner.imageUrl,
-	])
 }
 
 function readDefaultCache(): Cache | undefined {

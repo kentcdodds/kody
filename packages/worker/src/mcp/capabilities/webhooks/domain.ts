@@ -7,11 +7,12 @@ import { webhookListCapability } from './webhook-list.ts'
 import { webhookUrlApplyCapability } from './webhook-url-apply.ts'
 import { webhookUrlMintCapability } from './webhook-url-mint.ts'
 import { webhookUrlRotateCapability } from './webhook-url-rotate.ts'
+import { webhookSyntheticDispatchCapability } from './webhook-synthetic-dispatch.ts'
 
 export const webhooksDomain = defineDomain({
 	name: capabilityDomainNames.webhooks,
 	description:
-		'Package-declared inbound webhooks with minted handles. Rotate keeps the previous URL live briefly. Register first-class destinations with webhookUrlApply — credential URLs never appear in tool output.',
+		'Package-declared inbound webhooks with minted handles. Rotate keeps the previous URL live briefly. Register destinations with webhookUrlApply (http with {{webhookUrl}} substitution after interactive owner confirm; GitHub repo hooks use the Hooks API over http) — credential URLs never appear in tool output.',
 	keywords: [
 		'webhook',
 		'inbound',
@@ -19,12 +20,15 @@ export const webhooksDomain = defineDomain({
 		'package.json#kody.webhooks',
 		'sentry',
 		'github',
+		'http',
 		'stripe',
 		'signature',
 		'hmac',
 		'mint',
 		'rotate',
 		'apply',
+		'synthetic',
+		'smoke',
 	],
 	capabilities: [
 		webhookListCapability,
@@ -34,5 +38,6 @@ export const webhooksDomain = defineDomain({
 		webhookEnableCapability,
 		webhookDisableCapability,
 		webhookDeliveryListCapability,
+		webhookSyntheticDispatchCapability,
 	],
 })

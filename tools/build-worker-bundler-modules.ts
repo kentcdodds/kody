@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import {
 	copyFile,
 	link,
@@ -12,13 +13,13 @@ import {
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build, type Plugin } from 'esbuild'
-import { packageAppRemixSubpaths } from '#worker/package-runtime/package-app-remix-subpaths.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
 
 /**
  * Pre-bundles `@cloudflare/worker-bundler` (and its `/typescript` entry),
- * `@cloudflare/workers-oauth-provider`, and the platform-supplied `remix`
- * package for package apps into standalone ES modules under
+ * `@cloudflare/workers-oauth-provider`, local-execute runtime support
+ * (inlined CAF rewrite + CapabilityProxy shim source builders), and
+ * isomorphic-git into standalone ES modules under
  * `packages/worker/.generated/`.
  *
  * Why: wrangler inlines every dynamic `import()` into the single main worker
@@ -26,11 +27,18 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * evaluated on every isolate cold start even though only repo checks use it.
  * With `find_additional_modules` enabled in `wrangler.jsonc`, these generated
  * `.mjs` files upload as separate external modules that only load when the
- * repo-check paths actually import them. The OAuth provider rides the same
- * lane: origin's `fetch` wrapper imports it statically, but
+ * repo-check paths actually import them. The rules name each file, so a stray
+ * sibling under `node_modules/.kody-generated/` is not uploaded (Friction
+ * #2504). The OAuth provider rides the same lane: origin's `fetch` wrapper
+ * imports it statically, but
  * `#worker/oauth-helpers.ts` needs it only when `OAUTH_PROVIDER` is absent
  * (scheduled purge lane, the `MCP` Durable Object on kody-platform), and the
- * platform/runtime startup entries must not carry it.
+ * platform/runtime startup entries must not carry it. Local-execute package
+ * graph (#2830 rewrite / shim templates) uses the same deferral so platform
+ * startup bytes stay under budget (kody#2831). isomorphic-git is already lazy
+ * for CPU via `#worker/isomorphic-git-load.ts`; the additional module
+ * keeps its ~160 KB (+ pako) out of the Wrangler main byte graph after the
+ * Zod 4.6.5 startup growth (kody#2839 / kody#2856).
  *
  * Wrangler discovers additional ES modules by walking the entry directory
  * (`packages/worker/src`) and file-watches every discovered module. Overlay-FS
@@ -42,17 +50,9 @@ import { isExecutedDirectly } from './node-runtime.ts'
  * requires CompiledWasm for `esbuild.wasm` (`WebAssembly.compile` is
  * disallowed).
  *
- * `package-app-remix.mjs` is different in kind: it is not code the Worker
- * runs but a file set the Worker hands to the runtime bundler. Package apps
- * import `remix/<subpath>` and the platform, not npm, supplies Remix — the
- * same `remix` version the origin UI ships, so Kody's Remix conventions
- * carry over to hosted mini-apps without a 48-package npm install per
- * publish. Every Workers-safe subpath is bundled once with esbuild code
- * splitting so `remix/ui` and `remix/ui/server` share a single component
- * runtime instance, and the result is serialized as
- * `{ "package.json": …, "dist/router.js": …, "dist/chunks/…": … }` that
- * `#worker/package-runtime/package-app-remix.ts` mounts at
- * `node_modules/remix/` in the bundler's virtual file system.
+ * Origin UI still imports `remix` from repo `node_modules`. This generator
+ * does not vendor Remix (or any other third-party package) into package
+ * bundles; packages declare and install their own dependencies.
  *
  * The output is deterministic for a given installed package version, so a
  * stamp file makes re-runs a no-op (important: this runs in front of every
@@ -79,17 +79,30 @@ export const leftoverSrcGeneratedBundlerNames = [
 	'esbuild-wasm.mjs',
 	'worker-bundler.stamp.json',
 ] as const
-export const packageAppRemixModuleName = 'package-app-remix.mjs'
+const leftoverPackageAppRemixModuleName = 'package-app-remix.mjs'
+export const localExecuteRuntimeSupportModuleName =
+	'local-execute-runtime-support.mjs'
+const localExecuteRuntimeSupportEntry = path.join(
+	repoRoot,
+	'packages/worker/src/package-runtime/local-execute-runtime-support.ts',
+)
+export const isomorphicGitModuleName = 'isomorphic-git.mjs'
+const isomorphicGitModuleEntry = path.join(
+	repoRoot,
+	'packages/worker/src/repo/isomorphic-git-module.ts',
+)
 const generatedArtifactNames = [
 	'worker-bundler.mjs',
 	'worker-bundler-typescript.mjs',
 	'oauth-provider.mjs',
-	packageAppRemixModuleName,
+	localExecuteRuntimeSupportModuleName,
+	isomorphicGitModuleName,
 	'esbuild.wasm',
 ] as const
 const leftoverWranglerVisibleNames = [
 	...generatedArtifactNames,
 	'esbuild-wasm.mjs',
+	leftoverPackageAppRemixModuleName,
 ] as const
 const stampPath = path.join(
 	workerBundlerGeneratedDir,
@@ -149,6 +162,31 @@ const externalsPlugin: Plugin = {
 	},
 }
 
+const workerSrcRoot = path.join(repoRoot, 'packages/worker/src')
+
+/** Resolve `#worker/…` and `#mcp/…` / `#universal/…` / `#app/…` package imports. */
+const kodyPackageImportsPlugin: Plugin = {
+	name: 'kody-package-imports',
+	setup(pluginBuild) {
+		pluginBuild.onResolve({ filter: /^#worker\// }, (args) => ({
+			path: path.join(workerSrcRoot, args.path.slice('#worker/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#mcp\// }, (args) => ({
+			path: path.join(workerSrcRoot, 'mcp', args.path.slice('#mcp/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#app\// }, (args) => ({
+			path: path.join(workerSrcRoot, 'app', args.path.slice('#app/'.length)),
+		}))
+		pluginBuild.onResolve({ filter: /^#universal\// }, (args) => ({
+			path: path.join(
+				repoRoot,
+				'packages/worker/universal',
+				args.path.slice('#universal/'.length),
+			),
+		}))
+	},
+}
+
 async function readStamp(): Promise<string | null> {
 	try {
 		return await readFile(stampPath, 'utf8')
@@ -173,14 +211,9 @@ function resolveOAuthProviderPackageDir() {
 	)
 }
 
-function resolveRemixPackageDir() {
-	return path.join(repoRoot, 'node_modules', 'remix')
-}
-
 async function buildStampContent(
 	bundlerPackageDir: string,
 	oauthProviderPackageDir: string,
-	remixPackageDir: string,
 ) {
 	const bundlerPackageJson = await readFile(
 		path.join(bundlerPackageDir, 'package.json'),
@@ -190,18 +223,42 @@ async function buildStampContent(
 		path.join(oauthProviderPackageDir, 'package.json'),
 		'utf8',
 	)
-	// The `remix` meta-package pins its `@remix-run/*` dependencies by range,
-	// so the installed lockfile decides which bytes land in the vendored set;
-	// stamp the lockfile too so a `npm update` of those packages regenerates.
-	const remixPackageJson = await readFile(
-		path.join(remixPackageDir, 'package.json'),
-		'utf8',
-	)
 	const lockfile = await readFile(
 		path.join(repoRoot, 'package-lock.json'),
 		'utf8',
 	)
 	const generatorSource = await readFile(fileURLToPath(import.meta.url), 'utf8')
+	const localExecuteRuntimeSupportSource = await readFile(
+		localExecuteRuntimeSupportEntry,
+		'utf8',
+	)
+	const localExecuteRewriteSource = await readFile(
+		path.join(
+			repoRoot,
+			'packages/worker/src/package-runtime/rewrite-inlined-local-runtime.ts',
+		),
+		'utf8',
+	)
+	// Bundled into local-execute-runtime-support.mjs via rewrite →
+	// `#worker/module-source.ts` (`parseModuleSource`). Hash it so parser-only
+	// edits regenerate the deferred module (node tests alias the TS source and
+	// would otherwise stay green against a stale .mjs).
+	const localExecuteModuleSource = await readFile(
+		path.join(repoRoot, 'packages/worker/src/module-source.ts'),
+		'utf8',
+	)
+	const isomorphicGitModuleSource = await readFile(
+		isomorphicGitModuleEntry,
+		'utf8',
+	)
+	const isomorphicGitPackageJson = await readFile(
+		path.join(repoRoot, 'node_modules', 'isomorphic-git', 'package.json'),
+		'utf8',
+	)
+	const shellPackageJson = await readFile(
+		path.join(repoRoot, 'node_modules', '@cloudflare', 'shell', 'package.json'),
+		'utf8',
+	)
 	const esbuildVersion = (
 		JSON.parse(
 			await readFile(
@@ -213,97 +270,26 @@ async function buildStampContent(
 	const hash = createHash('sha256')
 		.update(bundlerPackageJson)
 		.update(oauthProviderPackageJson)
-		.update(remixPackageJson)
-		.update(packageAppRemixSubpaths.join('\n'))
 		.update(lockfile)
 		.update(esbuildVersion)
 		.update(generatorSource)
+		.update(localExecuteRuntimeSupportSource)
+		.update(localExecuteRewriteSource)
+		.update(localExecuteModuleSource)
+		.update(isomorphicGitModuleSource)
+		.update(isomorphicGitPackageJson)
+		.update(shellPackageJson)
+		.update(
+			await readFile(
+				path.join(
+					repoRoot,
+					'packages/worker/src/package-runtime/module-graph-path-basics.ts',
+				),
+				'utf8',
+			),
+		)
 		.digest('hex')
 	return JSON.stringify({ hash }, null, '\t')
-}
-
-type RemixExportTarget = string | { default?: string; types?: string }
-
-/**
- * Bundles the Workers-safe `remix/<subpath>` entries into one code-split ESM
- * file set and serializes it as the module `package-app-remix.mjs` exports:
- * `remixVersion` plus `files`, keyed relative to `node_modules/remix/`.
- */
-async function buildPackageAppRemixModule(remixPackageDir: string) {
-	const remixPackage = JSON.parse(
-		await readFile(path.join(remixPackageDir, 'package.json'), 'utf8'),
-	) as { version: string; exports: Record<string, RemixExportTarget> }
-	const entryPoints: Record<string, string> = {}
-	const vendoredExports: Record<string, string> = {
-		'./package.json': './package.json',
-	}
-	for (const subpath of packageAppRemixSubpaths) {
-		const target = remixPackage.exports[`./${subpath}`]
-		const targetFile =
-			typeof target === 'string' ? target : (target?.default ?? null)
-		if (!targetFile) {
-			throw new Error(
-				`remix@${remixPackage.version} does not export "./${subpath}"; update packageAppRemixSubpaths.`,
-			)
-		}
-		entryPoints[subpath] = path.join(remixPackageDir, targetFile)
-		vendoredExports[`./${subpath}`] = `./dist/${subpath}.js`
-	}
-	// `platform: 'neutral'` keeps esbuild from injecting Node or browser
-	// shims; the same output feeds the Worker bundle and the browser bundle.
-	// Node builtins stay external in `node:` form: the package-app isolate
-	// runs with `nodejs_compat`, and the browser bundle check rejects any
-	// subpath that still needs one (`middleware/async-context`).
-	const distOutdir = path.join(remixPackageDir, 'dist')
-	const result = await build({
-		entryPoints,
-		bundle: true,
-		splitting: true,
-		format: 'esm',
-		platform: 'neutral',
-		mainFields: ['module', 'main'],
-		conditions: ['workerd', 'worker', 'browser', 'import', 'default'],
-		target: 'es2022',
-		minify: true,
-		write: false,
-		outdir: distOutdir,
-		chunkNames: 'chunks/[name]-[hash]',
-		plugins: [externalsPlugin],
-		logLevel: 'silent',
-	})
-	const files: Record<string, string> = {
-		'package.json': JSON.stringify(
-			{
-				name: 'remix',
-				version: remixPackage.version,
-				type: 'module',
-				exports: vendoredExports,
-			},
-			null,
-			'\t',
-		),
-	}
-	for (const output of result.outputFiles) {
-		const relative = path
-			.relative(distOutdir, output.path)
-			.replaceAll(path.sep, '/')
-		if (relative.startsWith('..')) {
-			throw new Error(
-				`remix prebuild emitted "${output.path}" outside the dist directory.`,
-			)
-		}
-		files[`dist/${relative}`] = output.text
-	}
-	const serialized = [
-		'// Generated by tools/build-worker-bundler-modules.ts; do not edit.',
-		`export const remixVersion = ${JSON.stringify(remixPackage.version)};`,
-		`export const files = ${JSON.stringify(files)};`,
-		'',
-	].join('\n')
-	await writeFile(
-		path.join(workerBundlerGeneratedDir, packageAppRemixModuleName),
-		serialized,
-	)
 }
 
 async function pathExists(filePath: string) {
@@ -354,16 +340,26 @@ async function materializeWranglerVisibleModules() {
 export async function ensureWorkerBundlerModules() {
 	const bundlerPackageDir = resolveWorkerBundlerDistDir()
 	const oauthProviderPackageDir = resolveOAuthProviderPackageDir()
-	const remixPackageDir = resolveRemixPackageDir()
 	const stampContent = await buildStampContent(
 		bundlerPackageDir,
 		oauthProviderPackageDir,
-		remixPackageDir,
 	)
 	await removeLeftoverSrcGeneratedBundlerArtifacts()
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
 		force: true,
 	})
+	await rm(
+		path.join(workerBundlerGeneratedDir, leftoverPackageAppRemixModuleName),
+		{
+			force: true,
+		},
+	)
+	await rm(
+		path.join(workerBundlerWranglerDir, leftoverPackageAppRemixModuleName),
+		{
+			force: true,
+		},
+	)
 	if (
 		(await readStamp()) === stampContent &&
 		(await wranglerVisibleModulesExist())
@@ -394,17 +390,76 @@ export async function ensureWorkerBundlerModules() {
 		plugins: [externalsPlugin],
 		logLevel: 'silent',
 	})
+	await buildLocalExecuteRuntimeSupportModule()
+	await buildIsomorphicGitModule()
 	await copyFile(
 		path.join(bundlerPackageDir, 'dist/esbuild.wasm'),
 		path.join(workerBundlerGeneratedDir, 'esbuild.wasm'),
 	)
-	await buildPackageAppRemixModule(remixPackageDir)
 	await writeFile(stampPath, stampContent)
 	await rm(path.join(workerBundlerGeneratedDir, 'esbuild-wasm.mjs'), {
 		force: true,
 	})
 	await materializeWranglerVisibleModules()
 	await fsyncGeneratedDir()
+}
+
+async function buildLocalExecuteRuntimeSupportModule() {
+	await build({
+		entryPoints: [localExecuteRuntimeSupportEntry],
+		bundle: true,
+		format: 'esm',
+		platform: 'neutral',
+		target: 'es2022',
+		minify: true,
+		outfile: path.join(
+			workerBundlerGeneratedDir,
+			localExecuteRuntimeSupportModuleName,
+		),
+		plugins: [externalsPlugin, kodyPackageImportsPlugin],
+		logLevel: 'silent',
+	})
+}
+
+async function buildIsomorphicGitModule() {
+	// Do not reuse `externalsPlugin` here: marking `buffer` external leaves a
+	// `require("node:buffer")` in the additional module, and workerd rejects
+	// dynamic Node builtin requires in ESM additional modules (package-create /
+	// RepoSession git paths fail with "Dynamic require of node:buffer is not
+	// supported"). Polyfill Buffer into the bundle; keep only `node:crypto` for
+	// `@cloudflare/shell` workspace hashing under `nodejs_compat`.
+	const require = createRequire(import.meta.url)
+	const isomorphicGitExternalsPlugin: Plugin = {
+		name: 'isomorphic-git-externals',
+		setup(pluginBuild) {
+			pluginBuild.onResolve({ filter: /^cloudflare:/ }, (args) => ({
+				path: args.path,
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^node:crypto$/ }, (args) => ({
+				path: args.path,
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^crypto$/ }, () => ({
+				path: 'node:crypto',
+				external: true,
+			}))
+			pluginBuild.onResolve({ filter: /^(node:)?buffer$/ }, () => ({
+				path: require.resolve('buffer/'),
+			}))
+		},
+	}
+	await build({
+		entryPoints: [isomorphicGitModuleEntry],
+		bundle: true,
+		format: 'esm',
+		platform: 'browser',
+		target: 'es2022',
+		minify: true,
+		outfile: path.join(workerBundlerGeneratedDir, isomorphicGitModuleName),
+		plugins: [isomorphicGitExternalsPlugin],
+		logLevel: 'silent',
+	})
 }
 
 async function fsyncGeneratedDir() {

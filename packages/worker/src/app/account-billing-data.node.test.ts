@@ -27,47 +27,40 @@ import {
 	resolveBillingNoticeMessage,
 } from '#app/account-billing-data.ts'
 
-function createBillingTestDb(input: {
-	plan: string
-	stripePlan?: string | null
-	stripeCustomerId?: string | null
+function createBillingEnv(input: {
+	stripePlan: string | null
+	stripeCustomerId: string | null
 }) {
-	return {
+	const userRow = {
+		plan: 'free',
+		username: 'billing-user',
+		stable_user_id: 'stable-user-id',
+		stripe_plan: input.stripePlan,
+		stripe_customer_id: input.stripeCustomerId,
+		stripe_plan_refreshed_at: null,
+		second_agent_standard_gift_expires_at: null,
+		referral_standard_credit_expires_at: null,
+	}
+	const db = {
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first<T>() {
-							if (
-								normalized.includes('from users') &&
-								normalized.includes('where id')
-							) {
-								void params
-								return {
-									plan: input.plan,
-									username: 'billing-user',
-									stable_user_id: 'stable-user-id',
-									stripe_plan: input.stripePlan ?? null,
-									stripe_customer_id: input.stripeCustomerId ?? null,
-									stripe_plan_refreshed_at: null,
-									second_agent_standard_gift_expires_at: null,
-									referral_standard_credit_expires_at: null,
-								} as T
-							}
-							return null
-						},
-						async all<T>() {
-							return { results: [] as Array<T> }
-						},
-						async run() {
-							return { success: true }
-						},
-					}
-				},
+			const statement = {
+				bind: () => statement,
+				first: async () =>
+					normalized.includes('from users') && normalized.includes('where id')
+						? userRow
+						: null,
+				all: async () => ({ results: [] }),
+				run: async () => ({ success: true }),
 			}
+			return statement
 		},
-	} as unknown as D1Database
+	}
+	return {
+		APP_DB: db,
+		STRIPE_SECRET_KEY: 'sk_test',
+		STRIPE_PRO_PRICE_ID: 'price_pro',
+	} as unknown as Env
 }
 
 test('loadAccountBillingData refreshes Stripe status and degrades when refresh is unavailable', async () => {
@@ -86,40 +79,32 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		cancelAt: '2026-08-01T00:00:00.000Z',
 		subscriptionStatus: 'past_due',
 	})
-
-	const env = {
-		APP_DB: createBillingTestDb({
-			plan: 'free',
-			stripePlan: 'pro',
-			stripeCustomerId: 'cus_test',
-		}),
-		STRIPE_SECRET_KEY: 'sk_test',
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	} as Env
+	const env = createBillingEnv({
+		stripePlan: 'pro',
+		stripeCustomerId: 'cus_test',
+	})
+	const now = new Date('2026-07-25T12:00:00.000Z')
 
 	const data = await loadAccountBillingData({
 		env,
 		userId: 9,
 		noticeCode: 'updated',
-		now: new Date('2026-07-25T12:00:00.000Z'),
+		now,
 	})
-
-	expect(data.ok).toBe(true)
-	expect(data.configured).toBe(true)
-	expect(data.hasStripeCustomer).toBe(true)
-	expect(data.stripePlan).toBe('pro')
-	expect(data.stripeInterval).toBe('year')
-	expect(data.notice).toEqual(expect.any(String))
-	expect(data.notice?.length).toBeGreaterThan(0)
-	expect(data.error).toBeUndefined()
-	expect(data.effectivePlan).toBe('pro')
-	expect(data.subscriptionStatus).toBe('past_due')
-	expect(data.cancelAt).toBe('2026-08-01T00:00:00.000Z')
-	expect(data.usageHref).toBe('/account/usage')
-	expect(data.purchasablePlans).toEqual(['standard', 'pro'])
-	expect(data.referralProgram).toEqual(
-		expect.objectContaining({
+	expect(data).toMatchObject({
+		ok: true,
+		configured: true,
+		hasStripeCustomer: true,
+		stripePlan: 'pro',
+		stripeInterval: 'year',
+		notice: expect.stringMatching(/\S/),
+		effectivePlan: 'pro',
+		subscriptionStatus: 'past_due',
+		cancelAt: '2026-08-01T00:00:00.000Z',
+		usageHref: '/account/usage',
+		purchasablePlans: ['pro'],
+		creditsHref: '/account/usage#credits',
+		referralProgram: expect.objectContaining({
 			sharePath: '/signup?ref=billing-user',
 			rewardedCount: 0,
 			pendingCount: 0,
@@ -127,26 +112,26 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 			creditActive: false,
 			referrals: [],
 		}),
-	)
+	})
+	expect(data.error).toBeUndefined()
 	expect(refreshStripePlanForUser).toHaveBeenCalledWith(
-		expect.objectContaining({
-			userId: 9,
-			customerId: 'cus_test',
-		}),
+		expect.objectContaining({ userId: 9, customerId: 'cus_test' }),
 	)
 	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledWith({
 		env,
 		userId: 'stable-user-id',
-		now: new Date('2026-07-25T12:00:00.000Z'),
+		now,
 	})
 
 	consoleError.mockImplementation(() => {})
 	refreshStripePlanForUser.mockRejectedValueOnce(new Error('stripe down'))
 	const failed = await loadAccountBillingData({ env, userId: 3 })
-	expect(failed.stripePlan).toBe('pro')
-	expect(failed.stripeInterval).toBeNull()
-	expect(failed.subscriptionStatus).toBeNull()
-	expect(failed.cancelAt).toBeNull()
+	expect(failed).toMatchObject({
+		stripePlan: 'pro',
+		stripeInterval: null,
+		subscriptionStatus: null,
+		cancelAt: null,
+	})
 	expect(failed.notice).toBeUndefined()
 	expect(consoleError).toHaveBeenCalledWith(
 		'account_billing_refresh_failed',
@@ -154,23 +139,17 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	)
 
 	refreshStripePlanForUser.mockClear()
-	const noCustomerEnv = {
-		APP_DB: createBillingTestDb({
-			plan: 'free',
-			stripePlan: null,
-			stripeCustomerId: null,
+	expect(
+		await loadAccountBillingData({
+			env: createBillingEnv({ stripePlan: null, stripeCustomerId: null }),
+			userId: 4,
 		}),
-		STRIPE_SECRET_KEY: 'sk_test',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	} as Env
-	const noCustomer = await loadAccountBillingData({
-		env: noCustomerEnv,
-		userId: 4,
+	).toMatchObject({
+		hasStripeCustomer: false,
+		subscriptionStatus: null,
+		configured: true,
+		purchasablePlans: ['pro'],
 	})
-	expect(noCustomer.hasStripeCustomer).toBe(false)
-	expect(noCustomer.subscriptionStatus).toBeNull()
-	expect(noCustomer.configured).toBe(true)
-	expect(noCustomer.purchasablePlans).toEqual(['pro'])
 	expect(refreshStripePlanForUser).not.toHaveBeenCalled()
 	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledTimes(2)
 })

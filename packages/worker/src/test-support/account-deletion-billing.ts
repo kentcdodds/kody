@@ -2,12 +2,28 @@ import { vi } from 'vitest'
 import * as stripeClient from '#worker/billing/stripe-client.ts'
 import { createTestDb } from '#worker/test-support/account-deletion.ts'
 
-export function stripeSubscription(id: string, status: string) {
+export function stripeSubscription(
+	id: string,
+	status: string,
+): stripeClient.StripeSubscription {
 	return {
 		id,
 		status,
 		cancel_at: null,
-		items: { data: [{ price: { id: 'price_pro' } }] },
+		current_period_end: undefined,
+		// Kody ownership via metadata so deletion tests stay valid even when
+		// the stub env omits STRIPE_PRO_* price ids (shared-account filter).
+		metadata: { kody_plan: 'pro' },
+		items: {
+			data: [
+				{
+					id: undefined,
+					quantity: undefined,
+					price: { id: 'price_pro' },
+					current_period_end: undefined,
+				},
+			],
+		},
 	}
 }
 
@@ -83,7 +99,7 @@ export function paidInvoice(input: {
 	id: string
 	amountPaid: number
 	lines?: Array<PaidInvoiceLineInput>
-}) {
+}): stripeClient.StripePaidInvoice {
 	const lines = input.lines ?? [
 		{ id: `il_${input.id}`, amount: input.amountPaid },
 	]
@@ -99,9 +115,7 @@ export function paidInvoice(input: {
 					start: refundPeriodStart,
 					end: refundPeriodEnd,
 				},
-				...(line.discount_amounts
-					? { discount_amounts: line.discount_amounts }
-					: {}),
+				discount_amounts: line.discount_amounts,
 			})),
 		},
 	}

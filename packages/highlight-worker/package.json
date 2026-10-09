@@ -6,6 +6,6 @@
     "./*": "./src/*"
   },
   "dependencies": {
-    "shiki": "^4.4.3"
+    "shiki": "^4.5.0"
   }
 }

@@ -1,6 +1,6 @@
 # 0027: No invocation-token source allowlist
 
-- **Status:** accepted
+- **Status:** superseded by [0048](./0048-webhooks-replace-invocation-tokens.md)
 - **Date:** 2026-08-19
 
 ## Context
@@ -28,3 +28,10 @@ edit forms, MCP token metadata, and HTTP auth no longer mention allowed sources.
 Agents may still send `source` on invoke; it is not required and does not fail
 the call. Revisit only if a real caller-identity check is added that cannot be
 omitted.
+
+## LATER-NOTE (2026-10-08)
+
+The HTTP invocation-token mechanism was fully removed
+([0048](./0048-webhooks-replace-invocation-tokens.md)). Request `source` remains
+an optional log label on webhook and other invoke surfaces. Token rows were
+purged (`0084`) and `package_invocation_tokens` was dropped (`0085`).

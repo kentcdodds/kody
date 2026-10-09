@@ -33,6 +33,14 @@
 
 import * as cloudflareWorkers from 'cloudflare:workers'
 import {
+	type AutomationSource,
+	type RequestContext,
+} from '@kody-internal/shared/request-context.ts'
+import {
+	creditAttributionMeterFromUsageEventType,
+	normalizeCreditAttributionPackageId,
+} from '#universal/credit-attribution.ts'
+import {
 	isCoalescedCountUsageEventType,
 	type UsageEventType,
 } from '#universal/usage-event-types.ts'
@@ -105,6 +113,23 @@ export type UsageEvent = {
 	 * never the JSON.
 	 */
 	paramsChars?: number | null
+	/**
+	 * Saved package id when the billable unit is known to belong to one
+	 * package. Written to Analytics Engine blob9. Empty means Ad hoc
+	 * (direct execute or unattributed). Never guess.
+	 */
+	packageId?: string | null
+	/**
+	 * Person who triggered the metered unit. Empty for Automation. When unset
+	 * at write time, defaults to `userId` (org billing id) for backward
+	 * compatibility with P3 actor backfill.
+	 */
+	actorUserId?: string | null
+	/**
+	 * Closed automation source for Analytics Engine blob11. Empty for
+	 * interactive runs and for platform `event` automations.
+	 */
+	automationSource?: string | null
 }
 
 export const dynamicWorkerCacheReuses = ['hit', 'miss'] as const
@@ -120,7 +145,54 @@ export const usageEventBlobIndexes = {
 	surface: 5,
 	executeShape: 6,
 	cacheReuse: 7,
+	packageId: 8,
+	actorUserId: 9,
+	automationSource: 10,
 } as const
+
+export function automationSourceForAnalytics(
+	source: AutomationSource | undefined,
+): string {
+	if (source === 'webhook' || source === 'schedule' || source === 'email') {
+		return source
+	}
+	return ''
+}
+
+/** Map a request context to usage attribution blobs when available. */
+export function usageAttributionFieldsFromRequest(
+	request: RequestContext | null | undefined,
+): Pick<UsageEvent, 'actorUserId' | 'automationSource'> {
+	if (!request) return {}
+	if (request.attribution.kind === 'automation') {
+		return {
+			actorUserId: '',
+			automationSource: automationSourceForAnalytics(
+				request.attribution.source,
+			),
+		}
+	}
+	const actorUserId =
+		request.actor?.userId ?? request.attribution.userId ?? undefined
+	return {
+		...(actorUserId ? { actorUserId } : {}),
+		automationSource: '',
+	}
+}
+
+function resolvedUsageAttributionBlobs(
+	event: Pick<UsageEvent, 'userId' | 'actorUserId' | 'automationSource'>,
+): [string, string] {
+	const automationSource = event.automationSource?.trim() ?? ''
+	const actorTrimmed = event.actorUserId?.trim()
+	if (actorTrimmed) {
+		return [actorTrimmed, automationSource]
+	}
+	if (automationSource) {
+		return ['', automationSource]
+	}
+	return [event.userId, '']
+}
 
 export const usageEventDoubleIndexes = {
 	durationMs: 0,
@@ -140,9 +212,25 @@ export function usageEventBlobs(
 		| 'surface'
 		| 'executeShape'
 		| 'cacheReuse'
+		| 'packageId'
+		| 'actorUserId'
+		| 'automationSource'
 	>,
 	timestamp: string,
-): [string, string, string, string, string, string, string, string] {
+): [
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+	string,
+] {
+	const [actorUserId, automationSource] = resolvedUsageAttributionBlobs(event)
 	return [
 		event.userId,
 		event.eventType,
@@ -152,6 +240,9 @@ export function usageEventBlobs(
 		event.surface ?? '',
 		event.executeShape ?? '',
 		event.cacheReuse ?? '',
+		event.packageId?.trim() || '',
+		actorUserId,
+		automationSource,
 	]
 }
 
@@ -174,6 +265,18 @@ ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	total_cpu_ms = total_cpu_ms + excluded.total_cpu_ms,
 	total_bytes = total_bytes + excluded.total_bytes,
 	updated_at = excluded.updated_at
+`.trim()
+
+const usageAttributionDailyUpsertStatement = `
+INSERT INTO usage_attribution_daily (
+	user_id, day, package_id, meter, units, updated_at,
+	actor_user_id, automation_source
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+ON CONFLICT (user_id, day, package_id, meter) DO UPDATE SET
+	units = units + excluded.units,
+	updated_at = excluded.updated_at,
+	actor_user_id = excluded.actor_user_id,
+	automation_source = excluded.automation_source
 `.trim()
 
 /**
@@ -268,6 +371,17 @@ function emitUsageSpan(event: UsageEvent) {
 			if (event.paramsChars != null) {
 				span.setAttribute('kody.params_chars', event.paramsChars)
 			}
+			if (event.packageId) {
+				span.setAttribute('kody.package_id', event.packageId)
+			}
+			const [actorUserId, automationSource] =
+				resolvedUsageAttributionBlobs(event)
+			if (actorUserId) {
+				span.setAttribute('kody.actor_user_id', actorUserId)
+			}
+			if (automationSource) {
+				span.setAttribute('kody.automation_source', automationSource)
+			}
 		})
 	} catch (error) {
 		console.debug('usage-span-failed', error)
@@ -323,8 +437,42 @@ async function writeUsageRollup(
 				timestamp,
 			)
 			.run()
+		await writeUsageAttributionDaily(env, event, timestamp, eventCount)
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
+	}
+}
+
+/**
+ * Local/dev path: stamp billable units into `usage_attribution_daily` so
+ * `/account/usage` can show Where it went without Analytics Engine.
+ * Production recomputes this table from AE hourly.
+ */
+async function writeUsageAttributionDaily(
+	env: UsageEnv,
+	event: UsageEvent,
+	timestamp: string,
+	eventCount: number,
+) {
+	if (!env.APP_DB) return
+	const meter = creditAttributionMeterFromUsageEventType(event.eventType)
+	if (!meter) return
+	const [actorUserId, automationSource] = resolvedUsageAttributionBlobs(event)
+	try {
+		await env.APP_DB.prepare(usageAttributionDailyUpsertStatement)
+			.bind(
+				event.userId,
+				timestamp.slice(0, 'YYYY-MM-DD'.length),
+				normalizeCreditAttributionPackageId(event.packageId),
+				meter,
+				eventCount,
+				timestamp,
+				actorUserId,
+				automationSource,
+			)
+			.run()
+	} catch (error) {
+		console.warn('usage-attribution-daily-failed', error)
 	}
 }
 

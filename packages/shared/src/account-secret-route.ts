@@ -103,10 +103,18 @@ export function joinOriginAndEncodedPath(baseUrl: string, pathname: string) {
 	return `${new URL(baseUrl).origin}${pathname}`
 }
 
+function accountSecretPathname(pathname: string) {
+	const org = /^\/@[^/]+\/secrets(\/.*)?$/.exec(pathname)
+	if (!org) return pathname
+	return `/account/secrets${org[1] ?? ''}`
+}
+
 export function parseAccountSecretPath(
 	pathname: string,
 ): ParsedAccountSecretRoutePath | null {
-	const segments = pathname.replace(/\/+$/, '').split('/')
+	const segments = accountSecretPathname(pathname)
+		.replace(/\/+$/, '')
+		.split('/')
 	if (segments.length === 0) return null
 
 	const [empty, account, secrets, ...rest] = segments

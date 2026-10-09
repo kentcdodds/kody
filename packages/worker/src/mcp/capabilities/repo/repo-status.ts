@@ -12,6 +12,7 @@ export const repoStatusCapability = defineDomainCapability(
 	capabilityDomainNames.repo,
 	{
 		name: 'repoStatus',
+		orgPermission: 'package:read',
 		description: [
 			'Return git status for the active repo session workspace.',
 			fileLevelApiNote,

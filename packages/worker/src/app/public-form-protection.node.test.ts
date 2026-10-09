@@ -6,11 +6,22 @@ import {
 } from '#app/public-form-protection.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
+type PublicFormProtectionEnv = Pick<
+	Env,
+	'TURNSTILE_SITE_KEY' | 'TURNSTILE_SECRET_KEY'
+>
+
+function formProtectionEnv(env: Partial<PublicFormProtectionEnv>) {
+	return env as PublicFormProtectionEnv
+}
+
 test('public form protection defaults closed, rejects honeypots, and verifies Turnstile', async () => {
 	expect(
-		getTurnstileSiteKey({
-			TURNSTILE_SITE_KEY: 'site-key',
-		} as Pick<Env, 'TURNSTILE_SITE_KEY' | 'TURNSTILE_SECRET_KEY'>),
+		getTurnstileSiteKey(
+			formProtectionEnv({
+				TURNSTILE_SITE_KEY: 'site-key',
+			}),
+		),
 	).toBeNull()
 
 	const request = new Request('https://example.com/auth', {
@@ -19,14 +30,14 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 	})
 	await expect(
 		verifyPublicFormProtection({
-			env: {},
+			env: formProtectionEnv({}),
 			request,
 			body: {},
 		}),
 	).resolves.toEqual({ ok: true })
 
 	const honeypot = await verifyPublicFormProtection({
-		env: {},
+		env: formProtectionEnv({}),
 		request,
 		body: { [honeypotFieldName]: 'https://spam.example' },
 	})
@@ -39,7 +50,7 @@ test('public form protection defaults closed, rejects honeypots, and verifies Tu
 
 	await expect(
 		verifyPublicFormProtection({
-			env: {},
+			env: formProtectionEnv({}),
 			request,
 			body: { website: 'https://kody.codes' },
 		}),

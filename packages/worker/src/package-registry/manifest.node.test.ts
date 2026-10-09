@@ -13,22 +13,69 @@ import {
 	KODY_DESCRIPTION_MAX_LENGTH,
 } from './types.ts'
 
-test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next to the Worker entry', () => {
-	const manifest = parseAuthoredPackageJson({
+function parse(
+	name: string,
+	kody: Record<string, unknown> = {},
+	{
+		exports = { '.': './index.ts' },
+		...options
+	}: {
+		exports?: unknown
+		expectedPackageScope?: string
+		mode?: 'authoring' | 'published'
+	} = {},
+) {
+	return parseAuthoredPackageJson({
 		content: JSON.stringify({
-			name: '@kentcdodds/browser-app',
-			exports: { '.': './src/index.ts' },
+			name,
+			exports,
 			kody: {
-				id: 'browser-app',
-				description: 'App with a platform-built browser client',
-				app: {
-					entry: './src/app.ts',
-					client: './src/client.tsx',
-					assets: './public/',
-				},
+				id: name.split('/').pop(),
+				description: 'Test package',
+				...kody,
 			},
 		}),
 		manifestPath: 'package.json',
+		...options,
+	})
+}
+
+const sentryExports = {
+	exports: { './handle-sentry-webhook': './src/handle-sentry-webhook.ts' },
+}
+const sentryHook = (extra: Record<string, unknown> = {}) => ({
+	webhooks: [{ name: 'sentry', export: './handle-sentry-webhook', ...extra }],
+})
+const hmac = (header: string, secretName: string) => ({
+	type: 'hmac-sha256',
+	header,
+	secretName,
+	encoding: 'hex',
+})
+const webhookDefaults = {
+	description: null,
+	responseMode: 'ack',
+	inputMode: 'request',
+	rateLimitPerMinute: 60,
+	verification: null,
+	replay: null,
+	challenge: null,
+}
+const discordEvent = { description: 'A Discord message was created.' }
+const messageIdSchema = {
+	type: 'object',
+	properties: { messageId: { type: 'string', minLength: 1 } },
+	required: ['messageId'],
+	additionalProperties: false,
+}
+
+test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next to the Worker entry', () => {
+	const manifest = parse('@kentcdodds/browser-app', {
+		app: {
+			entry: './src/app.ts',
+			client: './src/client.tsx',
+			assets: './public/',
+		},
 	})
 	expect(manifest.kody.app).toEqual({
 		entry: './src/app.ts',
@@ -38,292 +85,340 @@ test('parseAuthoredPackageJson accepts kody.app.client and kody.app.assets next 
 	expect(getPackageAppEntryPath(manifest)).toBe('src/app.ts')
 	expect(getPackageAppClientEntryPath(manifest)).toBe('src/client.tsx')
 	expect(getPackageAppAssetsDirectory(manifest)).toBe('public')
-
-	const workerOnly = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/worker-app',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'worker-app',
-				description: 'Worker-only app',
-				app: { entry: './src/app.ts' },
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	expect(getPackageAppClientEntryPath(workerOnly)).toBeNull()
-	expect(getPackageAppAssetsDirectory(workerOnly)).toBeNull()
 	expect(getPackageAppClientExternals(manifest)).toEqual([])
 
-	const withExternals = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/import-map-app',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'import-map-app',
-				description: 'Client with import-map externals',
-				app: {
-					entry: './src/app.ts',
-					client: {
-						entry: './src/client.tsx',
-						externals: ['preact', ' @remix-run/ui ', 'preact'],
-					},
-				},
+	const workerOnly = parse('@kentcdodds/worker-app', {
+		app: { entry: './src/app.ts' },
+	})
+	expect(workerOnly.kody.app).toEqual({ entry: './src/app.ts' })
+	expect(getPackageAppClientEntryPath(workerOnly)).toBeNull()
+	expect(getPackageAppAssetsDirectory(workerOnly)).toBeNull()
+
+	const withExternals = parse('@kentcdodds/import-map-app', {
+		app: {
+			entry: './src/app.ts',
+			client: {
+				entry: './src/client.tsx',
+				externals: ['preact', ' lit ', 'preact'],
 			},
-		}),
-		manifestPath: 'package.json',
+		},
 	})
 	expect(getPackageAppClientEntryPath(withExternals)).toBe('src/client.tsx')
-	expect(getPackageAppClientExternals(withExternals)).toEqual([
-		'@remix-run/ui',
-		'preact',
-	])
+	expect(getPackageAppClientExternals(withExternals)).toEqual(['lit', 'preact'])
 
-	for (const external of [
-		'./local.ts',
-		'/abs.js',
-		'kody:runtime',
-		'https://esm.sh/preact',
-	]) {
-		expect(() =>
-			parseAuthoredPackageJson({
-				content: JSON.stringify({
-					name: '@kentcdodds/bad-externals',
-					exports: {},
-					kody: {
-						id: 'bad-externals',
-						description: 'Externals must be bare specifiers',
-						app: {
-							entry: './src/app.ts',
-							client: { entry: './src/client.ts', externals: [external] },
-						},
-					},
-				}),
-				manifestPath: 'package.json',
-			}),
-		).toThrow(/bare package specifiers/)
-	}
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/bad-app',
-				exports: {},
-				kody: {
-					id: 'bad-app',
-					description: 'Client without a Worker entry',
-					app: { client: './src/client.ts' },
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/entry/)
-})
-
-test('parseAuthoredPackageJson rejects kody.app.runtime and whitespace-only app paths', () => {
-	const parse = (app: Record<string, unknown>) =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/runtime-app',
-				exports: { '.': './src/index.ts' },
-				kody: {
-					id: 'runtime-app',
-					description: 'App runtime declaration',
-					app,
-				},
-			}),
-			manifestPath: 'package.json',
-		})
-	expect(parse({ entry: './src/app.ts' }).kody.app).toEqual({
-		entry: './src/app.ts',
-	})
-	expect(() => parse({ runtime: 'remix', entry: './app/router.ts' })).toThrow(
-		/kody\.app\.runtime was removed/,
+	// `published` snapshot loads treat leftover kody.app.runtime as inert.
+	const published = parse(
+		'@kentcdodds/runtime-app',
+		{ app: { runtime: 'remix', entry: './app/router.ts' } },
+		{ mode: 'published' },
 	)
-	expect(() => parse({ runtime: 'fetch', entry: './src/app.ts' })).toThrow(
-		/kody\.app\.runtime was removed/,
-	)
-	expect(() => parse({ runtime: 'vite', entry: './src/app.ts' })).toThrow(
-		/kody\.app\.runtime was removed/,
-	)
-	const published = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/runtime-app',
-			exports: { '.': './src/index.ts' },
-			kody: {
-				id: 'runtime-app',
-				description: 'App runtime declaration',
-				app: { runtime: 'remix', entry: './app/router.ts' },
-			},
-		}),
-		manifestPath: 'package.json',
-		mode: 'published',
-	})
 	expect(published.kody.app).toEqual({ entry: './app/router.ts' })
-	// Whitespace-only paths are rejected up front instead of trimming to an
-	// empty entry that publish would then silently skip.
-	for (const app of [
-		{ entry: '  ' },
-		{ entry: './src/app.ts', client: ' ' },
-		{ entry: './src/app.ts', client: { entry: '\t' } },
-		{ entry: './src/app.ts', assets: '  ' },
-	]) {
-		expect(() => parse(app)).toThrow(/app/)
-	}
 })
 
 test('parseAuthoredPackageJson validates scoped package names against kody.id', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/cursor-cloud-agents',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'cursor-cloud-agents',
-				description: 'Cursor cloud agents package',
-			},
-		}),
-		manifestPath: 'package.json',
-		expectedPackageScope: 'kentcdodds',
-	})
-
+	const scope = { expectedPackageScope: 'kentcdodds' }
+	const manifest = parse('@kentcdodds/cursor-cloud-agents', {}, scope)
 	expect(manifest.name).toBe('@kentcdodds/cursor-cloud-agents')
 	expect(manifest.kody.id).toBe('cursor-cloud-agents')
 
-	const omittedKodyId = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/cursor-cloud-agents',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				description: 'Defaults kody.id from the package name leaf',
-			},
-		}),
-		manifestPath: 'package.json',
-		expectedPackageScope: 'kentcdodds',
-	})
+	const omittedKodyId = parse(
+		'@kentcdodds/cursor-cloud-agents',
+		{ id: undefined },
+		scope,
+	)
 	expect(omittedKodyId.kody.id).toBe('cursor-cloud-agents')
 
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/cursor-cloud-agents',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'cursor-cloud-agents',
-					description: 'Wrong package scope',
-				},
-			}),
-			manifestPath: 'package.json',
-			expectedPackageScope: 'kody',
-		}),
-	).toThrow(/must use the authenticated user's package scope "@kody\/\*"/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/cursor-cloud-agents',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'follow-up-on-pr-agent',
-					description: 'Mismatched package id',
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(
-		/must use a leaf package name that matches kody\.id "follow-up-on-pr-agent"/,
-	)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: 'cursor-cloud-agents',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'cursor-cloud-agents',
-					description: 'Unscoped package name',
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/must be a scoped package name/)
-
+	// Descriptions longer than the write limit still parse (published
+	// snapshots); the write path enforces the cap separately.
 	const tooLongForWrite = 'a'.repeat(KODY_DESCRIPTION_MAX_LENGTH + 1)
-	const longDescription = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/long-description',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'long-description',
-				description: tooLongForWrite,
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	expect(longDescription.kody.description).toBe(tooLongForWrite)
+	expect(
+		parse('@kentcdodds/long-description', { description: tooLongForWrite }).kody
+			.description,
+	).toBe(tooLongForWrite)
 	expect(() => assertKodyDescriptionLength('a'.repeat(200))).not.toThrow()
 	expect(() => assertKodyDescriptionLength('a'.repeat(201))).toThrow(
 		/kody\.description must be at most 200 characters/,
 	)
 })
 
-test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and secret mounts', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway package',
-				secretMounts: {
-					discordBotToken: {
-						name: 'discordBotTokenKentPersonalAutomation',
-						scope: 'user',
+test('parseAuthoredPackageJson rejects invalid manifests with a specific error per rule', () => {
+	const discordGateway = '@kentcdodds/discord-gateway'
+	type Case = [
+		name: string,
+		kody: Record<string, unknown>,
+		error: RegExp | string,
+		options?: Parameters<typeof parse>[2],
+	]
+	const cases: Array<Case> = [
+		// Package name / scope.
+		[
+			'@kentcdodds/cursor-cloud-agents',
+			{},
+			/must use the authenticated user's package scope "@kody\/\*"/,
+			{ expectedPackageScope: 'kody' },
+		],
+		[
+			'@kentcdodds/cursor-cloud-agents',
+			{ id: 'follow-up-on-pr-agent' },
+			/must use a leaf package name that matches kody\.id "follow-up-on-pr-agent"/,
+		],
+		['cursor-cloud-agents', {}, /must be a scoped package name/],
+		// kody.app.
+		['@kentcdodds/bad-app', { app: { client: './src/client.ts' } }, /entry/],
+		...['remix', 'fetch', 'vite'].map((runtime): Case => [
+			'@kentcdodds/runtime-app',
+			{ app: { runtime, entry: './src/app.ts' } },
+			/kody\.app\.runtime was removed/,
+		]),
+		// Whitespace-only paths are rejected up front instead of trimming to an
+		// empty entry that publish would then silently skip.
+		...[
+			{ entry: '  ' },
+			{ entry: './src/app.ts', client: ' ' },
+			{ entry: './src/app.ts', client: { entry: '\t' } },
+			{ entry: './src/app.ts', assets: '  ' },
+		].map((app): Case => ['@kentcdodds/runtime-app', { app }, /app/]),
+		...['./local.ts', '/abs.js', 'kody:runtime', 'https://esm.sh/preact'].map(
+			(external): Case => [
+				'@kentcdodds/bad-externals',
+				{
+					app: {
+						entry: './src/app.ts',
+						client: { entry: './src/client.ts', externals: [external] },
 					},
 				},
-				secretProvider: {
-					id: '1password',
+				/bare package specifiers/,
+			],
+		),
+		// Removed / unsupported extensions.
+		[
+			'@kentcdodds/shade-automation',
+			{ workflows: { 'shade-event': { export: './run-event' } } },
+			/kody\.workflows is not a supported field/,
+			{ exports: { './run-event': './src/run-event.ts' } },
+		],
+		[
+			'@kentcdodds/discord',
+			{ services: { gateway: { entry: './src/services/gateway.ts' } } },
+			/kody\.services is not a supported field/,
+		],
+		// kody.emits.
+		[
+			discordGateway,
+			{ emits: { 'discord.message.created': discordEvent } },
+			/must use the scoped form "@scope\/topic\.name"/,
+		],
+		[
+			discordGateway,
+			{ emits: { '@other/discord.message.created': discordEvent } },
+			/must use the package scope "@kentcdodds"/,
+		],
+		[
+			discordGateway,
+			{
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						...discordEvent,
+						payloadSchema: { type: 'string' },
+					},
 				},
-				subscriptions: {
-					'discord.message.created': {
-						handler: './src/handle-discord-message-created.ts',
-						description: 'Personal-history subscriber',
-						filters: {
-							channelIds: ['1470913684598423592'],
+			},
+			/payloadSchema must declare "type": "object"/,
+		],
+		[
+			discordGateway,
+			{
+				emits: {
+					'@kentcdodds/discord.message.created': {
+						...discordEvent,
+						payloadSchema: {
+							type: 'object',
+							properties: {
+								messageId: { type: 'string', pattern: '^[0-9]+$' },
+							},
 						},
 					},
 				},
-				emits: {
-					'@kentcdodds/discord.message.created': {
-						description: 'A Discord message was created.',
-					},
-				},
+			},
+			/payloadSchema is not a supported JSON Schema subset/,
+		],
+		// kody.retrievers.
+		[
+			'@kentcdodds/personal-inbox',
+			{
 				retrievers: {
 					'notes-search': {
 						export: './search-notes',
 						name: 'Personal notes',
 						description: 'Searches saved notes and snippets.',
-						scopes: ['context', 'search'],
-						timeoutMs: 250,
-						maxResults: 3,
+						scopes: [],
 					},
 				},
 			},
-		}),
-		manifestPath: 'package.json',
+			'Too small',
+			{
+				exports: {
+					'.': './index.ts',
+					'./search-notes': './src/search-notes.ts',
+				},
+			},
+		],
+		// kody.webhooks.
+		[
+			'@kentcdodds/sentry-bridge',
+			{ webhooks: [{ name: 'sentry', export: './missing-export' }] },
+			/export "\.\/missing-export"/,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			{
+				webhooks: [
+					{ name: 'sentry', export: './handle-sentry-webhook' },
+					{ name: 'sentry', export: './handle-sentry-webhook' },
+				],
+			},
+			/Duplicate webhook name/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				verification: hmac('bad header\nname', 'sentryWebhookSecret'),
+			}),
+			/header/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({ rateLimitPerMinute: 601 }),
+			/rateLimitPerMinute/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/raycast',
+			{ webhooks: [{ name: 'star', export: '*' }] },
+			/export "\*"/,
+			{ exports: { './search': './src/search.ts' } },
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				replay: { timestampHeader: 'X-Timestamp', timestampFormat: 'rfc-2822' },
+			}),
+			/Unknown webhook replay timestampFormat "rfc-2822"/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({ challenge: { type: 'unknown-quiz', secretName: 'x' } }),
+			/challenge/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'GET',
+					challenge: { in: 'query', key: 'crc_token' },
+					prove: {
+						kind: 'hmac',
+						algorithm: 'hmac-sha256',
+						encoding: 'base64',
+					},
+					respond: { as: 'json-hmac', key: 'response_token' },
+				},
+			}),
+			/secretName/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'GET',
+					challenge: { in: 'query', key: 'crc_token' },
+					prove: {
+						kind: 'hmac',
+						secretName: 'x',
+						algorithm: 'hmac-sha256',
+						encoding: 'base64',
+					},
+					respond: { as: 'text' },
+				},
+			}),
+			/prove.kind=hmac requires respond.as=json-hmac/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'POST',
+					challenge: { in: 'json', key: 'challenge' },
+					respond: { as: 'json', key: 'challenge' },
+				},
+			}),
+			/when.json/,
+			sentryExports,
+		],
+		[
+			'@kentcdodds/sentry-bridge',
+			sentryHook({
+				challenge: {
+					type: 'subscription-challenge',
+					method: 'GET',
+					challenge: { in: 'query', key: '__proto__' },
+					respond: { as: 'text' },
+				},
+			}),
+			/prototype property names|Challenge keys/,
+			sentryExports,
+		],
+	]
+	const unmatched = cases.filter(([name, kody, error, options]) => {
+		try {
+			parse(name, kody, options)
+			return true
+		} catch (thrown) {
+			const message = thrown instanceof Error ? thrown.message : String(thrown)
+			return typeof error === 'string'
+				? !message.includes(error)
+				: !error.test(message)
+		}
+	})
+	expect(unmatched).toEqual([])
+})
+
+test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and secret mounts', () => {
+	const manifest = parse('@kentcdodds/discord-gateway', {
+		secretMounts: {
+			discordBotToken: {
+				name: 'discordBotTokenKentPersonalAutomation',
+				scope: 'user',
+			},
+		},
+		secretProvider: { id: '1password' },
+		subscriptions: {
+			'discord.message.created': {
+				handler: './src/handle-discord-message-created.ts',
+				description: 'Personal-history subscriber',
+				filters: { channelIds: ['1470913684598423592'] },
+			},
+		},
+		emits: { '@kentcdodds/discord.message.created': discordEvent },
+		retrievers: {
+			'notes-search': {
+				export: './search-notes',
+				name: 'Personal notes',
+				description: 'Searches saved notes and snippets.',
+				scopes: ['context', 'search'],
+				timeoutMs: 250,
+				maxResults: 3,
+			},
+		},
 	})
 
 	expect(manifest.kody.secretMounts).toEqual({
@@ -337,62 +432,17 @@ test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and sec
 		'discord.message.created': {
 			handler: './src/handle-discord-message-created.ts',
 			description: 'Personal-history subscriber',
-			filters: {
-				channelIds: ['1470913684598423592'],
-			},
+			filters: { channelIds: ['1470913684598423592'] },
 		},
 	})
 	expect(manifest.kody.emits).toEqual({
-		'@kentcdodds/discord.message.created': {
-			description: 'A Discord message was created.',
-		},
+		'@kentcdodds/discord.message.created': discordEvent,
 	})
 	expect(listPackageEmittedEvents(manifest)).toEqual([
 		{
 			topic: '@kentcdodds/discord.message.created',
-			description: 'A Discord message was created.',
+			...discordEvent,
 			payloadSchema: null,
-		},
-	])
-
-	const withPayloadSchema = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/discord-gateway',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'discord-gateway',
-				description: 'Discord gateway package',
-				emits: {
-					'@kentcdodds/discord.message.created': {
-						description: 'A Discord message was created.',
-						payloadSchema: {
-							type: 'object',
-							properties: {
-								messageId: { type: 'string', minLength: 1 },
-							},
-							required: ['messageId'],
-							additionalProperties: false,
-						},
-					},
-				},
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	expect(listPackageEmittedEvents(withPayloadSchema)).toEqual([
-		{
-			topic: '@kentcdodds/discord.message.created',
-			description: 'A Discord message was created.',
-			payloadSchema: {
-				type: 'object',
-				properties: {
-					messageId: { type: 'string', minLength: 1 },
-				},
-				required: ['messageId'],
-				additionalProperties: false,
-			},
 		},
 	])
 	expect(buildPackageSearchProjection(manifest).retrievers).toEqual([
@@ -406,477 +456,259 @@ test('parseAuthoredPackageJson accepts subscriptions, emits, retrievers, and sec
 			maxResults: 3,
 		},
 	])
-})
 
-test('parseAuthoredPackageJson accepts kody.webhooks and rejects unknown exports or duplicate names', () => {
-	const manifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/sentry-bridge',
-			exports: {
-				'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
+	const withPayloadSchema = parse('@kentcdodds/discord-gateway', {
+		emits: {
+			'@kentcdodds/discord.message.created': {
+				...discordEvent,
+				payloadSchema: messageIdSchema,
 			},
-			kody: {
-				id: 'sentry-bridge',
-				description: 'Sentry bridge',
-				webhooks: [
-					{
-						name: 'sentry',
-						export: './handle-sentry-webhook',
-						responseMode: 'ack',
-						verification: {
-							type: 'hmac-sha256',
-							header: 'sentry-hook-signature',
-							secretName: 'sentryWebhookSecret',
-							encoding: 'hex',
-						},
-					},
-				],
-			},
-		}),
-		manifestPath: 'package.json',
+		},
 	})
-	expect(buildPackageSearchProjection(manifest).webhooks).toEqual([
+	expect(listPackageEmittedEvents(withPayloadSchema)).toEqual([
 		{
-			name: 'sentry',
-			exportName: './handle-sentry-webhook',
-			description: null,
-			responseMode: 'ack',
-			inputMode: 'request',
-			rateLimitPerMinute: 60,
-			verification: {
-				type: 'hmac-sha256',
-				header: 'sentry-hook-signature',
-				secretName: 'sentryWebhookSecret',
-				encoding: 'hex',
-			},
-			replay: null,
+			topic: '@kentcdodds/discord.message.created',
+			...discordEvent,
+			payloadSchema: messageIdSchema,
 		},
 	])
-	expect(manifest.kody.webhooks).toEqual([
+})
+
+test('kody.emits mcp: true opts a topic into MCP Events; false or absent does not', () => {
+	const manifest = parse('@kentcdodds/discord-gateway', {
+		emits: {
+			'@kentcdodds/discord.message.created': {
+				description: 'A Discord message was created.',
+				mcp: true,
+			},
+			'@kentcdodds/discord.message.deleted': {
+				description: 'A Discord message was deleted.',
+				mcp: false,
+			},
+			'@kentcdodds/discord.message.updated': {
+				description: 'A Discord message was updated.',
+			},
+		},
+	})
+	const emitted = listPackageEmittedEvents(manifest)
+	expect(emitted).toEqual([
+		{
+			topic: '@kentcdodds/discord.message.created',
+			description: 'A Discord message was created.',
+			payloadSchema: null,
+			mcp: true,
+		},
+		{
+			topic: '@kentcdodds/discord.message.deleted',
+			description: 'A Discord message was deleted.',
+			payloadSchema: null,
+		},
+		{
+			topic: '@kentcdodds/discord.message.updated',
+			description: 'A Discord message was updated.',
+			payloadSchema: null,
+		},
+	])
+	expect(
+		emitted.filter((event) => event.mcp).map((event) => event.topic),
+	).toEqual(['@kentcdodds/discord.message.created'])
+	expect(() =>
+		parse('@kentcdodds/discord-gateway', {
+			emits: {
+				'@kentcdodds/discord.message.created': {
+					description: 'A Discord message was created.',
+					mcp: 'yes',
+				},
+			},
+		}),
+	).toThrow(/expected boolean[\s\S]*\.mcp/)
+})
+
+test('parseAuthoredPackageJson accepts kody.webhooks with verification, replay, challenge, and trusted rate limits', () => {
+	const sentryVerification = hmac(
+		'sentry-hook-signature',
+		'sentryWebhookSecret',
+	)
+	const sentry = parse(
+		'@kentcdodds/sentry-bridge',
+		sentryHook({ responseMode: 'ack', verification: sentryVerification }),
+		sentryExports,
+	)
+	expect(sentry.kody.webhooks).toEqual([
 		{
 			name: 'sentry',
 			export: './handle-sentry-webhook',
 			responseMode: 'ack',
-			verification: {
-				type: 'hmac-sha256',
-				header: 'sentry-hook-signature',
-				secretName: 'sentryWebhookSecret',
-				encoding: 'hex',
-			},
+			verification: sentryVerification,
+		},
+	])
+	expect(buildPackageSearchProjection(sentry).webhooks).toEqual([
+		{
+			...webhookDefaults,
+			name: 'sentry',
+			exportName: './handle-sentry-webhook',
+			verification: sentryVerification,
 		},
 	])
 
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/sentry-bridge',
-				exports: { '.': './index.ts' },
-				kody: {
-					id: 'sentry-bridge',
-					description: 'Sentry bridge',
-					webhooks: [
-						{
-							name: 'sentry',
-							export: './missing-export',
-						},
-					],
+	const trusted = parse(
+		'@kentcdodds/discord',
+		{
+			webhooks: [
+				{
+					name: 'message-created',
+					export: './dispatch-message-created',
+					responseMode: 'sync',
+					inputMode: 'params',
+					rateLimitPerMinute: 600,
 				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/export "\.\/missing-export"/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/sentry-bridge',
-				exports: {
-					'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
-				},
-				kody: {
-					id: 'sentry-bridge',
-					description: 'Sentry bridge',
-					webhooks: [
-						{ name: 'sentry', export: './handle-sentry-webhook' },
-						{ name: 'sentry', export: './handle-sentry-webhook' },
-					],
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/Duplicate webhook name/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/sentry-bridge',
-				exports: {
-					'./handle-sentry-webhook': './src/handle-sentry-webhook.ts',
-				},
-				kody: {
-					id: 'sentry-bridge',
-					description: 'Sentry bridge',
-					webhooks: [
-						{
-							name: 'sentry',
-							export: './handle-sentry-webhook',
-							verification: {
-								type: 'hmac-sha256',
-								header: 'bad header\nname',
-								secretName: 'sentryWebhookSecret',
-								encoding: 'hex',
-							},
-						},
-					],
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/header/)
-
-	const trusted = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/discord',
+			],
+		},
+		{
 			exports: {
 				'./dispatch-message-created': './src/dispatch-message-created.ts',
 			},
-			kody: {
-				id: 'discord',
-				description: 'Discord gateway proxy',
-				webhooks: [
-					{
-						name: 'message-created',
-						export: './dispatch-message-created',
-						responseMode: 'sync',
-						inputMode: 'params',
-						rateLimitPerMinute: 600,
-					},
-				],
-			},
-		}),
-		manifestPath: 'package.json',
-	})
+		},
+	)
 	expect(buildPackageSearchProjection(trusted).webhooks).toEqual([
 		{
+			...webhookDefaults,
 			name: 'message-created',
 			exportName: './dispatch-message-created',
-			description: null,
 			responseMode: 'sync',
 			inputMode: 'params',
 			rateLimitPerMinute: 600,
-			verification: null,
-			replay: null,
 		},
 	])
 
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord',
-				exports: {
-					'./dispatch-message-created': './src/dispatch-message-created.ts',
+	const stripeVerification = {
+		...hmac('Stripe-Signature', 'stripeWebhookSecret'),
+		signedPayload: 'timestamp.body',
+	}
+	const stripeReplay = {
+		timestampHeader: 'Stripe-Signature',
+		timestampFormat: 'stripe-signature',
+		toleranceSeconds: 300,
+	}
+	const stripe = parse(
+		'@kentcdodds/stripe-bridge',
+		{
+			webhooks: [
+				{
+					name: 'stripe',
+					export: './handle-stripe-webhook',
+					verification: stripeVerification,
+					replay: stripeReplay,
 				},
-				kody: {
-					id: 'discord',
-					description: 'Discord gateway proxy',
-					webhooks: [
-						{
-							name: 'message-created',
-							export: './dispatch-message-created',
-							rateLimitPerMinute: 601,
-						},
-					],
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/rateLimitPerMinute/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/raycast',
-				exports: { './search': './src/search.ts' },
-				kody: {
-					id: 'raycast',
-					description: 'Raycast',
-					webhooks: [
-						{
-							name: 'star',
-							export: '*',
-						},
-					],
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/export "\*"/)
-})
-
-test('parseAuthoredPackageJson accepts webhook replay fields and rejects unknown timestampFormat', () => {
-	const stripe = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/stripe-bridge',
-			exports: {
-				'./handle-stripe-webhook': './src/handle-stripe-webhook.ts',
-			},
-			kody: {
-				id: 'stripe-bridge',
-				description: 'Stripe bridge',
-				webhooks: [
-					{
-						name: 'stripe',
-						export: './handle-stripe-webhook',
-						verification: {
-							type: 'hmac-sha256',
-							header: 'Stripe-Signature',
-							secretName: 'stripeWebhookSecret',
-							encoding: 'hex',
-							signedPayload: 'timestamp.body',
-						},
-						replay: {
-							timestampHeader: 'Stripe-Signature',
-							timestampFormat: 'stripe-signature',
-							toleranceSeconds: 300,
-						},
-					},
-				],
-			},
-		}),
-		manifestPath: 'package.json',
-	})
+			],
+		},
+		{
+			exports: { './handle-stripe-webhook': './src/handle-stripe-webhook.ts' },
+		},
+	)
 	expect(buildPackageSearchProjection(stripe).webhooks).toEqual([
 		{
+			...webhookDefaults,
 			name: 'stripe',
 			exportName: './handle-stripe-webhook',
-			description: null,
-			responseMode: 'ack',
-			inputMode: 'request',
-			rateLimitPerMinute: 60,
-			verification: {
-				type: 'hmac-sha256',
-				header: 'Stripe-Signature',
-				secretName: 'stripeWebhookSecret',
-				encoding: 'hex',
-				signedPayload: 'timestamp.body',
-			},
-			replay: {
-				timestampHeader: 'Stripe-Signature',
-				timestampFormat: 'stripe-signature',
-				toleranceSeconds: 300,
-			},
+			verification: stripeVerification,
+			replay: stripeReplay,
 		},
 	])
 
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/stripe-bridge',
-				exports: {
-					'./handle-stripe-webhook': './src/handle-stripe-webhook.ts',
+	const xVerification = {
+		...hmac('X-Twitter-Webhooks-Signature', 'xConsumerSecret'),
+		encoding: 'base64',
+		prefix: 'sha256=',
+	}
+	const xChallenge = {
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'crc_token' },
+		prove: {
+			kind: 'hmac',
+			secretName: 'xConsumerSecret',
+			algorithm: 'hmac-sha256',
+			encoding: 'base64',
+			prefix: 'sha256=',
+		},
+		respond: { as: 'json-hmac', key: 'response_token' },
+	}
+	const x = parse(
+		'@kentcdodds/x',
+		{
+			webhooks: [
+				{
+					name: 'activity-event',
+					export: './activity-event',
+					challenge: xChallenge,
+					verification: xVerification,
 				},
-				kody: {
-					id: 'stripe-bridge',
-					description: 'Stripe bridge',
-					webhooks: [
-						{
-							name: 'stripe',
-							export: './handle-stripe-webhook',
-							replay: {
-								timestampHeader: 'X-Timestamp',
-								timestampFormat: 'rfc-2822',
-							},
-						},
-					],
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/Unknown webhook replay timestampFormat "rfc-2822"/)
-})
+			],
+		},
+		{ exports: { './activity-event': './src/activity-event.ts' } },
+	)
+	expect(buildPackageSearchProjection(x).webhooks).toEqual([
+		{
+			...webhookDefaults,
+			name: 'activity-event',
+			exportName: './activity-event',
+			verification: xVerification,
+			challenge: xChallenge,
+		},
+	])
 
-test('parseAuthoredPackageJson rejects unsupported or invalid kody manifest extensions', () => {
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/shade-automation',
-				exports: {
-					'./run-event': './src/run-event.ts',
+	const hubChallenge = {
+		type: 'subscription-challenge',
+		method: 'GET',
+		challenge: { in: 'query', key: 'hub.challenge' },
+		when: { query: { 'hub.mode': 'subscribe' } },
+		prove: {
+			kind: 'verify-token',
+			in: 'query',
+			key: 'hub.verify_token',
+			secretName: 'hubVerify',
+		},
+		respond: { as: 'json', key: 'hub.challenge' },
+	} as const
+	const hub = parse(
+		'@kentcdodds/activity-hub',
+		{
+			webhooks: [
+				{
+					name: 'events',
+					export: './handle-events',
+					challenge: hubChallenge,
 				},
-				kody: {
-					id: 'shade-automation',
-					description: 'Shade automation package',
-					workflows: {
-						'shade-event': {
-							export: './run-event',
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/kody\.workflows is not a supported field/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'discord',
-					description: 'Discord package',
-					services: {
-						gateway: {
-							entry: './src/services/gateway.ts',
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/kody\.services is not a supported field/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord-gateway',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord gateway package',
-					emits: {
-						'discord.message.created': {
-							description: 'A Discord message was created.',
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/must use the scoped form "@scope\/topic\.name"/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord-gateway',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord gateway package',
-					emits: {
-						'@other/discord.message.created': {
-							description: 'A Discord message was created.',
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/must use the package scope "@kentcdodds"/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord-gateway',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord gateway package',
-					emits: {
-						'@kentcdodds/discord.message.created': {
-							description: 'A Discord message was created.',
-							payloadSchema: { type: 'string' },
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/payloadSchema must declare "type": "object"/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/discord-gateway',
-				exports: {
-					'.': './index.ts',
-				},
-				kody: {
-					id: 'discord-gateway',
-					description: 'Discord gateway package',
-					emits: {
-						'@kentcdodds/discord.message.created': {
-							description: 'A Discord message was created.',
-							payloadSchema: {
-								type: 'object',
-								properties: {
-									messageId: { type: 'string', pattern: '^[0-9]+$' },
-								},
-							},
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow(/payloadSchema is not a supported JSON Schema subset/)
-
-	expect(() =>
-		parseAuthoredPackageJson({
-			content: JSON.stringify({
-				name: '@kentcdodds/personal-inbox',
-				exports: {
-					'.': './index.ts',
-					'./search-notes': './src/search-notes.ts',
-				},
-				kody: {
-					id: 'personal-inbox',
-					description: 'Personal inbox for random notes',
-					retrievers: {
-						'notes-search': {
-							export: './search-notes',
-							name: 'Personal notes',
-							description: 'Searches saved notes and snippets.',
-							scopes: [],
-						},
-					},
-				},
-			}),
-			manifestPath: 'package.json',
-		}),
-	).toThrow('Too small')
+			],
+		},
+		{ exports: { './handle-events': './src/handle-events.ts' } },
+	)
+	expect(buildPackageSearchProjection(hub).webhooks).toEqual([
+		{
+			...webhookDefaults,
+			name: 'events',
+			exportName: './handle-events',
+			challenge: hubChallenge,
+		},
+	])
 })
 
 test('buildPackageSearchProjection extracts export metadata, referenced types, and search documents', () => {
-	const weatherManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/weather-tools',
-			exports: {
-				'.': {
-					import: './src/index.ts',
-					types: './src/index.d.ts',
+	const weatherProjection = buildPackageSearchProjection(
+		parse(
+			'@kentcdodds/weather-tools',
+			{},
+			{
+				exports: {
+					'.': { import: './src/index.ts', types: './src/index.d.ts' },
 				},
 			},
-			kody: {
-				id: 'weather-tools',
-				description: 'Weather tools package',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-
-	const weatherProjection = buildPackageSearchProjection(weatherManifest, {
-		'src/index.ts':
-			'export const ignored = "types file should be preferred for metadata"',
-		'src/index.d.ts': `/**
+		),
+		{
+			'src/index.ts':
+				'export const ignored = "types file should be preferred for metadata"',
+			'src/index.d.ts': `/**
  * Look up the forecast for a city.
  */
 export declare function forecast(city: string): Promise<string>
@@ -886,7 +718,8 @@ export declare function forecast(city: string): Promise<string>
  */
 export declare const celsiusToFahrenheit: (value: number) => number
 `,
-	})
+		},
+	)
 
 	expect(weatherProjection.exports).toEqual([
 		expect.objectContaining({
@@ -914,25 +747,21 @@ export declare const celsiusToFahrenheit: (value: number) => number
 		}),
 	])
 
-	const cursorManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/cursor-cloud-agents',
-			exports: {
-				'./launch-cursor-cloud-agent': {
-					import: './src/launch-cursor-cloud-agent.ts',
-					types: './src/launch-cursor-cloud-agent.d.ts',
+	const cursorProjection = buildPackageSearchProjection(
+		parse(
+			'@kentcdodds/cursor-cloud-agents',
+			{},
+			{
+				exports: {
+					'./launch-cursor-cloud-agent': {
+						import: './src/launch-cursor-cloud-agent.ts',
+						types: './src/launch-cursor-cloud-agent.d.ts',
+					},
 				},
 			},
-			kody: {
-				id: 'cursor-cloud-agents',
-				description: 'Cursor cloud agents package',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-
-	const cursorProjection = buildPackageSearchProjection(cursorManifest, {
-		'src/launch-cursor-cloud-agent.d.ts': `type LaunchCursorCloudAgentInput = {
+		),
+		{
+			'src/launch-cursor-cloud-agent.d.ts': `type LaunchCursorCloudAgentInput = {
 	prompt: string
 	repository: RepositoryTarget
 	mode?: LaunchMode
@@ -959,7 +788,8 @@ type UnrelatedLocalType = {
  */
 export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Response>
 `,
-	})
+		},
+	)
 
 	const [exportDetail] = cursorProjection.exports
 	expect(exportDetail).toMatchObject({
@@ -973,15 +803,12 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 			}),
 		],
 	})
-	expect(exportDetail?.referencedTypes.map((type) => type.name)).toEqual([
-		'LaunchCursorCloudAgentInput',
-		'RepositoryTarget',
-		'LaunchMode',
-	])
-	expect(exportDetail?.referencedTypes.map((type) => type.kind)).toEqual([
-		'type',
-		'interface',
-		'enum',
+	expect(
+		exportDetail?.referencedTypes.map((type) => [type.name, type.kind]),
+	).toEqual([
+		['LaunchCursorCloudAgentInput', 'type'],
+		['RepositoryTarget', 'interface'],
+		['LaunchMode', 'enum'],
 	])
 	expect(
 		exportDetail?.referencedTypes.every((type) => type.definition.length > 0),
@@ -992,27 +819,25 @@ export declare function launch(input: LaunchCursorCloudAgentInput): Promise<Resp
 	const referencedTypeText = exportDetail?.referencedTypes
 		.map((type) => type.definition)
 		.join('\n')
-	expect(referencedTypeText).not.toContain('UnrelatedLocalType')
-	expect(referencedTypeText).not.toContain('type Record')
-	expect(referencedTypeText).not.toContain('type Date')
-	expect(referencedTypeText).not.toContain('interface Response')
+	for (const excluded of [
+		'UnrelatedLocalType',
+		'type Record',
+		'type Date',
+		'interface Response',
+	]) {
+		expect(referencedTypeText).not.toContain(excluded)
+	}
 
-	const mixedManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/mixed-runtime-tools',
-			exports: {
-				'.': './src/index.ts',
+	const mixedProjection = buildPackageSearchProjection(
+		parse(
+			'@kentcdodds/mixed-runtime-tools',
+			{},
+			{
+				exports: { '.': './src/index.ts' },
 			},
-			kody: {
-				id: 'mixed-runtime-tools',
-				description: 'Mixed runtime tools package',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-
-	const mixedProjection = buildPackageSearchProjection(mixedManifest, {
-		'src/index.ts': `type GenericBound = {
+		),
+		{
+			'src/index.ts': `type GenericBound = {
 	value: string
 }
 
@@ -1036,7 +861,8 @@ export const format = (value: string): string => value.trim()
 
 export const genericFormat = <T extends GenericBound>(input: T): string => input.value
 `,
-	})
+		},
+	)
 
 	expect(mixedProjection.exports[0]?.functions.map((fn) => fn.name)).toEqual([
 		'typed',
@@ -1053,26 +879,20 @@ export const genericFormat = <T extends GenericBound>(input: T): string => input
 		mixedProjection.exports[0]?.referencedTypes.map((type) => type.name),
 	).toEqual(['RenderedInput'])
 
-	const largeManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/large-type-tools',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'large-type-tools',
-				description: 'Large type tools package',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
 	const oversizedFields = Array.from(
 		{ length: 1_500 },
 		(_, index) => `	field${index}: string`,
 	).join('\n')
-
-	const largeProjection = buildPackageSearchProjection(largeManifest, {
-		'src/index.ts': `type HugeInput = {
+	const largeProjection = buildPackageSearchProjection(
+		parse(
+			'@kentcdodds/large-type-tools',
+			{},
+			{
+				exports: { '.': './src/index.ts' },
+			},
+		),
+		{
+			'src/index.ts': `type HugeInput = {
 ${oversizedFields}
 }
 
@@ -1084,8 +904,8 @@ export function run(huge: HugeInput, small: SmallInput): string {
 	return small.value
 }
 `,
-	})
-
+		},
+	)
 	expect(
 		largeProjection.exports[0]?.referencedTypes.map((type) => type.name),
 	).toEqual(['SmallInput'])
@@ -1095,34 +915,20 @@ export function run(huge: HugeInput, small: SmallInput): string {
 		),
 	).toBe(true)
 
-	const emailManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/email-notifier',
-			exports: {
-				'.': './index.ts',
-			},
-			kody: {
-				id: 'email-notifier',
-				description: 'Email notifier package',
-				subscriptions: {
-					'email.message.received': {
-						handler: './src/handle-received-email.ts',
-						description: 'Notify on accepted inbound email',
-						filters: {
-							policy_decisions: ['accepted'],
-						},
-					},
-					'email.message.quarantined': {
-						handler: './src/handle-quarantined-email.ts',
-					},
+	const emailProjection = buildPackageSearchProjection(
+		parse('@kentcdodds/email-notifier', {
+			subscriptions: {
+				'email.message.received': {
+					handler: './src/handle-received-email.ts',
+					description: 'Notify on accepted inbound email',
+					filters: { policy_decisions: ['accepted'] },
+				},
+				'email.message.quarantined': {
+					handler: './src/handle-quarantined-email.ts',
 				},
 			},
 		}),
-		manifestPath: 'package.json',
-	})
-
-	const emailProjection = buildPackageSearchProjection(emailManifest)
-
+	)
 	expect(emailProjection.subscriptions).toEqual([
 		{
 			topic: 'email.message.quarantined',
@@ -1134,30 +940,29 @@ export function run(huge: HugeInput, small: SmallInput): string {
 			topic: 'email.message.received',
 			handler: 'src/handle-received-email.ts',
 			description: 'Notify on accepted inbound email',
-			filters: {
-				policy_decisions: ['accepted'],
-			},
+			filters: { policy_decisions: ['accepted'] },
 		},
 	])
 })
 
 test('buildPackageSearchProjection follows local default-export bindings and one-hop imported types', () => {
-	const spotifyManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/spotify-like-tools',
-			exports: {
-				'./search': './src/search.ts',
-			},
-			kody: {
-				id: 'spotify-like-tools',
-				description: 'Spotify-like thin-export package',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
+	const project = (files: Record<string, string>, subpath = '.') =>
+		buildPackageSearchProjection(
+			parse(
+				'@kentcdodds/default-export-tools',
+				{},
+				{
+					exports: {
+						[subpath]: `./src/${subpath === '.' ? 'index' : subpath.slice(2)}.ts`,
+					},
+				},
+			),
+			files,
+		).exports[0]
 
-	const spotifyProjection = buildPackageSearchProjection(spotifyManifest, {
-		'src/search.ts': `import type { SearchParams } from '../lib/export-types.ts'
+	const spotifyExport = project(
+		{
+			'src/search.ts': `import type { SearchParams } from '../lib/export-types.ts'
 import { searchCatalog } from '../lib/search-catalog.ts'
 
 /**
@@ -1169,7 +974,7 @@ async function spotifySearch(params: SearchParams = {}) {
 
 export default spotifySearch
 `,
-		'lib/export-types.ts': `import type { PagingParams } from './paging.ts'
+			'lib/export-types.ts': `import type { PagingParams } from './paging.ts'
 
 export type SearchParams = {
 	q?: string
@@ -1182,48 +987,28 @@ export type UnrelatedExportType = {
 	ignored: boolean
 }
 `,
-		'lib/paging.ts': `export type PagingParams = {
+			'lib/paging.ts': `export type PagingParams = {
 	offset?: number
 }
 `,
-		'lib/search-catalog.ts': `export async function searchCatalog(params: { q?: string }) {
+			'lib/search-catalog.ts': `export async function searchCatalog(params: { q?: string }) {
 	return params
 }
 `,
-	})
-
-	const [spotifyExport] = spotifyProjection.exports
+		},
+		'./search',
+	)
 	expect(spotifyExport?.functions.map((fn) => fn.name)).toEqual(['default'])
 	expect(spotifyExport?.typeDefinition).toContain('spotifySearch')
+	// One hop only: PagingParams and UnrelatedExportType are excluded.
 	expect(spotifyExport?.referencedTypes.map((type) => type.name)).toEqual([
 		'SearchParams',
 	])
 	expect(spotifyExport?.referencedTypes[0]?.kind).toBe('type')
 	expect(spotifyExport?.referencedTypes[0]?.definition).toContain('q?: string')
-	expect(spotifyExport?.referencedTypes.map((type) => type.name)).not.toContain(
-		'PagingParams',
-	)
-	expect(spotifyExport?.referencedTypes.map((type) => type.name)).not.toContain(
-		'UnrelatedExportType',
-	)
 
-	const arrowDefaultManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/arrow-default-tools',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'arrow-default-tools',
-				description: 'Local arrow default export',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	const arrowDefaultProjection = buildPackageSearchProjection(
-		arrowDefaultManifest,
-		{
-			'src/index.ts': `import type { SearchParams } from '../lib/export-types.ts'
+	const arrowDefaultExport = project({
+		'src/index.ts': `import type { SearchParams } from '../lib/export-types.ts'
 
 /**
  * Search with a local arrow binding.
@@ -1232,34 +1017,18 @@ const search = async (params: SearchParams = {}) => params
 
 export default search
 `,
-			'lib/export-types.ts': `export type SearchParams = {
+		'lib/export-types.ts': `export type SearchParams = {
 	q?: string
 }
 `,
-		},
-	)
-	expect(arrowDefaultProjection.exports[0]?.functions[0]?.name).toBe('default')
-	expect(
-		arrowDefaultProjection.exports[0]?.referencedTypes.map((type) => type.name),
-	).toEqual(['SearchParams'])
-
-	const jsDocFallbackManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/jsdoc-fallback-tools',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'jsdoc-fallback-tools',
-				description: 'JSDoc fallback on export default',
-			},
-		}),
-		manifestPath: 'package.json',
 	})
-	const jsDocFallbackProjection = buildPackageSearchProjection(
-		jsDocFallbackManifest,
-		{
-			'src/index.ts': `async function search(query: string) {
+	expect(arrowDefaultExport?.functions[0]?.name).toBe('default')
+	expect(arrowDefaultExport?.referencedTypes.map((type) => type.name)).toEqual([
+		'SearchParams',
+	])
+
+	const jsDocFallbackExport = project({
+		'src/index.ts': `async function search(query: string) {
 	return query
 }
 
@@ -1268,65 +1037,36 @@ export default search
  */
 export default search
 `,
-		},
-	)
-	expect(jsDocFallbackProjection.exports[0]?.typeDefinition).toContain(
-		'search(query: string)',
-	)
-	expect(jsDocFallbackProjection.exports[0]?.description).toBeTruthy()
-
-	const reexportManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/reexport-tools',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'reexport-tools',
-				description: 'Imported value re-export package',
-			},
-		}),
-		manifestPath: 'package.json',
 	})
-	const reexportProjection = buildPackageSearchProjection(reexportManifest, {
-		'src/index.ts': `import foo from './other.ts'
+	expect(jsDocFallbackExport?.typeDefinition).toContain('search(query: string)')
+	expect(jsDocFallbackExport?.description).toBeTruthy()
+
+	expect(
+		project({
+			'src/index.ts': `import foo from './other.ts'
 
 /**
  * Should not be attributed to an imported re-export.
  */
 export default foo
 `,
-		'src/other.ts': `/**
+			'src/other.ts': `/**
  * Implemented in another module.
  */
 export default async function foo(params: { q: string }) {
 	return params
 }
 `,
-	})
-	expect(reexportProjection.exports[0]).toMatchObject({
+		}),
+	).toMatchObject({
 		description: null,
 		typeDefinition: null,
 		functions: [],
 		referencedTypes: [],
 	})
 
-	const namedPlusDefaultManifest = parseAuthoredPackageJson({
-		content: JSON.stringify({
-			name: '@kentcdodds/named-plus-default-tools',
-			exports: {
-				'.': './src/index.ts',
-			},
-			kody: {
-				id: 'named-plus-default-tools',
-				description: 'Named export also re-exported as default',
-			},
-		}),
-		manifestPath: 'package.json',
-	})
-	const namedPlusDefaultProjection = buildPackageSearchProjection(
-		namedPlusDefaultManifest,
-		{
+	expect(
+		project({
 			'src/index.ts': `/**
  * Look up a city forecast.
  */
@@ -1336,9 +1076,6 @@ export async function forecast(city: string): Promise<string> {
 
 export default forecast
 `,
-		},
-	)
-	expect(namedPlusDefaultProjection.exports[0]?.functions).toEqual([
-		expect.objectContaining({ name: 'forecast' }),
-	])
+		})?.functions,
+	).toEqual([expect.objectContaining({ name: 'forecast' })])
 })

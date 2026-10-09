@@ -1,6 +1,7 @@
 import { McpClientHub } from './mcp-client/hub.ts'
 import { MCP } from './mcp/index.ts'
 import { JobsHost } from './jobs/jobs-host.ts'
+import { KodyApi } from './open-api/kody-api.ts'
 import { StorageRunner } from './storage-runner.ts'
 import { RunLog } from './run-records/run-log-do.ts'
 import { UserMeter } from './entitlements/user-meter-do.ts'
@@ -11,6 +12,7 @@ import { RepoSessionIndex } from './repo/repo-session-index-do.ts'
 import { PackageRealtimeSession } from '#worker/package-runtime/realtime-session.ts'
 import { DynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
 import { KodyFetchGateway } from '#mcp/fetch-gateway.ts'
+import { DynamicWorkerUsageTail } from '#worker/usage/dynamic-worker-cpu.ts'
 import { PackageAppRuntimeBridge } from '#worker/package-runtime/package-app.ts'
 import { OAuthPurgeCoordinator } from './oauth-purge.ts'
 import { originWorkerHandler } from './origin-handler.ts'
@@ -40,9 +42,11 @@ export {
 	RepoSession,
 	RepoSessionIndex,
 	KodyFetchGateway,
+	DynamicWorkerUsageTail,
 	McpClientHub,
 	MCP,
 	JobsHost,
+	KodyApi,
 	PackageRealtimeSession,
 	DynamicCallableWorkflow,
 	PackageAppRuntimeBridge,

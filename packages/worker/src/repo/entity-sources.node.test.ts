@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
+import { type RepoSessionIndexRpc } from './repo-session-index-do.ts'
 import { type RepoSessionRow } from './types.ts'
 import {
 	deleteEntitySource,
@@ -34,6 +35,28 @@ function catalogSessionRow(
 	}
 }
 
+function entitySourcesSqlite() {
+	const sqlite = new DatabaseSync(':memory:')
+	sqlite.exec(`
+		CREATE TABLE entity_sources (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			entity_kind TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			repo_id TEXT NOT NULL,
+			published_commit TEXT,
+			indexed_commit TEXT,
+			manifest_path TEXT NOT NULL,
+			source_root TEXT NOT NULL,
+			last_external_check_at TEXT,
+			external_check_until TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+	`)
+	return sqlite
+}
+
 test('source deletion removes only its repo-session storage inventory', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
@@ -57,9 +80,13 @@ test('source deletion removes only its repo-session storage inventory', async ()
 	`)
 	const db = createD1FromSqlite(sqlite)
 	const indexEnv = createInMemoryRepoSessionIndexEnv(db)
-	await indexEnv.REPO_SESSION_INDEX.get(
-		indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
-	).insertSession({
+	const indexNamespace = indexEnv.REPO_SESSION_INDEX as unknown as {
+		idFromName(name: string): DurableObjectId
+		get(id: DurableObjectId): RepoSessionIndexRpc
+	}
+	const indexFor = (userId: string) =>
+		indexNamespace.get(indexNamespace.idFromName(userId))
+	await indexFor('user-a').insertSession({
 		ownerId: 'user-a',
 		row: catalogSessionRow({
 			id: 'session-a',
@@ -67,9 +94,7 @@ test('source deletion removes only its repo-session storage inventory', async ()
 			source_id: 'source-a',
 		}),
 	})
-	await indexEnv.REPO_SESSION_INDEX.get(
-		indexEnv.REPO_SESSION_INDEX.idFromName('user-b'),
-	).insertSession({
+	await indexFor('user-b').insertSession({
 		ownerId: 'user-b',
 		row: catalogSessionRow({
 			id: 'session-b',
@@ -100,38 +125,17 @@ test('source deletion removes only its repo-session storage inventory', async ()
 			kind: 'repo_session',
 		},
 	])
+	expect(await indexFor('user-a').listByUser({ ownerId: 'user-a' })).toEqual([])
 	expect(
-		await indexEnv.REPO_SESSION_INDEX.get(
-			indexEnv.REPO_SESSION_INDEX.idFromName('user-a'),
-		).listByUser({ ownerId: 'user-a' }),
-	).toEqual([])
-	expect(
-		(
-			await indexEnv.REPO_SESSION_INDEX.get(
-				indexEnv.REPO_SESSION_INDEX.idFromName('user-b'),
-			).listByUser({ ownerId: 'user-b' })
-		).map((row) => row.id),
+		(await indexFor('user-b').listByUser({ ownerId: 'user-b' })).map(
+			(row) => row.id,
+		),
 	).toEqual(['session-b'])
 })
 
 test('external reconcile selects token-pending packages and the daily backstop covers the fleet', async () => {
-	const sqlite = new DatabaseSync(':memory:')
+	const sqlite = entitySourcesSqlite()
 	sqlite.exec(`
-		CREATE TABLE entity_sources (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL,
-			repo_id TEXT NOT NULL,
-			published_commit TEXT,
-			indexed_commit TEXT,
-			manifest_path TEXT NOT NULL,
-			source_root TEXT NOT NULL,
-			last_external_check_at TEXT,
-			external_check_until TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
 		INSERT INTO entity_sources VALUES
 			(
 				'dormant', 'user-1', 'package', 'package-1', 'repo-1',
@@ -194,24 +198,7 @@ test('external reconcile selects token-pending packages and the daily backstop c
 })
 
 test('listEntitySourcesByIds batches ids into IN queries and skips missing rows', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(`
-		CREATE TABLE entity_sources (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			entity_kind TEXT NOT NULL,
-			entity_id TEXT NOT NULL,
-			repo_id TEXT NOT NULL,
-			published_commit TEXT,
-			indexed_commit TEXT,
-			manifest_path TEXT NOT NULL,
-			source_root TEXT NOT NULL,
-			last_external_check_at TEXT,
-			external_check_until TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		);
-	`)
+	const sqlite = entitySourcesSqlite()
 	for (const id of ['source-a', 'source-b', 'source-c']) {
 		sqlite
 			.prepare(

@@ -1,24 +1,44 @@
 import { expect, test, vi } from 'vitest'
+import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
+import type * as CommunityIcon from '#worker/community/community-icon.ts'
+import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
+import type * as EntitySources from './entity-sources.ts'
+import type * as IdentityIcon from './identity-icon.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getEntitySourceById: vi.fn(),
-	updateEntitySource: vi.fn(async () => true),
+	updateEntitySource: vi.fn<typeof EntitySources.updateEntitySource>(
+		async () => true,
+	),
 	runRepoChecks: vi.fn(),
-	writePublishedSourceSnapshot: vi.fn(async () => 'snapshot-key'),
-	deletePublishedSourceSnapshot: vi.fn(async () => undefined),
+	writePublishedSourceSnapshot: vi.fn<
+		typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+	>(async () => 'snapshot-key'),
+	deletePublishedSourceSnapshot: vi.fn<
+		typeof PublishedRuntimeArtifacts.deletePublishedSourceSnapshot
+	>(async () => undefined),
 	loadPublishedSourceSnapshot: vi.fn(),
 	refreshSavedPackageProjection: vi.fn(),
-	refreshCommunityIconForPackagePublish: vi.fn(async () => undefined),
-	refreshIdentityIconForSource: vi.fn(async () => undefined),
-	hasPublishedRuntimeArtifacts: vi.fn(() => false),
-	loadLockedSavedPackage: vi.fn(async () => null),
+	refreshCommunityIconForPackagePublish: vi.fn<
+		typeof CommunityIcon.refreshCommunityIconForPackagePublish
+	>(async () => undefined),
+	refreshIdentityIconForSource: vi.fn<
+		typeof IdentityIcon.refreshIdentityIconForSource
+	>(async () => undefined),
+	hasPublishedRuntimeArtifacts: vi.fn<
+		typeof PublishedRuntimeArtifacts.hasPublishedRuntimeArtifacts
+	>(() => false),
+	loadLockedSavedPackage: vi.fn<typeof PublishLock.loadLockedSavedPackage>(
+		async () => null,
+	),
 }))
 
 vi.mock('./entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceById(...args),
-	updateEntitySource: (...args: Array<unknown>) =>
-		mockModule.updateEntitySource(...args),
+	updateEntitySource: (
+		...args: Parameters<typeof EntitySources.updateEntitySource>
+	) => mockModule.updateEntitySource(...args),
 }))
 
 vi.mock('./checks.ts', () => ({
@@ -26,14 +46,23 @@ vi.mock('./checks.ts', () => ({
 }))
 
 vi.mock('#worker/package-runtime/published-runtime-artifacts.ts', () => ({
-	hasPublishedRuntimeArtifacts: (...args: Array<unknown>) =>
-		mockModule.hasPublishedRuntimeArtifacts(...args),
+	hasPublishedRuntimeArtifacts: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.hasPublishedRuntimeArtifacts
+		>
+	) => mockModule.hasPublishedRuntimeArtifacts(...args),
 	loadPublishedSourceSnapshot: (...args: Array<unknown>) =>
 		mockModule.loadPublishedSourceSnapshot(...args),
-	writePublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.writePublishedSourceSnapshot(...args),
-	deletePublishedSourceSnapshot: (...args: Array<unknown>) =>
-		mockModule.deletePublishedSourceSnapshot(...args),
+	writePublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.writePublishedSourceSnapshot
+		>
+	) => mockModule.writePublishedSourceSnapshot(...args),
+	deletePublishedSourceSnapshot: (
+		...args: Parameters<
+			typeof PublishedRuntimeArtifacts.deletePublishedSourceSnapshot
+		>
+	) => mockModule.deletePublishedSourceSnapshot(...args),
 }))
 
 vi.mock('#worker/package-registry/service.ts', () => ({
@@ -42,31 +71,45 @@ vi.mock('#worker/package-registry/service.ts', () => ({
 }))
 
 vi.mock('#worker/community/community-icon.ts', () => ({
-	refreshCommunityIconForPackagePublish: (...args: Array<unknown>) =>
-		mockModule.refreshCommunityIconForPackagePublish(...args),
+	refreshCommunityIconForPackagePublish: (
+		...args: Parameters<
+			typeof CommunityIcon.refreshCommunityIconForPackagePublish
+		>
+	) => mockModule.refreshCommunityIconForPackagePublish(...args),
 }))
 
 vi.mock('#worker/repo/identity-icon.ts', () => ({
-	refreshIdentityIconForSource: (...args: Array<unknown>) =>
-		mockModule.refreshIdentityIconForSource(...args),
+	refreshIdentityIconForSource: (
+		...args: Parameters<typeof IdentityIcon.refreshIdentityIconForSource>
+	) => mockModule.refreshIdentityIconForSource(...args),
 }))
 
 vi.mock(
 	'#worker/package-registry/package-publish-lock.ts',
 	async (importOriginal) => {
-		const actual =
-			await importOriginal<
-				typeof import('#worker/package-registry/package-publish-lock.ts')
-			>()
+		const actual = await importOriginal<typeof PublishLock>()
 		return {
 			...actual,
-			loadLockedSavedPackage: (...args: Array<unknown>) =>
-				mockModule.loadLockedSavedPackage(...args),
+			loadLockedSavedPackage: (
+				...args: Parameters<typeof PublishLock.loadLockedSavedPackage>
+			) => mockModule.loadLockedSavedPackage(...args),
 		}
 	},
 )
 
 const { publishFromExternalRef } = await import('./external-publish.ts')
+
+const manifest = {
+	name: '@scope/demo',
+	exports: { '.': './src/index.ts' },
+	kody: { id: 'demo', description: 'Demo' },
+}
+const passingChecks = {
+	ok: true,
+	results: [{ kind: 'manifest', ok: true, message: 'ok' }],
+	manifest,
+}
+const kvEnv = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env
 
 function source(overrides: Record<string, unknown> = {}) {
 	return {
@@ -87,14 +130,7 @@ function source(overrides: Record<string, unknown> = {}) {
 	}
 }
 
-function workspace() {
-	return {
-		readFile: vi.fn(async () => '{}'),
-		glob: vi.fn(async () => []),
-	}
-}
-
-function resetPublishMocks() {
+function setupPublish(sourceOverrides: Record<string, unknown> = {}) {
 	mockModule.writePublishedSourceSnapshot.mockResolvedValue('snapshot-key')
 	mockModule.deletePublishedSourceSnapshot.mockResolvedValue(undefined)
 	mockModule.loadPublishedSourceSnapshot.mockResolvedValue({
@@ -102,43 +138,41 @@ function resetPublishMocks() {
 	})
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(false)
 	mockModule.loadLockedSavedPackage.mockResolvedValue(null)
+	mockModule.getEntitySourceById.mockResolvedValue(source(sourceOverrides))
 }
 
-test('publishes an external fast-forward ref after checks pass', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(
-		source({ external_check_until: '2026-05-04T04:00:00.000Z' }),
-	)
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
-
-	const phaseTimings = { clone_ms: 9 }
-	const published = await publishFromExternalRef({
+function publish(
+	overrides: Partial<Parameters<typeof publishFromExternalRef>[0]> = {},
+) {
+	return publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
 		userId: 'user-1',
 		newCommit: 'commit-new',
 		isFastForward: async () => true,
-		workspace: workspace(),
+		workspace: {
+			readFile: vi.fn(async () => '{}'),
+			glob: vi.fn(async () => []),
+		},
 		files: { 'package.json': '{}' },
 		baseUrl: 'https://kody.test',
+		...overrides,
+	})
+}
+
+test('publishes an external fast-forward ref after checks pass', async () => {
+	setupPublish({ external_check_until: '2026-05-04T04:00:00.000Z' })
+	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
+	const phaseTimings = { clone_ms: 9 }
+
+	const published = await publish({
 		phaseTimings,
 		deferBundleCheckToRebuild: true,
 	})
 
 	expect(published.status).toBe('published')
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
-		expect.objectContaining({
-			phaseTimings,
-			deferBundleCheckToRebuild: true,
-		}),
+		expect.objectContaining({ phaseTimings, deferBundleCheckToRebuild: true }),
 	)
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
@@ -159,112 +193,86 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 		}),
 	)
 	expect(mockModule.refreshIdentityIconForSource).toHaveBeenCalledWith(
-		expect.objectContaining({
-			iconCommit: 'commit-new',
-			indexLiveHead: false,
-		}),
+		expect.objectContaining({ iconCommit: 'commit-new', indexLiveHead: false }),
 	)
 
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
+	setupPublish()
+	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
+	const sourceFiles = {
+		'package.json': '{"name":"@scope/demo"}',
+		'src/index.ts': 'export default async () => null',
+	}
+	mockModule.runRepoChecks.mockResolvedValue({ ...passingChecks, sourceFiles })
+
+	const withRuntimeArtifacts = await publish({ env: kvEnv, files: undefined })
+
+	expect(withRuntimeArtifacts.status).toBe('published')
+	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
+		expect.objectContaining({ files: sourceFiles }),
+	)
+
+	// Explicit files win over the UTF-8 check walk (PNG magic must stay 0x89).
+	const { bytesToLatin1String } =
+		await import('#universal/package-file-media.ts')
+	const pngLatin1 = bytesToLatin1String(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+	)
+	const utf8Corrupted = new TextDecoder().decode(
+		Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+	)
+	setupPublish()
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
 	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-		sourceFiles: {
-			'package.json': '{"name":"@scope/demo"}',
-			'src/index.ts': 'export default async () => null',
-		},
+		...passingChecks,
+		sourceFiles: { ...sourceFiles, 'public/mark.png': utf8Corrupted },
 	})
-
-	const publishedWithRuntimeArtifacts = await publishFromExternalRef({
-		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		baseUrl: 'https://kody.test',
+	const binarySafe = await publish({
+		env: kvEnv,
+		files: { ...sourceFiles, 'public/mark.png': pngLatin1 },
 	})
-
-	expect(publishedWithRuntimeArtifacts.status).toBe('published')
+	expect(binarySafe.status).toBe('published')
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
-			files: {
-				'package.json': '{"name":"@scope/demo"}',
-				'src/index.ts': 'export default async () => null',
-			},
+			files: expect.objectContaining({ 'public/mark.png': pngLatin1 }),
 		}),
 	)
 })
 
 test('returns no-op when commit is already current', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
-
-	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {} } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'commit-old',
-			isFastForward: async () => true,
-			workspace: workspace(),
-			files: {},
-			baseUrl: 'https://kody.test',
-		}),
-	).resolves.toEqual({
+	setupPublish()
+	const alreadyPublished = {
 		status: 'already_published',
 		published_commit: 'commit-old',
-	})
-	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
-	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
+	}
 
+	await expect(
+		publish({ newCommit: 'commit-old', files: {} }),
+	).resolves.toEqual(alreadyPublished)
 	// Re-invoking after a partial/timed-out publish whose D1 published_commit
 	// already matches the pushed HEAD must stay a no-op. This is what makes
 	// overlapping inline + durable escalation safe: the second attempt cannot
 	// double-apply checks or D1 writes.
 	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {} } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
+		publish({
 			newCommit: 'commit-old',
+			files: {},
 			isFastForward: async () => {
 				throw new Error('must not check ancestry when already published')
 			},
-			workspace: workspace(),
-			files: {},
-			baseUrl: 'https://kody.test',
 		}),
-	).resolves.toEqual({
-		status: 'already_published',
-		published_commit: 'commit-old',
-	})
+	).resolves.toEqual(alreadyPublished)
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
 test('non-fast-forward publish requires allowForce, destructive confirmation, and a restorable backup snapshot', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
-
-	const refusedWithoutForce = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
+	setupPublish()
+	const rewrite = {
 		newCommit: 'commit-rewritten',
 		isFastForward: async () => false,
-		workspace: workspace(),
-		files: {},
-		baseUrl: 'https://kody.test',
-	})
-	expect(refusedWithoutForce).toMatchObject({
+	}
+
+	await expect(publish({ ...rewrite, files: {} })).resolves.toMatchObject({
 		status: 'not_fast_forward',
 		previous_commit: 'commit-old',
 		published_commit: 'commit-rewritten',
@@ -272,58 +280,22 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 	expect(mockModule.runRepoChecks).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 
-	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {} } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'commit-rewritten',
-			isFastForward: async () => false,
-			allowForce: true,
-			workspace: workspace(),
-			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow('confirm_destructive_overwrite')
+	await expect(publish({ ...rewrite, allowForce: true })).rejects.toThrow(
+		'confirm_destructive_overwrite',
+	)
 
-	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce(null)
-	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {} } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'commit-rewritten',
-			isFastForward: async () => false,
-			allowForce: true,
-			destructiveOverwriteConfirmed: true,
-			workspace: workspace(),
-			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow('Stop and report this source recovery problem')
-
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
-	const published = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-rewritten',
-		isFastForward: async () => false,
+	const confirmed = {
+		...rewrite,
 		allowForce: true,
 		destructiveOverwriteConfirmed: true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
-	})
-	expect(published).toEqual(
+	}
+	mockModule.loadPublishedSourceSnapshot.mockResolvedValueOnce(null)
+	await expect(publish(confirmed)).rejects.toThrow(
+		'Stop and report this source recovery problem',
+	)
+
+	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
+	await expect(publish(confirmed)).resolves.toEqual(
 		expect.objectContaining({
 			status: 'published',
 			previous_commit: 'commit-old',
@@ -341,23 +313,15 @@ test('non-fast-forward publish requires allowForce, destructive confirmation, an
 })
 
 test('rechecks fast-forward against the latest source row before publishing', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(
-		source({ published_commit: 'commit-concurrent' }),
-	)
+	setupPublish({ published_commit: 'commit-concurrent' })
 
-	const result = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async (previousCommit) => previousCommit === 'commit-old',
-		workspace: workspace(),
-		files: {},
-		baseUrl: 'https://kody.test',
-	})
-
-	expect(result).toMatchObject({
+	await expect(
+		publish({
+			files: {},
+			isFastForward: async ({ previousCommit }) =>
+				previousCommit === 'commit-old',
+		}),
+	).resolves.toMatchObject({
 		status: 'not_fast_forward',
 		previous_commit: 'commit-concurrent',
 		published_commit: 'commit-new',
@@ -367,118 +331,52 @@ test('rechecks fast-forward against the latest source row before publishing', as
 })
 
 test('check failure leaves D1 untouched', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
+	setupPublish()
 	mockModule.runRepoChecks.mockResolvedValue({
 		ok: false,
 		results: [
 			{ kind: 'manifest', ok: true, message: 'ok' },
 			{ kind: 'typecheck', ok: false, message: 'bad type' },
 		],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
+		manifest,
 	})
 
-	const result = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: {},
-		baseUrl: 'https://kody.test',
-		runId: 'run-1',
-	})
-
-	expect(result).toEqual({
+	await expect(publish({ files: {}, runId: 'run-1' })).resolves.toEqual({
 		status: 'checks_failed',
 		failed_checks: [{ kind: 'typecheck', ok: false, message: 'bad type' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
+		manifest,
 		run_id: 'run-1',
 	})
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 })
 
 test('publishFromExternalRef fails when projection refresh fails after commit', async () => {
-	resetPublishMocks()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
+	setupPublish()
+	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
 	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
 		new Error('projection failed'),
 	)
 
-	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {} } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'commit-new',
-			isFastForward: async () => true,
-			workspace: workspace(),
-			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow('projection failed')
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			publishedCommit: 'commit-new',
-		}),
-	)
-	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
-		expect.anything(),
-		expect.objectContaining({
-			publishedCommit: 'commit-old',
-		}),
-	)
+	await expect(publish()).rejects.toThrow('projection failed')
+	for (const publishedCommit of ['commit-new', 'commit-old']) {
+		expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ publishedCommit }),
+		)
+	}
 	// Failed publishes must not invalidate community icon caches.
 	expect(
 		mockModule.refreshCommunityIconForPackagePublish,
 	).not.toHaveBeenCalled()
 
-	mockModule.getEntitySourceById.mockResolvedValue(source())
 	mockModule.hasPublishedRuntimeArtifacts.mockReturnValue(true)
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
 	mockModule.refreshSavedPackageProjection.mockRejectedValueOnce(
 		new Error('projection unavailable'),
 	)
 
-	await expect(
-		publishFromExternalRef({
-			env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env,
-			sourceId: 'source-1',
-			userId: 'user-1',
-			newCommit: 'commit-new',
-			isFastForward: async () => true,
-			workspace: workspace(),
-			files: { 'package.json': '{}' },
-			baseUrl: 'https://kody.test',
-		}),
-	).rejects.toThrow('projection unavailable')
+	await expect(publish({ env: kvEnv })).rejects.toThrow(
+		'projection unavailable',
+	)
 	expect(mockModule.writePublishedSourceSnapshot).toHaveBeenCalled()
 	expect(mockModule.deletePublishedSourceSnapshot).toHaveBeenCalledWith({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} },
@@ -488,37 +386,29 @@ test('publishFromExternalRef fails when projection refresh fails after commit', 
 })
 
 test('locked package finishes checks then withholds published_commit unless allowLockedPublish', async () => {
-	resetPublishMocks()
-	mockModule.updateEntitySource.mockClear()
-	mockModule.refreshSavedPackageProjection.mockClear()
-	mockModule.getEntitySourceById.mockResolvedValue(source())
-	mockModule.runRepoChecks.mockResolvedValue({
-		ok: true,
-		results: [{ kind: 'manifest', ok: true, message: 'ok' }],
-		manifest: {
-			name: '@scope/demo',
-			exports: { '.': './src/index.ts' },
-			kody: { id: 'demo', description: 'Demo' },
-		},
-	})
+	setupPublish()
+	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
 	mockModule.loadLockedSavedPackage.mockResolvedValue({
 		id: 'package-1',
+		userId: 'user-1',
 		name: '@scope/demo',
+		kodyId: 'demo',
+		description: 'Demo',
+		tags: [],
+		searchText: null,
+		sourceId: 'source-1',
+		hasApp: false,
+		hasSkills: false,
+		hidden: false,
+		isPrivate: false,
 		lockedAt: '2026-08-28T12:00:00.000Z',
+		createdAt: '2026-05-04T00:00:00.000Z',
+		updatedAt: '2026-05-04T00:00:00.000Z',
 	})
 
-	const locked = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
-		deferBundleCheckToRebuild: true,
-	})
-	expect(locked).toMatchObject({
+	await expect(
+		publish({ deferBundleCheckToRebuild: true }),
+	).resolves.toMatchObject({
 		status: 'locked',
 		previous_commit: 'commit-old',
 		pending_commit: 'commit-new',
@@ -532,29 +422,16 @@ test('locked package finishes checks then withholds published_commit unless allo
 	).toBeUndefined()
 
 	mockModule.runRepoChecks.mockClear()
-	const published = await publishFromExternalRef({
-		env: { APP_DB: {} } as Env,
-		sourceId: 'source-1',
-		userId: 'user-1',
-		newCommit: 'commit-new',
-		isFastForward: async () => true,
-		workspace: workspace(),
-		files: { 'package.json': '{}' },
-		baseUrl: 'https://kody.test',
+	const published = await publish({
 		allowLockedPublish: true,
 		deferBundleCheckToRebuild: true,
 	})
 	expect(mockModule.runRepoChecks).toHaveBeenCalledWith(
-		expect.objectContaining({
-			deferBundleCheckToRebuild: true,
-		}),
+		expect.objectContaining({ deferBundleCheckToRebuild: true }),
 	)
 	expect(published.status).toBe('published')
 	expect(mockModule.updateEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({
-			id: 'source-1',
-			publishedCommit: 'commit-new',
-		}),
+		expect.objectContaining({ id: 'source-1', publishedCommit: 'commit-new' }),
 	)
 })

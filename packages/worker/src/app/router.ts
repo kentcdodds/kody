@@ -17,11 +17,6 @@ import {
 	createAdminFeatureFlagsApiHandler,
 	createAdminFeatureFlagsHandler,
 } from '#app/handlers/admin-feature-flags.ts'
-import {
-	createAdminBannersApiHandler,
-	createAdminBannersHandler,
-} from '#app/handlers/admin-banners.ts'
-import { createSiteBannerDismissHandler } from '#app/handlers/site-banner-dismiss.ts'
 import { createYoutubeThumbHandler } from '#app/handlers/youtube-thumb.ts'
 import { createLandingHeroVideosApiHandler } from '#app/handlers/landing-hero-videos.ts'
 import {
@@ -142,6 +137,12 @@ import {
 	createAccountBillingPortalHandler,
 	createAccountBillingSuccessHandler,
 } from '#app/handlers/account-billing.ts'
+import { createAdminUserCreditsApiHandler } from '#app/handlers/admin-user-credits.ts'
+import {
+	createAccountCreditsHandler,
+	createAccountCreditsSettingsApiHandler,
+	createAccountCreditsTopUpApiHandler,
+} from '#app/handlers/account-credits.ts'
 import {
 	createAccountUsageApiHandler,
 	createAccountUsageHandler,
@@ -187,6 +188,9 @@ import {
 } from '#app/handlers/auth-provider.ts'
 import { createConnectOauthHandler } from '#app/handlers/connect-oauth.ts'
 import { createConnectSecretsHandler } from '#app/handlers/connect-secrets.ts'
+import { createConnectSecretSetHandler } from '#app/handlers/connect-secret-set.ts'
+import { createConnectWebhookApplyHandler } from '#app/handlers/connect-webhook-apply.ts'
+import { createAccountWebhooksApproveApplyApiHandler } from '#app/handlers/account-webhooks-approve-apply.ts'
 import {
 	createCommunityApiHandler,
 	createCommunityHandler,
@@ -245,7 +249,8 @@ import {
 	createLlmsTxtHandler,
 } from '#app/handlers/docs.tsx'
 import { createPackageSharingOptInHandler } from '#app/handlers/package-sharing-opt-in.ts'
-import { createSecretProvidersOptInHandler } from '#app/handlers/secret-providers-opt-in.ts'
+import { createPackageSkillsOptInHandler } from '#app/handlers/package-skills-opt-in.ts'
+import { createMcpEventsOptInHandler } from '#app/handlers/mcp-events-opt-in.ts'
 import {
 	createLegacyGuidesApiRedirectHandler,
 	createLegacyGuidesMarkdownRedirectHandler,
@@ -285,6 +290,7 @@ import {
 } from '#app/handlers/discord.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
+import { createCaseStudiesHandler } from '#app/handlers/case-studies.ts'
 import { createPrivacyHandler } from '#app/handlers/privacy.ts'
 import { createSupportHandler } from '#app/handlers/support.ts'
 import { createTermsHandler } from '#app/handlers/terms.ts'
@@ -313,11 +319,20 @@ import { createSignupHandler } from '#app/handlers/signup.ts'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
+import { createOrgAccountRedirectMiddleware } from '#app/org-account-redirect.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
+import {
+	createAccountInvitesApiHandler,
+	createAccountInvitesHandler,
+	createAccountOrganizationsNewHandler,
+	createAccountOrganizationsNewPostHandler,
+} from '#app/handlers/account-organizations.ts'
+import { createOrgSectionHandler } from '#app/handlers/org-section.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
 			remixCrossOriginProtection,
+			createOrgAccountRedirectMiddleware(env),
 			createReferralCookieMiddleware(),
 			createAccountWriteLeaseMiddleware(env),
 		],
@@ -365,7 +380,8 @@ export function createAppRouter(env: Env) {
 			docDetailMarkdown: createDocDetailMarkdownHandler(env),
 			docDetailOgImage: createDocDetailOgImageHandler(env),
 			packageSharingOptInPost: createPackageSharingOptInHandler(env),
-			secretProvidersOptInPost: createSecretProvidersOptInHandler(env),
+			packageSkillsOptInPost: createPackageSkillsOptInHandler(env),
+			mcpEventsOptInPost: createMcpEventsOptInHandler(env),
 			llmsTxt: createLlmsTxtHandler(env),
 			legacyGuides: createLegacyGuidesRedirectHandler(env),
 			legacyGuidesApi: createLegacyGuidesApiRedirectHandler(env),
@@ -373,6 +389,7 @@ export function createAppRouter(env: Env) {
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),
+			caseStudies: createCaseStudiesHandler(env),
 			support: createSupportHandler(env),
 			privacy: createPrivacyHandler(env),
 			terms: createTermsHandler(env),
@@ -396,9 +413,13 @@ export function createAppRouter(env: Env) {
 			unsubscribeTips: createUnsubscribeTipsHandler(env),
 			pendingVerification: createPendingVerificationHandler(env),
 			signup: createSignupHandler(env),
-			siteBannerDismissPost: createSiteBannerDismissHandler(env),
 			youtubeThumb: createYoutubeThumbHandler(env),
 			account: createAccountHandler(env),
+			accountOrganizationsNew: createAccountOrganizationsNewHandler(env),
+			accountOrganizationsNewPost:
+				createAccountOrganizationsNewPostHandler(env),
+			accountInvites: createAccountInvitesHandler(env),
+			accountInvitesApi: createAccountInvitesApiHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
 			accountIntegrations: createAccountIntegrationsHandler(env),
@@ -467,6 +488,9 @@ export function createAppRouter(env: Env) {
 				createAccountBillingCancellationFeedbackApiHandler(env),
 			accountBillingSuccess: createAccountBillingSuccessHandler(env),
 			accountBillingPortal: createAccountBillingPortalHandler(env),
+			accountCredits: createAccountCreditsHandler(),
+			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
+			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
 			accountWaiting: createAccountWaitingHandler(env),
@@ -513,6 +537,10 @@ export function createAppRouter(env: Env) {
 			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
 			accountWebhooks: createAccountWebhooksHandler(env),
 			accountWebhooksApi: createAccountWebhooksApiHandler(env),
+			accountWebhooksApproveApplyApi:
+				createAccountWebhooksApproveApplyApiHandler(env),
+			accountWebhooksApproveApplyApiPost:
+				createAccountWebhooksApproveApplyApiHandler(env),
 			accountActivity: createAccountActivityHandler(env),
 			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),
@@ -536,9 +564,6 @@ export function createAppRouter(env: Env) {
 			adminFeatureFlags: createAdminFeatureFlagsHandler(env),
 			adminFeatureFlagsApi: createAdminFeatureFlagsApiHandler(env),
 			adminFeatureFlagsApiPost: createAdminFeatureFlagsApiHandler(env),
-			adminBanners: createAdminBannersHandler(env),
-			adminBannersApi: createAdminBannersApiHandler(env),
-			adminBannersApiPost: createAdminBannersApiHandler(env),
 			adminPlatformIntegrations: createAdminPlatformIntegrationsHandler(env),
 			adminPlatformIntegrationNew: createAdminPlatformIntegrationsHandler(env),
 			adminPlatformIntegrationDetail:
@@ -560,12 +585,15 @@ export function createAppRouter(env: Env) {
 			adminCommunityReportsApi: createAdminCommunityReportsApiHandler(env),
 			adminCommunityReportsApiPost: createAdminCommunityReportsApiHandler(env),
 			adminUserUsageApi: createAdminUserUsageApiHandler(env),
+			adminUserCreditsApi: createAdminUserCreditsApiHandler(env),
+			adminUserCreditsApiPost: createAdminUserCreditsApiHandler(env),
 			adminInsights: createAdminInsightsHandler(env),
 			adminInsightsApi: createAdminInsightsApiHandler(env),
 			adminPlatformFeedback: createAdminPlatformFeedbackHandler(env),
 			adminPlatformFeedbackApi: createAdminPlatformFeedbackApiHandler(env),
 			adminSystemEmail: createAdminSystemEmailHandler(env),
 			adminSystemEmailApi: createAdminSystemEmailApiHandler(env),
+			adminSystemEmailApiPost: createAdminSystemEmailApiHandler(env),
 			community: createCommunityHandler(env),
 			communityApi: createCommunityApiHandler(env),
 			communityDetail: createCommunityDetailHandler(env),
@@ -592,6 +620,21 @@ export function createAppRouter(env: Env) {
 			communityTrustApiPost: createCommunityTrustApiPostHandler(env),
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
+			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgConnections: createOrgSectionHandler(env, 'connections'),
+			orgEmail: createOrgSectionHandler(env, 'email'),
+			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
+			orgJobs: createOrgSectionHandler(env, 'jobs'),
+			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
+			orgMemories: createOrgSectionHandler(env, 'memories'),
+			orgPackages: createOrgSectionHandler(env, 'packages'),
+			orgSecretProviders: createOrgSectionHandler(env, 'secret-providers'),
+			orgSecrets: createOrgSectionHandler(env, 'secrets'),
+			orgShared: createOrgSectionHandler(env, 'shared'),
+			orgValues: createOrgSectionHandler(env, 'values'),
+			orgWaiting: createOrgSectionHandler(env, 'waiting'),
+			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
+			orgWorkflows: createOrgSectionHandler(env, 'workflows'),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
 			profileAvatar: createProfileAvatarHandler(env),
@@ -600,6 +643,8 @@ export function createAppRouter(env: Env) {
 			stripeWebhook: createStripeWebhookHandler(env),
 			connectOauth: createConnectOauthHandler(env),
 			connectSecrets: createConnectSecretsHandler(env),
+			connectSecretSet: createConnectSecretSetHandler(env),
+			connectWebhookApply: createConnectWebhookApplyHandler(env),
 			auth: createAuthHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),
 			authProviderStart: createAuthProviderStartHandler(env),

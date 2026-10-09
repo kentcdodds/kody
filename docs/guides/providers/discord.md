@@ -97,7 +97,7 @@ client secret. Paste the client credentials into the setup form, then authorize.
 Save it through the account secrets page — never paste the token into chat:
 
 ```text
-https://kody.codes/account/secrets/new?name=discordBotToken&description=Discord%20bot%20token&allowedHosts=discord.com&scope=user
+https://kody.codes/connect/secret-set?name=discordBotToken&description=Discord%20bot%20token&allowedHosts=discord.com&scope=user
 ```
 
 Approve the `discord.com` host on the same page after saving.

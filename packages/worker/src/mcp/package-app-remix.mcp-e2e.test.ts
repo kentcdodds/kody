@@ -23,9 +23,20 @@ type PackageSaveResult = {
 }
 
 function readExecuteResult<T>(toolResult: CallToolResult): T {
-	expect(toolResult.isError).toBeFalsy()
 	const structured = toolResult.structuredContent as ExecuteStructured
-	expect(structured.error).toBeUndefined()
+	if (toolResult.isError || structured.error != null) {
+		expect.fail(
+			`execute failed: ${JSON.stringify(
+				{
+					isError: toolResult.isError,
+					error: structured.error,
+					content: toolResult.content,
+				},
+				null,
+				2,
+			)}`,
+		)
+	}
 	expect(structured.result).toBeTruthy()
 	return structured.result as T
 }
@@ -40,6 +51,7 @@ test('a Remix package app publishes and serves SSR routes, a form action, middle
 	})
 	await using mcp = await createMcpClient(server.origin, database.user, {
 		persistDir: database.persistDir,
+		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
 	const { username } = database.user
@@ -47,7 +59,7 @@ test('a Remix package app publishes and serves SSR routes, a form action, middle
 
 	try {
 		const files = Object.entries(
-			createRemixPackageAppFiles({ username, kodyId }),
+			await createRemixPackageAppFiles({ username, kodyId }),
 		).map(([path, content]) => ({ path, content }))
 		const saved = readExecuteResult<PackageSaveResult>(
 			(await mcp.client.callTool({
@@ -153,7 +165,7 @@ export default async function main(input) {
 		).toBe(405)
 
 		// The browser module: run() plus the island, compiled from the same
-		// platform Remix as the server, served fingerprinted and immutable.
+		// package-supplied remix as the server, served fingerprinted and immutable.
 		const clientModule = await authedFetch(clientModuleUrl as string)
 		const clientSource = await clientModule.text()
 		expect({ status: clientModule.status }).toEqual({ status: 200 })

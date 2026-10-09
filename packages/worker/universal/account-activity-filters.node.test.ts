@@ -8,127 +8,86 @@ import {
 	surfaceFilterToRunSurface,
 } from './account-activity-filters.ts'
 
+type Search = Parameters<typeof buildActivitySearch>[0]
+
+const errorsDefault: Search = {
+	view: 'errors',
+	status: 'error',
+	surface: 'all',
+	triage: 'open',
+}
+const recentDefault: Search = {
+	view: 'recent',
+	status: 'all',
+	surface: 'all',
+	triage: 'all',
+}
+
 test('activity URL defaults stay on open errors and recent runs flip to all history', () => {
 	expect(accountActivitySummaryWindowMs).toBe(7 * 24 * 60 * 60 * 1000)
+	const filters = (
+		viewFilter: string,
+		statusFilter: string,
+		surfaceFilter: string,
+		triageFilter: string,
+		cursor: string | null = null,
+	) => ({ viewFilter, statusFilter, surfaceFilter, triageFilter, cursor })
+	const reads: Array<[search: string, ReturnType<typeof filters>]> = [
+		['', filters('errors', 'error', 'all', 'open')],
+		[
+			'?status=all&surface=job&cursor=abc&error_triage=ignored',
+			filters('errors', 'all', 'job', 'ignored', 'abc'),
+		],
+		['?view=recent', filters('recent', 'all', 'all', 'all')],
+		[
+			'?view=recent&status=success&surface=webhook',
+			filters('recent', 'success', 'webhook', 'all'),
+		],
+		['?view=nope&status=success', filters('errors', 'success', 'all', 'open')],
+	]
 	expect(
-		readAccountActivityFilters('https://example.com/account/activity'),
-	).toEqual({
-		viewFilter: 'errors',
-		statusFilter: 'error',
-		surfaceFilter: 'all',
-		triageFilter: 'open',
-		cursor: null,
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?status=all&surface=job&cursor=abc&error_triage=ignored',
-		),
-	).toEqual({
-		viewFilter: 'errors',
-		statusFilter: 'all',
-		surfaceFilter: 'job',
-		triageFilter: 'ignored',
-		cursor: 'abc',
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?view=recent',
-		),
-	).toEqual({
-		viewFilter: 'recent',
-		statusFilter: 'all',
-		surfaceFilter: 'all',
-		triageFilter: 'all',
-		cursor: null,
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?view=recent&status=success&surface=webhook',
-		),
-	).toEqual({
-		viewFilter: 'recent',
-		statusFilter: 'success',
-		surfaceFilter: 'webhook',
-		triageFilter: 'all',
-		cursor: null,
-	})
-	expect(
-		readAccountActivityFilters(
-			'https://example.com/account/activity?view=nope&status=success',
-		),
-	).toEqual({
-		viewFilter: 'errors',
-		statusFilter: 'success',
-		surfaceFilter: 'all',
-		triageFilter: 'open',
-		cursor: null,
-	})
-
-	expect(statusFilterToRunStatus('error')).toBe('error')
-	expect(statusFilterToRunStatus('success')).toBe('success')
-	expect(statusFilterToRunStatus('running')).toBe('running')
-	expect(statusFilterToRunStatus('all')).toBeNull()
-	expect(surfaceFilterToRunSurface('all')).toBeNull()
-	expect(surfaceFilterToRunSurface('webhook')).toBe('webhook')
+		reads.map(([search]) => [
+			search,
+			readAccountActivityFilters(
+				`https://example.com/account/activity${search}`,
+			),
+		]),
+	).toEqual(reads)
 
 	expect(
-		buildActivitySearch({
-			view: 'errors',
-			status: 'error',
-			surface: 'all',
-			triage: 'open',
-		}),
-	).toBe('')
+		(['error', 'success', 'running', 'all'] as const).map(
+			statusFilterToRunStatus,
+		),
+	).toEqual(['error', 'success', 'running', null])
+	expect((['all', 'webhook'] as const).map(surfaceFilterToRunSurface)).toEqual([
+		null,
+		'webhook',
+	])
+
+	const searches: Array<Search> = [
+		errorsDefault,
+		recentDefault,
+		{ view: 'recent', status: 'success', surface: 'job', triage: 'open' },
+	]
+	expect(searches.map(buildActivitySearch)).toEqual([
+		'',
+		'?view=recent',
+		'?view=recent&status=success&surface=job&error_triage=open',
+	])
+
+	expect(activityEmptyLabel({ ...errorsDefault, summaryTotal: 0 })).toMatch(
+		/No failures in the last 7 days/,
+	)
+	expect(activityEmptyLabel({ ...errorsDefault, summaryTotal: 4 })).toMatch(
+		/Switch to Recent runs/,
+	)
+	expect(activityEmptyLabel({ ...recentDefault, summaryTotal: 0 })).toBe(
+		'Nothing ran in the last 7 days.',
+	)
 	expect(
-		buildActivitySearch({
-			view: 'recent',
-			status: 'all',
-			surface: 'all',
-			triage: 'all',
-		}),
-	).toBe('?view=recent')
-	expect(
-		buildActivitySearch({
-			view: 'recent',
+		activityEmptyLabel({
+			...recentDefault,
 			status: 'success',
-			surface: 'job',
-			triage: 'open',
-		}),
-	).toBe('?view=recent&status=success&surface=job&error_triage=open')
-
-	expect(
-		activityEmptyLabel({
-			view: 'errors',
-			status: 'error',
-			surface: 'all',
-			triage: 'open',
-			summaryTotal: 0,
-		}),
-	).toMatch(/No failures in the last 7 days/)
-	expect(
-		activityEmptyLabel({
-			view: 'errors',
-			status: 'error',
-			surface: 'all',
-			triage: 'open',
-			summaryTotal: 4,
-		}),
-	).toMatch(/Switch to Recent runs/)
-	expect(
-		activityEmptyLabel({
-			view: 'recent',
-			status: 'all',
-			surface: 'all',
-			triage: 'all',
-			summaryTotal: 0,
-		}),
-	).toBe('Nothing ran in the last 7 days.')
-	expect(
-		activityEmptyLabel({
-			view: 'recent',
-			status: 'success',
-			surface: 'all',
-			triage: 'all',
 			summaryTotal: 3,
 		}),
 	).toBe('No runs match the current filters.')

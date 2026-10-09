@@ -1,13 +1,14 @@
+import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import {
-	clearCapabilityRegistryCacheForTests,
 	getCapabilityRegistryForContext,
 	getStaticRegistry,
 } from '#mcp/capabilities/registry.ts'
 
 test('getCapabilityRegistryForContext hides flag-gated capabilities when the flag is off', async () => {
-	clearCapabilityRegistryCacheForTests()
+	const userId = `user-registry-flag-gate-${crypto.randomUUID()}`
 	const prepare = vi.fn(() => {
 		return {
 			bind() {
@@ -30,9 +31,10 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 		},
 	} as unknown as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored(userId),
 			email: 'user-1@example.com',
 			displayName: 'user-1',
 			roles: ['admin'],
@@ -45,8 +47,6 @@ test('getCapabilityRegistryForContext hides flag-gated capabilities when the fla
 	})
 	const staticRegistry = await getStaticRegistry()
 
-	expect(registry).not.toBe(staticRegistry)
-	expect(registry.capabilityMap).not.toBe(staticRegistry.capabilityMap)
 	expect(staticRegistry.capabilityMap).toHaveProperty('packageShareInvite')
 	expect(registry.capabilityMap).not.toHaveProperty('packageShareInvite')
 	expect(registry.capabilityMap).toHaveProperty('search')
@@ -62,18 +62,20 @@ test('getStaticRegistry memoizes the builtin registry', async () => {
 test('getCapabilityRegistryForContext filters admin capabilities by current caller roles', async () => {
 	const env = {} as Env
 	const adminContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'admin@example.com',
 			displayName: 'admin',
 			roles: ['admin'],
 		},
 	})
 	const regularContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'admin@example.com',
 			displayName: 'admin',
 			roles: ['user'],
@@ -90,7 +92,6 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	})
 
 	expect(adminRegistry.capabilityMap.adminUserList).toBeTruthy()
-	expect(adminRegistry.capabilityMap.adminUserStableIdConflict).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminUserMeterParity).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminRunLogSqlBilling).toBeTruthy()
 	expect(adminRegistry.capabilityMap.adminAccountDeletionAbort).toBeTruthy()
@@ -108,9 +109,6 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 		adminRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(true)
 	expect(regularRegistry.capabilityMap.adminUserList).toBeUndefined()
-	expect(
-		regularRegistry.capabilityMap.adminUserStableIdConflict,
-	).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminUserMeterParity).toBeUndefined()
 	expect(regularRegistry.capabilityMap.adminRunLogSqlBilling).toBeUndefined()
 	expect(
@@ -129,4 +127,29 @@ test('getCapabilityRegistryForContext filters admin capabilities by current call
 	expect(
 		regularRegistry.capabilityDomains.some((domain) => domain.name === 'admin'),
 	).toBe(false)
+})
+
+test('every capability declares a real org permission, and site-admin tools declare none', async () => {
+	const registry = await getStaticRegistry()
+	const invalid = registry.capabilityList
+		.filter(
+			(capability) =>
+				capability.orgPermission !== 'none' &&
+				!isOrgPermission(capability.orgPermission),
+		)
+		.map((capability) => capability.name)
+	expect(invalid).toEqual([])
+	const siteAdminWithOrgPermission = registry.capabilityList
+		.filter(
+			(capability) =>
+				(capability.requiredRole || capability.requiredPermission) &&
+				capability.orgPermission !== 'none',
+		)
+		.map((capability) => capability.name)
+	expect(siteAdminWithOrgPermission).toEqual([])
+	for (const spec of Object.values(registry.capabilitySpecs)) {
+		expect(spec.orgPermission).toBe(
+			registry.capabilityMap[spec.name]?.orgPermission,
+		)
+	}
 })

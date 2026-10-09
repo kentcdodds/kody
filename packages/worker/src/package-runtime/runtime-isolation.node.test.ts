@@ -24,6 +24,11 @@ import {
 
 const runtimeSource = createRuntimeModuleSource()
 
+type McpServers = Record<
+	string,
+	Record<string, (args: unknown) => Promise<unknown>>
+>
+
 type RuntimeModule = {
 	__kodyRunInRuntime: <T>(
 		value: unknown,
@@ -31,7 +36,9 @@ type RuntimeModule = {
 	) => Promise<T>
 	__kodyMeterStaticPackageExport: <T>(packageId: string, exportValue: T) => T
 	__kodyGetSecretAuthority: () => string | null
-	kody: { tool_call: (args: unknown) => Promise<unknown> } | undefined
+	kody:
+		| { tool_call: (args: unknown) => Promise<unknown>; mcp: McpServers }
+		| undefined
 	codemode?: unknown
 	capabilities?: unknown
 	email: { getMessage: (id: string) => Promise<unknown> } | null
@@ -44,308 +51,226 @@ type RuntimeModule = {
 	}
 }
 
-function resetRuntimeStorageSymbol() {
-	const globalAny = globalThis as unknown as Record<symbol, unknown>
-	delete globalAny[Symbol.for('kody.runtimeStorage')]
-	delete globalAny[Symbol.for('kody.secretAuthorityStorage')]
-}
+type GlobalSymbols = Record<symbol, unknown>
 
-async function writeHydratedRuntimeFiles(
+async function writeTempFiles(
 	cleanupCallbacks: Array<() => Promise<void>>,
+	files: Record<string, string>,
 ) {
 	const dir = await mkdtemp(join(tmpdir(), 'kody-runtime-isolation-'))
-	const rootPath = join(dir, '.__kody_virtual__/runtime.js')
-	const siblingVirtualPath =
-		'.__kody_packages__/pkg/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
-	const siblingPath = join(dir, siblingVirtualPath)
-	await mkdir(dirname(rootPath), { recursive: true })
-	await mkdir(dirname(siblingPath), { recursive: true })
-	await writeFile(rootPath, runtimeSource, 'utf8')
-	await writeFile(
-		siblingPath,
-		createRuntimeModuleReexportSource(siblingVirtualPath),
-		'utf8',
-	)
 	cleanupCallbacks.push(() => rm(dir, { recursive: true, force: true }))
-	return {
-		rootUrl: pathToFileURL(rootPath).href,
-		siblingUrl: pathToFileURL(siblingPath).href,
+	const urls: Record<string, string> = {}
+	for (const [relativePath, source] of Object.entries(files)) {
+		const filePath = join(dir, relativePath)
+		await mkdir(dirname(filePath), { recursive: true })
+		await writeFile(filePath, source, 'utf8')
+		urls[relativePath] = pathToFileURL(filePath).href
 	}
+	return urls
 }
 
-async function writeRuntimeFile(cleanupCallbacks: Array<() => Promise<void>>) {
-	const dir = await mkdtemp(join(tmpdir(), 'kody-runtime-isolation-'))
-	const filePath = join(dir, '.__kody_virtual__/runtime.js')
-	await mkdir(dirname(filePath), { recursive: true })
-	await writeFile(filePath, runtimeSource, 'utf8')
-	cleanupCallbacks.push(() => rm(dir, { recursive: true, force: true }))
-	return pathToFileURL(filePath).href
-}
-
-async function withRuntimeIsolationCleanup<T>(
+async function withRuntimeIsolationCleanup(
 	callback: (helpers: {
 		writeRuntimeFile: () => Promise<string>
-		writeHydratedRuntimeFiles: () => Promise<{
-			rootUrl: string
-			siblingUrl: string
+		writeTempFiles: (
+			files: Record<string, string>,
+		) => Promise<Record<string, string>>
+		installSharedStorage: () => AsyncLocalStorage<unknown>
+		loadPreloadedRuntime: () => Promise<{
+			storage: AsyncLocalStorage<unknown>
+			mod: RuntimeModule
+			kodyMcp: () => McpServers
 		}>
-	}) => Promise<T>,
+	}) => Promise<void>,
 ) {
-	resetRuntimeStorageSymbol()
+	const globals = globalThis as unknown as GlobalSymbols
+	delete globals[Symbol.for('kody.runtimeStorage')]
+	delete globals[Symbol.for('kody.secretAuthorityStorage')]
 	const cleanupCallbacks: Array<() => Promise<void>> = []
+	const writeRuntimeFile = async () =>
+		(
+			await writeTempFiles(cleanupCallbacks, {
+				'.__kody_virtual__/runtime.js': runtimeSource,
+			})
+		)['.__kody_virtual__/runtime.js'] ?? ''
+	const installSharedStorage = () => {
+		const storage = new AsyncLocalStorage<unknown>()
+		globals[Symbol.for('kody.runtimeStorage')] = storage
+		return storage
+	}
 	try {
-		return await callback({
-			writeRuntimeFile: () => writeRuntimeFile(cleanupCallbacks),
-			writeHydratedRuntimeFiles: () =>
-				writeHydratedRuntimeFiles(cleanupCallbacks),
+		await callback({
+			writeRuntimeFile,
+			writeTempFiles: (files) => writeTempFiles(cleanupCallbacks, files),
+			installSharedStorage,
+			loadPreloadedRuntime: async () => {
+				const storage = installSharedStorage()
+				const mod = (await import(await writeRuntimeFile())) as RuntimeModule
+				return { storage, mod, kodyMcp: () => mod.kody?.mcp ?? {} }
+			},
 		})
 	} finally {
 		while (cleanupCallbacks.length > 0) {
-			const cleanup = cleanupCallbacks.pop()
-			if (cleanup) await cleanup()
+			await cleanupCallbacks.pop()?.()
 		}
 	}
 }
 
 test('two concurrent runs observe their own runtime values', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
+	await withRuntimeIsolationCleanup(
+		async ({ writeRuntimeFile, installSharedStorage }) => {
+			const sharedStorage = installSharedStorage()
+			const observations = new Map<string, Record<string, string>>()
 
-		type Observation = {
-			userId: string
-			toolValue: string
-			emailValue: string
-			packageId: string
-		}
-
-		const observations = new Map<string, Observation>()
-
-		function buildRuntime(userId: string) {
-			return {
-				kody: {
-					async tool_call() {
-						return { ok: true, userId }
+			async function performRun(userId: string) {
+				// Each "request" has its own fresh runtime module, mirroring the
+				// production behaviour where DynamicWorkerExecutor / APP_LOADER.load()
+				// produce a fresh isolate per request. The module evaluates inside
+				// the AsyncLocalStorage context and captures the per-request runtime.
+				const runtime = {
+					kody: {
+						async tool_call() {
+							return { ok: true, userId }
+						},
 					},
-				},
-				email: {
-					async getMessage(id: string) {
-						return { id: `${userId}:${id}` }
+					email: {
+						async getMessage(id: string) {
+							return { id: `${userId}:${id}` }
+						},
 					},
-				},
-				packageContext: { packageId: `pkg-${userId}` },
-			}
-		}
-
-		async function performRun(userId: string) {
-			// Each "request" has its own fresh runtime module, mirroring the
-			// production behaviour where DynamicWorkerExecutor / APP_LOADER.load()
-			// produce a fresh isolate per request. The module evaluates inside
-			// the AsyncLocalStorage context and captures the per-request runtime.
-			await sharedStorage.run(buildRuntime(userId), async () => {
-				const url = await writeRuntimeFile()
-				await new Promise<void>((resolve) => setImmediate(resolve))
-				const mod = (await import(url)) as RuntimeModule
-				await new Promise<void>((resolve) => setImmediate(resolve))
-				const tool = mod.kody
-				if (!tool) throw new Error('kody missing')
-				const toolResult = (await tool.tool_call({})) as {
-					ok: true
-					userId: string
+					packageContext: { packageId: `pkg-${userId}` },
 				}
-				const email = mod.email
-				if (!email) throw new Error('email missing')
-				const emailResult = (await email.getMessage('m-1')) as { id: string }
-				observations.set(userId, {
-					userId,
-					toolValue: toolResult.userId,
-					emailValue: emailResult.id,
-					packageId: String(mod.packageContext?.packageId ?? ''),
+				await sharedStorage.run(runtime, async () => {
+					const url = await writeRuntimeFile()
+					await new Promise<void>((resolve) => setImmediate(resolve))
+					const mod = (await import(url)) as RuntimeModule
+					await new Promise<void>((resolve) => setImmediate(resolve))
+					if (!mod.kody) throw new Error('kody missing')
+					if (!mod.email) throw new Error('email missing')
+					const toolResult = (await mod.kody.tool_call({})) as {
+						userId: string
+					}
+					const emailResult = (await mod.email.getMessage('m-1')) as {
+						id: string
+					}
+					observations.set(userId, {
+						userId,
+						toolValue: toolResult.userId,
+						emailValue: emailResult.id,
+						packageId: String(mod.packageContext?.packageId ?? ''),
+					})
 				})
-			})
-		}
+			}
 
-		await Promise.all([performRun('user-aaa'), performRun('user-bbb')])
+			await Promise.all([performRun('user-aaa'), performRun('user-bbb')])
 
-		expect(observations.get('user-aaa')).toEqual({
-			userId: 'user-aaa',
-			toolValue: 'user-aaa',
-			emailValue: 'user-aaa:m-1',
-			packageId: 'pkg-user-aaa',
-		})
-		expect(observations.get('user-bbb')).toEqual({
-			userId: 'user-bbb',
-			toolValue: 'user-bbb',
-			emailValue: 'user-bbb:m-1',
-			packageId: 'pkg-user-bbb',
-		})
-	})
+			for (const userId of ['user-aaa', 'user-bbb']) {
+				expect(observations.get(userId)).toEqual({
+					userId,
+					toolValue: userId,
+					emailValue: `${userId}:m-1`,
+					packageId: `pkg-${userId}`,
+				})
+			}
+		},
+	)
 })
 
 test('optional runtime exports stay falsy when the wrapper omits them', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
+	await withRuntimeIsolationCleanup(
+		async ({ writeRuntimeFile, installSharedStorage }) => {
+			const { mod, observedPackageContext } = await installSharedStorage().run(
+				// Intentionally omit `email`, `kody` from the runtime payload to
+				// mirror an execute call that did not bind any of those helpers.
+				{ packageContext: { packageId: 'pkg-1' } },
+				async () => {
+					const mod = (await import(await writeRuntimeFile())) as RuntimeModule
+					return { mod, observedPackageContext: { ...mod.packageContext } }
+				},
+			)
 
-		let captured: RuntimeModule | null = null
-		let observedPackageContext: Record<string, unknown> | null = null
-		await sharedStorage.run(
-			// Intentionally omit `email`, `kody` from the runtime payload to
-			// mirror an execute call that did not bind any of those helpers.
-			{ packageContext: { packageId: 'pkg-1' } },
-			async () => {
-				const url = await writeRuntimeFile()
-				captured = (await import(url)) as RuntimeModule
-				observedPackageContext = {
-					...(captured as RuntimeModule).packageContext,
-				}
-			},
-		)
-
-		const mod = captured as unknown as RuntimeModule
-		// Each missing export must be falsy so user code that does
-		// `if (email) {...}` continues to skip the branch.
-		expect(mod.email).toBeNull()
-		expect(mod.kody).toBeUndefined()
-		expect(mod.codemode).toBeUndefined()
-		expect(mod.capabilities).toBeUndefined()
-		expect(Boolean(mod.email)).toBe(false)
-		expect(Boolean(mod.kody)).toBe(false)
-		expect(Boolean(mod.codemode)).toBe(false)
-		expect(Boolean(mod.capabilities)).toBe(false)
-		// packageContext is late-bound; read it inside the store run.
-		expect(observedPackageContext).toEqual({ packageId: 'pkg-1' })
-	})
+			// Each missing export must be falsy so user code that does
+			// `if (email) {...}` continues to skip the branch.
+			expect(mod.email).toBeNull()
+			expect(mod.kody).toBeUndefined()
+			expect(mod.codemode).toBeUndefined()
+			expect(mod.capabilities).toBeUndefined()
+			// packageContext is late-bound; read it inside the store run.
+			expect(observedPackageContext).toEqual({ packageId: 'pkg-1' })
+		},
+	)
 })
 
 test('preloaded kody exports resolve from the active runtime store', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
-		const url = await writeRuntimeFile()
-		const mod = (await import(url)) as RuntimeModule
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, mod } = await loadPreloadedRuntime()
 		expect(mod.codemode).toBeUndefined()
 		expect(mod.capabilities).toBeUndefined()
 		expect(mod.default.codemode).toBeUndefined()
 		expect(mod.default.capabilities).toBeUndefined()
 
-		const namedExportResult = await sharedStorage.run(
-			{
-				kody: {
-					async tool_call(args: unknown) {
-						return { ok: true, args }
-					},
+		const echoKody = {
+			kody: {
+				async tool_call(args: unknown) {
+					return { ok: true, args }
 				},
 			},
-			async () => {
-				const tool = mod.kody
-				if (!tool) throw new Error('kody missing')
-				return await tool.tool_call({ value: 'active-store' })
-			},
-		)
+		}
+		await expect(
+			storage.run(echoKody, async () => {
+				if (!mod.kody) throw new Error('kody missing')
+				return await mod.kody.tool_call({ value: 'active-store' })
+			}),
+		).resolves.toEqual({ ok: true, args: { value: 'active-store' } })
+		await expect(
+			storage.run(echoKody, async () => {
+				if (!mod.default.kody) throw new Error('default kody missing')
+				return await mod.default.kody.tool_call({
+					value: 'default-active-store',
+				})
+			}),
+		).resolves.toEqual({ ok: true, args: { value: 'default-active-store' } })
 
-		expect(namedExportResult).toEqual({
-			ok: true,
-			args: { value: 'active-store' },
+		for (const [packageContext, expected] of [
+			[{ packageId: 'pkg-a' }, 'pkg-a'],
+			[{ packageId: 'pkg-b' }, 'pkg-b'],
+			[null, null],
+		] as const) {
+			expect(
+				storage.run(
+					{ packageContext },
+					() => mod.packageContext?.packageId ?? null,
+				),
+			).toBe(expected)
+		}
+
+		const secretsRuntime = (prefix: string) => ({
+			packageSecrets: {
+				async get(alias: string) {
+					return `${prefix}:${alias}`
+				},
+			},
 		})
-
-		const defaultExportResult = await sharedStorage.run(
-			{
-				kody: {
-					async tool_call(args: unknown) {
-						return { ok: true, args }
-					},
-				},
-			},
-			async () => {
-				const tool = mod.default.kody
-				if (!tool) throw new Error('default kody missing')
-				return await tool.tool_call({ value: 'default-active-store' })
-			},
-		)
-
-		expect(defaultExportResult).toEqual({
-			ok: true,
-			args: { value: 'default-active-store' },
-		})
-
-		const firstPackageId = await sharedStorage.run(
-			{ packageContext: { packageId: 'pkg-a' } },
-			() => mod.packageContext?.packageId ?? null,
-		)
-		const secondPackageId = await sharedStorage.run(
-			{ packageContext: { packageId: 'pkg-b' } },
-			() => mod.packageContext?.packageId ?? null,
-		)
-		const absentPackageId = await sharedStorage.run(
-			{ packageContext: null },
-			() => mod.packageContext?.packageId ?? null,
-		)
-		expect(firstPackageId).toBe('pkg-a')
-		expect(secondPackageId).toBe('pkg-b')
-		expect(absentPackageId).toBeNull()
-
-		const firstSecretsBound = await sharedStorage.run(
-			{
-				packageSecrets: {
-					async get(alias: string) {
-						return `a:${alias}`
-					},
-				},
-			},
-			() => 'get' in mod.packageSecrets,
-		)
-		const firstSecretValue = await sharedStorage.run(
-			{
-				packageSecrets: {
-					async get(alias: string) {
-						return `a:${alias}`
-					},
-				},
-			},
-			() => mod.packageSecrets.get('token'),
-		)
-		const secondSecretValue = await sharedStorage.run(
-			{
-				packageSecrets: {
-					async get(alias: string) {
-						return `b:${alias}`
-					},
-				},
-			},
-			() => mod.packageSecrets.get('token'),
-		)
-		const absentSecretsBound = await sharedStorage.run(
-			{ packageSecrets: null },
-			() => 'get' in mod.packageSecrets,
-		)
-		expect(firstSecretsBound).toBe(true)
-		expect(firstSecretValue).toBe('a:token')
-		expect(secondSecretValue).toBe('b:token')
-		expect(absentSecretsBound).toBe(false)
+		expect(
+			storage.run(secretsRuntime('a'), () => 'get' in mod.packageSecrets),
+		).toBe(true)
+		for (const prefix of ['a', 'b']) {
+			await expect(
+				storage.run(secretsRuntime(prefix), () =>
+					mod.packageSecrets.get('token'),
+				),
+			).resolves.toBe(`${prefix}:token`)
+		}
+		expect(
+			storage.run({ packageSecrets: null }, () => 'get' in mod.packageSecrets),
+		).toBe(false)
 	})
 })
 
 test('preloaded kody.mcp survives bundler-style destructuring of server names', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
-		const url = await writeRuntimeFile()
-		const mod = (await import(url)) as RuntimeModule & {
-			kody: {
-				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-			}
-		}
-
-		const result = await sharedStorage.run(
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, kodyMcp } = await loadPreloadedRuntime()
+		const result = await storage.run(
 			{
 				// Match the pre-fix sandbox shape: kody.mcp is a get-only proxy
 				// with no has/ownKeys/getOwnPropertyDescriptor traps.
@@ -372,57 +297,42 @@ test('preloaded kody.mcp survives bundler-style destructuring of server names', 
 				),
 			},
 			async () => {
-				const { home } = mod.kody.mcp
-				return await home.sonos_list_players({})
+				const { home } = kodyMcp()
+				return await home!.sonos_list_players!({})
 			},
 		)
-
 		expect(result).toEqual({ players: ['Kitchen'] })
 	})
 })
 
 test('bundler-style destructure of a missing kody.mcp server late-binds to the calling run', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
-		const url = await writeRuntimeFile()
-		const mod = (await import(url)) as RuntimeModule & {
-			kody: {
-				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-			}
-		}
-
-		const captured = await sharedStorage.run(
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, kodyMcp } = await loadPreloadedRuntime()
+		const emptyMcp = new Proxy(
+			{},
+			{
+				get() {
+					return undefined
+				},
+				getOwnPropertyDescriptor() {
+					return undefined
+				},
+			},
+		)
+		const captured = storage.run(
 			{
 				kody: new Proxy(
 					{},
 					{
-						get(_target, property) {
-							if (property !== 'mcp') return undefined
-							return new Proxy(
-								{},
-								{
-									get() {
-										return undefined
-									},
-									getOwnPropertyDescriptor() {
-										return undefined
-									},
-								},
-							)
-						},
+						get: (_target, property) =>
+							property === 'mcp' ? emptyMcp : undefined,
 					},
 				),
 			},
-			async () => {
-				const { home } = mod.kody.mcp
-				return home
-			},
+			() => kodyMcp().home!,
 		)
 
-		const result = await sharedStorage.run(
+		const result = await storage.run(
 			{
 				kody: {
 					mcp: {
@@ -435,12 +345,11 @@ test('bundler-style destructure of a missing kody.mcp server late-binds to the c
 				},
 			},
 			async () =>
-				await captured.bond_shade_set_position({
+				await captured.bond_shade_set_position!({
 					deviceId: '8b1242b1616ed0f7',
 					position: 0,
 				}),
 		)
-
 		expect(result).toEqual({
 			ok: true,
 			args: { deviceId: '8b1242b1616ed0f7', position: 0 },
@@ -449,55 +358,29 @@ test('bundler-style destructure of a missing kody.mcp server late-binds to the c
 })
 
 test('destructured kody.mcp tools resolve against the calling run', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
-		const url = await writeRuntimeFile()
-		const mod = (await import(url)) as RuntimeModule & {
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, kodyMcp } = await loadPreloadedRuntime()
+		const homeRuntime = (run: string) => ({
 			kody: {
-				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-			}
-		}
-
-		const captured = await sharedStorage.run(
-			{
-				kody: {
-					mcp: {
-						home: {
-							async sonos_list_players() {
-								return { run: 'first' }
-							},
+				mcp: {
+					home: {
+						async sonos_list_players() {
+							return { run }
 						},
 					},
 				},
 			},
-			async () => {
-				const { home } = mod.kody.mcp
-				const { sonos_list_players } = home
-				return { home, sonos_list_players }
-			},
-		)
+		})
+		const captured = storage.run(homeRuntime('first'), () => {
+			const { home } = kodyMcp()
+			const { sonos_list_players } = home!
+			return { home: home!, sonos_list_players: sonos_list_players! }
+		})
 
-		const result = await sharedStorage.run(
-			{
-				kody: {
-					mcp: {
-						home: {
-							async sonos_list_players() {
-								return { run: 'second' }
-							},
-						},
-					},
-				},
-			},
-			async () => ({
-				viaHome: await captured.home.sonos_list_players({}),
-				viaTool: await captured.sonos_list_players({}),
-			}),
-		)
-
+		const result = await storage.run(homeRuntime('second'), async () => ({
+			viaHome: await captured.home.sonos_list_players!({}),
+			viaTool: await captured.sonos_list_players({}),
+		}))
 		expect(result).toEqual({
 			viaHome: { run: 'second' },
 			viaTool: { run: 'second' },
@@ -506,75 +389,60 @@ test('destructured kody.mcp tools resolve against the calling run', async () => 
 })
 
 test('kody.mcp tool calls stay callable when the current run throws on Get', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
-		const sharedStorage = new AsyncLocalStorage<unknown>()
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.runtimeStorage')
-		] = sharedStorage
-		const url = await writeRuntimeFile()
-		const mod = (await import(url)) as RuntimeModule & {
-			kody: {
-				mcp: Record<string, Record<string, (args: unknown) => Promise<unknown>>>
-			}
-		}
+	await withRuntimeIsolationCleanup(async ({ loadPreloadedRuntime }) => {
+		const { storage, kodyMcp } = await loadPreloadedRuntime()
 		const oauthWaitingMessage =
 			'The MCP server "home" is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers. Check mcpServerList for connection status.'
-
-		function authenticatingHomeRuntime() {
-			return {
-				kody: {
-					mcp: createKodyRemoteProxy({
-						entries: [
-							{
-								name: 'home',
-								status: {
-									state: 'authenticating',
-									connected: false,
-									toolCount: 0,
-									message:
-										'The MCP server "home" is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers.',
-									unavailableMessage: oauthWaitingMessage,
-								},
-								capabilities: [],
+		const authenticatingHomeRuntime = () => ({
+			kody: {
+				mcp: createKodyRemoteProxy({
+					entries: [
+						{
+							name: 'home',
+							status: {
+								state: 'authenticating',
+								connected: false,
+								toolCount: 0,
+								message:
+									'The MCP server "home" is waiting for OAuth authorization. Complete the authorization from /account/mcp-servers.',
+								unavailableMessage: oauthWaitingMessage,
 							},
-						],
-						async callTool() {
-							throw new Error('authenticating servers must not dispatch')
+							capabilities: [],
 						},
-					}),
-				},
-			}
-		}
+					],
+					async callTool() {
+						throw new Error('authenticating servers must not dispatch')
+					},
+				}),
+			},
+		})
 
-		await sharedStorage.run(authenticatingHomeRuntime(), async () => {
+		const captured = storage.run(authenticatingHomeRuntime(), () => {
 			// createKodyRemoteProxy throws on Get; the isolate stand-in is
 			// callable and rethrows that same message on the call, not as a
 			// TypeError "is not a function".
-			expect(Object.keys(mod.kody.mcp)).toEqual(['home'])
-			expect(Object.keys(mod.kody.mcp.home)).toEqual([])
-			expect(() => mod.kody.mcp.home.venstar_get_thermostat_info({})).toThrow(
-				oauthWaitingMessage,
-			)
-			expect(() => mod.kody.mcp.home.sonos_list_players({})).toThrow(
-				oauthWaitingMessage,
-			)
-
-			const { home } = mod.kody.mcp
-			const { venstar_get_thermostat_info } = home
+			const mcp = kodyMcp()
+			expect(Object.keys(mcp)).toEqual(['home'])
+			expect(Object.keys(mcp.home!)).toEqual([])
+			for (const tool of [
+				'venstar_get_thermostat_info',
+				'sonos_list_players',
+			]) {
+				expect(() => mcp.home![tool]!({})).toThrow(oauthWaitingMessage)
+			}
+			const { home } = mcp
+			const { venstar_get_thermostat_info } = home!
 			expect(typeof venstar_get_thermostat_info).toBe('function')
-			expect(() => venstar_get_thermostat_info({})).toThrow(oauthWaitingMessage)
+			expect(() => venstar_get_thermostat_info!({})).toThrow(
+				oauthWaitingMessage,
+			)
+			return {
+				home: home!,
+				venstar_get_thermostat_info: venstar_get_thermostat_info!,
+			}
 		})
 
-		const captured = await sharedStorage.run(
-			authenticatingHomeRuntime(),
-			async () => {
-				const { home } = mod.kody.mcp
-				const { venstar_get_thermostat_info } = home
-				return { home, venstar_get_thermostat_info }
-			},
-		)
-
-		const result = await sharedStorage.run(
+		const result = await storage.run(
 			{
 				kody: {
 					mcp: {
@@ -587,9 +455,9 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 				},
 			},
 			async () => ({
-				serverNames: Object.keys(mod.kody.mcp),
-				toolNames: Object.keys(mod.kody.mcp.home),
-				viaHome: await captured.home.venstar_get_thermostat_info({
+				serverNames: Object.keys(kodyMcp()),
+				toolNames: Object.keys(kodyMcp().home!),
+				viaHome: await captured.home.venstar_get_thermostat_info!({
 					thermostat: 'office',
 				}),
 				viaTool: await captured.venstar_get_thermostat_info({
@@ -597,7 +465,6 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 				}),
 			}),
 		)
-
 		expect(result).toEqual({
 			serverNames: ['home'],
 			toolNames: ['venstar_get_thermostat_info'],
@@ -608,16 +475,20 @@ test('kody.mcp tool calls stay callable when the current run throws on Get', asy
 })
 
 test('secret-authority stamps stay visible across hydrated runtime.js copies', async () => {
-	await withRuntimeIsolationCleanup(async ({ writeHydratedRuntimeFiles }) => {
-		const { rootUrl, siblingUrl } = await writeHydratedRuntimeFiles()
-		const rootCopy = (await import(rootUrl)) as RuntimeModule
-		const siblingCopy = (await import(siblingUrl)) as RuntimeModule
+	await withRuntimeIsolationCleanup(async ({ writeTempFiles }) => {
+		const siblingPath =
+			'.__kody_packages__/pkg/.__published_bundle__/2e/.__kody_virtual__/runtime.js'
+		const urls = await writeTempFiles({
+			'.__kody_virtual__/runtime.js': runtimeSource,
+			[siblingPath]: createRuntimeModuleReexportSource(siblingPath),
+		})
+		const rootCopy = (await import(
+			urls['.__kody_virtual__/runtime.js'] ?? ''
+		)) as RuntimeModule
+		const siblingCopy = (await import(urls[siblingPath] ?? '')) as RuntimeModule
+		const globals = globalThis as unknown as GlobalSymbols
 
-		expect(
-			(globalThis as unknown as Record<symbol, unknown>)[
-				Symbol.for('kody.secretAuthorityStorage')
-			],
-		).toBeUndefined()
+		expect(globals[Symbol.for('kody.secretAuthorityStorage')]).toBeUndefined()
 
 		const peek = siblingCopy.__kodyGetSecretAuthority
 		const stamped = siblingCopy.__kodyMeterStaticPackageExport(
@@ -646,19 +517,48 @@ test('secret-authority stamps stay visible across hydrated runtime.js copies', a
 		expect(new Wrapped().authority).toBe('pkg-ctor')
 		expect(peek()).toBeNull()
 
-		;(globalThis as unknown as Record<symbol, unknown>)[
-			Symbol.for('kody.secretAuthorityStorage')
-		] = {
+		globals[Symbol.for('kody.secretAuthorityStorage')] = {
 			getStore: () => 'pkg-forged',
 			run: (_packageId: string, callback: () => string) => callback(),
 		}
 		expect(stamped()).toBe('pkg-artifact')
+		expect(peek()).toBeNull()
+
+		// constructor.name is package-controlled; null must not break metering
+		// or async ALS selection (intrinsic prototype is used instead).
+		const syncNullCtor = () => peek()
+		Object.defineProperty(syncNullCtor, 'constructor', { value: null })
+		expect(
+			siblingCopy.__kodyMeterStaticPackageExport(
+				'pkg-null-ctor',
+				syncNullCtor,
+			)(),
+		).toBe('pkg-null-ctor')
+
+		const asyncNullCtor = async () => {
+			await Promise.resolve()
+			return peek()
+		}
+		Object.defineProperty(asyncNullCtor, 'constructor', { value: null })
+		expect(
+			await siblingCopy.__kodyMeterStaticPackageExport(
+				'pkg-async-null-ctor',
+				asyncNullCtor,
+			)(),
+		).toBe('pkg-async-null-ctor')
 		expect(peek()).toBeNull()
 	})
 })
 
 test('runtime evaluation replaces a configurable pre-planted authority forge', async () => {
 	const authoritySymbol = Symbol.for('kody.getSecretAuthority')
+	const callAuthority = () => {
+		const authority = (
+			globalThis as unknown as Record<symbol, (() => string | null) | undefined>
+		)[authoritySymbol]
+		if (!authority) throw new Error('Expected a secret authority getter.')
+		return authority()
+	}
 	const existing = Object.getOwnPropertyDescriptor(globalThis, authoritySymbol)
 	if (existing && !existing.configurable) {
 		// A prior sealed install already applied — still prove redefine is denied.
@@ -677,28 +577,16 @@ test('runtime evaluation replaces a configurable pre-planted authority forge', a
 		writable: true,
 		enumerable: false,
 	})
-	expect(
-		(globalThis as unknown as Record<symbol, () => string>)[authoritySymbol](),
-	).toBe('pkg-forged')
+	expect(callAuthority()).toBe('pkg-forged')
 
-	const dir = await mkdtemp(join(tmpdir(), 'kody-sa-forge-'))
-	try {
-		const filePath = join(dir, 'runtime.mjs')
-		await writeFile(filePath, createRuntimeModuleSource(), 'utf8')
-		await import(`${pathToFileURL(filePath).href}?t=${Date.now()}`)
-		const installed = Object.getOwnPropertyDescriptor(
-			globalThis,
-			authoritySymbol,
-		)
-		expect(installed?.configurable).toBe(false)
+	await withRuntimeIsolationCleanup(async ({ writeRuntimeFile }) => {
+		await import(`${await writeRuntimeFile()}?t=${Date.now()}`)
 		expect(
-			(globalThis as unknown as Record<symbol, () => string | null>)[
-				authoritySymbol
-			](),
-		).not.toBe('pkg-forged')
-	} finally {
-		await rm(dir, { recursive: true, force: true })
-	}
+			Object.getOwnPropertyDescriptor(globalThis, authoritySymbol)
+				?.configurable,
+		).toBe(false)
+		expect(callAuthority()).not.toBe('pkg-forged')
+	})
 })
 
 test('module secret-authority export ignores a sealed foreign global forge', async () => {
@@ -758,7 +646,7 @@ try {
 	}
 }
 `,
-			{ eval: true, type: 'module' },
+			{ eval: true },
 		)
 		worker.on('message', resolve)
 		worker.on('error', reject)

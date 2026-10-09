@@ -1,10 +1,13 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
-	assertCallerCanAccessCapability: vi.fn(async () => undefined),
+	assertCallerCanAccessCapability: vi.fn<
+		typeof AccessControlModule.assertCallerCanAccessCapability
+	>(async () => undefined),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -18,8 +21,11 @@ vi.mock(
 		const actual = await importOriginal()
 		return {
 			...actual,
-			assertCallerCanAccessCapability: (...args: Array<unknown>) =>
-				mockModule.assertCallerCanAccessCapability(...args),
+			assertCallerCanAccessCapability: (
+				...args: Parameters<
+					typeof AccessControlModule.assertCallerCanAccessCapability
+				>
+			) => mockModule.assertCallerCanAccessCapability(...args),
 		}
 	},
 )
@@ -34,9 +40,10 @@ test('execute capability runs modules through the shared execute runtime', async
 	})
 
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
-			userId: 'user-1',
+			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'User',
 		},

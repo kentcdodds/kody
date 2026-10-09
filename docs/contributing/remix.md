@@ -1,15 +1,13 @@
 # Remix guidance
 
-Use the repo-local Remix skill instead of vendoring generated Remix package
-documentation in this repository.
+The repo-local Remix skill lives at `.agents/skills/remix/SKILL.md`. Load it
+before changing Remix routes, controllers, middleware, data access, validation,
+auth, sessions, file uploads, server setup, UI components, hydration,
+navigation, frames, or tests.
 
-The repo-local skill lives at:
-
-- `.agents/skills/remix/SKILL.md`
-
-Load that skill before changing Remix routes, controllers, middleware, data
-access, validation, auth, sessions, file uploads, server setup, UI components,
-hydration, navigation, frames, or tests.
+The installed docs are canonical: search `node_modules/remix/INDEX.md`, then
+read the matching guide under `node_modules/remix/guides/` and the package
+README. Do not vendor copies of them here.
 
 Kody D1 leftovers (unused columns, dual-write, a later drop) follow
 [Cleanup after migrations](./cleanup-after-migrations.md), not the Remix skill.
@@ -35,11 +33,10 @@ Platform Durable Objects and scheduled jobs live on `kody-platform` and
 Package apps are framework-agnostic Worker entries on `kody-runtime` (dynamic
 Worker Loader isolate), not on the origin. Remix is a recipe: the package's
 `app/router.ts` default-exports a fetch handler that remounts into
-`createRouter()`, the platform supplies `remix` at the same version as this repo
-(pre-bundled by `tools/build-worker-bundler-modules.ts`, mounted at
-`node_modules/remix/` in the runtime bundler), and `kody:runtime` exposes Kody
-as named exports plus the optional `KodyRuntime` request-context key. Authoring
-conventions for that surface live in
+`createRouter()`, declares `remix` as an ordinary npm dependency (the platform
+does not vendor or inject frameworks into package bundles), and `kody:runtime`
+exposes Kody as named exports plus the optional `KodyRuntime` request-context
+key. Authoring conventions for that surface live in
 [`docs/guides/package-apps.md`](../guides/package-apps.md); the platform side is
 in [packages and manifests](./packages-and-manifests.md#package-apps). The skill
 below applies to origin UI and to the Remix package-app recipe, with two
@@ -71,10 +68,24 @@ template:
   the Navigation API; do not add a `window.navigation` stub. `crypto.randomUUID`
   and constructable stylesheets are still polyfilled in
   `packages/worker/client/entry.tsx` for older in-app browsers.
+- Kody keeps a custom client router on top of server-rendered HTML instead of
+  `remix/spa`: it runs the destination's loader before committing the URL, and
+  route components read the payload through `createRouteData`
+  (`#client/route-data.tsx`). It intercepts ordinary same-origin clicks and
+  submits, so Remix only handles elements opted in with `data-rmx-target`,
+  `data-rmx-src`, or `data-rmx-document`.
+- Server-rendered `<script>` elements take a single string child (Kody's inline
+  scroll-restoration script) or stay empty with `src`.
+- Raw HTML props (`innerHTML`, iframe `srcdoc`) take `unsafeHTML(...)` from
+  `remix/component`, which marks the trust boundary. The admin and account email
+  previews pass generated email HTML this way into a `sandbox=""` iframe.
 - Frame resolution is configured in both `packages/worker/client/entry.tsx` and
   `packages/worker/src/app/ssr-render.tsx`. The browser resolver is
-  `(src, options)` and returns the `Response`. SSR `resolveFrame` is
-  `(src, target, context)`.
+  `(src, options)` and returns the `Response`. Both browser resolvers
+  (`resolveClientFrame` and `prefetchFrame`) send `x-remix-frame: true` like
+  Remix's default resolver, plus `x-remix-target` for named frames; see
+  [frames](./frames.md) for why Kody keeps its own resolver. SSR `resolveFrame`
+  is `(src, target, context)`.
 - The app router uses Remix COP (`remix/middleware/cop`) before the account
   write lease. MCP, OAuth, package apps, and connectors never see that stack
   because `index.ts` handles them first. COP bypasses Stripe webhooks, package

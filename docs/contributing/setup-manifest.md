@@ -42,8 +42,11 @@ This project uses the following resources:
     subscriptions; leftover per-repo rows are still deleted during artifact
     cleanup. Uses `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN`.
   - Production and preview Workers bind `ARTIFACTS` (wrangler `artifacts`,
-    namespaces `production` / `preview`). Create/get prefer that JSRPC binding
-    and fall back to REST when the binding is absent (local/tests).
+    namespaces `production` / per-PR `kody-pr-<n>`). Create/get prefer that
+    JSRPC binding and fall back to REST when the binding is absent
+    (local/tests). Preview ensure creates the per-PR Artifacts namespace and
+    rewrites generated origin/platform/runtime configs away from the shared
+    committed `preview` template value.
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Consumers filter by `ARTIFACTS_NAMESPACE` and ignore session fork
@@ -82,8 +85,10 @@ This project uses the following resources:
   - Queue messages contain only `{ eventId, listingId }`. The consumer reloads
     the metadata-only listing projection, acknowledges invalid or inactive
     listings, and retries transient lookup, subscription-discovery, or
-    package-invocation infrastructure failures. Only first publish enqueues;
-    republish does not.
+    package-invocation infrastructure failures. Only first publish enqueues this
+    shape. A republish that moves the pinned commit enqueues a
+    `kind: 'fork_upstream_updated'` message on the same queue for
+    `community.fork.upstream_updated` forker fan-out.
 - Cloudflare Queue for durable package-emitted event dispatch
   - Producer binding: `PACKAGE_EVENTS_DISPATCH_QUEUE`
   - Queue: `kody-package-events-dispatch`
@@ -112,10 +117,13 @@ This project uses the following resources:
     the same registry inline so maintenance behavior remains testable.
 - Vectorize indexes for MCP capability search (`CAPABILITY_VECTOR_INDEX`)
   - Production: `kody-capabilities-prod`
-  - Preview: `kody-capabilities-preview`
-  - Create once per account, for example:
-    `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`
-    (same for preview). **Dimensions must match** the embedding model in
+  - Preview: `<preview-worker-name>-vectors`, created and deleted per preview by
+    `tools/ci/preview-resources.ts` (with metadata indexes) and filled by the
+    preview workflow's builtin reindex. `kody-capabilities-preview` is only the
+    committed placeholder the generated preview config replaces.
+  - Create production once per account, for example:
+    `wrangler vectorize create kody-capabilities-prod --dimensions=384 --metric=cosine`.
+    **Dimensions must match** the embedding model in
     `packages/worker/src/vectorize/embedding.ts` (`@cf/baai/bge-small-en-v1.5`,
     384 dimensions, `cls` pooling).
 - Cloudflare Images binding for package-icon and integration-logo ingest
@@ -267,8 +275,11 @@ content-addressed `blobs/sha256/`.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-backup-control-plane`) when a `main`
-push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`,
-and on every manual `workflow_dispatch` of that workflow. The job uses
+push changes `packages/backup-control-plane/` or `packages/shared/src/backup-*`
+inside the 15-commit path-filter lookback, and on every manual
+`workflow_dispatch` of that workflow. A longer Validate gap can skip the job
+even when `main` still contains those paths; dispatch Deploy on current `main`
+HEAD to force the control plane (and every other worker) live. The job uses
 `DR_DEPLOY_TOKEN` + `DR_BACKUP_ACCOUNT_ID` (never the production-account
 `CLOUDFLARE_API_TOKEN`) and sets `BUILD_COMMIT` to the deploy SHA. Worker
 secrets on the control plane remain one-time / out-of-band.
@@ -329,11 +340,13 @@ Component probes do not use the status hostname.
 
 Code deploys are automated by the production deploy workflow
 (`.github/workflows/deploy.yml` job `deploy-status-worker`) when a `main` push
-changes `packages/status/`, and on every manual `workflow_dispatch` of that
-workflow. The job deploys with the production-account `CLOUDFLARE_API_TOKEN`,
-sets `BUILD_COMMIT` to the deploy SHA, and syncs the Email Sending-only
-`CLOUDFLARE_STATUS_API_TOKEN` GitHub secret as the Worker secret
-`CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
+changes `packages/status/` inside the 15-commit path-filter lookback, and on
+every manual `workflow_dispatch` of that workflow. A longer Validate gap can
+skip the job even when `main` still contains those paths; dispatch Deploy on
+current `main` HEAD to force it. The job deploys with the production-account
+`CLOUDFLARE_API_TOKEN`, sets `BUILD_COMMIT` to the deploy SHA, and syncs the
+Email Sending-only `CLOUDFLARE_STATUS_API_TOKEN` GitHub secret as the Worker
+secret `CLOUDFLARE_API_TOKEN` so the status worker can send operator alert email
 through the Cloudflare Email REST API (from `ALERT_EMAIL_FROM` to
 `ALERT_EMAIL_TO`, both non-secret vars in `packages/status/wrangler.jsonc`).
 Without that secret, alert sends are skipped and logged.
@@ -506,19 +519,14 @@ automatically:
   for `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503.)
 - `STRIPE_API_BASE_URL` (optional; defaults to `https://api.stripe.com`.
   Override for tests/mocks.)
-- `STRIPE_STANDARD_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $12/month
-  `standard` plan and used for authenticated Checkout Sessions.)
-- `STRIPE_STANDARD_YEARLY_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $120/year
-  `standard` plan.)
 - `STRIPE_PRO_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $49/month
-  `pro` plan and used for authenticated Checkout Sessions.)
+  `packages/worker/wrangler.jsonc`; Stripe Price id for the purchasable
+  $12/month Pro with the prepaid credit wallet, used for authenticated Checkout
+  Sessions.)
 - `STRIPE_PRO_YEARLY_PRICE_ID` (optional public Wrangler var committed in
-  `packages/worker/wrangler.jsonc`; Stripe Price id mapped to the $480/year
-  `pro` plan.) Each price id is independent; an unset value only disables
-  checkout for that tier and interval.
+  `packages/worker/wrangler.jsonc`; Stripe Price id for the purchasable
+  $120/year Pro.) Each price id is independent; an unset value only disables
+  checkout for that interval.
 - `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` (optional public Wrangler var
   committed in `packages/worker/wrangler.jsonc` for production; Stripe Billing
   Portal configuration `bpc_...` used for Manage subscription and the prorated
@@ -790,9 +798,10 @@ How to get/set each value:
     existing rows are rebuilt with compatible vectors. Pooling is not part of
     the fingerprint, so a pooling-only change also needs `force` (or a
     `vectorEmbedFingerprintVersion` bump). After Vectorize data loss, `force` is
-    required so restored D1 fingerprints cannot skip an empty index. Local and
-    preview environments can omit it; CI skips reindex and origin-only
-    execute-smoke when the secret is unset.
+    required so restored D1 fingerprints cannot skip an empty index. Local
+    environments can omit it; production CI skips reindex and origin-only
+    execute-smoke when the secret is unset. Preview deploys generate a random
+    per-deploy value and run the builtin reindex against the per-preview index.
 - `JOB_REINDEX_SECRET` (optional; jobs-only reindex)
   - Bearer token for `POST /__maintenance/reindex-jobs`. Generate and sync the
     same way as `CAPABILITY_REINDEX_SECRET` only if you want the jobs-only

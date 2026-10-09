@@ -1,170 +1,54 @@
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { adminCreateUserWithPasswordSetup } from './admin-user-creation.ts'
 import { adminPasswordSetupTokenExpiryMs } from './password-reset-tokens.ts'
 import { getUsernameValidationError } from './username.ts'
 
-type TestUser = {
-	id: number
-	username: string
-	email: string
-	password_hash: string
-	email_verified_at: string | null
-	plan: string | null
-}
+const setupLinkOrigin = 'https://kody.example/admin/users'
 
-type TestPasswordReset = {
-	user_id: number
-	token_hash: string
-	expires_at: number
-}
-
-function createAdminUserCreationTestDb(initialUsers: Array<TestUser> = []) {
-	let nextId = Math.max(0, ...initialUsers.map((user) => user.id)) + 1
-	const users = new Map(initialUsers.map((user) => [user.id, { ...user }]))
-	const passwordResets = new Map<number, TestPasswordReset>()
-	const userRoles = new Set<string>()
-
-	const db = {
-		prepare(query: string) {
-			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
-			return {
-				bind(...params: Array<unknown>) {
-					return {
-						async first<T>() {
-							if (
-								normalizedQuery.includes('select id from users where email')
-							) {
-								const email = String(params[0] ?? '').toLowerCase()
-								const user =
-									Array.from(users.values()).find(
-										(row) => row.email.toLowerCase() === email,
-									) ?? null
-								return user ? ({ id: user.id } as T) : null
-							}
-							if (
-								normalizedQuery.includes('select id from users where username')
-							) {
-								const username = String(params[0] ?? '').toLowerCase()
-								const user =
-									Array.from(users.values()).find(
-										(row) => row.username.toLowerCase() === username,
-									) ?? null
-								return user ? ({ id: user.id } as T) : null
-							}
-							return null
-						},
-						async run() {
-							if (normalizedQuery.startsWith('insert into users')) {
-								const [username, email, passwordHash, emailVerifiedAt] =
-									params as Array<string>
-								if (
-									Array.from(users.values()).some(
-										(row) =>
-											row.email.toLowerCase() === String(email).toLowerCase(),
-									)
-								) {
-									throw new Error('UNIQUE constraint failed: users.email')
-								}
-								if (
-									Array.from(users.values()).some(
-										(row) =>
-											row.username.toLowerCase() ===
-											String(username).toLowerCase(),
-									)
-								) {
-									throw new Error('UNIQUE constraint failed: users.username')
-								}
-								const plan =
-									normalizedQuery.includes(', plan)') &&
-									normalizedQuery.includes("'free'")
-										? 'free'
-										: null
-								const user = {
-									id: nextId,
-									username: String(username),
-									email: String(email),
-									password_hash: String(passwordHash),
-									email_verified_at: String(emailVerifiedAt),
-									plan,
-								}
-								nextId += 1
-								users.set(user.id, user)
-								return { meta: { changes: 1, last_row_id: user.id } }
-							}
-							if (
-								normalizedQuery.includes('insert or ignore into user_roles')
-							) {
-								const userId = Number(params[0])
-								const roleName = String(params[1])
-								userRoles.add(`${userId}:${roleName}`)
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (normalizedQuery.startsWith('delete from password_resets')) {
-								passwordResets.delete(Number(params[0]))
-								return { meta: { changes: 1, last_row_id: 0 } }
-							}
-							if (normalizedQuery.startsWith('insert into password_resets')) {
-								const [userId, tokenHash, expiresAt] = params
-								passwordResets.set(Number(userId), {
-									user_id: Number(userId),
-									token_hash: String(tokenHash),
-									expires_at: Number(expiresAt),
-								})
-								return { meta: { changes: 1, last_row_id: 1 } }
-							}
-							if (normalizedQuery.startsWith('delete from users')) {
-								const deleted = users.delete(Number(params[0]))
-								return { meta: { changes: deleted ? 1 : 0, last_row_id: 0 } }
-							}
-							return { meta: { changes: 0, last_row_id: 0 } }
-						},
-					}
-				},
+function createDb() {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	const count = (table: string) =>
+		(
+			sqlite.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
+				count: number
 			}
-		},
-		async exec() {
-			return
-		},
-	} as unknown as D1Database
-
-	return { db, users, passwordResets, userRoles }
+		).count
+	return { sqlite, db: createD1FromSqlite(sqlite), count }
 }
 
 test('adminCreateUserWithPasswordSetup rejects duplicate email', async () => {
-	const { db, passwordResets } = createAdminUserCreationTestDb([
-		{
-			id: 1,
-			username: 'existing',
-			email: 'existing@example.com',
-			password_hash: 'hash',
-			email_verified_at: new Date(0).toISOString(),
-			plan: 'free',
-		},
-	])
+	const { sqlite, db, count } = createDb()
+	sqlite.exec(`
+		INSERT INTO users (username, email, password_hash, stable_user_id, email_verified_at)
+		VALUES ('existing', 'existing@example.com', 'hash', 'stable-existing', '1970-01-01T00:00:00.000Z')
+	`)
 
 	await expect(
 		adminCreateUserWithPasswordSetup({
 			db,
 			email: 'existing@example.com',
-			setupLinkOrigin: 'https://kody.example/admin/users',
+			setupLinkOrigin,
 		}),
 	).rejects.toMatchObject({
 		code: 'email_exists',
 		message: 'Email already registered.',
 	})
-	expect(passwordResets.size).toBe(0)
+	expect(count('password_resets')).toBe(0)
 })
 
 test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup link', async () => {
 	const now = new Date('2026-07-05T16:00:00.000Z')
-	const { db, users, passwordResets, userRoles } =
-		createAdminUserCreationTestDb()
+	const { sqlite, db } = createDb()
 
 	const created = await adminCreateUserWithPasswordSetup({
 		db,
 		email: 'Person+Launch@Example.com',
 		username: null,
-		setupLinkOrigin: 'https://kody.example/admin/users',
+		setupLinkOrigin,
 		now,
 	})
 
@@ -173,47 +57,87 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	expect(created.setupLink).toMatch(
 		/^https:\/\/kody\.example\/reset-password\?token=[0-9a-f]{64}$/,
 	)
-	expect(created.setupTokenExpiresAt).toBe(
-		now.getTime() + adminPasswordSetupTokenExpiryMs,
-	)
-	expect(users.get(created.userId)).toMatchObject({
+	const expiresAt = now.getTime() + adminPasswordSetupTokenExpiryMs
+	expect(created.setupTokenExpiresAt).toBe(expiresAt)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT email, username, email_verified_at, password_hash, plan
+				FROM users WHERE id = ?`,
+			)
+			.get(created.userId),
+	).toEqual({
 		email: 'person+launch@example.com',
 		username: 'person-launch',
 		email_verified_at: now.toISOString(),
 		password_hash: 'admin_created_no_usable_password',
 		plan: 'free',
 	})
-	expect(passwordResets.get(created.userId)?.expires_at).toBe(
-		now.getTime() + adminPasswordSetupTokenExpiryMs,
-	)
-	expect(userRoles.has(`${created.userId}:user`)).toBe(true)
+	expect(
+		sqlite
+			.prepare(`SELECT expires_at FROM password_resets WHERE user_id = ?`)
+			.all(created.userId),
+	).toEqual([{ expires_at: expiresAt }])
+	expect(
+		sqlite
+			.prepare(
+				`SELECT roles.name FROM user_roles
+				JOIN roles ON roles.id = user_roles.role_id
+				WHERE user_roles.user_id = ?`,
+			)
+			.all(created.userId),
+	).toEqual([{ name: 'user' }])
+	expect(
+		sqlite
+			.prepare(
+				`SELECT id, kind, amount_micro_usd, granted_by_user_id
+				 FROM credit_ledger_entries WHERE user_id = ?`,
+			)
+			.get(created.stableUserId),
+	).toEqual({
+		id: `signup_welcome:${created.stableUserId}`,
+		kind: 'admin_grant',
+		amount_micro_usd: 5_000_000,
+		granted_by_user_id: null,
+	})
+	expect(
+		sqlite
+			.prepare(`SELECT balance_micro_usd FROM credit_wallets WHERE user_id = ?`)
+			.get(created.stableUserId),
+	).toEqual({ balance_micro_usd: 5_000_000 })
+	expect(
+		sqlite
+			.prepare(
+				`SELECT signup_welcome_credits_pending AS pending
+				 FROM users WHERE stable_user_id = ?`,
+			)
+			.get(created.stableUserId),
+	).toEqual({ pending: 0 })
 })
 
 test('adminCreateUserWithPasswordSetup rejects explicit reserved usernames and skips reserved generated ones', async () => {
-	const explicit = createAdminUserCreationTestDb()
+	const explicit = createDb()
 	await expect(
 		adminCreateUserWithPasswordSetup({
 			db: explicit.db,
 			email: 'person@example.com',
 			username: 'postmaster',
-			setupLinkOrigin: 'https://kody.example/admin/users',
+			setupLinkOrigin,
 		}),
 	).rejects.toMatchObject({
 		code: 'invalid_username',
 		message: 'This username is reserved.',
 	})
-	expect(explicit.users.size).toBe(0)
+	expect(explicit.count('users')).toBe(0)
 
 	// A generated username derived from a reserved email local part must not
 	// keep that token (`support-2` still contains `support`).
-	const generated = createAdminUserCreationTestDb()
 	const created = await adminCreateUserWithPasswordSetup({
-		db: generated.db,
+		db: createDb().db,
 		email: 'support@example.com',
 		username: null,
-		setupLinkOrigin: 'https://kody.example/admin/users',
+		setupLinkOrigin,
 	})
-	expect(created.username).not.toBe('support')
 	expect(created.username.includes('support')).toBe(false)
 	expect(getUsernameValidationError(created.username)).toBeNull()
 })

@@ -8,7 +8,7 @@ Public **packages** appear in that catalog. Visibility lives on the **repo
 record in D1** (default private), not `package.json#private`. Making a package
 public lists it on `/community` and `/@username/:name` with full source and
 fork. Public plain repos store the same visibility flag and inherit it on
-promote; they do not yet appear on `/community`. Package **runtime** uses
+promote; they do not appear on `/community`. Package **runtime** uses
 `published_commit`; pushing to a public default branch is world-readable at HEAD
 even before the next package publish.
 
@@ -18,8 +18,26 @@ checks pass. If checks fail, the fork stays inert until you adapt and publish.
 
 Public pages work without a Kody account: `/community` (searchable index),
 `/@username` (public catalog), and `/@username/:name` (detail). Forking, rating,
-and reporting require a signed-in MCP user. Anonymous git remotes are not
-offered.
+and reporting require a signed-in MCP user.
+
+### Clone a public package (read-only Git)
+
+Append `.git` to a public listing URL for a **read-only** Git smart HTTP remote:
+
+```bash
+git clone https://kody.codes/@kody/cloudflare.git
+```
+
+That route proxies to the package's Artifacts repo with a short-lived
+server-side read token. Clients never see Artifacts host URLs or credentials.
+The advertised refs pin the **published snapshot** (`published_commit`, else the
+listing `pinned_commit`) — not a mutable worktree tip that may be ahead of
+publish. Push (`git-receive-pack`) is rejected with HTTP 403. Private or
+unlisted packages 404 the same way the website does (no existence leak).
+
+Owner write remotes stay on `packageGetGitRemote` (signed-in, short-lived
+Artifacts credentials). The public `.git` URL is for anonymous clone, preview,
+and tools such as Celld import — not for authoring.
 
 Community discovery uses the MCP **`community`** domain. Catalog listings do
 **not** appear in the general MCP **`search`** tool.
@@ -96,6 +114,11 @@ package apps guide.
 `communityFork` copies **HEAD** into your account as an **inert** source:
 
 - `package.json` `name` is rewritten to your username scope (`@you/<leaf>`).
+  When you omit a name, the leaf is the listing leaf. If that leaf is already
+  taken by an unrelated package, Kody uses the next free leaf (`leaf-2`, then
+  `leaf-3`, …). Pass an explicit leaf (or `@owner/leaf`) to choose the name;
+  that path errors if the name is taken. Forking the same listing again errors
+  with the existing fork's identity instead of minting another leaf.
 - **No saved package row is created**, so nothing runs yet — no imports, jobs,
   subscriptions, or package app.
 
@@ -122,11 +145,12 @@ Your agent should:
 5. Rewrite the README **`## Intent`** section for your goals.
 6. Publish via `repoPublishSession`. Repo checks fail if cross-scope imports
    remain.
-7. Optionally call `communityForkAdopt` from an interactive MCP agent (with a
-   short `review_summary`) after a real source review, so the fork gets the same
+7. Optionally adopt the fork after a real source review, so it gets the same
    automatic secret read/use access as self-authored packages (see
-   [Secrets and host approval](./secrets-and-values.md)). Package apps, jobs,
-   webhooks, and other package runtimes cannot adopt.
+   [Secrets and host approval](./secrets-and-values.md)). Only you can adopt,
+   signed in on the package's **Settings** page (**Community fork** section).
+   `communityForkAdopt` returns that link; agents, `execute`, package apps,
+   jobs, webhooks, and other package runtimes cannot adopt.
 
 Only after publish does the package become a live saved package in your account.
 
@@ -144,16 +168,22 @@ outdated fork, compare origin HEAD with your package, port useful changes, keep
 your customizations, then publish with `repoPublishSession` and
 `absorbed_upstream_commit` so the behind-upstream banner clears.
 
+When the listing owner republishes with a new pinned commit, packages in your
+account can react through the `community.fork.upstream_updated` subscription
+topic. Use it to auto-rebase, or to ping you on Discord. See
+[Package subscriptions](../guides/package-subscriptions.md#communityforkupstream_updated).
+
 ## One-click install
 
 The listing detail page puts the install control beside the package name.
 Official `@kody/*` listings show a fork icon and install on the first click —
 they are first-party platform packages. Listings from another account use the
-same fork icon. The tooltip says the listing is from another account and to
-verify it before using; the first click arms **Confirm fork** and the second
-click starts the install and sends `acknowledged: true` on
-`POST /community/:listingId/install.json` (the endpoint responds `409` without
-that flag). Blur cancels the confirm. Logged-out visitors get the same icon as a
+same fork icon. The tooltip says “This was built by another user. Verify it
+before using. Click again to confirm fork.” The first click arms that control
+and the second click on the same control starts the install and sends
+`acknowledged: true` on `POST /community/:listingId/install.json` (the endpoint
+responds `409` without that flag). Clicking elsewhere, navigating, or leaving
+the control clears the armed state. Logged-out visitors get the same icon as a
 login link and sign in on the first click. While the fork runs, that slot shows
 a spinner whose tooltip names the current stage.
 
@@ -166,8 +196,9 @@ under the listing.
 Catalog cards show **Installed**, **Forked**, **Fork outdated**, and **Fork
 ahead**. The detail page shows **Fork ahead**. Install forks the listing into
 your account and, when the fork passes publish checks, publishes it as a live
-saved package. **Publishing activates the package right away** — declared jobs
-are scheduled.
+saved package. If the listing leaf is already taken by an unrelated package, the
+install uses the next free leaf. **Publishing activates the package right away**
+— declared jobs are scheduled.
 
 When checks fail — most commonly because the package imports code from the
 original author's scope (`kody:@originuser/...`) — nothing is published. The
@@ -259,7 +290,7 @@ Use reporting for spam, malware patterns, license violations, or other policy
 issues. Admins review reports on `/admin/community-reports`.
 
 Admins can issue **community bans** that block a user from publishing, forking,
-rating, or reporting community listings.
+rating, or reporting public packages.
 
 ## Capabilities
 
@@ -276,10 +307,12 @@ Use the MCP `community` domain:
   published first; optional `category` to browse one listing category)
 - `communityGet` — fetch one listing's metadata and aggregates (including owner
   profile linkage when the owner is public)
-- `communityFork` — copy HEAD into your account (inert until published)
-- `communityForkAdopt` — mark a reviewed fork as adopted, granting it
-  self-authored-like secret read/use access (see
-  [Secrets and host approval](./secrets-and-values.md))
+- `communityFork` — copy HEAD into your account (inert until published).
+  Omitting a name uses the listing leaf, or the next free `leaf-N` when that
+  leaf is already taken by an unrelated package.
+- `communityForkAdopt` — return the website link where you adopt a reviewed
+  fork, granting it self-authored-like secret read/use access (see
+  [Secrets and host approval](./secrets-and-values.md)); it never adopts
 - `communityRate` — rate a listing after forking
 - `communityReport` — report a listing (requires login)
 - `communitySetFeatured` — admin-only: feature or unfeature a listing

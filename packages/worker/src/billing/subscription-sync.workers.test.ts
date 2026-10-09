@@ -1,7 +1,5 @@
 import { env, runInDurableObject } from 'cloudflare:test'
 import { expect, test, vi } from 'vitest'
-import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createBillingLinkReference } from './billing-config.ts'
 import { StripeApiError } from './stripe-client.ts'
@@ -10,6 +8,11 @@ import {
 	linkStripeCustomerFromCheckoutSession,
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
+import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+
+const legacyStandardPrice = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
+const standardYearlyPrice = 'price_1U3sg6LAQpAnsYszqq9abwIY'
 
 function jsonResponse(body: unknown, status = 200) {
 	return new Response(JSON.stringify(body), {
@@ -18,42 +21,29 @@ function jsonResponse(body: unknown, status = 200) {
 	})
 }
 
-function createBillingEnv(
-	overrides: {
-		STRIPE_SECRET_KEY?: string
-		STRIPE_STANDARD_PRICE_ID?: string
-		STRIPE_STANDARD_YEARLY_PRICE_ID?: string
-		STRIPE_PRO_PRICE_ID?: string
-		STRIPE_PRO_YEARLY_PRICE_ID?: string
-		STRIPE_API_BASE_URL?: string
-		STRIPE_PLAN_REFRESH?: Env['STRIPE_PLAN_REFRESH']
-		DISCORD_BOT_TOKEN?: string
-		DISCORD_GUILD_ID?: string
-		DISCORD_MEMBER_ROLE_ID?: string
-		DISCORD_STANDARD_ROLE_ID?: string
-		DISCORD_PRO_ROLE_ID?: string
-	} = {},
-): Env {
+function createBillingEnv(overrides: Partial<Env> = {}): Env {
+	const testProPriceId: string = 'price_pro'
 	return {
 		...env,
 		STRIPE_SECRET_KEY: 'sk_test_secret',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
+		STRIPE_PRO_PRICE_ID: testProPriceId,
 		STRIPE_API_BASE_URL: 'https://stripe.mock',
 		...overrides,
-	}
+	} as Env
 }
 
-async function seedUser(input: {
-	email: string
+type SeedInput = {
 	plan?: 'free' | 'pro' | 'max'
 	stripeCustomerId?: string | null
 	stripePlan?: string | null
 	stripePriceId?: string | null
-	stripePlanRefreshedAt?: string | null
 	entitlementLadder?: 'public' | 'legacy'
-}) {
-	await ensureEntitlementTestSchema(env.APP_DB)
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+}
+
+async function seedUser(label: string, input: SeedInput = {}) {
+	await ensureCreditWalletTestSchema(env.APP_DB)
+	const email = `${label}-${crypto.randomUUID()}@example.com`
+	const stableUserId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id, plan,
@@ -63,7 +53,7 @@ async function seedUser(input: {
 	)
 		.bind(
 			`billing-${crypto.randomUUID().slice(0, 8)}`,
-			input.email,
+			email,
 			'test-password-hash',
 			new Date().toISOString(),
 			stableUserId,
@@ -71,82 +61,78 @@ async function seedUser(input: {
 			input.stripeCustomerId ?? null,
 			input.stripePlan ?? null,
 			input.stripePriceId ?? null,
-			input.stripePlanRefreshedAt ?? null,
+			null,
 			input.entitlementLadder ?? 'public',
 		)
 		.run()
 	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
-		.bind(input.email)
+		.bind(email)
 		.first<{ id: number }>()
-	if (!row) throw new Error(`Failed to seed user ${input.email}`)
+	if (!row) throw new Error(`Failed to seed user ${email}`)
 	return {
 		id: row.id,
-		email: input.email,
+		email,
 		stableUserId,
 		linkReference: await createBillingLinkReference(env, stableUserId),
 	}
 }
 
-async function readUserBilling(userId: number) {
-	return env.APP_DB.prepare(
-		`SELECT stripe_customer_id, stripe_plan, stripe_price_id,
-		        stripe_plan_refreshed_at
-		 FROM users WHERE id = ?`,
-	)
+function readUser(userId: number, columns: string) {
+	return env.APP_DB.prepare(`SELECT ${columns} FROM users WHERE id = ?`)
 		.bind(userId)
-		.first<{
-			stripe_customer_id: string | null
-			stripe_plan: string | null
-			stripe_price_id: string | null
-			stripe_plan_refreshed_at: string | null
-		}>()
+		.first()
+}
+
+function subscriptionList(id: string, status: string, priceId = 'price_pro') {
+	return {
+		data: [
+			{
+				id,
+				status,
+				cancel_at: null,
+				items: { data: [{ price: { id: priceId } }] },
+			},
+		],
+	}
+}
+
+function stubFetch(
+	handler: (
+		url: string,
+		init?: RequestInit,
+		request?: RequestInfo | URL,
+	) => Response,
+) {
+	const fetchStub = vi.fn(
+		async (request: RequestInfo | URL, init?: RequestInit) =>
+			handler(String(request), init, request),
+	)
+	vi.stubGlobal('fetch', fetchStub)
+	return Object.assign(fetchStub, {
+		[Symbol.dispose]: () => vi.unstubAllGlobals(),
+	})
 }
 
 function stubStripeFetch(input: {
 	checkout?: unknown
 	subscriptions?: unknown
-	checkoutStatus?: number
 	subscriptionsStatus?: number
 }) {
-	const fetchStub = vi.fn(async (request: RequestInfo | URL) => {
-		const url = String(request)
+	return stubFetch((url) => {
 		if (url.includes('/v1/checkout/sessions/')) {
-			return jsonResponse(
-				input.checkout ?? {
-					id: 'cs_test',
-					customer: 'cus_linked',
-					client_reference_id: null,
-				},
-				input.checkoutStatus ?? 200,
-			)
+			return jsonResponse(input.checkout)
 		}
 		if (url.includes('/v1/subscriptions')) {
 			return jsonResponse(
-				input.subscriptions ?? {
-					data: [
-						{
-							id: 'sub_1',
-							status: 'active',
-							cancel_at: null,
-							items: {
-								data: [{ price: { id: 'price_pro' } }],
-							},
-						},
-					],
-				},
+				input.subscriptions ?? subscriptionList('sub_1', 'active'),
 				input.subscriptionsStatus ?? 200,
 			)
 		}
 		return jsonResponse({ error: 'unexpected stripe path' }, 500)
 	})
-	vi.stubGlobal('fetch', fetchStub)
-	return fetchStub
 }
 
-async function expectBillingLinkError(
-	promise: Promise<unknown>,
-	code: BillingLinkError['code'],
-) {
+async function billingLinkErrorCode(promise: Promise<unknown>) {
 	const error = await promise.then(
 		() => null,
 		(thrown: unknown) => thrown,
@@ -154,29 +140,33 @@ async function expectBillingLinkError(
 	if (!(error instanceof BillingLinkError)) {
 		throw new Error('Expected BillingLinkError')
 	}
-	expect(error.code).toBe(code)
+	return error.code
+}
+
+async function refreshWith(
+	user: { id: number },
+	customerId: string,
+	subscriptions: unknown,
+) {
+	using _fetch = stubStripeFetch({ subscriptions })
+	await refreshStripePlanForUser({
+		env: createBillingEnv(),
+		userId: user.id,
+		customerId,
+	})
+	return readUser(user.id, 'stripe_plan, stripe_price_id, entitlement_ladder')
 }
 
 test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_plan', async () => {
-	const email = `link-happy-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email, plan: 'pro' })
+	const user = await seedUser('link-happy', { plan: 'pro' })
 	const now = new Date('2026-07-19T12:00:00.000Z')
-	stubStripeFetch({
+	using _fetch = stubStripeFetch({
 		checkout: {
 			id: 'cs_happy',
 			customer: 'cus_happy',
 			client_reference_id: user.linkReference,
 		},
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_happy',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
+		subscriptions: subscriptionList('sub_happy', 'active'),
 	})
 
 	const result = await linkStripeCustomerFromCheckoutSession({
@@ -187,18 +177,23 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 	})
 	expect(result).toEqual({
 		stripePlan: 'pro',
+		creditsEligible: true,
 		stripeInterval: 'month',
 		stripePriceId: 'price_pro',
 		cancelAt: null,
 		subscriptionStatus: 'active',
 	})
-
-	const row = await readUserBilling(user.id)
-	expect(row).toEqual({
+	expect(
+		await readUser(
+			user.id,
+			'stripe_customer_id, stripe_plan, stripe_price_id, stripe_plan_refreshed_at, stripe_credits_eligible',
+		),
+	).toEqual({
 		stripe_customer_id: 'cus_happy',
 		stripe_plan: 'pro',
 		stripe_price_id: 'price_pro',
 		stripe_plan_refreshed_at: now.toISOString(),
+		stripe_credits_eligible: 1,
 	})
 	const refreshAlarm = env.STRIPE_PLAN_REFRESH.get(
 		env.STRIPE_PLAN_REFRESH.idFromName(user.stableUserId),
@@ -208,14 +203,11 @@ test('linkStripeCustomerFromCheckoutSession links customer and refreshes stripe_
 			state.storage.getAlarm(),
 		),
 	).toBeTypeOf('number')
-
-	vi.unstubAllGlobals()
 })
 
 test('checkout linking surfaces Stripe failure when its retry alarm cannot be armed', async () => {
-	const email = `link-no-backstop-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email, plan: 'pro' })
-	stubStripeFetch({
+	const user = await seedUser('link-no-backstop', { plan: 'pro' })
+	using _fetch = stubStripeFetch({
 		checkout: {
 			id: 'cs_no_backstop',
 			customer: 'cus_no_backstop',
@@ -249,125 +241,79 @@ test('checkout linking surfaces Stripe failure when its retry alarm cannot be ar
 		'stripe_plan_refresh_schedule_failed',
 		expect.objectContaining({ userId: user.stableUserId }),
 	)
-
-	vi.unstubAllGlobals()
 })
 
 test('linkStripeCustomerFromCheckoutSession rejects unsafe checkout links without mutating users', async () => {
-	const billingEnv = createBillingEnv()
-
-	{
-		const email = `link-mismatch-${crypto.randomUUID()}@example.com`
-		const user = await seedUser({ email })
-		stubStripeFetch({
+	await seedUser('link-claimed', { stripeCustomerId: 'cus_already' })
+	const cases: Array<{
+		label: string
+		seed?: SeedInput
+		customer: string | null
+		clientReference?: string
+		code: BillingLinkError['code']
+		unchanged: Record<string, unknown>
+	}> = [
+		{
+			label: 'link-mismatch',
+			customer: 'cus_mismatch',
+			clientReference: 'someone-else',
+			code: 'client_reference_mismatch',
+			unchanged: { stripe_customer_id: null, stripe_plan: null },
+		},
+		{
+			label: 'link-missing-cus',
+			customer: null,
+			code: 'missing_customer',
+			unchanged: { stripe_customer_id: null, stripe_plan: null },
+		},
+		{
+			label: 'link-claimant',
+			customer: 'cus_already',
+			code: 'customer_already_linked',
+			unchanged: { stripe_customer_id: null, stripe_plan: null },
+		},
+		{
+			label: 'link-replace',
+			seed: { stripeCustomerId: 'cus_original', stripePlan: 'pro' },
+			customer: 'cus_other',
+			code: 'account_already_linked',
+			unchanged: { stripe_customer_id: 'cus_original', stripe_plan: 'pro' },
+		},
+	]
+	for (const {
+		label,
+		seed,
+		customer,
+		clientReference,
+		code,
+		unchanged,
+	} of cases) {
+		const user = await seedUser(label, seed)
+		const sessionId = `cs_${label}`
+		using _fetch = stubStripeFetch({
 			checkout: {
-				id: 'cs_mismatch',
-				customer: 'cus_mismatch',
-				client_reference_id: 'someone-else',
+				id: sessionId,
+				customer,
+				client_reference_id: clientReference ?? user.linkReference,
 			},
 		})
-
-		await expectBillingLinkError(
-			linkStripeCustomerFromCheckoutSession({
-				env: billingEnv,
-				user,
-				sessionId: 'cs_mismatch',
-			}),
-			'client_reference_mismatch',
+		expect(
+			await billingLinkErrorCode(
+				linkStripeCustomerFromCheckoutSession({
+					env: createBillingEnv(),
+					user,
+					sessionId,
+				}),
+			),
+		).toBe(code)
+		expect(await readUser(user.id, 'stripe_customer_id, stripe_plan')).toEqual(
+			unchanged,
 		)
-		expect(await readUserBilling(user.id)).toMatchObject({
-			stripe_customer_id: null,
-			stripe_plan: null,
-		})
-		vi.unstubAllGlobals()
-	}
-
-	{
-		const email = `link-missing-cus-${crypto.randomUUID()}@example.com`
-		const user = await seedUser({ email })
-		stubStripeFetch({
-			checkout: {
-				id: 'cs_no_customer',
-				customer: null,
-				client_reference_id: user.linkReference,
-			},
-		})
-
-		await expectBillingLinkError(
-			linkStripeCustomerFromCheckoutSession({
-				env: billingEnv,
-				user,
-				sessionId: 'cs_no_customer',
-			}),
-			'missing_customer',
-		)
-		vi.unstubAllGlobals()
-	}
-
-	{
-		const claimedEmail = `link-claimed-${crypto.randomUUID()}@example.com`
-		const claimantEmail = `link-claimant-${crypto.randomUUID()}@example.com`
-		await seedUser({
-			email: claimedEmail,
-			stripeCustomerId: 'cus_already',
-		})
-		const claimant = await seedUser({ email: claimantEmail })
-		stubStripeFetch({
-			checkout: {
-				id: 'cs_already',
-				customer: 'cus_already',
-				client_reference_id: claimant.linkReference,
-			},
-		})
-
-		await expectBillingLinkError(
-			linkStripeCustomerFromCheckoutSession({
-				env: billingEnv,
-				user: claimant,
-				sessionId: 'cs_already',
-			}),
-			'customer_already_linked',
-		)
-		expect(await readUserBilling(claimant.id)).toMatchObject({
-			stripe_customer_id: null,
-		})
-		vi.unstubAllGlobals()
-	}
-
-	{
-		const email = `link-replace-${crypto.randomUUID()}@example.com`
-		const user = await seedUser({
-			email,
-			stripeCustomerId: 'cus_original',
-			stripePlan: 'pro',
-		})
-		stubStripeFetch({
-			checkout: {
-				id: 'cs_replacement',
-				customer: 'cus_other',
-				client_reference_id: user.linkReference,
-			},
-		})
-
-		await expectBillingLinkError(
-			linkStripeCustomerFromCheckoutSession({
-				env: billingEnv,
-				user,
-				sessionId: 'cs_replacement',
-			}),
-			'account_already_linked',
-		)
-		expect(await readUserBilling(user.id)).toMatchObject({
-			stripe_customer_id: 'cus_original',
-			stripe_plan: 'pro',
-		})
-		vi.unstubAllGlobals()
 	}
 })
 
 test('checkout linking assigns the Discord Pro role when Discord is connected', async () => {
-	const email = `link-discord-pro-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({ email, plan: 'free' })
+	const user = await seedUser('link-discord-pro', { plan: 'free' })
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS oauth_connections (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -387,317 +333,163 @@ test('checkout linking assigns the Discord Pro role when Discord is connected', 
 		.run()
 
 	const discordCalls: Array<{ url: string; method: string }> = []
-	const fetchStub = vi.fn(
-		async (request: RequestInfo | URL, init?: RequestInit) => {
-			const url = String(request)
-			const method =
-				init?.method ?? (request instanceof Request ? request.method : 'GET')
-			if (url.includes('discord.com/api/v10/guilds/')) {
-				discordCalls.push({ url, method })
-				return new Response(null, { status: 204 })
-			}
-			if (url.includes('/v1/checkout/sessions/')) {
-				return jsonResponse({
-					id: 'cs_discord_pro',
-					customer: 'cus_discord_pro',
-					client_reference_id: user.linkReference,
-				})
-			}
-			if (url.includes('/v1/subscriptions')) {
-				return jsonResponse({
-					data: [
-						{
-							id: 'sub_discord_pro',
-							status: 'active',
-							cancel_at: null,
-							items: { data: [{ price: { id: 'price_pro' } }] },
-						},
-					],
-				})
-			}
-			return jsonResponse({ error: 'unexpected path' }, 500)
-		},
+	using _fetch = stubFetch((url, init, request) => {
+		if (url.includes('discord.com/api/v10/guilds/')) {
+			discordCalls.push({
+				url,
+				method:
+					init?.method ?? (request instanceof Request ? request.method : 'GET'),
+			})
+			return new Response(null, { status: 204 })
+		}
+		if (url.includes('/v1/checkout/sessions/')) {
+			return jsonResponse({
+				id: 'cs_discord_pro',
+				customer: 'cus_discord_pro',
+				client_reference_id: user.linkReference,
+			})
+		}
+		if (url.includes('/v1/subscriptions')) {
+			return jsonResponse(subscriptionList('sub_discord_pro', 'active'))
+		}
+		return jsonResponse({ error: 'unexpected path' }, 500)
+	})
+
+	const result = await linkStripeCustomerFromCheckoutSession({
+		env: createBillingEnv({
+			DISCORD_BOT_TOKEN: 'bot-token-test',
+			DISCORD_GUILD_ID: '111111111111111111',
+			DISCORD_MEMBER_ROLE_ID: '222222222222222222',
+			DISCORD_STANDARD_ROLE_ID: '444444444444444444',
+			DISCORD_PRO_ROLE_ID: '555555555555555555',
+		}),
+		user,
+		sessionId: 'cs_discord_pro',
+	})
+	expect(result.stripePlan).toBe('pro')
+	await vi.waitFor(() => {
+		expect(discordCalls).toHaveLength(3)
+	})
+	const roleUrl = (roleId: string) =>
+		`https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/${roleId}`
+	expect(discordCalls).toEqual(
+		expect.arrayContaining([
+			{ url: roleUrl('222222222222222222'), method: 'PUT' },
+			{ url: roleUrl('444444444444444444'), method: 'DELETE' },
+			{ url: roleUrl('555555555555555555'), method: 'PUT' },
+		]),
 	)
-	vi.stubGlobal('fetch', fetchStub)
-	try {
-		const result = await linkStripeCustomerFromCheckoutSession({
-			env: createBillingEnv({
-				DISCORD_BOT_TOKEN: 'bot-token-test',
-				DISCORD_GUILD_ID: '111111111111111111',
-				DISCORD_MEMBER_ROLE_ID: '222222222222222222',
-				DISCORD_STANDARD_ROLE_ID: '444444444444444444',
-				DISCORD_PRO_ROLE_ID: '555555555555555555',
-			}),
-			user,
-			sessionId: 'cs_discord_pro',
-		})
-		expect(result.stripePlan).toBe('pro')
-		await vi.waitFor(() => {
-			expect(discordCalls).toHaveLength(3)
-		})
-		expect(discordCalls).toEqual(
-			expect.arrayContaining([
-				{
-					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/222222222222222222',
-					method: 'PUT',
-				},
-				{
-					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/444444444444444444',
-					method: 'DELETE',
-				},
-				{
-					url: 'https://discord.com/api/v10/guilds/111111111111111111/members/333333333333333333/roles/555555555555555555',
-					method: 'PUT',
-				},
-			]),
-		)
-	} finally {
-		vi.unstubAllGlobals()
-	}
 })
 
+const legacyStandard: SeedInput = {
+	plan: 'free',
+	stripePlan: 'standard',
+	stripePriceId: legacyStandardPrice,
+	entitlementLadder: 'legacy',
+}
+
 test('refreshStripePlanForUser keeps legacy on same-plan renew and drops it after cancel', async () => {
-	const email = `legacy-refresh-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({
-		email,
-		plan: 'free',
+	const user = await seedUser('legacy-refresh', {
+		...legacyStandard,
 		stripeCustomerId: 'cus_legacy_refresh',
-		stripePlan: 'standard',
-		stripePriceId: 'price_standard',
-		entitlementLadder: 'legacy',
-	})
-	const billingEnv = createBillingEnv({
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
 	})
 
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_still_active',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
-				},
-			],
-		},
-	})
-	await refreshStripePlanForUser({
-		env: billingEnv,
-		userId: user.id,
-		customerId: 'cus_legacy_refresh',
-	})
 	expect(
-		await env.APP_DB.prepare(
-			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
-		)
-			.bind(user.id)
-			.first(),
+		await refreshWith(
+			user,
+			'cus_legacy_refresh',
+			subscriptionList('sub_still_active', 'active', legacyStandardPrice),
+		),
 	).toEqual({
 		stripe_plan: 'standard',
-		stripe_price_id: 'price_standard',
+		stripe_price_id: legacyStandardPrice,
 		entitlement_ladder: 'legacy',
 	})
-	vi.unstubAllGlobals()
+	expect(await readUser(user.id, 'stripe_credits_eligible')).toEqual({
+		stripe_credits_eligible: 0,
+	})
 
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_canceled',
-					status: 'canceled',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
-				},
-			],
-		},
-	})
-	await refreshStripePlanForUser({
-		env: billingEnv,
-		userId: user.id,
-		customerId: 'cus_legacy_refresh',
-	})
 	expect(
-		await env.APP_DB.prepare(
-			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
-		)
-			.bind(user.id)
-			.first(),
+		await refreshWith(
+			user,
+			'cus_legacy_refresh',
+			subscriptionList('sub_canceled', 'canceled', legacyStandardPrice),
+		),
 	).toEqual({
 		stripe_plan: null,
 		stripe_price_id: null,
 		entitlement_ladder: 'public',
 	})
-	vi.unstubAllGlobals()
 })
 
 test('refreshStripePlanForUser drops legacy when the Stripe plan or price changes', async () => {
-	const billingEnv = createBillingEnv({
-		STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		STRIPE_STANDARD_YEARLY_PRICE_ID: 'price_standard_yearly',
-		STRIPE_PRO_PRICE_ID: 'price_pro',
-	})
-
-	{
-		const email = `legacy-plan-change-${crypto.randomUUID()}@example.com`
-		const user = await seedUser({
-			email,
-			plan: 'free',
-			stripeCustomerId: 'cus_legacy_plan_change',
-			stripePlan: 'standard',
-			stripePriceId: 'price_standard',
-			entitlementLadder: 'legacy',
-		})
-		stubStripeFetch({
-			subscriptions: {
-				data: [
-					{
-						id: 'sub_upgraded',
-						status: 'active',
-						cancel_at: null,
-						items: { data: [{ price: { id: 'price_pro' } }] },
-					},
-				],
+	const cases: Array<[string, string, Record<string, unknown>]> = [
+		[
+			'legacy-plan-change',
+			'price_pro',
+			{
+				stripe_plan: 'pro',
+				stripe_price_id: 'price_pro',
+				entitlement_ladder: 'public',
 			},
-		})
-		await refreshStripePlanForUser({
-			env: billingEnv,
-			userId: user.id,
-			customerId: 'cus_legacy_plan_change',
+		],
+		[
+			'legacy-interval-change',
+			standardYearlyPrice,
+			{
+				stripe_plan: 'standard',
+				stripe_price_id: standardYearlyPrice,
+				entitlement_ladder: 'public',
+			},
+		],
+	]
+	for (const [label, priceId, expected] of cases) {
+		const customerId = `cus_${label}`
+		const user = await seedUser(label, {
+			...legacyStandard,
+			stripeCustomerId: customerId,
 		})
 		expect(
-			await env.APP_DB.prepare(
-				`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
-			)
-				.bind(user.id)
-				.first(),
-		).toEqual({
-			stripe_plan: 'pro',
-			stripe_price_id: 'price_pro',
-			entitlement_ladder: 'public',
-		})
-		vi.unstubAllGlobals()
-	}
-
-	{
-		const email = `legacy-interval-change-${crypto.randomUUID()}@example.com`
-		const user = await seedUser({
-			email,
-			plan: 'free',
-			stripeCustomerId: 'cus_legacy_interval_change',
-			stripePlan: 'standard',
-			stripePriceId: 'price_standard',
-			entitlementLadder: 'legacy',
-		})
-		stubStripeFetch({
-			subscriptions: {
-				data: [
-					{
-						id: 'sub_yearly',
-						status: 'active',
-						cancel_at: null,
-						items: { data: [{ price: { id: 'price_standard_yearly' } }] },
-					},
-				],
-			},
-		})
-		await refreshStripePlanForUser({
-			env: billingEnv,
-			userId: user.id,
-			customerId: 'cus_legacy_interval_change',
-		})
-		expect(
-			await env.APP_DB.prepare(
-				`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
-			)
-				.bind(user.id)
-				.first(),
-		).toEqual({
-			stripe_plan: 'standard',
-			stripe_price_id: 'price_standard_yearly',
-			entitlement_ladder: 'public',
-		})
-		vi.unstubAllGlobals()
+			await refreshWith(
+				user,
+				customerId,
+				subscriptionList(`sub_${label}`, 'active', priceId),
+			),
+		).toEqual(expected)
 	}
 })
 
 test('refreshStripePlanForUser keeps legacy on the first price observation after deploy', async () => {
-	const email = `legacy-first-price-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({
-		email,
-		plan: 'free',
+	const user = await seedUser('legacy-first-price', {
+		...legacyStandard,
 		stripeCustomerId: 'cus_legacy_first_price',
-		stripePlan: 'standard',
 		stripePriceId: null,
-		entitlementLadder: 'legacy',
-	})
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_first_price',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_standard' } }] },
-				},
-			],
-		},
-	})
-	await refreshStripePlanForUser({
-		env: createBillingEnv({
-			STRIPE_STANDARD_PRICE_ID: 'price_standard',
-		}),
-		userId: user.id,
-		customerId: 'cus_legacy_first_price',
 	})
 	expect(
-		await env.APP_DB.prepare(
-			`SELECT stripe_plan, stripe_price_id, entitlement_ladder FROM users WHERE id = ?`,
-		)
-			.bind(user.id)
-			.first(),
+		await refreshWith(
+			user,
+			'cus_legacy_first_price',
+			subscriptionList('sub_first_price', 'active', legacyStandardPrice),
+		),
 	).toEqual({
 		stripe_plan: 'standard',
-		stripe_price_id: 'price_standard',
+		stripe_price_id: legacyStandardPrice,
 		entitlement_ladder: 'legacy',
 	})
-	vi.unstubAllGlobals()
 })
 
 test('refreshStripePlanForUser does not re-flag a public account that resubscribes', async () => {
-	const email = `resub-${crypto.randomUUID()}@example.com`
-	const user = await seedUser({
-		email,
+	const user = await seedUser('resub', {
 		plan: 'free',
 		stripeCustomerId: 'cus_resub',
 		stripePlan: null,
 		entitlementLadder: 'public',
 	})
-	stubStripeFetch({
-		subscriptions: {
-			data: [
-				{
-					id: 'sub_resub',
-					status: 'active',
-					cancel_at: null,
-					items: { data: [{ price: { id: 'price_pro' } }] },
-				},
-			],
-		},
-	})
-	await refreshStripePlanForUser({
-		env: createBillingEnv(),
-		userId: user.id,
-		customerId: 'cus_resub',
-	})
 	expect(
-		await env.APP_DB.prepare(
-			`SELECT stripe_plan, entitlement_ladder FROM users WHERE id = ?`,
-		)
-			.bind(user.id)
-			.first(),
-	).toEqual({ stripe_plan: 'pro', entitlement_ladder: 'public' })
-	vi.unstubAllGlobals()
+		await refreshWith(
+			user,
+			'cus_resub',
+			subscriptionList('sub_resub', 'active'),
+		),
+	).toMatchObject({ stripe_plan: 'pro', entitlement_ladder: 'public' })
 })

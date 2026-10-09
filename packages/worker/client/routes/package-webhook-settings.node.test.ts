@@ -1,6 +1,6 @@
-import { type Handle } from 'remix/ui'
-import { renderToString } from 'remix/ui/server'
-import { afterEach, expect, test, vi } from 'vitest'
+import { type Handle } from 'remix/component'
+import { renderToString } from 'remix/component/server'
+import { expect, test, vi } from 'vitest'
 import { createDoubleCheck } from '#client/double-check.ts'
 import { renderPackageWebhookCard } from '#client/routes/package-webhook-card.tsx'
 import { createPackageWebhooksController } from '#client/routes/package-webhook-settings.tsx'
@@ -26,6 +26,7 @@ const listCommands: PackageWebhookListItem = {
 	rateLimitPerMinute: 600,
 	verification: null,
 	replay: null,
+	challenge: null,
 	minted: false,
 	handle: null,
 	urlHost: null,
@@ -37,17 +38,11 @@ const listCommands: PackageWebhookListItem = {
 }
 
 const run: PackageWebhookListItem = {
+	...listCommands,
 	id: 'raycast/run',
-	packageId: 'pkg-2',
-	packageKodyId: 'raycast',
-	packageName: '@jane/raycast',
 	name: 'run',
 	exportName: './run',
 	description: null,
-	responseMode: 'sync',
-	inputMode: 'params',
-	rateLimitPerMinute: 600,
-	verification: null,
 	replay: { deliveryIdHeader: 'X-Delivery-Id' },
 	minted: true,
 	handle: 'whh_11111111-1111-1111-1111-111111111111',
@@ -56,7 +51,6 @@ const run: PackageWebhookListItem = {
 	urlRecoverable: true,
 	createdAt: '2026-09-01T10:00:00.000Z',
 	rotatedAt: '2026-09-05T10:00:00.000Z',
-	previousUrlActiveUntil: null,
 }
 
 const secretUrl =
@@ -68,34 +62,20 @@ function listPayload(
 	return { ok: true, username: 'jane', kodyId: 'raycast', webhooks }
 }
 
-function createStubHandle() {
-	let updates = 0
-	const handle = {
-		update() {
-			updates += 1
-			return Promise.resolve(new AbortController().signal)
-		},
-	} as unknown as Handle
-	return {
-		handle,
-		get updates() {
-			return updates
-		},
-	}
-}
-
-const originalFetch = globalThis.fetch
-afterEach(() => {
-	globalThis.fetch = originalFetch
-})
-
-function stubFetch(
-	respond: (input: { url: string; method: string; body: unknown }) => {
-		status: number
-		body: unknown
+const stubHandle = {
+	update() {
+		return Promise.resolve(new AbortController().signal)
 	},
+} as unknown as Handle
+
+type FetchCall = { url: string; method: string; body: unknown }
+
+/** Stubs fetch for one controller; dispose restores the real fetch. */
+function createControllerWithFetch(
+	respond: (input: FetchCall) => { status: number; body: unknown },
 ) {
-	const calls: Array<{ url: string; method: string; body: unknown }> = []
+	const originalFetch = globalThis.fetch
+	const calls: Array<FetchCall> = []
 	globalThis.fetch = vi.fn(
 		async (input: RequestInfo | URL, init?: RequestInit) => {
 			const url = typeof input === 'string' ? input : input.toString()
@@ -113,12 +93,33 @@ function stubFetch(
 			})
 		},
 	) as typeof fetch
-	return calls
+	const controller = createPackageWebhooksController(stubHandle)
+	return {
+		calls,
+		controller,
+		render: (target = ref) => renderToString(controller.render(target)),
+		[Symbol.dispose]() {
+			globalThis.fetch = originalFetch
+		},
+	}
 }
+
+const renderCard = (webhook: PackageWebhookListItem) =>
+	renderToString(
+		renderPackageWebhookCard({
+			webhook,
+			revealedUrl: null,
+			isMutating: false,
+			rotateCheck: createDoubleCheck(stubHandle),
+			disableCheck: createDoubleCheck(stubHandle),
+			onIntent: () => {},
+			onHideUrl: () => {},
+		}),
+	)
 
 test('the settings section loads one package’s webhooks, then mints, reveals, and hides a URL without ever rendering it from the list payload', async () => {
 	let listCommandsState = listCommands
-	const calls = stubFetch(({ url, method, body }) => {
+	using harness = createControllerWithFetch(({ url, method, body }) => {
 		if (method === 'GET') {
 			return {
 				status: 200,
@@ -164,12 +165,11 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		}
 		return { status: 400, body: { ok: false, error: `unexpected ${intent}` } }
 	})
-	const { handle } = createStubHandle()
-	const controller = createPackageWebhooksController(handle)
+	const { calls, controller, render } = harness
 
 	// Before the load resolves the section announces its state and stays a
 	// stable hash target for the account index.
-	const loadingHtml = await renderToString(controller.render(ref))
+	const loadingHtml = await render()
 	expect(loadingHtml).toContain('id="webhooks"')
 	expect(loadingHtml).toContain('data-testid="package-webhook-settings"')
 	expect(loadingHtml).toContain('aria-busy="true"')
@@ -181,7 +181,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 	await controller.ensureLoaded(ref)
 	expect(calls).toHaveLength(1)
 
-	const readyHtml = await renderToString(controller.render(ref))
+	const readyHtml = await render()
 	expect(readyHtml).toContain('2 declared · 1 minted')
 	expect(readyHtml).toContain('id="webhook-list-commands"')
 	expect(readyHtml).toContain('id="webhook-run"')
@@ -204,7 +204,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		method: 'POST',
 		body: { intent: 'mint', webhookName: 'list-commands' },
 	})
-	const mintedHtml = await renderToString(controller.render(ref))
+	const mintedHtml = await render()
 	expect(mintedHtml).toContain('2 declared · 2 minted')
 	expect(mintedHtml).toContain('Webhook URL minted. Copy it now')
 	expect(mintedHtml).toContain(secretUrl)
@@ -221,7 +221,7 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 
 	// Hide drops the URL from memory; the row stays minted.
 	controller.hideUrl(listCommands)
-	const hiddenHtml = await renderToString(controller.render(ref))
+	const hiddenHtml = await render()
 	expect(hiddenHtml).not.toContain(secretUrl)
 	expect(hiddenHtml).toContain(
 		'aria-label="Reveal URL for raycast/list-commands"',
@@ -234,17 +234,15 @@ test('the settings section loads one package’s webhooks, then mints, reveals, 
 		intent: 'reveal',
 		webhookName: 'list-commands',
 	})
-	expect(await renderToString(controller.render(ref))).toContain(secretUrl)
+	expect(await render()).toContain(secretUrl)
 	await controller.ensureLoaded({ username: 'jane', kodyId: 'other' })
-	const otherHtml = await renderToString(
-		controller.render({ username: 'jane', kodyId: 'other' }),
-	)
+	const otherHtml = await render({ username: 'jane', kodyId: 'other' })
 	expect(otherHtml).not.toContain(secretUrl)
 	expect(otherHtml).not.toContain('id="webhook-list-commands"')
 })
 
 test('the settings section reports a failed intent and keeps the rows', async () => {
-	stubFetch(({ method }) =>
+	using harness = createControllerWithFetch(({ method }) =>
 		method === 'GET'
 			? { status: 200, body: listPayload([run]) }
 			: {
@@ -256,64 +254,52 @@ test('the settings section reports a failed intent and keeps the rows', async ()
 					},
 				},
 	)
-	const { handle } = createStubHandle()
-	const controller = createPackageWebhooksController(handle)
+	const { controller, render } = harness
 	await controller.ensureLoaded(ref)
 	await controller.runIntent(ref, run, 'mint')
-	const html = await renderToString(controller.render(ref))
+	const html = await render()
 	expect(html).toContain('role="alert"')
 	expect(html).toContain('Rotate it to issue a new one.')
 	expect(html).toContain('id="webhook-run"')
 })
 
 test('a failed load reports the error once and does not refetch on the re-render it triggers', async () => {
-	const calls = stubFetch(() => ({
+	using harness = createControllerWithFetch(() => ({
 		status: 500,
 		body: { ok: false, error: 'boom' },
 	}))
-	const { handle } = createStubHandle()
-	const controller = createPackageWebhooksController(handle)
+	const { calls, controller, render } = harness
 	await controller.ensureLoaded(ref)
 	// The settings route queues ensureLoaded on every render, including the
 	// one the failure's update() causes; that pass must be a no-op.
 	await controller.ensureLoaded(ref)
 	await controller.ensureLoaded(ref)
 	expect(calls).toHaveLength(1)
-	const html = await renderToString(controller.render(ref))
+	const html = await render()
 	expect(html).toContain('role="alert"')
 	expect(html).toContain('Unable to load webhooks.')
 	expect(html).not.toContain('Loading webhooks…')
 })
 
 test('the settings section shows the empty state for a package without webhooks', async () => {
-	stubFetch(() => ({ status: 200, body: listPayload([]) }))
-	const { handle } = createStubHandle()
-	const controller = createPackageWebhooksController(handle)
+	using harness = createControllerWithFetch(() => ({
+		status: 200,
+		body: listPayload([]),
+	}))
+	const { controller, render } = harness
 	await controller.ensureLoaded(ref)
-	const html = await renderToString(controller.render(ref))
+	const html = await render()
 	expect(html).toContain('data-testid="package-webhook-settings-empty"')
 	expect(html).toContain('declares no webhooks yet')
 	expect(html).not.toContain('package-webhook-card')
 })
 
 test('a webhook card points legacy mints at Rotate instead of Reveal and offers Enable when disabled', async () => {
-	const { handle } = createStubHandle()
-	const legacy: PackageWebhookListItem = {
+	const html = await renderCard({
 		...run,
 		urlRecoverable: false,
 		enabled: false,
-	}
-	const html = await renderToString(
-		renderPackageWebhookCard({
-			webhook: legacy,
-			revealedUrl: null,
-			isMutating: false,
-			rotateCheck: createDoubleCheck(handle),
-			disableCheck: createDoubleCheck(handle),
-			onIntent: () => {},
-			onHideUrl: () => {},
-		}),
-	)
+	})
 	expect(html).not.toContain('data-testid="package-webhook-reveal"')
 	expect(html).toContain('aria-label="Enable raycast/run"')
 	expect(html).toContain('>Disabled<')
@@ -323,42 +309,14 @@ test('a webhook card points legacy mints at Rotate instead of Reveal and offers 
 })
 
 test('a webhook card shows previous URL overlap until the grace timestamp', async () => {
-	const { handle } = createStubHandle()
 	const until = '2026-09-13T15:04:05.000Z'
-	const overlapping: PackageWebhookListItem = {
-		...run,
-		previousUrlActiveUntil: until,
-	}
-	const html = await renderToString(
-		renderPackageWebhookCard({
-			webhook: overlapping,
-			revealedUrl: null,
-			isMutating: false,
-			rotateCheck: createDoubleCheck(handle),
-			disableCheck: createDoubleCheck(handle),
-			onIntent: () => {},
-			onHideUrl: () => {},
-		}),
-	)
+	const overlapping = { ...run, previousUrlActiveUntil: until }
+	const html = await renderCard(overlapping)
 	expect(html).toContain('Previous URL')
 	expect(html).toContain('active until')
 	expect(html).toContain(new Date(until).toLocaleString())
 
-	const disabledOverlap: PackageWebhookListItem = {
-		...overlapping,
-		enabled: false,
-	}
-	const disabledHtml = await renderToString(
-		renderPackageWebhookCard({
-			webhook: disabledOverlap,
-			revealedUrl: null,
-			isMutating: false,
-			rotateCheck: createDoubleCheck(handle),
-			disableCheck: createDoubleCheck(handle),
-			onIntent: () => {},
-			onHideUrl: () => {},
-		}),
-	)
+	const disabledHtml = await renderCard({ ...overlapping, enabled: false })
 	expect(disabledHtml).not.toContain('Previous URL')
 	expect(disabledHtml).toContain('>Disabled<')
 })

@@ -1,9 +1,10 @@
 import { expect, test } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import { classifyExecuteThinGlue } from '#worker/usage/execute-thin-glue.ts'
 import {
-	executeInvokeUnsupportedSpecifierMessage,
 	parseExecuteInvokeSpecifier,
 	resolveExecuteInvokeCode,
+	resolveExecuteModule,
 	resolveExecuteModuleSource,
 } from './execute-invoke.ts'
 
@@ -34,20 +35,18 @@ test('parseExecuteInvokeSpecifier accepts kody:@ and hash forms and rejects URLs
 	)
 
 	expect(() => parseExecuteInvokeSpecifier('https://example.com/pkg')).toThrow(
-		executeInvokeUnsupportedSpecifierMessage,
+		McpCallerError,
 	)
 	expect(() => parseExecuteInvokeSpecifier('github.com/acme/pkg')).toThrow(
-		executeInvokeUnsupportedSpecifierMessage,
+		McpCallerError,
 	)
 	expect(() => parseExecuteInvokeSpecifier('kody:runtime')).toThrow(
-		executeInvokeUnsupportedSpecifierMessage,
+		McpCallerError,
 	)
 	expect(() => parseExecuteInvokeSpecifier('kody:@acme')).toThrow(
-		executeInvokeUnsupportedSpecifierMessage,
+		McpCallerError,
 	)
-	expect(() => parseExecuteInvokeSpecifier('')).toThrow(
-		executeInvokeUnsupportedSpecifierMessage,
-	)
+	expect(() => parseExecuteInvokeSpecifier('')).toThrow(McpCallerError)
 })
 
 test('invoke codegen is the same thin passthrough a careful agent writes', () => {
@@ -87,4 +86,26 @@ test('resolveExecuteModuleSource enforces flag gating and mutual exclusion', () 
 			invokeEnabled: true,
 		}),
 	).toBe(handwrittenThinPassthrough)
+})
+
+test('resolveExecuteModule attributes invoke vs code', () => {
+	expect(
+		resolveExecuteModule({
+			code: 'export default async function main() { return 1 }',
+			invokeEnabled: true,
+		}),
+	).toEqual({
+		code: 'export default async function main() { return 1 }',
+		entry: 'code',
+	})
+	expect(
+		resolveExecuteModule({
+			invoke: '@acme/github#listRepos',
+			invokeEnabled: true,
+		}),
+	).toEqual({
+		code: handwrittenThinPassthrough,
+		entry: 'invoke',
+		invoke: 'kody:@acme/github/listRepos',
+	})
 })

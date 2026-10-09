@@ -43,18 +43,20 @@ function createConfig(
 	}
 }
 
+const emptyAllowlist = {
+	version: 1,
+	deletions: [],
+} satisfies DurableObjectDeletionAllowlist
+
 test('Durable Object guard rejects unreviewed deletion and accepts its exact allowlist entry', () => {
-	const emptyAllowlist = {
-		version: 1,
-		deletions: [],
-	} satisfies DurableObjectDeletionAllowlist
-	const unreviewedErrors = checkDurableObjectConfig(
-		configPath,
-		createConfig(['Mailbox']),
-		baseline,
-		emptyAllowlist,
-	)
-	expect(unreviewedErrors).toEqual([
+	expect(
+		checkDurableObjectConfig(
+			configPath,
+			createConfig(['Mailbox']),
+			baseline,
+			emptyAllowlist,
+		),
+	).toEqual([
 		expect.stringContaining(
 			'destructive deletion v2 [Mailbox] is not an exact entry',
 		),
@@ -72,7 +74,6 @@ test('Durable Object guard rejects unreviewed deletion and accepts its exact all
 			reviewedAllowlist,
 		),
 	).toEqual([])
-
 	expect(
 		checkDurableObjectConfig(
 			configPath,
@@ -84,71 +85,56 @@ test('Durable Object guard rejects unreviewed deletion and accepts its exact all
 })
 
 test('Durable Object guard protects migration tags and bound classes', () => {
-	const allowlist = {
-		version: 1,
-		deletions: [],
-	} satisfies DurableObjectDeletionAllowlist
-	const renamedMigration = createConfig(undefined)
-	renamedMigration.migrations[0] = {
-		tag: 'renamed-v1',
-		new_sqlite_classes: ['Mailbox'],
+	type Config = ReturnType<typeof createConfig>
+	const cases: Array<[(config: Config) => void, Array<string>]> = [
+		[
+			(config) => {
+				config.migrations[0] = {
+					tag: 'renamed-v1',
+					new_sqlite_classes: ['Mailbox'],
+				}
+			},
+			[
+				'was removed, renamed, or changed',
+				'new_sqlite_classes migration "renamed-v1" at migrations is not recorded',
+			],
+		],
+		[
+			(config) => {
+				config.env.production.durable_objects.bindings = []
+			},
+			['protected Durable Object class "Mailbox" was removed'],
+		],
+		[
+			(config) => {
+				config.env.production.durable_objects.bindings[0] = {
+					name: 'RENAMED_MAILBOX',
+					class_name: 'Mailbox',
+				}
+			},
+			['binding identities'],
+		],
+		[
+			(config) => {
+				Object.assign(config.env.production.durable_objects.bindings[0] ?? {}, {
+					script_name: 'external-worker',
+					environment: 'production',
+				})
+			},
+			['binding identities'],
+		],
+	]
+	for (const [mutate, expected] of cases) {
+		const config = createConfig(undefined)
+		mutate(config)
+		expect(
+			checkDurableObjectConfig(configPath, config, baseline, emptyAllowlist),
+		).toEqual(expected.map((message) => expect.stringContaining(message)))
 	}
-	expect(
-		checkDurableObjectConfig(configPath, renamedMigration, baseline, allowlist),
-	).toEqual([
-		expect.stringContaining('was removed, renamed, or changed'),
-		expect.stringContaining(
-			'new_sqlite_classes migration "renamed-v1" at migrations is not recorded',
-		),
-	])
-
-	const removedBinding = createConfig(undefined)
-	removedBinding.env.production.durable_objects.bindings = []
-	expect(
-		checkDurableObjectConfig(configPath, removedBinding, baseline, allowlist),
-	).toEqual([
-		expect.stringContaining(
-			'protected Durable Object class "Mailbox" was removed',
-		),
-	])
-
-	const renamedBinding = createConfig(undefined)
-	renamedBinding.env.production.durable_objects.bindings[0] = {
-		name: 'RENAMED_MAILBOX',
-		class_name: 'Mailbox',
-	}
-	expect(
-		checkDurableObjectConfig(configPath, renamedBinding, baseline, allowlist),
-	).toEqual([expect.stringContaining('binding identities')])
-
-	const retargetedBinding = createConfig(undefined)
-	Object.assign(
-		retargetedBinding.env.production.durable_objects.bindings[0] ?? {},
-		{
-			script_name: 'external-worker',
-			environment: 'production',
-		},
-	)
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			retargetedBinding,
-			baseline,
-			allowlist,
-		),
-	).toEqual([expect.stringContaining('binding identities')])
 })
 
 test('Durable Object guard protects transferred_classes migrations', () => {
-	const allowlist = {
-		version: 1,
-		deletions: [],
-	} satisfies DurableObjectDeletionAllowlist
-	const transfer = {
-		from: 'RunLog',
-		from_script: 'kody',
-		to: 'RunLog',
-	}
+	const transfer = { from: 'RunLog', from_script: 'kody', to: 'RunLog' }
 	const transferBaseline = {
 		path: configPath,
 		protected_migrations: [],
@@ -157,48 +143,32 @@ test('Durable Object guard protects transferred_classes migrations', () => {
 		],
 		protected_binding_sets: [],
 	} satisfies DurableObjectBaseline['configs'][number]
+	const check = (migrations: Array<unknown>) =>
+		checkDurableObjectConfig(
+			configPath,
+			{ migrations },
+			transferBaseline,
+			emptyAllowlist,
+		)
 
-	const matching = {
-		migrations: [{ tag: 'v1', transferred_classes: [transfer] }],
-	}
+	expect(check([{ tag: 'v1', transferred_classes: [transfer] }])).toEqual([])
 	expect(
-		checkDurableObjectConfig(configPath, matching, transferBaseline, allowlist),
-	).toEqual([])
-
-	const retargeted = {
-		migrations: [
+		check([
 			{
 				tag: 'v1',
 				transferred_classes: [{ ...transfer, from_script: 'other-worker' }],
 			},
-		],
-	}
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			retargeted,
-			transferBaseline,
-			allowlist,
-		),
+		]),
 	).toEqual([
 		expect.stringContaining(
 			'protected transferred_classes migration "v1" at migrations was removed, renamed, or changed',
 		),
 	])
-
-	const unrecorded = {
-		migrations: [
+	expect(
+		check([
 			{ tag: 'v1', transferred_classes: [transfer] },
 			{ tag: 'v2', transferred_classes: [transfer] },
-		],
-	}
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			unrecorded,
-			transferBaseline,
-			allowlist,
-		),
+		]),
 	).toEqual([
 		expect.stringContaining(
 			'transferred_classes migration "v2" at migrations is not recorded',
@@ -207,10 +177,7 @@ test('Durable Object guard protects transferred_classes migrations', () => {
 })
 
 test('Durable Object guard covers environment-specific migration lists', () => {
-	const allowlist = {
-		version: 1,
-		deletions: [],
-	} satisfies DurableObjectDeletionAllowlist
+	const transfer = { from: 'RunLog', from_script: 'kody', to: 'RunLog' }
 	const envBaseline = {
 		path: configPath,
 		protected_migrations: [
@@ -221,118 +188,45 @@ test('Durable Object guard covers environment-specific migration lists', () => {
 			},
 		],
 		protected_transfer_migrations: [
-			{
-				tag: 'v1',
-				transferred_classes: [
-					{ from: 'RunLog', from_script: 'kody', to: 'RunLog' },
-				],
-			},
+			{ tag: 'v1', transferred_classes: [transfer] },
 		],
 		protected_binding_sets: [],
 	} satisfies DurableObjectBaseline['configs'][number]
-
 	// The same tag may exist at the top level and in an env override.
-	const matching = {
-		migrations: [
+	const check = (previewMigrations: Array<unknown>) =>
+		checkDurableObjectConfig(
+			configPath,
 			{
-				tag: 'v1',
-				transferred_classes: [
-					{ from: 'RunLog', from_script: 'kody', to: 'RunLog' },
-				],
+				migrations: [{ tag: 'v1', transferred_classes: [transfer] }],
+				env: { preview: { migrations: previewMigrations } },
 			},
+			envBaseline,
+			emptyAllowlist,
+		)
+	const runLogV1 = { tag: 'v1', new_sqlite_classes: ['RunLog'] }
+
+	expect(check([runLogV1])).toEqual([])
+	expect(check([{ tag: 'v1', new_sqlite_classes: ['SomethingElse'] }])).toEqual(
+		[
+			expect.stringContaining(
+				'protected new_sqlite_classes migration "v1" at env.preview.migrations was removed, renamed, or changed',
+			),
 		],
-		env: {
-			preview: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['RunLog'] }],
-			},
-		},
-	}
+	)
 	expect(
-		checkDurableObjectConfig(configPath, matching, envBaseline, allowlist),
-	).toEqual([])
-
-	const changedEnvMigration = {
-		...matching,
-		env: {
-			preview: {
-				migrations: [{ tag: 'v1', new_sqlite_classes: ['SomethingElse'] }],
-			},
-		},
-	}
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			changedEnvMigration,
-			envBaseline,
-			allowlist,
-		),
-	).toEqual([
-		expect.stringContaining(
-			'protected new_sqlite_classes migration "v1" at env.preview.migrations was removed, renamed, or changed',
-		),
-	])
-
-	const unrecordedEnvMigration = {
-		...matching,
-		env: {
-			preview: {
-				migrations: [
-					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
-					{ tag: 'v2', new_sqlite_classes: ['Unrecorded'] },
-				],
-			},
-		},
-	}
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			unrecordedEnvMigration,
-			envBaseline,
-			allowlist,
-		),
+		check([runLogV1, { tag: 'v2', new_sqlite_classes: ['Unrecorded'] }]),
 	).toEqual([
 		expect.stringContaining(
 			'new_sqlite_classes migration "v2" at env.preview.migrations is not recorded',
 		),
 	])
-
-	const duplicateTagInEnv = {
-		...matching,
-		env: {
-			preview: {
-				migrations: [
-					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
-					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
-				],
-			},
-		},
-	}
-	expect(
-		checkDurableObjectConfig(
-			configPath,
-			duplicateTagInEnv,
-			envBaseline,
-			allowlist,
-		),
-	).toContainEqual(
+	expect(check([runLogV1, runLogV1])).toContainEqual(
 		expect.stringContaining(
 			'duplicate Durable Object migration tag "v1" in env.preview.migrations',
 		),
 	)
-
-	const envDeletion = {
-		...matching,
-		env: {
-			preview: {
-				migrations: [
-					{ tag: 'v1', new_sqlite_classes: ['RunLog'] },
-					{ tag: 'v2', deleted_classes: ['RunLog'] },
-				],
-			},
-		},
-	}
 	expect(
-		checkDurableObjectConfig(configPath, envDeletion, envBaseline, allowlist),
+		check([runLogV1, { tag: 'v2', deleted_classes: ['RunLog'] }]),
 	).toContainEqual(
 		expect.stringContaining(
 			'destructive deletion v2 [RunLog] is not an exact entry',
@@ -427,13 +321,11 @@ async function deletePreviewQueue(queueId: string, name: string) {
 }
 `
 
-test('preview cleanup guard accepts a script whose deletes all follow the name guard', () => {
+test('preview cleanup guard accepts guarded deletes and flags each delete call site not preceded by the guard', () => {
 	expect(
 		checkPreviewCleanupSource('preview-resources.ts', guardedCleanupScript),
 	).toEqual([])
-})
 
-test('preview cleanup guard flags each delete call site that is not preceded by the guard', () => {
 	const unguardedWorkerDelete = guardedCleanupScript.replace(
 		"\tassertPreviewResourceName(name, 'worker')\n",
 		'',

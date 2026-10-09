@@ -3,6 +3,7 @@ import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import type * as JobsRepo from '@kody-internal/shared/jobs/repo.ts'
+import type * as ArchivedArtifactsRepo from '@kody-internal/shared/jobs/archived-artifacts-repo.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import type * as EntitySources from '#worker/repo/entity-sources.ts'
 import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
@@ -10,13 +11,17 @@ import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
 const withAccountWriteLease = vi.fn(
 	async (input: { write: () => Promise<unknown> }) => input.write(),
 )
-const disableExpiredJobRowsForUser = vi.fn(async () => 0)
+const disableExpiredJobRowsForUser = vi.fn<
+	typeof JobsRepo.disableExpiredJobRowsForUser
+>(async () => 0)
 const listDueJobRows = vi.fn()
 const claimJobRow = vi.fn()
 const finalizeClaimedJobRow = vi.fn()
 const retryClaimedJobRow = vi.fn()
 const claimRunRecord = vi.fn()
-const listArchivedJobArtifactsDueBefore = vi.fn(async () => [])
+const listArchivedJobArtifactsDueBefore = vi.fn<
+	typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
+>(async () => [])
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
@@ -29,8 +34,9 @@ vi.mock('@kody-internal/shared/jobs/repo.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof JobsRepo>()
 	return {
 		...actual,
-		disableExpiredJobRowsForUser: (...args: Array<unknown>) =>
-			disableExpiredJobRowsForUser(...(args as [never])),
+		disableExpiredJobRowsForUser: (
+			...args: Parameters<typeof JobsRepo.disableExpiredJobRowsForUser>
+		) => disableExpiredJobRowsForUser(...args),
 		listDueJobRows: (...args: Array<unknown>) =>
 			listDueJobRows(...(args as [never])),
 		claimJobRow: (...args: Array<unknown>) => claimJobRow(...(args as [never])),
@@ -72,8 +78,11 @@ vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 })
 
 vi.mock('@kody-internal/shared/jobs/archived-artifacts-repo.ts', () => ({
-	listArchivedJobArtifactsDueBefore: (...args: Array<unknown>) =>
-		listArchivedJobArtifactsDueBefore(...(args as [never])),
+	listArchivedJobArtifactsDueBefore: (
+		...args: Parameters<
+			typeof ArchivedArtifactsRepo.listArchivedJobArtifactsDueBefore
+		>
+	) => listArchivedJobArtifactsDueBefore(...args),
 	deleteArchivedJobArtifact: vi.fn(),
 }))
 
@@ -141,31 +150,33 @@ function claimedRow(record: JobRecord) {
 	}
 }
 
-test('runDueJobsForUser treats superseded finalization and retry claims as expected fencing', async () => {
-	const now = new Date('2026-07-30T19:00:00.000Z')
-	const env = { APP_DB: {} } as Env
+const now = new Date('2026-07-30T19:00:00.000Z')
 
-	const finalizeRecord = createJobRecord()
-	const finalizeRow = claimedRow(finalizeRecord)
-	listDueJobRows.mockResolvedValue([finalizeRow])
-	claimJobRow.mockResolvedValue(finalizeRow)
-	claimRunRecord.mockResolvedValue({
+/** A claimRunRecord result where another attempt already recorded success. */
+function alreadyRecordedRun(
+	record: JobRecord,
+	row: ReturnType<typeof claimedRow>,
+	identity: {
+		packageId: string | null
+		kodyId: string | null
+		publishedCommit: string | null
+	},
+) {
+	return {
 		claimed: false,
 		run: {
-			id: 'run-1',
+			id: `run-${record.id}`,
 			surface: 'job',
 			status: 'success',
-			name: finalizeRecord.name,
-			packageId: null,
-			kodyId: null,
-			sourceId: finalizeRecord.sourceId,
-			publishedCommit: null,
-			storageId: finalizeRecord.storageId,
-			jobId: finalizeRecord.id,
+			name: record.name,
+			...identity,
+			sourceId: record.sourceId,
+			storageId: record.storageId,
+			jobId: record.id,
 			workflowId: null,
 			invocationId: null,
 			sessionId: null,
-			idempotencyKey: `scheduled-job:${finalizeRecord.id}:${finalizeRow.claimed_scheduled_for}`,
+			idempotencyKey: `scheduled-job:${record.id}:${row.claimed_scheduled_for}`,
 			parentRunId: null,
 			startedAt: now.toISOString(),
 			finishedAt: now.toISOString(),
@@ -175,21 +186,40 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 			metadata: { result: { ok: true } },
 			logCount: 0,
 		},
-	})
+	}
+}
+
+function seedDueClaim(record: JobRecord) {
+	const row = claimedRow(record)
+	listDueJobRows.mockResolvedValue([row])
+	claimJobRow.mockResolvedValue(row)
+	return row
+}
+
+function runDue(userId: string) {
+	return runDueJobsForUser({ env: { APP_DB: {} } as Env, userId, now })
+}
+
+const fencedOutcome = {
+	dueJobCount: 1,
+	successCount: 0,
+	errorCount: 0,
+	jobOutcomes: [],
+}
+
+test('runDueJobsForUser treats superseded finalization and retry claims as expected fencing', async () => {
+	const finalizeRecord = createJobRecord()
+	const finalizeRow = seedDueClaim(finalizeRecord)
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(finalizeRecord, finalizeRow, {
+			packageId: null,
+			kodyId: null,
+			publishedCommit: null,
+		}),
+	)
 	finalizeClaimedJobRow.mockResolvedValue(false)
 
-	await expect(
-		runDueJobsForUser({
-			env,
-			userId: finalizeRecord.userId,
-			now,
-		}),
-	).resolves.toEqual({
-		dueJobCount: 1,
-		successCount: 0,
-		errorCount: 0,
-		jobOutcomes: [],
-	})
+	await expect(runDue(finalizeRecord.userId)).resolves.toEqual(fencedOutcome)
 	expect(finalizeClaimedJobRow).toHaveBeenCalledOnce()
 	expect(finalizeClaimedJobRow).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -214,24 +244,11 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 	consoleInfo.mockClear()
 
 	const retryRecord = createJobRecord({ id: 'job-retry-fence' })
-	const retryRow = claimedRow(retryRecord)
-	listDueJobRows.mockResolvedValue([retryRow])
-	claimJobRow.mockResolvedValue(retryRow)
+	seedDueClaim(retryRecord)
 	claimRunRecord.mockResolvedValue(null)
 	retryClaimedJobRow.mockResolvedValue(false)
 
-	await expect(
-		runDueJobsForUser({
-			env,
-			userId: retryRecord.userId,
-			now,
-		}),
-	).resolves.toEqual({
-		dueJobCount: 1,
-		successCount: 0,
-		errorCount: 0,
-		jobOutcomes: [],
-	})
+	await expect(runDue(retryRecord.userId)).resolves.toEqual(fencedOutcome)
 	expect(retryClaimedJobRow).toHaveBeenCalledOnce()
 	expect(finalizeClaimedJobRow).not.toHaveBeenCalled()
 	expect(consoleInfo).toHaveBeenCalledWith(
@@ -241,7 +258,6 @@ test('runDueJobsForUser treats superseded finalization and retry claims as expec
 })
 
 test('scheduled package job claims carry package identity and the published source commit', async () => {
-	const now = new Date('2026-07-30T19:00:00.000Z')
 	const packageId = '11c7ff51-aa34-4ab8-94d6-bdd5e6af6d40'
 	const record = createJobRecord({
 		id: `package-job:${packageId}:archive-sync`,
@@ -249,13 +265,7 @@ test('scheduled package job claims carry package identity and the published sour
 		sourceId: 'source-package',
 		publishedCommit: null,
 	})
-	const row = claimedRow(record)
-	listDueJobRows.mockReset()
-	claimJobRow.mockReset()
-	claimRunRecord.mockReset()
-	finalizeClaimedJobRow.mockReset()
-	listDueJobRows.mockResolvedValue([row])
-	claimJobRow.mockResolvedValue(row)
+	const row = seedDueClaim(record)
 	getEntitySourceByIdForUser.mockResolvedValue({
 		id: record.sourceId,
 		user_id: record.userId,
@@ -274,40 +284,16 @@ test('scheduled package job claims carry package identity and the published sour
 		userId: record.userId,
 		kodyId: 'tesla-solar',
 	})
-	claimRunRecord.mockResolvedValue({
-		claimed: false,
-		run: {
-			id: 'run-package',
-			surface: 'job',
-			status: 'success',
-			name: record.name,
+	claimRunRecord.mockResolvedValue(
+		alreadyRecordedRun(record, row, {
 			packageId,
 			kodyId: 'tesla-solar',
-			sourceId: record.sourceId,
 			publishedCommit: 'published-package-commit',
-			storageId: record.storageId,
-			jobId: record.id,
-			workflowId: null,
-			invocationId: null,
-			sessionId: null,
-			idempotencyKey: `scheduled-job:${record.id}:${row.claimed_scheduled_for}`,
-			parentRunId: null,
-			startedAt: now.toISOString(),
-			finishedAt: now.toISOString(),
-			durationMs: 12,
-			errorName: null,
-			errorMessage: null,
-			metadata: { result: { ok: true } },
-			logCount: 0,
-		},
-	})
+		}),
+	)
 	finalizeClaimedJobRow.mockResolvedValue(true)
 
-	await runDueJobsForUser({
-		env: { APP_DB: {} } as Env,
-		userId: record.userId,
-		now,
-	})
+	await runDue(record.userId)
 
 	expect(getEntitySourceByIdForUser).toHaveBeenCalledWith(expect.anything(), {
 		id: record.sourceId,
@@ -331,21 +317,12 @@ test('scheduled package job claims carry package identity and the published sour
 	})
 
 	claimRunRecord.mockClear()
-	retryClaimedJobRow.mockReset()
 	retryClaimedJobRow.mockResolvedValue(true)
-	listDueJobRows.mockResolvedValue([row])
-	claimJobRow.mockResolvedValue(row)
 	getEntitySourceByIdForUser.mockRejectedValueOnce(
 		new TransientJobExecutionError('D1_ERROR: Network connection lost.'),
 	)
 
-	await expect(
-		runDueJobsForUser({
-			env: { APP_DB: {} } as Env,
-			userId: record.userId,
-			now,
-		}),
-	).resolves.toEqual({
+	await expect(runDue(record.userId)).resolves.toEqual({
 		dueJobCount: 1,
 		successCount: 0,
 		errorCount: 1,

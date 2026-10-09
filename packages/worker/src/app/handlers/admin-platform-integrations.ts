@@ -21,6 +21,7 @@ import {
 	getPlatformOauthAppBySlug,
 	renamePlatformOauthApp,
 	upsertPlatformOauthApp,
+	type PlatformOauthAppVisibility,
 } from '#worker/integrations/platform-apps.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 
@@ -119,6 +120,13 @@ async function handleSaveAction(input: {
 	if (flow !== 'pkce' && flow !== 'confidential') {
 		return jsonResponse({ ok: false, error: 'Invalid OAuth flow.' }, 400)
 	}
+	const visibility = readVisibility(record)
+	if (visibility === null) {
+		return jsonResponse(
+			{ ok: false, error: 'Visibility must be "draft" or "published".' },
+			400,
+		)
+	}
 
 	// A changed slug renames in place first — carrying the write-only client
 	// secret, logo, and user connections — then the normal upsert applies the
@@ -167,6 +175,7 @@ async function handleSaveAction(input: {
 				defaultScopes: readOptionalStringArray(record, 'defaultScopes'),
 				requiredHosts: readOptionalStringArray(record, 'requiredHosts'),
 				enabled: readOptionalBoolean(record, 'enabled') ?? undefined,
+				visibility,
 			},
 		})
 		const logoBase64 = record.logoBase64
@@ -311,6 +320,15 @@ function readOptionalRecord(record: Record<string, unknown>, key: string) {
 			(entry): entry is [string, string] => typeof entry[1] === 'string',
 		),
 	)
+}
+
+/** Omitted = retain; anything other than draft/published = invalid (null). */
+function readVisibility(
+	record: Record<string, unknown>,
+): PlatformOauthAppVisibility | undefined | null {
+	const value = record.visibility
+	if (value === undefined) return undefined
+	return value === 'draft' || value === 'published' ? value : null
 }
 
 function readTokenExchangeStyle(record: Record<string, unknown>) {

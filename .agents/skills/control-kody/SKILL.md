@@ -12,16 +12,19 @@ Do not invent a throwaway curl script, scrape PR comments by hand, or rediscover
 account routes from `routes.ts`. Use the CLI and the Feature Map.
 
 ```bash
-node tools/control-kody.ts doctor
-node tools/control-kody.ts dev
-node tools/control-kody.ts login
-node tools/control-kody.ts request GET /account/waiting.json
-node tools/control-kody.ts request GET /account/waiting --dump --contains 'Waiting'
-node tools/control-kody.ts map waiting
-node tools/control-kody.ts map --check
-node tools/control-kody.ts health --sha <merge-sha>
-node tools/control-kody.ts preview -- --request 'GET /account/waiting.json' --check /account/waiting
-node tools/control-kody.ts package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+npm run control-kody -- doctor
+npm run control-kody -- dev
+npm run control-kody -- login
+npm run control-kody -- request GET /account/waiting.json
+npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
+npm run control-kody -- map waiting
+npm run control-kody -- map --check
+npm run control-kody -- health --sha <merge-sha>
+npm run control-kody -- preview --pr 42 --request 'GET /account/waiting.json' --check /account/waiting
+npm run control-kody -- browse --origin <preview> --path /@user-me/pkg [--record]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
+npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages]
 ```
 
 `--kody-id` is an alias for `--package-name`.
@@ -31,8 +34,22 @@ After `login`, keep using `request` for HTML and JSON assertions. Do **not**
 `cat` the session cookie into `curl` or Python. `--dump` writes the raw body to
 `.tmp/control-kody-body`. `--contains <text>` fails unless that substring is in
 the body. Cookie files are bound to the origin that created them; `request`
-re-logs in if a leftover cookie is rejected (HTTP 401 or a login-page HTML
-body).
+fetches GET/HEAD first and only POSTs `/auth` when the response is HTTP 401 or
+login HTML. Public pages such as `/pricing` do not need a session. Mutating
+methods log in first when no cookie exists.
+
+`preview` forwards `--pr`, `--request`, and `--check` to `preview:manual-test`.
+A `--` separator is optional. `--request` specs take trailing `--dump` /
+`--contains <text>` like `request`:
+`preview --pr 42 --request 'GET /pricing --dump --contains Worker compute'`.
+
+`browse` reuses the seed cookie from `.tmp/control-kody-cookie` (after `login`
+or `preview`) and injects it into headed Playwright Chromium the same way E2E
+does (`addCookies`). Opens `--path` already signed in. Optional `--record`
+writes video under `.tmp/control-kody-browse`. Prefer MCP/API/`execute` for
+proof; use `browse` only when UI is under test. Cursor `computerUse` drives its
+own browser and cannot attach to the CLI Chromium window — for computerUse, open
+`/login?redirectTo=<path>` with the public seed credentials instead.
 
 `doctor` (and a failed local `login`) print `npm run migrate:local` plus
 `node tools/seed-test-data.ts --local` when local APP_DB was never migrated or
@@ -54,6 +71,13 @@ before opening a Feature Map PR.
 - Preview: `me@kentcdodds.com` / `ilikecode` (non-admin, empty until you create
   data through JSON APIs, or `package-create` for a saved package)
 - `/admin` 403 and `/mcp` 401 are expected for those seeds
+- Admin-gated states cannot be preview-tested with the public seed; use the
+  local admin account plus Workers or unit tests
+- `execute` / `search` reuse the same seed session on preview or local; they
+  refuse `https://kody.codes`
+- `packageSave`, publish, and `packageGetGitRemote` / `package-create` need the
+  remote `ARTIFACTS` binding. Use a PR preview origin, not `npm run dev`. See
+  [Local limitations](../../../docs/contributing/cloud-agents.md#local-limitations).
 
 ## Proof
 
@@ -62,7 +86,9 @@ CI green is not enough for a user-visible account change. Prefer:
 1. `doctor` then `dev` or `preview`
 2. `request` (`--dump` / `--contains`) or `--check` as the seed user **with data
    for this change**
-3. A computerUse video or screenshot of the same page
+3. When UI is under test: `browse --origin <origin> --path <path>` (or
+   computerUse with `/login?redirectTo=<path>` and the public seed credentials).
+   Prefer MCP/API otherwise.
 4. After merge, `health --origin https://kody.codes --sha <merge>` (full SHA,
    unique short SHA, or a later descendant HEAD that contains the merge)
 

@@ -2,12 +2,12 @@
 id: what_is_kody
 title: What is Kody?
 summary:
-  Start here. Kody is the home your agents share — connect the AI agent you
+  Start here. Kody is the home your agents share. Connect the AI agent you
   already use over MCP and it gains durable memory, secrets it never reads,
   saved packages, and jobs that keep running while you are offline. Covers what
-  Kody is and is not, what you cannot get elsewhere, the building blocks, real
-  uses, and notes for an agent running a discovery interview. Nothing here
-  requires an account.
+  Kody is, how it pairs with personal agents, what you cannot get elsewhere, the
+  building blocks, real uses, and notes for an agent running a discovery
+  interview. Nothing here requires an account.
 category: platform
 ---
 
@@ -36,16 +36,24 @@ Agent notes — for AI agents running a discovery conversation from this page:
 -->
 
 Kody is the home your agents share. You keep using the AI agent you already have
-— Claude, ChatGPT, Cursor, Codex, Copilot, Grok, or any other MCP-capable host —
-and connect it to your Kody account. That agent gains durable state that
-outlives the conversation and keeps working while your computer is off. Connect
-a second agent tomorrow and it finds the same home already furnished.
+(Claude, ChatGPT, Cursor, Codex, Copilot, Grok, OpenClaw, or any other
+MCP-capable host) and connect it to your Kody account. That agent gains durable
+state that outlives the conversation and keeps working while your computer is
+off. Connect a second agent tomorrow and it finds the same home already
+furnished.
 
 This page is for people deciding whether Kody is worth setting up, and for AI
 agents running a discovery conversation on someone's behalf. Everything here is
 readable without an account. It is also plain markdown at
 `/docs/what-is-kody.md` for anything that prefers to read it raw, and the full
 docs index is at `/llms.txt`.
+
+> [!WATCH] https://www.youtube.com/watch?v=QA0xYMAMjEg Watch: Introducing Kody:
+> Your Personal Software Factory
+
+Also watch:
+[The home your agents share](https://www.youtube.com/watch?v=6PGKZDcPsvE) and
+[Personal software, connected to everything.](https://www.youtube.com/watch?v=MGOj4NwV0uk).
 
 ## What Kody is
 
@@ -55,7 +63,8 @@ the things that should not live in one chat window:
 - **Memory** — durable facts and preferences on the account, surfaced to every
   connected agent.
 - **Secrets** — API keys and OAuth grants your code can use but your agent can
-  never read. There is deliberately no `secret_get`.
+  never read (mount `get` returns an opaque placeholder only). There is
+  deliberately no plaintext `secret_get`.
 - **Packages** — code your agent wrote once and saved, callable from any agent,
   with exports, a hosted app surface, and its own storage.
 - **Jobs, workflows, and webhooks** — the triggers that run those packages on a
@@ -70,27 +79,51 @@ each version converts to the Apache License 2.0 after two years. Kody runs no
 chat-model agent loop and bills no chat tokens. Search and indexing use a small
 embedding model; that is not a chat model and is not billed as inference.
 
+## Your agent and Kody work together
+
+Personal agents like OpenClaw, OpenMuse, Claude Desktop, Cursor, and Codex are
+where you talk, think, and act in the moment. Kody is where the results live
+afterward. Each is better with the other.
+
+Your agent is good at:
+
+- **The conversation.** Reasoning, judgment, and asking you before it does
+  something risky.
+- **The surface you already use.** A chat window, an IDE, a terminal, a phone,
+  or a messaging app.
+- **The computer it runs on.** Depending on the host: local files, a browser, a
+  shell, or a coding sandbox. Hosted Kody cannot see your laptop, and that is
+  fine; your agent can.
+
+Kody is good at:
+
+- **Remembering across agents.** A fact you tell one agent is there for the next
+  one.
+- **Holding keys the agent never reads.** Code uses them by name, and only for
+  hosts you approved.
+- **Keeping working code.** A walk your agent figured out once becomes a package
+  any agent can call.
+- **Running while you are away.** Jobs, workflows, and webhooks run with no
+  model in the loop and no laptop attached.
+
+Together, the agent does the thinking once and Kody keeps the result:
+
+- **Ask again tomorrow** becomes a saved export. No model in the loop.
+- **A key in chat or a `.env`** becomes a secret the agent never sees.
+- **Re-run the agent on a timer** becomes a job that runs while you are offline.
+- **Context stuck in one host** becomes memories that follow the account.
+
+A personal agent watching your school inbox can hand the watching to a Kody job
+that still fires when the laptop is in a bag. A receipt hunt your phone agent
+worked out becomes a package Cursor can call the next morning.
+
 ## What Kody is not
 
-Kody is not a gateway whose job is to connect APIs for your agent, and it is not
-middleware that sits in front of every SaaS login. Integrations and MCP servers
-are available when a job needs them; they are supporting cast. The center is
+Kody is not another chat app; there is nothing to talk to besides the agent you
+already use. It is also not a gateway whose job is wiring APIs for your agent.
+Integrations and MCP servers are there when a job needs them. The center is
 owned memory and owned packages that run in Kody's cloud and are callable from
 any MCP host.
-
-Kody is also not another chat app. There is nothing to talk to. If you leave
-thinking "I signed up to wire APIs" or "I got another assistant," this page
-failed.
-
-## The agent reasons. Kody keeps it honest.
-
-Your agent does the thinking. Kody holds the result so it does not have to think
-it again.
-
-- **Ask again tomorrow** — a saved export. No model in the loop.
-- **A key in chat or a `.env`** — a secret the agent never sees.
-- **Re-run the agent on a timer** — a job that runs while you are offline.
-- **Context stuck in one host** — memories that follow the account.
 
 ## What you cannot get elsewhere
 
@@ -112,7 +145,7 @@ exists. Everything in the next section is supporting cast.
    [Secrets](./secrets.md) and
    [Gmail drafts without send](./locked-gmail-drafts.md).
 3. **Every agent you connect shares one home, and every install is a fork you
-   own.** Switch from Claude to Cursor to a phone assistant and the memories,
+   own.** Switch from Claude to Cursor to a phone agent and the memories,
    secrets, packages, and jobs are already there. Installing someone else's
    automation puts code in your account, on your credentials, that you can open,
    change, schedule, and republish. Nothing stays locked in someone else's
@@ -141,7 +174,7 @@ exists. Everything in the next section is supporting cast.
   any provider that cannot set Bearer tokens. See
   [Jobs, workflows, and webhooks](./triggers.md).
 - **A personal email inbox** — inbound mail can trigger automations, and your
-  assistant can send you notifications. See
+  packages can send you notifications. See
   [Email primitives](../use/email-primitives.md).
 - **Public packages** — browse automations other people published, and fork them
   into your own account with one click. See

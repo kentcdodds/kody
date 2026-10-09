@@ -11,6 +11,7 @@ import {
 } from '@kody-internal/shared/outbound-email.ts'
 import { createMockCloudflareArtifactsState } from './mock-artifacts-do.ts'
 import { createMockCloudflareEmailState } from './mock-email-messages-do.ts'
+import { routeRehearsal } from './rehearsal-routes.ts'
 
 type MockCloudflareEnv = {
 	MOCK_API_TOKEN?: string
@@ -540,11 +541,8 @@ async function handleDashboard(
 async function handleEmailSend(
 	request: Request,
 	env: MockCloudflareEnv,
-	accountId: string,
+	_accountId: string,
 ) {
-	if (accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -592,9 +590,6 @@ async function handleArtifactsRepos(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,
@@ -677,9 +672,6 @@ async function handleArtifactsRepoInfo(
 		repoName: string
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,
@@ -701,9 +693,6 @@ async function handleArtifactsTokens(
 		namespace: string
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -743,9 +732,6 @@ async function handleArtifactsFork(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const body = await readJsonBody(request)
 	if (body === null) {
 		return errorEnvelope(400, 1001, 'invalid JSON body')
@@ -807,9 +793,6 @@ async function handleArtifactsMockSourceSnapshot(
 		url: URL
 	},
 ) {
-	if (input.accountId !== fixtureAccount.id) {
-		return errorEnvelope(404, 1002, 'account not found')
-	}
 	const tokenHash = await getTokenPartition(env)
 	const state = getMockArtifactsState(env, {
 		tokenHash,
@@ -1047,6 +1030,9 @@ export default {
 		if (request.method === 'POST' && url.pathname === '/__mocks/clear') {
 			return handleClear(request, env, url)
 		}
+
+		const rehearsalResponse = await routeRehearsal(request, url)
+		if (rehearsalResponse) return rehearsalResponse
 
 		const apiResponse = await routeApi(request, env, url)
 		if (apiResponse) return apiResponse

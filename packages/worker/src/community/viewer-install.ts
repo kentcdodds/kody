@@ -66,10 +66,13 @@ function scopedPackageName(packageScope: string, kodyId: string) {
 /**
  * Pick the viewer's existing install/fork for each listing.
  *
- * A saved package whose `kody_id` matches the listing wins (that is the
- * default one-click target, and a second install would collide). Otherwise
- * use a `community_forks` row for the listing: a live saved package for that
- * fork counts as installed; an inert source still needs adaptation.
+ * Only a `community_forks` row for the listing counts. A live saved package
+ * for that fork is installed; an inert source still needs adaptation. A
+ * viewer package that merely shares the listing's leaf/`kody_id` does not
+ * count — that would mark unrelated same-leaf packages as installed.
+ *
+ * When multiple forks exist for one listing, prefer a fork whose
+ * `targetKodyId` matches the listing leaf, else the newest fork.
  */
 export function resolveViewerListingInstalls(input: {
 	listings: Array<ViewerInstallListingRef>
@@ -78,10 +81,8 @@ export function resolveViewerListingInstalls(input: {
 	forks: Array<ViewerInstallFork>
 	listingPinIsAncestorByListingId?: Map<string, boolean | null>
 }): Map<string, ResolvedViewerListingInstall> {
-	const savedByKodyId = new Map<string, ViewerInstallSavedPackage>()
 	const savedById = new Map<string, ViewerInstallSavedPackage>()
 	for (const savedPackage of input.savedPackages) {
-		savedByKodyId.set(savedPackage.kodyId, savedPackage)
 		savedById.set(savedPackage.id, savedPackage)
 	}
 
@@ -100,39 +101,21 @@ export function resolveViewerListingInstalls(input: {
 	const resolved = new Map<string, ResolvedViewerListingInstall>()
 	for (const listing of input.listings) {
 		const listingForks = forksByListingId.get(listing.id)
-		const matchingKodyFork = listingForks?.find(
+		if (!listingForks || listingForks.length === 0) continue
+
+		const matchingKodyFork = listingForks.find(
 			(fork) => fork.targetKodyId === listing.kodyId,
 		)
-		const newestFork = listingForks?.[0]
-		const listingPinIsAncestorOfForkTip =
-			input.listingPinIsAncestorByListingId?.get(listing.id)
-
-		const savedByKody = savedByKodyId.get(listing.kodyId)
-		if (savedByKody) {
-			const forkForSaved = listingForks?.find(
-				(fork) => fork.forkedPackageId === savedByKody.id,
-			)
-			resolved.set(listing.id, {
-				status: 'installed',
-				targetName: savedByKody.name,
-				sourceId: savedByKody.sourceId,
-				packageId: savedByKody.id,
-				...listingRelationState({
-					originCommit: forkForSaved?.originCommit,
-					pinnedCommit: listing.pinnedCommit,
-					listingPinIsAncestorOfForkTip,
-				}),
-			})
-			continue
-		}
-
-		if (!listingForks || listingForks.length === 0) continue
+		const newestFork = listingForks[0]
 		const fork = matchingKodyFork ?? newestFork
 		if (!fork) continue
+
 		const relation = listingRelationState({
 			originCommit: fork.originCommit,
 			pinnedCommit: listing.pinnedCommit,
-			listingPinIsAncestorOfForkTip,
+			listingPinIsAncestorOfForkTip: input.listingPinIsAncestorByListingId?.get(
+				listing.id,
+			),
 		})
 		const forkedSaved = savedById.get(fork.forkedPackageId)
 		if (forkedSaved) {

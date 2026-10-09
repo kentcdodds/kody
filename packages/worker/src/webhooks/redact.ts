@@ -29,5 +29,13 @@ export function collectWebhookCredentialSecrets(input: {
 	url: string
 	urlSecret: string
 }) {
-	return [input.url, input.urlSecret]
+	const secrets = [input.url, input.urlSecret].filter(
+		(secret) => secret.length > 0,
+	)
+	const encoded: Array<string> = []
+	for (const secret of secrets) {
+		const percentEncoded = encodeURIComponent(secret)
+		if (percentEncoded !== secret) encoded.push(percentEncoded)
+	}
+	return [...secrets, ...encoded]
 }

@@ -1,5 +1,8 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { expect, test, vi } from 'vitest'
+import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import type * as AuditLog from '#worker/audit-log.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
@@ -8,12 +11,14 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { createFakeImagesBinding } from '#worker/test-support/images-binding.ts'
 
 const mockModule = vi.hoisted(() => ({
-	readAuthenticatedAppUser: vi.fn<() => Promise<unknown>>(),
+	readAuthenticatedAppUser:
+		vi.fn<typeof AuthenticatedUser.readAuthenticatedAppUser>(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
-	readAuthenticatedAppUser: (...args: Array<unknown>) =>
-		mockModule.readAuthenticatedAppUser(...args),
+	readAuthenticatedAppUser: (
+		...args: Parameters<typeof AuthenticatedUser.readAuthenticatedAppUser>
+	) => mockModule.readAuthenticatedAppUser(...args),
 }))
 
 vi.mock('#worker/audit-log.ts', async (importOriginal) => {
@@ -31,7 +36,11 @@ const { createAdminPlatformIntegrationsApiHandler } =
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
 
-function createActor(roles: Array<RoleName>) {
+type AppsPayload = { apps: Array<{ slug: string; label?: string }> }
+
+function createActor(
+	roles: Array<RoleName>,
+): AuthenticatedUser.AuthenticatedAppUser {
 	const permissions: Array<PermissionString> = roles.includes('admin')
 		? ['read:user:any', 'update:user:any']
 		: ['read:user:own']
@@ -39,17 +48,20 @@ function createActor(roles: Array<RoleName>) {
 		sessionUserId: '1',
 		userId: 1,
 		email: 'admin@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
 		username: 'admin-user',
 		displayName: 'admin-user',
 		roles,
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: '1'.padStart(64, '0'),
+			userId: personIdFromStored('1'.padStart(64, '0')),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
 		},
+		request: sessionRequestContext('1'.padStart(64, '0')),
 	}
 }
 
@@ -72,16 +84,29 @@ function createHarness() {
 			},
 		} as unknown as R2Bucket,
 		IMAGES: createFakeImagesBinding(),
-	} as Env
-	return { sqlite, env, objects }
-}
-
-function postRequest(body: Record<string, unknown>) {
-	return new Request('https://example.com/admin/platform-integrations.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	})
+	} as unknown as Env
+	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
+	const { handler } = createAdminPlatformIntegrationsApiHandler(env)
+	const url = new URL('https://example.com/admin/platform-integrations.json')
+	const invoke = (body: Record<string, unknown>) =>
+		handler({
+			request: new Request(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body),
+			}),
+			url,
+			params: {},
+		} as never)
+	const connectGithubUser = () =>
+		sqlite
+			.prepare(
+				`INSERT INTO user_integrations (
+					user_id, name, app_slug, platform_app_slug
+				) VALUES (?, ?, NULL, ?)`,
+			)
+			.run('user-1', 'github', 'github')
+	return { sqlite, invoke, connectGithubUser }
 }
 
 const saveGithubBody = {
@@ -97,37 +122,71 @@ const saveGithubBody = {
 	requiredHosts: ['api.github.com'],
 }
 
-test('admin save and delete return HTTP shapes without echoing secrets', async () => {
-	const { sqlite, env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	const url = new URL('https://example.com/admin/platform-integrations.json')
-	const invoke = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: postRequest(body),
-			url,
-			params: {},
-		} as never)
+const editGithubBody = {
+	action: 'save',
+	clientId: saveGithubBody.clientId,
+	tokenUrl: saveGithubBody.tokenUrl,
+	authorizeUrl: saveGithubBody.authorizeUrl,
+	flow: 'confidential',
+}
+
+test('admin save and delete require admin and return HTTP shapes without echoing secrets', async () => {
+	const { sqlite, invoke, connectGithubUser } = createHarness()
+
+	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(
+		createActor(['user']),
+	)
+	expect((await invoke(saveGithubBody)).status).toBe(403)
 
 	const created = await invoke(saveGithubBody)
 	expect(created.status).toBe(200)
-	const createdPayload = await created.json()
+	const createdPayload = (await created.json()) as AppsPayload
 	expect(createdPayload.apps[0]).toMatchObject({
 		slug: 'github',
 		hasClientSecret: true,
+		enabled: true,
+		visibility: 'draft',
 	})
 	expect(JSON.stringify(createdPayload)).not.toContain(
 		'platform-github-client-secret-value',
 	)
 
-	sqlite
-		.prepare(
-			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug
-			) VALUES (?, ?, NULL, ?)`,
-		)
-		.run('user-1', 'github', 'github')
+	// The admin UI's Publish / Move to draft buttons post the edit shape plus
+	// `visibility`; enable/disable is untouched.
+	const publish = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'published',
+	})
+	expect(publish.status).toBe(200)
+	expect(((await publish.json()) as AppsPayload).apps[0]).toMatchObject({
+		enabled: true,
+		visibility: 'published',
+	})
+	const kept = await invoke({ ...editGithubBody, slug: 'github' })
+	expect(((await kept.json()) as AppsPayload).apps[0]).toMatchObject({
+		visibility: 'published',
+	})
+	const invalid = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'Draft',
+	})
+	expect(invalid.status).toBe(400)
+	await expect(invalid.json()).resolves.toMatchObject({
+		ok: false,
+	})
+	const unpublish = await invoke({
+		...editGithubBody,
+		slug: 'github',
+		visibility: 'draft',
+	})
+	expect(((await unpublish.json()) as AppsPayload).apps[0]).toMatchObject({
+		enabled: true,
+		visibility: 'draft',
+	})
 
+	connectGithubUser()
 	const blocked = await invoke({ action: 'delete', slug: 'github' })
 	expect(blocked.status).toBe(400)
 	await expect(blocked.json()).resolves.toMatchObject({
@@ -142,39 +201,20 @@ test('admin save and delete return HTTP shapes without echoing secrets', async (
 })
 
 test('save with newSlug renames in place, keeping the secret and connections', async () => {
-	const { sqlite, env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['admin']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	const url = new URL('https://example.com/admin/platform-integrations.json')
-	const invoke = (body: Record<string, unknown>) =>
-		handler.handler({
-			request: postRequest(body),
-			url,
-			params: {},
-		} as never)
+	const { sqlite, invoke, connectGithubUser } = createHarness()
 
 	await invoke(saveGithubBody)
-	sqlite
-		.prepare(
-			`INSERT INTO user_integrations (
-				user_id, name, app_slug, platform_app_slug
-			) VALUES (?, ?, NULL, ?)`,
-		)
-		.run('user-1', 'github', 'github')
+	connectGithubUser()
 
 	// Rename plus a same-call edit; clientSecret omitted → retained.
 	const renamed = await invoke({
-		action: 'save',
+		...editGithubBody,
 		slug: 'github',
 		newSlug: 'github-platform',
-		clientId: saveGithubBody.clientId,
-		tokenUrl: saveGithubBody.tokenUrl,
-		authorizeUrl: saveGithubBody.authorizeUrl,
-		flow: 'confidential',
 		label: 'GitHub',
 	})
 	expect(renamed.status).toBe(200)
-	const payload = await renamed.json()
+	const payload = (await renamed.json()) as AppsPayload
 	expect(payload.apps.map((app: { slug: string }) => app.slug)).toEqual([
 		'github-platform',
 	])
@@ -194,13 +234,9 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 	// Renaming onto an occupied slug is a clean 400.
 	await invoke({ ...saveGithubBody, slug: 'occupied' })
 	const collision = await invoke({
-		action: 'save',
+		...editGithubBody,
 		slug: 'github-platform',
 		newSlug: 'occupied',
-		clientId: saveGithubBody.clientId,
-		tokenUrl: saveGithubBody.tokenUrl,
-		authorizeUrl: saveGithubBody.authorizeUrl,
-		flow: 'confidential',
 	})
 	expect(collision.status).toBe(400)
 	await expect(collision.json()).resolves.toMatchObject({
@@ -210,17 +246,13 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 
 	// A case-only slug edit is not a rename: the save applies normally.
 	const caseOnly = await invoke({
-		action: 'save',
+		...editGithubBody,
 		slug: 'github-platform',
 		newSlug: 'GitHub-Platform',
-		clientId: saveGithubBody.clientId,
-		tokenUrl: saveGithubBody.tokenUrl,
-		authorizeUrl: saveGithubBody.authorizeUrl,
-		flow: 'confidential',
 		label: 'GitHub (case-only edit)',
 	})
 	expect(caseOnly.status).toBe(200)
-	const caseOnlyPayload = await caseOnly.json()
+	const caseOnlyPayload = (await caseOnly.json()) as AppsPayload
 	expect(
 		caseOnlyPayload.apps.find(
 			(app: { slug: string }) => app.slug === 'github-platform',
@@ -230,41 +262,18 @@ test('save with newSlug renames in place, keeping the secret and connections', a
 	// When the post-rename upsert rejects, the rename rolls back so the row
 	// never sticks under a half-applied slug.
 	const failedEdit = await invoke({
-		action: 'save',
+		...editGithubBody,
 		slug: 'github-platform',
 		newSlug: 'github-hosted',
-		clientId: saveGithubBody.clientId,
-		tokenUrl: saveGithubBody.tokenUrl,
-		authorizeUrl: saveGithubBody.authorizeUrl,
-		flow: 'confidential',
 		// Explicit null clears the stored secret while enabled → rejected.
 		clientSecret: null,
 		enabled: true,
 	})
 	expect(failedEdit.status).toBe(400)
-	const after = await invoke({
-		action: 'save',
-		slug: 'github-platform',
-		clientId: saveGithubBody.clientId,
-		tokenUrl: saveGithubBody.tokenUrl,
-		authorizeUrl: saveGithubBody.authorizeUrl,
-		flow: 'confidential',
-	})
-	const slugs = (await after.json()).apps.map(
+	const after = await invoke({ ...editGithubBody, slug: 'github-platform' })
+	const slugs = ((await after.json()) as AppsPayload).apps.map(
 		(app: { slug: string }) => app.slug,
 	)
 	expect(slugs).toContain('github-platform')
 	expect(slugs).not.toContain('github-hosted')
-})
-
-test('non-admin callers are rejected', async () => {
-	const { env } = createHarness()
-	mockModule.readAuthenticatedAppUser.mockResolvedValue(createActor(['user']))
-	const handler = createAdminPlatformIntegrationsApiHandler(env)
-	const response = await handler.handler({
-		request: postRequest(saveGithubBody),
-		url: new URL('https://example.com/admin/platform-integrations.json'),
-		params: {},
-	} as never)
-	expect(response.status).toBe(403)
 })

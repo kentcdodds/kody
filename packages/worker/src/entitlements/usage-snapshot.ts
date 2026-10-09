@@ -4,20 +4,27 @@ import {
 	isWeeklyComputeWindowResource,
 	resolvePlanLimit,
 	resolveWeeklyPlanLimit,
+	type CreditWalletState,
 	type EntitlementLadder,
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
 import {
 	accountUsageEntitlementResources,
+	buildEntitlementHowToReduce,
 	entitlementResourceVisibility,
 	type EntitlementResourceGroup,
 	type EntitlementResourceVisibilityKind,
 } from './resource-visibility.ts'
 import {
 	readCurrentEntitlementResourceUsage,
-	readWeeklyEntitlementResourceUsage,
+	readUserMeterEntitlementUsageSnapshot,
 } from './service.ts'
+import {
+	dailyEntitlementResources,
+	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from './user-meter-do.ts'
 import { listUserStorageBucketEstimates } from '#worker/storage-buckets/service.ts'
 
 export const entitlementUsageWarningThreshold = 0.8
@@ -51,30 +58,12 @@ export type EntitlementUsageSnapshot = {
 	warnings: Array<EntitlementUsageSnapshotRow>
 }
 
-async function readVisibleEntitlementUsage(input: {
-	db: D1Database
-	env: Env
-	userId: string
-	resource: EntitlementResource
-	now: Date
-}) {
-	const authoritativeUsage = await readCurrentEntitlementResourceUsage({
-		db: input.db,
-		env: input.env,
-		userId: input.userId,
-		resource: input.resource,
-		now: input.now,
-	})
-	if (input.resource !== 'storage_bytes') return authoritativeUsage
-	const bucketEstimates = await listUserStorageBucketEstimates({
-		env: input.env,
-		userId: input.userId,
-	})
-	return bucketEstimates.reduce(
-		(total, bucket) => total + (bucket.estimatedBytes ?? 0),
-		authoritativeUsage,
-	)
-}
+const accountUsageDailyMeterResources = dailyEntitlementResources.filter(
+	(resource) =>
+		(accountUsageEntitlementResources as ReadonlyArray<string>).includes(
+			resource,
+		),
+)
 
 export async function readEntitlementUsageSnapshot(input: {
 	db: D1Database
@@ -82,57 +71,114 @@ export async function readEntitlementUsageSnapshot(input: {
 	usageUserId: string
 	plan: PlanName
 	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
 	now?: Date
 }): Promise<EntitlementUsageSnapshot> {
 	const now = input.now ?? new Date()
-	const resources = await Promise.all(
-		accountUsageEntitlementResources.map(async (resource) => {
-			const visibility = entitlementResourceVisibility[resource]
-			const current =
-				visibility.kind === 'per_unit_max'
-					? 0
-					: await readVisibleEntitlementUsage({
-							db: input.db,
-							env: input.env,
-							userId: input.usageUserId,
-							resource,
-							now,
-						})
-			const limit = resolvePlanLimit(input.plan, resource, input.ladder)
-			// per_unit_max compares one candidate value (no accumulating
-			// usage) and a zero limit means the plan has no allowance, so a
-			// current/limit ratio is meaningless for both.
-			const percentOfLimit =
-				visibility.kind === 'per_unit_max' || limit === 0
-					? null
-					: current / limit
-			const week = await readWeeklyUsageWindow({
-				env: input.env,
-				userId: input.usageUserId,
-				plan: input.plan,
-				ladder: input.ladder,
+	const weeklyResources = accountUsageDailyMeterResources.filter(
+		(resource) =>
+			isWeeklyComputeWindowResource(resource) &&
+			resolveWeeklyPlanLimit(
+				input.plan,
 				resource,
-				now,
-			})
-			const overEightyPercent =
-				(percentOfLimit !== null &&
-					percentOfLimit > entitlementUsageWarningThreshold) ||
-				(week?.overEightyPercent ?? false)
-			return {
-				resource,
-				label: entitlementResourceLabels[resource],
-				group: visibility.group,
-				kind: visibility.kind,
-				whatCounts: visibility.whatCounts,
-				howToReduce: visibility.howToReduce,
-				current,
-				limit,
-				percentOfLimit,
-				overEightyPercent,
-				...(week ? { week } : {}),
-			}
-		}),
+				input.ladder,
+				input.creditWallet,
+			) !== null,
 	)
+	const nonMeterResources = accountUsageEntitlementResources.filter(
+		(resource) =>
+			!isDailyEntitlementResource(resource) && resource !== 'storage_bytes',
+	)
+
+	const [meterCounts, bucketEstimates, nonMeterUsages] = await Promise.all([
+		readUserMeterEntitlementUsageSnapshot({
+			db: input.db,
+			env: input.env,
+			userId: input.usageUserId,
+			now,
+			dailyResources: accountUsageDailyMeterResources,
+			weeklyResources,
+			includeStorageBytes: true,
+		}),
+		listUserStorageBucketEstimates({
+			env: input.env,
+			userId: input.usageUserId,
+		}),
+		Promise.all(
+			nonMeterResources.map(async (resource) => {
+				const visibility = entitlementResourceVisibility[resource]
+				const current =
+					visibility.kind === 'per_unit_max'
+						? 0
+						: await readCurrentEntitlementResourceUsage({
+								db: input.db,
+								env: input.env,
+								userId: input.usageUserId,
+								resource,
+								now,
+							})
+				return { resource, current }
+			}),
+		),
+	])
+
+	const bucketEstimateTotal = bucketEstimates.reduce(
+		(total, bucket) => total + (bucket.estimatedBytes ?? 0),
+		0,
+	)
+	const nonMeterByResource = new Map(
+		nonMeterUsages.map((entry) => [entry.resource, entry.current]),
+	)
+
+	const resources = accountUsageEntitlementResources.map((resource) => {
+		const visibility = entitlementResourceVisibility[resource]
+		const current = resolveSnapshotCurrent({
+			resource,
+			visibilityKind: visibility.kind,
+			meterCounts,
+			bucketEstimateTotal,
+			nonMeterByResource,
+		})
+		const week = resolveSnapshotWeekWindow({
+			resource,
+			plan: input.plan,
+			ladder: input.ladder,
+			creditWallet: input.creditWallet,
+			weeklyCounts: meterCounts.weekly,
+		})
+		const limit = resolvePlanLimit(
+			input.plan,
+			resource,
+			input.ladder,
+			input.creditWallet,
+		)
+		// per_unit_max compares one candidate value (no accumulating
+		// usage) and a zero limit means the plan has no allowance, so a
+		// current/limit ratio is meaningless for both.
+		const percentOfLimit =
+			visibility.kind === 'per_unit_max' || limit === 0 ? null : current / limit
+		const overEightyPercent =
+			(percentOfLimit !== null &&
+				percentOfLimit > entitlementUsageWarningThreshold) ||
+			(week?.overEightyPercent ?? false)
+		return {
+			resource,
+			label: entitlementResourceLabels[resource],
+			group: visibility.group,
+			kind: visibility.kind,
+			whatCounts: visibility.whatCounts,
+			howToReduce: buildEntitlementHowToReduce(
+				resource,
+				input.plan,
+				input.creditWallet,
+			),
+			current,
+			limit,
+			percentOfLimit,
+			overEightyPercent,
+			...(week ? { week } : {}),
+		}
+	})
 	return {
 		plan: input.plan,
 		today: utcDayKey(now),
@@ -142,23 +188,39 @@ export async function readEntitlementUsageSnapshot(input: {
 	}
 }
 
-async function readWeeklyUsageWindow(input: {
-	env: Env
-	userId: string
+function resolveSnapshotCurrent(input: {
+	resource: EntitlementResource
+	visibilityKind: EntitlementResourceVisibilityKind
+	meterCounts: Awaited<ReturnType<typeof readUserMeterEntitlementUsageSnapshot>>
+	bucketEstimateTotal: number
+	nonMeterByResource: Map<EntitlementResource, number>
+}): number {
+	if (input.visibilityKind === 'per_unit_max') return 0
+	if (isDailyEntitlementResource(input.resource)) {
+		return input.meterCounts.daily[input.resource] ?? 0
+	}
+	if (input.resource === 'storage_bytes') {
+		return (input.meterCounts.storageBytes ?? 0) + input.bucketEstimateTotal
+	}
+	return input.nonMeterByResource.get(input.resource) ?? 0
+}
+
+function resolveSnapshotWeekWindow(input: {
+	resource: EntitlementResource
 	plan: PlanName
 	ladder: EntitlementLadder
-	resource: EntitlementResource
-	now: Date
-}): Promise<EntitlementUsageWeekWindow | undefined> {
+	creditWallet: CreditWalletState
+	weeklyCounts: Partial<Record<DailyEntitlementResource, number>>
+}): EntitlementUsageWeekWindow | undefined {
 	if (!isWeeklyComputeWindowResource(input.resource)) return undefined
-	const limit = resolveWeeklyPlanLimit(input.plan, input.resource, input.ladder)
+	const limit = resolveWeeklyPlanLimit(
+		input.plan,
+		input.resource,
+		input.ladder,
+		input.creditWallet,
+	)
 	if (limit === null) return undefined
-	const current = await readWeeklyEntitlementResourceUsage({
-		env: input.env,
-		userId: input.userId,
-		resource: input.resource,
-		now: input.now,
-	})
+	const current = input.weeklyCounts[input.resource] ?? 0
 	const percentOfLimit = limit === 0 ? null : current / limit
 	return {
 		current,

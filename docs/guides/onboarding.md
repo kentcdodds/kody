@@ -56,8 +56,8 @@ agent gains durable state that outlives the chat: memory, secrets, saved
 packages, jobs, workflows, and apps. Work runs in Kody's cloud. You can keep
 that agent or switch to another without rebuilding the stack.
 
-You do not chat with Kody directly. Your agent supplies the intelligence. Kody
-holds the result.
+You do not chat with Kody directly. You talk to your agent; it does the
+reasoning and uses your computer. Kody holds what should outlive the chat.
 
 ## What Kody is not
 
@@ -65,7 +65,8 @@ Kody is not a gateway that exists to connect APIs for your agent. It is not
 middleware that sits in front of every SaaS login. Integrations and MCP servers
 are available when a job needs them. They are supporting cast.
 
-If the person leaves thinking "I signed up to wire APIs," this briefing failed.
+Success is the person seeing one useful thing they made and own, not a list of
+wired APIs.
 
 ## Start with a first win
 
@@ -191,7 +192,7 @@ Only set up a connection when their use needs one. Say the difficulty first.
 - **MCP (easy).** Add a remote MCP server they already have, or one they can
   authorize quickly. Start here when a server exists.
 - **PAT / API key (harder, more powerful).** Store a token they already have as
-  a secret. Packages can use it. Send the `/account/secrets/new` URL and have
+  a secret. Packages can use it. Send the `/connect/secret-set` URL and have
   them paste into **Secret value** on that page. Open
   `search({ entity: "guide:connect_secret" })` or a resolved
   `search({ entity: "guide:provider_<slug>" })`.
@@ -200,8 +201,10 @@ Only set up a connection when their use needs one. Say the difficulty first.
   `search({ entity: "guide:oauth" })` or a resolved
   `search({ entity: "guide:provider_<slug>" })`.
 
-Hosted / platform OAuth is not the onboarding path. New connects are
-bring-your-own.
+A few providers have a Kody built-in app. `integrationPlatformAppList` lists the
+ones that are enabled and published. If it lists the provider, send
+`/connect/oauth?provider=<slug>&platform=<slug>` so the user skips app
+registration. Otherwise the user brings their own app.
 
 ## Secrets
 
@@ -217,6 +220,6 @@ if they have none.
 
 The last onboarding beat is portability. Send them to `/onboarding/step-3` to
 connect a second agent from a different ecosystem. Connecting that second agent
-unlocks Standard free for 2 weeks (once per account). That new agent looks up
+gives Pro free for 2 weeks (once per account). That new agent looks up
 `search({ entity: "guide:portability" })` and reuses the memory, package, or ask
 you just made — one short proof. Do not restart setup.

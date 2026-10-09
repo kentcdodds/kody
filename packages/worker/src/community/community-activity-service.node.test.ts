@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	countCommunityForksByListingIds,
 	insertCommunityFork,
@@ -9,41 +10,6 @@ import {
 	getCommunityActivityForAdmin,
 	listCommunityActivityForAdmin,
 } from './service.ts'
-
-type TestD1Statement = {
-	bind(...params: Array<unknown>): TestD1Statement
-	all<T>(): Promise<{ results: Array<T> }>
-	first<T>(): Promise<T | null>
-	run(): Promise<{ meta: { changes: number } }>
-}
-
-function createD1FromSqlite(sqlite: DatabaseSync) {
-	function createStatement(
-		query: string,
-		params: Array<unknown> = [],
-	): TestD1Statement {
-		return {
-			bind(...boundParams: Array<unknown>) {
-				return createStatement(query, boundParams)
-			},
-			async all<T>() {
-				return { results: sqlite.prepare(query).all(...params) as Array<T> }
-			},
-			async first<T>() {
-				return (sqlite.prepare(query).get(...params) ?? null) as T | null
-			},
-			async run() {
-				const result = sqlite.prepare(query).run(...params)
-				return { meta: { changes: result.changes } }
-			},
-		}
-	}
-	return {
-		prepare(query: string) {
-			return createStatement(query)
-		},
-	} as unknown as D1Database
-}
 
 function createCommunityDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -116,26 +82,29 @@ ON community_forks(forked_package_id);
 	return { sqlite, db: createD1FromSqlite(sqlite) }
 }
 
+const listings = {
+	'listing-1': { kodyId: 'alpha', name: '@owner/alpha' },
+	'listing-2': { kodyId: 'beta', name: '@owner/beta' },
+}
+
+const fork3Activity = {
+	id: 'fork-3',
+	kind: 'fork',
+	listingId: 'listing-2',
+	listingName: '@owner/beta',
+	listingKodyId: 'beta',
+	actingUsername: 'forker',
+	occurredAt: '2026-07-20T00:03:00.000Z',
+}
+
 test('admin community activity reads forks and latest ratings newest-first with pagination and filters', async () => {
 	const { sqlite, db } = createCommunityDb()
-	sqlite
-		.prepare(
-			`INSERT INTO users (
-				username, email, password_hash, stable_user_id
-			) VALUES (?, ?, 'hash', ?), (?, ?, 'hash', ?)`,
-		)
-		.run(
-			'forker',
-			'forker@example.com',
-			'user-forker',
-			'rater',
-			'rater@example.com',
-			'user-rater',
-		)
-	for (const listing of [
-		{ id: 'listing-1', kodyId: 'alpha', name: '@owner/alpha' },
-		{ id: 'listing-2', kodyId: 'beta', name: '@owner/beta' },
-	]) {
+	sqlite.exec(
+		`INSERT INTO users (username, email, password_hash, stable_user_id) VALUES
+			('forker', 'forker@example.com', 'hash', 'user-forker'),
+			('rater', 'rater@example.com', 'hash', 'user-rater')`,
+	)
+	for (const [id, listing] of Object.entries(listings)) {
 		sqlite
 			.prepare(
 				`INSERT INTO community_listings (
@@ -146,99 +115,61 @@ test('admin community activity reads forks and latest ratings newest-first with 
 					'commit-1', 'active', '2026-07-20T00:00:00.000Z',
 					'2026-07-20T00:00:00.000Z', '2026-07-20T00:00:00.000Z')`,
 			)
-			.run(
-				listing.id,
-				`package-${listing.id}`,
-				`source-${listing.id}`,
-				listing.kodyId,
-				listing.name,
-			)
+			.run(id, `package-${id}`, `source-${id}`, listing.kodyId, listing.name)
 	}
 
-	for (const fork of [
-		{
-			id: 'fork-1',
-			listingId: 'listing-1',
-			createdAt: '2026-07-20T00:01:00.000Z',
-		},
-		{
-			id: 'fork-2',
-			listingId: 'listing-1',
-			createdAt: '2026-07-20T00:02:00.000Z',
-		},
-		{
-			id: 'fork-3',
-			listingId: 'listing-2',
-			createdAt: '2026-07-20T00:03:00.000Z',
-		},
-	]) {
+	for (const [id, listingId, minute] of [
+		['fork-1', 'listing-1', 1],
+		['fork-2', 'listing-1', 2],
+		['fork-3', 'listing-2', 3],
+	] as const) {
 		await insertCommunityFork(db, {
-			id: fork.id,
-			listing_id: fork.listingId,
+			id,
+			listing_id: listingId,
 			forker_user_id: 'user-forker',
 			origin_commit: 'commit-1',
-			forked_package_id: `package-${fork.id}`,
-			forked_source_id: `source-${fork.id}`,
-			target_kody_id: `target-${fork.id}`,
-			listing_name:
-				fork.listingId === 'listing-1' ? '@owner/alpha' : '@owner/beta',
-			listing_kody_id: fork.listingId === 'listing-1' ? 'alpha' : 'beta',
-			created_at: fork.createdAt,
+			forked_package_id: `package-${id}`,
+			forked_source_id: `source-${id}`,
+			target_kody_id: `target-${id}`,
+			listing_name: listings[listingId].name,
+			listing_kody_id: listings[listingId].kodyId,
+			created_at: `2026-07-20T00:0${minute}:00.000Z`,
 		})
 	}
 
-	const firstRating = await upsertCommunityRating(db, {
-		id: 'rating-original',
-		listing_id: 'listing-1',
-		user_id: 'user-rater',
-		stars: 4,
-		adaptation_effort: 3,
-		note: 'not exposed',
-		created_at: '2026-07-20T00:04:00.000Z',
-		updated_at: '2026-07-20T00:04:00.000Z',
-	})
-	const updatedRating = await upsertCommunityRating(db, {
-		id: 'rating-replacement',
-		listing_id: 'listing-1',
-		user_id: 'user-rater',
-		stars: 5,
-		adaptation_effort: 1,
-		note: 'still not exposed',
-		created_at: '2026-07-20T00:05:00.000Z',
-		updated_at: '2026-07-20T00:05:00.000Z',
-	})
-	expect(firstRating.id).toBe('rating-original')
-	expect(updatedRating).toMatchObject({
+	const rate = (id: string, stars: number, effort: number, minute: number) =>
+		upsertCommunityRating(db, {
+			id,
+			listing_id: 'listing-1',
+			user_id: 'user-rater',
+			stars,
+			adaptation_effort: effort,
+			note: 'not exposed',
+			created_at: `2026-07-20T00:0${minute}:00.000Z`,
+			updated_at: `2026-07-20T00:0${minute}:00.000Z`,
+		})
+	expect((await rate('rating-original', 4, 3, 4)).id).toBe('rating-original')
+	expect(await rate('rating-replacement', 5, 1, 5)).toMatchObject({
 		id: 'rating-original',
 		stars: 5,
 		adaptationEffort: 1,
 		updatedAt: '2026-07-20T00:05:00.000Z',
 	})
 
+	const ratingActivity = {
+		id: 'rating-original',
+		kind: 'rating',
+		listingId: 'listing-1',
+		listingName: '@owner/alpha',
+		listingKodyId: 'alpha',
+		actingUsername: 'rater',
+		occurredAt: '2026-07-20T00:05:00.000Z',
+		stars: 5,
+		adaptationEffort: 1,
+	}
 	const firstPage = await listCommunityActivityForAdmin({ db, pageSize: 2 })
 	expect(firstPage).toMatchObject({ total: 4, page: 1, pageSize: 2 })
-	expect(firstPage.items).toEqual([
-		{
-			id: 'rating-original',
-			kind: 'rating',
-			listingId: 'listing-1',
-			listingName: '@owner/alpha',
-			listingKodyId: 'alpha',
-			actingUsername: 'rater',
-			occurredAt: '2026-07-20T00:05:00.000Z',
-			stars: 5,
-			adaptationEffort: 1,
-		},
-		{
-			id: 'fork-3',
-			kind: 'fork',
-			listingId: 'listing-2',
-			listingName: '@owner/beta',
-			listingKodyId: 'beta',
-			actingUsername: 'forker',
-			occurredAt: '2026-07-20T00:03:00.000Z',
-		},
-	])
+	expect(firstPage.items).toEqual([ratingActivity, fork3Activity])
 
 	const clamped = await listCommunityActivityForAdmin({
 		db,
@@ -254,14 +185,14 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		listingId: 'listing-1',
 	})
 	expect(filtered.total).toBe(1)
-	expect(filtered.items).toEqual([firstPage.items[0]])
+	expect(filtered.items).toEqual([ratingActivity])
 	expect(
 		await getCommunityActivityForAdmin({
 			db,
 			kind: 'rating',
 			activityId: 'rating-original',
 		}),
-	).toEqual(firstPage.items[0])
+	).toEqual(ratingActivity)
 
 	sqlite.prepare(`DELETE FROM community_listings WHERE id = 'listing-2'`).run()
 	const deletedListingActivity = await listCommunityActivityForAdmin({
@@ -269,17 +200,7 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		kind: 'fork',
 		listingId: 'listing-2',
 	})
-	expect(deletedListingActivity.items).toEqual([
-		{
-			id: 'fork-3',
-			kind: 'fork',
-			listingId: 'listing-2',
-			listingName: '@owner/beta',
-			listingKodyId: 'beta',
-			actingUsername: 'forker',
-			occurredAt: '2026-07-20T00:03:00.000Z',
-		},
-	])
+	expect(deletedListingActivity.items).toEqual([fork3Activity])
 
 	expect(
 		await countCommunityForksByListingIds(db, [

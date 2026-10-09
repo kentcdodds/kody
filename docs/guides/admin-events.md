@@ -16,6 +16,11 @@ These topics fan out only to packages saved by users who hold the admin role at
 dispatch time. A non-admin package may declare them; it never receives the
 event. Role revocation applies on the next dispatch.
 
+Handlers run unattended as the package owner and carry that owner's admin role,
+so they can call admin capabilities (for example `adminUserList` or
+`adminSystemEmailGet`) without a signed-in session. Only save packages you trust
+on an admin account: their code has the same admin reach you do.
+
 Public package subscription topics live in
 [Subscriptions and events](./package-subscriptions.md).
 
@@ -119,12 +124,12 @@ the payload or its request hash. Rows without submitter snapshots retain null
 The event deliberately omits admin notes, reviewer fields, revision and update
 metadata, roles, plan, and unrelated account content. This narrow delivery
 exception applies only to the exact feedback the user approved after an agent
-showed the proposed summary and details and asked first. It does not grant
-package runtime general admin roles or general access to user data. Notification
-copies already delivered outside Kody cannot be recalled and may remain after
-Kody account deletion under the deployment operator's retention and deletion
-controls. Such copies contain only the exact approved feedback and attribution,
-never unrelated account content.
+showed the proposed summary and details and asked first. Receiving the event
+grants no role or user-data access beyond what the admin owner already holds.
+Notification copies already delivered outside Kody cannot be recalled and may
+remain after Kody account deletion under the deployment operator's retention and
+deletion controls. Such copies contain only the exact approved feedback and
+attribution, never unrelated account content.
 
 The feedback row is durable before Kody awaits the small Queue enqueue. Enqueue
 failure is logged but does not change the successful MCP response, avoiding a
@@ -188,7 +193,7 @@ provides a distinct package-invocation idempotency key for every recorded write.
 
 ## `community.listing.published` (admins)
 
-The first successful community listing publish enqueues a durable
+The first successful publish of a public package to Community enqueues a durable
 `community.listing.published` attempt. Republishes record `listing_updated` in
 the activity timeline but do **not** enqueue this subscription topic. The Queue
 consumer dispatches only to packages saved by users who hold the admin role when
@@ -372,10 +377,12 @@ or package source.
 ## `fleet.entitlement.crossed` (admins)
 
 The hourly `usage_entitlement_alert` lane sweeps the top ~15 active accounts
-this UTC month and fans `fleet.entitlement.crossed` to packages saved by users
-who hold the admin role at dispatch time. A non-admin package may declare the
-topic, but it never receives the event. Role revocation stops delivery on the
-next crossing.
+this UTC month (scored against each account's effective plan, including
+temporary Pro gift / referral overlays; inbound `email_receives_per_day` uses
+the base plan, matching inbound mail enforcement) and fans
+`fleet.entitlement.crossed` to packages saved by users who hold the admin role
+at dispatch time. A non-admin package may declare the topic, but it never
+receives the event. Role revocation stops delivery on the next crossing.
 
 One event fires per crossing of 80% (`approaching`) or 100% (`reached`) on a
 specific entitlement, when a non-admin account first exceeds 24h of combined

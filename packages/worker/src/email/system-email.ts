@@ -16,6 +16,10 @@ import {
 	assertSystemEmailGraphAuthority,
 	commitSystemEmailAuthorityBatch,
 } from './system-email-authority.ts'
+import {
+	systemInboundDedupeTombstoneStatements,
+	systemInboundProvider,
+} from './system-inbound-dedupe.ts'
 
 export { systemEmailOwnerId }
 
@@ -402,9 +406,14 @@ async function deleteSystemEmailMessagesByIds(input: {
 		}
 		if (deletableIds.length === 0) continue
 		const placeholders = deletableIds.map(() => '?').join(', ')
+		const tombstones = await systemInboundDedupeTombstoneStatements({
+			db: input.db,
+			messageIds: deletableIds,
+		})
 		const deletes = await commitSystemEmailAuthorityBatch({
 			db: input.db,
 			statements: [
+				...tombstones,
 				input.db
 					.prepare(
 						`DELETE FROM system_email_attachments
@@ -414,9 +423,14 @@ async function deleteSystemEmailMessagesByIds(input: {
 				input.db
 					.prepare(
 						`DELETE FROM system_email_delivery_events
-						WHERE message_id IN (${placeholders})`,
+						WHERE message_id IN (${placeholders})
+							OR (
+								provider = '${systemInboundProvider}'
+								AND json_extract(detail_json, '$.messageId')
+									IN (${placeholders})
+							)`,
 					)
-					.bind(...deletableIds),
+					.bind(...deletableIds, ...deletableIds),
 				input.db
 					.prepare(
 						`DELETE FROM system_email_messages
@@ -425,7 +439,9 @@ async function deleteSystemEmailMessagesByIds(input: {
 					.bind(...deletableIds),
 			],
 		})
-		result.deletedMessages += Number(deletes[2]?.meta.changes ?? 0)
+		result.deletedMessages += Number(
+			deletes[tombstones.length + 2]?.meta.changes ?? 0,
+		)
 	}
 	return result
 }

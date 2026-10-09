@@ -1,28 +1,91 @@
 import { CommunityListingPublishedDispatchCancelledError } from './errors.ts'
-import { type CommunityListingPublishedDispatchQueueMessage } from './listing-published-dispatch-queue-producer.ts'
+import { type CommunityListingRelease } from './fork-upstream-updated-subscription-event.ts'
+import { dispatchCommunityForkUpstreamUpdatedSubscriptionEvents } from './fork-upstream-updated-package-subscriptions.ts'
+import {
+	communityForkUpstreamUpdatedDispatchKind,
+	type CommunityForkUpstreamUpdatedDispatchQueueMessage,
+	type CommunityListingPublishedDispatchQueueMessage,
+} from './listing-published-dispatch-queue-producer.ts'
 import { dispatchCommunityListingPublishedSubscriptionEvent } from './listing-published-package-subscriptions.ts'
 
 const communityListingPublishedDispatchRetryDelaySeconds = 30
 
-function parseCommunityListingPublishedDispatchQueueMessage(
-	body: unknown,
-): CommunityListingPublishedDispatchQueueMessage | null {
-	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
-	const record = body as Record<string, unknown>
-	const eventId = record['eventId']
-	const listingId = record['listingId']
+type ParsedCommunityListingDispatchQueueMessage =
+	| ({ kind: 'published' } & CommunityListingPublishedDispatchQueueMessage)
+	| CommunityForkUpstreamUpdatedDispatchQueueMessage
+
+function readNonEmptyString(value: unknown): string | null {
+	if (typeof value !== 'string') return null
+	const trimmed = value.trim()
+	return trimmed ? trimmed : null
+}
+
+function parseCommunityListingRelease(
+	value: unknown,
+): CommunityListingRelease | null {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+	const record = value as Record<string, unknown>
+	const pinnedCommit = readNonEmptyString(record['pinnedCommit'])
+	const packageVersion = record['packageVersion']
 	if (
-		Object.keys(record).length !== 2 ||
-		typeof eventId !== 'string' ||
-		!eventId.trim() ||
-		typeof listingId !== 'string' ||
-		!listingId.trim()
+		!pinnedCommit ||
+		(packageVersion !== null && typeof packageVersion !== 'string')
 	) {
 		return null
 	}
-	return {
-		eventId: eventId.trim(),
-		listingId: listingId.trim(),
+	return { pinnedCommit, packageVersion }
+}
+
+function parseCommunityListingPublishedDispatchQueueMessage(
+	body: unknown,
+): ParsedCommunityListingDispatchQueueMessage | null {
+	if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+	const record = body as Record<string, unknown>
+	const eventId = readNonEmptyString(record['eventId'])
+	const listingId = readNonEmptyString(record['listingId'])
+	if (!eventId || !listingId) return null
+	if (record['kind'] === communityForkUpstreamUpdatedDispatchKind) {
+		const previous = parseCommunityListingRelease(record['previous'])
+		const current = parseCommunityListingRelease(record['current'])
+		const publishedAt = readNonEmptyString(record['publishedAt'])
+		if (!previous || !current || !publishedAt) return null
+		return {
+			kind: communityForkUpstreamUpdatedDispatchKind,
+			eventId,
+			listingId,
+			previous,
+			current,
+			publishedAt,
+		}
+	}
+	if (Object.keys(record).length !== 2) return null
+	return { kind: 'published', eventId, listingId }
+}
+
+async function dispatchParsedMessage(
+	env: Env,
+	parsed: ParsedCommunityListingDispatchQueueMessage,
+) {
+	switch (parsed.kind) {
+		case 'published':
+			await dispatchCommunityListingPublishedSubscriptionEvent({
+				env,
+				eventId: parsed.eventId,
+				listingId: parsed.listingId,
+			})
+			return
+		case communityForkUpstreamUpdatedDispatchKind: {
+			const { kind: _kind, ...message } = parsed
+			await dispatchCommunityForkUpstreamUpdatedSubscriptionEvents({
+				env,
+				message,
+			})
+			return
+		}
+		default: {
+			const exhaustive: never = parsed
+			return exhaustive
+		}
 	}
 }
 
@@ -40,10 +103,7 @@ export async function handleCommunityListingPublishedDispatchQueue(
 			continue
 		}
 		try {
-			await dispatchCommunityListingPublishedSubscriptionEvent({
-				env,
-				...parsed,
-			})
+			await dispatchParsedMessage(env, parsed)
 			queueMessage.ack()
 		} catch (error) {
 			if (error instanceof CommunityListingPublishedDispatchCancelledError) {
@@ -54,7 +114,9 @@ export async function handleCommunityListingPublishedDispatchQueue(
 				'community-listing-published-dispatch-queue-processing-failed',
 				{
 					queueMessageId: queueMessage.id,
-					...parsed,
+					kind: parsed.kind,
+					eventId: parsed.eventId,
+					listingId: parsed.listingId,
 					error,
 				},
 			)

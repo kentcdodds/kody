@@ -9,13 +9,18 @@ import {
 	startD1Export,
 	verifySourceDatabaseIdentity,
 } from './d1-export-api.ts'
-import { BackupError } from './backup-policy.ts'
 import {
-	DATABASE_ID,
 	environment,
 	exportEnvelope,
 	identityEnvelope,
+	backupError,
 } from './backup-control-plane-test-support.ts'
+
+const noSleep = async () => undefined
+const respondWith = (response: Response) => ({
+	fetcher: async () => response.clone(),
+	sleep: noSleep,
+})
 
 test('verifies D1 identity size gates without calling the live account endpoint', async () => {
 	const consoleError = vi.spyOn(console, 'error')
@@ -27,100 +32,59 @@ test('verifies D1 identity size gates without calling the live account endpoint'
 	await verifySourceDatabaseIdentity(environment(), {
 		fetcher: async (input) => {
 			urls.push(String(input))
-			return Response.json({
-				success: true,
-				result: {
-					uuid: DATABASE_ID,
-					name: 'production-db',
-					file_size: 1_000,
-				},
-			})
+			return identityEnvelope(1_000)
 		},
-		sleep: async () => undefined,
+		sleep: noSleep,
 	})
 	assert.equal(urls.length, 1)
 	assert.match(urls[0]!, /\/d1\/database\//)
-
-	consoleError.mockClear()
-	for (const response of [
-		identityEnvelope(undefined, false),
-		identityEnvelope('1000'),
-		identityEnvelope(1.5),
-		identityEnvelope(-1),
-	]) {
-		await assert.rejects(
-			verifySourceDatabaseIdentity(environment(), {
-				fetcher: async () => response.clone(),
-			}),
-			(error: unknown) =>
-				error instanceof BackupError && error.code === 'api-malformed-identity',
-		)
-	}
-	assert.deepEqual(
-		await verifySourceDatabaseIdentity(environment(), {
-			fetcher: async () =>
-				identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1),
-		}),
-		{
-			fileSize: DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1,
-			maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES,
-		},
-	)
-	assert.equal(consoleError.mock.calls.length, 4)
-
-	consoleError.mockClear()
-	consoleLog.mockClear()
-	await assert.rejects(
-		verifySourceDatabaseIdentity(environment(), {
-			fetcher: async () => identityEnvelope(0),
-		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'source-size-zero' &&
-			error.retryable,
-	)
-	assert.equal(consoleError.mock.calls.length, 1)
-	assert.deepEqual(
-		await verifySourceDatabaseIdentity(environment(), {
-			fetcher: async () => identityEnvelope(1_000),
-		}),
-		{ fileSize: 1_000, maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES },
-	)
 	assert.equal(consoleLog.mock.calls.length, 1)
 
-	consoleError.mockClear()
-	for (const fileSize of [
-		DEFAULT_BACKUP_MAX_SOURCE_BYTES,
-		DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1,
-	]) {
+	const env = environment()
+	const cappedEnv = { ...env, BACKUP_MAX_SOURCE_BYTES: '100' }
+	const invalidCapEnv = {
+		...env,
+		BACKUP_MAX_SOURCE_BYTES: String(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1),
+	}
+	const rejected: Array<[Response, string, typeof env?]> = [
+		[identityEnvelope(undefined, false), 'api-malformed-identity'],
+		[identityEnvelope('1000'), 'api-malformed-identity'],
+		[identityEnvelope(1.5), 'api-malformed-identity'],
+		[identityEnvelope(-1), 'api-malformed-identity'],
+		[identityEnvelope(0), 'source-size-zero'],
+		[
+			identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES),
+			'source-size-limit-exceeded',
+		],
+		[
+			identityEnvelope(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1),
+			'source-size-limit-exceeded',
+		],
+		[identityEnvelope(100), 'source-size-limit-exceeded', cappedEnv],
+		[identityEnvelope(1), 'invalid-max-source-bytes', invalidCapEnv],
+	]
+	for (const [response, code, candidateEnv = env] of rejected) {
 		await assert.rejects(
-			verifySourceDatabaseIdentity(environment(), {
-				fetcher: async () => identityEnvelope(fileSize),
-			}),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === 'source-size-limit-exceeded',
+			verifySourceDatabaseIdentity(candidateEnv, respondWith(response)),
+			backupError(code),
 		)
 	}
-	const env = environment()
-	env.BACKUP_MAX_SOURCE_BYTES = '100'
+	// An invalid configured ceiling throws before any D1 call or log.
+	assert.equal(consoleError.mock.calls.length, rejected.length - 1)
 	await assert.rejects(
-		verifySourceDatabaseIdentity(env, {
-			fetcher: async () => identityEnvelope(100),
-		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'source-size-limit-exceeded',
+		verifySourceDatabaseIdentity(env, respondWith(identityEnvelope(0))),
+		backupError('source-size-zero', true),
 	)
-	env.BACKUP_MAX_SOURCE_BYTES = String(DEFAULT_BACKUP_MAX_SOURCE_BYTES + 1)
-	await assert.rejects(
-		verifySourceDatabaseIdentity(env, {
-			fetcher: async () => identityEnvelope(1),
-		}),
-		(error: unknown) =>
-			error instanceof BackupError && error.code === 'invalid-max-source-bytes',
-	)
-	assert.equal(consoleError.mock.calls.length, 3)
+
+	for (const fileSize of [1_000, DEFAULT_BACKUP_MAX_SOURCE_BYTES - 1]) {
+		assert.deepEqual(
+			await verifySourceDatabaseIdentity(
+				env,
+				respondWith(identityEnvelope(fileSize)),
+			),
+			{ fileSize, maxSourceBytes: DEFAULT_BACKUP_MAX_SOURCE_BYTES },
+		)
+	}
 })
 
 test('startD1Export classifies auth, transient, and malformed responses', async () => {
@@ -132,12 +96,9 @@ test('startD1Export classifies auth, transient, and malformed responses', async 
 					calls += 1
 					return new Response('', { status })
 				},
-				sleep: async () => undefined,
+				sleep: noSleep,
 			}),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === 'api-auth-failure' &&
-				error.retryable === false,
+			backupError('api-auth-failure', false),
 		)
 		assert.equal(calls, 1)
 	}
@@ -164,24 +125,15 @@ test('startD1Export classifies auth, transient, and malformed responses', async 
 		assert.equal(sleeps[0], status === 429 ? 2_000 : 1_000)
 	}
 
-	const malformedCases = [
-		{
-			response: new Response('{', { status: 200 }),
-			code: 'api-malformed-json',
-		},
-		{
-			response: Response.json({
-				success: true,
-				result: { status: 'complete' },
-			}),
-			code: 'export-malformed-response',
-		},
-		{
-			response: exportEnvelope('error'),
-			code: 'export-failed',
-		},
-		{
-			response: Response.json({
+	for (const [response, code] of [
+		[new Response('{', { status: 200 }), 'api-malformed-json'],
+		[
+			Response.json({ success: true, result: { status: 'complete' } }),
+			'export-malformed-response',
+		],
+		[exportEnvelope('error'), 'export-failed'],
+		[
+			Response.json({
 				success: true,
 				result: {
 					type: 'export',
@@ -190,81 +142,67 @@ test('startD1Export classifies auth, transient, and malformed responses', async 
 					status: 'weird',
 				},
 			}),
-			code: 'export-malformed-response',
-		},
-	]
-	for (const expected of malformedCases) {
+			'export-malformed-response',
+		],
+	] as const) {
 		await assert.rejects(
-			startD1Export(environment(), {
-				fetcher: async () => expected.response.clone(),
-				sleep: async () => undefined,
-			}),
-			(error: unknown) =>
-				error instanceof BackupError && error.code === expected.code,
+			startD1Export(environment(), respondWith(response)),
+			backupError(code),
 		)
 	}
 })
 
 test('refresh requires the same bookmark and a complete nonempty signed URL', async () => {
-	const cases = [
-		{
-			response: exportEnvelope('active'),
-			code: 'export-refresh-pending',
-			retryable: true,
-		},
-		{
-			response: exportEnvelope('complete', 'bookmark-2'),
-			code: 'export-bookmark-mismatch',
-			retryable: false,
-		},
-		{
-			response: exportEnvelope('complete', 'bookmark-1', ''),
-			code: 'export-malformed-response',
-			retryable: false,
-		},
-	]
-	for (const expected of cases) {
+	for (const [response, code, retryable] of [
+		[exportEnvelope('active'), 'export-refresh-pending', true],
+		[
+			exportEnvelope('complete', 'bookmark-2'),
+			'export-bookmark-mismatch',
+			false,
+		],
+		[
+			exportEnvelope('complete', 'bookmark-1', ''),
+			'export-malformed-response',
+			false,
+		],
+	] as const) {
 		await assert.rejects(
-			refreshCompletedD1Export(environment(), 'bookmark-1', {
-				fetcher: async () => expected.response.clone(),
-				sleep: async () => undefined,
-			}),
-			(error: unknown) =>
-				error instanceof BackupError &&
-				error.code === expected.code &&
-				error.retryable === expected.retryable,
+			refreshCompletedD1Export(
+				environment(),
+				'bookmark-1',
+				respondWith(response),
+			),
+			backupError(code, retryable),
 		)
 	}
 })
 
 test('export poll and refresh workflow covers pending, expired, and malformed states', async () => {
 	for (const response of [exportEnvelope(), exportEnvelope('active')]) {
-		const result = await startD1Export(environment(), {
-			fetcher: async () => response.clone(),
-			sleep: async () => undefined,
-		})
+		const result = await startD1Export(environment(), respondWith(response))
 		assert.equal(result.kind, 'pending')
 		assert.equal(result.bookmark, 'bookmark-1')
 	}
 
-	const lost = await pollD1Export(environment(), 'bookmark-1', {
-		fetcher: async () => exportEnvelope('lost'),
-		sleep: async () => undefined,
-	})
+	const lost = await pollD1Export(
+		environment(),
+		'bookmark-1',
+		respondWith(exportEnvelope('lost')),
+	)
 	assert.equal(lost.kind, 'lost')
 
 	await assert.rejects(
-		pollD1Export(environment(), 'bookmark-1', {
-			fetcher: async () =>
+		pollD1Export(
+			environment(),
+			'bookmark-1',
+			respondWith(
 				Response.json({
 					success: true,
 					result: { success: false, error: 'something else' },
 				}),
-			sleep: async () => undefined,
-		}),
-		(error: unknown) =>
-			error instanceof BackupError &&
-			error.code === 'export-malformed-response',
+			),
+		),
+		backupError('export-malformed-response'),
 	)
 
 	const bodies: unknown[] = []
@@ -281,7 +219,7 @@ test('export poll and refresh workflow covers pending, expired, and malformed st
 				bodies.push(JSON.parse(String(init?.body)))
 				return responses.shift()!
 			},
-			sleep: async () => undefined,
+			sleep: noSleep,
 			earlyPollDelayMs: 1,
 			pollDelayMs: 1,
 		},

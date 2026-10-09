@@ -1,7 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
 import {
@@ -23,6 +22,7 @@ import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { RetryableInboundStorageError } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const appBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
@@ -30,7 +30,7 @@ const platformDomain = 'inbox.kody.example.com'
 async function seedAccount(label: string) {
 	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
 	const email = `${username}@example.com`
-	const userId = await createStableUserIdFromEmail(email)
+	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
 			username, email, password_hash, email_verified_at, stable_user_id
@@ -81,22 +81,70 @@ function captureD1Sql(db: D1Database) {
 		sql,
 		db: new Proxy(db, {
 			get(target, property, receiver) {
-				if (property === 'prepare') {
+				if (property === 'prepare' || property === 'exec') {
 					return (statement: string) => {
 						sql.push(statement)
-						return target.prepare(statement)
-					}
-				}
-				if (property === 'exec') {
-					return (statement: string) => {
-						sql.push(statement)
-						return target.exec(statement)
+						return target[property](statement)
 					}
 				}
 				const value = Reflect.get(target, property, receiver)
 				return typeof value === 'function' ? value.bind(target) : value
 			},
 		}),
+	}
+}
+
+async function claimPendingDelivery(input: {
+	userId: string
+	recipient: string
+	rawMime: string
+	now: Date
+}) {
+	const { userId, now } = input
+	const authority = createUserInboundDeliveryAuthority({ env, userId })
+	const delivery = await buildInboundDelivery({
+		userId,
+		inboxId: `inbox-${crypto.randomUUID()}`,
+		recipient: input.recipient,
+		envelopeFrom: 'sender@example.net',
+		rawMime: input.rawMime,
+		quotaDay: now.toISOString().slice(0, 10),
+		now,
+	})
+	await mailboxRpc({ env, userId }).insertChargedPendingInboundDelivery({
+		ownerId: userId,
+		delivery,
+		now: now.toISOString(),
+	})
+	const pending = await authority.get(delivery.deliveryId)
+	if (!pending) throw new Error('Expected pending delivery.')
+	const claim = await authority.claimStorage(pending, 0, undefined, now)
+	if (!claim.claimed) throw new Error('Expected storage claim.')
+	return { authority, delivery, claimed: claim.delivery }
+}
+
+function graphFor(
+	userId: string,
+	delivery: Awaited<ReturnType<typeof buildInboundDelivery>>,
+	now: Date,
+	messageOverrides: Partial<ReturnType<typeof baseMessage>> = {},
+) {
+	const at = now.toISOString()
+	return {
+		thread: baseThread({
+			id: delivery.threadId,
+			inboxId: delivery.inboxId,
+			lastMessageAt: at,
+		}),
+		message: baseMessage(userId, {
+			id: delivery.messageId,
+			inboxId: delivery.inboxId,
+			threadId: delivery.threadId,
+			rawMimeKey: delivery.rawMimeKey,
+			createdAt: at,
+			...messageOverrides,
+		}),
+		attachments: [],
 	}
 }
 
@@ -164,10 +212,41 @@ test('identical MIME from distinct envelopes creates two Mailbox deliveries and 
 	)
 }, 30_000)
 
-test('raw MIME read failure occurs before quota and successful redelivery charges once', async () => {
+test('stored-count and raw MIME read failures happen before quota; redelivery charges once', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const account = await seedAccount('raw-read-failure')
+	const account = await seedAccount('pre-quota-failure')
+	const baseEnv = { ...env, APP_BASE_URL: appBaseUrl }
+	const failingCountEnv: Parameters<typeof handleInboundEmail>[1] = {
+		...baseEnv,
+		MAILBOX: {
+			idFromName: (name: string) => baseEnv.MAILBOX.idFromName(name),
+			get: (id: DurableObjectId) =>
+				new Proxy(baseEnv.MAILBOX.get(id), {
+					get(target, property, receiver) {
+						if (property === 'countMessages') {
+							return async () => {
+								throw new Error('simulated stored count failure')
+							}
+						}
+						return Reflect.get(target, property, receiver)
+					},
+				}),
+		} as unknown as Env['MAILBOX'],
+	}
+	await expect(
+		handleInboundEmail(
+			inboundMessage({ address: account.address }),
+			failingCountEnv,
+		),
+	).rejects.toThrow('simulated stored count failure')
+	expect(await readReceiveCount(account.userId)).toBe(0)
+	expect(
+		await mailboxRpc({ env, userId: account.userId }).listDeliveryEvents({
+			limit: 10,
+		}),
+	).toEqual([])
+
 	const raw = 'Subject: Unreadable\r\n\r\nBody'
 	const unreadable = inboundMessage({ address: account.address, raw })
 	Object.defineProperty(unreadable, 'raw', {
@@ -177,12 +256,14 @@ test('raw MIME read failure occurs before quota and successful redelivery charge
 			},
 		}),
 	})
-	await expect(
-		handleInboundEmail(unreadable, { ...env, APP_BASE_URL: appBaseUrl }),
-	).rejects.toBeInstanceOf(RetryableInboundStorageError)
+	await expect(handleInboundEmail(unreadable, baseEnv)).rejects.toBeInstanceOf(
+		RetryableInboundStorageError,
+	)
 	expect(await readReceiveCount(account.userId)).toBe(0)
-	const retry = inboundMessage({ address: account.address, raw })
-	await handleInboundEmail(retry, { ...env, APP_BASE_URL: appBaseUrl })
+	await handleInboundEmail(
+		inboundMessage({ address: account.address, raw }),
+		baseEnv,
+	)
 	expect(await readReceiveCount(account.userId)).toBe(1)
 	expect(
 		await mailboxRpc({ env, userId: account.userId }).listMessages({
@@ -191,108 +272,36 @@ test('raw MIME read failure occurs before quota and successful redelivery charge
 	).toMatchObject({ messages: [{}] })
 }, 30_000)
 
-test('Mailbox stored-count failure happens before durable quota charge', async () => {
-	await ensureEmailTestSchema(env.APP_DB)
-	await ensureUsageRollupsTestSchema(env.APP_DB)
-	const account = await seedAccount('stored-count-failure')
-	const baseEnv = { ...env, APP_BASE_URL: appBaseUrl }
-	const failingEnv = {
-		...baseEnv,
-		MAILBOX: {
-			idFromName: (name: string) => baseEnv.MAILBOX.idFromName(name),
-			get: (id: DurableObjectId) => {
-				const mailbox = baseEnv.MAILBOX.get(id)
-				return new Proxy(mailbox, {
-					get(target, property, receiver) {
-						if (property === 'countMessages') {
-							return async () => {
-								throw new Error('simulated stored count failure')
-							}
-						}
-						return Reflect.get(target, property, receiver)
-					},
-				})
-			},
-		},
-	} as Parameters<typeof handleInboundEmail>[1]
-	await expect(
-		handleInboundEmail(
-			inboundMessage({ address: account.address }),
-			failingEnv,
-		),
-	).rejects.toThrow('simulated stored count failure')
-	expect(await readReceiveCount(account.userId)).toBe(0)
-	expect(
-		await mailboxRpc({ env, userId: account.userId }).listDeliveryEvents({
-			limit: 10,
-		}),
-	).toEqual([])
-}, 30_000)
-
 test('Mailbox storage lease takeover fences stale finalization and cleanup', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = uniqueUserId('lease-takeover')
-	const authority = createUserInboundDeliveryAuthority({ env, userId })
-	const mailbox = mailboxRpc({ env, userId })
 	const oldNow = new Date('2026-07-19T00:00:00.000Z')
 	const takeoverNow = new Date(
 		oldNow.getTime() + mailboxInboundStorageLeaseMs + 1_000,
 	)
-	const delivery = await buildInboundDelivery({
+	const { authority, delivery, claimed } = await claimPendingDelivery({
 		userId,
-		inboxId: `inbox-${crypto.randomUUID()}`,
 		recipient: 'lease-race@example.com',
-		envelopeFrom: 'sender@example.net',
 		rawMime: 'lease race raw MIME',
-		quotaDay: '2026-07-19',
 		now: oldNow,
 	})
-	await mailbox.insertChargedPendingInboundDelivery({
-		ownerId: userId,
-		delivery,
-		now: oldNow.toISOString(),
-	})
-	const pending = await authority.get(delivery.deliveryId)
-	if (!pending) throw new Error('Expected pending delivery.')
-	const staleClaim = await authority.claimStorage(pending, 0, undefined, oldNow)
-	if (!staleClaim.claimed) throw new Error('Expected initial storage claim.')
 	const takeover = await authority.claimStorage(
-		staleClaim.delivery,
+		claimed,
 		0,
-		staleClaim.delivery.usageStartedAt ?? undefined,
+		claimed.usageStartedAt ?? undefined,
 		takeoverNow,
 	)
 	if (!takeover.claimed) throw new Error('Expected storage lease takeover.')
-	expect(takeover.delivery.storageLease).not.toBe(
-		staleClaim.delivery.storageLease,
-	)
-	const thread = baseThread({
-		id: delivery.threadId,
-		inboxId: delivery.inboxId,
-		createdAt: oldNow.toISOString(),
-		updatedAt: oldNow.toISOString(),
-		lastMessageAt: oldNow.toISOString(),
-	})
-	const message = baseMessage(userId, {
-		id: delivery.messageId,
-		inboxId: delivery.inboxId,
-		threadId: delivery.threadId,
-		rawMimeKey: delivery.rawMimeKey,
-		createdAt: oldNow.toISOString(),
-		updatedAt: oldNow.toISOString(),
-		receivedAt: oldNow.toISOString(),
-	})
+	expect(takeover.delivery.storageLease).not.toBe(claimed.storageLease)
 	await expect(
 		authority.commitInboundMessageGraph({
-			delivery: staleClaim.delivery,
-			thread,
-			message,
-			attachments: [],
+			delivery: claimed,
+			...graphFor(userId, delivery, oldNow),
 		}),
 	).resolves.toEqual({ status: 'lease-lost' })
 	await expect(
 		authority.receive({
-			delivery: staleClaim.delivery,
+			delivery: claimed,
 			usageDurationMs: 1,
 			usageMonth: '2026-07',
 			usageBytes: 19,
@@ -301,11 +310,7 @@ test('Mailbox storage lease takeover fences stale finalization and cleanup', asy
 	).rejects.toBeInstanceOf(InboundDeliveryLeaseLostError)
 	await env.EMAIL_BLOBS.put(delivery.rawMimeKey, 'lease race raw MIME')
 	await expect(
-		reconcileUserStaleInboundDeliveries({
-			env,
-			userId,
-			now: takeoverNow,
-		}),
+		reconcileUserStaleInboundDeliveries({ env, userId, now: takeoverNow }),
 	).resolves.toEqual({ recovered: 0, cleaned: 0 })
 	expect(await env.EMAIL_BLOBS.get(delivery.rawMimeKey)).not.toBeNull()
 }, 30_000)
@@ -316,53 +321,17 @@ test('scheduled due-owner sweep recovers a committed Mailbox graph without share
 	const account = await seedAccount('scheduled-recovery')
 	const oldNow = new Date('2026-07-30T00:00:00.000Z')
 	const sweepNow = new Date('2026-08-03T00:00:00.000Z')
-	const delivery = await buildInboundDelivery({
+	const { authority, delivery, claimed } = await claimPendingDelivery({
 		userId: account.userId,
-		inboxId: `inbox-${crypto.randomUUID()}`,
 		recipient: account.address,
-		envelopeFrom: 'sender@example.net',
 		rawMime: 'partially committed raw MIME',
-		quotaDay: '2026-07-30',
 		now: oldNow,
-	})
-	const mailbox = mailboxRpc({ env, userId: account.userId })
-	await mailbox.insertChargedPendingInboundDelivery({
-		ownerId: account.userId,
-		delivery,
-		now: oldNow.toISOString(),
-	})
-	const authority = createUserInboundDeliveryAuthority({
-		env,
-		userId: account.userId,
-	})
-	const pending = await authority.get(delivery.deliveryId)
-	if (!pending) throw new Error('Expected pending delivery.')
-	const claim = await authority.claimStorage(pending, 0, undefined, oldNow)
-	if (!claim.claimed) throw new Error('Expected storage claim.')
-	const thread = baseThread({
-		id: delivery.threadId,
-		inboxId: delivery.inboxId,
-		createdAt: oldNow.toISOString(),
-		updatedAt: oldNow.toISOString(),
-		lastMessageAt: oldNow.toISOString(),
-	})
-	const message = baseMessage(account.userId, {
-		id: delivery.messageId,
-		inboxId: delivery.inboxId,
-		threadId: thread.id,
-		rawMimeKey: delivery.rawMimeKey,
-		rawSize: 28,
-		receivedAt: oldNow.toISOString(),
-		createdAt: oldNow.toISOString(),
-		updatedAt: oldNow.toISOString(),
 	})
 	await env.EMAIL_BLOBS.put(delivery.rawMimeKey, 'partially committed raw MIME')
 	await expect(
 		authority.commitInboundMessageGraph({
-			delivery: claim.delivery,
-			thread,
-			message,
-			attachments: [],
+			delivery: claimed,
+			...graphFor(account.userId, delivery, oldNow, { rawSize: 28 }),
 		}),
 	).resolves.toMatchObject({ status: 'committed' })
 	await replaceInboundDueOwnerHint({

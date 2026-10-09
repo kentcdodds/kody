@@ -8,7 +8,6 @@ import {
 	type AuthSession,
 } from '#app/auth-session.ts'
 import { createAccountPasswordHandler } from './account-password.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	createPasswordHash,
 	verifyPassword,
@@ -16,6 +15,7 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { isCredentialInvalidatedByStoredPasswordChange } from '#worker/password-change-lockout.ts'
 
@@ -42,7 +42,7 @@ async function seedUser(
 ) {
 	const passwordHash =
 		input.passwordHash ?? (await createPasswordHash(input.password ?? ''))
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	sqlite.exec(`
 		INSERT INTO users (
 			id,
@@ -60,6 +60,10 @@ async function seedUser(
 			CURRENT_TIMESTAMP
 		);
 	`)
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId,
+		username: input.username,
+	})
 	return stableUserId
 }
 
@@ -89,32 +93,35 @@ function createAppEnv(db: D1Database, overrides: Record<string, unknown> = {}) {
 		...overrides,
 	} as unknown as Env
 }
-
-async function createRequest(input: { session: AuthSession; body: unknown }) {
-	const cookie = await createAuthCookie(input.session, false)
-	return {
-		cookie,
-		request: new Request('http://example.com/account/password.json', {
+function createPasswordClient(db: D1Database, session: AuthSession) {
+	const { helpers, revokedGrantIds } = createTrackingGrantHelpers()
+	const { handler } = createAccountPasswordHandler(
+		createAppEnv(db, { OAUTH_PROVIDER: helpers }),
+	)
+	const post = async (body: unknown, signedIn = true) => {
+		const cookie = await createAuthCookie(session, false)
+		const request = new Request('http://example.com/account/password.json', {
 			method: 'POST',
 			headers: {
-				Cookie: cookie,
+				...(signedIn ? { Cookie: cookie } : {}),
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(input.body),
-		}),
+			body: JSON.stringify(body),
+		})
+		const response = await handler({
+			request,
+			url: new URL(request.url),
+			params: {},
+		} as never)
+		return { cookie, response }
 	}
+	return { post, revokedGrantIds }
 }
 
-async function runHandler(
-	handler: ReturnType<typeof createAccountPasswordHandler>,
-	request: Request,
-) {
-	return handler.handler({
-		request,
-		url: new URL(request.url),
-		params: {},
-	} as never)
-}
+const readSession = (cookie: string) =>
+	readParsedAuthSession(
+		new Request('http://example.com/account', { headers: { Cookie: cookie } }),
+	)
 
 beforeAll(() => {
 	setAuthSessionSecret(testCookieSecret)
@@ -145,123 +152,75 @@ test('signed-in password change requires the current password, revokes MCP grant
 		INSERT INTO oauth_connections (provider_name, provider_id, user_id, provider_display_name)
 		VALUES ('github', 'keep-github', 1, 'ada');
 	`)
-	const { helpers, revokedGrantIds } = createTrackingGrantHelpers()
-	const handler = createAccountPasswordHandler(
-		createAppEnv(db, { OAUTH_PROVIDER: helpers }),
-	)
-	const session = {
+	const { post, revokedGrantIds } = createPasswordClient(db, {
 		stableUserId: testStableUserIdFromEmail(email),
 		email,
 		rememberMe: true,
+	})
+	const change = {
+		currentPassword: 'correct-password',
+		newPassword: 'brand-new-password',
 	}
 
-	const unauthenticated = await handler.handler({
-		request: new Request('http://example.com/account/password.json', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				currentPassword: 'correct-password',
-				newPassword: 'brand-new-password',
+	const unauthenticated = await post(change, false)
+	expect(unauthenticated.response.status).toBe(401)
+
+	const rejections = [
+		[
+			{ ...change, currentPassword: 'wrong-password' },
+			401,
+			{
+				ok: false,
+				code: 'invalid_password',
+				error: 'Current password is incorrect.',
+			},
+		],
+		[
+			{ ...change, newPassword: 'short' },
+			400,
+			expect.objectContaining({
+				ok: false,
+				error: 'Password must be at least 8 characters.',
 			}),
-		}),
-		url: new URL('http://example.com/account/password.json'),
-		params: {},
-	} as never)
-	expect(unauthenticated.status).toBe(401)
-
-	const wrongPassword = await runHandler(
-		handler,
-		(
-			await createRequest({
-				session,
-				body: {
-					currentPassword: 'wrong-password',
-					newPassword: 'brand-new-password',
-				},
-			})
-		).request,
-	)
-	expect(wrongPassword.status).toBe(401)
-	expect(await wrongPassword.json()).toEqual({
-		ok: false,
-		code: 'invalid_password',
-		error: 'Current password is incorrect.',
-	})
-
-	const weakPassword = await runHandler(
-		handler,
-		(
-			await createRequest({
-				session,
-				body: { currentPassword: 'correct-password', newPassword: 'short' },
-			})
-		).request,
-	)
-	expect(weakPassword.status).toBe(400)
-	expect(await weakPassword.json()).toMatchObject({
-		ok: false,
-		error: 'Password must be at least 8 characters.',
-	})
-
-	const samePassword = await runHandler(
-		handler,
-		(
-			await createRequest({
-				session,
-				body: {
-					currentPassword: 'correct-password',
-					newPassword: 'correct-password',
-				},
-			})
-		).request,
-	)
-	expect(samePassword.status).toBe(400)
-	expect(await samePassword.json()).toEqual({
-		ok: false,
-		error: 'Choose a different password.',
-	})
-
-	const { cookie: oldCookie, request } = await createRequest({
-		session,
-		body: {
-			currentPassword: 'correct-password',
-			newPassword: 'brand-new-password',
-		},
-	})
-	const oldSession = await readParsedAuthSession(
-		new Request('http://example.com/account', {
-			headers: { Cookie: oldCookie },
-		}),
-	)
-	const response = await runHandler(handler, request)
-	expect(response.status).toBe(200)
-	const payload = (await response.json()) as {
-		ok: boolean
-		message: string
+		],
+		[
+			{ ...change, newPassword: 'correct-password' },
+			400,
+			{ ok: false, error: 'Choose a different password.' },
+		],
+	] as const
+	for (const [body, status, want] of rejections) {
+		const { response } = await post(body)
+		expect([body, response.status, await response.json()]).toEqual([
+			body,
+			status,
+			want,
+		])
 	}
-	expect(payload.ok).toBe(true)
-	expect(payload.message).toContain('Password updated.')
+
+	const { cookie: oldCookie, response } = await post(change)
+	const oldSession = await readSession(oldCookie)
+	expect(response.status).toBe(200)
+	await expect(response.json()).resolves.toMatchObject({
+		ok: true,
+		message: expect.stringContaining('Password updated.'),
+	})
 	expect(revokedGrantIds).toEqual(['grant-1'])
-	expect(
-		sqlite.prepare(`SELECT COUNT(*) AS count FROM password_resets`).get(),
-	).toEqual({ count: 0 })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM verifications WHERE target = '1'`)
-			.get(),
-	).toEqual({ count: 1 })
-	expect(
-		sqlite
-			.prepare(`SELECT COUNT(*) AS count FROM passkeys WHERE user_id = 1`)
-			.get(),
-	).toEqual({ count: 1 })
-	expect(
-		sqlite
-			.prepare(
-				`SELECT COUNT(*) AS count FROM oauth_connections WHERE user_id = 1`,
-			)
-			.get(),
-	).toEqual({ count: 1 })
+	const counts = [
+		`password_resets`,
+		`verifications WHERE target = '1'`,
+		`passkeys WHERE user_id = 1`,
+		`oauth_connections WHERE user_id = 1`,
+	].map((from) => [
+		from,
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM ${from}`).get(),
+	])
+	expect(counts).toEqual([
+		[`password_resets`, { count: 0 }],
+		[`verifications WHERE target = '1'`, { count: 1 }],
+		[`passkeys WHERE user_id = 1`, { count: 1 }],
+		[`oauth_connections WHERE user_id = 1`, { count: 1 }],
+	])
 
 	const row = sqlite
 		.prepare(
@@ -277,11 +236,7 @@ test('signed-in password change requires the current password, revokes MCP grant
 
 	const setCookie = response.headers.get('Set-Cookie')
 	expect(setCookie).toContain('kody_session=')
-	const newSession = await readParsedAuthSession(
-		new Request('http://example.com/account', {
-			headers: { Cookie: setCookie?.split(';', 1)[0] ?? '' },
-		}),
-	)
+	const newSession = await readSession(setCookie?.split(';', 1)[0] ?? '')
 	expect(newSession?.session.rememberMe).toBe(true)
 	expect(
 		isCredentialInvalidatedByStoredPasswordChange({
@@ -313,36 +268,15 @@ test('oauth-only accounts can set a first password without a current password', 
 		username: 'oauth-user',
 		passwordHash: 'oauth_created_no_usable_password',
 	})
-	const { helpers } = createTrackingGrantHelpers()
-	const handler = createAccountPasswordHandler(
-		createAppEnv(db, { OAUTH_PROVIDER: helpers }),
-	)
-	const session = {
+	const { post } = createPasswordClient(db, {
 		stableUserId: testStableUserIdFromEmail(email),
 		email,
 		rememberMe: false,
-	}
+	})
 
-	const missingNewPassword = await runHandler(
-		handler,
-		(
-			await createRequest({
-				session,
-				body: {},
-			})
-		).request,
-	)
-	expect(missingNewPassword.status).toBe(400)
+	expect((await post({})).response.status).toBe(400)
 
-	const response = await runHandler(
-		handler,
-		(
-			await createRequest({
-				session,
-				body: { newPassword: 'first-password-ok' },
-			})
-		).request,
-	)
+	const { response } = await post({ newPassword: 'first-password-ok' })
 	expect(response.status).toBe(200)
 	const row = sqlite
 		.prepare(`SELECT password_hash FROM users WHERE id = 2`)

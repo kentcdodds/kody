@@ -1,3 +1,8 @@
+import {
+	apiTokenPrefix,
+	redactApiTokens,
+	redactKodyCredentials,
+} from '@kody-internal/shared/api-token-format.ts'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 
 export const redactedSecretText = '[REDACTED SECRET]'
@@ -17,9 +22,12 @@ export function createExecutionSecretRedactor(): ExecutionSecretRedactor {
 			}
 		},
 		redactErrorMessage(value: string) {
-			return redactSecretValuesInString(value, secretValues)
+			return redactKodyCredentials(
+				redactSecretValuesInString(value, secretValues),
+			)
 		},
 		redactUnknown(value: unknown) {
+			if (secretValues.size === 0 && !mayContainApiToken(value)) return value
 			return redactUnknownSecretValues(value, secretValues)
 		},
 	}
@@ -30,7 +38,6 @@ function redactUnknownSecretValues(
 	secretValues: ReadonlySet<string>,
 	seen = new WeakMap<object, unknown>(),
 ): unknown {
-	if (secretValues.size === 0) return value
 	if (typeof value === 'string') {
 		return redactSecretValuesInString(value, secretValues)
 	}
@@ -79,12 +86,33 @@ function redactSecretValuesInString(
 	value: string,
 	secretValues: ReadonlySet<string>,
 ) {
-	if (secretValues.size === 0 || value.length === 0) return value
-	let nextValue = value
+	if (value.length === 0) return value
+	let nextValue = redactApiTokens(value)
 	for (const secretValue of [...secretValues].sort(
 		(left, right) => right.length - left.length,
 	)) {
 		nextValue = nextValue.replaceAll(secretValue, redactedSecretText)
 	}
 	return nextValue
+}
+
+/**
+ * Kody API tokens (`kody_at_…`) are redacted from run output even when the
+ * run never read them through a secret, so a token a module prints or
+ * returns never lands in run history.
+ */
+function mayContainApiToken(value: unknown) {
+	if (typeof value === 'string') return value.includes(apiTokenPrefix)
+	if (value === null || typeof value !== 'object') return false
+	try {
+		return (
+			JSON.stringify(value, (_key, entry: unknown) =>
+				entry instanceof Error
+					? { message: entry.message, stack: entry.stack, cause: entry.cause }
+					: entry,
+			)?.includes(apiTokenPrefix) ?? false
+		)
+	} catch {
+		return true
+	}
 }

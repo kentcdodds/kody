@@ -3,7 +3,8 @@
 Kody is a source-available codebase written almost entirely by AI agents.
 Instead of asking readers to take code quality on faith, this page records the
 measured numbers and the enforcement that keeps them from regressing. All
-figures below were measured directly against the repository (2026-08-30).
+figures below were measured directly against the repository (2026-08-30;
+validate gate count re-counted from `package.json` on 2026-10-06).
 
 ## Measured baseline
 
@@ -15,18 +16,28 @@ figures below were measured directly against the repository (2026-08-30).
 | Duplicated lines (jscpd, min 70 tokens, non-test source) | 1.96% |
 | Runtime dependencies of the main worker package          | 28    |
 | Decision records in `docs/contributing/decisions/`       | 45    |
-| Checks in the `npm run validate` gate                    | 23    |
+| Checks in the `npm run validate` gate                    | 34    |
 
 ## Enforcement, not promises
 
-- `npm run validate` is the single authoritative gate: format, lint, typecheck,
-  node/workers/e2e/mcp test suites, build checks for every worker, migrations,
-  deploy guardrails, temporal-docs and decision-record checks, the file-size
-  ratchet, knip dead-code analysis, and `audit:prod` (production dependencies,
-  failing on moderate or higher).
-- `tools/file-size-ratchet.json` enforces budgets of 800 lines for client routes
-  and 2,000 lines for node test files. Files may only shrink out of the
-  grandfathered list; new oversized files fail CI.
+- `npm run validate` is the single authoritative gate: 33 concurrent lanes
+  (`format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
+  `test:e2e:run`, `test:mcp`, `backup:build`, `status:build`, `nx-cache:build`,
+  `jobs:build`, `highlight:build`, `api:build`, `api-docs:build`,
+  `runtime:build`, `platform:build`, `worker-startup-bundles:check`,
+  `primitives:check`, `migrations:check`, `deploy-guardrails:check`,
+  `workflows:check`, `origin-production-exports:check`, `docs:check-temporal`,
+  `docs:check-decisions`, `docs:check-no-hosted-execute`,
+  `docs:check-file-refs`, `skills-lock:check`, `mermaid:check`,
+  `slop-ratchet:check`, `knip`, `audit:prod`, `lockfile:check`,
+  `overrides:check`) plus `worker-startup-time:check` after that parallel phase.
+- `tools/file-size-ratchet.json` enforces budgets of 20 lines for root
+  `AGENTS.md` (raise `agents-md` `maxLines` in
+  `tools/check-file-size-ratchet.ts` only on purpose; never grandfather it in
+  the snapshot), 800 lines for client routes, and 2,000 lines for node test
+  files. Line counts are measured **after** the repo formatter (`oxfmt`),
+  matching the formatted tree CI checks. Route/test files may only shrink out of
+  the grandfathered list; new oversized files fail CI.
 - `knip` fails the gate on unused files, exports, and types.
 - `tools/check-decorative-banners.ts` rejects decorative comment banners.
 

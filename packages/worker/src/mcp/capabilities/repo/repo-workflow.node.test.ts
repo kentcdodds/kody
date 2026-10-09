@@ -1,20 +1,25 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import type * as RepoSessions from '#worker/repo/repo-sessions.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getActiveRepoSessionByConversation: vi.fn(),
-	countActiveRepoSessions: vi.fn(async () => 0),
+	countActiveRepoSessions: vi.fn<typeof RepoSessions.countActiveRepoSessions>(
+		async () => 0,
+	),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
-	getSavedPackageByKodyId: vi.fn(),
+	resolveSavedPackageRef: vi.fn(),
 	repoSessionRpc: vi.fn(),
 }))
 
 vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	getActiveRepoSessionByConversation: (...args: Array<unknown>) =>
 		mockModule.getActiveRepoSessionByConversation(...args),
-	countActiveRepoSessions: (...args: Array<unknown>) =>
-		mockModule.countActiveRepoSessions(...args),
+	countActiveRepoSessions: (
+		...args: Parameters<typeof RepoSessions.countActiveRepoSessions>
+	) => mockModule.countActiveRepoSessions(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -25,8 +30,8 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#worker/package-registry/repo.ts', () => ({
 	getSavedPackageById: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageById(...args),
-	getSavedPackageByKodyId: (...args: Array<unknown>) =>
-		mockModule.getSavedPackageByKodyId(...args),
+	resolveSavedPackageRef: (...args: Array<unknown>) =>
+		mockModule.resolveSavedPackageRef(...args),
 }))
 
 vi.mock('#worker/repo/repo-session-rpc.ts', () => ({
@@ -41,105 +46,52 @@ const { repoEditFilesCapability } = await import('./repo-edit-files.ts')
 const { repoCommitCapability } = await import('./repo-commit.ts')
 const { repoRunChecksCapability } = await import('./repo-run-checks.ts')
 
-function createCapabilityContext() {
-	return {
-		env: {
-			APP_DB: {
-				prepare() {
-					return {
-						bind() {
-							return {
-								first: async () => ({
-									username: 'user',
-									plan: 'max',
-									stripe_plan: null,
-								}),
-							}
-						},
-					}
-				},
-			},
-		} as unknown as Env,
-		callerContext: createMcpCallerContext({
-			baseUrl: 'https://heykody.dev',
-			user: {
-				userId: 'user-1',
-				email: 'user@example.com',
-				displayName: 'user',
-			},
-		}),
-	}
+const ctx = {
+	env: {
+		APP_DB: {
+			prepare: () => ({
+				bind: () => ({
+					first: async () => ({
+						username: 'user',
+						plan: 'max',
+						stripe_plan: null,
+					}),
+				}),
+			}),
+		},
+	} as unknown as Env,
+	callerContext: createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
+		baseUrl: 'https://heykody.dev',
+		user: {
+			userId: personIdFromStored('user-1'),
+			email: 'user@example.com',
+			displayName: 'user',
+		},
+	}),
 }
 
-function createRepoRpc(overrides?: Partial<Record<string, unknown>>) {
-	return {
+function setupRepoRpc() {
+	for (const mock of Object.values(mockModule)) mock.mockReset()
+	mockModule.countActiveRepoSessions.mockResolvedValue(0)
+	const rpc = {
 		openSession: vi.fn(),
 		getSessionInfo: vi.fn(),
 		applyEdits: vi.fn(),
 		sessionCommit: vi.fn(),
 		runChecks: vi.fn(),
 		publishSession: vi.fn(),
-		listPublishedPackageArtifactTargets: vi.fn(async () => []),
+		listPublishedPackageArtifactTargets: vi.fn(
+			async (): Promise<Array<unknown>> => [],
+		),
 		rebuildPublishedPackageArtifact: vi.fn(),
-		...overrides,
 	}
+	mockModule.repoSessionRpc.mockReturnValue(rpc)
+	return rpc
 }
 
-function resetMocks() {
-	mockModule.getActiveRepoSessionByConversation.mockReset()
-	mockModule.countActiveRepoSessions.mockReset()
-	mockModule.countActiveRepoSessions.mockResolvedValue(0)
-	mockModule.getEntitySourceByIdForUser.mockReset()
-	mockModule.getSavedPackageById.mockReset()
-	mockModule.getSavedPackageByKodyId.mockReset()
-	mockModule.repoSessionRpc.mockReset()
-}
-
-function createSavedPackageRow() {
+function sessionInfo(overrides: Record<string, unknown> = {}) {
 	return {
-		id: 'package-1',
-		userId: 'user-1',
-		name: '@kody/triage-github-pr',
-		kodyId: 'triage-github-pr',
-		description: 'Triages one PR',
-		tags: ['github', 'triage'],
-		searchText: null,
-		sourceId: 'source-package-1',
-		hasApp: false,
-		hidden: false,
-		isPrivate: false,
-		createdAt: '2026-04-18T00:00:00.000Z',
-		updatedAt: '2026-04-18T00:00:00.000Z',
-	}
-}
-
-function createPackageSourceRow() {
-	return {
-		id: 'source-package-1',
-		user_id: 'user-1',
-		entity_kind: 'package',
-		entity_id: 'package-1',
-		repo_id: 'repo-package-1',
-		published_commit: 'commit-package-1',
-		indexed_commit: 'commit-package-1',
-		manifest_path: 'package.json',
-		source_root: '/',
-		created_at: '2026-04-18T00:00:00.000Z',
-		updated_at: '2026-04-18T00:00:00.000Z',
-	}
-}
-
-test('repo open session workflow and conversation conflict guard', async () => {
-	resetMocks()
-	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce(
-		createPackageSourceRow(),
-	)
-	const openRpc = createRepoRpc()
-	openRpc.openSession.mockResolvedValueOnce({
 		id: 'session-1',
 		source_id: 'source-package-1',
 		source_root: '/',
@@ -156,14 +108,51 @@ test('repo open session workflow and conversation conflict guard', async () => {
 		published_commit: 'commit-package-1',
 		manifest_path: 'package.json',
 		entity_type: 'package',
+		...overrides,
+	}
+}
+
+function stubPackageLookup(sourceOverrides: Record<string, unknown> = {}) {
+	mockModule.resolveSavedPackageRef.mockResolvedValueOnce({
+		id: 'package-1',
+		userId: 'user-1',
+		name: '@kody/triage-github-pr',
+		kodyId: 'triage-github-pr',
+		description: 'Triages one PR',
+		tags: ['github', 'triage'],
+		searchText: null,
+		sourceId: 'source-package-1',
+		hasApp: false,
+		hidden: false,
+		isPrivate: false,
+		createdAt: '2026-04-18T00:00:00.000Z',
+		updatedAt: '2026-04-18T00:00:00.000Z',
 	})
-	mockModule.repoSessionRpc.mockReturnValue(openRpc)
+	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce({
+		id: 'source-package-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+		repo_id: 'repo-package-1',
+		published_commit: 'commit-package-1',
+		indexed_commit: 'commit-package-1',
+		manifest_path: 'package.json',
+		source_root: '/',
+		created_at: '2026-04-18T00:00:00.000Z',
+		updated_at: '2026-04-18T00:00:00.000Z',
+		...sourceOverrides,
+	})
+}
+
+test('repo open session workflow and conversation conflict guard', async () => {
+	const openRpc = setupRepoRpc()
+	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce(null)
+	stubPackageLookup()
+	openRpc.openSession.mockResolvedValueOnce(sessionInfo())
 
 	const opened = await repoOpenSessionCapability.handler(
-		{
-			target: { kind: 'package', kody_id: 'triage-github-pr' },
-		},
-		createCapabilityContext(),
+		{ target: { kind: 'package', kody_id: 'triage-github-pr' } },
+		ctx,
 	)
 
 	expect(opened.resolved_target).toEqual({
@@ -181,19 +170,12 @@ test('repo open session workflow and conversation conflict guard', async () => {
 		}),
 	)
 
-	resetMocks()
+	setupRepoRpc()
 	mockModule.getActiveRepoSessionByConversation.mockResolvedValueOnce({
 		id: 'session-other',
 		source_id: 'source-other',
 	})
-	mockModule.getSavedPackageByKodyId.mockResolvedValueOnce(
-		createSavedPackageRow(),
-	)
-	mockModule.getEntitySourceByIdForUser.mockResolvedValueOnce({
-		...createPackageSourceRow(),
-		id: 'source-other',
-		entity_id: 'package-other',
-	})
+	stubPackageLookup({ id: 'source-other', entity_id: 'package-other' })
 
 	await expect(
 		repoOpenSessionCapability.handler(
@@ -201,43 +183,36 @@ test('repo open session workflow and conversation conflict guard', async () => {
 				target: { kind: 'package', kody_id: 'triage-github-pr' },
 				conversation_id: 'conversation-1',
 			},
-			createCapabilityContext(),
+			ctx,
 		),
 	).rejects.toThrow(Error)
 })
 
 test('repo edit → commit → checks → publish session workflow', async () => {
-	resetMocks()
-	const workflowRpc = createRepoRpc()
-	workflowRpc.applyEdits.mockResolvedValueOnce({
+	const rpc = setupRepoRpc()
+	const edits = [
+		{
+			kind: 'write',
+			path: 'src/index.ts',
+			content: 'export const done = true\n',
+		},
+		{ kind: 'delete', path: 'src/remove.ts' },
+		{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' },
+	]
+	rpc.applyEdits.mockResolvedValueOnce({
 		dryRun: true,
 		totalChanged: 3,
 		edits: [
-			{
-				path: 'src/index.ts',
-				changed: true,
-				content: 'export const done = true\n',
-				diff: '@@',
-			},
-			{
-				path: 'src/remove.ts',
-				changed: true,
-				content: '',
-				diff: '@@',
-			},
-			{
-				path: 'src/new.ts',
-				changed: true,
-				content: 'moved\n',
-				diff: '@@',
-			},
-		],
+			['src/index.ts', 'export const done = true\n'],
+			['src/remove.ts', ''],
+			['src/new.ts', 'moved\n'],
+		].map(([path, content]) => ({ path, changed: true, content, diff: '@@' })),
 	})
-	workflowRpc.sessionCommit.mockResolvedValueOnce({
+	rpc.sessionCommit.mockResolvedValueOnce({
 		oid: 'commit-session-1',
 		message: 'Update index',
 	})
-	workflowRpc.runChecks.mockResolvedValueOnce({
+	rpc.runChecks.mockResolvedValueOnce({
 		ok: true,
 		results: [{ kind: 'manifest', ok: true, message: 'Manifest ok' }],
 		manifest: {
@@ -248,84 +223,45 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 		treeHash: 'tree-1',
 		checkedAt: '2026-04-18T00:02:00.000Z',
 	})
-	workflowRpc.getSessionInfo.mockResolvedValue({
-		id: 'session-existing',
-		source_id: 'source-package-1',
-		source_root: '/',
-		base_commit: 'commit-package-1',
-		session_branch: 'sessions/session-1',
-		source_branch: 'main',
-		conversation_id: 'conversation-1',
-		last_checkpoint_commit: 'commit-session-1',
-		last_check_run_id: 'check-1',
-		last_check_tree_hash: 'tree-1',
-		expires_at: null,
-		created_at: '2026-04-18T00:01:00.000Z',
-		updated_at: '2026-04-18T00:02:00.000Z',
-		published_commit: 'commit-package-1',
-		manifest_path: 'package.json',
-		entity_type: 'package',
-	})
-	workflowRpc.publishSession.mockResolvedValueOnce({
+	rpc.getSessionInfo.mockResolvedValue(
+		sessionInfo({
+			id: 'session-existing',
+			conversation_id: 'conversation-1',
+			last_checkpoint_commit: 'commit-session-1',
+			last_check_run_id: 'check-1',
+			last_check_tree_hash: 'tree-1',
+			updated_at: '2026-04-18T00:02:00.000Z',
+		}),
+	)
+	rpc.publishSession.mockResolvedValueOnce({
 		status: 'ok',
 		sessionId: 'session-existing',
 		publishedCommit: 'commit-published',
 		message: 'Published session.',
 	})
-	workflowRpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([])
-	mockModule.repoSessionRpc.mockReturnValue(workflowRpc)
+	const session = { session_id: 'session-existing' }
 
 	const edited = await repoEditFilesCapability.handler(
-		{
-			session_id: 'session-existing',
-			edits: [
-				{
-					kind: 'write',
-					path: 'src/index.ts',
-					content: 'export const done = true\n',
-				},
-				{ kind: 'delete', path: 'src/remove.ts' },
-				{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' },
-			],
-			dry_run: true,
-			rollback_on_error: false,
-		},
-		createCapabilityContext(),
+		{ ...session, edits, dry_run: true, rollback_on_error: false },
+		ctx,
 	)
 	const committed = await repoCommitCapability.handler(
-		{
-			session_id: 'session-existing',
-			message: 'Update index',
-		},
-		createCapabilityContext(),
+		{ ...session, message: 'Update index' },
+		ctx,
 	)
-	const checks = await repoRunChecksCapability.handler(
-		{ session_id: 'session-existing' },
-		createCapabilityContext(),
-	)
-	const published = await repoPublishSessionCapability.handler(
-		{ session_id: 'session-existing' },
-		createCapabilityContext(),
-	)
+	const checks = await repoRunChecksCapability.handler(session, ctx)
+	const published = await repoPublishSessionCapability.handler(session, ctx)
 
-	expect(workflowRpc.applyEdits).toHaveBeenCalledWith({
+	expect(rpc.applyEdits).toHaveBeenCalledWith({
 		sessionId: 'session-existing',
 		userId: 'user-1',
-		edits: [
-			{
-				kind: 'write',
-				path: 'src/index.ts',
-				content: 'export const done = true\n',
-			},
-			{ kind: 'delete', path: 'src/remove.ts' },
-			{ kind: 'move', path: 'src/old.ts', to: 'src/new.ts' },
-		],
+		edits,
 		dryRun: true,
 		rollbackOnError: false,
 	})
 	expect(edited.total_changed).toBe(3)
 	expect(edited.dry_run).toBe(true)
-	expect(workflowRpc.sessionCommit).toHaveBeenCalledWith({
+	expect(rpc.sessionCommit).toHaveBeenCalledWith({
 		sessionId: 'session-existing',
 		userId: 'user-1',
 		message: 'Update index',
@@ -343,27 +279,38 @@ test('repo edit → commit → checks → publish session workflow', async () =>
 })
 
 test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild failures', async () => {
-	resetMocks()
-	const baseMovedRpc = createRepoRpc()
-	baseMovedRpc.getSessionInfo.mockResolvedValueOnce({
-		id: 'session-1',
-		source_id: 'source-package-1',
-		source_root: '/',
-		base_commit: 'commit-old',
-		session_branch: 'sessions/session-1',
-		source_branch: 'main',
-		conversation_id: null,
-		last_checkpoint_commit: 'commit-old',
-		last_check_run_id: 'check-1',
-		last_check_tree_hash: 'tree-1',
-		expires_at: null,
-		created_at: '2026-04-18T00:01:00.000Z',
-		updated_at: '2026-04-18T00:02:00.000Z',
-		published_commit: 'commit-old',
-		manifest_path: 'package.json',
-		entity_type: 'package',
-	})
-	baseMovedRpc.publishSession.mockResolvedValueOnce({
+	const target = {
+		kind: 'module',
+		artifactName: '.',
+		entryPoint: 'src/index.ts',
+		bundleKind: 'module',
+	}
+	const publishedOk = {
+		status: 'ok',
+		sessionId: 'session-1',
+		publishedCommit: 'commit-new',
+		message: 'Published session.',
+	}
+	const setupPublish = (publishResult: Record<string, unknown>) => {
+		const rpc = setupRepoRpc()
+		rpc.getSessionInfo.mockResolvedValueOnce(
+			sessionInfo({
+				base_commit: 'commit-old',
+				last_checkpoint_commit: 'commit-old',
+				last_check_run_id: 'check-1',
+				last_check_tree_hash: 'tree-1',
+				updated_at: '2026-04-18T00:02:00.000Z',
+				published_commit: 'commit-old',
+			}),
+		)
+		rpc.publishSession.mockResolvedValueOnce(publishResult)
+		rpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([target])
+		return rpc
+	}
+	const publish = () =>
+		repoPublishSessionCapability.handler({ session_id: 'session-1' }, ctx)
+
+	setupPublish({
 		status: 'base_moved',
 		sessionId: 'session-1',
 		publishedCommit: null,
@@ -373,13 +320,7 @@ test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild
 		sessionBaseCommit: 'commit-old',
 		currentPublishedCommit: 'commit-new',
 	})
-	mockModule.repoSessionRpc.mockReturnValue(baseMovedRpc)
-
-	const baseMovedResult = await repoPublishSessionCapability.handler(
-		{ session_id: 'session-1' },
-		createCapabilityContext(),
-	)
-	expect(baseMovedResult).toMatchObject({
+	expect(await publish()).toMatchObject({
 		status: 'base_moved',
 		session_id: 'session-1',
 		published_commit: null,
@@ -388,47 +329,8 @@ test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild
 		current_published_commit: 'commit-new',
 	})
 
-	resetMocks()
-	const publishRpc = createRepoRpc()
-	publishRpc.getSessionInfo.mockResolvedValueOnce({
-		id: 'session-1',
-		source_id: 'source-package-1',
-		source_root: '/',
-		base_commit: 'commit-old',
-		session_branch: 'sessions/session-1',
-		source_branch: 'main',
-		conversation_id: null,
-		last_checkpoint_commit: 'commit-old',
-		last_check_run_id: 'check-1',
-		last_check_tree_hash: 'tree-1',
-		expires_at: null,
-		created_at: '2026-04-18T00:01:00.000Z',
-		updated_at: '2026-04-18T00:02:00.000Z',
-		published_commit: 'commit-old',
-		manifest_path: 'package.json',
-		entity_type: 'package',
-	})
-	publishRpc.publishSession.mockResolvedValueOnce({
-		status: 'ok',
-		sessionId: 'session-1',
-		publishedCommit: 'commit-new',
-		message: 'Published session.',
-	})
-	publishRpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([
-		{
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
-	])
-	mockModule.repoSessionRpc.mockReturnValue(publishRpc)
-
-	const publishResult = await repoPublishSessionCapability.handler(
-		{ session_id: 'session-1' },
-		createCapabilityContext(),
-	)
-	expect(publishResult).toMatchObject({
+	const publishRpc = setupPublish(publishedOk)
+	expect(await publish()).toMatchObject({
 		status: 'ok',
 		session_id: 'session-1',
 		published_commit: 'commit-new',
@@ -445,58 +347,13 @@ test('repoPublishSession covers base_moved repair, artifact rebuild, and rebuild
 		sourceId: 'source-package-1',
 		userId: 'user-1',
 		publishedCommit: 'commit-new',
-		target: {
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
+		target,
 		baseUrl: 'https://heykody.dev',
 	})
 
-	resetMocks()
-	const rebuildFailureRpc = createRepoRpc()
-	rebuildFailureRpc.getSessionInfo.mockResolvedValueOnce({
-		id: 'session-1',
-		source_id: 'source-package-1',
-		source_root: '/',
-		base_commit: 'commit-old',
-		session_branch: 'sessions/session-1',
-		source_branch: 'main',
-		conversation_id: null,
-		last_checkpoint_commit: 'commit-old',
-		last_check_run_id: 'check-1',
-		last_check_tree_hash: 'tree-1',
-		expires_at: null,
-		created_at: '2026-04-18T00:01:00.000Z',
-		updated_at: '2026-04-18T00:02:00.000Z',
-		published_commit: 'commit-old',
-		manifest_path: 'package.json',
-		entity_type: 'package',
-	})
-	rebuildFailureRpc.publishSession.mockResolvedValueOnce({
-		status: 'ok',
-		sessionId: 'session-1',
-		publishedCommit: 'commit-new',
-		message: 'Published session.',
-	})
-	rebuildFailureRpc.listPublishedPackageArtifactTargets.mockResolvedValueOnce([
-		{
-			kind: 'module',
-			artifactName: '.',
-			entryPoint: 'src/index.ts',
-			bundleKind: 'module',
-		},
-	])
-	rebuildFailureRpc.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
+	const failureRpc = setupPublish(publishedOk)
+	failureRpc.rebuildPublishedPackageArtifact.mockRejectedValueOnce(
 		new Error('bundle too large'),
 	)
-	mockModule.repoSessionRpc.mockReturnValue(rebuildFailureRpc)
-
-	await expect(
-		repoPublishSessionCapability.handler(
-			{ session_id: 'session-1' },
-			createCapabilityContext(),
-		),
-	).rejects.toThrow(/bundle artifact rebuild failed/i)
+	await expect(publish()).rejects.toThrow(/bundle artifact rebuild failed/i)
 })

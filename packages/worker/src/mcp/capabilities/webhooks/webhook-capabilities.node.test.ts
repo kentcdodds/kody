@@ -1,6 +1,8 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { listedWebhookSchema } from './shared.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listWebhooksForUser: vi.fn(),
@@ -41,6 +43,15 @@ vi.mock('#worker/run-records/service.ts', () => ({
 		mockModule.listRunRecords(...args),
 }))
 
+const approvalMock = vi.hoisted(() => ({
+	requireWebhookApplyDestinationGrantOrPending: vi.fn(),
+}))
+
+vi.mock('#worker/webhooks/apply-destination-approval.ts', () => ({
+	requireWebhookApplyDestinationGrantOrPending: (...args: Array<unknown>) =>
+		approvalMock.requireWebhookApplyDestinationGrantOrPending(...args),
+}))
+
 const { webhookListCapability } = await import('./webhook-list.ts')
 const { webhookUrlMintCapability } = await import('./webhook-url-mint.ts')
 const { webhookUrlRotateCapability } = await import('./webhook-url-rotate.ts')
@@ -51,13 +62,19 @@ const { webhookUrlApplyCapability, webhookUrlApplyDestinationSchema } =
 const { webhookDeliveryListCapability } =
 	await import('./webhook-delivery-list.ts')
 
-function createCapabilityContext() {
+const sentry = { kodyId: 'sentry-bridge', webhookName: 'sentry' }
+
+function createCapabilityContext(
+	executionOrigin: 'interactive' | 'background' = 'interactive',
+) {
 	return {
 		env: { APP_DB: {} as D1Database } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
+			executionOrigin,
 			user: {
-				userId: 'user-1',
+				userId: personIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 				username: 'user',
@@ -66,34 +83,35 @@ function createCapabilityContext() {
 	}
 }
 
-test('webhook capabilities expose mint once and never leak secrets on list', async () => {
-	mockModule.listWebhooksForUser.mockResolvedValue([
-		{
-			packageId: 'pkg-1',
-			packageKodyId: 'sentry-bridge',
-			packageName: '@user/sentry-bridge',
-			name: 'sentry',
-			exportName: './handle-sentry-webhook',
-			description: null,
-			responseMode: 'ack',
-			inputMode: 'request',
-			rateLimitPerMinute: 60,
-			verification: {
-				type: 'hmac-sha256',
-				header: 'sentry-hook-signature',
-				secretName: 'sentryWebhookSecret',
-				encoding: 'hex',
-			},
-			minted: true,
-			handle: 'whh_ep-1',
-			urlHost: 'heykody.dev',
-			enabled: true,
-			createdAt: '2026-07-24T00:00:00.000Z',
-			rotatedAt: '2026-07-24T00:00:00.000Z',
-			previousUrlActiveUntil: null,
-		},
-	])
-	mockModule.mintWebhookUrlForUser.mockResolvedValue({
+function mockSavedWebhook(webhookName = 'sentry') {
+	mockModule.resolveSavedPackage.mockResolvedValue({
+		id: 'pkg-1',
+		kodyId: 'sentry-bridge',
+		name: '@user/sentry-bridge',
+		userId: 'user-1',
+		sourceId: 'src-1',
+	})
+	mockModule.getWebhookEndpointByKey.mockResolvedValue(
+		endpoint({ webhookName }),
+	)
+}
+
+function endpoint(overrides: Record<string, unknown> = {}) {
+	return {
+		id: 'ep-1',
+		userId: 'user-1',
+		packageId: 'pkg-1',
+		webhookName: 'sentry',
+		urlSecretHash: 'hash',
+		enabled: true,
+		createdAt: '2026-07-24T00:00:00.000Z',
+		rotatedAt: '2026-07-24T00:00:00.000Z',
+		...overrides,
+	}
+}
+
+function mintedUrl(overrides: Record<string, unknown> = {}) {
+	return {
 		packageId: 'pkg-1',
 		packageKodyId: 'sentry-bridge',
 		name: 'sentry',
@@ -103,210 +121,14 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 		createdAt: '2026-07-24T00:00:00.000Z',
 		rotatedAt: '2026-07-24T00:00:00.000Z',
 		previousUrlActiveUntil: null,
-	})
-	mockModule.rotateWebhookUrlForUser.mockResolvedValue({
-		packageId: 'pkg-1',
-		packageKodyId: 'sentry-bridge',
-		name: 'sentry',
-		handle: 'whh_ep-1',
-		urlHost: 'heykody.dev',
-		enabled: true,
-		createdAt: '2026-07-24T00:00:00.000Z',
-		rotatedAt: '2026-07-24T01:00:00.000Z',
-		previousUrlActiveUntil: '2026-07-25T01:00:00.000Z',
-	})
-	mockModule.setWebhookEnabledForUser.mockImplementation(
-		async (input: { enabled: boolean }) => ({
-			id: 'ep-1',
-			userId: 'user-1',
-			packageId: 'pkg-1',
-			webhookName: 'sentry',
-			urlSecretHash: 'hash',
-			enabled: input.enabled,
-			createdAt: '2026-07-24T00:00:00.000Z',
-			rotatedAt: '2026-07-24T00:00:00.000Z',
-		}),
-	)
-	mockModule.resolveSavedPackage.mockResolvedValue({
-		id: 'pkg-1',
-		kodyId: 'sentry-bridge',
-		name: '@user/sentry-bridge',
-		userId: 'user-1',
-		sourceId: 'src-1',
-	})
-	mockModule.getWebhookEndpointByKey.mockResolvedValue({
-		id: 'ep-1',
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		webhookName: 'sentry',
-		urlSecretHash: 'hash',
-		enabled: true,
-		createdAt: '2026-07-24T00:00:00.000Z',
-		rotatedAt: '2026-07-24T00:00:00.000Z',
-	})
-	mockModule.listRunRecords.mockResolvedValue({
-		runs: [
-			{
-				id: 'del-1',
-				surface: 'webhook',
-				status: 'success',
-				name: 'sentry',
-				packageId: 'pkg-1',
-				kodyId: 'sentry-bridge',
-				sourceId: null,
-				publishedCommit: null,
-				storageId: null,
-				jobId: null,
-				workflowId: null,
-				invocationId: null,
-				sessionId: null,
-				idempotencyKey: null,
-				parentRunId: null,
-				startedAt: '2026-07-24T01:00:00.000Z',
-				finishedAt: '2026-07-24T01:00:01.000Z',
-				durationMs: 1000,
-				errorName: null,
-				errorMessage: null,
-				metadata: {
-					outcome: 'delivered',
-					http_status: 202,
-					payload_bytes: 10,
-				},
-				logCount: 0,
-			},
-		],
-		nextCursor: null,
-	})
-
-	const ctx = createCapabilityContext()
-	const listed = await webhookListCapability.handler({}, ctx)
-	expect(listed.webhooks[0]?.minted).toBe(true)
-	expect(listed.webhooks[0]?.handle).toBe('whh_ep-1')
-	expect(listed.webhooks[0]?.previous_url_active_until).toBeNull()
-	expect(JSON.stringify(listed)).not.toContain('secret-once')
-
-	const minted = await webhookUrlMintCapability.handler(
-		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
-		ctx,
-	)
-	expect(minted.webhook.handle).toBe('whh_ep-1')
-	expect(minted.webhook.url_host).toBe('heykody.dev')
-	expect(minted.webhook).not.toHaveProperty('url')
-	expect(minted.webhook).not.toHaveProperty('url_secret')
-
-	const rotated = await webhookUrlRotateCapability.handler(
-		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
-		ctx,
-	)
-	expect(rotated.webhook.handle).toBe('whh_ep-1')
-	expect(rotated.webhook.previous_url_active_until).toBe(
-		'2026-07-25T01:00:00.000Z',
-	)
-	expect(rotated.webhook).not.toHaveProperty('url_secret')
-
-	mockModule.applyWebhookUrlForUser.mockResolvedValue({
-		ok: true,
-		urlHost: 'heykody.dev',
-		httpStatus: 201,
-		remoteId: '4242',
-		error: null,
-	})
-	await expect(
-		webhookUrlApplyCapability.handler(
-			{
-				handle: 'whh_ep-1',
-				destination: { type: 'github', owner: 'acme', repo: 'api' },
-			},
-			ctx,
-		),
-	).resolves.toEqual({
-		ok: true,
-		url_host: 'heykody.dev',
-		http_status: 201,
-		remote_id: '4242',
-		error: null,
-	})
-	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
-		expect.objectContaining({
-			handle: 'whh_ep-1',
-			destination: { type: 'github', owner: 'acme', repo: 'api' },
-		}),
-	)
-	expect(
-		webhookUrlApplyDestinationSchema.safeParse({
-			type: 'https',
-			url: 'https://attacker.example/exfil',
-			body: '{"url":"{{webhookUrl}}"}',
-		}).success,
-	).toBe(false)
-	expect(
-		webhookUrlApplyDestinationSchema.safeParse({
-			type: 'github',
-			owner: 'acme',
-			repo: 'api',
-		}).success,
-	).toBe(true)
-	expect(
-		webhookUrlApplyDestinationSchema.safeParse({
-			type: 'github',
-			owner: '..',
-			repo: 'api',
-		}).success,
-	).toBe(false)
-
-	await expect(
-		webhookDisableCapability.handler(
-			{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
-			ctx,
-		),
-	).resolves.toEqual({
-		package_id: 'pkg-1',
-		webhook_name: 'sentry',
-		enabled: false,
-	})
-	await expect(
-		webhookEnableCapability.handler(
-			{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
-			ctx,
-		),
-	).resolves.toEqual({
-		package_id: 'pkg-1',
-		webhook_name: 'sentry',
-		enabled: true,
-	})
-
-	const deliveries = await webhookDeliveryListCapability.handler(
-		{ kodyId: 'sentry-bridge', webhookName: 'sentry' },
-		ctx,
-	)
-	expect(deliveries.deliveries).toEqual([
-		{
-			id: 'del-1',
-			package_id: 'pkg-1',
-			webhook_name: 'sentry',
-			received_at: '2026-07-24T01:00:00.000Z',
-			outcome: 'delivered',
-			http_status: 202,
-			error: null,
-			payload_bytes: 10,
-		},
-	])
-	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
-		env: ctx.env,
-		userId: 'user-1',
-		filter: {
-			surface: 'webhook',
-			packageId: 'pkg-1',
-			name: 'sentry',
-		},
-		limit: 25,
-	})
-})
+		...overrides,
+	}
+}
 
 function makeWebhookRun(input: {
 	id: string
-	name: string
-	status: 'success' | 'error'
+	name?: string
+	status?: 'success' | 'error'
 	startedAt: string
 	metadata: Record<string, unknown>
 	errorMessage?: string | null
@@ -314,8 +136,8 @@ function makeWebhookRun(input: {
 	return {
 		id: input.id,
 		surface: 'webhook' as const,
-		status: input.status,
-		name: input.name,
+		status: input.status ?? 'success',
+		name: input.name ?? 'sentry',
 		packageId: 'pkg-1',
 		kodyId: 'sentry-bridge',
 		sourceId: null,
@@ -337,165 +159,399 @@ function makeWebhookRun(input: {
 	}
 }
 
-test('webhookDeliveryList pushes name filter and returns a full page for one webhook', async () => {
-	mockModule.resolveSavedPackage.mockResolvedValue({
-		id: 'pkg-1',
-		kodyId: 'sentry-bridge',
-		name: '@user/sentry-bridge',
-		userId: 'user-1',
-		sourceId: 'src-1',
-	})
-	mockModule.getWebhookEndpointByKey.mockResolvedValue({
-		id: 'ep-alpha',
-		userId: 'user-1',
+test('webhook capabilities expose mint once and never leak secrets on list', async () => {
+	const listedRow = {
 		packageId: 'pkg-1',
-		webhookName: 'alpha',
-		urlSecretHash: 'hash',
-		enabled: true,
-		createdAt: '2026-07-24T00:00:00.000Z',
-		rotatedAt: '2026-07-24T00:00:00.000Z',
-	})
-	const limit = 10
-	const matchingRuns = Array.from({ length: limit }, (_, index) =>
-		makeWebhookRun({
-			id: `alpha-${index}`,
-			name: 'alpha',
-			status: 'success',
-			startedAt: `2026-07-24T02:${String(index).padStart(2, '0')}:00.000Z`,
-			metadata: {
-				outcome: 'delivered',
-				httpStatus: 202,
-				payloadBytes: 8,
+		packageKodyId: 'sentry-bridge',
+		packageName: '@user/sentry-bridge',
+		description: null,
+		responseMode: 'ack',
+		inputMode: 'request',
+		rateLimitPerMinute: 60,
+		replay: null,
+	}
+	mockModule.listWebhooksForUser.mockResolvedValue([
+		{
+			...listedRow,
+			...mintedUrl(),
+			exportName: './handle-sentry-webhook',
+			verification: {
+				type: 'hmac-sha256',
+				header: 'sentry-hook-signature',
+				secretName: 'sentryWebhookSecret',
+				encoding: 'hex',
 			},
+			challenge: {
+				type: 'subscription-challenge',
+				method: 'GET',
+				challenge: { in: 'query', key: 'hub.challenge' },
+				when: { query: { 'hub.mode': 'subscribe' } },
+				prove: {
+					kind: 'verify-token',
+					in: 'query',
+					key: 'hub.verify_token',
+					secretName: 'metaVerify',
+					required: true,
+				},
+				respond: { as: 'text' },
+			},
+			minted: true,
+		},
+		{
+			...listedRow,
+			name: 'unchallenged',
+			exportName: './handle-unchallenged',
+			verification: null,
+			challenge: null,
+			minted: false,
+			handle: null,
+			urlHost: null,
+			enabled: null,
+			createdAt: null,
+			rotatedAt: null,
+			previousUrlActiveUntil: null,
+		},
+	])
+	mockModule.mintWebhookUrlForUser.mockResolvedValue(mintedUrl())
+	mockModule.rotateWebhookUrlForUser.mockResolvedValue(
+		mintedUrl({
+			rotatedAt: '2026-07-24T01:00:00.000Z',
+			previousUrlActiveUntil: '2026-07-25T01:00:00.000Z',
 		}),
 	)
-	mockModule.listRunRecords.mockReset()
-	mockModule.listRunRecords.mockResolvedValue({
-		runs: matchingRuns,
-		nextCursor: null,
-	})
-
-	const ctx = createCapabilityContext()
-	const deliveries = await webhookDeliveryListCapability.handler(
-		{ kodyId: 'sentry-bridge', webhookName: 'alpha', limit },
-		ctx,
+	mockModule.setWebhookEnabledForUser.mockImplementation(
+		async (input: { enabled: boolean }) => endpoint({ enabled: input.enabled }),
 	)
-
-	expect(deliveries.deliveries).toHaveLength(limit)
-	expect(
-		deliveries.deliveries.every((row) => row.webhook_name === 'alpha'),
-	).toBe(true)
-	expect(mockModule.listRunRecords).toHaveBeenCalledTimes(1)
-	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
-		env: ctx.env,
-		userId: 'user-1',
-		filter: {
-			surface: 'webhook',
-			packageId: 'pkg-1',
-			name: 'alpha',
-		},
-		limit,
-	})
-})
-
-test('webhookDeliveryList round-trips explicit outcomes', async () => {
-	mockModule.resolveSavedPackage.mockResolvedValue({
-		id: 'pkg-1',
-		kodyId: 'sentry-bridge',
-		name: '@user/sentry-bridge',
-		userId: 'user-1',
-		sourceId: 'src-1',
-	})
-	mockModule.getWebhookEndpointByKey.mockResolvedValue({
-		id: 'ep-1',
-		userId: 'user-1',
-		packageId: 'pkg-1',
-		webhookName: 'sentry',
-		urlSecretHash: 'hash',
-		enabled: true,
-		createdAt: '2026-07-24T00:00:00.000Z',
-		rotatedAt: '2026-07-24T00:00:00.000Z',
-	})
-	mockModule.listRunRecords.mockReset()
+	mockSavedWebhook()
 	mockModule.listRunRecords.mockResolvedValue({
 		runs: [
-			makeWebhookRun({
-				id: 'delivered-1',
-				name: 'sentry',
-				status: 'success',
-				startedAt: '2026-07-24T03:00:00.000Z',
-				metadata: {
-					outcome: 'delivered',
-					httpStatus: 202,
-					payloadBytes: 1,
-				},
-			}),
-			makeWebhookRun({
-				id: 'rejected-1',
-				name: 'sentry',
-				status: 'error',
-				startedAt: '2026-07-24T02:00:00.000Z',
-				metadata: {
-					outcome: 'rejected',
-					httpStatus: 401,
-					payloadBytes: 2,
-				},
-				errorMessage: 'invalid_signature',
-			}),
-			makeWebhookRun({
-				id: 'failed-1',
-				name: 'sentry',
-				status: 'error',
-				startedAt: '2026-07-24T01:00:00.000Z',
-				metadata: {
-					outcome: 'failed',
-					httpStatus: 502,
-					payloadBytes: 3,
-				},
-				errorMessage: 'invocation_failed',
-			}),
+			{
+				...makeWebhookRun({
+					id: 'del-1',
+					startedAt: '2026-07-24T01:00:00.000Z',
+					metadata: {
+						outcome: 'delivered',
+						http_status: 202,
+						payload_bytes: 10,
+					},
+				}),
+				finishedAt: '2026-07-24T01:00:01.000Z',
+				durationMs: 1000,
+			},
 		],
 		nextCursor: null,
 	})
 
 	const ctx = createCapabilityContext()
-	const deliveries = await webhookDeliveryListCapability.handler(
-		{ kodyId: 'sentry-bridge', webhookName: 'sentry', limit: 50 },
+	const listed = await webhookListCapability.handler({}, ctx)
+	expect(listed.webhooks[0]).toMatchObject({
+		minted: true,
+		handle: 'whh_ep-1',
+		previous_url_active_until: null,
+		challenge: {
+			type: 'subscription-challenge',
+			method: 'GET',
+			challenge: { in: 'query', key: 'hub.challenge' },
+			when: { query: { 'hub.mode': 'subscribe' } },
+			prove: {
+				kind: 'verify-token',
+				in: 'query',
+				key: 'hub.verify_token',
+				secretName: 'metaVerify',
+				required: true,
+			},
+			respond: { as: 'text' },
+		},
+	})
+	expect(listed.webhooks[1]?.challenge).toBeNull()
+	for (const row of listed.webhooks) {
+		expect(listedWebhookSchema.parse(row)).toEqual(row)
+	}
+	expect(JSON.stringify(listed)).not.toContain('secret-once')
+
+	const minted = await webhookUrlMintCapability.handler(sentry, ctx)
+	expect(minted.webhook.handle).toBe('whh_ep-1')
+	expect(minted.webhook.url_host).toBe('heykody.dev')
+	expect(minted.webhook).not.toHaveProperty('url')
+	expect(minted.webhook).not.toHaveProperty('url_secret')
+
+	const rotated = await webhookUrlRotateCapability.handler(sentry, ctx)
+	expect(rotated.webhook.handle).toBe('whh_ep-1')
+	expect(rotated.webhook.previous_url_active_until).toBe(
+		'2026-07-25T01:00:00.000Z',
+	)
+	expect(rotated.webhook).not.toHaveProperty('url_secret')
+
+	mockModule.applyWebhookUrlForUser.mockResolvedValue({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 201,
+		remoteId: '4242',
+		error: null,
+	})
+	const githubHooksDestination = {
+		type: 'http' as const,
+		url: 'https://api.github.com/repos/acme/api/hooks',
+		method: 'POST' as const,
+		headers: {
+			Accept: 'application/vnd.github+json',
+			'Content-Type': 'application/json',
+			'User-Agent': 'kody',
+			'X-GitHub-Api-Version': '2022-11-28',
+		},
+		body: JSON.stringify({
+			name: 'web',
+			active: true,
+			events: ['push', 'pull_request'],
+			config: {
+				url: '{{webhookUrl}}',
+				content_type: 'json',
+				insecure_ssl: '0',
+			},
+		}),
+		integration: 'github',
+	}
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'granted',
+		fingerprint: 'fp-github-hooks',
+	})
+	await expect(
+		webhookUrlApplyCapability.handler(
+			{ handle: 'whh_ep-1', destination: githubHooksDestination },
+			ctx,
+		),
+	).resolves.toEqual({
+		ok: true,
+		url_host: 'heykody.dev',
+		http_status: 201,
+		remote_id: '4242',
+		error: null,
+	})
+	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
+		expect.objectContaining({
+			handle: 'whh_ep-1',
+			destination: githubHooksDestination,
+		}),
+	)
+	const destinationCases = [
+		[
+			{
+				url: 'https://hooks.example/register',
+				body: '{"url":"{{webhookUrl}}"}',
+			},
+			true,
+		],
+		[{ url: 'https://hooks.example/register', body: '{"ok":true}' }, false],
+		[
+			{
+				url: 'http://hooks.example/register',
+				body: '{"url":"{{webhookUrl}}"}',
+			},
+			false,
+		],
+		[
+			{
+				type: 'https',
+				url: 'https://attacker.example/exfil',
+				body: '{"url":"{{webhookUrl}}"}',
+			},
+			false,
+		],
+		[githubHooksDestination, true],
+	] as const
+	expect(
+		destinationCases.filter(
+			([destination, valid]) =>
+				webhookUrlApplyDestinationSchema.safeParse({
+					type: 'http',
+					...destination,
+				}).success !== valid,
+		),
+	).toEqual([])
+
+	await expect(webhookDisableCapability.handler(sentry, ctx)).resolves.toEqual({
+		package_id: 'pkg-1',
+		webhook_name: 'sentry',
+		enabled: false,
+	})
+	await expect(webhookEnableCapability.handler(sentry, ctx)).resolves.toEqual({
+		package_id: 'pkg-1',
+		webhook_name: 'sentry',
+		enabled: true,
+	})
+
+	const deliveries = await webhookDeliveryListCapability.handler(sentry, ctx)
+	expect(deliveries.deliveries).toEqual([
+		{
+			id: 'del-1',
+			package_id: 'pkg-1',
+			webhook_name: 'sentry',
+			received_at: '2026-07-24T01:00:00.000Z',
+			outcome: 'delivered',
+			http_status: 202,
+			error: null,
+			payload_bytes: 10,
+		},
+	])
+	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
+		env: ctx.env,
+		userId: 'user-1',
+		filter: { surface: 'webhook', packageId: 'pkg-1', name: 'sentry' },
+		limit: 25,
+	})
+})
+
+test('webhookDeliveryList pushes the name filter, round-trips outcomes, and treats missing packages and unminted URLs as caller errors', async () => {
+	const ctx = createCapabilityContext()
+	mockSavedWebhook('alpha')
+	const limit = 10
+	mockModule.listRunRecords.mockResolvedValue({
+		runs: Array.from({ length: limit }, (_, index) =>
+			makeWebhookRun({
+				id: `alpha-${index}`,
+				name: 'alpha',
+				startedAt: `2026-07-24T02:${String(index).padStart(2, '0')}:00.000Z`,
+				metadata: { outcome: 'delivered', httpStatus: 202, payloadBytes: 8 },
+			}),
+		),
+		nextCursor: null,
+	})
+	const page = await webhookDeliveryListCapability.handler(
+		{ kodyId: 'sentry-bridge', webhookName: 'alpha', limit },
 		ctx,
 	)
+	expect(page.deliveries).toHaveLength(limit)
+	expect(page.deliveries.every((row) => row.webhook_name === 'alpha')).toBe(
+		true,
+	)
+	expect(mockModule.listRunRecords).toHaveBeenCalledTimes(1)
+	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
+		env: ctx.env,
+		userId: 'user-1',
+		filter: { surface: 'webhook', packageId: 'pkg-1', name: 'alpha' },
+		limit,
+	})
 
-	expect(deliveries.deliveries.map((row) => [row.id, row.outcome])).toEqual([
+	mockSavedWebhook()
+	mockModule.listRunRecords.mockResolvedValue({
+		runs: [
+			['delivered-1', 'delivered', 202, '03', null],
+			['rejected-1', 'rejected', 401, '02', 'invalid_signature'],
+			['failed-1', 'failed', 502, '01', 'invocation_failed'],
+		].map(([id, outcome, httpStatus, hour, errorMessage]) =>
+			makeWebhookRun({
+				id: String(id),
+				status: errorMessage ? 'error' : 'success',
+				startedAt: `2026-07-24T${hour}:00:00.000Z`,
+				metadata: { outcome, httpStatus, payloadBytes: 1 },
+				errorMessage: errorMessage as string | null,
+			}),
+		),
+		nextCursor: null,
+	})
+	const outcomes = await webhookDeliveryListCapability.handler(
+		{ ...sentry, limit: 50 },
+		ctx,
+	)
+	expect(outcomes.deliveries.map((row) => [row.id, row.outcome])).toEqual([
 		['delivered-1', 'delivered'],
 		['rejected-1', 'rejected'],
 		['failed-1', 'failed'],
 	])
-})
 
-test('webhookDeliveryList treats a missing package and an unminted URL as caller errors', async () => {
-	mockModule.listRunRecords.mockReset()
-	mockModule.getWebhookEndpointByKey.mockReset()
+	mockModule.listRunRecords.mockClear()
+	mockModule.getWebhookEndpointByKey.mockClear()
 	mockModule.resolveSavedPackage.mockResolvedValue(null)
-	const ctx = createCapabilityContext()
-
-	const missingPackage = await webhookDeliveryListCapability
-		.handler({ packageId: 'missing-pkg', webhookName: 'sentry' }, ctx)
-		.catch((error: unknown) => error)
-	expect(missingPackage).toBeInstanceOf(McpCallerError)
+	await expect(
+		webhookDeliveryListCapability.handler(
+			{ packageId: 'missing-pkg', webhookName: 'sentry' },
+			ctx,
+		),
+	).rejects.toBeInstanceOf(McpCallerError)
 	expect(mockModule.getWebhookEndpointByKey).not.toHaveBeenCalled()
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 
-	mockModule.resolveSavedPackage.mockResolvedValue({
-		id: 'pkg-1',
-		kodyId: 'sentry-bridge',
-		name: '@user/sentry-bridge',
-		userId: 'user-1',
-		sourceId: 'src-1',
-	})
+	mockSavedWebhook()
 	mockModule.getWebhookEndpointByKey.mockResolvedValue(null)
-
-	const unminted = await webhookDeliveryListCapability
-		.handler({ kodyId: 'sentry-bridge', webhookName: 'sentry' }, ctx)
-		.catch((error: unknown) => error)
-	expect(unminted).toBeInstanceOf(McpCallerError)
+	await expect(
+		webhookDeliveryListCapability.handler(sentry, ctx),
+	).rejects.toBeInstanceOf(McpCallerError)
 	expect(mockModule.listRunRecords).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply http destination requires owner website approval before outbound registration', async () => {
+	const destination = {
+		type: 'http' as const,
+		url: 'https://hooks.example/register',
+		method: 'POST' as const,
+		headers: { 'Content-Type': 'application/json' },
+		body: '{"url":"{{webhookUrl}}"}',
+		secretName: 'hooksRegistrationToken',
+	}
+	const approvalUrl =
+		'https://heykody.dev/connect/webhook-apply?handle=whh_ep-1&fingerprint=fp-1'
+	expect(webhookUrlApplyDestinationSchema.safeParse(destination).success).toBe(
+		true,
+	)
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'approval_required',
+		fingerprint: 'fp-1',
+		approvalUrl,
+		destination: {
+			method: 'POST',
+			url: destination.url,
+			headers: [{ name: 'Content-Type', value: 'application/json' }],
+			body: destination.body,
+			secretName: destination.secretName,
+			integration: null,
+			injectionSites: ['body'],
+			auth: 'secretName=hooksRegistrationToken',
+		},
+		message: `HTTP webhookUrlApply requires owner approval\n\napproval_url: ${approvalUrl}\nmethod: POST\nurl: ${destination.url}`,
+	})
+	const input = { handle: 'whh_ep-1', destination }
+
+	const approvalRequired = await webhookUrlApplyCapability
+		.handler(input, createCapabilityContext())
+		.catch((error: unknown) => error)
+	expect(approvalRequired).toBeInstanceOf(Error)
+	expect(String(approvalRequired)).toMatch(/approval_url:/)
+	expect(String(approvalRequired)).toContain('/connect/webhook-apply')
+	expect(String(approvalRequired)).toContain('https://hooks.example/register')
+	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
+
+	await expect(
+		webhookUrlApplyCapability.handler(
+			input,
+			createCapabilityContext('background'),
+		),
+	).rejects.toThrow(/interactive/)
+	expect(mockModule.applyWebhookUrlForUser).not.toHaveBeenCalled()
+
+	approvalMock.requireWebhookApplyDestinationGrantOrPending.mockResolvedValue({
+		status: 'granted',
+		fingerprint: 'fp-1',
+	})
+	mockModule.applyWebhookUrlForUser.mockResolvedValue({
+		ok: true,
+		urlHost: 'heykody.dev',
+		httpStatus: 200,
+		remoteId: 'reg-1',
+		error: null,
+	})
+	await expect(
+		webhookUrlApplyCapability.handler(input, createCapabilityContext()),
+	).resolves.toEqual({
+		ok: true,
+		url_host: 'heykody.dev',
+		http_status: 200,
+		remote_id: 'reg-1',
+		error: null,
+	})
+	expect(mockModule.applyWebhookUrlForUser).toHaveBeenCalledWith(
+		expect.objectContaining({ handle: 'whh_ep-1', destination }),
+	)
+	expect(
+		mockModule.applyWebhookUrlForUser.mock.calls.at(-1)?.[0].destination,
+	).not.toHaveProperty('user_confirmed')
 })

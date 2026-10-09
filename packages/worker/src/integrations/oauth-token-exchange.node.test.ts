@@ -8,35 +8,57 @@ import {
 	resolveTokenExchangeStyle,
 } from './oauth-token-exchange.ts'
 
-test('token exchange style resolves Notion basic-json and builds both request shapes', () => {
-	expect(
-		resolveTokenExchangeStyle({
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-		}),
-	).toBe('basic-json')
-	expect(
-		resolveTokenExchangeStyle({
-			tokenUrl: 'https://slack.com/api/oauth.v2.access',
-		}),
-	).toBe('form')
-	expect(
-		resolveTokenExchangeStyle({
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			tokenExchangeStyle: 'form',
-		}),
-	).toBe('form')
+const redirectUri = 'https://example.com/connect/oauth'
+const basicFormError =
+	'basic-form token exchange requires confidential flow with a client secret.'
 
-	const notionRequest = buildOAuthTokenExchangeRequest({
+function build(
+	params: Record<string, string>,
+	{
+		flow = 'confidential',
+		clientSecret = 'client-secret',
+		style,
+	}: {
+		flow?: 'confidential' | 'pkce'
+		clientSecret?: string | null
+		style: 'form' | 'basic-json' | 'basic-form'
+	},
+) {
+	return buildOAuthTokenExchangeRequest({
 		params: new URLSearchParams({
 			grant_type: 'authorization_code',
-			client_id: 'client-id',
-			code: 'code',
-			redirect_uri: 'https://example.com/connect/oauth',
+			...params,
 		}),
-		flow: 'confidential',
-		clientSecret: 'client-secret',
-		style: 'basic-json',
+		flow,
+		clientSecret,
+		style,
 	})
+}
+
+test('token exchange style resolves Notion basic-json, Canva basic-form, and explicit overrides', () => {
+	const notion = 'https://api.notion.com/v1/oauth/token'
+	const canva = 'https://api.canva.com/rest/v1/oauth/token'
+	const styleCases = [
+		{ tokenUrl: notion, expected: 'basic-json' },
+		{ tokenUrl: 'https://slack.com/api/oauth.v2.access', expected: 'form' },
+		{ tokenUrl: notion, tokenExchangeStyle: 'form' as const, expected: 'form' },
+		{ tokenUrl: canva, expected: 'basic-form' },
+		{ tokenUrl: canva, tokenExchangeStyle: 'form' as const, expected: 'form' },
+	]
+	expect(
+		styleCases.filter(
+			({ expected, ...input }) => resolveTokenExchangeStyle(input) !== expected,
+		),
+	).toEqual([])
+})
+
+test('token exchange builds basic-json and form request shapes and the failure payload', () => {
+	const codeParams = {
+		client_id: 'client-id',
+		code: 'code',
+		redirect_uri: redirectUri,
+	}
+	const notionRequest = build(codeParams, { style: 'basic-json' })
 	expect(notionRequest.headers).toEqual({
 		Accept: 'application/json',
 		'Content-Type': 'application/json',
@@ -45,20 +67,10 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 	expect(JSON.parse(notionRequest.body)).toEqual({
 		grant_type: 'authorization_code',
 		code: 'code',
-		redirect_uri: 'https://example.com/connect/oauth',
+		redirect_uri: redirectUri,
 	})
 
-	const formRequest = buildOAuthTokenExchangeRequest({
-		params: new URLSearchParams({
-			grant_type: 'authorization_code',
-			client_id: 'client-id',
-			code: 'code',
-			redirect_uri: 'https://example.com/connect/oauth',
-		}),
-		flow: 'confidential',
-		clientSecret: 'client-secret',
-		style: 'form',
-	})
+	const formRequest = build(codeParams, { style: 'form' })
 	expect(formRequest.headers).toEqual({
 		Accept: 'application/json',
 		'Content-Type': 'application/x-www-form-urlencoded',
@@ -67,32 +79,22 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 		'client-secret',
 	)
 
-	const formPkceConfidentialRequest = buildOAuthTokenExchangeRequest({
-		params: new URLSearchParams({
-			grant_type: 'authorization_code',
-			client_id: 'client-id',
-			code: 'code',
-			redirect_uri: 'https://example.com/connect/oauth',
-			code_verifier: 'pkce-verifier',
-		}),
-		flow: 'confidential',
-		clientSecret: 'client-secret',
-		style: 'form',
-	})
-	const formPkceConfidentialBody = new URLSearchParams(
-		formPkceConfidentialRequest.body,
+	const formPkceBody = new URLSearchParams(
+		build({ ...codeParams, code_verifier: 'pkce-verifier' }, { style: 'form' })
+			.body,
 	)
-	expect(formPkceConfidentialBody.get('client_secret')).toBe('client-secret')
-	expect(formPkceConfidentialBody.get('code_verifier')).toBe('pkce-verifier')
+	expect(formPkceBody.get('client_secret')).toBe('client-secret')
+	expect(formPkceBody.get('code_verifier')).toBe('pkce-verifier')
 
-	const failurePayload = buildOAuthTokenExchangeFailurePayload({
-		providerStatus: 401,
-		payload: {
-			error: 'invalid_client',
-			error_description: 'Client authentication failed',
-		},
-	})
-	expect(failurePayload).toEqual({
+	expect(
+		buildOAuthTokenExchangeFailurePayload({
+			providerStatus: 401,
+			payload: {
+				error: 'invalid_client',
+				error_description: 'Client authentication failed',
+			},
+		}),
+	).toEqual({
 		ok: false,
 		error: 'invalid_client',
 		error_description: 'Client authentication failed',
@@ -101,32 +103,17 @@ test('token exchange style resolves Notion basic-json and builds both request sh
 	expect(oauthTokenExchangeFailureHttpStatus()).toBe(502)
 })
 
-test('token exchange style resolves Canva basic-form and keeps PKCE code_verifier alongside Basic client auth', () => {
-	expect(
-		resolveTokenExchangeStyle({
-			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-		}),
-	).toBe('basic-form')
-	expect(
-		resolveTokenExchangeStyle({
-			tokenUrl: 'https://api.canva.com/rest/v1/oauth/token',
-			tokenExchangeStyle: 'form',
-		}),
-	).toBe('form')
-
-	const canvaRequest = buildOAuthTokenExchangeRequest({
-		params: new URLSearchParams({
-			grant_type: 'authorization_code',
+test('basic-form keeps PKCE code_verifier alongside Basic client auth and requires a confidential client', () => {
+	const canvaRequest = build(
+		{
 			client_id: 'canva-client-id',
 			client_secret: 'stale-body-secret',
 			code: 'canva-code',
-			redirect_uri: 'https://example.com/connect/oauth',
+			redirect_uri: redirectUri,
 			code_verifier: 'pkce-verifier',
-		}),
-		flow: 'confidential',
-		clientSecret: 'canva-client-secret',
-		style: 'basic-form',
-	})
+		},
+		{ clientSecret: 'canva-client-secret', style: 'basic-form' },
+	)
 	expect(canvaRequest.headers).toEqual({
 		Accept: 'application/json',
 		'Content-Type': 'application/x-www-form-urlencoded',
@@ -139,58 +126,29 @@ test('token exchange style resolves Canva basic-form and keeps PKCE code_verifie
 	expect(canvaBody.get('client_id')).toBeNull()
 	expect(canvaBody.get('client_secret')).toBeNull()
 
-	const reservedCharacterRequest = buildOAuthTokenExchangeRequest({
-		params: new URLSearchParams({
-			grant_type: 'authorization_code',
-			client_id: 'client:id',
-			code: 'canva-code',
-		}),
-		flow: 'confidential',
-		clientSecret: 'secret%value',
-		style: 'basic-form',
-	})
-	expect(reservedCharacterRequest.headers.Authorization).toBe(
-		`Basic ${btoa('client%3Aid:secret%25value')}`,
-	)
+	expect(
+		build(
+			{ client_id: 'client:id', code: 'canva-code' },
+			{ clientSecret: 'secret%value', style: 'basic-form' },
+		).headers.Authorization,
+	).toBe(`Basic ${btoa('client%3Aid:secret%25value')}`)
 
+	const canvaParams = { client_id: 'canva-client-id', code: 'canva-code' }
 	expect(() =>
-		buildOAuthTokenExchangeRequest({
-			params: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: 'canva-client-id',
-				code: 'canva-code',
-			}),
+		build(canvaParams, {
 			flow: 'pkce',
 			clientSecret: 'canva-client-secret',
 			style: 'basic-form',
 		}),
-	).toThrow(
-		'basic-form token exchange requires confidential flow with a client secret.',
-	)
+	).toThrow(basicFormError)
 	expect(() =>
-		buildOAuthTokenExchangeRequest({
-			params: new URLSearchParams({
-				grant_type: 'authorization_code',
-				client_id: 'canva-client-id',
-				code: 'canva-code',
-			}),
-			flow: 'confidential',
-			clientSecret: null,
-			style: 'basic-form',
-		}),
-	).toThrow(
-		'basic-form token exchange requires confidential flow with a client secret.',
-	)
+		build(canvaParams, { clientSecret: null, style: 'basic-form' }),
+	).toThrow(basicFormError)
 	expect(() =>
-		buildOAuthTokenExchangeRequest({
-			params: new URLSearchParams({
-				grant_type: 'authorization_code',
-				code: 'canva-code',
-			}),
-			flow: 'confidential',
-			clientSecret: 'canva-client-secret',
-			style: 'basic-form',
-		}),
+		build(
+			{ code: 'canva-code' },
+			{ clientSecret: 'canva-client-secret', style: 'basic-form' },
+		),
 	).toThrow('basic-form token exchange requires client_id in params.')
 })
 

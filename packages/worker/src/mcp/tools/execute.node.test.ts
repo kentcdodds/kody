@@ -10,7 +10,6 @@ import {
 	entitlementLimitErrorCode,
 	jobIntervalFloorErrorCode,
 } from '#worker/entitlements/errors.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	defaultMcpContentLimitBytes,
 	maxMcpContentBlockCount,
@@ -22,8 +21,11 @@ import {
 	executeInvokeMutualExclusionMessage,
 } from '#mcp/execute-invoke.ts'
 import type * as AccessControlModule from '#mcp/capabilities/access-control.ts'
+import type * as CapabilityRegistryModule from '#mcp/capabilities/registry.ts'
+import type * as EntitlementsService from '#worker/entitlements/service.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const heartbeatMock = vi.hoisted(() => ({
 	scheduleFleetExecuteLastSuccess: vi.fn(),
@@ -33,20 +35,40 @@ vi.mock('#worker/execute-health-heartbeat.ts', () => heartbeatMock)
 
 const mockModule = vi.hoisted(() => ({
 	runModuleWithRegistry: vi.fn(),
-	createExecutePackageInvokeTools: vi.fn(),
-	createPackageRuntimeInvokeTools: vi.fn(),
 	createPackageEventTools: vi.fn(),
-	getCapabilityRegistryForContext: vi.fn(async () => ({
-		capabilityHandlers: {
-			codingGuideGet: true,
-		},
-	})),
-	getRunRecordByIdempotencyKey: vi.fn(async () => null),
-	claimRunRecord: vi.fn(async () => null),
-	finishRunRecord: vi.fn(async () => undefined),
-	resolveCallerFeatureFlags: vi.fn(async () => ({
-		'execute-invoke': false,
-	})),
+	getCapabilityRegistryForContext: vi.fn(
+		async (
+			..._args: Parameters<
+				typeof CapabilityRegistryModule.getCapabilityRegistryForContext
+			>
+		) => ({
+			capabilityHandlers: {
+				codingGuideGet: true,
+			},
+		}),
+	),
+	getRunRecordByIdempotencyKey: vi.fn<
+		typeof RunRecordsServiceModule.getRunRecordByIdempotencyKey
+	>(async () => null),
+	claimRunRecord: vi.fn<typeof RunRecordsServiceModule.claimRunRecord>(
+		async () => null,
+	),
+	finishRunRecord: vi.fn(
+		async (
+			..._args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => undefined,
+	),
+	resolveCallerFeatureFlags: vi.fn(
+		async (
+			..._args: Parameters<typeof AccessControlModule.resolveCallerFeatureFlags>
+		) => ({
+			'execute-invoke': false,
+			'connection-profiles': false,
+			'mcp-skills-extension': false,
+			'mcp-events-extension': false,
+		}),
+	),
+	consumeDailyEntitlement: vi.fn(),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
@@ -55,8 +77,11 @@ vi.mock('#mcp/run-kody-registry.ts', () => ({
 }))
 
 vi.mock('#mcp/capabilities/registry.ts', () => ({
-	getCapabilityRegistryForContext: (...args: Array<unknown>) =>
-		mockModule.getCapabilityRegistryForContext(...args),
+	getCapabilityRegistryForContext: (
+		...args: Parameters<
+			typeof CapabilityRegistryModule.getCapabilityRegistryForContext
+		>
+	) => mockModule.getCapabilityRegistryForContext(...args),
 }))
 
 vi.mock(
@@ -65,17 +90,29 @@ vi.mock(
 		const actual = await importOriginal()
 		return {
 			...actual,
-			resolveCallerFeatureFlags: (...args: Array<unknown>) =>
-				mockModule.resolveCallerFeatureFlags(...args),
+			resolveCallerFeatureFlags: (
+				...args: Parameters<
+					typeof AccessControlModule.resolveCallerFeatureFlags
+				>
+			) => mockModule.resolveCallerFeatureFlags(...args),
 		}
 	},
 )
 
+vi.mock('#worker/entitlements/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof EntitlementsService>()
+	return {
+		...actual,
+		consumeDailyEntitlement: (
+			...args: Parameters<typeof actual.consumeDailyEntitlement>
+		) => {
+			mockModule.consumeDailyEntitlement(...args)
+			return actual.consumeDailyEntitlement(...args)
+		},
+	}
+})
+
 vi.mock('#worker/package-invocations/service.ts', () => ({
-	createExecutePackageInvokeTools: (...args: Array<unknown>) =>
-		mockModule.createExecutePackageInvokeTools(...args),
-	createPackageRuntimeInvokeTools: (...args: Array<unknown>) =>
-		mockModule.createPackageRuntimeInvokeTools(...args),
 	createPackageEventTools: (...args: Array<unknown>) =>
 		mockModule.createPackageEventTools(...args),
 }))
@@ -86,12 +123,17 @@ vi.mock('#worker/run-records/service.ts', async () => {
 	)
 	return {
 		...actual,
-		getRunRecordByIdempotencyKey: (...args: Array<unknown>) =>
-			mockModule.getRunRecordByIdempotencyKey(...args),
-		claimRunRecord: (...args: Array<unknown>) =>
-			mockModule.claimRunRecord(...args),
-		finishRunRecord: (...args: Array<unknown>) =>
-			mockModule.finishRunRecord(...args),
+		getRunRecordByIdempotencyKey: (
+			...args: Parameters<
+				typeof RunRecordsServiceModule.getRunRecordByIdempotencyKey
+			>
+		) => mockModule.getRunRecordByIdempotencyKey(...args),
+		claimRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.claimRunRecord>
+		) => mockModule.claimRunRecord(...args),
+		finishRunRecord: (
+			...args: Parameters<typeof RunRecordsServiceModule.finishRunRecord>
+		) => mockModule.finishRunRecord(...args),
 	}
 })
 
@@ -136,18 +178,71 @@ function mockPerformanceSequence(...values: Array<number>) {
 	})
 }
 
-async function getExecuteRegistration(
-	callerContext: {
-		baseUrl: string
-		user: null | {
-			userId: string
-			email?: string
-			displayName?: string
+type ExecuteInput = {
+	code?: string
+	invoke?: string
+	params?: Record<string, unknown>
+	responseLimit?: number
+	conversationId?: string
+	idempotencyKey?: string
+}
+
+type ExecuteResponse = {
+	content: Array<ContentBlock>
+	structuredContent: {
+		conversationId: string
+		runId?: string
+		replayed?: boolean
+		inProgress?: boolean
+		status?: string
+		returnedBytes: number
+		truncated?: boolean
+		note?: string
+		warnings?: Array<string>
+		timing: {
+			startedAt: string
+			endedAt: string
+			durationMs: number
 		}
-	} = {
-		baseUrl: 'https://example.com',
-		user: null,
+		result: unknown
+		logs: Array<unknown>
+		error?: string
+		errorDetails?: unknown
+		entitlement?: {
+			code: string
+			resource: string
+			plan: string
+			limit?: number
+			current?: number
+			upgradeHint: string
+			used?: number
+			remaining?: number
+		}
+	}
+	isError: boolean
+}
+
+type ExecuteHandler = (
+	input: ExecuteInput,
+	extra?: {
+		mcpReq?: {
+			_meta?: { progressToken?: string }
+			notify?: (notification: unknown) => Promise<void>
+		}
 	},
+) => Promise<ExecuteResponse>
+
+type CallerContext = {
+	baseUrl: string
+	user: null | {
+		userId: string
+		email?: string
+		displayName?: string
+	}
+}
+
+async function getExecuteRegistration(
+	callerContext: CallerContext = { baseUrl: 'https://example.com', user: null },
 	agentExtras: {
 		state?: Record<string, unknown>
 		setState?: (state: Record<string, unknown>) => void
@@ -158,13 +253,14 @@ async function getExecuteRegistration(
 	vi.clearAllMocks()
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': agentExtras.invokeEnabled === true,
+		'connection-profiles': false,
+		'mcp-skills-extension': false,
+		'mcp-events-extension': false,
 	})
 	const registerTool = vi.fn()
 
 	await registerExecuteTool({
-		server: {
-			registerTool,
-		} as never,
+		server: { registerTool } as never,
 		getEnv: vi.fn(() => stubEnv),
 		getCallerContext: vi.fn(() => callerContext),
 		requireDomain: vi.fn(),
@@ -175,86 +271,41 @@ async function getExecuteRegistration(
 	expect(registerTool).toHaveBeenCalledTimes(1)
 	return registerTool.mock.calls[0] as [
 		string,
-		{
-			description: string
-			inputSchema: Record<string, unknown>
-		},
-		(input: {
-			code?: string
-			invoke?: string
-			responseLimit?: number
-			conversationId?: string
-		}) => Promise<{
-			content: Array<ContentBlock>
-			structuredContent: {
-				conversationId: string
-				returnedBytes: number
-				truncated?: boolean
-				note?: string
-				warnings?: Array<string>
-				timing: {
-					startedAt: string
-					endedAt: string
-					durationMs: number
-				}
-				result: unknown
-				logs: Array<unknown>
-				error?: string
-			}
-			isError: boolean
-		}>,
+		{ description: string; inputSchema: Record<string, unknown> },
+		ExecuteHandler,
 	]
 }
 
 async function getExecuteHandler(
-	callerContext?: Parameters<typeof getExecuteRegistration>[0],
-	agentExtras?: Parameters<typeof getExecuteRegistration>[1],
+	...args: Parameters<typeof getExecuteRegistration>
 ) {
-	const [, , handler] = await getExecuteRegistration(callerContext, agentExtras)
-	return handler as (input: {
-		code?: string
-		invoke?: string
-		params?: Record<string, unknown>
-		responseLimit?: number
-		conversationId?: string
-		idempotencyKey?: string
-	}) => Promise<{
-		content: Array<ContentBlock>
-		structuredContent: {
-			conversationId: string
-			runId?: string
-			replayed?: boolean
-			inProgress?: boolean
-			status?: string
-			returnedBytes: number
-			truncated?: boolean
-			note?: string
-			warnings?: Array<string>
-			timing: {
-				startedAt: string
-				endedAt: string
-				durationMs: number
-			}
-			result: unknown
-			logs: Array<unknown>
-			error?: string
-			errorDetails?: unknown
-			entitlement?: {
-				code: string
-				resource: string
-				plan: string
-				limit?: number
-				current?: number
-				upgradeHint: string
-				used?: number
-				remaining?: number
-			}
-		}
-		isError: boolean
-	}>
+	const [, , handler] = await getExecuteRegistration(...args)
+	return handler
 }
 
-test('execute tool serializes successes and errors, passes package invoke tools, and truncates oversized returns', async () => {
+function moduleReturns(result: unknown, extra: Record<string, unknown> = {}) {
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
+		result,
+		logs: [],
+		...extra,
+	})
+}
+
+function moduleThrows(error: Error, logs: Array<unknown> = []) {
+	mockModule.runModuleWithRegistry.mockResolvedValueOnce({ error, logs })
+}
+
+const okCode = 'export default async () => ({ ok: true })'
+const shouldNotRunCode = 'export default async () => ({ shouldNotRun: true })'
+const timing = (durationMs: number) => ({
+	startedAt: expect.any(String),
+	endedAt: expect.any(String),
+	durationMs,
+})
+const truncationNote = (bytes: number, limit: number) =>
+	`Returned value was ${String(bytes)} bytes, exceeding responseLimit ${String(limit)} bytes; output was truncated. Project fields before returning.`
+
+test('execute tool serializes successes and errors, binds no packages helper tools, and truncates oversized returns', async () => {
 	const handler = await getExecuteHandler()
 	const rawContent: Array<ContentBlock> = [
 		{
@@ -262,21 +313,13 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 			data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB',
 			mimeType: 'image/png',
 		},
-		{
-			type: 'text',
-			text: 'Screenshot of https://example.com',
-		},
+		{ type: 'text', text: 'Screenshot of https://example.com' },
 	]
 	mockPerformanceSequence(100, 142)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			__mcpContent: rawContent,
-		},
-		logs: [{ level: 'info', message: 'captured screenshot' }],
-	})
-	const returnedBytes = new TextEncoder().encode(
-		JSON.stringify(rawContent),
-	).byteLength
+	moduleReturns(
+		{ __mcpContent: rawContent },
+		{ logs: [{ level: 'info', message: 'captured screenshot' }] },
+	)
 
 	const mcpContentResponse = await handler({
 		code: 'async () => ({ __mcpContent: [] })',
@@ -290,116 +333,60 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 		'async () => ({ __mcpContent: [] })',
 		undefined,
 		expect.objectContaining({
-			capabilityRegistry: {
-				capabilityHandlers: {
-					codingGuideGet: true,
-				},
-			},
+			capabilityRegistry: { capabilityHandlers: { codingGuideGet: true } },
 		}),
 	)
 	expect(mcpContentResponse.isError).toBe(false)
 	expect(mcpContentResponse.content).toEqual([
-		{
-			type: 'text',
-			text: 'conversationId: conv-123',
-		},
+		{ type: 'text', text: 'conversationId: conv-123' },
 		...rawContent,
 	])
 	expect(mcpContentResponse.structuredContent).toEqual({
 		conversationId: 'conv-123',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 42,
-		},
-		returnedBytes,
+		timing: timing(42),
+		returnedBytes: new TextEncoder().encode(JSON.stringify(rawContent))
+			.byteLength,
 		result: null,
 		logs: [{ level: 'info', message: 'captured screenshot' }],
 	})
 
+	const serverTiming = [
+		{ name: 'typecheck-total', durationMs: 12 },
+		{ name: 'bundle', durationMs: 34 },
+		{ name: 'run', durationMs: 56 },
+	]
 	mockPerformanceSequence(10, 19)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-		serverTiming: [
-			{ name: 'typecheck-total', durationMs: 12 },
-			{ name: 'bundle', durationMs: 34 },
-			{ name: 'run', durationMs: 56 },
-		],
-	})
-
+	moduleReturns({ ok: true }, { serverTiming })
 	const jsonResponse = await handler({
 		code: 'async () => ({ ok: true })',
 		conversationId: 'conv-456',
 	})
-
 	expect(jsonResponse.isError).toBe(false)
 	expect(jsonResponse.content).toEqual([
-		{
-			type: 'text',
-			text: 'conversationId: conv-456',
-		},
-		{
-			type: 'text',
-			text: '{\n  "ok": true\n}',
-		},
+		{ type: 'text', text: 'conversationId: conv-456' },
+		{ type: 'text', text: '{\n  "ok": true\n}' },
 	])
 	expect(jsonResponse.structuredContent).toEqual({
 		conversationId: 'conv-456',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 9,
-			serverTiming: [
-				{ name: 'typecheck-total', durationMs: 12 },
-				{ name: 'bundle', durationMs: 34 },
-				{ name: 'run', durationMs: 56 },
-			],
-		},
+		timing: { ...timing(9), serverTiming },
 		returnedBytes: 11,
 		result: { ok: true },
 		logs: [],
 	})
 
-	const packageInvokeTools = {
-		invoke: vi.fn(),
-	}
-	mockModule.createExecutePackageInvokeTools.mockReturnValueOnce(
-		packageInvokeTools,
-	)
 	const callerContext = {
 		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-123',
-			email: 'me@example.com',
-			displayName: 'Me',
-		},
+		user: { userId: 'user-123', email: 'me@example.com', displayName: 'Me' },
 	}
 	const authenticatedHandler = await getExecuteHandler(callerContext)
-	mockPerformanceSequence(9, 12)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
-
-	await authenticatedHandler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-packages',
-	})
-
-	expect(mockModule.createExecutePackageInvokeTools).toHaveBeenCalledWith({
-		env: stubEnv,
-		baseUrl: 'https://example.com',
-		callerContext: expect.objectContaining(callerContext),
-		conversationId: 'conv-packages',
-	})
+	moduleReturns({ ok: true })
+	await authenticatedHandler({ code: okCode, conversationId: 'conv-packages' })
 	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining(callerContext),
-		'export default async () => ({ ok: true })',
+		okCode,
 		undefined,
 		expect.objectContaining({
-			packageInvokeTools,
 			conversationId: 'conv-packages',
 			runRecordHandle: null,
 			runRecord: {
@@ -407,100 +394,72 @@ test('execute tool serializes successes and errors, passes package invoke tools,
 				name: null,
 				storageId: null,
 				idempotencyKey: null,
-				metadata: {
-					conversationId: 'conv-packages',
-				},
+				metadata: { conversationId: 'conv-packages', entry: 'code' },
 			},
 		}),
 	)
+	expect(
+		mockModule.runModuleWithRegistry.mock.lastCall?.[4],
+	).not.toHaveProperty('packageInvokeTools')
 
 	mockPerformanceSequence(20, 25)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: 'hello world',
-		logs: [],
-	})
-
+	moduleReturns('hello world')
 	const truncatedStringResponse = await handler({
 		code: 'async () => "hello world"',
 		responseLimit: 5,
 		conversationId: 'conv-truncated-string',
 	})
-
 	expect(truncatedStringResponse.isError).toBe(false)
 	expect(truncatedStringResponse.content).toEqual([
+		{ type: 'text', text: 'conversationId: conv-truncated-string' },
 		{
 			type: 'text',
-			text: 'conversationId: conv-truncated-string',
-		},
-		{
-			type: 'text',
-			text: 'hello\n\n--- TRUNCATED ---\nReturned value was 11 bytes, exceeding responseLimit 5 bytes; output was truncated. Project fields before returning.',
+			text: `hello\n\n--- TRUNCATED ---\n${truncationNote(11, 5)}`,
 		},
 	])
 	expect(truncatedStringResponse.structuredContent).toEqual({
 		conversationId: 'conv-truncated-string',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 5,
-		},
+		timing: timing(5),
 		returnedBytes: 11,
 		truncated: true,
-		note: 'Returned value was 11 bytes, exceeding responseLimit 5 bytes; output was truncated. Project fields before returning.',
+		note: truncationNote(11, 5),
 		result: 'hello',
 		logs: [],
 	})
 
 	mockPerformanceSequence(30, 40)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { rows: [{ id: 'message-1', payload: 'abcdef' }] },
-		logs: [],
-	})
-
+	moduleReturns({ rows: [{ id: 'message-1', payload: 'abcdef' }] })
 	const truncatedObjectResponse = await handler({
 		code: 'async () => ({ rows: [{ id: "message-1", payload: "abcdef" }] })',
 		responseLimit: 10,
 		conversationId: 'conv-truncated-object',
 	})
-
 	expect(truncatedObjectResponse.isError).toBe(false)
+	expect(truncatedObjectResponse.content[1]).toEqual({
+		type: 'text',
+		text: `{\n  "truncated": true,\n  "type": "object"\n}\n\n--- TRUNCATED ---\n${truncationNote(48, 10)}`,
+	})
 	expect(truncatedObjectResponse.structuredContent).toEqual({
 		conversationId: 'conv-truncated-object',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 10,
-		},
+		timing: timing(10),
 		returnedBytes: 48,
 		truncated: true,
-		note: 'Returned value was 48 bytes, exceeding responseLimit 10 bytes; output was truncated. Project fields before returning.',
-		result: {
-			truncated: true,
-			type: 'object',
-		},
+		note: truncationNote(48, 10),
+		result: { truncated: true, type: 'object' },
 		logs: [],
 	})
 
 	mockPerformanceSequence(50, 65)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		error: new Error('Boom'),
-		logs: [{ level: 'error', message: 'failed' }],
-	})
-
+	moduleThrows(new Error('Boom'), [{ level: 'error', message: 'failed' }])
 	const errorResponse = await handler({
 		code: 'async () => { throw new Error("Boom") }',
 		conversationId: 'conv-error',
 	})
-
 	expect(errorResponse.isError).toBe(true)
 	expect(errorResponse.structuredContent).toEqual(
 		expect.objectContaining({
 			conversationId: 'conv-error',
-			timing: {
-				startedAt: expect.any(String),
-				endedAt: expect.any(String),
-				durationMs: 15,
-			},
+			timing: timing(15),
 			error: 'Boom',
 			returnedBytes: 0,
 			logs: [{ level: 'error', message: 'failed' }],
@@ -515,81 +474,62 @@ test('execute passes through downstream MCP image content with structured data a
 		data: 'UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAwA0JaQAA3AA/vuUAAA=',
 		mimeType: 'image/webp',
 	}
-
-	mockPerformanceSequence(1, 2)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: wrapDownstreamMcpToolResult(
-			{
-				content: [webpBlock],
-				structuredContent: { shotId: 's1' },
-			},
-			{ kind: 'mcp-server', label: 'vision:screenshot' },
-		),
-		logs: [],
+	const conversationLine = (conversationId: string) => ({
+		type: 'text',
+		text: `conversationId: ${conversationId}`,
 	})
 
+	moduleReturns(
+		wrapDownstreamMcpToolResult(
+			{ content: [webpBlock], structuredContent: { shotId: 's1' } },
+			{ kind: 'mcp-server', label: 'vision:screenshot' },
+		),
+	)
 	const passthroughResponse = await handler({
 		code: 'async () => downstream',
 		conversationId: 'conv-passthrough',
 	})
-
 	expect(passthroughResponse.isError).toBe(false)
 	expect(passthroughResponse.content).toEqual([
-		{ type: 'text', text: 'conversationId: conv-passthrough' },
+		conversationLine('conv-passthrough'),
 		webpBlock,
 	])
 	expect(passthroughResponse.structuredContent.result).toEqual({
 		shotId: 's1',
 	})
 
-	const largeData = 'A'.repeat(Math.ceil(110_000 / 4) * 4)
 	const largeBlock = {
 		type: 'image' as const,
-		data: largeData,
+		data: 'A'.repeat(Math.ceil(110_000 / 4) * 4),
 		mimeType: 'image/webp',
 	}
-	mockPerformanceSequence(3, 4)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			__mcpContent: [largeBlock],
-		},
-		logs: [],
-	})
-
+	moduleReturns({ __mcpContent: [largeBlock] })
 	const largeResponse = await handler({
 		code: 'async () => large',
 		conversationId: 'conv-large-image',
 		responseLimit: 102_400,
 	})
-
 	expect(largeResponse.isError).toBe(false)
 	expect(largeResponse.content).toEqual([
-		{ type: 'text', text: 'conversationId: conv-large-image' },
+		conversationLine('conv-large-image'),
 		largeBlock,
 	])
 
-	const tooLargeData = 'A'.repeat(
-		Math.ceil((defaultMcpContentLimitBytes + 50_000) / 4) * 4,
-	)
-	mockPerformanceSequence(5, 6)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			__mcpContent: [
-				{
-					type: 'image',
-					data: tooLargeData,
-					mimeType: 'image/png',
-				},
-			],
-		},
-		logs: [],
+	moduleReturns({
+		__mcpContent: [
+			{
+				type: 'image',
+				data: 'A'.repeat(
+					Math.ceil((defaultMcpContentLimitBytes + 50_000) / 4) * 4,
+				),
+				mimeType: 'image/png',
+			},
+		],
 	})
-
 	const oversizeResponse = await handler({
 		code: 'async () => oversize',
 		conversationId: 'conv-oversize',
 	})
-
 	expect(oversizeResponse.isError).toBe(true)
 	expect(oversizeResponse.structuredContent.error).toContain(
 		'exceeding content limit',
@@ -600,37 +540,23 @@ test('execute passes through downstream MCP image content with structured data a
 	})
 
 	// Ordinary application objects with a `content` array stay JSON text.
-	mockPerformanceSequence(7, 8)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			content: [webpBlock],
-			ok: true,
-		},
-		logs: [],
-	})
+	moduleReturns({ content: [webpBlock], ok: true })
 	const arbitraryContentResponse = await handler({
 		code: 'async () => ({ content: [...] })',
 		conversationId: 'conv-arbitrary-content',
 	})
 	expect(arbitraryContentResponse.isError).toBe(false)
 	expect(arbitraryContentResponse.content).toEqual([
-		{ type: 'text', text: 'conversationId: conv-arbitrary-content' },
+		conversationLine('conv-arbitrary-content'),
 		{
 			type: 'text',
 			text: JSON.stringify({ content: [webpBlock], ok: true }, null, 2),
 		},
 	])
-	expect(arbitraryContentResponse.content.some((b) => b.type === 'image')).toBe(
-		false,
-	)
 
 	// Malformed user-authored __mcpContent becomes an isError result (no throw).
-	mockPerformanceSequence(9, 10)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			__mcpContent: [{ type: 'image', data: '!!!', mimeType: 'image/png' }],
-		},
-		logs: [],
+	moduleReturns({
+		__mcpContent: [{ type: 'image', data: '!!!', mimeType: 'image/png' }],
 	})
 	const malformedResponse = await handler({
 		code: 'async () => bad',
@@ -643,15 +569,11 @@ test('execute passes through downstream MCP image content with structured data a
 	expect(malformedResponse.content.some((b) => b.type === 'image')).toBe(false)
 
 	// Too many content blocks fail before expensive validation work.
-	mockPerformanceSequence(11, 12)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: {
-			__mcpContent: Array.from({ length: maxMcpContentBlockCount + 1 }, () => ({
-				type: 'text',
-				text: 'x',
-			})),
-		},
-		logs: [],
+	moduleReturns({
+		__mcpContent: Array.from({ length: maxMcpContentBlockCount + 1 }, () => ({
+			type: 'text',
+			text: 'x',
+		})),
 	})
 	const tooManyBlocksResponse = await handler({
 		code: 'async () => many',
@@ -676,94 +598,56 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation', async
 			baseUrl: 'https://example.com',
 			user: { userId: 'user-1', email: 'user@example.com' },
 		},
-		{
-			state: agentState,
-			setState,
-		},
+		{ state: agentState, setState },
 	)
-
-	mockModule.runModuleWithRegistry.mockImplementation(
+	const rawFetches =
+		(hostname: string, count: number) =>
 		async (
-			_env,
-			_ctx,
-			_code,
-			_params,
+			_env: unknown,
+			_ctx: unknown,
+			_code: string,
+			_params: unknown,
 			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
 		) => {
-			options.rawFetchHostSink?.add('api.notion.com')
-			options.rawFetchHostSink?.add('api.notion.com')
+			for (let i = 0; i < count; i++) {
+				options.rawFetchHostSink?.add(hostname)
+			}
 			return { result: { ok: true }, logs: [] }
-		},
-	)
-	mockPerformanceSequence(1, 2)
-	const below = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-nudge',
-	})
-	expect(below.structuredContent.warnings).toBeUndefined()
+		}
 
-	mockPerformanceSequence(3, 4)
-	const tipped = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-nudge',
-	})
-	expect(tipped.structuredContent.warnings).toEqual([
-		formatRawFetchHostNudge({
-			hostname: 'api.notion.com',
-			count: 4,
-		}),
+	mockModule.runModuleWithRegistry.mockImplementation(
+		rawFetches('api.notion.com', 2),
+	)
+	const warningsFor = async (conversationId: string, code = okCode) =>
+		(await handler({ code, conversationId })).structuredContent.warnings
+	expect(await warningsFor('conv-nudge')).toBeUndefined()
+	const tipped = await warningsFor('conv-nudge')
+	expect(tipped).toEqual([
+		formatRawFetchHostNudge({ hostname: 'api.notion.com', count: 4 }),
 	])
 	expect(setState).toHaveBeenCalled()
-
-	mockPerformanceSequence(5, 6)
-	const again = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-nudge',
-	})
-	expect(again.structuredContent.warnings).toBeUndefined()
+	expect(await warningsFor('conv-nudge')).toBeUndefined()
 
 	// Integration-auth helper source sharpens the packages-first warning text.
 	mockModule.runModuleWithRegistry.mockImplementationOnce(
-		async (
-			_env,
-			_ctx,
-			_code,
-			_params,
-			options: { rawFetchHostSink?: { add: (hostname: string) => void } },
-		) => {
-			options.rawFetchHostSink?.add('gmail.googleapis.com')
-			options.rawFetchHostSink?.add('gmail.googleapis.com')
-			options.rawFetchHostSink?.add('gmail.googleapis.com')
-			return { result: { ok: true }, logs: [] }
-		},
+		rawFetches('gmail.googleapis.com', 3),
 	)
-	mockPerformanceSequence(9, 10)
-	const authHelperTipped = await handler({
-		code: `import { createAuthenticatedFetch } from 'kody:runtime'
+	const authHelperTipped = await warningsFor(
+		'conv-oauth-nudge',
+		`import { createAuthenticatedFetch } from 'kody:runtime'
 export default async () => ({ ok: true })`,
-		conversationId: 'conv-oauth-nudge',
-	})
-	expect(authHelperTipped.structuredContent.warnings).toEqual([
+	)
+	expect(authHelperTipped).toEqual([
 		formatRawFetchHostNudge({
 			hostname: 'gmail.googleapis.com',
 			count: 3,
 			usedIntegrationAuthHelpers: true,
 		}),
 	])
-	expect(authHelperTipped.structuredContent.warnings?.[0]).not.toBe(
-		tipped.structuredContent.warnings?.[0],
-	)
+	expect(authHelperTipped?.[0]).not.toBe(tipped?.[0])
 })
 
 test('execute tool replays finished keyed runs and reports in-progress without re-executing', async () => {
-	const authenticatedCaller = {
-		baseUrl: 'https://example.com',
-		user: {
-			userId: 'user-keyed-execute',
-			email: 'keyed@example.com',
-			displayName: 'Keyed',
-		},
-	}
 	const finishedRun = {
 		id: 'run-finished-1',
 		surface: 'execute' as const,
@@ -788,15 +672,32 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		metadata: { result: { ok: true, agentId: 'agent-9' } },
 		logCount: 0,
 	}
-	const handler = await getExecuteHandler(authenticatedCaller)
-	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce(finishedRun)
-	mockPerformanceSequence(1, 2)
-	const replayed = await handler({
-		code: 'export default async () => ({ shouldNotRun: true })',
-		idempotencyKey: 'spawn-agent-1',
-		conversationId: 'conv-replay',
+	const handler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: {
+			userId: 'user-keyed-execute',
+			email: 'keyed@example.com',
+			displayName: 'Keyed',
+		},
 	})
-	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	const replay = async (
+		conversationId: string,
+		record: Record<string, unknown> = {},
+	) => {
+		mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
+			...finishedRun,
+			...record,
+		} as never)
+		const response = await handler({
+			code: shouldNotRunCode,
+			idempotencyKey: 'spawn-agent-1',
+			conversationId,
+		})
+		expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+		return response
+	}
+
+	const replayed = await replay('conv-replay')
 	expect(replayed.isError).toBe(false)
 	expect(replayed.structuredContent).toMatchObject({
 		runId: 'run-finished-1',
@@ -804,21 +705,13 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		result: { ok: true, agentId: 'agent-9' },
 	})
 
-	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
-		...finishedRun,
+	const inProgress = await replay('conv-running', {
 		id: 'run-running-1',
 		status: 'running',
 		finishedAt: null,
 		durationMs: null,
 		metadata: {},
 	})
-	mockPerformanceSequence(3, 4)
-	const inProgress = await handler({
-		code: 'export default async () => ({ shouldNotRun: true })',
-		idempotencyKey: 'spawn-agent-1',
-		conversationId: 'conv-running',
-	})
-	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 	expect(inProgress.isError).toBe(false)
 	expect(inProgress.structuredContent).toMatchObject({
 		runId: 'run-running-1',
@@ -827,7 +720,7 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 	})
 
 	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
-	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day', 'free')
 	const quotaMessage = buildEntitlementLimitMessage({
 		code: entitlementLimitErrorCode,
 		resource: 'execute_calls_per_day',
@@ -836,21 +729,13 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		current: quotaLimit,
 		upgradeHint: quotaHint,
 	})
-	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
-		...finishedRun,
+	const quotaReplayed = await replay('conv-quota-replay', {
 		id: 'run-quota-replay-1',
 		status: 'error',
 		errorName: 'EntitlementLimitError',
 		errorMessage: quotaMessage,
 		metadata: {},
 	})
-	mockPerformanceSequence(5, 6)
-	const quotaReplayed = await handler({
-		code: 'export default async () => ({ shouldNotRun: true })',
-		idempotencyKey: 'spawn-agent-1',
-		conversationId: 'conv-quota-replay',
-	})
-	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 	expect(quotaReplayed.isError).toBe(true)
 	expect(quotaReplayed.structuredContent.error).toBe(quotaMessage)
 	expect(quotaReplayed.structuredContent.entitlement).toEqual({
@@ -868,19 +753,12 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 		plan: 'free',
 		minIntervalMs: planLimits.free.minJobIntervalMs,
 	})
-	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce({
-		...finishedRun,
+	const intervalReplayed = await replay('conv-interval-replay', {
 		id: 'run-interval-replay-1',
 		status: 'error',
 		errorName: 'JobIntervalFloorError',
 		errorMessage: intervalDenial.message,
 		metadata: {},
-	})
-	mockPerformanceSequence(7, 8)
-	const intervalReplayed = await handler({
-		code: 'export default async () => ({ shouldNotRun: true })',
-		idempotencyKey: 'spawn-agent-1',
-		conversationId: 'conv-interval-replay',
 	})
 	expect(intervalReplayed.isError).toBe(true)
 	expect(intervalReplayed.structuredContent.error).toBe(intervalDenial.message)
@@ -894,38 +772,30 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 })
 
 test('execute tool claims a keyed run, passes the handle, and returns runId', async () => {
-	const authenticatedCaller = {
+	const claimedHandle = {
+		id: 'run-claimed-1',
+		userId: 'user-claim-execute',
+		startedAt: '2026-07-28T00:00:00.000Z',
+		persistence: 'eager' as const,
+		context: { surface: 'execute' as const, idempotencyKey: 'claim-key-1' },
+	}
+	const handler = await getExecuteHandler({
 		baseUrl: 'https://example.com',
 		user: {
 			userId: 'user-claim-execute',
 			email: 'claim@example.com',
 			displayName: 'Claim',
 		},
-	}
-	const claimedHandle = {
-		id: 'run-claimed-1',
-		userId: 'user-claim-execute',
-		startedAt: '2026-07-28T00:00:00.000Z',
-		persistence: 'eager' as const,
-		context: {
-			surface: 'execute' as const,
-			idempotencyKey: 'claim-key-1',
-		},
-	}
-	const handler = await getExecuteHandler(authenticatedCaller)
+	})
 	mockModule.getRunRecordByIdempotencyKey.mockResolvedValueOnce(null)
 	mockModule.claimRunRecord.mockResolvedValueOnce({
 		claimed: true,
 		handle: claimedHandle,
-	})
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { spawned: true },
-		logs: [],
-		runId: 'run-claimed-1',
-	})
-	mockPerformanceSequence(5, 6)
+	} as never)
+	moduleReturns({ spawned: true }, { runId: 'run-claimed-1' })
+	const code = 'export default async () => ({ spawned: true })'
 	const response = await handler({
-		code: 'export default async () => ({ spawned: true })',
+		code,
 		idempotencyKey: 'claim-key-1',
 		conversationId: 'conv-claim',
 	})
@@ -941,13 +811,11 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.anything(),
-		'export default async () => ({ spawned: true })',
+		code,
 		undefined,
 		expect.objectContaining({
 			runRecordHandle: claimedHandle,
-			runRecord: expect.objectContaining({
-				idempotencyKey: 'claim-key-1',
-			}),
+			runRecord: expect.objectContaining({ idempotencyKey: 'claim-key-1' }),
 		}),
 	)
 	expect(response.structuredContent).toMatchObject({
@@ -957,39 +825,19 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 })
 
 test('execute tool threads a progress reporter when the client sends progressToken', async () => {
-	const [, , handler] = await getExecuteRegistration()
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
+	const handler = await getExecuteHandler()
+	moduleReturns({ ok: true })
 	const notify = vi.fn().mockResolvedValue(undefined)
-	await (
-		handler as (
-			input: { code: string },
-			extra?: {
-				mcpReq?: {
-					_meta?: { progressToken?: string }
-					notify?: (notification: unknown) => Promise<void>
-				}
-			},
-		) => Promise<unknown>
-	)(
-		{ code: 'export default async () => ({ ok: true })' },
-		{
-			mcpReq: {
-				_meta: { progressToken: 'progress-1' },
-				notify,
-			},
-		},
+	await handler(
+		{ code: okCode },
+		{ mcpReq: { _meta: { progressToken: 'progress-1' }, notify } },
 	)
 	expect(mockModule.runModuleWithRegistry).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.anything(),
-		'export default async () => ({ ok: true })',
+		okCode,
 		undefined,
-		expect.objectContaining({
-			reportProgress: expect.any(Function),
-		}),
+		expect.objectContaining({ reportProgress: expect.any(Function) }),
 	)
 	const options = mockModule.runModuleWithRegistry.mock.calls.at(-1)?.[4] as {
 		reportProgress?: (update: {
@@ -1008,33 +856,28 @@ test('execute tool threads a progress reporter when the client sends progressTok
 	})
 })
 
-test('execute tool attaches entitlement metadata on denials and quota, not on success', async () => {
-	const successHandler = await getExecuteHandler()
+test('execute tool attaches entitlement metadata on denials and quota, not on success, and heartbeats only on success', async () => {
+	const handler = await getExecuteHandler()
 	mockPerformanceSequence(1, 2)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
-	const success = await successHandler({
-		code: 'export default async () => ({ ok: true })',
+	moduleReturns({ ok: true })
+	const success = await handler({
+		code: okCode,
 		conversationId: 'conv-entitlement-success',
 	})
 	expect(success.isError).toBe(false)
 	expect(success.structuredContent).toEqual({
 		conversationId: 'conv-entitlement-success',
-		timing: {
-			startedAt: expect.any(String),
-			endedAt: expect.any(String),
-			durationMs: 1,
-		},
+		timing: timing(1),
 		returnedBytes: expect.any(Number),
 		result: { ok: true },
 		logs: [],
 	})
 	expect(success.structuredContent).not.toHaveProperty('entitlement')
+	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).toHaveBeenCalledTimes(1)
 
+	heartbeatMock.scheduleFleetExecuteLastSuccess.mockClear()
 	const stockLimit = planLimits.free.maxSavedPackages
-	const stockHint = buildEntitlementUpgradeHint('saved_packages')
+	const stockHint = buildEntitlementUpgradeHint('saved_packages', 'free')
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',
@@ -1042,12 +885,8 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 		current: stockLimit,
 		upgradeHint: stockHint,
 	})
-	mockPerformanceSequence(3, 4)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		error: stockDenial,
-		logs: [],
-	})
-	const denied = await successHandler({
+	moduleThrows(stockDenial)
+	const denied = await handler({
 		code: 'export default async () => { throw stockDenial }',
 		conversationId: 'conv-entitlement-stock',
 	})
@@ -1064,10 +903,19 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 	expect(denied.structuredContent.entitlement).not.toHaveProperty('used')
 	expect(denied.structuredContent.entitlement).not.toHaveProperty('remaining')
 
+	moduleThrows(new Error('caller boom'))
+	const failure = await handler({
+		code: 'export default async () => { throw new Error("caller boom") }',
+		conversationId: 'conv-heartbeat-error',
+	})
+	expect(failure.isError).toBe(true)
+	expect(failure.structuredContent).not.toHaveProperty('entitlement')
+	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
+
 	const quotaEmail = 'quota-metadata@example.com'
-	const quotaUserId = await createStableUserIdFromEmail(quotaEmail)
+	const quotaUserId = testStableUserIdFromEmail(quotaEmail)
 	const quotaLimit = planLimits.free.maxExecuteCallsPerDay
-	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day')
+	const quotaHint = buildEntitlementUpgradeHint('execute_calls_per_day', 'free')
 	await userMeter.seed({
 		userId: quotaUserId,
 		resource: 'execute_calls_per_day',
@@ -1078,62 +926,28 @@ test('execute tool attaches entitlement metadata on denials and quota, not on su
 		baseUrl: 'https://example.com',
 		user: { userId: quotaUserId, email: quotaEmail },
 	})
-	mockPerformanceSequence(5, 6)
 	const quotaDenied = await quotaHandler({
-		code: 'export default async () => ({ shouldNotRun: true })',
+		code: shouldNotRunCode,
 		conversationId: 'conv-entitlement-quota',
 	})
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 	expect(quotaDenied.isError).toBe(true)
-	expect(quotaDenied.structuredContent.error).toBe(
-		buildEntitlementLimitMessage({
-			code: entitlementLimitErrorCode,
-			resource: 'execute_calls_per_day',
-			plan: 'free',
-			limit: quotaLimit,
-			current: quotaLimit,
-			upgradeHint: quotaHint,
-		}),
-	)
-	expect(quotaDenied.structuredContent.entitlement).toEqual({
+	const quotaEntitlement = {
 		code: entitlementLimitErrorCode,
 		resource: 'execute_calls_per_day',
 		plan: 'free',
 		limit: quotaLimit,
 		current: quotaLimit,
 		upgradeHint: quotaHint,
+	} as const
+	expect(quotaDenied.structuredContent.error).toBe(
+		buildEntitlementLimitMessage(quotaEntitlement),
+	)
+	expect(quotaDenied.structuredContent.entitlement).toEqual({
+		...quotaEntitlement,
 		used: quotaLimit,
 		remaining: 0,
 	})
-})
-
-test('successful execute completion schedules a fail-open fleet heartbeat and caller errors do not', async () => {
-	const handler = await getExecuteHandler()
-	mockPerformanceSequence(1, 2)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
-	const success = await handler({
-		code: 'export default async () => ({ ok: true })',
-		conversationId: 'conv-heartbeat-success',
-	})
-	expect(success.isError).toBe(false)
-	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).toHaveBeenCalledTimes(1)
-
-	heartbeatMock.scheduleFleetExecuteLastSuccess.mockClear()
-	mockPerformanceSequence(3, 4)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		error: new Error('caller boom'),
-		logs: [],
-	})
-	const failure = await handler({
-		code: 'export default async () => { throw new Error("caller boom") }',
-		conversationId: 'conv-heartbeat-error',
-	})
-	expect(failure.isError).toBe(true)
-	expect(heartbeatMock.scheduleFleetExecuteLastSuccess).not.toHaveBeenCalled()
-	heartbeatMock.scheduleFleetExecuteLastSuccess.mockReset()
 })
 
 test('execute invoke is omitted when the flag is off and mints the handwritten passthrough when on', async () => {
@@ -1150,19 +964,12 @@ test('execute invoke is omitted when the flag is off and mints the handwritten p
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 
 	const [, onConfig, onHandler] = await getExecuteRegistration(
-		{
-			baseUrl: 'https://example.com',
-			user: { userId: 'user-1' },
-		},
+		{ baseUrl: 'https://example.com', user: { userId: 'user-1' } },
 		{ invokeEnabled: true },
 	)
 	expect(onConfig.inputSchema).toHaveProperty('invoke')
 
-	mockPerformanceSequence(10, 20)
-	mockModule.runModuleWithRegistry.mockResolvedValueOnce({
-		result: { ok: true },
-		logs: [],
-	})
+	moduleReturns({ ok: true })
 	const invoked = await onHandler({
 		invoke: '@acme/github#listRepos',
 		params: { limit: 5 },
@@ -1178,7 +985,15 @@ export default async function main(params) {
 	return await action(params)
 }`,
 		{ limit: 5 },
-		expect.anything(),
+		expect.objectContaining({
+			runRecord: expect.objectContaining({
+				metadata: {
+					conversationId: 'conv-invoke-on',
+					entry: 'invoke',
+					invoke: 'kody:@acme/github/listRepos',
+				},
+			}),
+		}),
 	)
 
 	const both = await onHandler({
@@ -1191,6 +1006,9 @@ export default async function main(params) {
 
 	mockModule.resolveCallerFeatureFlags.mockResolvedValue({
 		'execute-invoke': false,
+		'connection-profiles': false,
+		'mcp-skills-extension': false,
+		'mcp-events-extension': false,
 	})
 	const killed = await onHandler({
 		invoke: 'kody:@acme/github/listRepos',
@@ -1199,4 +1017,30 @@ export default async function main(params) {
 	expect(killed.isError).toBe(true)
 	expect(killed.structuredContent.error).toBe(executeInvokeFlagOffMessage)
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(1)
+})
+
+test('execute does not consume daily entitlement when live flag resolution fails', async () => {
+	const userId = testStableUserIdFromEmail('flag-fail@example.com')
+	const handler = await getExecuteHandler({
+		baseUrl: 'https://example.com',
+		user: {
+			userId,
+			email: 'flag-fail@example.com',
+		},
+	})
+	mockModule.resolveCallerFeatureFlags.mockRejectedValueOnce(
+		new Error('flag resolution failed'),
+	)
+
+	const denied = await handler({
+		code: shouldNotRunCode,
+		conversationId: 'conv-flag-fail',
+	})
+
+	expect(denied.isError).toBe(true)
+	expect(denied.structuredContent.error).toBe('flag resolution failed')
+	expect(denied.structuredContent).not.toHaveProperty('entitlement')
+	expect(mockModule.consumeDailyEntitlement).not.toHaveBeenCalled()
+	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
+	expect(mockModule.getCapabilityRegistryForContext).not.toHaveBeenCalled()
 })

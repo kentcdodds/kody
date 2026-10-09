@@ -22,7 +22,7 @@ test('package private parsing gates community publish and visibility confirmatio
 	).toThrow(CommunityActionError)
 	expect(() =>
 		assertPackageNotPrivateForCommunityPublish('{"private":true}'),
-	).toThrow('community listings cannot publish packages')
+	).toThrow('cannot be published as a public package')
 	expect(() =>
 		assertPackageNotPrivateForCommunityPublish('{"private":false}'),
 	).not.toThrow()
@@ -35,6 +35,15 @@ test('package private parsing gates community publish and visibility confirmatio
 		packagePrivateFieldChanged('{"private":true}', '{"private":true}'),
 	).toBe(false)
 	expect(
+		packagePrivateFieldChanged('{"private":true}', '{"name":"@a/b"}'),
+	).toBe(false)
+	expect(
+		packagePrivateFieldChanged('{"name":"@a/b"}', '{"private":true}'),
+	).toBe(false)
+	expect(
+		packagePrivateFieldChanged('{"private":false}', '{"name":"@a/b"}'),
+	).toBe(true)
+	expect(
 		requiresPrivateVisibilityConfirmation({
 			beforeContent: null,
 			afterContent: '{"private":false}',
@@ -46,6 +55,13 @@ test('package private parsing gates community publish and visibility confirmatio
 			beforeContent: null,
 			afterContent: '{"private":true}',
 			isNewPackage: true,
+		}),
+	).toBe(false)
+	expect(
+		requiresPrivateVisibilityConfirmation({
+			beforeContent: '{"name":"@a/b","private":true}',
+			afterContent: '{"name":"@a/b"}',
+			isNewPackage: false,
 		}),
 	).toBe(false)
 

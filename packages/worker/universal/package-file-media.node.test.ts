@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	bytesToLatin1String,
+	bytesToSnapshotString,
 	classifyPackageFileMedia,
 	latin1StringToBytes,
 	looksLikeSvg,
@@ -120,6 +121,18 @@ test('latin1 snapshot helpers recover binary bytes and skip SVG', () => {
 	expect(shouldStoreArtifactBlobAsLatin1('src/index.ts')).toBe(false)
 	expect(snapshotStringToBytes(pngLatin1, 'logo.png')).toEqual(pngBytes)
 	expect(latin1StringToBytes(jpegLatin1)).toEqual(jpegBytes)
+	expect(bytesToSnapshotString(pngBytes, 'logo.png')).toBe(pngLatin1)
+	expect(
+		snapshotStringToBytes(
+			bytesToSnapshotString(pngBytes, 'public/mark.png'),
+			'public/mark.png',
+		),
+	).toEqual(pngBytes)
+	// UTF-8 decoding replaces PNG's leading 0x89 with U+FFFD; latin1 of that
+	// is 0xFD — the exact corruption `/_assets` used to serve.
+	const utf8Corrupted = new TextDecoder().decode(pngBytes)
+	expect(utf8Corrupted.charCodeAt(0)).toBe(0xfffd)
+	expect(latin1StringToBytes(utf8Corrupted)[0]).toBe(0xfd)
 	expect(packageFileKindLabel('docs/logo.PNG', 'image')).toBe('PNG')
 	expect(packageFileKindLabel('clip.webm', 'video')).toBe('WEBM')
 	expect(packageFileKindLabel('app.wasm', 'binary')).toBe('Binary')

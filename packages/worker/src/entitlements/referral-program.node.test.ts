@@ -5,7 +5,11 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureReferralProgramTestSchema } from './test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
-import { getUserEntitlement } from './service.ts'
+import {
+	resolveUserEntitlementFromRow,
+	userEntitlementColumnsSql,
+	type UserEntitlementRow,
+} from './service.ts'
 import {
 	attributeReferralAtSignup,
 	isQualifyingPaidReferralInvoice,
@@ -32,182 +36,171 @@ async function ensureReferralSchema(db: D1Database) {
 	await ensureReferralProgramTestSchema(db)
 }
 
+async function createDb() {
+	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
+	await ensureReferralSchema(db)
+	return db
+}
+
+type TestUser = { email: string; username: string; stableUserId: string }
+
 async function insertUser(
 	db: D1Database,
-	input: {
-		email: string
-		username?: string
-		verified?: boolean
-		plan?: string
-		stripePlan?: string | null
-		stripeCustomerId?: string | null
-		accountType?: string
-	},
-) {
-	const stableUserId = testStableUserIdFromEmail(input.email)
+	username: string,
+	input: { email?: string; verified?: boolean } = {},
+): Promise<TestUser> {
+	const email = input.email ?? `${username}@example.com`
+	const stableUserId = testStableUserIdFromEmail(email)
 	await db
 		.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id, plan, stripe_plan,
 				stripe_customer_id, email_verified_at, account_type
-			) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, 'hash', ?, 'free', NULL, NULL, ?, 'person')`,
 		)
 		.bind(
-			input.username ?? input.email.split('@')[0],
-			input.email,
+			username,
+			email,
 			stableUserId,
-			input.plan ?? 'free',
-			input.stripePlan ?? null,
-			input.stripeCustomerId ?? null,
 			input.verified === false ? null : now.toISOString(),
-			input.accountType ?? 'person',
 		)
 		.run()
-	return { email: input.email, stableUserId }
+	return { email, username, stableUserId }
 }
 
-async function creditExpiry(db: D1Database, stableUserId: string) {
+async function creditExpiry(db: D1Database, user: TestUser) {
 	const row = await db
 		.prepare(
 			`SELECT referral_standard_credit_expires_at
 			 FROM users WHERE stable_user_id = ?`,
 		)
-		.bind(stableUserId)
+		.bind(user.stableUserId)
 		.first<{ referral_standard_credit_expires_at: string | null }>()
 	return row?.referral_standard_credit_expires_at ?? null
 }
 
-async function referralRow(db: D1Database, refereeStableUserId: string) {
+/** Entitlement at the test's frozen `now` (not wall clock). */
+async function entitlementAt(db: D1Database, user: TestUser) {
+	const row = await db
+		.prepare(
+			`SELECT ${userEntitlementColumnsSql()}
+			 FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(user.stableUserId)
+		.first<UserEntitlementRow>()
+	if (!row) throw new Error(`Missing user ${user.stableUserId}`)
+	return resolveUserEntitlementFromRow({
+		db,
+		stableUserId: user.stableUserId,
+		row,
+		now,
+	})
+}
+
+function referralRow(db: D1Database, referee: TestUser) {
 	return db
 		.prepare(`SELECT * FROM referrals WHERE referee_stable_user_id = ?`)
-		.bind(refereeStableUserId)
-		.first<{
-			status: string
-			reward_invoice_id: string | null
-			reject_reason: string | null
-			held_invoice_id: string | null
-		}>()
+		.bind(referee.stableUserId)
+		.first()
+}
+
+function attribute(db: D1Database, referee: TestUser, referralCode: string) {
+	return attributeReferralAtSignup({
+		db,
+		refereeStableUserId: referee.stableUserId,
+		refereeUsername: referee.username,
+		referralCode,
+		now,
+	})
+}
+
+function reward(
+	db: D1Database,
+	referee: TestUser,
+	invoiceId: string,
+	invoiceQualifies = true,
+) {
+	return rewardReferralForPaidInvoice({
+		db,
+		refereeStableUserId: referee.stableUserId,
+		invoiceId,
+		invoiceQualifies,
+		now,
+	})
+}
+
+async function verifyEmail(db: D1Database, user: TestUser) {
+	await db
+		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
+		.bind(now.toISOString(), user.stableUserId)
+		.run()
 }
 
 test('referral rewards both parties once on first paid invoice, skips trial, rejects fraud, and stacks without a cap', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureReferralSchema(db)
-
-	const referrer = await insertUser(db, {
-		email: 'referrer@example.com',
-		username: 'referrer',
-	})
-	const referee = await insertUser(db, {
-		email: 'referee@example.com',
-		username: 'referee',
-	})
-	const unpaid = await insertUser(db, {
-		email: 'unpaid@example.com',
-		username: 'unpaid',
-	})
-	const plusTag = await insertUser(db, {
+	const db = await createDb()
+	const referrer = await insertUser(db, 'referrer')
+	const referee = await insertUser(db, 'referee')
+	const unpaid = await insertUser(db, 'unpaid')
+	const plusTag = await insertUser(db, 'plustag', {
 		email: 'referrer+alt@example.com',
-		username: 'plustag',
 	})
-	const self = await insertUser(db, {
-		email: 'self@example.com',
-		username: 'selfuser',
-	})
-	const unverified = await insertUser(db, {
-		email: 'unverified@example.com',
-		username: 'unverified',
-		verified: false,
-	})
+	const self = await insertUser(db, 'selfuser')
+	const unverified = await insertUser(db, 'unverified', { verified: false })
+	const ghost = {
+		email: 'ghost@example.com',
+		username: 'ghost',
+		stableUserId: testStableUserIdFromEmail('ghost@example.com'),
+	}
 
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: referee.stableUserId,
-			refereeUsername: 'referee',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'attributed' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: referee.stableUserId,
-			refereeUsername: 'referee',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'already_attributed' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: unpaid.stableUserId,
-			refereeUsername: 'unpaid',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'attributed' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: plusTag.stableUserId,
-			refereeUsername: 'plustag',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'attributed' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: self.stableUserId,
-			refereeUsername: 'selfuser',
-			referralCode: 'selfuser',
-			now,
-		}),
-	).toEqual({ outcome: 'ignored', reason: 'self' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: unverified.stableUserId,
-			refereeUsername: 'unverified',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'attributed' })
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: testStableUserIdFromEmail('ghost@example.com'),
-			refereeUsername: 'ghost',
-			referralCode: 'nobody',
-			now,
-		}),
-	).toEqual({ outcome: 'ignored', reason: 'unknown_referrer' })
+	const attributions: Array<[TestUser, string, unknown]> = [
+		[referee, 'referrer', { outcome: 'attributed' }],
+		[referee, 'referrer', { outcome: 'already_attributed' }],
+		[unpaid, 'referrer', { outcome: 'attributed' }],
+		[plusTag, 'referrer', { outcome: 'attributed' }],
+		[self, 'selfuser', { outcome: 'ignored', reason: 'self' }],
+		[unverified, 'referrer', { outcome: 'attributed' }],
+		[ghost, 'nobody', { outcome: 'ignored', reason: 'unknown_referrer' }],
+	]
+	const attributed = []
+	for (const [user, code] of attributions) {
+		attributed.push(await attribute(db, user, code))
+	}
+	expect(attributed).toEqual(attributions.map(([, , want]) => want))
 
+	const invoices: Array<
+		[Parameters<typeof isQualifyingPaidReferralInvoice>[0], boolean]
+	> = [
+		[
+			{
+				status: 'paid',
+				amount_paid: 0,
+				billing_reason: 'subscription_create',
+				subscription: 'sub_trial',
+			},
+			false,
+		],
+		[
+			{
+				status: 'paid',
+				amount_paid: 1200,
+				billing_reason: 'subscription_create',
+				subscription: 'sub_paid',
+			},
+			true,
+		],
+		[
+			{
+				status: 'paid',
+				amount_paid: 250,
+				billing_reason: 'manual',
+				metadata: { kody_compute_overage: '1' },
+			},
+			false,
+		],
+	]
 	expect(
-		isQualifyingPaidReferralInvoice({
-			status: 'paid',
-			amount_paid: 0,
-			billing_reason: 'subscription_create',
-			subscription: 'sub_trial',
-		}),
-	).toBe(false)
-	expect(
-		isQualifyingPaidReferralInvoice({
-			status: 'paid',
-			amount_paid: 1200,
-			billing_reason: 'subscription_create',
-			subscription: 'sub_paid',
-		}),
-	).toBe(true)
-	expect(
-		isQualifyingPaidReferralInvoice({
-			status: 'paid',
-			amount_paid: 250,
-			billing_reason: 'manual',
-			metadata: { kody_compute_overage: '1' },
-		}),
-	).toBe(false)
+		invoices.map(([invoice]) => isQualifyingPaidReferralInvoice(invoice)),
+	).toEqual(invoices.map(([, want]) => want))
 	expect(
 		readStripeInvoicePeriodEndIso({
 			lines: {
@@ -219,130 +212,65 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 		}),
 	).toBe('2026-06-04T16:00:00.000Z')
 
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: unpaid.stableUserId,
-			invoiceId: 'in_trial',
-			invoiceQualifies: false,
-			now,
-		}),
-	).toEqual({ outcome: 'ignored', reason: 'invoice_unqualified' })
-	expect(await referralRow(db, unpaid.stableUserId)).toMatchObject({
+	expect(await reward(db, unpaid, 'in_trial', false)).toEqual({
+		outcome: 'ignored',
+		reason: 'invoice_unqualified',
+	})
+	expect(await referralRow(db, unpaid)).toMatchObject({
 		status: 'pending',
 		reward_invoice_id: null,
 	})
 
-	const firstPaid = await rewardReferralForPaidInvoice({
-		db,
-		refereeStableUserId: referee.stableUserId,
-		invoiceId: 'in_first',
-		invoiceQualifies: true,
-		now,
-	})
-	expect(firstPaid).toEqual({ outcome: 'rewarded' })
-	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
-	expect(await creditExpiry(db, referee.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
-	expect(
-		await getUserEntitlement(db, {
-			userId: referrer.stableUserId,
-			email: referrer.email,
-		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
-	expect(
-		await getUserEntitlement(db, {
-			userId: referee.stableUserId,
-			email: referee.email,
-		}),
-	).toEqual({ plan: 'standard', ladder: 'public' })
-	expect(await referralRow(db, referee.stableUserId)).toMatchObject({
+	expect(await reward(db, referee, 'in_first')).toEqual({ outcome: 'rewarded' })
+	for (const user of [referrer, referee]) {
+		expect(await creditExpiry(db, user)).toBe(firstCreditExpiresAt)
+		expect(await entitlementAt(db, user)).toEqual({
+			plan: 'pro',
+			ladder: 'public',
+			creditWallet: 'none',
+		})
+	}
+	expect(await referralRow(db, referee)).toMatchObject({
 		status: 'rewarded',
 		reward_invoice_id: 'in_first',
 	})
 
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: referee.stableUserId,
-			invoiceId: 'in_second_cycle',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'already_rewarded' })
-	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
-	expect(await creditExpiry(db, referee.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
-
-	const secondReferee = await insertUser(db, {
-		email: 'referee-two@example.com',
-		username: 'refereetwo',
+	expect(await reward(db, referee, 'in_second_cycle')).toEqual({
+		outcome: 'already_rewarded',
 	})
-	expect(
-		await attributeReferralAtSignup({
-			db,
-			refereeStableUserId: secondReferee.stableUserId,
-			refereeUsername: 'refereetwo',
-			referralCode: 'referrer',
-			now,
-		}),
-	).toEqual({ outcome: 'attributed' })
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: secondReferee.stableUserId,
-			invoiceId: 'in_second_friend',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'rewarded' })
-	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
-		secondCreditExpiresAt,
-	)
-	expect(await creditExpiry(db, secondReferee.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
+	expect(await creditExpiry(db, referrer)).toBe(firstCreditExpiresAt)
+	expect(await creditExpiry(db, referee)).toBe(firstCreditExpiresAt)
 
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: plusTag.stableUserId,
-			invoiceId: 'in_plus',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'rejected', reason: 'same_email' })
-	expect(await referralRow(db, plusTag.stableUserId)).toMatchObject({
+	const secondReferee = await insertUser(db, 'refereetwo')
+	expect(await attribute(db, secondReferee, 'referrer')).toEqual({
+		outcome: 'attributed',
+	})
+	expect(await reward(db, secondReferee, 'in_second_friend')).toEqual({
+		outcome: 'rewarded',
+	})
+	expect(await creditExpiry(db, referrer)).toBe(secondCreditExpiresAt)
+	expect(await creditExpiry(db, secondReferee)).toBe(firstCreditExpiresAt)
+
+	expect(await reward(db, plusTag, 'in_plus')).toEqual({
+		outcome: 'rejected',
+		reason: 'same_email',
+	})
+	expect(await referralRow(db, plusTag)).toMatchObject({
 		status: 'rejected',
 		reject_reason: 'same_email',
 	})
-	expect(await creditExpiry(db, plusTag.stableUserId)).toBeNull()
+	expect(await creditExpiry(db, plusTag)).toBeNull()
 
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: unverified.stableUserId,
-			invoiceId: 'in_held',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'held_unverified' })
-	expect(await referralRow(db, unverified.stableUserId)).toMatchObject({
+	expect(await reward(db, unverified, 'in_held')).toEqual({
+		outcome: 'held_unverified',
+	})
+	expect(await referralRow(db, unverified)).toMatchObject({
 		status: 'pending',
 		held_invoice_id: 'in_held',
 	})
-	expect(await creditExpiry(db, unverified.stableUserId)).toBeNull()
+	expect(await creditExpiry(db, unverified)).toBeNull()
 
-	await db
-		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
-		.bind(now.toISOString(), unverified.stableUserId)
-		.run()
+	await verifyEmail(db, unverified)
 	expect(
 		await maybeRewardHeldReferralAfterEmailVerified({
 			db,
@@ -350,69 +278,28 @@ test('referral rewards both parties once on first paid invoice, skips trial, rej
 			now,
 		}),
 	).toEqual({ outcome: 'rewarded' })
-	expect(await creditExpiry(db, unverified.stableUserId)).toBe(
-		firstCreditExpiresAt,
-	)
-	expect(await referralRow(db, unverified.stableUserId)).toMatchObject({
+	expect(await creditExpiry(db, unverified)).toBe(firstCreditExpiresAt)
+	expect(await referralRow(db, unverified)).toMatchObject({
 		status: 'rewarded',
 		reward_invoice_id: 'in_held',
 	})
 })
 
 test('held rewards release for every pending referee when the referrer verifies', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureReferralSchema(db)
-	const referrer = await insertUser(db, {
-		email: 'held-referrer@example.com',
-		username: 'heldreferrer',
-		verified: false,
-	})
-	const first = await insertUser(db, {
-		email: 'held-one@example.com',
-		username: 'heldone',
-	})
-	const second = await insertUser(db, {
-		email: 'held-two@example.com',
-		username: 'heldtwo',
-	})
-	await attributeReferralAtSignup({
-		db,
-		refereeStableUserId: first.stableUserId,
-		refereeUsername: 'heldone',
-		referralCode: 'heldreferrer',
-		now,
-	})
-	await attributeReferralAtSignup({
-		db,
-		refereeStableUserId: second.stableUserId,
-		refereeUsername: 'heldtwo',
-		referralCode: 'heldreferrer',
-		now,
-	})
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: first.stableUserId,
-			invoiceId: 'in_held_one',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'held_unverified' })
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: second.stableUserId,
-			invoiceId: 'in_held_two',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'held_unverified' })
+	const db = await createDb()
+	const referrer = await insertUser(db, 'heldreferrer', { verified: false })
+	const referees = [
+		[await insertUser(db, 'heldone'), 'in_held_one'],
+		[await insertUser(db, 'heldtwo'), 'in_held_two'],
+	] as const
+	for (const [referee, invoiceId] of referees) {
+		await attribute(db, referee, 'heldreferrer')
+		expect(await reward(db, referee, invoiceId)).toEqual({
+			outcome: 'held_unverified',
+		})
+	}
 
-	await db
-		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
-		.bind(now.toISOString(), referrer.stableUserId)
-		.run()
+	await verifyEmail(db, referrer)
 	expect(
 		await maybeRewardHeldReferralAfterEmailVerified({
 			db,
@@ -420,52 +307,24 @@ test('held rewards release for every pending referee when the referrer verifies'
 			now,
 		}),
 	).toEqual({ outcome: 'rewarded' })
-	expect(await referralRow(db, first.stableUserId)).toMatchObject({
-		status: 'rewarded',
-		reward_invoice_id: 'in_held_one',
-	})
-	expect(await referralRow(db, second.stableUserId)).toMatchObject({
-		status: 'rewarded',
-		reward_invoice_id: 'in_held_two',
-	})
-	expect(await creditExpiry(db, referrer.stableUserId)).toBe(
-		secondCreditExpiresAt,
-	)
+	for (const [referee, invoiceId] of referees) {
+		expect(await referralRow(db, referee)).toMatchObject({
+			status: 'rewarded',
+			reward_invoice_id: invoiceId,
+		})
+	}
+	expect(await creditExpiry(db, referrer)).toBe(secondCreditExpiresAt)
 })
 
 test('held rewards stay pending when the referrer period resolver fails', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureReferralSchema(db)
-	const referrer = await insertUser(db, {
-		email: 'held-fail-referrer@example.com',
-		username: 'heldfailref',
-		verified: false,
+	const db = await createDb()
+	const referrer = await insertUser(db, 'heldfailref', { verified: false })
+	const referee = await insertUser(db, 'heldfailree')
+	await attribute(db, referee, 'heldfailref')
+	expect(await reward(db, referee, 'in_held_fail')).toEqual({
+		outcome: 'held_unverified',
 	})
-	const referee = await insertUser(db, {
-		email: 'held-fail-referee@example.com',
-		username: 'heldfailree',
-	})
-	await attributeReferralAtSignup({
-		db,
-		refereeStableUserId: referee.stableUserId,
-		refereeUsername: 'heldfailree',
-		referralCode: 'heldfailref',
-		now,
-	})
-	expect(
-		await rewardReferralForPaidInvoice({
-			db,
-			refereeStableUserId: referee.stableUserId,
-			invoiceId: 'in_held_fail',
-			invoiceQualifies: true,
-			now,
-		}),
-	).toEqual({ outcome: 'held_unverified' })
-	await db
-		.prepare(`UPDATE users SET email_verified_at = ? WHERE stable_user_id = ?`)
-		.bind(now.toISOString(), referrer.stableUserId)
-		.run()
+	await verifyEmail(db, referrer)
 	consoleWarn.mockImplementation(() => {})
 	expect(
 		await maybeRewardHeldReferralAfterEmailVerified({
@@ -481,27 +340,19 @@ test('held rewards stay pending when the referrer period resolver fails', async 
 		'referral-held-referrer-period-end-failed',
 		expect.any(Error),
 	)
-	expect(await referralRow(db, referee.stableUserId)).toMatchObject({
+	expect(await referralRow(db, referee)).toMatchObject({
 		status: 'pending',
 		held_invoice_id: 'in_held_fail',
 		credits_granted_at: null,
 	})
-	expect(await creditExpiry(db, referrer.stableUserId)).toBeNull()
+	expect(await creditExpiry(db, referrer)).toBeNull()
 })
 
 test('referral billing summary counts every row, not only the displayed page', async () => {
-	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureReferralSchema(db)
-	const referrer = await insertUser(db, {
-		email: 'count-referrer@example.com',
-		username: 'countreferrer',
-	})
+	const db = await createDb()
+	const referrer = await insertUser(db, 'countreferrer')
 	for (let index = 0; index < 52; index += 1) {
-		const referee = await insertUser(db, {
-			email: `count-ref-${index}@example.com`,
-			username: `countref${index}`,
-		})
+		const referee = await insertUser(db, `countref${index}`)
 		await db
 			.prepare(
 				`INSERT INTO referrals (

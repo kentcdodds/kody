@@ -1,24 +1,33 @@
+import type git from 'isomorphic-git'
 import { expect, test, vi } from 'vitest'
 import { isWorkspaceSqliteTooBigMessage } from './external-publish-clone.ts'
 
 const gitMocks = vi.hoisted(() => ({
-	clone: vi.fn(async () => undefined),
-	log: vi.fn(async () => [{ oid: 'commit-head' }]),
-	checkout: vi.fn(async () => undefined),
-	listFiles: vi.fn(async () => ['package.json', 'src/index.ts']),
+	clone: vi.fn(async (..._args: Parameters<typeof git.clone>) => undefined),
+	log: vi.fn(async (..._args: Parameters<typeof git.log>) => [
+		{ oid: 'commit-head' },
+	]),
+	checkout: vi.fn(
+		async (..._args: Parameters<typeof git.checkout>) => undefined,
+	),
+	listFiles: vi.fn(async (..._args: Parameters<typeof git.listFiles>) => [
+		'package.json',
+		'src/index.ts',
+	]),
 }))
 
-vi.mock('isomorphic-git', () => ({
-	default: {
-		clone: (...args: Array<unknown>) => gitMocks.clone(...args),
-		log: (...args: Array<unknown>) => gitMocks.log(...args),
-		checkout: (...args: Array<unknown>) => gitMocks.checkout(...args),
-		listFiles: (...args: Array<unknown>) => gitMocks.listFiles(...args),
-	},
-}))
-
-vi.mock('isomorphic-git/http/web', () => ({
-	default: {},
+vi.mock('./isomorphic-git-lazy.ts', () => ({
+	loadIsomorphicGit: async () => ({
+		git: {
+			clone: (...args: Parameters<typeof git.clone>) => gitMocks.clone(...args),
+			log: (...args: Parameters<typeof git.log>) => gitMocks.log(...args),
+			checkout: (...args: Parameters<typeof git.checkout>) =>
+				gitMocks.checkout(...args),
+			listFiles: (...args: Parameters<typeof git.listFiles>) =>
+				gitMocks.listFiles(...args),
+		},
+		http: {},
+	}),
 }))
 
 vi.mock('./artifacts-git-retry.ts', () => ({
@@ -112,4 +121,34 @@ test('cloneExternalPublishWorkspace clones into ephemeral FS and exposes publish
 	await expect(cloned.workspace.glob('repo/src/**/*')).resolves.toEqual([
 		{ path: '/repo/src/index.ts', type: 'file' },
 	])
+})
+
+test('collectFiles keeps PNG magic byte-identical (no UTF-8 replacement)', async () => {
+	const { bytesToLatin1String, snapshotStringToBytes } =
+		await import('#universal/package-file-media.ts')
+	const pngMagic = Uint8Array.from([
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+	])
+
+	gitMocks.listFiles.mockResolvedValueOnce(['package.json', 'public/mark.png'])
+
+	const cloned = await cloneExternalPublishWorkspace({
+		remote: 'https://acct.artifacts.cloudflare.net/git/default/source-repo.git',
+		token: 'art_token',
+		branch: 'main',
+		checkoutCommit: 'commit-head',
+	})
+
+	await cloned.filesystem.writeFile('/repo/package.json', '{"name":"@kody/x"}')
+	await cloned.filesystem.writeFileBytes('/repo/public/mark.png', pngMagic)
+
+	// Ephemeral `readFile` UTF-8-decodes and would corrupt 0x89 → U+FFFD.
+	const utf8Decoded = await cloned.filesystem.readFile('/repo/public/mark.png')
+	expect(utf8Decoded.charCodeAt(0)).toBe(0xfffd)
+
+	const collected = await cloned.collectFiles()
+	expect(collected['public/mark.png']).toBe(bytesToLatin1String(pngMagic))
+	expect([
+		...snapshotStringToBytes(collected['public/mark.png']!, 'public/mark.png'),
+	]).toEqual([...pngMagic])
 })

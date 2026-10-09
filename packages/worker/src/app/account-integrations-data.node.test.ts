@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import {
 	upsertIntegration,
@@ -18,25 +18,35 @@ import {
 } from './account-integrations-data.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
+const secretLeakPattern =
+	/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/
 
-function applyAllMigrations(db: DatabaseSync) {
-	applyRepositoryMigrations(db, migrationsDirectory)
-}
-
-function createEnv() {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(sqlite)
-	return {
-		env: { APP_DB: createD1FromSqlite(sqlite) } as Env,
-	}
-}
+type LoaderUser = Parameters<typeof loadAccountIntegrationByName>[1]
+type LookupOptions = Parameters<typeof loadAccountIntegrationByName>[3]
 
 function fakeUser(userId: string) {
 	return {
 		email: 'user@example.com',
 		username: 'user',
 		mcpUser: { userId, email: 'user@example.com', username: 'user' },
-	} as Parameters<typeof loadAccountIntegrationByName>[1]
+	} as LoaderUser
+}
+
+function createEnv(userId: string) {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, migrationsDirectory)
+	const env = { APP_DB: createD1FromSqlite(sqlite) } as Env
+	const user = fakeUser(userId)
+	return {
+		env,
+		user,
+		platformEnv: {
+			...env,
+			SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		} as Env,
+		lookup: (name: string, options?: LookupOptions) =>
+			loadAccountIntegrationByName(env, user, name, options),
+	}
 }
 
 const googleConfig = {
@@ -54,25 +64,34 @@ const googleConfig = {
 	},
 }
 
+const googleCalendarConfig = {
+	...googleConfig,
+	name: 'google-calendar',
+	authorization: {
+		...googleConfig.authorization,
+		scopes: ['calendar.readonly'],
+	},
+}
+
+const notionAppConfig = {
+	name: 'notion',
+	tokenUrl: 'https://api.notion.com/v1/oauth/token',
+	flow: 'confidential' as const,
+	clientId: 'notion-client-from-setup',
+	authorization: { authorizeUrl: 'https://api.notion.com/v1/oauth/authorize' },
+}
+
+const githubTokenUrl = 'https://github.com/login/oauth/access_token'
+const githubAuthorizeUrl = 'https://github.com/login/oauth/authorize'
+
 test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-slug apps', async () => {
-	const { env } = createEnv()
 	const userId = 'user-integrations-loader'
+	const { env, lookup } = createEnv(userId)
 
-	expect(
-		await loadAccountIntegrationByName(env, fakeUser(userId), 'linear'),
-	).toBeNull()
+	expect(await lookup('linear')).toBeNull()
 
-	await upsertIntegration({
-		env,
-		userId,
-		config: googleConfig,
-	})
-
-	const calendarSetup = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'google-calendar',
-	)
+	await upsertIntegration({ env, userId, config: googleConfig })
+	const calendarSetup = await lookup('google-calendar')
 	expect(calendarSetup).toMatchObject({
 		name: 'google-calendar',
 		appSlug: 'google',
@@ -84,58 +103,30 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 			authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 			scopes: [],
 		},
+		hasClientSecret: false,
 	})
-	expect(calendarSetup?.hasClientSecret).toBe(false)
-	expect(JSON.stringify(calendarSetup)).not.toMatch(
-		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
-	)
+	expect(JSON.stringify(calendarSetup)).not.toMatch(secretLeakPattern)
 
-	await upsertIntegration({
-		env,
-		userId,
-		config: {
-			...googleConfig,
-			name: 'google-calendar',
-			authorization: {
-				...googleConfig.authorization,
-				scopes: ['calendar.readonly'],
-			},
-		},
-	})
-
-	const reconnect = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'google-calendar',
-	)
-	expect(reconnect).toMatchObject({
+	await upsertIntegration({ env, userId, config: googleCalendarConfig })
+	expect(await lookup('google-calendar')).toMatchObject({
 		name: 'google-calendar',
 		appSlug: 'google',
 		clientId: 'shared-google-client',
-		authorization: {
-			scopes: ['calendar.readonly'],
-		},
+		authorization: { scopes: ['calendar.readonly'] },
 	})
 
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId: 'user-abandoned',
-		config: {
-			name: 'notion',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			flow: 'confidential',
-			clientId: 'notion-client-from-setup',
-			authorization: {
-				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			},
-		},
+		config: notionAppConfig,
 	})
-	const connectionless = await loadAccountIntegrationByName(
-		env,
-		fakeUser('user-abandoned'),
-		'notion',
-	)
-	expect(connectionless).toMatchObject({
+	expect(
+		await loadAccountIntegrationByName(
+			env,
+			fakeUser('user-abandoned'),
+			'notion',
+		),
+	).toMatchObject({
 		name: 'notion',
 		appSlug: 'notion',
 		clientId: 'notion-client-from-setup',
@@ -143,12 +134,8 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 })
 
 test('connect lookup never prefills a built-in and converts platform reconnects to BYO', async () => {
-	const { env } = createEnv()
 	const userId = 'user-platform-priority'
-	const platformEnv = {
-		...env,
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
+	const { env, user, platformEnv, lookup } = createEnv(userId)
 
 	await upsertPlatformOauthApp({
 		db: env.APP_DB,
@@ -157,21 +144,15 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			slug: 'github',
 			clientId: 'platform-github-client',
 			clientSecret: 'platform-github-secret',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
+			tokenUrl: githubTokenUrl,
+			authorizeUrl: githubAuthorizeUrl,
 			flow: 'confidential',
 			defaultScopes: ['read:user'],
 		},
 	})
 
-	expect(
-		await loadAccountIntegrationByName(env, fakeUser(userId), 'github'),
-	).toBeNull()
-	expect(
-		await loadAccountIntegrationByName(env, fakeUser(userId), 'github-2', {
-			appSlug: 'github',
-		}),
-	).toBeNull()
+	expect(await lookup('github')).toBeNull()
+	expect(await lookup('github-2', { appSlug: 'github' })).toBeNull()
 
 	await upsertPlatformIntegration({
 		env,
@@ -180,41 +161,30 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		name: 'github',
 		scopes: ['read:user'],
 	})
-	const platformReconnect = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github',
-	)
+	const platformBrowserFields = {
+		appSlug: '',
+		platform: false,
+		clientId: '',
+		authorization: {
+			authorizeUrl: githubAuthorizeUrl,
+			scopes: ['read:user'],
+		},
+	}
+	const platformReconnect = await lookup('github')
 	expect(platformReconnect).toMatchObject({
 		name: 'github',
-		appSlug: '',
-		platform: false,
-		clientId: '',
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			scopes: ['read:user'],
-		},
+		...platformBrowserFields,
 	})
-	expect(
-		await loadExistingConnectionSummary(env, fakeUser(userId), 'github'),
-	).toEqual({ lane: 'platform', appSlug: 'github' })
+	expect(await loadExistingConnectionSummary(env, user, 'github')).toEqual({
+		lane: 'platform',
+		appSlug: 'github',
+	})
 
-	const addAccountOnPlatform = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github-2',
-		{ appSlug: 'github' },
-	)
+	const addAccountOnPlatform = await lookup('github-2', { appSlug: 'github' })
 	expect(addAccountOnPlatform).toMatchObject({
 		name: 'github-2',
-		appSlug: '',
-		platform: false,
-		clientId: '',
-		tokenUrl: 'https://github.com/login/oauth/access_token',
-		authorization: {
-			authorizeUrl: 'https://github.com/login/oauth/authorize',
-			scopes: ['read:user'],
-		},
+		tokenUrl: githubTokenUrl,
+		...platformBrowserFields,
 	})
 
 	await upsertOauthAppWithoutConnection({
@@ -222,12 +192,10 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		userId,
 		config: {
 			name: 'github',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
+			tokenUrl: githubTokenUrl,
 			flow: 'confidential',
 			clientId: 'user-github-client',
-			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
-			},
+			authorization: { authorizeUrl: githubAuthorizeUrl },
 		},
 	})
 	await updateOauthAppClientSecretCiphertext({
@@ -237,17 +205,12 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		clientSecretEncrypted: 'ciphertext-from-other-byo-app',
 	})
 	expect(
-		await hasStoredConnectClientSecret(
-			env,
-			fakeUser(userId),
-			'github',
-			platformReconnect,
-		),
+		await hasStoredConnectClientSecret(env, user, 'github', platformReconnect),
 	).toBe(false)
 	expect(
 		await hasStoredConnectClientSecret(
 			env,
-			fakeUser(userId),
+			user,
 			'github-2',
 			addAccountOnPlatform,
 		),
@@ -258,39 +221,19 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 		userId,
 		config: {
 			name: 'github',
-			tokenUrl: 'https://github.com/login/oauth/access_token',
+			tokenUrl: githubTokenUrl,
 			apiBaseUrl: 'https://api.github.com',
 			flow: 'confidential',
 			clientId: 'user-github-client',
 			requiredHosts: ['api.github.com'],
 			authorization: {
-				authorizeUrl: 'https://github.com/login/oauth/authorize',
+				authorizeUrl: githubAuthorizeUrl,
 				scopes: ['repo'],
 				scopeSeparator: null,
 				extraAuthorizeParams: {},
 			},
 		},
 	})
-	const byoWins = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github',
-	)
-	expect(byoWins?.clientId).toBe('user-github-client')
-	expect(byoWins?.platform ?? false).toBe(false)
-
-	const familyPrefill = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github-2',
-	)
-	expect(familyPrefill).toMatchObject({
-		name: 'github-2',
-		appSlug: 'github',
-		clientId: 'user-github-client',
-	})
-	expect(familyPrefill?.platform ?? false).toBe(false)
-
 	await upsertIntegration({
 		env,
 		userId,
@@ -301,77 +244,220 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 			clientId: 'user-linear-client',
 		},
 	})
-	const incomplete = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'linear',
-	)
-	expect(incomplete?.clientId).toBe('user-linear-client')
-	expect(incomplete?.platform ?? false).toBe(false)
 
-	const pinnedByo = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'work',
-		{ appSlug: 'github' },
-	)
-	expect(pinnedByo).toMatchObject({
-		name: 'work',
-		appSlug: 'github',
-		clientId: 'user-github-client',
-	})
-	expect(pinnedByo?.platform ?? false).toBe(false)
-
-	const pinnedIncomplete = await loadAccountIntegrationByName(
-		env,
-		fakeUser(userId),
-		'github-platform',
-		{ appSlug: 'linear' },
-	)
-	expect(pinnedIncomplete).toMatchObject({
-		name: 'github-platform',
-		appSlug: 'linear',
-		clientId: 'user-linear-client',
-	})
-	expect(pinnedIncomplete?.platform ?? false).toBe(false)
+	const byoLookups = [
+		[await lookup('github'), { clientId: 'user-github-client' }],
+		[
+			await lookup('github-2'),
+			{
+				name: 'github-2',
+				appSlug: 'github',
+				clientId: 'user-github-client',
+			},
+		],
+		[await lookup('linear'), { clientId: 'user-linear-client' }],
+		[
+			await lookup('work', { appSlug: 'github' }),
+			{ name: 'work', appSlug: 'github', clientId: 'user-github-client' },
+		],
+		[
+			await lookup('github-platform', { appSlug: 'linear' }),
+			{
+				name: 'github-platform',
+				appSlug: 'linear',
+				clientId: 'user-linear-client',
+			},
+		],
+	] as const
+	for (const [loaded, expected] of byoLookups) {
+		expect(loaded).toMatchObject(expected)
+	}
+	expect(byoLookups.filter(([loaded]) => loaded?.platform)).toEqual([])
 })
 
-test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
-	const { env } = createEnv()
-	const userId = 'user-integrations-apps-loader'
+test('published built-ins prefill connects, reconnect in-lane, and feed the account catalog', async () => {
+	const userId = 'user-platform-published'
+	const { env, user, platformEnv, lookup } = createEnv(userId)
+	const githubApp = {
+		slug: 'github-platform',
+		label: 'GitHub',
+		description: 'Read-only repo access.',
+		clientId: 'platform-github-client',
+		clientSecret: 'platform-github-secret',
+		tokenUrl: githubTokenUrl,
+		authorizeUrl: githubAuthorizeUrl,
+		flow: 'confidential' as const,
+		defaultScopes: ['read:user'],
+		allowedScopes: ['read:user', 'repo'],
+	}
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: githubApp,
+	})
 
-	await upsertIntegration({
+	// Draft: `platform=` does not resolve, and nothing is in the catalog.
+	expect(
+		await lookup('github-platform', { platformSlug: 'github-platform' }),
+	).toBeNull()
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([])
+
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'published' },
+	})
+	const prefill = await lookup('github-platform', {
+		platformSlug: 'github-platform',
+	})
+	expect(prefill).toMatchObject({
+		name: 'github-platform',
+		platform: true,
+		appSlug: 'github-platform',
+		clientId: 'platform-github-client',
+		hasClientSecret: false,
+		platformAllowedScopes: ['read:user', 'repo'],
+		platformDescription: 'Read-only repo access.',
+		authorization: { authorizeUrl: githubAuthorizeUrl, scopes: ['read:user'] },
+	})
+	expect(JSON.stringify(prefill)).not.toContain('platform-github-secret')
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([
+		expect.objectContaining({
+			slug: 'github-platform',
+			label: 'GitHub',
+			description: 'Read-only repo access.',
+			connectHref:
+				'/connect/oauth?provider=github-platform&platform=github-platform',
+		}),
+	])
+
+	await upsertPlatformIntegration({
 		env,
 		userId,
-		config: googleConfig,
+		platformAppSlug: 'github-platform',
+		name: 'github-platform',
+		scopes: ['read:user'],
 	})
+	expect(await lookup('github-platform')).toMatchObject({
+		name: 'github-platform',
+		platform: true,
+		clientId: 'platform-github-client',
+	})
+	expect(
+		await lookup('github-work', { appSlug: 'github-platform' }),
+	).toMatchObject({ name: 'github-work', platform: true })
+	// Connected already: the catalog drops it.
+	expect(
+		(await loadAccountIntegrationsData(env, user)).platformCatalog,
+	).toEqual([])
+
+	// Back to draft: the existing connection still exists but reconnects BYO.
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'draft' },
+	})
+	expect(await lookup('github-platform')).toMatchObject({
+		name: 'github-platform',
+		platform: false,
+		clientId: '',
+	})
+})
+
+test('platform= never converts an existing connection and wins over a same-slug personal app only while published', async () => {
+	const userId = 'user-platform-precedence'
+	const { env, platformEnv, lookup } = createEnv(userId)
+	const githubApp = {
+		slug: 'github-platform',
+		label: 'GitHub',
+		clientId: 'platform-github-client',
+		clientSecret: 'platform-github-secret',
+		tokenUrl: githubTokenUrl,
+		authorizeUrl: githubAuthorizeUrl,
+		flow: 'confidential' as const,
+		defaultScopes: ['read:user'],
+		allowedScopes: ['read:user'],
+		visibility: 'published' as const,
+	}
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: githubApp,
+	})
+	const personalGithub = {
+		tokenUrl: githubTokenUrl,
+		flow: 'confidential' as const,
+		authorization: { authorizeUrl: githubAuthorizeUrl, scopes: [] },
+	}
 	await upsertIntegration({
 		env,
 		userId,
 		config: {
-			...googleConfig,
-			name: 'google-calendar',
-			authorization: {
-				...googleConfig.authorization,
-				scopes: ['calendar.readonly'],
-			},
+			...personalGithub,
+			name: 'github-mine',
+			clientId: 'user-github-client',
 		},
 	})
+	const existingByo = await lookup('github-mine', {
+		platformSlug: 'github-platform',
+	})
+	expect(existingByo).toMatchObject({
+		name: 'github-mine',
+		clientId: 'user-github-client',
+	})
+	expect(existingByo?.platform).toBeFalsy()
+
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId,
 		config: {
-			name: 'notion',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			flow: 'confidential',
-			clientId: 'notion-client-from-setup',
-			authorization: {
-				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			},
+			...personalGithub,
+			name: 'github-platform',
+			clientId: 'personal-same-slug-client',
 		},
 	})
+	const personalOnly = await lookup('github-platform-2', {
+		appSlug: 'github-platform',
+	})
+	expect(personalOnly).toMatchObject({ clientId: 'personal-same-slug-client' })
+	expect(personalOnly?.platform).toBeFalsy()
+	expect(
+		await lookup('github-platform-2', {
+			appSlug: 'github-platform',
+			platformSlug: 'github-platform',
+		}),
+	).toMatchObject({ platform: true, clientId: 'platform-github-client' })
 
-	const payload = await loadAccountIntegrationsData(env, fakeUser(userId))
+	await upsertPlatformOauthApp({
+		db: env.APP_DB,
+		env: platformEnv,
+		app: { ...githubApp, clientSecret: undefined, visibility: 'draft' },
+	})
+	const draftBuiltIn = await lookup('github-platform-2', {
+		appSlug: 'github-platform',
+		platformSlug: 'github-platform',
+	})
+	expect(draftBuiltIn).toMatchObject({ clientId: 'personal-same-slug-client' })
+	expect(draftBuiltIn?.platform).toBeFalsy()
+})
+
+test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
+	const userId = 'user-integrations-apps-loader'
+	const { env, user } = createEnv(userId)
+
+	await upsertIntegration({ env, userId, config: googleConfig })
+	await upsertIntegration({ env, userId, config: googleCalendarConfig })
+	await upsertOauthAppWithoutConnection({
+		env,
+		userId,
+		config: notionAppConfig,
+	})
+
+	const payload = await loadAccountIntegrationsData(env, user)
 	expect(payload.ok).toBe(true)
 	expect(payload.integrations.map((entry) => entry.name).sort()).toEqual([
 		'google',
@@ -398,35 +484,22 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 			}),
 		]),
 	)
-	expect(JSON.stringify(payload)).not.toMatch(
-		/"access_token"\s*:|"refresh_token"\s*:|sk_|secret_value/,
-	)
+	expect(JSON.stringify(payload)).not.toMatch(secretLeakPattern)
 
-	const googleApp = await loadAccountOauthAppBySlug(
-		env,
-		fakeUser(userId),
-		'google',
-	)
-	expect(googleApp).toMatchObject({
+	expect(await loadAccountOauthAppBySlug(env, user, 'google')).toMatchObject({
 		slug: 'google',
 		clientId: 'shared-google-client',
 		connectionCount: 2,
 	})
-	expect(
-		await loadAccountOauthAppBySlug(env, fakeUser(userId), 'missing'),
-	).toBeNull()
+	expect(await loadAccountOauthAppBySlug(env, user, 'missing')).toBeNull()
 	expect(
 		await loadAccountOauthAppBySlug(env, fakeUser('other-user'), 'google'),
 	).toBeNull()
 })
 
 test('loadAccountIntegrationsData lists built-in apps next to user-registered apps', async () => {
-	const { env } = createEnv()
 	const userId = 'user-integrations-platform-list'
-	const platformEnv = {
-		...env,
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
+	const { env, user, platformEnv } = createEnv(userId)
 
 	await upsertPlatformOauthApp({
 		db: env.APP_DB,
@@ -454,18 +527,10 @@ test('loadAccountIntegrationsData lists built-in apps next to user-registered ap
 	await upsertOauthAppWithoutConnection({
 		env,
 		userId,
-		config: {
-			name: 'notion',
-			tokenUrl: 'https://api.notion.com/v1/oauth/token',
-			flow: 'confidential',
-			clientId: 'notion-client-from-setup',
-			authorization: {
-				authorizeUrl: 'https://api.notion.com/v1/oauth/authorize',
-			},
-		},
+		config: notionAppConfig,
 	})
 
-	const payload = await loadAccountIntegrationsData(env, fakeUser(userId))
+	const payload = await loadAccountIntegrationsData(env, user)
 	expect(payload.apps).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({
@@ -479,10 +544,7 @@ test('loadAccountIntegrationsData lists built-in apps next to user-registered ap
 					}),
 				],
 			}),
-			expect.objectContaining({
-				slug: 'notion',
-				connectionCount: 0,
-			}),
+			expect.objectContaining({ slug: 'notion', connectionCount: 0 }),
 		]),
 	)
 	expect(payload.integrations).toEqual([

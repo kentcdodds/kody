@@ -71,64 +71,42 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	consoleError.mockImplementation(() => {})
 	const env = {} as Env
 	const ctx = {} as ExecutionContext
-	const emailBatch = createBatch('kody-email-delivery')
-	const artifactsBatch = createBatch('kody-artifacts-repo-events')
-	const feedbackBatch = createBatch('kody-platform-feedback-dispatch')
-	const communityActivityBatch = createBatch('kody-community-activity-dispatch')
-	const communityListingPublishedBatch = createBatch(
-		'kody-community-listing-published-dispatch',
-	)
-	const packageEventsBatch = createBatch(packageEventsDispatchQueueName)
-	const webhookBatch = createBatch(webhookDispatchQueueName)
+	const routes: Array<[string, ReturnType<typeof vi.fn>, boolean]> = [
+		['kody-email-delivery', mocks.handleEmailDeliveryQueue, true],
+		['kody-artifacts-repo-events', mocks.handleArtifactsRepoEventsQueue, true],
+		[
+			'kody-platform-feedback-dispatch',
+			mocks.handlePlatformFeedbackDispatchQueue,
+			true,
+		],
+		[
+			'kody-community-activity-dispatch',
+			mocks.handleCommunityActivityDispatchQueue,
+			true,
+		],
+		[
+			'kody-community-listing-published-dispatch',
+			mocks.handleCommunityListingPublishedDispatchQueue,
+			true,
+		],
+		[
+			packageEventsDispatchQueueName,
+			mocks.handlePackageEventsDispatchQueue,
+			true,
+		],
+		// Webhook dispatch does not take the execution context.
+		[webhookDispatchQueueName, mocks.handleWebhookDispatchQueue, false],
+	]
+	const batches = routes.map(([queue]) => createBatch(queue))
 	const unknownBatch = createBatch('unexpected-queue')
+	for (const batch of [...batches, unknownBatch]) {
+		await handleQueueBatch(batch, env, ctx)
+	}
 
-	await handleQueueBatch(emailBatch, env, ctx)
-	await handleQueueBatch(artifactsBatch, env, ctx)
-	await handleQueueBatch(feedbackBatch, env, ctx)
-	await handleQueueBatch(communityActivityBatch, env, ctx)
-	await handleQueueBatch(communityListingPublishedBatch, env, ctx)
-	await handleQueueBatch(packageEventsBatch, env, ctx)
-	await handleQueueBatch(webhookBatch, env, ctx)
-	await handleQueueBatch(unknownBatch, env, ctx)
-
-	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledTimes(1)
-	expect(mocks.handleEmailDeliveryQueue).toHaveBeenCalledWith(
-		emailBatch,
-		env,
-		ctx,
-	)
-	expect(mocks.handleArtifactsRepoEventsQueue).toHaveBeenCalledWith(
-		artifactsBatch,
-		env,
-		ctx,
-	)
-	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledTimes(1)
-	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledWith(
-		feedbackBatch,
-		env,
-		ctx,
-	)
-	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledTimes(1)
-	expect(mocks.handleCommunityActivityDispatchQueue).toHaveBeenCalledWith(
-		communityActivityBatch,
-		env,
-		ctx,
-	)
-	expect(
-		mocks.handleCommunityListingPublishedDispatchQueue,
-	).toHaveBeenCalledTimes(1)
-	expect(
-		mocks.handleCommunityListingPublishedDispatchQueue,
-	).toHaveBeenCalledWith(communityListingPublishedBatch, env, ctx)
-	expect(mocks.handlePackageEventsDispatchQueue).toHaveBeenCalledTimes(1)
-	expect(mocks.handlePackageEventsDispatchQueue).toHaveBeenCalledWith(
-		packageEventsBatch,
-		env,
-		ctx,
-	)
-	expect(mocks.handleWebhookDispatchQueue).toHaveBeenCalledWith(
-		webhookBatch,
-		env,
+	expect(routes.map(([, handler]) => handler.mock.calls)).toEqual(
+		routes.map(([, , takesCtx], index) => [
+			takesCtx ? [batches[index], env, ctx] : [batches[index], env],
+		]),
 	)
 	expect(unknownBatch.retryAll).toHaveBeenCalledWith({ delaySeconds: 30 })
 	expect(consoleError).toHaveBeenCalledTimes(1)

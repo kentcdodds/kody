@@ -1,4 +1,4 @@
-import { css, type Handle } from 'remix/ui'
+import { css, type Handle } from 'remix/component'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import { buildDonutSegments, describeArc } from './chart-geometry.ts'
 import {

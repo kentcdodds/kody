@@ -17,103 +17,90 @@ const emptyOptionalRows = {
 	userIntegrationRows: [],
 }
 
-test('guide search entities rank advertised docs and open full markdown on entity detail', async () => {
-	const descriptors = guideSearchEntityPlugin.buildDescriptors!({
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(descriptors.some((descriptor) => descriptor.id === 'values')).toBe(
-		false,
-	)
-	expect(
-		descriptors.some(
-			(descriptor) => descriptor.id === 'package_invocation_token_setup',
-		),
-	).toBe(false)
-	expect(
-		descriptors.some((descriptor) => descriptor.id === 'admin_events'),
-	).toBe(false)
-	expect(
-		guideSearchEntityPlugin.buildDescriptors!({
-			registry: { capabilitySpecs: {} } as never,
-			optionalRows: emptyOptionalRows,
-			includeAdminGuides: true,
-		}).some((descriptor) => descriptor.id === 'admin_events'),
-	).toBe(true)
+const registry = { capabilitySpecs: {} } as never
 
-	const authoringCandidates = await guideSearchEntityPlugin.buildCandidates!({
+function buildGuideCandidates(domain?: string) {
+	return guideSearchEntityPlugin.buildCandidates!({
 		env: {} as Env,
 		query: 'package authoring',
 		limit: 15,
 		offline: true,
-		registry: { capabilitySpecs: {} } as never,
+		registry,
 		optionalRows: emptyOptionalRows,
 		retrieverResults: [],
 		queryEmbedding: [],
+		...(domain ? { domain } : {}),
 	})
-	expect(
-		authoringCandidates.some(
-			(candidate) => candidate.id === 'package_authoring',
-		),
-	).toBe(true)
-	expect(
-		authoringCandidates.some((candidate) => candidate.id === 'values'),
-	).toBe(false)
-	expect(
-		authoringCandidates.some(
-			(candidate) => candidate.id === 'package_invocation_token_setup',
-		),
-	).toBe(false)
+}
 
-	const emailScoped = await guideSearchEntityPlugin.buildCandidates!({
+function rankGuides(query: string, includeAdminGuides?: boolean) {
+	return searchUnified({
 		env: {} as Env,
-		query: 'package authoring',
-		limit: 15,
-		offline: true,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-		retrieverResults: [],
-		queryEmbedding: [],
-		domain: 'email',
-	})
-	expect(emailScoped).toEqual([])
-
-	const codingScoped = await guideSearchEntityPlugin.buildCandidates!({
-		env: {} as Env,
-		query: 'package authoring',
-		limit: 15,
-		offline: true,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-		retrieverResults: [],
-		queryEmbedding: [],
-		domain: capabilityDomainNames.coding,
-	})
-	expect(
-		codingScoped.some((candidate) => candidate.id === 'package_authoring'),
-	).toBe(true)
-
-	const ranked = await searchUnified({
-		env: {} as Env,
-		query: 'package authoring',
+		query,
 		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
+		registry,
 		optionalRows: emptyOptionalRows,
+		...(includeAdminGuides ? { includeAdminGuides } : {}),
 	})
-	expect(ranked.matches[0]).toMatchObject({
+}
+
+const { guides } = await importGuideCatalog()
+
+function guideDetail(id: string, section?: string) {
+	const guide = guides.find((entry) => entry.id === id)
+	expect(guide).toBeDefined()
+	return formatEntityDetailMarkdown({
 		type: 'guide',
-		id: 'package_authoring',
+		id: guide!.id,
+		title: guide!.title,
+		description: guide!.summary,
+		body: guide!.body,
+		slug: guide!.slug,
+		category: guide!.category,
+		provider: guide!.provider,
+		lastVerified: guide!.lastVerified,
+		...(section ? { section } : {}),
 	})
+}
+
+test('guide descriptors and candidates hide unadvertised and admin guides and respect domain scope', async () => {
+	const descriptorIds = (includeAdminGuides?: boolean) =>
+		guideSearchEntityPlugin.buildDescriptors!({
+			registry,
+			optionalRows: emptyOptionalRows,
+			...(includeAdminGuides ? { includeAdminGuides } : {}),
+		}).map((descriptor) => descriptor.id)
+	const hiddenIds = ['values', 'admin_events']
+	expect(descriptorIds().filter((id) => hiddenIds.includes(id))).toEqual([])
+	expect(descriptorIds(true)).toContain('admin_events')
+
+	const authoringCandidates = await buildGuideCandidates()
+	const authoringIds = authoringCandidates.map((candidate) => candidate.id)
+	expect(authoringIds).toContain('package_authoring')
+	expect(authoringIds.filter((id) => hiddenIds.includes(id))).toEqual([])
+	expect(await buildGuideCandidates('email')).toEqual([])
+	expect(
+		(await buildGuideCandidates(capabilityDomainNames.coding)).map(
+			(candidate) => candidate.id,
+		),
+	).toContain('package_authoring')
+	expect(
+		buildSearchableEntityDescriptors({
+			registry,
+			optionalRows: emptyOptionalRows,
+			domain: 'email',
+		}).filter((descriptor) => descriptor.type === 'guide'),
+	).toEqual([])
 
 	const authoringMatch = authoringCandidates.find(
 		(candidate) => candidate.id === 'package_authoring',
-	)
-	expect(authoringMatch).toBeDefined()
-	const slim = toSlimStructuredMatches({
-		baseUrl: 'https://kody.codes',
-		matches: [authoringMatch!.match],
-	})
-	expect(slim).toEqual([
+	)!.match
+	expect(
+		toSlimStructuredMatches({
+			baseUrl: 'https://kody.codes',
+			matches: [authoringMatch],
+		}),
+	).toEqual([
 		expect.objectContaining({
 			type: 'guide',
 			id: 'package_authoring',
@@ -121,51 +108,86 @@ test('guide search entities rank advertised docs and open full markdown on entit
 			usage: 'search({ entity: "guide:package_authoring" })',
 		}),
 	])
+	expect(formatSearchMarkdown({ matches: [authoringMatch] })).toContain(
+		'guide:package_authoring',
+	)
+})
 
-	const markdown = formatSearchMarkdown({
-		matches: [authoringMatch!.match],
-	})
-	expect(markdown).toContain('guide:package_authoring')
+test('searchUnified ranks advertised guides for doc queries and keeps them out of task and identity queries', async () => {
+	const cases: Array<{
+		query: string
+		top?: string
+		includes?: Array<string>
+		excludes?: Array<string>
+		includeAdminGuides?: boolean
+	}> = [
+		{ query: 'package authoring', top: 'package_authoring' },
+		{ query: 'package apps', top: 'package_apps' },
+		{
+			query: 'package authoring lifecycle',
+			includes: ['package_authoring', 'package_lifecycle'],
+		},
+		{ query: 'google guide', includes: ['provider_google'] },
+		{ query: 'how kody works', includes: ['how_kody_works'] },
+		{
+			query: 'packages integrations mcp',
+			includes: ['packages_integrations_mcp'],
+		},
+		{ query: 'google-calendar', excludes: ['provider_google'] },
+		{ query: 'what is kody', excludes: ['first_win'] },
+		{ query: 'admin events', excludes: ['admin_events'] },
+		{
+			query: 'admin events',
+			includeAdminGuides: true,
+			includes: ['admin_events'],
+		},
+	]
+	for (const {
+		query,
+		top,
+		includes = [],
+		excludes = [],
+		includeAdminGuides,
+	} of cases) {
+		const { matches } = await rankGuides(query, includeAdminGuides)
+		const guideIds = matches.flatMap((match) =>
+			match.type === 'guide' ? [match.id] : [],
+		)
+		expect({
+			query,
+			top: top ? matches[0] : undefined,
+			missing: includes.filter((id) => !guideIds.includes(id)),
+			leaked: guideIds.filter((id) => excludes.includes(id)),
+		}).toEqual({
+			query,
+			top: top
+				? expect.objectContaining({ type: 'guide', id: top })
+				: undefined,
+			missing: [],
+			leaked: [],
+		})
+	}
 
-	const { guides } = await importGuideCatalog()
-	const loaded =
-		guides.find((guide) => guide.id === 'package_authoring') ?? null
-	expect(loaded).not.toBeNull()
-	const detail = formatEntityDetailMarkdown({
-		type: 'guide',
-		id: loaded!.id,
-		title: loaded!.title,
-		description: loaded!.summary,
-		body: loaded!.body,
-		slug: loaded!.slug,
-		category: loaded!.category,
-		provider: loaded!.provider,
-		lastVerified: loaded!.lastVerified,
-	})
-	expect(detail.markdown).toContain(loaded!.body.slice(0, 40))
+	const taskQuery = await rankGuides('send an email to kent')
+	expect(taskQuery.matches.filter((match) => match.type === 'guide')).toEqual(
+		[],
+	)
+})
+
+test('guide entity detail returns full bodies, a TOC for oversized guides, and focused sections', () => {
+	const authoring = guides.find((guide) => guide.id === 'package_authoring')!
+	const detail = guideDetail('package_authoring')
+	expect(detail.markdown).toContain(authoring.body.slice(0, 40))
 	expect(detail.structured).toMatchObject({
 		kind: 'entity',
 		type: 'guide',
 		entityRef: 'guide:package_authoring',
-		body: loaded!.body,
+		body: authoring.body,
 		bodyMode: 'full',
 		section: null,
 	})
 
-	const subscriptions =
-		guides.find((guide) => guide.id === 'package_subscriptions') ?? null
-	expect(subscriptions).not.toBeNull()
-	const subscriptionsDetail = formatEntityDetailMarkdown({
-		type: 'guide',
-		id: subscriptions!.id,
-		title: subscriptions!.title,
-		description: subscriptions!.summary,
-		body: subscriptions!.body,
-		slug: subscriptions!.slug,
-		category: subscriptions!.category,
-		provider: subscriptions!.provider,
-		lastVerified: subscriptions!.lastVerified,
-	})
+	const subscriptionsDetail = guideDetail('package_subscriptions')
 	expect(subscriptionsDetail.structured).toMatchObject({
 		type: 'guide',
 		bodyMode: 'toc',
@@ -177,192 +199,31 @@ test('guide search entities rank advertised docs and open full markdown on entit
 	)
 	expect(subscriptionsDetail.markdown).not.toContain('type RepoPushedEvent')
 
-	const repoSection = formatEntityDetailMarkdown({
-		type: 'guide',
-		id: subscriptions!.id,
-		title: subscriptions!.title,
-		description: subscriptions!.summary,
-		body: subscriptions!.body,
-		slug: subscriptions!.slug,
-		category: subscriptions!.category,
-		provider: subscriptions!.provider,
-		lastVerified: subscriptions!.lastVerified,
-		section: 'repo.pushed',
-	})
-	expect(repoSection.structured).toMatchObject({
-		type: 'guide',
-		bodyMode: 'section',
-		entityRef: 'guide:package_subscriptions#repo.pushed',
-		section: { slug: 'repo.pushed' },
-	})
-	expect(repoSection.markdown).toContain('type RepoPushedEvent')
-	expect(repoSection.markdown).not.toContain(
-		'type FleetEntitlementCrossedEvent',
-	)
-
-	expect(
-		buildSearchableEntityDescriptors({
-			registry: { capabilitySpecs: {} } as never,
-			optionalRows: emptyOptionalRows,
-			domain: 'email',
-		}).filter((descriptor) => descriptor.type === 'guide'),
-	).toEqual([])
-
-	const taskQuery = await searchUnified({
-		env: {} as Env,
-		query: 'send an email to kent',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(taskQuery.matches.every((match) => match.type !== 'guide')).toBe(true)
-
-	const integrationIdentity = await searchUnified({
-		env: {} as Env,
-		query: 'google-calendar',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		integrationIdentity.matches.some(
-			(match) => match.type === 'guide' && match.id === 'provider_google',
-		),
-	).toBe(false)
-
-	const documentedDiscovery = await searchUnified({
-		env: {} as Env,
-		query: 'package authoring lifecycle',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		documentedDiscovery.matches.some(
-			(match) => match.type === 'guide' && match.id === 'package_authoring',
-		),
-	).toBe(true)
-	expect(
-		documentedDiscovery.matches.some(
-			(match) => match.type === 'guide' && match.id === 'package_lifecycle',
-		),
-	).toBe(true)
-
-	const suffixDiscovery = await searchUnified({
-		env: {} as Env,
-		query: 'google guide',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		suffixDiscovery.matches.some(
-			(match) => match.type === 'guide' && match.id === 'provider_google',
-		),
-	).toBe(true)
-
-	const howKodyWorks = await searchUnified({
-		env: {} as Env,
-		query: 'how kody works',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		howKodyWorks.matches.some(
-			(match) => match.type === 'guide' && match.id === 'how_kody_works',
-		),
-	).toBe(true)
-
-	const packagesIntegrationsMcp = await searchUnified({
-		env: {} as Env,
-		query: 'packages integrations mcp',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		packagesIntegrationsMcp.matches.some(
-			(match) =>
-				match.type === 'guide' && match.id === 'packages_integrations_mcp',
-		),
-	).toBe(true)
-
-	const packageApps = await searchUnified({
-		env: {} as Env,
-		query: 'package apps',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(packageApps.matches[0]).toMatchObject({
-		type: 'guide',
-		id: 'package_apps',
-	})
-
-	const packageAppsGuide =
-		guides.find((guide) => guide.id === 'package_apps') ?? null
-	expect(packageAppsGuide).not.toBeNull()
-	const assetUrls = formatEntityDetailMarkdown({
-		type: 'guide',
-		id: packageAppsGuide!.id,
-		title: packageAppsGuide!.title,
-		description: packageAppsGuide!.summary,
-		body: packageAppsGuide!.body,
-		slug: packageAppsGuide!.slug,
-		category: packageAppsGuide!.category,
-		provider: packageAppsGuide!.provider,
-		lastVerified: packageAppsGuide!.lastVerified,
-		section: 'asset-urls',
-	})
-	expect(assetUrls.structured).toMatchObject({
-		type: 'guide',
-		bodyMode: 'section',
-		entityRef: 'guide:package_apps#asset-urls',
-		section: { slug: 'asset-urls' },
-	})
-	expect(assetUrls.markdown).toContain('packageContext.appBasePath')
-	expect(assetUrls.markdown).not.toContain('Module.wasmBinary')
-
-	const stopwordInId = await searchUnified({
-		env: {} as Env,
-		query: 'what is kody',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		stopwordInId.matches.every(
-			(match) => match.type !== 'guide' || match.id !== 'first_win',
-		),
-	).toBe(true)
-
-	const publicAdminSearch = await searchUnified({
-		env: {} as Env,
-		query: 'admin events',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-	})
-	expect(
-		publicAdminSearch.matches.some(
-			(match) => match.type === 'guide' && match.id === 'admin_events',
-		),
-	).toBe(false)
-
-	const adminSearch = await searchUnified({
-		env: {} as Env,
-		query: 'admin events',
-		limit: 10,
-		registry: { capabilitySpecs: {} } as never,
-		optionalRows: emptyOptionalRows,
-		includeAdminGuides: true,
-	})
-	expect(
-		adminSearch.matches.some(
-			(match) => match.type === 'guide' && match.id === 'admin_events',
-		),
-	).toBe(true)
+	const sectionCases = [
+		{
+			id: 'package_subscriptions',
+			section: 'repo.pushed',
+			contains: 'type RepoPushedEvent',
+			omits: 'type FleetEntitlementCrossedEvent',
+		},
+		{
+			id: 'package_apps',
+			section: 'asset-urls',
+			contains: 'packageContext.appBasePath',
+			omits: 'Module.wasmBinary',
+		},
+	]
+	for (const { id, section, contains, omits } of sectionCases) {
+		const sectionDetail = guideDetail(id, section)
+		expect(sectionDetail.structured).toMatchObject({
+			type: 'guide',
+			bodyMode: 'section',
+			entityRef: `guide:${id}#${section}`,
+			section: { slug: section },
+		})
+		expect(sectionDetail.markdown).toContain(contains)
+		expect(sectionDetail.markdown).not.toContain(omits)
+	}
 })
 
 test('guide entity detail focuses line anchors and rejects lines past the end', () => {

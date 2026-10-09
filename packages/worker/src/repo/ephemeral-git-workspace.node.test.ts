@@ -4,6 +4,17 @@ import { createEphemeralGitWorkspace } from './ephemeral-git-workspace.ts'
 
 type RawGitInitFs = Parameters<typeof rawGit.init>[0]['fs']
 
+async function readText(
+	workspace: ReturnType<typeof createEphemeralGitWorkspace>,
+	path: string,
+) {
+	const contents = await workspace.fs.promises.readFile(path)
+	if (typeof contents === 'string') {
+		throw new Error(`Expected binary contents for ${path}.`)
+	}
+	return new TextDecoder().decode(contents)
+}
+
 test('ephemeral git workspace preserves and follows symlinks', async () => {
 	const workspace = createEphemeralGitWorkspace()
 	await workspace.fs.promises.mkdir('/repo', { recursive: true })
@@ -20,11 +31,7 @@ test('ephemeral git workspace preserves and follows symlinks', async () => {
 	expect(await workspace.fs.promises.readlink('/repo/link.txt')).toBe(
 		'target.txt',
 	)
-	expect(
-		new TextDecoder().decode(
-			await workspace.fs.promises.readFile('/repo/link.txt'),
-		),
-	).toBe('target contents')
+	expect(await readText(workspace, '/repo/link.txt')).toBe('target contents')
 })
 
 test('ephemeral git workspace normalizes dot paths so isomorphic-git checkout can walk the workdir root', async () => {
@@ -51,9 +58,5 @@ test('ephemeral git workspace normalizes dot paths so isomorphic-git checkout ca
 	await expect(
 		rawGit.checkout({ fs, dir: workspace.dir, ref: oid }),
 	).resolves.toBeUndefined()
-	expect(
-		new TextDecoder().decode(
-			await workspace.fs.promises.readFile('/repo/README.md'),
-		),
-	).toBe('hello\n')
+	expect(await readText(workspace, '/repo/README.md')).toBe('hello\n')
 })

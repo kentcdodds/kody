@@ -1,4 +1,6 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -35,16 +37,15 @@ function createCtx(userId = 'user-1') {
 	})
 	return {
 		env: { APP_DB: {} } as Env,
-		callerContext: {
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
-				userId,
+				userId: personIdFromStored(userId),
 				email: 'user@example.com',
 				displayName: 'User',
 			},
-			storageContext: null,
-			repoContext: null,
-		},
+		}),
 	}
 }
 
@@ -71,7 +72,7 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 	mockModule.getSavedPackageById.mockResolvedValue(createSavedPackage())
 	mockModule.deleteSavedPackageProjection.mockResolvedValue(undefined)
 	const expectedError =
-		'This permanently deletes "@user/notes". It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, drops invocation tokens, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos. Existing forks keep their copies. This cannot be undone. Hiding or making the package private is not deletion. Do not call this unless the owner explicitly asked to delete this package and typed its name. Then pass confirm_name: "@user/notes" (the package name).'
+		'This permanently deletes "@user/notes". It removes the package from the account, stops its jobs, clears package storage and package-scoped secrets, unlists a public catalog entry if one exists, and best-effort deletes Artifacts repos. Existing forks keep their copies. This cannot be undone. Hiding or making the package private is not deletion. Do not call this unless the owner explicitly asked to delete this package and typed its name. Then pass confirm_name: "@user/notes" (the package name).'
 
 	const missingName = await deletePackageCapability
 		.handler({ package_id: 'pkg-1' }, createCtx())
@@ -117,12 +118,11 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 			{ package_id: 'pkg-1', confirm_name: '@user/notes' },
 			{
 				env: { APP_DB: {} } as Env,
-				callerContext: {
+				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://heykody.dev',
 					user: null,
-					storageContext: null,
-					repoContext: null,
-				},
+				}),
 			},
 		),
 	).rejects.toThrow(/authenticated/i)

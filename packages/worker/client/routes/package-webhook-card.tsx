@@ -1,4 +1,4 @@
-import { css } from 'remix/ui'
+import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { type createDoubleCheck } from '#client/double-check.ts'
 import {
@@ -75,7 +75,13 @@ function verificationValue(webhook: PackageWebhookListItem) {
 				{verification.type} · <code>{verification.header}</code>
 			</span>
 			<span mix={css({ color: colors.textMuted })}>
-				secret <code>{verification.secretName}</code>
+				{verification.secretName ? (
+					<>
+						secret <code>{verification.secretName}</code>
+					</>
+				) : (
+					'package-owned HMAC'
+				)}
 				{verification.prefix ? ` · prefix ${verification.prefix}` : ''}
 				{verification.signedPayload === 'timestamp.body'
 					? ' · signs timestamp.body'
@@ -98,6 +104,32 @@ function replayValue(webhook: PackageWebhookListItem) {
 		)
 	}
 	return parts.length > 0 ? parts.join(' · ') : 'Not configured'
+}
+
+function challengeSecretName(
+	challenge: NonNullable<PackageWebhookListItem['challenge']>,
+) {
+	const prove = challenge.prove
+	if (!prove || prove.kind === 'none') return undefined
+	return prove.secretName
+}
+
+function challengeValue(webhook: PackageWebhookListItem) {
+	const challenge = webhook.challenge
+	if (!challenge) return 'Not configured'
+	const secretName = challengeSecretName(challenge)
+	return (
+		<span mix={css({ display: 'grid', gap: spacing.xs })}>
+			<span>
+				<code>{challenge.type}</code>
+			</span>
+			{secretName ? (
+				<span mix={css({ color: colors.textMuted })}>
+					secret <code>{secretName}</code>
+				</span>
+			) : null}
+		</span>
+	)
 }
 
 /**
@@ -162,6 +194,7 @@ export function renderPackageWebhookCard(input: {
 						value: `${webhook.rateLimitPerMinute} / min`,
 					},
 					{ label: 'Verification', value: verificationValue(webhook) },
+					{ label: 'Challenge', value: challengeValue(webhook) },
 					{ label: 'Replay protection', value: replayValue(webhook) },
 					{
 						label: 'Handle',

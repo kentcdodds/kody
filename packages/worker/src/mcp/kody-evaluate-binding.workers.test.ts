@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -20,9 +21,10 @@ const userId = 'user-evaluate-kody-binding'
 
 function createCaller() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
-			userId,
+			userId: personIdFromStored(userId),
 			email: 'binding@example.com',
 			displayName: 'Binding Test',
 		},
@@ -58,6 +60,7 @@ test(
 				baseUrl: 'https://kody.dev',
 				userId: null,
 				email: null,
+				request: null,
 				storageContext: null,
 			},
 			timeoutMs: 15_000,

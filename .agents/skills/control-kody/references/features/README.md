@@ -28,16 +28,18 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [two-factor](./two-factor.md) — `/account/two-factor`
 - [passkeys](./passkeys.md) — `/account/passkeys`
 - [account](./account.md) — `/account`
-- [connections](./connections.md) — `/account/connections`
+- [connections](./connections.md) — `/@<slug>/connections`
+  (`/account/connections` redirects)
 - [packages](./packages.md) — `/@username`
 - [shared](./shared.md) — `/account/shared`
-- [secrets](./secrets.md) — `/account/secrets`
+- [secrets](./secrets.md) — `/@<slug>/secrets` (`/account/secrets` redirects)
 - [integrations](./integrations.md) — `/account/integrations`
 - [mcp-servers](./mcp-servers.md) — `/account/mcp-servers`
-- [jobs](./jobs.md) — `/account/jobs`
+- [jobs](./jobs.md) — `/@<slug>/jobs` (`/account/jobs` redirects)
 - [workflows](./workflows.md) — `/account/workflows`
 - [webhooks](./webhooks.md) — `/@username/kodyId/settings#webhooks` (index at
-  `/account/webhooks`)
+  `/account/webhooks`; generic `http` apply approval at
+  `/connect/webhook-apply`)
 - [activity](./activity.md) — `/account/activity`
 - [waiting](./waiting.md) — `/account/waiting`
 - [experiments](./experiments.md) — `/account/experiments`

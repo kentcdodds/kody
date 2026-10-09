@@ -328,7 +328,10 @@ export function createUserInboundDeliveryAuthority(
 				plan: chargeInput.plan,
 				limit: chargeInput.limit,
 				current: meterResult.count,
-				upgradeHint: buildEntitlementUpgradeHint('email_receives_per_day'),
+				upgradeHint: buildEntitlementUpgradeHint(
+					'email_receives_per_day',
+					chargeInput.plan,
+				),
 			})
 		}
 		const result = await mailbox.insertChargedPendingInboundDelivery({

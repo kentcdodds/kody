@@ -1,34 +1,15 @@
 import { expect, test } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { type DailyEntitlementResource } from '#worker/entitlements/user-meter-do.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
 import { createInMemoryRunLogUsageEnv } from '#worker/test-support/run-log-usage.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { loadAccountUsageData } from '#app/account-usage-data.ts'
 
-function withUsageEnv(
-	env: { APP_DB: D1Database } & Record<string, unknown>,
-	mailboxMessageCount = 0,
-) {
-	const meter = createInMemoryUserMeterEnv()
-	const runLog = createInMemoryRunLogUsageEnv()
-	const repoSessionIndex = createInMemoryRepoSessionIndexEnv(env.APP_DB)
-	const countMessages = async () => ({ total: mailboxMessageCount })
-	return {
-		...env,
-		...meter.env,
-		...runLog.env,
-		REPO_SESSION_INDEX: repoSessionIndex.REPO_SESSION_INDEX,
-		MAILBOX: {
-			idFromName: (name: string) => name as unknown as DurableObjectId,
-			get: () => ({ countMessages }),
-		},
-		meter,
-		runLog,
-	}
-}
+const now = new Date('2026-07-25T12:00:00.000Z')
 
-function createUsageTestDb(input: {
+type UsageDbInput = {
 	userId: number
 	email: string
 	plan: string
@@ -38,271 +19,286 @@ function createUsageTestDb(input: {
 	packageCount?: number
 	uniqueWorkerDays?: number
 	durableObjectRowsRead?: number
-}) {
-	const stableUserId = testStableUserIdFromEmail(input.email)
+	activity?: Record<string, number>
+	creditsEligible?: boolean
+	creditBalanceMicroUsd?: number
+	giftExpiresAt?: string
+}
+
+function createUsageTestDb(
+	input: UsageDbInput,
+	stableUserId: string,
+	counters: { creditWalletQueries: number } = { creditWalletQueries: 0 },
+) {
+	const rollups = [
+		['dynamic_worker_day', input.uniqueWorkerDays ?? 0],
+		['durable_object_rows_read', input.durableObjectRowsRead ?? 0],
+	].filter(([, count]) => Number(count) > 0)
 	return {
-		stableUserId,
-		db: {
-			prepare(query: string) {
-				const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
-				return {
-					bind(...params: Array<unknown>) {
+		counters,
+		prepare(query: string) {
+			const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			const statement = {
+				async first<T>() {
+					if (
+						normalized.includes('from users') &&
+						normalized.includes('where id')
+					) {
 						return {
-							async first<T>() {
-								if (
-									normalized.includes('from users') &&
-									normalized.includes('where id')
-								) {
-									return {
-										id: input.userId,
-										plan: input.plan,
-										stripe_plan: input.stripePlan ?? null,
-										entitlement_ladder: input.entitlementLadder ?? 'public',
-										stable_user_id: stableUserId,
-										stripe_customer_id: input.stripeCustomerId ?? null,
-									} as T
-								}
-								if (normalized.includes('from saved_packages')) {
-									return { count: input.packageCount ?? 0 } as T
-								}
-								if (normalized.includes('select 1 as present from users')) {
-									return { present: 1 } as T
-								}
-								if (
-									normalized.includes('count(*)') ||
-									normalized.includes('sum(')
-								) {
-									return { count: 0, total: 0, bytes: 0 } as T
-								}
-								void params
-								return null
-							},
-							async all() {
-								if (normalized.includes('from usage_rollups')) {
-									const results = []
-									if ((input.uniqueWorkerDays ?? 0) > 0) {
-										results.push({
-											metric: 'dynamic_worker_day',
-											event_count: input.uniqueWorkerDays,
-										})
-									}
-									if ((input.durableObjectRowsRead ?? 0) > 0) {
-										results.push({
-											metric: 'durable_object_rows_read',
-											event_count: input.durableObjectRowsRead,
-										})
-									}
-									return { results }
-								}
-								return { results: [] }
-							},
-						}
-					},
-				}
+							id: input.userId,
+							plan: input.plan,
+							stripe_plan: input.stripePlan ?? null,
+							entitlement_ladder: input.entitlementLadder ?? 'public',
+							stripe_credits_eligible: input.creditsEligible ? 1 : 0,
+							second_agent_standard_gift_expires_at:
+								input.giftExpiresAt ?? null,
+							stable_user_id: stableUserId,
+							username: 'usage-user',
+							stripe_customer_id: input.stripeCustomerId ?? null,
+						} as T
+					}
+					if (normalized.includes('from credit_wallets')) {
+						counters.creditWalletQueries += 1
+						return { balance_micro_usd: input.creditBalanceMicroUsd ?? 0 } as T
+					}
+					if (normalized.includes('from saved_packages')) {
+						return { count: input.packageCount ?? 0 } as T
+					}
+					if (normalized.includes('select 1 as present from users')) {
+						return { present: 1 } as T
+					}
+					if (normalized.includes('count(*)') || normalized.includes('sum(')) {
+						return { count: 0, total: 0, bytes: 0 } as T
+					}
+					return null
+				},
+				async all() {
+					if (normalized.includes('from usage_attribution_daily')) {
+						return { results: [] }
+					}
+					if (!normalized.includes('from usage_rollups')) return { results: [] }
+					return {
+						results: [...rollups, ...Object.entries(input.activity ?? {})].map(
+							([metric, event_count]) => ({ metric, event_count }),
+						),
+					}
+				},
+			}
+			return { bind: () => statement }
+		},
+	} as unknown as D1Database & { counters: { creditWalletQueries: number } }
+}
+
+/**
+ * Loads usage for a seeded account. `daily` seeds authoritative UserMeter
+ * counters for today; `activeWorkflows` seeds the RunLog count for this user
+ * (another user's 99 workflows must never leak in).
+ */
+async function loadUsage(
+	input: UsageDbInput,
+	options: {
+		env?: Record<string, unknown>
+		mailboxMessageCount?: number
+		daily?: Partial<Record<DailyEntitlementResource, number>>
+		storageBytes?: number
+		activeWorkflows?: number
+	} = {},
+) {
+	const stableUserId = testStableUserIdFromEmail(input.email)
+	const db = createUsageTestDb(input, stableUserId)
+	const meter = createInMemoryUserMeterEnv()
+	const runLog = createInMemoryRunLogUsageEnv()
+	const countMessages = async () => ({
+		total: options.mailboxMessageCount ?? 0,
+	})
+	for (const [resource, count] of Object.entries(options.daily ?? {})) {
+		await meter.seed({
+			userId: stableUserId,
+			resource: resource as DailyEntitlementResource,
+			day: utcDayKey(now),
+			count,
+		})
+	}
+	if (options.storageBytes !== undefined) {
+		await meter.seedStorageBytes({
+			userId: stableUserId,
+			bytes: options.storageBytes,
+		})
+	}
+	if (options.activeWorkflows !== undefined) {
+		runLog.setActiveWorkflowCount(stableUserId, options.activeWorkflows)
+		runLog.setActiveWorkflowCount('other-user', 99)
+	}
+	const data = await loadAccountUsageData({
+		env: {
+			APP_DB: db,
+			...options.env,
+			...meter.env,
+			...runLog.env,
+			REPO_SESSION_INDEX:
+				createInMemoryRepoSessionIndexEnv(db).REPO_SESSION_INDEX,
+			MAILBOX: {
+				idFromName: (name: string) => name as unknown as DurableObjectId,
+				get: () => ({ countMessages }),
 			},
-		} as unknown as D1Database,
+		} as unknown as Env,
+		userId: input.userId,
+		now,
+	})
+	const row = (resource: string) =>
+		data?.entitlementConsumption.find((entry) => entry.resource === resource)
+	const meterFor = (resource: string) =>
+		data?.computeOverage.meters.find((entry) => entry.resource === resource)
+	return {
+		data,
+		row,
+		meterFor,
+		creditWalletQueries: db.counters.creditWalletQueries,
 	}
 }
 
-function currentFor(
-	data: Awaited<ReturnType<typeof loadAccountUsageData>>,
-	resource: string,
-) {
-	return data?.entitlementConsumption.find((row) => row.resource === resource)
-}
-
 test('loadAccountUsageData returns plan rows and authoritative UserMeter daily counts', async () => {
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	const day = utcDayKey(now)
-
-	const { db: emptyDailyDb } = createUsageTestDb({
+	const baseline = await loadUsage({
 		userId: 7,
 		email: 'usage@example.com',
 		plan: 'free',
 		packageCount: 2,
 	})
-	const baselineEnv = withUsageEnv({ APP_DB: emptyDailyDb })
-	const baseline = await loadAccountUsageData({
-		env: baselineEnv as Env,
-		userId: 7,
-		now,
+	expect(baseline.data).toMatchObject({
+		ok: true,
+		plan: 'free',
+		manualPlan: 'free',
+		stripePlan: null,
+		today: '2026-07-25',
 	})
-	expect(baseline?.ok).toBe(true)
-	expect(baseline?.plan).toBe('free')
-	expect(baseline?.manualPlan).toBe('free')
-	expect(baseline?.stripePlan).toBe(null)
-	expect(baseline?.today).toBe('2026-07-25')
-	expect(currentFor(baseline, 'saved_packages')?.current).toBe(2)
-	expect(currentFor(baseline, 'concurrent_workflows')?.current).toBe(0)
+	expect(baseline.row('saved_packages')?.current).toBe(2)
+	expect(baseline.row('concurrent_workflows')?.current).toBe(0)
+	expect(baseline.data?.computeOverage.creditsStatus).toBe('within_include')
+	expect(baseline.data?.computeOverage.creditWallet).toBe('none')
+	expect(baseline.data?.computeOverage.meters).toHaveLength(2)
 
-	const bootstrapEmail = 'usage-bootstrap@example.com'
-	const bootstrapUserId = testStableUserIdFromEmail(bootstrapEmail)
-	const { db: bootstrapDb } = createUsageTestDb({
-		userId: 8,
-		email: bootstrapEmail,
-		plan: 'pro',
-		packageCount: 1,
-	})
-	const bootstrapEnv = withUsageEnv({ APP_DB: bootstrapDb })
-	await bootstrapEnv.meter.seed({
-		userId: bootstrapUserId,
-		resource: 'email_sends_per_day',
-		day,
-		count: 17,
-	})
-	await bootstrapEnv.meter.seed({
-		userId: bootstrapUserId,
-		resource: 'execute_calls_per_day',
-		day,
-		count: 91,
-	})
-	const bootstrapped = await loadAccountUsageData({
-		env: bootstrapEnv as Env,
-		userId: 8,
-		now,
-	})
-	expect(currentFor(bootstrapped, 'email_sends_per_day')?.current).toBe(17)
-	expect(currentFor(bootstrapped, 'execute_calls_per_day')?.current).toBe(91)
-	expect(currentFor(bootstrapped, 'saved_packages')?.current).toBe(1)
+	const bootstrapped = await loadUsage(
+		{
+			userId: 8,
+			email: 'usage-bootstrap@example.com',
+			plan: 'pro',
+			packageCount: 1,
+		},
+		{ daily: { email_sends_per_day: 17, execute_calls_per_day: 91 } },
+	)
+	expect(bootstrapped.row('email_sends_per_day')?.current).toBe(17)
+	expect(bootstrapped.row('execute_calls_per_day')?.current).toBe(91)
+	expect(bootstrapped.row('saved_packages')?.current).toBe(1)
 
-	const meterEmail = 'usage-meter@example.com'
-	const meterUserId = testStableUserIdFromEmail(meterEmail)
-	const { db: warmDb } = createUsageTestDb({
-		userId: 9,
-		email: meterEmail,
-		plan: 'pro',
-		packageCount: 4,
-	})
-	const warmEnv = withUsageEnv({ APP_DB: warmDb }, 7)
-	warmEnv.runLog.setActiveWorkflowCount(meterUserId, 3)
-	warmEnv.runLog.setActiveWorkflowCount('other-user', 99)
-	await warmEnv.meter.seed({
-		userId: meterUserId,
-		resource: 'email_sends_per_day',
-		day,
-		count: 101,
-	})
-	await warmEnv.meter.seed({
-		userId: meterUserId,
-		resource: 'email_receives_per_day',
-		day,
-		count: 202,
-	})
-	await warmEnv.meter.seed({
-		userId: meterUserId,
-		resource: 'execute_calls_per_day',
-		day,
-		count: 303,
-	})
-	await warmEnv.meter.seed({
-		userId: meterUserId,
-		resource: 'outbound_fetches_per_day',
-		day,
-		count: 404,
-	})
-	const authoritative = await loadAccountUsageData({
-		env: warmEnv as Env,
-		userId: 9,
-		now,
-	})
-	expect(currentFor(authoritative, 'email_sends_per_day')?.current).toBe(101)
-	expect(currentFor(authoritative, 'email_receives_per_day')?.current).toBe(202)
-	expect(currentFor(authoritative, 'execute_calls_per_day')?.current).toBe(303)
-	expect(currentFor(authoritative, 'execute_calls_per_day')?.week).toEqual({
+	const warm = await loadUsage(
+		{
+			userId: 9,
+			email: 'usage-meter@example.com',
+			plan: 'pro',
+			packageCount: 4,
+		},
+		{
+			mailboxMessageCount: 7,
+			activeWorkflows: 3,
+			daily: {
+				email_sends_per_day: 101,
+				email_receives_per_day: 202,
+				execute_calls_per_day: 303,
+				outbound_fetches_per_day: 404,
+			},
+		},
+	)
+	expect(warm.row('email_sends_per_day')?.current).toBe(101)
+	expect(warm.row('email_receives_per_day')?.current).toBe(202)
+	expect(warm.row('execute_calls_per_day')?.current).toBe(303)
+	expect(warm.row('execute_calls_per_day')?.week).toEqual({
 		current: 303,
 		limit: 4_000,
 		percentOfLimit: 303 / 4_000,
 		overEightyPercent: false,
 	})
-	expect(currentFor(authoritative, 'outbound_fetches_per_day')?.current).toBe(
-		404,
+	expect(warm.row('outbound_fetches_per_day')?.current).toBe(404)
+	expect(warm.data?.weekStart).toBe('2026-07-20')
+	expect(warm.row('concurrent_workflows')?.current).toBe(3)
+	expect(warm.row('stored_email_messages')?.current).toBe(7)
+	expect(warm.row('saved_packages')?.current).toBe(4)
+
+	const storage = await loadUsage(
+		{
+			userId: 11,
+			email: 'usage-storage@example.com',
+			plan: 'pro',
+			packageCount: 0,
+		},
+		{ storageBytes: 4_321 },
 	)
-	expect(authoritative?.weekStart).toBe('2026-07-20')
-	expect(currentFor(authoritative, 'concurrent_workflows')?.current).toBe(3)
-	expect(currentFor(authoritative, 'stored_email_messages')?.current).toBe(7)
-	expect(currentFor(authoritative, 'saved_packages')?.current).toBe(4)
+	expect(storage.row('storage_bytes')?.current).toBe(4_321)
 
-	const storageEmail = 'usage-storage@example.com'
-	const storageUserId = testStableUserIdFromEmail(storageEmail)
-	const { db: storageDb } = createUsageTestDb({
-		userId: 11,
-		email: storageEmail,
-		plan: 'pro',
-		packageCount: 0,
-	})
-	const storageEnv = withUsageEnv({ APP_DB: storageDb })
-	await storageEnv.meter.seedStorageBytes({
-		userId: storageUserId,
-		bytes: 4_321,
-	})
-	const storageData = await loadAccountUsageData({
-		env: storageEnv as Env,
-		userId: 11,
-		now,
-	})
-	expect(currentFor(storageData, 'storage_bytes')?.current).toBe(4_321)
-
-	const { db: grantDb } = createUsageTestDb({
+	const grant = await loadUsage({
 		userId: 12,
 		email: 'usage-grant@example.com',
 		plan: 'max',
 		stripePlan: null,
 	})
-	const grantData = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: grantDb }) as Env,
-		userId: 12,
-		now,
+	expect(grant.data).toMatchObject({
+		plan: 'max',
+		manualPlan: 'max',
+		stripePlan: null,
+		credits: null,
 	})
-	expect(grantData?.plan).toBe('max')
-	expect(grantData?.manualPlan).toBe('max')
-	expect(grantData?.stripePlan).toBe(null)
 
-	const { db: subscribedDb } = createUsageTestDb({
+	const subscribed = await loadUsage({
 		userId: 13,
 		email: 'usage-sub@example.com',
 		plan: 'free',
 		stripePlan: 'pro',
 	})
-	const subscribedData = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: subscribedDb }) as Env,
-		userId: 13,
-		now,
+	expect(subscribed.data).toMatchObject({
+		plan: 'pro',
+		manualPlan: 'free',
+		stripePlan: 'pro',
 	})
-	expect(subscribedData?.plan).toBe('pro')
-	expect(subscribedData?.manualPlan).toBe('free')
-	expect(subscribedData?.stripePlan).toBe('pro')
-	expect(baseline?.computeOverage.disposition).toBe('skip_zero')
-	expect(baseline?.computeOverage.meters).toHaveLength(2)
 })
 
-test('unpaid Free over compute includes is a soft-block, not a charge', async () => {
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	const { db } = createUsageTestDb({
+test('Free over compute includes stays informational: activity first, no warning, no alarm', async () => {
+	const { data, meterFor } = await loadUsage({
 		userId: 21,
-		email: 'usage-soft-block@example.com',
+		email: 'usage-free-over@example.com',
 		plan: 'free',
-		uniqueWorkerDays: 60,
+		uniqueWorkerDays: 517,
+		activity: { execute: 140, job_run: 3 },
 	})
-	const data = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: db }) as Env,
-		userId: 21,
-		now,
-	})
-	expect(data?.computeOverage.disposition).toBe('soft_block')
-	expect(data?.computeOverage.hasStripeCustomer).toBe(false)
-	expect(data?.computeOverage.totalCents).toBeGreaterThan(0)
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
+	expect(meterFor('unique_worker_days')?.label).toBe('Worker compute')
+	expect(meterFor('unique_worker_days')?.howToReduce).toContain(
+		'On Free this is informational: it never charges you or stops runs.',
 	)
-	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
 	expect(
-		data?.warnings.some((row) => row.resource === 'unique_worker_days'),
-	).toBe(true)
+		data?.warnings.filter((row) => row.resource === 'unique_worker_days'),
+	).toEqual([])
+	expect(data?.creditsAlarm).toBeNull()
+	expect(data?.credits).toEqual({
+		eligible: false,
+		canSwitchToPro: false,
+		billingHref: '/account/billing',
+	})
+	expect(data?.activity.metrics.slice(0, 2)).toEqual([
+		{ metric: 'execute', label: 'Code executions', count: 140 },
+		{ metric: 'job_run', label: 'Job runs', count: 3 },
+	])
+	expect(data?.includedCompute[0]).toMatchObject({
+		resource: 'unique_worker_days',
+		informational: true,
+		barPercent: 0,
+		tone: 'calm',
+	})
+	expect(
+		JSON.stringify([data?.includedCompute, data?.includedComputeSummary]),
+	).not.toMatch(/\d{3,}%/)
 })
 
-test('legacy Standard over compute includes stays unbilled', async () => {
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	const { db } = createUsageTestDb({
+test('retired Standard over compute includes is not charged and has no wallet', async () => {
+	const { data, meterFor } = await loadUsage({
 		userId: 22,
 		email: 'usage-legacy@example.com',
 		plan: 'standard',
@@ -310,47 +306,153 @@ test('legacy Standard over compute includes stays unbilled', async () => {
 		entitlementLadder: 'legacy',
 		stripeCustomerId: 'cus_legacy',
 		uniqueWorkerDays: 400,
+		creditBalanceMicroUsd: 5_000_000,
 	})
-	const data = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: db }) as Env,
-		userId: 22,
-		now,
-	})
-	expect(data?.computeOverage.legacyUnbilled).toBe(true)
-	expect(data?.computeOverage.disposition).toBe('skip_legacy')
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	expect(data?.computeOverage.creditWallet).toBe('none')
+	expect(data?.computeOverage.creditsStatus).toBe('switch_to_pro')
+	expect(meterFor('unique_worker_days')?.howToReduce).toMatch(
+		/not charged on your plan/,
 	)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
 })
 
-test('legacy Standard approaching compute include stays unbilled copy', async () => {
-	const now = new Date('2026-07-25T12:00:00.000Z')
-	const { db } = createUsageTestDb({
-		userId: 23,
-		email: 'usage-legacy-approaching@example.com',
-		plan: 'standard',
-		stripePlan: 'standard',
-		entitlementLadder: 'legacy',
-		stripeCustomerId: 'cus_legacy_approaching',
-		uniqueWorkerDays: 280,
+test('purchasable Pro with credits runs past the include on credits; at $0 Free rates apply', async () => {
+	const purchasablePro = {
+		plan: 'free',
+		stripePlan: 'pro',
+		creditsEligible: true,
+		uniqueWorkerDays: 400,
+	}
+	const funded = await loadUsage({
+		...purchasablePro,
+		userId: 24,
+		email: 'usage-credits@example.com',
+		creditBalanceMicroUsd: 10_000_000,
+		stripeCustomerId: 'cus_credits',
 	})
-	const data = await loadAccountUsageData({
-		env: withUsageEnv({ APP_DB: db }) as Env,
-		userId: 23,
-		now,
+	expect(funded.creditWalletQueries).toBe(1)
+	expect(funded.data?.computeOverage.creditWallet).toBe('funded')
+	expect(funded.data?.computeOverage.creditsStatus).toBe('debiting_credits')
+	expect(funded.data?.computeOverage.creditsCostMicroUsd).toBe(50 * 4_000)
+	expect(funded.data?.creditsAlarm).toBeNull()
+	expect(funded.data?.canBuyCredits).toBe(true)
+	expect(funded.data?.credits).toMatchObject({
+		eligible: true,
+		configured: false,
+		canBuyCredits: false,
+		balanceMicroUsd: 10_000_000,
+		hasCredits: true,
+		recent: [],
 	})
-	expect(data?.computeOverage.legacyUnbilled).toBe(true)
-	expect(data?.computeOverage.disposition).toBe('skip_zero')
-	const uniqueWorkerDays = data?.computeOverage.meters.find(
-		(meter) => meter.resource === 'unique_worker_days',
+	const fundedCredits = funded.data?.credits
+	expect(
+		fundedCredits?.eligible ? fundedCredits.debitMeters[0] : null,
+	).toMatchObject({
+		meter: 'unique_worker_days',
+		used: 400,
+		pastInclude: 50,
+		estCreditsMicroUsd: 50 * 4_000,
+	})
+	expect(funded.data?.includedCompute[0]).toMatchObject({
+		barPercent: 100,
+		tone: 'calm',
+		status: 'Include used · $0.20 on credits',
+	})
+	expect(
+		funded.data?.warnings.filter(
+			(row) => row.resource === 'unique_worker_days',
+		),
+	).toEqual([])
+	expect(funded.row('execute_calls_per_day')?.limit).toBe(25_000)
+	expect(funded.row('email_sends_per_day')?.limit).toBe(200)
+
+	const empty = await loadUsage(
+		{
+			...purchasablePro,
+			userId: 25,
+			email: 'usage-credits-empty@example.com',
+			creditBalanceMicroUsd: 0,
+			stripeCustomerId: 'cus_credits_empty',
+		},
+		{ env: { STRIPE_SECRET_KEY: 'sk_test_usage' } },
 	)
-	expect(uniqueWorkerDays?.current).toBe(280)
-	expect(uniqueWorkerDays?.include).toBe(350)
-	expect(uniqueWorkerDays?.overEightyPercent).toBe(true)
-	expect(uniqueWorkerDays?.howToReduce).toMatch(/not billed/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/\$0\.0025/)
-	expect(uniqueWorkerDays?.howToReduce).not.toMatch(/payment method/)
+	expect(empty.data?.computeOverage.creditWallet).toBe('empty')
+	expect(empty.data?.computeOverage.creditsStatus).toBe('add_credits')
+	expect(empty.data?.canBuyCredits).toBe(true)
+	expect(empty.data?.credits).toMatchObject({
+		eligible: true,
+		balanceMicroUsd: 0,
+		hasCredits: false,
+	})
+	expect(empty.data?.creditsAlarm).toMatchObject({
+		kind: 'include_used_no_credits',
+		action: { label: 'Add credits', href: '/account/usage#credits' },
+	})
+	expect(empty.data?.includedCompute[0]).toMatchObject({
+		barPercent: 100,
+		tone: 'attention',
+	})
+	expect(
+		empty.data?.warnings.filter((row) => row.resource === 'unique_worker_days'),
+	).toEqual([])
+	expect(empty.row('execute_calls_per_day')?.limit).toBe(150)
+	expect(empty.row('execute_calls_per_day')?.howToReduce).toMatch(
+		/add credits at \/account\/usage#credits to restore Pro rates past your include/,
+	)
+	expect(empty.meterFor('unique_worker_days')?.howToReduce).toMatch(
+		/With no credits left, rate and compute limits match Free until you top up/,
+	)
+
+	// Without a Stripe customer nobody can buy: the alarm and the Credits
+	// section agree.
+	const noCustomer = await loadUsage(
+		{
+			...purchasablePro,
+			userId: 27,
+			email: 'usage-credits-no-customer@example.com',
+			creditBalanceMicroUsd: 0,
+			stripeCustomerId: null,
+		},
+		{ env: { STRIPE_SECRET_KEY: 'sk_test_usage' } },
+	)
+	expect(noCustomer.data?.computeOverage.creditWallet).toBe('empty')
+	expect(noCustomer.data?.canBuyCredits).toBe(false)
+	expect(noCustomer.data?.creditsAlarm).toMatchObject({
+		kind: 'include_used_no_credits',
+		action: { label: 'Subscribe to Pro', href: '/account/usage#credits' },
+	})
+	expect(noCustomer.data?.credits).toMatchObject({
+		eligible: true,
+		configured: true,
+		canBuyCredits: false,
+	})
+})
+
+test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credits', async () => {
+	const { data, row, meterFor } = await loadUsage({
+		userId: 26,
+		email: 'usage-gift@example.com',
+		plan: 'free',
+		giftExpiresAt: '2026-08-25T00:00:00.000Z',
+		uniqueWorkerDays: 400,
+	})
+	expect(data?.plan).toBe('pro')
+	expect(data?.computeOverage.creditWallet).toBe('none')
+	expect(data?.computeOverage.creditsStatus).toBe('within_include')
+	expect(data?.canBuyCredits).toBe(false)
+	expect(data?.credits).toMatchObject({ eligible: false })
+	expect(meterFor('unique_worker_days')).toMatchObject({
+		label: 'Worker compute',
+		include: 2_000,
+	})
+	expect(meterFor('durable_object_rows_read')).toMatchObject({
+		label: 'Rows read',
+		include: 20_000_000_000,
+	})
+	expect(row('execute_calls_per_day')?.limit).toBe(1_500)
+	expect(
+		[
+			...(data?.entitlementConsumption ?? []),
+			...(data?.computeOverage.meters ?? []),
+		].filter((entry) => /^add credits/i.test(entry.howToReduce ?? '')),
+	).toEqual([])
 })

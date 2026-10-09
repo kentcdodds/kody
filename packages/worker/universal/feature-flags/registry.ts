@@ -8,10 +8,13 @@
  * Flags should declare a `successMetric`: the usage metric the flag is
  * expected to move, reviewed in the same PR that creates the flag. Flags
  * with one get exposure recording and an on/off cohort readout on the admin
- * surfaces (see `docs/contributing/architecture/feature-flags.md`). The
- * field stays optional for flags that are genuinely unmeasurable (such as
- * the permanent `demo-indicator`), and the admin UI and MCP list surface a
- * notice strongly recommending one everywhere else.
+ * surfaces (see `docs/contributing/architecture/feature-flags.md`). Optional
+ * `exposureRecording` selects the write site (`evaluation` chokepoints by
+ * default, `paid-ranked-search` for the Jev experiment frame, or
+ * `mcp-events-clients` for events-capable MCP clients only). The
+ * `successMetric` field stays optional for flags that are genuinely
+ * unmeasurable (such as the permanent `demo-indicator`), and the admin UI and
+ * MCP list surface a notice strongly recommending one everywhere else.
  */
 
 import {
@@ -36,6 +39,20 @@ export type FeatureFlagSuccessMetric = {
 	hypothesis: string
 }
 
+/**
+ * Where success-metric exposures are written for a measured flag.
+ *
+ * - `evaluation` (default): app session cache + MCP caller flag resolver.
+ * - `paid-ranked-search`: only from paid list-mode ranked search (Jev frame);
+ *   free/anonymous never enter the on/off cohorts for that flag.
+ * - `mcp-events-clients`: only from `registerMcpEvents` after the client
+ *   declares events support; execute and other MCP callers stay out.
+ */
+export type FeatureFlagExposureRecording =
+	| 'evaluation'
+	| 'paid-ranked-search'
+	| 'mcp-events-clients'
+
 export type FeatureFlagDefinition = {
 	key: string
 	description: string
@@ -47,6 +64,11 @@ export type FeatureFlagDefinition = {
 	 */
 	defaultAudience?: FeatureFlagAudience
 	successMetric?: FeatureFlagSuccessMetric
+	/**
+	 * Exposure write site for measured flags. Omit for `evaluation`.
+	 * Only meaningful when `successMetric` is set.
+	 */
+	exposureRecording?: FeatureFlagExposureRecording
 }
 
 export const featureFlagDefinitions = [
@@ -60,49 +82,24 @@ export const featureFlagDefinitions = [
 		// admin notice), not to move a product metric.
 	},
 	{
-		key: 'compute-overage-charging',
-		defaultEnabled: true,
-		description:
-			'Creates Stripe invoices for public-ladder compute overages at list rates when resolveComputeOverageDisposition returns invoice (Standard/Pro with a Stripe customer, or Free that already has a customer). Unpaid Free is a soft-block, not a charge. Legacy Standard/Pro stays unbilled. Set the global flag off to dry-run for everyone; a per-user on override cannot charge while global is off. D1 evaluation failures fail closed (no charges). No success metric: this flag is a billing gate, not an experiment.',
-		// Intentionally no successMetric: a money-moving kill switch is not
-		// judged by moving a usage stream.
-	},
-	{
-		key: 'compact-mcp-server-instructions',
-		defaultEnabled: false,
-		description:
-			'Serves a short MCP server-instruction stub instead of the full always-on manual, so clients that keep only the first ~2048 characters still see how to use search/execute and the user overlay. Delete the flag and the compact branch when the experiment ends.',
-		successMetric: {
-			eventType: 'execute',
-			measure: 'event_count',
-			goal: 'increase',
-			hypothesis:
-				'A stub that fits in a 2048-character head cut makes agents reach for Kody execute more often from vague prompts.',
-		},
-	},
-	{
 		key: 'package-share-grants',
 		defaultEnabled: false,
 		description:
 			'Person-to-person package share grants: invite, accept, UI, MCP, and runtime use of a shared package. Off by default. Signed-in users can turn it on from /docs/package-sharing. No success metric: this is a rollout kill switch, not an experiment.',
 	},
 	{
-		key: 'secret-providers',
-		defaultEnabled: false,
-		description:
-			'Pluggable external secret providers (1Password-shaped placeholders, account bindings, sealed resolve, and package grants). Off by default. Signed-in users can turn it on from /docs/secret-providers. No success metric: this is a rollout kill switch, not an experiment.',
-	},
-	{
 		key: 'jev-search-rerank',
 		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
 		description:
 			'Kill switch for improved ranked search: when on, paid plans (standard/pro/max) widen hybrid recall and may run Workers AI typesafe/jev Score (AI Gateway) when the post-hybrid pool looks ambiguous. Free and anonymous never get Jev (skipped-plan). Necessity skips: skipped-small-pool (≤8), skipped-clear-winner (9–20 with a decisive top hit). Pricing-page improved-search copy is gated by this same flag. List-mode ranked search only. Offline/deterministic paths skip Jev and use hybrid order. Plan gate is a feature gate, not an entitlement. Delete the flag and gate sites when the experiment ends.',
+		exposureRecording: 'paid-ranked-search',
 		successMetric: {
 			eventType: 'execute',
 			measure: 'event_count',
 			goal: 'increase',
 			hypothesis:
-				'Wider recall plus selective Jev Score filtering surfaces better next hops for paid users, so agents follow ranked search with execute more often in the same conversation.',
+				'Paid ranked-search users with the flag on (Jev-eligible: widen recall + selective Score; necessity may still skip) follow search with more execute calls than comparable paid flag-off searchers.',
 		},
 	},
 	{
@@ -119,6 +116,49 @@ export const featureFlagDefinitions = [
 				'Invoke-generated thin passthrough reuses one Dynamic Worker per package export, so experiment users burn fewer unique worker-days on execute.',
 		},
 	},
+	{
+		key: 'connection-profiles',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Named connection profiles on /account/connections: package grant allowlists (read/execute) for MCP ?profile= URLs and profile-bound API tokens. Off by default; enable with audience experiments_opt_in. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Experimenters with connection profiles create restricted agent connections and keep executing against granted packages.',
+		},
+	},
+	{
+		key: 'mcp-skills-extension',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'Skills-over-MCP (SEP-2640) for package-shipped Agent Skills: packages may ship `skills/<name>/SKILL.md`, and when an MCP client advertises the skills extension Kody exposes those skills via skills/list, skills/get, and resources/read as a progressive enhancement. Signed-in users can opt in from /docs/package-skills; enable for experimenters via admin (adminFeatureFlagSet with audience experiments_opt_in). Off by default. Delete the flag and gate sites when the experiment ends.',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Skill-aware hosts that load package skills over MCP then act via execute, so experimenters with the extension on run more execute calls against skill-guided packages.',
+		},
+	},
+	{
+		key: 'mcp-events-extension',
+		defaultEnabled: false,
+		defaultAudience: 'experiments_opt_in',
+		description:
+			'MCP Events extension (draft, webhook delivery only) on the stateless /mcp lane: advertise the events capability and serve events/list, events/subscribe, and events/unsubscribe for package kody.emits topics that opt in with mcp: true. Only for clients that declare events support. Off by default; enable with audience experiments_opt_in. Signed-in users can also turn it on from /docs/mcp-events. Delete the flag and gate sites when the experiment ends.',
+		exposureRecording: 'mcp-events-clients',
+		successMetric: {
+			eventType: 'execute',
+			measure: 'event_count',
+			goal: 'increase',
+			hypothesis:
+				'Experimenters whose MCP clients subscribe to package events run more event-driven execute calls than comparable flag-off users.',
+		},
+	},
 ] as const satisfies ReadonlyArray<FeatureFlagDefinition>
 
 export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
@@ -126,13 +166,19 @@ export type FeatureFlagKey = (typeof featureFlagDefinitions)[number]['key']
 export const packageShareGrantsFlagKey =
 	'package-share-grants' satisfies FeatureFlagKey
 
-export const secretProvidersFlagKey =
-	'secret-providers' satisfies FeatureFlagKey
-
 export const jevSearchRerankFlagKey =
 	'jev-search-rerank' satisfies FeatureFlagKey
 
 export const executeInvokeFlagKey = 'execute-invoke' satisfies FeatureFlagKey
+
+export const connectionProfilesFlagKey =
+	'connection-profiles' satisfies FeatureFlagKey
+
+export const mcpSkillsExtensionFlagKey =
+	'mcp-skills-extension' satisfies FeatureFlagKey
+
+export const mcpEventsExtensionFlagKey =
+	'mcp-events-extension' satisfies FeatureFlagKey
 
 export const featureFlagKeys: ReadonlyArray<FeatureFlagKey> =
 	featureFlagDefinitions.map((definition) => definition.key)
@@ -193,5 +239,31 @@ export function getFeatureFlagDefaultAudience(
 ): FeatureFlagAudience {
 	return (
 		getFeatureFlagDefinition(key).defaultAudience ?? defaultFeatureFlagAudience
+	)
+}
+
+/**
+ * Where exposures are written for a measured flag. Unmeasured flags never
+ * record exposures; measured flags default to the evaluation chokepoints.
+ */
+export function getFeatureFlagExposureRecording(
+	key: FeatureFlagKey,
+): FeatureFlagExposureRecording {
+	const definition = getFeatureFlagDefinition(key)
+	if (!definition.successMetric) return 'evaluation'
+	return definition.exposureRecording ?? 'evaluation'
+}
+
+/**
+ * True when the app/MCP evaluation chokepoints should write an exposure for
+ * this measured flag. Flags with a dedicated recording site (for example
+ * paid ranked search) return false here and record only on that path.
+ */
+export function recordsFeatureFlagExposureAtEvaluation(
+	key: FeatureFlagKey,
+): boolean {
+	return (
+		measuredFeatureFlagKeys.has(key) &&
+		getFeatureFlagExposureRecording(key) === 'evaluation'
 	)
 }

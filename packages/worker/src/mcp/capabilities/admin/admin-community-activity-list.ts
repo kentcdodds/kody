@@ -65,7 +65,7 @@ export const adminCommunityActivityListCapability = defineDomainCapability(
 		...adminCapabilityAccess,
 		name: 'adminCommunityActivityList',
 		description:
-			'List admin-only metadata about who forked or rated public community listings and when. Fork rows include both agent forks and one-click installs because the existing data model records both identically. Returns no package source, rating notes, secrets, or unrelated user content.',
+			'List admin-only metadata about who forked or rated public packages in the Community catalog and when. Fork rows include both agent forks and one-click installs because the existing data model records both identically. Returns no package source, rating notes, secrets, or unrelated user content.',
 		keywords: [
 			'admin',
 			'community',
@@ -98,7 +98,7 @@ export const adminCommunityActivityListCapability = defineDomainCapability(
 				.string()
 				.min(1)
 				.optional()
-				.describe('Optional exact community listing id filter.'),
+				.describe('Optional exact Community catalog entry id filter.'),
 		}),
 		outputSchema: z.object({
 			total: z.number().int().nonnegative(),

@@ -1,13 +1,14 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createPlatformAccount } from '#worker/identity/platform-account-creation.ts'
-import { createStableUserIdFromEmail } from '#worker/user-id.ts'
 import {
 	PackageScopeAccessError,
 	resolvePackageOwnerContext,
 } from './package-owner.ts'
 import { insertPackageScopeGrant } from './scope-grants.ts'
 import { ensurePackageScopeGrantsTestSchema } from './test-schema.ts'
+import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 function reservedPlatformUsername() {
 	return `kody-r-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`
@@ -18,7 +19,7 @@ function personUsername() {
 }
 
 async function seedPersonUser(input: { username: string; email: string }) {
-	const stableUserId = await createStableUserIdFromEmail(input.email)
+	const stableUserId = testStableUserIdFromEmail(input.email)
 	const result = await env.APP_DB.prepare(
 		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, account_type, plan)
 		 VALUES (?, ?, 'test-password-hash', ?, ?, 'person', 'max')`,
@@ -53,12 +54,12 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 		username: reservedPlatformUsername(),
 	})
 	const personUser = {
-		userId: person.stableUserId,
+		userId: personIdFromStored(person.stableUserId),
 		email: person.email,
 		displayName: person.username,
 	}
 	const actorUser = {
-		userId: actor.stableUserId,
+		userId: personIdFromStored(actor.stableUserId),
 		email: actor.email,
 		displayName: actor.username,
 	}
@@ -113,7 +114,7 @@ test('resolvePackageOwnerContext returns caller ownership, grant delegation, and
 	const staleEmail = `stale-${crypto.randomUUID()}@example.com`
 	expect(
 		await resolvePackageOwnerContext(env, {
-			userId: person.stableUserId,
+			userId: personIdFromStored(person.stableUserId),
 			email: staleEmail,
 			displayName: person.username,
 		}),

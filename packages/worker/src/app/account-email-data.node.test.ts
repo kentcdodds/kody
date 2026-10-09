@@ -1,7 +1,10 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const messageRecord = {
 	id: 'msg-1',
@@ -93,22 +96,24 @@ vi.mock('#worker/email/owner-email-reader.ts', () => ({
 
 const { loadAccountEmailData } = await import('./account-email-data.ts')
 
-const authenticatedUser = {
+const authenticatedUser: AuthenticatedAppUser = {
 	sessionUserId: '42',
 	userId: 42,
 	username: 'test-user',
 	email: 'user@example.com',
 	emailVerified: true,
+	emailVerificationDelivery: null,
 	displayName: 'user',
-	roles: ['user'] as const,
-	permissions: [] as const,
+	roles: ['user'],
+	permissions: [],
 	artifactOwnerIds: [],
 	mcpUser: {
-		userId: 'stable-user-1',
+		userId: personIdFromStored('stable-user-1'),
 		email: 'user@example.com',
 		username: 'test-user',
 		displayName: 'user',
 	},
+	request: sessionRequestContext('stable-user-1'),
 }
 
 test('loadAccountEmailData reads USER message graph only through owner Mailbox readers', async () => {

@@ -79,3 +79,9 @@ export {
 	AccountValuesRoute,
 	accountValuesRouteLoader,
 } from './account-values.tsx'
+export {
+	AccountInvitesRoute,
+	AccountOrganizationsNewRoute,
+	accountInvitesRouteLoader,
+	accountOrganizationsNewRouteLoader,
+} from './account-organizations.tsx'

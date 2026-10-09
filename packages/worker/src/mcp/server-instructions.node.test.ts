@@ -1,82 +1,74 @@
 import { expect, test } from 'vitest'
+import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-instruction-limits.ts'
 import {
-	buildBaseMcpServerInstructions,
+	appendUserMcpServerInstructionOverlay,
+	baseMcpServerInstructions,
 	buildMcpServerInstructions,
-	formatPopularPackagesInstructions,
-	popularPackagesInstructionCharBudget,
+	describeAssembledMcpServerInstructions,
+	maxBaseMcpServerInstructionsChars,
 } from './server-instructions.ts'
 
-test('popular package MCP instructions omit cold start, list kody ids under budget, and keep overlays', () => {
-	expect(formatPopularPackagesInstructions(undefined)).toBe('')
-	expect(formatPopularPackagesInstructions([])).toBe('')
-	expect(buildBaseMcpServerInstructions({ popularPackages: [] })).not.toMatch(
-		/`email-helper`|`notes`/,
+const overlayHeader = `---
+User-provided MCP instructions (follow these when they do not conflict with safety or tool contracts):`
+
+test('buildMcpServerInstructions appends the user overlay after the stub', () => {
+	expect(baseMcpServerInstructions.length).toBeGreaterThanOrEqual(300)
+	expect(baseMcpServerInstructions.length).toBeLessThanOrEqual(
+		maxBaseMcpServerInstructionsChars,
 	)
-
-	const section = formatPopularPackagesInstructions([
-		{ kodyId: 'email-helper', description: 'Send and read mail' },
-		{ kodyId: 'calendar-sync', description: '' },
-	])
-	expect(section).toMatch(/`email-helper`/)
-	expect(section).toMatch(/`calendar-sync`/)
-	expect(section).toContain('- `email-helper`')
-	expect(section).not.toContain('Send and read mail')
-
-	const many = Array.from({ length: 12 }, (_, index) => ({
-		kodyId: `pkg-${String(index + 1).padStart(2, '0')}`,
-		description: 'A reasonably long one-line description for packing',
-	}))
-	const capped = formatPopularPackagesInstructions(many)
-	const listed = [...capped.matchAll(/`pkg-\d+`/g)].map((match) => match[0])
-	expect(listed.length).toBeGreaterThan(0)
-	expect(listed.length).toBeLessThanOrEqual(8)
-	expect(capped.trim().length).toBeLessThanOrEqual(
-		popularPackagesInstructionCharBudget + 10,
+	const assembled = buildMcpServerInstructions('Prefer concise replies.')
+	expect(assembled.startsWith(baseMcpServerInstructions)).toBe(true)
+	expect(assembled).toContain(overlayHeader)
+	expect(assembled.endsWith('Prefer concise replies.')).toBe(true)
+	expect(assembled.indexOf(overlayHeader)).toBeGreaterThan(
+		baseMcpServerInstructions.length,
 	)
-	expect(
-		[
-			...formatPopularPackagesInstructions(many, { charBudget: 80 }).matchAll(
-				/`pkg-\d+`/g,
-			),
-		].length,
-	).toBeLessThanOrEqual(2)
+	expect(assembled.length).toBeLessThan(
+		mcpServerInstructionsClientHeadLimitChars,
+	)
+	expect(buildMcpServerInstructions(null)).toBe(baseMcpServerInstructions)
+	expect(buildMcpServerInstructions('   ')).toBe(baseMcpServerInstructions)
 
-	const instructions = buildMcpServerInstructions({
-		popularPackages: [{ kodyId: 'notes', description: 'Scratch notes' }],
-		userOverlay: 'Prefer concise replies.',
-		domains: [],
-	})
-	expect(instructions).toMatch(/`notes`/)
-	expect(instructions).toContain('Prefer concise replies.')
+	const headerOnly = appendUserMcpServerInstructionOverlay(
+		baseMcpServerInstructions,
+		'x',
+	)
+	expect(headerOnly.length - 1).toBeLessThan(
+		mcpServerInstructionsClientHeadLimitChars,
+	)
 })
 
-test('domain instructions list builtins and summarize connected bindings', () => {
-	const instructions = buildBaseMcpServerInstructions({
-		domains: [
-			{
-				name: 'admin',
-				description:
-					'Admin-only operator capabilities for account metadata, platform accounts, package scope grants, fleet package-codemod scan/dry-run/apply/revert over published package trees, feature flags, and much more detail that should not all appear in always-loaded instructions.',
-			},
-			{
-				name: 'mcp:canva',
-				description:
-					'Canva Connect API — designs, assets, folders, comments, and exports.',
-			},
-			{
-				name: 'mcp:home',
-				description: 'Home MCP server for local-network devices.',
-			},
-		],
+test('overlay warning fires only when assembled text meets the client cut', () => {
+	const shortAssembled = buildMcpServerInstructions('Prefer concise replies.')
+	expect(
+		describeAssembledMcpServerInstructions({
+			assembled: shortAssembled,
+			hasOverlay: true,
+		}),
+	).toEqual({
+		assembled_chars: shortAssembled.length,
+		warning: null,
 	})
-	const line = instructions
-		.split('\n')
-		.find((entry) => entry.includes('`admin`'))
-	expect(line).toBeTruthy()
-	expect(line!.length).toBeLessThan(130)
-	expect(line).toContain('...')
-	expect(instructions).not.toContain('`mcp:canva`')
-	expect(instructions).not.toContain('Canva Connect API')
-	expect(instructions).not.toContain('`mcp:home`')
-	expect(instructions).not.toContain('Home MCP server')
+
+	const fatAssembled = appendUserMcpServerInstructionOverlay(
+		baseMcpServerInstructions,
+		'O'.repeat(mcpServerInstructionsClientHeadLimitChars),
+	)
+	const fatWarning = describeAssembledMcpServerInstructions({
+		assembled: fatAssembled,
+		hasOverlay: true,
+	})
+	expect(fatAssembled.length).toBeGreaterThanOrEqual(
+		mcpServerInstructionsClientHeadLimitChars,
+	)
+	expect(fatWarning.assembled_chars).toBe(fatAssembled.length)
+	expect(fatWarning.warning).toMatch(/2048/)
+	expect(fatWarning.warning).toMatch(/overlay may never reach the model/)
+
+	expect(
+		describeAssembledMcpServerInstructions({
+			assembled: fatAssembled,
+			hasOverlay: false,
+		}).warning,
+	).toBeNull()
 })

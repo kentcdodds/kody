@@ -110,9 +110,3 @@ export async function getOrSetDataCache<T>(input: {
 	setDataCache(input.key, value, input.ttlMs)
 	return { value, lookup: 'miss' }
 }
-
-/** Test-only: reset module state between unit tests. */
-export function resetDataCacheForTests() {
-	communityPublicCacheVersion = 0
-	store.clear()
-}

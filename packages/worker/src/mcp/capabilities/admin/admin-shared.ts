@@ -12,16 +12,21 @@ import { roleNames } from '#universal/permissions.ts'
 import { planNames } from '#universal/plans.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { normalizeStableUserId } from '#worker/user-id.ts'
 
+/** Site-admin tools: the `admin` role gates them, not org permissions. */
 export const adminCapabilityAccess = {
+	orgPermission: 'none',
 	requiredRole: 'admin',
 	readOnly: true,
 	idempotent: true,
 	destructive: false,
 } as const
 
+// Admin mutations stay callable from admin-owned background package/job/webhook
+// callers (no executionOrigin gate). Accepted residual: cross-user / fleet blast
+// such as adminPackageCodemodApply. See docs/contributing/security.md.
 export const adminMutationCapabilityAccess = {
+	orgPermission: 'none',
 	requiredRole: 'admin',
 	readOnly: false,
 	idempotent: false,
@@ -60,8 +65,37 @@ export const adminUserMetadataSchema = z.object({
 			'Stripe-derived paid tier from users.stripe_plan, or null when none.',
 		),
 	effectivePlan: planNameSchema.describe(
-		'Higher of the manual grant and Stripe subscription. This is the plan entitlements enforce.',
+		'Entitlement plan after manual grant, Stripe, and unexpired Pro overlays (second-agent gift / referral credit).',
 	),
+	secondAgentGiftExpiresAt: z
+		.string()
+		.nullable()
+		.describe(
+			'Raw users.second_agent_standard_gift_expires_at ISO timestamp, or null.',
+		),
+	referralCreditExpiresAt: z
+		.string()
+		.nullable()
+		.describe(
+			'Raw users.referral_standard_credit_expires_at ISO timestamp, or null.',
+		),
+	overlayExpiresAt: z
+		.string()
+		.nullable()
+		.describe(
+			'Later of the two overlay expiry columns (or null). Same value gating uses for the temporary Pro raise.',
+		),
+	isProOverlay: z
+		.boolean()
+		.describe(
+			'True while a temporary Pro overlay currently raises Free. False for paid or manual plans even when expiry columns remain set.',
+		),
+	overlayType: z
+		.enum(['second_agent_gift', 'referral_credit'])
+		.nullable()
+		.describe(
+			'Which overlay classifies the current Pro raise. When both are active, the later expiry wins; equal timestamps prefer second_agent_gift. Null unless isProOverlay.',
+		),
 	entitlementLadder: z
 		.enum(['public', 'legacy'])
 		.describe(
@@ -74,7 +108,7 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'Set when the account is platform-suspended (blocked at session, MCP, and email chokepoints).',
+			'Set when the account is platform-suspended (blocks sessions, MCP, package apps, webhooks, jobs and other background work, and email).',
 		),
 	email_outbound_paused_at: z
 		.string()
@@ -210,7 +244,7 @@ export async function resolveActingAdminUserId(
 	ctx: CapabilityContext,
 ): Promise<number> {
 	const user = requireMcpUser(ctx.callerContext)
-	const stableUserId = normalizeStableUserId(user.userId)
+	const stableUserId = user.userId.trim()
 	if (!stableUserId) {
 		throw new Error('Authenticated admin account was not found.')
 	}

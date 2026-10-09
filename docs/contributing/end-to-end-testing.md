@@ -76,9 +76,11 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
 - `preview:e2e` is the manual path: it prepares `packages/worker/.env`, applies
   local D1 migrations, and starts Vite against `.wrangler/state/e2e`.
 - `npm run test:e2e:run` ensures Playwright Chromium is installed before the
-  suite starts (`tools/ensure-playwright-browser.ts`). The Validate E2E job
-  restores `~/.cache/ms-playwright` from Actions cache and calls the same ensure
-  script, so a matching Playwright revision does not download or run `apt-get`.
+  suite starts (`tools/ensure-playwright-browser.ts`). On Cloud Agent Linux that
+  uses native `unzip` for the `browsers.json` revision; elsewhere it uses
+  `playwright install`. The Validate E2E job restores `~/.cache/ms-playwright`
+  from Actions cache and calls the same ensure script, so a matching Playwright
+  revision does not download or run `apt-get`.
 - `npm run test:e2e:ui` and plain `npx playwright test` assume Playwright
   browsers are already installed.
 - Playwright sets `CLOUDFLARE_ENV=test`; Wrangler loads `packages/worker/.env`
@@ -101,8 +103,17 @@ Avoid `page.locator('css')` unless no accessible alternative exists.
   after Ready. Opt in with `X_LOCAL_EXPLORER=true`. `wrangler-env.ts` also sets
   `WRANGLER_DISABLE_BUNDLE_WATCH=true` in the test env so esbuild's source-graph
   watcher does not rebuild after the first compile on Cloud Agent overlay FS
-  (Friction #1789). On CI, the `🎭 E2E` job uploads `logs.local/` as the
-  `e2e-wrangler-logs` artifact when the suite fails.
+  (Friction #1789). `tools/e2e-web-server.ts` refuses to start when a leftover
+  `dev:ensure` origin on 3742–3751 is listening but `/health` fails (a
+  crash-looping Vite after `npm ci` collides on the inspector port and fails
+  `fetchWorkerExportTypes`). It also restarts Vite once if the first process
+  exits before Playwright reaches `/health`. On CI, the `🎭 E2E` job also
+  retries the suite once when `tools/ci/is-retryable-e2e-failure.ts` matches a
+  webServer start crash (`Process from config.webServer was not able to start`,
+  including Vite `__LOAD__ is not defined` during Cloudflare export-type
+  inspection) or a mid-suite death on port 3847. Genuine assertion failures do
+  not retry. The job uploads `logs.local/` as the `e2e-wrangler-logs` artifact
+  when the suite fails.
 - Ensure the `env.test` section in `packages/worker/wrangler.jsonc` includes
   assets, KV, and durable objects since these are not inherited from top-level
   Wrangler config.

@@ -9,6 +9,7 @@ import {
 	type Capability,
 	type CapabilityDefinition,
 	type CapabilityJsonSchema,
+	type CapabilityOutput,
 	type CapabilitySchemaDefinition,
 	type InferCapabilitySchema,
 } from './types.ts'
@@ -18,13 +19,16 @@ import {
 } from './schema-type-definitions.ts'
 import { assertCallerCanAccessCapability } from './access-control.ts'
 import { assertKodyRuntimeIdentifier } from './runtime-identifier.ts'
+import { authorizeSurface } from '#worker/authorization/authorize.ts'
 
 // Normalize capability authoring input into the JSON-Schema-based shape
 // consumed by the registry and sandbox search surface.
 export function defineCapability<
 	TInputSchema extends CapabilitySchemaDefinition,
 	TOutputSchema extends CapabilitySchemaDefinition | undefined = undefined,
->(definition: CapabilityDefinition<TInputSchema, TOutputSchema>): Capability {
+>(
+	definition: CapabilityDefinition<TInputSchema, TOutputSchema>,
+): Capability<CapabilityOutput<TOutputSchema>> {
 	const source = definition.source ?? 'builtin'
 	if (source === 'builtin') {
 		assertKodyRuntimeIdentifier('capability', definition.name)
@@ -79,6 +83,7 @@ export function defineCapability<
 		readOnly: definition.readOnly ?? false,
 		idempotent: definition.idempotent ?? false,
 		destructive: definition.destructive ?? false,
+		orgPermission: definition.orgPermission,
 		...(definition.requiredRole
 			? { requiredRole: definition.requiredRole }
 			: {}),
@@ -114,6 +119,10 @@ export function defineCapability<
 			await assertCallerCanAccessCapability(ctx.callerContext, definition, {
 				env: ctx.env,
 			})
+			await authorizeSurface(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				definition.orgPermission,
+			)
 
 			let parsedArgs: InferCapabilitySchema<TInputSchema>
 			try {
@@ -165,7 +174,9 @@ export function defineCapability<
 			}
 
 			try {
-				const finalized = outputParser ? outputParser(result) : result
+				const finalized = (
+					outputParser ? outputParser(result) : result
+				) as CapabilityOutput<TOutputSchema>
 				logMcpEvent({
 					category: 'mcp',
 					tool: 'capability',

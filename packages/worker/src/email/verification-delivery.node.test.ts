@@ -12,6 +12,9 @@ import {
 	transactionalEmailVerificationKind,
 } from './verification-delivery.ts'
 
+const senderBlockResponse =
+	'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613'
+
 async function createDeliveryTestDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
@@ -37,43 +40,96 @@ async function createDeliveryTestDb() {
 	return db
 }
 
+function register(
+	db: D1Database,
+	providerMessageId: string,
+	extra: { recipient?: string; kind?: string } = {},
+) {
+	return registerTransactionalEmailDelivery({
+		db,
+		providerMessageId,
+		userId: 1,
+		recipient: 'blocked@example.com',
+		...extra,
+	})
+}
+
+function record(
+	db: D1Database,
+	providerMessageId: string,
+	deliveryStatus: 'bounced' | 'failed' | 'delivered',
+	eventTimestamp: string,
+	smtpResponse?: string,
+) {
+	return recordTransactionalEmailDeliveryEvent({
+		db,
+		providerMessageId,
+		deliveryStatus,
+		eventTimestamp,
+		smtpResponse,
+	})
+}
+
+function readUserDelivery(db: D1Database) {
+	return db
+		.prepare(
+			`SELECT email_verification_delivery_status AS status, email_verification_delivery_class AS class
+			 FROM users WHERE id = 1`,
+		)
+		.first<{ status: string | null; class: string | null }>()
+}
+
+function senderBlockEvent(kind: string, recipient = 'blocked@example.com') {
+	return {
+		outcome: 'recorded',
+		event: {
+			userId: 1,
+			kind,
+			recipient,
+			status: 'bounced',
+			class: 'sender_block',
+			alreadyTerminal: false,
+		},
+	}
+}
+
 test('classifyVerificationDeliveryFailure treats Fastmail RLR613 as a sender block', () => {
+	const cases = [
+		{
+			input: {
+				status: 'bounced',
+				smtpResponse: senderBlockResponse,
+				smtpEnhancedStatusCode: '4.7.1',
+			},
+			expected: 'sender_block',
+		},
+		{
+			input: { status: 'failed', smtpResponse: '550 5.7.1 Too new - RLR813' },
+			expected: 'sender_block',
+		},
+		{
+			input: {
+				status: 'bounced',
+				smtpResponse: '550 5.1.1 mailbox unavailable',
+			},
+			expected: 'other',
+		},
+		{
+			input: {
+				status: 'delivered',
+				smtpResponse: 'kody.codes is blacklisted - RLR613',
+			},
+			expected: null,
+		},
+	] as const
 	expect(
-		classifyVerificationDeliveryFailure({
-			status: 'bounced',
-			smtpResponse:
-				'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-			smtpEnhancedStatusCode: '4.7.1',
-		}),
-	).toBe('sender_block')
-	expect(
-		classifyVerificationDeliveryFailure({
-			status: 'failed',
-			smtpResponse: '550 5.7.1 Too new - RLR813',
-		}),
-	).toBe('sender_block')
-	expect(
-		classifyVerificationDeliveryFailure({
-			status: 'bounced',
-			smtpResponse: '550 5.1.1 mailbox unavailable',
-		}),
-	).toBe('other')
-	expect(
-		classifyVerificationDeliveryFailure({
-			status: 'delivered',
-			smtpResponse: 'kody.codes is blacklisted - RLR613',
-		}),
-	).toBeNull()
+		cases.map(({ input }) => classifyVerificationDeliveryFailure(input)),
+	).toEqual(cases.map(({ expected }) => expected))
 })
 
 test('transactional verification delivery records bounce status and stops matching unknown ids', async () => {
 	const db = await createDeliveryTestDb()
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-message-1',
-		userId: 1,
-		recipient: 'blocked@example.com',
-	})
+	await register(db, 'cf-message-1')
 	expect(
 		await lookupTransactionalEmailDelivery({
 			db,
@@ -85,162 +141,93 @@ test('transactional verification delivery records bounce status and stops matchi
 		recipient: 'blocked@example.com',
 	})
 
-	const first = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-message-1',
-		deliveryStatus: 'bounced',
-		eventTimestamp: '2026-08-27T23:20:00.000Z',
-		smtpResponse:
-			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-	})
-	expect(first).toEqual({
-		outcome: 'recorded',
-		event: {
-			userId: 1,
-			kind: 'email_verification',
-			recipient: 'blocked@example.com',
-			status: 'bounced',
-			class: 'sender_block',
-			alreadyTerminal: false,
-		},
-	})
-
-	const replay = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-message-1',
-		deliveryStatus: 'bounced',
-		eventTimestamp: '2026-08-27T23:21:00.000Z',
-		smtpResponse:
-			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-	})
-	expect(replay).toMatchObject({
-		outcome: 'recorded',
-		event: { alreadyTerminal: true, class: 'sender_block' },
-	})
-
 	expect(
-		await recordTransactionalEmailDeliveryEvent({
+		await record(
 			db,
-			providerMessageId: 'unknown-message',
-			deliveryStatus: 'bounced',
-			eventTimestamp: '2026-08-27T23:22:00.000Z',
-		}),
-	).toEqual({ outcome: 'unmatched' })
-
-	const row = await db
-		.prepare(
-			`SELECT email_verification_delivery_status, email_verification_delivery_class, email_verification_delivery_detail
-			 FROM users WHERE id = 1`,
-		)
-		.first<{
-			email_verification_delivery_status: string
-			email_verification_delivery_class: string
-			email_verification_delivery_detail: string
-		}>()
-	expect(row).toMatchObject({
-		email_verification_delivery_status: 'bounced',
-		email_verification_delivery_class: 'sender_block',
-	})
-	expect(row?.email_verification_delivery_detail).toContain('RLR613')
-
-	const laterGenericFailure = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-message-1',
-		deliveryStatus: 'failed',
-		eventTimestamp: '2026-08-27T23:23:00.000Z',
-		smtpResponse: '550 5.7.1 policy rejected',
-	})
-	expect(laterGenericFailure).toMatchObject({
+			'cf-message-1',
+			'bounced',
+			'2026-08-27T23:20:00.000Z',
+			senderBlockResponse,
+		),
+	).toEqual(senderBlockEvent('email_verification'))
+	const keepsSenderBlock = {
 		outcome: 'recorded',
 		event: { alreadyTerminal: true, class: 'sender_block' },
+	}
+	expect(
+		await record(
+			db,
+			'cf-message-1',
+			'bounced',
+			'2026-08-27T23:21:00.000Z',
+			senderBlockResponse,
+		),
+	).toMatchObject(keepsSenderBlock)
+	expect(
+		await record(db, 'unknown-message', 'bounced', '2026-08-27T23:22:00.000Z'),
+	).toEqual({ outcome: 'unmatched' })
+	expect(await readUserDelivery(db)).toEqual({
+		status: 'bounced',
+		class: 'sender_block',
 	})
 	expect(
 		await db
 			.prepare(
-				`SELECT email_verification_delivery_class FROM users WHERE id = 1`,
+				`SELECT email_verification_delivery_detail AS detail FROM users WHERE id = 1`,
 			)
-			.first<{ email_verification_delivery_class: string }>(),
-	).toEqual({ email_verification_delivery_class: 'sender_block' })
+			.first<{ detail: string }>(),
+	).toEqual({ detail: expect.stringContaining('RLR613') })
+
+	expect(
+		await record(
+			db,
+			'cf-message-1',
+			'failed',
+			'2026-08-27T23:23:00.000Z',
+			'550 5.7.1 policy rejected',
+		),
+	).toMatchObject(keepsSenderBlock)
+	expect(await readUserDelivery(db)).toMatchObject({ class: 'sender_block' })
 })
 
 test('a newer verification send retires older provider ids and ignores stale events', async () => {
 	const db = await createDeliveryTestDb()
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-old',
-		userId: 1,
-		recipient: 'blocked@example.com',
-	})
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-new',
-		userId: 1,
-		recipient: 'blocked@example.com',
-	})
+	await register(db, 'cf-old')
+	await register(db, 'cf-new')
 	expect(
-		await lookupTransactionalEmailDelivery({
-			db,
-			providerMessageId: 'cf-old',
-		}),
+		await lookupTransactionalEmailDelivery({ db, providerMessageId: 'cf-old' }),
 	).toBeNull()
 	expect(
-		await lookupTransactionalEmailDelivery({
-			db,
-			providerMessageId: 'cf-new',
-		}),
+		await lookupTransactionalEmailDelivery({ db, providerMessageId: 'cf-new' }),
 	).toMatchObject({ provider_message_id: 'cf-new' })
 
-	const delivered = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-new',
-		deliveryStatus: 'delivered',
-		eventTimestamp: '2026-08-27T23:30:00.000Z',
-	})
-	expect(delivered).toMatchObject({
+	expect(
+		await record(db, 'cf-new', 'delivered', '2026-08-27T23:30:00.000Z'),
+	).toMatchObject({
 		outcome: 'recorded',
 		event: { status: 'delivered', alreadyTerminal: false },
 	})
-
-	const staleBounce = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-new',
-		deliveryStatus: 'bounced',
-		eventTimestamp: '2026-08-27T23:20:00.000Z',
-		smtpResponse:
-			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-	})
-	expect(staleBounce).toMatchObject({
-		outcome: 'recorded',
-		event: {
-			status: 'delivered',
-			class: null,
-			alreadyTerminal: true,
-		},
-	})
 	expect(
-		await db
-			.prepare(
-				`SELECT email_verification_delivery_status, email_verification_delivery_class
-				 FROM users WHERE id = 1`,
-			)
-			.first<{
-				email_verification_delivery_status: string
-				email_verification_delivery_class: string | null
-			}>(),
-	).toEqual({
-		email_verification_delivery_status: 'delivered',
-		email_verification_delivery_class: null,
+		await record(
+			db,
+			'cf-new',
+			'bounced',
+			'2026-08-27T23:20:00.000Z',
+			senderBlockResponse,
+		),
+	).toMatchObject({
+		outcome: 'recorded',
+		event: { status: 'delivered', class: null, alreadyTerminal: true },
+	})
+	expect(await readUserDelivery(db)).toEqual({
+		status: 'delivered',
+		class: null,
 	})
 })
 
 test('an immediate bounce still wins over a later worker-clock accepted stamp', async () => {
 	const db = await createDeliveryTestDb()
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-immediate-bounce',
-		userId: 1,
-		recipient: 'blocked@example.com',
-	})
+	await register(db, 'cf-immediate-bounce')
 	await setUserEmailVerificationDelivery({
 		db,
 		userId: 1,
@@ -248,51 +235,24 @@ test('an immediate bounce still wins over a later worker-clock accepted stamp', 
 		class: null,
 		at: '2026-08-27T23:21:00.000Z',
 	})
-
-	const bounce = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-immediate-bounce',
-		deliveryStatus: 'bounced',
-		eventTimestamp: '2026-08-27T23:20:00.000Z',
-		smtpResponse:
-			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-	})
-	expect(bounce).toEqual({
-		outcome: 'recorded',
-		event: {
-			userId: 1,
-			kind: 'email_verification',
-			recipient: 'blocked@example.com',
-			status: 'bounced',
-			class: 'sender_block',
-			alreadyTerminal: false,
-		},
-	})
 	expect(
-		await db
-			.prepare(
-				`SELECT email_verification_delivery_status, email_verification_delivery_class
-				 FROM users WHERE id = 1`,
-			)
-			.first<{
-				email_verification_delivery_status: string
-				email_verification_delivery_class: string
-			}>(),
-	).toEqual({
-		email_verification_delivery_status: 'bounced',
-		email_verification_delivery_class: 'sender_block',
+		await record(
+			db,
+			'cf-immediate-bounce',
+			'bounced',
+			'2026-08-27T23:20:00.000Z',
+			senderBlockResponse,
+		),
+	).toEqual(senderBlockEvent('email_verification'))
+	expect(await readUserDelivery(db)).toEqual({
+		status: 'bounced',
+		class: 'sender_block',
 	})
 })
 
 test('destination verification lifecycle matches the index without clobbering signup delivery columns', async () => {
 	const db = await createDeliveryTestDb()
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-signup',
-		userId: 1,
-		recipient: 'blocked@example.com',
-		kind: transactionalEmailVerificationKind,
-	})
+	await register(db, 'cf-signup', { kind: transactionalEmailVerificationKind })
 	await setUserEmailVerificationDelivery({
 		db,
 		userId: 1,
@@ -300,10 +260,7 @@ test('destination verification lifecycle matches the index without clobbering si
 		class: null,
 		at: '2026-09-17T02:00:00.000Z',
 	})
-	await registerTransactionalEmailDelivery({
-		db,
-		providerMessageId: 'cf-destination',
-		userId: 1,
+	await register(db, 'cf-destination', {
 		recipient: 'pager@example.com',
 		kind: transactionalEmailDestinationVerificationKind,
 	})
@@ -327,47 +284,28 @@ test('destination verification lifecycle matches the index without clobbering si
 		recipient: 'pager@example.com',
 	})
 
-	const destinationBounce = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-destination',
-		deliveryStatus: 'bounced',
-		eventTimestamp: '2026-09-17T02:05:00.000Z',
-		smtpResponse:
-			'451 4.7.1 Data command rejected: kody.codes is blacklisted - RLR613',
-	})
-	expect(destinationBounce).toEqual({
-		outcome: 'recorded',
-		event: {
-			userId: 1,
-			kind: transactionalEmailDestinationVerificationKind,
-			recipient: 'pager@example.com',
-			status: 'bounced',
-			class: 'sender_block',
-			alreadyTerminal: false,
-		},
-	})
 	expect(
-		await db
-			.prepare(
-				`SELECT email_verification_delivery_status, email_verification_delivery_class
-				 FROM users WHERE id = 1`,
-			)
-			.first<{
-				email_verification_delivery_status: string
-				email_verification_delivery_class: string | null
-			}>(),
-	).toEqual({
-		email_verification_delivery_status: 'accepted',
-		email_verification_delivery_class: null,
+		await record(
+			db,
+			'cf-destination',
+			'bounced',
+			'2026-09-17T02:05:00.000Z',
+			senderBlockResponse,
+		),
+	).toEqual(
+		senderBlockEvent(
+			transactionalEmailDestinationVerificationKind,
+			'pager@example.com',
+		),
+	)
+	expect(await readUserDelivery(db)).toEqual({
+		status: 'accepted',
+		class: null,
 	})
 
-	const signupDelivered = await recordTransactionalEmailDeliveryEvent({
-		db,
-		providerMessageId: 'cf-signup',
-		deliveryStatus: 'delivered',
-		eventTimestamp: '2026-09-17T02:06:00.000Z',
-	})
-	expect(signupDelivered).toMatchObject({
+	expect(
+		await record(db, 'cf-signup', 'delivered', '2026-09-17T02:06:00.000Z'),
+	).toMatchObject({
 		outcome: 'recorded',
 		event: {
 			kind: transactionalEmailVerificationKind,
@@ -375,11 +313,5 @@ test('destination verification lifecycle matches the index without clobbering si
 			alreadyTerminal: false,
 		},
 	})
-	expect(
-		await db
-			.prepare(
-				`SELECT email_verification_delivery_status FROM users WHERE id = 1`,
-			)
-			.first<{ email_verification_delivery_status: string }>(),
-	).toEqual({ email_verification_delivery_status: 'delivered' })
+	expect(await readUserDelivery(db)).toMatchObject({ status: 'delivered' })
 })

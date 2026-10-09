@@ -89,7 +89,7 @@ export function renderDashboard(data: AdminInsightsLoaderData) {
 					id="stat-packages"
 					label="Saved packages"
 					value={formatIntegerNumber(data.totals.savedPackages)}
-					sub={`${formatIntegerNumber(data.totals.activeCommunityListings)} community listings`}
+					sub={`${formatIntegerNumber(data.totals.activeCommunityListings)} catalog entries`}
 					color={chartColor.emerald}
 				/>
 				<StatCard

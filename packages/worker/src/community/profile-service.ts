@@ -1,5 +1,8 @@
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
-import { resolveUserStableId } from '#worker/user-id.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { CommunityActionError } from './errors.ts'
 import {
@@ -25,8 +28,8 @@ import {
 const maxDisplayNameLength = 50
 const maxBioLength = 500
 
-function resolveStableUserIdFromRow(row: UserSocialRow): string {
-	return resolveUserStableId(row)
+function resolveStableUserIdFromRow(row: UserSocialRow): OwnerId {
+	return ownerIdFromStored(row.stable_user_id)
 }
 
 function toCommunityProfileRecord(input: {

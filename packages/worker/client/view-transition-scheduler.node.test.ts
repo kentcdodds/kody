@@ -44,51 +44,43 @@ async function waitFor(predicate: () => boolean, label: string, maxTurns = 20) {
 	throw new Error(`timed out waiting for ${label}`)
 }
 
-test('view transition scheduler waits for the prior update callback before starting the next transition', async () => {
-	const firstCallback = deferred<void>()
-	const starts: Array<string> = []
-	const starter = vi.fn<ViewTransitionStarter>((callback) => {
-		const id = starts.length === 0 ? 'first' : 'second'
-		starts.push(id)
-		return fakeTransition({ updateCallbackDone: callback() })
-	})
-
-	const scheduler = createViewTransitionScheduler(() => starter)
-
-	scheduler.run(async () => {
-		await firstCallback.promise
-	})
-	await waitFor(() => starts.length === 1, 'first start')
-
-	scheduler.run(async () => {
-		// second swap
-	})
-
-	// Second start must not run until the first update callback settles.
-	expect(starts).toEqual(['first'])
-	expect(starter).toHaveBeenCalledTimes(1)
-
-	firstCallback.resolve()
-	await scheduler.whenIdle()
-
-	expect(starts).toEqual(['first', 'second'])
-	expect(starter).toHaveBeenCalledTimes(2)
-})
-
-test('view transition scheduler keeps only the latest pending swap under rapid superseding navigations', async () => {
+/** Starts swap 'a' as an in-flight transition held open until `firstCallback` resolves. */
+async function startBlockedScheduler() {
 	const firstCallback = deferred<void>()
 	const swaps: Array<string> = []
 	const starter = vi.fn<ViewTransitionStarter>((callback) =>
 		fakeTransition({ updateCallbackDone: callback() }),
 	)
-
 	const scheduler = createViewTransitionScheduler(() => starter)
 	scheduler.run(async () => {
 		swaps.push('a')
 		await firstCallback.promise
 	})
-	await waitFor(() => swaps.includes('a'), 'swap a')
+	await waitFor(() => starter.mock.calls.length === 1, 'first start')
+	return { firstCallback, swaps, starter, scheduler }
+}
 
+test('view transition scheduler waits for the prior update callback before starting the next transition', async () => {
+	const { firstCallback, swaps, starter, scheduler } =
+		await startBlockedScheduler()
+	scheduler.run(async () => {
+		swaps.push('b')
+	})
+
+	// Second start must not run until the first update callback settles.
+	expect(swaps).toEqual(['a'])
+	expect(starter).toHaveBeenCalledTimes(1)
+
+	firstCallback.resolve()
+	await scheduler.whenIdle()
+
+	expect(swaps).toEqual(['a', 'b'])
+	expect(starter).toHaveBeenCalledTimes(2)
+})
+
+test('view transition scheduler keeps only the latest pending swap under rapid superseding navigations', async () => {
+	const { firstCallback, swaps, starter, scheduler } =
+		await startBlockedScheduler()
 	scheduler.run(async () => {
 		swaps.push('b')
 	})
@@ -133,19 +125,8 @@ test('view transition scheduler skips the API when startViewTransition is unavai
 })
 
 test('cancelPending drops queued swaps so an instant navigation cannot be followed by a stale VT', async () => {
-	const firstCallback = deferred<void>()
-	const swaps: Array<string> = []
-	const starter = vi.fn<ViewTransitionStarter>((callback) =>
-		fakeTransition({ updateCallbackDone: callback() }),
-	)
-
-	const scheduler = createViewTransitionScheduler(() => starter)
-	scheduler.run(async () => {
-		swaps.push('a')
-		await firstCallback.promise
-	})
-	await waitFor(() => swaps.includes('a'), 'swap a')
-
+	const { firstCallback, swaps, starter, scheduler } =
+		await startBlockedScheduler()
 	scheduler.run(async () => {
 		swaps.push('b-queued')
 	})
@@ -165,16 +146,7 @@ test('skipped transition lifecycle rejections are swallowed (no unhandledrejecti
 	process.on('unhandledRejection', onUnhandled)
 
 	try {
-		const firstCallback = deferred<void>()
-		const starter = vi.fn<ViewTransitionStarter>((callback) =>
-			fakeTransition({ updateCallbackDone: callback() }),
-		)
-		const scheduler = createViewTransitionScheduler(() => starter)
-
-		scheduler.run(async () => {
-			await firstCallback.promise
-		})
-		await waitFor(() => starter.mock.calls.length === 1, 'first start')
+		const { firstCallback, scheduler } = await startBlockedScheduler()
 		// Supersede: skipTransition rejects ready/finished.
 		scheduler.run(async () => {})
 		firstCallback.resolve()

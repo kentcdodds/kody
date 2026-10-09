@@ -2,8 +2,25 @@ import { getSavedPackageByName } from '#worker/package-registry/repo.ts'
 import { resolveShareGrantedPackageImport } from '#worker/package-registry/share-grants.ts'
 import { getPlatformAccountByUsername } from '#worker/package-registry/scope-grants.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
+import {
+	checkPermission,
+	getRequestPermissions,
+	reachedPackage,
+} from '#worker/authorization/authorize.ts'
 
 export const packageSpecifierPrefix = 'kody:@'
+
+/**
+ * Caller referenced a `kody:@scope/pkg` import that is not installed for this
+ * user. Observability treats it like `PackageNameInputError` and keeps it off
+ * Sentry (KODY-86).
+ */
+export class SavedPackageNotFoundError extends Error {
+	constructor(packageName: string) {
+		super(`Saved package "${packageName}" was not found for this user.`)
+		this.name = 'SavedPackageNotFoundError'
+	}
+}
 
 export type KodyPackageSpecifier = {
 	packageName: string
@@ -38,6 +55,8 @@ export type ResolvedPackageImport = {
 	platformScope: string | null
 	shareOwned?: boolean
 	storageOwnerUserId?: string
+	/** Skip profile grant checks (platform or nested share-owner helpers). */
+	bypassConnectionProfileGrant?: boolean
 }
 
 function unsupportedSpecifierError(specifier: string) {
@@ -86,9 +105,11 @@ export async function resolveSavedPackageImport(input: {
 	userId: string
 	specifier: string | KodyPackageSpecifier
 	/**
-	 * The dynamic-import hydration lane persists rebuilt artifacts under the
-	 * caller's identity, which must never happen for platform-owned sources;
-	 * it opts out and reports a teaching error instead.
+	 * The dynamic-import hydration lane loads source and published artifacts
+	 * under `sourceOwnerUserId` (own package or share grant). Rebuild+persist
+	 * is owner-only; share guests fail closed when the artifact is missing.
+	 * Platform-owned sources must never rebuild here; the lane opts out and
+	 * reports a teaching error instead.
 	 */
 	allowPlatformScopes?: boolean
 	/**
@@ -113,13 +134,16 @@ export async function resolveSavedPackageImport(input: {
 			name: parsed.packageName,
 		})
 		if (ownerOwned) {
-			return {
+			return allowResolvedPackageImport({
 				row: ownerOwned,
 				sourceOwnerUserId: input.nestedShareOwnerUserId,
 				platformScope: null,
 				shareOwned: true,
 				storageOwnerUserId: input.nestedShareOwnerUserId,
-			}
+				// Nested helpers of an already-granted shared package ride that
+				// package's published graph; they are not independently choosable.
+				bypassConnectionProfileGrant: true,
+			})
 		}
 	}
 	const own = await getSavedPackageByName(input.db, {
@@ -127,11 +151,11 @@ export async function resolveSavedPackageImport(input: {
 		name: parsed.packageName,
 	})
 	if (own) {
-		return {
+		return allowResolvedPackageImport({
 			row: own,
 			sourceOwnerUserId: input.userId,
 			platformScope: null,
-		}
+		})
 	}
 	const shared = await resolveShareGrantedPackageImport({
 		db: input.db,
@@ -139,19 +163,45 @@ export async function resolveSavedPackageImport(input: {
 		packageName: parsed.packageName,
 	})
 	if (shared) {
-		return {
+		return allowResolvedPackageImport({
 			row: shared.row,
 			sourceOwnerUserId: shared.sourceOwnerUserId,
 			platformScope: null,
 			shareOwned: true,
 			storageOwnerUserId: shared.sourceOwnerUserId,
-		}
+		})
 	}
 	if (input.allowPlatformScopes !== true) return null
-	return await resolvePlatformScopedPackageImport({
+	const platform = await resolvePlatformScopedPackageImport({
 		db: input.db,
 		packageName: parsed.packageName,
 	})
+	return platform ? allowResolvedPackageImport(platform) : null
+}
+
+function allowResolvedPackageImport(
+	resolution: ResolvedPackageImport,
+): ResolvedPackageImport {
+	const access = getRequestPermissions()
+	// Outside a request binding (jobs, apps, nested runtimes) → allow.
+	if (!access) return resolution
+	// Platform packages and nested share-owner helpers are infrastructure for
+	// an already-granted package graph, not chooser entries.
+	if (resolution.platformScope || resolution.bypassConnectionProfileGrant) {
+		return resolution
+	}
+	const decision = checkPermission(
+		access,
+		'package:execute',
+		reachedPackage(access.orgId, {
+			id: resolution.row.id,
+			label: resolution.row.name,
+		}),
+	)
+	// Do not collapse a scope/permission denial into "package not found" —
+	// callers (CLI package-graph) need the missing scope named.
+	if (!decision.allowed) throw decision.error
+	return resolution
 }
 
 export async function resolvePlatformScopedPackageImport(input: {

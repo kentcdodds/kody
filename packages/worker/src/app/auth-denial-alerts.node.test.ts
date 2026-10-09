@@ -1,12 +1,18 @@
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { authDenialBurstTopic } from './auth-denial-subscription-event.ts'
+import type * as authDenialPackageSubscriptions from './auth-denial-package-subscriptions.ts'
 
-const dispatchAuthDenialBurstSubscriptionEvent = vi.fn(async () => [])
+const dispatchAuthDenialBurstSubscriptionEvent = vi.fn<
+	typeof authDenialPackageSubscriptions.dispatchAuthDenialBurstSubscriptionEvent
+>(async () => [])
 
 vi.mock('./auth-denial-package-subscriptions.ts', () => ({
-	dispatchAuthDenialBurstSubscriptionEvent: (...args: Array<unknown>) =>
-		dispatchAuthDenialBurstSubscriptionEvent(...args),
+	dispatchAuthDenialBurstSubscriptionEvent: (
+		...args: Parameters<
+			typeof authDenialPackageSubscriptions.dispatchAuthDenialBurstSubscriptionEvent
+		>
+	) => dispatchAuthDenialBurstSubscriptionEvent(...args),
 }))
 
 const {
