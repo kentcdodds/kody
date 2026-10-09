@@ -6,6 +6,7 @@ import {
 } from '#worker/billing/billing-config.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
 import { buildPreviewResourceNames } from '../ci/preview-resources.ts'
+import { defaultOauthKvTitle } from '../ci/production-resources.ts'
 import { cloudflareApiRequest, fail, parseJsonc } from '../ci/resource-utils.ts'
 import {
 	assertRehearsalWorkerName,
@@ -33,14 +34,67 @@ export function parseQueryTarget(value: string): QueryTarget {
 	return { kind: 'preview', workerName: assertRehearsalWorkerName(value) }
 }
 
-export function targetResourceNames(target: QueryTarget) {
+const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
+
+/**
+ * The production OAuth KV title the way `production-resources.ts ensure`
+ * resolves it: a title on the `env.production` OAUTH_KV binding wins, else the
+ * default derived from the worker name (`kody` -> `kody-oauth`).
+ */
+export async function resolveProductionOauthKvTitle(
+	wranglerPath = defaultWranglerConfigPath,
+) {
+	const config = parseJsonc<{
+		name?: unknown
+		env?: {
+			production?: {
+				kv_namespaces?: Array<{ binding?: unknown; title?: unknown }>
+			}
+		}
+	}>(await readFile(wranglerPath, 'utf8'))
+	if (typeof config.name !== 'string' || !config.name) {
+		throw new Error(`${wranglerPath} is missing the top-level worker name.`)
+	}
+	const entry = config.env?.production?.kv_namespaces?.find(
+		(candidate) => candidate.binding === 'OAUTH_KV',
+	)
+	if (!entry) {
+		throw new Error(
+			`${wranglerPath} has no env.production OAUTH_KV kv_namespaces binding.`,
+		)
+	}
+	return typeof entry.title === 'string' && entry.title.length > 0
+		? entry.title
+		: defaultOauthKvTitle(config.name)
+}
+
+export function targetAppD1Name(target: QueryTarget) {
 	switch (target.kind) {
 		case 'production':
-			return { appD1Name: 'kody', oauthKvTitle: 'kody-production-oauth' }
+			return 'kody'
+		case 'preview':
+			return buildPreviewResourceNames(target.workerName).d1DatabaseName
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown query target: ${JSON.stringify(exhaustive)}`)
+		}
+	}
+}
+
+export async function targetResourceNames(
+	target: QueryTarget,
+	wranglerPath = defaultWranglerConfigPath,
+) {
+	switch (target.kind) {
+		case 'production':
+			return {
+				appD1Name: targetAppD1Name(target),
+				oauthKvTitle: await resolveProductionOauthKvTitle(wranglerPath),
+			}
 		case 'preview': {
 			const names = buildPreviewResourceNames(target.workerName)
 			return {
-				appD1Name: names.d1DatabaseName,
+				appD1Name: targetAppD1Name(target),
 				oauthKvTitle: names.oauthKvTitle,
 			}
 		}
@@ -271,7 +325,7 @@ export type ProductionQueryReport = {
 	stripeSubscriptions: StripeSubscriptionCounts
 }
 
-async function resolveD1Uuid(client: CloudflareClient, name: string) {
+export async function resolveD1Uuid(client: CloudflareClient, name: string) {
 	const response = await cloudflareApiRequest<
 		Array<{ uuid: string; name: string }>
 	>({
@@ -520,7 +574,7 @@ export async function runProductionQueries(input: {
 	now?: () => Date
 }): Promise<ProductionQueryReport> {
 	const { client, target } = input
-	const names = targetResourceNames(target)
+	const names = await targetResourceNames(target)
 	const appUuid = await resolveD1Uuid(client, names.appD1Name)
 
 	const platformRows = await readOnlyD1Query<Record<string, unknown>>(

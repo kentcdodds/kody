@@ -1,18 +1,16 @@
 # `packageStorage()` grants and stamp-aligned secrets
 
-How `packageStorage()` and user-secret authority work under
-[0036](./decisions/0036-platform-packages-fork-only.md) (person accounts fork
-`@kody/*` before running it) and
-[0037](./decisions/0037-no-author-packages-invoke.md) (authors compose with
-static import / `import(specifier)` / workflows; external clients use inbound
-webhooks).
+How `packageStorage()` and user-secret authority work when imports resolve only
+in the caller's org (a package from another org, including `@kody/*`, is forked
+first; see
+[0067](./decisions/0067-cross-org-grants-replace-shares-and-platform-accounts.md))
+and under [0037](./decisions/0037-no-author-packages-invoke.md) (authors compose
+with static import / `import(specifier)` / workflows; external clients use
+inbound webhooks).
 
-Related: [0014](./decisions/0014-platform-live-packages.md) (grant exclusion for
-platform-owned static deps),
-[#1337](https://github.com/kentcdodds/kody/pull/1337) (fail-closed grants),
-[#1691](https://github.com/kentcdodds/kody/pull/1691) (caller secrets on
-official use), [#1741](https://github.com/kentcdodds/kody/pull/1741) (0036),
-[#1742](https://github.com/kentcdodds/kody/pull/1742) (0037).
+Related: [#1337](https://github.com/kentcdodds/kody/pull/1337) (fail-closed
+grants), [#1691](https://github.com/kentcdodds/kody/pull/1691) (caller secrets
+on package use), [#1742](https://github.com/kentcdodds/kody/pull/1742) (0037).
 
 ## What the code does
 
@@ -36,12 +34,12 @@ the grant is the security boundary.
    `packages/worker/src/mcp/run-kody-registry.ts` builds the set from
    host-controlled provenance only:
    - the run's `packageContext.packageId` (when the run _is_ a package)
-   - each static dependency `packageId` where `platformOwned !== true`,
-     including `transitive: true` entries: packages that a dependency's export
-     statically imports from files reachable from that export
-     (`resolveKodyDependenciesForEntryPoint` in `module-graph-workspace.ts`).
-     Execute that imports only A still grants B when A's export imports B.
-     Static-call metering, popularity, and republish staleness stay direct-only.
+   - each static dependency `packageId`, including `transitive: true` entries:
+     packages that a dependency's export statically imports from files reachable
+     from that export (`resolveKodyDependenciesForEntryPoint` in
+     `module-graph-workspace.ts`). Execute that imports only A still grants B
+     when A's export imports B. Static-call metering, popularity, and republish
+     staleness stay direct-only.
    - dynamic-import artifact ids installed during hydration
 3. **Enforce.** `createPackageStorageKodyTools` rejects any sandbox-supplied
    `packageId` outside that set. Secret mounts (`packageSecrets`) do not take an
@@ -49,20 +47,14 @@ the grant is the security boundary.
    honors only the stamp identity (hidden ALS / capability field) or the run
    package, and only when that id is in the grant set. Then `allowed_packages` /
    implicit read checks run as that package. The StorageRunner name is
-   `(callerUserId, package:{packageId})` for caller-owned packages, so a granted
-   id is a **per-caller** bucket. Person-to-person
-   [package share grants](../guides/package-sharing.md) are the exception:
-   accepted grants route `packageStorage()` to the **owner's** bucket
-   (`storageOwnerUserId`) so guests share one package state and the owner pays
-   storage. Shared code still cannot read the guest's other user secrets.
+   `(callerUserId, package:{packageId})`, so a granted id is a **per-caller**
+   bucket.
 
-When the bundler would resolve `kody:@kody/…` live, it records
-`platformOwned: true` on that `BundleArtifactDependency`
-(`module-graph-workspace.ts`). The grant collector **drops** that id. Under
-0036, person accounts do not live-resolve `@kody/*` at all — they
-`communityFork` first — so the person-account bucket is the **fork's** UUID.
-Caller-owned static imports already receive `packageStorage()` grants and
-stamp-aligned secret authority.
+Static imports resolve only to packages in the caller's org, so every static
+dependency id is one the org owns. A package from another org (for example
+`@kody/github`) is `communityFork`ed first, and the bucket is the **fork's**
+UUID. Static imports receive `packageStorage()` grants and stamp-aligned secret
+authority.
 
 `packageContext` on a static import from execute stays `null`. Code that needs
 the ambient run (hosted URL, app paths) must run as that package: inbound
@@ -75,14 +67,14 @@ otherwise as the run.
 
 ## Recommended model (secrets, storage, context)
 
-Person accounts fork `@kody/*` and then only run **their** copy. Three facts,
-one rule each:
+An org forks a package from another org and then only runs **its** copy. Three
+facts, one rule each:
 
-| Thing              | Identity                         | Rule                                                                                                      |
-| ------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `packageStorage()` | declaring module (bundler stamp) | A's code hits `(callerUserId, package:{A.id})` when granted; accepted share grants use the owner's bucket |
-| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                                   |
-| Secrets            | declaring module (bundler stamp) | user-secret `allowed_packages` and `packageSecrets` mounts check the stamp when the call site is stamped  |
+| Thing              | Identity                         | Rule                                                                                                     |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `packageStorage()` | declaring module (bundler stamp) | A's code hits `(callerUserId, package:{A.id})` when granted                                              |
+| `packageContext`   | the run                          | one ambient; A only when the run _is_ A                                                                  |
+| Secrets            | declaring module (bundler stamp) | user-secret `allowed_packages` and `packageSecrets` mounts check the stamp when the call site is stamped |
 
 **Composition:** static `import` when the name is known (library in this
 isolate). Computed `import(specifier)` when the name is data (caller-owned /
@@ -189,7 +181,6 @@ sequenceDiagram
 	participant Amod as A's module
 	Caller->>Execute: await import(runtimeSpecifier)
 	Execute->>Hydrate: resolveCurrentDynamicPackageArtifact
-	Execute->>Hydrate: allowPlatformScopes false
 	Hydrate->>KV: persist importable-module under caller userId
 	KV-->>Hydrate: artifact
 	Hydrate-->>Execute: install A's modules in B's isolate
@@ -200,10 +191,8 @@ sequenceDiagram
 	Note over Amod: secrets authorized as A's stamp
 ```
 
-0014 blocked **platform** dynamic import because that persist step writes under
-the **caller**. A live `@kody/*` specifier would store an official artifact as
-if the person owned it. Under 0036 person accounts cannot resolve `@kody/*` at
-all, so that footgun does not apply to person execute.
+The persist step writes under the **caller**, which is safe because the
+specifier can only resolve to a package in the caller's org.
 
 ESM `import()` has no `params`, no `idempotencyKey`, and does not start a
 package run. Ambient `packageContext` stays this run. Do not overload `import()`
@@ -223,17 +212,3 @@ sequenceDiagram
 	Note over Enter: HTTP token job subscription app
 	Note over Import: making import mean enter-as-package rebuilds invoke behind ESM
 ```
-
-## Why official static-import grants are vacated for person accounts
-
-0014 excluded platform-owned dependency ids from `packageStorage()` grants so
-live platform code stayed stateless in the caller. 0036 removed the
-person-account live-resolve lane entirely: there is no official static-import
-grant to add for person execute or person packages. The durable person-account
-path is fork, then import the fork. Platform-account packages may still compose
-with each other when the operator publishes them.
-
-The access-denied message that says “statically import so the bundler records
-the dependency” applies to **caller-owned** packages. For a platform-owned id
-the dependency is recorded and the grant drops it — but person accounts never
-reach that path under 0036.

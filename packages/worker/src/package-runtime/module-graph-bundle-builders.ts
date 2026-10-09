@@ -1,6 +1,5 @@
 import { sha256Base64Url } from '@kody-internal/shared/sha256.ts'
 import { normalizePackageWorkspacePath } from '#worker/package-registry/manifest.ts'
-import { isPlatformAccountStableUserId } from '#worker/package-registry/scope-grants.ts'
 import {
 	createPublishedPackageCacheKey,
 	createPublishedPackagePromiseCache,
@@ -156,14 +155,6 @@ async function createModuleBundleCacheKey(input: {
 	])
 }
 
-async function resolveAllowPlatformScopes(input: {
-	env: Env
-	userId: string
-	bundleContext?: 'ad-hoc-execute' | 'saved-package-module'
-}) {
-	return await isPlatformAccountStableUserId(input.env.APP_DB, input.userId)
-}
-
 function cloneRuntimeBundle(bundle: RuntimeBundle): RuntimeBundle {
 	return {
 		mainModule: bundle.mainModule,
@@ -197,7 +188,6 @@ export async function buildKodyModuleBundle(input: {
 	 */
 	prepareCache?: PreparedKodyGraphCache
 }) {
-	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 	const prepared = await getOrPrepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -205,7 +195,6 @@ export async function buildKodyModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.rootPackageId,
-		allowPlatformScopes,
 		prepareCache: input.prepareCache,
 	})
 	const files = clonePreparedGraphFiles(prepared.files)
@@ -255,7 +244,6 @@ export async function buildKodyModuleBundle(input: {
 			dependencies: await resolveKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
-				allowPlatformScopes,
 			}),
 			publishedArtifactDependencies,
 		})
@@ -298,7 +286,6 @@ export async function buildKodyImportableModuleBundle(input: {
 	 */
 	prepareCache?: PreparedKodyGraphCache
 }) {
-	const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 	const prepared = await getOrPrepareKodyGraphFiles({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -306,7 +293,6 @@ export async function buildKodyImportableModuleBundle(input: {
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.rootPackageId,
-		allowPlatformScopes,
 		prepareCache: input.prepareCache,
 	})
 	const files = clonePreparedGraphFiles(prepared.files)
@@ -344,7 +330,6 @@ export async function buildKodyImportableModuleBundle(input: {
 			dependencies: await resolveKodyDependenciesForEntryPoint({
 				...input,
 				loadedPackages: packages,
-				allowPlatformScopes,
 			}),
 			publishedArtifactDependencies,
 		}),
@@ -365,7 +350,6 @@ export async function buildKodyAppBundle(input: {
 	prepareCache?: PreparedKodyGraphCache
 }) {
 	const buildBundle = async () => {
-		const allowPlatformScopes = await resolveAllowPlatformScopes(input)
 		const prepared = await getOrPrepareKodyGraphFiles({
 			env: input.env,
 			baseUrl: input.baseUrl,
@@ -373,7 +357,6 @@ export async function buildKodyAppBundle(input: {
 			sourceFiles: input.sourceFiles,
 			entryPoint: input.entryPoint,
 			rootPackageId: input.rootPackageId,
-			allowPlatformScopes,
 			prepareCache: input.prepareCache,
 		})
 		const files = clonePreparedGraphFiles(prepared.files)
@@ -411,7 +394,6 @@ export async function buildKodyAppBundle(input: {
 				dependencies: await resolveKodyDependenciesForEntryPoint({
 					...input,
 					loadedPackages: packages,
-					allowPlatformScopes,
 				}),
 				publishedArtifactDependencies,
 			}),

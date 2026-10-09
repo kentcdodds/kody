@@ -3,7 +3,7 @@ id: provider_origin
 title: Connect Origin
 summary:
   Verified walkthrough for connecting Cursor Origin to Kody: Origin Apps with
-  Ed25519 signing keys, installation access tokens, the official helpers
+  Ed25519 signing keys, installation access tokens, the community helpers
   package, and a rate-limit smoke test. Cloud Agents API keys are not Origin
   credentials.
 category: provider

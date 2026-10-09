@@ -29,6 +29,7 @@ function createFakeDb(
 		emailUsageRows?: Array<EmailUsageRow>
 		systemEmailUsageRows?: Array<EmailUsageRow>
 		liveUserIds?: Array<string>
+		liveOrgIds?: Array<string>
 	} = {},
 ) {
 	const rollups = input.existingRollups?.map((row) => ({ ...row })) ?? []
@@ -68,6 +69,15 @@ function createFakeDb(
 										.map((stable_user_id) => ({ stable_user_id })),
 								}
 							}
+							if (sql.includes('SELECT id FROM orgs')) {
+								const allowed = new Set(input.liveOrgIds ?? [])
+								return {
+									results: params
+										.map(String)
+										.filter((orgId) => allowed.has(orgId))
+										.map((id) => ({ id })),
+								}
+							}
 							if (sql.includes('FROM email_delivery_events event')) {
 								selects.push({ sql, params })
 								return { results: input.emailUsageRows ?? [] }
@@ -95,13 +105,15 @@ function createFakeDb(
 							deletes.push({ sql, params })
 							if (sql.includes('NOT EXISTS')) {
 								const months = new Set(params.slice(0, 2))
-								const live = input.liveUserIds
+								const liveUsers = input.liveUserIds
+								const liveOrgs = input.liveOrgIds
 								return removeRollups(
 									(row) =>
 										months.has(row.month) &&
 										row.user_id !== 'system:email' &&
-										live != null &&
-										!live.includes(row.user_id),
+										(liveUsers != null || liveOrgs != null) &&
+										!liveUsers?.includes(row.user_id) &&
+										!liveOrgs?.includes(row.user_id),
 								)
 							}
 							const pairs = new Set<string>()
@@ -397,6 +409,53 @@ test('aggregateUsageRollups honors CLOUDFLARE_API_BASE_URL and the preview datas
 		]),
 	).toEqual([])
 	expect(batches).toHaveLength(0)
+})
+
+test('hourly aggregation keeps live team org rollups and drops deleted orgs', async () => {
+	using _fetch = fetchReplying(
+		dataReply(
+			aeRow('org-team', 'dynamic_worker_day', { event_count: 351 }),
+			aeRow('user-personal', 'dynamic_worker_day', { event_count: 351 }),
+			aeRow('org-overlap', 'dynamic_worker_day', { event_count: 351 }),
+			aeRow('org-deleted', 'dynamic_worker_day', { event_count: 400 }),
+		),
+		empty,
+	)
+	const { db, batches, deletes, rollups } = createFakeDb({
+		liveUserIds: ['user-personal', 'org-overlap'],
+		liveOrgIds: ['org-team', 'org-overlap'],
+		existingRollups: [
+			{
+				user_id: 'org-team',
+				metric: 'dynamic_worker_day',
+				month: '2026-07',
+			},
+			{
+				user_id: 'org-deleted',
+				metric: 'dynamic_worker_day',
+				month: '2026-07',
+			},
+		],
+	})
+
+	await expect(aggregate(db)).resolves.toMatchObject({
+		upsertedRows: 3,
+		users: 3,
+	})
+	expect(batches[0]?.map((statement) => statement.params[0]).sort()).toEqual([
+		'org-overlap',
+		'org-team',
+		'user-personal',
+	])
+	expect(batches[0]?.[0]?.sql).toContain('FROM orgs')
+	expect(
+		deletes.some(
+			(statement) =>
+				statement.sql.includes('NOT EXISTS') &&
+				statement.sql.includes('FROM orgs'),
+		),
+	).toBe(true)
+	expect(rollups.map((row) => row.user_id)).toEqual(['org-team'])
 })
 
 test('hourly aggregation cannot recreate rollups for deleting or deleted users', async () => {

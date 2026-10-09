@@ -69,8 +69,8 @@ websites fail closed.
   `secretProviderLock` returns the approval URL; only the owner can grant or
   revoke on `/account/secret-providers`. Unbind, and rebind to a different
   provider package, drop every grant for that provider.
-- Share-granted packages use the **package owner's** binding and grants, not the
-  guest's.
+- A package runs in the org that owns it, so a collaborator holding a grant uses
+  that org's binding and grants, not their own.
 
 Ungranted package use fails **before** the value-returning provider call.
 

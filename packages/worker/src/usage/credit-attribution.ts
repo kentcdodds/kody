@@ -133,8 +133,9 @@ export async function aggregateCreditAttributionDaily(
 		baseUrl,
 		query: buildCreditAttributionDailyQuery(dataset, utcMonthBounds(now)),
 	})
-	// Same live-user guard as usage_rollups: AE retains points after account
-	// deletion; never reinsert those into D1 attribution rows.
+	// Same live-owner guard as usage_rollups: AE retains points after account
+	// deletion; never reinsert those into D1 attribution rows. Team org ids
+	// stay when the org row is live.
 	const liveRows = await filterLiveUsageRows(env.APP_DB, analyticsRows)
 	const month = utcMonthKey(now)
 	const updatedAt = now.toISOString()

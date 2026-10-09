@@ -50,7 +50,6 @@ test('router prefers static nested paths and package files over dynamic siblings
 		'communityPackageAsset',
 		'communityDetailAsset',
 		'communityPackageApprovePublish',
-		'communityPackageApproveChanges',
 		'accountPackageDetail',
 		'accountPackageApprovePublish',
 		'accountPackageFiles',

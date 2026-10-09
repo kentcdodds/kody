@@ -29,11 +29,11 @@ Packages are the saved-entity unit across search, execute, repo editing, and UI
 hosting. The package page tabs are **Repo**, **Files**
 (`/@username/:name/tree/:ref` — the same URL whether the package is public or
 private), and **Settings**. Visibility keeps private source off the public web.
-Owner controls (lock, visibility, share, webhooks, delete) live at
+Owner controls (lock, visibility, webhooks, delete) live at
 `/@username/:name/settings`. Public listings also expose a read-only
 [`.git` clone URL](./community-packages.md#clone-a-public-package-read-only-git).
-Inbound HTTP uses [webhooks](./webhooks.md). To let another paid account use a
-package without getting a copy, [share it](../guides/package-sharing.md). To
+Inbound HTTP uses [webhooks](./webhooks.md). To let someone use a package
+without getting a copy, [grant them access](../guides/package-sharing.md). To
 ship Agent Skills with a package, see
 [package skills](../guides/package-skills.md).
 
@@ -158,16 +158,12 @@ exhaustive.
   package's name is known when the code is written. Static imports are typed,
   publish-verified, dependency-graph-visible, and add zero per-call platform
   cost.
-- **Platform (built-in) scopes are fork-only.** When a scope's username belongs
-  to a platform account (for example `@kody`), person accounts must not
-  statically import that package from ad hoc `execute` or from a saved
-  person-owned package. Official `@kody` packages may still compose with each
-  other. Publish checks reject `kody:@kody/…` static imports and
-  `kody.dependencies` entries in person-owned package source. Execute fails the
-  same way. Fork the official package into your scope (`communityFork`) and
-  import that copy. Dynamic `import("kody:@kody/…")` is unsupported. Platform
-  packages appear in `search` results (marked with their platform scope) so
-  agents can discover them and fork.
+- **Imports resolve only in your org.** A package from another org (including
+  the public community packages from the `@kody` org) cannot be imported from ad
+  hoc `execute` or from a saved package, even with a grant. Publish checks
+  reject a static import or `kody.dependencies` entry for another org's package,
+  and execute fails the same way. Fork the package into your org
+  (`communityFork`) and import that copy.
 - Static `kody:@...` imports in saved package code are bundled into published
   runtime artifacts as snapshots of the imported package's published bundle.
   Republishing the imported package does not change already-published
@@ -242,9 +238,8 @@ const account = await profile({})
 ```
 
 Declare every static `kody:@` import in `package.json#kody.dependencies`.
-Person-owned packages must not import a platform scope; `communityFork` first.
-`packageStorage()` on a static import reaches the declaring package's bucket for
-**caller-owned** packages.
+Imports resolve only in your org; `communityFork` another org's package first.
+`packageStorage()` on a static import reaches the declaring package's bucket.
 
 Interactive MCP `packageSubscriptionDispatch` is the post-publish subscription
 smoke test, not a composition primitive. External trusted clients that must call
@@ -254,11 +249,11 @@ provider needs the URL, and POST JSON (`inputMode: "params"` and
 `Idempotency-Key` for first-party clients). See
 [Inbound webhooks](./webhooks.md).
 
-Scoped resolution is exact: `kody:@kentcdodds/google` selects a package under
-that person scope that the caller owns or has an accepted
-[share grant](../guides/package-sharing.md) to use. A platform specifier such as
-`kody:@kody/google` is not runnable in a person account — `communityFork` it
-first.
+Scoped resolution is exact: `kody:@kentcdodds/google` selects that package only
+when it belongs to the caller's org. A package from another org, such as
+`kody:@kody/google`, is not runnable until you `communityFork` it into your org.
+To run someone else's live package, they
+[grant you access](../guides/package-sharing.md) and you connect to their org.
 
 ## Package storage
 
@@ -286,13 +281,10 @@ bucket no matter where the code runs:
   run-scoped state in that bucket under run-scoped keys.
 - When the module is statically imported (`kody:@scope/package/export`) into an
   ad hoc `execute` call or into another package, each module reads and writes
-  the bucket of the package it came from. For caller-owned packages that is the
-  calling user's account. For an accepted
-  [share grant](../guides/package-sharing.md), `packageStorage()` uses the
-  owner's bucket so guests share one package state. Grants are per-bundle, not
-  per-module: statically importing a package grants the whole bundle read/write
-  access to that package's bucket, so treat static imports of unadopted
-  community forks as a trust decision (adopt after review).
+  the bucket of the package it came from, in the calling user's account. Grants
+  are per-bundle, not per-module: statically importing a package grants the
+  whole bundle read/write access to that package's bucket, so treat static
+  imports of unadopted community forks as a trust decision (adopt after review).
 
 ```ts
 import { packageStorage } from 'kody:runtime'

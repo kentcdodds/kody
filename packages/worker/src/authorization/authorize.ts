@@ -4,7 +4,10 @@ import {
 	type OrgPermission,
 	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	connectionProfileAllows,
@@ -255,7 +258,7 @@ function denialMessage(
 		case 'missing_permission':
 			return `Missing ${permission}${target}. An org Owner can grant it.`
 		case 'credential_scope':
-			return `This credential is not scoped for ${permission}${target}.`
+			return `This credential is not scoped for ${permission}${target}. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.`
 		case 'connection_profile': {
 			const action = profileActionFor(permission) ?? permission
 			return `This connection profile cannot ${action}${resource ? ` ${describeResource(resource)}` : ''}.`
@@ -308,17 +311,21 @@ export function canSeeResource(
 }
 
 /**
- * A package the request reached through its own lookups: one its org owns,
- * one delegated through `package_scope`, an accepted share, or a built-in
- * platform package. Those lookups run their own checks first, so the
- * package counts as in the request's org until delegation becomes an org
- * binding, shares become grants, and platform packages need a fork (#3040).
+ * The org resource for a saved package, bound to the org that owns it
+ * (`saved_packages.user_id`). A package from another org is denied with
+ * `wrong_org`.
  */
-export function reachedPackage(
-	orgId: OwnerId,
-	input: { id: string; label?: string },
-): OrgResource {
-	return { type: 'package', id: input.id, orgId, label: input.label }
+export function packageResource(input: {
+	id: string
+	userId: string
+	label?: string
+}): OrgResource {
+	return {
+		type: 'package',
+		id: input.id,
+		orgId: ownerIdFromStored(input.userId),
+		label: input.label,
+	}
 }
 
 const requestPermissionsStorage = new AsyncLocalStorage<EffectivePermissions>()

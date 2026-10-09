@@ -281,7 +281,6 @@ function createFeatureFlagsTestDb(
 
 const registryKeys = [
 	'demo-indicator',
-	'package-share-grants',
 	'jev-search-rerank',
 	'execute-invoke',
 	'connection-profiles',
@@ -564,7 +563,6 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		goal: 'increase',
 	}
 	const registryExpectations: Array<[string, Record<string, unknown>]> = [
-		['package-share-grants', { successMetric: null }],
 		[
 			'jev-search-rerank',
 			{ defaultAudience: 'experiments_opt_in', successMetric: executeMetric },

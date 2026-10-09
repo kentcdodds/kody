@@ -1,9 +1,7 @@
 // remix-skill: owner settings for a package (`/@user/name/settings`).
 import { type Handle, css } from 'remix/component'
 import { createMatcher } from 'remix/route-pattern/match'
-import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { isFeatureFlagEnabled } from '#client/feature-flags.ts'
 import {
 	createRouteData,
 	renderRoutePendingStatus,
@@ -12,14 +10,12 @@ import {
 import { readRouterPathname } from '#client/router-location.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
-import { packageShareGrantsFlagKey } from '#universal/feature-flags/registry.ts'
 import { resolvePackageListIconUrl } from '#universal/identity-icon-urls.ts'
 import { type AccountPackageDetail } from '#universal/loader-data.ts'
 import {
 	fallbackDefaultBranchName,
 	getPackageTreeHref,
 } from '#universal/package-files.ts'
-import { type PackageShareGrantLoaderView } from '#universal/package-share.ts'
 import { renderPackageRepoChrome } from '#universal/package-repo-nav.tsx'
 import { routes } from '#universal/routes.ts'
 import {
@@ -38,11 +34,6 @@ import {
 	renderOwnerPackageSection,
 	renderShellStatus,
 } from './community-detail-sections.tsx'
-import {
-	loadPackageShareGrants,
-	renderPackageShareSettings,
-} from './package-share-settings.tsx'
-import { postPackageShareAction } from './package-share-client.ts'
 import { createPackageWebhooksController } from './package-webhook-settings.tsx'
 
 const settingsMatcher = createMatcher(routes.communityPackageSettings.pattern)
@@ -59,12 +50,6 @@ export function PackageSettingsRoute(handle: Handle) {
 	/** Payload last applied to the closure state above. */
 	let appliedShell: PackageSettingsShell | null = null
 	const lockInFlight = new Map<string, string | null>()
-	let shareGrants: Array<PackageShareGrantLoaderView> = []
-	let shareInviteUsername = ''
-	let shareInviteEmail = ''
-	let shareBusy = false
-	let shareMessage: string | null = null
-	let shareLoadedFor = ''
 	const webhooks = createPackageWebhooksController(handle)
 	const settingsData = createRouteData<
 		'communityDetailShell',
@@ -158,81 +143,6 @@ export function PackageSettingsRoute(handle: Handle) {
 		handle.update()
 	}
 
-	async function refreshShareGrants(nextUsername: string, nextKodyId: string) {
-		const key = `${nextUsername}/${nextKodyId}`
-		if (!nextUsername || !nextKodyId || shareLoadedFor === key) return
-		shareLoadedFor = key
-		try {
-			const grants = await loadPackageShareGrants({
-				username: nextUsername,
-				kodyId: nextKodyId,
-			})
-			if (`${username}/${kodyId}` !== key) return
-			shareGrants = grants
-		} catch {
-			if (`${username}/${kodyId}` !== key) return
-			// Keep the key: the update below re-renders, and a cleared key
-			// would queue this same fetch again, looping on a persistent
-			// failure (for example the 404 the API answers when share grants
-			// are disabled). Invite / revoke clear it explicitly to refetch.
-			shareMessage = 'Unable to load who this package is shared with.'
-		}
-		handle.update()
-	}
-
-	async function inviteShare() {
-		if (shareBusy || !username || !kodyId) return
-		shareBusy = true
-		shareMessage = null
-		handle.update()
-		const result = await postPackageShareAction({
-			intent: 'invite',
-			ownerUsername: username,
-			kodyId,
-			username: shareInviteUsername,
-			email: shareInviteEmail,
-		})
-		shareBusy = false
-		if (result.status === 'unauthorized') {
-			window.location.assign('/login')
-			return
-		}
-		if (result.status === 'error') {
-			shareMessage = result.message
-			handle.update()
-			return
-		}
-		shareInviteUsername = ''
-		shareInviteEmail = ''
-		shareLoadedFor = ''
-		await refreshShareGrants(username, kodyId)
-	}
-
-	async function revokeShare(grantId: string) {
-		if (shareBusy || !username || !kodyId) return
-		shareBusy = true
-		shareMessage = null
-		handle.update()
-		const result = await postPackageShareAction({
-			intent: 'revoke',
-			ownerUsername: username,
-			kodyId,
-			grantId,
-		})
-		shareBusy = false
-		if (result.status === 'unauthorized') {
-			window.location.assign('/login')
-			return
-		}
-		if (result.status === 'error') {
-			shareMessage = result.message
-			handle.update()
-			return
-		}
-		shareLoadedFor = ''
-		await refreshShareGrants(username, kodyId)
-	}
-
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
 		const pathname = readRouterPathname(handle)
@@ -288,22 +198,6 @@ export function PackageSettingsRoute(handle: Handle) {
 		// The previous package's settings (`snapshot.stale`) stay on screen
 		// while a fallback fetch runs; the loading copy is for the cold path.
 		const showReady = snapshot.data?.kind === 'owner'
-		const shareEnabled = isFeatureFlagEnabled(
-			readAppSession(handle)?.session,
-			packageShareGrantsFlagKey,
-		)
-		// The share API answers 404 while the flag is off, so only the
-		// rendered Share section asks for its grants.
-		if (
-			showReady &&
-			shareEnabled &&
-			username &&
-			kodyId &&
-			shareLoadedFor !== `${username}/${kodyId}` &&
-			typeof document !== 'undefined'
-		) {
-			handle.queueTask(() => refreshShareGrants(username, kodyId))
-		}
 		if (showReady && username && kodyId && typeof document !== 'undefined') {
 			handle.queueTask(() => webhooks.ensureLoaded({ username, kodyId }))
 		}
@@ -370,27 +264,6 @@ export function PackageSettingsRoute(handle: Handle) {
 					: null}
 				{showReady && ownerPackage
 					? webhooks.render({ username, kodyId })
-					: null}
-				{showReady && ownerPackage && shareEnabled
-					? renderPackageShareSettings({
-							username,
-							kodyId,
-							grants: shareGrants,
-							inviteUsername: shareInviteUsername,
-							inviteEmail: shareInviteEmail,
-							busy: shareBusy,
-							message: shareMessage,
-							onInviteUsername: (value) => {
-								shareInviteUsername = value
-								handle.update()
-							},
-							onInviteEmail: (value) => {
-								shareInviteEmail = value
-								handle.update()
-							},
-							onInvite: () => void inviteShare(),
-							onRevoke: (grantId) => void revokeShare(grantId),
-						})
 					: null}
 			</article>
 		)

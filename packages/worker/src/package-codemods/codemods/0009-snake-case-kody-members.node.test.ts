@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest'
 import { snakeCaseKodyMembersCodemod } from './0009-snake-case-kody-members.ts'
 
+const packageContext = { packageName: '@user/demo' }
+
 function manifest() {
 	return `${JSON.stringify(
 		{
@@ -34,14 +36,14 @@ test('0009 recases snake_case kody members, brackets, and entity refs, and leave
 			'Call `kody.secret_list({})` or search `capability:secret_list`.\n',
 	}
 
-	expect(snakeCaseKodyMembersCodemod.detect(files)).toEqual(
+	expect(snakeCaseKodyMembersCodemod.detect(files, packageContext)).toEqual(
 		expect.arrayContaining([
 			{ path: 'README.md', message: expect.stringContaining('camelCase') },
 			{ path: 'index.ts', message: expect.stringContaining('camelCase') },
 		]),
 	)
 
-	const result = snakeCaseKodyMembersCodemod.transform(files)
+	const result = snakeCaseKodyMembersCodemod.transform(files, packageContext)
 	expect(result.changed).toBe(true)
 	expect(result.changedPaths).toEqual(['index.ts', 'README.md'])
 	expect(result.needsManual).toEqual([])
@@ -60,7 +62,10 @@ test('0009 recases snake_case kody members, brackets, and entity refs, and leave
 	expect(result.files['README.md']).toContain('kody.secretList({})')
 	expect(result.files['README.md']).toContain('capability:secretList')
 
-	const again = snakeCaseKodyMembersCodemod.transform(result.files)
+	const again = snakeCaseKodyMembersCodemod.transform(
+		result.files,
+		packageContext,
+	)
 	expect(again.changed).toBe(false)
 	expect(again.changedPaths).toEqual([])
 	expect(again.needsManual).toEqual([])
@@ -77,10 +82,10 @@ test('0009 recases leftover ambient kody.foo_bar without a kody:runtime import',
 		].join('\n'),
 	}
 
-	expect(snakeCaseKodyMembersCodemod.detect(files)).toEqual([
+	expect(snakeCaseKodyMembersCodemod.detect(files, packageContext)).toEqual([
 		{ path: 'legacy.ts', message: expect.stringContaining('camelCase') },
 	])
-	const result = snakeCaseKodyMembersCodemod.transform(files)
+	const result = snakeCaseKodyMembersCodemod.transform(files, packageContext)
 	expect(result.changedPaths).toEqual(['legacy.ts'])
 	expect(result.files['legacy.ts']).toContain(
 		'kody.packageGet({ package_id: "demo" })',
@@ -100,7 +105,7 @@ test('0009 detect does not skip a later file after a global entity-ref match', (
 		].join('\n'),
 	}
 
-	expect(snakeCaseKodyMembersCodemod.detect(files)).toEqual(
+	expect(snakeCaseKodyMembersCodemod.detect(files, packageContext)).toEqual(
 		expect.arrayContaining([
 			{
 				path: 'broken.ts',
@@ -109,7 +114,7 @@ test('0009 detect does not skip a later file after a global entity-ref match', (
 			{ path: 'refs.ts', message: expect.stringContaining('camelCase') },
 		]),
 	)
-	const result = snakeCaseKodyMembersCodemod.transform(files)
+	const result = snakeCaseKodyMembersCodemod.transform(files, packageContext)
 	expect(result.files['refs.ts']).toContain('"capability:packageGet"')
 	expect(result.needsManual).toEqual([
 		{
@@ -132,10 +137,10 @@ test('0009 flags computed kody[id] for manual recase and does not rewrite it', (
 		].join('\n'),
 	}
 
-	expect(snakeCaseKodyMembersCodemod.detect(files)).toEqual([
+	expect(snakeCaseKodyMembersCodemod.detect(files, packageContext)).toEqual([
 		{ path: 'dynamic.ts', message: expect.stringContaining('computed') },
 	])
-	const result = snakeCaseKodyMembersCodemod.transform(files)
+	const result = snakeCaseKodyMembersCodemod.transform(files, packageContext)
 	expect(result.changed).toBe(false)
 	expect(result.files['dynamic.ts']).toContain('kody[id]({})')
 	expect(result.needsManual).toEqual([

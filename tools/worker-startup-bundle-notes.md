@@ -114,8 +114,8 @@ Listing-only helpers live in the shared secrets service module
 (resolveSecretListScopeOrder / listSecretBucketsByScope). Runtime does not call
 them, but they sit in the same module as resolve and add a few KB. Share-grant
 import/storage routing added more. secretJwtSign JWA families (HMAC/PSS/ES plus
-extra RSA hashes) add ~0.5KB. Split listing out of service.ts or the share-grant
-runtime path if this budget is raised again.
+extra RSA hashes) add ~0.5KB. Split listing out of service.ts if this budget is
+raised again.
 
 - Package-app `/_assets/*` serving (fingerprinted client module, static assets
   directory) runs here: local dry-run 3_701_307 bytes. Package-app runtime

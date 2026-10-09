@@ -121,8 +121,8 @@ export function personalPackageFiles(input: {
 	]
 }
 
-/** A platform-scope package (`@<platform>/<leaf>`), published by a grantee. */
-export function platformPackageFiles(input: {
+/** An org package (`@<org>/<leaf>`), published by an org Owner. */
+export function orgPackageFiles(input: {
 	scope: string
 	leaf: string
 	description: string
@@ -144,32 +144,32 @@ export function platformPackageFiles(input: {
 		{ path: 'AGENTS.md', content: agentsMd },
 		{
 			path: 'src/index.ts',
-			content: `export default async function main() {\n\treturn { platform: ${JSON.stringify(input.scope)}, leaf: ${JSON.stringify(input.leaf)} }\n}\n`,
+			content: `export default async function main() {\n\treturn { org: ${JSON.stringify(input.scope)}, leaf: ${JSON.stringify(input.leaf)} }\n}\n`,
 		},
 	]
 }
 
-export type PlatformPackageVisibility = 'public' | 'private' | 'hidden'
+export type OrgPackageVisibility = 'public' | 'private' | 'hidden'
 
-export const platformPackages: ReadonlyArray<{
+export const orgPackages: ReadonlyArray<{
 	leaf: string
-	visibility: PlatformPackageVisibility
+	visibility: OrgPackageVisibility
 	description: string
 }> = [
 	{
 		leaf: 'rehearsal-public-tools',
 		visibility: 'public',
-		description: 'Public platform package with a community listing',
+		description: 'Public org package with a community listing',
 	},
 	{
 		leaf: 'rehearsal-private-tools',
 		visibility: 'private',
-		description: 'Private platform package',
+		description: 'Private org package',
 	},
 	{
 		leaf: 'rehearsal-hidden-tools',
 		visibility: 'hidden',
-		description: 'Platform package hidden from search discovery',
+		description: 'Org package hidden from search discovery',
 	},
 ]
 

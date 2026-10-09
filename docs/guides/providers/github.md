@@ -219,15 +219,16 @@ private repositories: their permissions are per-repository and per-capability.
 - Token exchange fails on the OAuth lane: the client secret is required even
   with PKCE. Regenerate the secret and reconnect.
 
-## Use the official package and verify
+## Use the `@kody/github` package and verify
 
-A saved token or integration is credentials only. Finish by forking the official
-helpers so day-to-day work goes through maintained code in **your** scope
-instead of hand-rolled API calls.
+A saved token or integration is credentials only. Finish by forking the
+`@kody/github` helpers so day-to-day work goes through maintained code in
+**your** org instead of hand-rolled API calls. `@kody/github` is a public
+community package from the `@kody` org.
 
 1. Search for `@kody/github`. It wraps REST, GraphQL, pagination, and PR
    helpers.
-2. `communityFork` it into your scope (or click **Install** on the listing).
+2. `communityFork` it into your org (or click **Install** on the listing).
 3. Check the fork's README **Required setup**: the default `bot` account reads
    the `githubAccessToken` secret — the exact name
    [Save the token](#save-the-token) uses, so no adaptation is needed for the

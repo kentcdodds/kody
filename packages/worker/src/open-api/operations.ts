@@ -198,17 +198,6 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 			'packagePublishExternalPush',
 		],
 		['GET', '/v1/package-subscriptions', 'packageSubscriptionsList'],
-		['GET', '/v1/package-shares', 'packageShareList'],
-		['POST', '/v1/package-shares', 'packageShareInvite'],
-		['POST', '/v1/package-shares/accept', 'packageShareAccept'],
-		['GET', '/v1/package-shares/{grant_id}', 'packageShareInspect'],
-		['POST', '/v1/package-shares/{grant_id}/revoke', 'packageShareRevoke'],
-		['POST', '/v1/package-shares/{grant_id}/leave', 'packageShareLeave'],
-		[
-			'POST',
-			'/v1/package-shares/{grant_id}/acknowledge-update',
-			'packageShareAcknowledgeUpdate',
-		],
 	]),
 	...capabilityRoutes('repos', [
 		['GET', '/v1/repos', 'repoList'],

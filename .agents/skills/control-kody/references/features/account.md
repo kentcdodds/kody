@@ -57,6 +57,10 @@ node tools/control-kody.ts request GET /account/connections.json
 
 - Seed users start empty. Profile fields exist; packages/secrets/jobs do not
   until you create them.
+- A successful `POST /account/delete` clears the session and the account page
+  navigates to `/?accountDeleted=1`. The homepage status
+  `data-testid="account-deleted-notice"` reads "Your Kody account has been
+  deleted". Do not delete the shared preview seed to prove this.
 - Connected agents (inbound MCP hosts) are not on this page. They live on
   [connections](./connections.md) at `/account/connections`; Overview only links
   there.

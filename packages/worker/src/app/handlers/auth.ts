@@ -409,7 +409,6 @@ export function createAuthHandler(env: Env) {
 						stableUserId: signupUser.stableUserId,
 						username: normalizedUsername,
 						createdAt: signupCreatedAt,
-						accountType: 'person',
 						plan: resolvePlanWrite(null),
 						signupWelcomeCreditsPending: 1,
 					})

@@ -162,44 +162,6 @@ function formatExport(
 	})
 }
 
-test('platform package heading detail tells person accounts to communityFork first', () => {
-	const detail = createHomeControlsDetail('bond-area-shades')
-	const lookupDefinition =
-		'export default async function lookup(input: { id: string }): Promise<{ id: string }>'
-	const formatted = formatExport(
-		{
-			subpath: './lookup',
-			runtimeTarget: 'src/lookup.ts',
-			description: 'Look up one official record.',
-			typeDefinition: lookupDefinition,
-			functions: [
-				defaultFunction('Look up one official record.', lookupDefinition),
-			],
-		},
-		{
-			detail: {
-				...detail,
-				title: '@kody/official-tools',
-				platformScope: 'kody',
-				record: {
-					...detail.record,
-					name: '@kody/official-tools',
-					kodyId: 'official-tools',
-				},
-			},
-		},
-	)
-	expect(formatted.structured).toMatchObject({
-		detailMode: 'export',
-		platformScope: 'kody',
-		importSpecifier: 'kody:@kody/official-tools/lookup',
-		followUp: expect.stringContaining('communityFork'),
-	})
-	expect(formatted.markdown).toContain(
-		'This is a platform (built-in) package from @kody. communityFork it into your scope before importing it.',
-	)
-})
-
 test('heading usage uses the namespace import without a callable and prefers the default export over named helpers', () => {
 	expect(
 		formatExport({

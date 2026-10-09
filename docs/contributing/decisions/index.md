@@ -54,9 +54,6 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0008 — No traces, previews, browser-run, gradual deploys, or session mining](./0008-declined-adlc-primitives.md)
 - [0011 — Keep workers-unit per-file isolation; do not warm DOs to "fix" slowness](./0011-workers-unit-pool-harness.md)
 - [0013 — Post-publish checks stay on MCP; no signed app URLs or inbox injection](./0013-synthetic-package-requests.md)
-- [0036 — Person accounts do not run official platform packages](./0036-platform-packages-fork-only.md)
-  — supersedes 0035 and the remaining execute-live half of 0014; fork, then use
-  the copy
 - [0037 — No author-facing `packages.invoke`](./0037-no-author-packages-invoke.md)
   — static import, `import(specifier)`, or workflows; external HTTP is
   [0048](./0048-webhooks-replace-invocation-tokens.md)
@@ -101,12 +98,6 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0049 — No MCP capability OAuth scopes](./0049-no-mcp-capability-oauth-scopes.md)
   — connecting an agent is one grant; `openid` / `profile` / `email` stay
   identity claims, not a permission menu
-- [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
-  — person-to-person `package_share_grants` stay separate from admin-minted
-  platform `package_scope_grants`; grant `pin` is not an import specifier pin
-- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
-  at $0, usage past the include stops; no customer-facing fund-to-unlock rates
-  and no free past-include burn; 50× is a credits ceiling, not a tier
 - [0052 — OAuth refresh expectation comes from the token response](./0052-oauth-refresh-policy-from-token-response.md)
   — no app/adapter refresh defaults and no blanket `missing_refresh_token`
   Waiting suppression; wait only when the connect response implied refresh
@@ -124,10 +115,10 @@ Open these before proposing a new primitive, surface, or storage home.
   bootstrap without a second interactive OAuth
 - [0056 — Explicit MCP/API session → CLI credential bootstrap](./0056-cli-credential-bootstrap.md)
   (amended 2026-10-06: required lifetimes, 500-token cap, reclaim by soonest
-  expiry; 2026-10-09 Teams P4: default scopes `org:execute` + `org:read` +
-  `package:execute`) — one-shot `kody_bc_…` code from `cliCredentialBootstrap`
-  (capability + Open API); CLI redeems for `kody_at_…` without chat-facing
-  secrets or host-token scavenging
+  expiry; 2026-10-09 Teams P4 + 0092: default scopes restore `local-execute`
+  parity including `integration:read` / `secret:use`) — one-shot `kody_bc_…`
+  code from `cliCredentialBootstrap` (capability + Open API); CLI redeems for
+  `kody_at_…` without chat-facing secrets or host-token scavenging
 - [0057 — No framework platform affordance for package bundles](./0057-no-framework-platform-affordance.md)
   — do not vendor, mount, inject, sniff, or rewrite package bundles for Remix,
   TanStack, Preact, or any other framework; packages bring frameworks themselves
@@ -165,6 +156,10 @@ Open these before proposing a new primitive, surface, or storage home.
   — 30-day restore window, live `deleted_at IS NULL` reads plus scanner, purge
   lane with `deleting_at`, org vs user deletion split, purge audit in
   `org_audit_events`, first purge dry-run, no feature flag
+- [0067 — Cross-org grants replace package shares and platform accounts](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
+  — shares are `use` grants, scope grants are Owner memberships, platform
+  accounts are ordinary orgs; a package imports only its own org's packages and
+  cross-org access is a grant or a fork (supersedes 0014, 0035, 0036, 0050)
 
 ## Historical / UI / implementation
 
@@ -173,10 +168,17 @@ Do not treat this list as homework. History stays; it is not silently deleted.
 
 - [0015 — Wait on Skills over MCP; serve skill content via packages](./0015-skills-over-mcp-wait.md)
   — superseded by 0058; Skills over MCP now ship behind a flag
+- [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
+  — superseded by 0067; shares are `use` grants and scope grantees are Owners
+- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
+  superseded by 0065; empty wallets use Free-tier limits instead of stopping
+- [0036 — Person accounts do not run official platform packages](./0036-platform-packages-fork-only.md)
+  — superseded by 0067; platform accounts are ordinary orgs and cross-org
+  imports are refused
 - [0035 — Platform packages are execute-only; person packages must fork](./0035-platform-packages-execute-only.md)
-  — superseded by 0036; execute-live half is gone
+  — superseded by 0036, then 0067
 - [0014 — Platform scopes resolve live; person-account imports stay caller-owned](./0014-platform-live-packages.md)
-  — superseded by 0035 then 0036
+  — superseded by 0035, 0036, then 0067
 - [0009 — Shiki for in-app syntax highlighting](./0009-shiki-syntax-highlighting.md)
   — library pick; the highlighter is already in the app
 - [0010 — One RecordTable for account and admin list/detail screens](./0010-account-record-table.md)

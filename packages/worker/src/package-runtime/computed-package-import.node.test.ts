@@ -43,7 +43,6 @@ test('buildComputedPackageImportCallBundle wraps the importable main with a call
 			packageId: 'pkg-callee',
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',
-			platformOwned: false,
 		}),
 	])
 })

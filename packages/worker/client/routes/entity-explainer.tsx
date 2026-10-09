@@ -163,20 +163,6 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 		],
 	},
 	{
-		id: 'shared',
-		question: 'What is a shared package?',
-		match: accountSection(routes.accountShared.href()),
-		paragraphs: [
-			'A shared package is an invitation from one paid Kody account to another. Guests can read source and invoke. They cannot publish, write, or create jobs, apps, webhooks, or subscriptions.',
-		],
-		learnMore: [
-			{
-				href: docHref('package-sharing'),
-				label: 'Package sharing',
-			},
-		],
-	},
-	{
 		id: 'waiting',
 		question: 'What is waiting?',
 		match: accountSection(routes.accountWaiting.href()),

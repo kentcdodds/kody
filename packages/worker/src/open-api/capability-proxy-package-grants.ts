@@ -1,14 +1,10 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	type AdditionalKodyTools,
 	type PackageSecretToolOptions,
 } from '#mcp/runtime-helper-manifest.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
-import {
-	collectShareStorageOwners,
-	retainAuthorizedPackageStorageGrantIds,
-} from '#worker/package-registry/share-grants.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	createPackageStorageAccessDeniedMessage,
 	createPackageStorageKodyTools,
@@ -57,7 +53,6 @@ async function authorizeLocalExecutePackageId(input: {
 	return {
 		userId,
 		packageId: authorizedPackageId,
-		storageOwnerByPackageId: new Map(),
 		grantedPackageIds: new Set([authorizedPackageId]),
 	}
 }
@@ -87,23 +82,11 @@ export async function authorizeLocalExecuteOwnedPackageId(input: {
 	callerUserId: string
 	packageId: string
 }) {
-	const storageOwnerByPackageId = await collectShareStorageOwners({
-		db: input.db,
-		callerUserId: personIdFromStored(input.callerUserId),
-		packageIds: [input.packageId],
+	const owned = await getSavedPackageById(input.db, {
+		userId: input.callerUserId,
+		packageId: input.packageId,
 	})
-	const authorized = await retainAuthorizedPackageStorageGrantIds({
-		db: input.db,
-		callerUserId: input.callerUserId,
-		packageIds: [input.packageId],
-		storageOwnerByPackageId: new Map(),
-	})
-	if (authorized.has(input.packageId)) return input.packageId
-	if (storageOwnerByPackageId.has(input.packageId)) {
-		throw new Error(
-			'Shared packages cannot use packageStorage, packageSecrets, authenticatedFetch, gatewayFetch, or oauthClientCredentials on execute --local. Use cloud execute.',
-		)
-	}
+	if (owned) return input.packageId
 	throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
 }
 
@@ -133,7 +116,6 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				email: input.callerContext.user?.email ?? null,
 				grantedPackageIds: authorized.grantedPackageIds,
 				writable: true,
-				storageOwnerByPackageId: authorized.storageOwnerByPackageId,
 			})
 			storageToolsByPackageId.set(authorized.packageId, tools)
 		}

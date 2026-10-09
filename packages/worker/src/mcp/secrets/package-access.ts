@@ -17,10 +17,6 @@ import { resolveCallerSecretAuthority } from './secret-authority.ts'
 import { getCommunityForkByForkedPackageId } from '#worker/community/repo.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
-	findAcceptedPackageShareGrant,
-	isShareGrantedForeignPackage,
-} from '#worker/package-registry/share-grants.ts'
-import {
 	loadPackageManifestBySourceId,
 	type LoadedPackageManifest,
 } from '#worker/package-registry/source.ts'
@@ -62,53 +58,6 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
 		error instanceof PackageSecretMissingError ||
 		error instanceof PackageSecretAccessDeniedError
 	)
-}
-
-/**
- * Resolve the package whose runtime is asking for a secret.
- *
- * Caller-owned packages stay on the caller's stamp. Share-granted packages
- * load as the owner so mounts and package-scoped secrets stay on the
- * owner's stamp. Shared code never receives the guest's other user secrets.
- */
-async function resolvePackageRecordForSecretAccess(input: {
-	db: D1Database
-	userId: string
-	packageId: string
-}): Promise<SavedPackageRecord | null> {
-	const own = await getSavedPackageById(input.db, {
-		userId: input.userId,
-		packageId: input.packageId,
-	})
-	if (own) return own
-	const grant = await findAcceptedPackageShareGrant({
-		db: input.db,
-		packageId: input.packageId,
-		granteeUserId: input.userId,
-	})
-	if (!grant) return null
-	return await getSavedPackageById(input.db, {
-		userId: grant.ownerUserId,
-		packageId: grant.packageId,
-	})
-}
-
-async function resolveSecretStampUserId(input: {
-	db: D1Database
-	callerUserId: string
-	packageId: string
-}) {
-	const own = await getSavedPackageById(input.db, {
-		userId: input.callerUserId,
-		packageId: input.packageId,
-	})
-	if (own) return input.callerUserId
-	const grant = await findAcceptedPackageShareGrant({
-		db: input.db,
-		packageId: input.packageId,
-		granteeUserId: input.callerUserId,
-	})
-	return grant?.ownerUserId ?? input.callerUserId
 }
 
 /**
@@ -168,34 +117,15 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 	 * `storageContext.packageId` (the run) is used.
 	 */
 	authorityPackageId?: string | null
-	/**
-	 * When false, skip implicit self-authored package access. Share-grant
-	 * owner remaps at fetch/JWT use sites must pass false so a guest cannot
-	 * open the owner's full user keychain — only `allowed_packages` grants.
-	 * Defaults to true.
-	 */
-	allowImplicitUserSecretAccess?: boolean
 }) {
 	const { authorityPackageId: packageId } = resolveCallerSecretAuthority({
 		storageContext: input.storageContext,
 		authorityPackageId: input.authorityPackageId,
 	})
 	if (!packageId || input.resolved.scope !== 'user') return
-	if (
-		await isShareGrantedForeignPackage({
-			db: input.env.APP_DB,
-			callerUserId: input.userId,
-			packageId,
-		})
-	) {
-		throw new PackageSecretAccessDeniedError(
-			`Shared package code cannot use the guest's user secrets, including "${input.secretName}". Pass explicit inputs or use package-scoped mounts on the shared package.`,
-		)
-	}
 	if (input.resolved.allowedPackages.includes(packageId)) return
 
-	const savedPackage = await resolvePackageRecordForSecretAccess({
-		db: input.env.APP_DB,
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
 		packageId,
 	})
@@ -205,9 +135,7 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		)
 	}
 	const intent = input.intent ?? 'use'
-	const allowImplicit = input.allowImplicitUserSecretAccess ?? true
 	if (
-		allowImplicit &&
 		intent === 'use' &&
 		(await savedPackageHasImplicitUserSecretReadAccess({
 			db: input.env.APP_DB,
@@ -314,23 +242,17 @@ export async function loadPackageSecretMounts(input: {
 	manifest: LoadedPackageManifest['manifest']
 	mounts: Record<string, SecretMountDefinition>
 }> {
-	const savedPackage = await resolvePackageRecordForSecretAccess({
-		db: input.env.APP_DB,
+	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: input.userId,
 		packageId: input.packageId,
 	})
 	if (!savedPackage) {
 		throw new Error(`Saved package "${input.packageId}" was not found.`)
 	}
-	const stampUserId = await resolveSecretStampUserId({
-		db: input.env.APP_DB,
-		callerUserId: input.userId,
-		packageId: input.packageId,
-	})
 	const loaded = await loadPackageManifestBySourceId({
 		env: input.env,
 		baseUrl: input.baseUrl,
-		userId: stampUserId,
+		userId: input.userId,
 		sourceId: savedPackage.sourceId,
 	})
 	return {
@@ -375,11 +297,6 @@ export async function resolvePackageMountedSecret(input: {
 			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${input.alias}".`,
 		)
 	}
-	const stampUserId = await resolveSecretStampUserId({
-		db: input.env.APP_DB,
-		callerUserId: userId,
-		packageId,
-	})
 	const storageContext = {
 		sessionId: input.callerContext.storageContext?.sessionId ?? null,
 		appId: input.callerContext.storageContext?.appId ?? null,
@@ -388,7 +305,7 @@ export async function resolvePackageMountedSecret(input: {
 	}
 	const resolved = await resolveSecret({
 		env: input.env,
-		userId: stampUserId,
+		userId,
 		name: mount.name,
 		scope: mount.scope,
 		storageContext,
@@ -397,7 +314,7 @@ export async function resolvePackageMountedSecret(input: {
 		throw new PackageSecretMissingError(
 			await createUnresolvedSecretMessage({
 				env: input.env,
-				userId: stampUserId,
+				userId,
 				name: mount.name,
 				scope: mount.scope,
 				storageContext,
@@ -408,7 +325,7 @@ export async function resolvePackageMountedSecret(input: {
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
-		userId: stampUserId,
+		userId,
 		storageContext,
 		authorityPackageId: packageId,
 		secretName: mount.name,
@@ -417,9 +334,6 @@ export async function resolvePackageMountedSecret(input: {
 	// Opaque ref only — decrypted plaintext stays on the host. Package /
 	// execute JS must never observe `resolved.value`. The placeholder carries
 	// name+scope only (never owner id — that would be caller-forgeable).
-	// Share-grant resolution remaps to the package owner at platform use
-	// sites via the trusted package authority stamp (fetch gateway,
-	// secretHeaders → fetch, secretJwtSign).
 	const scope = resolved.scope ?? mount.scope ?? 'user'
 	return {
 		alias: input.alias,

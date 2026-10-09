@@ -224,3 +224,48 @@ test('the credits monthly-cap notice sends at most once per UTC month', async ()
 	expect(await send('2026-10')).toBe(true)
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(2)
 })
+
+test('connect-agent mail sends from the verify request origin when no sending domain is set', async () => {
+	sendCloudflareEmail.mockClear()
+	const { kv } = createKv()
+	const env = createEnv(kv, {
+		APP_BASE_URL: '',
+		SYSTEM_EMAIL_DOMAIN: '',
+	})
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-request',
+			requestUrl: 'http://127.0.0.1:3847/verify-email?token=abc',
+		}),
+	).toBe(true)
+	expect(sendCloudflareEmail).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ from: 'kody@127.0.0.1' }),
+	)
+})
+
+test('connect-agent mail opens the retry row when no sender can be resolved', async () => {
+	sendCloudflareEmail.mockClear()
+	const { db } = createAppDb('user-noconfig')
+	const { kv } = createKv()
+	const env = createEnv(kv, {
+		APP_DB: db,
+		APP_BASE_URL: '',
+		SYSTEM_EMAIL_DOMAIN: '',
+	})
+	expect(
+		await sendConnectAgentEmail({
+			env,
+			email: 'ada@example.com',
+			userId: 'user-noconfig',
+		}),
+	).toBe(false)
+	expect(sendCloudflareEmail).not.toHaveBeenCalled()
+	expect(await readUsageCampaign(db, 'user-noconfig')).toMatchObject({
+		state: 'VerifiedNoMcp',
+		origin: 'event',
+		send_count: 0,
+	})
+})

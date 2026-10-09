@@ -23,10 +23,7 @@ import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
-import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import {
 	buildPackageTestHints,
 	type PackageTestHints,
@@ -60,11 +57,6 @@ import {
 const inputSchema = z.object({
 	package_id: z.string().min(1).optional(),
 	kody_id: z.string().min(1).optional(),
-	package_scope: z
-		.string()
-		.min(1)
-		.optional()
-		.describe(packageScopeInputDescription),
 	allow_force: z.boolean().optional().default(false),
 	confirm_destructive_overwrite: z
 		.boolean()
@@ -396,7 +388,6 @@ function buildPublishPhaseTimings(input: {
 function readPackageTestHintsFromManifest(input: {
 	manifest: unknown
 	packageId: string
-	packageScope?: string
 }): PackageTestHints | undefined {
 	const { manifest } = input
 	if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -407,7 +398,6 @@ function readPackageTestHintsFromManifest(input: {
 	const subscriptions = Reflect.get(kody, 'subscriptions')
 	return buildPackageTestHints({
 		packageId: input.packageId,
-		...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		hasApp: Reflect.get(kody, 'app') !== undefined,
 		subscriptionTopics:
 			subscriptions &&
@@ -423,7 +413,6 @@ async function getPublishedPackageTestHints(input: {
 	userId: string
 	sourceId: string
 	packageId: string
-	packageScope?: string
 }) {
 	try {
 		const published = await loadPublishedEntitySource({
@@ -436,7 +425,6 @@ async function getPublishedPackageTestHints(input: {
 		return readPackageTestHintsFromManifest({
 			manifest: JSON.parse(packageJson),
 			packageId: input.packageId,
-			...(input.packageScope ? { packageScope: input.packageScope } : {}),
 		})
 	} catch {
 		return undefined
@@ -589,7 +577,6 @@ async function runExternalPublishAttempt(input: {
 	expectedPackageScope: string
 	packageId: string
 	kodyId: string
-	testHintPackageScope?: string
 	hasApp: boolean
 	source: {
 		id: string
@@ -684,9 +671,6 @@ async function runExternalPublishAttempt(input: {
 								userId: input.ownerUserId,
 								sourceId: input.source.id,
 								packageId: input.packageId,
-								...(input.testHintPackageScope
-									? { packageScope: input.testHintPackageScope }
-									: {}),
 							})
 							return {
 								testHints,
@@ -813,9 +797,6 @@ async function runExternalPublishAttempt(input: {
 						const testHints = readPackageTestHintsFromManifest({
 							manifest: result.manifest,
 							packageId: input.packageId,
-							...(input.testHintPackageScope
-								? { packageScope: input.testHintPackageScope }
-								: {}),
 						})
 						return {
 							testHints,
@@ -913,11 +894,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const expectedPackageScope = owner.ownerScope
 			const { packageId, kodyId, hasApp, source } =
 				await resolveOwnedPackageSource({
@@ -946,9 +926,6 @@ export const publishExternalPushCapability = defineDomainCapability(
 				expectedPackageScope,
 				packageId,
 				kodyId,
-				...(args.package_scope
-					? { testHintPackageScope: args.package_scope }
-					: {}),
 				hasApp,
 				source: { id: source.id, repo_id: source.repo_id },
 				newCommit,
@@ -971,7 +948,6 @@ export const publishExternalPushCapability = defineDomainCapability(
 			const durableParams = {
 				...(args.package_id ? { package_id: args.package_id } : {}),
 				...(args.kody_id ? { kody_id: args.kody_id } : {}),
-				...(args.package_scope ? { package_scope: args.package_scope } : {}),
 				allow_force: args.allow_force,
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
 			}

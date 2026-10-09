@@ -6,7 +6,6 @@ const mocks = vi.hoisted(() => ({
 	resolvePackagePageUrl: vi.fn(),
 	getCommunityListingById: vi.fn(),
 	getEntitySourceById: vi.fn(),
-	loadViewerPackageShare: vi.fn(),
 	serveIdentityIcon: vi.fn(),
 }))
 
@@ -28,11 +27,6 @@ vi.mock('#worker/community/repo.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: (...args: Array<unknown>) =>
 		mocks.getEntitySourceById(...args),
-}))
-
-vi.mock('#worker/package-registry/share-grants.ts', () => ({
-	loadViewerPackageShare: (...args: Array<unknown>) =>
-		mocks.loadViewerPackageShare(...args),
 }))
 
 vi.mock('./identity-icon-response.ts', () => ({
@@ -97,7 +91,7 @@ test('package identity icon serves the published commit for guest-visible packag
 	)
 })
 
-test('private package identity icons use a private cache for owner and sharees', async () => {
+test('private package identity icons use a private cache for the owner and 404 for other viewers', async () => {
 	const privatePackage = {
 		...publicPackage,
 		hidden: false,
@@ -128,17 +122,10 @@ test('private package identity icons use a private cache for owner and sharees',
 
 	mocks.serveIdentityIcon.mockClear()
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'sharee-1' },
-		email: 'sharee@example.com',
-		emailVerified: true,
+		mcpUser: { userId: 'other-1' },
 	})
-	mocks.loadViewerPackageShare.mockResolvedValue({ status: 'accepted' })
-	expect((await callHandler()).status).toBe(200)
-	expect(mocks.serveIdentityIcon).toHaveBeenCalledWith(
-		expect.objectContaining({
-			cacheControl: 'private, max-age=31536000, immutable',
-		}),
-	)
+	expect((await callHandler()).status).toBe(404)
+	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
 })
 
 test('package identity icon rejects stale commits and hidden private packages', async () => {

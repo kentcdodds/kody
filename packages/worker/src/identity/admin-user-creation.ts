@@ -170,7 +170,6 @@ export async function adminCreateUserWithPasswordSetup(input: {
 			stableUserId,
 			username,
 			createdAt: nowIso,
-			accountType: 'person',
 			plan: 'free',
 			signupWelcomeCreditsPending: 1,
 		})

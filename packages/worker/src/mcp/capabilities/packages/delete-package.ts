@@ -2,11 +2,11 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import {
-	packageScopeInputDescription,
-	resolvePackageOwnerContext,
-} from '#worker/package-registry/package-owner.ts'
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { deleteSavedPackageProjection } from '#worker/package-registry/service.ts'
 
@@ -43,11 +43,6 @@ export const deletePackageCapability = defineDomainCapability(
 		destructive: true,
 		inputSchema: z.object({
 			package_id: z.string().min(1).describe('Saved package id to delete.'),
-			package_scope: z
-				.string()
-				.min(1)
-				.optional()
-				.describe(packageScopeInputDescription),
 			confirm_name: z
 				.string()
 				.min(1)
@@ -62,11 +57,10 @@ export const deletePackageCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
-			const owner = await resolvePackageOwnerContext(
-				ctx.env,
+			const owner = await resolvePackageOwnerContext(ctx.env, {
 				user,
-				args.package_scope,
-			)
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			const existing = await getSavedPackageById(ctx.env.APP_DB, {
 				userId: owner.ownerUserId,
 				packageId: args.package_id,

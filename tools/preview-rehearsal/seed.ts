@@ -18,11 +18,10 @@ import {
 } from './kody-session.ts'
 import {
 	deriveRehearsalPassword,
-	rehearsalPlatformAccount,
+	rehearsalOrg,
 	rehearsalUser,
 	rehearsalUsers,
 	renamedDaveUsername,
-	sharingOptInRoles,
 	type RehearsalOrigins,
 	type RehearsalUser,
 } from './rehearsal-env.ts'
@@ -30,9 +29,9 @@ import {
 	integrationName,
 	packageSecretName,
 	personalPackageFiles,
+	orgPackageFiles,
+	orgPackages,
 	personalPackageLeaf,
-	platformPackageFiles,
-	platformPackages,
 	rehearsalMemories,
 	userSecretName,
 } from './rehearsal-packages.ts'
@@ -137,18 +136,20 @@ export type SeedManifest = {
 	seededAt: string
 	origins: RehearsalOrigins
 	people: Array<SeededPerson>
-	platform: {
-		email: string
-		username: string
-		scopeGrantee: string
+	org: {
+		id: string
+		slug: string
+		owner: RehearsalUser['role']
 		packages: Array<{ leaf: string; visibility: string; packageId: string }>
 		listingId: string
 		forkedBy: string
 		forkPackageId: string
 	}
-	sharing: {
-		acceptedGrantId: string
-		pendingGrantId: string
+	grants: {
+		/** alice's org grants carol Use on alice's package. */
+		useGrantId: string
+		/** carol's org invites alice to Use carol's package (pending). */
+		pendingInviteId: string
 	}
 	renamed: { from: string; to: string }
 	autoRefill: { role: RehearsalUser['role'] }
@@ -162,6 +163,11 @@ export type SeedCredentials = {
 		role: RehearsalUser['role']
 		email: string
 		username: string
+		/**
+		 * Personal org slug for `?org=` on consent. Stays the signup username
+		 * forever (dave stays `rh-dave` after rename).
+		 */
+		orgSlug: string
 		password: string
 		cliToken: string
 		everyScopeToken: string
@@ -180,18 +186,20 @@ type SeedInput = {
 async function sessionFor(
 	input: SeedInput,
 	user: RehearsalUser,
-	username = user.username,
+	options: { orgSlug?: string } = {},
 ) {
 	const password = await deriveRehearsalPassword({
 		key: input.passwordKey,
 		workerName: input.workerName,
 		role: user.role,
 	})
-	return openRehearsalSession(input.origins.app, {
-		email: user.email,
-		username,
-		password,
-	})
+	// Default to the personal org slug so multi-org users (bob after a
+	// scope-grant conversion) do not hit the consent org picker.
+	return openRehearsalSession(
+		input.origins.app,
+		{ email: user.email, username: user.username, password },
+		{ orgSlug: options.orgSlug ?? user.username },
+	)
 }
 
 async function approveSecretHost(
@@ -494,11 +502,8 @@ async function seedPersonData(
 	}
 }
 
-/** Person roster plus the platform account. A complete seed has all of these. */
-export const rehearsalSeedEmails = [
-	...rehearsalUsers.map((user) => user.email),
-	rehearsalPlatformAccount.email,
-] as const
+/** The person roster. A complete seed has all of these. */
+export const rehearsalSeedEmails = rehearsalUsers.map((user) => user.email)
 
 export const rehearsalSeedRosterSize = rehearsalSeedEmails.length
 
@@ -519,8 +524,8 @@ export function classifyRehearsalSeed(input: {
 }): RehearsalSeedState {
 	if (!Number.isFinite(input.count) || input.count <= 0) return 'empty'
 	if (input.count < rehearsalSeedRosterSize) return 'partial'
-	// Dave's rename is the last durable APP_DB write in seedRehearsal. Six
-	// accounts can exist earlier; that is still an incomplete seed.
+	// Dave's rename is the last durable APP_DB write in seedRehearsal. Every
+	// account can exist earlier; that is still an incomplete seed.
 	if (input.daveUsername === renamedDaveUsername) return 'complete'
 	return 'partial'
 }
@@ -679,7 +684,7 @@ export async function seedRehearsal(
 			readStringAt(daveRecord, ['user', 'stableUserId'], 'adminUserGet'),
 		)
 
-		log('Site-admin setup: plans, credits, platform account, scope grant...')
+		log('Site-admin setup: plans and credits...')
 		for (const role of ['alice', 'carol'] as const) {
 			await callCapability(admin, 'adminUserUpdate', {
 				email: rehearsalUser(role).email,
@@ -697,17 +702,6 @@ export async function seedRehearsal(
 				note: 'Preview migration rehearsal seed',
 			})
 		}
-		await callCapability(admin, 'adminReservedUsernameAdd', {
-			usernames: [rehearsalPlatformAccount.username],
-		})
-		await callCapability(admin, 'adminPlatformAccountCreate', {
-			email: rehearsalPlatformAccount.email,
-			username: rehearsalPlatformAccount.username,
-		})
-		await callCapability(admin, 'adminPackageScopeGrantCreate', {
-			scope: rehearsalPlatformAccount.username,
-			username: rehearsalUser('bob').username,
-		})
 
 		const personSessions = new Map<RehearsalUser['role'], RehearsalSession>()
 		const people: Array<SeededPerson> = []
@@ -729,98 +723,100 @@ export async function seedRehearsal(
 		tokens.set('admin', await mintTokens(admin, input.origins, 'admin'))
 
 		log(
-			'Sharing: alice shares with carol (accepted), carol invites alice (pending)...',
+			'Grants: alice grants carol Use on her package, carol invites alice (pending)...',
 		)
 		const alice = personSessions.get('alice')
 		const carolSession = personSessions.get('carol')
 		if (!alice || !carolSession)
 			throw new Error('Missing alice/carol sessions.')
-		for (const role of sharingOptInRoles) {
-			const session = personSessions.get(role)
-			if (!session) throw new Error(`Missing ${role} session.`)
-			const optIn = await session.request('/docs/package-sharing/opt-in', {
-				method: 'POST',
-			})
-			if (optIn.status !== 302 || optIn.location?.includes('/login')) {
-				throw new Error(describeFailure('/docs/package-sharing/opt-in', optIn))
-			}
-		}
 		const alicePackage = people.find((person) => person.role === 'alice')
 		const carolPackage = people.find((person) => person.role === 'carol')
-		const accepted = await callCapability(alice, 'packageShareInvite', {
-			package_id: alicePackage?.packageId,
+		const useGrant = await callCapability(alice, 'accessGrant', {
+			resource_type: 'package',
+			resource_id: alicePackage?.packageId,
+			subject_type: 'user',
 			username: rehearsalUser('carol').username,
+			preset: 'use',
 		})
-		const acceptedGrantId = readStringAt(
-			accepted,
-			['grant', 'grant_id'],
-			'packageShareInvite',
-		)
-		await callCapability(carolSession, 'packageShareAccept', {
-			grant_id: acceptedGrantId,
+		const useGrantId = readStringAt(useGrant, ['grant', 'id'], 'accessGrant')
+		const carolInAliceOrg = await sessionFor(input, rehearsalUser('carol'), {
+			orgSlug: rehearsalUser('alice').username,
 		})
-		const guestRun = readRecord(
-			await carolSession.execute(
+		sessions.push(carolInAliceOrg)
+		const granteeRun = readRecord(
+			await carolInAliceOrg.execute(
 				packageExportModule(`kody:${alicePackage?.packageName}/ping`),
 			),
-			'guest execute of the shared package',
+			"carol's execute of alice's package through her Use grant",
 		)
-		if (guestRun.pong !== true) {
+		if (granteeRun.pong !== true) {
 			throw new Error(
-				`carol could not run alice's package: ${JSON.stringify(guestRun)}`,
+				`carol could not run alice's package: ${JSON.stringify(granteeRun)}`,
 			)
 		}
-		const pending = await callCapability(carolSession, 'packageShareInvite', {
-			package_id: carolPackage?.packageId,
+		const pending = await callCapability(carolSession, 'inviteCreate', {
+			kind: 'grant',
 			username: rehearsalUser('alice').username,
+			resource_type: 'package',
+			resource_id: carolPackage?.packageId,
+			preset: 'use',
 		})
-		const pendingGrantId = readStringAt(
+		const pendingInviteId = readStringAt(
 			pending,
-			['grant', 'grant_id'],
-			'packageShareInvite',
+			['invite', 'id'],
+			'inviteCreate',
 		)
 
 		log(
-			'Platform: bob publishes public, private, and hidden platform packages...',
+			`Org: bob creates @${rehearsalOrg.slug} and publishes public, private, and hidden packages...`,
 		)
-		const bob = personSessions.get('bob')
+		const bob = personSessions.get(rehearsalOrg.owner)
 		const daveSession = personSessions.get('dave')
 		if (!bob || !daveSession) throw new Error('Missing bob/dave sessions.')
-		const platformScope = rehearsalPlatformAccount.username
-		const platformSaved: SeedManifest['platform']['packages'] = []
+		const createdOrg = await callCapability(bob, 'orgCreate', {
+			slug: rehearsalOrg.slug,
+			display_name: rehearsalOrg.displayName,
+		})
+		const orgId = readStringAt(createdOrg, ['org', 'id'], 'orgCreate')
+		const bobInOrg = await sessionFor(
+			input,
+			rehearsalUser(rehearsalOrg.owner),
+			{
+				orgSlug: rehearsalOrg.slug,
+			},
+		)
+		sessions.push(bobInOrg)
+		const orgSaved: SeedManifest['org']['packages'] = []
 		let listingId = ''
-		for (const entry of platformPackages) {
-			const savedPlatform = await callCapability(bob, 'packageSave', {
-				files: platformPackageFiles({
-					scope: platformScope,
+		for (const entry of orgPackages) {
+			const savedOrgPackage = await callCapability(bobInOrg, 'packageSave', {
+				files: orgPackageFiles({
+					scope: rehearsalOrg.slug,
 					leaf: entry.leaf,
 					description: entry.description,
 				}),
-				package_scope: platformScope,
 			})
 			const packageId = readStringAt(
-				savedPlatform,
+				savedOrgPackage,
 				['package_id'],
 				'packageSave',
 			)
-			platformSaved.push({
+			orgSaved.push({
 				leaf: entry.leaf,
 				visibility: entry.visibility,
 				packageId,
 			})
 			switch (entry.visibility) {
 				case 'public': {
-					const listing = await callCapability(bob, 'communityPublish', {
+					const listing = await callCapability(bobInOrg, 'communityPublish', {
 						package_id: packageId,
-						package_scope: platformScope,
 					})
 					listingId = readStringAt(listing, ['listing_id'], 'communityPublish')
 					break
 				}
 				case 'hidden':
-					await callCapability(bob, 'packageUpdate', {
+					await callCapability(bobInOrg, 'packageUpdate', {
 						package_id: packageId,
-						package_scope: platformScope,
 						changes: { hidden: true },
 					})
 					break
@@ -864,6 +860,7 @@ export async function seedRehearsal(
 				role: user.role,
 				email: user.email,
 				username: user.role === 'dave' ? renamedDaveUsername : user.username,
+				orgSlug: user.username,
 				password: passwords.get(user.role) ?? '',
 				cliToken: tokens.get(user.role)?.cliToken ?? '',
 				everyScopeToken: tokens.get(user.role)?.everyScopeToken ?? '',
@@ -890,16 +887,16 @@ export async function seedRehearsal(
 				},
 				...people,
 			],
-			platform: {
-				email: rehearsalPlatformAccount.email,
-				username: platformScope,
-				scopeGrantee: rehearsalUser('bob').username,
-				packages: platformSaved,
+			org: {
+				id: orgId,
+				slug: rehearsalOrg.slug,
+				owner: rehearsalOrg.owner,
+				packages: orgSaved,
 				listingId,
 				forkedBy: 'dave',
 				forkPackageId,
 			},
-			sharing: { acceptedGrantId, pendingGrantId },
+			grants: { useGrantId, pendingInviteId },
 			renamed: {
 				from: rehearsalUser('dave').username,
 				to: renamedDaveUsername,

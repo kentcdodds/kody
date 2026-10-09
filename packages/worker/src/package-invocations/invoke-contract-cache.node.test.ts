@@ -18,8 +18,6 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	resolveSavedPackageRef: vi.fn(),
 	getSavedPackageByName: vi.fn(),
-	getPlatformAccountByUsername: vi.fn(),
-	isPlatformAccountStableUserId: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	loadPublishedEntityManifest: vi.fn(),
 	loadPublishedEntitySource: vi.fn(),
@@ -36,13 +34,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 		mockModule.resolveSavedPackageRef(...args),
 	getSavedPackageByName: (...args: Array<unknown>) =>
 		mockModule.getSavedPackageByName(...args),
-}))
-
-vi.mock('#worker/package-registry/scope-grants.ts', () => ({
-	getPlatformAccountByUsername: (...args: Array<unknown>) =>
-		mockModule.getPlatformAccountByUsername(...args),
-	isPlatformAccountStableUserId: (...args: Array<unknown>) =>
-		mockModule.isPlatformAccountStableUserId(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -83,14 +74,6 @@ const contractCheckLoadMocks = [
 	['saved package by id (D1)', mockModule.getSavedPackageById],
 	['saved package by kody id (D1)', mockModule.resolveSavedPackageRef],
 	['saved package by name (D1)', mockModule.getSavedPackageByName],
-	[
-		'platform account by username (D1)',
-		mockModule.getPlatformAccountByUsername,
-	],
-	[
-		'platform account by user id (D1)',
-		mockModule.isPlatformAccountStableUserId,
-	],
 	['entity source row (D1)', mockModule.getEntitySourceById],
 	['published manifest snapshot (KV)', mockModule.loadPublishedEntityManifest],
 	['published source snapshot (KV)', mockModule.loadPublishedEntitySource],
@@ -213,21 +196,6 @@ function seedFixtures(fixturesByUserId: Record<string, Fixture>) {
 				: null
 		},
 	)
-	mockModule.getPlatformAccountByUsername.mockImplementation(
-		async (_db: unknown, username: string) =>
-			username === 'kody'
-				? {
-						id: 1,
-						username: 'kody',
-						email: 'kody@example.com',
-						stableUserId: 'platform-owner',
-					}
-				: null,
-	)
-	mockModule.isPlatformAccountStableUserId.mockImplementation(
-		async (_db: unknown, stableUserId: string) =>
-			stableUserId === 'platform-owner',
-	)
 	mockModule.getEntitySourceById.mockImplementation(
 		async (_db: unknown, sourceId: string) =>
 			Object.values(fixturesByUserId).find(
@@ -317,63 +285,29 @@ function mockModuleArtifactRebuild(
 	mockModule.persistPublishedBundleArtifact.mockResolvedValue('kv-key')
 }
 
-test('person package runtimes cannot invoke official platform packages', async () => {
+test('contract checks only resolve packages in the caller org', async () => {
 	seedFixtures({
 		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
-		'platform-owner': createFixture({
-			userId: 'platform-owner',
+		'org-owner': createFixture({
+			userId: 'org-owner',
 			publishedCommit: 'commit-1',
-			packageName: '@kody/github',
+			packageName: '@acme/github',
 			kodyId: 'github',
 		}),
 	})
-	const callers = {
-		'pkg-user-1': {
-			userId: 'user-1',
-			name: '@kentcdodds/sentry-triage',
-			kodyId: 'sentry-triage',
-		},
-		'pkg-kody-github': {
-			userId: 'platform-owner',
-			name: '@kody/github',
-			kodyId: 'github',
-		},
-	} as const
-	mockModule.getSavedPackageById.mockImplementation(
-		async (_db: unknown, input: { userId: string; packageId: string }) => {
-			const caller = callers[input.packageId as keyof typeof callers]
-			return caller?.userId === input.userId
-				? { id: input.packageId, ...caller }
-				: null
-		},
-	)
-	const specifier = 'kody:@kody/github/get-issue-state'
+	const specifier = 'kody:@acme/github/get-issue-state'
 
-	for (const caller of [
-		{ callerKind: 'package', callingPackageId: 'pkg-user-1' },
-		{ callerKind: 'execute' },
-	] as const) {
-		const denied = await runContractCheck({
-			userId: 'user-1',
-			specifier,
-			...caller,
-		})
-		expect(denied.result.ok).toBe(false)
-		if (denied.result.ok)
-			throw new Error('Expected the contract check to deny.')
-		expect(denied.result.message).toContain(
-			'not runnable from a person account',
-		)
-		expect(denied.preloads).toBeNull()
-	}
+	const denied = await runContractCheck({ userId: 'user-1', specifier })
+	expect(denied.result.ok).toBe(false)
+	if (denied.result.ok) throw new Error('Expected the contract check to deny.')
+	expect(denied.result.message).toContain('could not be resolved in this org')
+	expect(denied.preloads).toBeNull()
 
-	const fromPlatformPackage = await runContractCheck({
-		userId: 'platform-owner',
+	const fromOwningOrg = await runContractCheck({
+		userId: 'org-owner',
 		specifier,
-		callerKind: 'package',
-		callingPackageId: 'pkg-kody-github',
 	})
-	expect(fromPlatformPackage.result.ok).toBe(true)
+	expect(fromOwningOrg.result.ok).toBe(true)
 })
 
 test('a republish is picked up by same-isolate invalidation, or in other isolates once the freshness TTL elapses', async () => {
@@ -441,32 +375,32 @@ test('contract-check caches never serve entries across users', async () => {
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 })
 
-test('warm platform contract checks perform zero D1/KV loads until invalidation clears the platform-owner specifier cache', async () => {
-	const platformFixture = createFixture({
-		userId: 'platform-owner',
-		publishedCommit: 'commit-platform',
-		packageName: '@kody/sentry-triage',
+test('warm contract checks perform zero D1/KV loads until invalidation clears the specifier cache', async () => {
+	const orgFixture = createFixture({
+		userId: 'org-owner',
+		publishedCommit: 'commit-org',
+		packageName: '@acme/sentry-triage',
 	})
-	seedFixtures({ 'platform-owner': platformFixture })
+	seedFixtures({ 'org-owner': orgFixture })
 	invalidateInvokeContractFreshness({
-		userId: 'platform-owner',
+		userId: 'org-owner',
 		packageIdOrKodyIds: [
-			platformFixture.savedPackage.id,
-			platformFixture.savedPackage.kodyId,
-			`kody:${platformFixture.savedPackage.name}`,
+			orgFixture.savedPackage.id,
+			orgFixture.savedPackage.kodyId,
+			`kody:${orgFixture.savedPackage.name}`,
 		],
-		sourceId: platformFixture.source.id,
+		sourceId: orgFixture.source.id,
 	})
 	const check = () =>
 		runContractCheck({
-			userId: 'platform-owner',
-			specifier: 'kody:@kody/sentry-triage/get-issue-state',
+			userId: 'org-owner',
+			specifier: 'kody:@acme/sentry-triage/get-issue-state',
 		})
 
 	const beforeDelete = await check()
 	expect(beforeDelete.result.ok).toBe(true)
 	expect(beforeDelete.preloads?.savedPackage.id).toBe(
-		platformFixture.savedPackage.id,
+		orgFixture.savedPackage.id,
 	)
 	expect(mockModule.getEntitySourceById).toHaveBeenCalledTimes(1)
 	expect(mockModule.loadPublishedEntityManifest).toHaveBeenCalledTimes(1)
@@ -477,21 +411,21 @@ test('warm platform contract checks perform zero D1/KV loads until invalidation 
 	clearContractCheckLoadCounters()
 	const warm = await check()
 	expect(warm.result.ok).toBe(true)
-	expect(publishedCommitOf(warm)).toBe('commit-platform')
+	expect(publishedCommitOf(warm)).toBe('commit-org')
 	expect(warm.preloads?.moduleArtifact.artifact.publishedCommit).toBe(
-		'commit-platform',
+		'commit-org',
 	)
 	expect(countContractCheckLoads()).toEqual(zeroContractCheckLoads)
 
 	seedFixtures({})
 	invalidateInvokeContractFreshness({
-		userId: 'platform-owner',
+		userId: 'org-owner',
 		packageIdOrKodyIds: [
-			platformFixture.savedPackage.id,
-			platformFixture.savedPackage.kodyId,
-			`kody:${platformFixture.savedPackage.name}`,
+			orgFixture.savedPackage.id,
+			orgFixture.savedPackage.kodyId,
+			`kody:${orgFixture.savedPackage.name}`,
 		],
-		sourceId: platformFixture.source.id,
+		sourceId: orgFixture.source.id,
 	})
 
 	const afterDelete = await check()

@@ -15,7 +15,6 @@ const signedInSession: session.SessionInfo = {
 	permissions: [],
 	featureFlags: {
 		'demo-indicator': false,
-		'package-share-grants': false,
 		'jev-search-rerank': false,
 		'execute-invoke': false,
 		'connection-profiles': false,

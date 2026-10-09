@@ -130,9 +130,14 @@ Requests are handled in this order:
      servers (`kody.mcp[...]`) for home automation and similar tools.
 
 8. Static assets:
-   - Served from `ASSETS` for `GET` and `HEAD` when available
-   - Matching files under `packages/worker/public/` are asset-first at the edge
-     (they do not enter this Worker list) unless listed in
+   - Served from `ASSETS` for `GET` and `HEAD` when the path can be a file under
+     `packages/worker/public/` (for example `/favicon.ico`, `/images/…`,
+     `/fonts/…`, `/styles.css`, `/assets/…`)
+   - The origin skips that probe when the first segment is a Remix route root,
+     an `/@…` org or package path, or a pre-router mount (`/mcp`, `/api`,
+     `/oauth`, `/connectors`). Those prefixes have no static twin. `/og/…` still
+     probes because `public/og/` sits beside the `/og/:page.png` route
+   - Matching files are asset-first at the edge unless listed in
      `assets.run_worker_first`
 9. Hosted package apps served inline on the app origin
    (`/@{username}/packages/*`), only in confirmed non-production runtimes when

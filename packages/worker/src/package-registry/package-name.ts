@@ -55,8 +55,8 @@ export function mismatchedPackageScopeMessage(input: {
 
 /**
  * Caller-clearable package name rejection (empty, mismatched owner scope, or
- * invalid leaf/format). Observability treats it like `PackageScopeAccessError`
- * and keeps it off Sentry (KODY-83).
+ * invalid leaf/format). Observability treats it as caller-clearable and keeps
+ * it off Sentry (KODY-83).
  */
 export class PackageNameInputError extends Error {
 	constructor(message: string) {

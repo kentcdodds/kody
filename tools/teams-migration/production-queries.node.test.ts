@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -7,6 +10,8 @@ import {
 	crossPlatformScopeDependenciesSql,
 	parseQueryTarget,
 	platformAccountsSql,
+	resolveProductionOauthKvTitle,
+	targetResourceNames,
 	readProductionBillingEnv,
 	runProductionQueries,
 	sharedPackageImportsSql,
@@ -185,7 +190,7 @@ function createFakeApis(sqlite: DatabaseSync) {
 			return ok([{ results: sqlite.prepare(body.sql).all(), success: true }])
 		}
 		if (path === '/storage/kv/namespaces' && method === 'GET') {
-			return ok([{ id: 'oauth-kv', title: 'kody-production-oauth' }])
+			return ok([{ id: 'oauth-kv', title: 'kody-oauth' }])
 		}
 		if (path === '/storage/kv/namespaces/oauth-kv/keys' && method === 'GET') {
 			const prefix = url.searchParams.get('prefix') ?? ''
@@ -439,4 +444,37 @@ test('Stripe prices are classified with the worker billing config', async () => 
 		'retired-standard',
 	)
 	expect(classifyStripePrice(production, 'price_unknown')).toBe('unmapped')
+})
+
+test('the production OAuth KV title follows the Wrangler worker name and any title override', async () => {
+	expect(await resolveProductionOauthKvTitle()).toBe('kody-oauth')
+	expect(await targetResourceNames(parseQueryTarget('production'))).toEqual({
+		appD1Name: 'kody',
+		oauthKvTitle: 'kody-oauth',
+	})
+
+	const directory = await mkdtemp(path.join(tmpdir(), 'wrangler-'))
+	const withBinding = async (binding: string) => {
+		const file = path.join(directory, 'wrangler.jsonc')
+		await writeFile(
+			file,
+			`{ "name": "kody-test", "env": { "production": { "kv_namespaces": [${binding}] } } }`,
+		)
+		return file
+	}
+	expect(
+		await resolveProductionOauthKvTitle(
+			await withBinding('{ "binding": "OAUTH_KV" }'),
+		),
+	).toBe('kody-test-oauth')
+	expect(
+		await resolveProductionOauthKvTitle(
+			await withBinding('{ "binding": "OAUTH_KV", "title": "custom-oauth" }'),
+		),
+	).toBe('custom-oauth')
+	await expect(
+		resolveProductionOauthKvTitle(
+			await withBinding('{ "binding": "BUNDLE_ARTIFACTS_KV" }'),
+		),
+	).rejects.toThrow(/OAUTH_KV/)
 })

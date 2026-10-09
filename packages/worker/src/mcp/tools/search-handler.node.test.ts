@@ -106,11 +106,6 @@ vi.mock('#mcp/capabilities/registry.ts', () => ({
 	) => mockModule.getCapabilityRegistryForContext(...args),
 }))
 
-vi.mock('#worker/package-registry/platform-packages.ts', () => ({
-	listPlatformPackagesForSearch: async () => [],
-	findPlatformPackageByRef: async () => null,
-}))
-
 vi.mock('#worker/community/fork-listing-relation.ts', () => ({
 	applySavedPackageForkListingAncestry: async ({
 		records,

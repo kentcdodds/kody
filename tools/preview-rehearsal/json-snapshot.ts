@@ -1,7 +1,7 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { openRehearsalSession, type RehearsalSession } from './kody-session.ts'
 import {
-	sharingOptInRoles,
+	rehearsalOrg,
 	type RehearsalOrigins,
 	type RehearsalUser,
 } from './rehearsal-env.ts'
@@ -21,6 +21,11 @@ export type SnapshotUser = {
 	role: RehearsalUser['role']
 	email: string
 	username: string
+	/**
+	 * Personal org slug for `?org=` on consent. Migrated orgs keep the
+	 * signup username forever, so this stays `rh-dave` after dave renames.
+	 */
+	orgSlug: string
 	password: string
 }
 
@@ -178,18 +183,9 @@ async function snapshotPerson(
 			session.execute(integrationProofModule(echoUrl)),
 		),
 		memorySearches,
-		shares: sharingOptInRoles.includes(user.role)
-			? {
-					inbound: await capture(check('shares.inbound'), () =>
-						callCapability(session, 'packageShareList', { scope: 'inbound' }),
-					),
-					outbound: await capture(check('shares.outbound'), () =>
-						callCapability(session, 'packageShareList', {
-							scope: 'outbound',
-						}),
-					),
-				}
-			: 'not opted in',
+		grants: await capture(check('grants'), () =>
+			callCapability(session, 'accessList'),
+		),
 		tokens: await capture(check('tokens'), async () => {
 			const listed = (await session.api('tokenList')) as {
 				tokens?: Array<Record<string, unknown>>
@@ -212,12 +208,82 @@ async function snapshotPerson(
 	}
 }
 
+/**
+ * The org owner's MCP connection binds to the rehearsal org only while the
+ * owner membership is live; its package list is the org's, not the owner's.
+ */
+async function snapshotOrg(
+	origins: RehearsalOrigins,
+	owner: SnapshotUser,
+	capture: Capture,
+) {
+	const check = (name: string) => `org.${name}`
+	let session: RehearsalSession
+	try {
+		session = await openRehearsalSession(origins.app, owner, {
+			orgSlug: rehearsalOrg.slug,
+		})
+	} catch (error) {
+		return {
+			slug: rehearsalOrg.slug,
+			session: await capture(check('session'), async () => {
+				throw error
+			}),
+		}
+	}
+	try {
+		return {
+			slug: rehearsalOrg.slug,
+			me: await capture(check('me'), () =>
+				callCapability(session, 'metaGetCurrentUser'),
+			),
+			packages: await capture(check('packages'), () =>
+				callCapability(session, 'packageList'),
+			),
+			grants: await capture(check('grants'), () =>
+				callCapability(session, 'accessList'),
+			),
+		}
+	} finally {
+		await session.close()
+	}
+}
+
+function listedPackageIds(listing: unknown) {
+	const packages = (listing as { packages?: unknown } | null)?.packages
+	if (!Array.isArray(packages)) return []
+	return packages.flatMap((pkg) => {
+		const id = (pkg as { id?: unknown } | null)?.id
+		return typeof id === 'string' ? [id] : []
+	})
+}
+
+/**
+ * Package ids that show up in more than one owner's `packageList`. Each org
+ * lists only the packages it owns, so any hit is a package injected from
+ * another account (the old platform-account lane).
+ */
+export function findPackagesListedByMoreThanOneOwner(
+	listings: Record<string, unknown>,
+) {
+	const ownersById = new Map<string, Array<string>>()
+	for (const [owner, listing] of Object.entries(listings)) {
+		for (const id of new Set(listedPackageIds(listing))) {
+			ownersById.set(id, [...(ownersById.get(id) ?? []), owner])
+		}
+	}
+	return [...ownersById]
+		.filter(([, owners]) => owners.length > 1)
+		.map(([id, owners]) => ({ id, owners }))
+}
+
 export type JsonSnapshot = {
 	version: 1
 	takenAt: string
 	origins: RehearsalOrigins
 	admin: Record<string, unknown>
 	people: Array<Awaited<ReturnType<typeof snapshotPerson>>>
+	org: Awaited<ReturnType<typeof snapshotOrg>>
 	failures: Array<SnapshotCheckFailure>
 }
 
@@ -239,7 +305,12 @@ export async function takeJsonSnapshot(input: {
 		throw new Error('Snapshot needs the rehearsal admin credentials.')
 	const failures: Array<SnapshotCheckFailure> = []
 	const capture = createCapture(failures)
-	const admin = await openRehearsalSession(input.origins.app, adminUser)
+	// Bind every session to an org. After P8, users who also own another org
+	// (for example bob after a scope-grant conversion) must pass ?org= or
+	// consent refuses with "Choose an organization".
+	const admin = await openRehearsalSession(input.origins.app, adminUser, {
+		orgSlug: adminUser.orgSlug,
+	})
 	const adminView: Record<string, unknown> = {}
 	try {
 		for (const user of input.users) {
@@ -252,21 +323,42 @@ export async function takeJsonSnapshot(input: {
 				),
 			}
 		}
-		adminView.scopeGrants = await capture('admin.scopeGrants', () =>
-			callCapability(admin, 'adminPackageScopeGrantList'),
-		)
 	} finally {
 		await admin.close()
 	}
 	const people: JsonSnapshot['people'] = []
 	for (const user of input.users.filter((entry) => entry.role !== 'admin')) {
 		log(`Snapshotting ${user.role}...`)
-		const session = await openRehearsalSession(input.origins.app, user)
+		const session = await openRehearsalSession(input.origins.app, user, {
+			orgSlug: user.orgSlug,
+		})
 		try {
 			people.push(await snapshotPerson(session, user, input.origins, capture))
 		} finally {
 			await session.close()
 		}
+	}
+	const orgOwner = input.users.find((user) => user.role === rehearsalOrg.owner)
+	if (!orgOwner) {
+		throw new Error(
+			`Snapshot needs the rehearsal org owner (${rehearsalOrg.owner}) credentials.`,
+		)
+	}
+	log(`Snapshotting @${rehearsalOrg.slug} as ${orgOwner.role}...`)
+	const org = await snapshotOrg(input.origins, orgOwner, capture)
+	const shared = findPackagesListedByMoreThanOneOwner({
+		...Object.fromEntries(
+			people.map((person) => [person.role, person.packages]),
+		),
+		[`@${rehearsalOrg.slug}`]: 'packages' in org ? org.packages : null,
+	})
+	if (shared.length > 0) {
+		failures.push({
+			check: 'packages.ownedByOneOrg',
+			error: shared
+				.map(({ id, owners }) => `${id} is listed by ${owners.join(', ')}`)
+				.join('; '),
+		})
 	}
 	return {
 		version: 1,
@@ -274,6 +366,7 @@ export async function takeJsonSnapshot(input: {
 		origins: input.origins,
 		admin: adminView,
 		people,
+		org,
 		failures,
 	}
 }

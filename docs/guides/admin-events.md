@@ -484,8 +484,7 @@ packages, secrets, or Activity.
 Password signup, social-login signup, and admin-created person accounts dispatch
 `user.created` after the account row and default `user` role exist. Self-service
 account deletion at `/account` dispatches `user.deleted` after the per-user
-cascade finishes. Platform accounts (reserved official package owners) do not
-emit `user.created`.
+cascade finishes. Creating an org (`orgCreate`) does not emit `user.created`.
 
 Production fan-out selects only packages whose owners hold the admin role at
 dispatch time. A non-admin package may declare the topic, but it never receives
