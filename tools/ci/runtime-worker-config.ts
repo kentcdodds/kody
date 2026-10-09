@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	dynamicCallableWorkflowName,
 	listPackageAppHostnames,
 	packageAppApexRoutePattern,
 	packageAppWildcardRoutePattern,
@@ -398,10 +399,10 @@ export async function generate(options: CliOptions) {
 				`runtime env.${options.envName}.workflows declares ${String(runtimeEnv.workflows.length)} entries; the generator only knows how to name the single dynamic-callable workflow. Extend the naming logic before adding workflows.`,
 			)
 		}
+		const workflowName = dynamicCallableWorkflowName(options.runtimeWorkerName)
 		for (const entry of runtimeEnv.workflows) {
 			if (entry && typeof entry === 'object') {
-				;(entry as JsonRecord).name =
-					`${options.runtimeWorkerName}-dynamic-callable-workflows`
+				;(entry as JsonRecord).name = workflowName
 			}
 		}
 	}
@@ -421,14 +422,14 @@ export async function generate(options: CliOptions) {
 		`main generated config "${options.mainConfigPath}"`,
 	)
 	if (Array.isArray(mainEnvAfterRewrite.workflows)) {
+		const workflowName = dynamicCallableWorkflowName(options.runtimeWorkerName)
 		for (const entry of mainEnvAfterRewrite.workflows) {
 			if (
 				entry &&
 				typeof entry === 'object' &&
 				(entry as JsonRecord).script_name === options.runtimeWorkerName
 			) {
-				;(entry as JsonRecord).name =
-					`${options.runtimeWorkerName}-dynamic-callable-workflows`
+				;(entry as JsonRecord).name = workflowName
 			}
 		}
 	}

@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	dynamicCallableWorkflowName,
 	parseJsonc,
 	setArtifactsNamespaceOnWranglerEnv,
 } from './resource-utils.ts'
@@ -253,10 +254,10 @@ function alignCrossScriptWorkflowName(
 			`platform workflows declares ${String(envRecord.workflows.length)} entries; the generator only knows how to name the single dynamic-callable workflow. Extend the naming logic before adding workflows.`,
 		)
 	}
+	const workflowName = dynamicCallableWorkflowName(runtimeWorkerName)
 	for (const entry of envRecord.workflows) {
 		if (entry && typeof entry === 'object') {
-			;(entry as JsonRecord).name =
-				`${runtimeWorkerName}-dynamic-callable-workflows`
+			;(entry as JsonRecord).name = workflowName
 		}
 	}
 }

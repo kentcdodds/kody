@@ -505,6 +505,25 @@ export function truncateWithSuffix(
 	return `${trimmed}${suffix}`
 }
 
+/** Cloudflare Workflow binding `name` max length (wrangler rejects longer). */
+export const cloudflareWorkflowNameMaxLength = 64
+
+export const dynamicCallableWorkflowNameSuffix = '-dynamic-callable-workflows'
+
+/**
+ * Per-worker dynamic-callable workflow name, truncated to Cloudflare's 64-char
+ * limit so long branch preview names (e.g. local-execute-parity-0092) still
+ * deploy. Runtime and platform/main configs must use the same helper so the
+ * cross-script binding name matches.
+ */
+export function dynamicCallableWorkflowName(runtimeWorkerName: string) {
+	return truncateWithSuffix(
+		runtimeWorkerName,
+		dynamicCallableWorkflowNameSuffix,
+		cloudflareWorkflowNameMaxLength,
+	)
+}
+
 export function listD1Databases(): Array<D1DatabaseListEntry> {
 	const result = runWrangler(['d1', 'list', '--json'], { quiet: true })
 	if (result.status !== 0) {

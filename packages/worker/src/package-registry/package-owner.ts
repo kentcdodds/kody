@@ -1,4 +1,7 @@
-import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import {
+	type McpCallerContext,
+	type McpUserContext,
+} from '@kody-internal/shared/chat.ts'
 import {
 	personalOrgId,
 	type OwnerId,
@@ -21,6 +24,18 @@ export type PackageOwnerContext = {
 	ownerScope: string
 	ownerEmail: string
 	actorUserId: PersonId
+}
+
+/**
+ * Package storage / import lookup key for a caller: the bound org when the
+ * request carries one, otherwise the acting person (legacy wire callers
+ * without `request`). Use grants let an outside collaborator bind to the
+ * owner's org and run that org's packages; person id alone would miss them.
+ */
+export function packageStorageOwnerIdFromCaller(
+	callerContext: Pick<McpCallerContext, 'request' | 'user'>,
+): string {
+	return callerContext.request?.org.id ?? callerContext.user?.userId ?? ''
 }
 
 /**
