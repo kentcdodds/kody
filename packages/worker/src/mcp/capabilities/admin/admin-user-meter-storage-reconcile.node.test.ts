@@ -44,6 +44,7 @@ function createAdminContext(env: Env) {
 	return {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored(

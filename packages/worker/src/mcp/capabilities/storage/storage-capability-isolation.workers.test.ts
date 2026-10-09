@@ -16,6 +16,7 @@ function createPackageCallerContext(input: {
 	packageId: string
 }) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
 			userId: personIdFromStored(input.userId),

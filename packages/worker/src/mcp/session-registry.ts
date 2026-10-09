@@ -54,7 +54,10 @@ export async function readPersistedMcpAgentOwner(input: {
 	const props = await input.storage.get<McpServerProps>('props')
 	return {
 		doId: input.doId,
-		userId: props ? (parseMcpCallerContext(props).user?.userId ?? null) : null,
+		userId: props
+			? (parseMcpCallerContext(props, { kind: 'mcp-oauth' }).user?.userId ??
+				null)
+			: null,
 	}
 }
 

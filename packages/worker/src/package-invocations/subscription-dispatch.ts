@@ -3,6 +3,11 @@ import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-sche
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	requestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
 import { fanOutPackageEventToMcpSubscriptions } from '#mcp/events/fan-out.ts'
 import {
 	type PackageEventDispatchInput,
@@ -253,6 +258,7 @@ export async function deliverPackageEventWithToolFactories(input: {
 				}),
 				source: `package:${message.source.kodyId}`,
 				actorTokenId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
+				request: packageEventRequestSource(message),
 				runtimeInvokeDepth: message.invokeDepth,
 				toolFactories: input.toolFactories,
 				waitUntil: input.waitUntil,
@@ -310,6 +316,21 @@ export async function deliverPackageEventWithToolFactories(input: {
 		delivered: subscribers.length - failed,
 		failed,
 	}
+}
+
+/**
+ * Messages enqueued before they carried lineage run as Automation, which has
+ * no actor and so can only narrow what the emitter could do.
+ */
+function packageEventRequestSource(
+	message: PackageEventsDispatchQueueMessage,
+): RequestSource {
+	return message.lineage
+		? { kind: 'inherited', lineage: message.lineage }
+		: {
+				kind: 'platform-event',
+				sourceId: `${internalPackageEventSubscriptionTokenId}:${message.source.packageId}`,
+			}
 }
 
 export function createPackageEventToolsWithToolFactories(input: {
@@ -388,6 +409,9 @@ export function createPackageEventToolsWithToolFactories(input: {
 				invokeDepth: packageInvokeDepth + 1,
 				...(declaredEvent.mcp ? { mcp: true as const } : {}),
 				emittedAt: new Date().toISOString(),
+				...(input.callerContext.request
+					? { lineage: requestLineage(input.callerContext.request) }
+					: {}),
 			}
 			const queue = (input.env as Partial<Env>).PACKAGE_EVENTS_DISPATCH_QUEUE
 			let enqueued = false
@@ -451,6 +475,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 	source?: string | null
 	trustedSyntheticDispatch?: TrustedSyntheticSubscriptionDispatch
 	actorTokenId?: string
+	request: RequestSource
 	runtimeInvokeDepth?: number
 	toolFactories: PackageRuntimeToolFactories
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -481,8 +506,9 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
-			userId: input.savedPackage.userId,
+			sourceId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
+			orgId: ownerIdFromStored(input.savedPackage.userId),
+			request: input.request,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: buildPackageSubscriptionArtifactName(topic),

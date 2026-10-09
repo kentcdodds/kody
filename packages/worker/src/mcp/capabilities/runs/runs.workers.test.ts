@@ -26,6 +26,7 @@ function createTenant(label: string) {
 	const ctx = {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored(userId),
@@ -80,7 +81,10 @@ test(
 	async () => {
 		const anonymous = {
 			env,
-			callerContext: createMcpCallerContext({ baseUrl: 'https://example.com' }),
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+			}),
 		}
 		const authRequired = /Authenticated MCP user/
 		await expect(runListCapability.handler({}, anonymous)).rejects.toThrow(

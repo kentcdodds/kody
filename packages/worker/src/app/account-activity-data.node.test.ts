@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	loadAccountActivityData,
@@ -11,6 +8,7 @@ import {
 	surfaceFilterToRunSurface,
 } from '#app/account-activity-data.ts'
 import { type RunRecord } from '#worker/run-records/types.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	listRunRecords: vi.fn(),
@@ -39,8 +37,7 @@ const user: ActivityUser = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-	actor: personIdFromStored('stable-user-1'),
-	owner: personalOrgId(personIdFromStored('stable-user-1')),
+	request: sessionRequestContext('stable-user-1'),
 }
 
 const weekAgo = '2026-07-19T12:00:00.000Z'

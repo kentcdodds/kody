@@ -116,6 +116,7 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ctx = {
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			user: {
 				userId: personIdFromStored(stableUserId),
 				email: userEmail,
@@ -155,6 +156,7 @@ test('repoCreate creates within entitlement, rejects duplicates, and gates side 
 	const ceilingCtx = {
 		env: { APP_DB: atCeiling } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			user: {
 				userId: personIdFromStored(stableUserId),
 				email: userEmail,

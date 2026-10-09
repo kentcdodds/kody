@@ -169,6 +169,10 @@ export async function dispatchInboundEmailSubscriptionEvents(input: {
 							topic,
 						}),
 						source: 'email',
+						request: {
+							kind: 'inbound-email',
+							sourceId: input.message.inboxId ?? input.message.id,
+						},
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =
@@ -254,6 +258,7 @@ export async function dispatchEmailDeliverySubscriptionEvents(input: {
 						params: payload,
 						idempotencyKey: `email-delivery:${input.providerEvent.payload.eventId}:${savedPackage.id}`,
 						source: 'email',
+						request: { kind: 'platform-event', sourceId: 'email' },
 						waitUntil: input.waitUntil,
 					})
 					return {

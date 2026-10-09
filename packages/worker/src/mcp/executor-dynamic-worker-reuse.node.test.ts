@@ -51,6 +51,7 @@ function createGatewayProps(userId: string) {
 		baseUrl: 'https://heykody.dev',
 		userId,
 		email: `${userId}@example.com`,
+		request: null,
 		storageContext: null,
 	}
 }

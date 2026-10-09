@@ -477,6 +477,7 @@ export async function handleMcpRequest({
 		readConnectionProfileNameFromGrantProps(grantProps)
 	const callerContext = createMcpCallerContext({
 		baseUrl: origin,
+		source: { kind: 'mcp-oauth' },
 		executionOrigin: 'interactive',
 		user: mcpUser,
 		connectionProfileName,

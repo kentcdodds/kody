@@ -1,9 +1,7 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -41,8 +39,7 @@ function createUser(): AuthenticatedAppUser {
 			username: 'user',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	}
 }
 

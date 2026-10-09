@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockFns = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
@@ -68,6 +69,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 		env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
+		request: sessionRequestContext('user-1'),
 		scope: 'search',
 		query: 'notes',
 	})
@@ -78,6 +80,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 		env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
+		request: sessionRequestContext('user-1'),
 		scope: 'search',
 		query: 'notes',
 		includeHiddenPackages: true,
@@ -96,6 +99,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 		env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
+		request: sessionRequestContext('user-1'),
 		scope: 'context',
 		query: 'notes',
 	})

@@ -63,6 +63,7 @@ const {
 
 const env = { APP_DB: {} } as unknown as Env
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://kody.example',
 	user: {
 		userId: personIdFromStored('user-1'),
@@ -143,7 +144,10 @@ beforeEach(() => {
 test('anonymous callers get an empty catalog without touching storage', async () => {
 	const catalog = await loadCallerSkillsCatalog({
 		env,
-		callerContext: createMcpCallerContext({ baseUrl: 'https://kody.example' }),
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://kody.example',
+		}),
 	})
 	expect(catalog).toEqual([])
 	expect(mocks.listOwn).not.toHaveBeenCalled()

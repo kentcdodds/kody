@@ -152,6 +152,7 @@ function mountCaller(
 ) {
 	const userId = options.userId === undefined ? 'user-1' : options.userId
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: userId
 			? {

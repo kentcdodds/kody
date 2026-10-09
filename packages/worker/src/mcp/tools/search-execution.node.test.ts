@@ -240,6 +240,7 @@ async function runThreeBlockingEvaluations(env: Env) {
 						baseUrl: 'https://example.com',
 						userId: 'user-1',
 						email: null,
+						request: null,
 						storageContext: null,
 					},
 				}).execute(`async () => ${index}`, [{ name: 'kody', fns: {} }])

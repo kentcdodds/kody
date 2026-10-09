@@ -4,7 +4,11 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { inheritRequest } from '#worker/request-context/request-context.ts'
 import {
 	buildEmailReceiptSubscriptionEnvelope,
 	inboundEmailReceiptTopic,
@@ -324,6 +328,7 @@ export const packageSubscriptionDispatchCapability = defineDomainCapability(
 				idempotencyKey,
 				trustedSyntheticDispatch: trustedSyntheticSubscriptionDispatch,
 				actorTokenId: internalSyntheticSubscriptionTokenId,
+				request: inheritRequest(requireMcpRequest(ctx.callerContext)),
 			})
 			const retryableCode =
 				readPreExecutionPackageInvocationInfrastructureCode(response)

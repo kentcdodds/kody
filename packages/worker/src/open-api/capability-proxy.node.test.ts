@@ -68,6 +68,7 @@ function mockBootstrapToolContext(db: D1Database) {
 						{
 							env: { APP_DB: db } as Env,
 							callerContext: createMcpCallerContext({
+								source: { kind: 'mcp-oauth' },
 								baseUrl: 'https://kody.codes',
 								user: {
 									userId: personIdFromStored(callerContext.user.userId),

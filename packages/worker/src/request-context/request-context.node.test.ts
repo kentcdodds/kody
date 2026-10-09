@@ -1,0 +1,154 @@
+import { expect, test } from 'vitest'
+import { type McpUserContext } from '@kody-internal/shared/chat.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	createMcpCallerContext,
+	parseMcpCallerContextWire,
+	toMcpCallerContextWire,
+} from '#mcp/context.ts'
+import {
+	deriveRequestContext,
+	inheritRequest,
+	parseRequestLineage,
+	requestLineage,
+} from './request-context.ts'
+
+const stableId = 'a'.repeat(64)
+const user: McpUserContext = {
+	userId: personIdFromStored(stableId),
+	email: 'ada@example.com',
+	username: 'ada',
+	displayName: 'Ada',
+}
+
+test('interactive sources act as the person, as Owner of their own org', () => {
+	const session = deriveRequestContext({ user, source: { kind: 'session' } })
+	expect(session).toEqual({
+		org: { id: stableId, slug: 'ada' },
+		actor: { userId: stableId, username: 'ada' },
+		attribution: { kind: 'user', userId: stableId },
+		credential: {
+			kind: 'session',
+			id: null,
+			orgId: stableId,
+			scopes: null,
+			profileName: null,
+		},
+		membership: { role: 'owner' },
+	})
+
+	const token = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+		profileName: 'work',
+	})
+	expect(token.credential).toEqual({
+		kind: 'api-token',
+		id: 'tok_1',
+		orgId: stableId,
+		scopes: null,
+		profileName: 'work',
+	})
+	expect(token.actor).toEqual(session.actor)
+})
+
+test('automation sources have no actor and no membership', () => {
+	const cases = [
+		[{ kind: 'schedule', jobId: 'job-1' }, 'schedule', 'schedule'],
+		[{ kind: 'webhook', sourceId: 'wh-1' }, 'webhook', 'webhook'],
+		[{ kind: 'inbound-email', sourceId: 'inbox-1' }, 'email', 'inbound-email'],
+		[{ kind: 'platform-event', sourceId: 'repo' }, 'event', 'platform-event'],
+	] as const
+	for (const [source, automationSource, credentialKind] of cases) {
+		const request = deriveRequestContext({ user, source })
+		expect(request.org.id).toBe(stableId)
+		expect(request.actor).toBeNull()
+		expect(request.membership).toBeNull()
+		expect(request.attribution).toEqual({
+			kind: 'automation',
+			source: automationSource,
+			sourceId: 'jobId' in source ? source.jobId : source.sourceId,
+		})
+		expect(request.credential.kind).toBe(credentialKind)
+	}
+})
+
+test('inherited runs keep the starter lineage and re-resolve the org', () => {
+	const starter = deriveRequestContext({
+		user,
+		source: { kind: 'api-token', tokenId: 'tok_1' },
+	})
+	const nested = deriveRequestContext({
+		user,
+		source: inheritRequest(starter),
+	})
+	expect(nested).toEqual(starter)
+
+	const automation = deriveRequestContext({
+		user,
+		source: { kind: 'webhook', sourceId: 'wh-1' },
+	})
+	const emitted = deriveRequestContext({
+		user,
+		source: inheritRequest(automation),
+	})
+	expect(emitted.actor).toBeNull()
+	expect(emitted.membership).toBeNull()
+	expect(emitted.attribution).toEqual(automation.attribution)
+})
+
+test('lineage survives a JSON round trip and malformed lineage is rejected', () => {
+	const lineage = requestLineage(
+		deriveRequestContext({ user, source: { kind: 'mcp-oauth' } }),
+	)
+	expect(parseRequestLineage(JSON.parse(JSON.stringify(lineage)))).toEqual(
+		lineage,
+	)
+	const automation = requestLineage(
+		deriveRequestContext({ user, source: { kind: 'schedule', jobId: 'j' } }),
+	)
+	expect(parseRequestLineage(JSON.parse(JSON.stringify(automation)))).toEqual(
+		automation,
+	)
+
+	expect(parseRequestLineage(undefined)).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			credential: { ...lineage.credential, kind: 'site-admin' },
+		}),
+	).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			credential: { ...lineage.credential, scopes: ['package:root'] },
+		}),
+	).toBeNull()
+	expect(
+		parseRequestLineage({
+			...lineage,
+			attribution: { kind: 'automation', source: 'cron', sourceId: 'x' },
+		}),
+	).toBeNull()
+})
+
+test('the request context is derived, never part of the persisted caller context', () => {
+	const callerContext = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user,
+		source: { kind: 'mcp-oauth' },
+	})
+	expect(callerContext.request?.credential.kind).toBe('mcp-oauth')
+	const wire = toMcpCallerContextWire(callerContext)
+	expect(wire).not.toHaveProperty('request')
+	expect(parseMcpCallerContextWire(JSON.parse(JSON.stringify(wire)))).toEqual(
+		wire,
+	)
+
+	expect(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			source: { kind: 'mcp-oauth' },
+		}).request,
+	).toBeNull()
+})

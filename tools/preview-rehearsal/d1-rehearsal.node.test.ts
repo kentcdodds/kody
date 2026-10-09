@@ -16,6 +16,7 @@ type FakeDatabase = {
 
 function fakeD1Api(databases: Record<string, FakeDatabase>) {
 	const requests: Array<string> = []
+	const querySql: Array<string> = []
 	const restores: Array<{ uuid: string; bookmark: string }> = []
 	const ok = (result: unknown) => Response.json({ success: true, result })
 	const byUuid = (uuid: string) =>
@@ -48,6 +49,7 @@ function fakeD1Api(databases: Record<string, FakeDatabase>) {
 		}
 		if (action === 'query' && method === 'POST') {
 			const sql = String(JSON.parse(String(init?.body)).sql)
+			querySql.push(sql)
 			if (sql.startsWith('SELECT name FROM sqlite_master')) {
 				return ok([
 					{
@@ -55,27 +57,36 @@ function fakeD1Api(databases: Record<string, FakeDatabase>) {
 					},
 				])
 			}
-			if (sql.includes('UNION')) {
+			const counted = [...sql.matchAll(/SELECT '([^']+)' AS table_name/g)].map(
+				(match) => match[1] ?? '',
+			)
+			// Production D1 sets SQLITE_LIMIT_COMPOUND_SELECT to 5. Keep this
+			// literal so raising the production batch size fails this suite.
+			if (counted.length > 5) {
 				return Response.json(
 					{
 						success: false,
-						errors: [{ message: 'too many terms in compound SELECT' }],
+						errors: [
+							{
+								message: 'too many terms in compound SELECT: SQLITE_ERROR',
+							},
+						],
 					},
 					{ status: 400 },
 				)
 			}
-			const counted = [...sql.matchAll(/SELECT '([^']+)' AS table_name/g)].map(
-				(match) => match[1] ?? '',
-			)
-			return ok(
-				counted.map((table) => ({
-					results: [{ table_name: table, row_count: database.tables[table] }],
-				})),
-			)
+			return ok([
+				{
+					results: counted.map((table) => ({
+						table_name: table,
+						row_count: database.tables[table],
+					})),
+				},
+			])
 		}
 		throw new Error(`unexpected ${method} ${url.pathname}`)
 	}
-	return { fetcher, requests, restores }
+	return { fetcher, requests, querySql, restores }
 }
 
 const client = (fetcher: typeof fetch) => ({
@@ -229,4 +240,38 @@ test('snapshot fails loudly when a preview database is missing', async () => {
 	await expect(
 		takeD1RehearsalSnapshot(client(api.fetcher), worker),
 	).rejects.toThrow(`D1 database ${worker}-jobs-db (jobs) does not exist`)
+})
+
+test('table counts batch UNION ALL so D1 never sees more than five compound SELECT terms', async () => {
+	const tables = Object.fromEntries(
+		Array.from({ length: 12 }, (_, index) => [
+			`table_${String(index).padStart(2, '0')}`,
+			index + 1,
+		]),
+	)
+	const api = fakeD1Api({
+		[`${worker}-db`]: { uuid: 'app-uuid', bookmark: 'app-b1', tables },
+		[`${worker}-audit-db`]: {
+			uuid: 'audit-uuid',
+			bookmark: 'audit-b1',
+			tables: { audit_events: 1 },
+		},
+		[`${worker}-jobs-db`]: {
+			uuid: 'jobs-uuid',
+			bookmark: 'jobs-b1',
+			tables: { jobs: 1 },
+		},
+	})
+	const snapshot = await takeD1RehearsalSnapshot(client(api.fetcher), worker)
+	const [app] = snapshot.databases
+	expect(app?.tables).toEqual(
+		Object.entries(tables)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([table, rows]) => ({ table, rows })),
+	)
+	for (const sql of api.querySql.filter((query) =>
+		query.includes('AS table_name'),
+	)) {
+		expect(sql.split(' UNION ALL ').length).toBeLessThanOrEqual(5)
+	}
 })

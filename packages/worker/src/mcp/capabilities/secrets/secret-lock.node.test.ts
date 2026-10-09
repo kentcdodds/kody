@@ -71,6 +71,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 	const ctx = {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.codes',
 			user: {
 				userId: personIdFromStored(userId),

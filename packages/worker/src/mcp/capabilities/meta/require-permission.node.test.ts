@@ -6,7 +6,10 @@ import { requireMcpUserWithPermission } from './require-permission.ts'
 test('requireMcpUserWithPermission requires an authenticated user', () => {
 	expect(() =>
 		requireMcpUserWithPermission(
-			createMcpCallerContext({ baseUrl: 'https://example.com' }),
+			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://example.com',
+			}),
 			'read:user:any',
 		),
 	).toThrow('Authenticated MCP user is required for this capability.')
@@ -16,6 +19,7 @@ test('requireMcpUserWithPermission throws when the user lacks the permission', (
 	expect(() =>
 		requireMcpUserWithPermission(
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
 					userId: personIdFromStored('user-1'),
@@ -41,6 +45,7 @@ test('requireMcpUserWithPermission returns the user when the permission is prese
 	expect(
 		requireMcpUserWithPermission(
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user,
 			}),
@@ -53,6 +58,7 @@ test('requireMcpUserWithPermission treats missing permissions as unauthorized', 
 	expect(() =>
 		requireMcpUserWithPermission(
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
 					userId: personIdFromStored('user-1'),

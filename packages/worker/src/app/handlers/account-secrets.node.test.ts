@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
@@ -13,6 +10,7 @@ import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
 import type * as HostApproval from '#mcp/secrets/host-approval.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn<
@@ -33,8 +31,7 @@ const mockModule = vi.hoisted(() => ({
 			email: 'user@example.com',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 	saveSecret: vi.fn<typeof secretsService.saveSecret>(async () => ({

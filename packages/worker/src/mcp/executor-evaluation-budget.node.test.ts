@@ -35,6 +35,7 @@ function executeAs(env: Env, userId: string, code: string) {
 			baseUrl: 'https://heykody.dev',
 			userId,
 			email: null,
+			request: null,
 			storageContext: null,
 		},
 	}).execute(code, providers)

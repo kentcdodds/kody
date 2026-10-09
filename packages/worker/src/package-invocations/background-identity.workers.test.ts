@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { metaGetCurrentUserCapability } from '#mcp/capabilities/meta/meta-get-current-user.ts'
@@ -97,8 +98,9 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		env,
 		baseUrl: 'https://kody.dev',
 		actor: {
-			tokenId: 'internal:email-subscriptions',
-			userId,
+			sourceId: 'internal:email-subscriptions',
+			orgId: ownerIdFromStored(userId),
+			request: { kind: 'inbound-email', sourceId: 'inbox-1' },
 		},
 		savedPackage: {
 			id: 'package-1',

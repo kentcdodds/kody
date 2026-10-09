@@ -437,6 +437,7 @@ test('searchUnified hides admin capabilities from non-admins in offline search',
 			registry: filterCapabilityRegistryForCaller(
 				registry,
 				createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 					user: {
 						userId: personIdFromStored(`${roles[0]}-1`),

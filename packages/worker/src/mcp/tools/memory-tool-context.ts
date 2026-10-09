@@ -1,5 +1,6 @@
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	acknowledgeSurfacedMemories,
 	searchMemoryRecords,
@@ -92,6 +93,7 @@ async function runContextPackageRetrievers(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	request: RequestContext | null
 	query: string
 	memoryContext?: {
 		task?: string
@@ -107,6 +109,7 @@ async function runContextPackageRetrievers(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.userId,
+		request: input.request,
 		scope: 'context',
 		query: input.query,
 		memoryContext: input.memoryContext,
@@ -148,6 +151,7 @@ export async function loadRelevantMemoriesForTool(input: {
 			env: input.env as Env,
 			baseUrl: input.callerContext.baseUrl,
 			userId,
+			request: input.callerContext.request,
 			query: retrievalQuery,
 			memoryContext: input.memoryContext,
 			conversationId: input.conversationId,
@@ -211,6 +215,7 @@ export async function surfaceToolMemories(input: {
 			env: input.env as Env,
 			baseUrl: input.callerContext.baseUrl,
 			userId,
+			request: input.callerContext.request,
 			query: retrievalQuery,
 			conversationId: input.conversationId,
 		}),

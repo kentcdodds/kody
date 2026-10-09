@@ -38,6 +38,7 @@ function as(db: D1Database, username: Username) {
 	return {
 		env: { APP_DB: db } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.codes',
 			user: {
 				...users[username],

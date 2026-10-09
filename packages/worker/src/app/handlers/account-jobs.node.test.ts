@@ -1,13 +1,11 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as appBaseUrl from '#worker/app-base-url.ts'
 import type * as jobRetention from '#worker/jobs/job-retention-cleanup.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const adHocJob = {
 	id: 'job-adhoc-1',
@@ -98,8 +96,7 @@ const mockModule = vi.hoisted(() => ({
 			username: 'test-user',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	inspectJobsForUser: vi.fn(),
 	updateJob: vi.fn(),

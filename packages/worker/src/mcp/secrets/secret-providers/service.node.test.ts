@@ -1,6 +1,7 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -124,6 +125,7 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 				env,
 				baseUrl: 'https://kody.example',
 				userId,
+				request: sessionRequestContext(userId),
 				provider: providerId,
 				ref: canonicalRef,
 				invokeProvider,

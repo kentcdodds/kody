@@ -117,6 +117,7 @@ const secretSetRegistry = () =>
 
 const meCaller = () =>
 	createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://app.example.com',
 		user: {
 			userId: personIdFromStored('user-1'),
@@ -225,6 +226,7 @@ test('buildKodyFns rejects role-gated capabilities even when passed an unfiltere
 	const tools = await buildKodyFns(
 		{} as Env,
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored('user-1'),
@@ -264,6 +266,7 @@ test('package workflow tools create instances from package context and honor cal
 	const workflowTools = createWorkflowTools({
 		env: workflowEnv,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://app.example.com',
 			user: {
 				userId: personIdFromStored('user-1'),
@@ -403,6 +406,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 		displayName: 'User Example',
 	}
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user,
 		storageContext: {
@@ -541,6 +545,7 @@ test('buildKodyFns tracks secretSet values and runModuleWithRegistry redacts the
 		secretSetRegistry(),
 	)
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-123'),
@@ -642,6 +647,7 @@ test('buildKodyFns rejects package storage kody tools that collide with capabili
 		buildKodyFns(
 			env,
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 				user: {
 					userId: personIdFromStored('user-123'),
@@ -660,6 +666,7 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	silenceIncidentalRuntimeWarnings()
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-123'),

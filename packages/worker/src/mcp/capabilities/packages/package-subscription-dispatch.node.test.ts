@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import type * as PackageInvocations from '#worker/package-invocations/service.ts'
 
 const inboundEmailReceiptTopic = 'email.message.received'
@@ -107,6 +108,7 @@ function createCtx(
 			},
 			storageContext: overrides?.storageContext ?? null,
 			repoContext: null,
+			request: sessionRequestContext('user-1'),
 		},
 	}
 }

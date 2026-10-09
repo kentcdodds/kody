@@ -65,6 +65,7 @@ function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 	return packageAppFetchCapability.handler(args, {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: input.executionOrigin ?? 'interactive',
 			user: {

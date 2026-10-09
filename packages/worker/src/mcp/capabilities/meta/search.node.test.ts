@@ -220,6 +220,7 @@ function createContext(
 			WRANGLER_IS_LOCAL_DEV: 'true',
 		} as unknown as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: user
 				? {

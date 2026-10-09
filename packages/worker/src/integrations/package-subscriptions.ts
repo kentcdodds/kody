@@ -186,6 +186,7 @@ async function dispatchIntegrationAuthSubscriptionEvents(input: {
 							packageId: savedPackage.id,
 						}),
 						source: 'integrations',
+						request: { kind: 'platform-event', sourceId: 'integrations' },
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

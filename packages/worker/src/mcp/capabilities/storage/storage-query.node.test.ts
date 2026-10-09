@@ -25,6 +25,7 @@ const { storageQueryCapability } = await import('./storage-query.ts')
 
 function createCallerContext() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored('user-1'),
@@ -36,6 +37,7 @@ function createCallerContext() {
 
 function createPackageCallerContext(packageId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		executionOrigin: 'background',
 		user: {

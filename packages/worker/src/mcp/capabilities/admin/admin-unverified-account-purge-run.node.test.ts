@@ -74,6 +74,7 @@ function createContext(roles: Array<string>, env: Env) {
 	return {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored(

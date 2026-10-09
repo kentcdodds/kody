@@ -46,6 +46,7 @@ function createEnv() {
 
 function createUserContext(userId = 'user-1') {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(userId),

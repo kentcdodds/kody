@@ -18,6 +18,7 @@ const { invokePackageSubscriptionWithToolFactories } =
 test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers on real sources', async () => {
 	await invokePackageSubscriptionWithToolFactories({
 		env: {} as Env,
+		request: { kind: 'platform-event', sourceId: 'test' },
 		baseUrl: 'https://heykody.dev',
 		savedPackage: {
 			id: 'pkg-1',
@@ -55,9 +56,11 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 				event: 'email.message.received',
 			},
 			source: 'email',
-			actor: expect.objectContaining({
-				userId: 'user-1',
-			}),
+			actor: {
+				sourceId: 'internal:email-subscriptions',
+				orgId: 'user-1',
+				request: { kind: 'platform-event', sourceId: 'test' },
+			},
 		}),
 	)
 })
@@ -65,6 +68,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 test('invokePackageSubscriptionWithToolFactories preserves synthetic markers only with the trusted dispatch token', async () => {
 	await invokePackageSubscriptionWithToolFactories({
 		env: {} as Env,
+		request: { kind: 'platform-event', sourceId: 'test' },
 		baseUrl: 'https://heykody.dev',
 		savedPackage: {
 			id: 'pkg-1',

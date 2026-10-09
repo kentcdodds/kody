@@ -1,12 +1,10 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const messageRecord = {
 	id: 'msg-1',
@@ -115,8 +113,7 @@ const authenticatedUser: AuthenticatedAppUser = {
 		username: 'test-user',
 		displayName: 'user',
 	},
-	actor: personIdFromStored('stable-user-1'),
-	owner: personalOrgId(personIdFromStored('stable-user-1')),
+	request: sessionRequestContext('stable-user-1'),
 }
 
 test('loadAccountEmailData reads USER message graph only through owner Mailbox readers', async () => {

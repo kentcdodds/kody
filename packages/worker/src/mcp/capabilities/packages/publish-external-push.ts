@@ -14,7 +14,11 @@ import {
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
@@ -973,6 +977,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: user.userId,
 				userEmail: user.email,
+				lineage: requestLineage(requireMcpRequest(ctx.callerContext)),
 				budgetMs: defaultDurableEscalationBudgetMs,
 				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),
 				workflowName: 'packagePublishExternalPush',

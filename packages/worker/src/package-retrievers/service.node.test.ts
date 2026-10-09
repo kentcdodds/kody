@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mockFns = vi.hoisted(() => ({
@@ -164,6 +165,7 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env,
 		baseUrl: 'https://example.com',
 		userId: 'user-1',
+		request: sessionRequestContext('user-1'),
 		scope: 'context',
 		query: 'notes',
 	})

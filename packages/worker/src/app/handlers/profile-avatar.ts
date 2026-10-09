@@ -29,7 +29,7 @@ export function createProfileAvatarHandler(env: Env) {
 			if (!isPublic) {
 				const user = await readAuthenticatedAppUser(request, env)
 				const ownerStableId = ownerIdFromStored(row.stable_user_id)
-				if (!user || user.owner !== ownerStableId) {
+				if (!user || user.request.org.id !== ownerStableId) {
 					return new Response('Not found', { status: 404 })
 				}
 			}

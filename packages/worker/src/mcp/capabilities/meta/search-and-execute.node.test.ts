@@ -40,6 +40,7 @@ test('execute capability runs modules through the shared execute runtime', async
 	})
 
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-1'),

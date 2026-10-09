@@ -1,5 +1,7 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
 import { sealedSecretProviderInvocationSource } from '#worker/package-runtime/package-invocation-sources.ts'
 import { runSavedPackageModuleOnce } from '#worker/package-invocations/module-execution.ts'
 import { createPackageEventTools } from '#worker/package-invocations/service.ts'
@@ -26,6 +28,7 @@ export async function invokeSealedSecretProvider(
 		env: Env
 		baseUrl: string
 		ownerUserId: string
+		request: RequestSource
 		savedPackage: SavedPackageRecord
 	},
 ): Promise<SealedProviderCanonicalizeResult | SealedProviderResolveResult> {
@@ -37,8 +40,9 @@ export async function invokeSealedSecretProvider(
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: 'internal:secret-provider-sealed',
-			userId: input.ownerUserId,
+			sourceId: 'internal:secret-provider-sealed',
+			orgId: ownerIdFromStored(input.ownerUserId),
+			request: input.request,
 		},
 		savedPackage: input.savedPackage,
 		invocationName: sealedSecretProviderExportName,

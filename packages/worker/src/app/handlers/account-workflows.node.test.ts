@@ -1,10 +1,8 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const listedWorkflow = {
 	id: 'dynwf-1',
@@ -46,8 +44,7 @@ const mockModule = vi.hoisted(() => ({
 			username: 'test-user',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	})),
 	listWorkflowRunsForUser: vi.fn(),
 	cancelWorkflowRunForUser: vi.fn(),
@@ -184,8 +181,7 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 			username: 'test-user',
 			displayName: 'user',
 		},
-		actor: personIdFromStored('stable-user-1'),
-		owner: personalOrgId(personIdFromStored('stable-user-1')),
+		request: sessionRequestContext('stable-user-1'),
 	})
 	const methodNotAllowed = await handler.handler(
 		new RequestContext(

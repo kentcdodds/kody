@@ -128,7 +128,7 @@ export async function invokeSavedPackageModule(input: {
 	// reports them as before.
 	const suspension = await resolveBackgroundMcpUser(
 		input.env.APP_DB,
-		input.actor.userId,
+		input.actor.orgId,
 	).then(
 		() => null,
 		(error: unknown) => (isAccountSuspendedError(error) ? error : null),
@@ -152,7 +152,7 @@ export async function invokeSavedPackageModule(input: {
 		topic: input.topic,
 	})
 	const ledgerKey = {
-		tokenId: input.actor.tokenId,
+		tokenId: input.actor.sourceId,
 		packageId: input.savedPackage.id,
 		exportName: input.invocationName,
 		idempotencyKey: input.idempotencyKey,
@@ -220,7 +220,7 @@ export async function invokeSavedPackageModule(input: {
 	const attemptClaim = async () =>
 		await claimPackageInvocationRecord({
 			env: input.env,
-			userId: input.actor.userId,
+			userId: input.actor.orgId,
 			context: buildRunRecordContext(),
 			invocation: {
 				id: crypto.randomUUID(),
@@ -237,7 +237,7 @@ export async function invokeSavedPackageModule(input: {
 	const lookupLedger = async () =>
 		await getPackageInvocationRecord({
 			env: input.env,
-			userId: input.actor.userId,
+			userId: input.actor.orgId,
 			key: ledgerKey,
 		})
 	let claim: Awaited<ReturnType<typeof attemptClaim>>
@@ -321,7 +321,7 @@ export async function invokeSavedPackageModule(input: {
 		})
 		const pending = finishPackageInvocationRecord({
 			env: input.env,
-			userId: input.actor.userId,
+			userId: input.actor.orgId,
 			handle: claimed.handle,
 			invocationId: claimed.invocationId,
 			claimUpdatedAt: claimed.claimUpdatedAt,
@@ -426,7 +426,7 @@ export async function invokeSavedPackageModule(input: {
 			const releaseErrorCode = readInvocationErrorCode(outcome.response.body)
 			const release = await releasePackageInvocationRecord({
 				env: input.env,
-				userId: input.actor.userId,
+				userId: input.actor.orgId,
 				invocationId: claimed.invocationId,
 				claimUpdatedAt: claimed.claimUpdatedAt,
 				handle: claimed.handle,
@@ -469,7 +469,7 @@ export async function invokeSavedPackageModule(input: {
 			try {
 				const finished = await finishPackageInvocationRecord({
 					env: input.env,
-					userId: input.actor.userId,
+					userId: input.actor.orgId,
 					handle: claimed.handle,
 					invocationId: claimed.invocationId,
 					claimUpdatedAt: claimed.claimUpdatedAt,
@@ -505,7 +505,7 @@ export async function invokeSavedPackageModule(input: {
 			try {
 				const finished = await finishPackageInvocationRecord({
 					env: input.env,
-					userId: input.actor.userId,
+					userId: input.actor.orgId,
 					handle: claimed.handle,
 					invocationId: claimed.invocationId,
 					claimUpdatedAt: claimed.claimUpdatedAt,

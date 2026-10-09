@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	emptyCommunityCategoryCounts,
 	type CommunityCategoryCounts,
@@ -148,7 +149,11 @@ function sampleOverview(listing = sampleListing) {
 }
 
 function signedInUser() {
-	return { mcpUser: { userId: 'viewer-1', username: 'burhan' }, roles: [] }
+	return {
+		mcpUser: { userId: 'viewer-1', username: 'burhan' },
+		request: sessionRequestContext('viewer-1', 'burhan'),
+		roles: [],
+	}
 }
 
 const request = (path: string) => new Request(`https://example.com${path}`)

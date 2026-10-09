@@ -16,6 +16,7 @@ const { workflowCancelCapability } = await import('./workflow-cancel.ts')
 test('workflowRunCancel maps service outcomes for the signed-in user', async () => {
 	const env = {} as Env
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored('user-123'),

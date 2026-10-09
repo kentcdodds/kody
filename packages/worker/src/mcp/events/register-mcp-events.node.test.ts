@@ -38,6 +38,7 @@ vi.mock('./list-events.ts', async (importOriginal) => ({
 }))
 
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://kody.example.com',
 	user: {
 		userId: personIdFromStored('stable-user-1'),

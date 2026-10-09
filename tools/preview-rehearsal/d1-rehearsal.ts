@@ -113,7 +113,11 @@ function quoteIdentifier(name: string) {
 	return `"${name.replaceAll('"', '""')}"`
 }
 
-const countBatchSize = 40
+/**
+ * D1 compiles SQLite with SQLITE_LIMIT_COMPOUND_SELECT = 5. A larger UNION ALL
+ * fails with `too many terms in compound SELECT`.
+ */
+const d1CompoundSelectLimit = 5
 
 /** Row counts for every user table (SQLite and Cloudflare internals skipped). */
 export async function countD1Tables(
@@ -126,16 +130,14 @@ export async function countD1Tables(
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name",
 	)
 	const counts: Array<D1TableCount> = []
-	for (let index = 0; index < tables.length; index += countBatchSize) {
-		const batch = tables.slice(index, index + countBatchSize)
-		// Separate statements, not UNION ALL: D1 caps compound SELECT terms far
-		// below SQLite's default.
+	for (let index = 0; index < tables.length; index += d1CompoundSelectLimit) {
+		const batch = tables.slice(index, index + d1CompoundSelectLimit)
 		const sql = batch
 			.map(
 				({ name }) =>
-					`SELECT '${name.replaceAll("'", "''")}' AS table_name, COUNT(*) AS row_count FROM ${quoteIdentifier(name)};`,
+					`SELECT '${name.replaceAll("'", "''")}' AS table_name, COUNT(*) AS row_count FROM ${quoteIdentifier(name)}`,
 			)
-			.join('\n')
+			.join(' UNION ALL ')
 		const rows = await queryD1<{ table_name: string; row_count: number }>(
 			client,
 			uuid,

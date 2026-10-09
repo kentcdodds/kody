@@ -1,6 +1,8 @@
 import { normalizePackageInvocationExportName } from '@kody-internal/shared/public-urls.ts'
 import { type PackageEventTools } from '#mcp/run-kody-registry.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
+import { type RequestSource } from '#worker/request-context/request-context.ts'
 import {
 	type RunRecordContext,
 	type RunSurface,
@@ -21,6 +23,7 @@ export type PackageInvocationTokenScope = {
 	email?: string
 	packageId: string
 	exportNames?: Array<string>
+	request: RequestSource
 }
 
 export type PackageInvocationRequest = {
@@ -56,8 +59,15 @@ export type PackageInvocationRequest = {
 export type PackageInvocationResponse = PackageInvocationStoredResponse
 
 export type PackageInvocationActor = {
-	tokenId: string
-	userId: string
+	/**
+	 * Frozen synthetic id (`internal:webhook:<id>`, `internal:package-events:…`).
+	 * Keys the idempotency ledger and the automation entitlement skip.
+	 */
+	sourceId: string
+	/** The org that owns the invoked package. */
+	orgId: OwnerId
+	/** How the run is attributed and authenticated. */
+	request: RequestSource
 }
 
 export type PackageModuleSelector =
@@ -118,8 +128,6 @@ export {
 	syntheticPackageSubscriptionSource,
 } from './subscription-envelope.ts'
 export const internalPackageEventSubscriptionTokenId = 'internal:package-events'
-export const internalPackageRuntimeInvokeTokenId = 'internal:package-runtime'
-export const internalExecuteRuntimeInvokeTokenId = 'internal:execute-runtime'
 export const maxPackageRuntimeInvokeDepth = 8
 export const packageInvocationScopeWildcard = '*'
 

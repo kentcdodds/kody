@@ -78,6 +78,7 @@ test('secretList matches implicit user-secret read access and still lists packag
 	const executeContext = {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored('user-1'),
@@ -89,6 +90,7 @@ test('secretList matches implicit user-secret read access and still lists packag
 	const packageContext = {
 		env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored('user-1'),
@@ -184,6 +186,7 @@ test('secretList from execute returns caller-owned package metadata with package
 		{
 			env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
 					userId: personIdFromStored(userId),

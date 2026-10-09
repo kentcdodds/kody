@@ -53,6 +53,7 @@ function createTrendEnv() {
 
 function callerContext(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(userId),
@@ -86,6 +87,7 @@ test('usageTrendGet requires a signed-in user', async () => {
 			{
 				env,
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},

@@ -1,8 +1,6 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
@@ -63,8 +61,7 @@ function createActor(
 			username: 'admin-user',
 			displayName: 'admin-user',
 		},
-		actor: personIdFromStored('1'.padStart(64, '0')),
-		owner: personalOrgId(personIdFromStored('1'.padStart(64, '0'))),
+		request: sessionRequestContext('1'.padStart(64, '0')),
 	}
 }
 

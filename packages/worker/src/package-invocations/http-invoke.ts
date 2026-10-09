@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildSavedPackageNotFoundMessage,
 	normalizeExportName,
@@ -114,8 +115,9 @@ export async function invokePackageExportWithToolFactories(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		actor: {
-			tokenId: input.token.tokenId,
-			userId: input.token.userId,
+			sourceId: input.token.tokenId,
+			orgId: ownerIdFromStored(input.token.userId),
+			request: input.token.request,
 		},
 		savedPackage,
 		invocationName: exportName,

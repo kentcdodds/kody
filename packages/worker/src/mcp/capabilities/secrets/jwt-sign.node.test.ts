@@ -29,6 +29,7 @@ const spki = { type: 'spki', format: 'pem' } as const
 const ctx = {
 	env: {} as Env,
 	callerContext: createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
 		user: {
 			userId: personIdFromStored('user-123'),
@@ -503,6 +504,7 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 	await signWith(privateKey, refInput, {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
 			user: {
 				userId: personIdFromStored('guest-user'),

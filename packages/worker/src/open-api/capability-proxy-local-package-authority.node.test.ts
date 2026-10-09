@@ -88,6 +88,7 @@ function createDb() {
 
 function createContext(db: D1Database): ApiInvocationContext {
 	const callerContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.codes',
 		executionOrigin: 'interactive',
 		user: {

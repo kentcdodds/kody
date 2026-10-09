@@ -160,6 +160,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 			baseUrl: input.ctx.callerContext.baseUrl,
 			userId: input.ctx.callerContext.user.userId,
 			email: input.ctx.callerContext.user.email,
+			request: input.ctx.callerContext.request,
 			storageContext,
 			...(packageId ? { grantedSecretAuthorityPackageIds: [packageId] } : {}),
 		},

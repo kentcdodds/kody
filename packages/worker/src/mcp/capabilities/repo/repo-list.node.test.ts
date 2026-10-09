@@ -16,6 +16,7 @@ function createContext(userId = 'user-1') {
 	return {
 		env: { APP_DB: {} } as Env,
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.test',
 			user: {
 				userId: personIdFromStored(userId),

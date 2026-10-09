@@ -85,6 +85,7 @@ function createCapability(
 const flagged = createCapability('example_flagged', 'demo-indicator')
 const open = createCapability('example_open')
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://example.com',
 	user: {
 		userId: personIdFromStored('user-1'),
@@ -194,6 +195,7 @@ test('featureFlag-gated capabilities fail closed when the flag map is missing', 
 
 test('featureFlag-gated capabilities require an authenticated caller', async () => {
 	const anonymousContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 	})
 	const enabledFlags = createFlagMap(true)
@@ -286,6 +288,7 @@ function createFlagResolveEnv(numericUserId: number) {
 test('one MCP request records flag exposures once and reuses the request evaluation', async () => {
 	const stableUserId = testStableUserIdFromEmail('flags@example.com')
 	const requestContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(stableUserId),
@@ -328,6 +331,7 @@ test('one MCP request records flag exposures once and reuses the request evaluat
 	// A distinct caller context (next HTTP request) must evaluate and record
 	// again — no cross-request cache.
 	const nextRequestContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(stableUserId),

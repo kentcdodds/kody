@@ -203,6 +203,7 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 	const created = await insertJob(env, callerContext, 'Owner job')
 	const otherCallerContext = withCallerUser(
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored('user-999'),

@@ -36,6 +36,7 @@ function createEnv(options: { emailVerifiedAt?: string | null } = {}) {
 
 function createUserContext(userId = 'user-1') {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored(userId),
@@ -52,6 +53,7 @@ test('emailMessageDelete requires a signed-in, verified owner and deletes that m
 			{
 				env: createEnv(),
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},

@@ -135,6 +135,7 @@ function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
 function createPlanUserCallerContext(input: { userId: string; email: string }) {
 	return withCallerUser(
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			user: {
 				userId: personIdFromStored(input.userId),
@@ -570,6 +571,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 	}
 	const stalePackageContext = withCallerUser(
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
 			executionOrigin: 'background',
 			user: {

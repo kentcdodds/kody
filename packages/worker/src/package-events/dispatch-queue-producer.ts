@@ -1,3 +1,6 @@
+import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
+import { parseRequestLineage } from '#worker/request-context/request-context.ts'
+
 export type PackageEventsDispatchQueueMessage = {
 	userId: string
 	topic: string
@@ -21,6 +24,11 @@ export type PackageEventsDispatchQueueMessage = {
 	mcp?: true
 	/** ISO time `events.dispatch` accepted the event (MCP occurrence timestamp). */
 	emittedAt?: string
+	/**
+	 * The run that emitted the event; subscriber handlers inherit it. Absent
+	 * on messages enqueued before the field existed.
+	 */
+	lineage?: RequestLineage
 }
 
 export function parsePackageEventsDispatchQueueMessage(
@@ -65,6 +73,7 @@ export function parsePackageEventsDispatchQueueMessage(
 		return null
 	}
 	const emittedAt = record['emittedAt']
+	const lineage = parseRequestLineage(record['lineage'])
 	return {
 		userId: userId.trim(),
 		topic: topic.trim(),
@@ -76,5 +85,6 @@ export function parsePackageEventsDispatchQueueMessage(
 		...(typeof emittedAt === 'string' && !Number.isNaN(Date.parse(emittedAt))
 			? { emittedAt }
 			: {}),
+		...(lineage ? { lineage } : {}),
 	}
 }

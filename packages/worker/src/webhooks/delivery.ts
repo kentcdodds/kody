@@ -143,6 +143,7 @@ export async function dispatchWebhookInvocation(input: {
 			userId: input.endpoint.userId,
 			packageId: input.endpoint.packageId,
 			exportNames: [input.exportName],
+			request: { kind: 'webhook', sourceId: input.endpoint.id },
 		},
 		request: {
 			packageIdOrKodyId: input.endpoint.packageId,

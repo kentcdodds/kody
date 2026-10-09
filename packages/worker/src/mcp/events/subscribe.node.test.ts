@@ -78,6 +78,7 @@ function createPrincipal(
 		env,
 		oauthClientId: overrides.oauthClientId ?? 'client-a',
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.example.com',
 			user: userId
 				? {

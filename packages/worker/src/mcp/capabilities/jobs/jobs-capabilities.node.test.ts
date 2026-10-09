@@ -54,6 +54,7 @@ const user = {
 	displayName: 'User Example',
 }
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://example.com',
 	user,
 })
@@ -118,7 +119,10 @@ function updateBody(body: Record<string, unknown>) {
 test('jobUpdate and jobDelete require authentication and mutate existing jobs for the signed-in user', async () => {
 	const unauthenticated = {
 		env,
-		callerContext: createMcpCallerContext({ baseUrl: 'https://example.com' }),
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://example.com',
+		}),
 	}
 	for (const capability of [
 		jobUpdateCapability,
@@ -361,6 +365,7 @@ test('jobUpdate accepts interval and cron schedule replacements and round-trips 
 
 test('jobRunNow executes jobs immediately and preserves failed one-off jobs for inspection', async () => {
 	const appContext = createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user,
 		storageContext: {

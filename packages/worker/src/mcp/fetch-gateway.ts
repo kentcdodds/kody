@@ -59,6 +59,7 @@ import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
 import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { assertIntegrationHostAllowed } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	consumeDailyEntitlement,
 	findCachedUserAccountByStableUserId,
@@ -75,6 +76,8 @@ type FetchGatewayProps = {
 	 * stable userId so the caller's real plan still binds.
 	 */
 	email: string | null
+	/** The run's request; sealed secret providers inherit it. */
+	request: RequestContext | null
 	storageContext: StorageContext | null
 	/**
 	 * Bundler/host provenance ids that may be named as secret authority
@@ -523,13 +526,15 @@ export async function expandSecretPlaceholders(input: {
 	)
 	const resolvedProviderSecrets = await Promise.all(
 		referencedProviderSecrets.map(async (referenced) => {
-			if (!callerUserId) {
+			const request = input.props.request
+			if (!callerUserId || !request) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
 			const resolved = await resolveProviderSecretForFetch({
 				env: input.env as Env,
 				baseUrl: input.props.baseUrl,
 				userId: callerUserId,
+				request,
 				provider: referenced.provider,
 				ref: referenced.ref,
 				storageContext,

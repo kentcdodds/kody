@@ -32,6 +32,7 @@ const reuseEnv = {
 
 function createCaller() {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
 			userId: personIdFromStored('user-reuse-test'),

@@ -242,6 +242,7 @@ function runBundle(
 	return runBundledModuleWithRegistry(
 		env,
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl,
 			user: {
 				userId: personIdFromStored(userId),

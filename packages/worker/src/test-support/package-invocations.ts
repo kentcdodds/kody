@@ -497,6 +497,7 @@ export function createToken(
 		email: 'me@example.com',
 		packageId: overrides.packageId ?? 'pkg-1',
 		exportNames: overrides.exportNames ?? ['./dispatch-message-created'],
+		request: { kind: 'webhook', sourceId: 'discord-gateway' },
 	} as const
 }
 
@@ -939,6 +940,7 @@ export function createRuntimeEventTools(
 		} as unknown as Env,
 		baseUrl: 'https://kody.dev',
 		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
 				userId: personIdFromStored('user-123'),

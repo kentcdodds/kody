@@ -32,6 +32,7 @@ const {
 } = await import('./memory-tool-context.ts')
 
 const callerContext = createMcpCallerContext({
+	source: { kind: 'mcp-oauth' },
 	baseUrl: 'https://heykody.dev',
 	user: {
 		userId: personIdFromStored('user-1'),

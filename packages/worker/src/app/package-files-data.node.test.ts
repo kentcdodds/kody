@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUser from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -21,6 +18,7 @@ import type * as artifactFile from '#worker/repo/artifact-file.ts'
 import type * as artifactHeadCache from '#worker/repo/artifact-head-cache.ts'
 import type * as entitySources from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
 	getCommunityListingById:
@@ -222,8 +220,7 @@ function viewer(userId: string): AuthenticatedAppUser {
 			username: 'viewer',
 			displayName: 'viewer',
 		},
-		actor: personIdFromStored(userId),
-		owner: personalOrgId(personIdFromStored(userId)),
+		request: sessionRequestContext(userId),
 	}
 }
 

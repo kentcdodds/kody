@@ -111,6 +111,10 @@ export async function dispatchCommunityForkUpstreamUpdatedSubscriptionEvents(inp
 						}) as Record<string, unknown>,
 						idempotencyKey: `community-fork-upstream-updated:${message.eventId}:${fork.id}:${savedPackage.id}`,
 						source: 'community-fork-upstream-updated',
+						request: {
+							kind: 'platform-event',
+							sourceId: 'community-fork-upstream-updated',
+						},
 						actorTokenId: communityForkUpstreamUpdatedSubscriptionActorTokenId,
 					})
 					const retryableCode =

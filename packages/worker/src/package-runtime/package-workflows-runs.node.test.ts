@@ -1,5 +1,6 @@
 import { type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
+import { sessionRequestLineage } from '#worker/test-support/request-context.ts'
 import type * as PackageInvocationsService from '#worker/package-invocations/service.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import type * as RunRecordsServiceModule from '#worker/run-records/service.ts'
@@ -139,6 +140,7 @@ function createInline(
 	return createDynamicCallableWorkflow({
 		env,
 		userId,
+		lineage: sessionRequestLineage(userId),
 		body: { code: inlineCode, ...body } as never,
 	})
 }
@@ -184,6 +186,7 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 	const created = await createDynamicCallableWorkflow({
 		env,
 		userId: 'user-1',
+		lineage: sessionRequestLineage('user-1'),
 		packageContext: null,
 		body: {
 			...packageBody,
@@ -217,6 +220,7 @@ test('createDynamicCallableWorkflow verifies package ownership before queueing p
 				createWorkflowRunsDatabase({ savedPackage: null }),
 			),
 			userId: 'user-1',
+			lineage: sessionRequestLineage('user-1'),
 			body: {
 				packageId: 'not-owned',
 				exportName: './run-event',
@@ -248,6 +252,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 		createDynamicCallableWorkflow({
 			env,
 			userId: 'user-1',
+			lineage: sessionRequestLineage('user-1'),
 			body: {
 				...packageBody,
 				runAt,
@@ -318,6 +323,7 @@ test('createDynamicCallableWorkflow dedupes queued runs by user and idempotency 
 					}),
 				),
 				userId,
+				lineage: sessionRequestLineage(userId),
 				body: {
 					...packageBody,
 					runAt: '2026-05-08T19:30:00.000Z',
@@ -620,6 +626,7 @@ test('createDynamicCallableWorkflow enforces concurrent workflow entitlements ac
 		createDynamicCallableWorkflow({
 			env: planEnv(plan),
 			userId,
+			lineage: sessionRequestLineage(userId),
 			userEmail: email,
 			body: { code: inlineCode, runAt, idempotencyKey },
 		})
@@ -700,6 +707,7 @@ test('DynamicCallableWorkflowBase records workflow_run usage on terminal transit
 			const created = await createDynamicCallableWorkflow({
 				env,
 				userId: 'user-1',
+				lineage: sessionRequestLineage('user-1'),
 				packageContext: null,
 				body: {
 					code,
@@ -779,6 +787,7 @@ test('workflow_run usage is recorded once across replays and never on failed ter
 		const created = await createDynamicCallableWorkflow({
 			env,
 			userId: 'user-1',
+			lineage: sessionRequestLineage('user-1'),
 			packageContext: null,
 			body: {
 				code: 'export default async function main(){ return { ok: true }; }',

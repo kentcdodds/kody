@@ -141,7 +141,7 @@ export async function runSavedPackageModuleOnce(
 	try {
 		const user = await resolveBackgroundMcpUser(
 			input.env.APP_DB,
-			input.actor.userId,
+			input.actor.orgId,
 		)
 		const { artifact, source: sourceRow } =
 			input.preloadedModuleArtifact ??
@@ -150,7 +150,7 @@ export async function runSavedPackageModuleOnce(
 				baseUrl: input.baseUrl,
 				savedPackage: input.savedPackage,
 				selector: input.moduleSelector,
-				userId: input.actor.userId,
+				userId: input.actor.orgId,
 			}))
 		const repoSource =
 			artifact.packageContext?.sourceId == null ||
@@ -158,11 +158,11 @@ export async function runSavedPackageModuleOnce(
 				? sourceRow
 				: await getEntitySourceByIdForUser(input.env.APP_DB, {
 						id: artifact.packageContext.sourceId,
-						userId: input.actor.userId,
+						userId: input.actor.orgId,
 					})
 		if (
 			shouldConsumeAutomationInvocationEntitlement({
-				actorTokenId: input.actor.tokenId,
+				actorTokenId: input.actor.sourceId,
 				runtimeInvokeDepth: input.runtimeInvokeDepth ?? 0,
 			})
 		) {
@@ -174,7 +174,7 @@ export async function runSavedPackageModuleOnce(
 				await consumeDailyEntitlement({
 					db: input.env.APP_DB,
 					env: input.env,
-					userId: input.actor.userId,
+					userId: input.actor.orgId,
 					email: user.email,
 					resource: automationInvocationsPerDayResource,
 				})
@@ -210,6 +210,7 @@ export async function runSavedPackageModuleOnce(
 				storageId: buildPackageInvocationStorageId(input.savedPackage.id),
 			},
 			repoContext: repoSource ? createRepoContext(repoSource) : null,
+			source: input.actor.request,
 		})
 		const runtimeSurface = resolveInvocationRuntimeSurface({
 			selector: input.moduleSelector,
@@ -288,7 +289,7 @@ export async function runSavedPackageModuleOnce(
 						const loaded = await getEmailMessageWithAttachmentsById({
 							env: input.env,
 							db: input.env.APP_DB,
-							userId: input.actor.userId,
+							userId: input.actor.orgId,
 							messageId,
 						})
 						if (!loaded) {
@@ -341,7 +342,7 @@ export async function runSavedPackageModuleOnce(
 							env: input.env,
 							db: input.env.APP_DB,
 							blobs: input.env.EMAIL_BLOBS,
-							userId: input.actor.userId,
+							userId: input.actor.orgId,
 							attachmentId,
 						})
 						if (!attachment) {
@@ -349,7 +350,7 @@ export async function runSavedPackageModuleOnce(
 						}
 						const message = await getInternalEmailMessageById({
 							env: input.env,
-							ownerId: input.actor.userId,
+							ownerId: input.actor.orgId,
 							messageId: attachment.messageId,
 						})
 						if (!message) {

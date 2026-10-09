@@ -3,9 +3,13 @@ import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
+	parseRequestLineage,
+	type RequestSource,
+} from '#worker/request-context/request-context.ts'
+import {
 	createMcpCallerContext,
-	parseMcpCallerContext,
-	toMcpCallerContextWire,
+	createMcpCallerContextWire,
+	parseMcpCallerContextWire,
 } from '#mcp/context.ts'
 import { buildJobEmbedText } from '#mcp/jobs-embed.ts'
 import { deleteJobVector, upsertJobVector } from '#mcp/jobs-vectorize.ts'
@@ -121,11 +125,25 @@ export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
 ): PersistedJobCallerContext {
-	const wire = toMcpCallerContextWire(parseMcpCallerContext(callerContext))
+	const wire = parseMcpCallerContextWire(callerContext)
 	if (!wire.user) {
 		throw new Error('Authenticated MCP user is required for job operations.')
 	}
 	return { ...wire, user: wire.user }
+}
+
+/**
+ * The clicker's request reaches run-now through the jobs worker RPC, so its
+ * lineage is re-validated, not trusted. A caller deployed before the request
+ * context existed sends none; the run then executes as the schedule would,
+ * which has no actor and so can only narrow what the clicker could do.
+ */
+function runNowRequestSource(
+	callerContext: McpCallerContext,
+	jobId: string,
+): RequestSource {
+	const lineage = parseRequestLineage(callerContext.request)
+	return lineage ? { kind: 'inherited', lineage } : { kind: 'schedule', jobId }
 }
 
 function serializeCallerContext(callerContext: PersistedJobCallerContext) {
@@ -356,6 +374,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	artifactName?: string | null
@@ -392,6 +411,7 @@ async function rebuildAndExecuteJobArtifact(input: {
 		env: input.env,
 		job: input.job,
 		callerContext: input.callerContext,
+		source: input.source,
 		artifact,
 		bypassLogs: [],
 		waitUntil: input.waitUntil,
@@ -404,6 +424,7 @@ async function executePublishedJobArtifact(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	artifact:
 		| PublishedBundleArtifact
 		| Awaited<ReturnType<typeof ensurePublishedBundleArtifactForJob>>
@@ -420,6 +441,7 @@ async function executePublishedJobArtifact(input: {
 	})
 	const callerContext = createMcpCallerContext({
 		...input.callerContext,
+		source: input.source,
 		repoContext: source
 			? {
 					sourceId: source.id,
@@ -623,20 +645,18 @@ async function createPackageJobCallerContext(input: {
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
 	const user = await resolveBackgroundMcpUser(input.db, input.userId)
-	const wire = toMcpCallerContextWire(
-		createMcpCallerContext({
-			baseUrl: input.baseUrl,
-			executionOrigin: 'background',
-			user,
-			storageContext: {
-				sessionId: null,
-				appId: input.packageId,
-				packageId: input.packageId,
-				storageId: null,
-			},
-			repoContext: null,
-		}),
-	)
+	const wire = createMcpCallerContextWire({
+		baseUrl: input.baseUrl,
+		executionOrigin: 'background',
+		user,
+		storageContext: {
+			sessionId: null,
+			appId: input.packageId,
+			packageId: input.packageId,
+			storageId: null,
+		},
+		repoContext: null,
+	})
 	return { ...wire, user }
 }
 
@@ -1247,6 +1267,8 @@ export async function executeJobOnce(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext | null
+	/** A schedule tick, or the person who pressed "run now". */
+	source: RequestSource
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
 	runRecordHandle?: RunRecordHandle | null
@@ -1299,6 +1321,7 @@ export async function executeJobOnce(input: {
 						env: input.env,
 						job: input.job,
 						callerContext: runtimeCallerContext,
+						source: input.source,
 						repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 						waitUntil: input.waitUntil,
 						runRecordHandle: input.runRecordHandle,
@@ -1396,6 +1419,7 @@ async function runRepoBackedJob(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
+	source: RequestSource
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
 	waitUntil?: (promise: Promise<unknown>) => void
 	runRecordHandle?: RunRecordHandle | null
@@ -1442,6 +1466,7 @@ async function runRepoBackedJob(input: {
 			env: input.env,
 			job: input.job,
 			callerContext: input.callerContext,
+			source: input.source,
 			artifact: loadedArtifact.artifact,
 			bypassLogs: [],
 			waitUntil: input.waitUntil,
@@ -1453,6 +1478,7 @@ async function runRepoBackedJob(input: {
 		env: input.env,
 		job: input.job,
 		callerContext: input.callerContext,
+		source: input.source,
 		sourceFiles: resolved.files,
 		entryPoint: resolved.entryPoint,
 		artifactName: resolved.artifactName,
@@ -1495,6 +1521,9 @@ export async function runJobNow(input: {
 				env: input.env,
 				job: row.record,
 				callerContext: activeCallerContext,
+				source: input.callerContext
+					? runNowRequestSource(input.callerContext, row.record.id)
+					: { kind: 'schedule', jobId: row.record.id },
 				repoCheckPolicyOverride: input.repoCheckPolicyOverride,
 				waitUntil: input.waitUntil,
 			})
@@ -1615,6 +1644,7 @@ async function executeClaimedScheduledJob(input: {
 				executeJobOnce({
 					env: input.env,
 					job: input.row.record,
+					source: { kind: 'schedule', jobId: input.row.record.id },
 					callerContext: resolveScheduledJobCallerContext({
 						rowUserId: input.row.record.userId,
 						callerContext: input.row.callerContext,

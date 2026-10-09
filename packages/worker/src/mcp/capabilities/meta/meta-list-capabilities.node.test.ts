@@ -11,6 +11,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 				user: {
 					userId: personIdFromStored('user-1'),
@@ -38,6 +39,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},
@@ -75,6 +77,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},
@@ -95,6 +98,7 @@ test('metaListCapabilities indexes domains and lists one requested domain', asyn
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
 			}),
 		},

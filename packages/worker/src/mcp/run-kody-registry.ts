@@ -100,6 +100,7 @@ import {
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
+import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	isDirectBundleDependency,
 	type BundleArtifactDependency,
@@ -334,7 +335,8 @@ export function createWorkflowTools(input: {
 	return {
 		create: async (body) => {
 			const userId = input.callerContext.user?.userId
-			if (!userId) {
+			const request = input.callerContext.request
+			if (!userId || !request) {
 				throw new Error('workflows.create requires an authenticated user.')
 			}
 			return await createDynamicCallableWorkflow({
@@ -343,6 +345,7 @@ export function createWorkflowTools(input: {
 				userEmail: input.callerContext.user?.email,
 				packageContext,
 				body,
+				lineage: requestLineage(request),
 			})
 		},
 	}
@@ -1229,6 +1232,7 @@ export async function runBundledModuleWithRegistry(
 				baseUrl: callerContext.baseUrl,
 				userId: callerContext.user?.userId ?? null,
 				email: callerContext.user?.email ?? null,
+				request: callerContext.request,
 				storageContext: normalizedStorageContext,
 				grantedSecretAuthorityPackageIds: [...authorizedPackageStorageIds],
 			},

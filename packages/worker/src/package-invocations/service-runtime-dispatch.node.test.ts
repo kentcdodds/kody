@@ -160,6 +160,17 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 		source: { packageId: 'pkg-gateway', kodyId: 'discord-gateway' },
 		invokeDepth: 1,
 		emittedAt: expect.any(String),
+		lineage: {
+			actor: { userId: 'user-123', username: null },
+			attribution: { kind: 'user', userId: 'user-123' },
+			credential: {
+				kind: 'mcp-oauth',
+				id: null,
+				orgId: 'user-123',
+				scopes: null,
+				profileName: null,
+			},
+		},
 	})
 	// Queued delivery never invokes subscribers inside the emitting request.
 	expect(repoMockModule.runBundledModuleWithRegistry).not.toHaveBeenCalled()

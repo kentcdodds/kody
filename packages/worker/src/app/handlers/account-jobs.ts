@@ -193,6 +193,7 @@ function buildCallerContext(input: {
 			env: input.env,
 			requestUrl: input.request.url,
 		}),
+		source: { kind: 'session' },
 		executionOrigin: 'interactive',
 		user: input.user.mcpUser,
 	})

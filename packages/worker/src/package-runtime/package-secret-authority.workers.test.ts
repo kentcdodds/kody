@@ -311,6 +311,7 @@ async function saveWakeTokenLockedTo(userId: string, packageId: string) {
 
 function createCallerContext(userId: string) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
 			userId: personIdFromStored(userId),
@@ -897,6 +898,7 @@ export default async function selfAdopt() {
 		const executed = await runBundledModuleWithRegistry(
 			env,
 			createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://kody.dev',
 				executionOrigin: 'interactive',
 				user: {

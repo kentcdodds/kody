@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
@@ -9,6 +6,7 @@ import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsRepo from '#worker/integrations/repo.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
 import type * as PackageRegistryRepo from '#worker/package-registry/repo.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => {
 	const stamps = {
@@ -89,8 +87,7 @@ const mockModule = vi.hoisted(() => {
 				username: 'test-user',
 				displayName: 'user',
 			},
-			actor: personIdFromStored('stable-user-1'),
-			owner: personalOrgId(personIdFromStored('stable-user-1')),
+			request: sessionRequestContext('stable-user-1'),
 		})),
 		readAuthSessionResult: async () => ({ session: null, setCookie: null }),
 		listJoinedIntegrations: vi.fn<
@@ -656,8 +653,7 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 			username: 'other-user',
 			displayName: 'other',
 		},
-		actor: personIdFromStored('stable-user-other'),
-		owner: personalOrgId(personIdFromStored('stable-user-other')),
+		request: sessionRequestContext('stable-user-other'),
 	})
 	const otherUserResponse = await rotate({
 		clientId: 'other-client',

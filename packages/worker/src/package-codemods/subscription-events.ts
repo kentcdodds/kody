@@ -142,6 +142,7 @@ async function invokeCodemodSubscriptions(input: {
 							packageId: savedPackage.id,
 						}),
 						source: 'package-codemods',
+						request: { kind: 'platform-event', sourceId: 'package-codemods' },
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

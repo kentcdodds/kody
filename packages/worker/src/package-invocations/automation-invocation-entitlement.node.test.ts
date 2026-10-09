@@ -1,8 +1,4 @@
 import { expect, test } from 'vitest'
-import {
-	internalExecuteRuntimeInvokeTokenId,
-	internalPackageRuntimeInvokeTokenId,
-} from './common.ts'
 import { shouldConsumeAutomationInvocationEntitlement } from './automation-invocation-entitlement.ts'
 
 test('shouldConsumeAutomationInvocationEntitlement covers top-level always-on entrypoints only', () => {
@@ -12,19 +8,6 @@ test('shouldConsumeAutomationInvocationEntitlement covers top-level always-on en
 			runtimeInvokeDepth: 0,
 		}),
 	).toBe(true)
-
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: internalExecuteRuntimeInvokeTokenId,
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(false)
-	expect(
-		shouldConsumeAutomationInvocationEntitlement({
-			actorTokenId: `${internalPackageRuntimeInvokeTokenId}:pkg-1`,
-			runtimeInvokeDepth: 0,
-		}),
-	).toBe(false)
 	expect(
 		shouldConsumeAutomationInvocationEntitlement({
 			actorTokenId: 'discord-gateway',

@@ -8,6 +8,7 @@ import { guides } from '#worker/guides/catalog.ts'
 const ctx: CapabilityContext = {
 	env: {} as Env,
 	callerContext: createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.example',
 		user: null,
 	}),
@@ -78,6 +79,7 @@ test('codingGuideGet serves public bundled guides and hides admin-only docs from
 		{
 			env: {} as Env,
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://kody.example',
 				user: {
 					userId: personIdFromStored('admin-1'),

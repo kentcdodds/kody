@@ -6,6 +6,7 @@ import {
 } from 'cloudflare:workers'
 import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	getPackageAppEntryPath,
 	parseAuthoredPackageJson,
@@ -988,6 +989,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				packageId: this.ctx.props.packageId,
 				storageId,
 			},
+			source: { kind: 'package-app' },
 		})
 	}
 
@@ -1465,6 +1467,9 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async workflowCreate(input: unknown) {
+		const { request } = await this.createCallerContext(null)
+		if (!request)
+			throw new Error('workflows.create requires a package app user.')
 		return await createDynamicCallableWorkflow({
 			env: this.env,
 			userId: this.ctx.props.userId,
@@ -1475,6 +1480,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				sourceId: this.ctx.props.sourceId,
 			},
 			body: input as PackageWorkflowCreateInput,
+			lineage: requestLineage(request),
 		})
 	}
 
@@ -1961,6 +1967,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 						baseUrl: input.baseUrl,
 						userId: input.userId,
 						email: input.runtime.callerContext.user?.email ?? null,
+						request: input.runtime.callerContext.request,
 						storageContext: {
 							sessionId: null,
 							appId: input.savedPackage.id,
@@ -2129,5 +2136,6 @@ export async function createPackageAppCallerContext(input: {
 			packageId: input.packageId,
 			storageId: null,
 		},
+		source: { kind: 'package-app' },
 	})
 }

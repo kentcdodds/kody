@@ -136,6 +136,7 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 							packageId: savedPackage.id,
 						}),
 						source: 'run-records',
+						request: { kind: 'platform-event', sourceId: 'run-records' },
 						waitUntil: input.waitUntil,
 					})
 					const retryableCode =

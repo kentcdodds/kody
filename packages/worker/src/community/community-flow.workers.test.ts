@@ -89,7 +89,11 @@ async function insertTestUser(input: {
 function createCapabilityContext(testEnv: Env, user: TestUser) {
 	return {
 		env: testEnv,
-		callerContext: createMcpCallerContext({ baseUrl, user }),
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl,
+			user,
+		}),
 	}
 }
 

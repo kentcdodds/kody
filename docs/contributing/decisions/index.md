@@ -140,6 +140,10 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0060 — Owner ids and person ids are separate types; storage stays keyed as-is](./0060-owner-and-person-ids.md)
   — `OwnerId` (owning org) vs `PersonId` (actor), `personalOrgId` is the only
   conversion; no `orgs` tables, column renames, or storage re-keying yet
+- [0061 — One request context for every request source](./0061-one-request-context.md)
+  — every caller context names its `RequestSource`; `RequestContext` (org,
+  actor, attribution, credential, membership) is derived, never persisted;
+  Automation has no actor; downstream runs inherit lineage
 
 ## Historical / UI / implementation
 

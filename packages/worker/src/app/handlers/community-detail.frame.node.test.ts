@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { createCommunityDetailHandler } from './community-detail.tsx'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
@@ -126,8 +127,7 @@ async function renderDetail({
 		viewer && {
 			roles: [],
 			...viewer,
-			actor: viewer.mcpUser.userId,
-			owner: viewer.mcpUser.userId,
+			request: sessionRequestContext(viewer.mcpUser.userId),
 		},
 	)
 	mockModule.listCommunityForksByListingIdsAndUser.mockResolvedValue(forks)

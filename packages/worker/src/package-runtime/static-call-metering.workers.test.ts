@@ -159,6 +159,7 @@ async function runEntry(userId: string, entrySource: string) {
 	return await runBundledModuleWithRegistry(
 		env,
 		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
 			baseUrl,
 			user: {
 				userId: personIdFromStored(userId),

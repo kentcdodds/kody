@@ -1,13 +1,11 @@
-import {
-	personalOrgId,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
 import type * as packageSource from '#worker/package-registry/source.ts'
 import type * as entitySources from '#worker/repo/entity-sources.ts'
 import type * as communityRepo from '#worker/community/repo.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => {
 	const savedPackage = {
@@ -48,8 +46,7 @@ const mockModule = vi.hoisted(() => {
 				username: 'test-user',
 				displayName: 'user',
 			},
-			actor: personIdFromStored('stable-user-1'),
-			owner: personalOrgId(personIdFromStored('stable-user-1')),
+			request: sessionRequestContext('stable-user-1'),
 		})),
 		searchSavedPackagesByUserId: vi.fn<
 			typeof packageRepo.searchSavedPackagesByUserId

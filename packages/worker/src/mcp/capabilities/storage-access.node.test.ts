@@ -13,6 +13,7 @@ function createCallerContext(
 	boundStorageId?: string,
 ) {
 	return createMcpCallerContext({
+		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://example.com',
 		user: {
 			userId: personIdFromStored('user-1'),

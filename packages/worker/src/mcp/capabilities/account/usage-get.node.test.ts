@@ -84,6 +84,7 @@ async function readUsage(input: Parameters<typeof createUsageEnv>[0]) {
 		{
 			env: createUsageEnv(input),
 			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
 					userId: personIdFromStored(testStableUserIdFromEmail(email)),
@@ -108,6 +109,7 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 			{
 				env: createUsageEnv({ plan: 'pro' }),
 				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://example.com',
 				}),
 			},
