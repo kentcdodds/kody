@@ -11,7 +11,10 @@ import {
 	buildPackageAppNotFoundMessage,
 	buildUnmatchedPackageAppOriginPathMessage,
 } from '#worker/package-runtime/package-app-synthetic.ts'
-import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	silenceExpectedConsoleWarns,
+} from '#worker/test-support/console-spies.ts'
 import {
 	ensurePackageSubscriptionTestSchema,
 	ensureRbacTestSchema,
@@ -372,9 +375,19 @@ test('production package apps fail closed when origin isolation is missing or un
 		packageAppBaseUrl: packageAppOrigin,
 		runtime: 'production',
 	})
+	consoleError.mockImplementation(() => {})
 	const inlineResponse = await handlePackageAppRequest(
 		new Request(`${appOrigin}/@${ownerUsername}/packages/demo`),
 		env,
+	)
+	expect(consoleError).toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.objectContaining({
+			status: 500,
+			phase: 'inline-disabled',
+			pathname: `/@${ownerUsername}/packages/demo`,
+			runtimeRunId: null,
+		}),
 	)
 	expect(inlineResponse.status).toBe(500)
 	await expect(inlineResponse.text()).resolves.toContain(
