@@ -56,13 +56,15 @@ jobs:
           REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          # The CI token reaches production for every target, so only main's
+          # reviewed script runs with it.
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Run from main only, got $REF." >&2
+            exit 1
+          fi
           if [ "$TARGET" = "production" ]; then
             if [ "$ACTOR" != "kentcdodds" ]; then
               echo "Production queries run as kentcdodds only (or Kent adds an approved runner here); got $ACTOR." >&2
-              exit 1
-            fi
-            if [ "$REF" != "refs/heads/main" ]; then
-              echo "Production queries run from main only, got $REF." >&2
               exit 1
             fi
             if [ "$CONFIRM" != "read-only production queries" ]; then
@@ -76,6 +78,8 @@ jobs:
 
       - name: 📦 Checkout
         uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
 
       - name: 🟢 Setup Node
         uses: actions/setup-node@v6

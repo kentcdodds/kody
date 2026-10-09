@@ -10,6 +10,7 @@ someone else running them.
 From `main`, as `kentcdodds`:
 
 ```bash
+mkdir -p ~/.kody-queries
 node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-queries/key > ~/.kody-queries/key.pub
 gh workflow run teams-production-queries.yml --ref main -f target=production \
   -f recipient_public_key="$(cat ~/.kody-queries/key.pub)" \
@@ -18,18 +19,19 @@ gh run download <run-id> -n teams-production-queries -D queries
 node tools/preview-rehearsal/seal.ts open --private-key ~/.kody-queries/key --in queries/report.sealed.json --out queries/report.json
 ```
 
-The workflow (`.github/workflows/teams-production-queries.yml`) refuses
-production unless the actor is `kentcdodds`, the ref is `main`, and `confirm`
-matches. To approve another runner, Kent adds their GitHub login to the
-workflow's check step in a reviewed PR.
+The workflow (`.github/workflows/teams-production-queries.yml`) runs only from
+`main`, because the CI Cloudflare token reaches production for every target. It
+refuses production unless the actor is `kentcdodds` and `confirm` matches. To
+approve another runner, Kent adds their GitHub login to the workflow's check
+step in a reviewed PR.
 
 The report leaves CI only sealed to the recipient key, and the public run
 summary has no counts: Actions artifacts and logs on this repo are
 world-readable. Keep `report.json` off the repo.
 
 Rehearse the same D1 and KV queries on a branch preview first with
-`-f target=kody-branch-<slug>` (any dispatcher, no `confirm`). Previews have no
-Stripe account, so that run reports Stripe as skipped.
+`-f target=kody-branch-<slug>` (from `main`, any dispatcher, no `confirm`).
+Previews have no Stripe account, so that run reports Stripe as skipped.
 
 ## What it answers
 
