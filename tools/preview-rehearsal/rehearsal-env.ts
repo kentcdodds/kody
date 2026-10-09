@@ -68,6 +68,15 @@ export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 	},
 ]
 
+/**
+ * Package sharing is a per-user opt-in (`/docs/package-sharing`); bob and
+ * dave stay opted out, so share capabilities are hidden from them.
+ */
+export const sharingOptInRoles: ReadonlyArray<RehearsalUser['role']> = [
+	'alice',
+	'carol',
+]
+
 /** Dave renames during the seed so `username_redirects` has a row. */
 export const renamedDaveUsername = 'rh-dave-renamed'
 

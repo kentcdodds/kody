@@ -21,6 +21,7 @@ import {
 	rehearsalUser,
 	rehearsalUsers,
 	renamedDaveUsername,
+	sharingOptInRoles,
 	type RehearsalOrigins,
 	type RehearsalUser,
 } from './rehearsal-env.ts'
@@ -674,7 +675,9 @@ export async function seedRehearsal(
 		const carolSession = personSessions.get('carol')
 		if (!alice || !carolSession)
 			throw new Error('Missing alice/carol sessions.')
-		for (const session of [alice, carolSession]) {
+		for (const role of sharingOptInRoles) {
+			const session = personSessions.get(role)
+			if (!session) throw new Error(`Missing ${role} session.`)
 			const optIn = await session.request('/docs/package-sharing/opt-in', {
 				method: 'POST',
 			})
