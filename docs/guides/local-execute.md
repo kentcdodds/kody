@@ -81,7 +81,9 @@ npx @kodycodes/cli execute --local --code 'import { kody } from "kody:runtime"; 
 
 Use `--file path.ts` the same way when the module lives on disk. Keep `--local`;
 static `kody:@owner/name` imports still run locally (package-graph download +
-CapabilityProxy hops).
+CapabilityProxy hops). Package-graph always returns the gateway-fetch shim, so
+ad-hoc scripts with no `kody:@` imports still expand `{{secret:…}}` placeholders
+on origin (or fail closed naming the secret) instead of sending them raw.
 
 ## Failure
 

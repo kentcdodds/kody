@@ -994,11 +994,23 @@ export default async () => hello()`
 	} satisfies Partial<LocalExecutePackageGraphError>)
 })
 
-test('buildLocalExecutePackageGraph returns an empty graph when there are no kody:@ imports', async () => {
+test('buildLocalExecutePackageGraph always embeds the gateway-fetch shim without kody:@ imports', async () => {
 	const graph = await buildLocalExecutePackageGraph({
 		...graphInput,
-		code: 'export default async function main() { return 1 }',
+		code: `export default async function main() {
+  return fetch('https://api.example.com/v1', {
+    headers: { authorization: 'Bearer {{secret:cloudflarePagesApiToken}}' },
+  })
+}`,
 	})
-	expect(graph).toEqual({ modules: [], imports: [], warnings: [] })
+	expect(graph.imports).toEqual([])
+	expect(graph.warnings).toEqual([])
 	expect(mockModule.getSavedPackageByName).not.toHaveBeenCalled()
+	expect(graph.modules).toHaveLength(1)
+	const runtimeShim = graph.modules[0]
+	expect(runtimeShim?.name).toBe(runtimeModulePath)
+	expect(runtimeShim?.esModule).toContain('__kodyGatewayFetch')
+	expect(runtimeShim?.esModule).toContain('kody.gatewayFetch')
+	expect(runtimeShim?.esModule).toContain('kody.localExecuteFetchPatched')
+	expect(runtimeShim?.esModule).toMatch(/globalThis\.fetch\s*=/)
 })

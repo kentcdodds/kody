@@ -198,10 +198,13 @@ module and does not silently hop to `kody.execute`. See
 - Secret-bearing ambient fetch: `path: ['kody','gatewayFetch']` with
   `{ request: { url, method?, headers?, body? }, packageId? }`. Origin runs
   `executeGatewayFetch` / `expandSecretPlaceholders` (same as cloud sandbox
-  `fetch`). Package-graph rewrites published modules so ambient `fetch` hops
-  here and quoted `{{secret:name|scope=…}}` literals become
-  `__kodySecretRef(...)` — secret plaintext never enters local workerd, and a
-  missing secret fails closed before any third-party request.
+  `fetch`). Package-graph always returns the `.__kody_virtual__/runtime.js`
+  gateway-fetch shim (even when the entry has no `kody:@` imports) so ad-hoc
+  scripts that call ambient `fetch` with `{{secret:…}}` still hop here. It also
+  rewrites published modules so ambient `fetch` hops here and quoted
+  `{{secret:name|scope=…}}` literals become `__kodySecretRef(...)` — secret
+  plaintext never enters local workerd, and a missing secret fails closed before
+  any third-party request.
 - OAuth client-credentials: `path: ['kody','oauthClientCredentials']` with the
   same argument shape as cloud `oauthClientCredentials(...)`. Origin expands
   secret placeholders through the fetch gateway.

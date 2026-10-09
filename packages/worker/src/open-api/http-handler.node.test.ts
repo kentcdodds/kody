@@ -660,11 +660,26 @@ test('local-execute package-graph requires scope and meters as api_call prep', a
 	const empty = await api.call('POST', '/v1/local-execute/package-graph', {
 		token,
 		body: {
-			code: 'export default async function main() { return 1 }',
+			code: `export default async function main() {
+  return fetch('https://api.example.com', {
+    headers: { authorization: 'Bearer {{secret:demoToken}}' },
+  })
+}`,
 		},
 	})
 	expect(empty.status).toBe(200)
-	expect(empty.body).toEqual({ modules: [], imports: [], warnings: [] })
+	expect(empty.body).toMatchObject({
+		imports: [],
+		warnings: [],
+		modules: [
+			{
+				name: '.__kody_virtual__/runtime.js',
+				esModule: expect.stringMatching(
+					/__kodyGatewayFetch[\s\S]*globalThis\.fetch\s*=/,
+				),
+			},
+		],
+	})
 
 	const dynamic = await api.call('POST', '/v1/local-execute/package-graph', {
 		token,
@@ -758,11 +773,14 @@ test('MCP OAuth Bearer authenticates CapabilityProxy and package-graph', async (
 		},
 	)
 	expect(packageGraph.status).toBe(200)
-	expect(packageGraph.body).toEqual({
-		modules: [],
-		imports: [],
-		warnings: [],
-	})
+	expect(packageGraph.body.imports).toEqual([])
+	expect(packageGraph.body.warnings).toEqual([])
+	expect(packageGraph.body.modules).toEqual([
+		expect.objectContaining({
+			name: '.__kody_virtual__/runtime.js',
+			esModule: expect.stringContaining('__kodyGatewayFetch'),
+		}),
+	])
 })
 
 test('MCP OAuth Bearer is rejected unless it is a valid CLI token on a local-execute route', async () => {

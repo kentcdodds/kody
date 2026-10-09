@@ -77,8 +77,29 @@ export async function buildLocalExecutePackageGraph(input: {
 			(entry) => entry.specifier,
 		),
 	)
+
+	const {
+		rewriteInlinedLocalExecuteBundleSource,
+		createLocalExecuteRuntimeShimSource,
+		createLocalExecutePackageRuntimeModuleSource,
+	} = await loadLocalExecuteRuntimeSupport()
+
+	// Always embed the gateway-fetch runtime shim, even when the entry has no
+	// `kody:@` imports. Ad-hoc scripts that call ambient `fetch` with
+	// `{{secret:…}}` placeholders still need globalThis.fetch wrapped so the
+	// hop expands on origin (or fails closed) instead of sending the raw
+	// template to a third party (kody#3020).
 	if (staticImports.length === 0) {
-		return { modules: [], imports: [], warnings: [] }
+		return {
+			modules: [
+				{
+					name: runtimeModulePath,
+					esModule: createLocalExecuteRuntimeShimSource(runtimeModulePath),
+				},
+			],
+			imports: [],
+			warnings: [],
+		}
 	}
 
 	let prepared: Awaited<ReturnType<typeof prepareKodyGraphFiles>>
@@ -98,12 +119,6 @@ export async function buildLocalExecutePackageGraph(input: {
 	} catch (error) {
 		throw mapPrepareFailure(error, staticImports)
 	}
-
-	const {
-		rewriteInlinedLocalExecuteBundleSource,
-		createLocalExecuteRuntimeShimSource,
-		createLocalExecutePackageRuntimeModuleSource,
-	} = await loadLocalExecuteRuntimeSupport()
 
 	const modulesByName = new Map<string, string>()
 	const runtimeModulePaths: Array<string> = []
