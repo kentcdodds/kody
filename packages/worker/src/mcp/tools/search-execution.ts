@@ -248,32 +248,38 @@ async function executeSearchListWithinBudget(
 					phaseTimings.retrieversMs = elapsedMs(retrieversStart)
 					return retrieverRun
 				})
-	const [searchRows] = await Promise.all([rowsPromise, retrieverRunPromise])
+	const featureFlagsStart = performance.now()
+	// Flag reads overlap row load and retrievers. Recall width needs the
+	// evaluation before candidate generation; retriever hits are merged later.
+	const evaluationsPromise = (async () => {
+		await resolveCallerFeatureFlags(input.env, input.callerContext)
+		return await resolveCallerFeatureFlagEvaluations(
+			input.env,
+			input.callerContext,
+		)
+	})().then((evaluations) => {
+		phaseTimings.featureFlagsMs = elapsedMs(featureFlagsStart)
+		return evaluations
+	})
+	const [searchRows, evaluations, jevPlan] = await Promise.all([
+		rowsPromise,
+		evaluationsPromise,
+		jevPlanPromise,
+	])
 	input.signal?.throwIfAborted()
 	warnings = searchRows.warnings
-	const retrieverRun = await retrieverRunPromise
-	warnings.push(...retrieverRun.warnings)
-	const featureFlagsStart = performance.now()
-	// Warm the per-request evaluation cache and record evaluation-site
-	// exposures for other measured flags.
-	await resolveCallerFeatureFlags(input.env, input.callerContext)
-	const evaluations = await resolveCallerFeatureFlagEvaluations(
-		input.env,
-		input.callerContext,
-	)
-	phaseTimings.featureFlagsMs = elapsedMs(featureFlagsStart)
 	const jevEvaluation = evaluations?.[jevSearchRerankFlagKey]
 	const jevRerankEnabled = jevEvaluation?.enabled === true
-	const jevRerankPlanEligible = isPaidPlan(await jevPlanPromise)
+	const jevRerankPlanEligible = isPaidPlan(jevPlan)
 	const searchUnifiedStart = performance.now()
-	result = await searchUnified({
+	const rankedPromise = searchUnified({
 		env: input.env,
 		query: input.query,
 		limit: input.limit,
 		userId: input.userId ?? undefined,
 		registry: searchRows.registry,
 		optionalRows: searchRows,
-		retrieverResults: retrieverRun.results,
+		retrieverResults: retrieverRunPromise.then((run) => run.results),
 		embedText: embeddingCache.embedText,
 		...(domainFilter ? { domain: domainFilter } : {}),
 		...(callerHasRole(input.callerContext, 'admin')
@@ -283,6 +289,12 @@ async function executeSearchListWithinBudget(
 		...(jevRerankPlanEligible ? { jevRerankPlanEligible: true } : {}),
 		...(input.signal ? { signal: input.signal } : {}),
 	})
+	const [ranked, retrieverRun] = await Promise.all([
+		rankedPromise,
+		retrieverRunPromise,
+	])
+	result = ranked
+	warnings.push(...retrieverRun.warnings)
 	input.signal?.throwIfAborted()
 	phaseTimings.searchUnifiedMs = elapsedMs(searchUnifiedStart)
 	// Only ranked-path results include jevRerank telemetry. Domain index /

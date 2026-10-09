@@ -81,10 +81,17 @@ const mockModule = vi.hoisted(() => {
 		loadRelevantMemoriesForTool: vi.fn(async (..._args: Array<unknown>) =>
 			memoryResult(),
 		),
-		runPackageRetrievers: vi.fn(async (..._args: Array<unknown>) => ({
-			results: [],
-			warnings: [],
-		})),
+		runPackageRetrievers: vi.fn(
+			async (
+				..._args: Array<unknown>
+			): Promise<{
+				results: Array<Record<string, unknown>>
+				warnings: Array<string>
+			}> => ({
+				results: [],
+				warnings: [],
+			}),
+		),
 		consumeSearchRateLimit: vi.fn(async (..._args: Array<unknown>) => 'free'),
 		getUserPlan: vi.fn(async (..._args: Array<unknown>) => 'free'),
 	}
@@ -394,6 +401,51 @@ test('executeSearchList does not prefetch an embedding for domain-overview or in
 	await search(env, { query: 'what can kody do' })
 	await search(env, { query: '' })
 	expect(run).not.toHaveBeenCalled()
+})
+
+test('executeSearchList starts ranking before search-scope retrievers settle', async () => {
+	const retrievers = gate()
+	let rankingStarted = false
+	mockModule.runPackageRetrievers.mockImplementationOnce(async () => {
+		await retrievers.promise
+		return {
+			results: [
+				{
+					id: 'note-1',
+					title: 'Skills note',
+					summary: 'Saved skill.',
+					packageId: 'package-1',
+					kodyId: 'skills',
+					retrieverKey: 'notes',
+					retrieverName: 'Notes',
+				},
+			],
+			warnings: ['retriever warning'],
+		}
+	})
+	mockModule.searchUnified.mockImplementationOnce(
+		async (...args: Array<unknown>) => {
+			const input = args[0] as {
+				retrieverResults?:
+					| Promise<Array<{ id: string }>>
+					| Array<{ id: string }>
+			}
+			rankingStarted = true
+			expect(input.retrieverResults).toBeInstanceOf(Promise)
+			const results = await Promise.resolve(input.retrieverResults ?? [])
+			expect(results.map((result) => result.id)).toEqual(['note-1'])
+			return mockModule.createEmptySearchUnifiedResult()
+		},
+	)
+
+	const pending = search({ APP_DB: {} } as unknown as Env)
+	await vi.waitFor(() => {
+		expect(rankingStarted).toBe(true)
+	})
+	expect(mockModule.runPackageRetrievers).toHaveBeenCalledTimes(1)
+	retrievers.release()
+	const result = await pending
+	expect(result.warnings).toContain('retriever warning')
 })
 
 test('executeSearchList reads the Jev plan fresh while the rate limit runs', async () => {

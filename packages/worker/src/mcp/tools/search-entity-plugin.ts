@@ -73,6 +73,13 @@ export type SearchEntityPlugin<Type extends SearchMatch['type']> = {
 		SearchPhaseTimings,
 		'capabilityCandidatesMs' | 'packageCandidatesMs'
 	>
+	/**
+	 * This plugin's candidates come from search-scope package retrievers.
+	 * Ranking starts the other plugins before those retrievers settle, then
+	 * builds this plugin's candidates and merges them in plugin order before
+	 * hybrid rerank / Jev.
+	 */
+	waitsForRetrieverResults?: boolean
 	buildDescriptors?: (
 		input: SearchEntityDescriptorInput,
 	) => Array<SearchableEntityDescriptor>
