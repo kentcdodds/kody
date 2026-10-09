@@ -18,7 +18,6 @@ import {
 } from './acknowledgement-email.ts'
 import { platformFeedbackTestSchemaSql } from './test-schema.ts'
 import { type PlatformFeedbackRecord } from './types.ts'
-import { submitPlatformFeedback } from './service.ts'
 
 const captureException = vi.hoisted(() => vi.fn())
 
@@ -40,6 +39,13 @@ vi.mock('#app/authenticated-user.ts', () => ({
 		...args: Parameters<typeof authenticatedUserModule.readAuthenticatedAppUser>
 	) => authMock.readAuthenticatedAppUser(...args),
 }))
+
+vi.mock('./package-subscriptions.ts', () => ({
+	dispatchPlatformFeedbackSubmittedSubscriptionEvent: async () => [],
+}))
+
+const { handlePlatformFeedbackDispatchQueue } =
+	await import('./dispatch-queue.ts')
 
 const mockAccountId = 'cf_account_ack_test'
 const mockApiBaseUrl = 'https://api.cloudflare.test'
@@ -313,7 +319,29 @@ test('platform feedback acknowledgement send failures release the claim, log, an
 	})
 })
 
-test('meta submit and billing cancellation both send one acknowledgement through the shared insert', async () => {
+async function drainDispatchQueue(env: Env, queueBodies: Array<unknown>) {
+	const messages = queueBodies.splice(0).map((body, index) => ({
+		id: `queue-${String(index)}`,
+		timestamp: new Date('2026-07-19T00:01:00.000Z'),
+		body,
+		attempts: 1,
+		ack: vi.fn(),
+		retry: vi.fn(),
+	}))
+	await handlePlatformFeedbackDispatchQueue(
+		{
+			queue: 'kody-platform-feedback-dispatch',
+			messages,
+			ackAll: vi.fn(),
+			retryAll: vi.fn(),
+		} as unknown as MessageBatch<unknown>,
+		env,
+		{} as ExecutionContext,
+	)
+	return messages
+}
+
+test('meta submit and billing cancellation both send one acknowledgement through the shared dispatch queue', async () => {
 	const sent: Array<CapturedSend> = []
 	using _server = createEmailCaptureServer(sent)
 	const { sqlite, db } = createUsersAndFeedbackDb()
@@ -360,58 +388,19 @@ test('meta submit and billing cancellation both send one acknowledgement through
 	)
 	expect(metaResult.status).toBe('open')
 	expect(typeof metaResult.feedback_id).toBe('string')
+	expect(sent).toHaveLength(0)
+	expect(queueBodies).toEqual([{ feedbackId: metaResult.feedback_id }])
+
+	await drainDispatchQueue(env, queueBodies)
 	expect(sent).toHaveLength(1)
 	expect(sent[0]?.to).toBe('meta@example.com')
 	expect(sent[0]?.subject).toContain('got your')
 	expect(sent[0]?.text).toContain(metaResult.feedback_id)
 	expect(sent[0]?.text).toContain('metaPlatformFeedbackGet')
-	expect(queueBodies).toEqual([{ feedbackId: metaResult.feedback_id }])
 
-	// Re-sending acknowledgement for the same feedback id is a no-op.
-	const stored = await db
-		.prepare(
-			`SELECT id, submitter_user_id, submitter_username, submitter_email,
-			        category, summary, details, status, reviewed_by_user_id,
-			        reviewed_at, admin_note, created_at, updated_at
-			 FROM platform_feedback WHERE id = ?`,
-		)
-		.bind(metaResult.feedback_id)
-		.first<{
-			id: string
-			submitter_user_id: string
-			submitter_username: string
-			submitter_email: string
-			category: PlatformFeedbackRecord['category']
-			summary: string
-			details: string
-			status: PlatformFeedbackRecord['status']
-			reviewed_by_user_id: string | null
-			reviewed_at: string | null
-			admin_note: string | null
-			created_at: string
-			updated_at: string
-		}>()
-	expect(stored).toBeTruthy()
-	expect(
-		await sendPlatformFeedbackAcknowledgementEmail({
-			env,
-			feedback: {
-				id: stored!.id,
-				submitterUserId: stored!.submitter_user_id,
-				submitterUsername: stored!.submitter_username,
-				submitterEmail: stored!.submitter_email,
-				category: stored!.category,
-				summary: stored!.summary,
-				details: stored!.details,
-				status: stored!.status,
-				reviewedByUserId: stored!.reviewed_by_user_id,
-				reviewedAt: stored!.reviewed_at,
-				adminNote: stored!.admin_note,
-				createdAt: stored!.created_at,
-				updatedAt: stored!.updated_at,
-			},
-		}),
-	).toBe(false)
+	// Re-processing the same feedback id does not send again.
+	queueBodies.push({ feedbackId: metaResult.feedback_id })
+	await drainDispatchQueue(env, queueBodies)
 	expect(sent).toHaveLength(1)
 
 	const authenticatedUser: AuthenticatedAppUser = {
@@ -450,43 +439,11 @@ test('meta submit and billing cancellation both send one acknowledgement through
 		} as never)
 	expect(billingResponse.status).toBe(200)
 	expect(await billingResponse.json()).toEqual({ ok: true })
+	expect(sent).toHaveLength(1)
+	expect(queueBodies).toHaveLength(1)
+
+	await drainDispatchQueue(env, queueBodies)
 	expect(sent).toHaveLength(2)
 	expect(sent[1]?.to).toBe('ada@example.com')
 	expect(sent[1]?.text).toContain('metaPlatformFeedbackGet')
-	expect(queueBodies).toHaveLength(2)
-
-	// Shared insert still succeeds when the receipt path throws unexpectedly.
-	consoleWarn.mockImplementation(() => {})
-	const brokenEnv = createEnv({
-		db,
-		kv: {
-			get: async () => null,
-			put: async () => {
-				throw new Error('kv exploded')
-			},
-			delete: async () => undefined,
-		} as unknown as KVNamespace,
-	})
-	seedUser(sqlite, {
-		stableUserId: 'user-resilient',
-		email: 'resilient@example.com',
-	})
-	const resilient = await submitPlatformFeedback({
-		db,
-		env: brokenEnv,
-		submitterUserId: 'user-resilient',
-		submitterUsername: 'user-resilient',
-		submitterEmail: 'resilient@example.com',
-		category: 'other',
-		summary: 'Submit must succeed even if ack fails',
-		details: 'Acknowledgement claim failure must not fail insert.',
-	})
-	expect(resilient.status).toBe('open')
-	expect(consoleWarn).toHaveBeenCalledWith(
-		'platform-feedback-acknowledgement-email-claim-failed',
-		{
-			feedbackId: resilient.id,
-			error: expect.any(Error),
-		},
-	)
 })

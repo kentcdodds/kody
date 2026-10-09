@@ -208,7 +208,6 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	)
 	expect(mockModule.submitPlatformFeedback).toHaveBeenCalledWith({
 		db: expect.anything(),
-		env: expect.anything(),
 		submitterUserId: 'user-1',
 		submitterUsername: 'user-1-name',
 		submitterEmail: 'user-1@example.com',

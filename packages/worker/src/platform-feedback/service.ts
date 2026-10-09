@@ -1,5 +1,3 @@
-import * as Sentry from '@sentry/cloudflare'
-import { sendPlatformFeedbackAcknowledgementEmail } from './acknowledgement-email.ts'
 import {
 	PlatformFeedbackActiveQueueLimitError,
 	PlatformFeedbackConcurrentUpdateError,
@@ -174,11 +172,6 @@ function planTransition(input: {
 
 export async function submitPlatformFeedback(input: {
 	db: D1Database
-	/**
-	 * When provided (production submit paths), send the one-time receipt after a
-	 * successful insert. Acknowledgement failures never fail the submit.
-	 */
-	env?: Env
 	submitterUserId: string
 	submitterUsername: string
 	submitterEmail: string
@@ -249,7 +242,7 @@ export async function submitPlatformFeedback(input: {
 			throw new PlatformFeedbackSubmissionConflictError()
 		}
 	}
-	const feedback: PlatformFeedbackRecord = {
+	return {
 		id: row.id,
 		submitterUserId: row.submitter_user_id,
 		submitterUsername: row.submitter_username,
@@ -264,30 +257,6 @@ export async function submitPlatformFeedback(input: {
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}
-	if (input.env) {
-		try {
-			await sendPlatformFeedbackAcknowledgementEmail({
-				env: input.env,
-				feedback,
-			})
-		} catch (error) {
-			// sendPlatformFeedbackAcknowledgementEmail already logs + Sentry for
-			// provider failures; this catch is for unexpected throws only.
-			console.warn('platform-feedback-acknowledgement-email-failed', {
-				feedbackId: feedback.id,
-				error,
-			})
-			try {
-				Sentry.captureException(error, {
-					tags: { scope: 'platform-feedback-acknowledgement-email' },
-					extra: { feedbackId: feedback.id },
-				})
-			} catch {
-				// ignore Sentry bootstrap failures
-			}
-		}
-	}
-	return feedback
 }
 
 export async function listPlatformFeedbackForAdmin(input: {

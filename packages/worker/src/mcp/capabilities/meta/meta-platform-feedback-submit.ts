@@ -81,7 +81,6 @@ export const metaPlatformFeedbackSubmitCapability = defineDomainCapability(
 			}
 			const feedback = await submitPlatformFeedback({
 				db: ctx.env.APP_DB,
-				env: ctx.env,
 				submitterUserId: user.userId,
 				submitterUsername,
 				submitterEmail: user.email,
