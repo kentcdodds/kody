@@ -31,3 +31,10 @@ The hero illustration uses Kody's existing lantern character as a reference.
 Three separate lantern-lit workspaces connect through a shared cloud, showing
 shared infrastructure with distinct team or client spaces. The generated PNG
 is stored locally in `assets/agent-cloud-lanterns.png` and includes transparency.
+
+The animated hero uses a connection-free sprite sheet, with five independently
+positioned SVG layers. `hero-motion.js` draws the connecting curves and moving
+lights in code, keeping endpoints attached as the cloud and workspaces float.
+Motion pauses offscreen, in hidden tabs, or through the pause button, and
+respects reduced-motion settings. The original connected illustration remains
+as a design reference.
