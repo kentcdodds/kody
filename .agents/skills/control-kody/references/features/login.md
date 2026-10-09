@@ -19,6 +19,9 @@ Local default: `jane@example.com` / `ilikecode`. Preview default:
 ## APIs
 
 - `POST /auth` `{ email, password, mode: "login" }`
+- `POST /auth/restore-account` `{ intent: "restore" | "decline" }` after a
+  soft-deleted account signs in during the 30-day window. Confirm calls
+  `restoreUserAccount`. Decline keeps the account deleted and signed out.
 - `GET /session`
 - `POST /logout`
 - `GET /auth/providers.json`

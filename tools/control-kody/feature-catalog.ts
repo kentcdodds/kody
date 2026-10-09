@@ -23,7 +23,13 @@ export const featureCatalog: ReadonlyArray<Feature> = [
 		title: 'Sign in',
 		file: 'login.md',
 		paths: ['/login'],
-		apis: ['/auth', '/session', '/logout', '/auth/providers.json'],
+		apis: [
+			'/auth',
+			'/auth/restore-account',
+			'/session',
+			'/logout',
+			'/auth/providers.json',
+		],
 	},
 	{
 		id: 'signup',

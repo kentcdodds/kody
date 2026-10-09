@@ -12,6 +12,10 @@ import {
 	isSecureRequest,
 	readAuthSessionResult,
 } from '#app/auth-session.ts'
+import {
+	issueAccountRestoreCookie,
+	readSoftDeletedSignIn,
+} from '#app/account-restore.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { maybeTagKitSubscriberOnSignup } from '#app/kit-signup.ts'
 import { attachPendingPackageShareInvitesSafely } from '#worker/package-registry/share-grants.ts'
@@ -450,6 +454,57 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				const stableUserId = personIdFromStored(user.stable_user_id)
 				const postLoginPath =
 					options.destination ?? redirectTo ?? defaultRedirectTo
+				const softDeletedSignIn = await readSoftDeletedSignIn(
+					env.APP_DB,
+					user.email,
+				)
+				switch (softDeletedSignIn.kind) {
+					case 'live':
+						break
+					case 'expired':
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'auth',
+							action: 'oauth_login',
+							result: 'failure',
+							email: user.email,
+							ip: requestIp,
+							path: url.pathname,
+							reason: 'account_deleted',
+						})
+						return redirectToLoginWithError('account-error', [
+							clearStateCookie,
+							await destroyAuthCookie(secure),
+						])
+					case 'restore': {
+						const restoreCookie = await issueAccountRestoreCookie({
+							secret: env.COOKIE_SECRET,
+							email: user.email,
+							stableUserId,
+							rememberMe: false,
+							secure,
+						})
+						void logAuditEvent({
+							db: auditDatabaseFromEnv(env),
+							category: 'auth',
+							action: 'login_restore_prompt',
+							result: 'success',
+							email: user.email,
+							ip: requestIp,
+							path: url.pathname,
+							reason: `provider=${provider}`,
+						})
+						return redirect('/login?accountRestore=1', [
+							restoreCookie,
+							await destroyAuthCookie(secure),
+							clearStateCookie,
+						])
+					}
+					default: {
+						const unreachable: never = softDeletedSignIn
+						throw new Error(`Unhandled sign-in state: ${String(unreachable)}`)
+					}
+				}
 				// Two-factor accounts get the same pending-verification gate as
 				// password and passkey logins; the session cookie is only
 				// issued once the TOTP code passes.

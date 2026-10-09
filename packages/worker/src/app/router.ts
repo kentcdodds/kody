@@ -181,6 +181,7 @@ import {
 	createAccountValuesHandler,
 } from '#app/handlers/account-values.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
+import { createAccountRestoreHandler } from '#app/handlers/account-restore.ts'
 import {
 	createAuthProviderCallbackHandler,
 	createAuthProviderStartHandler,
@@ -646,6 +647,7 @@ export function createAppRouter(env: Env) {
 			connectSecretSet: createConnectSecretSetHandler(env),
 			connectWebhookApply: createConnectWebhookApplyHandler(env),
 			auth: createAuthHandler(env),
+			authRestoreAccount: createAccountRestoreHandler(env),
 			authProvidersApi: createAuthProvidersApiHandler(env),
 			authProviderStart: createAuthProviderStartHandler(env),
 			authProviderCallback: createAuthProviderCallbackHandler(env),

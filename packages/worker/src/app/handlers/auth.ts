@@ -5,6 +5,11 @@ import {
 	destroyAuthCookie,
 	isSecureRequest,
 } from '#app/auth-session.ts'
+import {
+	issueAccountRestoreCookie,
+	readSoftDeletedSignIn,
+} from '#app/account-restore.ts'
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
 import {
 	createVerifySessionCookie,
@@ -692,6 +697,67 @@ export function createAuthHandler(env: Env) {
 					{ error: 'Invalid email or password.' },
 					{ status: 401 },
 				)
+			}
+
+			const softDeletedSignIn = await readSoftDeletedSignIn(
+				env.APP_DB,
+				normalizedEmail,
+			)
+			switch (softDeletedSignIn.kind) {
+				case 'live':
+					break
+				case 'expired':
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'login',
+						result: 'failure',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'account_deleted',
+					})
+					return Response.json(
+						{ error: 'Invalid email or password.' },
+						{ status: 401 },
+					)
+				case 'restore': {
+					const secure = isSecureRequest(request)
+					const headers = new Headers()
+					headers.append(
+						'Set-Cookie',
+						await issueAccountRestoreCookie({
+							secret: env.COOKIE_SECRET,
+							email: normalizedEmail,
+							stableUserId: personIdFromStored(userRecord.stable_user_id),
+							rememberMe,
+							secure,
+						}),
+					)
+					headers.append('Set-Cookie', await destroyAuthCookie(secure))
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'login_restore_prompt',
+						result: 'success',
+						email: normalizedEmail,
+						ip: requestIp,
+						path: url.pathname,
+					})
+					return Response.json(
+						{
+							ok: true,
+							mode: normalizedMode,
+							accountRestoreRequired: true,
+							restoreWindowDays: softDeleteRetentionDays,
+						},
+						{ headers },
+					)
+				}
+				default: {
+					const unreachable: never = softDeletedSignIn
+					throw new Error(`Unhandled sign-in state: ${String(unreachable)}`)
+				}
 			}
 
 			try {

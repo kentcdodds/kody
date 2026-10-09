@@ -16,9 +16,15 @@ import {
 } from '#worker/audit-log.ts'
 import {
 	createAuthCookie,
+	destroyAuthCookie,
 	isSecureRequest,
 	setAuthSessionSecret,
 } from '#app/auth-session.ts'
+import {
+	issueAccountRestoreCookie,
+	readSoftDeletedSignIn,
+} from '#app/account-restore.ts'
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { buildDefaultPasskeyName } from '#app/passkey-label.ts'
 import {
@@ -343,6 +349,64 @@ export function createWebauthnAuthenticationHandler(env: Env) {
 			// user verification), so skip the TOTP challenge even when 2FA is
 			// enabled. Password and social logins still require it.
 			const stableUserId = personIdFromStored(userRecord.stable_user_id)
+			const softDeletedSignIn = await readSoftDeletedSignIn(
+				env.APP_DB,
+				userRecord.email,
+			)
+			switch (softDeletedSignIn.kind) {
+				case 'live':
+					break
+				case 'expired':
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'passkey_login',
+						result: 'failure',
+						email: userRecord.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'account_deleted',
+					})
+					headers.append('Set-Cookie', await destroyAuthCookie(secure))
+					return jsonResponse(
+						{ ok: false, error: 'Passkey sign-in failed.' },
+						{ status: 401, headers },
+					)
+				case 'restore':
+					headers.append(
+						'Set-Cookie',
+						await issueAccountRestoreCookie({
+							secret: env.COOKIE_SECRET,
+							email: userRecord.email,
+							stableUserId,
+							rememberMe,
+							secure,
+						}),
+					)
+					headers.append('Set-Cookie', await destroyAuthCookie(secure))
+					void logAuditEvent({
+						db: auditDatabaseFromEnv(env),
+						category: 'auth',
+						action: 'login_restore_prompt',
+						result: 'success',
+						email: userRecord.email,
+						ip: requestIp,
+						path: url.pathname,
+						reason: 'passkey',
+					})
+					return new Response(
+						JSON.stringify({
+							ok: true,
+							accountRestoreRequired: true,
+							restoreWindowDays: softDeleteRetentionDays,
+						}),
+						{ status: 200, headers },
+					)
+				default: {
+					const unreachable: never = softDeletedSignIn
+					throw new Error(`Unhandled sign-in state: ${String(unreachable)}`)
+				}
+			}
 			headers.append(
 				'Set-Cookie',
 				await createAuthCookie(

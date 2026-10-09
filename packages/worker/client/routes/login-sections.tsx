@@ -449,6 +449,53 @@ const rememberInputCss = {
 /* Status/error line. The `success-in` keyframes live in public/styles.css
    inside the reduced-motion-gated block, so the entrance simply no-ops when
    motion is off. */
+export function renderAccountRestorePrompt(props: {
+	working: boolean
+	message: string | null
+	onRestore: () => void
+	onDecline: () => void
+}) {
+	return (
+		<div data-testid="account-restore-prompt" mix={css(authFormCss)}>
+			<p mix={css({ margin: 0 })}>
+				This account was deleted and can still be restored. Restoring brings it
+				back. Declining keeps it deleted and leaves you signed out.
+			</p>
+			{props.message ? (
+				<p aria-live="polite" data-tone="error" mix={css(formMessageCss)}>
+					{props.message}
+				</p>
+			) : null}
+			<button
+				type="button"
+				disabled={props.working}
+				data-testid="account-restore-confirm"
+				mix={[
+					css(authSubmitCss),
+					on('click', () => {
+						props.onRestore()
+					}),
+				]}
+			>
+				{props.working ? 'Restoring…' : 'Restore account'}
+			</button>
+			<button
+				type="button"
+				disabled={props.working}
+				data-testid="account-restore-decline"
+				mix={[
+					css(getGhostButtonCss({ size: 'sm' })),
+					on('click', () => {
+						props.onDecline()
+					}),
+				]}
+			>
+				Keep it deleted
+			</button>
+		</div>
+	)
+}
+
 export const formMessageCss = {
 	margin: 0,
 	fontSize: '0.95rem',

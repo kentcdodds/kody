@@ -7,6 +7,7 @@ import {
 import { readAuthenticatedAppUserForDeletion } from '#app/authenticated-user.ts'
 import { destroyAuthCookie, isSecureRequest } from '#app/auth-session.ts'
 import { isAccountDeletionConfirmation } from '#universal/account-deletion-confirmation.ts'
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
 import { type routes } from '#universal/routes.ts'
 import {
 	UserDeleteBlockedSoleOwnerError,
@@ -176,7 +177,7 @@ export function createAccountDeleteHandler(env: Env) {
 				JSON.stringify({
 					ok: true,
 					softDeleted: true,
-					restoreWindowDays: 30,
+					restoreWindowDays: softDeleteRetentionDays,
 					...result,
 				}),
 				{ status: 200, headers },

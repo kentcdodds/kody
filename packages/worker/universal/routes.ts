@@ -345,6 +345,7 @@ export const routes = route({
 	accountInvitesApi: '/account/invites.json',
 	accountDelete: post('/account/delete'),
 	auth: post('/auth'),
+	authRestoreAccount: post('/auth/restore-account'),
 	authProvidersApi: '/auth/providers.json',
 	authProviderStart: post('/auth/:provider'),
 	authProviderCallback: '/auth/:provider/callback',

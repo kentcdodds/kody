@@ -1,4 +1,6 @@
-export const softDeleteRetentionDays = 30
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
+
+export { softDeleteRetentionDays }
 
 export function softDeletePurgeCutoffIso(now: Date = new Date()): string {
 	const cutoff = new Date(now.getTime())

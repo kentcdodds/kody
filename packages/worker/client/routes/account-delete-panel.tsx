@@ -1,5 +1,6 @@
 import { css, ref, type Handle } from 'remix/component'
 import { accountDeletionConfirmationPhrase } from '#universal/account-deletion-confirmation.ts'
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
 import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
@@ -226,7 +227,9 @@ export function AccountDeletePanel(
 								)}
 							>
 								<p mix={css({ margin: 0 })}>
-									This cannot be undone. Type{' '}
+									Your account is deleted right away. Sign in again within{' '}
+									{softDeleteRetentionDays} days to restore it. After that, the
+									deletion is permanent. Type{' '}
 									<strong>{accountDeletionConfirmationPhrase}</strong> to
 									confirm.
 								</p>

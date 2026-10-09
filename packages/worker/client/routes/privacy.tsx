@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/component'
+import { softDeleteRetentionDays } from '#universal/soft-delete-retention.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 import {
 	cardCss,
@@ -365,8 +366,8 @@ export function PrivacyRoute(_handle: Handle) {
 					package-app session cookie on <code>kody.run</code> (
 					<code>__Host-kody_pkg_session</code> on HTTPS,{' '}
 					<code>kody_pkg_session</code> on HTTP). Short-lived cookies support
-					two-factor verification, passkey challenges, and OAuth login.
-					Analytics (Fathom and Scarf) are cookieless. The browser uses
+					two-factor verification, passkey challenges, OAuth login, and account
+					restore. Analytics (Fathom and Scarf) are cookieless. The browser uses
 					sessionStorage for first-touch signup attribution and scroll
 					restoration, not tracking cookies.
 				</p>
@@ -377,9 +378,11 @@ export function PrivacyRoute(_handle: Handle) {
 				<p mix={css(descriptionCss)}>
 					Use Account settings to export a copy of your Kody data or delete your
 					account. Deletion asks you to type GOODBYE KODY in a confirmation
-					modal, and to re-enter your password when the account has one. You can
-					also ask to access, correct, delete, restrict, or receive your
-					personal data, or object to its processing, by emailing{' '}
+					modal, and to re-enter your password when the account has one. Signing
+					in again within {softDeleteRetentionDays} days restores the account.
+					After that window it stays deleted. You can also ask to access,
+					correct, delete, restrict, or receive your personal data, or object to
+					its processing, by emailing{' '}
 					<a href="mailto:support@kody.codes" mix={css(mutedLinkCss)}>
 						support@kody.codes
 					</a>

@@ -40,8 +40,10 @@ import {
 	getCurrentRedirectTo,
 	getSearchParams,
 } from './login-shared.ts'
+import { routes } from '#universal/routes.ts'
 import {
 	formMessageCss,
+	renderAccountRestorePrompt,
 	renderAuthForm,
 	renderLoginVisualPanel,
 	renderMobileBrand,
@@ -69,6 +71,7 @@ export function LoginRoute(handle: Handle) {
 	let routePath: string | null = null
 	let activeSignupSearch = readRouterSearch(handle)
 	let signupStartedTracked = false
+	let restoreOffer: 'unknown' | 'show' | 'hidden' = 'unknown'
 
 	function maybeTrackSignupStarted() {
 		if (signupStartedTracked) return
@@ -205,6 +208,12 @@ export function LoginRoute(handle: Handle) {
 				return
 			}
 
+			if (payload?.accountRestoreRequired === true) {
+				restoreOffer = 'show'
+				setState('idle')
+				return
+			}
+
 			if (mode === 'signup') {
 				const tracked = trackFathomEvent(fathomEventNames.accountCreated)
 				clearStoredFirstTouchAttribution()
@@ -266,6 +275,48 @@ export function LoginRoute(handle: Handle) {
 		}
 	}
 
+	async function postAccountRestore(intent: 'restore' | 'decline') {
+		setState('submitting')
+		try {
+			const response = await fetch(routes.authRestoreAccount.href(), {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ intent }),
+			})
+			const payload = await response.json().catch(() => null)
+			if (intent === 'decline') {
+				restoreOffer = 'hidden'
+				const nextUrl = new URL(window.location.href)
+				nextUrl.searchParams.delete('accountRestore')
+				window.history.replaceState(
+					null,
+					'',
+					`${nextUrl.pathname}${nextUrl.search}`,
+				)
+				setState('idle', 'This account stays deleted. You are signed out.')
+				return
+			}
+			if (!response.ok || payload?.restored !== true) {
+				const errorMessage =
+					typeof payload?.error === 'string'
+						? payload.error
+						: 'Unable to restore this account.'
+				setSubmitError(errorMessage)
+				return
+			}
+			window.location.assign(
+				resolvePasswordAuthRedirect({
+					mode: 'login',
+					requiresTwoFactor: payload?.requiresTwoFactor === true,
+					redirectTo: getCurrentRedirectTo(handle),
+				}),
+			)
+		} catch {
+			setSubmitError('Network error. Please try again.')
+		}
+	}
+
 	async function handlePasskeySignIn() {
 		setState('submitting')
 
@@ -317,6 +368,12 @@ export function LoginRoute(handle: Handle) {
 			const verificationPayload = await verificationResponse
 				.json()
 				.catch(() => null)
+			if (verificationPayload?.accountRestoreRequired === true) {
+				restoreOffer = 'show'
+				setState('idle')
+				return
+			}
+
 			if (!verificationResponse.ok || verificationPayload?.ok !== true) {
 				const errorMessage =
 					typeof verificationPayload?.error === 'string'
@@ -392,6 +449,10 @@ export function LoginRoute(handle: Handle) {
 		const submitLabel = isSignup ? 'Create account' : 'Sign in'
 		const submitBusyLabel = isSignup ? 'Creating account…' : 'Signing in…'
 		const showSocial = authProviders.length > 0
+		const showRestore =
+			restoreOffer === 'show' ||
+			(restoreOffer === 'unknown' &&
+				getSearchParams(handle).get('accountRestore') === '1')
 
 		return (
 			<div mix={css(authLayoutCss)}>
@@ -412,19 +473,30 @@ export function LoginRoute(handle: Handle) {
 							</p>
 						) : null}
 
-						{renderAuthForm({
-							handleId: handle.id,
-							turnstileSiteKey,
-							status,
-							message,
-							isSubmitting,
-							isSignup,
-							submitLabel,
-							submitBusyLabel,
-							onSubmit: handleSubmit,
-							onPasskeySignIn: handlePasskeySignIn,
-							onFieldEdit: clearFieldError,
-						})}
+						{showRestore
+							? renderAccountRestorePrompt({
+									working: isSubmitting,
+									message: status === 'error' ? message : null,
+									onRestore: () => {
+										void postAccountRestore('restore')
+									},
+									onDecline: () => {
+										void postAccountRestore('decline')
+									},
+								})
+							: renderAuthForm({
+									handleId: handle.id,
+									turnstileSiteKey,
+									status,
+									message,
+									isSubmitting,
+									isSignup,
+									submitLabel,
+									submitBusyLabel,
+									onSubmit: handleSubmit,
+									onPasskeySignIn: handlePasskeySignIn,
+									onFieldEdit: clearFieldError,
+								})}
 
 						{showSocial ? (
 							<>
