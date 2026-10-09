@@ -8,7 +8,10 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createOrg, updateOrgMemberRole } from '#worker/orgs/access-writes.ts'
-import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
+import {
+	onMemberSoftRemoved,
+	readTombstonedOrgMembership,
+} from '#worker/orgs/member-offboarding.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
@@ -203,14 +206,12 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 				})
 				const membership = await liveMembership(db, request.org.id, userId)
 				if (!membership) {
-					const tombstone = await db
-						.prepare(
-							`SELECT role, deleted_at FROM org_memberships
-							 WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
-						)
-						.bind(request.org.id, userId)
-						.first<{ role: string; deleted_at: string }>()
-					if (!tombstone?.deleted_at) {
+					const tombstone = await readTombstonedOrgMembership({
+						db,
+						orgId: request.org.id,
+						userId,
+					})
+					if (!tombstone) {
 						throw new McpCallerError(
 							'That person is not a member of this organization.',
 						)
@@ -219,7 +220,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 						env: ctx.env,
 						orgId: request.org.id,
 						userId,
-						deletedAt: tombstone.deleted_at,
+						deletedAt: tombstone.deletedAt,
 						resume: true,
 					})
 					if (seatRole(tombstone.role)) {
