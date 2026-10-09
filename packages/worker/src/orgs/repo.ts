@@ -282,8 +282,10 @@ export async function countPendingInvitesForPerson(
 export type PendingInviteSummary = {
 	id: string
 	orgSlug: string
+	orgDisplayName: string | null
 	kind: string
 	role: string | null
+	expiresAt: string
 }
 
 export async function listPendingInvitesForPerson(
@@ -292,7 +294,8 @@ export async function listPendingInvitesForPerson(
 ): Promise<Array<PendingInviteSummary>> {
 	const rows = await db
 		.prepare(
-			`SELECT i.id AS id, o.slug AS org_slug, i.kind AS kind, i.role AS role
+			`SELECT i.id AS id, o.slug AS org_slug, o.display_name AS org_display_name,
+			        i.kind AS kind, i.role AS role, i.expires_at AS expires_at
 			 FROM invites i
 			 INNER JOIN orgs o ON o.id = i.org_id
 			 WHERE i.status = 'pending'
@@ -306,12 +309,21 @@ export async function listPendingInvitesForPerson(
 			 ORDER BY i.created_at DESC`,
 		)
 		.bind(input.now, input.email, input.username)
-		.all<{ id: string; org_slug: string; kind: string; role: string | null }>()
+		.all<{
+			id: string
+			org_slug: string
+			org_display_name: string | null
+			kind: string
+			role: string | null
+			expires_at: string
+		}>()
 	return (rows.results ?? []).map((row) => ({
 		id: row.id,
 		orgSlug: row.org_slug,
+		orgDisplayName: row.org_display_name,
 		kind: row.kind,
 		role: row.role,
+		expiresAt: row.expires_at,
 	}))
 }
 

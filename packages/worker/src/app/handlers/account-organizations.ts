@@ -27,6 +27,10 @@ export function createAccountOrganizationsNewHandler(env: Env) {
 					accountOrganizations: {
 						ok: true,
 						error: url.searchParams.get('error'),
+						draft: {
+							displayName: url.searchParams.get('displayName') ?? '',
+							slug: url.searchParams.get('slug') ?? '',
+						},
 					},
 				},
 			})
@@ -44,26 +48,40 @@ export function createAccountOrganizationsNewPostHandler(env: Env) {
 			}
 			const body = await request.formData().catch(() => null)
 			if (!body) {
-				return redirectWithError(request, 'Enter a name and a URL slug.')
+				return redirectWithError(request, 'Enter a name and a URL slug.', {
+					displayName: '',
+					slug: '',
+				})
+			}
+			const draft = {
+				displayName: readFormValue(body, 'displayName'),
+				slug: readFormValue(body, 'slug'),
 			}
 			const created = await createOrganization(env.APP_DB, env, {
 				personId: user.mcpUser.userId,
-				slug: readFormValue(body, 'slug'),
-				displayName: readFormValue(body, 'displayName'),
+				...draft,
 			})
-			if (!created.ok) return redirectWithError(request, created.error)
+			if (!created.ok) return redirectWithError(request, created.error, draft)
 			const destination = new URL(`/@${created.slug}`, request.url)
 			return Response.redirect(destination.toString(), 302)
 		},
 	} satisfies Action<typeof routes.accountOrganizationsNewPost>
 }
 
-function redirectWithError(request: Request, error: string) {
+function redirectWithError(
+	request: Request,
+	error: string,
+	draft: { displayName: string; slug: string },
+) {
 	const destination = new URL(
 		routes.accountOrganizationsNew.href(),
 		request.url,
 	)
 	destination.searchParams.set('error', error)
+	if (draft.displayName) {
+		destination.searchParams.set('displayName', draft.displayName)
+	}
+	if (draft.slug) destination.searchParams.set('slug', draft.slug)
 	return Response.redirect(destination.toString(), 302)
 }
 

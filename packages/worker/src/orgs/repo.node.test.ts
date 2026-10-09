@@ -272,7 +272,14 @@ test('listOrganizationsForPerson puts the signup organization first and includes
 			now: '2026-02-01T00:00:00.000Z',
 		}),
 	).toEqual([
-		{ id: 'invite-1', orgSlug: 'zeta', kind: 'membership', role: null },
+		{
+			id: 'invite-1',
+			orgSlug: 'zeta',
+			orgDisplayName: 'Zeta',
+			kind: 'membership',
+			role: null,
+			expiresAt: '2099-01-01T00:00:00.000Z',
+		},
 	])
 })
 
