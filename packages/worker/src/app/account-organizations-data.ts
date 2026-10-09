@@ -1,6 +1,5 @@
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
-	countPendingInvitesForPerson,
 	listOrganizationsForPerson,
 	listPendingInvitesForPerson,
 	type ListedOrganization,
@@ -26,9 +25,8 @@ export async function loadAccountOrganizationSnapshot(
 		username: user.username,
 		now,
 	}
-	const [organizations, inviteCount, invites] = await Promise.all([
+	const [organizations, invites] = await Promise.all([
 		listOrganizationsForPerson(env.APP_DB, user.mcpUser.userId),
-		countPendingInvitesForPerson(env.APP_DB, identity),
 		listPendingInvitesForPerson(env.APP_DB, identity),
 	])
 	const remembered = readLastUsedOrgSlug(request.headers.get('cookie'))
@@ -39,7 +37,7 @@ export async function loadAccountOrganizationSnapshot(
 		: null
 	return {
 		organizations,
-		inviteCount,
+		inviteCount: invites.length,
 		lastUsedOrganization,
 		invites,
 	}

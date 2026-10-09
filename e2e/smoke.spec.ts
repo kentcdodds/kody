@@ -68,7 +68,9 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 	// SPA-navigate to secrets: the client refetch must hit the same origin
 	// (regression: absolute placeholder-origin URLs caused "Failed to fetch").
 	await page.getByRole('link', { name: 'Secrets', exact: true }).click()
-	await expect(page).toHaveURL(/\/account\/secrets$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${primaryTestUser.username}/secrets$`),
+	)
 	// The list is a named region; it replaced the sidebar heading that used to
 	// carry this name, and it is present whether or not the account has rows.
 	await expect(

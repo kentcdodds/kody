@@ -1,6 +1,6 @@
 import { isOrganizationSlug } from '#universal/org-pages.ts'
 
-export const lastUsedOrgCookieName = 'kody_last_org'
+const lastUsedOrgCookieName = 'kody_last_org'
 const lastUsedOrgMaxAgeSeconds = 60 * 60 * 24 * 365
 
 export function readLastUsedOrgSlug(cookieHeader: string | null | undefined) {

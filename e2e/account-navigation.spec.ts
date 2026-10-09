@@ -62,6 +62,7 @@ test('account section switches keep the current page on screen (no loading flash
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/jobs')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/jobs$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Jobs' }),
@@ -137,6 +138,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
 	await page.goto('/account/connections')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/connections$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Connections' }),
@@ -152,7 +154,9 @@ test('Add connection opens its own page with the client wall, then a host step (
 	const requests = collectJsonRequests(page)
 	await observeMainTransitions(page)
 	await page.getByTestId('account-connections-add').click()
-	await expect(page).toHaveURL(/\/account\/connections\/new$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/connections/new$`),
+	)
 	const grid = page.getByTestId('account-connections-agent-grid')
 	await expect(grid).toBeVisible()
 	await expect(page.getByTestId('account-connections-back')).toBeVisible()
@@ -182,7 +186,9 @@ test('Add connection opens its own page with the client wall, then a host step (
 	await expect(page.getByTestId('onboarding-agent-muse')).toBeVisible()
 
 	await page.getByTestId('onboarding-agent-claude-code').click()
-	await expect(page).toHaveURL(/\/account\/connections\/new\/claude-code$/)
+	await expect(page).toHaveURL(
+		new RegExp(`/@${user.username}/connections/new/claude-code$`),
+	)
 	await expect(
 		page.getByRole('heading', { level: 2, name: 'Connect Claude Code' }),
 	).toBeVisible()
@@ -208,7 +214,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 	requests.reset()
 
 	await page.getByTestId('account-connections-back').click()
-	await expect(page).toHaveURL(/\/account\/connections$/)
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/connections$`))
 	await expect(page.getByTestId('account-connections-add')).toBeVisible()
 	await expect(
 		page.getByRole('region', { name: 'Connected agents' }),
@@ -267,6 +273,7 @@ test('account live search keeps the same focused input while the list filters', 
 	expect(betaSecret.ok()).toBe(true)
 
 	await page.goto('/account/secrets')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/secrets$`))
 	await waitForClientHydration(page)
 	await expect(
 		page.getByRole('heading', { level: 1, name: 'Secrets' }),
@@ -285,6 +292,7 @@ test('account live search keeps the same focused input while the list filters', 
 	await expect(page.getByText(`betaSecret${runId}`)).toHaveCount(0)
 
 	await page.goto('/account/jobs')
+	await expect(page).toHaveURL(new RegExp(`/@${user.username}/jobs$`))
 	await waitForClientHydration(page)
 	const jobsSearch = page.getByRole('searchbox', { name: 'Search jobs' })
 	await jobsSearch.click()

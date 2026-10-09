@@ -183,7 +183,8 @@ export async function listOrganizationsForPerson(
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
 			   AND m.deleted_at IS NULL
-			   AND o.deleted_at IS NULL`,
+			   AND o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL`,
 		)
 		.bind(personId, personId)
 		.all<{
@@ -201,6 +202,29 @@ export async function listOrganizationsForPerson(
 			   AND g.subject_type = 'user'
 			   AND g.subject_id = ?
 			   AND o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
+			   AND NOT EXISTS (
+			     SELECT 1 FROM org_memberships m
+			     WHERE m.org_id = o.id
+			       AND m.user_id = ?
+			       AND m.deleted_at IS NULL
+			   )
+			 UNION
+			 SELECT DISTINCT o.slug AS slug, o.display_name AS display_name
+			 FROM team_members tm
+			 INNER JOIN teams t
+			   ON t.id = tm.team_id
+			  AND t.deleted_at IS NULL
+			 INNER JOIN grants g
+			   ON g.subject_type = 'team'
+			  AND g.subject_id = t.id
+			  AND g.org_id = t.org_id
+			  AND g.deleted_at IS NULL
+			 INNER JOIN orgs o ON o.id = t.org_id
+			 WHERE tm.user_id = ?
+			   AND tm.deleted_at IS NULL
+			   AND o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
 			   AND NOT EXISTS (
 			     SELECT 1 FROM org_memberships m
 			     WHERE m.org_id = o.id
@@ -208,7 +232,7 @@ export async function listOrganizationsForPerson(
 			       AND m.deleted_at IS NULL
 			   )`,
 		)
-		.bind(personId, personId)
+		.bind(personId, personId, personId, personId)
 		.all<{ slug: string; display_name: string | null }>()
 	const listed = [
 		...(memberships.results ?? []).map((row) => ({

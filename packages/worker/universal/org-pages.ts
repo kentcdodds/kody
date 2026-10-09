@@ -5,7 +5,7 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
  * passkeys, email claims, experiments, billing) stay on `/account`.
  * Billing stays there until the billing move.
  */
-export const orgOwnedAccountSections = [
+const orgOwnedAccountSections = [
 	'activity',
 	'connections',
 	'email',
@@ -53,7 +53,7 @@ export function isOrganizationSlug(value: string) {
 	return slugPattern.test(value)
 }
 
-export function isOrgOwnedAccountSection(
+function isOrgOwnedAccountSection(
 	section: string,
 ): section is OrgOwnedAccountSection {
 	return orgOwnedSectionSet.has(section)

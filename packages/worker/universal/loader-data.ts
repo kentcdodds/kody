@@ -1148,7 +1148,7 @@ export type AccountOrganizationSummary = {
 	personal: boolean
 }
 
-export type AccountInviteSummary = {
+type AccountInviteSummary = {
 	id: string
 	orgSlug: string
 	kind: string
@@ -1171,7 +1171,7 @@ export type AccountProfileLoaderData = {
 	lastUsedOrganization?: string | null
 }
 
-export type AccountOrganizationsLoaderData = {
+type AccountOrganizationsLoaderData = {
 	ok: true
 	error: string | null
 }
