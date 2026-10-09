@@ -485,11 +485,92 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		expect(gatewayCalls).toHaveLength(0)
 		expect(ambientCalls).toHaveLength(1)
 		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
+		const streamedBody = (ambientCalls[0]?.init as RequestInit).body
+		expect(streamedBody).toBeInstanceOf(ReadableStream)
 		expect(
 			new TextDecoder().decode(
-				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
+				await new Response(streamedBody as ReadableStream).arrayBuffer(),
 			),
 		).toBe('hello')
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const secretStream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('before-'))
+				controller.enqueue(new TextEncoder().encode('{{secret:demoToken}}'))
+				controller.enqueue(new TextEncoder().encode('-after'))
+				controller.close()
+			},
+		})
+		const secretFetch = __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: secretStream,
+		})
+		await expect(secretFetch).resolves.toBeInstanceOf(Response)
+		expect(gatewayCalls).toHaveLength(0)
+		const secretBody = (ambientCalls.at(-1)?.init as RequestInit).body
+		await expect(
+			new Response(secretBody as ReadableStream).arrayBuffer(),
+		).rejects.toThrow(/streaming body/)
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const splitSecret = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('{{sec'))
+				controller.enqueue(new TextEncoder().encode('ret:demoToken}}'))
+				controller.close()
+			},
+		})
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: splitSecret,
+		})
+		await expect(
+			new Response(
+				(ambientCalls.at(-1)?.init as RequestInit).body as ReadableStream,
+			).arrayBuffer(),
+		).rejects.toThrow(/streaming body/)
+		expect(gatewayCalls).toHaveLength(0)
+
+		const ambientBeforeHeaderSecret = ambientCalls.length
+		await expect(
+			__kodyGatewayFetch(
+				'https://api.example.com/{{secret:demoToken}}/upload',
+				{
+					method: 'POST',
+					body: new ReadableStream({
+						start(controller) {
+							controller.enqueue(new TextEncoder().encode('plain'))
+							controller.close()
+						},
+					}),
+				},
+			),
+		).rejects.toThrow(/streaming body/)
+		expect(ambientCalls).toHaveLength(ambientBeforeHeaderSecret)
+		expect(gatewayCalls).toHaveLength(0)
+
+		ambientCalls.length = 0
+		const braceStream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('keep {{not-a-secret}}'))
+				controller.close()
+			},
+		})
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			body: braceStream,
+		})
+		expect(
+			new TextDecoder().decode(
+				await new Response(
+					(ambientCalls[0]?.init as RequestInit).body as ReadableStream,
+				).arrayBuffer(),
+			),
+		).toBe('keep {{not-a-secret}}')
+		expect(gatewayCalls).toHaveLength(0)
 
 		ambientCalls.length = 0
 		const typedBlob = new Blob(['blob-body'], { type: 'application/json' })
@@ -498,11 +579,7 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			body: typedBlob,
 		})
 		expect(ambientCalls).toHaveLength(1)
-		expect(
-			new TextDecoder().decode(
-				(ambientCalls[0]?.init as RequestInit).body as Uint8Array,
-			),
-		).toBe('blob-body')
+		expect((ambientCalls[0]?.init as RequestInit).body).toBe(typedBlob)
 		expect(
 			(ambientCalls[0]?.init as RequestInit).headers as Record<string, string>,
 		).toMatchObject({ 'content-type': 'application/json' })
@@ -521,6 +598,27 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		expect(forwarded.method).toBe('POST')
 		expect(forwarded.cache).toBe('no-store')
 		expect(await forwarded.text()).toBe('payload')
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
+		const largePayload = `${'b'.repeat(5000)}tail`
+		const largeRequest = new Request('https://api.example.com/post', {
+			method: 'POST',
+			body: largePayload,
+		})
+		await __kodyGatewayFetch(largeRequest)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
+		expect((ambientCalls[0]?.init as RequestInit).body).toBeInstanceOf(
+			ReadableStream,
+		)
+		expect(
+			new TextDecoder().decode(
+				await new Response(
+					(ambientCalls[0]?.init as RequestInit).body as ReadableStream,
+				).arrayBuffer(),
+			),
+		).toBe(largePayload)
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0

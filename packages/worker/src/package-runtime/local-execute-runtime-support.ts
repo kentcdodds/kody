@@ -395,11 +395,231 @@ function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
 	return false;
 }
 
+const __kodyStreamingPlaceholderLimit = 4096;
+
+function __kodyIsCallerByteStream(body) {
+	return Boolean(
+		body &&
+			typeof body.getReader === "function" &&
+			!(typeof Blob !== "undefined" && body instanceof Blob) &&
+			!(typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) &&
+			!(typeof FormData !== "undefined" && body instanceof FormData),
+	);
+}
+
+function __kodyConcatBytes(chunks) {
+	let length = 0;
+	for (const chunk of chunks) length += chunk.byteLength;
+	const bytes = new Uint8Array(length);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return bytes;
+}
+
+function __kodyBytesToAscii(bytes) {
+	return new TextDecoder("latin1").decode(bytes);
+}
+
+function __kodyStreamingSecretError() {
+	return new Error(
+		"Local execute secret-aware fetch cannot expand secret placeholders in a streaming body. Buffer the body or remove {{secret:…}} placeholders.",
+	);
+}
+
+function __kodyStreamingWindowError() {
+	return new Error(
+		"Local execute secret-aware fetch cannot check a streaming body for secret placeholders past the inspection window. Buffer the body or remove {{secret:…}} placeholders.",
+	);
+}
+
+function __kodyStreamingHeaderError() {
+	return new Error(
+		"Local execute secret-aware fetch cannot use a streaming body when the URL or headers contain secret placeholders. Buffer the body, or remove those placeholders.",
+	);
+}
+
+function __kodyUnclosedCouldBeSecret(tail) {
+	if (!tail.includes("{{")) return false;
+	const starters = [
+		"{{secret:",
+		"{{secret-basic:",
+		"{{integration-token:",
+		"{{secret/",
+	];
+	for (const starter of starters) {
+		const length = Math.min(starter.length, tail.length);
+		if (starter.slice(0, length) === tail.slice(0, length)) return true;
+		if (tail.startsWith(starter)) return true;
+	}
+	return false;
+}
+
+function __kodyStreamingDecision(text) {
+	if (__kodyRequestHasSecretPlaceholders("", {}, text)) {
+		return { reject: "secret", hold: 0 };
+	}
+	const lastClose = text.lastIndexOf("}}");
+	const rest = lastClose === -1 ? text : text.slice(lastClose + 2);
+	const open = rest.lastIndexOf("{{");
+	if (open === -1) {
+		return { reject: null, hold: rest.endsWith("{") ? 1 : 0 };
+	}
+	const tail = rest.slice(open);
+	if (tail.includes("}}") || !__kodyUnclosedCouldBeSecret(tail)) {
+		return { reject: null, hold: rest.endsWith("{") ? 1 : 0 };
+	}
+	if (tail.length > __kodyStreamingPlaceholderLimit) {
+		return { reject: "window", hold: 0 };
+	}
+	return { reject: null, hold: tail.length };
+}
+
+function __kodyScanStreamingBody(source) {
+	const reader = source.getReader();
+	let carry = new Uint8Array(0);
+	return new ReadableStream({
+		async pull(controller) {
+			const { done, value } = await reader.read();
+			if (done) {
+				if (carry.byteLength > 0) {
+					const text = __kodyBytesToAscii(carry);
+					if (
+						__kodyRequestHasSecretPlaceholders("", {}, text) ||
+						__kodyUnclosedCouldBeSecret(text)
+					) {
+						controller.error(__kodyStreamingSecretError());
+						return;
+					}
+					controller.enqueue(carry);
+					carry = new Uint8Array(0);
+				}
+				controller.close();
+				return;
+			}
+			const chunk =
+				value instanceof Uint8Array ? value : new Uint8Array(value);
+			const data = __kodyConcatBytes([carry, chunk]);
+			carry = new Uint8Array(0);
+			const decision = __kodyStreamingDecision(__kodyBytesToAscii(data));
+			if (decision.reject === "secret") {
+				controller.error(__kodyStreamingSecretError());
+				try {
+					await reader.cancel();
+				} catch {
+					// The caller already has the failure.
+				}
+				return;
+			}
+			if (decision.reject === "window") {
+				controller.error(__kodyStreamingWindowError());
+				try {
+					await reader.cancel();
+				} catch {
+					// The caller already has the failure.
+				}
+				return;
+			}
+			const emitLength = data.byteLength - decision.hold;
+			if (emitLength > 0) {
+				controller.enqueue(data.subarray(0, emitLength));
+			}
+			if (decision.hold > 0) {
+				carry = data.subarray(data.byteLength - decision.hold);
+			}
+		},
+		cancel(reason) {
+			return reader.cancel(reason);
+		},
+	});
+}
+
+async function __kodyReadBoundedBody(source, limit) {
+	const reader = source.getReader();
+	const chunks = [];
+	let total = 0;
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) {
+			return { kind: "bytes", bytes: __kodyConcatBytes(chunks) };
+		}
+		const chunk =
+			value instanceof Uint8Array ? value : new Uint8Array(value);
+		total += chunk.byteLength;
+		if (total > limit) {
+			const prefix = __kodyConcatBytes([...chunks, chunk]);
+			const decision = __kodyStreamingDecision(__kodyBytesToAscii(prefix));
+			if (decision.reject != null) {
+				try {
+					await reader.cancel();
+				} catch {
+					// The thrown probe error is the caller-facing failure.
+				}
+				throw decision.reject === "window"
+					? __kodyStreamingWindowError()
+					: __kodyStreamingSecretError();
+			}
+			const rest = new ReadableStream({
+				start(controller) {
+					if (prefix.byteLength > 0) controller.enqueue(prefix);
+				},
+				async pull(controller) {
+					const next = await reader.read();
+					if (next.done) {
+						controller.close();
+						return;
+					}
+					const nextChunk =
+						next.value instanceof Uint8Array
+							? next.value
+							: new Uint8Array(next.value);
+					controller.enqueue(nextChunk);
+				},
+				cancel(reason) {
+					return reader.cancel(reason);
+				},
+			});
+			return {
+				kind: "stream",
+				stream: __kodyScanStreamingBody(rest),
+			};
+		}
+		chunks.push(chunk);
+	}
+}
+
+async function __kodyBlobHasSecretPlaceholder(blob) {
+	const reader = blob.stream().getReader();
+	let carry = "";
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) {
+			return (
+				__kodyRequestHasSecretPlaceholders("", {}, carry) ||
+				__kodyUnclosedCouldBeSecret(carry)
+			);
+		}
+		const chunk =
+			value instanceof Uint8Array ? value : new Uint8Array(value);
+		const text = carry + __kodyBytesToAscii(chunk);
+		if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
+		const decision = __kodyStreamingDecision(text);
+		if (decision.reject === "window") {
+			throw __kodyStreamingWindowError();
+		}
+		carry =
+			decision.hold > 0 ? text.slice(text.length - decision.hold) : "";
+	}
+}
+
 async function __kodyGatewayFetchCall(input, init, packageId) {
 	let url;
 	let method = "GET";
 	let headers = {};
 	let bodyBytes = null;
+	let streamingBody = null;
 	// Prefer ambient fetch(input, init) when the probe did not consume the
 	// original body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
@@ -450,26 +670,45 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				headers = Object.fromEntries(encoded.headers.entries());
 				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
 				reuseOriginal = false;
-			} else {
-			bodyBytes = await __kodyBodyToBytes(body);
-			if (
-				(typeof Blob !== "undefined" && body instanceof Blob) ||
-				(body && typeof body.getReader === "function")
-			) {
+			} else if (__kodyIsCallerByteStream(body)) {
+				// Streams cannot be replayed. Scan with a bounded holdback and
+				// forward the same bytes as a stream. A placeholder fails closed
+				// instead of buffering the body for a gateway hop.
+				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+					throw __kodyStreamingHeaderError();
+				}
+				streamingBody = __kodyScanStreamingBody(body);
 				reuseOriginal = false;
+			} else if (typeof Blob !== "undefined" && body instanceof Blob) {
+				const blobHasSecret = await __kodyBlobHasSecretPlaceholder(body);
 				if (
-					typeof Blob !== "undefined" &&
-					body instanceof Blob &&
-					body.type
+					!blobHasSecret &&
+					!__kodyRequestHasSecretPlaceholders(url, headers, null)
 				) {
-					const hasContentType = Object.keys(headers).some(
-						(key) => key.toLowerCase() === "content-type",
-					);
-					if (!hasContentType) {
-						headers["content-type"] = body.type;
+					streamingBody = body;
+					reuseOriginal = false;
+					if (body.type) {
+						const hasContentType = Object.keys(headers).some(
+							(key) => key.toLowerCase() === "content-type",
+						);
+						if (!hasContentType) {
+							headers["content-type"] = body.type;
+						}
+					}
+				} else {
+					bodyBytes = await __kodyBodyToBytes(body);
+					reuseOriginal = false;
+					if (body.type) {
+						const hasContentType = Object.keys(headers).some(
+							(key) => key.toLowerCase() === "content-type",
+						);
+						if (!hasContentType) {
+							headers["content-type"] = body.type;
+						}
 					}
 				}
-			}
+			} else {
+				bodyBytes = await __kodyBodyToBytes(body);
 			}
 		}
 	} else {
@@ -477,16 +716,61 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		url = merged.url;
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
-		if (method !== "GET" && method !== "HEAD") {
-			// Probe a clone so the unconsumed Request can fall back to native
-			// fetch with cache, credentials, mode, and the rest intact.
-			bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
-			reuseOriginal = false;
+		if (method !== "GET" && method !== "HEAD" && merged.body) {
+			if (__kodyIsCallerByteStream(init?.body)) {
+				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+					throw __kodyStreamingHeaderError();
+				}
+				streamingBody = __kodyScanStreamingBody(merged.body);
+				reuseOriginal = false;
+			} else {
+				// Request bodies are already streams, including ones built from
+				// a string. Read that stream directly (no clone — a clone tees
+				// and buffers the unread side). Bodies that fit the inspection
+				// window keep the buffered probe so a short {{secret:…}} still
+				// hops. Larger bodies continue as a stream.
+				const bounded = await __kodyReadBoundedBody(
+					merged.body,
+					__kodyStreamingPlaceholderLimit,
+				);
+				if (bounded.kind === "stream") {
+					if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+						throw __kodyStreamingHeaderError();
+					}
+					streamingBody = bounded.stream;
+					reuseOriginal = false;
+				} else {
+					bodyBytes = bounded.bytes;
+					reuseOriginal = false;
+					preservedRequest = new Request(merged, {
+						body: bounded.bytes,
+						duplex: "half",
+					});
+				}
+			}
+		} else {
+			preservedRequest = merged;
 		}
-		preservedRequest = merged;
 	}
 	const bodyText =
 		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
+	if (streamingBody != null) {
+		const fallbackInit = {
+			method,
+			headers,
+			body: streamingBody,
+		};
+		if (__kodyIsCallerByteStream(streamingBody)) {
+			fallbackInit.duplex = "half";
+		}
+		const signal =
+			init?.signal ?? (input instanceof Request ? input.signal : null);
+		if (signal != null) fallbackInit.signal = signal;
+		const redirect =
+			init?.redirect ?? (input instanceof Request ? input.redirect : null);
+		if (redirect != null) fallbackInit.redirect = redirect;
+		return __kodyNativeFetch(url, fallbackInit);
+	}
 	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
 		if (reuseOriginal) {
 			return __kodyNativeFetch(input, init);
