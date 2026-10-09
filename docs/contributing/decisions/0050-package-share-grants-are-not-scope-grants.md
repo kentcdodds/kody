@@ -1,6 +1,7 @@
 # 0050: Package share grants are not platform scope grants
 
-- **Status:** accepted
+- **Status:** superseded by
+  [0067](./0067-cross-org-grants-replace-shares-and-platform-accounts.md)
 - **Date:** 2026-09-10
 
 ## Context
