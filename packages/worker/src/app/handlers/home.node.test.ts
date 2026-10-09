@@ -10,6 +10,10 @@ import { loadOnboardingData } from '#app/onboarding-data.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import type * as OnboardingData from '#app/onboarding-data.ts'
@@ -75,7 +79,13 @@ test('authenticated home SSR prefetches flags while loading page data', async ()
 					query,
 					bind: () => statement,
 					all: async () => ({ results: rowsFor(query), meta: { changes: 0 } }),
-					first: async () => null,
+					first: async () => {
+						const normalized = query.replace(/\s+/g, ' ').trim().toLowerCase()
+						if (isOrgBindingMembershipQuery(normalized)) {
+							return mockPersonalOrgBindingRow(stableUserId, userRow.username)
+						}
+						return null
+					},
 					run: async () => ({ meta: { changes: 0 } }),
 				}
 				return statement

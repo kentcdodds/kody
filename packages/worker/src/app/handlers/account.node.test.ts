@@ -9,6 +9,10 @@ import { createAccountHandler } from '#app/handlers/account.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
@@ -115,12 +119,30 @@ function createAccountEnv(
 				const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
 				const statement = {
 					query,
-					bind: () => statement,
+					bind: (...params: Array<unknown>) => {
+						statement.bindParams = params
+						return statement
+					},
+					bindParams: [] as Array<unknown>,
 					all: async () => ({
 						results: resultsFor(normalizedQuery) ?? [],
 						meta: { changes: 0 },
 					}),
-					first: async () => null,
+					first: async () => {
+						if (isOrgBindingMembershipQuery(normalizedQuery)) {
+							const personId = String(statement.bindParams[0] ?? '')
+							const user = (rows.users ?? []).find(
+								(row) => row.stable_user_id === personId,
+							)
+							return user
+								? mockPersonalOrgBindingRow(
+										personId,
+										typeof user.username === 'string' ? user.username : null,
+									)
+								: null
+						}
+						return null
+					},
 					run: async () => ({ meta: { changes: 0 } }),
 				}
 				return statement

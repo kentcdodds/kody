@@ -31,6 +31,10 @@ import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -110,6 +114,18 @@ function createProfileTestDb(
 						query,
 						all: executeAll,
 						async first() {
+							if (isOrgBindingMembershipQuery(normalizedQuery)) {
+								const personId = String(params[0] ?? '')
+								const user = Array.from(users.values()).find(
+									(row) => row.stable_user_id === personId,
+								)
+								return user
+									? mockPersonalOrgBindingRow(
+											user.stable_user_id,
+											user.username,
+										)
+									: null
+							}
 							const result = await executeAll()
 							return result.results[0] ?? null
 						},

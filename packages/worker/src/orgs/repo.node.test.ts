@@ -17,15 +17,14 @@ async function createDb() {
 	return db
 }
 
-test('loadOrgBindingForPerson falls back when personal org membership is missing', async () => {
+test('loadOrgBindingForPerson throws when personal org membership is missing', async () => {
 	const db = await createDb()
 	const stableUserId = testStableUserIdFromEmail(
 		'missing-membership@example.com',
 	)
-	expect(await loadOrgBindingForPerson(db, stableUserId)).toEqual({
-		org: { id: stableUserId, slug: null },
-		role: 'owner',
-	})
+	await expect(loadOrgBindingForPerson(db, stableUserId)).rejects.toThrow(
+		/No live personal-org membership/,
+	)
 })
 
 test('loadOrgBindingForPerson returns personal org slug and owner role', async () => {
