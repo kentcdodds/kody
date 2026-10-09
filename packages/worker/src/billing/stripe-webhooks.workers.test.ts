@@ -420,12 +420,9 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 	expect(await rewardState()).toEqual(rewarded)
 })
 
-test('invoice.paid returns 500 when a qualifying invoice has no linked user', async () => {
+test('invoice.paid acks when a qualifying invoice has no linked live user', async () => {
 	await ensureCreditWalletTestSchema(env.APP_DB)
-	silenceExpectedConsoleErrors([
-		'stripe_webhook_process_failed',
-		'stripe_webhook_invoice_paid_user_not_linked',
-	])
+	silenceExpectedConsoleErrors(['stripe_webhook_invoice_paid_user_not_linked'])
 	using _fetch = noFetch('an unlinked invoice.paid')
 	const result = await deliver(
 		invoicePaid('evt_invoice_unlinked', 1_778_000_200, {
@@ -435,7 +432,9 @@ test('invoice.paid returns 500 when a qualifying invoice has no linked user', as
 			amount_paid: 1200,
 		}),
 	)
-	expect(result).toEqual(processFailed)
+	// Soft-deleted / unlinked customers must not 500: Stripe retries disable
+	// the webhook endpoint for every customer.
+	expect(result).toEqual({ status: 200, body: { ok: true } })
 })
 
 test('invoice.paid returns 500 when the referrer paid period cannot be loaded', async () => {

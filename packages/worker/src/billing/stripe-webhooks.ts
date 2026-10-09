@@ -388,7 +388,13 @@ async function handleInvoicePaid(input: {
 		.bind(customerId)
 		.first<{ stable_user_id: string }>()
 	if (!user?.stable_user_id) {
-		throw new Error('stripe_webhook_invoice_paid_user_not_linked')
+		// Soft-deleted (or unlinked) accounts must not fail the webhook: Stripe
+		// retries and can disable the endpoint for every customer. Soft-delete
+		// cancels Kody subscriptions; acknowledge and skip referral handling.
+		console.error('stripe_webhook_invoice_paid_user_not_linked', {
+			customerId,
+		})
+		return
 	}
 
 	const pending = await input.env.APP_DB.prepare(

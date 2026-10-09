@@ -11,9 +11,11 @@ import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import {
+	orgOwnedBucketChildSoftDeleteTables,
 	orgOwnedUserIdRestoreTables,
 	orgOwnedUserIdSoftDeleteTables,
 } from '#worker/orgs/data-targets.ts'
+import { cancelKodySubscriptionsForSoftDelete } from '#worker/billing/soft-delete-billing.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
@@ -95,6 +97,25 @@ async function softDeleteOrgOwnedAppRows(input: {
 		.bind(input.deletedAt, input.orgId)
 		.run()
 	total += listings.meta.changes ?? 0
+	for (const {
+		child,
+		parent,
+		parentKey,
+	} of orgOwnedBucketChildSoftDeleteTables) {
+		const children = await input.appDb
+			.prepare(
+				`UPDATE ${child}
+				 SET deleted_at = ?
+				 WHERE deleted_at IS NULL
+				   AND ${parentKey} IN (
+				     SELECT id FROM ${parent}
+				     WHERE user_id = ? AND deleted_at = ?
+				   )`,
+			)
+			.bind(input.deletedAt, input.orgId, input.deletedAt)
+			.run()
+		total += children.meta.changes ?? 0
+	}
 	return total
 }
 
@@ -163,6 +184,25 @@ async function restoreOrgOwnedAppRows(input: {
 		.bind(input.orgId, input.deletedAt)
 		.run()
 	total += listings.meta.changes ?? 0
+	for (const {
+		child,
+		parent,
+		parentKey,
+	} of orgOwnedBucketChildSoftDeleteTables) {
+		const children = await input.appDb
+			.prepare(
+				`UPDATE ${child}
+				 SET deleted_at = NULL, deleting_at = NULL
+				 WHERE deleted_at = ?
+				   AND ${parentKey} IN (
+				     SELECT id FROM ${parent}
+				     WHERE user_id = ? AND deleted_at IS NULL
+				   )`,
+			)
+			.bind(input.deletedAt, input.orgId)
+			.run()
+		total += children.meta.changes ?? 0
+	}
 	return total
 }
 
@@ -248,6 +288,10 @@ export async function softDeleteOrg(input: {
 	})
 	await syncJobManagerAlarm({ env: input.env, userId: input.orgId })
 	invalidatePackageAppOwnerCache({ stableUserId: input.orgId })
+	const billing = await cancelKodySubscriptionsForSoftDelete({
+		env: input.env,
+		ownerId: input.orgId,
+	})
 
 	await logOrgAuditEvent({
 		env: input.env,
@@ -260,6 +304,7 @@ export async function softDeleteOrg(input: {
 			deletedAt,
 			resourceRowsSoftDeleted,
 			jobsSoftDeleted,
+			stripeSubscriptionsCanceled: billing.canceled,
 		}),
 		createdAt: deletedAt,
 	})
@@ -498,6 +543,10 @@ export async function softDeleteUserAccount(input: {
 	})
 
 	invalidatePackageAppOwnerCache({ stableUserId: input.userId })
+	await cancelKodySubscriptionsForSoftDelete({
+		env: input.env,
+		ownerId: input.userId,
+	})
 
 	return { userId: input.userId, deletedAt, deletedOrgIds }
 }
