@@ -93,7 +93,7 @@ test('guide catalog parses every guide with unique ids and slugs', () => {
 
 	const listedIds = (options?: { includeAdmin: boolean }) =>
 		listGuides(options).map((guide) => guide.id)
-	for (const id of ['values', 'package_invocation_token_setup']) {
+	for (const id of ['values']) {
 		expect(getGuideById(id)?.unadvertised).toBe(true)
 		expect(listedIds()).not.toContain(id)
 	}

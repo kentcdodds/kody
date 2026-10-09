@@ -70,7 +70,7 @@ test('guide descriptors and candidates hide unadvertised and admin guides and re
 			optionalRows: emptyOptionalRows,
 			...(includeAdminGuides ? { includeAdminGuides } : {}),
 		}).map((descriptor) => descriptor.id)
-	const hiddenIds = ['values', 'package_invocation_token_setup', 'admin_events']
+	const hiddenIds = ['values', 'admin_events']
 	expect(descriptorIds().filter((id) => hiddenIds.includes(id))).toEqual([])
 	expect(descriptorIds(true)).toContain('admin_events')
 

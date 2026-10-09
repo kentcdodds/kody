@@ -79,11 +79,7 @@ test('docs API lists every advertised doc by section and the markdown root is in
 	expect(payload.guides.map((guide) => guide.slug)).toEqual(
 		listDocsNavSlugs({ includeAdmin: false }),
 	)
-	expect(
-		payload.guides.filter((guide) =>
-			['values', 'package_invocation_token_setup'].includes(guide.id),
-		),
-	).toEqual([])
+	expect(payload.guides.filter((guide) => guide.id === 'values')).toEqual([])
 	expect(payload.guides.every((guide) => guide.section !== null)).toBe(true)
 	expect(payload.sections.map((section) => section.id)).toEqual(
 		visibleDocsNav(false).map((section) => section.id),
