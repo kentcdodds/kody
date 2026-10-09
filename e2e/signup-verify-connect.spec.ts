@@ -197,11 +197,13 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 			`${origin}/.well-known/oauth-protected-resource/mcp`,
 		)
 
-		await page.goto('/account')
+		await page.goto('/account/security')
 		await waitForClientHydration(page)
 		await expect(
 			page.getByText('Change password', { exact: true }),
 		).toBeVisible()
+		await page.goto('/account/data')
+		await waitForClientHydration(page)
 		await page.getByTestId('delete-account').click()
 		await page.getByTestId('delete-account-confirmation').fill('GOODBYE KODY')
 		await page.getByTestId('delete-account-password').fill(password)
