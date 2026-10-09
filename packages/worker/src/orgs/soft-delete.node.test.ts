@@ -805,3 +805,57 @@ test('retrying a user soft-delete revokes org credentials left by a partial offb
 		.first<{ revoked_at: string | null }>()
 	expect(token?.revoked_at).toBe(deletedAt)
 })
+
+test('a user-delete retry does not soft-delete a shared org after the other member leaves', async () => {
+	const { env, appDb } = await createHarness()
+	const userId = testStableUserIdFromEmail('alice-retry@example.com')
+	const otherId = testStableUserIdFromEmail('bob-left@example.com')
+	const orgId = 'org-shared-retry'
+	const ts = '2026-01-01T00:00:00.000Z'
+	const deletedAt = now.toISOString()
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at,
+				stable_user_id, deleted_at
+			) VALUES
+				(31, 'alice-retry@example.com', 'aliceretry', 'x', ?, ?, ?, ?),
+				(32, 'bob-left@example.com', 'bobleft', 'x', ?, ?, ?, NULL)`,
+		)
+		.bind(ts, ts, userId, deletedAt, ts, ts, otherId)
+		.run()
+	await seedOrg(appDb, orgId, 'shared-retry')
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'member', ?, ?), (?, ?, 'owner', ?, ?)`,
+		)
+		.bind(orgId, userId, ts, deletedAt, orgId, otherId, ts, deletedAt)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-shared-retry', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+
+	const resumed = await softDeleteUserAccount({
+		env,
+		userId,
+		now: new Date(now.getTime() + 60_000),
+	})
+	expect(resumed.deletedOrgIds).toEqual([])
+	const org = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(orgId)
+		.first<{ deleted_at: string | null }>()
+	expect(org?.deleted_at).toBeNull()
+	const bucket = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_buckets WHERE id = 'sec-shared-retry'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(bucket?.deleted_at).toBeNull()
+})

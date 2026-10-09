@@ -124,6 +124,11 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 		)
 		.get() as { deleted_at: string; before: number }
 	expect(stillOriginal).toEqual({ deleted_at: deletedAt, before: 1 })
+	const candidates = await store.listJobRetentionCandidates({
+		afterId: null,
+		limit: 20,
+	})
+	expect(candidates.map((row) => row.id)).not.toContain('job-on')
 	expect(
 		await store.restoreJobsForUser({
 			userId: 'org-jobs',

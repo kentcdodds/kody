@@ -732,8 +732,8 @@ export const maxJobRetentionCandidatesPerRun = 100
 
 /**
  * Candidate scan for the platform job retention sweeper. Excludes preserved,
- * package-owned, and clearly held/active rows in SQL so hourly budget is not
- * spent re-walking live jobs:
+ * package-owned, soft-deleted, and clearly held/active rows in SQL so hourly
+ * budget is not spent re-walking live jobs:
  * - enabled recurring (including kill-switched pause)
  * - enabled never-ran once that is still runnable
  * Age/category eligibility still runs in application code so account
@@ -751,6 +751,7 @@ export async function listJobRetentionCandidateRows(
 		.prepare(
 			`SELECT * FROM jobs
 			WHERE preserved = 0
+				AND deleted_at IS NULL
 				AND id NOT LIKE 'package-job:%'
 				AND id > ?
 				AND NOT (

@@ -595,22 +595,35 @@ export async function softDeleteUserAccount(input: {
 	})
 	const fenceAt = new Date(deletedAt)
 
+	// A shared org is sole-owned only while this membership is still live and
+	// no other member is. A membership already tombstoned in this generation
+	// stays on the offboard path unless the org itself was tombstoned then.
+	// Otherwise a later departure of the remaining members would make a retry
+	// delete their org.
 	const soleMemberOrgs = await appDb
 		.prepare(
 			`SELECT m.org_id AS org_id
 			 FROM org_memberships m
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
-			   AND (m.deleted_at IS NULL OR m.deleted_at = ?)
-			   AND (o.deleted_at IS NULL OR o.deleted_at = ?)
-			   AND NOT EXISTS (
-			     SELECT 1 FROM org_memberships other
-			     WHERE other.org_id = m.org_id
-			       AND other.user_id != ?
-			       AND other.deleted_at IS NULL
+			   AND (
+			     (
+			       m.deleted_at IS NULL
+			       AND o.deleted_at IS NULL
+			       AND NOT EXISTS (
+			         SELECT 1 FROM org_memberships other
+			         WHERE other.org_id = m.org_id
+			           AND other.user_id != ?
+			           AND other.deleted_at IS NULL
+			       )
+			     )
+			     OR (
+			       o.deleted_at = ?
+			       AND (m.deleted_at IS NULL OR m.deleted_at = ?)
+			     )
 			   )`,
 		)
-		.bind(input.userId, deletedAt, deletedAt, input.userId)
+		.bind(input.userId, input.userId, deletedAt, deletedAt)
 		.all<{ org_id: string }>()
 
 	const deletedOrgIds: Array<string> = []
