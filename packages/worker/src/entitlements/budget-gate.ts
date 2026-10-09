@@ -268,4 +268,146 @@ export function orgBudgetFromGateContext(
 	}
 }
 
+type AttributionSpendShare = {
+	actorUserId: string | null
+	automationSource: string | null
+	weight: number
+}
+
+/**
+ * After a funded credit debit, attribute the spent micro-USD into org budget
+ * MTD counters. The real-time gate only checks (delta 0); settlement is what
+ * advances spend so member/automation budgets can block later work.
+ *
+ * Splits by `usage_attribution_daily` actor weights for the month when present;
+ * otherwise attributes the debit to the org billing id as the member actor
+ * (personal-org soak: org id equals the owner user id).
+ */
+export async function recordOrgBudgetSpendAfterCreditDebit(input: {
+	db: D1Database
+	env: UserMeterEnv
+	orgId: string
+	month: string
+	debitedMicroUsd: number
+	now?: Date
+}): Promise<void> {
+	const debit = Math.max(0, Math.floor(Number(input.debitedMicroUsd)))
+	if (debit === 0) return
+	const now = input.now ?? new Date()
+	if (!shouldMutateBudgetMtdForMonth(input.month, now)) {
+		return
+	}
+	const shares = await loadBudgetSpendShares({
+		db: input.db,
+		orgId: input.orgId,
+		month: input.month,
+	})
+	const totalWeight = shares.reduce((sum, share) => sum + share.weight, 0)
+	if (totalWeight <= 0 || shares.length === 0) {
+		await recordOrgBudgetSpend({
+			db: input.db,
+			env: input.env,
+			orgId: input.orgId,
+			actorUserId: input.orgId,
+			automationSource: null,
+			deltaMicroUsd: debit,
+			now,
+			month: input.month,
+		})
+		return
+	}
+	let allocated = 0
+	for (let index = 0; index < shares.length; index += 1) {
+		const share = shares[index]!
+		const isLast = index === shares.length - 1
+		const slice = isLast
+			? debit - allocated
+			: Math.floor((debit * share.weight) / totalWeight)
+		allocated += slice
+		if (slice <= 0) continue
+		await recordOrgBudgetSpend({
+			db: input.db,
+			env: input.env,
+			orgId: input.orgId,
+			actorUserId: share.actorUserId,
+			automationSource: share.automationSource,
+			deltaMicroUsd: slice,
+			now,
+			month: input.month,
+		})
+	}
+}
+
+async function loadBudgetSpendShares(input: {
+	db: D1Database
+	orgId: string
+	month: string
+}): Promise<Array<AttributionSpendShare>> {
+	const monthPrefix = `${input.month}-`
+	try {
+		const { results } = await input.db
+			.prepare(
+				`SELECT
+					COALESCE(actor_user_id, '') AS actor_user_id,
+					COALESCE(automation_source, '') AS automation_source,
+					SUM(units) AS weight
+				 FROM usage_attribution_daily
+				 WHERE user_id = ?
+				   AND day >= ?
+				   AND day < ?
+				   AND meter IN ('dynamic_worker_day', 'durable_object_rows_read')
+				 GROUP BY COALESCE(actor_user_id, ''), COALESCE(automation_source, '')`,
+			)
+			.bind(
+				input.orgId,
+				`${monthPrefix}01`,
+				// Exclusive upper bound: first day of next month (month is YYYY-MM).
+				nextUtcMonthDay(input.month),
+			)
+			.all<{
+				actor_user_id: string
+				automation_source: string
+				weight: number
+			}>()
+		const shares: Array<AttributionSpendShare> = []
+		for (const row of results ?? []) {
+			const weight = Number(row.weight)
+			if (!Number.isFinite(weight) || weight <= 0) continue
+			const actor = row.actor_user_id.trim()
+			const automation = row.automation_source.trim()
+			if (actor.length > 0) {
+				shares.push({
+					actorUserId: actor,
+					automationSource: null,
+					weight,
+				})
+				continue
+			}
+			if (automation.length > 0) {
+				shares.push({
+					actorUserId: null,
+					automationSource: automation,
+					weight,
+				})
+			}
+		}
+		return shares
+	} catch {
+		return []
+	}
+}
+
+function nextUtcMonthDay(month: string): string {
+	const [yearText, monthText] = month.split('-')
+	const year = Number(yearText)
+	const monthIndex = Number(monthText)
+	if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) {
+		return `${month}-32`
+	}
+	if (monthIndex >= 12) {
+		return `${year + 1}-01-01`
+	}
+	return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`
+}
+
 export { BudgetLimitError }

@@ -2057,6 +2057,15 @@ class UserMeterBase extends DurableObject<Env> {
 		automation: number
 	}): Promise<UserMeterBudgetSpendState> {
 		const month = assertUtcMonthKey(input.month)
+		const stored = this.storedBudgetMonth()
+		// Never let a past-month reconciliation wipe or rewrite live MTD rows.
+		if (stored && month < stored) {
+			console.info('user_meter_budget_recompute_skip_past_month', {
+				month,
+				storedMonth: stored,
+			})
+			return this.readBudgetSpendState(stored)
+		}
 		this.ensureBudgetMonth(month)
 		const automationTarget = Math.max(0, Math.floor(Number(input.automation)))
 		this.ctx.storage.transactionSync(() => {
