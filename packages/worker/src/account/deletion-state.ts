@@ -1,3 +1,8 @@
+/**
+ * soft-delete-read-filter: opt-out — owner write-lease gate reads
+ * `users.deleted_at` so a tombstoned person cannot fall through to a leftover
+ * personal org row.
+ */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import {
@@ -348,19 +353,66 @@ export async function abortAccountDeletingByStableUserId(input: {
 	})
 }
 
+type OwnerWriteGate =
+	| { kind: 'person'; deletingAt: string | null; deletedAt: string | null }
+	| { kind: 'org' }
+	| { kind: 'missing' }
+
+/**
+ * Person accounts and team orgs share the same owner-id space. Package and
+ * job writes pass the owning org id into the account write lease, so a live
+ * team org (no `users` row) must be writable. A person id still wins: a
+ * deleting or soft-deleted user is blocked even when a personal org row
+ * remains.
+ */
+async function loadOwnerWriteGate(
+	db: D1Database,
+	ownerId: string,
+): Promise<OwnerWriteGate> {
+	const user = await db
+		.prepare(
+			`SELECT deleting_at, deleted_at FROM users WHERE stable_user_id = ?`,
+		)
+		.bind(ownerId)
+		.first<{ deleting_at: string | null; deleted_at: string | null }>()
+	if (user) {
+		return {
+			kind: 'person',
+			deletingAt: user.deleting_at,
+			deletedAt: user.deleted_at,
+		}
+	}
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`)
+		.bind(ownerId)
+		.first<{ id: string }>()
+	if (org) return { kind: 'org' }
+	return { kind: 'missing' }
+}
+
+function assertOwnerWriteGate(gate: OwnerWriteGate) {
+	switch (gate.kind) {
+		case 'person':
+			if (gate.deletingAt || gate.deletedAt) {
+				throw new AccountDeletionInProgressError()
+			}
+			return
+		case 'org':
+			return
+		case 'missing':
+			throw new AccountDeletionInProgressError()
+		default: {
+			const unreachable: never = gate
+			throw new Error(`Unknown owner write gate ${String(unreachable)}`)
+		}
+	}
+}
+
 export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: string,
 ) {
-	const row = await db
-		.prepare(
-			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(stableUserId)
-		.first<{ deleting_at: string | null }>()
-	if (!row || row.deleting_at) {
-		throw new AccountDeletionInProgressError()
-	}
+	assertOwnerWriteGate(await loadOwnerWriteGate(db, stableUserId))
 }
 
 /**
@@ -373,22 +425,29 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	env: UserMeterEnv
 	stableUserId: string
 }) {
-	const row = await input.db
-		.prepare(
-			`SELECT deleting_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.stableUserId)
-		.first<{ deleting_at: string | null }>()
-	const deletingAt = row?.deleting_at
-	if (row && !deletingAt) return
-	if (deletingAt) {
-		await runUserMeterRpc({
-			env: input.env,
-			stableUserId: input.stableUserId,
-			operation: async (meter) => await meter.markDeleting({ deletingAt }),
-		})
+	const gate = await loadOwnerWriteGate(input.db, input.stableUserId)
+	switch (gate.kind) {
+		case 'person': {
+			if (!gate.deletingAt && !gate.deletedAt) return
+			const deletingAt = gate.deletingAt
+			if (deletingAt) {
+				await runUserMeterRpc({
+					env: input.env,
+					stableUserId: input.stableUserId,
+					operation: async (meter) => await meter.markDeleting({ deletingAt }),
+				})
+			}
+			throw new AccountDeletionInProgressError()
+		}
+		case 'org':
+			return
+		case 'missing':
+			throw new AccountDeletionInProgressError()
+		default: {
+			const unreachable: never = gate
+			throw new Error(`Unknown owner write gate ${String(unreachable)}`)
+		}
 	}
-	throw new AccountDeletionInProgressError()
 }
 
 export async function assertAccountWritable(env: Env, stableUserId: string) {

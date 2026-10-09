@@ -121,6 +121,10 @@ function createLeaseHarness(
 		);
 		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
 		INSERT INTO users (id, stable_user_id) VALUES (2, 'user-b');
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
+			deleted_at TEXT
+		);
 		CREATE TABLE account_write_lease_repairs (
 			id TEXT PRIMARY KEY,
 			target_user_id TEXT NOT NULL,
@@ -806,6 +810,69 @@ test('abortAccountDeleting clears the D1 gate and UserMeter tombstone only for t
 	await expect(
 		clearUserMeterDeletionTombstone({ env: {}, stableUserId: 'user-a' }),
 	).resolves.toEqual({ cleared: false })
+})
+
+test('withAccountWriteLease allows a live team org that has no users row', async () => {
+	const h = createLeaseHarness()
+	h.sqlite.prepare(`INSERT INTO orgs (id) VALUES ('org-team')`).run()
+
+	await expect(
+		h.lease(async () => 'ok', { stableUserId: 'org-team' }),
+	).resolves.toBe('ok')
+})
+
+test('withAccountWriteLease refuses a soft-deleted team org', async () => {
+	const h = createLeaseHarness()
+	h.sqlite
+		.prepare(`INSERT INTO orgs (id, deleted_at) VALUES ('org-team', ?)`)
+		.run(fence)
+
+	await expect(
+		h.lease(async () => 'should not run', { stableUserId: 'org-team' }),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+})
+
+test('withAccountWriteLease refuses an owner id that is neither a user nor a live org', async () => {
+	const h = createLeaseHarness()
+	await expect(
+		h.lease(async () => 'should not run', { stableUserId: 'missing-owner' }),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+})
+
+test('withAccountWriteLease refuses a soft-deleted person even when a live org shares that id', async () => {
+	const h = createLeaseHarness()
+	h.sqlite.prepare(`INSERT INTO orgs (id) VALUES ('user-a')`).run()
+	h.sqlite
+		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = 'user-a'`)
+		.run(fence)
+
+	await expect(h.lease(async () => 'should not run')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+})
+
+test('withAccountWriteLease refuses a deleting person even when a live org shares that id', async () => {
+	const h = createLeaseHarness()
+	h.sqlite.prepare(`INSERT INTO orgs (id) VALUES ('user-a')`).run()
+	h.sqlite
+		.prepare(`UPDATE users SET deleting_at = ? WHERE stable_user_id = 'user-a'`)
+		.run(fence)
+
+	await expect(h.lease(async () => 'should not run')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+})
+
+test('withAccountWriteLease drops a leftover UserMeter tombstone on a live team org', async () => {
+	const h = createLeaseHarness()
+	h.sqlite.prepare(`INSERT INTO orgs (id) VALUES ('org-team')`).run()
+	const orgMeter = userMeterRpc({ env: h.env, userId: 'org-team' })
+	await orgMeter.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+
+	await expect(
+		h.lease(async () => 'ok', { stableUserId: 'org-team' }),
+	).resolves.toBe('ok')
+	expect(await orgMeter.readDeletionState()).toEqual({ deletingAt: null })
 })
 
 test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {

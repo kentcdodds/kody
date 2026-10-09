@@ -711,12 +711,18 @@ export function createWaitUntilDrain() {
 export function createPermissiveAccountWriteLeaseDbHooks() {
 	return {
 		supportsDeletingAtQuery(query: string) {
-			return query.includes(
-				'SELECT deleting_at FROM users WHERE stable_user_id',
+			return (
+				query.includes('SELECT deleting_at FROM users WHERE stable_user_id') ||
+				query.includes(
+					'SELECT deleting_at, deleted_at FROM users WHERE stable_user_id',
+				)
 			)
 		},
 		deletingAtFirstResult() {
-			return { deleting_at: null as string | null }
+			return {
+				deleting_at: null as string | null,
+				deleted_at: null as string | null,
+			}
 		},
 	}
 }

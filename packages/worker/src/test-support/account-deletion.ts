@@ -89,13 +89,24 @@ export function createTestDb(
 							}
 							if (
 								lower ===
-								'select deleting_at from users where stable_user_id = ?'
+									'select deleting_at from users where stable_user_id = ?' ||
+								lower ===
+									'select deleting_at, deleted_at from users where stable_user_id = ?'
 							) {
 								results = (rows.users ?? [])
 									.filter((row) => row['stable_user_id'] === userId)
 									.map((row) => ({
 										deleting_at: row['deleting_at'] ?? null,
+										deleted_at: row['deleted_at'] ?? null,
 									}))
+								return { results: results as Array<T>, meta: { changes: 0 } }
+							}
+							if (lower === 'select id from orgs where id = ?') {
+								results = (rows.orgs ?? [])
+									.filter(
+										(row) => row['id'] === userId && row['deleted_at'] == null,
+									)
+									.map((row) => ({ id: row['id'] }))
 								return { results: results as Array<T>, meta: { changes: 0 } }
 							}
 							if (lower === 'select stable_user_id from users where id = ?') {
