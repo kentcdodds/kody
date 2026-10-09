@@ -129,11 +129,16 @@ async function snapshotPerson(
 			let attempt = 0
 			for (;;) {
 				attempt += 1
-				const response = await session.request(new URL(appUrl).pathname)
-				const servesApp =
-					typeof response.body === 'string' && response.body.includes(appMarker)
-				if (servesApp || attempt === appAttempts) {
-					return { status: response.status, servesApp }
+				try {
+					const response = await session.request(new URL(appUrl).pathname)
+					const servesApp =
+						typeof response.body === 'string' &&
+						response.body.includes(appMarker)
+					if (servesApp || attempt === appAttempts) {
+						return { status: response.status, servesApp }
+					}
+				} catch (error) {
+					if (attempt === appAttempts) throw error
 				}
 				await sleep(appRetryDelayMs)
 			}
