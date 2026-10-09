@@ -40,7 +40,6 @@ import {
 	AccountManagementPanel,
 	AccountManagementShell,
 	AccountPageHeader,
-	accountActionsCss,
 } from '#client/routes/account-management-components.tsx'
 import { createAccountEmailClaims } from '#client/routes/account-email-claims-client.ts'
 import { renderAccountFormerEmailsPanel } from '#client/routes/account-former-emails-panel.tsx'
@@ -641,28 +640,6 @@ export function AccountRoute(handle: Handle) {
 								accountConnections.markHasUsablePassword()
 							}}
 						/>
-						<AccountManagementPanel
-							title="Second sign-in step"
-							description="Ask for a code from an authenticator app, or sign in with a passkey instead of a password."
-							ariaLabel="Second sign-in step"
-						>
-							<div mix={css(accountActionsCss)}>
-								<a
-									href={routes.accountTwoFactor.href()}
-									data-testid="account-security-two-factor"
-									mix={css(compactGhostButtonCss)}
-								>
-									Two-factor authentication
-								</a>
-								<a
-									href={routes.accountPasskeys.href()}
-									data-testid="account-security-passkeys"
-									mix={css(compactGhostButtonCss)}
-								>
-									Passkeys
-								</a>
-							</div>
-						</AccountManagementPanel>
 						{accountConnections.render()}
 						{emailVerified
 							? renderAccountFormerEmailsPanel({
