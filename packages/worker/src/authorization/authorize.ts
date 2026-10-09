@@ -5,10 +5,7 @@ import {
 	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
-import {
-	type OrgRole,
-	type RequestContext,
-} from '@kody-internal/shared/request-context.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	connectionProfileAllows,
 	type ConnectionProfileAction,
@@ -16,6 +13,11 @@ import {
 } from '#universal/connection-profiles/grants.ts'
 import { resolveConnectionProfileGrants } from '#worker/connection-profiles/repo.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import {
+	compileAccessForRequest,
+	resourceGrantKey,
+	type CompiledAccess,
+} from './access-compile.ts'
 
 /** A concrete org resource a permission is checked on. */
 export type OrgResource = {
@@ -32,7 +34,12 @@ export type OrgResource = {
  */
 export type EffectivePermissions = {
 	orgId: OwnerId
+	/** Org-level permissions (role basics + grants on the org resource). */
 	permissions: ReadonlySet<OrgPermission>
+	/** True when the actor is an Owner (or Automation acting for the org). */
+	isOwner: boolean
+	/** Per-resource grants keyed by `${type}:${id}`. */
+	resourcePermissions: ReadonlyMap<string, ReadonlySet<OrgPermission>>
 	credentialScopes: ReadonlySet<OrgPermission> | null
 	/** Null when no connection profile is bound to the credential. */
 	profileGrants: ReadonlyArray<ConnectionProfileGrant> | null
@@ -75,29 +82,6 @@ export type AuthorizationDecision =
 	| { allowed: true }
 	| { allowed: false; error: AuthorizationError }
 
-const allOrgPermissions: ReadonlySet<OrgPermission> = new Set(orgPermissions)
-
-const rolePresets: Record<OrgRole, ReadonlySet<OrgPermission>> = {
-	owner: allOrgPermissions,
-	member: new Set(['org:read', 'member:read', 'team:read', 'search:read']),
-	billing: new Set([
-		'org:read',
-		'member:read',
-		'search:read',
-		'billing:read',
-		'billing:write',
-	]),
-}
-
-function compileOrgPermissions(
-	request: RequestContext,
-): ReadonlySet<OrgPermission> {
-	// Automation acts for the org that owns the job, webhook, or subscription.
-	if (!request.actor) return allOrgPermissions
-	if (!request.membership) return new Set()
-	return rolePresets[request.membership.role]
-}
-
 async function loadProfileGrants(
 	env: Env,
 	request: RequestContext,
@@ -112,6 +96,23 @@ async function loadProfileGrants(
 		userId: request.actor?.userId ?? request.org.id,
 		profileName,
 	})
+}
+
+function toEffective(
+	compiled: CompiledAccess,
+	request: RequestContext,
+	profileGrants: ReadonlyArray<ConnectionProfileGrant> | null,
+): EffectivePermissions {
+	return {
+		orgId: compiled.orgId,
+		permissions: compiled.orgPermissions,
+		isOwner: compiled.isOwner,
+		resourcePermissions: compiled.resourcePermissions,
+		credentialScopes: request.credential.scopes
+			? new Set(request.credential.scopes)
+			: null,
+		profileGrants,
+	}
 }
 
 const effectivePermissionsByRequest = new WeakMap<
@@ -129,14 +130,14 @@ export function computeEffectivePermissions(input: {
 }): Promise<EffectivePermissions> {
 	let promise = effectivePermissionsByRequest.get(input.request)
 	if (!promise) {
-		promise = (async () => ({
-			orgId: input.request.org.id,
-			permissions: compileOrgPermissions(input.request),
-			credentialScopes: input.request.credential.scopes
-				? new Set(input.request.credential.scopes)
-				: null,
-			profileGrants: await loadProfileGrants(input.env, input.request),
-		}))()
+		promise = (async () => {
+			const compiled = await compileAccessForRequest({
+				db: input.env.APP_DB,
+				request: input.request,
+			})
+			const profileGrants = await loadProfileGrants(input.env, input.request)
+			return toEffective(compiled, input.request, profileGrants)
+		})()
 		effectivePermissionsByRequest.set(input.request, promise)
 		promise.catch(() => effectivePermissionsByRequest.delete(input.request))
 	}
@@ -182,6 +183,27 @@ function describeResource(resource: OrgResource) {
 	return `${resource.type} ${resource.label ?? `"${resource.id}"`}`
 }
 
+function holdsPermission(
+	access: EffectivePermissions,
+	permission: OrgPermission,
+	resource: OrgResource | undefined,
+) {
+	if (access.isOwner) return true
+	if (access.permissions.has(permission)) return true
+	if (resource) {
+		const granted = access.resourcePermissions.get(
+			resourceGrantKey(resource.type, resource.id),
+		)
+		return granted?.has(permission) ?? false
+	}
+	// Surface / discovery checks (§6.3): the permission is held somewhere in
+	// the org when any resource grant includes it.
+	for (const granted of access.resourcePermissions.values()) {
+		if (granted.has(permission)) return true
+	}
+	return false
+}
+
 function deny(input: {
 	code: AuthorizationDenialCode
 	permission: OrgPermission
@@ -207,7 +229,9 @@ function denialCode(
 	resource: OrgResource | undefined,
 ): AuthorizationDenialCode | null {
 	if (resource && resource.orgId !== access.orgId) return 'wrong_org'
-	if (!access.permissions.has(permission)) return 'missing_permission'
+	if (!holdsPermission(access, permission, resource)) {
+		return 'missing_permission'
+	}
 	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
 		return 'credential_scope'
 	}
@@ -366,3 +390,6 @@ export async function authorizeSurface(
 	if (permission === 'none') return
 	await authorize(ctx, permission)
 }
+
+// Re-export so callers that only need the vocabulary keep one import path.
+export { orgPermissions }

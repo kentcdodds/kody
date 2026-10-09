@@ -24,12 +24,22 @@ import {
 
 const mocks = vi.hoisted(() => ({
 	resolveConnectionProfileGrants: vi.fn(),
+	compileAccessForRequest: vi.fn(),
 }))
 
 vi.mock('#worker/connection-profiles/repo.ts', () => ({
 	resolveConnectionProfileGrants: (...args: Array<unknown>) =>
 		mocks.resolveConnectionProfileGrants(...args),
 }))
+
+vi.mock('./access-compile.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./access-compile.ts')>()
+	return {
+		...actual,
+		compileAccessForRequest: (...args: Array<unknown>) =>
+			mocks.compileAccessForRequest(...args),
+	}
+})
 
 const env = { APP_DB: {} } as Env
 
@@ -39,6 +49,8 @@ function access(
 	return {
 		orgId: ownerIdFromStored('org-1'),
 		permissions: new Set(orgPermissions),
+		isOwner: true,
+		resourcePermissions: new Map(),
 		credentialScopes: null,
 		profileGrants: null,
 		...overrides,
@@ -60,12 +72,38 @@ function denial(decision: ReturnType<typeof checkPermission>) {
 	return decision.error
 }
 
+function stubCompile(request: RequestContext) {
+	const role = request.membership?.role ?? null
+	const isOwner = !request.actor || role === 'owner'
+	mocks.compileAccessForRequest.mockResolvedValue({
+		orgId: request.org.id,
+		epoch: 0,
+		isOwner,
+		orgPermissions: isOwner
+			? new Set(orgPermissions)
+			: role === 'member'
+				? new Set(['org:read', 'member:read', 'team:read', 'search:read'])
+				: role === 'billing'
+					? new Set([
+							'org:read',
+							'member:read',
+							'search:read',
+							'billing:read',
+							'billing:write',
+						])
+					: new Set(['search:read']),
+		resourcePermissions: new Map(),
+	})
+}
+
 test('every person owns their implicit org and holds every org permission in it', async () => {
 	const request = sessionRequestContext('user-1')
+	stubCompile(request)
 	const effective = await computeEffectivePermissions({ env, request })
 
 	expect(effective.orgId).toBe(personalOrgId(personIdFromStored('user-1')))
 	expect([...effective.permissions].sort()).toEqual([...orgPermissions].sort())
+	expect(effective.isOwner).toBe(true)
 	expect(effective.credentialScopes).toBeNull()
 	expect(effective.profileGrants).toBeNull()
 	await expect(
@@ -82,6 +120,7 @@ test('Automation acts for its org with no actor', async () => {
 		user: { userId: personIdFromStored('user-1') },
 		source: { kind: 'schedule', jobId: 'job-1' },
 	})
+	stubCompile(request)
 	expect(request.actor).toBeNull()
 	await expect(
 		authorize({ env, request }, 'job:execute'),
@@ -91,6 +130,7 @@ test('Automation acts for its org with no actor', async () => {
 test('a member holds only the role basics', async () => {
 	const owner = sessionRequestContext('user-1')
 	const member: RequestContext = { ...owner, membership: { role: 'member' } }
+	stubCompile(member)
 	const effective = await computeEffectivePermissions({
 		env,
 		request: member,
@@ -101,6 +141,7 @@ test('a member holds only the role basics', async () => {
 		'search:read',
 		'team:read',
 	])
+	expect(effective.isOwner).toBe(false)
 	const error = await authorize(
 		{ env, request: member },
 		'package:write',
@@ -111,6 +152,34 @@ test('a member holds only the role basics', async () => {
 		permission: 'package:write',
 		message: 'Missing package:write. An org Owner can grant it.',
 	})
+})
+
+test('a resource grant lets a member act on that resource only', () => {
+	const memberAccess = access({
+		isOwner: false,
+		permissions: new Set([
+			'org:read',
+			'member:read',
+			'team:read',
+			'search:read',
+		]),
+		resourcePermissions: new Map([
+			['package:pkg-1', new Set(['package:read', 'package:execute'])],
+		]),
+	})
+	expect(
+		checkPermission(memberAccess, 'package:execute', packageResource()).allowed,
+	).toBe(true)
+	// Without a resource, surface checks pass when the permission is held
+	// somewhere in the org (Teams spec §6.3).
+	expect(checkPermission(memberAccess, 'package:execute').allowed).toBe(true)
+	expect(
+		checkPermission(
+			memberAccess,
+			'package:execute',
+			packageResource({ id: 'pkg-2', label: undefined }),
+		).allowed,
+	).toBe(false)
 })
 
 test('a resource in another org is denied before permissions are read', () => {
@@ -207,6 +276,17 @@ test('lists show a package when the request holds any permission on it', () => {
 			reachedPackage(ownerIdFromStored('org-2'), { id: 'pkg-1' }),
 		),
 	).toBe(false)
+	const grantedOnly = access({
+		isOwner: false,
+		permissions: new Set(['search:read']),
+		resourcePermissions: new Map([
+			['package:pkg-1', new Set(['package:execute'])],
+		]),
+	})
+	expect(canSeeResource(grantedOnly, pkg)).toBe(true)
+	expect(canSeeResource(grantedOnly, packageResource({ id: 'pkg-2' }))).toBe(
+		false,
+	)
 })
 
 test('Automation keeps the connection profile of the credential that created it', async () => {
@@ -219,6 +299,7 @@ test('Automation keeps the connection profile of the credential that created it'
 		source: { kind: 'schedule', jobId: 'job-1' },
 		profileName: ' work ',
 	})
+	stubCompile(request)
 	const effective = await computeEffectivePermissions({ env, request })
 	expect(mocks.resolveConnectionProfileGrants).toHaveBeenCalledWith({
 		db: env.APP_DB,
@@ -230,6 +311,7 @@ test('Automation keeps the connection profile of the credential that created it'
 
 test('deep call sites read the permissions bound for the request', async () => {
 	const request = sessionRequestContext('user-1')
+	stubCompile(request)
 	const bound = await runWithRequestPermissions({ env, request }, async () =>
 		getRequestPermissions(),
 	)

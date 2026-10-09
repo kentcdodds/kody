@@ -37,17 +37,23 @@ synchronous, for callers that already hold the compiled permissions.
 
 1. **Signed in.** A request without a person (`request: null`) is denied.
 2. **Org binding.** The resource must belong to `request.org.id` (`wrong_org`).
-3. **Effective permissions.** `computeEffectivePermissions` compiles the role
-   preset: Owner holds every permission; Member and Billing hold their org-level
-   basics. Automation (no actor) acts for the org that owns the job, webhook, or
-   subscription. The result is cached per request context.
+3. **Effective permissions.** `computeEffectivePermissions` compiles
+   memberships, team memberships, and grants (`access-compile.ts`): Owner holds
+   every permission; Member and Billing hold their org-level basics plus any
+   direct or team grants; outside collaborators hold `search:read` plus grants
+   (and `org:execute` when they hold `package:execute` somewhere, the ad-hoc
+   rule). Compiled results are stored in `access_cache` and keyed by
+   `orgs.access_epoch`. Automation (no actor) acts for the org that owns the
+   job, webhook, or subscription. The result is also cached per request context.
 4. **Credential scopes.** Non-null `credential.scopes` narrow the result.
 5. **Connection profile.** A bound profile narrows package resources to the
    packages and actions it lists. Profiles list packages only, so they do not
    narrow other resources or org-level checks.
 
-Every person is the Owner of their implicit org today, so steps 2 to 4 never
-deny. Profiles and the signed-in step are the denials that can fire.
+A surface check without a resource (capability `orgPermission`, Open API
+`x-kody-permission`) passes when the permission is held at org level **or on any
+resource grant** in the org. A check with a resource requires that resource.
+Profiles and the signed-in step are the other denials that can fire.
 
 ### Checking many resources
 
