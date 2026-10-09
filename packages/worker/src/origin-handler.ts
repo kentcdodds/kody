@@ -68,7 +68,11 @@ import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import { getLegacyHostRedirectResponse } from '#worker/app-legacy-redirect.ts'
 import { isRuntimeWorkerOwnedRequest } from '#worker/runtime-worker-routing.ts'
 import { fetchPreservingWebSocketUpgrade } from '#worker/package-runtime/websocket-upgrade.ts'
-import { isNamespacedAppEndpointPath } from '#worker/user-namespace-routes.ts'
+import {
+	isNamespacedAppEndpointPath,
+	retiredConnectorsPathPrefix,
+} from '#worker/user-namespace-routes.ts'
+import { requestSkipsAssetProbe } from './static-asset-probe.ts'
 import { handleOpenIdConfigurationRequest } from '#worker/oidc/discovery.ts'
 import { handleOidcJwksRequest } from '#worker/oidc/jwks.ts'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
@@ -367,7 +371,7 @@ const appHandler = withCors({
 			return new Response('Not Found', { status: 404 })
 		}
 
-		if (url.pathname.startsWith('/connectors/')) {
+		if (url.pathname.startsWith(`${retiredConnectorsPathPrefix}/`)) {
 			return new Response('Not Found', { status: 404 })
 		}
 
@@ -375,7 +379,13 @@ const appHandler = withCors({
 		// (including 304 Not Modified for conditional requests) must be passed
 		// through; treating 304 as a miss would fall through to the app router
 		// and return 404 for every browser revalidation request.
-		if (env.ASSETS && (request.method === 'GET' || request.method === 'HEAD')) {
+		// Dynamic prefixes owned by the route table (and pre-router mounts such
+		// as /mcp) never have a public/ twin, so skip the probe on those GETs.
+		if (
+			env.ASSETS &&
+			(request.method === 'GET' || request.method === 'HEAD') &&
+			!requestSkipsAssetProbe(url.pathname)
+		) {
 			const response = await env.ASSETS.fetch(request)
 			if (response.status !== 404) {
 				if (shouldApplyLongLivedAssetCaching(url.pathname, env)) {
