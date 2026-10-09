@@ -20,7 +20,7 @@ import {
 	mutedLinkCss,
 } from '#universal/styles/style-primitives.ts'
 
-export function readOauthAuthorizeFormProtection() {
+function readOauthAuthorizeFormProtection() {
 	const authForm = document.querySelector<HTMLFormElement>(
 		'form[data-testid="oauth-authorize-form"]',
 	)
