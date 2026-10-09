@@ -172,6 +172,19 @@ test('migration 0092 restores local-execute parity on org:execute tokens', () =>
 			JSON.stringify(['org:read', 'search:read']),
 			'api',
 		)
+	// Intentional CapabilityProxy CI token with package:execute already —
+	// not a 0090 local-execute rewrite and not cli-bootstrap; leave alone.
+	sqlite
+		.prepare(
+			`INSERT INTO api_tokens (id, user_id, scopes_json, created_via)
+			 VALUES (?, ?, ?, ?)`,
+		)
+		.run(
+			'tok-ci-narrow',
+			'user-1',
+			JSON.stringify(['org:execute', 'org:read', 'package:execute']),
+			'api',
+		)
 	sqlite
 		.prepare(
 			`INSERT INTO cli_credential_bootstrap_codes (id, user_id, scopes_json)
@@ -224,6 +237,15 @@ test('migration 0092 restores local-execute parity on org:execute tokens', () =>
 			).scopes_json,
 		),
 	).toEqual(['org:read', 'search:read'])
+	expect(
+		JSON.parse(
+			(
+				sqlite
+					.prepare(`SELECT scopes_json FROM api_tokens WHERE id = ?`)
+					.get('tok-ci-narrow') as { scopes_json: string }
+			).scopes_json,
+		),
+	).toEqual(['org:execute', 'org:read', 'package:execute'])
 
 	const code = JSON.parse(
 		(

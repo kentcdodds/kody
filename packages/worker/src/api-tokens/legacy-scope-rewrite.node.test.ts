@@ -5,6 +5,7 @@ import {
 	legacyApiTokenScopeMap,
 	localExecuteOrgPermissions,
 	rewriteLegacyApiTokenScopes,
+	shouldRepairLocalExecuteParity,
 	unionLocalExecuteParityScopes,
 } from './legacy-scope-rewrite.ts'
 
@@ -158,6 +159,33 @@ test('unionLocalExecuteParityScopes adds the parity set only when org:execute is
 			'package:execute',
 		]),
 	).toEqual([...localExecuteOrgPermissions, 'org:read'].sort())
+})
+
+test('shouldRepairLocalExecuteParity matches migration 0092 targets', () => {
+	expect(
+		shouldRepairLocalExecuteParity({
+			scopes: ['org:execute', 'org:read'],
+			createdVia: 'api',
+		}),
+	).toBe(true)
+	expect(
+		shouldRepairLocalExecuteParity({
+			scopes: ['org:execute', 'org:read', 'package:execute'],
+			createdVia: 'cli-bootstrap',
+		}),
+	).toBe(true)
+	expect(
+		shouldRepairLocalExecuteParity({
+			scopes: ['org:execute', 'org:read', 'package:execute'],
+			createdVia: 'api',
+		}),
+	).toBe(false)
+	expect(
+		shouldRepairLocalExecuteParity({
+			scopes: ['org:execute', 'org:read', 'package:execute'],
+			table: 'cli_credential_bootstrap_codes',
+		}),
+	).toBe(true)
 })
 
 test('dedupes overlapping expansions, keeps org permissions, and sorts', () => {

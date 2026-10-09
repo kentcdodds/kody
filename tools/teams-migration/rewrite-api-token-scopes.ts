@@ -1,6 +1,7 @@
 /**
  * Repair / re-apply the P4 API token scope rewrite using the TypeScript map,
- * then ensure `org:execute` tokens hold local-execute parity scopes (0092).
+ * then ensure eligible `org:execute` tokens hold local-execute parity scopes
+ * (0092).
  *
  * Production and `wrangler d1 migrations apply` use the SQL in
  * `0090-teams-credential-org-binding.sql` and
@@ -13,6 +14,7 @@
  */
 import {
 	rewriteLegacyApiTokenScopes,
+	shouldRepairLocalExecuteParity,
 	unionLocalExecuteParityScopes,
 } from '#worker/api-tokens/legacy-scope-rewrite.ts'
 
@@ -31,9 +33,14 @@ export async function rewriteStoredApiTokenScopes(
 ): Promise<Array<RewriteStoredApiTokenScopesResult>> {
 	const results: Array<RewriteStoredApiTokenScopesResult> = []
 	for (const table of scopedCredentialTables) {
-		const rows = await db
-			.prepare(`SELECT id, scopes_json FROM ${table}`)
-			.all<{ id: string; scopes_json: string }>()
+		const rows =
+			table === 'api_tokens'
+				? await db
+						.prepare(`SELECT id, scopes_json, created_via FROM ${table}`)
+						.all<{ id: string; scopes_json: string; created_via: string }>()
+				: await db
+						.prepare(`SELECT id, scopes_json FROM ${table}`)
+						.all<{ id: string; scopes_json: string }>()
 		let updated = 0
 		for (const row of rows.results ?? []) {
 			let parsed: unknown
@@ -50,10 +57,17 @@ export async function rewriteStoredApiTokenScopes(
 					`${table} ${row.id}: scopes_json must be a string array.`,
 				)
 			}
-			const rewritten = unionLocalExecuteParityScopes(
-				rewriteLegacyApiTokenScopes(parsed),
-			)
-			const next = JSON.stringify(rewritten)
+			const rewritten = rewriteLegacyApiTokenScopes(parsed)
+			const createdVia =
+				'created_via' in row ? (row.created_via as string) : null
+			const withParity = shouldRepairLocalExecuteParity({
+				scopes: rewritten,
+				createdVia,
+				table,
+			})
+				? unionLocalExecuteParityScopes(rewritten)
+				: rewritten
+			const next = JSON.stringify(withParity)
 			if (next === JSON.stringify([...parsed].sort())) continue
 			await db
 				.prepare(`UPDATE ${table} SET scopes_json = ? WHERE id = ?`)

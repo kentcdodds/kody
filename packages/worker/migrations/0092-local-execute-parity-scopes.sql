@@ -9,10 +9,13 @@
 -- `packages/worker/src/api-tokens/legacy-scope-rewrite.ts`
 -- (`localExecuteOrgPermissions`).
 --
--- Repair targets:
--- - every `api_tokens` / `cli_credential_bootstrap_codes` row that holds
---   `org:execute` and is missing any parity scope (covers 0090 local-execute
---   rewrites and post-P4 narrow CLI bootstraps)
+-- Repair targets (narrow — do not widen intentional CI tokens that already
+-- hold `package:execute` via `tokenCreate`):
+-- - `api_tokens.created_via = 'cli-bootstrap'` missing any parity scope
+-- - `api_tokens` with `org:execute` but without `package:execute` (0090
+--   local-execute rewrite left only org:execute)
+-- - outstanding `cli_credential_bootstrap_codes` with `org:execute` missing
+--   any parity scope
 -- Idempotent: already-complete rows are left unchanged.
 
 DROP TABLE IF EXISTS __local_execute_parity;
@@ -59,6 +62,14 @@ AND EXISTS (
 		FROM json_each(api_tokens.scopes_json) AS j
 		WHERE j.value = p.perm
 	)
+)
+AND (
+	created_via = 'cli-bootstrap'
+	OR NOT EXISTS (
+		SELECT 1
+		FROM json_each(api_tokens.scopes_json)
+		WHERE value = 'package:execute'
+	)
 );
 
 UPDATE cli_credential_bootstrap_codes
@@ -96,15 +107,21 @@ CREATE TABLE __migration_assertions (
 	message TEXT NOT NULL CHECK (0)
 );
 
--- Every org:execute token must now hold the full parity set.
+-- Repaired targets must hold the full parity set.
 INSERT INTO __migration_assertions (message)
-SELECT 'api_tokens with org:execute still missing a local-execute parity scope after 0092; aborting.'
+SELECT 'api_tokens cli-bootstrap / incomplete-local-execute rows still missing parity after 0092; aborting.'
 WHERE EXISTS (
 	SELECT 1
 	FROM api_tokens AS t
 	JOIN __local_execute_parity AS p
 	WHERE EXISTS (
 		SELECT 1 FROM json_each(t.scopes_json) WHERE value = 'org:execute'
+	)
+	AND (
+		t.created_via = 'cli-bootstrap'
+		OR NOT EXISTS (
+			SELECT 1 FROM json_each(t.scopes_json) WHERE value = 'package:execute'
+		)
 	)
 	AND NOT EXISTS (
 		SELECT 1 FROM json_each(t.scopes_json) AS j WHERE j.value = p.perm
