@@ -136,6 +136,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUT_DIR"
+          # Check the roster before bookmarking. A snapshot of an already-seeded
+          # preview is not a pre-seed restore point, and a second seed must not
+          # overwrite the last successful seed run's bookmarks.
+          state="$(node tools/preview-rehearsal/run.ts seed-status --worker "$PREVIEW_NAME" --out "$OUT_DIR/seed-status.json")"
+          echo "Rehearsal seed status: $state"
+          if [ "$state" = "complete" ]; then
+            echo "Already seeded. Skipping snapshot and seed so this run does not overwrite the pre-seed D1 bookmark with the live (seeded) state."
+            echo "To start over: restore from the last successful seed run, then seed again."
+            exit 0
+          fi
+          if [ "$state" != "empty" ]; then
+            echo "Partial rehearsal roster. Restore the last successful seed run's pre-seed snapshot, then seed again." >&2
+            exit 1
+          fi
           node tools/preview-rehearsal/run.ts d1-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/d1-snapshot.json" --summary "$OUT_DIR/d1-snapshot.md"
           node tools/preview-rehearsal/run.ts seed --worker "$PREVIEW_NAME" --out-dir "$OUT_DIR" --recipient-public-key "$RECIPIENT_PUBLIC_KEY"
 
@@ -194,8 +208,17 @@ jobs:
             echo "## 🧪 Preview rehearsal: \`$ACTION\` on \`$PREVIEW_NAME\`"
             echo ""
             echo "Artifact: \`preview-rehearsal-$ACTION\` (run $RUN_ID)."
-            if [ "$ACTION" = "seed" ] || [ "$ACTION" = "snapshot" ]; then
+            if [ -f "$OUT_DIR/d1-snapshot.json" ]; then
               echo "Restore to this run's D1 bookmarks with action \`restore\`, \`snapshot_run_id=$RUN_ID\`."
+            elif [ "$ACTION" = "seed" ]; then
+              echo "This seed run did not take a pre-seed bookmark (roster was already complete or the snapshot step did not run)."
+            fi
+            if [ -f "$OUT_DIR/seed-status.json" ]; then
+              echo ""
+              echo "Seed status:"
+              echo '```json'
+              cat "$OUT_DIR/seed-status.json"
+              echo '```'
             fi
             if [ -f "$OUT_DIR/credentials.sealed.json" ]; then
               echo ""

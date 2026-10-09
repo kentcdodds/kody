@@ -24,7 +24,12 @@ import {
 	type RehearsalOrigins,
 } from './rehearsal-env.ts'
 import { importRecipientPublicKey, sealJson } from './seal.ts'
-import { mintCliToken, seedRehearsal, type TokenLifetime } from './seed.ts'
+import {
+	mintCliToken,
+	rehearsalSeedStatus,
+	seedRehearsal,
+	type TokenLifetime,
+} from './seed.ts'
 
 export const rehearsalUsage = [
 	'Usage: node tools/preview-rehearsal/run.ts <command> [flags]',
@@ -32,6 +37,7 @@ export const rehearsalUsage = [
 	'CI commands (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; seed/json-snapshot/credentials also REHEARSAL_PASSWORD_KEY):',
 	'  d1-snapshot  --worker <kody-branch-*> --out <d1-snapshot.json> [--summary <file.md>]',
 	'  d1-restore   --worker <kody-branch-*> --snapshot <d1-snapshot.json> --confirm <kody-branch-*>',
+	'  seed-status  --worker <kody-branch-*> [--out <seed-status.json>]',
 	'  seed         --worker <kody-branch-*> --out-dir <dir> --recipient-public-key <base64 SPKI>',
 	'  credentials  --worker <kody-branch-*> --out <sealed.json> --recipient-public-key <base64 SPKI>',
 	'               (--lifetime short|long | --idle-ttl-seconds <n> --max-lifetime-seconds <n>)',
@@ -175,6 +181,17 @@ async function main(argv: ReadonlyArray<string>) {
 					2,
 				),
 			)
+			return
+		}
+		case 'seed-status': {
+			const workerName = assertRehearsalWorkerName(requireFlag(flags, 'worker'))
+			const status = await rehearsalSeedStatus(cloudflareClient(), workerName)
+			const out = flags.get('out')
+			if (out) await writeJson(out, status)
+			log(
+				`${workerName} rehearsal roster is ${status.state} (${status.count}/${status.expected}).`,
+			)
+			console.log(status.state)
 			return
 		}
 		case 'seed': {

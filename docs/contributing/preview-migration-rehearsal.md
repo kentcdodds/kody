@@ -23,7 +23,8 @@ gh workflow run preview.yml --ref main -f action=deploy -f target=branch -f prev
 # 2. Make a key pair for sealed credentials (keep the private key off the repo).
 node tools/preview-rehearsal/seal.ts keygen --private-key ~/.kody-rehearsal/key > ~/.kody-rehearsal/key.pub
 
-# 3. Seed (takes a pre-seed D1 bookmark first).
+# 3. Seed (takes a pre-seed D1 bookmark first). Safe to re-run: a complete
+#    roster is a no-op and does not overwrite the pre-seed bookmark.
 gh workflow run preview-rehearsal.yml -f preview_name=$P -f action=seed -f recipient_public_key="$(cat ~/.kody-rehearsal/key.pub)"
 
 # 4. Snapshot before the migration. Note the run id: it is the restore point.
@@ -68,15 +69,18 @@ uploads `preview-rehearsal-<action>` and writes the D1 table to the run summary.
 
 | Action        | Does                                                                                                                          | Inputs                                      |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `seed`        | Pre-seed D1 bookmark, then the §12.2 dataset; uploads `seed-manifest.json` and `credentials.sealed.json`                      | `recipient_public_key`                      |
+| `seed`        | Empty roster: pre-seed D1 bookmark, then the §12.2 dataset. Complete roster: no-op (no new bookmark). Partial roster: fail.   | `recipient_public_key`                      |
 | `snapshot`    | JSON snapshot as every rehearsal user, then D1 bookmark + row counts per table (APP_DB, AUDIT_DB, JOBS_DB)                    | —                                           |
 | `reindex`     | Rotates the app worker's `CAPABILITY_REINDEX_SECRET` and runs a full `--force` sweep (capabilities, memories, jobs, packages) | —                                           |
 | `credentials` | Mints one CLI token per rehearsal user with an explicit lifetime; uploads them sealed                                         | `recipient_public_key`, `token_lifetime`    |
 | `restore`     | D1 Time Travel restore of APP_DB, AUDIT_DB, and JOBS_DB to the bookmarks in another run's `d1-snapshot.json`                  | `snapshot_run_id`, `confirm` = preview name |
 
-A `seed` run's artifact holds the **pre-seed** bookmarks, so a failed seed is
-retried by restoring that run and seeding again. Seed refuses a preview that
-already has rehearsal users.
+A `seed` run's artifact holds the **pre-seed** bookmarks only when the roster
+was empty. A failed mid-seed is retried by restoring that run and seeding again.
+A second `seed` on a preview that already has the full roster is a no-op: it
+does not take a new bookmark, so it cannot overwrite the real pre-seed snapshot.
+A partial roster still fails — restore the last successful seed run, then seed
+again. The `seed` command itself still refuses to write into a non-empty roster.
 
 <details>
 <summary>What the seed creates (§12.2)</summary>
