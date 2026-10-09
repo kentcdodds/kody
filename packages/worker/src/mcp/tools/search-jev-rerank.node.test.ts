@@ -13,9 +13,13 @@ import {
 	normalizeJevRunResponse,
 	rerankSearchCandidatesWithJev,
 	resolveJevSearchRecallLimit,
+	hybridCandidateMatchesIdentityTerm,
 	selectJevKeptCandidates,
 } from './search-jev-rerank.ts'
-import { understandSearchQuery,type SearchIntent } from './understand-search-query.ts'
+import {
+	understandSearchQuery,
+	type SearchIntent,
+} from './understand-search-query.ts'
 import { type SearchCandidate } from './search-types.ts'
 
 function makeCandidate(
@@ -370,6 +374,34 @@ test('rerankSearchCandidatesWithJev skips offline or flag-off and applies Score 
 	expect(idsOf(identityKept)).toEqual(['dropbox'])
 	expect(identityKept.candidatesAfter).toBe(1)
 	expect(identityKept.droppedCount).toBeGreaterThan(0)
+
+	const longName = makeCandidate({
+		id: 'home-assistant-controls',
+		title: '@user/home-assistant-controls',
+		type: 'package',
+		match: {
+			type: 'package',
+			packageId: 'pkg-home',
+			kodyId: 'home-assistant-controls',
+			name: '@user/home-assistant-controls',
+			title: '@user/home-assistant-controls',
+			description: 'Controls for the house.',
+			tags: [],
+			hasApp: false,
+			hidden: false,
+			actionMatches: [],
+		},
+	})
+	const longNameIntent = understandSearchQuery({
+		query: 'use home assistant controls',
+		entities: [],
+	})
+	expect(hybridCandidateMatchesIdentityTerm(longName, longNameIntent)).toBe(
+		true,
+	)
+	expect(
+		hybridCandidateMatchesIdentityTerm(descriptionOnlyPackage, longNameIntent),
+	).toBe(false)
 
 	const midTier = await rerank(
 		scoreRun((key) => {

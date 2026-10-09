@@ -22,7 +22,7 @@
  * floor if that keep-set is empty, then a true empty ranked list (never
  * restore hybrid noise when every Jev score is weak). The one exception:
  * hybrid candidates whose package name, kody id, or name leaf equals a query
- * term (or an adjacent query phrase) stay, in hybrid order
+ * term (or a contiguous run of query terms) stay, in hybrid order
  * (`keepPath: kept-identity`). `dropbox shared link` can still return the
  * `dropbox` package; description-only overlap stays dropped.
  *
@@ -208,37 +208,49 @@ export function selectJevKeptCandidates(
 	return { kept: lowered, keepPath: 'kept-lowered' }
 }
 
-function addPackageIdentityKey(
-	tokens: Set<string>,
-	phrases: Set<string>,
-	value: string,
-) {
-	const parts = extractMeaningfulSearchTokens(value)
-	if (parts.length === 1 && parts[0]) {
-		tokens.add(parts[0])
-		return
+function identityTokensMatchQuery(
+	identityTokens: ReadonlyArray<string>,
+	queryTokens: ReadonlyArray<string>,
+): boolean {
+	if (
+		identityTokens.length === 0 ||
+		queryTokens.length < identityTokens.length
+	) {
+		return false
 	}
-	if (parts.length >= 2) phrases.add(parts.join(' '))
+	for (
+		let start = 0;
+		start <= queryTokens.length - identityTokens.length;
+		start += 1
+	) {
+		let matches = true
+		for (let offset = 0; offset < identityTokens.length; offset += 1) {
+			if (queryTokens[start + offset] !== identityTokens[offset]) {
+				matches = false
+				break
+			}
+		}
+		if (matches) return true
+	}
+	return false
 }
 
 /**
- * Package name, kody id, or name leaf equals one query term, or the whole
- * identity equals one adjacent query phrase. Description and tag overlap
- * does not count.
+ * Package name, kody id, or name leaf equals one query term or a contiguous
+ * run of query terms of any length. Description and tag overlap does not count.
  */
 export function hybridCandidateMatchesIdentityTerm(
 	candidate: SearchCandidate,
 	intent: SearchIntent,
 ): boolean {
 	if (candidate.match.type !== 'package') return false
-	const tokens = new Set<string>()
-	const phrases = new Set<string>()
 	const { kodyId, name } = candidate.match
-	for (const value of [kodyId, name, getPackageNameLeaf(name)]) {
-		addPackageIdentityKey(tokens, phrases, value)
-	}
-	if (intent.meaningfulTokens.some((token) => tokens.has(token))) return true
-	return intent.phrases.some((phrase) => phrases.has(phrase))
+	return [kodyId, name, getPackageNameLeaf(name)].some((value) =>
+		identityTokensMatchQuery(
+			extractMeaningfulSearchTokens(value),
+			intent.meaningfulTokens,
+		),
+	)
 }
 
 /** Hybrid order, identity-term package hits only. */

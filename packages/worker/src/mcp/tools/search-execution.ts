@@ -225,7 +225,7 @@ async function executeSearchListWithinBudget(
 		return rows
 	})
 	const retrieversStart = performance.now()
-	const retrieverRunPromise =
+	const retrieverRunStarted =
 		input.userId && input.query && !domainFilter
 			? runPackageRetrievers({
 					env: input.env,
@@ -240,14 +240,23 @@ async function executeSearchListWithinBudget(
 						memoryContext: input.memoryContext,
 					}),
 					conversationId: input.conversationId,
-				}).then((retrieverRun) => {
-					phaseTimings.retrieversMs = elapsedMs(retrieversStart)
-					return retrieverRun
 				})
-			: Promise.resolve({ results: [], warnings: [] }).then((retrieverRun) => {
-					phaseTimings.retrieversMs = elapsedMs(retrieversStart)
-					return retrieverRun
-				})
+			: Promise.resolve({ results: [], warnings: [] })
+	// Rows and flags still have to finish before ranking. Observe a retriever
+	// rejection now so that gap cannot surface as an unhandled rejection.
+	// Awaiting `retrieverRunPromise` later still throws.
+	void retrieverRunStarted.catch(() => {})
+	const retrieverRunPromise = retrieverRunStarted.then(
+		(settled) => {
+			phaseTimings.retrieversMs = elapsedMs(retrieversStart)
+			return settled
+		},
+		(error: unknown) => {
+			phaseTimings.retrieversMs = elapsedMs(retrieversStart)
+			throw error
+		},
+	)
+	void retrieverRunPromise.catch(() => {})
 	const featureFlagsStart = performance.now()
 	// Flag reads overlap row load and retrievers. Recall width needs the
 	// evaluation before candidate generation; retriever hits are merged later.

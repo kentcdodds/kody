@@ -448,6 +448,42 @@ test('executeSearchList starts ranking before search-scope retrievers settle', a
 	expect(result.warnings).toContain('retriever warning')
 })
 
+test('executeSearchList observes a retriever rejection while rows are still loading', async () => {
+	const rows = gate()
+	const unhandled: Array<unknown> = []
+	const onUnhandled = (reason: unknown) => {
+		unhandled.push(reason)
+	}
+	process.on('unhandledRejection', onUnhandled)
+	mockModule.loadSearchRowsAndRegistry.mockImplementationOnce(async () => {
+		await rows.promise
+		return mockModule.emptySearchRows()
+	})
+	mockModule.runPackageRetrievers.mockImplementationOnce(async () => {
+		throw new Error('retriever artifact missing')
+	})
+	mockModule.searchUnified.mockImplementationOnce(
+		async (...args: Array<unknown>) => {
+			const input = args[0] as { retrieverResults?: Promise<unknown> }
+			void Promise.resolve(input.retrieverResults).catch(() => {})
+			return mockModule.createEmptySearchUnifiedResult()
+		},
+	)
+	try {
+		const pending = search({ APP_DB: {} } as unknown as Env)
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+		rows.release()
+		await expect(pending).rejects.toThrow('retriever artifact missing')
+		await Promise.resolve()
+		await Promise.resolve()
+		expect(unhandled).toEqual([])
+	} finally {
+		process.off('unhandledRejection', onUnhandled)
+	}
+})
+
 test('executeSearchList reads the Jev plan fresh while the rate limit runs', async () => {
 	const rateLimit = gate()
 	mockModule.consumeSearchRateLimit.mockImplementationOnce(async () => {

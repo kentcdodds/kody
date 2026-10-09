@@ -131,7 +131,7 @@ Score batches share a 4-second budget; past it Kody aborts them and returns
 hybrid order with outcome `fallback-timeout`. When every Score misses the keep
 floors, the ranked list stays empty (`fallback-empty-after-drop`,
 `keepPath: empty`). Hybrid candidates whose package name, kody id, or name leaf
-equals a query term or an adjacent query phrase stay in hybrid order
+equals a query term or a contiguous run of query terms stay in hybrid order
 (`keepPath: kept-identity`). `search({ query: "dropbox shared link" })` can
 still return the package `search({ query: "dropbox" })` finds. A package that
 only mentions those words in its description stays dropped. The response is
