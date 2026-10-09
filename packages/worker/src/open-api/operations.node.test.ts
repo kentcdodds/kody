@@ -2,7 +2,6 @@ import { expect, test } from 'vitest'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
-import { apiTokenScopes } from '#worker/api-tokens/scopes.ts'
 import { buildOpenApiDocument, resolveApiOperation } from './document.ts'
 import {
 	apiOperationUsesQueryInputs,
@@ -224,8 +223,7 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 			if (declared.join() !== expected.join()) {
 				pathParamMismatches.push(String(operation.operationId))
 			}
-			const scope = operation['x-kody-scope']
-			if (scope !== null) expect(apiTokenScopes).toContain(scope)
+			expect(operation).not.toHaveProperty('x-kody-scope')
 			const permission = operation['x-kody-permission']
 			if (permission !== 'none' && !isOrgPermission(permission)) {
 				missingPermissions.push(String(operation.operationId))
@@ -244,17 +242,31 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	).toBe('org:execute')
 
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
-	expect(tokenCreate?.['x-kody-scope']).toBe('tokens:write')
+	expect(tokenCreate?.['x-kody-permission']).toBe('none')
 	expect(tokenCreate?.requestBody?.required).toBe(true)
+	expect(document.paths['/v1/tokens']?.['get']?.['x-kody-permission']).toBe(
+		'token:read',
+	)
+	expect(
+		document.paths['/v1/tokens/{token_id}']?.['get']?.['x-kody-permission'],
+	).toBe('token:read')
+	expect(
+		document.paths['/v1/tokens/{token_id}']?.['delete']?.['x-kody-permission'],
+	).toBe('token:delete')
+	expect(
+		document.paths['/v1/tokens/{token_id}/rotate']?.['post']?.[
+			'x-kody-permission'
+		],
+	).toBe('token:delete')
 	const secretSet = document.paths['/v1/secrets/{scope}/{name}']?.['put']
 	const secretBody = secretSet?.requestBody?.content['application/json'].schema
 	expect(
 		Object.keys((secretBody?.['properties'] as object) ?? {}),
 	).not.toContain('name')
-	expect(document.paths['/v1/secrets/lock']?.['post']?.['x-kody-scope']).toBe(
-		'secrets:write',
-	)
-	expect(document.paths['/v1/search']?.['get']?.['x-kody-scope']).toBe(
+	expect(
+		document.paths['/v1/secrets/lock']?.['post']?.['x-kody-permission'],
+	).toBe('secret:use')
+	expect(document.paths['/v1/search']?.['get']?.['x-kody-permission']).toBe(
 		'search:read',
 	)
 })

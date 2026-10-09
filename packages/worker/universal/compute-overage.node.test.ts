@@ -106,7 +106,7 @@ test('howToReduce points wallet and retired accounts at /account/usage#credits; 
 	).not.toContain(accountCreditsPath)
 })
 
-test('resolvePastIncludeStop is a no-op after ADR 0064 free-tier fallback', () => {
+test('resolvePastIncludeStop is a no-op after ADR 0065 free-tier fallback', () => {
 	for (const input of [
 		{
 			plan: 'pro' as const,

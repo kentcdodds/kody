@@ -13,6 +13,10 @@ import { createAccountResendVerificationHandler } from './account-resend-verific
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -73,6 +77,9 @@ function createResendTestDb(
 				}
 			},
 			async first() {
+				if (isOrgBindingMembershipQuery(normalized)) {
+					return mockPersonalOrgBindingRow(user.stable_user_id, user.username)
+				}
 				if (normalized.includes('select deleting_at from users')) {
 					if (options.fenceAfterWritableCheck) {
 						state.fenceAfterWritableCheck = true

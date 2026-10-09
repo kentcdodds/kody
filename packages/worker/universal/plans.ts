@@ -644,7 +644,7 @@ export const proCreditsPlanLimits: PlanLimits = {
 /**
  * Purchasable Pro at $0: Max stock/concurrency and Pro monthly includes from
  * {@link proCreditsPlanLimits}, with Free rate/compute/email/job-interval
- * ceilings (ADR 0064). Monthly UWD/DO includes stay on the Pro allotment so
+ * ceilings (ADR 0065). Monthly UWD/DO includes stay on the Pro allotment so
  * debit and warning copy keep the seat include the org already burned.
  */
 export const proCreditsEmptyWalletPlanLimits: PlanLimits = {
@@ -699,7 +699,7 @@ export function isCreditsUnlockedResource(
 
 /**
  * Counted entry points that start new compute. Historically gated the
- * include → credits → stop path (0051); ADR 0064 replaced the stop with
+ * include → credits → stop path (0051); ADR 0065 replaced the stop with
  * Free rate limits via {@link proCreditsEmptyWalletPlanLimits}. Kept for
  * call-site stability.
  * Outbound fetches are left out: they happen inside a run that was already

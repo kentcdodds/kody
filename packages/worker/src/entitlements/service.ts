@@ -1561,7 +1561,7 @@ export async function consumeDailyEntitlement(
 }
 
 /**
- * Former include → credits → stop gate (0051). ADR 0064: an empty purchasable
+ * Former include → credits → stop gate (0051). ADR 0065: an empty purchasable
  * Pro wallet falls back to Free rate/compute via {@link resolvePlanLimits}
  * instead of throwing here. Kept so {@link consumeDailyEntitlement} and
  * {@link assertWithinComputeInclude} call sites stay stable.
@@ -1590,7 +1590,7 @@ async function assertWithinPastIncludeCredits(input: {
 
 /**
  * Legacy hook for compute without a daily counter (hosted package apps,
- * realtime). ADR 0064 removed the empty-wallet hard stop; limits come from
+ * realtime). ADR 0065 removed the empty-wallet hard stop; limits come from
  * {@link resolvePlanLimits}. Counted entry points use the same no-op inside
  * {@link consumeDailyEntitlement}.
  */

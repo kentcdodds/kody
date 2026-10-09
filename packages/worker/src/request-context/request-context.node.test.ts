@@ -56,12 +56,13 @@ test('interactive sources act as the person, as Owner of their own org', () => {
 		user,
 		source: { kind: 'api-token', tokenId: 'tok_1' },
 		profileName: 'work',
+		scopes: ['org:execute', 'org:read'],
 	})
 	expect(token.credential).toEqual({
 		kind: 'api-token',
 		id: 'tok_1',
 		orgId: stableId,
-		scopes: null,
+		scopes: ['org:execute', 'org:read'],
 		profileName: 'work',
 	})
 	expect(token.actor).toEqual(session.actor)

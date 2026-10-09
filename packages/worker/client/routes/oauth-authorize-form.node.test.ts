@@ -4,6 +4,10 @@ import {
 	oauthAuthorizeApproveAriaLabel,
 	oauthAuthorizeConsentFormAttrs,
 	oauthAuthorizeEmailVerificationDenyDisabled,
+	oauthAuthorizeGrantHeading,
+	oauthAuthorizeOrgField,
+	readOAuthAuthorizeConsentOrgs,
+	readOAuthAuthorizeSelectedOrgSlug,
 } from './oauth-authorize-form.ts'
 
 test('authorize consent form defaults preserve the OAuth query on native submit', () => {
@@ -67,4 +71,57 @@ test('authorize consent form defaults preserve the OAuth query on native submit'
 				}) !== want,
 		),
 	).toEqual([])
+})
+
+test('consent org field hides the picker for a sole org and requires a pick when several', () => {
+	expect(oauthAuthorizeGrantHeading(null)).toBe('This agent gets full access')
+	expect(oauthAuthorizeGrantHeading('acme')).toBe(
+		'This agent gets full access in @acme',
+	)
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [{ slug: 'ada', displayName: 'Ada', role: 'owner' }],
+			selectedOrgSlug: 'ada',
+			signedIn: true,
+		}),
+	).toEqual({ kind: 'hidden', slug: 'ada' })
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [
+				{ slug: 'acme', displayName: 'Acme', role: 'member' },
+				{ slug: 'ada', displayName: 'Ada', role: 'owner' },
+			],
+			selectedOrgSlug: 'acme',
+			signedIn: true,
+		}),
+	).toEqual({
+		kind: 'picker',
+		selectedSlug: 'acme',
+		options: [
+			{ slug: 'acme', displayName: 'Acme', role: 'member' },
+			{ slug: 'ada', displayName: 'Ada', role: 'owner' },
+		],
+	})
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [],
+			selectedOrgSlug: null,
+			signedIn: true,
+		}),
+	).toEqual({ kind: 'missing' })
+	expect(
+		oauthAuthorizeOrgField({
+			orgs: [],
+			selectedOrgSlug: null,
+			signedIn: false,
+		}),
+	).toEqual({ kind: 'pending' })
+	expect(
+		readOAuthAuthorizeConsentOrgs([
+			{ slug: 'Acme', displayName: 'Acme', role: 'owner' },
+			{ slug: '' },
+			null,
+		]),
+	).toEqual([{ slug: 'acme', displayName: 'Acme', role: 'owner' }])
+	expect(readOAuthAuthorizeSelectedOrgSlug(' Acme ')).toBe('acme')
 })

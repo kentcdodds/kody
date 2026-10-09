@@ -1,4 +1,4 @@
-# 0064 — Org seats, prepaid credits, and free-tier fallback
+# 0065 — Org seats, prepaid credits, and free-tier fallback
 
 - **Status:** accepted
 - **Date:** 2026-10-09

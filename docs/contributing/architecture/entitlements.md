@@ -42,7 +42,7 @@ at `packages/worker/universal/plans.ts`.
   other resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
   (Free). `ComputeOverageLimitError` remains for legacy surfaces; empty-wallet
   enforcement uses Free rate/compute via `proCreditsEmptyWalletPlanLimits` (ADR
-  0064).
+  0065).
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -255,7 +255,7 @@ credits and auto-refill still require the purchasable Pro subscription
 
 **Include → credits → free-tier limits.** This is the customer billing path for
 purchasable Pro
-([decision 0064](../decisions/0064-org-seats-and-free-tier-fallback.md), which
+([decision 0065](../decisions/0065-org-seats-and-free-tier-fallback.md), which
 supersedes [0051](../decisions/0051-include-credits-stop.md)). The $12 / $120
 subscription is the seat plus a monthly include: the retired Standard rates,
 email, Worker compute (350 unique worker days), Rows read (5B), and job interval

@@ -15,6 +15,8 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 export type ConnectionProfileRecord = {
 	id: string
 	userId: string
+	/** Org this profile narrows. Profiles stay an org-bound layer, not scopes. */
+	orgId: string
 	name: string
 	grants: Array<ConnectionProfileGrant>
 	createdAt: string
@@ -24,6 +26,7 @@ export type ConnectionProfileRecord = {
 type ConnectionProfileRow = {
 	id: string
 	user_id: string
+	org_id: string | null
 	name: string
 	grants_json: string
 	created_at: string
@@ -34,6 +37,7 @@ function mapRow(row: ConnectionProfileRow): ConnectionProfileRecord {
 	return {
 		id: row.id,
 		userId: row.user_id,
+		orgId: row.org_id?.trim() || row.user_id,
 		name: row.name,
 		grants: parseConnectionProfileGrantsJson(row.grants_json),
 		createdAt: row.created_at,
@@ -70,7 +74,7 @@ export async function listConnectionProfiles(input: {
 }): Promise<Array<ConnectionProfileRecord>> {
 	const result = await input.db
 		.prepare(
-			`SELECT id, user_id, name, grants_json, created_at, updated_at
+			`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 			 FROM connection_profiles
 			 WHERE user_id = ?
 			 ORDER BY name COLLATE NOCASE ASC`,
@@ -84,18 +88,32 @@ export async function getConnectionProfileByName(input: {
 	db: D1Database
 	userId: string
 	name: string
+	orgId?: string
 }): Promise<ConnectionProfileRecord | null> {
 	const name = normalizeConnectionProfileName(input.name)
 	if (!name) return null
-	const row = await input.db
-		.prepare(
-			`SELECT id, user_id, name, grants_json, created_at, updated_at
-			 FROM connection_profiles
-			 WHERE user_id = ? AND name = ?
-			 LIMIT 1`,
-		)
-		.bind(input.userId, name)
-		.first<ConnectionProfileRow>()
+	const orgId = input.orgId?.trim()
+	// Always filter by user_id: uniqueness is still (user_id, name). Org id
+	// narrows further when the caller knows which org the profile belongs to.
+	const row = orgId
+		? await input.db
+				.prepare(
+					`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
+					 FROM connection_profiles
+					 WHERE user_id = ? AND org_id = ? AND name = ?
+					 LIMIT 1`,
+				)
+				.bind(input.userId, orgId, name)
+				.first<ConnectionProfileRow>()
+		: await input.db
+				.prepare(
+					`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
+					 FROM connection_profiles
+					 WHERE user_id = ? AND name = ?
+					 LIMIT 1`,
+				)
+				.bind(input.userId, name)
+				.first<ConnectionProfileRow>()
 	return row ? mapRow(row) : null
 }
 
@@ -106,7 +124,7 @@ export async function getConnectionProfileById(input: {
 }): Promise<ConnectionProfileRecord | null> {
 	const row = await input.db
 		.prepare(
-			`SELECT id, user_id, name, grants_json, created_at, updated_at
+			`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 			 FROM connection_profiles
 			 WHERE user_id = ? AND id = ?
 			 LIMIT 1`,
@@ -119,6 +137,8 @@ export async function getConnectionProfileById(input: {
 export async function createConnectionProfile(input: {
 	db: D1Database
 	userId: string
+	/** Org this profile is bound to. Defaults to the caller's personal org. */
+	orgId?: string
 	name: string
 	grants?: unknown
 }): Promise<ConnectionProfileRecord> {
@@ -142,16 +162,18 @@ export async function createConnectionProfile(input: {
 	})
 	const id = newProfileId()
 	const now = new Date().toISOString()
+	const orgId = input.orgId?.trim() || input.userId
 	try {
 		await input.db
 			.prepare(
 				`INSERT INTO connection_profiles (
-					id, user_id, name, grants_json, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?)`,
+					id, user_id, org_id, name, grants_json, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				id,
 				input.userId,
+				orgId,
 				name,
 				serializeConnectionProfileGrants(grants),
 				now,

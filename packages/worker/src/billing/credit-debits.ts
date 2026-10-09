@@ -19,7 +19,7 @@
  *   (`creditDebitCostMicroUsd(next) - creditDebitCostMicroUsd(accounted)`).
  * - A funded purchasable-Pro wallet is debited for the delta. The balance
  *   can dip below $0 by up to one hour of usage past the include; after
- *   that, rate/compute falls back to Free caps until a top-up (ADR 0064).
+ *   that, rate/compute falls back to Free caps until a top-up (ADR 0065).
  * - Every other wallet (empty, or not eligible) advances progress without
  *   a debit. An empty wallet only gets here through the hour-scale lag
  *   before the stop applies; that overshoot and wallet-less usage are never

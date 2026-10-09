@@ -1,6 +1,5 @@
 import {
 	ownerIdFromStored,
-	personalOrgId,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
@@ -18,13 +17,20 @@ export type OrgRecord = {
 
 export type OrgBinding = {
 	org: RequestOrg
-	role: OrgRole
+	/** Null for outside collaborators who hold a live grant but no membership. */
+	role: OrgRole | null
 }
+
+export type PersonOrg = OrgRecord & {
+	role: OrgRole | null
+}
+
+const orgSelect = `id, slug, display_name, plan, entitlement_ladder`
 
 export async function getOrgById(db: D1Database, orgId: string) {
 	return await db
 		.prepare(
-			`SELECT id, slug, display_name, plan, entitlement_ladder
+			`SELECT ${orgSelect}
 			 FROM orgs WHERE id = ?`,
 		)
 		.bind(orgId)
@@ -36,7 +42,7 @@ export async function getOrgBySlug(db: D1Database, slug: string) {
 	if (!normalized) return null
 	return await db
 		.prepare(
-			`SELECT id, slug, display_name, plan, entitlement_ladder
+			`SELECT ${orgSelect}
 			 FROM orgs WHERE slug = ?`,
 		)
 		.bind(normalized)
@@ -58,8 +64,23 @@ export async function getLiveOwnerMembership(
 		.first<{ org_id: string; user_id: string; role: OrgRole }>()
 }
 
+function toBinding(row: {
+	org_id: string
+	org_slug: string | null
+	role: OrgRole | null
+}): OrgBinding {
+	return {
+		org: {
+			id: ownerIdFromStored(row.org_id),
+			slug: row.org_slug?.trim() || null,
+		},
+		role: row.role,
+	}
+}
+
 /**
- * P3: each person has one personal org whose id equals their stable user id.
+ * The person's personal org (id = stable user id). Throws when the owner
+ * membership is missing — P4 does not invent a binding.
  */
 export async function loadOrgBindingForPerson(
 	db: D1Database,
@@ -78,20 +99,84 @@ export async function loadOrgBindingForPerson(
 		.bind(personId)
 		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
 	if (!row) {
-		// P3 dual path — DB binding when present; personalOrgId fallback until
-		// every create/seed path provisions orgs (cleanup: require membership
-		// after P3 soak / P4).
-		const person = personIdFromStored(personId)
-		return {
-			org: { id: personalOrgId(person), slug: null },
-			role: 'owner',
-		}
+		throw new Error(
+			`No live personal-org membership for person ${personIdFromStored(personId)}. Every person must have an org_memberships row where org_id = user_id.`,
+		)
 	}
-	return {
-		org: {
-			id: ownerIdFromStored(row.org_id),
-			slug: row.org_slug?.trim() || null,
-		},
-		role: row.role,
-	}
+	return toBinding(row)
+}
+
+/**
+ * Bind a person to a specific org: live membership, or any live grant in that
+ * org (outside collaborator, role null). Returns null when neither applies.
+ */
+export async function loadOrgBindingForOrg(
+	db: D1Database,
+	personId: string,
+	orgId: string,
+): Promise<OrgBinding | null> {
+	const membership = await db
+		.prepare(
+			`SELECT o.id AS org_id, o.slug AS org_slug, m.role AS role
+			 FROM org_memberships m
+			 INNER JOIN orgs o ON o.id = m.org_id
+			 WHERE m.user_id = ?
+			   AND m.org_id = ?
+			   AND m.deleted_at IS NULL
+			 LIMIT 1`,
+		)
+		.bind(personId, orgId)
+		.first<{ org_id: string; org_slug: string; role: OrgRole }>()
+	if (membership) return toBinding(membership)
+
+	const grant = await db
+		.prepare(
+			`SELECT o.id AS org_id, o.slug AS org_slug
+			 FROM grants g
+			 INNER JOIN orgs o ON o.id = g.org_id
+			 WHERE g.org_id = ?
+			   AND g.subject_type = 'user'
+			   AND g.subject_id = ?
+			   AND g.deleted_at IS NULL
+			 LIMIT 1`,
+		)
+		.bind(orgId, personId)
+		.first<{ org_id: string; org_slug: string }>()
+	if (!grant) return null
+	return toBinding({ ...grant, role: null })
+}
+
+/**
+ * Orgs the person can pick: live memberships union orgs where they hold a
+ * live grant. Grant-only rows have `role: null`.
+ */
+export async function listOrgsForPerson(
+	db: D1Database,
+	personId: string,
+): Promise<Array<PersonOrg>> {
+	const rows = await db
+		.prepare(
+			`SELECT o.id, o.slug, o.display_name, o.plan, o.entitlement_ladder,
+			        m.role AS role
+			 FROM orgs o
+			 LEFT JOIN org_memberships m
+			   ON m.org_id = o.id
+			  AND m.user_id = ?
+			  AND m.deleted_at IS NULL
+			 WHERE m.user_id IS NOT NULL
+			    OR EXISTS (
+			      SELECT 1 FROM grants g
+			      WHERE g.org_id = o.id
+			        AND g.subject_type = 'user'
+			        AND g.subject_id = ?
+			        AND g.deleted_at IS NULL
+			    )
+			 ORDER BY o.slug ASC, o.id ASC`,
+		)
+		.bind(personId, personId)
+		.all<OrgRecord & { role: OrgRole | null }>()
+	return (rows.results ?? []).map((row) => ({
+		...row,
+		role: row.role ?? null,
+	}))
 }

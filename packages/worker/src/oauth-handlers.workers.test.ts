@@ -194,6 +194,15 @@ async function createDatabase(
 		email_verified_at: emailVerifiedAt,
 		stable_user_id: stableUserId,
 	}
+	const personalOrg = {
+		id: stableUserId,
+		org_id: stableUserId,
+		slug: 'test-user',
+		display_name: null,
+		role: 'owner',
+		plan: 'free',
+		entitlement_ladder: 'public',
+	}
 	return {
 		prepare(query: string) {
 			// The 2FA gate queries verifications during inline OAuth login; the
@@ -202,6 +211,15 @@ async function createDatabase(
 			const isOwnedClientQuery = query.includes('FROM user_mcp_oauth_clients')
 			const isEmailVerifiedQuery =
 				query.includes('email_verified_at') && !query.includes('stable_user_id')
+			const isOrgQuery =
+				query.includes('FROM orgs') ||
+				query.includes('FROM org_memberships') ||
+				query.includes('FROM grants')
+			// listOrgsForPerson mentions grants in an EXISTS subquery but still
+			// returns memberships. Only the grant-only binding lookup is empty.
+			const isGrantsOnlyQuery =
+				query.includes('FROM grants') &&
+				!query.includes('LEFT JOIN org_memberships')
 			let bound: Array<unknown> = []
 			const statement = {
 				bind(...params: Array<unknown>) {
@@ -209,8 +227,17 @@ async function createDatabase(
 					return statement
 				},
 				async all() {
+					if (isVerificationsQuery) {
+						return { results: [], meta: { changes: 0, last_row_id: 0 } }
+					}
+					if (isOrgQuery) {
+						return {
+							results: isGrantsOnlyQuery ? [] : [personalOrg],
+							meta: { changes: 0, last_row_id: 0 },
+						}
+					}
 					return {
-						results: isVerificationsQuery ? [] : [userRow],
+						results: [userRow],
 						meta: { changes: 0, last_row_id: 0 },
 					}
 				},
@@ -228,6 +255,10 @@ async function createDatabase(
 					}
 					if (isEmailVerifiedQuery) {
 						return { email_verified_at: emailVerifiedAt }
+					}
+					if (isOrgQuery) {
+						if (isGrantsOnlyQuery) return null
+						return personalOrg
 					}
 					return userRow
 				},
@@ -515,6 +546,8 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		scopes: baseAuthRequest.scope,
 		emailVerified: null,
 		requireCredentials: true,
+		orgs: [],
+		selectedOrgSlug: null,
 	})
 
 	const authorizeHtml = await readAuthorizePage(
@@ -524,6 +557,63 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		),
 	)
 	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
+
+	const signedInInfo = await handleAuthorizeInfo(
+		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams), {
+			headers: { ...jsonAccept, Cookie: await sessionCookie() },
+		}),
+		createEnv(createHelpers(), await createDatabase('password123')),
+	)
+	expect(signedInInfo.status).toBe(200)
+	await expect(signedInInfo.json()).resolves.toMatchObject({
+		ok: true,
+		orgs: [{ slug: 'test-user', displayName: null, role: 'owner' }],
+		selectedOrgSlug: 'test-user',
+	})
+
+	const resourceOrgInfo = await handleAuthorizeInfo(
+		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams), {
+			headers: { ...jsonAccept, Cookie: await sessionCookie() },
+		}),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => ({
+					...baseAuthRequest,
+					resource: `${mcpResource}?org=test-user`,
+				}),
+			}),
+			await createDatabase('password123'),
+		),
+	)
+	expect(resourceOrgInfo.status).toBe(200)
+	await expect(resourceOrgInfo.json()).resolves.toMatchObject({
+		ok: true,
+		selectedOrgSlug: 'test-user',
+	})
+
+	const orgMismatchInfo = await handleAuthorizeInfo(
+		new Request(
+			exampleOAuthUrl('authorize-info', {
+				...baseAuthorizeParams,
+				org: 'test-user',
+			}),
+			{ headers: { ...jsonAccept, Cookie: await sessionCookie() } },
+		),
+		createEnv(
+			createHelpers({
+				parseAuthRequest: async () => ({
+					...baseAuthRequest,
+					resource: `${mcpResource}?org=other-org`,
+				}),
+			}),
+			await createDatabase('password123'),
+		),
+	)
+	expect(orgMismatchInfo.status).toBe(400)
+	await expect(orgMismatchInfo.json()).resolves.toMatchObject({
+		ok: false,
+		error: expect.stringMatching(/do not match/i),
+	})
 
 	const mismatchResponse = await handleAuthorizeInfo(
 		new Request(
@@ -594,6 +684,13 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 	expect(sessionCompletion.mock.lastCall?.[0].request.issuer).toBe(
 		'https://example.com',
 	)
+	const sessionUserId = testStableUserIdFromEmail('user@example.com')
+	expect(sessionCompletion.mock.lastCall?.[0].props).toMatchObject({
+		orgId: sessionUserId,
+	})
+	expect(sessionCompletion.mock.lastCall?.[0].metadata).toMatchObject({
+		orgId: sessionUserId,
+	})
 
 	const defaultScopeCompletion = completingWith(
 		'https://example.com/callback?code=ok',

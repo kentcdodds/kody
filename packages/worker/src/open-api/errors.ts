@@ -7,6 +7,7 @@ import {
 	getErrorMessage,
 } from '@kody-internal/shared/error-message.ts'
 import { isMcpCallerError } from '#mcp/caller-error.ts'
+import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import {
 	AccountDeletionInProgressError,
 	AccountWriteLeaseLostError,
@@ -125,6 +126,29 @@ export function notFound(message: string) {
  */
 export function toApiError(error: unknown): ApiError {
 	if (error instanceof ApiError) return error
+	if (error instanceof AuthorizationError) {
+		if (error.code === 'unauthenticated') {
+			return new ApiError({
+				status: 401,
+				code: 'unauthorized',
+				message: error.message,
+				cause: error,
+			})
+		}
+		return new ApiError({
+			status: 403,
+			code: 'insufficient_scope',
+			message: error.message,
+			details: {
+				required_permission: error.permission,
+				denial: error.code,
+			},
+			headers: {
+				'WWW-Authenticate': `Bearer error="insufficient_scope", scope="${error.permission}"`,
+			},
+			cause: error,
+		})
+	}
 	if (error instanceof AccountDeletionInProgressError) {
 		return new ApiError({
 			status: 409,

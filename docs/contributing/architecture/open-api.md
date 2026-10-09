@@ -29,7 +29,7 @@ sequenceDiagram
   C->>E: HTTPS api.kody.codes
   E->>E: CORS, path + method allowlist, rate limits, 5 MiB cap
   E->>O: service binding KODY_API (allowlisted headers only)
-  O->>DB: authenticate token, scope check, operation
+  O->>DB: authenticate token, permission check, operation
   O-->>E: JSON
   E-->>C: JSON (no Set-Cookie)
 ```
@@ -93,32 +93,36 @@ full MCP grant, without API-token scope checks
 ([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)). Other `/v1`
 operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
-- Scopes: `<resource>:read` and `<resource>:write` for `account`, `memories`,
-  `secrets`, `packages`, `repos`, `jobs`, `webhooks`, `email`, `integrations`,
-  `mcp-servers`, `runs`, `storage`, `community`, and `tokens`; plus
-  `search:read` and `local-execute`. `:write` satisfies `:read`. Capabilities
-  that sign, lock, or run caller queries (`secretLock`, `secretJwtSign`,
-  `secretProviderLock`, `storageQuery`) need `:write`. `local-execute` grants
-  the whole `kody.*` runtime surface, like cloud execute.
+- Scopes are org permissions (`resource-type:action`: `org:read`, `org:execute`,
+  `package:read`, `search:read`, …). Vocabulary:
+  [`packages/shared/src/org-permissions.ts`](../../../packages/shared/src/org-permissions.ts).
+  There is no implied hierarchy: `package:write` does not grant `package:read`.
+  Every operation publishes the required permission as `x-kody-permission`
+  (capability operations take it from `orgPermission`; native operations declare
+  it in `nativeRoute`). `authorize` step 4 narrows the compiled role by
+  `credential.scopes`. There is no separate `x-kody-scope` check. `org:execute`
+  is the CapabilityProxy / package-graph / execute grant. `none` means the
+  surface touches no org data (own tokens, who-am-I, discovery, site-admin
+  tools).
 - TTL: tokens require an explicit lifetime: `lifetime` `short` (1h idle / 24h
   max) or `long` (14d idle / 3mo max), or both `idle_ttl_seconds` (60–1209600)
   and `max_lifetime_seconds` (up to 7776000). Each authenticated request slides
   `expires_at` forward (debounced), never past `max_expires_at`. Aliases are
   input sugar only; only the resulting idle/max values are stored.
 - Minting: the first token comes from the MCP `api` tool (`tokenCreate`, full
-  MCP grant). A token holding `tokens:write` can mint more, but only with scopes
-  it holds and never outliving its own `max_expires_at`. At most 500 active
-  tokens per account. When the pool is full, a new mint revokes the active
-  token(s) with the least remaining life (time until stored `expires_at`), never
-  the caller's own token. Reclaim applies to every mint.
+  MCP grant; `x-kody-permission: none`). An existing token can mint more, but
+  only with scopes it holds and never outliving its own `max_expires_at`. At
+  most 500 active tokens per account. When the pool is full, a new mint revokes
+  the active token(s) with the least remaining life (time until stored
+  `expires_at`), never the caller's own token. Reclaim applies to every mint.
 - **CLI bootstrap (ADR 0056):** `cliCredentialBootstrap` (capability +
   `POST /v1/tokens/bootstrap`) returns a one-shot `kody_bc_…` code (never
   `kody_at_`) and a `cli_command` that includes required lifetime flags.
   `POST /v1/tokens/bootstrap/redeem` is code-authenticated only (no Bearer;
-  rejected for MCP `api`) and mints a normal `kody_at_` with
-  `created_via: cli-bootstrap` for the CLI to store. Lifetime is required on
-  both bootstrap mint and redeem. CLI `whoami` / `GET /v1/tokens/current`
-  surface sliding `expires_at` (the idle window).
+  rejected for MCP `api`) and mints a normal `kody_at_` with default scopes
+  `org:execute` + `org:read` and `created_via: cli-bootstrap` for the CLI to
+  store. Lifetime is required on both bootstrap mint and redeem. CLI `whoami` /
+  `GET /v1/tokens/current` surface sliding `expires_at` (the idle window).
 - Mint and rotate return `token`, `token_type: "Bearer"`, `id`, `name`,
   `scopes`, `status`, `idle_ttl_seconds`, `expires_at`, `max_expires_at`, and
   timestamps. List and get never return the value.
@@ -136,7 +140,7 @@ operations reject non-`kody_at_` bearers with `401 Invalid API token`.
 
 The cloud half of local execute. The CLI runs modules in a local workerd and
 forwards each `kody:runtime` call here. Static `kody:@…` imports are resolved by
-`POST /v1/local-execute/package-graph` (same `local-execute` scope): origin
+`POST /v1/local-execute/package-graph` (same `org:execute` permission): origin
 returns published, stamped importable-module artifacts for embedding — it does
 **not** execute the user module and does not silently hop to `kody.execute`. See
 [Local CLI execute](../../guides/local-execute.md) and
@@ -171,10 +175,10 @@ returns published, stamped importable-module artifacts for embedding — it does
   or cookie is forwarded into a capability, and the edge strips `Cookie` and
   `X-Kody-*` before origin sees the request.
 - Order of checks: bearer credential (401), then — for `kody_at_` tokens only —
-  the `local-execute` scope (403 `insufficient_scope`). CLI MCP OAuth skips the
-  scope check (full MCP grant on these routes).
-- Auth: `kody_at_…` with `local-execute`, or a valid `kody login` MCP OAuth
-  access token for this origin
+  `org:execute` via `authorize` (403 `insufficient_scope`). CLI MCP OAuth skips
+  the token-scope check (full MCP grant on these routes).
+- Auth: `kody_at_…` with `org:execute`, or a valid `kody login` MCP OAuth access
+  token for this origin
   ([ADR 0055](../decisions/0055-cli-mcp-oauth-local-execute-http.md)).
 - Authenticated outbound fetch: `path: ['kody','authenticatedFetch']` with
   `{ providerName, request: { url, method?, headers?, body? } }`. Origin runs

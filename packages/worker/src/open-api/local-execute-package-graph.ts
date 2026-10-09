@@ -43,7 +43,7 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 	localExecutePackageGraph: {
 		summary: 'Download stamped package modules for local execute',
 		description:
-			'Resolve published, stamped `kody:@…` importable-module artifacts for an ad hoc execute module so `@kodycodes/cli execute --local` can embed them in workerd. Uses the same static-import scanner and resolution policy as cloud execute (own copy, share grants, platform-scope rules). Does **not** execute the user module and does not meter `dynamic_worker_day`. CapabilityProxy remains for per-call `kody:runtime` hops during the later local run. Requires the `local-execute` scope and a scoped API token or CLI MCP OAuth bearer.',
+			'Resolve published, stamped `kody:@…` importable-module artifacts for an ad hoc execute module so `@kodycodes/cli execute --local` can embed them in workerd. Uses the same static-import scanner and resolution policy as cloud execute (own copy, share grants, platform-scope rules). Does **not** execute the user module and does not meter `dynamic_worker_day`. CapabilityProxy remains for per-call `kody:runtime` hops during the later local run. Requires `org:execute` and a scoped API token or CLI MCP OAuth bearer.',
 		inputSchema: localExecutePackageGraphInputSchema,
 		outputSchema: localExecutePackageGraphOutputSchema,
 		readOnly: true,

@@ -5,7 +5,6 @@ import { type BuiltCapabilityRegistry } from '#mcp/capabilities/build-capability
 import {
 	apiTokenScopeDescriptions,
 	apiTokenScopes,
-	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
 import { apiTokenIdleTtlDescription } from '#worker/api-tokens/service.ts'
 import { type SurfacePermission } from '#worker/authorization/authorize.ts'
@@ -14,7 +13,6 @@ import {
 	apiOperationUsesQueryInputs,
 	apiOperations,
 	getApiOperationPathParams,
-	resolveCapabilityOperationScope,
 	type ApiOperation,
 } from './operations.ts'
 import { nativeApiOperationDefinitions } from './native-operations.ts'
@@ -46,7 +44,6 @@ type OpenApiOperation = {
 	}
 	responses: Record<string, unknown>
 	security: Array<Record<string, Array<string>>>
-	'x-kody-scope': ApiTokenScope | null
 	/** Org permission the caller must hold (`none`: touches no org data). */
 	'x-kody-permission': SurfacePermission
 	'x-kody-read-only': boolean
@@ -76,7 +73,6 @@ export type ResolvedApiOperation = {
 	description: string
 	inputSchema: JsonSchema
 	outputSchema: JsonSchema | null
-	scope: ApiTokenScope | null
 	permission: SurfacePermission
 	readOnly: boolean
 	featureFlag: string | null
@@ -100,7 +96,7 @@ const tagDescriptions: Record<ApiOperation['tag'], string> = {
 	community: 'Public packages in the community catalog, and profile.',
 	tokens: 'Scoped, short-lived API tokens.',
 	'capability-proxy':
-		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires the `local-execute` scope and a scoped API token or CLI `kody login` MCP OAuth bearer.',
+		'Platform I/O for a local execute venue: CapabilityProxy hops (`kody:runtime` calls) and `POST /v1/local-execute/package-graph` (stamped `kody:@…` module download). Requires `org:execute` and a scoped API token or CLI `kody login` MCP OAuth bearer.',
 }
 
 function stripSchemaMeta(schema: JsonSchema): JsonSchema {
@@ -177,7 +173,6 @@ export function resolveApiOperation(
 				description: definition.description,
 				inputSchema: z.toJSONSchema(definition.inputSchema) as JsonSchema,
 				outputSchema: z.toJSONSchema(definition.outputSchema) as JsonSchema,
-				scope: operation.scope,
 				permission: operation.permission,
 				readOnly: definition.readOnly,
 				featureFlag: null,
@@ -196,7 +191,6 @@ export function resolveApiOperation(
 				inputSchema: capability.inputSchema as JsonSchema,
 				outputSchema:
 					(capability.outputSchema as JsonSchema | undefined) ?? null,
-				scope: resolveCapabilityOperationScope(operation, capability),
 				permission: capability.orgPermission,
 				readOnly: capability.readOnly,
 				featureFlag: capability.featureFlag ?? null,
@@ -308,8 +302,7 @@ function buildOperation(
 			},
 			default: { $ref: '#/components/responses/Error' },
 		},
-		security: [{ apiToken: resolved.scope ? [resolved.scope] : [] }],
-		'x-kody-scope': resolved.scope,
+		security: [{ apiToken: [] }],
 		'x-kody-permission': resolved.permission,
 		'x-kody-read-only': resolved.readOnly,
 		...(resolved.featureFlag
@@ -356,7 +349,7 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 			description: [
 				'HTTP API for a Kody account. Versioned under `/v1`; changes within v1 are additive.',
 				'',
-				'Authenticate with `Authorization: Bearer kody_at_…`. Tokens are minted by the MCP `api` tool (`tokenCreate`) or by another token with `tokens:write`, and each carries explicit scopes.',
+				'Authenticate with `Authorization: Bearer kody_at_…`. Tokens are minted by the MCP `api` tool (`tokenCreate`) or by another token, and each carries explicit org-permission scopes. There is no write-implies-read hierarchy.',
 				apiTokenIdleTtlDescription(),
 				'',
 				'Errors use `{ "error": { "code", "message", "details"? } }`. Requests are rate limited per IP and per token (HTTP 429 with `Retry-After`).',
@@ -397,7 +390,7 @@ function buildDocumentBody(registry: BuiltCapabilityRegistry) {
 					scheme: 'bearer',
 					bearerFormat: 'kody_at_<id>_<secret>',
 					description:
-						'Scoped Kody API token. Each operation lists its required scope in `security` and `x-kody-scope`.',
+						'Scoped Kody API token. Each operation lists its required org permission in `x-kody-permission`. Credential scopes narrow that permission.',
 				},
 			},
 		},

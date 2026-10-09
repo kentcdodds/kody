@@ -37,7 +37,7 @@ export const accountCreditsPath = '/account/usage#credits'
  * - `within_include` — at or under the include.
  * - `debiting_credits` — above the include; the funded wallet pays.
  * - `add_credits` — above the include on Pro with an empty wallet: UI nudge
- *   to top up; enforcement uses Free rate/compute caps (ADR 0064).
+ *   to top up; enforcement uses Free rate/compute caps (ADR 0065).
  * - `switch_to_pro` — above the include on Free or retired Standard/Pro
  *   (no wallet; not charged).
  * - `not_charged` — above the include on an operator plan (`max`).
@@ -210,7 +210,7 @@ export type PastIncludeStop = {
 }
 
 /**
- * Former include → credits → stop gate (0051). ADR 0064 replaced the hard
+ * Former include → credits → stop gate (0051). ADR 0065 replaced the hard
  * stop with Free rate/compute fallback via {@link resolvePlanLimits}, so
  * this always returns `null`. Kept for stable imports and informational
  * callers.

@@ -53,6 +53,7 @@ class MCPBase extends McpAgent<Env, State, Props> {
 				registerMcpAgentSession({
 					db: this.env.APP_DB,
 					userId,
+					orgId: caller.request?.org.id ?? userId,
 					doId: this.ctx.id.toString(),
 				}),
 			assembleMcpServerInstructionsForCaller({

@@ -7,6 +7,7 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { kodyDiscordInviteUrl } from '#universal/community-links.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -40,6 +41,10 @@ async function seedUser(
 			 VALUES (?, ?, ?, ?, ?)`,
 		)
 		.run(input.id, `user-${input.id}`, input.email, stableUserId, 'x')
+	await provisionPersonalOrg(createD1FromSqlite(sqlite), {
+		stableUserId,
+		username: `user-${input.id}`,
+	})
 	return stableUserId
 }
 

@@ -17,6 +17,7 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 		CREATE TABLE mcp_agent_sessions (
 			do_id TEXT PRIMARY KEY NOT NULL,
 			user_id TEXT NOT NULL,
+			org_id TEXT,
 			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 		);
 	`)

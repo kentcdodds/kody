@@ -18,6 +18,7 @@ import {
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
@@ -27,12 +28,17 @@ async function setupRbac(users: Array<{ id: number; roles: Array<RoleName> }>) {
 	const db = createD1FromSqlite(sqlite)
 	for (const { id, roles } of users) {
 		const email = `user-${id}@example.com`
+		const stableUserId = testStableUserIdFromEmail(email)
 		sqlite
 			.prepare(
 				`INSERT INTO users (id, username, email, stable_user_id, password_hash)
 				VALUES (?, ?, ?, ?, 'unused')`,
 			)
-			.run(id, `user-${id}`, email, testStableUserIdFromEmail(email))
+			.run(id, `user-${id}`, email, stableUserId)
+		await provisionPersonalOrg(db, {
+			stableUserId,
+			username: `user-${id}`,
+		})
 		for (const roleName of roles) {
 			await assignUserRole({ db, userId: id, roleName })
 		}

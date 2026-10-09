@@ -41,7 +41,8 @@ type RequestPerson = Pick<McpUserContext, 'userId' | 'username'>
 
 export type RequestOrgBinding = {
 	org: RequestOrg
-	role: OrgRole
+	/** Null for grant-only outside collaborators. */
+	role: OrgRole | null
 }
 
 /**
@@ -69,12 +70,13 @@ function credentialFor(input: {
 	id: string | null
 	org: RequestOrg
 	profileName: string | null
+	scopes?: RequestCredential['scopes']
 }): RequestCredential {
 	return {
 		kind: input.kind,
 		id: input.id,
 		orgId: input.org.id,
-		scopes: null,
+		scopes: input.scopes ?? null,
 		profileName: input.profileName,
 	}
 }
@@ -115,6 +117,8 @@ export function deriveRequestContext(input: {
 	profileName?: string | null
 	/** When set (DB-backed session paths), overrides {@link resolveOrgBinding}. */
 	orgBinding?: RequestOrgBinding
+	/** Credential scopes. Populated for API tokens; null does not narrow. */
+	scopes?: RequestCredential['scopes']
 }): RequestContext {
 	const binding = input.orgBinding ?? resolveOrgBinding(input.user)
 	const { source } = input
@@ -135,8 +139,9 @@ export function deriveRequestContext(input: {
 					id: source.kind === 'api-token' ? source.tokenId : null,
 					org: binding.org,
 					profileName,
+					scopes: input.scopes ?? null,
 				}),
-				membership: { role: binding.role },
+				membership: binding.role ? { role: binding.role } : null,
 			}
 		}
 		case 'schedule':
@@ -181,7 +186,8 @@ export function deriveRequestContext(input: {
 					...lineage.credential,
 					profileName: lineage.credential.profileName ?? profileName,
 				},
-				membership: lineage.actor ? { role: binding.role } : null,
+				membership:
+					lineage.actor && binding.role ? { role: binding.role } : null,
 			}
 		}
 		default: {

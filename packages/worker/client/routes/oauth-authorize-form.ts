@@ -16,6 +16,73 @@ export function oauthAuthorizeConsentFormAttrs(href: string) {
 	}
 }
 
+export type OAuthAuthorizeConsentOrg = {
+	slug: string
+	displayName: string | null
+	role: string | null
+}
+
+export function readOAuthAuthorizeConsentOrgs(value: unknown) {
+	if (!Array.isArray(value)) return []
+	const orgs: Array<OAuthAuthorizeConsentOrg> = []
+	for (const entry of value) {
+		if (!entry || typeof entry !== 'object') continue
+		const slug = (entry as { slug?: unknown }).slug
+		if (typeof slug !== 'string' || !slug.trim()) continue
+		const displayName = (entry as { displayName?: unknown }).displayName
+		const role = (entry as { role?: unknown }).role
+		orgs.push({
+			slug: slug.trim().toLowerCase(),
+			displayName: typeof displayName === 'string' ? displayName : null,
+			role: typeof role === 'string' ? role : null,
+		})
+	}
+	return orgs
+}
+
+export function readOAuthAuthorizeSelectedOrgSlug(value: unknown) {
+	if (typeof value !== 'string') return null
+	const slug = value.trim().toLowerCase()
+	return slug.length > 0 ? slug : null
+}
+
+export function oauthAuthorizeGrantHeading(selectedOrgSlug: string | null) {
+	if (selectedOrgSlug)
+		return `This agent gets full access in @${selectedOrgSlug}`
+	return 'This agent gets full access'
+}
+
+export type OAuthAuthorizeOrgField =
+	| { kind: 'hidden'; slug: string }
+	| {
+			kind: 'picker'
+			selectedSlug: string | null
+			options: ReadonlyArray<OAuthAuthorizeConsentOrg>
+	  }
+	| { kind: 'missing' }
+	| { kind: 'pending' }
+
+export function oauthAuthorizeOrgField(input: {
+	orgs: ReadonlyArray<OAuthAuthorizeConsentOrg>
+	selectedOrgSlug: string | null
+	signedIn: boolean
+}): OAuthAuthorizeOrgField {
+	if (input.orgs.length === 1) {
+		const sole = input.orgs[0]
+		if (!sole) return { kind: 'missing' }
+		return { kind: 'hidden', slug: sole.slug }
+	}
+	if (input.orgs.length > 1) {
+		return {
+			kind: 'picker',
+			selectedSlug: input.selectedOrgSlug,
+			options: input.orgs,
+		}
+	}
+	if (input.signedIn) return { kind: 'missing' }
+	return { kind: 'pending' }
+}
+
 /** `hydrated` is post-hydrate interactivity, not `typeof document`. */
 export function oauthAuthorizeActionsDisabled(input: {
 	hydrated: boolean

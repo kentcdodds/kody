@@ -34,6 +34,10 @@ import {
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { firstPartySecurityHeaders } from '#app/security-headers.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { BLOG_PLACEHOLDER_CALLOUT } from '#universal/blog-display.ts'
 import {
@@ -187,6 +191,15 @@ function createUserTestDb(users: Array<TestUser>) {
 			},
 			all: executeAll,
 			async first() {
+				if (isOrgBindingMembershipQuery(normalizedQuery)) {
+					const personId = String(params[0] ?? '')
+					const user = [...userRecords.values()].find(
+						(row) => row.stable_user_id === personId,
+					)
+					return user
+						? mockPersonalOrgBindingRow(user.stable_user_id, user.username)
+						: null
+				}
 				return (await executeAll()).results[0] ?? null
 			},
 			async run() {
@@ -874,6 +887,8 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 		scopes: ['profile', 'email'],
 		emailVerified,
 		requireCredentials: false,
+		orgs: [{ slug: 'ada', displayName: 'Ada', role: 'owner' }],
+		selectedOrgSlug: 'ada',
 	})
 
 	const anonymous = await render(env, authorizePath, {
@@ -885,6 +900,8 @@ test('renderAppPage configures session secret and server-renders oauth authorize
 		anonymous.html,
 		[
 			'data-testid="oauth-authorize-grant"',
+			'This agent gets full access in @ada',
+			'data-testid="oauth-authorize-org"',
 			'data-testid="oauth-authorize-oidc-scopes"',
 			'<code>profile</code>',
 			'<code>email</code>',

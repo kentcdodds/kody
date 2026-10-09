@@ -3,7 +3,9 @@ import { createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { createPasswordHash } from '@kody-internal/shared/password-hash.ts'
 import { originWorkerHandler } from './origin-handler.ts'
-import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { seedAccount } from '#worker/test-support/workers-seed.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 type TokenPayload = {
 	access_token: string
@@ -52,27 +54,10 @@ async function createS256CodeChallenge(verifier: string) {
 }
 
 async function seedWorkerUser(email: string, password: string) {
-	const passwordHash = await createPasswordHash(password)
-	const stableUserId = testStableUserIdFromEmail(email)
-	await env.APP_DB.prepare(
-		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			username TEXT NOT NULL UNIQUE,
-			email TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL,
-			email_verified_at TEXT,
-			stable_user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-			updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-		)`,
-	).run()
-	try {
-		await env.APP_DB.prepare(
-			`ALTER TABLE users ADD COLUMN stable_user_id TEXT`,
-		).run()
-	} catch {
-		// Column already present on a fresh CREATE above.
-	}
+	await ensureUsersTestSchema({
+		db: env.APP_DB,
+		columns: ['email_verified_at'],
+	})
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS verifications (
 			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -88,22 +73,14 @@ async function seedWorkerUser(email: string, password: string) {
 			UNIQUE (target, type)
 		)`,
 	).run()
-	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT(email) DO UPDATE SET
-				password_hash = excluded.password_hash,
-				email_verified_at = excluded.email_verified_at,
-				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id)`,
-	)
-		.bind(
-			`user-${crypto.randomUUID().slice(0, 8)}`,
-			email,
-			passwordHash,
-			new Date(0).toISOString(),
-			stableUserId,
-		)
-		.run()
+	await ensureOrgsTestSchema(env.APP_DB)
+	await seedAccount({
+		db: env.APP_DB,
+		email,
+		username: `user-${crypto.randomUUID().slice(0, 8)}`,
+		emailVerifiedAt: new Date(0).toISOString(),
+		passwordHash: await createPasswordHash(password),
+	})
 }
 
 async function mintSharedClientTokens() {

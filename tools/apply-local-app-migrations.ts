@@ -67,7 +67,9 @@ function applyCommand(
 /**
  * APP_DB, AUDIT_DB, and JOBS_DB migrations for one local persist directory.
  * Bookkeeping reset stays APP_DB-only; it rewrites pre-squash `d1_migrations`
- * rows before the regular apply.
+ * rows before the regular apply. `0090-teams-credential-org-binding.sql`
+ * rewrites API token scopes in SQL; `tools/teams-migration/rewrite-api-token-scopes.ts`
+ * can re-run the same map for local repair.
  */
 export function buildLocalMigrationCommands(input: {
 	argv: ReadonlyArray<string>

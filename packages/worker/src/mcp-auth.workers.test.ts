@@ -17,6 +17,10 @@ import { oauthScopes } from './oauth-handlers.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const origin = 'https://example.com'
@@ -251,6 +255,12 @@ function createMockDb(options: MockDbOptions = {}) {
 					// consolidated profile lookup above; any per-field users
 					// lookup is a regression.
 					throw new Error(`Unexpected per-field users lookup: ${query}`)
+				}
+				if (isOrgBindingMembershipQuery(normalized)) {
+					const personId =
+						typeof boundParams[0] === 'string' ? boundParams[0] : null
+					if (!personId) return null
+					return mockPersonalOrgBindingRow(personId)
 				}
 				if (normalized.includes('from org_memberships')) {
 					return null

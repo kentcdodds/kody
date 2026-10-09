@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import {
 	apiTokenScopeDescriptions,
-	apiTokenScopeSatisfies,
+	apiTokenScopeIncludes,
 	apiTokenScopes,
 	type ApiTokenScope,
 } from '#worker/api-tokens/scopes.ts'
@@ -51,6 +51,11 @@ const tokenIdSchema = z
 const tokenViewSchema = z.object({
 	id: z.string(),
 	name: z.string(),
+	org_id: z
+		.string()
+		.describe(
+			'Org this token is bound to. Defaults to the owner personal org.',
+		),
 	scopes: z.array(scopeSchema),
 	status: z.enum(['active', 'expired', 'revoked']),
 	idle_ttl_seconds: z.number().int(),
@@ -99,7 +104,7 @@ const tokenCreateInputSchema = z
 			.array(scopeSchema)
 			.min(1)
 			.describe(
-				`Scopes to grant. \`<resource>:write\` also grants \`<resource>:read\`. A token can only mint tokens with scopes it holds.\n${scopeListDescription}`,
+				`Org-permission scopes to grant. There is no write-implies-read hierarchy. A token can only mint tokens with scopes it holds.\n${scopeListDescription}`,
 			),
 		profile: z
 			.string()
@@ -174,7 +179,7 @@ async function assertCallerMayRotate(
 	})
 	if (!target) return
 	const missing = target.scopes.filter(
-		(scope) => !apiTokenScopeSatisfies(caller.scopes, scope),
+		(scope) => !apiTokenScopeIncludes(caller.scopes, scope),
 	)
 	const outlives =
 		Date.parse(target.max_expires_at) > Date.parse(caller.max_expires_at)
@@ -291,6 +296,7 @@ export const tokenOperationDefinitions: Record<
 				const profile = await getConnectionProfileByName({
 					db: ctx.env.APP_DB,
 					userId: userIdOf(ctx),
+					orgId: ctx.callerContext.request?.org.id,
 					name: profileName,
 				})
 				if (!profile) {
@@ -326,6 +332,7 @@ export const tokenOperationDefinitions: Record<
 			return mintApiToken({
 				db: ctx.env.APP_DB,
 				userId: userIdOf(ctx),
+				orgId: ctx.callerContext.request?.org.id ?? userIdOf(ctx),
 				name: input.name,
 				scopes: input.scopes,
 				idleTtlSeconds: lifetime.idleTtlSeconds,

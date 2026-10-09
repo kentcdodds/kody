@@ -38,13 +38,13 @@ required: `short` (1h idle / 24h max), `long` (14d idle / 3mo max), or both
 	"operationId": "tokenCreate",
 	"params": {
 		"name": "ci-bot",
-		"scopes": ["account:read", "search:read"],
+		"scopes": ["org:read", "search:read"],
 		"lifetime": "short"
 	}
 }
 ```
 
-Include `"local-execute"` in `scopes` only when a headless CLI needs
+Include `"org:execute"` in `scopes` only when a headless CLI needs
 CapabilityProxy / package-graph over a `kody_at_…` token (see
 [Local CLI execute](./local-execute.md)). Put the value in the environment
 (`KODY_API_TOKEN`); never paste it into chat.

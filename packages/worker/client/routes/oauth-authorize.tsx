@@ -28,7 +28,15 @@ import {
 	oauthAuthorizeConsentDecision,
 	oauthAuthorizeConsentFormAttrs,
 	oauthAuthorizeEmailVerificationDenyDisabled,
+	oauthAuthorizeOrgField,
+	readOAuthAuthorizeConsentOrgs,
+	readOAuthAuthorizeSelectedOrgSlug,
+	type OAuthAuthorizeConsentOrg,
 } from '#client/routes/oauth-authorize-form.ts'
+import {
+	renderAuthorizeOrgField,
+	renderOauthAuthorizeGrant,
+} from '#client/routes/oauth-authorize-org-picker.tsx'
 import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
 	fetchSessionInfo,
@@ -49,7 +57,6 @@ import {
 	insetCardCss,
 	inputCss,
 	mutedLinkCss,
-	nativeDisclosureCss,
 	pageDescriptionCss,
 	pageEyebrowCss,
 	pageHeaderCss,
@@ -64,6 +71,8 @@ type OAuthAuthorizeInfo = {
 	scopes: Array<string>
 	emailVerified: boolean | null
 	requireCredentials: boolean
+	orgs: Array<OAuthAuthorizeConsentOrg>
+	selectedOrgSlug: string | null
 }
 
 type OAuthAuthorizeStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -131,53 +140,12 @@ export async function oauthAuthorizeRouteLoader(
 					? payload.emailVerified
 					: null,
 			requireCredentials: payload.requireCredentials === true,
+			orgs: readOAuthAuthorizeConsentOrgs(payload.orgs),
+			selectedOrgSlug: readOAuthAuthorizeSelectedOrgSlug(
+				payload.selectedOrgSlug,
+			),
 		},
 	}
-}
-
-function renderOauthAuthorizeGrant(input: {
-	clientLabel: string
-	scopes: ReadonlyArray<string>
-}) {
-	return (
-		<section data-testid="oauth-authorize-grant" mix={css(cardCss)}>
-			<h2 mix={css(sectionTitleCss)}>This agent gets full access</h2>
-			<p mix={css(descriptionCss)}>
-				Approving lets {input.clientLabel} use everything in this Kody account:
-				packages, memories, secrets, email, connected services, and anything
-				else your assistant can do.
-			</p>
-			{input.scopes.length > 0 ? (
-				<details
-					data-testid="oauth-authorize-oidc-scopes"
-					mix={css(nativeDisclosureCss)}
-				>
-					<summary>Identity claims on the token</summary>
-					{/* nativeDisclosureCss grids each direct details child. */}
-					<div>
-						<p mix={css(descriptionCss)}>
-							These OAuth scopes are identity claims. They do not limit what the
-							assistant can do.
-						</p>
-						<p
-							mix={css({
-								...descriptionCss,
-								display: 'flex',
-								flexWrap: 'wrap',
-								columnGap: spacing.md,
-								rowGap: spacing.xs,
-								alignItems: 'baseline',
-							})}
-						>
-							{input.scopes.map((scope) => (
-								<code key={scope}>{scope}</code>
-							))}
-						</p>
-					</div>
-				</details>
-			) : null}
-		</section>
-	)
 }
 
 export function OAuthAuthorizeRoute(handle: Handle) {
@@ -198,10 +166,17 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	// Stay false through SSR and the first client render so hydrate matches
 	// the disabled form. Flip after queueTask, once submit handlers are bound.
 	let consentInteractive = false
+	// Tracks the picker choice so the grant heading matches the submitted org.
+	let pickedOrgSlug: string | null | undefined
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
 		handle.update()
+	}
+
+	function readDisplayedOrgSlug() {
+		if (pickedOrgSlug !== undefined) return pickedOrgSlug
+		return info?.selectedOrgSlug ?? null
 	}
 
 	function readQueryError() {
@@ -249,7 +224,12 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						? payload.emailVerified
 						: null,
 				requireCredentials: payload.requireCredentials === true,
+				orgs: readOAuthAuthorizeConsentOrgs(payload.orgs),
+				selectedOrgSlug: readOAuthAuthorizeSelectedOrgSlug(
+					payload.selectedOrgSlug,
+				),
 			}
+			pickedOrgSlug = undefined
 			status = 'ready'
 			allowClientReset = false
 			message = null
@@ -257,6 +237,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		} catch {
 			if (requestId !== activeInfoRequestId) return
 			info = null
+			pickedOrgSlug = undefined
 			status = 'error'
 			allowClientReset = false
 			message = {
@@ -288,12 +269,16 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						? routeData.emailVerified
 						: null,
 				requireCredentials: routeData.requireCredentials === true,
+				orgs: routeData.orgs,
+				selectedOrgSlug: routeData.selectedOrgSlug,
 			}
+			pickedOrgSlug = undefined
 			status = 'ready'
 			allowClientReset = false
 			message = null
 		} else {
 			info = null
+			pickedOrgSlug = undefined
 			status = 'error'
 			allowClientReset = routeData.allowClientReset
 			message = { type: 'error', text: routeData.error }
@@ -384,25 +369,29 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			body.set('decision', decision)
 			if (decision === 'approve' && form) {
 				const formData = new FormData(form)
+				const org = String(formData.get('org') ?? '').trim()
+				if (org) body.set('org', org)
 				const email = String(formData.get('email') ?? '').trim()
 				const password = String(formData.get('password') ?? '')
-				if (!email || !password) {
-					setMessage({
-						type: 'error',
-						text: 'Email and password are required.',
-					})
-					submittingDecision = null
-					handle.update()
-					return
+				if (email || password) {
+					if (!email || !password) {
+						setMessage({
+							type: 'error',
+							text: 'Email and password are required.',
+						})
+						submittingDecision = null
+						handle.update()
+						return
+					}
+					body.set('email', email)
+					body.set('password', password)
+					const protection = readPublicFormProtection(formData, form)
+					body.set(honeypotFieldName, protection[honeypotFieldName])
+					body.set(
+						turnstileResponseFieldName,
+						protection[turnstileResponseFieldName],
+					)
 				}
-				body.set('email', email)
-				body.set('password', password)
-				const protection = readPublicFormProtection(formData, form)
-				body.set(honeypotFieldName, protection[honeypotFieldName])
-				body.set(
-					turnstileResponseFieldName,
-					protection[turnstileResponseFieldName],
-				)
 			}
 			const response = await fetch(window.location.href, {
 				method: 'POST',
@@ -452,13 +441,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		if (!(event.currentTarget instanceof HTMLFormElement)) return
-		const requireCredentials = info?.requireCredentials === true
-		const hasSession =
-			Boolean(readEffectiveSession().session?.email) && !requireCredentials
-		await submitDecision(
-			'approve',
-			hasSession ? undefined : event.currentTarget,
-		)
+		await submitDecision('approve', event.currentTarget)
 	}
 
 	return () => {
@@ -526,13 +509,20 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		}
 		const hydrated = consentInteractive
 		const consentForm = oauthAuthorizeConsentFormAttrs(currentHref)
-		const actionsDisabled = oauthAuthorizeActionsDisabled({
-			hydrated,
-			statusReady: status === 'ready',
-			submitting: Boolean(submittingDecision),
-			sessionLoading: isSessionLoading,
-			needsEmailVerification,
+		const displayedOrgSlug = readDisplayedOrgSlug()
+		const orgField = oauthAuthorizeOrgField({
+			orgs: info?.orgs ?? [],
+			selectedOrgSlug: displayedOrgSlug,
+			signedIn: isLoggedIn,
 		})
+		const actionsDisabled =
+			oauthAuthorizeActionsDisabled({
+				hydrated,
+				statusReady: status === 'ready',
+				submitting: Boolean(submittingDecision),
+				sessionLoading: isSessionLoading,
+				needsEmailVerification,
+			}) || orgField.kind === 'missing'
 		const resetClientDisabled =
 			Boolean(submittingDecision) || isSessionLoading || !isLoggedIn
 		const formReady = hydrated && status === 'ready' && !isSessionLoading
@@ -561,7 +551,11 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 					) : null}
 				</header>
 				{status === 'ready'
-					? renderOauthAuthorizeGrant({ clientLabel, scopes })
+					? renderOauthAuthorizeGrant({
+							clientLabel,
+							scopes,
+							selectedOrgSlug: displayedOrgSlug,
+						})
 					: null}
 				{isLoggedIn ? (
 					<section mix={css(insetCardCss)}>
@@ -683,6 +677,15 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							name="decision"
 							value={oauthAuthorizeConsentDecision}
 						/>
+						{renderAuthorizeOrgField({
+							orgs: info?.orgs ?? [],
+							selectedOrgSlug: displayedOrgSlug,
+							signedIn: isLoggedIn,
+							onSelectedOrgSlugChange: (slug) => {
+								pickedOrgSlug = slug
+								handle.update()
+							},
+						})}
 						{renderHoneypot()}
 						{!isLoggedIn && isSessionReady ? (
 							<>

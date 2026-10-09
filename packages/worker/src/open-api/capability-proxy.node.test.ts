@@ -159,7 +159,7 @@ test('CapabilityProxy preserves token scopes when minting CLI bootstrap credenti
 				user_id: 'user-1',
 				name: 'parent',
 				token_hash: 'hash',
-				scopes: ['local-execute'],
+				scopes: ['org:execute'],
 				idle_ttl_seconds: 3600,
 				expires_at: new Date(now.getTime() + 3600_000).toISOString(),
 				max_expires_at: new Date(now.getTime() + 3600_000).toISOString(),
@@ -177,7 +177,7 @@ test('CapabilityProxy preserves token scopes when minting CLI bootstrap credenti
 		ctx: tokenCtx,
 		call: {
 			path: ['kody', 'cliCredentialBootstrap'],
-			args: [{ scopes: ['tokens:write'], idle_ttl_seconds: 60 }],
+			args: [{ scopes: ['token:delete'], idle_ttl_seconds: 60 }],
 		},
 	}).catch((value: unknown) => value)
 	expect(error).toMatchObject({
@@ -190,7 +190,7 @@ test('CapabilityProxy preserves token scopes when minting CLI bootstrap credenti
 		expect.objectContaining({
 			openApiPrincipal: expect.objectContaining({
 				kind: 'token',
-				token: expect.objectContaining({ scopes: ['local-execute'] }),
+				token: expect.objectContaining({ scopes: ['org:execute'] }),
 			}),
 		}),
 	)
@@ -211,7 +211,7 @@ test('CapabilityProxy caps bootstrap token lifetime to the parent token lifetime
 				user_id: 'user-1',
 				name: 'parent',
 				token_hash: 'hash',
-				scopes: ['local-execute'],
+				scopes: ['org:execute'],
 				idle_ttl_seconds: 3600,
 				expires_at: new Date(now.getTime() + 3600_000).toISOString(),
 				max_expires_at: new Date(now.getTime() + 3600_000).toISOString(),
@@ -231,7 +231,7 @@ test('CapabilityProxy caps bootstrap token lifetime to the parent token lifetime
 			path: ['kody', 'cliCredentialBootstrap'],
 			args: [
 				{
-					scopes: ['local-execute'],
+					scopes: ['org:execute'],
 					idle_ttl_seconds: 60,
 					max_lifetime_seconds: 7200,
 				},
