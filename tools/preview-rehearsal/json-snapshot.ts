@@ -1,7 +1,7 @@
 import { buildPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
 import { openRehearsalSession, type RehearsalSession } from './kody-session.ts'
 import {
-	sharingOptInRoles,
+	rehearsalOrg,
 	type RehearsalOrigins,
 	type RehearsalUser,
 } from './rehearsal-env.ts'
@@ -178,18 +178,9 @@ async function snapshotPerson(
 			session.execute(integrationProofModule(echoUrl)),
 		),
 		memorySearches,
-		shares: sharingOptInRoles.includes(user.role)
-			? {
-					inbound: await capture(check('shares.inbound'), () =>
-						callCapability(session, 'packageShareList', { scope: 'inbound' }),
-					),
-					outbound: await capture(check('shares.outbound'), () =>
-						callCapability(session, 'packageShareList', {
-							scope: 'outbound',
-						}),
-					),
-				}
-			: 'not opted in',
+		grants: await capture(check('grants'), () =>
+			callCapability(session, 'accessList'),
+		),
 		tokens: await capture(check('tokens'), async () => {
 			const listed = (await session.api('tokenList')) as {
 				tokens?: Array<Record<string, unknown>>
@@ -212,12 +203,54 @@ async function snapshotPerson(
 	}
 }
 
+/**
+ * The org owner's MCP connection binds to the rehearsal org only while the
+ * owner membership is live; its package list is the org's, not the owner's.
+ */
+async function snapshotOrg(
+	origins: RehearsalOrigins,
+	owner: SnapshotUser,
+	capture: Capture,
+) {
+	const check = (name: string) => `org.${name}`
+	let session: RehearsalSession
+	try {
+		session = await openRehearsalSession(origins.app, owner, {
+			orgSlug: rehearsalOrg.slug,
+		})
+	} catch (error) {
+		return {
+			slug: rehearsalOrg.slug,
+			session: await capture(check('session'), async () => {
+				throw error
+			}),
+		}
+	}
+	try {
+		return {
+			slug: rehearsalOrg.slug,
+			me: await capture(check('me'), () =>
+				callCapability(session, 'metaGetCurrentUser'),
+			),
+			packages: await capture(check('packages'), () =>
+				callCapability(session, 'packageList'),
+			),
+			grants: await capture(check('grants'), () =>
+				callCapability(session, 'accessList'),
+			),
+		}
+	} finally {
+		await session.close()
+	}
+}
+
 export type JsonSnapshot = {
 	version: 1
 	takenAt: string
 	origins: RehearsalOrigins
 	admin: Record<string, unknown>
 	people: Array<Awaited<ReturnType<typeof snapshotPerson>>>
+	org: Awaited<ReturnType<typeof snapshotOrg>>
 	failures: Array<SnapshotCheckFailure>
 }
 
@@ -252,9 +285,6 @@ export async function takeJsonSnapshot(input: {
 				),
 			}
 		}
-		adminView.scopeGrants = await capture('admin.scopeGrants', () =>
-			callCapability(admin, 'adminPackageScopeGrantList'),
-		)
 	} finally {
 		await admin.close()
 	}
@@ -268,12 +298,21 @@ export async function takeJsonSnapshot(input: {
 			await session.close()
 		}
 	}
+	const orgOwner = input.users.find((user) => user.role === rehearsalOrg.owner)
+	if (!orgOwner) {
+		throw new Error(
+			`Snapshot needs the rehearsal org owner (${rehearsalOrg.owner}) credentials.`,
+		)
+	}
+	log(`Snapshotting @${rehearsalOrg.slug} as ${orgOwner.role}...`)
+	const org = await snapshotOrg(input.origins, orgOwner, capture)
 	return {
 		version: 1,
 		takenAt: (input.now ?? (() => new Date()))().toISOString(),
 		origins: input.origins,
 		admin: adminView,
 		people,
+		org,
 		failures,
 	}
 }
