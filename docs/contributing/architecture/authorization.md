@@ -95,8 +95,7 @@ scores. This boundary never exposes forked package source, rating notes,
 secrets, or unrelated account content.
 
 For browser and MCP authentication mechanics, see
-[Authentication](./authentication.md). For the org, actor, and credential every
-request carries, see [Request context](./request-context.md).
+[Authentication](./authentication.md).
 
 ### Model
 
