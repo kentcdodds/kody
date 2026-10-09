@@ -13,7 +13,7 @@ export const businessCss = {
 	margin: '0',
 	background: 'var(--paper)',
 	color: 'var(--ink)',
-	font: '16px/1.55 var(--font-family),\n          Arial,\n          sans-serif',
+	font: '16px/1.55 var(--font-family)',
 	'& button, & a, & input': {
 		font: 'inherit',
 	},
@@ -103,13 +103,6 @@ export const businessCss = {
 	'& .button:hover': {
 		background: '#325543',
 		transform: 'translateY(-1px)',
-	},
-	'& .button.light': {
-		background: 'var(--lime)',
-		color: '#20342a',
-	},
-	'& .button.light:hover': {
-		background: '#e8f8b5',
 	},
 	'& .arrow': {
 		fontSize: '21px',
@@ -201,12 +194,6 @@ export const businessCss = {
 	},
 	'& .example-tabs button:hover': {
 		borderColor: '#9bac91',
-	},
-	'& .example-label': {
-		marginLeft: 'auto',
-		fontSize: '12px',
-		color: '#63705d',
-		paddingRight: '5px',
 	},
 	'& .app': {
 		display: 'grid',
@@ -673,17 +660,6 @@ export const businessCss = {
 		marginRight: '12px',
 		color: '#698647',
 	},
-	'& footer': {
-		borderTop: '1px solid var(--line)',
-		padding: '25px 0 35px',
-		display: 'flex',
-		justifyContent: 'space-between',
-		fontSize: '12px',
-		color: '#76806b',
-	},
-	'& footer a': {
-		borderBottom: '1px solid #b5bfaa',
-	},
 	'& [hidden]': {
 		display: 'none',
 	},
@@ -796,9 +772,6 @@ export const businessCss = {
 			padding: '9px 8px',
 			fontSize: '11px',
 		},
-		'& .example-label': {
-			display: 'none',
-		},
 		'& .app': {
 			gridTemplateColumns: '1fr',
 		},
@@ -890,10 +863,6 @@ export const businessCss = {
 		'& .hero-copy .button': {
 			gap: '12px',
 			padding: '13px 16px',
-		},
-		'& footer': {
-			gap: '20px',
-			fontSize: '11px',
 		},
 	},
 	'@media (prefers-reduced-motion: reduce)': {

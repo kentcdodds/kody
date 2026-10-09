@@ -97,7 +97,6 @@ export function BusinessRoute(handle: Handle) {
 								>
 									Client onboarding
 								</button>
-								<span class="example-label">Interactive example</span>
 							</div>
 							<div class="app">
 								<aside class="studio">
