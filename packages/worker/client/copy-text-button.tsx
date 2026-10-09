@@ -171,10 +171,7 @@ export function CopyTextButton(handle: Handle<CopyTextButtonProps>) {
 			]}
 		>
 			{renderLabel('idle', handle.props.idleLabel ?? 'Copy')}
-			{renderLabel(
-				'copied',
-				handle.props.copiedLabel ?? handle.props.copiedLabel ?? 'Copied',
-			)}
+			{renderLabel('copied', handle.props.copiedLabel ?? 'Copied')}
 			{renderLabel('error', 'Copy failed')}
 			<span
 				id={`${handle.id}-copy-status`}
