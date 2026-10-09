@@ -243,19 +243,19 @@ test('package secret access authorizes the stamp package, not the importing run'
 	).resolves.toBeUndefined()
 })
 
-test('package secret access does not resolve platform packages the caller does not own', async () => {
-	const platformPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
+test("package secret access does not resolve another org's package", async () => {
+	const otherOrgPackageId = '91d7d9e4-6b88-44da-ab19-01fe26845ac5'
 	mockModule.getSavedPackageById.mockResolvedValueOnce(null)
 	await expect(
 		assertPackageCanAccessResolvedSecret(
 			accessInput({
-				storageContext: { sessionId: null, packageId: platformPackageId },
+				storageContext: { sessionId: null, packageId: otherOrgPackageId },
 			}),
 		),
 	).rejects.toSatisfy((error: unknown) => {
 		expect(error).toBeInstanceOf(PackageSecretAccessDeniedError)
 		expect((error as Error).message).toBe(
-			`Package "${platformPackageId}" was not found for secret access.`,
+			`Package "${otherOrgPackageId}" was not found for secret access.`,
 		)
 		return true
 	})

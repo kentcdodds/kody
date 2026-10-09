@@ -79,7 +79,7 @@ export function personIdFromStored<T extends string | null | undefined>(
 
 /**
  * Brand an owner id read from Kody's own storage (a `user_id` /
- * `owner_user_id` column, a platform account row, a persisted owner). Throws
+ * `owner_user_id` column, an org id, a persisted owner). Throws
  * when empty. Owners are not always people: `system:email` owns system mail.
  */
 export function ownerIdFromStored<T extends string | null | undefined>(

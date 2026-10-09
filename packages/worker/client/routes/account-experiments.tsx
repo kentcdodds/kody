@@ -101,7 +101,7 @@ export function AccountExperimentsRoute(handle: Handle) {
 			}
 			// Keep `appliedSnapshot` on the route-data cache object so the next
 			// render does not treat that still-cached value as a newer snapshot
-			// and overwrite the POST result (same pattern as account-shared).
+			// and overwrite the POST result.
 			payload = next
 			message = enabled
 				? 'You are opted into experiments. You can turn this off anytime.'

@@ -844,9 +844,8 @@ export async function unpublishCommunityListing(input: {
 	env: Env
 	userId: string
 	/**
-	 * Acting user on delegated (package scope grant) unpublishes. Community
-	 * bans must bind to the person acting, not just the owning platform
-	 * account.
+	 * Acting member when an org unpublishes. Community bans must bind to the
+	 * person acting, not just the owning org.
 	 */
 	actorUserId?: string
 	listingId: string

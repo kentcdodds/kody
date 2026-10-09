@@ -35,7 +35,7 @@ import { createCapabilityProxyPackageHostTools } from './capability-proxy-packag
  * `kody.gatewayFetch` the same way. OAuth client-credentials grants use
  * `kody.oauthClientCredentials`. Stamped `packageStorage` / `packageSecrets`
  * hop as `kody.packageStorage*` / `kody.packageSecret*` with per-call
- * ownership / share grant checks — long-lived OAuth tokens and secret
+ * ownership checks — long-lived OAuth tokens and secret
  * plaintext never enter local workerd.
  */
 

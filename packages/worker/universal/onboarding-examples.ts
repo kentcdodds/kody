@@ -109,7 +109,7 @@ export function buildOnboardingExamplePrompt(input: {
 	return [
 		`I started a one-click install/fork of the onboarding example "${input.listingName}" (package name leaf: ${input.kodyId}) into my Kody account.`,
 		`Wait until that install is ready: search for my user-owned package by its scoped name "${scopedName}" once, and if it is missing, try again once after I say install finished — do not poll in a loop.`,
-		`Then call MY installed/forked package with a static import from its scoped specifier "kody:${scopedName}" (not a platform "kody:@kody/${input.kodyId}" specifier or bare @kody/* static import — those target the platform package, which cannot use my fork's packageStorage).`,
+		`Then call MY installed/forked package with a static import from its scoped specifier "kody:${scopedName}" (not "kody:@kody/${input.kodyId}": imports resolve only in my own org, so the copy I own is the one to import).`,
 		exampleImportHint(scopedName, input.kodyId),
 		'Show the result briefly. Explain that the package is one I own.',
 		'Ask if I want to hang a trigger on it (webhook, Kody app, cron, or skip) — list options without recommending one.',
