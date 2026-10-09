@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { authorize } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -86,7 +87,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 	capabilityDomainNames.packages,
 	{
 		name: 'packageGetGitRemote',
-		orgPermission: 'package:write',
+		orgPermission: 'package:read',
 		description:
 			'Start or continue the git lane for saved packages: mint a short-lived Cloudflare Artifacts git remote so coding agents with local filesystem/git access can clone into a temporary directory, edit normally (including binary assets), push, and publish with packagePublishExternalPush. Pass `create: true` with a new `@scope/leaf` name (or the name leaf) to register a stub saved package and mint its remote in one call, so new packages can be authored via clone-edit-push instead of packageSave file blobs. Prefer the scoped name for existing packages; use `package_id` only when the name is not known. The result includes `git_author` (signed-in Kody account email and display name) and `setup_commands` that set local `user.email` / `user.name` to that identity — never invent a git email. Write access verifies the current package source has a restorable backup snapshot before clone/edit/publish. Individual files may be at most 10 MiB (10,485,760 stored bytes; UTF-8 for text, raw for binary): publish rejects anything larger with external-hosting guidance (commit a link or pointer instead), and the Artifacts remote itself fails pushes above ~32 MiB of pack content with a raw HTTP 413.',
 		keywords: [
@@ -109,6 +110,13 @@ export const getGitRemoteCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			const authorizeCtx = {
+				env: ctx.env,
+				request: ctx.callerContext.request,
+			}
+			if (args.scope === 'write') {
+				await authorize(authorizeCtx, 'package:write')
+			}
 			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const owner = await resolvePackageOwnerContext(
 				ctx.env,
@@ -136,6 +144,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 					match: 'slug',
 				})
 				if (!existing) {
+					await authorize(authorizeCtx, 'package:create')
 					await createStubSavedPackage({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
