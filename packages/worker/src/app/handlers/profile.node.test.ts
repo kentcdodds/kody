@@ -316,7 +316,7 @@ test('profile page shell embeds the person and the unfiltered package list, or 4
 	})
 })
 
-test("an organization handle is its members' org home and a 404 for everyone else", async () => {
+test('an organization handle is a home for everyone its switcher lists and a 404 for everyone else', async () => {
 	setupPublicProfileMocks()
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
@@ -326,6 +326,7 @@ test("an organization handle is its members' org home and a 404 for everyone els
 	mockModule.listOrganizationsForPerson.mockResolvedValue([
 		{ slug: 'alice', displayName: null, role: 'owner', personal: true },
 		{ slug: 'acme', displayName: 'Acme', role: 'member', personal: false },
+		{ slug: 'globex', displayName: 'Globex', role: null, personal: false },
 	])
 
 	const member = await call(createProfileHandler, '/@acme', 'acme')
@@ -338,6 +339,10 @@ test("an organization handle is its members' org home and a 404 for everyone els
 		undefined,
 		'stable-alice',
 	)
+
+	const collaborator = await call(createProfileHandler, '/@globex', 'globex')
+	expect(collaborator.status).toBe(200)
+	expect(collaborator.body).toMatchObject({ title: 'Globex' })
 
 	const outsider = await call(createProfileHandler, '/@zeta', 'zeta')
 	expect(outsider.status).toBe(404)

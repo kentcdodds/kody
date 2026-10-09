@@ -13,16 +13,25 @@ import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
  * Main column of a non-personal organization's home. Its resources still live
  * in each member's personal account until storage follows `request.org.id`
  * (#3073), so this says where the organization's work happens today.
+ * Grant-only collaborators see what was shared with them instead of member
+ * management.
  */
-export function renderOrgHomeMain(input: { handle: string }) {
+export function renderOrgHomeMain(input: {
+	handle: string
+	collaborator: boolean
+}) {
 	return (
 		<div mix={css(mainCss)} data-testid="org-home">
 			<h2 mix={css(headingCss)}>Get started</h2>
 			<ul mix={css(stepListCss)}>
 				{renderStep({
-					icon: 'users',
-					title: 'Invite members and share access',
-					body: `Members, teams, and access grants are managed by an agent connected to ${input.handle}. When you connect one, choose ${input.handle} on the approval screen.`,
+					icon: input.collaborator ? 'key' : 'users',
+					title: input.collaborator
+						? 'Use what was shared with you'
+						: 'Invite members and share access',
+					body: input.collaborator
+						? `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`
+						: `Members, teams, and access grants are managed by an agent connected to ${input.handle}. When you connect one, choose ${input.handle} on the approval screen.`,
 					action: (
 						<a
 							href={routes.accountConnections.href()}

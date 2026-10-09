@@ -247,7 +247,10 @@ export function ProfileRoute(handle: Handle) {
 							avatarName: identity.avatarName,
 							role: orgRoleLabel(memberOrg.role),
 						})}
-						{renderOrgHomeMain({ handle: identity.handle })}
+						{renderOrgHomeMain({
+							handle: identity.handle,
+							collaborator: memberOrg.role === null,
+						})}
 					</div>
 				</section>
 			)
