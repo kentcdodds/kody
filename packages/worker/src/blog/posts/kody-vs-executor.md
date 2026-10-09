@@ -57,7 +57,7 @@ is the product. The calling convention is pluggable.
 
 ## What Kody is for
 
-Kody is not a catalog of other people's tools. It's Your Agents' Cloud: the
+Kody is not a catalog of other people's tools. It's Your agents' cloud: the
 runtime and home your assistant keeps, no matter which agent you talk to this
 year.
 

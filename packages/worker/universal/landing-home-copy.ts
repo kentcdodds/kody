@@ -3,8 +3,8 @@
  * Keep these strings exact. Do not invent positioning or swap in synonyms.
  */
 
-export const landingHeroHeadlineLead = 'Your Agents\u2019 '
-export const landingHeroHeadlineEmphasis = 'Cloud'
+export const landingHeroHeadlineLead = 'Your agents\u2019 '
+export const landingHeroHeadlineEmphasis = 'cloud'
 export const landingHeroHeadline = `${landingHeroHeadlineLead}${landingHeroHeadlineEmphasis}`
 
 export const landingHeroSubheadLead =

@@ -64,7 +64,7 @@ export type AgentSkillDefinition = {
 
 const connectKodySkillBody = `# Connect Kody
 
-Kody is Your Agents' Cloud: an OAuth-protected MCP personal assistant. You use
+Kody is Your agents' cloud: an OAuth-protected MCP personal assistant. You use
 it from an existing MCP host (Cursor, ChatGPT, Claude Desktop, Claude Code,
 Codex, Copilot, Grok, OpenCode, OpenClaw, Muse). There is no separate Kody chat
 app.
@@ -92,7 +92,7 @@ or passwords into chat.
 
 const whatIsKodySkillBody = `# What is Kody
 
-Kody is Your Agents' Cloud: a per-user personal assistant reached over MCP.
+Kody is Your agents' cloud: a per-user personal assistant reached over MCP.
 Each signed-in user gets an isolated assistant (packages, jobs, secrets,
 memories, email, storage). The public MCP surface is two tools: \`search\` and
 \`execute\`.
@@ -237,7 +237,7 @@ export function buildMcpServerCard(origin: string) {
 			version: kodyMcpServerCardVersion,
 		},
 		description:
-			"Your Agents' Cloud. Per-user MCP assistant with search and execute. OAuth required. Connect from an existing MCP host. There is no separate Kody chat app.",
+			"Your agents' cloud. Per-user MCP assistant with search and execute. OAuth required. Connect from an existing MCP host. There is no separate Kody chat app.",
 		url: endpoint,
 		transport: {
 			type: 'streamable-http',
@@ -316,7 +316,7 @@ export function buildAuthMarkdown(origin: string): string {
 	return [
 		'# auth.md',
 		'',
-		"Kody is Your Agents' Cloud: an OAuth-protected MCP personal assistant.",
+		"Kody is Your agents' cloud: an OAuth-protected MCP personal assistant.",
 		`Agents connect at \`${mcp}\` from an existing MCP host. People complete`,
 		'sign-in and consent in the browser; do not ask anyone to paste secrets',
 		'or tokens into chat.',
@@ -358,7 +358,7 @@ export function buildHomeMarkdown(origin: string): string {
 	return [
 		'# Kody',
 		'',
-		"Kody is Your Agents' Cloud: a per-user personal assistant for builders",
+		"Kody is Your agents' cloud: a per-user personal assistant for builders",
 		'who would rather own their automations than rent them. You use it from',
 		'Cursor, ChatGPT, Claude, Codex, Copilot, Grok, or any MCP host, not from',
 		'a separate Kody chat app.',

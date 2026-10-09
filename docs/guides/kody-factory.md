@@ -12,7 +12,7 @@ ogImage: /images/kody-factory-map-og.jpg
 
 # The Kody factory map
 
-Kody is Your Agents' Cloud, laid out as a hosted factory: capabilities your
+Kody is Your agents' cloud, laid out as a hosted factory: capabilities your
 agent can discover, combine, and keep running after the conversation ends. Your
 agent connects to Kody over MCP and starts with two tools:
 

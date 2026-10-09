@@ -1,5 +1,5 @@
 ---
-title: Why Your Agents' Cloud should make zero inference calls
+title: Why Your agents' cloud should make zero inference calls
 date: 2026-07-20
 description:
   Kody makes zero inference calls. That's not a limitation, it's the business
@@ -35,7 +35,7 @@ Under the hood, our agent calls a model, and you'll pay for that too. You are
 now funding two brains to do one job, and the second one is usually worse than
 the one you already had.
 
-Kody's answer is to not be a second brain at all. It's Your Agents' Cloud: the
+Kody's answer is to not be a second brain at all. It's Your agents' cloud: the
 memory, keys, code, and automations your assistant keeps, no matter which agent
 you talk to. You connect the agent you already use
 [over MCP](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md),

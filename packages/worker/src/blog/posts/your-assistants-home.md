@@ -1,5 +1,5 @@
 ---
-title: Your Agents' Cloud
+title: Your agents' cloud
 date: 2026-07-20
 description:
   Your AI assistant accumulates things worth keeping. Memory, keys, code,
@@ -25,7 +25,7 @@ learned about you, the code you built together, the credentials it uses on your
 behalf, the tasks it runs on a schedule. That stuff deserves a home, and the
 home shouldn't be inside any one agent.
 
-**Kody is Your Agents' Cloud: the memory, keys, code, and automations it keeps,
+**Kody is Your agents' cloud: the memory, keys, code, and automations it keeps,
 no matter which agent you talk to.**
 
 ## What actually accumulates
@@ -67,7 +67,7 @@ Desktop, Claude Code, Codex and ChatGPT, OpenCode, VS Code: if it speaks MCP, it
 can be your assistant's front door.
 ([Connection docs](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md))
 
-Switch agents and Your Agents' Cloud comes with you. The memories are still
+Switch agents and Your agents' cloud comes with you. The memories are still
 there. The secrets are still there. The 42 jobs are still running (more on those
 in a minute). The new agent picks up where the old one left off, because the
 durable stuff never lived in the old one to begin with.
@@ -86,7 +86,7 @@ Kody's job is to give it hands and a memory.
 
 ## You have to be able to trust the home
 
-If Your Agents' Cloud holds your keys and runs your code, the security model
+If Your agents' cloud holds your keys and runs your code, the security model
 can't be an afterthought. Here's how it actually works:
 
 - **Code runs sandboxed.** When your assistant executes code, it runs in a

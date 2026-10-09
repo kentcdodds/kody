@@ -144,7 +144,7 @@ export function PricingRoute(handle: Handle) {
 						Pay when Kody <em>earns it</em>.
 					</h1>
 					<p>
-						Your Agents' Cloud is a factory: it turns the work they do once into
+						Your agents' cloud is a factory: it turns the work they do once into
 						durable software that keeps running. Every plan is the whole
 						factory. You pay for volume.
 					</p>

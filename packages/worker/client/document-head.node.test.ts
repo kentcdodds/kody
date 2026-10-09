@@ -134,7 +134,7 @@ test('doc artwork and blog posts route Open Graph cards through generated paths'
 			blogPost: {
 				ok: true,
 				slug: 'your-assistants-home',
-				title: "Your Agents' Cloud",
+				title: "Your agents' cloud",
 				date: '2026-07-18',
 				description: 'A home for your agents.',
 				placeholder: true,

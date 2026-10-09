@@ -12,7 +12,7 @@
     "#*": "./*",
     "#mcp/*": "./packages/worker/src/mcp/*"
   },
-  "description": "Your Agents' Cloud: the memory, keys, code, and automations your AI agent keeps, portable across every MCP host",
+  "description": "Your agents' cloud: the memory, keys, code, and automations your AI agent keeps, portable across every MCP host",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}": [
       "oxfmt --no-error-on-unmatched-pattern",

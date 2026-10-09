@@ -1,6 +1,6 @@
 import { stripOgEmphasis } from '#universal/og-emphasis.ts'
 
-const homeOgImageTitle = 'Your Agents\u2019\n**Cloud**'
+const homeOgImageTitle = 'Your agents\u2019\n**cloud**'
 const homeOgImageSubtitle =
 	'You shouldn\u2019t have to start over in every agent.'
 
@@ -28,7 +28,7 @@ export type PublicOgPage = {
 export const publicOgPages = {
 	home: {
 		// Locked share card. `**` is accent emphasis in the PNG. The newline is
-		// the 1200×630 break (after "over"), not a wording change. Meta uses
+		// the 1200×630 break (after "agents'"), not a wording change. Meta uses
 		// the same words with the markers removed.
 		imageTitle: homeOgImageTitle,
 		imageSubtitle: homeOgImageSubtitle,
@@ -54,7 +54,7 @@ export const publicOgPages = {
 		path: '/blog',
 	},
 	login: {
-		imageTitle: 'Your Agents\u2019 Cloud',
+		imageTitle: 'Your agents\u2019 cloud',
 		imageSubtitle:
 			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign in — Kody',
@@ -63,7 +63,7 @@ export const publicOgPages = {
 		path: '/login',
 	},
 	signup: {
-		imageTitle: 'Your Agents\u2019 Cloud',
+		imageTitle: 'Your agents\u2019 cloud',
 		imageSubtitle:
 			"For all the agents you use today,\nand the ones you'll use tomorrow",
 		ogTitle: 'Sign up — Kody',

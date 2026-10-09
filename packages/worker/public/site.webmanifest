@@ -1,7 +1,7 @@
 {
 	"name": "Kody",
 	"short_name": "Kody",
-	"description": "Your Agents' Cloud",
+	"description": "Your agents' cloud",
 	"icons": [
 		{
 			"src": "/android-chrome-192x192.png",

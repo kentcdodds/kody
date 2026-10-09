@@ -8,7 +8,7 @@ import { mcpServerInstructionsClientHeadLimitChars } from '#mcp/mcp-user-server-
  *
  * Copy is Kent-locked; change only with an explicit server-instructions update.
  */
-export const baseMcpServerInstructions = `Kody is Your Agents' Cloud: the user's personal software platform of primitives including:
+export const baseMcpServerInstructions = `Kody is Your agents' cloud: the user's personal software platform of primitives including:
 
 - memory
 - secrets

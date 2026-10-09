@@ -132,13 +132,13 @@ catastrophic. That's the trade, and I think it's a great one.
 
 ## Why this is the bar
 
-Kody is Your Agents' Cloud: the memory, keys, code, and automations it keeps, no
+Kody is Your agents' cloud: the memory, keys, code, and automations it keeps, no
 matter which agent I'm talking to. You connect the agent you already use over
 MCP
 ([here's how](https://github.com/kentcdodds/kody/blob/main/docs/use/connect-your-agent.md)),
 and everything it accumulates lives in an account you own.
 
-Your Agents' Cloud holding 51 keys had better be built like it. The full secrets
+Your agents' cloud holding 51 keys had better be built like it. The full secrets
 model is documented at
 [Secrets and host approval](https://github.com/kentcdodds/kody/blob/main/docs/use/secrets-and-values.md),
 and the code behind every claim in this post is in

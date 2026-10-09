@@ -42,9 +42,9 @@ test('locked homepage copy names the six primitives', () => {
 		'',
 	)
 	expect(withoutTriggersBody).not.toMatch(/\u2014|—/)
-	expect(landingHeroHeadline).toBe('Your Agents\u2019 Cloud')
+	expect(landingHeroHeadline).toBe('Your agents\u2019 cloud')
 	expect(landingHeroHeadline.endsWith(landingHeroHeadlineEmphasis)).toBe(true)
-	expect(landingHeroHeadlineEmphasis).toBe('Cloud')
+	expect(landingHeroHeadlineEmphasis).toBe('cloud')
 	expect(landingHeroSubhead).toBe(
 		'You shouldn\u2019t have to start over in every agent.',
 	)

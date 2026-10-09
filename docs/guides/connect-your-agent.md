@@ -12,7 +12,7 @@ category: platform
 
 # Connect your agent
 
-Kody is Your Agents' Cloud, and you reach it over MCP. Keep using the agent you
+Kody is Your agents' cloud, and you reach it over MCP. Keep using the agent you
 like: Cursor, ChatGPT, Codex, Claude Desktop, Claude Code, Copilot, Grok,
 Gemini, OpenCode, OpenClaw, Muse, Devin, or any other agent that supports MCP.
 That agent stays the place you talk and work. Kody adds memory, secrets it never
