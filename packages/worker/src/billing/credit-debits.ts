@@ -169,12 +169,16 @@ async function writeCreditDebitCursor(input: {
 }
 
 /**
- * Entitlement columns prefer the live org row and fall back to `users` when
- * that org is missing (same read as `getUserEntitlement`).
+ * Entitlement columns come from the whole live org row when one exists, and
+ * from `users` only when it does not. Per-column COALESCE would mix a partial
+ * org row with the user row. Same read as `getUserEntitlement`.
  */
 function creditDebitEntitlementSelectSql() {
 	return userEntitlementColumns
-		.map((column) => `COALESCE(o.${column}, u.${column}) AS ${column}`)
+		.map(
+			(column) =>
+				`CASE WHEN o.id IS NOT NULL THEN o.${column} ELSE u.${column} END AS ${column}`,
+		)
 		.join(', ')
 }
 
@@ -200,7 +204,8 @@ export async function listCreditDebitCandidates(input: {
 				COALESCE(w.auto_refill_enabled, 0) AS auto_refill_enabled,
 				COALESCE(w.notify_low_balance, 1) AS notify_low_balance,
 				COALESCE(u.email, '') AS email,
-				COALESCE(o.stripe_customer_id, u.stripe_customer_id) AS stripe_customer_id,
+				CASE WHEN o.id IS NOT NULL THEN o.stripe_customer_id
+					ELSE u.stripe_customer_id END AS stripe_customer_id,
 				${creditDebitEntitlementSelectSql()}
 			 FROM (
 				SELECT w.user_id AS id

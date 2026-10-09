@@ -256,3 +256,34 @@ test('a personal org that shares stable_user_id is settled once', async () => {
 	}).getBudgetSpend({ month })
 	expect(spend.users[user.stableUserId]).toBe(oneBillableDayMicroUsd)
 })
+
+test('a live org row supplies every billing column, even when the user row disagrees', async () => {
+	const user = await seedPersonalPro(
+		'org-row-wins',
+		`cus_${crypto.randomUUID().slice(0, 8)}`,
+	)
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (
+			id, slug, plan, entitlement_ladder, stripe_customer_id, stripe_plan,
+			stripe_credits_eligible, created_at, updated_at
+		) VALUES (?, ?, 'free', 'public', NULL, NULL, 0, ?, ?)`,
+	)
+		.bind(
+			user.stableUserId,
+			`partial-${user.stableUserId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	await fund(user.stableUserId)
+	const candidates = await candidatesFor(user.stableUserId)
+	expect(candidates).toHaveLength(1)
+	expect(candidates[0]).toMatchObject({
+		user_id: user.stableUserId,
+		email: user.email,
+		stripe_customer_id: null,
+		plan: 'free',
+		stripe_plan: null,
+		stripe_credits_eligible: 0,
+	})
+})
