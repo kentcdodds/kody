@@ -93,15 +93,17 @@ export async function getConnectionProfileByName(input: {
 	const name = normalizeConnectionProfileName(input.name)
 	if (!name) return null
 	const orgId = input.orgId?.trim()
+	// Always filter by user_id: uniqueness is still (user_id, name). Org id
+	// narrows further when the caller knows which org the profile belongs to.
 	const row = orgId
 		? await input.db
 				.prepare(
 					`SELECT id, user_id, org_id, name, grants_json, created_at, updated_at
 					 FROM connection_profiles
-					 WHERE org_id = ? AND name = ?
+					 WHERE user_id = ? AND org_id = ? AND name = ?
 					 LIMIT 1`,
 				)
-				.bind(orgId, name)
+				.bind(input.userId, orgId, name)
 				.first<ConnectionProfileRow>()
 		: await input.db
 				.prepare(

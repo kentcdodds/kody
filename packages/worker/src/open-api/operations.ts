@@ -313,7 +313,10 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['GET', '/v1/community/profile', 'communityProfileGet'],
 		['PATCH', '/v1/community/profile', 'communityProfileUpdate'],
 	]),
-	nativeRoute('GET', '/v1/tokens', 'tokenList', 'none'),
+	// Own-token create needs no org permission (spec §5.3). List/get/revoke of
+	// account tokens require token:read / token:delete so authorize step 4
+	// still narrows API-token callers (replaces pre-P4 x-kody-scope).
+	nativeRoute('GET', '/v1/tokens', 'tokenList', 'token:read'),
 	nativeRoute('POST', '/v1/tokens', 'tokenCreate', 'none'),
 	...capabilityRoutes('tokens', [
 		['POST', '/v1/tokens/bootstrap', 'cliCredentialBootstrap'],
@@ -332,9 +335,14 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		'none',
 	),
 	nativeRoute('DELETE', '/v1/tokens/current', 'tokenRevokeCurrent', 'none'),
-	nativeRoute('GET', '/v1/tokens/{token_id}', 'tokenGet', 'none'),
-	nativeRoute('POST', '/v1/tokens/{token_id}/rotate', 'tokenRotate', 'none'),
-	nativeRoute('DELETE', '/v1/tokens/{token_id}', 'tokenRevoke', 'none'),
+	nativeRoute('GET', '/v1/tokens/{token_id}', 'tokenGet', 'token:read'),
+	nativeRoute(
+		'POST',
+		'/v1/tokens/{token_id}/rotate',
+		'tokenRotate',
+		'token:delete',
+	),
+	nativeRoute('DELETE', '/v1/tokens/{token_id}', 'tokenRevoke', 'token:delete'),
 	nativeRoute(
 		'GET',
 		'/v1/capability-proxy/session',

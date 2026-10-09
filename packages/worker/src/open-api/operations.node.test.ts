@@ -244,6 +244,20 @@ test('the OpenAPI document covers every operation with resolvable refs', async (
 	const tokenCreate = document.paths['/v1/tokens']?.['post']
 	expect(tokenCreate?.['x-kody-permission']).toBe('none')
 	expect(tokenCreate?.requestBody?.required).toBe(true)
+	expect(document.paths['/v1/tokens']?.['get']?.['x-kody-permission']).toBe(
+		'token:read',
+	)
+	expect(
+		document.paths['/v1/tokens/{token_id}']?.['get']?.['x-kody-permission'],
+	).toBe('token:read')
+	expect(
+		document.paths['/v1/tokens/{token_id}']?.['delete']?.['x-kody-permission'],
+	).toBe('token:delete')
+	expect(
+		document.paths['/v1/tokens/{token_id}/rotate']?.['post']?.[
+			'x-kody-permission'
+		],
+	).toBe('token:delete')
 	const secretSet = document.paths['/v1/secrets/{scope}/{name}']?.['put']
 	const secretBody = secretSet?.requestBody?.content['application/json'].schema
 	expect(

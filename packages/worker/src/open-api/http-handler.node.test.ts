@@ -255,7 +255,7 @@ test('writes secrets through path params and never returns the value', async () 
 
 test('token minting enforces parent scopes for local-execute', async () => {
 	const api = await createApi()
-	const parent = await api.mint(['token:delete', 'package:read'])
+	const parent = await api.mint(['token:delete', 'token:read', 'package:read'])
 	const child = await api.call('POST', '/v1/tokens', {
 		token: parent,
 		body: {
@@ -311,6 +311,11 @@ test('token minting enforces parent scopes for local-execute', async () => {
 	expect(listed.status).toBe(200)
 	expect(listed.body['tokens']).toHaveLength(2)
 	expect(JSON.stringify(listed.body)).not.toContain(childOk.body['token'])
+
+	const noTokenRead = await api.mint(['package:read'])
+	const listDenied = await api.call('GET', '/v1/tokens', { token: noTokenRead })
+	expect(listDenied.status).toBe(403)
+	expect(listDenied.body.error?.code).toMatch(/insufficient_scope|forbidden/)
 })
 
 test('a token can only rotate tokens it could have minted', async () => {
