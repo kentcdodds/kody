@@ -725,13 +725,15 @@ routed from `packages/worker/src/index.ts`.
   is the app origin (`getAppBaseUrl`). `sub` identifies the connection: personal
   (and personal-org) grants use the account `stable_user_id`; organization
   grants use `org:<orgId>:user:<userId>` so one person can connect both a
-  personal and an org account to the same OIDC client. ID tokens are RS256 JWTs
-  signed with `OIDC_SIGNING_PRIVATE_KEY_PEM` (`kid` = `OIDC_SIGNING_KEY_ID`).
-  Discovery: `/.well-known/openid-configuration`; JWKS:
-  `/.well-known/jwks.json`; UserInfo: `/oauth/userinfo` (Bearer access token;
-  fail-closed when email is unverified). RP-Initiated Logout: `/oauth/logout`.
-  RFC 7009 revocation is the token endpoint (`/oauth/token`); both
-  `/.well-known/openid-configuration` and
+  personal and an org account to the same OIDC client. Existing grants without
+  `metadata.orgId` or `props.orgId` keep the `userId` subject on refresh and
+  code exchange; reauthorization is required for an organization-specific
+  subject. ID tokens are RS256 JWTs signed with `OIDC_SIGNING_PRIVATE_KEY_PEM`
+  (`kid` = `OIDC_SIGNING_KEY_ID`). Discovery:
+  `/.well-known/openid-configuration`; JWKS: `/.well-known/jwks.json`; UserInfo:
+  `/oauth/userinfo` (Bearer access token; fail-closed when email is unverified).
+  RP-Initiated Logout: `/oauth/logout`. RFC 7009 revocation is the token
+  endpoint (`/oauth/token`); both `/.well-known/openid-configuration` and
   `/.well-known/oauth-authorization-server` advertise that URL as
   `revocation_endpoint`. OpenID Connect discovery also lists
   `revocation_endpoint_auth_methods_supported` matching
