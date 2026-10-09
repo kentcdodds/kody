@@ -833,14 +833,14 @@ export async function refreshStripePlanForOrg(input: {
 	if (!previous) {
 		throw new Error(`Cannot refresh Stripe plan: missing org ${orgId}.`)
 	}
-	// Null customer is allowed (link-then-refresh race). A different stored
-	// customer must not forgive usage or queue billing mail for this org.
-	if (
-		previous.stripe_customer_id != null &&
-		previous.stripe_customer_id !== input.customerId
-	) {
+	// Checkout link writes stripe_customer_id before refresh. Require that
+	// link here so forgive/email cannot run against an unlinked or foreign
+	// customer while the guarded UPDATE matches zero rows.
+	if (previous.stripe_customer_id !== input.customerId) {
 		throw new Error(
-			`Cannot refresh Stripe plan: Stripe customer mismatch for org ${orgId}.`,
+			previous.stripe_customer_id == null
+				? `Cannot refresh Stripe plan: org ${orgId} has no Stripe customer linked yet.`
+				: `Cannot refresh Stripe plan: Stripe customer mismatch for org ${orgId}.`,
 		)
 	}
 	const subscriptions = await listSubscriptions(input.env, input.customerId)

@@ -597,3 +597,43 @@ test('refreshStripePlanForOrg rejects a different Stripe customer before forgive
 		stripe_plan: 'pro',
 	})
 })
+
+test('refreshStripePlanForOrg defers until the org has a linked Stripe customer', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const teamOrgId = testStableUserIdFromEmail(
+		`team-unlinked-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`team-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+
+	using _fetch = stubStripeFetch({
+		subscriptions: subscriptionList('sub_unlinked', 'active'),
+	})
+	await expect(
+		refreshStripePlanForOrg({
+			env: createBillingEnv(),
+			orgId: teamOrgId,
+			customerId: 'cus_unlinked',
+			now,
+		}),
+	).rejects.toThrow(/no Stripe customer linked yet/)
+	const org = await env.APP_DB.prepare(
+		`SELECT stripe_customer_id, stripe_plan FROM orgs WHERE id = ?`,
+	)
+		.bind(teamOrgId)
+		.first<{ stripe_customer_id: string | null; stripe_plan: string | null }>()
+	expect(org).toEqual({
+		stripe_customer_id: null,
+		stripe_plan: null,
+	})
+})
