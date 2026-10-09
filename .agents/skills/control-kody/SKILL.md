@@ -69,7 +69,11 @@ before opening a Feature Map PR.
 
 - Local: `jane@example.com` / `ilikecode` (non-admin)
 - Preview: `me@kentcdodds.com` / `ilikecode` (non-admin, empty until you create
-  data through JSON APIs, or `package-create` for a saved package)
+  data through JSON APIs, or `package-create` for a saved package). Experimenter
+  flags stay off unless the PR is labeled `preview-flag:<key>` for a key in
+  `tools/preview-seed-flag-allowlist.ts`. Example: label
+  `preview-flag:connection-profiles`, wait for 🔎 Preview, then
+  `npm run control-kody -- request GET /account/connected-agents.json --origin <preview> --dump --contains '"connectionProfilesEnabled":true'`.
 - `/admin` 403 and `/mcp` 401 are expected for those seeds
 - Admin-gated states cannot be preview-tested with the public seed; use the
   local admin account plus Workers or unit tests

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
+import { previewSeedFlagAllowlist } from './preview-seed-flag-allowlist.ts'
 
 /**
  * SQL builders shared by the seeding CLI (`tools/seed-test-data.ts`), the E2E
@@ -91,6 +92,26 @@ ON CONFLICT(id) DO UPDATE SET
  * Per-user feature-flag override (forced on) for a seeded account. Resolves
  * `users.id` by email so the FK matches the numeric override column.
  */
+/**
+ * Drop allowlisted preview-seed overrides this seed is not turning on.
+ * Preview D1 is reused across deploys, and the upsert only forces flags on.
+ */
+export function buildClearUnrequestedPreviewSeedFlagsSql(input: {
+	email: string
+	enableFlags: ReadonlyArray<string>
+}) {
+	const requested = new Set(input.enableFlags)
+	const clearKeys = previewSeedFlagAllowlist.filter(
+		(key) => !requested.has(key),
+	)
+	if (clearKeys.length === 0) return ''
+	const keys = clearKeys.map((key) => quoteSqlString(key)).join(', ')
+	return `
+DELETE FROM feature_flag_user_overrides
+WHERE user_id = (SELECT id FROM users WHERE email = ${quoteSqlString(input.email)})
+	AND flag_key IN (${keys});`.trim()
+}
+
 export function buildSeedFeatureFlagOverrideSql(input: {
 	email: string
 	flagKey: FeatureFlagKey
