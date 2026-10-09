@@ -8,6 +8,7 @@ import { AccountConnectionsRoute } from '#client/routes/account-connections.tsx'
 import {
 	accountNavItemsFor,
 	accountPackagesNavHref,
+	accountRailOrgSlug,
 } from '#client/routes/account-management-components.tsx'
 import { type SessionInfo } from '#client/session.ts'
 import {
@@ -200,6 +201,10 @@ test('connections views parse from the pathname', () => {
 		['/account/connections/new/nope', null],
 		['/account/connections/new/cursor/x', null],
 		['/account/connections/nope', null],
+		['/@jane/connections', { kind: 'list' }],
+		['/@jane/connections/new', { kind: 'new', agent: null }],
+		['/@jane/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/@jane/connections/new/nope', null],
 	] as const
 	expect(
 		cases.map(([pathname]) => [
@@ -287,7 +292,8 @@ test('connection profiles list only granted packages and add more through a pack
 
 test('account rail lists Connections and Repositories at the same level as the other sections', () => {
 	const items = accountNavItemsFor({
-		username: 'jane',
+		orgSlug: 'jane',
+		personal: true,
 		showShared: true,
 	})
 	expect(items.map((item) => item.label)).toContain('Shared')
@@ -307,5 +313,43 @@ test('account rail lists Connections and Repositories at the same level as the o
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
 		'/@jane',
 	)
-	expect(accountPackagesNavHref(null)).toBe('/account/packages')
+	expect(accountPackagesNavHref({ orgSlug: null, personal: true })).toBe(
+		'/account/packages',
+	)
+})
+
+test('account rail keeps the selected organization slug for section links', () => {
+	const items = accountNavItemsFor({
+		orgSlug: 'acme',
+		personal: false,
+		showShared: false,
+	})
+	expect(items.find((item) => item.label === 'Secrets')?.href).toBe(
+		'/@acme/secrets',
+	)
+	expect(items.find((item) => item.label === 'Jobs')?.href).toBe('/@acme/jobs')
+	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
+		'/@acme/packages',
+	)
+})
+
+test('account rail org slug prefers the path org over username', () => {
+	const organizations = [
+		{ slug: 'ada-old', personal: true },
+		{ slug: 'acme', personal: false },
+	]
+	expect(
+		accountRailOrgSlug({
+			pathname: '/@acme/jobs',
+			organizations,
+			username: 'ada-new',
+		}),
+	).toBe('acme')
+	expect(
+		accountRailOrgSlug({
+			pathname: '/account',
+			organizations,
+			username: 'ada-new',
+		}),
+	).toBe('ada-old')
 })

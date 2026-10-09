@@ -7,8 +7,8 @@ import {
 
 /**
  * Short-lived redirects from `/account/...` resource pages to
- * `/@<signup slug>/...`. Person pages and JSON stay put. Removal is tracked
- * by the cleanup issue filed with this change.
+ * `/@<signup slug>/...` (not last-used — storage still keys personal data by
+ * person id). Person pages and JSON stay put. Removal is tracked by #3063.
  */
 export function createOrgAccountRedirectMiddleware(env: Env): Middleware {
 	return async ({ request, url }, next) => {

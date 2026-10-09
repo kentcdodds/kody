@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -140,11 +141,27 @@ export function createOrgSectionHandler(
 					status: 404,
 				})
 			}
+			// Storage still keys resources by person id (personal org id ===
+			// userId). Non-personal org URLs would show the actor's personal
+			// data under the wrong slug until storage follows request.org.id.
+			const isPersonalOrg =
+				resolution.org.id === personalOrgId(user.mcpUser.userId)
+			if (!isPersonalOrg) {
+				return renderAppPage({
+					request: ctx.request,
+					env,
+					title: 'Organization resources unavailable',
+					notFound: true,
+					status: 404,
+				})
+			}
 			const slug = resolution.org.slug ?? ctx.params.orgSlug ?? ''
 			const params = {
 				...ctx.params,
 				...sectionParams(section, ctx.params.rest),
-				...(section === 'packages' ? { username: slug } : {}),
+				// Profile lookup is by users.username, which can diverge from
+				// the immutable personal-org slug after a rename.
+				...(section === 'packages' ? { username: user.username } : {}),
 			}
 			const response = await inner.handler({
 				request: ctx.request,

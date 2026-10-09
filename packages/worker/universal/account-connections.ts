@@ -11,6 +11,7 @@ import {
 	isMcpClientKind,
 	mcpClientTabs,
 } from '#universal/onboarding-mcp-clients.ts'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 
 export type AccountConnectionsView =
@@ -42,6 +43,7 @@ export function accountConnectionsNewHref(agent: McpClientKind | null) {
 export function parseAccountConnectionsPathname(
 	pathname: string,
 ): AccountConnectionsView | null {
+	pathname = accountAliasPath(pathname)
 	const base = routes.accountConnections.href()
 	if (pathname === base || pathname === `${base}/`) return { kind: 'list' }
 	const newBase = routes.accountConnectionNew.href()

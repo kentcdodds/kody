@@ -2,6 +2,7 @@ import { type Handle, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
+import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -105,16 +106,27 @@ export async function accountInvitesRouteLoader(
 }
 
 export function AccountInvitesRoute(handle: Handle) {
-	const initialHref = readCurrentRouterHref(handle)
-	const consumed = tryConsumeRouteLoaderData(
-		handle,
-		'accountInvites',
-		initialHref,
-	)
-	const invites = consumed?.ok ? consumed.invites : []
+	const invitesData = createRouteData({
+		key: 'accountInvites',
+		async load(_href, signal) {
+			const response = await fetch(routes.accountInvitesApi.href(), {
+				headers: { Accept: 'application/json' },
+				credentials: 'include',
+				signal,
+			})
+			if (response.status === 401) return routeDataRedirect('/login')
+			const payload = await readJson<AccountInvitesLoaderData>(response)
+			if (!response.ok || !payload?.ok) {
+				throw new Error('Unable to load invites.')
+			}
+			return payload
+		},
+	})
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
+		const snapshot = invitesData.read(handle, href)
+		const invites = snapshot.data?.ok ? snapshot.data.invites : []
 		return (
 			<AccountManagementShell>
 				<AccountPageHeader

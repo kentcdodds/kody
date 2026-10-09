@@ -48,29 +48,30 @@ export async function createOrganization(
 	const orgId = ownerIdFromStored(String(mintPersonId()))
 	const now = new Date().toISOString()
 	try {
-		await db
-			.prepare(
-				`INSERT INTO orgs (
-					id, slug, display_name, created_by_user_id, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?)`,
-			)
-			.bind(orgId, slug, displayName, input.personId, now, now)
-			.run()
-		await db
-			.prepare(
-				`INSERT INTO org_memberships (
-					org_id, user_id, role, invited_by_user_id, created_at, deleted_at
-				) VALUES (?, ?, 'owner', NULL, ?, NULL)`,
-			)
-			.bind(orgId, input.personId, now)
-			.run()
-		await db
-			.prepare(
-				`INSERT INTO handles (handle, user_id, org_id, created_at)
-				 VALUES (?, NULL, ?, ?)`,
-			)
-			.bind(slug, orgId, now)
-			.run()
+		// One batch so a late handle conflict rolls back the org + membership
+		// inserts instead of leaving a slug-squatting orphan.
+		await db.batch([
+			db
+				.prepare(
+					`INSERT INTO orgs (
+						id, slug, display_name, created_by_user_id, created_at, updated_at
+					) VALUES (?, ?, ?, ?, ?, ?)`,
+				)
+				.bind(orgId, slug, displayName, input.personId, now, now),
+			db
+				.prepare(
+					`INSERT INTO org_memberships (
+						org_id, user_id, role, invited_by_user_id, created_at, deleted_at
+					) VALUES (?, ?, 'owner', NULL, ?, NULL)`,
+				)
+				.bind(orgId, input.personId, now),
+			db
+				.prepare(
+					`INSERT INTO handles (handle, user_id, org_id, created_at)
+					 VALUES (?, NULL, ?, ?)`,
+				)
+				.bind(slug, orgId, now),
+		])
 	} catch (error) {
 		const field = getUniqueConstraintField(error)
 		if (field) return { ok: false, error: 'That name is taken.' }

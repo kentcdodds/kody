@@ -2,6 +2,7 @@ import { css, type Handle, type RemixNode } from 'remix/component'
 import {
 	accountAliasPath,
 	orgResourcePath,
+	orgSlugFromPathname,
 	parseOrgResourcePath,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -390,43 +391,70 @@ const adminNavItems = [
 }>
 
 /**
- * Packages live on the signed-in user's public profile (`/@username`);
- * `/account/packages` only 302s there. Link straight to the canonical page
- * when the session knows the username and let the redirect cover the rare
- * case where it does not, so the rail never points at a dead route.
+ * Packages for the signup organization live on the public profile home
+ * (`/@slug`). Non-personal org package lists use `/@slug/packages` (gated
+ * until storage follows `request.org.id`). `/account/packages` only 302s
+ * when the session has no org slug yet.
  */
-export function accountPackagesNavHref(username: string | null | undefined) {
-	return username
-		? routes.profile.href({ username })
-		: routes.accountPackages.href()
+export function accountPackagesNavHref(input: {
+	orgSlug: string | null | undefined
+	personal: boolean
+}) {
+	if (!input.orgSlug) return routes.accountPackages.href()
+	return input.personal
+		? routes.profile.href({ username: input.orgSlug })
+		: orgResourcePath(input.orgSlug, 'packages')
 }
 
 function orgSectionHref(
-	username: string | null | undefined,
+	orgSlug: string | null | undefined,
 	section: OrgOwnedAccountSection,
 	fallback: string,
 ) {
-	return username ? orgResourcePath(username, section) : fallback
+	return orgSlug ? orgResourcePath(orgSlug, section) : fallback
+}
+
+/**
+ * Org slug for account-rail links: the org already in the URL when the
+ * person belongs to it, otherwise their signup organization. Username is
+ * only a last resort — personal org slugs stay put across renames.
+ */
+export function accountRailOrgSlug(input: {
+	pathname: string
+	organizations: ReadonlyArray<{ slug: string; personal: boolean }>
+	username: string | null | undefined
+}) {
+	const fromPath = orgSlugFromPathname(input.pathname)
+	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
+		return fromPath
+	}
+	return (
+		input.organizations.find((org) => org.personal)?.slug ??
+		input.username?.trim() ??
+		null
+	)
 }
 
 type AccountNavItem = { href: string; label: string; icon: IconName }
 
 /** Account rail items in display order for the signed-in session. */
 export function accountNavItemsFor(input: {
-	username: string | null | undefined
+	orgSlug: string | null | undefined
+	/** True when `orgSlug` is the signup (personal) organization. */
+	personal: boolean
 	showShared: boolean
 }): Array<AccountNavItem> {
 	return [
 		{ href: '/account', label: 'Overview', icon: 'home' },
 		{
-			href: orgSectionHref(input.username, 'waiting', '/account/waiting'),
+			href: orgSectionHref(input.orgSlug, 'waiting', '/account/waiting'),
 			label: 'Waiting',
 			icon: 'clock',
 		},
 		{ href: '/account/experiments', label: 'Experiments', icon: 'star' },
 		{
 			href: orgSectionHref(
-				input.username,
+				input.orgSlug,
 				'connections',
 				routes.accountConnections.href(),
 			),
@@ -434,7 +462,10 @@ export function accountNavItemsFor(input: {
 			icon: 'link',
 		},
 		{
-			href: accountPackagesNavHref(input.username),
+			href: accountPackagesNavHref({
+				orgSlug: input.orgSlug,
+				personal: input.personal,
+			}),
 			label: 'Repositories',
 			icon: 'box',
 		},
@@ -442,7 +473,7 @@ export function accountNavItemsFor(input: {
 			? [
 					{
 						href: orgSectionHref(
-							input.username,
+							input.orgSlug,
 							'shared',
 							routes.accountShared.href(),
 						),
@@ -454,23 +485,23 @@ export function accountNavItemsFor(input: {
 		{ href: '/account/billing', label: 'Billing', icon: 'wallet' },
 		{ href: '/account/usage', label: 'Usage', icon: 'chart' },
 		{
-			href: orgSectionHref(input.username, 'activity', '/account/activity'),
+			href: orgSectionHref(input.orgSlug, 'activity', '/account/activity'),
 			label: 'Activity',
 			icon: 'trending-up',
 		},
 		{
-			href: orgSectionHref(input.username, 'jobs', '/account/jobs'),
+			href: orgSectionHref(input.orgSlug, 'jobs', '/account/jobs'),
 			label: 'Jobs',
 			icon: 'briefcase',
 		},
 		{
-			href: orgSectionHref(input.username, 'workflows', '/account/workflows'),
+			href: orgSectionHref(input.orgSlug, 'workflows', '/account/workflows'),
 			label: 'Workflows',
 			icon: 'refresh',
 		},
 		{
 			href: orgSectionHref(
-				input.username,
+				input.orgSlug,
 				'webhooks',
 				routes.accountWebhooks.href(),
 			),
@@ -478,13 +509,13 @@ export function accountNavItemsFor(input: {
 			icon: 'cloud',
 		},
 		{
-			href: orgSectionHref(input.username, 'secrets', '/account/secrets'),
+			href: orgSectionHref(input.orgSlug, 'secrets', '/account/secrets'),
 			label: 'Secrets',
 			icon: 'key',
 		},
 		{
 			href: orgSectionHref(
-				input.username,
+				input.orgSlug,
 				'secret-providers',
 				'/account/secret-providers',
 			),
@@ -493,7 +524,7 @@ export function accountNavItemsFor(input: {
 		},
 		{
 			href: orgSectionHref(
-				input.username,
+				input.orgSlug,
 				'integrations',
 				'/account/integrations',
 			),
@@ -502,7 +533,7 @@ export function accountNavItemsFor(input: {
 		},
 		{
 			href: orgSectionHref(
-				input.username,
+				input.orgSlug,
 				'mcp-servers',
 				'/account/mcp-servers',
 			),
@@ -510,12 +541,12 @@ export function accountNavItemsFor(input: {
 			icon: 'server',
 		},
 		{
-			href: orgSectionHref(input.username, 'memories', '/account/memories'),
+			href: orgSectionHref(input.orgSlug, 'memories', '/account/memories'),
 			label: 'Memories',
 			icon: 'book',
 		},
 		{
-			href: orgSectionHref(input.username, 'email', '/account/email'),
+			href: orgSectionHref(input.orgSlug, 'email', '/account/email'),
 			label: 'Email',
 			icon: 'mail',
 		},
@@ -558,13 +589,23 @@ export function AccountPageHeader(handle: Handle<AccountPageHeaderProps>) {
 		const currentPath = new URL(handle.props.currentHref, 'http://localhost')
 			.pathname
 		const session = readAppSession(handle)?.session ?? null
+		const organizations = session?.organizations ?? []
+		const orgSlug = accountRailOrgSlug({
+			pathname: currentPath,
+			organizations,
+			username: session?.username,
+		})
+		const personal =
+			organizations.find((org) => org.slug === orgSlug)?.personal ??
+			Boolean(orgSlug && orgSlug === session?.username)
 		const showShared = isFeatureFlagEnabled(session, packageShareGrantsFlagKey)
 		const explainer =
 			!showShared && currentPath === routes.accountShared.href()
 				? null
 				: resolveEntityExplainer(currentPath)
 		const navItems = accountNavItemsFor({
-			username: session?.username,
+			orgSlug,
+			personal,
 			showShared,
 		})
 
