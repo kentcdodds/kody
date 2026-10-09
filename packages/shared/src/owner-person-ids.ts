@@ -89,10 +89,10 @@ export function ownerIdFromStored<T extends string | null | undefined>(
 }
 
 /**
- * The person's personal org: the owner their own (non-delegated) actions read
- * and write. A personal org reuses the person's stable id, so this is the
- * identity. Acting in any other org must go through an explicit membership or
- * grant check, never through this function.
+ * The person's personal org: the owner their own actions read and write. A
+ * personal org reuses the person's stable id, so this is the identity. Acting
+ * in any other org must go through an explicit membership or grant check, never
+ * through this function.
  */
 export function personalOrgId(person: PersonId): OwnerId {
 	return person as string as OwnerId

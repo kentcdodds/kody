@@ -8,7 +8,6 @@ const usablePasswordHashPrefix = 'pbkdf2_sha256$'
 export const unusablePasswordHash = {
 	oauthCreated: 'oauth_created_no_usable_password',
 	adminCreated: 'admin_created_no_usable_password',
-	platformAccount: 'platform_account_no_usable_password',
 	reclaimedUnverified: 'reclaimed_unverified_no_usable_password',
 } as const
 

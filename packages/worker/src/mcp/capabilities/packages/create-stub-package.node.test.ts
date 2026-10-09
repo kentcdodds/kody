@@ -84,7 +84,7 @@ function create(
 	})
 }
 
-test('createStubSavedPackage rejects invalid kody ids and registers stubs for owner and delegated scopes', async () => {
+test('createStubSavedPackage rejects invalid kody ids and registers stubs for personal and org scopes', async () => {
 	const rejections = [
 		{
 			args: { kodyId: 'Not_A_Valid_Id' },
