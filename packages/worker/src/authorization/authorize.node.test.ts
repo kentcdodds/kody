@@ -170,7 +170,9 @@ test('a resource grant lets a member act on that resource only', () => {
 	expect(
 		checkPermission(memberAccess, 'package:execute', packageResource()).allowed,
 	).toBe(true)
-	expect(checkPermission(memberAccess, 'package:execute').allowed).toBe(false)
+	// Without a resource, surface checks pass when the permission is held
+	// somewhere in the org (Teams spec §6.3).
+	expect(checkPermission(memberAccess, 'package:execute').allowed).toBe(true)
 	expect(
 		checkPermission(
 			memberAccess,
