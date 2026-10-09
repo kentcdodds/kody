@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import {
 	claimJobRow,
 	disableExpiredJobRowsForUser,
@@ -43,7 +44,8 @@ async function ensureJobsSchema() {
 			claimed_scheduled_for TEXT,
 			retry_scheduled_for TEXT,
 			retry_count INTEGER NOT NULL DEFAULT 0,
-			last_completed_scheduled_for TEXT
+			last_completed_scheduled_for TEXT,
+			deleted_at TEXT
 		)`,
 	).run()
 	try {
@@ -53,6 +55,7 @@ async function ensureJobsSchema() {
 	} catch {
 		// Column already present when migrations or a prior CREATE included it.
 	}
+	await ensureSoftDeleteTestColumns(env.APP_DB, ['jobs'])
 	await env.APP_DB.prepare(`DELETE FROM jobs`).run()
 }
 

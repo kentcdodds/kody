@@ -1,3 +1,5 @@
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
+
 /**
  * Non-destructive schema for `user_storage_buckets` in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
@@ -14,6 +16,7 @@ export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 	last_seen_at TEXT NOT NULL,
 	estimated_bytes INTEGER,
 	estimated_bytes_updated_at TEXT,
+	deleted_at TEXT,
 	PRIMARY KEY (user_id, storage_id)
 )`,
 		)
@@ -24,4 +27,5 @@ export async function ensureUserStorageBucketsTestSchema(db: D1Database) {
 			 ON user_storage_buckets(user_id)`,
 		)
 		.run()
+	await ensureSoftDeleteTestColumns(db, ['user_storage_buckets'])
 }

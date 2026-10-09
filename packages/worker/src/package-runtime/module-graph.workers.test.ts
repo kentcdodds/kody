@@ -15,6 +15,7 @@ import { packageAppClientModuleNamePattern } from './package-app-client-module-n
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 const baseUrl = 'https://kody.dev'
@@ -79,6 +80,7 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`)
+	await ensureSoftDeleteTestColumns(env.APP_DB)
 }
 
 function makePackageFiles(

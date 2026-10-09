@@ -1,4 +1,5 @@
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { ensurePersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -49,6 +50,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			hidden INTEGER NOT NULL DEFAULT 0,
 			is_private INTEGER NOT NULL DEFAULT 1,
 			locked_at TEXT,
+			deleted_at TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
@@ -78,6 +80,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 			source_root TEXT NOT NULL,
 			last_external_check_at TEXT,
 			external_check_until TEXT,
+			deleted_at TEXT,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
@@ -116,6 +119,7 @@ export async function ensurePackageSubscriptionTestSchema(db: D1Database) {
 	} catch {
 		// Column already present on newer schemas.
 	}
+	await ensureSoftDeleteTestColumns(db)
 }
 
 /**

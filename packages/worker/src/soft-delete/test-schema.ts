@@ -1,4 +1,4 @@
-import { softDeleteAppTables } from './tables.ts'
+import { softDeleteTables } from './tables.ts'
 
 /**
  * Workers-unit D1 does not apply migrations. Add `deleted_at` to tables that
@@ -6,7 +6,7 @@ import { softDeleteAppTables } from './tables.ts'
  */
 export async function ensureSoftDeleteTestColumns(
 	db: D1Database,
-	tables: ReadonlyArray<string> = softDeleteAppTables,
+	tables: ReadonlyArray<string> = softDeleteTables,
 ) {
 	for (const table of tables) {
 		try {

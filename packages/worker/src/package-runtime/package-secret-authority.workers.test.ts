@@ -19,6 +19,7 @@ import {
 } from './module-graph.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
@@ -109,6 +110,7 @@ async function ensureSecretAuthorityTestSchema() {
 		actor TEXT,
 		created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 	)`)
+	await ensureSoftDeleteTestColumns(env.APP_DB)
 }
 
 async function insertSavedPackage(input: {

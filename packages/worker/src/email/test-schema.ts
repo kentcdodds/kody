@@ -1,4 +1,5 @@
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 export async function ensureEmailTestSchema(db: D1Database) {
 	// Outbound sends increment the entitlement daily counter, so any suite
@@ -37,6 +38,7 @@ export async function ensureEmailTestSchema(db: D1Database) {
 	display_name TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL CHECK (status IN ('verified')),
 	verified_at TEXT,
+	deleted_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
@@ -50,6 +52,7 @@ ON email_sender_identities(user_id, email);`,
 	name TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
 	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+	deleted_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
@@ -62,6 +65,7 @@ ON email_sender_identities(user_id, email);`,
 	local_part TEXT NOT NULL,
 	domain TEXT NOT NULL,
 	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+	deleted_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL,
 	FOREIGN KEY (inbox_id) REFERENCES email_inboxes(id) ON DELETE CASCADE
@@ -74,6 +78,7 @@ ON email_sender_identities(user_id, email);`,
 	value TEXT NOT NULL,
 	effect TEXT NOT NULL CHECK (effect IN ('allow', 'block', 'quarantine')),
 	note TEXT NOT NULL DEFAULT '',
+	deleted_at TEXT,
 	created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL
 );`,
@@ -222,6 +227,7 @@ WHERE provider_event_id IS NOT NULL;`,
 	email TEXT NOT NULL,
 	verified_at TEXT,
 	is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+	deleted_at TEXT,
 	created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_email_notification_destinations_user_email
@@ -311,7 +317,8 @@ ON email_inbound_due_owners(
 	authority TEXT NOT NULL CHECK (authority = 'dedicated'),
 	cutover_at TEXT NOT NULL,
 	graph_mismatch_count INTEGER NOT NULL CHECK (graph_mismatch_count = 0),
-	provider_link_count INTEGER NOT NULL CHECK (provider_link_count = 0)
+	provider_link_count INTEGER NOT NULL CHECK (provider_link_count = 0),
+	deleted_at TEXT
 );`,
 		`INSERT INTO system_email_graph_authority (
 	singleton, authority, cutover_at, graph_mismatch_count, provider_link_count
@@ -320,4 +327,5 @@ ON email_inbound_due_owners(
 	for (const statement of statements) {
 		await db.prepare(statement).run()
 	}
+	await ensureSoftDeleteTestColumns(db)
 }

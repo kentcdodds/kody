@@ -16,6 +16,7 @@ import {
 } from './module-graph.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 /**
  * End-to-end behavior matrix for `packageStorage()` against REAL
@@ -89,6 +90,7 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`)
+	await ensureSoftDeleteTestColumns(env.APP_DB)
 }
 
 function makePackageFiles(

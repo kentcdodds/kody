@@ -5,6 +5,7 @@ import {
 } from '../packages/shared/src/jobs/store.ts'
 // Bundled as text by tools/build-jobs-test-service.ts (esbuild `.sql` loader).
 import jobsInitSql from '../packages/jobs-worker/migrations/0001-jobs-init.sql'
+import jobsSoftDeleteSql from '../packages/jobs-worker/migrations/0002-teams-expand-actor-and-soft-delete.sql'
 
 /**
  * Auxiliary worker for the workers-unit vitest pool: the main worker's test
@@ -17,13 +18,20 @@ import jobsInitSql from '../packages/jobs-worker/migrations/0001-jobs-init.sql'
 
 type StubEnv = { JOBS_DB: D1Database }
 
-const schemaStatements = jobsInitSql
-	.split('\n')
-	.filter((line) => !line.trim().startsWith('--'))
-	.join('\n')
-	.split(';')
-	.map((statement) => statement.trim())
-	.filter((statement) => statement.length > 0)
+function migrationStatements(sql: string) {
+	return sql
+		.split('\n')
+		.filter((line) => !line.trim().startsWith('--'))
+		.join('\n')
+		.split(';')
+		.map((statement) => statement.trim())
+		.filter((statement) => statement.length > 0)
+}
+
+const schemaStatements = [
+	...migrationStatements(jobsInitSql),
+	...migrationStatements(jobsSoftDeleteSql),
+]
 
 // Runs on every call (not memoized): the pool's isolated storage can reset
 // the aux worker's D1 between tests while module state survives.
@@ -32,7 +40,14 @@ async function ensureSchema(db: D1Database) {
 		try {
 			await db.prepare(statement).run()
 		} catch (error) {
-			if (!String(error).includes('already exists')) throw error
+			const message = String(error)
+			if (
+				message.includes('already exists') ||
+				message.includes('duplicate column name')
+			) {
+				continue
+			}
+			throw error
 		}
 	}
 }

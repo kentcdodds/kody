@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { insertSavedPackage, searchSavedPackagesByUserId } from './repo.ts'
 
 const userId = 'search-user-1'
@@ -41,6 +42,7 @@ async function ensureSchema(db: D1Database) {
 		.prepare(`DELETE FROM saved_packages WHERE user_id IN (?, ?)`)
 		.bind(userId, otherUserId)
 		.run()
+	await ensureSoftDeleteTestColumns(db)
 }
 
 function buildRow(input: {

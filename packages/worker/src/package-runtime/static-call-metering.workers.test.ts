@@ -11,6 +11,7 @@ import {
 } from './module-graph.ts'
 import { persistPublishedSourceSnapshot } from './published-runtime-artifacts.ts'
 import { persistPublishedBundleArtifact } from './published-bundle-artifacts.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 
 const baseUrl = 'https://kody.dev'
 
@@ -69,6 +70,7 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`)
+	await ensureSoftDeleteTestColumns(env.APP_DB)
 }
 
 /**

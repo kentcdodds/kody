@@ -20,6 +20,7 @@ import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { retirePackageSlug } from '#worker/community/package-url.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 import { webhookRateLimitConfig } from './types.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mocks = vi.hoisted(() => ({
@@ -119,6 +120,7 @@ async function ensureSchema(db: D1Database) {
 				password_hash TEXT NOT NULL,
 				stable_user_id TEXT NOT NULL,
 				deleting_at TEXT,
+				deleted_at TEXT,
 				suspended_at TEXT
 			)`,
 		)
@@ -139,6 +141,7 @@ async function ensureSchema(db: D1Database) {
 				hidden INTEGER NOT NULL DEFAULT 0,
 				is_private INTEGER NOT NULL DEFAULT 1,
 				locked_at TEXT,
+				deleted_at TEXT,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
@@ -173,11 +176,13 @@ async function ensureSchema(db: D1Database) {
 				previous_url_secret_hash TEXT,
 				previous_url_secret_expires_at TEXT,
 				enabled INTEGER NOT NULL DEFAULT 1,
+				deleted_at TEXT,
 				created_at TEXT NOT NULL,
 				rotated_at TEXT NOT NULL
 			)`,
 		)
 		.run()
+	await ensureSoftDeleteTestColumns(db)
 }
 
 const urlSecret = 'url-secret-plain'

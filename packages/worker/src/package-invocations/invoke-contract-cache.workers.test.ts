@@ -5,6 +5,7 @@ import { persistPublishedBundleArtifact } from '#worker/package-runtime/publishe
 import { persistPublishedSourceSnapshot } from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
+import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 import { invalidateInvokeContractFreshness } from './invoke-contract-cache.ts'
 
@@ -63,6 +64,7 @@ async function ensureSavedPackageArtifactSchema() {
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`)
+	await ensureSoftDeleteTestColumns(env.APP_DB)
 }
 
 function createSourceRow(input: {
