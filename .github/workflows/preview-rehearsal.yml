@@ -124,8 +124,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUT_DIR"
-          node tools/preview-rehearsal/run.ts json-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/json-snapshot.json"
+          # A failed JSON check still gets its D1 bookmark and counts; the step
+          # fails afterwards.
+          json_status=0
+          node tools/preview-rehearsal/run.ts json-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/json-snapshot.json" || json_status=$?
           node tools/preview-rehearsal/run.ts d1-snapshot --worker "$PREVIEW_NAME" --out "$OUT_DIR/d1-snapshot.json" --summary "$OUT_DIR/d1-snapshot.md"
+          exit "$json_status"
 
       - name: 🌱 Seed (pre-seed bookmark first)
         if: inputs.action == 'seed'
