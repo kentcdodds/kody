@@ -197,6 +197,7 @@ export function McpServerOAuthClientSection(
 								mix={[
 									on('input', (event) => {
 										clientIdDraft = event.currentTarget.value
+										handle.update()
 									}),
 									css(accountInputCss),
 								]}
@@ -220,6 +221,7 @@ export function McpServerOAuthClientSection(
 								mix={[
 									on('input', (event) => {
 										clientSecretDraft = event.currentTarget.value
+										handle.update()
 									}),
 									css(accountInputCss),
 								]}
