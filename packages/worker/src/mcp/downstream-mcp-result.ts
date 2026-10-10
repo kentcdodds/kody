@@ -31,9 +31,19 @@ export const reservedStructuredFieldCollisionKey =
  * dumps are rejected before `ContentBlockSchema` runs `atob`.
  *
  * Text-only content skips this pre-validation byte cap (no `atob`) and is
- * truncated to this limit at egress instead of failing the call.
+ * truncated to this limit at egress instead of failing the call. A separate,
+ * higher bound (`maxUntrustedMcpTextPayloadBytes`) still rejects absurd
+ * multi-MiB dumps before schema parse.
  */
 export const defaultMcpContentLimitBytes = 524_288
+
+/**
+ * Hard ceiling for untrusted text-only MCP content before schema parse /
+ * egress truncation. Well above the egress truncate target so typical large
+ * log searches still truncate into a usable result; rejects pathological
+ * payloads that would otherwise force multi-MiB `safeParse` copies.
+ */
+export const maxUntrustedMcpTextPayloadBytes = defaultMcpContentLimitBytes * 8
 
 /** Max content blocks accepted from untrusted downstream / execute payloads. */
 export const maxMcpContentBlockCount = 32
@@ -219,11 +229,14 @@ export function validateDownstreamMcpContentBlocks(
 	options?: {
 		maxBlockCount?: number
 		maxPayloadBytes?: number
+		maxTextPayloadBytes?: number
 	},
 ): Array<ContentBlock> {
 	const maxBlockCount = options?.maxBlockCount ?? maxMcpContentBlockCount
 	const maxPayloadBytes =
 		options?.maxPayloadBytes ?? defaultMcpContentLimitBytes
+	const maxTextPayloadBytes =
+		options?.maxTextPayloadBytes ?? maxUntrustedMcpTextPayloadBytes
 
 	if (!Array.isArray(content)) {
 		throw new McpCallerError(
@@ -238,13 +251,17 @@ export function validateDownstreamMcpContentBlocks(
 	}
 
 	const textOnly = untrustedContentLooksTextOnly(content)
-	if (!textOnly) {
-		const estimatedBytes = estimateUntrustedMcpContentPayloadBytes(content)
-		if (estimatedBytes > maxPayloadBytes) {
+	const estimatedBytes = estimateUntrustedMcpContentPayloadBytes(content)
+	if (textOnly) {
+		if (estimatedBytes > maxTextPayloadBytes) {
 			throw new McpCallerError(
-				`${sourcePrefix(source)} returned MCP content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding content limit ${maxPayloadBytes.toLocaleString()} bytes before validation. Reduce image/audio payload size or split the response.`,
+				`${sourcePrefix(source)} returned MCP text content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding text content limit ${maxTextPayloadBytes.toLocaleString()} bytes before validation. Narrow the query or use pagination.`,
 			)
 		}
+	} else if (estimatedBytes > maxPayloadBytes) {
+		throw new McpCallerError(
+			`${sourcePrefix(source)} returned MCP content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding content limit ${maxPayloadBytes.toLocaleString()} bytes before validation. Reduce image/audio payload size or split the response.`,
+		)
 	}
 
 	const blocks: Array<ContentBlock> = []
@@ -386,11 +403,19 @@ export function wrapDownstreamMcpToolResult(
 		Array.isArray(result.content) &&
 		untrustedContentLooksTextOnly(result.content)
 	) {
-		// Text is discarded on this path — still enforce the block-count cap
-		// without schema-parsing (or size-checking) the unused payload.
+		// Text is discarded on this path — still enforce block-count and the
+		// untrusted-text ceiling without schema-parsing the unused payload.
 		if (result.content.length > maxMcpContentBlockCount) {
 			throw new McpCallerError(
 				`${sourcePrefix(source)} returned too many MCP content blocks (${result.content.length.toLocaleString()} > limit ${maxMcpContentBlockCount.toLocaleString()}).`,
+			)
+		}
+		const estimatedBytes = estimateUntrustedMcpContentPayloadBytes(
+			result.content,
+		)
+		if (estimatedBytes > maxUntrustedMcpTextPayloadBytes) {
+			throw new McpCallerError(
+				`${sourcePrefix(source)} returned MCP text content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding text content limit ${maxUntrustedMcpTextPayloadBytes.toLocaleString()} bytes before validation. Narrow the query or use pagination.`,
 			)
 		}
 		return structuredRecord

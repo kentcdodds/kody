@@ -7,6 +7,7 @@ import {
 	extractMcpPassthrough,
 	limitMcpContentBlocks,
 	maxMcpContentBlockCount,
+	maxUntrustedMcpTextPayloadBytes,
 	measureMcpContentBytes,
 	mcpContentMarker,
 	mcpIsErrorMarker,
@@ -459,6 +460,29 @@ test('oversized text-only downstream results truncate instead of failing the cal
 		ok: false,
 		note: expect.stringContaining('could not be truncated to fit'),
 	})
+
+	// Absurd text dumps fail before schema parse (above the untrusted-text ceiling).
+	const absurdText = [
+		{
+			type: 'text' as const,
+			text: 'Z'.repeat(maxUntrustedMcpTextPayloadBytes + 50_000),
+		},
+	]
+	expect(() =>
+		validateDownstreamMcpContentBlocks(
+			absurdText,
+			mcpServer('sentry:search_logs'),
+		),
+	).toThrow(/exceeding text content limit/)
+	expect(() =>
+		wrapDownstreamMcpToolResult(
+			{
+				content: absurdText,
+				structuredContent: { hits: 1 },
+			},
+			mcpServer('sentry:search_logs'),
+		),
+	).toThrow(McpCallerError)
 
 	// Media oversize still fails as a caller error (not a bare Error).
 	expect(() =>
