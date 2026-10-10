@@ -2,10 +2,12 @@ import {
 	ownerIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { inheritRequest } from '#worker/request-context/request-context.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
 	AccountSuspendedError,
@@ -25,7 +27,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import * as schedule from './schedule.ts'
-import { executeJobOnce, runJobNow } from './service.ts'
+import { executeJobOnce, runJobNow, updateJob } from './service.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 import {
 	identityMockModule,
@@ -39,6 +41,7 @@ import {
 	insertPublishedEntitySource,
 	createBaseCallerContext,
 	insertLeftoverJob,
+	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 
 vi.mock('#worker/repo/source-service.ts', async () =>
@@ -92,8 +95,10 @@ afterEach(() => {
 
 const onceSchedule = { type: 'once', runAt: '2026-04-17T15:00:00Z' } as const
 
-function createExecuteEnv() {
-	const db = createDatabase()
+function createExecuteEnv(
+	initialRows: Parameters<typeof createDatabase>[0] = {},
+) {
+	const db = createDatabase(initialRows)
 	const bundleKv = createBundleArtifactsKv()
 	const env = createJobServiceTestEnv({
 		APP_DB: db,
@@ -818,8 +823,10 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 
 test('executeJobOnce loads the published source by job owner id, not the caller person', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const { db, env } = createExecuteEnv()
 	const orgId = ownerIdFromStored('org-owner')
+	const { db, env } = createExecuteEnv({
+		orgs: [{ id: orgId, slug: 'org-owner', plan: 'free' }],
+	})
 	await insertPublishedEntitySource({
 		db,
 		userId: orgId,
@@ -1038,4 +1045,146 @@ test('runJobNow can use a one-off repo check policy override without changing th
 	const row = await getJobRowById(db, callerContext.user.userId, jobView.id)
 	expect(row?.record.repoCheckPolicy).toBeUndefined()
 	expect(executeSpy).toHaveBeenCalledTimes(1)
+})
+
+test('executeJobOnce re-resolves the org binding at run time instead of trusting the stored one', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const callerContext = createBaseCallerContext()
+	if (!callerContext.request) throw new Error('Expected a request context.')
+	const orgId = 'org-gone'
+	// Blobs persisted before this change still carry a binding and role.
+	const legacyBlob = (orgBinding: unknown) =>
+		({ ...callerContext, orgBinding }) as PersistedJobCallerContext
+	const job = (id: string, owner: string) =>
+		createJob({
+			id,
+			name: id,
+			sourceId: `source-${id}`,
+			schedule: { type: 'interval', every: '1h' },
+			userId: ownerIdFromStored(owner),
+		})
+
+	// The stored blob still names the org, but the org was soft-deleted.
+	const { env } = createExecuteEnv({
+		orgs: [{ id: orgId, slug: 'gone', plan: 'free', deleted_at: '2026-01-01' }],
+	})
+	const missingOrg = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'job-org-gone' },
+		env,
+		job: job('job-org-gone', orgId),
+		callerContext: legacyBlob({
+			org: { id: orgId, slug: 'gone' },
+			role: 'owner',
+		}),
+	})
+	expect(missingOrg.execution).toMatchObject({
+		ok: false,
+		error: expect.stringContaining('no longer active'),
+	})
+
+	// Run-now by a person who no longer holds the org fails closed.
+	const { env: orgEnv } = createExecuteEnv({
+		orgs: [{ id: 'org-live', slug: 'live', plan: 'free' }],
+	})
+	const lostAccess = await executeJobOnce({
+		source: inheritRequest(callerContext.request),
+		env: orgEnv,
+		job: job('job-lost-access', 'org-live'),
+		callerContext: legacyBlob({
+			org: { id: 'org-live', slug: 'live' },
+			role: 'owner',
+		}),
+	})
+	expect(lostAccess.execution).toMatchObject({
+		ok: false,
+		error: expect.stringContaining('no longer has access'),
+	})
+
+	expect(executeSpy).not.toHaveBeenCalled()
+	expect(recordUsageSpy).not.toHaveBeenCalled()
+})
+
+test("a team-org job runs for an active member and a run-now uses the member's current role", async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const base = createBaseCallerContext()
+	const teamOrgId = ownerIdFromStored('org-team')
+	const { db, env } = createExecuteEnv({
+		orgs: [{ id: teamOrgId, slug: 'team', plan: 'free' }],
+		org_memberships: [
+			{ org_id: teamOrgId, user_id: base.user.userId, role: 'member' },
+		],
+	})
+	// The request is bound to the team org; the stored blob (pre-change) still
+	// carries the Owner role the member held when the job was created.
+	const teamContext = withCallerUser(
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: base.baseUrl,
+			user: base.user,
+			storageContext: base.storageContext,
+			orgBinding: { org: { id: teamOrgId, slug: 'team' }, role: 'owner' },
+		}),
+	)
+	if (!teamContext.request) throw new Error('Expected a request context.')
+	mockRepoPersistence()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext: teamContext,
+		ownerId: teamOrgId,
+		body: {
+			name: 'Team job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: { type: 'interval', every: '1h' },
+		},
+	})
+	const row = await getJobRowById(db, teamOrgId, jobView.id)
+	if (!row) throw new Error('Expected the job under the team org.')
+
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({ result: { ok: true }, error: undefined, logs: [] })
+	const legacyBlob = {
+		...row.callerContext,
+		orgBinding: { org: { id: teamOrgId, slug: 'team' }, role: 'owner' },
+	} as PersistedJobCallerContext
+
+	// Scheduled tick: team automation with no actor keeps running.
+	const scheduled = await executeJobOnce({
+		source: { kind: 'schedule', jobId: row.record.id },
+		env,
+		job: row.record,
+		callerContext: legacyBlob,
+	})
+	expect(scheduled.execution).toMatchObject({ ok: true })
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+	expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
+		orgBinding: { org: { id: teamOrgId }, role: null },
+	})
+
+	// Run-now by the (now demoted) member runs with the role they hold today.
+	const runNow = await executeJobOnce({
+		source: inheritRequest(teamContext.request),
+		env,
+		job: row.record,
+		callerContext: legacyBlob,
+	})
+	expect(runNow.execution).toMatchObject({ ok: true })
+	expect(executeSpy).toHaveBeenCalledTimes(2)
+	expect(executeSpy.mock.calls[1]?.[1]).toMatchObject({
+		orgBinding: { org: { id: teamOrgId }, role: 'member' },
+	})
+
+	// A member's update targets the team's job, not a personal one.
+	await updateJob({
+		env,
+		callerContext: teamContext,
+		body: { id: jobView.id, enabled: false },
+	})
+	const updated = await getJobRowById(db, teamOrgId, jobView.id)
+	expect(updated?.record.enabled).toBe(false)
 })

@@ -2,6 +2,7 @@ import {
 	personIdFromStored,
 	ownerIdFromStored,
 	personalOrgId,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 export * from './jobs-service-mocks.ts'
 import { repoMockModule } from './jobs-service-mocks.ts'
@@ -156,6 +157,8 @@ export function createDatabase(
 	initialRows: {
 		users?: Array<Record<string, unknown>>
 		jobs?: Array<Record<string, unknown>>
+		orgs?: Array<Record<string, unknown>>
+		org_memberships?: Array<Record<string, unknown>>
 	} = {},
 ) {
 	const tables = new Map<string, Array<Record<string, unknown>>>([
@@ -169,6 +172,11 @@ export function createDatabase(
 		['user_storage_buckets', []],
 		['jobs', (initialRows.jobs ?? []).map((row) => ({ ...row }))],
 		['users', (initialRows.users ?? []).map((row) => ({ ...row }))],
+		['orgs', (initialRows.orgs ?? []).map((row) => ({ ...row }))],
+		[
+			'org_memberships',
+			(initialRows.org_memberships ?? []).map((row) => ({ ...row })),
+		],
 	])
 	const writeLeaseDb = createPermissiveAccountWriteLeaseDbHooks()
 
@@ -235,6 +243,52 @@ export function createDatabase(
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
 							if (query.includes('SELECT 1 AS ok FROM orgs')) {
+								return null
+							}
+							// Org rows: an explicit orgs row (soft-deleted when it has
+							// deleted_at), else a live personal org for the owner id.
+							if (
+								query.includes('avatar_key') &&
+								query.includes('FROM orgs WHERE id = ?')
+							) {
+								const org = selectOne('orgs', (row) => row['id'] === params[0])
+								if (org) return (org['deleted_at'] ? null : org) as T | null
+								const user = selectOne(
+									'users',
+									(row) => row['stable_user_id'] === params[0],
+								)
+								return {
+									id: params[0],
+									slug: user?.['username'] ?? null,
+									display_name: null,
+									avatar_key: null,
+									plan: user?.['plan'] ?? 'free',
+									entitlement_ladder: 'standard',
+								} as T
+							}
+							if (query.includes('FROM org_memberships m')) {
+								const membership = selectOne(
+									'org_memberships',
+									(row) =>
+										row['user_id'] === params[0] &&
+										row['org_id'] === params[1] &&
+										!row['deleted_at'],
+								)
+								if (membership) {
+									return {
+										org_id: membership['org_id'],
+										org_slug: membership['org_slug'] ?? null,
+										role: membership['role'],
+									} as T
+								}
+								// A person always owns their personal org (id == person id).
+								return (
+									params[0] === params[1]
+										? { org_id: params[0], org_slug: null, role: 'owner' }
+										: null
+								) as T | null
+							}
+							if (query.includes('FROM orgs o') && query.includes('EXISTS (')) {
 								return null
 							}
 							if (
@@ -1149,6 +1203,8 @@ export function createBaseCallerContext() {
 export async function insertLeftoverJob(input: {
 	env: Env
 	callerContext: PersistedJobCallerContext
+	/** Org that owns the job; defaults to the caller's personal org. */
+	ownerId?: OwnerId
 	body: {
 		name: string
 		schedule: JobSchedule
@@ -1165,10 +1221,12 @@ export async function insertLeftoverJob(input: {
 	const sourceId = input.body.sourceId ?? `job-${jobId}`
 	const publishedCommit = input.body.publishedCommit ?? 'published-commit-1'
 	const timezone = input.body.timezone ?? 'UTC'
+	const ownerId =
+		input.ownerId ?? personalOrgId(input.callerContext.user.userId)
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
-		userId: personalOrgId(input.callerContext.user.userId),
+		userId: ownerId,
 		name: input.body.name,
 		sourceId,
 		publishedCommit,
@@ -1195,7 +1253,7 @@ export async function insertLeftoverJob(input: {
 		await insertPublishedEntitySource({
 			db: input.env.APP_DB as ReturnType<typeof createDatabase>,
 			env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
-			userId: input.callerContext.user.userId,
+			userId: ownerId,
 			sourceId,
 			entityKind: 'job',
 			entityId: jobId,
@@ -1210,7 +1268,7 @@ export async function insertLeftoverJob(input: {
 		})
 	}
 	await jobsData(input.env).insertJob({
-		userId: input.callerContext.user.userId,
+		userId: ownerId,
 		job,
 		callerContextJson: JSON.stringify(input.callerContext),
 	})
