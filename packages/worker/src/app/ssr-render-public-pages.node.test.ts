@@ -1,3 +1,8 @@
+import { acquisitionPages } from '#universal/acquisition/catalog.ts'
+import { createAcquisitionHandler } from '#app/handlers/acquisition.ts'
+import { buildSitemapXml } from '#app/agent-discovery.ts'
+import { clientRouteAreaNameForPath } from '#client/lazy-route.tsx'
+import { getGuideBySlug } from '#worker/guides/catalog.ts'
 import { expect, test } from 'vitest'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
@@ -123,4 +128,78 @@ test('renderAppPage renders the public Discord connect page', async () => {
 		html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
 	).filter((button) => button.includes('Connect Discord'))
 	expect(connectButtons).toHaveLength(1)
+})
+
+test('acquisition pages render crawlable HTML, metadata, navigation, and matching markdown', async () => {
+	resetDataCacheForTests()
+	setAuthSessionSecret(testCookieSecret)
+	const env = createTestEnv()
+	const sitemap = buildSitemapXml('https://example.com')
+	for (const page of acquisitionPages) {
+		const request = new Request(`https://example.com${page.path}`)
+		const response = await createAcquisitionHandler(env).handler({
+			request,
+		} as never)
+		expect(response.status).toBe(200)
+		expect(response.headers.get('vary')).toMatch(/accept/i)
+		const html = await response.text()
+		expect(html).toContain(`<h1>${page.title}</h1>`)
+		expect(html).toContain(`content="${page.description}"`)
+		expect(html).toContain(`href="https://example.com${page.path}"`)
+		expect(html).toContain('href="/onboarding"')
+		expect(html).toContain('Copy prompt')
+		expect(html).toContain('id="try-it"')
+		expect(html).toContain('aria-pressed="true"')
+		expect(html).not.toMatch(/aria-pressed(?:\s|>)/)
+		for (const [, slug] of html.matchAll(/href="\/docs\/([^"#?]+)[^"]*"/g)) {
+			expect(getGuideBySlug(slug!), `${page.path}: /docs/${slug}`).toBeTruthy()
+		}
+		expect(sitemap).toContain(`<loc>https://example.com${page.path}</loc>`)
+		expect(clientRouteAreaNameForPath(page.path)).toBe('marketing-area')
+		for (const source of page.sources.filter((source) =>
+			source.href.startsWith('/docs/'),
+		)) {
+			expect(
+				getGuideBySlug(source.href.slice('/docs/'.length)),
+				source.href,
+			).toBeTruthy()
+		}
+		const markdown = await createAcquisitionHandler(env).handler({
+			request: new Request(request.url, {
+				headers: { Accept: 'text/markdown' },
+			}),
+		} as never)
+		expect(markdown.headers.get('content-type')).toBe(
+			'text/markdown; charset=utf-8',
+		)
+		const body = await markdown.text()
+		expect(body).toContain(`# ${page.title}`)
+		expect(body).toContain(page.prompt)
+		for (const section of page.sections)
+			expect(body).toContain(`## ${section.title}`)
+	}
+})
+
+test('use-case index exposes every landing page in HTML and Markdown', async () => {
+	const env = createTestEnv()
+	const handler = createAcquisitionHandler(env)
+	const response = await handler.handler({
+		request: new Request('https://example.com/use-cases'),
+	} as never)
+	expect(response.status).toBe(200)
+	const html = await response.text()
+	expect(html).toContain('What will you build with Kody?')
+	expect(html).toContain('href="https://example.com/use-cases"')
+	const markdown = await handler.handler({
+		request: new Request('https://example.com/use-cases', {
+			headers: { Accept: 'text/markdown' },
+		}),
+	} as never)
+	expect(markdown.status).toBe(200)
+	const text = await markdown.text()
+	for (const page of acquisitionPages) {
+		expect(html).toContain(`href="${page.path}"`)
+		expect(text).toContain(`](${page.path})`)
+	}
+	expect(clientRouteAreaNameForPath('/use-cases')).toBe('marketing-area')
 })

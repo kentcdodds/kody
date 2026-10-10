@@ -1,4 +1,5 @@
 export { BusinessRoute } from './business.tsx'
+export { AcquisitionRoute } from './acquisition.tsx'
 export { CaseStudiesRoute } from './case-studies.tsx'
 export { DiscordRoute, discordRouteLoader } from './discord.tsx'
 export { FaqRoute, faqRouteLoader } from './faq.tsx'

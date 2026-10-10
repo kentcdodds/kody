@@ -38,6 +38,7 @@ export function SiteFooter(handle: Handle<SiteFooterProps>) {
 					<a href="/community">Community</a>
 					<a href="/discord">Discord</a>
 					<a href="/docs">Docs</a>
+					<a href="/use-cases">Use cases</a>
 					<a href="/pricing">Pricing</a>
 					<a href="/faq">FAQ</a>
 					<a href="/support">Support</a>
