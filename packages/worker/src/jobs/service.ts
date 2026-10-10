@@ -1666,7 +1666,6 @@ async function executeClaimedScheduledJob(input: {
 					job: input.row.record,
 					source: { kind: 'schedule', jobId: input.row.record.id },
 					callerContext: resolveScheduledJobCallerContext({
-						rowUserId: input.row.record.userId,
 						callerContext: input.row.callerContext,
 					}),
 					waitUntil: input.waitUntil,

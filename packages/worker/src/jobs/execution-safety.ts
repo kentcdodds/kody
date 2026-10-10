@@ -115,11 +115,13 @@ export async function executeOrReplayScheduledJobRun(input: {
 	return await input.execute(input.claim.handle)
 }
 
+/**
+ * Use the blob stored on the job row. Execution rebinds identity to that
+ * row's owner, so a legacy blob whose user is a member person (not the org
+ * id) still runs. A missing blob stays missing.
+ */
 export function resolveScheduledJobCallerContext(input: {
-	rowUserId: string
 	callerContext: PersistedJobCallerContext | null
 }) {
-	return input.callerContext?.user.userId === input.rowUserId
-		? input.callerContext
-		: null
+	return input.callerContext
 }
