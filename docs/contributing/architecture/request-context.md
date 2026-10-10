@@ -5,7 +5,7 @@ Every request Kody serves carries one `RequestContext`
 session, MCP, the CLI, an API token, a package app, a schedule, a webhook, an
 inbound email, or a platform event. It answers four questions in one shape:
 
-| Field         | Question                                   | Today                                                                           |
+| Field         | Question                                   | Answer                                                                          |
 | ------------- | ------------------------------------------ | ------------------------------------------------------------------------------- |
 | `org`         | Whose data does this touch?                | The request's resolved org (`id`, `slug`); personal orgs reuse `stable_user_id` |
 | `actor`       | Who is acting?                             | The signed-in person; `null` for Automation                                     |
@@ -64,14 +64,14 @@ the starter could do.
 ## The one swap point
 
 `deriveRequestContext` chooses org binding from an optional DB-backed
-`orgBinding`. Browser sessions still load the person's personal org
+`orgBinding`. Browser sessions load the person's personal org
 (`loadOrgBindingForPerson`). MCP OAuth and the CLI OAuth Open API path load the
 org stamped on the grant (`props.orgId`, then `loadOrgBindingForOrg`), falling
-back to `props.userId` as the personal org id for grants minted before the stamp
+back to `props.userId` as the personal org id when the grant has no `orgId`
 ([0064](../decisions/0064-oauth-org-binding.md)). Call sites that omit
-`orgBinding` still use `resolveOrgBinding` → `personalOrgId(user.userId)` with
-slug from username (covers sync paths and tests). Call sites pass `orgBinding`
-only; they do not reimplement membership rules.
+`orgBinding` use `resolveOrgBinding` → `personalOrgId(user.userId)` with slug
+from username (covers sync paths and tests). Call sites pass `orgBinding` only;
+they do not reimplement membership rules.
 
 The persisted caller context (job `caller_context_json`, MCP agent props) stays
 wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,
@@ -84,7 +84,7 @@ Org-owned storage and usage billing read `ownerIdFromCaller`
 request has an org, otherwise the acting person. Personal orgs reuse the person
 id, so those keys do not move. Package import lookup, account resource pages,
 secrets, jobs, and execute usage go through that function. Packages and
-connected agents on `/@slug/-/` still read the person. A same-origin
+connected agents on `/@slug/-/` read the person. A same-origin
 `/account/<section>.json` fetch from an org page binds that org via Referer.
 
 ## What to read when changing it

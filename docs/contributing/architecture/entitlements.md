@@ -182,12 +182,11 @@ retries it. Stripe subscriptions are not mutated.
 
 Fraud basics before a reward: both emails verified, new-account attribution only
 (persisted at signup from the last-wins cookie), no self-referral, no plus-tag /
-Gmail-dot email collapse, no shared Stripe customer, and no former platform
-account as referrer (its `users` row has no person behind it until Teams P9
-removes it, [#3084](https://github.com/kentcdodds/kody/issues/3084)). An
-unverified party holds the qualifying invoice id on the pending row; email
-verification retries the grant. `/@<slug>/-/billing` shows the share link and
-simple referrer status.
+Gmail-dot email collapse, no shared Stripe customer, and no platform-type
+`users` row as referrer (those rows have no person behind them;
+[#3084](https://github.com/kentcdodds/kody/issues/3084)). An unverified party
+holds the qualifying invoice id on the pending row; email verification retries
+the grant. `/@<slug>/-/billing` shows the share link and simple referrer status.
 
 `getUserEntitlement` overlays Pro through the later of the second-agent gift and
 this referral credit (retired Pro table, no wallet).
