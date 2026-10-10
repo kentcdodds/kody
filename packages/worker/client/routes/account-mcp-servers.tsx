@@ -184,8 +184,8 @@ export function AccountMcpServersRoute(handle: Handle) {
 		successMessage: (payload: AccountMcpServersPayload) => string | null
 		failureMessage: string
 		afterSuccess?: (payload: AccountMcpServersPayload) => void
-	}) {
-		if (actionState !== 'idle') return
+	}): Promise<boolean> {
+		if (actionState !== 'idle') return false
 		actionState = 'busy'
 		setMessage(null)
 		handle.update()
@@ -201,7 +201,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			})
 			if (response.status === 401) {
 				window.location.assign('/login')
-				return
+				return false
 			}
 			const payload = await readJson<
 				AccountMcpServersPayload & { error?: string; ok?: boolean }
@@ -214,6 +214,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 			setMessage(input.successMessage(payload))
 			input.afterSuccess?.(payload)
 			handle.update()
+			return true
 		} catch (error) {
 			actionState = 'idle'
 			usageSavingId = null
@@ -222,6 +223,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 				'error',
 			)
 			handle.update()
+			return false
 		}
 	}
 
@@ -543,6 +545,38 @@ export function AccountMcpServersRoute(handle: Handle) {
 													? 'Disabled MCP server.'
 													: 'Enabled MCP server.',
 											failureMessage: 'Unable to update MCP server.',
+										})
+									},
+									onOAuthClientSave: (client) =>
+										postAction({
+											body: {
+												action: 'set-oauth-client',
+												id: server.id,
+												clientId: client.clientId,
+												clientSecret: client.clientSecret,
+											},
+											successMessage: (payload) => {
+												const updated = payload.servers.find(
+													(item) => item.id === server.id,
+												)
+												return updated?.authUrl
+													? 'Saved the OAuth client. Authorize the server to finish connecting.'
+													: 'Saved the OAuth client.'
+											},
+											failureMessage: 'Unable to save the OAuth client.',
+										}),
+									onOAuthClientRemove: () => {
+										void postAction({
+											body: { action: 'remove-oauth-client', id: server.id },
+											successMessage: (payload) => {
+												const updated = payload.servers.find(
+													(item) => item.id === server.id,
+												)
+												return updated?.authUrl
+													? 'Removed the OAuth client. Authorize the server again to reconnect.'
+													: 'Removed the OAuth client.'
+											},
+											failureMessage: 'Unable to remove the OAuth client.',
 										})
 									},
 									onDelete: () => {

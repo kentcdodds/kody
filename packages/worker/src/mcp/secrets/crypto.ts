@@ -111,6 +111,8 @@ const webhookUrlSecretPurpose = 'webhook-url-secret'
 const webhookHmacSecretPurpose = 'webhook-hmac-secret'
 /** Client-supplied `whsec_` signing secrets on mcp_event_subscriptions. */
 const mcpEventSubscriptionSecretPurpose = 'mcp-event-subscription-secret'
+/** Pre-registered OAuth client secrets for user-added MCP servers. */
+const mcpServerOAuthClientSecretPurpose = 'mcp-server-oauth-client-secret'
 
 /** AAD context for a user-owned secret ciphertext. */
 export function userSecretContext(userId: OwnerId) {
@@ -369,6 +371,45 @@ export async function decryptMcpEventSubscriptionSecret(
 		)
 	} catch {
 		throw new Error('Unable to decrypt MCP event subscription secret.')
+	}
+}
+
+/**
+ * AAD context for an MCP server's pre-registered OAuth client secret. The
+ * MCP client hub decrypts it and knows servers only by id, which is a
+ * UUID that never moves between owners.
+ */
+export function mcpServerOAuthClientSecretContext(serverId: string) {
+	return `mcp-server:${serverId}:oauth-client`
+}
+
+export async function encryptMcpServerOAuthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	value: string,
+	context: string,
+) {
+	return encryptWithKey(
+		env.SECRET_STORE_KEY,
+		mcpServerOAuthClientSecretPurpose,
+		context,
+		value,
+	)
+}
+
+export async function decryptMcpServerOAuthClientSecret(
+	env: Pick<Env, 'SECRET_STORE_KEY'>,
+	payload: string,
+	context: string,
+) {
+	try {
+		return await decryptWithKey(
+			env.SECRET_STORE_KEY,
+			mcpServerOAuthClientSecretPurpose,
+			context,
+			payload,
+		)
+	} catch {
+		throw new Error('Unable to decrypt MCP server OAuth client secret.')
 	}
 }
 

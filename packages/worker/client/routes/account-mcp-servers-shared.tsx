@@ -61,6 +61,7 @@ export type McpServerListItem = {
 	catalogLogoPath: string | null
 	usageMode: 'any' | 'packages'
 	allowedPackageIds: Array<string>
+	oauthClientId: string | null
 }
 
 export type AccountMcpServersPayload = {

@@ -98,6 +98,7 @@ export async function loadAccountMcpServersData(input: {
 						oauthClientMetadataUrl: oauth.clientMetadataUrl,
 					}),
 					autoLogoPath: buildMcpServerAutoLogoPath(setting),
+					oauthClientId: setting.oauthClientId,
 				},
 				marks,
 			),

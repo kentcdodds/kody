@@ -1838,6 +1838,11 @@ type AccountMcpServerListItem = {
 	catalogLogoPath: string | null
 	usageMode: 'any' | 'packages'
 	allowedPackageIds: Array<string>
+	/**
+	 * Public id of the pre-registered OAuth client, or null. The client
+	 * secret is never sent to the browser.
+	 */
+	oauthClientId: string | null
 }
 
 export type AccountMcpServersLoaderData = {

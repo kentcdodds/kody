@@ -3,6 +3,10 @@ import { DurableObject } from 'cloudflare:workers'
 import { Lifecycle } from 'agents/lifecycle'
 import { MCPClientManager } from 'agents/mcp/client'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import {
+	decryptMcpServerOAuthClientSecret,
+	mcpServerOAuthClientSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	createMcpClientOAuthProvider,
@@ -48,6 +52,13 @@ import {
 	outboundMcpClientOptions,
 	reconnectMcpServerOptions,
 } from './reconnect.ts'
+import {
+	describeMcpOAuthClientRegistrationError,
+	mcpPreRegisteredOAuthClientStorageKey,
+	parseSealedMcpPreRegisteredOAuthClient,
+	type McpPreRegisteredOAuthClientInformation,
+	type SealedMcpPreRegisteredOAuthClient,
+} from './preregistered-oauth-client.ts'
 import { sanitizeStoredMcpSessions } from './restore.ts'
 import { withStaticTransportHeaders } from './transport-headers.ts'
 import { clearLiveMcpTransportSession } from './transport-session.ts'
@@ -113,6 +124,12 @@ class McpClientHubBase extends DurableObject<Env> {
 	private readonly lastDiscoverErrors = new Map<string, McpServerLastError>()
 	private readonly tokenPresence = new Map<string, McpOAuthTokenPresence>()
 	private readonly connectLocks = new Map<string, Promise<void>>()
+	/** Why the last connect attempt failed; the SDK returns it but keeps none. */
+	private readonly connectErrors = new Map<string, string>()
+	private readonly preRegisteredClients = new Map<
+		string,
+		Promise<McpPreRegisteredOAuthClientInformation | null>
+	>()
 
 	constructor(state: DurableObjectState, env: Env) {
 		super(state, env)
@@ -133,12 +150,46 @@ class McpClientHubBase extends DurableObject<Env> {
 		// createAuthProvider mirrors Agent.addMcpServer so restore + OAuth
 		// callback paths rebuild a DO-storage-backed provider after hibernation.
 		this.manager = new MCPClientManager(mcpClientName, mcpClientVersion, {
-			createAuthProvider: (callbackUrl) =>
-				createMcpClientOAuthProvider(state.storage, callbackUrl),
+			createAuthProvider: (callbackUrl) => this.createAuthProvider(callbackUrl),
 		})
 		// The manager is a lifecycle capability: it receives DO storage from the
 		// lifecycle and restores persisted connections in its `onStart`.
 		this.lifecycle = Lifecycle.install(this).use(this.manager)
+	}
+
+	private createAuthProvider(callbackUrl: string) {
+		return createMcpClientOAuthProvider(this.ctx.storage, callbackUrl, {
+			resolvePreRegisteredClient: (serverId) =>
+				this.resolvePreRegisteredOAuthClient(serverId),
+		})
+	}
+
+	private async readSealedPreRegisteredOAuthClient(serverId: string) {
+		return parseSealedMcpPreRegisteredOAuthClient(
+			await this.ctx.storage.get(
+				mcpPreRegisteredOAuthClientStorageKey(serverId),
+			),
+		)
+	}
+
+	private resolvePreRegisteredOAuthClient(serverId: string) {
+		const cached = this.preRegisteredClients.get(serverId)
+		if (cached) return cached
+		const pending = (async () => {
+			const sealed = await this.readSealedPreRegisteredOAuthClient(serverId)
+			if (!sealed) return null
+			return {
+				client_id: sealed.clientId,
+				client_secret: await decryptMcpServerOAuthClientSecret(
+					this.env,
+					sealed.sealedClientSecret,
+					mcpServerOAuthClientSecretContext(serverId),
+				),
+			}
+		})()
+		pending.catch(() => this.preRegisteredClients.delete(serverId))
+		this.preRegisteredClients.set(serverId, pending)
+		return pending
 	}
 
 	private ensureRestored() {
@@ -230,7 +281,10 @@ class McpClientHubBase extends DurableObject<Env> {
 					}))
 				: []
 		const lastError = this.lastDiscoverErrors.get(row.id) ?? null
-		const error = connection?.connectionError ?? lastError?.message ?? null
+		const error =
+			connection?.connectionError ??
+			lastError?.message ??
+			(state === 'failed' ? (this.connectErrors.get(row.id) ?? null) : null)
 		return {
 			serverId: row.id,
 			name: row.name,
@@ -302,10 +356,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		// DO-storage-backed provider here or OAuth servers can never surface an
 		// authorization URL. The clientName must match the one passed to
 		// `restoreConnectionsFromStorage` so storage keys line up after restarts.
-		const authProvider = createMcpClientOAuthProvider(
-			this.ctx.storage,
-			input.callbackUrl,
-		)
+		const authProvider = this.createAuthProvider(input.callbackUrl)
 		authProvider.serverId = input.serverId
 		await this.manager.registerServer(input.serverId, {
 			url: input.url,
@@ -387,12 +438,71 @@ class McpClientHubBase extends DurableObject<Env> {
 		await this.manager.removeServer(input.serverId)
 		this.lastDiscoverErrors.delete(input.serverId)
 		this.tokenPresence.delete(input.serverId)
+		this.connectErrors.delete(input.serverId)
+		this.preRegisteredClients.delete(input.serverId)
 		await this.ctx.storage.delete([
 			mcpConnectionEpisodeStorageKey(input.serverId),
 			mcpLegacyHandshakeStorageKey(input.serverId),
 			mcpOAuthTokenRecoveryStorageKey(input.serverId),
 			mcpOAuthRefreshTokenStorageKey(input.serverId),
+			mcpPreRegisteredOAuthClientStorageKey(input.serverId),
 		])
+	}
+
+	/**
+	 * Save or clear a server's pre-registered OAuth client, then start a
+	 * fresh authorization with it. The worker seals the secret before it gets
+	 * here. Tokens and any CIMD or DCR registration from the previous client
+	 * are dropped because the authorization server issued them to that
+	 * client.
+	 */
+	async setPreRegisteredOAuthClient(input: {
+		serverId: string
+		callbackUrl: string
+		client: SealedMcpPreRegisteredOAuthClient | null
+	}): Promise<McpHubConnectResult> {
+		await this.ensureRestored()
+		const registered = this.manager
+			.listServers()
+			.some((server) => server.id === input.serverId)
+		if (!registered) {
+			throw new Error(`MCP server "${input.serverId}" is not registered.`)
+		}
+		await this.manager.waitForConnections({
+			timeout: connectionSettleTimeoutMs,
+		})
+		const key = mcpPreRegisteredOAuthClientStorageKey(input.serverId)
+		const previous = await this.readSealedPreRegisteredOAuthClient(
+			input.serverId,
+		)
+		const writeClient = async (
+			client: SealedMcpPreRegisteredOAuthClient | null,
+		) => {
+			if (client) await this.ctx.storage.put(key, client)
+			else await this.ctx.storage.delete(key)
+			this.preRegisteredClients.delete(input.serverId)
+		}
+		await writeClient(input.client)
+		this.tokenPresence.delete(input.serverId)
+		await this.persistTokenRecoveryLastError(input.serverId, null)
+		await this.forgetLegacyHandshakeFallback(input.serverId)
+		try {
+			await this.restartServerAuthorization({
+				serverId: input.serverId,
+				callbackUrl: input.callbackUrl,
+				resetClientRegistration: true,
+			})
+		} catch (error) {
+			await writeClient(previous)
+			throw error
+		}
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === input.serverId)
+		if (row) {
+			await this.observeServer({ serverId: row.id, serverName: row.name })
+		}
+		return this.finalizeConnectResult(input.serverId)
 	}
 
 	/**
@@ -409,6 +519,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			.find((server) => server.id === input.serverId)
 		if (!row?.auth_url || !URL.canParse(row.auth_url)) return null
 		if (this.connectionStateFor(row.id) !== 'authenticating') return null
+		const preRegistered = await this.readSealedPreRegisteredOAuthClient(row.id)
 		return {
 			serverId: row.id,
 			name: row.name,
@@ -417,6 +528,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			clientMode: resolveMcpOAuthClientMode({
 				authorizationUrl: row.auth_url,
 				callbackUrl: row.callback_url,
+				preRegisteredClientId: preRegistered?.clientId ?? null,
 			}),
 		}
 	}
@@ -629,6 +741,8 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async restartServerAuthorization(input: {
 		serverId: string
 		callbackUrl: string
+		/** Drop the stored client registration and tokens, as for a new client. */
+		resetClientRegistration?: boolean
 	}): Promise<McpHubConnectResult> {
 		const row = this.manager
 			.listServers()
@@ -639,6 +753,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		const storedTokens = await this.readTokenPresence(input.serverId)
 		if (
+			!input.resetClientRegistration &&
 			row.callback_url === input.callbackUrl &&
 			shouldAttemptMcpOAuthRefresh(storedTokens)
 		) {
@@ -653,8 +768,10 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		const existingConnection = this.manager.mcpConnections[input.serverId]
 		const existingOptions = existingConnection?.options
-		const callbackChanged = row.callback_url !== input.callbackUrl
-		const clientId = callbackChanged ? null : row.client_id
+		const clearClientRegistration =
+			input.resetClientRegistration === true ||
+			row.callback_url !== input.callbackUrl
+		const clientId = clearClientRegistration ? null : row.client_id
 		const oauthStoragePrefix = `/${mcpClientName}/${input.serverId}/`
 		const oauthStorageSnapshot = await this.ctx.storage.list({
 			prefix: oauthStoragePrefix,
@@ -669,13 +786,10 @@ class McpClientHubBase extends DurableObject<Env> {
 			await this.manager.removeServer(input.serverId)
 			await this.clearOAuthAuthorizationStorage({
 				serverId: input.serverId,
-				clearClientRegistration: callbackChanged,
+				clearClientRegistration,
 			})
 
-			const authProvider = createMcpClientOAuthProvider(
-				this.ctx.storage,
-				input.callbackUrl,
-			)
+			const authProvider = this.createAuthProvider(input.callbackUrl)
 			authProvider.serverId = input.serverId
 			if (clientId) authProvider.clientId = clientId
 
@@ -700,10 +814,7 @@ class McpClientHubBase extends DurableObject<Env> {
 					.catch(() => {})
 			}
 
-			const originalAuthProvider = createMcpClientOAuthProvider(
-				this.ctx.storage,
-				row.callback_url,
-			)
+			const originalAuthProvider = this.createAuthProvider(row.callback_url)
 			originalAuthProvider.serverId = input.serverId
 			if (row.client_id) originalAuthProvider.clientId = row.client_id
 			const restored = reconnectMcpServerOptions(existingOptions)
@@ -841,10 +952,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 		try {
 			await this.manager.removeServer(serverId)
-			const authProvider = createMcpClientOAuthProvider(
-				this.ctx.storage,
-				row.callback_url,
-			)
+			const authProvider = this.createAuthProvider(row.callback_url)
 			authProvider.serverId = serverId
 			if (row.client_id) authProvider.clientId = row.client_id
 			const legacy = reconnectMcpServerOptions(existingOptions, 'legacy')
@@ -863,10 +971,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		} catch (error) {
 			try {
 				await this.manager.removeServer(serverId).catch(() => {})
-				const authProvider = createMcpClientOAuthProvider(
-					this.ctx.storage,
-					row.callback_url,
-				)
+				const authProvider = this.createAuthProvider(row.callback_url)
 				authProvider.serverId = serverId
 				if (row.client_id) authProvider.clientId = row.client_id
 				const restored = reconnectMcpServerOptions(existingOptions)
@@ -1476,7 +1581,16 @@ class McpClientHubBase extends DurableObject<Env> {
 		this.connectLocks.set(serverId, current)
 		await previous.catch(() => {})
 		try {
-			return await this.manager.connectToServer(serverId)
+			const result = await this.manager.connectToServer(serverId)
+			if (result.state === 'failed' && result.error) {
+				this.connectErrors.set(
+					serverId,
+					describeMcpOAuthClientRegistrationError(result.error),
+				)
+			} else {
+				this.connectErrors.delete(serverId)
+			}
+			return result
 		} finally {
 			release()
 			if (this.connectLocks.get(serverId) === current) {
@@ -1753,6 +1867,7 @@ class McpClientHubBase extends DurableObject<Env> {
 			// Connections that fail to close cleanly must not block deletion.
 		}
 		this.restored = null
+		this.preRegisteredClients.clear()
 		await this.ctx.storage.deleteAll()
 	}
 }

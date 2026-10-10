@@ -387,6 +387,10 @@
 		{
 			"filename": "0096-teams-migrated-actor-ids.sql",
 			"sha256": "c7da3f2d37b72a75595711e2728e49a799f696c6c5edb2f4fb37efc06eb8ab0f"
+		},
+		{
+			"filename": "0097-mcp-server-oauth-client-id.sql",
+			"sha256": "ee6e3a4ad77526de8ba69bcedaeac28ad3003db53b18d64bbba1a3505b4b042f"
 		}
 	]
 }

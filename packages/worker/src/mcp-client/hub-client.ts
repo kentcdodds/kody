@@ -3,6 +3,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
+import { type SealedMcpPreRegisteredOAuthClient } from './preregistered-oauth-client.ts'
 import {
 	type McpClientHubSnapshot,
 	type McpHubConnectResult,
@@ -64,6 +65,11 @@ export type McpClientHubClient = {
 	}): Promise<McpServerConnectResult>
 	refreshServer(input: { serverId: string }): Promise<McpServerConnectResult>
 	removeServer(input: { serverId: string }): Promise<void>
+	setPreRegisteredOAuthClient(input: {
+		serverId: string
+		callbackUrl: string
+		client: SealedMcpPreRegisteredOAuthClient | null
+	}): Promise<McpServerConnectResult>
 	handleOAuthCallback(input: {
 		url: string
 		callbackUrl: string
@@ -105,6 +111,12 @@ export function createMcpClientHubClient(
 		async removeServer(removeInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			await stub.removeServer(removeInput)
+		},
+		async setPreRegisteredOAuthClient(clientInput) {
+			invalidateMcpClientHubSnapshotCache(input)
+			const result = await stub.setPreRegisteredOAuthClient(clientInput)
+			await emitPendingConnectionEvents(input, stub)
+			return toMcpServerConnectResult(result)
 		},
 		async handleOAuthCallback(callbackInput) {
 			invalidateMcpClientHubSnapshotCache(input)

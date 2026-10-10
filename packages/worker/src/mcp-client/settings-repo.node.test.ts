@@ -31,6 +31,7 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 			usage_mode: 'any',
 			allowedPackageIds: [],
 			last_error: null,
+			oauth_client_id: null,
 		},
 	})
 
