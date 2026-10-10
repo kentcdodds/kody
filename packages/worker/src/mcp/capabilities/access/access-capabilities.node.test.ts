@@ -31,7 +31,7 @@ function capabilityContext(input: {
 	userId: string
 	email: string
 	username: string
-	org?: { id: string; slug: string; role: OrgRole }
+	org?: { id: string; slug: string; role: OrgRole | null }
 	auditDb?: D1Database
 }) {
 	return {
@@ -372,4 +372,102 @@ test('orgCreate rejects reserved and malformed slugs with the shared validation'
 		.prepare(`SELECT COUNT(*) AS n FROM orgs`)
 		.first<{ n: number }>()
 	expect(orgs?.n).toBe(0)
+})
+
+test('org grants that hand out Owner-held permissions require an Owner', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'owneruser',
+	})
+	const created = await orgCreateCapability.handler(
+		{ slug: 'delegateco' },
+		capabilityContext({
+			db,
+			userId: ownerId,
+			email: 'owner@example.com',
+			username: 'owneruser',
+		}),
+	)
+	const org = { id: created.org.id, slug: created.org.slug }
+	const delegateId = testStableUserIdFromEmail('delegate@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: delegateId,
+		username: 'delegateuser',
+	})
+	const owner = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner@example.com',
+		username: 'owneruser',
+		org: { ...org, role: 'owner' },
+	})
+	const delegated = await accessGrantCapability.handler(
+		{
+			resource_type: 'org',
+			resource_id: org.id,
+			subject_type: 'user',
+			subject_id: delegateId,
+			permissions: ['member:read', 'member:write'],
+		},
+		owner,
+	)
+	expect(delegated.grant.permissions).toEqual(['member:read', 'member:write'])
+
+	const delegate = capabilityContext({
+		db,
+		userId: delegateId,
+		email: 'delegate@example.com',
+		username: 'delegateuser',
+		org: { ...org, role: null },
+	})
+	const otherId = testStableUserIdFromEmail('other@example.com')
+	for (const permission of ['member:write', 'member:delete'] as const) {
+		for (const subjectId of [delegateId, otherId]) {
+			await expect(
+				accessGrantCapability.handler(
+					{
+						resource_type: 'org',
+						resource_id: org.id,
+						subject_type: 'user',
+						subject_id: subjectId,
+						permissions: [permission],
+					},
+					delegate,
+				),
+			).rejects.toThrow(
+				new McpCallerError(
+					`Only an Owner can grant ${permission} on an organization.`,
+				),
+			)
+		}
+	}
+
+	await expect(
+		accessGrantCapability.handler(
+			{
+				resource_type: 'org',
+				resource_id: org.id,
+				subject_type: 'user',
+				subject_id: delegateId,
+				permissions: ['billing:write'],
+			},
+			owner,
+		),
+	).rejects.toThrow(
+		new McpCallerError('Permission billing:write cannot be granted on org.'),
+	)
+
+	const teamRead = await accessGrantCapability.handler(
+		{
+			resource_type: 'org',
+			resource_id: org.id,
+			subject_type: 'user',
+			subject_id: otherId,
+			permissions: ['team:read'],
+		},
+		delegate,
+	)
+	expect(teamRead.grant.permissions).toEqual(['team:read'])
 })

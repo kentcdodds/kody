@@ -194,15 +194,26 @@ export async function authorizeGrantTarget(
 	return { user, request, db: ctx.env.APP_DB }
 }
 
-/** Org:delete (and org:write) on an org grant would let a delegate elevate past Owner. */
-const ownerOnlyOrgGrantPermissions = new Set<OrgPermission>([
-	'org:delete',
-	'org:write',
-])
+/**
+ * Org-level permissions only an Owner may put on an org grant. org:write and
+ * org:delete would let a delegate elevate past Owner; member:write would let a
+ * delegate re-delegate; member:delete is an Owner-held control a member:write
+ * holder must not hand out (to anyone, including themselves). billing:* never
+ * appears here because it is not grantable on an org grant at all.
+ */
+const ownerOnlyOrgGrantPermissions: ReadonlySet<OrgPermission> =
+	new Set<OrgPermission>([
+		'org:delete',
+		'org:write',
+		'member:write',
+		'member:delete',
+		'billing:read',
+		'billing:write',
+	])
 
 /**
- * Resolve grant permissions for a resource, and require an Owner when the list
- * includes org:delete or org:write on an organization grant.
+ * Resolve grant permissions for a resource, and require an Owner when an
+ * organization grant includes any of `ownerOnlyOrgGrantPermissions`.
  */
 export async function resolveAuthorizedGrantPermissions(
 	ctx: CapabilityContext,
@@ -225,17 +236,19 @@ export async function resolveAuthorizedGrantPermissions(
 		)
 	}
 	if (input.resourceType !== 'org') return permissions
-	const needsOwner = permissions.some((permission) =>
+	const ownerOnly = permissions.filter((permission) =>
 		ownerOnlyOrgGrantPermissions.has(permission),
 	)
-	if (!needsOwner) return permissions
+	if (ownerOnly.length === 0) return permissions
 	const request = requireMcpRequest(ctx.callerContext)
 	const access = await computeEffectivePermissions({
 		env: ctx.env,
 		request,
 	})
 	if (!access.isOwner) {
-		throw new McpCallerError('Only an Owner can grant org:write or org:delete.')
+		throw new McpCallerError(
+			`Only an Owner can grant ${ownerOnly.join(', ')} on an organization.`,
+		)
 	}
 	return permissions
 }
