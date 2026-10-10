@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	listWorkflowRunsForUser,
@@ -127,7 +128,10 @@ export async function loadAccountWorkflowsData(input: {
 	user: AuthenticatedUser
 	pathWorkflowId?: string
 }): Promise<AccountWorkflowsLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const selectedWorkflowId = readAccountWorkflowsSelectedWorkflowId(
 		input.request.url,
 		input.pathWorkflowId,

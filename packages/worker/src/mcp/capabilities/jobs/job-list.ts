@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -31,10 +32,10 @@ export const jobListCapability = defineDomainCapability(
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema: jobListOutputSchema,
 		async handler(_args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const inspection = await inspectJobsForUser({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 			})
 			return {
 				jobs: inspection.jobs.map((job) =>

@@ -2,6 +2,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi, type Mock } from 'vitest'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensurePackageSubscriptionTestSchema } from '#worker/test-support/workers-seed.ts'
@@ -53,6 +54,7 @@ function analyticsResponse(
 
 async function ensureSchema() {
 	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	await ensurePackageSubscriptionTestSchema(env.APP_DB)
 	await env.APP_DB.batch([
@@ -89,6 +91,26 @@ async function seedUser() {
 		.bind(`dod-${crypto.randomUUID().slice(0, 8)}`, email, userId)
 		.run()
 	return userId
+}
+
+async function seedTeamOrg(input?: { deletedAt?: string | null }) {
+	const orgId = testStableUserIdFromEmail(
+		`do-duration-org-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, deleted_at, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?, ?)`,
+	)
+		.bind(
+			orgId,
+			`org${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`,
+			input?.deletedAt ?? null,
+			now,
+			now,
+		)
+		.run()
+	return orgId
 }
 
 test('owner map object ids match the ids the Durable Objects themselves see', async () => {
@@ -211,6 +233,59 @@ test('a user whose deletion starts mid-run gets no duration rows', async () => {
 			`SELECT COUNT(*) AS count FROM durable_object_duration_daily WHERE user_id = ?`,
 		)
 			.bind(userId)
+			.first(),
+	).toEqual({ count: 0 })
+})
+
+test('a live team org with no users row keeps duration rows', async () => {
+	await ensureSchema()
+	const orgId = await seedTeamOrg()
+	const hubId = env.MCP_CLIENT_HUB.idFromName(orgId).toString()
+	using _fetch = stubFetch(
+		vi.fn(async () => analyticsResponse([[hubId, 3_000_000]])),
+	)
+	await runDurableObjectDurationAttribution({
+		env: credentialedEnv,
+		now: new Date('2026-09-27T03:20:00.000Z'),
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT do_class, active_ms FROM durable_object_duration_daily
+			 WHERE user_id = ? AND day = '2026-09-26'`,
+		)
+			.bind(orgId)
+			.all(),
+	).toMatchObject({
+		results: [{ do_class: 'McpClientHub', active_ms: 3_000 }],
+	})
+})
+
+test('a soft-deleted team org gets no duration rows', async () => {
+	await ensureSchema()
+	const orgId = await seedTeamOrg({ deletedAt: '2026-09-01T00:00:00.000Z' })
+	const storageId = `package:${crypto.randomUUID()}`
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO user_storage_buckets (user_id, storage_id, kind, created_at, last_seen_at)
+		 VALUES (?, ?, 'package', ?, ?)`,
+	)
+		.bind(orgId, storageId, now, now)
+		.run()
+	const storageObjectId = env.STORAGE_RUNNER.idFromName(
+		storageRunnerDurableObjectName(orgId, storageId),
+	).toString()
+	using _fetch = stubFetch(
+		vi.fn(async () => analyticsResponse([[storageObjectId, 3_000_000]])),
+	)
+	await runDurableObjectDurationAttribution({
+		env: credentialedEnv,
+		now: new Date('2026-09-27T03:20:00.000Z'),
+	})
+	expect(
+		await env.APP_DB.prepare(
+			`SELECT COUNT(*) AS count FROM durable_object_duration_daily WHERE user_id = ?`,
+		)
+			.bind(orgId)
 			.first(),
 	).toEqual({ count: 0 })
 })

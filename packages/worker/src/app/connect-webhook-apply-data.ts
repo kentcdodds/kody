@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { type ConnectWebhookApplyLoaderData } from '#universal/loader-data.ts'
 import {
@@ -32,7 +33,10 @@ export async function loadConnectWebhookApplyData(input: {
 
 	const view = await loadWebhookApplyDestinationApprovalView({
 		db: input.env.APP_DB,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		handle,
 		fingerprint,
 	})
@@ -76,7 +80,10 @@ export async function approveConnectWebhookApply(input: {
 	}
 	await approveWebhookApplyDestination({
 		db: input.env.APP_DB,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		endpointId,
 		fingerprint: input.fingerprint,
 	})
@@ -104,7 +111,10 @@ export async function rejectConnectWebhookApply(input: {
 	}
 	await rejectWebhookApplyDestination({
 		db: input.env.APP_DB,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		endpointId,
 		fingerprint: input.fingerprint,
 	})

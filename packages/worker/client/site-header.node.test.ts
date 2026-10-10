@@ -147,10 +147,9 @@ test('org switcher lists the signup organization, then others with roles, then c
 	)
 	expect(adaRow).not.toContain('aria-current')
 	expect(adaRow).not.toContain('data-selected')
-	// Personal org keeps the section; non-personal lands on org home (#3073).
+	// Secrets follow the org, so both organizations keep the section.
 	expect(html).toContain('href="/@ada/-/secrets"')
-	expect(html).toContain('href="/@acme"')
-	expect(html).not.toContain('href="/@acme/-/secrets"')
+	expect(html).toContain('href="/@acme/-/secrets"')
 	expect(html).toContain('data-icon="plus"')
 	expect(html).toContain('data-icon="mail"')
 })

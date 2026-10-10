@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -46,10 +47,10 @@ export const integrationOauthAppRotateCredentialsCapability =
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const existing = await getOauthApp({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				slug: args.slug,
 			})
 			if (!existing) {
@@ -59,13 +60,13 @@ export const integrationOauthAppRotateCredentialsCapability =
 			}
 			const rotated = await rotateOauthAppClientCredentials({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				slug: args.slug,
 				clientId: args.clientId,
 			})
 			const joined = await listJoinedIntegrations({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 			})
 			const connections = joined
 				.filter(

@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
@@ -25,7 +26,10 @@ export async function handleAccountPackageAdoptAction(input: {
 	try {
 		await adoptCommunityFork({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			packageId,
 			reviewSummary: readTrimmedStringOrEmpty(input.body, 'reviewNote'),
 		})

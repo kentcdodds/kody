@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -57,7 +58,7 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 			try {
 				const result = await refreshIntegrationTokens({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					userEmail: user.email,
 					name: args.name,
 					baseUrl: ctx.callerContext.baseUrl,

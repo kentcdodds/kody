@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import {
@@ -167,7 +168,10 @@ export async function loadAccountMemoriesData(input: {
 	user: AuthenticatedUser
 	pathMemoryId?: string
 }): Promise<AccountMemoriesLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const query = readAccountMemoriesQuery(input.request.url)
 	const includeDeleted = readAccountMemoriesIncludeDeleted(input.request.url)
 	const selectedMemoryId = readAccountMemoriesSelectedMemoryId(
@@ -237,7 +241,10 @@ export async function loadAccountMemoriesExport(input: {
 	user: AuthenticatedUser
 	includeDeleted: boolean
 }): Promise<AccountMemoriesExport> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const statuses = memoryStatusesForExport(input.includeDeleted)
 	const memories: Array<AccountMemoryDetail> = []
 	let afterId: string | null = null

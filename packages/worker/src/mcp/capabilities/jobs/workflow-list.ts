@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -70,12 +71,12 @@ export const workflowListCapability = defineDomainCapability(
 			workflows: z.array(workflowRunSchema),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const { listWorkflowRunsForUser } =
 				await import('#worker/package-runtime/package-workflows.ts')
 			const workflows = await listWorkflowRunsForUser({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				limit: args.limit,
 			})
 			return {

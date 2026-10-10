@@ -9,9 +9,11 @@ import {
 	orgIdentity,
 	orgRoleLabel,
 	orgRoleManagesBilling,
+	orgSectionKeysOnPerson,
 	orgSwitcherEntries,
 	organizationsWithSignupFallback,
 	parseOrgBillingPath,
+	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
 	type OrgSwitcherEntry,
@@ -176,6 +178,20 @@ function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
 	next.focus()
 }
 
+function teamOrgSwitchHref(input: {
+	pathname: string
+	slug: string
+	personal: boolean
+	onBillingPage: boolean
+	managesBilling: boolean
+}) {
+	if (input.personal) return switchOrgPath(input.pathname, input.slug)
+	if (input.onBillingPage && !input.managesBilling) return `/@${input.slug}`
+	const section = parseOrgResourcePath(input.pathname)?.section
+	if (section && orgSectionKeysOnPerson(section)) return `/@${input.slug}`
+	return switchOrgPath(input.pathname, input.slug)
+}
+
 function OrgSwitcher(
 	handle: Handle<{
 		organizations: Array<OrganizationSummary>
@@ -253,15 +269,16 @@ function OrgSwitcher(
 					const selected = entry.org.slug === currentSlug
 					return {
 						key: entry.org.slug,
-						// Non-personal org resource pages stay gated until storage
-						// follows request.org.id (#3073), so switching into those
-						// orgs lands on the org home instead of a not-found section.
-						// Billing is the exception: every org has its own.
-						href:
-							entry.org.personal ||
-							(onBillingPage && orgRoleManagesBilling(entry.org.role))
-								? switchOrgPath(handle.props.currentPathname, entry.org.slug)
-								: `/@${entry.org.slug}`,
+						// Packages and connected agents still belong to the person, so
+						// a team org opens its home instead of that section. Billing
+						// stays on the section only for roles that manage it.
+						href: teamOrgSwitchHref({
+							pathname: handle.props.currentPathname,
+							slug: entry.org.slug,
+							personal: entry.org.personal,
+							onBillingPage,
+							managesBilling: orgRoleManagesBilling(entry.org.role),
+						}),
 						label: identity.name,
 						detail: identity.hasName
 							? [identity.handle, role].filter(Boolean).join(' · ')

@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
@@ -10,7 +11,10 @@ import {
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
 
-export type WebhooksUser = Pick<AuthenticatedAppUser, 'username' | 'mcpUser'>
+export type WebhooksUser = Pick<
+	AuthenticatedAppUser,
+	'username' | 'mcpUser' | 'request'
+>
 
 /** Row id shared by the list payloads and the `revealed` entry. */
 export function packageWebhookItemId(input: {
@@ -66,7 +70,10 @@ async function listWebhookItems(input: {
 	const webhooks = await listWebhooksForUser({
 		env: input.env,
 		baseUrl,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		kodyId: input.kodyId,
 	})
 	return webhooks.map(toPackageWebhookListItem)

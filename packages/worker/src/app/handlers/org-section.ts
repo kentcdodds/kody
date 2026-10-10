@@ -31,7 +31,10 @@ import {
 import { jsonResponse } from '#worker/json-response.ts'
 import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
-import { type OrgOwnedAccountSection } from '#universal/org-pages.ts'
+import {
+	orgSectionKeysOnPerson,
+	type OrgOwnedAccountSection,
+} from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
 
 type SectionHandler = {
@@ -124,19 +127,24 @@ function sectionParams(
 }
 
 /**
- * Why `/@slug/<section>` is closed to this person, or null when it is open.
- * Storage still keys resources by person id (personal org id === userId), so
- * a non-personal org would show the actor's personal data under the wrong
- * slug until storage follows request.org.id (#3073).
+ * Why `/@slug/-/<section>` is closed to this person, or null when it is open.
  */
 function orgSectionDenial(
 	resolution: RequestOrgResolution,
 	personId: PersonId,
+	section: OrgOwnedAccountSection,
 ): string | null {
 	if (resolution === 'denied' || resolution === 'personal') {
 		return 'Organization unavailable'
 	}
-	if (resolution.org.id !== personalOrgId(personId)) {
+	// A grant without a membership is not access to the whole workspace.
+	if (resolution.role == null) {
+		return 'Organization resources unavailable'
+	}
+	if (
+		orgSectionKeysOnPerson(section) &&
+		resolution.org.id !== personalOrgId(personId)
+	) {
 		return 'Organization resources unavailable'
 	}
 	return null
@@ -160,7 +168,7 @@ export function createOrgSectionHandler(
 				env,
 				user.mcpUser.userId,
 			)
-			const denial = orgSectionDenial(resolution, user.mcpUser.userId)
+			const denial = orgSectionDenial(resolution, user.mcpUser.userId, section)
 			if (denial || typeof resolution === 'string') {
 				return renderAppPage({
 					request: ctx.request,
@@ -221,7 +229,11 @@ export function createOrgPackagesApiHandler(env: Env) {
 				user.mcpUser.userId,
 				params.orgSlug,
 			)
-			const denial = orgSectionDenial(binding ?? 'denied', user.mcpUser.userId)
+			const denial = orgSectionDenial(
+				binding ?? 'denied',
+				user.mcpUser.userId,
+				'packages',
+			)
 			if (denial) return jsonResponse({ ok: false, error: denial }, 404)
 			return profileApi.handler({
 				request,

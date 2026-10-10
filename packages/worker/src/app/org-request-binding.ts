@@ -1,5 +1,7 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
+	orgOwnedAccountApiSection,
+	orgSectionKeysOnPerson,
 	parseOrgBillingPath,
 	parseOrgManagementPath,
 	parseOrgResourcePath,
@@ -12,7 +14,8 @@ const resolutions = new WeakMap<Request, Promise<RequestOrgResolution>>()
 /**
  * The organization for this request. Resource, billing, and management URLs
  * under `/@slug/...` bind that organization when the actor is a member or
- * holds a grant. Every other URL keeps the signup organization.
+ * holds a grant. Org-owned `/account/<section>.json` fetches from those pages
+ * bind the same org via Referer. Every other URL keeps the signup organization.
  */
 export function loadRequestOrgResolution(
 	request: Request,
@@ -26,16 +29,50 @@ export function loadRequestOrgResolution(
 	return pending
 }
 
+function orgSlugFromPageUrl(pathname: string): string | null {
+	return (
+		parseOrgResourcePath(pathname)?.slug ??
+		parseOrgBillingPath(pathname)?.slug ??
+		parseOrgManagementPath(pathname)?.slug ??
+		null
+	)
+}
+
+/**
+ * Account JSON stays on `/account/<section>.json`. A same-origin fetch from
+ * `/@slug/-/...` sends that page as Referer, and the section then binds that
+ * org. Membership is still required. A missing or foreign Referer keeps the
+ * signup org.
+ */
+function orgSlugFromAccountApiReferer(
+	request: Request,
+	origin: string,
+): string | null {
+	const header = request.headers.get('referer')
+	if (!header) return null
+	let referer: URL
+	try {
+		referer = new URL(header)
+	} catch {
+		return null
+	}
+	if (referer.origin !== origin) return null
+	return orgSlugFromPageUrl(referer.pathname)
+}
+
 async function resolveRequestOrg(
 	request: Request,
 	env: Env,
 	personId: string,
 ): Promise<RequestOrgResolution> {
-	const pathname = new URL(request.url).pathname
+	const url = new URL(request.url)
+	const slugOnPage = orgSlugFromPageUrl(url.pathname)
+	const apiSection = orgOwnedAccountApiSection(url.pathname)
 	const slug =
-		parseOrgResourcePath(pathname)?.slug ??
-		parseOrgBillingPath(pathname)?.slug ??
-		parseOrgManagementPath(pathname)?.slug
+		slugOnPage ??
+		(apiSection && !orgSectionKeysOnPerson(apiSection)
+			? orgSlugFromAccountApiReferer(request, url.origin)
+			: null)
 	if (!slug) return 'personal'
 	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'

@@ -63,6 +63,46 @@ function isOrgOwnedAccountSection(
 	return orgOwnedSectionSet.has(section)
 }
 
+/**
+ * Packages and connected agents still read the signed-in person. Other org
+ * sections read `request.org.id`.
+ */
+export function orgSectionKeysOnPerson(
+	section: OrgOwnedAccountSection,
+): boolean {
+	switch (section) {
+		case 'packages':
+		case 'connections':
+			return true
+		case 'activity':
+		case 'email':
+		case 'integrations':
+		case 'jobs':
+		case 'mcp-servers':
+		case 'memories':
+		case 'secret-providers':
+		case 'secrets':
+		case 'values':
+		case 'waiting':
+		case 'webhooks':
+		case 'workflows':
+			return false
+		default: {
+			const exhaustive: never = section
+			return exhaustive
+		}
+	}
+}
+
+/** `/account/secrets.json` and the other org-owned account JSON routes. */
+export function orgOwnedAccountApiSection(
+	pathname: string,
+): OrgOwnedAccountSection | null {
+	const match = /^\/account\/([^/.]+)\.json$/.exec(pathname)
+	const section = match?.[1] ?? ''
+	return isOrgOwnedAccountSection(section) ? section : null
+}
+
 export type ParsedOrgResourcePath = {
 	slug: string
 	section: OrgOwnedAccountSection

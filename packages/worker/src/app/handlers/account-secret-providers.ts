@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountSecretProvidersData } from '#app/account-secret-providers-data.ts'
@@ -27,7 +28,10 @@ export function createAccountSecretProvidersHandler(env: Env) {
 			}
 			const accountSecretProviders = await loadAccountSecretProvidersData({
 				env,
-				userId: user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: user.request,
+					user: user.mcpUser,
+				}),
 				email: user.email,
 				url: request.url,
 			})
@@ -56,7 +60,10 @@ export function createAccountSecretProvidersApiHandler(env: Env) {
 				return jsonResponse(
 					await loadAccountSecretProvidersData({
 						env,
-						userId: user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: user.request,
+							user: user.mcpUser,
+						}),
 						email: user.email,
 						url: request.url,
 					}),
@@ -112,7 +119,10 @@ async function handleBind(input: {
 	const bound = await bindSecretProvider({
 		env: input.env,
 		baseUrl: new URL(input.requestUrl).origin,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		providerId: readTrimmedStringOrEmpty(input.body, 'provider'),
 		packageId: readTrimmedStringOrEmpty(input.body, 'packageId'),
 		doorSecretName: readTrimmedStringOrEmpty(input.body, 'doorSecretName'),
@@ -128,7 +138,10 @@ async function handleUnbind(input: {
 }) {
 	await unbindSecretProvider({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		providerId: readTrimmedStringOrEmpty(input.body, 'provider'),
 	})
 	return jsonResponse({ ok: true })
@@ -141,7 +154,10 @@ async function handleGrant(input: {
 }) {
 	const granted = await grantSecretProviderToPackage({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		providerId: readTrimmedStringOrEmpty(input.body, 'provider'),
 		ref: readTrimmedStringOrEmpty(input.body, 'ref'),
 		packageId: readTrimmedStringOrEmpty(input.body, 'packageId'),
@@ -156,7 +172,10 @@ async function handleRevoke(input: {
 }) {
 	await revokeSecretProviderGrant({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		providerId: readTrimmedStringOrEmpty(input.body, 'provider'),
 		ref: readTrimmedStringOrEmpty(input.body, 'ref'),
 		packageId: readTrimmedStringOrEmpty(input.body, 'packageId'),

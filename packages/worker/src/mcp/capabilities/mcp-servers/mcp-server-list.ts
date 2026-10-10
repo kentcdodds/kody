@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -49,16 +50,19 @@ export const mcpServerListCapability = defineDomainCapability(
 		inputSchema: emptyCapabilityInputSchema,
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env: ctx.env,
 				requestUrl: ctx.callerContext.baseUrl,
 			})
 			const [settings, hubSnapshot] = await Promise.all([
-				listMcpServerSettings({ env: ctx.env, userId: user.userId }),
+				listMcpServerSettings({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+				}),
 				loadMcpClientHubSnapshotOrNull({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					waitUntil: ctx.waitUntil,
 				}),
 			])
@@ -70,7 +74,7 @@ export const mcpServerListCapability = defineDomainCapability(
 						) ?? null
 					return persistMcpServerLastErrorIfChanged({
 						env: ctx.env,
-						userId: user.userId,
+						userId: ownerIdFromCaller(ctx.callerContext),
 						id: setting.id,
 						state: snapshot?.state ?? 'disconnected',
 						lastError: snapshot?.lastError ?? null,

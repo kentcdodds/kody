@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -29,7 +30,7 @@ export const secretDeleteCapability = defineDomainCapability(
 			deleted: z.boolean(),
 		}),
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const { authorityPackageId, storageContext } =
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
@@ -37,7 +38,7 @@ export const secretDeleteCapability = defineDomainCapability(
 			if (args.scope === 'user' && authorityPackageId) {
 				const existing = await resolveSecret({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					name: args.name,
 					scope: 'user',
 					storageContext,
@@ -46,7 +47,7 @@ export const secretDeleteCapability = defineDomainCapability(
 					await assertPackageCanAccessResolvedSecret({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
-						userId: user.userId,
+						userId: ownerIdFromCaller(ctx.callerContext),
 						storageContext,
 						authorityPackageId,
 						secretName: args.name,
@@ -58,7 +59,7 @@ export const secretDeleteCapability = defineDomainCapability(
 			return {
 				deleted: await deleteSecret({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					name: args.name,
 					scope: args.scope,
 					storageContext,

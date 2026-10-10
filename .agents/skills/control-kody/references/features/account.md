@@ -31,11 +31,12 @@ home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings and
 members are `/@<slug>/-/settings` and `/@<slug>/-/members`.
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
-404s for everyone else. Its resource pages stay 404 until storage follows
-`request.org.id` (#3073). Team orgs still get an Organization rail: Settings
-(`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and Billing
-(`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs keep
-Billing/Usage on the account rail.
+404s for everyone else. Secrets, jobs, and the other org resource pages read
+`request.org.id`. Packages and connected agents stay 404 on a team org because
+those two sections still read the person. Team orgs still get an Organization
+rail: Settings (`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and
+Billing (`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs
+keep Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short

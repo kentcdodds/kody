@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -96,7 +97,7 @@ export const metaMemoryUpsertCapability = defineDomainCapability(
 			}
 			const result = await upsertMemory({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				userEmail: user.email,
 				memoryId: args.memory_id ?? null,
 				category: args.category ?? null,
