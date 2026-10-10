@@ -1,6 +1,11 @@
-import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import {
+	utcDayKey,
+	utcMonthKey,
+	utcWeekStart,
+} from '@kody-internal/shared/date-keys.ts'
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
+import { resolvePastIncludeStop } from '#universal/compute-overage.ts'
 import {
 	isPastIncludeStopResource,
 	isWeeklyComputeWindowResource,
@@ -23,6 +28,11 @@ import { type RepoSessionIndexEnv } from '#worker/repo/repo-session-index-client
 import { countActiveRepoSessions } from '#worker/repo/repo-sessions.ts'
 import { countActiveWorkflowProjections } from '#worker/run-records/service.ts'
 import {
+	readMonthlyComputeUsage,
+	type MonthlyComputeUsage,
+} from '#worker/billing/compute-overage-usage.ts'
+import {
+	ComputeOverageLimitError,
 	EntitlementLimitError,
 	buildEntitlementUpgradeHint,
 	isBudgetLimitError,
@@ -64,9 +74,9 @@ const publicFreeEntitlement: UserEntitlement = {
 }
 
 /**
- * `users` columns every entitlement resolution reads. Select these (with a
- * `u.` prefix via {@link userEntitlementColumnsSql}) wherever a sweep
- * already has the row, then call {@link resolveUserEntitlementFromRow}.
+ * Org columns every entitlement resolution reads. Select these (with an
+ * `o.` prefix via {@link userEntitlementColumnsSql}) wherever a sweep
+ * already has the org row, then call {@link resolveUserEntitlementFromRow}.
  */
 export const userEntitlementColumns = [
 	'plan',
@@ -260,7 +270,7 @@ export async function resolveUserEntitlementFromRow(input: {
  * contexts with a blank/missing email reverse-resolve by stable id. Missing or
  * invalid stable ids still fail closed to public `free` without touching D1.
  *
- * Effective plan = f(manual users.plan, users.stripe_plan, unexpired
+ * Effective plan = f(manual orgs.plan, orgs.stripe_plan, unexpired
  * Pro overlays): the higher-ranked of the manual grant and Stripe
  * subscription plan, then a public Pro overlay when the later of the
  * second-agent gift and stacked referral credit is still active and the
@@ -274,14 +284,13 @@ async function loadEntitlementRowForStableUserId(
 	input: { stableUserId: string; email: string | null | undefined },
 ): Promise<UserEntitlementRow | null> {
 	const orgColumns = userEntitlementColumnsSql('o')
-	const userColumns = userEntitlementColumnsSql('u')
 	const email = input.email?.trim().toLowerCase()
 
 	// When email is provided, require a live users row for (email, stable id)
 	// before reading org billing — a mismatched caller context must not inherit
-	// another account's plan. Prefer orgs; fall back to users columns.
+	// another account's plan. Entitlement columns come from `orgs` only.
 	if (email) {
-		const orgRow = await db
+		return await db
 			.prepare(
 				`SELECT ${orgColumns}
 				 FROM users u
@@ -290,29 +299,11 @@ async function loadEntitlementRowForStableUserId(
 			)
 			.bind(email, input.stableUserId)
 			.first<UserEntitlementRow>()
-		if (orgRow) return orgRow
-
-		return await db
-			.prepare(
-				`SELECT ${userColumns}
-				 FROM users u
-				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
-			)
-			.bind(email, input.stableUserId)
-			.first<UserEntitlementRow>()
 	}
-
-	const orgRow = await db
-		.prepare(
-			`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
-		)
-		.bind(input.stableUserId)
-		.first<UserEntitlementRow>()
-	if (orgRow) return orgRow
 
 	return await db
 		.prepare(
-			`SELECT ${userColumns} FROM users u WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
+			`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
@@ -467,8 +458,8 @@ export async function findCachedUserAccountByStableUserId(
 }
 
 /**
- * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state via one indexed `users.stable_user_id` point read.
+ * Reverse-resolve a stable MCP userId back to the account email, personal-org
+ * plan, and verified-email state via the indexed `users.stable_user_id`.
  * Only call this on paths that genuinely have no caller context email (for
  * example package-runtime contexts acting with only the stable userId);
  * inbound email routing resolves accounts via the indexed username lookup
@@ -482,9 +473,10 @@ export async function findUserAccountByStableUserId(
 	if (!trimmed) return null
 	const row = await db
 		.prepare(
-			`SELECT email, plan, email_verified_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.email, o.plan, u.email_verified_at
+			 FROM users u
+			 INNER JOIN orgs o ON o.id = u.stable_user_id
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(trimmed)
 		.first<{
@@ -1603,21 +1595,21 @@ async function resolveDailyEntitlementWindow(input: {
 	// Cached plan resolution: this runs on every new execute worker and every
 	// sandbox outbound fetch; the UserMeter call after it is the only
 	// counter state that must be fresh.
-	const entitlement = await getCachedUserEntitlement(input.db, {
+	const cachedEntitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
 	// Before the counter so a stopped attempt does not spend daily quota.
-	if (isPastIncludeStopResource(resource)) {
-		await assertWithinPastIncludeCredits({
-			db: input.db,
-			env: input.env,
-			userId: input.userId,
-			entitlement,
-			now,
-			orgBudget: input.orgBudget,
-		})
-	}
+	const entitlement = isPastIncludeStopResource(resource)
+		? await assertWithinPastIncludeCredits({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				entitlement: cachedEntitlement,
+				now,
+				orgBudget: input.orgBudget,
+			})
+		: cachedEntitlement
 	const limit = resolvePlanLimit(
 		entitlement.plan,
 		resource,
@@ -1705,11 +1697,20 @@ async function throwDailyEntitlementDenial(input: {
 	})
 }
 
+const cachedMonthlyComputeUsage =
+	createEntitlementLookupCache<MonthlyComputeUsage>()
+
 /**
- * Former include → credits → stop gate (0051). ADR 0065: an empty purchasable
- * Pro wallet falls back to Free rate/compute via {@link resolvePlanLimits}
- * instead of throwing here. Kept so {@link consumeDailyEntitlement} and
- * {@link assertWithinComputeInclude} call sites stay stable.
+ * Include → credits → stop for purchasable Pro: once this UTC month's
+ * Worker compute or Rows read include is used up and the wallet is empty,
+ * new compute stops until credits are added. Funded wallets pay past the
+ * include; wallet-less plans keep their hard caps. `usage_rollups` refresh
+ * hourly and the read shares the entitlement cache TTL, so the stop trails
+ * usage by about an hour; a later top-up forgives that overshoot instead of
+ * charging it. A stop is confirmed against an uncached entitlement so a
+ * top-up in another isolate resumes work right away. Org budgets are
+ * checked after the include stop. Returns the entitlement callers should
+ * resolve limits from: the uncached one when the stop re-read it.
  */
 async function assertWithinPastIncludeCredits(input: {
 	db: D1Database
@@ -1718,7 +1719,43 @@ async function assertWithinPastIncludeCredits(input: {
 	entitlement: UserEntitlement
 	now: Date
 	orgBudget?: OrgBudgetGateContext
-}) {
+}): Promise<UserEntitlement> {
+	let entitlement = input.entitlement
+	if (input.entitlement.creditWallet === 'empty') {
+		const month = utcMonthKey(input.now)
+		const usage = await cachedMonthlyComputeUsage.getOrCreate(
+			input.db,
+			`${input.userId}\n${month}`,
+			async () =>
+				await readMonthlyComputeUsage({
+					db: input.db,
+					stableUserId: input.userId,
+					month,
+				}),
+		)
+		const stop = resolvePastIncludeStop({
+			plan: input.entitlement.plan,
+			ladder: input.entitlement.ladder,
+			creditWallet: input.entitlement.creditWallet,
+			...usage,
+		})
+		if (stop) {
+			const fresh = await getUserEntitlement(input.db, {
+				userId: input.userId,
+				email: null,
+			})
+			if (fresh.creditWallet === 'empty') {
+				throw new ComputeOverageLimitError({
+					resource: stop.resource,
+					plan: fresh.plan,
+					limit: stop.limit,
+					current: stop.current,
+					creditsStatus: 'add_credits',
+				})
+			}
+			entitlement = fresh
+		}
+	}
 	const budget = orgBudgetFromGateContext(input.userId, input.orgBudget)
 	await assertWithinOrgBudget({
 		db: input.db,
@@ -1731,13 +1768,13 @@ async function assertWithinPastIncludeCredits(input: {
 		estimatedDeltaMicroUsd: 0,
 		now: input.now,
 	})
+	return entitlement
 }
 
 /**
- * Legacy hook for compute without a daily counter (hosted package apps,
- * realtime). ADR 0065 removed the empty-wallet hard stop; limits come from
- * {@link resolvePlanLimits}. Counted entry points use the same no-op inside
- * {@link consumeDailyEntitlement}.
+ * The include → credits → stop gate for compute that has no daily counter:
+ * hosted package app requests and realtime hooks. Counted entry points get
+ * the same check inside {@link consumeDailyEntitlement}.
  */
 export async function assertWithinComputeInclude(input: {
 	db: D1Database

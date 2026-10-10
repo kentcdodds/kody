@@ -34,15 +34,21 @@ function seedUser(
 	sqlite
 		.prepare(
 			`INSERT INTO users (
-				username, email, password_hash, stable_user_id,
-				signup_welcome_credits_pending, email_verified_at
-			) VALUES (?, ?, 'hash', ?, ?, ?)`,
+				username, email, password_hash, stable_user_id, email_verified_at
+			) VALUES (?, ?, 'hash', ?, ?)`,
+		)
+		.run(input.username, input.email, input.stableUserId, now.toISOString())
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, signup_welcome_credits_pending, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?)`,
 		)
 		.run(
-			input.username,
-			input.email,
 			input.stableUserId,
+			input.username,
 			input.pending ? 1 : 0,
+			now.toISOString(),
 			now.toISOString(),
 		)
 }
@@ -52,7 +58,7 @@ function pendingFlag(sqlite: DatabaseSync, stableUserId: string) {
 		sqlite
 			.prepare(
 				`SELECT signup_welcome_credits_pending AS pending
-				 FROM users WHERE stable_user_id = ?`,
+				 FROM orgs WHERE id = ?`,
 			)
 			.get(stableUserId) as { pending: number } | undefined
 	)?.pending
@@ -83,7 +89,7 @@ function walletBalance(sqlite: DatabaseSync, stableUserId: string) {
 test('failed creation-time grant keeps insert pending; login reconcile grants once without double-crediting', async () => {
 	const { sqlite, db } = createDb()
 	const stableUserId = ownerIdFromStored('stable-welcome-retry')
-	// Person-account inserts set pending=1 in the same write so a later D1
+	// Personal-org provisioning sets pending=1 so a later D1
 	// failure during the grant cannot erase the retry signal.
 	seedUser(sqlite, {
 		stableUserId,
@@ -97,7 +103,7 @@ test('failed creation-time grant keeps insert pending; login reconcile grants on
 		prepare(query: string) {
 			const normalized = query.replace(/\s+/g, ' ').toLowerCase()
 			if (
-				normalized.includes('update users') &&
+				normalized.includes('update orgs') &&
 				normalized.includes('signup_welcome_credits_pending')
 			) {
 				return {
@@ -207,9 +213,7 @@ test('reconcile of a pending account that already has signup_welcome clears pend
 	})
 	expect(first.applied).toBe(true)
 	sqlite
-		.prepare(
-			`UPDATE users SET signup_welcome_credits_pending = 1 WHERE stable_user_id = ?`,
-		)
+		.prepare(`UPDATE orgs SET signup_welcome_credits_pending = 1 WHERE id = ?`)
 		.run(stableUserId)
 
 	const reconciled = await reconcileSignupWelcomeCreditsIfPending({

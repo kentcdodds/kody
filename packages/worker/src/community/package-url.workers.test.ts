@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import {
 	deletePackageSlugRedirects,
@@ -28,12 +29,17 @@ async function insertUser(username: string): Promise<Owner> {
 	const userId = testStableUserIdFromEmail(email)
 	await runSql(
 		`INSERT INTO users (
-			username, email, stable_user_id, profile_visibility, password_hash, plan
-		) VALUES (?, ?, ?, 'public', 'test-password-hash', 'max')`,
+			username, email, stable_user_id, profile_visibility, password_hash
+		) VALUES (?, ?, ?, 'public', 'test-password-hash')`,
 		username,
 		email,
 		userId,
 	)
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	return { userId, username }
 }
 

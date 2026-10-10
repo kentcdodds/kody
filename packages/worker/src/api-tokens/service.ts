@@ -155,7 +155,7 @@ export type ApiTokenCreatedVia = (typeof apiTokenCreatedVia)[number]
 const apiTokenRowSchema = object({
 	id: string(),
 	user_id: string(),
-	org_id: nullable(string()),
+	org_id: string(),
 	name: string(),
 	token_hash: string(),
 	scopes_json: string(),
@@ -173,8 +173,7 @@ const apiTokenRowSchema = object({
 
 type ApiTokenRow = InferOutput<typeof apiTokenRowSchema>
 
-export type ApiTokenRecord = Omit<ApiTokenRow, 'scopes_json' | 'org_id'> & {
-	org_id: string
+export type ApiTokenRecord = Omit<ApiTokenRow, 'scopes_json'> & {
 	scopes: Array<ApiTokenScope>
 }
 
@@ -205,6 +204,10 @@ export type ApiTokenSecretView = ApiTokenView & {
 }
 
 function mapRow(row: Record<string, unknown>): ApiTokenRecord {
+	// org_id is required. A missing value must not be coerced to user_id.
+	if (typeof row.org_id !== 'string' || !row.org_id.trim()) {
+		throw new Error('Invalid API token record: org_id is required')
+	}
 	const parsed = parseSafe(apiTokenRowSchema, {
 		...row,
 		profile_name:
@@ -216,10 +219,9 @@ function mapRow(row: Record<string, unknown>): ApiTokenRecord {
 		const message = parsed.issues.map((issue) => issue.message).join(', ')
 		throw new Error(`Invalid API token record: ${message}`)
 	}
-	const { scopes_json, org_id, ...rest } = parsed.value
+	const { scopes_json, ...rest } = parsed.value
 	return {
 		...rest,
-		org_id: org_id && org_id.trim() ? org_id : rest.user_id,
 		scopes: normalizeApiTokenScopes(JSON.parse(scopes_json) as Array<unknown>),
 	}
 }

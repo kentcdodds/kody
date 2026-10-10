@@ -11,6 +11,7 @@ import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { RetryableInboundStorageError } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -62,11 +63,16 @@ async function seedAccountWithPlan(label: string, plan: 'free' | 'max') {
 	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, plan, stable_user_id
-		) VALUES (?, ?, 'test-password-hash', ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
-		.bind(username, email, new Date().toISOString(), plan, userId)
+		.bind(username, email, new Date().toISOString(), userId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan,
+	})
 	const address = `${username}@${platformDomain}`
 	return {
 		address,

@@ -44,17 +44,51 @@ function insertUser(
 		password_hash: 'x',
 		plan: 'free',
 		entitlement_ladder: 'public',
-		account_type: 'person',
 		...row,
 		created_at: createdAt,
 		updated_at: createdAt,
 	}
-	const names = Object.keys(columns)
+	const orgColumnNames = new Set([
+		'plan',
+		'entitlement_ladder',
+		'stripe_plan',
+		'stripe_price_id',
+		'second_agent_standard_gift_expires_at',
+		'referral_standard_credit_expires_at',
+	])
+	const userColumns = Object.fromEntries(
+		Object.entries(columns).filter(([name]) => !orgColumnNames.has(name)),
+	)
+	const userNames = Object.keys(userColumns)
 	sqlite
 		.prepare(
-			`INSERT INTO users (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`,
+			`INSERT INTO users (${userNames.join(', ')}) VALUES (${userNames.map(() => '?').join(', ')})`,
 		)
-		.run(...Object.values(columns))
+		.run(...Object.values(userColumns))
+	const orgColumns: Record<string, string> = {
+		id: row.stable_user_id,
+		slug: row.username,
+		plan: columns.plan ?? 'free',
+		entitlement_ladder: columns.entitlement_ladder ?? 'public',
+		created_at: createdAt,
+		updated_at: createdAt,
+	}
+	for (const name of orgColumnNames) {
+		const value = columns[name]
+		if (
+			value !== undefined &&
+			name !== 'plan' &&
+			name !== 'entitlement_ladder'
+		) {
+			orgColumns[name] = value
+		}
+	}
+	const orgNames = Object.keys(orgColumns)
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (${orgNames.join(', ')}) VALUES (${orgNames.map(() => '?').join(', ')})`,
+		)
+		.run(...Object.values(orgColumns))
 }
 
 test('launch signals aggregate paid MRR, funnels, activity, and overlays without paging users', async () => {

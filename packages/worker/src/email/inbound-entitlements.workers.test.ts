@@ -18,6 +18,7 @@ import { type Mailbox } from './mailbox-do.ts'
 import { stubFor } from './mailbox-test-helpers.ts'
 import { maxDetailedEmailRejectionEventsPerDay } from './service.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -30,11 +31,16 @@ async function seedAccount(label: string, plan: PlanName) {
 	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan
-		) VALUES (?, ?, 'test-password-hash', ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
-		.bind(username, email, new Date().toISOString(), userId, plan)
+		.bind(username, email, new Date().toISOString(), userId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan,
+	})
 	return { address: `${username}@inbox.kody.example.com`, userId }
 }
 

@@ -141,7 +141,7 @@ export function createExecuteWorkerDayClaim(input: {
 	email: string | null | undefined
 	orgBudget?: OrgBudgetGateContext
 }): ClaimWorkerDay {
-	return async (workerId) => {
+	return async (workerId, attribution) => {
 		const now = new Date()
 		const usage = await consumeExecuteUniqueWorkerDay({
 			db: input.env.APP_DB,
@@ -160,6 +160,7 @@ export function createExecuteWorkerDayClaim(input: {
 				outcome: 'success',
 				timestamp: now.toISOString(),
 				surface: 'execute',
+				...attribution,
 			})
 		}
 		return { created: usage.created }

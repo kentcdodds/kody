@@ -7,6 +7,7 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import {
 	packageOwnerEntitlementEmail,
@@ -20,11 +21,16 @@ function personUsername() {
 async function seedPersonUser(input: { username: string; email: string }) {
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-		 VALUES (?, ?, 'test-password-hash', ?, ?, 'max')`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+		 VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
 		.bind(input.username, input.email, new Date().toISOString(), stableUserId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username: input.username,
+		plan: 'max',
+	})
 	return { username: input.username, email: input.email, stableUserId }
 }
 

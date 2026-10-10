@@ -414,6 +414,11 @@ test('orgCreate rejects reserved and malformed slugs with the shared validation'
 	await expect(
 		orgCreateCapability.handler({ slug: 'admin' }, ctx),
 	).rejects.toThrow('This username is reserved.')
+	for (const slug of ['me', 'ME']) {
+		await expect(orgCreateCapability.handler({ slug }, ctx)).rejects.toThrow(
+			'This username is reserved.',
+		)
+	}
 	await expect(
 		orgCreateCapability.handler({ slug: '-bad-' }, ctx),
 	).rejects.toThrow(/3 to 32 characters/)

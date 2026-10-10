@@ -105,6 +105,7 @@ import {
 	resolvePackageAppClientArtifact,
 } from './package-app-assets.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
+import { usageConnectionKey } from '#worker/usage/record-usage.ts'
 import {
 	createNullPackagesInvokeRewriteHostSource,
 	modulesContainUnboundPackagesInvokeAccess,
@@ -2168,6 +2169,7 @@ export async function buildPackageAppWorker(input: {
 				workerId: build.workerId,
 				surface,
 				packageId: input.savedPackage.id,
+				connectionKey: usageConnectionKey(input.runtime.callerContext.request),
 				waitUntil: input.waitUntil,
 			})
 		}
@@ -2187,6 +2189,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 	workerId: string
 	surface: 'app_fetch' | 'app_realtime'
 	packageId: string
+	connectionKey: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const tracked = recordUniqueDynamicWorkerDay({
@@ -2195,6 +2198,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 		workerId: input.workerId,
 		surface: input.surface,
 		packageId: input.packageId,
+		connectionKey: input.connectionKey,
 	}).catch((error: unknown) => {
 		console.warn('package-app-dynamic-worker-day-record-failed', error)
 	})

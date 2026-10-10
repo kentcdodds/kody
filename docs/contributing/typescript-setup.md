@@ -57,15 +57,20 @@ The root `tsconfig.json` is the **solution** file:
 - It references `tsconfig-tools.json`, `packages/worker/tsconfig-client.json`,
   and `packages/worker/tsconfig-worker-typecheck.json`.
 
-`npm run typecheck` runs:
+`npm run typecheck` runs `nx run-many -t typecheck`: every project's `typecheck`
+target in parallel, each cached by Nx (local and remote):
 
-- `nx run worker:typecheck` — which runs
-  `tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit`,
-  then the two worker test configs (see [Tests](#tests))
-- then `tsc -p tsconfig-tools-typecheck.json`
-- then `tsc --noEmit -p` for each sibling package config
-  (`backup-control-plane`, `status`, `jobs-worker`, `highlight-worker`,
-  `nx-cache`); those configs already include their own tests
+- `worker:typecheck` fans out to `typecheck-src`
+  (`tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit`),
+  `typecheck-worker-test`, and `typecheck-client-test` (see [Tests](#tests))
+- the root `tools` project runs `tsc -p tsconfig-tools-typecheck.json`
+- each sibling package (`backup-control-plane`, `status`, `jobs-worker`,
+  `highlight-worker`, `api-worker`, `api-docs-worker`, `nx-cache`) runs
+  `tsc --noEmit -p` on its own config; those configs already include their own
+  tests
+
+Adding a package means giving it a `typecheck` target (a `typecheck` npm script
+is enough); `run-many` picks it up without touching the root script.
 
 The root solution file (and therefore `tsconfig-tools.json`) is used by the
 editor, not by `npm run typecheck`.

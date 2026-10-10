@@ -493,6 +493,7 @@ export async function handleMcpRequest({
 		executionOrigin: 'interactive',
 		user: mcpUser,
 		connectionProfileName,
+		oauthClientId: tokenSummary.grant.clientId,
 		orgBinding,
 	})
 	context.props = toMcpCallerContextWire(callerContext)

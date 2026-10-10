@@ -48,6 +48,12 @@ function clientModeCopy(mode: McpOAuthClientMode) {
 				label: 'Dynamic Client Registration (DCR)',
 				detail: 'Kody registered itself with this authorization server.',
 			}
+		case 'pre-registered':
+			return {
+				label: 'Pre-registered OAuth client',
+				detail:
+					"Kody uses the OAuth client an admin saved in this server's settings.",
+			}
 		default: {
 			const exhaustive: never = mode
 			throw new Error(`Unhandled MCP OAuth client mode: ${String(exhaustive)}`)

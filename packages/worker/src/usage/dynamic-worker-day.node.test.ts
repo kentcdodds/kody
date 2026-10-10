@@ -31,6 +31,7 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		userId: ownerIdFromStored('user-1'),
 		workerId: 'kody-worker-b',
 		surface: 'package_export',
+		connectionKey: 'api-token:person-1:tok-1',
 		now,
 	})
 	expect(first).toEqual({ created: true })
@@ -53,6 +54,7 @@ test('recordUniqueDynamicWorkerDay records the first claim and skips repeats', a
 		outcome: 'success',
 		timestamp: now.toISOString(),
 		surface: 'package_export',
+		connectionKey: 'api-token:person-1:tok-1',
 	})
 	recordUsageSpy.mockRestore()
 })

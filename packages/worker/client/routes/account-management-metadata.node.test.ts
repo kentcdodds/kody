@@ -250,7 +250,12 @@ test('team settings rail names the URL org when the session list is personal-onl
 	expect(html).toContain('href="/@acme/-/members"')
 	expect(html).toContain('aria-label="Organization"')
 	expect(html).not.toContain('href="/@acme/-/billing"')
-	expect(html).not.toContain('aria-label="Build"')
+	expect(html).toContain('href="/@acme/-/jobs"')
+	expect(html).toContain('href="/@acme/-/secrets"')
+	// No personal workspace links leak onto the team URL.
+	expect(html).not.toContain('href="/@ada/-/')
+	expect(html).not.toContain('href="/@acme/-/packages"')
+	expect(html).not.toContain('href="/@acme/-/connections"')
 })
 
 test('account page header puts the phone section menu above the heading', async () => {

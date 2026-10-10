@@ -67,15 +67,15 @@ export const adminUserMetadataSchema = z.object({
 		.nullable()
 		.describe('Raw users.email_verified_at timestamp, or null if unverified.'),
 	plan: planNameSchema.describe(
-		'Manual entitlement grant (users.plan). Manage plan writes this column. Ordinary Stripe subscribers keep this as free.',
+		'Manual entitlement grant (orgs.plan on the personal org). Manage plan writes this column. Ordinary Stripe subscribers keep this as free.',
 	),
 	manualPlan: planNameSchema.describe(
-		'Same as plan: the admin/manual grant on users.plan.',
+		'Same as plan: the admin/manual grant on orgs.plan.',
 	),
 	stripePlan: planNameSchema
 		.nullable()
 		.describe(
-			'Stripe-derived paid tier from users.stripe_plan, or null when none.',
+			'Stripe-derived paid tier from orgs.stripe_plan, or null when none.',
 		),
 	effectivePlan: planNameSchema.describe(
 		'Entitlement plan after manual grant, Stripe, and unexpired Pro overlays (second-agent gift / referral credit).',
@@ -84,13 +84,13 @@ export const adminUserMetadataSchema = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'Raw users.second_agent_standard_gift_expires_at ISO timestamp, or null.',
+			'Raw orgs.second_agent_standard_gift_expires_at ISO timestamp, or null.',
 		),
 	referralCreditExpiresAt: z
 		.string()
 		.nullable()
 		.describe(
-			'Raw users.referral_standard_credit_expires_at ISO timestamp, or null.',
+			'Raw orgs.referral_standard_credit_expires_at ISO timestamp, or null.',
 		),
 	overlayExpiresAt: z
 		.string()
@@ -116,7 +116,7 @@ export const adminUserMetadataSchema = z.object({
 		),
 	stripeCustomerLinked: z
 		.boolean()
-		.describe('True when users.stripe_customer_id is set.'),
+		.describe('True when orgs.stripe_customer_id is set.'),
 	suspended_at: z
 		.string()
 		.nullable()

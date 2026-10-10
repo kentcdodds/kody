@@ -255,7 +255,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'package_codemod_run_items' },
 	// Codemod runs are operator ledger rows: scope_user_id / initiated_by_user_id
 	// are attribution only. Keep the run for audit and anonymize both columns
-	// (matching community_bans.banned_by_user_id / package_scope_grants).
+	// (matching community_bans.banned_by_user_id).
 	{
 		kind: 'replace_user_column',
 		table: 'package_codemod_runs',
@@ -347,11 +347,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'user_repos' },
 	{ kind: 'user_id', table: 'saved_packages' },
-	{
-		kind: 'user_columns',
-		table: 'package_share_grants',
-		columns: ['owner_user_id', 'grantee_user_id'],
-	},
 	{
 		kind: 'user_id',
 		table: 'saved_package_search_index_debt',
@@ -499,21 +494,6 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		nullColumns: ['resolved_by_user_id', 'resolved_at', 'resolution_note'],
 		includeInExport: false,
 	},
-	// A grant dies with its scope owner or grantee, but survives deletion of
-	// the admin who created it (the grant remains valid; only attribution is
-	// anonymized, matching community_bans).
-	{
-		kind: 'user_columns',
-		table: 'package_scope_grants',
-		columns: ['scope_owner_user_id', 'grantee_user_id'],
-	},
-	{
-		kind: 'replace_user_column',
-		table: 'package_scope_grants',
-		matchColumn: 'created_by_user_id',
-		setColumn: 'created_by_user_id',
-		value: 'deleted-user',
-	},
 	{
 		kind: 'user_columns',
 		table: 'community_bans',
@@ -531,11 +511,9 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_listings',
 		columns: ['owner_user_id'],
 	},
-	// Retired usernames (no longer written now that handles are permanent, but
-	// the table still holds older rows until it is dropped) and retired package
-	// slugs die with the account: once the packages are gone there is nothing
-	// left to redirect to.
-	{ kind: 'user_id', table: 'username_redirects' },
+	// Retired package slugs exist only to keep canonical package URLs resolving
+	// after a package rename. They die with the account: once the packages are
+	// gone there is nothing left to redirect to.
 	{ kind: 'user_id', table: 'package_kody_id_redirects' },
 	{ kind: 'user_id', table: 'package_slug_redirects' },
 	// password_resets.user_id is an INTEGER FK to users.id (predates the
@@ -958,11 +936,6 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],
 	package_codemod_runs: ['scope_user_id', 'initiated_by_user_id'],
-	package_scope_grants: [
-		'scope_owner_user_id',
-		'grantee_user_id',
-		'created_by_user_id',
-	],
 	grants: ['created_by_user_id'],
 	invites: ['invited_by_user_id', 'accepted_by_user_id'],
 	org_memberships: ['invited_by_user_id'],
@@ -973,7 +946,6 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	mcp_server_settings: ['connected_by_user_id'],
 	user_integrations: ['connected_by_user_id'],
 	webhook_endpoints: ['created_by_user_id'],
-	package_share_grants: ['owner_user_id', 'grantee_user_id'],
 	referrals: ['referrer_stable_user_id', 'referee_stable_user_id'],
 }
 

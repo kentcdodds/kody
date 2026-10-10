@@ -121,40 +121,41 @@ export async function loadAdminLaunchSignals(input: {
 				.prepare(
 					`SELECT
 						COUNT(*) AS signed_up,
-						SUM(CASE WHEN email_verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified,
-						SUM(CASE WHEN first_mcp_connected_at IS NOT NULL THEN 1 ELSE 0 END) AS first_mcp,
-						SUM(CASE WHEN first_search_at IS NOT NULL THEN 1 ELSE 0 END) AS first_search,
-						SUM(CASE WHEN first_execute_at IS NOT NULL THEN 1 ELSE 0 END) AS first_execute,
-						SUM(CASE WHEN first_saved_package_at IS NOT NULL THEN 1 ELSE 0 END) AS first_saved_package,
-						SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS signed_up_since_open,
-						SUM(CASE WHEN created_at >= ? AND email_verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified_since_open,
-						SUM(CASE WHEN created_at >= ? AND first_mcp_connected_at IS NOT NULL THEN 1 ELSE 0 END) AS first_mcp_since_open,
-						SUM(CASE WHEN created_at >= ? AND first_search_at IS NOT NULL THEN 1 ELSE 0 END) AS first_search_since_open,
-						SUM(CASE WHEN created_at >= ? AND first_execute_at IS NOT NULL THEN 1 ELSE 0 END) AS first_execute_since_open,
-						SUM(CASE WHEN created_at >= ? AND first_saved_package_at IS NOT NULL THEN 1 ELSE 0 END) AS first_saved_package_since_open,
-						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_24h,
-						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_48h,
-						SUM(CASE WHEN date(last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_7d,
-						SUM(CASE WHEN plan = 'free' OR plan IS NULL THEN 1 ELSE 0 END) AS manual_free,
-						SUM(CASE WHEN plan = 'standard' THEN 1 ELSE 0 END) AS manual_standard,
-						SUM(CASE WHEN plan = 'pro' THEN 1 ELSE 0 END) AS manual_pro,
-						SUM(CASE WHEN plan = 'max' THEN 1 ELSE 0 END) AS manual_max,
-						SUM(CASE WHEN stripe_plan IS NULL OR stripe_plan = '' THEN 1 ELSE 0 END) AS stripe_none,
-						SUM(CASE WHEN stripe_plan = 'standard' THEN 1 ELSE 0 END) AS stripe_standard,
-						SUM(CASE WHEN stripe_plan = 'pro' THEN 1 ELSE 0 END) AS stripe_pro,
-						SUM(CASE WHEN COALESCE(entitlement_ladder, 'public') = 'public' THEN 1 ELSE 0 END) AS ladder_public,
-						SUM(CASE WHEN COALESCE(entitlement_ladder, 'public') = 'legacy' THEN 1 ELSE 0 END) AS ladder_legacy,
-						SUM(CASE WHEN COALESCE(entitlement_ladder, 'public') = 'legacy' AND stripe_plan IN ('standard', 'pro') THEN 1 ELSE 0 END) AS ladder_legacy_paid,
+						SUM(CASE WHEN u.email_verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified,
+						SUM(CASE WHEN u.first_mcp_connected_at IS NOT NULL THEN 1 ELSE 0 END) AS first_mcp,
+						SUM(CASE WHEN u.first_search_at IS NOT NULL THEN 1 ELSE 0 END) AS first_search,
+						SUM(CASE WHEN u.first_execute_at IS NOT NULL THEN 1 ELSE 0 END) AS first_execute,
+						SUM(CASE WHEN u.first_saved_package_at IS NOT NULL THEN 1 ELSE 0 END) AS first_saved_package,
+						SUM(CASE WHEN u.created_at >= ? THEN 1 ELSE 0 END) AS signed_up_since_open,
+						SUM(CASE WHEN u.created_at >= ? AND u.email_verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified_since_open,
+						SUM(CASE WHEN u.created_at >= ? AND u.first_mcp_connected_at IS NOT NULL THEN 1 ELSE 0 END) AS first_mcp_since_open,
+						SUM(CASE WHEN u.created_at >= ? AND u.first_search_at IS NOT NULL THEN 1 ELSE 0 END) AS first_search_since_open,
+						SUM(CASE WHEN u.created_at >= ? AND u.first_execute_at IS NOT NULL THEN 1 ELSE 0 END) AS first_execute_since_open,
+						SUM(CASE WHEN u.created_at >= ? AND u.first_saved_package_at IS NOT NULL THEN 1 ELSE 0 END) AS first_saved_package_since_open,
+						SUM(CASE WHEN date(u.last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_24h,
+						SUM(CASE WHEN date(u.last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_48h,
+						SUM(CASE WHEN date(u.last_active_at) >= date(?) THEN 1 ELSE 0 END) AS active_7d,
+						SUM(CASE WHEN o.plan = 'free' OR o.plan IS NULL THEN 1 ELSE 0 END) AS manual_free,
+						SUM(CASE WHEN o.plan = 'standard' THEN 1 ELSE 0 END) AS manual_standard,
+						SUM(CASE WHEN o.plan = 'pro' THEN 1 ELSE 0 END) AS manual_pro,
+						SUM(CASE WHEN o.plan = 'max' THEN 1 ELSE 0 END) AS manual_max,
+						SUM(CASE WHEN o.stripe_plan IS NULL OR o.stripe_plan = '' THEN 1 ELSE 0 END) AS stripe_none,
+						SUM(CASE WHEN o.stripe_plan = 'standard' THEN 1 ELSE 0 END) AS stripe_standard,
+						SUM(CASE WHEN o.stripe_plan = 'pro' THEN 1 ELSE 0 END) AS stripe_pro,
+						SUM(CASE WHEN COALESCE(o.entitlement_ladder, 'public') = 'public' THEN 1 ELSE 0 END) AS ladder_public,
+						SUM(CASE WHEN COALESCE(o.entitlement_ladder, 'public') = 'legacy' THEN 1 ELSE 0 END) AS ladder_legacy,
+						SUM(CASE WHEN COALESCE(o.entitlement_ladder, 'public') = 'legacy' AND o.stripe_plan IN ('standard', 'pro') THEN 1 ELSE 0 END) AS ladder_legacy_paid,
 						SUM(CASE
-							WHEN (plan IS NULL OR plan = 'free')
-								AND (stripe_plan IS NULL OR stripe_plan NOT IN ('standard', 'pro'))
+							WHEN (o.plan IS NULL OR o.plan = 'free')
+								AND (o.stripe_plan IS NULL OR o.stripe_plan NOT IN ('standard', 'pro'))
 								AND (
-									(second_agent_standard_gift_expires_at IS NOT NULL AND second_agent_standard_gift_expires_at > ?)
-									OR (referral_standard_credit_expires_at IS NOT NULL AND referral_standard_credit_expires_at > ?)
+									(o.second_agent_standard_gift_expires_at IS NOT NULL AND o.second_agent_standard_gift_expires_at > ?)
+									OR (o.referral_standard_credit_expires_at IS NOT NULL AND o.referral_standard_credit_expires_at > ?)
 								)
 							THEN 1 ELSE 0 END) AS overlay_pro
-					 FROM users
-					 WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
+					 FROM users u
+					 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
 				)
 				.bind(
 					platformPublicOpenedDay,
@@ -172,13 +173,14 @@ export async function loadAdminLaunchSignals(input: {
 				.first<LaunchTotalsRow>(),
 			input.db
 				.prepare(
-					`SELECT COALESCE(stripe_plan, '') AS stripe_plan,
-						COALESCE(stripe_price_id, '') AS stripe_price_id,
+					`SELECT COALESCE(o.stripe_plan, '') AS stripe_plan,
+						COALESCE(o.stripe_price_id, '') AS stripe_price_id,
 						COUNT(*) AS n
-					 FROM users
-					 WHERE deleting_at IS NULL
-						AND stripe_plan IN ('standard', 'pro')
-						${andLiveDeletedAtSql()}
+					 FROM users u
+					 INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 WHERE u.deleting_at IS NULL
+						AND o.stripe_plan IN ('standard', 'pro')
+						${andLiveDeletedAtSql('u')}
 					 GROUP BY 1, 2`,
 				)
 				.all<PaidPriceRow>(),
@@ -186,19 +188,20 @@ export async function loadAdminLaunchSignals(input: {
 				.prepare(
 					`SELECT
 						CASE
-							WHEN plan = 'max' THEN 'max'
-							WHEN plan = 'pro' OR stripe_plan = 'pro' THEN 'pro'
-							WHEN plan = 'standard' OR stripe_plan = 'standard' THEN 'standard'
+							WHEN o.plan = 'max' THEN 'max'
+							WHEN o.plan = 'pro' OR o.stripe_plan = 'pro' THEN 'pro'
+							WHEN o.plan = 'standard' OR o.stripe_plan = 'standard' THEN 'standard'
 							WHEN (
-								(second_agent_standard_gift_expires_at IS NOT NULL AND second_agent_standard_gift_expires_at > ?)
-								OR (referral_standard_credit_expires_at IS NOT NULL AND referral_standard_credit_expires_at > ?)
+								(o.second_agent_standard_gift_expires_at IS NOT NULL AND o.second_agent_standard_gift_expires_at > ?)
+								OR (o.referral_standard_credit_expires_at IS NOT NULL AND o.referral_standard_credit_expires_at > ?)
 							) THEN 'pro'
-							ELSE COALESCE(plan, 'free')
+							ELSE COALESCE(o.plan, 'free')
 						END AS name,
 						COUNT(*) AS n
-					 FROM users
-					 WHERE deleting_at IS NULL
-						${andLiveDeletedAtSql()}
+					 FROM users u
+					 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+					 WHERE u.deleting_at IS NULL
+						${andLiveDeletedAtSql('u')}
 					 GROUP BY 1`,
 				)
 				.bind(nowIso, nowIso)

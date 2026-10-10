@@ -104,13 +104,13 @@ function sqliteNames(state: DurableObjectState, where: string) {
 		.map((row) => row.name)
 }
 
-function expectSchemaV13(state: DurableObjectState) {
+function expectSchemaV14(state: DurableObjectState) {
 	const version = state.storage.sql
 		.exec<{ value: number }>(
 			`SELECT value FROM user_meter_meta WHERE key = 'schema_version' LIMIT 1`,
 		)
 		.toArray()[0]
-	expect(Number(version?.value)).toBe(13)
+	expect(Number(version?.value)).toBe(14)
 	expect(
 		state.storage.sql
 			.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
@@ -120,9 +120,13 @@ function expectSchemaV13(state: DurableObjectState) {
 	expect(
 		sqliteNames(
 			state,
-			`type = 'table' AND name IN ('dynamic_worker_days', 'inbound_mcp_connection_last_used') ORDER BY name`,
+			`type = 'table' AND name IN ('dynamic_worker_days', 'execute_call_days', 'inbound_mcp_connection_last_used') ORDER BY name`,
 		),
-	).toEqual(['dynamic_worker_days', 'inbound_mcp_connection_last_used'])
+	).toEqual([
+		'dynamic_worker_days',
+		'execute_call_days',
+		'inbound_mcp_connection_last_used',
+	])
 }
 
 /**
@@ -139,13 +143,13 @@ function recentDailyCounterNow(): Date {
 	)
 }
 
-test('fresh UserMeter schema is v12 and warm v7 upgrades to v12 preserving leases', async () => {
+test('fresh UserMeter schema is v14 and warm v7 upgrades to v14 preserving leases', async () => {
 	const fresh = await seedFreeUser('meter-schema-v12-fresh')
 	await runInDurableObject(
 		meterStub(fresh.userId),
 		async (instance: UserMeter, state) => {
 			expect(instance).toBeInstanceOf(UserMeter)
-			expectSchemaV13(state)
+			expectSchemaV14(state)
 		},
 	)
 
@@ -192,7 +196,7 @@ test('fresh UserMeter schema is v12 and warm v7 upgrades to v12 preserving lease
 			}
 			proto.initializeSchema.call(instance)
 
-			expectSchemaV13(state)
+			expectSchemaV14(state)
 			expect(
 				state.storage.sql
 					.exec(
@@ -585,6 +589,28 @@ test('UserMeter readDailyTrend returns counters and unique worker days for the r
 		createdAt: now.toISOString(),
 	})
 
+	for (const nowMs of [yesterday.getTime(), now.getTime(), now.getTime()]) {
+		await user.meter.admitExecuteCall({ nowMs, limitPerMinute: 300 })
+	}
+	// Pre-deploy call counts under the retired per-call counter still show.
+	await runInDurableObject(
+		meterStub(user.userId),
+		async (_instance: UserMeter, state) => {
+			for (const [day, count] of [
+				[utcDayKey(yesterday), 40],
+				[utcDayKey(now), 5],
+			] as const) {
+				state.storage.sql.exec(
+					`INSERT INTO daily_counters (resource, day, count, revision, updated_at)
+					 VALUES ('execute_calls_per_day', ?, ?, 1, ?)`,
+					day,
+					count,
+					now.toISOString(),
+				)
+			}
+		},
+	)
+
 	const trend = await user.meter.readDailyTrend({ now: now.toISOString() })
 	expect(trend.retentionDays).toBeGreaterThan(0)
 	expect(trend.endDay).toBe(utcDayKey(now))
@@ -605,6 +631,10 @@ test('UserMeter readDailyTrend returns counters and unique worker days for the r
 	expect(trend.uniqueWorkerDays).toEqual([
 		{ day: utcDayKey(yesterday), count: 2 },
 		{ day: utcDayKey(now), count: 1 },
+	])
+	expect(trend.executeCalls).toEqual([
+		{ day: utcDayKey(yesterday), count: 41 },
+		{ day: utcDayKey(now), count: 7 },
 	])
 }, 30_000)
 

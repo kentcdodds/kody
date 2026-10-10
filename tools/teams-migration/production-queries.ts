@@ -19,10 +19,11 @@ import {
 } from '../preview-rehearsal/seal.ts'
 
 /**
- * The read-only production queries Teams needs before the P8 data conversion
- * (docs/contributing/teams-production-queries.md). Counts and ids only. Every
- * request is a D1 SELECT, a KV read, or a Stripe GET, and the report leaves
- * only as an envelope sealed to the operator's key.
+ * Read-only production queries that stay useful after the Teams P8 conversion
+ * (docs/contributing/teams-production-queries.md): OAuth grant org binding and
+ * live Stripe subscriptions. Counts only. Every request is a KV read or a
+ * Stripe GET, and the report leaves only as an envelope sealed to the
+ * operator's key. Credential exposure is a separate script.
  */
 
 export type QueryTarget =
@@ -161,124 +162,6 @@ export async function readOnlyD1Query<Row>(
 	return queryD1<Row>(client, uuid, assertReadOnlySql(sql))
 }
 
-export const platformAccountsSql = `SELECT u.id AS user_id, u.username,
-	(SELECT COUNT(*) FROM saved_packages p WHERE p.user_id = u.stable_user_id) AS packages,
-	(SELECT COUNT(*) FROM saved_packages p WHERE p.user_id = u.stable_user_id AND p.is_private = 0) AS public_packages,
-	(SELECT COUNT(*) FROM saved_packages p WHERE p.user_id = u.stable_user_id AND p.hidden = 1) AS hidden_packages,
-	(SELECT COUNT(*) FROM package_scope_grants g WHERE g.scope_owner_user_id = u.stable_user_id) AS scope_grantees
-FROM users u
-WHERE u.account_type = 'platform'
-ORDER BY u.username`
-
-/**
- * Each package's current published artifacts (`published_commit` matches its
- * source) and the dependencies recorded at bundle time, including transitive
- * ones. Older commits' artifacts are not imports anymore.
- */
-const currentArtifactDependencies = `FROM published_bundle_artifacts AS artifact
-JOIN entity_sources AS source
-	ON source.id = artifact.source_id
-	AND source.user_id = artifact.user_id
-	AND source.entity_kind = 'package'
-JOIN saved_packages AS p
-	ON p.id = source.entity_id
-	AND p.user_id = artifact.user_id
-JOIN json_each(artifact.dependencies_json) AS dependency
-LEFT JOIN entity_sources AS dependency_source
-	ON dependency_source.id = json_extract(dependency.value, '$.sourceId')
-LEFT JOIN users AS dependency_owner
-	ON dependency_owner.stable_user_id = dependency_source.user_id`
-
-/**
- * One row per (package, dependency): a dependency that is direct in one
- * artifact and transitive in another counts once, as direct.
- */
-export const crossPlatformScopeDependenciesSql = `SELECT
-	p.id AS package_id,
-	owner.username AS scope,
-	dependency_source.entity_id AS dependency_package_id,
-	dependency_owner.username AS dependency_scope,
-	MIN(CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END) AS transitive
-${currentArtifactDependencies}
-JOIN users AS owner
-	ON owner.stable_user_id = artifact.user_id
-	AND owner.account_type = 'platform'
-WHERE artifact.published_commit = source.published_commit
-	AND dependency_owner.account_type = 'platform'
-	AND dependency_source.user_id != artifact.user_id
-GROUP BY p.id, owner.username, dependency_source.entity_id, dependency_owner.username
-ORDER BY package_id, dependency_package_id`
-
-/**
- * A guest package that imports another person's package can only have
- * resolved it through a share grant (`resolveShareGrantedPackageImport`), so
- * this matches either the `shareOwned` stamp or a person-owned dependency
- * from another owner. One row per (guest package, shared package), with the
- * most relevant grant row: accepted, then pending, then the latest other.
- */
-export const sharedPackageImportsSql = `WITH imports AS (
-	SELECT
-		p.id AS guest_package_id,
-		artifact.user_id AS guest_user_id,
-		COALESCE(dependency_source.entity_id, json_extract(dependency.value, '$.packageId')) AS shared_package_id,
-		MIN(CASE WHEN json_extract(dependency.value, '$.transitive') IS NULL THEN 0 ELSE 1 END) AS transitive
-	${currentArtifactDependencies}
-	WHERE artifact.published_commit = source.published_commit
-		AND (
-			json_extract(dependency.value, '$.shareOwned') = 1
-			OR (
-				dependency_owner.account_type = 'person'
-				AND dependency_source.user_id != artifact.user_id
-			)
-		)
-	GROUP BY 1, 2, 3
-)
-SELECT
-	imports.guest_package_id,
-	imports.shared_package_id,
-	grant_row.id AS share_grant_id,
-	grant_row.status AS share_status,
-	imports.transitive
-FROM imports
-LEFT JOIN package_share_grants AS grant_row
-	ON grant_row.id = (
-		SELECT candidate.id
-		FROM package_share_grants AS candidate
-		WHERE candidate.package_id = imports.shared_package_id
-			AND candidate.grantee_user_id = imports.guest_user_id
-		ORDER BY
-			CASE candidate.status WHEN 'accepted' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
-			candidate.updated_at DESC,
-			candidate.id
-		LIMIT 1
-	)
-ORDER BY imports.guest_package_id, imports.shared_package_id`
-
-export type PlatformAccountRow = {
-	userId: number
-	username: string
-	packages: number
-	publicPackages: number
-	hiddenPackages: number
-	scopeGrantees: number
-}
-
-export type CrossPlatformScopeDependencyRow = {
-	packageId: string
-	scope: string
-	dependencyPackageId: string
-	dependencyScope: string
-	transitive: boolean
-}
-
-export type SharedPackageImportRow = {
-	guestPackageId: string
-	sharedPackageId: string | null
-	shareGrantId: string | null
-	shareStatus: string | null
-	transitive: boolean
-}
-
 export type OAuthGrantCounts = {
 	grants: number
 	withOrgId: number
@@ -309,18 +192,9 @@ export type StripeSubscriptionCounts =
 	| { skipped: true; reason: string }
 
 export type ProductionQueryReport = {
-	version: 1
+	version: 2
 	target: string
 	ranAt: string
-	platformAccounts: { count: number; rows: Array<PlatformAccountRow> }
-	crossPlatformScopeDependencies: {
-		count: number
-		rows: Array<CrossPlatformScopeDependencyRow>
-	}
-	sharedPackageImports: {
-		count: number
-		rows: Array<SharedPackageImportRow>
-	}
 	oauthGrants: OAuthGrantCounts
 	stripeSubscriptions: StripeSubscriptionCounts
 }
@@ -559,12 +433,6 @@ export async function readProductionBillingEnv(
 	}
 }
 
-function toNumber(value: unknown) {
-	const number = Number(value)
-	if (!Number.isFinite(number)) throw new Error(`Expected a number: ${value}`)
-	return number
-}
-
 export async function runProductionQueries(input: {
 	client: CloudflareClient
 	target: QueryTarget
@@ -575,50 +443,6 @@ export async function runProductionQueries(input: {
 }): Promise<ProductionQueryReport> {
 	const { client, target } = input
 	const names = await targetResourceNames(target)
-	const appUuid = await resolveD1Uuid(client, names.appD1Name)
-
-	const platformRows = await readOnlyD1Query<Record<string, unknown>>(
-		client,
-		appUuid,
-		platformAccountsSql,
-	)
-	const platformAccounts = platformRows.map((row) => ({
-		userId: toNumber(row['user_id']),
-		username: String(row['username']),
-		packages: toNumber(row['packages']),
-		publicPackages: toNumber(row['public_packages']),
-		hiddenPackages: toNumber(row['hidden_packages']),
-		scopeGrantees: toNumber(row['scope_grantees']),
-	}))
-
-	const crossRows = await readOnlyD1Query<Record<string, unknown>>(
-		client,
-		appUuid,
-		crossPlatformScopeDependenciesSql,
-	)
-	const crossPlatformScopeDependencies = crossRows.map((row) => ({
-		packageId: String(row['package_id']),
-		scope: String(row['scope']),
-		dependencyPackageId: String(row['dependency_package_id']),
-		dependencyScope: String(row['dependency_scope']),
-		transitive: toNumber(row['transitive']) === 1,
-	}))
-
-	const sharedRows = await readOnlyD1Query<Record<string, unknown>>(
-		client,
-		appUuid,
-		sharedPackageImportsSql,
-	)
-	const nullableString = (value: unknown) =>
-		value === null || value === undefined ? null : String(value)
-	const sharedPackageImports = sharedRows.map((row) => ({
-		guestPackageId: String(row['guest_package_id']),
-		sharedPackageId: nullableString(row['shared_package_id']),
-		shareGrantId: nullableString(row['share_grant_id']),
-		shareStatus: nullableString(row['share_status']),
-		transitive: toNumber(row['transitive']) === 1,
-	}))
-
 	const oauthGrants = await countOAuthGrants(
 		client,
 		await resolveKvNamespaceId(client, names.oauthKvTitle),
@@ -630,21 +454,9 @@ export async function runProductionQueries(input: {
 			: await countStripeSubscriptions(input.stripe)
 
 	return {
-		version: 1,
+		version: 2,
 		target: target.kind === 'production' ? 'production' : target.workerName,
 		ranAt: (input.now ?? (() => new Date()))().toISOString(),
-		platformAccounts: {
-			count: platformAccounts.length,
-			rows: platformAccounts,
-		},
-		crossPlatformScopeDependencies: {
-			count: crossPlatformScopeDependencies.length,
-			rows: crossPlatformScopeDependencies,
-		},
-		sharedPackageImports: {
-			count: sharedPackageImports.length,
-			rows: sharedPackageImports,
-		},
 		oauthGrants,
 		stripeSubscriptions,
 	}
@@ -657,7 +469,7 @@ export const missingStripeSecretSkipReason =
 /**
  * Production can count live Stripe subscriptions only when the Actions (or
  * local) secret is present. Billing is optional on the Worker, so a missing
- * key skips question 5 instead of aborting the D1 and KV queries.
+ * key skips Stripe counts instead of aborting the OAuth KV query.
  */
 export function resolveProductionStripe(
 	secretKey: string | undefined,

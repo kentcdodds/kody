@@ -24,7 +24,7 @@ function callAll<Event>(
 	}
 }
 
-export function createDoubleCheck(handle: Handle) {
+export function createDoubleCheck(handle: Pick<Handle, 'update'>) {
 	let doubleCheck = false
 
 	function setDoubleCheck(nextValue: boolean) {

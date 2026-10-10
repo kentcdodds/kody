@@ -29,7 +29,7 @@ function isBillableSubscription(subscription: StripeSubscription) {
 	return billableStatuses.has(subscription.status)
 }
 
-/** Prefer org customer, else personal user customer — including soft-deleted. */
+/** Org Stripe customer, including a soft-deleted org row. */
 async function readStripeCustomerIdIncludingSoftDeleted(
 	db: D1Database,
 	ownerId: string,
@@ -38,13 +38,7 @@ async function readStripeCustomerIdIncludingSoftDeleted(
 		.prepare(`SELECT stripe_customer_id FROM orgs WHERE id = ?`)
 		.bind(ownerId)
 		.first<{ stripe_customer_id: string | null }>()
-	const orgCustomer = org?.stripe_customer_id?.trim()
-	if (orgCustomer) return orgCustomer
-	const user = await db
-		.prepare(`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?`)
-		.bind(ownerId)
-		.first<{ stripe_customer_id: string | null }>()
-	return user?.stripe_customer_id?.trim() || null
+	return org?.stripe_customer_id?.trim() || null
 }
 
 export async function cancelKodySubscriptionsForSoftDelete(input: {

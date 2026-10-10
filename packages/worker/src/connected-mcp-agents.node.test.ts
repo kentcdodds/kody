@@ -16,6 +16,7 @@ type TestGrant = {
 	clientId: string
 	createdAt?: number
 	redirectUri?: string
+	metadata?: unknown
 }
 
 const chatgptClientId = 'https://chatgpt.com/oauth/vG3/client.json'
@@ -230,7 +231,7 @@ test('revokeConnectedMcpAgent revokes every grant for that clientId', async () =
 			userId: ownerIdFromStored('user-1'),
 			clientId: 'client-a',
 		}),
-	).resolves.toEqual({ revoked: 2 })
+	).resolves.toEqual({ revoked: 2, clientRemains: false })
 	expect(helpers.revoked).toEqual(['grant-1', 'grant-2'])
 	await expect(
 		revokeConnectedMcpAgent({
@@ -238,7 +239,7 @@ test('revokeConnectedMcpAgent revokes every grant for that clientId', async () =
 			userId: ownerIdFromStored('user-1'),
 			clientId: 'missing',
 		}),
-	).resolves.toEqual({ error: 'not_found' })
+	).resolves.toEqual({ error: 'not_found', clientRemains: false })
 })
 
 test('inbound connection state joins last-used and revoke forgets that stamp', async () => {
@@ -296,8 +297,98 @@ test('inbound connection state joins last-used and revoke forgets that stamp', a
 			clientId: 'client-active',
 			env: meter.env,
 		}),
-	).resolves.toEqual({ revoked: 1 })
+	).resolves.toEqual({ revoked: 1, clientRemains: false })
 	expect(
 		await listInboundMcpConnectionLastUsed({ env: meter.env, userId: userId }),
 	).toEqual(new Map([['client-stale', '2026-03-10T00:00:00.000Z']]))
+})
+
+test('an org filter lists only agents approved for that org', async () => {
+	const personId = ownerIdFromStored('user-1')
+	const teamId = ownerIdFromStored('org-acme')
+	const helpers = createHelpers({
+		grants: [
+			// Before org stamping: the signup org.
+			grant('grant-legacy', 'client-cursor', 1_700_000_000),
+			{
+				...grant('grant-personal', 'client-chatgpt', 1_700_000_100),
+				metadata: { orgId: 'user-1' },
+			},
+			{
+				...grant('grant-team', 'client-cursor', 1_700_000_200),
+				metadata: { orgId: 'org-acme' },
+			},
+		],
+		clients: {
+			'client-cursor': { clientName: 'Cursor' },
+			'client-chatgpt': { clientName: 'ChatGPT' },
+		},
+	})
+	const agentGrants = (
+		state: Awaited<ReturnType<typeof loadInboundMcpConnectionState>>,
+	) => state.agents.map((agent) => [agent.clientId, agent.grantIds])
+
+	expect(
+		agentGrants(
+			await loadInboundMcpConnectionState(helpers, personId, {
+				orgId: teamId,
+			}),
+		),
+	).toEqual([['client-cursor', ['grant-team']]])
+	expect(
+		agentGrants(
+			await loadInboundMcpConnectionState(helpers, personId, {
+				orgId: personId,
+			}),
+		),
+	).toEqual([
+		['client-chatgpt', ['grant-personal']],
+		['client-cursor', ['grant-legacy']],
+	])
+})
+
+test('revoking from an org keeps the same agent in other orgs and its last-used stamp', async () => {
+	const meter = createInMemoryUserMeterEnv()
+	const personId = ownerIdFromStored(`user-${crypto.randomUUID()}`)
+	const teamId = ownerIdFromStored('org-acme')
+	const helpers = createHelpers({
+		grants: [
+			grant('grant-personal', 'client-cursor'),
+			{ ...grant('grant-team', 'client-cursor'), metadata: { orgId: teamId } },
+			grant('grant-other', 'client-chatgpt'),
+		],
+	})
+	await recordInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId: personId,
+		clientId: 'client-cursor',
+		lastUsedAt: '2026-03-20T00:00:00.000Z',
+		nowMs: Date.parse('2026-03-20T00:00:00.000Z'),
+	})
+
+	await expect(
+		revokeConnectedMcpAgent({
+			helpers,
+			userId: personId,
+			clientId: 'client-chatgpt',
+			orgId: teamId,
+			env: meter.env,
+		}),
+	).resolves.toEqual({ error: 'not_found', clientRemains: true })
+	await expect(
+		revokeConnectedMcpAgent({
+			helpers,
+			userId: personId,
+			clientId: 'client-cursor',
+			orgId: teamId,
+			env: meter.env,
+		}),
+	).resolves.toEqual({ revoked: 1, clientRemains: true })
+	expect(helpers.revoked).toEqual(['grant-team'])
+	expect(
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId: personId,
+		}),
+	).toEqual(new Map([['client-cursor', '2026-03-20T00:00:00.000Z']]))
 })

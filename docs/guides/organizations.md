@@ -16,12 +16,12 @@ one org. Handles are permanent: `@slug` does not rename.
 
 ## Personal vs team
 
-|                    | Personal                                              | Team                                                                                                                                              |
-| ------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Created            | At signup (slug = username)                           | `orgCreate` or Create organization                                                                                                                |
-| Members / teams    | No — create a team org to invite people or group them | Yes                                                                                                                                               |
-| Package grants     | `accessGrant` / grant invites                         | Same, plus the Grants web page                                                                                                                    |
-| Resource web pages | Secrets, jobs, packages, connections, …               | Secrets and jobs (and more org-keyed pages); packages and connections still key on the person and 404 on a team URL until listing follows the org |
+|                    | Personal                                              | Team                                                                                                                                             |
+| ------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Created            | At signup (slug = username)                           | `orgCreate` or Create organization                                                                                                               |
+| Members / teams    | No — create a team org to invite people or group them | Yes                                                                                                                                              |
+| Package grants     | `accessGrant` / grant invites                         | Same, plus the Grants web page                                                                                                                   |
+| Resource web pages | Secrets, jobs, packages, connections, …               | Secrets, jobs, connections (your agents approved for that org), and more org-keyed pages; packages still key on the person and 404 on a team URL |
 
 Switch orgs in the header, or pick the org at MCP consent. One connection binds
 one org.
