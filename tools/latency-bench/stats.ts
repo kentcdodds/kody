@@ -87,6 +87,8 @@ export function summarizePath(input: {
 /**
  * "Latency Kody adds" in Executor's sense: the Kody round trip minus the
  * round trip of the same underlying call made directly from the client.
+ * Each row subtracts the two paths' percentiles (p50 − p50, p95 − p95); it is
+ * not the percentile of per-call differences, since the calls are not paired.
  */
 export function addedOverhead(
 	kodyPath: string,
@@ -121,7 +123,7 @@ export function formatMarkdown(report: {
 	if (report.overhead.length) {
 		lines.push(
 			'',
-			'| added over direct | p50 ms | p95 ms |',
+			'| added over direct (percentile − percentile) | p50 ms | p95 ms |',
 			'| --- | ---: | ---: |',
 		)
 		for (const entry of report.overhead) {

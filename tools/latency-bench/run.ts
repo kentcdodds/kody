@@ -180,17 +180,10 @@ export async function runLatencyBench(
 			)
 		).oauth.accessToken
 
-	let lastWallMs = 0
-	const timedFetch: typeof fetch = async (input, init) => {
-		const startedAt = performance.now()
-		const response = await fetch(input, init)
-		lastWallMs = performance.now() - startedAt
-		return response
-	}
 	const { client, transport } = await connectStatelessMcpClient(
 		options.origin,
 		{ Authorization: `Bearer ${token}` },
-		{ name: latencyBenchClientName, fetch: timedFetch },
+		{ name: latencyBenchClientName },
 	)
 
 	const paths: Record<string, PathSummary> = {}
@@ -220,41 +213,53 @@ export async function runLatencyBench(
 			console.error(`${name}: ${JSON.stringify(paths[name].warm)}`)
 	}
 
-	async function execute(code: string): Promise<PhaseSample> {
-		const result = (await client.callTool({
-			name: 'execute',
-			arguments: { code },
-		})) as ExecuteResult
+	function assertToolSucceeded(result: ExecuteResult) {
 		if (result.isError) {
 			throw new Error(JSON.stringify(result.content).slice(0, 400))
 		}
-		const timing = result.structuredContent?.timing
-		const phases: Record<string, number> = {}
-		for (const entry of timing?.serverTiming ?? []) {
-			phases[entry.name] = entry.durationMs
-		}
-		return { wallMs: lastWallMs, toolMs: timing?.durationMs, phases }
+		return result
 	}
 
+	/** Wall time around the whole call, including body transfer and parsing. */
 	async function timed(run: () => Promise<unknown>): Promise<PhaseSample> {
 		const startedAt = performance.now()
 		await run()
 		return { wallMs: performance.now() - startedAt }
 	}
 
+	async function execute(code: string): Promise<PhaseSample> {
+		const startedAt = performance.now()
+		const result = assertToolSucceeded(
+			(await client.callTool({
+				name: 'execute',
+				arguments: { code },
+			})) as ExecuteResult,
+		)
+		const wallMs = performance.now() - startedAt
+		const timing = result.structuredContent?.timing
+		const phases: Record<string, number> = {}
+		for (const entry of timing?.serverTiming ?? []) {
+			phases[entry.name] = entry.durationMs
+		}
+		return { wallMs, toolMs: timing?.durationMs, phases }
+	}
+
+	async function fetchOk(url: string | URL) {
+		const response = await fetch(url)
+		if (!response.ok) throw new Error(`${url} responded ${response.status}`)
+		return response.text()
+	}
+
 	await measure('health', () =>
-		timed(async () => (await fetch(new URL('/health', options.origin))).text()),
+		timed(() => fetchOk(new URL('/health', options.origin))),
 	)
-	await measure('mcp-tools-list', async () => {
-		await client.listTools()
-		return { wallMs: lastWallMs }
-	})
+	await measure('mcp-tools-list', () => timed(() => client.listTools()))
 	await measure('execute-noop', () => execute('export default async () => 1'))
 
 	if (options.fetchUrl) {
 		const fetchUrl = JSON.stringify(options.fetchUrl)
 		await measure('direct-fetch', () =>
-			timed(async () => (await fetch(options.fetchUrl as string)).text()),
+			timed(() => fetchOk(options.fetchUrl as string)),
 		)
 		await measure('execute-fetch-plain', () =>
 			execute(`export default async () => (await fetch(${fetchUrl})).text()`),
@@ -281,13 +286,24 @@ export async function runLatencyBench(
 			name: latencyBenchClientName,
 			version: '1.0.0',
 		})
-		await direct.connect(new LegacyMcpTransport(new URL(options.mcpDirectUrl)))
-		await measure('direct-mcp-tool', () =>
-			timed(() =>
-				direct.callTool({ name: options.mcpTool, arguments: options.mcpArgs }),
-			),
-		)
-		await direct.close()
+		let connected = false
+		await measure('direct-mcp-tool', async () => {
+			if (!connected) {
+				await direct.connect(
+					new LegacyMcpTransport(new URL(options.mcpDirectUrl as string)),
+				)
+				connected = true
+			}
+			return timed(async () =>
+				assertToolSucceeded(
+					(await direct.callTool({
+						name: options.mcpTool,
+						arguments: options.mcpArgs,
+					})) as ExecuteResult,
+				),
+			)
+		})
+		if (connected) await direct.close().catch(() => undefined)
 	}
 
 	if (options.packageImport) {
@@ -298,16 +314,16 @@ export async function runLatencyBench(
 		)
 	}
 
-	await measure('search', async () => {
-		const result = (await client.callTool({
-			name: 'search',
-			arguments: { query: options.searchQuery },
-		})) as ExecuteResult
-		if (result.isError) {
-			throw new Error(JSON.stringify(result.content).slice(0, 400))
-		}
-		return { wallMs: lastWallMs }
-	})
+	await measure('search', () =>
+		timed(async () =>
+			assertToolSucceeded(
+				(await client.callTool({
+					name: 'search',
+					arguments: { query: options.searchQuery },
+				})) as ExecuteResult,
+			),
+		),
+	)
 
 	await client.close().catch(() => undefined)
 	await transport.close().catch(() => undefined)
@@ -320,8 +336,14 @@ export async function runLatencyBench(
 	for (const [kodyPath, directPath] of pairs) {
 		const kody = paths[kodyPath]
 		const direct = paths[directPath]
-		if (kody && direct)
+		if (
+			kody &&
+			direct &&
+			isComplete(kody, options.n) &&
+			isComplete(direct, options.n)
+		) {
 			overhead.push(addedOverhead(kodyPath, kody, directPath, direct))
+		}
 	}
 
 	return {
@@ -333,6 +355,16 @@ export async function runLatencyBench(
 	}
 }
 
+export function isComplete(path: PathSummary, n: number) {
+	return path.cold !== null && path.warm.n === n && path.errors === 0
+}
+
+export function incompletePaths(report: LatencyBenchReport) {
+	return Object.entries(report.paths)
+		.filter(([, path]) => !isComplete(path, report.n))
+		.map(([name]) => name)
+}
+
 export async function main(argv = process.argv.slice(2)) {
 	const options = parseArgs(argv)
 	const report = await runLatencyBench(options)
@@ -342,6 +374,13 @@ export async function main(argv = process.argv.slice(2)) {
 	console.log(
 		options.json ? JSON.stringify(report, null, 2) : formatMarkdown(report),
 	)
+	const incomplete = incompletePaths(report)
+	if (incomplete.length) {
+		console.error(
+			`Incomplete paths (missing cold sample, fewer than ${report.n} warm samples, or errors): ${incomplete.join(', ')}`,
+		)
+		process.exitCode = 1
+	}
 }
 
 if (isExecutedDirectly(import.meta.url)) {
