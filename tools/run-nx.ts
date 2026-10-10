@@ -1,7 +1,14 @@
 import { spawn } from 'node:child_process'
 import { isExecutedDirectly, resolveLocalBinary } from './node-runtime.ts'
+import {
+	formatNxRemoteCacheProbe,
+	type NxRemoteCacheProbe,
+	nxRemoteCacheServerEnv,
+	nxRemoteCacheTokenEnv,
+	probeNxRemoteCache,
+} from './nx-remote-cache-probe.ts'
 
-export const nxRemoteCacheServerEnv = 'NX_SELF_HOSTED_REMOTE_CACHE_SERVER'
+export { nxRemoteCacheServerEnv }
 
 export type NxRunResult = {
 	status: number
@@ -83,10 +90,37 @@ export function spawnNx(
 	})
 }
 
+export function nxCacheSummaryLine(output: string) {
+	return /Cache:\s+\S+ hit \([^)]*\)/.exec(output)?.[0] ?? 'Cache: n/a'
+}
+
+/**
+ * Nx says nothing when the server rejects an upload, so after every run that
+ * had the remote cache configured, ask the server whether this token writes
+ * and print the answer next to Nx's own hit count. Never changes the status.
+ */
+export async function reportNxRemoteCache(input: {
+	output: string
+	env: NodeJS.ProcessEnv
+	probe?: typeof probeNxRemoteCache
+	log: (line: string) => void
+}) {
+	const server = input.env[nxRemoteCacheServerEnv]
+	if (!server) return
+	const probe: NxRemoteCacheProbe = await (input.probe ?? probeNxRemoteCache)({
+		server,
+		token: input.env[nxRemoteCacheTokenEnv] ?? '',
+	})
+	input.log(
+		`${formatNxRemoteCacheProbe(probe)} ${nxCacheSummaryLine(input.output)}`,
+	)
+}
+
 export async function runNxWithRemoteCacheFallback(input: {
 	args: ReadonlyArray<string>
 	env?: NodeJS.ProcessEnv
 	run?: NxRun
+	probe?: typeof probeNxRemoteCache
 	log?: (line: string) => void
 }): Promise<NxRunResult> {
 	const env = input.env ?? process.env
@@ -97,6 +131,23 @@ export async function runNxWithRemoteCacheFallback(input: {
 			console.error(line)
 		})
 
+	const result = await runNxOnce({ ...input, env, run, log })
+	await reportNxRemoteCache({
+		output: result.output,
+		env,
+		probe: input.probe,
+		log,
+	})
+	return result
+}
+
+async function runNxOnce(input: {
+	args: ReadonlyArray<string>
+	env: NodeJS.ProcessEnv
+	run: NxRun
+	log: (line: string) => void
+}): Promise<NxRunResult> {
+	const { env, run, log } = input
 	const first = await run(input.args, env)
 	if (first.status === 0) return first
 

@@ -141,3 +141,55 @@ test('spawnNx captures stdout from the local nx binary', async () => {
 	expect(result.status).toBe(0)
 	expect(result.output).toMatch(/\d+\.\d+\.\d+/)
 })
+
+test('runNxWithRemoteCacheFallback reports whether the token writes next to the Nx hit count', async () => {
+	const logs: Array<string> = []
+	const result = await runNxWithRemoteCacheFallback({
+		args: ['run-many', '-t', 'typecheck'],
+		env: {
+			NX_SELF_HOSTED_REMOTE_CACHE_SERVER: 'https://nx-cache.kody.codes',
+			NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'read-token',
+		},
+		log: (line) => {
+			logs.push(line)
+		},
+		run: () => ({
+			status: 0,
+			output:
+				'\n NX   Successfully ran target typecheck for 9 projects\n\nCache:             0/12 hit (0%)\n',
+			errorMessage: '',
+		}),
+		probe: async ({ server, token }) => ({
+			server,
+			health: 'ok',
+			read: 'ok',
+			write: token === 'read-token' ? 'read-only' : 'ok',
+		}),
+	})
+	expect(result.status).toBe(0)
+	expect(logs).toEqual([
+		expect.stringMatching(
+			/^Nx remote cache enabled \(https:\/\/nx-cache\.kody\.codes\) READ-ONLY: .* Cache: {13}0\/12 hit \(0%\)$/,
+		),
+	])
+})
+
+test('runNxWithRemoteCacheFallback stays quiet when no remote cache is configured', async () => {
+	const logs: Array<string> = []
+	await runNxWithRemoteCacheFallback({
+		args: ['run', 'worker:test-node'],
+		env: {},
+		log: (line) => {
+			logs.push(line)
+		},
+		run: () => ({
+			status: 0,
+			output: 'Cache: 1/1 hit (100%)',
+			errorMessage: '',
+		}),
+		probe: async () => {
+			throw new Error('probe must not run without a server')
+		},
+	})
+	expect(logs).toEqual([])
+})
