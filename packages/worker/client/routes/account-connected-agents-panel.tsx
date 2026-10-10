@@ -36,7 +36,11 @@ import {
 
 export function createAccountConnectedAgents(handle: Handle) {
 	let agents: Array<AccountConnectedAgentListItem> = []
-	const pendingRevokes = new Set<string>()
+	/**
+	 * Grant IDs of revokes still in flight. Keyed by grant, not clientId, so
+	 * the same host connected to another org stays visible after an org switch.
+	 */
+	const pendingRevokeGrantIds = new Set<string>()
 	/**
 	 * After a revoke commits, ignore those grant IDs in later payloads so a
 	 * prefetched / in-flight GET cannot restore the row or the Add connection
@@ -55,30 +59,41 @@ export function createAccountConnectedAgents(handle: Handle) {
 	}
 
 	function agentSurvivesRevokeFilter(agent: AccountConnectedAgentListItem) {
-		if (pendingRevokes.has(agent.clientId)) return false
-		if (revokedGrantIds.size === 0) return true
-		// Hide only when every listed grant was tombstoned. A new grant under
-		// the same clientId means a fresh reconnect and must stay visible.
-		return agent.grantIds.some((grantId) => !revokedGrantIds.has(grantId))
+		// Hide only when every listed grant is being revoked or was tombstoned.
+		// A new grant under the same clientId means a fresh reconnect and must
+		// stay visible.
+		return agent.grantIds.some(
+			(grantId) =>
+				!pendingRevokeGrantIds.has(grantId) && !revokedGrantIds.has(grantId),
+		)
 	}
 
 	function visibleAgents(next: Array<AccountConnectedAgentListItem>) {
-		if (pendingRevokes.size === 0 && revokedGrantIds.size === 0) return next
+		if (pendingRevokeGrantIds.size === 0 && revokedGrantIds.size === 0) {
+			return next
+		}
 		return next.filter(agentSurvivesRevokeFilter)
 	}
 
+	/** Last unfiltered payload list, so a failed revoke can re-derive rows. */
+	let latestPayloadAgents: Array<AccountConnectedAgentListItem> = []
+	let payloadVersion = 0
+
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
+		latestPayloadAgents = payload.agents
+		payloadVersion += 1
 		agents = visibleAgents(payload.agents)
 	}
 
 	async function revokeAgent(clientId: string) {
 		const removed = agents.find((agent) => agent.clientId === clientId)
 		if (!removed) return
+		const versionAtStart = payloadVersion
 
 		agents = agents.filter((agent) => agent.clientId !== clientId)
 		revokeChecks.get(clientId)?.reset()
 		revokeChecks.delete(clientId)
-		pendingRevokes.add(clientId)
+		for (const grantId of removed.grantIds) pendingRevokeGrantIds.add(grantId)
 		handle.update()
 		try {
 			const response = await fetch(connectedAgentsApiPath, {
@@ -100,25 +115,33 @@ export function createAccountConnectedAgents(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to revoke this agent.')
 			}
-			pendingRevokes.delete(clientId)
 			for (const grantId of removed.grantIds) {
+				pendingRevokeGrantIds.delete(grantId)
 				revokedGrantIds.add(grantId)
 			}
 			// Keep the optimistic list. Replacing from this response can put
 			// back a sibling that already committed if that POST listed earlier.
 			toast.success('Agent disconnected.')
 		} catch (error) {
-			pendingRevokes.delete(clientId)
+			for (const grantId of removed.grantIds) {
+				pendingRevokeGrantIds.delete(grantId)
+			}
 			// Do not clear revokedGrantIds: this attempt never added tombstones
 			// (only success does), and deleted IDs could wipe an earlier revoke.
-			if (!agents.some((agent) => agent.clientId === clientId)) {
+			// A payload that landed mid-revoke may be another org's list, so
+			// re-derive from it instead of putting this org's row back.
+			if (payloadVersion !== versionAtStart) {
+				agents = visibleAgents(latestPayloadAgents)
+			} else if (!agents.some((agent) => agent.clientId === clientId)) {
 				agents = [...agents, removed]
 			}
 			toast.error(
 				error instanceof Error ? error.message : 'Unable to revoke this agent.',
 			)
 		} finally {
-			pendingRevokes.delete(clientId)
+			for (const grantId of removed.grantIds) {
+				pendingRevokeGrantIds.delete(grantId)
+			}
 			handle.update()
 		}
 	}
@@ -136,7 +159,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 			return (
 				<AccountManagementPanel
 					title="Connected agents"
-					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
+					description="AI hosts you approved for this organization. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
 					ariaLabel="Connected agents"
 				>
 					{groups.length > 0 ? (

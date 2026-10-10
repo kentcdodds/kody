@@ -315,7 +315,7 @@ test('retired Standard over compute includes is not charged and has no wallet', 
 	)
 })
 
-test('purchasable Pro with credits runs past the include on credits; at $0 Free rates apply', async () => {
+test('purchasable Pro with credits runs past the include on credits; at $0 it stops at the include', async () => {
 	const purchasablePro = {
 		plan: 'free',
 		stripePlan: 'pro',
@@ -394,12 +394,12 @@ test('purchasable Pro with credits runs past the include on credits; at $0 Free 
 	expect(
 		empty.data?.warnings.filter((row) => row.resource === 'unique_worker_days'),
 	).toEqual([])
-	expect(empty.row('execute_unique_workers_per_day')?.limit).toBe(150)
+	expect(empty.row('execute_unique_workers_per_day')?.limit).toBe(500)
 	expect(empty.row('execute_unique_workers_per_day')?.howToReduce).toMatch(
-		/add credits at \/account\/usage#credits to restore Pro rates past your include/,
+		/add credits at \/account\/usage#credits to keep going past your include/,
 	)
 	expect(empty.meterFor('unique_worker_days')?.howToReduce).toMatch(
-		/With no credits left, rate and compute limits match Free until you top up/,
+		/With no credits left, usage past the include stops/,
 	)
 
 	// Without a Stripe customer nobody can buy: the alarm and the Credits
