@@ -177,7 +177,9 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 		refresh_token: 'rotated-rt',
 	})
 	expect(values.get(refreshKey)).toEqual({ refresh_token: 'rotated-rt' })
-	expect(await rotating.tokens()).toMatchObject({ refresh_token: 'rotated-rt' })
+	expect(await rotating.tokens()).toMatchObject({
+		refresh_token: 'rotated-rt',
+	})
 })
 
 test('client mode reads the client_id the authorization URL carries', () => {
@@ -203,6 +205,20 @@ test('client mode reads the client_id the authorization URL carries', () => {
 				`https://kody.codes${mcpClientIdMetadataPath}`,
 			),
 			callbackUrl: 'http://localhost:8787/account/mcp-servers/oauth/callback',
+		}),
+	).toBe('dcr')
+	expect(
+		resolveMcpOAuthClientMode({
+			authorizationUrl: authorize('github-app-client'),
+			callbackUrl,
+			preRegisteredClientId: 'github-app-client',
+		}),
+	).toBe('pre-registered')
+	expect(
+		resolveMcpOAuthClientMode({
+			authorizationUrl: authorize('registered-client-1'),
+			callbackUrl,
+			preRegisteredClientId: 'github-app-client',
 		}),
 	).toBe('dcr')
 })

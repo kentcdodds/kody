@@ -5,9 +5,10 @@ export type McpServerRef = {
 
 /**
  * How Kody identifies itself to an MCP server's authorization server: a
- * Client ID Metadata Document URL or a Dynamic Client Registration.
+ * Client ID Metadata Document URL, a Dynamic Client Registration, or the
+ * pre-registered client an admin saved on the server's settings page.
  */
-export type McpOAuthClientMode = 'cimd' | 'dcr'
+export type McpOAuthClientMode = 'cimd' | 'dcr' | 'pre-registered'
 
 export const mcpServerNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 
