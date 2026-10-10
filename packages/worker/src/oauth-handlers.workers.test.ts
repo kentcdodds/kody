@@ -557,6 +557,26 @@ test('authorize info, denial, approval, and default scopes follow the OAuth work
 		),
 	)
 	expect(authorizeHtml).toContain(baseClient.clientName ?? '')
+	expect(authorizeHtml).toContain('data-testid="oauth-authorize-passkey"')
+	expect(authorizeHtml).not.toContain('Continue with GitHub')
+
+	const providerHtml = await readAuthorizePage(
+		await handleAuthorizeRequest(
+			new Request(exampleOAuthUrl('authorize', baseAuthorizeParams)),
+			{
+				...createEnv(createHelpers()),
+				GITHUB_CLIENT_ID: 'github-client-id',
+				GITHUB_CLIENT_SECRET: 'github-client-secret',
+				GOOGLE_CLIENT_ID: 'google-client-id',
+				GOOGLE_CLIENT_SECRET: 'google-client-secret',
+			},
+		),
+	)
+	expect(providerHtml).toContain('"authProviders"')
+	expect(providerHtml).toContain('aria-label="Continue with GitHub"')
+	expect(providerHtml).toContain('data-testid="social-sign-in-github"')
+	expect(providerHtml).toContain('aria-label="Continue with Google"')
+	expect(providerHtml).toContain('data-testid="social-sign-in-google"')
 
 	const signedInInfo = await handleAuthorizeInfo(
 		new Request(exampleOAuthUrl('authorize-info', baseAuthorizeParams), {

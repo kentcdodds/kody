@@ -33,9 +33,9 @@ export function getCurrentRedirectTo(handle: Handle) {
 }
 
 /**
- * SPA navigations to /login and /signup prefetch the enabled providers so
- * the buttons render with the rest of the page (full-document loads embed
- * the same payload during SSR).
+ * SPA navigations prefetch the enabled providers so the buttons render
+ * with the rest of the page. Full-document loads embed the same payload
+ * during SSR (`/login`, `/signup`, and `/oauth/authorize`).
  */
 export async function authProvidersRouteLoader(
 	_url: URL,
