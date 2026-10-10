@@ -5,6 +5,12 @@
  */
 
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
+import {
+	AccountDeletionWritersActiveError,
+	abortOrgDeleting,
+	clearUserMeterDeletionTombstone,
+	markOrgDeleting,
+} from '#worker/account/deletion-state.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isWithinSoftDeleteRestoreWindow } from '#worker/soft-delete/window.ts'
 import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
@@ -20,6 +26,8 @@ import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { revokeOAuthGrantsForOrg } from '#worker/orgs/offboarding.ts'
+
+export { AccountDeletionWritersActiveError }
 
 export class OrgRestoreWindowExpiredError extends Error {
 	constructor() {
@@ -215,6 +223,33 @@ export async function softDeleteOrg(input: {
 }): Promise<SoftDeleteOrgResult> {
 	const deletedAt = (input.now ?? new Date()).toISOString()
 	const appDb = input.env.APP_DB
+
+	// Fence org-id (and personal-user) write leases before sweeping so a
+	// concurrent packageSave cannot insert after its table was tombstoned.
+	const marked = await markOrgDeleting({
+		db: appDb,
+		orgId: input.orgId,
+		now: new Date(deletedAt),
+		env: input.env,
+	})
+	if (marked.leaseCount > 0) {
+		try {
+			if (marked.created) {
+				await abortOrgDeleting({
+					db: appDb,
+					orgId: input.orgId,
+					now: new Date(deletedAt),
+					env: input.env,
+					expectedDeletingAt: marked.deletingAt,
+				})
+			}
+		} finally {
+			// Prefer the lease-busy signal even when abort's UserMeter RPC fails;
+			// leftover heal clears meter tombstones once D1 is live again.
+			throw new AccountDeletionWritersActiveError(marked.leaseCount)
+		}
+	}
+
 	const orgUpdate = await appDb
 		.prepare(
 			`UPDATE orgs
@@ -224,13 +259,23 @@ export async function softDeleteOrg(input: {
 		.bind(deletedAt, deletedAt, input.orgId)
 		.run()
 	if ((orgUpdate.meta.changes ?? 0) === 0) {
+		if (marked.created) {
+			await abortOrgDeleting({
+				db: appDb,
+				orgId: input.orgId,
+				now: new Date(deletedAt),
+				env: input.env,
+				expectedDeletingAt: marked.deletingAt,
+			})
+		}
 		throw new Error('org_not_found_or_already_deleted')
 	}
 
 	// Spec §10.1 / §10.3: revoke credentials bound to the org. Team-bound tokens
 	// store the person on user_id and the org on org_id (same COALESCE match as
 	// member offboarding). Soft-delete also tombstones api_tokens; restore never
-	// clears those tombstones.
+	// clears those tombstones. After deleted_at is set, leave write fences in
+	// place even if a later step fails — fail closed for OwnerId writes.
 	await appDb
 		.prepare(
 			`UPDATE api_tokens
@@ -381,6 +426,13 @@ export async function restoreOrg(input: {
 		throw new Error('org_restore_race')
 	}
 
+	// Soft-delete fences the org-id UserMeter; clear it after D1 is live again
+	// so the first post-restore write does not depend on leftover-tombstone heal.
+	await clearUserMeterDeletionTombstone({
+		env: input.env,
+		stableUserId: input.orgId,
+	})
+
 	const resourceRowsRestored = await restoreOrgOwnedAppRows({
 		appDb,
 		orgId: input.orgId,
@@ -466,6 +518,14 @@ export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
 /**
  * Soft-delete a user and their sole-member orgs. Other-org memberships go
  * through {@link onMemberSoftRemoved}.
+ *
+ * The person row is tombstoned first (OwnerId writes stay blocked via
+ * {@link assertAccountWritableDb} even if a personal org is still live).
+ * {@link softDeleteOrg} fences each org itself; if it refuses for an active
+ * lease, retry this function — it resumes from an existing person tombstone
+ * and continues remaining sole-member orgs, memberships, and billing cancel.
+ * {@link restoreUserAccount} only revives orgs that share the person's
+ * `deleted_at`.
  */
 export async function softDeleteUserAccount(input: {
 	env: Env
@@ -478,28 +538,48 @@ export async function softDeleteUserAccount(input: {
 		db: input.env.APP_DB,
 		userId: input.userId,
 	})
-	const deletedAt = (input.now ?? new Date()).toISOString()
-	const userUpdate = await input.env.APP_DB.prepare(
-		`UPDATE users
-		 SET deleted_at = ?, updated_at = ?
-		 WHERE stable_user_id = ? AND deleted_at IS NULL`,
-	)
-		.bind(deletedAt, deletedAt, input.userId)
-		.run()
-	if ((userUpdate.meta.changes ?? 0) === 0) {
+	const appDb = input.env.APP_DB
+	const existing = await appDb
+		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
+		.bind(input.userId)
+		.first<{ deleted_at: string | null }>()
+	if (!existing) {
 		throw new Error('user_not_found_or_already_deleted')
 	}
 
-	const soleMemberOrgs = await input.env.APP_DB.prepare(
-		`SELECT m.org_id AS org_id
-		 FROM org_memberships m
-		 WHERE m.user_id = ?
-		   AND m.deleted_at IS NULL
-		   AND (
-		     SELECT COUNT(*) FROM org_memberships o
-		     WHERE o.org_id = m.org_id AND o.deleted_at IS NULL
-		   ) = 1`,
-	)
+	let deletedAt: string
+	let createdPersonTombstone = false
+	if (existing.deleted_at) {
+		deletedAt = existing.deleted_at
+	} else {
+		deletedAt = (input.now ?? new Date()).toISOString()
+		const userUpdate = await appDb
+			.prepare(
+				`UPDATE users
+				 SET deleted_at = ?, updated_at = ?
+				 WHERE stable_user_id = ? AND deleted_at IS NULL`,
+			)
+			.bind(deletedAt, deletedAt, input.userId)
+			.run()
+		if ((userUpdate.meta.changes ?? 0) === 0) {
+			throw new Error('user_not_found_or_already_deleted')
+		}
+		createdPersonTombstone = true
+	}
+	const fenceAt = new Date(deletedAt)
+
+	const soleMemberOrgs = await appDb
+		.prepare(
+			`SELECT m.org_id AS org_id
+			 FROM org_memberships m
+			 INNER JOIN orgs org ON org.id = m.org_id AND org.deleted_at IS NULL
+			 WHERE m.user_id = ?
+			   AND m.deleted_at IS NULL
+			   AND (
+			     SELECT COUNT(*) FROM org_memberships peers
+			     WHERE peers.org_id = m.org_id AND peers.deleted_at IS NULL
+			   ) = 1`,
+		)
 		.bind(input.userId)
 		.all<{ org_id: string }>()
 
@@ -510,15 +590,16 @@ export async function softDeleteUserAccount(input: {
 			orgId: row.org_id,
 			actorUserId: input.actorUserId ?? input.userId,
 			actorUsername: input.actorUsername,
-			now: new Date(deletedAt),
+			now: fenceAt,
 		})
 		deletedOrgIds.push(row.org_id)
 	}
 
-	const otherMemberships = await input.env.APP_DB.prepare(
-		`SELECT org_id FROM org_memberships
-		 WHERE user_id = ? AND deleted_at IS NULL`,
-	)
+	const otherMemberships = await appDb
+		.prepare(
+			`SELECT org_id FROM org_memberships
+			 WHERE user_id = ? AND deleted_at IS NULL`,
+		)
 		.bind(input.userId)
 		.all<{ org_id: string }>()
 	for (const row of otherMemberships.results ?? []) {
@@ -530,6 +611,9 @@ export async function softDeleteUserAccount(input: {
 		})
 	}
 
+	// Log on every successful completion, including resume after a lease
+	// refuse — otherwise a first attempt that tombstones the person then
+	// throws never writes user.deleted, and the retry skips it too.
 	await logOrgAuditEvent({
 		env: input.env,
 		orgId: input.userId,
@@ -538,8 +622,12 @@ export async function softDeleteUserAccount(input: {
 		actorUserId: input.actorUserId ?? input.userId,
 		actorUsername: input.actorUsername,
 		targetUserId: input.userId,
-		detailsJson: JSON.stringify({ deletedAt, deletedOrgIds }),
-		createdAt: deletedAt,
+		detailsJson: JSON.stringify({
+			deletedAt,
+			deletedOrgIds,
+			resumed: !createdPersonTombstone,
+		}),
+		createdAt: (input.now ?? new Date()).toISOString(),
 	})
 
 	invalidatePackageAppOwnerCache({ stableUserId: input.userId })

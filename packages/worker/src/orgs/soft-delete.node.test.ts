@@ -3,9 +3,11 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { provisionPersonalOrg } from './provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
+	AccountDeletionWritersActiveError,
 	OrgRestoreWindowExpiredError,
 	UserDeleteBlockedSoleOwnerError,
 	assertActorCanRestoreSoftDeletedOrg,
@@ -13,7 +15,9 @@ import {
 	restoreOrg,
 	restoreResourceRow,
 	softDeleteOrg,
+	softDeleteUserAccount,
 } from './soft-delete.ts'
+import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import * as JobManager from '#worker/jobs/manager-client.ts'
 
 vi.mock('#worker/jobs/jobs-data.ts', () => ({
@@ -51,11 +55,13 @@ async function createHarness() {
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const appDb = createD1FromSqlite(sqlite)
 	const auditDb = createAuditDb()
+	const meter = createInMemoryUserMeterEnv()
 	const env = {
 		APP_DB: appDb,
 		AUDIT_DB: auditDb,
+		USER_METER: meter.env.USER_METER,
 	} as Env
-	return { env, appDb, auditDb }
+	return { env, appDb, auditDb, sqlite }
 }
 
 async function seedOrg(db: D1Database, orgId: string, slug: string) {
@@ -473,4 +479,148 @@ test('personal org provision path supports soft delete audit', async () => {
 		.bind(stableUserId)
 		.first<{ action: string }>()
 	expect(audit?.action).toBe('org.deleted')
+})
+
+test('softDeleteUserAccount resumes after a sole-member org lease refusal', async () => {
+	const { env, appDb } = await createHarness()
+	const stableUserId = testStableUserIdFromEmail('lease-busy@example.com')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at, stable_user_id
+			) VALUES (91001, 'lease-busy@example.com', 'leasebusy', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, stableUserId)
+		.run()
+	await provisionPersonalOrg(appDb, {
+		stableUserId,
+		username: 'leasebusy',
+		createdAt: ts,
+		plan: 'free',
+	})
+
+	let releaseLease!: () => void
+	const hold = new Promise<void>((resolve) => {
+		releaseLease = resolve
+	})
+	let leaseAcquired!: () => void
+	const acquired = new Promise<void>((resolve) => {
+		leaseAcquired = resolve
+	})
+	const writePromise = withAccountWriteLease({
+		db: appDb,
+		stableUserId,
+		env,
+		holder: 'packageSave',
+		write: async () => {
+			leaseAcquired()
+			await hold
+			return 'saved'
+		},
+	})
+	await acquired
+
+	await expect(
+		softDeleteUserAccount({
+			env,
+			userId: stableUserId,
+			now,
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+
+	const personAfterRefuse = await appDb
+		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null }>()
+	expect(personAfterRefuse?.deleted_at).toBe(now.toISOString())
+	const orgAfterRefuse = await appDb
+		.prepare(`SELECT deleted_at, deleting_at FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null; deleting_at: string | null }>()
+	expect(orgAfterRefuse?.deleted_at).toBeNull()
+	expect(orgAfterRefuse?.deleting_at).toBeNull()
+
+	releaseLease()
+	await expect(writePromise).resolves.toBe('saved')
+
+	await expect(
+		softDeleteUserAccount({
+			env,
+			userId: stableUserId,
+			now,
+		}),
+	).resolves.toMatchObject({
+		userId: stableUserId,
+		deletedAt: now.toISOString(),
+		deletedOrgIds: [stableUserId],
+	})
+	const orgAfterResume = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(stableUserId)
+		.first<{ deleted_at: string | null }>()
+	expect(orgAfterResume?.deleted_at).toBe(now.toISOString())
+	const audits = await env.AUDIT_DB.prepare(
+		`SELECT action, details_json FROM org_audit_events
+		 WHERE org_id = ? AND action = 'user.deleted'`,
+	)
+		.bind(stableUserId)
+		.all<{ action: string; details_json: string }>()
+	expect(audits.results).toHaveLength(1)
+	expect(audits.results?.[0]?.details_json).toContain('"resumed":true')
+})
+
+test('softDeleteOrg refuses while an org OwnerId write lease is held', async () => {
+	const { env, appDb } = await createHarness()
+	const orgId = 'org-lease-busy'
+	await seedOrg(appDb, orgId, 'lease-busy')
+
+	let releaseLease!: () => void
+	const hold = new Promise<void>((resolve) => {
+		releaseLease = resolve
+	})
+	let leaseAcquired!: () => void
+	const acquired = new Promise<void>((resolve) => {
+		leaseAcquired = resolve
+	})
+	const writePromise = withAccountWriteLease({
+		db: appDb,
+		stableUserId: orgId,
+		env,
+		holder: 'packageSave',
+		write: async () => {
+			leaseAcquired()
+			await hold
+			return 'saved'
+		},
+	})
+	await acquired
+
+	await expect(
+		softDeleteOrg({
+			env,
+			orgId,
+			actorUserId: 'actor-1',
+			now,
+		}),
+	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
+
+	const stillLive = await appDb
+		.prepare(`SELECT deleted_at, deleting_at FROM orgs WHERE id = ?`)
+		.bind(orgId)
+		.first<{ deleted_at: string | null; deleting_at: string | null }>()
+	expect(stillLive?.deleted_at).toBeNull()
+	expect(stillLive?.deleting_at).toBeNull()
+
+	releaseLease()
+	await expect(writePromise).resolves.toBe('saved')
+
+	await expect(
+		softDeleteOrg({
+			env,
+			orgId,
+			actorUserId: 'actor-1',
+			now,
+		}),
+	).resolves.toMatchObject({ orgId })
 })

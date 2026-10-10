@@ -704,19 +704,30 @@ export function createWaitUntilDrain() {
 }
 
 /**
- * Minimal D1 stub for the `deleting_at` gate used by
+ * Minimal D1 stub for the OwnerId write gate used by
  * {@link withAccountWriteLease} in node tests. The DO handles all lease
- * storage; the only D1 query on the hot path is the `deleting_at` point gate.
+ * storage; D1 only answers the person / personal-org / team-org point gates.
+ * The soft-deleted-person probe is intentionally unmatched so stubs return
+ * null (no tombstone) from their default `first()` path.
  */
 export function createPermissiveAccountWriteLeaseDbHooks() {
 	return {
 		supportsDeletingAtQuery(query: string) {
-			return query.includes(
-				'SELECT deleting_at FROM users WHERE stable_user_id',
+			const compact = query.replace(/\s+/g, ' ')
+			return (
+				compact.includes(
+					'SELECT deleting_at FROM users WHERE stable_user_id',
+				) ||
+				(/FROM orgs\b/.test(compact) &&
+					compact.includes('deleting_at') &&
+					/\bWHERE id = \?/.test(compact))
 			)
 		},
 		deletingAtFirstResult() {
-			return { deleting_at: null as string | null }
+			return {
+				deleting_at: null as string | null,
+				deleted_at: null as string | null,
+			}
 		},
 	}
 }

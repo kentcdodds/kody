@@ -13,6 +13,7 @@ import {
 	AccountWriteLeaseLostError,
 	abortAccountDeleting,
 	abortAccountDeletingByStableUserId,
+	assertAccountWritableDb,
 	clearUserMeterDeletionTombstone,
 	listActiveAccountWriteLeases,
 	markAccountDeleting,
@@ -121,6 +122,18 @@ function createLeaseHarness(
 		);
 		INSERT INTO users (id, stable_user_id) VALUES (1, 'user-a');
 		INSERT INTO users (id, stable_user_id) VALUES (2, 'user-b');
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY NOT NULL,
+			slug TEXT NOT NULL UNIQUE,
+			deleted_at TEXT,
+			deleting_at TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
+		INSERT INTO orgs (id, slug, created_at, updated_at)
+			VALUES ('team-org-a', 'acme', '2026-01-01', '2026-01-01');
+		INSERT INTO orgs (id, slug, created_at, updated_at)
+			VALUES ('user-a', 'user-a', '2026-01-01', '2026-01-01');
 		CREATE TABLE account_write_lease_repairs (
 			id TEXT PRIMARY KEY,
 			target_user_id TEXT NOT NULL,
@@ -806,6 +819,76 @@ test('abortAccountDeleting clears the D1 gate and UserMeter tombstone only for t
 	await expect(
 		clearUserMeterDeletionTombstone({ env: {}, stableUserId: 'user-a' }),
 	).resolves.toEqual({ cleared: false })
+})
+
+test('assertAccountWritableDb allows a live team org OwnerId with no users row', async () => {
+	const h = createLeaseHarness()
+	await expect(
+		assertAccountWritableDb(h.db, 'team-org-a'),
+	).resolves.toBeUndefined()
+	await expect(
+		assertAccountWritableDb(h.db, 'missing-id'),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+	h.sqlite
+		.prepare(`UPDATE orgs SET deleting_at = ? WHERE id = ?`)
+		.run(fence, 'team-org-a')
+	await expect(
+		assertAccountWritableDb(h.db, 'team-org-a'),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
+})
+
+test('assertAccountWritableDb rejects a soft-deleted person even when their personal org is live', async () => {
+	const h = createLeaseHarness()
+	h.sqlite
+		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = ?`)
+		.run(fence, 'user-a')
+	await expect(assertAccountWritableDb(h.db, 'user-a')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+	await expect(h.lease(async () => 'should-not-run')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+})
+
+test('assertAccountWritableDb rejects a live person whose personal org is deleting', async () => {
+	const h = createLeaseHarness()
+	h.sqlite
+		.prepare(`UPDATE orgs SET deleting_at = ? WHERE id = ?`)
+		.run(fence, 'user-a')
+	await expect(assertAccountWritableDb(h.db, 'user-a')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+})
+
+test('withAccountWriteLease does not clear a leftover meter tombstone for a soft-deleted person', async () => {
+	const h = createLeaseHarness()
+	h.sqlite
+		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = ?`)
+		.run(fence, 'user-a')
+	await h.meterA.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	await expect(h.lease(async () => 'should-not-run')).rejects.toBeInstanceOf(
+		AccountDeletionInProgressError,
+	)
+	expect(await h.meterA.readDeletionState()).toEqual({
+		deletingAt: '2026-08-31 15:22:12',
+	})
+})
+
+test('withAccountWriteLease leases package writes under a team org OwnerId', async () => {
+	const h = createLeaseHarness()
+	await expect(
+		h.lease(async () => 'saved', { stableUserId: 'team-org-a' }),
+	).resolves.toBe('saved')
+})
+
+test('withAccountWriteLease drops a leftover team-org meter tombstone when the org is live', async () => {
+	const h = createLeaseHarness()
+	const meterOrg = userMeterRpc({ env: h.env, userId: 'team-org-a' })
+	await meterOrg.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
+	await expect(
+		h.lease(async () => 'saved', { stableUserId: 'team-org-a' }),
+	).resolves.toBe('saved')
+	expect(await meterOrg.readDeletionState()).toEqual({ deletingAt: null })
 })
 
 test('withAccountWriteLease drops a leftover UserMeter tombstone when D1 is live', async () => {

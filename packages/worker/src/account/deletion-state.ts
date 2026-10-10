@@ -1,3 +1,10 @@
+/**
+ * soft-delete-read-filter: opt-out
+ *
+ * Write-lease gates must see soft-deleted `users` rows so a tombstoned person
+ * is never mistaken for a team org OwnerId (personal orgs reuse stable_user_id).
+ */
+
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import {
@@ -348,6 +355,132 @@ export async function abortAccountDeletingByStableUserId(input: {
 	})
 }
 
+export type MarkOrgDeletingResult = {
+	leaseCount: number
+	/** True when this invocation wrote `orgs.deleting_at`. */
+	created: boolean
+	deletingAt: string
+}
+
+/**
+ * Fence OwnerId writes under an org before soft-delete sweeps resources.
+ * Sets `orgs.deleting_at`, then the org-id UserMeter tombstone.
+ * {@link assertAccountWritableDb} treats a deleting/deleted org as
+ * non-writable even when a live personal-user row shares the same id, so
+ * leftover-tombstone heal cannot clear this fence while the org is fenced.
+ */
+export async function markOrgDeleting(input: {
+	db: D1Database
+	orgId: string
+	now?: Date
+	env: UserMeterEnv
+}): Promise<MarkOrgDeletingResult> {
+	const now = utcSqliteTimestamp(input.now ?? new Date())
+	const createResult = await input.db
+		.prepare(
+			`UPDATE orgs
+			SET deleting_at = ?, updated_at = ?
+			WHERE id = ? AND deleting_at IS NULL${andLiveDeletedAtSql()}`,
+		)
+		.bind(now, now, input.orgId)
+		.run()
+	const created = (createResult.meta.changes ?? 0) === 1
+	const orgRow = await input.db
+		.prepare(
+			`SELECT deleting_at
+			FROM orgs
+			WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.orgId)
+		.first<{ deleting_at: string | null }>()
+	const deletingAt = orgRow?.deleting_at
+	if (!deletingAt) {
+		throw new Error('Organization could not be marked for deletion.')
+	}
+
+	invalidatePackageAppOwnerCache({ stableUserId: input.orgId })
+	try {
+		const env = requireUserMeterEnv(input.env)
+		const marked = await runUserMeterRpc({
+			env,
+			stableUserId: input.orgId,
+			operation: async (meter) => await meter.markDeleting({ deletingAt }),
+		})
+		return {
+			leaseCount: marked.leaseCount,
+			created,
+			deletingAt,
+		}
+	} catch (error) {
+		if (created) {
+			await input.db
+				.prepare(
+					`UPDATE orgs
+					SET deleting_at = NULL, updated_at = ?
+					WHERE id = ? AND deleting_at = ?${andLiveDeletedAtSql()}`,
+				)
+				.bind(now, input.orgId, deletingAt)
+				.run()
+			invalidatePackageAppOwnerCache({ stableUserId: input.orgId })
+		}
+		throw error
+	}
+}
+
+/**
+ * Undo {@link markOrgDeleting} when org soft-delete aborts before cleanup.
+ */
+export async function abortOrgDeleting(input: {
+	db: D1Database
+	orgId: string
+	now?: Date
+	env: UserMeterEnv
+	expectedDeletingAt?: string
+}) {
+	const now = utcSqliteTimestamp(input.now ?? new Date())
+	if (input.expectedDeletingAt) {
+		await input.db
+			.prepare(
+				`UPDATE orgs
+				SET deleting_at = NULL, updated_at = ?
+				WHERE id = ? AND deleting_at = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(now, input.orgId, input.expectedDeletingAt)
+			.run()
+	} else {
+		await input.db
+			.prepare(
+				`UPDATE orgs
+				SET deleting_at = NULL, updated_at = ?
+				WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(now, input.orgId)
+			.run()
+	}
+	const env = requireUserMeterEnv(input.env)
+	await runUserMeterRpc({
+		env,
+		stableUserId: input.orgId,
+		operation: async (meter) =>
+			await meter.clearDeleting(
+				input.expectedDeletingAt
+					? { expectedDeletingAt: input.expectedDeletingAt }
+					: undefined,
+			),
+	})
+	invalidatePackageAppOwnerCache({ stableUserId: input.orgId })
+}
+
+/**
+ * OwnerIds may be a personal org (same id as `users.stable_user_id`) or a
+ * team org (`orgs.id` with no users row). A soft-deleted or deleting person
+ * must stay non-writable even while their personal org row is still live —
+ * never treat a missing *live* users row as a team org when a tombstone
+ * exists. A live person whose personal org (same id) is deleting/deleted is
+ * also blocked so org soft-delete fencing cannot be cleared by leftover
+ * UserMeter heal. Only OwnerIds with no users row at all use the live org
+ * check alone (team orgs).
+ */
 export async function assertAccountWritableDb(
 	db: D1Database,
 	stableUserId: string,
@@ -358,7 +491,67 @@ export async function assertAccountWritableDb(
 		)
 		.bind(stableUserId)
 		.first<{ deleting_at: string | null }>()
-	if (!row || row.deleting_at) {
+	if (row) {
+		if (row.deleting_at) throw new AccountDeletionInProgressError()
+		// Personal orgs reuse stable_user_id. A deleting/deleted personal org
+		// must block OwnerId writes even while the person row is still live,
+		// or leftover UserMeter heal would clear softDeleteOrg's fence.
+		// Pre-Teams test DBs may lack `orgs`; treat that as no personal-org fence.
+		try {
+			const personalOrg = await db
+				.prepare(
+					`SELECT deleting_at, deleted_at
+					FROM orgs
+					WHERE id = ?`,
+				)
+				.bind(stableUserId)
+				.first<{ deleting_at: string | null; deleted_at: string | null }>()
+			if (personalOrg && (personalOrg.deleted_at || personalOrg.deleting_at)) {
+				throw new AccountDeletionInProgressError()
+			}
+		} catch (error) {
+			if (
+				error instanceof AccountDeletionInProgressError ||
+				!(
+					error instanceof Error && /no such table:\s*orgs/i.test(error.message)
+				)
+			) {
+				throw error
+			}
+		}
+		return
+	}
+	// Soft-deleted persons still have a users row; do not treat them as team
+	// orgs via the live-org fallback below.
+	const softDeletedPerson = await db
+		.prepare(
+			`SELECT 1 AS present
+			FROM users
+			WHERE stable_user_id = ?
+			  AND deleted_at IS NOT NULL`,
+		)
+		.bind(stableUserId)
+		.first<{ present: number }>()
+	if (softDeletedPerson) {
+		throw new AccountDeletionInProgressError()
+	}
+	try {
+		const org = await db
+			.prepare(
+				`SELECT deleting_at FROM orgs WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(stableUserId)
+			.first<{ deleting_at: string | null }>()
+		if (!org || org.deleting_at) {
+			throw new AccountDeletionInProgressError()
+		}
+	} catch (error) {
+		if (
+			error instanceof AccountDeletionInProgressError ||
+			!(error instanceof Error && /no such table:\s*orgs/i.test(error.message))
+		) {
+			throw error
+		}
 		throw new AccountDeletionInProgressError()
 	}
 }
@@ -366,7 +559,9 @@ export async function assertAccountWritableDb(
 /**
  * After dropping a leftover UserMeter tombstone, re-read D1. A deletion that
  * started in that window already wrote `users.deleting_at` and may have had
- * its DO fence cleared; restore that tombstone before failing closed.
+ * its DO fence cleared; restore that tombstone before failing closed. Otherwise
+ * re-run {@link assertAccountWritableDb} (team orgs, soft-deleted persons,
+ * personal-org fences).
  */
 async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	db: D1Database
@@ -380,15 +575,15 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 		.bind(input.stableUserId)
 		.first<{ deleting_at: string | null }>()
 	const deletingAt = row?.deleting_at
-	if (row && !deletingAt) return
 	if (deletingAt) {
 		await runUserMeterRpc({
 			env: input.env,
 			stableUserId: input.stableUserId,
 			operation: async (meter) => await meter.markDeleting({ deletingAt }),
 		})
+		throw new AccountDeletionInProgressError()
 	}
-	throw new AccountDeletionInProgressError()
+	await assertAccountWritableDb(input.db, input.stableUserId)
 }
 
 export async function assertAccountWritable(env: Env, stableUserId: string) {
