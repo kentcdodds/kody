@@ -690,6 +690,7 @@ test('plans without a wallet are never stopped past the monthly include, and ret
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	for (const resource of pastIncludeStopped) await consume(gift, resource)
 
@@ -726,6 +727,7 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	await setRollup(userId, 600)
 	await debit()
@@ -757,6 +759,7 @@ test('gift overlay with no prior wallet row is not skipped by debit and is not b
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	expect(
 		await env.APP_DB.prepare(
@@ -1307,21 +1310,25 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 		plan: 'free',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	expect(await base(paying.stableUserId)).toEqual({
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'funded',
+		limitOverrides: [],
 	})
 	expect(await base(retired.stableUserId)).toEqual({
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 	// Overlay-aware resolution grants Pro without a wallet (retired ceilings).
 	expect(await entitlementFor(overlay)).toEqual({
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',
+		limitOverrides: [],
 	})
 })

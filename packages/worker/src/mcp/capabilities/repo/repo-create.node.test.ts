@@ -84,6 +84,12 @@ function createDatabase(
 							}
 							throw new Error(`Unsupported first query: ${query}`)
 						},
+						async all() {
+							if (query.includes('FROM org_limit_overrides')) {
+								return { results: [] }
+							}
+							throw new Error(`Unsupported all query: ${query}`)
+						},
 						async run() {
 							if (query.startsWith('INSERT INTO user_repos')) {
 								const row = {

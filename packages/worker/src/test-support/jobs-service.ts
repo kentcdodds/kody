@@ -599,6 +599,9 @@ export function createDatabase(
 									) as T[],
 								}
 							}
+							if (query.includes('FROM org_limit_overrides')) {
+								return { results: [] as T[] }
+							}
 							throw new Error(`Unsupported all query: ${query}`)
 						},
 						async run() {

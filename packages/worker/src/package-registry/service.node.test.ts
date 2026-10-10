@@ -1065,6 +1065,9 @@ function createEntitlementsDatabase(input: {
 							throw new Error(`Unsupported first query: ${query}`)
 						},
 						async all<T>() {
+							if (query.includes('FROM org_limit_overrides')) {
+								return { results: [] as Array<T> }
+							}
 							if (
 								query.includes('FROM user_storage_buckets') &&
 								query.includes('SELECT storage_id AS storageId') &&

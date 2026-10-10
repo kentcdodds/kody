@@ -11,7 +11,7 @@ import type * as emailService from '#worker/email/service.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import type * as EmailPlatformAddress from '#worker/email/platform-address.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
-import { type resolvePlanLimit } from '#universal/plans.ts'
+import { type resolveEntitlementLimit } from '#universal/plans.ts'
 import type * as EntitlementService from '#worker/entitlements/service.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
@@ -97,20 +97,22 @@ const mockModule = await vi.hoisted(async () => {
 		readEntitlementResourceUsage: vi.fn<
 			typeof EntitlementService.readEntitlementResourceUsage
 		>(async () => 2),
-		resolvePlanLimit: vi.fn<typeof resolvePlanLimit>((_plan, resource) => {
-			switch (resource) {
-				case 'stored_email_messages':
-					return 100
-				case 'email_sends_per_day':
-					return 20
-				case 'email_receives_per_day':
-					return 50
-				case 'email_message_bytes':
-					return 1_000_000
-				default:
-					return 0
-			}
-		}),
+		resolveEntitlementLimit: vi.fn<typeof resolveEntitlementLimit>(
+			(_entitlement, resource) => {
+				switch (resource) {
+					case 'stored_email_messages':
+						return 100
+					case 'email_sends_per_day':
+						return 20
+					case 'email_receives_per_day':
+						return 50
+					case 'email_message_bytes':
+						return 1_000_000
+					default:
+						return 0
+				}
+			},
+		),
 		getPlatformEmailDomain: vi.fn<
 			typeof EmailPlatformAddress.getPlatformEmailDomain
 		>(() => 'inbox.example.com'),
@@ -248,8 +250,9 @@ vi.mock('#universal/plans.ts', async (importOriginal) => {
 	const actual = await importOriginal<typeof EntitlementPlans>()
 	return {
 		...actual,
-		resolvePlanLimit: (...args: Parameters<typeof resolvePlanLimit>) =>
-			mockModule.resolvePlanLimit(...args),
+		resolveEntitlementLimit: (
+			...args: Parameters<typeof resolveEntitlementLimit>
+		) => mockModule.resolveEntitlementLimit(...args),
 	}
 })
 
