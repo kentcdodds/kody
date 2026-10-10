@@ -63,6 +63,8 @@ export type ProfileContentProps = {
 	queryAppliedByLoader?: boolean
 	/** Filter links stay on this page instead of the public profile. */
 	basePath?: string
+	/** False renders names without a package page link or fork button. */
+	packageLinks?: boolean
 }
 
 function renderForkIcon() {
@@ -379,6 +381,7 @@ function renderProfilePackagesEmptyCopy(input: {
 export function ProfileContent(handle: Handle<ProfileContentProps>) {
 	return () => {
 		const { profile, packages, activity, query, isSelf } = handle.props
+		const packageLinks = handle.props.packageLinks !== false
 		const filters: ProfilePackageFilters = {
 			query: query ?? '',
 			visibility: handle.props.visibility ?? 'all',
@@ -426,13 +429,14 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 									username: profile.username,
 									kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
 								})
-								const listingHref = pkg.communityListingId
-									? getCommunityListingHref({
-											listingId: pkg.communityListingId,
-											ownerUsername: profile.username,
-											kodyId: pkg.communityListingKodyId,
-										})
-									: null
+								const listingHref =
+									packageLinks && pkg.communityListingId
+										? getCommunityListingHref({
+												listingId: pkg.communityListingId,
+												ownerUsername: profile.username,
+												kodyId: pkg.communityListingKodyId,
+											})
+										: null
 								return (
 									<li key={pkg.kodyId} mix={css(cardCss)}>
 										<div mix={css(packageHeadingCss)}>
@@ -454,9 +458,13 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 													</a>
 												) : null}
 												<h3 mix={css(packageNameCss)}>
-													<a href={packageHref} mix={css(packageNameLinkCss)}>
-														{renderCommunityListingName(pkg.name)}
-													</a>
+													{packageLinks ? (
+														<a href={packageHref} mix={css(packageNameLinkCss)}>
+															{renderCommunityListingName(pkg.name)}
+														</a>
+													) : (
+														renderCommunityListingName(pkg.name)
+													)}
 												</h3>
 												{renderProfilePackageSignifiers(pkg)}
 											</div>

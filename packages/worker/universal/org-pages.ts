@@ -64,37 +64,6 @@ function isOrgOwnedAccountSection(
 }
 
 /**
- * Packages still read the signed-in person. Other org sections read
- * `request.org.id`.
- */
-export function orgSectionKeysOnPerson(
-	section: OrgOwnedAccountSection,
-): boolean {
-	switch (section) {
-		case 'packages':
-			return true
-		case 'activity':
-		case 'connections':
-		case 'email':
-		case 'integrations':
-		case 'jobs':
-		case 'mcp-servers':
-		case 'memories':
-		case 'secret-providers':
-		case 'secrets':
-		case 'values':
-		case 'waiting':
-		case 'webhooks':
-		case 'workflows':
-			return false
-		default: {
-			const exhaustive: never = section
-			return exhaustive
-		}
-	}
-}
-
-/**
  * `/account/secrets.json` and the other org-owned account JSON routes. The
  * Connections page reads `/account/connected-agents.json`;
  * `/account/connections.json` is the person's sign-in providers.

@@ -1,7 +1,6 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
 	orgOwnedAccountApiSection,
-	orgSectionKeysOnPerson,
 	orgSlugFromOrgOwnedPath,
 } from '#universal/org-pages.ts'
 
@@ -63,9 +62,7 @@ async function resolveRequestOrg(
 	const apiSection = orgOwnedAccountApiSection(url.pathname)
 	const slug =
 		slugOnPage ??
-		(apiSection && !orgSectionKeysOnPerson(apiSection)
-			? orgSlugFromAccountApiReferer(request, url.origin)
-			: null)
+		(apiSection ? orgSlugFromAccountApiReferer(request, url.origin) : null)
 	if (!slug) return 'personal'
 	const binding = await loadOrgBindingForSlug(env.APP_DB, personId, slug)
 	return binding ?? 'denied'
