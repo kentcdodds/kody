@@ -11,6 +11,7 @@ import {
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgSectionKeysOnPerson,
+	orgSettingsPath,
 	orgSwitcherEntries,
 	organizationsWithSignupFallback,
 	parseOrgBillingPath,
@@ -187,10 +188,32 @@ function teamOrgSwitchHref(input: {
 	managesBilling: boolean
 }) {
 	if (input.personal) return switchOrgPath(input.pathname, input.slug)
-	if (input.onBillingPage && !input.managesBilling) return `/@${input.slug}`
+	if (input.onBillingPage && !input.managesBilling) {
+		return orgSettingsPath(input.slug)
+	}
 	const section = parseOrgResourcePath(input.pathname)?.section
-	if (section && orgSectionKeysOnPerson(section)) return `/@${input.slug}`
-	return switchOrgPath(input.pathname, input.slug)
+	// Packages and connected agents still key on the person — land on Settings
+	// so management stays one click away instead of a bare org home.
+	if (section && orgSectionKeysOnPerson(section)) {
+		return orgSettingsPath(input.slug)
+	}
+	const next = switchOrgPath(input.pathname, input.slug)
+	if (next === `/@${input.slug}`) return orgSettingsPath(input.slug)
+	return next
+}
+
+/** Prefer the team org already in context; otherwise last-used or first team. */
+function manageOrganization(
+	organizations: ReadonlyArray<OrganizationSummary>,
+	current: OrganizationSummary | undefined,
+	lastUsedSlug: string | null | undefined,
+) {
+	if (current && !current.personal && current.role !== null) return current
+	const teams = organizations.filter(
+		(org) => !org.personal && org.role !== null,
+	)
+	if (teams.length === 0) return null
+	return teams.find((org) => org.slug === lastUsedSlug) ?? teams[0] ?? null
 }
 
 function OrgSwitcher(
@@ -304,31 +327,38 @@ function OrgSwitcher(
 			}
 		}
 		const orgRows = entries.filter((entry) => entry.kind === 'org').map(toRow)
-		// Team orgs: Settings / Members / Teams / Grants / Collaborators /
-		// Billing for the current org. Personal: Billing only (workspace rail
-		// owns the rest). Collaborators get no manage rows.
-		const manageItems =
-			current && !current.personal
-				? teamOrgManagementItems({
-						orgSlug: current.slug,
-						role: current.role,
-					})
-				: current && orgRoleManagesBilling(current.role)
-					? [
-							{
-								href: orgBillingPath(current.slug),
-								label: 'Billing',
-								icon: 'wallet' as const,
-							},
-						]
-					: []
+		// Prefer the team org in context so Settings/Members/… stay one click
+		// away from account pages. Fall back to last-used / first team org.
+		// Personal-only sessions still get Billing for the signup org.
+		const manageOrg = manageOrganization(
+			organizations,
+			current,
+			handle.props.lastUsedOrganization,
+		)
+		const manageIdentity = manageOrg ? orgIdentity(manageOrg, viewer) : null
+		const manageItems = manageOrg
+			? teamOrgManagementItems({
+					orgSlug: manageOrg.slug,
+					role: manageOrg.role,
+				})
+			: current && orgRoleManagesBilling(current.role)
+				? [
+						{
+							href: orgBillingPath(current.slug),
+							label: 'Billing',
+							icon: 'wallet' as const,
+						},
+					]
+				: []
+		const manageDetailHandle =
+			manageIdentity?.handle ?? currentIdentity?.handle ?? null
 		const manageRows: Array<SwitcherRow> =
-			currentIdentity && manageItems.length > 0
+			manageDetailHandle && manageItems.length > 0
 				? manageItems.map((item) => ({
 						key: `org-manage-${item.label.toLowerCase()}`,
 						href: item.href,
 						label: item.label,
-						detail: currentIdentity.handle,
+						detail: manageDetailHandle,
 						ariaCurrent:
 							handle.props.currentPathname === item.href
 								? ('page' as const)
@@ -380,14 +410,14 @@ function OrgSwitcher(
 				>
 					{orgRows.map(renderSwitcherRow)}
 				</div>
-				{manageRows.length > 0 && currentIdentity ? (
+				{manageRows.length > 0 && manageDetailHandle ? (
 					<div
 						role="group"
-						aria-label={`Manage ${currentIdentity.handle}`}
+						aria-label={`Manage ${manageDetailHandle}`}
 						data-testid="org-switcher-manage-group"
 						mix={css(switcherActionsCss)}
 					>
-						<p mix={css(switcherEyebrowCss)}>Manage {currentIdentity.handle}</p>
+						<p mix={css(switcherEyebrowCss)}>Manage {manageDetailHandle}</p>
 						{manageRows.map(renderSwitcherRow)}
 					</div>
 				) : null}

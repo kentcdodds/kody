@@ -169,6 +169,47 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(html).toContain('data-icon="mail"')
 })
 
+test('org switcher keeps Manage links for a team org on account pages', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: 'owner',
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'acme',
+		}),
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/settings"')
+	expect(menu).toContain('href="/@acme/-/teams"')
+	expect(menu).toContain('href="/@acme/-/billing"')
+	// Switching into the team org from an account page lands on Settings.
+	const acmeRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
+	)
+	expect(acmeRow).toContain('href="/@acme/-/settings"')
+})
+
 test('logged-out header shows Log in without an Account link', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
