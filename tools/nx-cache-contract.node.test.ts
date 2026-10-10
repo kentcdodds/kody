@@ -108,6 +108,8 @@ const suiteDependencyFiles: Record<string, ReadonlyArray<string>> = {
 		'packages/backup-control-plane/x.node.test.ts',
 		'e2e/x.node.test.ts',
 		'.github/workflows/validate.yml',
+		'.cursor/rules/x.mdc',
+		'.husky/pre-commit',
 	],
 	'test-workers': [
 		cloudflareMock,
@@ -165,6 +167,11 @@ test.each(['test', 'test-node', 'test-workers', 'test-mcp', 'test-e2e'])(
 		expect(includesCiEnv(inputs)).toBe(true)
 	},
 )
+
+test('test cache hash includes KODY_VALIDATE_LOAD because the full suite runs workers-unit', async () => {
+	const inputs = await getWorkerDeclaredInputs('test')
+	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
+})
 
 test('test-workers cache hash includes KODY_VALIDATE_LOAD for validate-load timeouts', async () => {
 	const inputs = await getWorkerDeclaredInputs('test-workers')

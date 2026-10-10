@@ -17,7 +17,9 @@
 		"workspace": [
 			"{workspaceRoot}/**/*",
 			"{workspaceRoot}/.agents/**/*",
+			"{workspaceRoot}/.cursor/**/*",
 			"{workspaceRoot}/.github/**/*",
+			"{workspaceRoot}/.husky/**/*",
 			{
 				"env": "CI"
 			}
@@ -58,7 +60,12 @@
 		},
 		"test": {
 			"cache": true,
-			"inputs": ["workspace"]
+			"inputs": [
+				"workspace",
+				{
+					"env": "KODY_VALIDATE_LOAD"
+				}
+			]
 		},
 		"test-node": {
 			"cache": true,
