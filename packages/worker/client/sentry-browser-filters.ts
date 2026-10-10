@@ -1581,10 +1581,11 @@ function filterSentryReplayCrossOriginIframeSentryEvent<
  * agree on one `exception.values` entry — never pair a CSP message from
  * one value with an `eval` frame from another (same-entry gate as KODY-8W).
  * Multi-value events drop only when **every** value fully matches; an
- * unrelated sibling keeps the event. Keep when any first-party
- * `kody.codes/assets/…` frame is present, and keep when the stack is
- * missing or URL-less in a way that could be first-party (`beforeSend` sees
- * minified frames — same pitfall as KODY-8A). Never blanket-drop EvalError.
+ * unrelated sibling keeps the event. Keep when any non-`sentryWrapped`
+ * first-party `kody.codes/assets/…` frame is present (`sentryWrapped` may
+ * itself be bundled under `/assets/…` in production beforeSend), and keep
+ * when the stack is missing or URL-less in a way that could be first-party
+ * (same pitfall as KODY-8A). Never blanket-drop EvalError.
  */
 const cspUnsafeEvalRefusalMessage =
 	/^(?:EvalError:\s*)?Refused to evaluate a string as JavaScript because ['"]unsafe-eval['"] is not an allowed source of script in the following Content Security Policy directive:/i
