@@ -81,7 +81,10 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 import { scheduleFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 
 export const executeTool = {
 	name: 'execute',
@@ -335,6 +338,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// transport-timeout retries can replay / report in-progress
 				// without spending the runaway brake or loading a worker.
 				const storageOwnerId = ownerIdFromCaller(callerContext)
+				const entitlementEmail = entitlementEmailForOwner(
+					callerContext,
+					storageOwnerId,
+				)
 				if (normalizedIdempotencyKey && storageOwnerId) {
 					const existing = await getRunRecordByIdempotencyKey({
 						env,
@@ -362,7 +369,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const entitlementPrefetch = callerContext.user?.userId
 					? getCachedUserEntitlement(env.APP_DB, {
 							userId: storageOwnerId,
-							email: callerContext.user.email,
+							email: entitlementEmail,
 						}).then(
 							() => undefined,
 							() => undefined,
@@ -404,7 +411,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						? createExecuteWorkerDayClaim({
 								env,
 								ownerId: storageOwnerId,
-								email: callerContext.user.email,
+								email: entitlementEmail,
 								orgBudget: callerContext.request
 									? {
 											orgId: callerContext.request.org.id,
