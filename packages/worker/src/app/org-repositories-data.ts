@@ -40,7 +40,7 @@ export async function loadOrgRepositoriesData(input: {
 	const limit = readOptionalLimit(url.searchParams.get('limit'))
 	const [org, access, packages] = await Promise.all([
 		input.env.APP_DB.prepare(
-			`SELECT display_name, avatar_key, created_at FROM orgs WHERE id = ?`,
+			`SELECT display_name, avatar_key, created_at FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 		)
 			.bind(orgId)
 			.first<{
