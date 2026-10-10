@@ -421,3 +421,68 @@ test('loadOrgBindingForOrg and listOrgsForPerson skip deleted and suspended orgs
 	const listed = await listOrgsForPerson(db, ada)
 	expect(listed.map((org) => org.slug)).toEqual(['ada', 'live', 'live-grant'])
 })
+
+test('loadOrgBindingForOrg and listOrgsForPerson include orgs reached through a team grant', async () => {
+	const db = await createDb()
+	const ada = testStableUserIdFromEmail('ada@example.com')
+	const gus = testStableUserIdFromEmail('gus@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: gus,
+		username: 'gus',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	const ts = '2026-01-04T00:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO teams (
+				id, org_id, slug, name, created_by_user_id, created_at, updated_at
+			) VALUES ('team-1', ?, 'eng', 'Eng', ?, ?, ?)`,
+		)
+		.bind(gus, gus, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO team_members (team_id, user_id, created_at)
+			 VALUES ('team-1', ?, ?)`,
+		)
+		.bind(ada, ts)
+		.run()
+
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toBeNull()
+
+	await db
+		.prepare(
+			`INSERT INTO grants (
+				id, org_id, resource_type, resource_id, subject_type, subject_id,
+				preset, created_by_user_id, created_at, updated_at, deleted_at
+			) VALUES ('grant-team', ?, 'package', 'pkg-1', 'team', 'team-1', 'use', ?, ?, ?, NULL)`,
+		)
+		.bind(gus, gus, ts, ts)
+		.run()
+
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toEqual({
+		org: { id: gus, slug: 'gus' },
+		role: null,
+	})
+	expect(
+		(await listOrgsForPerson(db, ada)).map((org) => ({
+			id: org.id,
+			role: org.role,
+		})),
+	).toEqual([
+		{ id: ada, role: 'owner' },
+		{ id: gus, role: null },
+	])
+
+	await db
+		.prepare(`UPDATE team_members SET deleted_at = ? WHERE team_id = 'team-1'`)
+		.bind(ts)
+		.run()
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toBeNull()
+	expect((await listOrgsForPerson(db, ada)).map((org) => org.id)).toEqual([ada])
+})
