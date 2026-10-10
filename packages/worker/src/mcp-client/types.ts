@@ -1,5 +1,6 @@
 import { type JsonSchemaToolDescriptor } from '@cloudflare/codemode'
 import { type Tool } from '@modelcontextprotocol/sdk/types.js'
+import { type McpOAuthClientMode } from '@kody-internal/shared/mcp-servers.ts'
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
 
 export type McpServerConnectionState =
@@ -51,7 +52,13 @@ export type McpServerToolDescriptor = {
 	annotations?: Tool['annotations']
 }
 
-export type McpServerSnapshot = {
+/**
+ * Server card inside the hub Durable Object. `authUrl` is the provider's
+ * authorization URL. It never crosses the hub client: callers get
+ * `authorizationPending` and send people to the Kody consent page, which
+ * reads the provider URL through `readPendingAuthorization`.
+ */
+export type McpHubServerSnapshot = {
 	serverId: string
 	name: string
 	url: string
@@ -64,12 +71,12 @@ export type McpServerSnapshot = {
 	tools: Array<McpServerToolDescriptor>
 }
 
-export type McpClientHubSnapshot = {
-	servers: Array<McpServerSnapshot>
+export type McpHubSnapshot = {
+	servers: Array<McpHubServerSnapshot>
 	connectionEvents?: Array<McpServerConnectionEvent>
 }
 
-export type McpServerConnectResult = {
+export type McpHubConnectResult = {
 	serverId: string
 	state: McpServerConnectionState
 	authUrl: string | null
@@ -77,6 +84,29 @@ export type McpServerConnectResult = {
 	toolCount: number
 	lastError?: McpServerLastError | null
 	hasRefreshToken?: boolean
+}
+
+/** True when the person must approve access on the Kody consent page. */
+type McpAuthorizationPending = { authorizationPending: boolean }
+
+export type McpServerSnapshot = Omit<McpHubServerSnapshot, 'authUrl'> &
+	McpAuthorizationPending
+
+export type McpClientHubSnapshot = {
+	servers: Array<McpServerSnapshot>
+	connectionEvents?: Array<McpServerConnectionEvent>
+}
+
+export type McpServerConnectResult = Omit<McpHubConnectResult, 'authUrl'> &
+	McpAuthorizationPending
+
+/** What the consent page shows, plus the provider URL Continue redirects to. */
+export type McpServerPendingAuthorization = {
+	serverId: string
+	name: string
+	serverUrl: string
+	authorizationUrl: string
+	clientMode: McpOAuthClientMode
 }
 
 export type McpServerOAuthCallbackOutcome = {

@@ -12,7 +12,7 @@ function createSnapshot(
 		name: 'linear',
 		url: 'https://mcp.example.com/mcp',
 		state: 'ready',
-		authUrl: null,
+		authorizationPending: false,
 		error: null,
 		instructions: null,
 		tools: [

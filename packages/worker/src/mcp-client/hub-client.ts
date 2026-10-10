@@ -5,8 +5,12 @@ import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-objec
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
 import {
 	type McpClientHubSnapshot,
+	type McpHubConnectResult,
+	type McpHubServerSnapshot,
 	type McpServerConnectResult,
 	type McpServerOAuthCallbackOutcome,
+	type McpServerPendingAuthorization,
+	type McpServerSnapshot,
 } from './types.ts'
 
 export const mcpClientHubSnapshotCacheTtlMs = 30_000
@@ -65,6 +69,9 @@ export type McpClientHubClient = {
 		callbackUrl: string
 	}): Promise<McpServerOAuthCallbackOutcome>
 	getSnapshot(): Promise<McpClientHubSnapshot>
+	readPendingAuthorization(input: {
+		serverId: string
+	}): Promise<McpServerPendingAuthorization | null>
 	callTool(input: {
 		serverId: string
 		toolName: string
@@ -81,19 +88,19 @@ export function createMcpClientHubClient(
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.addServer(addInput)
 			await emitPendingConnectionEvents(input, stub)
-			return result
+			return toMcpServerConnectResult(result)
 		},
 		async reconnectServer(reconnectInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.reconnectServer(reconnectInput)
 			await emitPendingConnectionEvents(input, stub)
-			return result
+			return toMcpServerConnectResult(result)
 		},
 		async refreshServer(refreshInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const result = await stub.refreshServer(refreshInput)
 			await emitPendingConnectionEvents(input, stub)
-			return result
+			return toMcpServerConnectResult(result)
 		},
 		async removeServer(removeInput) {
 			invalidateMcpClientHubSnapshotCache(input)
@@ -108,6 +115,9 @@ export function createMcpClientHubClient(
 		async getSnapshot() {
 			return getCachedMcpClientHubSnapshot(input)
 		},
+		async readPendingAuthorization(readInput) {
+			return await stub.readPendingAuthorization(readInput)
+		},
 		async callTool(callInput) {
 			try {
 				const result = (await stub.callTool(callInput)) as CallToolResult
@@ -120,6 +130,29 @@ export function createMcpClientHubClient(
 			}
 		},
 	}
+}
+
+/**
+ * The provider authorization URL stays in the hub. Callers learn that
+ * approval is pending and link the Kody consent page instead.
+ */
+function isAuthorizationPending(result: {
+	state: McpHubConnectResult['state']
+	authUrl: string | null
+}) {
+	return result.state === 'authenticating' && Boolean(result.authUrl)
+}
+
+function toMcpServerConnectResult(
+	result: McpHubConnectResult,
+): McpServerConnectResult {
+	const { authUrl: _authUrl, ...rest } = result
+	return { ...rest, authorizationPending: isAuthorizationPending(result) }
+}
+
+function toMcpServerSnapshot(server: McpHubServerSnapshot): McpServerSnapshot {
+	const { authUrl: _authUrl, ...rest } = server
+	return { ...rest, authorizationPending: isAuthorizationPending(server) }
 }
 
 async function emitPendingConnectionEvents(
@@ -171,7 +204,7 @@ export function getCachedMcpClientHubSnapshot(
 				stub,
 				snapshot.connectionEvents ?? [],
 			)
-			return { servers: snapshot.servers }
+			return { servers: snapshot.servers.map(toMcpServerSnapshot) }
 		},
 	})
 }
@@ -196,7 +229,7 @@ export function getCachedMcpClientHubServers(
 			const stub = getMcpClientHubStub(input)
 			const peeked = await stub.peekServers()
 			await emitPendingConnectionEvents(input, stub)
-			return peeked
+			return { servers: peeked.servers.map(toMcpServerSnapshot) }
 		},
 	})
 }

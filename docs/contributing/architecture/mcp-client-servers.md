@@ -79,11 +79,28 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    `client_id_metadata_document_supported` and the callback origin is HTTPS:
    Kody presents `{canonical-app-origin}/oauth/client-metadata.json` as
    `client_id`. Otherwise it falls back to Dynamic Client Registration. The
-   connection parks in state `authenticating` with an `authUrl`.
-3. The user opens `authUrl` in the browser (surfaced in the account UI and by
-   the `mcpServerAdd` / `mcpServerList` capabilities). The authorize link uses
-   `rel="noopener noreferrer"` so browser Referer does not send Kody's origin to
-   providers that enforce authorized-origin allowlists on Referer.
+   connection parks in state `authenticating`, and the hub keeps the provider
+   authorization URL in its SQL row.
+3. The provider URL never leaves the hub client
+   (`packages/worker/src/mcp-client/hub-client.ts`): callers get
+   `authorizationPending`. Every `authUrl` that the account UI and the
+   `mcpServerAdd` / `mcpServerList` / `mcpServerReconnect` capabilities return
+   is the Kody consent page `/@<slug>/-/mcp-servers/:serverId/authorize`
+   (`packages/worker/src/app/handlers/org-mcp-server-authorize.ts`). That page
+   requires a signed-in member of the org in the URL with `integration:write` on
+   it. It reads the pending authorization through the hub's
+   `readPendingAuthorization` RPC and shows the server name, the authorization
+   server host, and the client mode (`cimd` or `dcr`, read from the URL's
+   `client_id`). Nothing redirects to the provider until the person clicks
+   Continue. Continue posts a form token: an HMAC over the person, org, server,
+   and pending provider URL
+   (`packages/worker/src/mcp-client/authorize-consent.ts`), so a reconnect
+   retires older forms. App-wide cross-origin protection rejects cross-site
+   posts, and the global CSP forbids framing. The CSP also keeps `form-action`
+   on `'self'`, so the browser cannot follow a form redirect to the provider.
+   The page posts with fetch, a valid token returns the provider URL as JSON,
+   and the page navigates through a `rel="noreferrer"` link so providers that
+   check authorized origins on Referer do not see Kody's.
 4. The provider redirects back to the callback route. The worker authenticates
    the browser session cookie, forwards the full callback URL to that user's hub
    DO, and the SDK exchanges the code (matching the `state` parameter to the

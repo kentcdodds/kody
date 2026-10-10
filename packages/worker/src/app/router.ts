@@ -66,6 +66,10 @@ import {
 	createAccountMcpServersOauthCallbackHandler,
 } from '#app/handlers/account-mcp-servers.ts'
 import {
+	createOrgMcpServerAuthorizeHandler,
+	createOrgMcpServerAuthorizePostHandler,
+} from '#app/handlers/org-mcp-server-authorize.ts'
+import {
 	createAccountMemoriesApiHandler,
 	createAccountMemoriesExportHandler,
 } from '#app/handlers/account-memories.ts'
@@ -596,6 +600,8 @@ export function createAppRouter(env: Env) {
 			orgIntegrations: createOrgSectionHandler(env, 'integrations'),
 			orgJobs: createOrgSectionHandler(env, 'jobs'),
 			orgMcpServers: createOrgSectionHandler(env, 'mcp-servers'),
+			orgMcpServerAuthorize: createOrgMcpServerAuthorizeHandler(env),
+			orgMcpServerAuthorizePost: createOrgMcpServerAuthorizePostHandler(env),
 			orgMemories: createOrgSectionHandler(env, 'memories'),
 			orgPackages: createOrgSectionHandler(env, 'packages'),
 			orgPackagesApi: createOrgPackagesApiHandler(env),

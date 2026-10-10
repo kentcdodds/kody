@@ -7,6 +7,7 @@ import {
 	type PublicProfilePackageItem,
 	type ViewerListingInstall,
 } from '#universal/community-public-types.ts'
+import { type McpOAuthClientMode } from '@kody-internal/shared/mcp-servers.ts'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type AdminFeatureFlag } from '#universal/feature-flags/types.ts'
 import { type OnboardingChecklistItemId } from '#universal/onboarding-checklist-types.ts'
@@ -1824,6 +1825,7 @@ type AccountMcpServerListItem = {
 	state: string
 	connected: boolean
 	toolCount: number
+	/** Kody consent page for a pending authorization, never the provider URL. */
 	authUrl: string | null
 	error: string | null
 	hasRefreshToken: boolean
@@ -1851,6 +1853,37 @@ export type AccountMcpServersLoaderData = {
 	servers: Array<AccountMcpServerListItem>
 	savedPackages: Array<{ id: string; kodyId: string }>
 }
+
+export type McpServerAuthorizeLoaderData = {
+	ok: true
+	orgSlug: string
+	serverId: string
+	serverName: string
+	serverUrl: string
+	/** The server's detail page, for Cancel and the not-pending state. */
+	serverHref: string
+	/** Null when the server is not waiting for approval. */
+	pending: {
+		authorizationServerHost: string
+		clientMode: McpOAuthClientMode
+		csrfToken: string
+	} | null
+	error: string | null
+}
+
+/**
+ * Continue on the MCP server consent page. The CSP keeps `form-action` on
+ * 'self', so the browser cannot follow a form redirect to the provider: the
+ * page posts with fetch and navigates to `authorizationUrl` itself.
+ */
+export type McpServerAuthorizeContinueResponse =
+	| { ok: true; authorizationUrl: string }
+	| {
+			ok: false
+			error: string
+			/** Fresh page data (a new form token) when the page can still be shown. */
+			consent: McpServerAuthorizeLoaderData | null
+	  }
 
 export type AccountPackageListingAhead = {
 	listingId: string
@@ -2506,6 +2539,7 @@ export type AppLoaderData = {
 	accountMcpOauthClients?: AccountMcpOauthClientsLoaderData
 	accountIntegrations?: AccountIntegrationsLoaderData
 	accountMcpServers?: AccountMcpServersLoaderData
+	mcpServerAuthorize?: McpServerAuthorizeLoaderData
 	accountPackages?: AccountPackagesLoaderData
 	accountPackageApprovePublish?: AccountPackageApprovePublishLoaderData
 	accountSecrets?: AccountSecretsLoaderData

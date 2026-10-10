@@ -85,7 +85,7 @@ const mockModule = await vi.hoisted(async () => {
 			connection: {
 				serverId: 'server-2',
 				state: 'authenticating',
-				authUrl: 'https://auth.example.com/authorize?state=abc',
+				authorizationPending: true,
 				error: null,
 				toolCount: 0,
 			},
@@ -115,7 +115,7 @@ const mockModule = await vi.hoisted(async () => {
 					name: 'linear',
 					url: 'https://mcp.example.com/mcp',
 					state: 'ready',
-					authUrl: null,
+					authorizationPending: false,
 					error: null,
 					instructions: null,
 					tools: [
@@ -138,7 +138,7 @@ const mockModule = await vi.hoisted(async () => {
 		reconnectServer: vi.fn<McpClientHubClient['reconnectServer']>(async () => ({
 			serverId: 'server-1',
 			state: 'authenticating',
-			authUrl: 'https://auth.example.com/authorize?state=fresh.server-1',
+			authorizationPending: true,
 			error: null,
 			toolCount: 0,
 		})),
@@ -247,7 +247,7 @@ vi.mock('#worker/mcp-client/hub-client.ts', () => ({
 		refreshServer: vi.fn(async () => ({
 			serverId: 'server-1',
 			state: 'ready',
-			authUrl: null,
+			authorizationPending: false,
 			error: null,
 			toolCount: 2,
 		})),
@@ -383,7 +383,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 	mockModule.reconnectServer.mockResolvedValueOnce({
 		serverId: 'server-1',
 		state: 'connected',
-		authUrl: null,
+		authorizationPending: false,
 		error: hung.message,
 		toolCount: 0,
 		lastError: hung.lastError,

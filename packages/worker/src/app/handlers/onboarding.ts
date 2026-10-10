@@ -22,8 +22,8 @@ import {
 	loadOnboardingMcpChooserListings,
 } from '#app/community-data.ts'
 import {
-	buildMcpServerStatusView,
 	loadMcpClientHubSnapshotOrNull,
+	mcpServerStatusError,
 } from '#mcp/capabilities/mcp-servers/shared.ts'
 import { listMcpServerSettings } from '#worker/mcp-client/settings-service.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
@@ -156,20 +156,16 @@ async function loadOnboardingMcpChooserOverlay(
 		const snapshot = await loadMcpClientHubSnapshotOrNull({ env, userId })
 		const statusByServerId = new Map(
 			settings.map((setting) => {
-				const view = buildMcpServerStatusView({
-					setting,
-					snapshot:
-						snapshot?.servers.find(
-							(server) => server.serverId === setting.id,
-						) ?? null,
-				})
+				const server =
+					snapshot?.servers.find((entry) => entry.serverId === setting.id) ??
+					null
 				return [
 					setting.id,
 					{
-						connected: view.connected,
-						authUrl: view.authUrl,
-						state: view.state,
-						error: view.error,
+						connected: server?.state === 'ready',
+						authorizationPending: server?.authorizationPending ?? false,
+						state: server?.state ?? 'disconnected',
+						error: mcpServerStatusError({ setting, snapshot: server }),
 					},
 				] as const
 			}),

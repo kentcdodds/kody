@@ -88,6 +88,11 @@ export async function loadAccountMcpServersData(input: {
 							snapshot?.servers.find(
 								(server) => server.serverId === setting.id,
 							) ?? null,
+						authorizeLink: {
+							appOrigin: oauth.clientOrigin,
+							orgSlug:
+								input.user.request.org.slug?.trim() || input.user.username,
+						},
 						oauthCallbackUrl: oauth.callbackUrl,
 						oauthClientOrigin: oauth.clientOrigin,
 						oauthClientMetadataUrl: oauth.clientMetadataUrl,

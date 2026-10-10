@@ -7,6 +7,7 @@ import {
 	restoreReadableMcpOAuthTokens,
 	withPreservedMcpOAuthRefreshToken,
 } from './oauth-token-recovery.ts'
+import { type McpOAuthClientMode } from '@kody-internal/shared/mcp-servers.ts'
 
 export const mcpClientIdMetadataPath = '/oauth/client-metadata.json'
 export const mcpServerOAuthCallbackPath = '/account/mcp-servers/oauth/callback'
@@ -25,6 +26,20 @@ export function resolveMcpClientMetadataUrl(callbackUrl: string) {
 	} catch {
 		return undefined
 	}
+}
+
+/**
+ * Which client identity an authorization URL carries. The MCP SDK puts the
+ * CIMD URL in `client_id` when the authorization server supports it, and the
+ * registered id otherwise.
+ */
+export function resolveMcpOAuthClientMode(input: {
+	authorizationUrl: string
+	callbackUrl: string
+}): McpOAuthClientMode {
+	const clientId = new URL(input.authorizationUrl).searchParams.get('client_id')
+	const metadataUrl = resolveMcpClientMetadataUrl(input.callbackUrl)
+	return metadataUrl && clientId === metadataUrl ? 'cimd' : 'dcr'
 }
 
 export function buildMcpClientIdMetadataDocument(origin: string) {
