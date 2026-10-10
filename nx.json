@@ -56,15 +56,7 @@
 		},
 		"test": {
 			"cache": true,
-			"inputs": [
-				"workspace",
-				{
-					"env": "KODY_VALIDATE_LOAD"
-				},
-				{
-					"env": "CI"
-				}
-			]
+			"inputs": ["workspace", { "env": "CI" }]
 		},
 		"test-node": {
 			"cache": true,
@@ -77,17 +69,7 @@
 		},
 		"test-workers": {
 			"cache": true,
-			"inputs": [
-				"default",
-				"^default",
-				{
-					"env": "KODY_VALIDATE_LOAD"
-				},
-				"suiteSupport",
-				{
-					"env": "CI"
-				}
-			]
+			"inputs": ["default", "^default", "suiteSupport", { "env": "CI" }]
 		},
 		"test-mcp": {
 			"cache": true,

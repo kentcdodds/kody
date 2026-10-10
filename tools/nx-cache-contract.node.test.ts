@@ -247,12 +247,15 @@ test('tools:typecheck cache hash ignores CI', async () => {
 	expect(includesCiEnv(inputs)).toBe(false)
 })
 
-test('cache hash includes KODY_VALIDATE_LOAD because the full suite runs workers-unit', async () => {
-	const inputs = await getWorkerDeclaredInputs('test')
-	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
-})
-
-test('test-workers cache hash includes KODY_VALIDATE_LOAD for validate-load timeouts', async () => {
-	const inputs = await getWorkerDeclaredInputs('test-workers')
-	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
-})
+// KODY_VALIDATE_LOAD only widens the workers-unit timeout and lowers
+// maxWorkers; measured on an isolated 4-core VM, the same 104 files / 401
+// tests pass with and without it (448s vs 526s). Hashing it would keep
+// validate's test-workers artifact (flag on) from ever matching CI's Workers
+// job (flag off), so no cached target may key on it.
+test.each(['test', 'test-workers'])(
+	'%s cache hash ignores KODY_VALIDATE_LOAD so validate artifacts match CI',
+	async (target) => {
+		const inputs = await getWorkerDeclaredInputs(target)
+		expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(false)
+	},
+)

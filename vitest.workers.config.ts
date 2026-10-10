@@ -12,8 +12,10 @@ process.env.WRANGLER_LOG ??= 'warn'
 // past the shared 20s budget (#2939). `KODY_VALIDATE_LOAD=1` (set on
 // validate's test-workers leg only) raises the workers-unit budget and lowers
 // maxWorkers. Kept here — not in sharedProjectConfig — so node-unit /
-// mcp-e2e never inherit the flag and Nx test/test-node caches stay keyed to
-// the 20s default. Does not change production startup CPU budgets.
+// mcp-e2e never inherit the flag. Nx cache hashes ignore the flag on purpose:
+// it changes budgets, not which tests run or what they assert, so validate's
+// test-workers artifact is the one CI's Workers job (no flag) looks up. Does
+// not change production startup CPU budgets.
 const underValidateLoad =
 	process.env.KODY_VALIDATE_LOAD === '1' ||
 	process.env.KODY_VALIDATE_LOAD === 'true'

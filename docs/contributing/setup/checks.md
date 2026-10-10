@@ -53,7 +53,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   timeout and `maxWorkers=2` under the parallel gate without changing production
   startup CPU budgets or node-unit timeouts (Cloud Agent load flakes: #2475,
   #2939; `tools/validate-load-contract.node.test.ts` locks the validate script
-  shape).
+  shape). The flag is not part of any Nx cache hash: it only changes budgets, so
+  the `test-workers` artifact validate uploads is the one CI's Workers job
+  (which runs without it) looks up.
 - Because the commit hook already enforces formatting, lint fixes,
   install:check, and typechecking for commits that include code, agents do not
   need to run those checks separately before every code commit unless they want
