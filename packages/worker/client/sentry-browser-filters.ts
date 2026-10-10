@@ -1628,8 +1628,11 @@ function isAnonymousNativeOrSentrySdkStackFrameUrl(url: string) {
 /**
  * Drop-safe only when every reported frame is present and is either
  * anonymous/native or a Sentry SDK frame (`@sentry/` / `sentryWrapped`),
- * with an `eval` function or anonymous-only URLs. URL-less frames are
- * unknown (possibly first-party) and keep the event.
+ * with an `eval` function or anonymous-only URLs. `sentryWrapped` is allowed
+ * even when the URL is a bundled `/assets/…` path — production `beforeSend`
+ * sees those minified asset URLs, not sourcemapped `@sentry/browser` paths.
+ * Other `/assets/…` frames still keep the event. URL-less frames are unknown
+ * (possibly first-party) and keep the event.
  */
 function isAnonymousOrSentryOnlyReportedFrames(
 	frames: Array<SentryStackFrame> | undefined,
@@ -1642,8 +1645,13 @@ function isAnonymousOrSentryOnlyReportedFrames(
 	for (const frame of frames) {
 		const urls = stackFrameUrls(frame)
 		if (urls.length === 0) return false
-		if (urls.some(isFirstPartyKodyAssetStackFrameUrl)) return false
+		// Bundled Sentry helpers land under /assets/… in production beforeSend
+		// (KODY-8A pitfall). Recognize them by function name before treating
+		// the URL as a first-party keep signal.
 		const isSentryWrapped = frame.function === 'sentryWrapped'
+		if (!isSentryWrapped && urls.some(isFirstPartyKodyAssetStackFrameUrl)) {
+			return false
+		}
 		if (
 			!isSentryWrapped &&
 			!urls.every(isAnonymousNativeOrSentrySdkStackFrameUrl)

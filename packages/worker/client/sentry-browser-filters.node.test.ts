@@ -404,6 +404,17 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 				fr('sentryWrapped', '/node_modules/@sentry/browser/helpers.js'),
 			],
 		],
+		// Production beforeSend: sentryWrapped is bundled under /assets/…
+		// (Bugbot on #3204) — still drop when paired with anonymous eval.
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[
+				fr('sentryWrapped', 'https://kody.codes/assets/entry-abc123.js'),
+				fr('next', '<anonymous>'),
+				fr('eval', '<anonymous>'),
+			],
+		],
 		// Anonymous-only stack with the CSP wording (no named eval frame).
 		[
 			'EvalError',
