@@ -23,8 +23,7 @@ export async function readSignupOrgSlugOrNull(
 	if (provided) return provided
 	try {
 		return await readSignupOrgSlug(db, ownerId)
-	} catch (error) {
-		console.warn('signup organization slug lookup failed', { error })
+	} catch {
 		return null
 	}
 }

@@ -257,10 +257,6 @@ export async function dispatchIntegrationAuthFailedSubscriptionEvents(input: {
 		input.orgSlug,
 	)
 	if (!orgSlug) {
-		console.warn('integration auth subscription missing org slug', {
-			userId: input.userId,
-			eventId: input.eventId,
-		})
 		return []
 	}
 	const baseUrl = getAppBaseUrl({ env: input.env })
@@ -308,10 +304,6 @@ export async function dispatchIntegrationAuthSucceededSubscriptionEvents(input: 
 		input.orgSlug,
 	)
 	if (!orgSlug) {
-		console.warn('integration auth subscription missing org slug', {
-			userId: input.userId,
-			eventId: input.eventId,
-		})
 		return []
 	}
 	const baseUrl = getAppBaseUrl({ env: input.env })

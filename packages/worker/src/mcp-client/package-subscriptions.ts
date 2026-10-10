@@ -132,13 +132,6 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 				},
 			)
 		}
-		console.warn(
-			'mcp.server connection package subscription missing org slug',
-			{
-				userId: input.userId,
-				eventId: input.event.eventId,
-			},
-		)
 		return { results: [], complete: false }
 	}
 	const eventPayload = buildEventPayload({

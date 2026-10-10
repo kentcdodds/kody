@@ -141,10 +141,6 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 				},
 			)
 		}
-		console.warn('run error subscription missing org slug', {
-			userId: input.userId,
-			runId: input.run.id,
-		})
 		return []
 	}
 	const eventPayload = buildRunErrorEventPayload({
