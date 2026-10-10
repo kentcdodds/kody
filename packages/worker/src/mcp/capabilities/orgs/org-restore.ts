@@ -1,6 +1,7 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { FreeOrgLimitError } from '#worker/orgs/billing.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -69,6 +70,9 @@ export const orgRestoreCapability = defineDomainCapability(
 					throw new McpCallerError(
 						'The 30-day restore window for this organization has expired.',
 					)
+				}
+				if (error instanceof FreeOrgLimitError) {
+					throw new McpCallerError(error.message)
 				}
 				throw error
 			}

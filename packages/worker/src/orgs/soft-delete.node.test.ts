@@ -6,6 +6,15 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { provisionPersonalOrg } from './provision.ts'
+import { FreeOrgLimitError, countLiveFreeOwnedOrgs } from './billing.ts'
+
+vi.mock('./billing.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./billing.ts')>()
+	return {
+		...actual,
+		countLiveFreeOwnedOrgs: vi.fn(actual.countLiveFreeOwnedOrgs),
+	}
+})
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import {
 	AccountDeletionWritersActiveError,
@@ -862,4 +871,237 @@ test('a user-delete retry does not soft-delete a shared org after the other memb
 		)
 		.first<{ deleted_at: string | null }>()
 	expect(bucket?.deleted_at).toBeNull()
+})
+
+test('restoring a free org refuses when an Owner is already at the free-org cap', async () => {
+	const { env, appDb } = await createHarness()
+	const ownerId = 'owner-at-cap'
+	const ts = '2026-01-01T00:00:00.000Z'
+	for (const [orgId, slug] of [
+		['org-cap-a', 'cap-a'],
+		['org-cap-b', 'cap-b'],
+		['org-cap-c', 'cap-c'],
+	] as const) {
+		await seedOrg(appDb, orgId, slug)
+		await appDb
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'owner', ?)`,
+			)
+			.bind(orgId, ownerId, ts)
+			.run()
+	}
+	await appDb
+		.prepare(
+			`INSERT INTO handles (handle, user_id, created_at) VALUES ('capowner', ?, ?)`,
+		)
+		.bind(ownerId, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO users (id, email, username, password_hash, created_at, updated_at, stable_user_id)
+			 VALUES (41, 'capowner@example.com', 'capowner', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, ownerId)
+		.run()
+	await softDeleteOrg({
+		env,
+		orgId: ownerIdFromStored('org-cap-a'),
+		actorUserId: ownerId,
+		now,
+	})
+	const restoreNow = new Date(now.getTime() + 60_000)
+	await expect(
+		restoreOrg({
+			env,
+			orgId: ownerIdFromStored('org-cap-a'),
+			actorUserId: ownerId,
+			now: restoreNow,
+		}),
+	).rejects.toThrow(
+		'Restoring this organization would give @capowner more than 2 free organizations.',
+	)
+	const stillDeleted = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind('org-cap-a')
+		.first<{ deleted_at: string | null }>()
+	expect(stillDeleted?.deleted_at).toBeTruthy()
+
+	// A paid org restores regardless of the cap.
+	await appDb
+		.prepare(`UPDATE orgs SET plan = 'pro' WHERE id = ?`)
+		.bind('org-cap-a')
+		.run()
+	await restoreOrg({
+		env,
+		orgId: ownerIdFromStored('org-cap-a'),
+		actorUserId: ownerId,
+		now: restoreNow,
+	})
+
+	// Under the cap, a free org restores.
+	await softDeleteOrg({
+		env,
+		orgId: ownerIdFromStored('org-cap-b'),
+		actorUserId: ownerId,
+		now,
+	})
+	await appDb
+		.prepare(`UPDATE orgs SET plan = 'pro' WHERE id = ?`)
+		.bind('org-cap-c')
+		.run()
+	await restoreOrg({
+		env,
+		orgId: ownerIdFromStored('org-cap-b'),
+		actorUserId: ownerId,
+		now: restoreNow,
+	})
+	const live = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind('org-cap-b')
+		.first<{ deleted_at: string | null }>()
+	expect(live?.deleted_at).toBeNull()
+	const membership = await appDb
+		.prepare(
+			`SELECT deleted_at FROM org_memberships WHERE org_id = ? AND user_id = ?`,
+		)
+		.bind('org-cap-b', ownerId)
+		.first<{ deleted_at: string | null }>()
+	expect(membership?.deleted_at).toBeNull()
+	expect(await countLiveFreeOwnedOrgs(appDb, ownerId)).toBe(1)
+})
+
+test('the restore UPDATE refuses when a concurrent restore filled the free-org cap first', async () => {
+	const { env, appDb } = await createHarness()
+	const ownerId = 'owner-racing'
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (id, email, username, password_hash, created_at, updated_at, stable_user_id)
+			 VALUES (42, 'racer@example.com', 'racer', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, ownerId)
+		.run()
+	for (const [orgId, slug] of [
+		['org-race-live', 'race-live'],
+		['org-race-a', 'race-a'],
+		['org-race-b', 'race-b'],
+	] as const) {
+		await seedOrg(appDb, orgId, slug)
+		await appDb
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'owner', ?)`,
+			)
+			.bind(orgId, ownerId, ts)
+			.run()
+	}
+	await softDeleteOrg({
+		env,
+		orgId: ownerIdFromStored('org-race-a'),
+		actorUserId: ownerId,
+		now,
+	})
+	await softDeleteOrg({
+		env,
+		orgId: ownerIdFromStored('org-race-b'),
+		actorUserId: ownerId,
+		now,
+	})
+	const restoreNow = new Date(now.getTime() + 60_000)
+	await restoreOrg({
+		env,
+		orgId: ownerIdFromStored('org-race-a'),
+		actorUserId: ownerId,
+		now: restoreNow,
+	})
+	expect(await countLiveFreeOwnedOrgs(appDb, ownerId)).toBe(2)
+
+	// Stand in for a restore whose pre-check read the cap before org-race-a
+	// went live: the pre-check passes, the guarded UPDATE must still refuse.
+	vi.mocked(countLiveFreeOwnedOrgs).mockResolvedValueOnce(1)
+	await expect(
+		restoreOrg({
+			env,
+			orgId: ownerIdFromStored('org-race-b'),
+			actorUserId: ownerId,
+			now: restoreNow,
+		}),
+	).rejects.toBeInstanceOf(FreeOrgLimitError)
+	const rows = await appDb
+		.prepare(
+			`SELECT o.deleted_at AS org_deleted_at, m.deleted_at AS membership_deleted_at
+			 FROM orgs o INNER JOIN org_memberships m ON m.org_id = o.id
+			 WHERE o.id = 'org-race-b'`,
+		)
+		.first<{
+			org_deleted_at: string | null
+			membership_deleted_at: string | null
+		}>()
+	expect(rows?.org_deleted_at).toBeTruthy()
+	expect(rows?.membership_deleted_at).toBeTruthy()
+	expect(await countLiveFreeOwnedOrgs(appDb, ownerId)).toBe(2)
+})
+
+test('a deleted co-Owner does not count against the free-org cap on restore', async () => {
+	const { env, appDb } = await createHarness()
+	const live = 'owner-live-co'
+	const gone = 'owner-gone-co'
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (id, email, username, password_hash, created_at, updated_at, stable_user_id)
+			 VALUES (43, 'live-co@example.com', 'liveco', 'x', ?, ?, ?),
+			        (44, 'gone-co@example.com', 'goneco', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, live, ts, ts, gone)
+		.run()
+	await seedOrg(appDb, 'org-shared-co', 'shared-co')
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES ('org-shared-co', ?, 'owner', ?), ('org-shared-co', ?, 'owner', ?)`,
+		)
+		.bind(live, ts, gone, ts)
+		.run()
+	// The departed Owner still owns two live free orgs from an interrupted
+	// account deletion.
+	for (const [orgId, slug] of [
+		['org-gone-1', 'gone-1'],
+		['org-gone-2', 'gone-2'],
+	] as const) {
+		await seedOrg(appDb, orgId, slug)
+		await appDb
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'owner', ?)`,
+			)
+			.bind(orgId, gone, ts)
+			.run()
+	}
+	await softDeleteOrg({
+		env,
+		orgId: ownerIdFromStored('org-shared-co'),
+		actorUserId: live,
+		now,
+	})
+	await appDb
+		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = ?`)
+		.bind(now.toISOString(), gone)
+		.run()
+	await restoreOrg({
+		env,
+		orgId: ownerIdFromStored('org-shared-co'),
+		actorUserId: live,
+		now: new Date(now.getTime() + 60_000),
+	})
+	const rows = await appDb
+		.prepare(
+			`SELECT user_id, deleted_at FROM org_memberships WHERE org_id = 'org-shared-co' ORDER BY user_id`,
+		)
+		.all<{ user_id: string; deleted_at: string | null }>()
+	expect(rows.results).toEqual([
+		{ user_id: gone, deleted_at: expect.any(String) },
+		{ user_id: live, deleted_at: null },
+	])
 })

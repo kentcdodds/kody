@@ -26,6 +26,12 @@ import {
 	orgOwnedUserIdSoftDeleteTables,
 } from '#worker/orgs/data-targets.ts'
 import { cancelKodySubscriptionsForSoftDelete } from '#worker/billing/soft-delete-billing.ts'
+import {
+	FreeOrgLimitError,
+	MAX_FREE_ORGS_PER_USER,
+	countLiveFreeOwnedOrgs,
+	isPaidOrg,
+} from '#worker/orgs/billing.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
@@ -187,21 +193,6 @@ async function restoreOrgOwnedAppRows(input: {
 			.run()
 		total += result.meta.changes ?? 0
 	}
-	// Only revive memberships for people who are still live accounts. A member
-	// who soft-deleted their own account must not regain access on org restore.
-	const memberships = await input.appDb
-		.prepare(
-			`UPDATE org_memberships
-			 SET deleted_at = NULL
-			 WHERE org_id = ?
-			   AND deleted_at = ?
-			   AND user_id IN (
-			     SELECT stable_user_id FROM users WHERE deleted_at IS NULL
-			   )`,
-		)
-		.bind(input.orgId, input.deletedAt)
-		.run()
-	total += memberships.meta.changes ?? 0
 	const teamMembers = await input.appDb
 		.prepare(
 			`UPDATE team_members
@@ -432,6 +423,65 @@ export async function assertActorCanRestoreSoftDeletedOrg(input: {
 	return { deletedAt: row.deleted_at }
 }
 
+/**
+ * A restored free org counts toward its Owners' two-free-org cap again, the
+ * same as creating one. Refuse when a live Owner whose membership this restore
+ * would revive (same deletion generation; deleted people are not revived) is
+ * already at the cap. This produces the message; the restore UPDATE re-checks
+ * the same condition atomically (`freeOrgCapRestoreGuardSql`).
+ */
+async function assertRestoreKeepsOwnersUnderFreeOrgCap(input: {
+	db: D1Database
+	orgId: string
+	deletedAt: string
+}) {
+	const owners = await input.db
+		.prepare(
+			`SELECT m.user_id AS user_id, h.handle AS handle
+			 FROM org_memberships m
+			 INNER JOIN users u ON u.stable_user_id = m.user_id AND u.deleted_at IS NULL
+			 LEFT JOIN handles h ON h.user_id = m.user_id
+			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at = ?`,
+		)
+		.bind(input.orgId, input.deletedAt)
+		.all<{ user_id: string; handle: string | null }>()
+	for (const owner of owners.results ?? []) {
+		const count = await countLiveFreeOwnedOrgs(input.db, owner.user_id)
+		if (count >= MAX_FREE_ORGS_PER_USER) {
+			const who = owner.handle ? `@${owner.handle}` : 'an Owner'
+			throw new FreeOrgLimitError(
+				`Restoring this organization would give ${who} more than ${String(MAX_FREE_ORGS_PER_USER)} free organizations. Make one paid or delete one before restoring.`,
+			)
+		}
+	}
+}
+
+/**
+ * Guard for the restore UPDATE: no live Owner this restore would revive may
+ * already own `MAX_FREE_ORGS_PER_USER` live free orgs. Evaluated inside the
+ * same statement that clears the tombstone, so two concurrent restores for one
+ * Owner cannot both pass the cap check and then both go live.
+ */
+const freeOrgCapRestoreGuardSql = `
+	AND NOT EXISTS (
+		SELECT 1
+		FROM org_memberships m
+		INNER JOIN users u ON u.stable_user_id = m.user_id AND u.deleted_at IS NULL
+		WHERE m.org_id = orgs.id
+		  AND m.role = 'owner'
+		  AND m.deleted_at = orgs.deleted_at
+		  AND (
+		    SELECT COUNT(*)
+		    FROM orgs o2
+		    INNER JOIN org_memberships m2
+		      ON m2.org_id = o2.id
+		     AND m2.user_id = m.user_id
+		     AND m2.role = 'owner'
+		     AND m2.deleted_at IS NULL
+		    WHERE o2.plan = 'free' AND o2.deleted_at IS NULL
+		  ) >= ?
+	)`
+
 export async function restoreOrg(input: {
 	env: Env
 	orgId: OwnerId
@@ -442,27 +492,61 @@ export async function restoreOrg(input: {
 	const now = input.now ?? new Date()
 	const appDb = input.env.APP_DB
 	const row = await appDb
-		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.prepare(`SELECT deleted_at, plan FROM orgs WHERE id = ?`)
 		.bind(input.orgId)
-		.first<{ deleted_at: string | null }>()
+		.first<{ deleted_at: string | null; plan: string }>()
 	if (!row?.deleted_at) {
 		throw new Error('org_not_deleted')
 	}
 	if (!isWithinSoftDeleteRestoreWindow(row.deleted_at, now)) {
 		throw new OrgRestoreWindowExpiredError()
 	}
+	const freeOrg = !isPaidOrg(row.plan)
 	const deletedAt = row.deleted_at
+	const assertUnderCap = () =>
+		assertRestoreKeepsOwnersUnderFreeOrgCap({
+			db: appDb,
+			orgId: input.orgId,
+			deletedAt,
+		})
+	if (freeOrg) await assertUnderCap()
 	const restoredAt = now.toISOString()
 
-	const orgUpdate = await appDb
-		.prepare(
-			`UPDATE orgs
-			 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
-			 WHERE id = ? AND deleted_at = ?`,
-		)
-		.bind(restoredAt, input.orgId, deletedAt)
-		.run()
-	if ((orgUpdate.meta.changes ?? 0) === 0) {
+	// The org row and its Owner memberships go live in one atomic batch so the
+	// cap guard of a concurrent restore never sees a live org whose Owner
+	// membership is still tombstoned. Only people who are still live accounts
+	// are revived: a member who soft-deleted their own account must not regain
+	// access on org restore.
+	const [orgUpdate, memberships] = await appDb.batch([
+		appDb
+			.prepare(
+				`UPDATE orgs
+				 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
+				 WHERE id = ? AND deleted_at = ?${freeOrg ? freeOrgCapRestoreGuardSql : ''}`,
+			)
+			.bind(
+				restoredAt,
+				input.orgId,
+				deletedAt,
+				...(freeOrg ? [MAX_FREE_ORGS_PER_USER] : []),
+			),
+		appDb
+			.prepare(
+				`UPDATE org_memberships
+				 SET deleted_at = NULL
+				 WHERE org_id = ?
+				   AND deleted_at = ?
+				   AND EXISTS (SELECT 1 FROM orgs WHERE id = ? AND deleted_at IS NULL)
+				   AND user_id IN (
+				     SELECT stable_user_id FROM users WHERE deleted_at IS NULL
+				   )`,
+			)
+			.bind(input.orgId, deletedAt, input.orgId),
+	])
+	if ((orgUpdate?.meta.changes ?? 0) === 0) {
+		// Either another restore won, or a concurrent restore for one of the
+		// Owners went live first and the guard refused this one.
+		if (freeOrg) await assertUnderCap()
 		throw new Error('org_restore_race')
 	}
 
@@ -473,11 +557,13 @@ export async function restoreOrg(input: {
 		stableUserId: input.orgId,
 	})
 
-	const resourceRowsRestored = await restoreOrgOwnedAppRows({
-		appDb,
-		orgId: input.orgId,
-		deletedAt,
-	})
+	const resourceRowsRestored =
+		(memberships?.meta.changes ?? 0) +
+		(await restoreOrgOwnedAppRows({
+			appDb,
+			orgId: input.orgId,
+			deletedAt,
+		}))
 	const jobsRestored = await jobsData(input.env).restoreJobsForUser({
 		userId: input.orgId,
 		deletedAt,
