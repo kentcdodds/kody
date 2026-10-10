@@ -734,26 +734,22 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 			statsFor(2, 2),
 		],
 		[
-			'non-hashable module',
+			'binary module bytes',
 			[
 				{
 					modules: {
-						'entry.js': {
-							js: entryModules['entry.js'],
-							onLoad: async () => 'not-hashable',
-						},
+						...entryModules,
+						'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
 					} as never,
 				},
 				{
 					modules: {
-						'entry.js': {
-							js: entryModules['entry.js'],
-							onLoad: async () => 'not-hashable',
-						},
+						...entryModules,
+						'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
 					} as never,
 				},
 			],
-			statsFor(2, 2),
+			statsFor(2, 1),
 		],
 	]
 	const bundledStats = []
