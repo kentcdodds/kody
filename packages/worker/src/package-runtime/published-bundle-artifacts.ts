@@ -260,6 +260,11 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	publishedCommit: string
 	target: PublishedPackageArtifactBuildTarget
 	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
+	/**
+	 * Snapshot already loaded for this rebuild's `publishedCommit`.
+	 * `null` means that load found none. Omit to read it here.
+	 */
+	publishedSnapshot?: PublishedSourceSnapshot | null
 }) {
 	if (!hasPublishedRuntimeArtifacts(input.env)) return false
 	const loaded = await loadPublishedBundleArtifactByIdentity({
@@ -277,12 +282,7 @@ export async function isPublishedPackageArtifactBuiltForCommit(input: {
 	) {
 		return false
 	}
-	const snapshot = await readPublishedSourceSnapshotCached({
-		env: input.env,
-		sourceId: input.sourceId,
-		publishedCommit: input.publishedCommit,
-		snapshotCache: input.snapshotCache,
-	})
+	const snapshot = await currentPublishedSnapshot(input)
 	const cutoff = snapshot?.invalidateArtifactsBefore
 	if (
 		cutoff &&
@@ -333,6 +333,37 @@ function readPublishedSourceSnapshotCached(input: {
 }
 
 /**
+ * `publishedSnapshot` is the snapshot loaded for this rebuild. Callers pass
+ * that same value to every target. A later rebuild loads again.
+ */
+function currentPublishedSnapshot(input: {
+	env: Env
+	sourceId: string
+	publishedCommit: string
+	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
+	publishedSnapshot?: PublishedSourceSnapshot | null
+}) {
+	if (input.publishedSnapshot !== undefined) {
+		if (
+			input.publishedSnapshot &&
+			(input.publishedSnapshot.sourceId !== input.sourceId ||
+				input.publishedSnapshot.publishedCommit !== input.publishedCommit)
+		) {
+			throw new Error(
+				`Published snapshot for source "${input.publishedSnapshot.sourceId}" at commit "${input.publishedSnapshot.publishedCommit}" does not match rebuild source "${input.sourceId}" at commit "${input.publishedCommit}".`,
+			)
+		}
+		return input.publishedSnapshot
+	}
+	return readPublishedSourceSnapshotCached({
+		env: input.env,
+		sourceId: input.sourceId,
+		publishedCommit: input.publishedCommit,
+		snapshotCache: input.snapshotCache,
+	})
+}
+
+/**
  * Copy a prior-commit artifact onto `publishedCommit` when the target's
  * bundler inputs are unchanged and captured `kody:@` dependency commits
  * still match those sources' current `published_commit`. Artifacts are
@@ -349,6 +380,12 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 	target: PublishedPackageArtifactBuildTarget
 	snapshotCache?: PublishedPackageArtifactReuseSnapshotCache
 	dependencySourceCache?: PublishedPackageArtifactDependencySourceCache
+	/**
+	 * Snapshot already loaded for this rebuild's `publishedCommit`.
+	 * `null` means that load found none. Omit to read it here.
+	 * Prior-commit snapshots still go through `snapshotCache`.
+	 */
+	publishedSnapshot?: PublishedSourceSnapshot | null
 }) {
 	if (!hasPublishedRuntimeArtifacts(input.env)) return false
 	const loaded = await loadPublishedBundleArtifactByIdentity({
@@ -377,12 +414,7 @@ export async function reusePublishedPackageArtifactIfUnchanged(input: {
 			publishedCommit: priorCommit,
 			snapshotCache: input.snapshotCache,
 		}),
-		readPublishedSourceSnapshotCached({
-			env: input.env,
-			sourceId: input.sourceId,
-			publishedCommit: input.publishedCommit,
-			snapshotCache: input.snapshotCache,
-		}),
+		currentPublishedSnapshot(input),
 	])
 	if (!previousSnapshot?.files || !nextSnapshot?.files) return false
 	if (
