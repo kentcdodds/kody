@@ -261,6 +261,18 @@ export const routes = route({
 	orgWaiting: get('/@:orgSlug/-/waiting(/*rest)'),
 	orgWebhooks: get('/@:orgSlug/-/webhooks'),
 	orgWorkflows: get('/@:orgSlug/-/workflows(/*rest)'),
+	// Org settings and members under the same `/-/` separator.
+	orgSettings: get('/@:orgSlug/-/settings'),
+	orgSettingsApi: get('/@:orgSlug/-/settings.json'),
+	orgSettingsPost: post('/@:orgSlug/-/settings.json'),
+	orgSettingsAvatarPost: post('/@:orgSlug/-/settings/avatar.json'),
+	orgSettingsDeletePost: post('/@:orgSlug/-/settings/delete.json'),
+	orgMembers: get('/@:orgSlug/-/members'),
+	orgMembersApi: get('/@:orgSlug/-/members.json'),
+	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
+	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
+	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgAvatar: get('/orgs/:orgSlug/avatar/:hash.:ext'),
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
 	// package name leaf (`/@acme/devin`) rather than the listing uuid. Deeper

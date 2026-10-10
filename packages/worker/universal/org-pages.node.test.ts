@@ -6,11 +6,16 @@ import {
 	orderOrganizations,
 	orgBillingPath,
 	orgIdentity,
+	orgMembersPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
+	orgRoleManagesOrg,
+	orgRoleReadsMembers,
+	orgSettingsPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
+	parseOrgManagementPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -89,9 +94,43 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/-/billing/success', 'other')).toBe(
 		'/@other/-/billing',
 	)
+	expect(switchOrgPath('/@acme/-/settings', 'other')).toBe('/@other/-/settings')
+	expect(switchOrgPath('/@acme/-/members.json', 'other')).toBe(
+		'/@other/-/members',
+	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
+})
+
+test('management paths name settings and members under the /- separator', () => {
+	expect(parseOrgManagementPath('/@acme/-/settings')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/settings.json')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/settings/avatar.json')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/members/invite.json')).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
+	expect(parseOrgManagementPath('/@acme/settings')).toBeNull()
+	expect(parseOrgManagementPath('/@acme/secrets')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/settings')).toBeNull()
+	expect(orgSettingsPath('acme')).toBe('/@acme/-/settings')
+	expect(orgMembersPath('acme')).toBe('/@acme/-/members')
+	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
+	expect(orgRoleManagesOrg('owner')).toBe(true)
+	expect(orgRoleManagesOrg('member')).toBe(false)
+	expect(orgRoleManagesOrg(null)).toBe(false)
+	expect(orgRoleReadsMembers('billing')).toBe(true)
+	expect(orgRoleReadsMembers(null)).toBe(false)
 })
 
 test('switcher lists the signup organization first, then roles, then create and any waiting invites', () => {
@@ -159,6 +198,10 @@ test('org rows show the signup organization as the person and others by name or 
 		avatarName: 'Acme',
 		avatarUrl: null,
 	})
+	expect(
+		orgIdentity({ ...acme, avatarUrl: '/orgs/acme/avatar/hash.png' }, viewer)
+			.avatarUrl,
+	).toBe('/orgs/acme/avatar/hash.png')
 	expect(orgIdentity({ ...billing, displayName: '  ' }, viewer)).toEqual({
 		name: '@billing-co',
 		handle: '@billing-co',

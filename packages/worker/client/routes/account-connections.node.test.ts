@@ -401,23 +401,40 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
 })
 
-test('a team organization rail has only Billing, for roles that manage it (#3073)', () => {
+test('workspace rail for a team organization is Settings, Members, and Billing', () => {
 	expect(
-		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: 'owner' }),
+		workspaceRailGroups({
+			orgSlug: 'acme',
+			personal: false,
+			role: 'owner',
+		}).map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
-		{
-			label: 'Organization',
-			items: [{ href: '/@acme/-/billing', label: 'Billing', icon: 'wallet' }],
-		},
+		[
+			'Organization',
+			['/@acme/-/settings', '/@acme/-/members', '/@acme/-/billing'],
+		],
 	])
 	expect(
-		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: 'billing' }),
-	).toHaveLength(1)
-	for (const role of ['member', null] as const) {
-		expect(
-			workspaceRailGroups({ orgSlug: 'acme', personal: false, role }),
-		).toEqual([])
-	}
+		workspaceRailGroups({
+			orgSlug: 'acme',
+			personal: false,
+			role: 'billing',
+		})
+			.flatMap((group) => group.items)
+			.map((item) => item.label),
+	).toEqual(['Settings', 'Members', 'Billing'])
+	expect(
+		workspaceRailGroups({
+			orgSlug: 'acme',
+			personal: false,
+			role: 'member',
+		})
+			.flatMap((group) => group.items)
+			.map((item) => item.label),
+	).toEqual(['Settings', 'Members'])
+	expect(
+		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: null }),
+	).toEqual([])
 })
 
 test('account rail org slug prefers the path org over username', () => {

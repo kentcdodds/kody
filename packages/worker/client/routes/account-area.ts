@@ -78,3 +78,5 @@ export {
 	accountOrganizationsRouteLoader,
 } from './account-organizations.tsx'
 export { AccountRepositoriesRoute } from './account-repositories.tsx'
+export { OrgSettingsRoute, orgSettingsRouteLoader } from './org-settings.tsx'
+export { OrgMembersRoute, orgMembersRouteLoader } from './org-members.tsx'

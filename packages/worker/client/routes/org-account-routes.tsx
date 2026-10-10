@@ -78,6 +78,14 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountOrganizationsRouteLoader,
 	),
+	[routePattern(routes.orgSettings)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.orgSettingsRouteLoader,
+	),
+	[routePattern(routes.orgMembers)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.orgMembersRouteLoader,
+	),
 }
 
 export const orgAccountClientRoutes = {
@@ -146,5 +154,11 @@ export const orgAccountClientRoutes = {
 		<LazyAccountRoute
 			render={(module) => <module.AccountOrganizationsRoute />}
 		/>
+	),
+	[routePattern(routes.orgSettings)]: (
+		<LazyAccountRoute render={(module) => <module.OrgSettingsRoute />} />
+	),
+	[routePattern(routes.orgMembers)]: (
+		<LazyAccountRoute render={(module) => <module.OrgMembersRoute />} />
 	),
 }

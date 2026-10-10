@@ -511,6 +511,9 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.orgWebhooks)]: titleOnly('Webhooks'),
 	[routePattern(routes.orgWorkflows)]: titleOnly('Workflows'),
+	// Static `/-/` outranks `/@:username/:kodyId/settings` (kodyId would be `-`).
+	[routePattern(routes.orgSettings)]: titleOnly('Settings'),
+	[routePattern(routes.orgMembers)]: titleOnly('Members'),
 	[routePattern(routes.accountOrganizationsNew)]: titleOnly(
 		'Create organization',
 	),

@@ -323,6 +323,21 @@ import {
 	createOrgPackagesApiHandler,
 	createOrgSectionHandler,
 } from '#app/handlers/org-section.ts'
+import { createOrgAvatarHandler } from '#app/handlers/org-avatar.ts'
+import {
+	createOrgMembersApiHandler,
+	createOrgMembersHandler,
+	createOrgMembersInvitePostHandler,
+	createOrgMembersRemovePostHandler,
+	createOrgMembersRolePostHandler,
+} from '#app/handlers/org-members.ts'
+import {
+	createOrgSettingsApiHandler,
+	createOrgSettingsAvatarPostHandler,
+	createOrgSettingsDeletePostHandler,
+	createOrgSettingsHandler,
+	createOrgSettingsPostHandler,
+} from '#app/handlers/org-settings.ts'
 export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
@@ -629,6 +644,17 @@ export function createAppRouter(env: Env) {
 			orgWaiting: createOrgSectionHandler(env, 'waiting'),
 			orgWebhooks: createOrgSectionHandler(env, 'webhooks'),
 			orgWorkflows: createOrgSectionHandler(env, 'workflows'),
+			orgSettings: createOrgSettingsHandler(env),
+			orgSettingsApi: createOrgSettingsApiHandler(env),
+			orgSettingsPost: createOrgSettingsPostHandler(env),
+			orgSettingsAvatarPost: createOrgSettingsAvatarPostHandler(env),
+			orgSettingsDeletePost: createOrgSettingsDeletePostHandler(env),
+			orgMembers: createOrgMembersHandler(env),
+			orgMembersApi: createOrgMembersApiHandler(env),
+			orgMembersRolePost: createOrgMembersRolePostHandler(env),
+			orgMembersRemovePost: createOrgMembersRemovePostHandler(env),
+			orgMembersInvitePost: createOrgMembersInvitePostHandler(env),
+			orgAvatar: createOrgAvatarHandler(env),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),
 			profileAvatar: createProfileAvatarHandler(env),
