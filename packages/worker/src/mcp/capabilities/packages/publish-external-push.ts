@@ -13,6 +13,7 @@ import {
 } from '@kody-internal/shared/error-message.ts'
 import { isDurableObjectIsolateResetMessage } from '#worker/sentry-options.ts'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
 	requireMcpRequest,
@@ -899,7 +900,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				request: requireMcpRequest(ctx.callerContext),
 			})
 			const expectedPackageScope = owner.ownerScope
-			const { packageId, kodyId, hasApp, source } =
+			const { packageId, userId, kodyId, hasApp, name, source } =
 				await resolveOwnedPackageSource({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
@@ -909,6 +910,10 @@ export const publishExternalPushCapability = defineDomainCapability(
 						kody_id: args.kody_id,
 					},
 				})
+			await authorizePackageWrite(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				{ id: packageId, userId, label: name },
+			)
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)
 			const newCommit = head.commit
 			if (!newCommit) {

@@ -2,6 +2,7 @@ import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeRepoSessionPackageWrite } from './authorize-repo-session-package-write.ts'
 import {
 	buildPlainRepoPackageShapedFields,
 	isPlainRepoPackageShapedAtCommit,
@@ -38,6 +39,12 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		outputSchema: repoPublishSessionOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			await authorizeRepoSessionPackageWrite({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				userId: user.userId,
+				sessionId: args.session_id,
+			})
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,

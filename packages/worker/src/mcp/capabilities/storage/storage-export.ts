@@ -9,6 +9,7 @@ import {
 	requireStorageUser,
 } from './shared.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 export const storageExportCapability = defineDomainCapability(
 	capabilityDomainNames.storage,
@@ -27,7 +28,7 @@ export const storageExportCapability = defineDomainCapability(
 		}),
 		outputSchema: storageExportOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireStorageUser(ctx)
+			requireStorageUser(ctx)
 			const storageId = authorizeCapabilityStorageId({
 				callerContext: ctx.callerContext,
 				capabilityName: 'storageExport',
@@ -35,7 +36,7 @@ export const storageExportCapability = defineDomainCapability(
 			})
 			const result = await storageRunnerRpc({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				storageId,
 			}).exportStorage({
 				pageSize: args.page_size,

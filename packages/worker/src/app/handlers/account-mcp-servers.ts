@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
@@ -157,7 +158,10 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 
 			const hub = createMcpClientHubClient({
 				env,
-				userId: user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: user.request,
+					user: user.mcpUser,
+				}),
 				waitUntil,
 			})
 			let authSuccess = false
@@ -193,14 +197,20 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 			if (serverId && authSuccess && !lastError) {
 				await setMcpServerLastError({
 					env,
-					userId: user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: user.request,
+						user: user.mcpUser,
+					}),
 					id: serverId,
 					lastError: null,
 				}).catch(() => {})
 			} else if (serverId && lastError) {
 				await setMcpServerLastError({
 					env,
-					userId: user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: user.request,
+						user: user.mcpUser,
+					}),
 					id: serverId,
 					lastError,
 				}).catch(() => {})
@@ -257,7 +267,10 @@ async function handleAddAction(input: {
 	})
 	const { setting } = await addMcpServer({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		name: readTrimmedStringOrEmpty(input.body, 'name'),
 		url: readTrimmedStringOrEmpty(input.body, 'url'),
 		baseUrl: oauth.clientOrigin,
@@ -286,7 +299,10 @@ async function handleConnectionAction(input: {
 	const setting = await requireSetting(input)
 	const hub = createMcpClientHubClient({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		waitUntil,
 	})
 	const result =
@@ -302,14 +318,20 @@ async function handleConnectionAction(input: {
 	if (result.state === 'ready') {
 		await setMcpServerLastError({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			id: setting.id,
 			lastError: null,
 		}).catch(() => {})
 	} else if (result.lastError) {
 		await setMcpServerLastError({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			id: setting.id,
 			lastError: result.lastError,
 		}).catch(() => {})
@@ -335,7 +357,10 @@ async function handleSetEnabledAction(input: {
 	const setting = await requireSetting(input)
 	const updated = await setMcpServerEnabled({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		id: setting.id,
 		enabled: readBoolean(input.body, 'enabled', true),
 	})
@@ -368,7 +393,10 @@ async function handleSetUsageAction(input: {
 			: []
 	const updated = await setMcpServerUsage({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		id: setting.id,
 		usageMode,
 		allowedPackageIds,
@@ -394,7 +422,10 @@ async function handleDeleteAction(input: {
 	const setting = await requireSetting(input)
 	const deleted = await deleteMcpServer({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		id: setting.id,
 	})
 	if (!deleted) {
@@ -421,7 +452,10 @@ async function requireSetting(input: {
 	}
 	const setting = await getMcpServerSettingById({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		id,
 	})
 	if (!setting) {

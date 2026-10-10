@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
@@ -249,7 +250,10 @@ async function handleSaveOauthAppAction(input: {
 	try {
 		const app = await upsertOauthAppWithoutConnection({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			waitUntil,
 			config: {
 				name: provider,
@@ -277,14 +281,20 @@ async function handleSaveOauthAppAction(input: {
 		})
 		const clientSecret = await resolveConnectClientSecret({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			provider,
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
 		if (clientSecret) {
 			await persistUserOauthAppClientSecret({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				slug: app.slug,
 				value: clientSecret,
 			})
@@ -432,7 +442,10 @@ async function handleConnectOauthAction(input: {
 		? (
 				await upsertPlatformIntegration({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					platformAppSlug: platformApp.slug,
 					name: provider,
 					scopes,
@@ -440,7 +453,10 @@ async function handleConnectOauthAction(input: {
 			).name
 		: await saveIntegrationConfig({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				provider,
 				tokenUrl,
 				apiBaseUrl,
@@ -466,7 +482,10 @@ async function handleConnectOauthAction(input: {
 			})
 	await persistIntegrationTokens({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		name: integrationName,
 		accessToken,
 		refreshToken,
@@ -475,19 +494,28 @@ async function handleConnectOauthAction(input: {
 	if (!platformApp) {
 		const clientSecret = await resolveConnectClientSecret({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			provider: integrationName,
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
 		const saved = await getJoinedIntegration({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			name: integrationName,
 		})
 		if (clientSecret && saved?.lane === 'user') {
 			await persistUserOauthAppClientSecret({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				slug: saved.app.slug,
 				value: clientSecret,
 			})
@@ -513,7 +541,10 @@ async function handleConnectOauthAction(input: {
 
 	await emitConnectOauthAuthSucceeded({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		integration: {
 			name: integrationName,
 			lane: platformApp ? 'platform' : 'user',
@@ -623,7 +654,10 @@ async function handleOAuthExchangeAction(input: {
 	if (flow === 'confidential') {
 		clientSecret = await resolveConnectClientSecret({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			provider: readOptionalString(input.body, 'provider') ?? '',
 			clientSecret: readOptionalString(input.body, 'clientSecret'),
 		})
@@ -911,7 +945,10 @@ async function handleApprovalAction(input: {
 				const savedPackages = await listSavedPackagesByUserId(
 					input.env.APP_DB,
 					{
-						userId: input.user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: input.user.request,
+							user: input.user.mcpUser,
+						}),
 					},
 				)
 				if (!savedPackages.some((entry) => entry.id === approval.packageId)) {
@@ -922,7 +959,10 @@ async function handleApprovalAction(input: {
 				}
 				const current = await listSecrets({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					scope: 'user',
 				})
 				const byName = new Map(
@@ -940,7 +980,10 @@ async function handleApprovalAction(input: {
 					if (secret.allowedPackages.includes(approval.packageId)) continue
 					await setSecretAllowedPackages({
 						env: input.env,
-						userId: input.user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: input.user.request,
+							user: input.user.mcpUser,
+						}),
 						name,
 						scope: 'user',
 						allowedPackages: Array.from(
@@ -970,7 +1013,10 @@ async function handleApprovalAction(input: {
 				const savedPackages = await listSavedPackagesByUserId(
 					input.env.APP_DB,
 					{
-						userId: input.user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: input.user.request,
+							user: input.user.mcpUser,
+						}),
 					},
 				)
 				if (!savedPackages.some((entry) => entry.id === approval.packageId)) {
@@ -981,7 +1027,10 @@ async function handleApprovalAction(input: {
 				}
 				const current = await listSecrets({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					scope: approval.scope,
 					storageContext: approval.storageContext,
 				})
@@ -994,7 +1043,10 @@ async function handleApprovalAction(input: {
 				}
 				await setSecretAllowedPackages({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					name: approval.name,
 					scope: approval.scope,
 					allowedPackages: Array.from(
@@ -1027,7 +1079,10 @@ async function handleApprovalAction(input: {
 				}
 				const current = await listSecrets({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					scope: approval.scope,
 					storageContext: approval.storageContext,
 				})
@@ -1040,7 +1095,10 @@ async function handleApprovalAction(input: {
 				}
 				await setSecretAllowedHosts({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					name: approval.name,
 					scope: approval.scope,
 					allowedHosts: normalizeAllowedHosts([
@@ -1075,7 +1133,10 @@ async function handleApprovalAction(input: {
 				}
 				const current = await listSecrets({
 					env: input.env,
-					userId: input.user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: input.user.request,
+						user: input.user.mcpUser,
+					}),
 					scope: approval.scope,
 					storageContext: approval.storageContext,
 				})
@@ -1093,7 +1154,10 @@ async function handleApprovalAction(input: {
 					}
 					await setSecretAllowedHosts({
 						env: input.env,
-						userId: input.user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: input.user.request,
+							user: input.user.mcpUser,
+						}),
 						name,
 						scope: approval.scope,
 						allowedHosts: normalizeAllowedHosts([
@@ -1185,7 +1249,10 @@ async function handleSaveAction(input: {
 		if (parsed) {
 			const existing = await resolveSecret({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				name: parsed.name,
 				scope: parsed.scope,
 				includeExpired: true,
@@ -1202,7 +1269,10 @@ async function handleSaveAction(input: {
 	}
 
 	const savedPackages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 	})
 	const packageOptions = toPackageOptions(savedPackages)
 	const packageId = readPackageIdForScope({
@@ -1247,7 +1317,10 @@ async function handleSaveAction(input: {
 	try {
 		saved = await saveSecret({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			userEmail: input.user.mcpUser.email,
 			name,
 			value,
@@ -1261,7 +1334,10 @@ async function handleSaveAction(input: {
 		})
 		await setSecretAllowedHosts({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			name,
 			scope,
 			allowedHosts,
@@ -1272,7 +1348,10 @@ async function handleSaveAction(input: {
 		})
 		await setSecretAllowedPackages({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			name,
 			scope,
 			allowedPackages,
@@ -1285,7 +1364,10 @@ async function handleSaveAction(input: {
 		if (currentSecret && currentSecret.id !== nextId) {
 			await deleteSecret({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				name: currentSecret.name,
 				scope: currentSecret.scope,
 				storageContext: getSecretContextForAccountSecret(currentSecret),
@@ -1388,7 +1470,10 @@ async function handleDeleteAction(input: {
 
 	const deleted = await deleteSecret({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		name: secret.name,
 		scope: secret.scope,
 		storageContext: getSecretContextForAccountSecret(secret),

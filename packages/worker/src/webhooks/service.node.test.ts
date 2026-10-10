@@ -18,6 +18,7 @@ import {
 	rotateWebhookUrlForUser,
 	setWebhookEnabledForUser,
 } from './service.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 vi.mock('#mcp/secrets/service.ts', () => ({
@@ -30,21 +31,23 @@ vi.mock('#mcp/secrets/service.ts', () => ({
 }))
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) => {
-		if (
-			input.packageIdOrKodyId === 'pkg-1' ||
-			input.packageIdOrKodyId === 'sentry-bridge'
-		) {
-			return {
-				id: 'pkg-1',
-				kodyId: 'sentry-bridge',
-				name: '@owner/sentry-bridge',
-				userId: 'ignored',
-				sourceId: 'src-1',
+	resolveSavedPackage: vi.fn(
+		async (input: { userId: string; packageIdOrKodyId: string }) => {
+			if (
+				input.packageIdOrKodyId === 'pkg-1' ||
+				input.packageIdOrKodyId === 'sentry-bridge'
+			) {
+				return {
+					id: 'pkg-1',
+					kodyId: 'sentry-bridge',
+					name: '@owner/sentry-bridge',
+					userId: input.userId,
+					sourceId: 'src-1',
+				}
 			}
-		}
-		return null
-	}),
+			return null
+		},
+	),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -151,7 +154,13 @@ async function setupOwner(email: string, username: string) {
 		)
 		.bind(username, email, userId)
 		.run()
-	const input = { env, userId, username, ...sentryHook }
+	const input = {
+		env,
+		request: sessionRequestContext(userId),
+		userId,
+		username,
+		...sentryHook,
+	}
 	return {
 		env,
 		db,
@@ -191,6 +200,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 
 	const minted = await mintWebhookUrlForUser({
 		env,
+		request: sessionRequestContext(userId),
 		userId,
 		email: 'owner@example.com',
 		username: 'owner',
@@ -279,6 +289,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 
 	const disabled = await setWebhookEnabledForUser({
 		env,
+		request: sessionRequestContext(userId),
 		userId,
 		...sentryHook,
 		enabled: false,
@@ -380,6 +391,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 
 	const minted = await mintWebhookUrlForUser({
 		env,
+		request: sessionRequestContext(userId),
 		userId,
 		email: 'race@example.com',
 		username: 'racer',
@@ -414,7 +426,13 @@ test('concurrent first mints converge on one handle', async () => {
 	const userId = testStableUserIdFromEmail('parallel@example.com')
 	const { env } = createEnv()
 	const mint = () =>
-		mintWebhookUrlForUser({ env, userId, username: 'parallel', ...sentryHook })
+		mintWebhookUrlForUser({
+			env,
+			request: sessionRequestContext(userId),
+			userId,
+			username: 'parallel',
+			...sentryHook,
+		})
 	const [first, second] = await Promise.all([mint(), mint()])
 	expect(first.handle).toBe(second.handle)
 	expect(first.urlHost).toBe('heykody.dev')

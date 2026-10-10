@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
@@ -157,7 +158,10 @@ async function handleDeleteAction(input: {
 	const force = readBoolean(input.body, 'force', false)
 	const deleted = await deleteMemory({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		memoryId,
 		force,
 	})

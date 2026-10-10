@@ -117,16 +117,6 @@ async function resolveOrgBillingAccess(input: {
 	}
 }
 
-async function canManageBilling(env: Env, user: AuthenticatedAppUser) {
-	try {
-		await authorize({ env, request: user.request }, 'billing:write')
-		return true
-	} catch (error) {
-		if (error instanceof AuthorizationError) return false
-		throw error
-	}
-}
-
 function orgBillingUrl(request: Request, slug: string, step = '') {
 	return new URL(
 		step ? `${orgBillingPath(slug)}/${step}` : orgBillingPath(slug),
@@ -144,6 +134,11 @@ function billingErrorRedirect(
 	return Response.redirect(url.toString(), 302)
 }
 
+/**
+ * Page data for someone who already passed `billing:read`. That permission
+ * implies `billing:write`: the billing role preset includes both, and
+ * billing permissions cannot be granted. The page has no read-only state.
+ */
 async function loadOrgBillingPageData(input: {
 	request: Request
 	env: Env
@@ -156,7 +151,6 @@ async function loadOrgBillingPageData(input: {
 		userId: input.user.userId,
 		org: input.org,
 		seats: Math.max(1, await countLiveSeats(input.env.APP_DB, input.org.id)),
-		canManage: await canManageBilling(input.env, input.user),
 		errorCode: searchParams.get('error'),
 		noticeCode: searchParams.get('billing'),
 	})

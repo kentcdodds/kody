@@ -101,7 +101,18 @@ test('workspace repositories JSON is closed to people outside the organization',
 	expect(mocks.loadProfileData).not.toHaveBeenCalled()
 })
 
-test('workspace repositories JSON stays closed for a team org until its storage lands (#3073)', async () => {
+test('workspace secrets pass the team-org gate and repositories stay closed', async () => {
+	const env = await createEnv()
+	signInAs(adaId, 'ada')
+	const { createOrgSectionHandler } = await import('./org-section.ts')
+	const response = await createOrgSectionHandler(env, 'secrets').handler({
+		request: new Request('https://kody.test/@acme/-/secrets'),
+		params: { orgSlug: 'acme' },
+	} as never)
+	expect(response.status).not.toBe(404)
+})
+
+test('workspace repositories JSON stays closed for a team org until package listing follows the org', async () => {
 	const env = await createEnv()
 	signInAs(adaId, 'ada')
 	const response = await getPackages(env, 'acme')

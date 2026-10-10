@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	type AccountIntegrationListItem,
 	type AccountOauthAppListItem,
@@ -311,7 +312,10 @@ export async function loadAccountIntegrationsData(
 	} | null
 	platformCatalog: Array<PlatformIntegrationCatalogItem>
 }> {
-	const userId = user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: user.request,
+		user: user.mcpUser,
+	})
 	const [joined, apps, savedPackages, marks, platformCatalog] =
 		await Promise.all([
 			listJoinedIntegrations({ env, userId }),
@@ -390,7 +394,10 @@ export async function loadAccountOauthAppBySlug(
 	user: AuthenticatedUser,
 	slug: string,
 ): Promise<AccountOauthAppRecord | null> {
-	const userId = user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: user.request,
+		user: user.mcpUser,
+	})
 	const app = await getOauthApp({ env, userId, slug })
 	if (!app) return null
 	const [joined, marks] = await Promise.all([
@@ -451,7 +458,7 @@ async function resolveAccountIntegrationByName(
 	// a bring-your-own connection that already holds the name.
 	const joined = await getJoinedIntegration({
 		env,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		name,
 	})
 	if (joined) {
@@ -476,7 +483,7 @@ async function resolveAccountIntegrationByName(
 	if (options?.appSlug) {
 		const app = await getOauthApp({
 			env,
-			userId: user.mcpUser.userId,
+			userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 			slug: options.appSlug,
 		})
 		if (app) {
@@ -484,7 +491,7 @@ async function resolveAccountIntegrationByName(
 		}
 		const siblings = await listJoinedIntegrations({
 			env,
-			userId: user.mcpUser.userId,
+			userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		})
 		const platformSibling = siblings.find(
 			(entry): entry is Extract<JoinedIntegration, { lane: 'platform' }> =>
@@ -501,7 +508,7 @@ async function resolveAccountIntegrationByName(
 	// client id across github/github-kent, shared google app, etc.).
 	const prefill = await findOauthAppForProviderSetup({
 		env,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		name,
 	})
 	if (prefill) {
@@ -535,7 +542,7 @@ export async function loadExistingConnectionSummary(
 ): Promise<ConnectOauthExistingConnection | null> {
 	const joined = await getJoinedIntegration({
 		env,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		name,
 	})
 	if (!joined) return null
@@ -557,7 +564,7 @@ export async function hasStoredConnectClientSecret(
 	if (!record?.appSlug || record.platform) return false
 	const storedCiphertext = await getOauthAppClientSecretCiphertext({
 		db: env.APP_DB,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		slug: record.appSlug,
 	})
 	return Boolean(storedCiphertext)

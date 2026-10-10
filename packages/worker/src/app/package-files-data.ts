@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { getUserSocialRowByUsername } from '#worker/community/profile-repo.ts'
@@ -610,7 +611,9 @@ export async function loadPackagePageHasAgentsDocs(input: {
 				env: input.env,
 				requestUrl: input.request.url,
 			}),
-			userId: input.ownerUserId ?? user.mcpUser.userId,
+			userId:
+				input.ownerUserId ??
+				ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 			sourceId: input.ownerSourceId,
 		})
 		return findRootPackageDoc(loaded.files, 'AGENTS.md') != null
@@ -867,7 +870,7 @@ export async function loadAccessiblePackageFileRaw(input: {
 	return loadAccountPackageFileRaw({
 		env: input.env,
 		request: input.request,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		username: page.username,
 		packageId: page.ownerPackage.id,
 		selectedPath: input.selectedPath,

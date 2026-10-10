@@ -99,7 +99,8 @@ const dashboardEndpoints: Array<DashboardEndpoint> = [
 	{
 		method: 'POST',
 		path: `/client/v4/accounts/${fixtureAccount.id}/email/sending/send`,
-		description: 'Send an outbound email',
+		description:
+			'Send an outbound email. The route accepts any account id; the fixture id is only an example.',
 		requiresAuth: true,
 	},
 	{

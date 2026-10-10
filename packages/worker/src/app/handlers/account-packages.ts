@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { handleAccountPackageAdoptAction } from '#app/account-package-adopt.ts'
@@ -33,7 +34,10 @@ export function createAccountPackagesHandler(env: Env) {
 			const url = new URL(request.url)
 			if (pathPackageId) {
 				const savedPackage = await getSavedPackageById(env.APP_DB, {
-					userId: user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: user.request,
+						user: user.mcpUser,
+					}),
 					packageId: pathPackageId,
 				})
 				if (!savedPackage) {
@@ -139,7 +143,10 @@ export function createAccountPackagesApiHandler(env: Env) {
 				try {
 					await absorbCommunityForkUpstream({
 						env,
-						userId: user.mcpUser.userId,
+						userId: ownerIdFromCaller({
+							request: user.request,
+							user: user.mcpUser,
+						}),
 						packageId,
 					})
 				} catch (error) {

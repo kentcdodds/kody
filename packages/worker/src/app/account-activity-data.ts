@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	executeEntryMetadataKey,
 	executeWorkerIdMetadataKey,
@@ -224,7 +225,10 @@ export async function loadAccountActivityData(input: {
 	now?: Date
 	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountActivityLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const now = input.now ?? new Date()
 	const selectedRunId = readAccountActivitySelectedRunId(
 		input.request.url,

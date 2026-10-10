@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -10,6 +9,7 @@ import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-acces
 import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
 	decodeHmacKeyMaterial,
@@ -93,7 +93,7 @@ export const jwtSignCapability = defineDomainCapability(
 			algorithm: jwtAlgorithmSchema,
 		}),
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const { authorityPackageId, storageContext } =
 				resolveCallerSecretAuthority({
 					storageContext: ctx.callerContext.storageContext,
@@ -105,7 +105,7 @@ export const jwtSignCapability = defineDomainCapability(
 			const secretName = referenced.name
 			const secretScope =
 				args.private_key_secret_scope ?? referenced.scope ?? undefined
-			const secretUserId = personalOrgId(user.userId)
+			const secretUserId = ownerIdFromCaller(ctx.callerContext)
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: secretUserId,

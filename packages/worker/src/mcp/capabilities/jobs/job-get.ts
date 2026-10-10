@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -36,17 +37,17 @@ export const jobGetCapability = defineDomainCapability(
 		inputSchema: jobGetInputSchema,
 		outputSchema: jobGetOutputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const jobId = resolveJobGetId(args)
 			const inspection = await getJobInspection({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				jobId,
 				includeCode: args.includeCode ?? false,
 			})
 			const recentPage = await listRunRecords({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				filter: { jobId, surface: 'job' },
 				limit: 10,
 			})

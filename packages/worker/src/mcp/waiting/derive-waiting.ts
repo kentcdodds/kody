@@ -37,6 +37,8 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type DeriveWaitingUser = {
 	userId: number
 	stableUserId: string
+	/** Person id for probes that are not org-owned, such as agent OAuth grants. */
+	actorStableUserId?: string
 	email: string
 	username: string
 	emailVerified: boolean
@@ -137,7 +139,7 @@ export async function collectWaitingSignals(input: {
 			env,
 			userId: user.stableUserId,
 		}).catch(() => true),
-		userHasMcpOAuthGrants(env, user.stableUserId),
+		userHasMcpOAuthGrants(env, user.actorStableUserId ?? user.stableUserId),
 		collectMcpServerSignals(env, user.stableUserId, input.waitUntil),
 		probe(() => listJoinedIntegrations({ env, userId: user.stableUserId })),
 		probe(() =>

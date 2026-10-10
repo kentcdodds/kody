@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -61,7 +62,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 		}),
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			if (!args.verified_by_agent) {
 				throw new Error(
 					'Agents must run metaMemoryVerify before calling metaMemoryDelete. Set verified_by_agent=true only after review.',
@@ -69,7 +70,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			}
 			const existing = await getMemory({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				memoryId: args.memory_id,
 			})
 			if (!existing) {
@@ -77,7 +78,7 @@ export const metaMemoryDeleteCapability = defineDomainCapability(
 			}
 			const memory = await deleteMemory({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				memoryId: args.memory_id,
 				force: args.force ?? false,
 			})

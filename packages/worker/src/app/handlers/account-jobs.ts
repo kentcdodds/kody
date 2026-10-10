@@ -17,6 +17,7 @@ import { createMcpCallerContext } from '#mcp/context.ts'
 import { runJobNowViaManager } from '#worker/jobs/manager-client.ts'
 import { updateJobRetentionPreferencesForUser } from '#worker/jobs/job-retention-cleanup.ts'
 import { deleteJob, updateJob } from '#worker/jobs/service.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -202,6 +203,10 @@ function buildCallerContext(input: {
 		source: { kind: 'session' },
 		executionOrigin: 'interactive',
 		user: input.user.mcpUser,
+		orgBinding: {
+			org: input.user.request.org,
+			role: input.user.request.membership?.role ?? null,
+		},
 	})
 }
 
@@ -326,7 +331,10 @@ async function handleRunNowAction(input: {
 	const id = requireJobId(input.body)
 	const result = await runJobNowViaManager({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		jobId: id,
 		callerContext: buildCallerContext(input),
 	})
@@ -354,7 +362,10 @@ async function handleDeleteAction(input: {
 	assertNotPackageOwnedJob(id, 'be deleted')
 	await deleteJob({
 		env: input.env,
-		userId: input.user.mcpUser.userId,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
 		jobId: id,
 	})
 	return jsonResponse(

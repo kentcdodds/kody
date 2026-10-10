@@ -1,8 +1,12 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import {
 	httpDestinationIncludesWebhookUrlPlaceholder,
 	webhookUrlApplyHttpMethods,
@@ -204,14 +208,15 @@ export const webhookUrlApplyCapability = defineDomainCapability(
 			assertInteractiveHttpApplyCaller(ctx.callerContext)
 			await assertHttpApplyDestinationApproved({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				handle: args.handle,
 				destination: args.destination,
 				baseUrl: ctx.callerContext.baseUrl,
 			})
 			const applied = await applyWebhookUrlForUser({
 				env: ctx.env,
-				userId: user.userId,
+				request: requireMcpRequest(ctx.callerContext),
+				userId: ownerIdFromCaller(ctx.callerContext),
 				email: user.email,
 				username: user.username,
 				handle: args.handle,

@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -48,16 +49,16 @@ export const mcpServerLockCapability = defineDomainCapability(
 			args: { server: string; package_id: string },
 			ctx: CapabilityContext,
 		) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const setting = await resolveMcpServerSetting({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				server: args.server,
 			})
 			try {
 				const updated = await lockMcpServerToPackage({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					id: setting.id,
 					packageId: args.package_id,
 				})

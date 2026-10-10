@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -585,11 +586,11 @@ export async function runJobNowFromArgs(input: {
 	callerContext: CapabilityContext['callerContext']
 	args: JobRunNowCapabilityInput
 }) {
-	const user = requireMcpUser(input.callerContext)
+	requireMcpUser(input.callerContext)
 	const { runJobNowViaManager } = await import('#worker/jobs/manager-client.ts')
 	const result = await runJobNowViaManager({
 		env: input.env,
-		userId: user.userId,
+		userId: ownerIdFromCaller(input.callerContext),
 		jobId: input.args.id,
 		callerContext: input.callerContext,
 	})
@@ -601,7 +602,7 @@ export async function updateJobFromArgs(input: {
 	callerContext: CapabilityContext['callerContext']
 	args: JobUpdateCapabilityInput
 }) {
-	const user = requireMcpUser(input.callerContext)
+	requireMcpUser(input.callerContext)
 	const { updateJob } = await import('#worker/jobs/service.ts')
 	const updated = await updateJob({
 		env: input.env,
@@ -610,7 +611,7 @@ export async function updateJobFromArgs(input: {
 	})
 	logJobSchedulerEvent({
 		event: 'job_updated',
-		userId: user.userId,
+		userId: ownerIdFromCaller(input.callerContext),
 		jobId: updated.id,
 		scheduleType: updated.schedule.type,
 		nextRunAt: updated.nextRunAt,
@@ -623,19 +624,19 @@ export async function deleteJobFromArgs(input: {
 	callerContext: CapabilityContext['callerContext']
 	args: JobDeleteCapabilityInput
 }) {
-	const user = requireMcpUser(input.callerContext)
+	requireMcpUser(input.callerContext)
 	if (isPackageOwnedJobId(input.args.id)) {
 		throw new McpCallerError(packageOwnedJobDeleteErrorMessage)
 	}
 	const { deleteJob } = await import('#worker/jobs/service.ts')
 	const result = await deleteJob({
 		env: input.env,
-		userId: user.userId,
+		userId: ownerIdFromCaller(input.callerContext),
 		jobId: input.args.id,
 	})
 	logJobSchedulerEvent({
 		event: 'job_deleted',
-		userId: user.userId,
+		userId: ownerIdFromCaller(input.callerContext),
 		jobId: result.id,
 		reason: 'mcp_capability',
 	})

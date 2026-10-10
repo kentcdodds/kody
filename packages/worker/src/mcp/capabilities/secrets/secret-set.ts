@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -98,7 +99,7 @@ export const secretSetCapability = defineDomainCapability(
 				}
 				const existing = await resolveSecret({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					name: parsed.name,
 					scope: 'user',
 					storageContext,
@@ -111,7 +112,7 @@ export const secretSetCapability = defineDomainCapability(
 				await assertPackageCanAccessResolvedSecret({
 					env: ctx.env,
 					baseUrl: ctx.callerContext.baseUrl,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					storageContext,
 					authorityPackageId,
 					secretName: parsed.name,
@@ -120,7 +121,7 @@ export const secretSetCapability = defineDomainCapability(
 				})
 				saved = await updateUserSecretForPackage({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					userEmail: user.email,
 					packageId: authorityPackageId,
 					name: parsed.name,
@@ -130,7 +131,7 @@ export const secretSetCapability = defineDomainCapability(
 			} else if (typeof parsed.value === 'string' && parsed.value.length > 0) {
 				saved = await saveSecret({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					userEmail: user.email,
 					scope: parsed.scope,
 					name: parsed.name,
@@ -142,7 +143,7 @@ export const secretSetCapability = defineDomainCapability(
 			} else {
 				saved = await updateSecret({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					scope: parsed.scope,
 					name: parsed.name,
 					description: parsed.description,

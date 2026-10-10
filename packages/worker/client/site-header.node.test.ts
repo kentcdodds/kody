@@ -60,6 +60,14 @@ test('logged-in header has one menu: the organization, then your own links and L
 	)
 	expect(trigger.match(/avatar\/abc\.jpg/g)).toHaveLength(1)
 	expect(html).toContain('min-height: 44px')
+	// The menu's inline end tracks the trigger (and the centered header
+	// column when anchor positioning is unavailable), so it stays inside
+	// the header at 1440px instead of hanging past the right edge.
+	expect(html).toContain('right: anchor(right)')
+	expect(html).toContain(
+		'right: max(clamp(1.25rem, 4vw, 2.5rem), calc((100% - 72rem) / 2 + clamp(1.25rem, 4vw, 2.5rem)))',
+	)
+	expect(html).not.toContain('left: anchor(left)')
 
 	// A single organization is the person: their name and handle, no role,
 	// and the mobile menu does not list the handle twice.
@@ -139,10 +147,9 @@ test('org switcher lists the signup organization, then others with roles, then c
 	)
 	expect(adaRow).not.toContain('aria-current')
 	expect(adaRow).not.toContain('data-selected')
-	// Personal org keeps the section; non-personal lands on org home (#3073).
+	// Secrets follow the org, so both organizations keep the section.
 	expect(html).toContain('href="/@ada/-/secrets"')
-	expect(html).toContain('href="/@acme"')
-	expect(html).not.toContain('href="/@acme/-/secrets"')
+	expect(html).toContain('href="/@acme/-/secrets"')
 	expect(html).toContain('data-icon="plus"')
 	expect(html).toContain('data-icon="mail"')
 })

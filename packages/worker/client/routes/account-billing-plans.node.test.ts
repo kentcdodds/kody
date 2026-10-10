@@ -31,7 +31,6 @@ function billing(
 			displayName: null,
 			personal: true,
 			seats: 1,
-			canManage: true,
 		},
 		...overrides,
 	}
@@ -101,7 +100,7 @@ test('purchasable Pro subscribers see their plan and the interval switch', async
 	expect(html).not.toContain('Switch to Pro')
 })
 
-test('team organizations see seat pricing and a promo field; non-managers see no actions', async () => {
+test('team organizations see seat pricing, a promo field, and subscribe', async () => {
 	const team = billing({
 		creditsHref: null,
 		usageHref: null,
@@ -110,7 +109,6 @@ test('team organizations see seat pricing and a promo field; non-managers see no
 			displayName: 'Acme',
 			personal: false,
 			seats: 3,
-			canManage: true,
 		},
 	})
 	const html = await renderPlans(team)
@@ -118,13 +116,6 @@ test('team organizations see seat pricing and a promo field; non-managers see no
 	expect(html).toContain('Promo code (optional)')
 	expect(html).toContain('Subscribe monthly')
 	expect(html).not.toContain('See your current usage')
-
-	const readOnly = await renderPlans(
-		billing({ ...team, org: { ...team.org, canManage: false } }),
-	)
-	expect(readOnly).toContain('3 seats · $36/month')
-	expect(readOnly).not.toContain('Subscribe monthly')
-	expect(readOnly).not.toContain('Promo code')
 })
 
 test('seat pricing multiplies the per-seat Pro price by live seats', () => {
@@ -151,7 +142,6 @@ test('an annual team subscription shows its annual seat total', async () => {
 		displayName: 'Acme',
 		personal: false,
 		seats: 3,
-		canManage: true,
 	}
 	const annual = await renderPlans(
 		billing({

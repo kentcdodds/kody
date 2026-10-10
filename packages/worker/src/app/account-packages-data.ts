@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	buildForkListingDiffHref,
 	buildListingAheadPrompt,
@@ -417,7 +418,10 @@ export async function loadAccountPackagesData(input: {
 	user: AuthenticatedUser
 	pathPackageId?: string
 }): Promise<AccountPackagesLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const url = new URL(input.request.url, 'http://localhost')
 	const { page, pageSize, offset } = readPagination(url, {
 		defaultPageSize,

@@ -79,6 +79,7 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 import { scheduleFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 export const executeTool = {
 	name: 'execute',
@@ -331,10 +332,11 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// Look up an existing keyed execute run before consuming quota
 				// so transport-timeout retries can replay / report in-progress
 				// without burning another daily slot.
-				if (normalizedIdempotencyKey && callerContext.user?.userId) {
+				const storageOwnerId = ownerIdFromCaller(callerContext)
+				if (normalizedIdempotencyKey && storageOwnerId) {
 					const existing = await getRunRecordByIdempotencyKey({
 						env,
-						userId: callerContext.user.userId,
+						userId: storageOwnerId,
 						idempotencyKey: normalizedIdempotencyKey,
 						surface: 'execute',
 					})
@@ -411,10 +413,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					})
 				}
 
-				if (normalizedIdempotencyKey && callerContext.user?.userId) {
+				if (normalizedIdempotencyKey && storageOwnerId) {
 					const claim = await claimRunRecord({
 						env,
-						userId: callerContext.user.userId,
+						userId: storageOwnerId,
 						context: {
 							surface: 'execute',
 							name: null,

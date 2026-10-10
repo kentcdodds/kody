@@ -34,6 +34,13 @@ setup pages.
   git remotes use this namespace via the `ARTIFACTS` binding and
   `ARTIFACTS_NAMESPACE` var — not the shared committed `preview` namespace.
 - Mock workers: `<preview-worker-name>-mock-<service>`
+- Queues: one queue and dead-letter queue per origin producer binding, named
+  `<preview-worker-name>-<production-suffix>` (for example
+  `kody-pr-<n>-platform-feedback-dispatch`). The list is the production origin
+  producer set in `packages/worker/wrangler.jsonc`, except
+  `PACKAGE_EVENTS_DISPATCH_QUEUE`, which preview still delivers inline.
+  `tools/ci/preview-queue-plan.ts` is that rule. Adding a production producer
+  without an inline fallback provisions it on the next preview.
 
 When a PR is closed, the cleanup job deletes the preview
 app/platform/runtime/jobs Workers, mock Workers, Queues, per-preview app, audit,
