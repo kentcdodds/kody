@@ -435,8 +435,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
-- `package_scope_grants` and `package_share_grants`: unused tables. No code
-  reads or writes them. Drop is tracked in
+- `package_scope_grants` and `package_share_grants`: live access does not use
+  these tables. Account export/deletion inventory and Teams conversion tools
+  list them. Drop is tracked in
   [#3083](https://github.com/kentcdodds/kody/issues/3083) and
   [#3082](https://github.com/kentcdodds/kody/issues/3082).
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
