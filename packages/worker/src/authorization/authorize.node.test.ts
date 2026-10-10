@@ -295,6 +295,27 @@ test('a connection profile narrows the package resources it lists', () => {
 	expect(
 		checkPermission(writeGranted, 'package:write', packageResource()).allowed,
 	).toBe(true)
+	for (const permission of ['package:delete', 'package:publish'] as const) {
+		const denied = denial(
+			checkPermission(profiled, permission, packageResource()),
+		)
+		expect(denied.code).toBe('connection_profile')
+		expect(denied.message).toBe(
+			'This connection profile cannot write package @kent/invoices.',
+		)
+		expect(
+			checkPermission(writeGranted, permission, packageResource()).allowed,
+		).toBe(true)
+	}
+	const createDenied = denial(checkPermission(writeGranted, 'package:create'))
+	expect(createDenied.code).toBe('connection_profile')
+	expect(createDenied.message).toBe(
+		'This connection profile cannot create packages.',
+	)
+	expect(
+		checkPermission(access({ profileGrants: [] }), 'package:create').allowed,
+	).toBe(false)
+	expect(checkPermission(access(), 'package:create').allowed).toBe(true)
 	// Profiles list packages only, so other resources and org-level checks
 	// are left to the role and credential.
 	expect(checkPermission(profiled, 'package:read').allowed).toBe(true)

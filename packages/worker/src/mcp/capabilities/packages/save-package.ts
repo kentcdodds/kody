@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+} from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -255,15 +258,19 @@ export const savePackageCapability = defineDomainCapability(
 					)
 				}
 			}
+			const authorizeCtx = {
+				env: ctx.env,
+				request: ctx.callerContext.request,
+			}
 			if (existing) {
-				await authorizePackageWrite(
-					{ env: ctx.env, request: ctx.callerContext.request },
-					{
-						id: existing.id,
-						userId: existing.userId,
-						label: existing.name,
-					},
-				)
+				await authorizePackageWrite(authorizeCtx, {
+					id: existing.id,
+					userId: existing.userId,
+					label: existing.name,
+				})
+			} else if (authorizeCtx.request?.credential.profileName) {
+				// A profile names existing packages, so it cannot create one.
+				await authorize(authorizeCtx, 'package:create')
 			}
 			if (!existing) {
 				await assertWithinEntitlement({

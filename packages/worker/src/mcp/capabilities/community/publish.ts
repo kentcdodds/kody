@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { publishCommunityListing } from '#worker/community/service.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -7,6 +8,7 @@ import {
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
 import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	communityListingSummarySchema,
 	toCommunityListingSummaryOutput,
@@ -43,6 +45,21 @@ export const communityPublishCapability = defineDomainCapability(
 				user,
 				request: requireMcpRequest(ctx.callerContext),
 			})
+			const existing = await getSavedPackageById(ctx.env.APP_DB, {
+				userId: owner.ownerUserId,
+				packageId: args.package_id,
+			})
+			if (existing) {
+				await authorizePackageWrite(
+					{ env: ctx.env, request: ctx.callerContext.request },
+					{
+						id: existing.id,
+						userId: existing.userId,
+						label: existing.name,
+					},
+					'package:publish',
+				)
+			}
 			const listing = await publishCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,

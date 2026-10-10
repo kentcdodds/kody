@@ -162,9 +162,9 @@ export const getGitRemoteCapability = defineDomainCapability(
 						kody_id: requestedKodyId,
 					},
 				})
-			// A package created in this call has no profile grant yet (profiles
-			// name existing packages). The org-level package:write check above
-			// still applies. An existing package must list write.
+			// package:create above denies a profile-bound credential before the
+			// stub exists. An unbound create has no profile grant to check.
+			// An existing package with write scope must list profile write.
 			if (args.scope === 'write' && !created) {
 				await authorizePackageWrite(authorizeCtx, {
 					id: packageId,
