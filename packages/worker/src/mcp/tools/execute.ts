@@ -67,6 +67,7 @@ import { getCachedUserEntitlement } from '#worker/entitlements/service.ts'
 import {
 	admitHostedExecuteCall,
 	createExecuteWorkerDayClaim,
+	executeAdmissionStructuredContent,
 	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
@@ -327,6 +328,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						error: error.message,
 						...(errorDetails ? { errorDetails } : {}),
 						...entitlementStructuredContent(error),
+						...executeAdmissionStructuredContent(error),
 					},
 					isError: true,
 				}

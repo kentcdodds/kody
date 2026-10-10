@@ -88,6 +88,19 @@ export class ExecuteRateLimitedError extends Error {
 	}
 }
 
+/** Machine-readable brake refusal for the execute tool's structured error. */
+export function executeAdmissionStructuredContent(error: unknown) {
+	if (
+		error instanceof ExecuteRateLimitedError ||
+		error instanceof ExecuteLoopDetectedError
+	) {
+		return {
+			admission: { code: error.code, retryAfterMs: error.retryAfterMs },
+		}
+	}
+	return {}
+}
+
 /** Refuses the call before any claim, bundle, or sandbox work. */
 export async function admitHostedExecuteCall(input: {
 	env: Env
