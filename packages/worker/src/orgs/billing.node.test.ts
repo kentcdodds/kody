@@ -17,35 +17,10 @@ import {
 } from './billing.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
-async function ensureBillingColumns(db: D1Database) {
-	await db
-		.prepare(
-			`ALTER TABLE orgs ADD COLUMN default_user_budget_micro_usd INTEGER`,
-		)
-		.run()
-	await db
-		.prepare(`ALTER TABLE orgs ADD COLUMN automation_budget_micro_usd INTEGER`)
-		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS org_user_budgets (
-				org_id TEXT NOT NULL,
-				user_id TEXT NOT NULL,
-				monthly_budget_micro_usd INTEGER NOT NULL,
-				set_by_user_id TEXT NOT NULL,
-				updated_at TEXT NOT NULL,
-				deleted_at TEXT,
-				PRIMARY KEY (org_id, user_id)
-			)`,
-		)
-		.run()
-}
-
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
-	await ensureBillingColumns(db)
 	return db
 }
 
