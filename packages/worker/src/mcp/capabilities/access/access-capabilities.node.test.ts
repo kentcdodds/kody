@@ -123,6 +123,33 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 	expect(compiled.orgPermissions.has('package:write')).toBe(false)
 })
 
+test('inviteCreate membership refuses the personal organization', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner-personal-invite@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'personalowner',
+	})
+	const ownerOnPersonal = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner-personal-invite@example.com',
+		username: 'personalowner',
+	})
+	await expect(
+		inviteCreateCapability.handler(
+			{ kind: 'membership', email: 'guest@example.com', role: 'member' },
+			ownerOnPersonal,
+		),
+	).rejects.toBeInstanceOf(McpCallerError)
+	await expect(
+		inviteCreateCapability.handler(
+			{ kind: 'membership', email: 'guest@example.com', role: 'member' },
+			ownerOnPersonal,
+		),
+	).rejects.toThrow(/personal organization/i)
+})
+
 test('inviteCreate prompt names the org and inviteAccept writes membership', async () => {
 	const db = await createDb()
 	const ownerId = testStableUserIdFromEmail('owner2@example.com')

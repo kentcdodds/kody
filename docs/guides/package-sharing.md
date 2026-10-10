@@ -68,22 +68,54 @@ username. The token is shown once, with a prompt for the invitee's agent:
 The invitee calls `inviteAccept` with the token. Nothing attaches before they
 accept. Invites expire after 7 days; `inviteRevoke` cancels a pending one.
 
-Use `kind: "membership"` to add someone to the whole org instead (with a role
-and optional teams). Members hold the org-level basics plus what they are
-granted. Owners hold everything.
+Use `kind: "membership"` to add someone to the whole **team** org instead (with
+a role and optional teams). Members hold the org-level basics plus what they are
+granted. Owners hold everything. Membership invites are refused on a personal
+(signup) org — create a team org to invite people.
+
+Personal orgs can still grant Use/Contribute/Manage on packages via
+`accessGrant` / `inviteCreate` `kind: "grant"` and revoke with `accessRevoke`.
+The web Grants page is aimed at team orgs; manage personal-org grants through
+those capabilities.
 
 ## What a collaborator can do
 
 Someone who holds a grant but is not a member is an **outside collaborator**.
-Connected to your org, they can:
+They must connect with **your** org selected at consent. Then they can:
 
 - Read and run the packages they hold Use on
 - Run ad hoc code that imports those packages
 - Search the shared catalog
 
 They cannot see anything else in your org, reveal secret values, or change a
-package unless the grant says so. Usage they run in your org is billed to your
-org, and your per-user budgets apply to them.
+package unless the grant says so.
+
+### Who pays when a Use collaborator runs your package
+
+Bind the agent to the **owning** org first. Then meters split:
+
+| Meter                                                       | Charged to                      |
+| ----------------------------------------------------------- | ------------------------------- |
+| Usage events, credits, org/per-user budgets, outbound fetch | **Owning org** (the bound org)  |
+| Daily/weekly **execute** entitlement                        | **Grantee's personal org** plan |
+
+Example: Jesse has Use on `@acme/bot`. Connected as `@acme`, a run debits acme's
+credits and budgets; Jesse's own Free/Pro execute-per-day cap still counts
+against Jesse.
+
+### Secrets and integrations on a granted run
+
+When Jesse runs **your** stamped package in your org:
+
+- Secret **values** and integration tokens come from **your** org
+- Jesse never gets `secret:read` from a Use grant
+- Package-authority runs skip ambient `secret:use`; the package still needs
+  `package:execute`, and each secret/integration must allow that package (host
+  allowlist, `allowed_packages`, or self-authored rules for user secrets)
+- Ad-hoc `{{secret:…}}` in Jesse's own code needs a separate `secret:use` /
+  `integration:use` grant on that credential
+
+See [Secrets](/docs/secrets) for placeholders and allowlists.
 
 ## Cross-org imports
 
