@@ -380,6 +380,17 @@ export async function resolveProviderSecret(input: {
 			createMissingProviderBindingMessage(providerId),
 		)
 	}
+	if (!authorityPackageId) {
+		// Ad-hoc: require secret:use on the door key before any decrypt or
+		// provider invoke (canonicalize uses the door key).
+		await authorizeAmbientSecretUse({
+			env: input.env,
+			request: input.request,
+			orgUserId: ownerUserId,
+			secretName: binding.doorSecretName,
+			authorityPackageId: null,
+		})
+	}
 	const providerPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: ownerUserId,
 		packageId: binding.packageId,
@@ -423,16 +434,6 @@ export async function resolveProviderSecret(input: {
 			providerId,
 			canonicalRef,
 			packageId: authorityPackageId,
-		})
-	} else {
-		// Ambient ad-hoc: acting person needs secret:use on the door key.
-		// Package authority keeps assertProviderGrant only.
-		await authorizeAmbientSecretUse({
-			env: input.env,
-			request: input.request,
-			orgUserId: ownerUserId,
-			secretName: binding.doorSecretName,
-			authorityPackageId: null,
 		})
 	}
 	const cached = readProviderSecretCache({

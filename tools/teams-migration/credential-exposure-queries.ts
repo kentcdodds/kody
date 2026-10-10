@@ -66,11 +66,11 @@ WHERE g.deleted_at IS NULL
 	)`
 
 /**
- * Org audit rows that look like secret/integration use by a non-owner actor.
- * Ambient placeholder expansion did not historically write these; expect 0 or
- * only capability-surface events (secretJwtSign, integrationTokenRefresh).
+ * Org audit rows for secret/integration resources where the actor is not the
+ * org id. AUDIT_DB has no org_memberships (APP_DB only), so owner filtering
+ * happens in JS after a second APP_DB membership query.
  */
-export const nonOwnerCredentialAuditSql = `SELECT e.org_id AS org_id,
+export const credentialAuditCandidateSql = `SELECT e.org_id AS org_id,
 	e.action AS action, e.resource_type AS resource_type,
 	e.resource_id AS resource_id, e.actor_user_id AS actor_user_id,
 	e.result AS result, e.created_at AS created_at
@@ -78,15 +78,13 @@ FROM org_audit_events e
 WHERE e.resource_type IN ('secret', 'integration')
 	AND e.actor_user_id IS NOT NULL
 	AND e.actor_user_id != e.org_id
-	AND NOT EXISTS (
-		SELECT 1 FROM org_memberships m
-		WHERE m.org_id = e.org_id
-			AND m.user_id = e.actor_user_id
-			AND m.role = 'owner'
-			AND m.deleted_at IS NULL
-	)
 ORDER BY e.created_at DESC
 LIMIT 500`
+
+/** Live owner memberships used to filter audit candidates in-process. */
+export const liveOwnerMembershipsSql = `SELECT org_id, user_id
+FROM org_memberships
+WHERE role = 'owner' AND deleted_at IS NULL`
 
 export type CredentialExposureReport = {
 	version: 1
@@ -127,7 +125,8 @@ export async function runCredentialExposureQueries(input: {
 	assertReadOnlySql(multiMemberOrgsSql)
 	assertReadOnlySql(outsideGrantsSql)
 	assertReadOnlySql(orgsWithOutsideGrantsSql)
-	assertReadOnlySql(nonOwnerCredentialAuditSql)
+	assertReadOnlySql(credentialAuditCandidateSql)
+	assertReadOnlySql(liveOwnerMembershipsSql)
 
 	const multiMemberRows = await readOnlyD1Query<Record<string, unknown>>(
 		input.client,
@@ -144,16 +143,28 @@ export async function runCredentialExposureQueries(input: {
 		appUuid,
 		orgsWithOutsideGrantsSql,
 	)
+	const ownerMemberships = await readOnlyD1Query<{
+		org_id: string
+		user_id: string
+	}>(input.client, appUuid, liveOwnerMembershipsSql)
+	const ownerKeys = new Set(
+		ownerMemberships.map((row) => `${row.org_id}:${row.user_id}`),
+	)
 
 	const auditUuid = await resolveAuditD1Uuid(input.client, input.target)
 	let auditRows: Array<Record<string, unknown>> = []
 	if (auditUuid) {
 		try {
-			auditRows = await readOnlyD1Query<Record<string, unknown>>(
+			const candidates = await readOnlyD1Query<Record<string, unknown>>(
 				input.client,
 				auditUuid,
-				nonOwnerCredentialAuditSql,
+				credentialAuditCandidateSql,
 			)
+			auditRows = candidates.filter((row) => {
+				const orgId = String(row['org_id'] ?? '')
+				const actorId = String(row['actor_user_id'] ?? '')
+				return !ownerKeys.has(`${orgId}:${actorId}`)
+			})
 		} catch {
 			auditRows = []
 		}

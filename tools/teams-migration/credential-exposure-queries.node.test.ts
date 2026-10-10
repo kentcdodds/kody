@@ -3,6 +3,8 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { assertReadOnlySql } from './production-queries.ts'
 import {
+	credentialAuditCandidateSql,
+	liveOwnerMembershipsSql,
 	multiMemberOrgsSql,
 	orgsWithOutsideGrantsSql,
 	outsideGrantsSql,
@@ -13,6 +15,8 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 		multiMemberOrgsSql,
 		outsideGrantsSql,
 		orgsWithOutsideGrantsSql,
+		credentialAuditCandidateSql,
+		liveOwnerMembershipsSql,
 	]) {
 		expect(() => assertReadOnlySql(sql)).not.toThrow()
 	}
