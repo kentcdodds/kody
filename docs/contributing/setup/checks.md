@@ -66,28 +66,23 @@ pushes. See the [setup index](./index.md) for the other setup pages.
 - `npm run validate` is the single authoritative local gate. It is read-only.
   `prevalidate` runs `install:check` first so a snapshot whose `node_modules`
   lags `package-lock.json` fails with `run npm ci` instead of type/bundle
-  errors. Then it executes `format:check`, `lint`, `typecheck`, `test:node`,
-  `test:workers`, Playwright E2E, MCP E2E, `backup:build`, `status:build`,
-  `nx-cache:build`, `jobs:build`, `highlight:build`, `api:build`,
-  `api-docs:build`, `runtime:build`, `platform:build`,
-  `worker-startup-bundles:check`, `primitives:check`, `migrations:check`,
-  `deploy-guardrails:check`, `workflows:check`,
-  `origin-production-exports:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `docs:check-no-hosted-execute`,
-  `docs:check-file-refs`, `skills-lock:check`, `mermaid:check`,
-  `slop-ratchet:check`, `knip`, `audit:prod`, `lockfile:check`, and
-  `overrides:check` in parallel, reporting every failure (sibling checks are not
-  aborted on the first failure, including when one of the docs or mermaid checks
-  fails). `worker-startup-time:check` runs after that parallel phase so the CPU
-  budget measures the bundle, not contention from e2e and Worker builds (#2475,
-  #2759). The unit-test and Playwright legs set `CI=1` so timeouts, worker
-  limits, and Nx cache hashes match the contended parallel layout used in GitHub
-  Actions. CI runs the same checks as parallel jobs (🧹 Static, 🧪 Node, ☁️
-  Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate). If `npm run validate`
-  passes locally, CI will pass. Trusted writers (Cloud Agent environments, and
-  same-repo validate) set `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write
-  token so Nx uploads task artifacts to `https://nx-cache.kody.codes`. Fork
-  `pull_request` validate uses the read token and can only GET (see
+  errors. The check list lives in `tools/validate-gate.ts` and
+  `tools/run-validate.ts` runs it. Sibling checks are not aborted on the first
+  failure. Suite legs (typecheck, node unit, workers unit, Playwright, MCP) are
+  sized like a dedicated CI job. On a machine with at most 4 cores, or with less
+  than 24GB of RAM, the gate runs one suite leg and one build leg (worker
+  dry-runs, startup bundles, knip) at a time. Starting all of them together
+  exhausts a 4-core 16GB VM (#3147). Larger machines still start every leg
+  together. `worker-startup-time:check` runs after that phase so the CPU budget
+  measures the bundle, not contention from e2e and Worker builds (#2475, #2759).
+  The unit-test and Playwright legs set `CI=1` so timeouts, worker limits, and
+  Nx cache hashes match GitHub Actions. CI runs the same checks as separate jobs
+  (🧹 Static, 🧪 Node, ☁️ Workers, 🔌 MCP, 🎭 E2E, aggregated by ✅ Validate).
+  If `npm run validate` passes locally, CI will pass. Trusted writers (Cloud
+  Agent environments, and same-repo validate) set
+  `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and the write token so Nx uploads task
+  artifacts to `https://nx-cache.kody.codes`. Fork `pull_request` validate uses
+  the read token and can only GET (see
   [decision 0019](../decisions/0019-self-hosted-nx-remote-cache.md),
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and

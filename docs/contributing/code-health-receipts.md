@@ -20,17 +20,13 @@ validate gate count re-counted from `package.json` on 2026-10-06).
 
 ## Enforcement, not promises
 
-- `npm run validate` is the single authoritative gate: 33 concurrent lanes
-  (`format:check`, `lint`, `typecheck`, `test:node`, `test:workers`,
-  `test:e2e:run`, `test:mcp`, `backup:build`, `status:build`, `nx-cache:build`,
-  `jobs:build`, `highlight:build`, `api:build`, `api-docs:build`,
-  `runtime:build`, `platform:build`, `worker-startup-bundles:check`,
-  `primitives:check`, `migrations:check`, `deploy-guardrails:check`,
-  `workflows:check`, `origin-production-exports:check`, `docs:check-temporal`,
-  `docs:check-decisions`, `docs:check-no-hosted-execute`,
-  `docs:check-file-refs`, `skills-lock:check`, `mermaid:check`,
-  `slop-ratchet:check`, `knip`, `audit:prod`, `lockfile:check`,
-  `overrides:check`) plus `worker-startup-time:check` after that parallel phase.
+- `npm run validate` is the single authoritative gate. The check list is
+  `tools/validate-gate.ts` (format, lint, typecheck, both unit suites,
+  Playwright, MCP, worker dry-run builds, startup bundles, structure checks,
+  knip, audit, lockfile, overrides, and the docs checks) plus
+  `worker-startup-time:check` after that phase. On a machine with at most 4
+  cores, or under 24GB of RAM, suite and build legs run one at a time (#3147).
+  Larger machines start every leg together.
 - `tools/file-size-ratchet.json` enforces budgets of 20 lines for root
   `AGENTS.md` (raise `agents-md` `maxLines` in
   `tools/check-file-size-ratchet.ts` only on purpose; never grandfather it in
