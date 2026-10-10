@@ -534,6 +534,35 @@ test('an insert that writes zero rows counts as already present', async () => {
 	})
 })
 
+test('0003 stops when a duplicate success row already exists', () => {
+	const audit = new DatabaseSync(':memory:')
+	audit.exec(`CREATE TABLE org_audit_events (
+		id TEXT PRIMARY KEY NOT NULL,
+		org_id TEXT NOT NULL,
+		action TEXT NOT NULL,
+		result TEXT NOT NULL
+	)`)
+	audit.exec(
+		`INSERT INTO org_audit_events (id, org_id, action, result) VALUES
+			('one', 'org-a', 'org.migrated', 'success'),
+			('two', 'org-a', 'org.migrated', 'success')`,
+	)
+	expect(() =>
+		audit.exec(
+			readFileSync(
+				new URL(
+					'../../packages/worker/audit-migrations/0003-org-migrated-success-unique.sql',
+					import.meta.url,
+				),
+				'utf8',
+			),
+		),
+	).toThrow(/CHECK constraint failed/)
+	expect(
+		audit.prepare(`SELECT COUNT(*) AS n FROM org_audit_events`).get(),
+	).toEqual({ n: 2 })
+})
+
 test('0003 allows one org.migrated success row per org', () => {
 	const audit = new DatabaseSync(':memory:')
 	audit.exec(`CREATE TABLE org_audit_events (

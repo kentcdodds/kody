@@ -15,12 +15,14 @@ after the expand migrations are on the target.
 - Skips an org that already has `action = 'org.migrated'` and
   `result = 'success'` in AUDIT_DB.
 - In `dry-run`, prints counts and writes nothing.
-- In `apply`, inserts the missing success rows in one statement
-  (`INSERT ... SELECT ... WHERE NOT EXISTS`). `inserted` is the number of rows
-  that statement wrote. A second apply inserts nothing.
+- In `apply`, inserts each missing success row with one conditional statement
+  per org (`INSERT ... SELECT ... WHERE NOT EXISTS`). `inserted` is the total
+  number of rows those statements wrote. A second apply inserts nothing. An
+  interrupted apply keeps the rows already written.
 - Audit migration `0003-org-migrated-success-unique.sql` allows one success row
   per org. A `failure` row does not count, so apply still writes the success
-  row.
+  row. If one org already has two success rows, 0003 stops and leaves those rows
+  in place.
 
 The public log is counts and database names (`orgs`, `pending`, `present`,
 `inserted`). It does not list org ids.
