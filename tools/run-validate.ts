@@ -28,16 +28,13 @@ export function failedValidateLegNames(events: unknown): string[] {
 			command && typeof command === 'object' && 'name' in command
 				? command.name
 				: undefined
-		if (
-			typeof exitCode === 'number' &&
-			exitCode !== 0 &&
-			typeof name === 'string'
-		) {
-			names.push(name)
-		}
+		if (typeof name !== 'string') continue
+		const failed =
+			exitCode == null || (typeof exitCode === 'number' && exitCode !== 0)
+		if (failed) names.push(name)
 	}
 	if (names.length === 0) {
-		throw new Error('validate pool failed without a named leg')
+		return ['validate-pool']
 	}
 	return names
 }
