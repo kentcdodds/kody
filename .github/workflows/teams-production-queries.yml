@@ -115,24 +115,32 @@ jobs:
       - name: 🔎 Run the read-only queries (sealed)
         if: inputs.target != 'production'
         run: |
-          set -euo pipefail
+          # Collect both exit statuses: P8 (Stripe/OAuth KV) must not block the
+          # independent D1 credential-exposure report. Fail the step if either fails.
+          set -uo pipefail
           mkdir -p "$OUT_DIR"
+          status=0
           # P8 conversion report (Stripe skipped when the Actions secret is empty).
-          node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json"
+          node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json" || status=$?
           # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
-          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json"
+          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json" || status=$?
+          exit "$status"
 
       - name: 🔎 Run the read-only queries (sealed)
         if: inputs.target == 'production'
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
-          set -euo pipefail
+          # Collect both exit statuses: P8 (Stripe/OAuth KV) must not block the
+          # independent D1 credential-exposure report. Fail the step if either fails.
+          set -uo pipefail
           mkdir -p "$OUT_DIR"
+          status=0
           # P8 conversion report (Stripe skipped when the Actions secret is empty).
-          node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json"
+          node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json" || status=$?
           # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
-          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json"
+          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json" || status=$?
+          exit "$status"
 
       - name: 🧾 Summary
         if: always()
