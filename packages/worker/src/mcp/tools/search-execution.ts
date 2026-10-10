@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callerHasRole,
@@ -106,11 +109,21 @@ async function executeSearchListWithinBudget(
 	phaseTimings.rateLimitMs = elapsedMs(rateLimitStart)
 	const domainFilter = input.domain?.trim() || undefined
 	const usernameStart = performance.now()
-	const username = await resolvePublicUsername({
-		db: input.env.APP_DB,
-		username: input.callerContext.user?.username ?? null,
-		email: input.callerContext.user?.email ?? null,
-	})
+	// Team-bound search must label packages with the org slug, not the actor
+	// person handle (otherwise exact URLs and hosted app links go to /@actor/…).
+	const boundOrg = input.callerContext.request?.org
+	const actorUserId = input.callerContext.user?.userId
+	const boundToTeamOrg =
+		Boolean(boundOrg?.slug?.trim()) &&
+		Boolean(actorUserId) &&
+		boundOrg!.id !== personalOrgId(actorUserId!)
+	const username = boundToTeamOrg
+		? boundOrg!.slug!.trim()
+		: await resolvePublicUsername({
+				db: input.env.APP_DB,
+				username: input.callerContext.user?.username ?? null,
+				email: input.callerContext.user?.email ?? null,
+			})
 	phaseTimings.usernameLookupMs = elapsedMs(usernameStart)
 	// Domain-scoped searches rank capabilities only; exact package identity
 	// resolution does not apply.

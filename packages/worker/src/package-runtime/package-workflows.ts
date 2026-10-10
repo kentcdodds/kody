@@ -1,7 +1,4 @@
-import {
-	ownerIdFromStored,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import {
@@ -34,7 +31,6 @@ import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
-import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	AccountSuspendedError,
 	accountSuspendedErrorCode,
@@ -1681,40 +1677,12 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 		const waitUntil = (promise: Promise<unknown>) => {
 			this.ctx.waitUntil(promise)
 		}
-		const backgroundUser = await resolveBackgroundMcpUser(
-			this.env.APP_DB,
-			payload.userId,
-		)
-		const source = workflowRequestSource(payload)
-		// Inherited lineage keeps the original credential.orgId. When the
-		// workflow payload userId is still the actor personal org (legacy
-		// escalations), re-bind to that credential org so team package publishes
-		// do not look up packages under the wrong owner.
-		let orgBinding:
-			| { org: { id: OwnerId; slug: string | null }; role: 'owner' }
-			| undefined
-		if (source.kind === 'inherited') {
-			const credentialOrgId = source.lineage.credential.orgId
-			if (credentialOrgId && credentialOrgId !== payload.userId) {
-				const org = await getOrgById(this.env.APP_DB, credentialOrgId)
-				if (org) {
-					orgBinding = {
-						org: {
-							id: ownerIdFromStored(org.id),
-							slug: org.slug,
-						},
-						role: 'owner',
-					}
-				}
-			}
-		}
 		const callerContext = createMcpCallerContext({
 			baseUrl: getAppBaseUrl({
 				env: this.env,
 			}),
 			executionOrigin: 'background',
-			user: backgroundUser,
-			...(orgBinding ? { orgBinding } : {}),
+			user: await resolveBackgroundMcpUser(this.env.APP_DB, payload.userId),
 			storageContext: payload.packageContext
 				? {
 						sessionId: null,
@@ -1723,7 +1691,7 @@ export class DynamicCallableWorkflowBase extends WorkflowEntrypoint<
 						storageId: null,
 					}
 				: null,
-			source,
+			source: workflowRequestSource(payload),
 		})
 		const runHandle = beginRunRecord({
 			env: this.env,

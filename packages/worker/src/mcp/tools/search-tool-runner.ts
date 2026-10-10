@@ -316,11 +316,18 @@ export async function runSearchTool(input: {
 			}
 		}
 		const usernameStart = performance.now()
-		username = await resolvePublicUsername({
-			db: agent.getEnv().APP_DB,
-			username: callerContext.user?.username ?? null,
-			email: callerContext.user?.email ?? null,
-		})
+		const boundOrgSlug = callerContext.request?.org.slug?.trim() || null
+		const boundToTeamOrg =
+			Boolean(boundOrgSlug) &&
+			Boolean(callerUserId) &&
+			callerContext.request?.org.id !== personOwnerId
+		username = boundToTeamOrg
+			? boundOrgSlug
+			: await resolvePublicUsername({
+					db: agent.getEnv().APP_DB,
+					username: callerContext.user?.username ?? null,
+					email: callerContext.user?.email ?? null,
+				})
 		endToEndPhaseTimings.usernameLookupMs = elapsedMs(usernameStart)
 		const rowAndRegistryLoadStart = performance.now()
 		const rowsPromise = loadSearchRowsAndRegistry({

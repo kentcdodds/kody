@@ -25,7 +25,10 @@ import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
-import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import {
+	packageOwnerEntitlementEmail,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import {
 	buildPackageTestHints,
 	type PackageTestHints,
@@ -971,7 +974,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 			const outcome = await runWithDurableEscalation({
 				env: ctx.env,
 				userId: owner.ownerUserId,
-				userEmail: user.email,
+				userEmail: packageOwnerEntitlementEmail(owner),
 				lineage: requestLineage(requireMcpRequest(ctx.callerContext)),
 				budgetMs: defaultDurableEscalationBudgetMs,
 				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),
