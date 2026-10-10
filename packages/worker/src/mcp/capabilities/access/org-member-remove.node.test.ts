@@ -9,6 +9,7 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { orgMemberRemoveCapability } from './org-members.ts'
+import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
 test('orgMemberRemove revokes org credentials and disconnects own-login integrations', async () => {
 	const sqlite = new DatabaseSync(':memory:')
@@ -79,7 +80,7 @@ test('orgMemberRemove revokes org credentials and disconnects own-login integrat
 	const result = await orgMemberRemoveCapability.handler(
 		{ user_id: memberId },
 		{
-			env: { APP_DB: db } as Env,
+			env: { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env,
 			callerContext: createMcpCallerContext({
 				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
@@ -169,7 +170,7 @@ test('orgMemberRemove retries credential revoke after the membership is already 
 	const result = await orgMemberRemoveCapability.handler(
 		{ user_id: memberId },
 		{
-			env: { APP_DB: db } as Env,
+			env: { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env,
 			callerContext: createMcpCallerContext({
 				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
@@ -261,7 +262,7 @@ test('a non-owner cannot resume offboarding of a tombstoned owner', async () => 
 		orgMemberRemoveCapability.handler(
 			{ user_id: ownerId },
 			{
-				env: { APP_DB: db } as Env,
+				env: { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env,
 				callerContext: createMcpCallerContext({
 					source: { kind: 'mcp-oauth' },
 					baseUrl: 'https://heykody.dev',

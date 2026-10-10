@@ -8,6 +8,7 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { createOrg, updateOrgMemberRole } from '#worker/orgs/access-writes.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
 	onMemberSoftRemoved,
 	readTombstonedOrgMembership,
@@ -76,7 +77,10 @@ export const orgCreateCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			try {
-				const { user, db } = await requireOrgPermission(ctx, 'org:write')
+				const { user, request, db } = await requireOrgPermission(
+					ctx,
+					'org:write',
+				)
 				const slug = normalizeUsername(args.slug)
 				const formatError = getUsernameFormatValidationError(slug)
 				if (formatError) throw new McpCallerError(formatError)
@@ -85,6 +89,7 @@ export const orgCreateCapability = defineDomainCapability(
 					slug,
 					displayName: args.display_name,
 					createdByUserId: user.userId,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				const org = await requireLiveOrg(db, created.id)
 				return {
@@ -212,6 +217,7 @@ export const orgMemberUpdateCapability = defineDomainCapability(
 					userId,
 					role: args.role,
 					protectLastOwner: demotingOwner,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				if (seatRole(membership.role) !== seatRole(args.role)) {
 					await syncSeatsAfterMembershipChange({
@@ -281,6 +287,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 						userId,
 						deletedAt: tombstone.deletedAt,
 						resume: true,
+						audit: orgAuditWriterFromRequest(ctx.env, request),
 					})
 					if (seatRole(tombstone.role)) {
 						await syncSeatsAfterMembershipChange({
@@ -310,6 +317,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 					orgId: request.org.id,
 					userId,
 					deletedAt: new Date().toISOString(),
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				if (seatRole(membership.role)) {
 					await syncSeatsAfterMembershipChange({

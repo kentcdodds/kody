@@ -6,6 +6,7 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { createOrganization } from './create-organization.ts'
 import { listOrgMembers, listPendingOrgInvites } from './org-members-list.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -61,6 +62,7 @@ test('listOrgMembers returns live memberships with identity and role', async () 
 	})
 	const created = await createOrganization(db, env, {
 		personId: ada,
+		audit: createTestOrgAuditWriter(),
 		slug: 'zeta-co',
 		displayName: 'Zeta Co',
 	})
@@ -96,6 +98,7 @@ test('listPendingOrgInvites hides expired and non-pending invites', async () => 
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	const created = await createOrganization(db, env, {
 		personId: ada,
+		audit: createTestOrgAuditWriter(),
 		slug: 'north',
 		displayName: 'North',
 	})

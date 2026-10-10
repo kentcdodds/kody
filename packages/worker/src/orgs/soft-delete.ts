@@ -13,7 +13,10 @@ import {
 } from '#worker/account/deletion-state.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isWithinSoftDeleteRestoreWindow } from '#worker/soft-delete/window.ts'
-import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
+import {
+	logOrgAuditEvent,
+	orgAuditWriterForPerson,
+} from '#worker/orgs/org-audit.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { syncJobManagerAlarm } from '#worker/jobs/manager-client.ts'
 import {
@@ -655,6 +658,10 @@ export async function softDeleteUserAccount(input: {
 			userId: input.userId,
 			deletedAt,
 			resume: true,
+			audit: orgAuditWriterForPerson(input.env, {
+				userId: input.actorUserId ?? input.userId,
+				username: input.actorUsername,
+			}),
 		})
 	}
 

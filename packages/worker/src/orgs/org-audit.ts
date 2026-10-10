@@ -1,3 +1,5 @@
+import * as Sentry from '@sentry/cloudflare'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 
@@ -91,4 +93,91 @@ export async function redactOrgAuditActorIdsForDeletedUser(input: {
 			.bind(input.userId)
 			.run(),
 	)
+}
+
+/** Who is acting and where org audit rows go; built once per request. */
+export type OrgAuditWriter = {
+	db: D1Database
+	actorUserId: string | null
+	actorUsername: string | null
+	credentialKind: string | null
+	credentialId: string | null
+}
+
+export function orgAuditWriterFromRequest(
+	env: Env,
+	request: RequestContext,
+): OrgAuditWriter {
+	return {
+		db: auditDatabaseFromEnvOrThrow(env),
+		actorUserId: request.actor?.userId ?? null,
+		actorUsername: request.actor?.username ?? null,
+		credentialKind: request.credential.kind,
+		credentialId: request.credential.id,
+	}
+}
+
+export function orgAuditWriterForPerson(
+	env: Env,
+	actor: { userId: string | null; username?: string | null },
+): OrgAuditWriter {
+	return {
+		db: auditDatabaseFromEnvOrThrow(env),
+		actorUserId: actor.userId,
+		actorUsername: actor.username ?? null,
+		credentialKind: null,
+		credentialId: null,
+	}
+}
+
+/**
+ * Records an access change that has already committed to APP_DB. An AUDIT_DB
+ * failure is reported loudly but never rethrown: the access change is durable
+ * and the caller may still have dependent writes to apply.
+ */
+export async function recordOrgAuditEvent(
+	writer: OrgAuditWriter,
+	event: {
+		orgId: string
+		action: string
+		resourceType?: string | null
+		resourceId?: string | null
+		targetUserId?: string | null
+		details?: Record<string, unknown>
+	},
+) {
+	try {
+		await logOrgAuditEvent({
+			db: writer.db,
+			orgId: event.orgId,
+			action: event.action,
+			result: 'success',
+			actorUserId: writer.actorUserId,
+			actorUsername: writer.actorUsername,
+			credentialKind: writer.credentialKind,
+			credentialId: writer.credentialId,
+			resourceType: event.resourceType ?? null,
+			resourceId: event.resourceId ?? null,
+			targetUserId: event.targetUserId ?? null,
+			details: event.details,
+		})
+	} catch (error) {
+		console.error('Failed to record org audit event:', {
+			orgId: event.orgId,
+			action: event.action,
+			resourceType: event.resourceType ?? null,
+			resourceId: event.resourceId ?? null,
+			error,
+		})
+		Sentry.withScope((scope) => {
+			scope.setTag('org_audit.action', event.action)
+			scope.setContext('org_audit', {
+				orgId: event.orgId,
+				action: event.action,
+				resourceType: event.resourceType ?? null,
+				resourceId: event.resourceId ?? null,
+			})
+			Sentry.captureException(error)
+		})
+	}
 }

@@ -21,6 +21,7 @@ import {
 	resolveSavedPackageImport,
 	SavedPackageNotFoundError,
 } from './package-import-resolution.ts'
+import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -131,7 +132,7 @@ test('Use grant: grantee bound to owner org resolves and execute looks up that o
 			preset: 'use',
 		},
 		{
-			env: { APP_DB: db } as Env,
+			env: { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env,
 			callerContext: ownerCaller({
 				userId: ownerId,
 				username: 'rh-alice',
@@ -149,7 +150,7 @@ test('Use grant: grantee bound to owner org resolves and execute looks up that o
 	expect(carolInAlice.request?.org.id).toBe(ownerId)
 	expect(carolInAlice.user?.userId).toBe(granteeId)
 
-	const env = { APP_DB: db } as Env
+	const env = { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env
 	const resolved = await runWithRequestPermissions(
 		{ env, request: carolInAlice.request! },
 		() =>

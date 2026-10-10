@@ -5,6 +5,10 @@
 import { offboardOrgMember } from '#worker/orgs/offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
+import {
+	recordOrgAuditEvent,
+	type OrgAuditWriter,
+} from '#worker/orgs/org-audit.ts'
 
 export type MemberSoftRemovedInput = {
 	env: Env
@@ -16,6 +20,7 @@ export type MemberSoftRemovedInput = {
 	 * credentials and disconnects own-login integrations.
 	 */
 	resume?: boolean
+	audit: OrgAuditWriter
 }
 
 /**
@@ -54,5 +59,11 @@ export async function onMemberSoftRemoved(
 		now: new Date(input.deletedAt),
 		oauthHelpers: oauthHelpers ?? null,
 		resumeDeletedAt: input.resume ? input.deletedAt : undefined,
+	})
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'member.removed',
+		targetUserId: input.userId,
+		details: { deletedAt: input.deletedAt, resumed: input.resume === true },
 	})
 }

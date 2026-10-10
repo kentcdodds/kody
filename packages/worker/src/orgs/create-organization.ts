@@ -5,8 +5,10 @@ import {
 } from '#worker/identity/username.ts'
 import { createOrg } from '#worker/orgs/access-writes.ts'
 import { FreeOrgLimitError } from '#worker/orgs/billing.ts'
+import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
 
 export type CreateOrganizationInput = {
+	audit: OrgAuditWriter
 	personId: string
 	slug: string
 	displayName: string
@@ -54,6 +56,7 @@ export async function createOrganization(
 			slug,
 			displayName,
 			createdByUserId: input.personId,
+			audit: input.audit,
 		})
 		return { ok: true, slug: created.slug }
 	} catch (error) {

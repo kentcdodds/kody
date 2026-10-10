@@ -17,6 +17,7 @@ import { accessGrantCapability } from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
 import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -31,9 +32,13 @@ function capabilityContext(input: {
 	email: string
 	username: string
 	org?: { id: string; slug: string; role: OrgRole }
+	auditDb?: D1Database
 }) {
 	return {
-		env: { APP_DB: input.db } as Env,
+		env: {
+			APP_DB: input.db,
+			AUDIT_DB: input.auditDb ?? createAuditTestDb(),
+		} as Env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
@@ -169,11 +174,13 @@ test('inviteCreate prompt names the org and inviteAccept writes membership', asy
 		inviteAcceptCapability.handler({ token: invited.token }, wrongAccount),
 	).rejects.toBeInstanceOf(McpCallerError)
 
+	const guestAuditDb = createAuditTestDb()
 	const guest = capabilityContext({
 		db,
 		userId: guestId,
 		email: 'guest2@example.com',
 		username: 'guestacct',
+		auditDb: guestAuditDb,
 	})
 	const accepted = await inviteAcceptCapability.handler(
 		{ token: invited.token },
@@ -201,6 +208,19 @@ test('inviteCreate prompt names the org and inviteAccept writes membership', asy
 		.first<{ token_hash: string; status: string }>()
 	expect(stored?.status).toBe('accepted')
 	expect(stored?.token_hash).not.toBe(invited.token)
+
+	// Acceptance is recorded only after the membership write landed.
+	const auditRows = await guestAuditDb
+		.prepare(
+			`SELECT action FROM org_audit_events
+			 WHERE org_id = ? ORDER BY rowid ASC`,
+		)
+		.bind(created.org.id)
+		.all<{ action: string }>()
+	expect(auditRows.results.map((row) => row.action)).toEqual([
+		'member.added',
+		'invite.accepted',
+	])
 })
 
 test('orgMemberList returns live members and requires member:read', async () => {

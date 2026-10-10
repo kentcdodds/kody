@@ -9,6 +9,7 @@ import {
 } from '#worker/orgs/org-teams-list.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
@@ -51,6 +52,7 @@ beforeEach(async () => {
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 		{
 			personId: ada.personId,
+			audit: createTestOrgAuditWriter(),
 			slug: 'zeta-co',
 			displayName: 'Zeta Co',
 		},
@@ -75,6 +77,7 @@ test('listTeams returns empty then teams with member counts', async () => {
 		slug: 'platform',
 		name: 'Platform',
 		createdByUserId: ada.personId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await addTeamMember({
 		db,
@@ -82,6 +85,7 @@ test('listTeams returns empty then teams with member counts', async () => {
 		teamId: team.id,
 		userId: bob.personId,
 		addedByUserId: ada.personId,
+		audit: createTestOrgAuditWriter(),
 	})
 	expect(await listTeams(db, orgId)).toEqual([
 		{

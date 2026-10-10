@@ -10,6 +10,10 @@ import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import {
+	createAuditTestDb,
+	createTestOrgAuditWriter,
+} from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
@@ -76,6 +80,7 @@ async function seed() {
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 		{
 			personId: people.ada.personId,
+			audit: createTestOrgAuditWriter(),
 			slug: 'zeta-co',
 			displayName: 'Zeta Co',
 		},
@@ -106,7 +111,7 @@ async function seed() {
 }
 
 function createEnv() {
-	return { APP_DB: db } as Env
+	return { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env
 }
 
 async function signIn(person: Person, request: Request) {
@@ -240,6 +245,7 @@ test('team member remove rejects a team id from another organization', async () 
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 		{
 			personId: people.bob.personId,
+			audit: createTestOrgAuditWriter(),
 			slug: 'other-co',
 			displayName: 'Other Co',
 		},
@@ -256,6 +262,7 @@ test('team member remove rejects a team id from another organization', async () 
 		slug: 'foreign',
 		name: 'Foreign',
 		createdByUserId: people.bob.personId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await addTeamMember({
 		db,
@@ -263,6 +270,7 @@ test('team member remove rejects a team id from another organization', async () 
 		teamId: foreign.id,
 		userId: people.bob.personId,
 		addedByUserId: people.bob.personId,
+		audit: createTestOrgAuditWriter(),
 	})
 
 	const removeReq = new Request(

@@ -22,6 +22,7 @@ import {
 	computeEffectivePermissions,
 	packageResource,
 } from './authorize.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
@@ -93,6 +94,7 @@ test('an OAuth outside collaborator can do only what their grant allows', async 
 		preset: 'use',
 		permissions: null,
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	expect(grant.permissions).toEqual(['package:read', 'package:execute'])
 

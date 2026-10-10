@@ -19,6 +19,7 @@ import {
 	createTeam,
 	removeTeamMember,
 } from '#worker/orgs/access-writes.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { listTeamsWithMembers } from '#worker/orgs/org-teams-list.ts'
 import {
@@ -253,6 +254,7 @@ export function createOrgTeamsCreatePostHandler(env: Env) {
 					name,
 					description,
 					createdByUserId: user.mcpUser.userId,
+					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
 				const message =
@@ -311,6 +313,7 @@ export function createOrgTeamsMemberAddPostHandler(env: Env) {
 					teamId,
 					userId,
 					addedByUserId: user.mcpUser.userId,
+					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
 				const message =
@@ -359,6 +362,7 @@ export function createOrgTeamsMemberRemovePostHandler(env: Env) {
 					orgId: access.org.id,
 					teamId,
 					userId,
+					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
 				const message =
