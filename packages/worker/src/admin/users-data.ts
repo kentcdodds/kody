@@ -429,12 +429,17 @@ export async function updateAdminUserPlan(
 		})
 	}
 	const updatedAt = utcSqliteTimestamp(now)
-	await updateOrgBillingColumns({
+	const planWrite = await updateOrgBillingColumns({
 		db,
 		orgId: existing.stableUserId,
 		setClause: 'plan = ?, entitlement_ladder = ?, updated_at = ?',
 		values: [nextPlan, nextLadder, updatedAt],
 	})
+	if ((planWrite.meta.changes ?? 0) === 0) {
+		throw new Error(
+			`Cannot update billing: missing personal org ${existing.stableUserId}.`,
+		)
+	}
 
 	return loadAdminUserByTarget(db, { stableUserId: existing.stableUserId })
 }
