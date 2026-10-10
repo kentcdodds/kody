@@ -73,6 +73,8 @@ import {
 	buildExecuteUsageReport,
 	createExecuteWorkerDayClaim,
 	executeAdmissionStructuredContent,
+	executeLoopDetectedErrorCode,
+	executeRateLimitedErrorCode,
 	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
@@ -179,6 +181,15 @@ export const executeToolOutputSchema = {
 		.optional()
 		.describe(
 			'Hosted execute allowance after this call: unit, and per window (day, plus week when the plan has one) used, limit, remaining, resetsAt. Repeats of code already run today do not count.',
+		),
+	admission: z
+		.object({
+			code: z.enum([executeRateLimitedErrorCode, executeLoopDetectedErrorCode]),
+			retryAfterMs: z.number(),
+		})
+		.optional()
+		.describe(
+			'Set when a runaway or loop brake refused the call before it ran: the refusal code and how long to wait before the same call is admitted.',
 		),
 	logs: z
 		.array(z.unknown())
