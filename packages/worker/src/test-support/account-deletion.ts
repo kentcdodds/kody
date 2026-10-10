@@ -270,7 +270,9 @@ export function createTestDb(
 							}
 							if (
 								lower ===
-								'select stripe_customer_id, email from users where id = ?'
+									'select stripe_customer_id, email from users where id = ?' ||
+								(lower.includes('stripe_customer_id') &&
+									lower.includes('from users'))
 							) {
 								const numericId = Number(params[0])
 								results = (rows.users ?? [])

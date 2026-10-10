@@ -29,8 +29,8 @@ function createDb() {
 async function insertUser(db: D1Database, userId = 'user-tips') {
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
-			 VALUES ('tips', 'tips@example.com', 'x', ?, 'free', 'person')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES ('tips', 'tips@example.com', 'x', ?)`,
 		)
 		.bind(userId)
 		.run()

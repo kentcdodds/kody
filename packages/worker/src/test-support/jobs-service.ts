@@ -295,9 +295,6 @@ export function createDatabase(
 								query.includes('SELECT plan, stripe_plan') ||
 								query.includes('entitlement_ladder')
 							) {
-								if (/\b(?:FROM|JOIN) orgs\b/.test(query)) {
-									return null
-								}
 								const pairLookup = query.includes('email = ?')
 								return selectOne('users', (row) =>
 									pairLookup

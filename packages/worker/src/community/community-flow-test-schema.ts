@@ -11,15 +11,7 @@ import { communityForksDeleteCascadeStatements } from './community-forks-delete-
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: [
-			'account_type',
-			'bio',
-			'avatar_key',
-			'profile_visibility',
-			'stripe_customer_id',
-			'stripe_plan',
-			'stripe_plan_refreshed_at',
-		],
+		columns: ['bio', 'avatar_key', 'profile_visibility'],
 	})
 	await ensureUserStorageBucketsTestSchema(db)
 	await ensureSecretBucketsTestSchema(db)
@@ -111,13 +103,6 @@ export async function ensureCommunityFlowSchema(db: D1Database) {
 			ON community_listings(owner_user_id, package_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_community_listings_owner_kody_id_active
 			ON community_listings(owner_user_id, kody_id) WHERE status = 'active'`,
-		`CREATE TABLE IF NOT EXISTS username_redirects (
-			old_username TEXT PRIMARY KEY NOT NULL,
-			user_id TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_username_redirects_user_id
-			ON username_redirects(user_id)`,
 		`CREATE TABLE IF NOT EXISTS package_kody_id_redirects (
 			user_id TEXT NOT NULL,
 			old_kody_id TEXT NOT NULL,

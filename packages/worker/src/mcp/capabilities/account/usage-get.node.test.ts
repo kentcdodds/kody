@@ -32,15 +32,23 @@ function createUsageEnv(input: {
 	)
 	sqlite
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, stripe_plan, entitlement_ladder)
-			 VALUES ('usage', ?, 'hash', ?, ?, ?, ?)`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES ('usage', ?, 'hash', ?)`,
+		)
+		.run(email, stableUserId)
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, plan, stripe_plan, entitlement_ladder, created_at, updated_at
+			) VALUES (?, 'usage', ?, ?, ?, ?, ?)`,
 		)
 		.run(
-			email,
 			stableUserId,
 			input.plan,
 			input.stripePlan ?? null,
 			input.entitlementLadder ?? 'public',
+			'2026-07-01T00:00:00.000Z',
+			'2026-07-01T00:00:00.000Z',
 		)
 	for (let index = 0; index < (input.packageCount ?? 0); index += 1) {
 		sqlite

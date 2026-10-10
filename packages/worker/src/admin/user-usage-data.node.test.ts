@@ -102,7 +102,8 @@ function createAdminUserUsageTestDb(input: {
 			const createStatement = (params: Array<unknown>) => ({
 				async first<T>() {
 					if (
-						normalizedQuery.includes('from users where stable_user_id = ?') &&
+						normalizedQuery.includes('from users') &&
+						normalizedQuery.includes('join orgs') &&
 						normalizedQuery.includes('stripe_price_id') &&
 						normalizedQuery.includes('stripe_credits_eligible')
 					) {

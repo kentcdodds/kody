@@ -1,8 +1,7 @@
 /**
- * P3 dual-write: billing and entitlement columns stay on `users` until the
- * contract moves; mirror writes onto `orgs` where org id = stable_user_id
- * (personal org only). Team orgs write the org row alone — never half
- * dual-write a team Stripe customer onto a member's personal org.
+ * Billing and entitlement column writes on `orgs`. Personal org id equals
+ * the owner's stable user id. Team orgs use their own id. These columns are
+ * not written on `users`.
  */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -44,29 +43,7 @@ export function preparePersonalOrgBillingUpdate(
 	)
 }
 
-export async function batchUsersAndPersonalOrgBillingUpdate(input: {
-	db: D1Database
-	stableUserId: string
-	usersStatement: D1PreparedStatement
-	orgSetClause: string
-	orgValues: ReadonlyArray<unknown>
-	orgWhereSuffix?: string
-	orgWhereValues?: ReadonlyArray<unknown>
-}) {
-	return await input.db.batch([
-		input.usersStatement,
-		prepareOrgBillingUpdate(
-			input.db,
-			input.stableUserId,
-			input.orgSetClause,
-			input.orgValues,
-			input.orgWhereSuffix ?? '',
-			input.orgWhereValues ?? [],
-		),
-	])
-}
-
-/** Team-org (or any org-row) billing write without touching a users row. */
+/** Billing write on one org row. */
 export async function updateOrgBillingColumns(input: {
 	db: D1Database
 	orgId: string

@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { type Mailbox } from './mailbox-do.ts'
@@ -56,23 +57,26 @@ async function seedAccount(
 	const userId = testStableUserIdFromEmail(accountEmail)
 	const username = input.username ?? `sender-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)
 			ON CONFLICT(username) DO UPDATE SET
 				email = excluded.email,
 				email_verified_at = excluded.email_verified_at,
-				stable_user_id = excluded.stable_user_id,
-				plan = excluded.plan`,
+				stable_user_id = excluded.stable_user_id`,
 	)
 		.bind(
 			username,
 			accountEmail,
 			'test-password-hash',
 			input.verified === false ? null : new Date().toISOString(),
-			input.plan ?? 'max',
 			userId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: input.plan ?? 'max',
+	})
 	return { accountEmail, userId, from: `${username}@${platformDomain}` }
 }
 

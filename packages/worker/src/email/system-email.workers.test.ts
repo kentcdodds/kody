@@ -22,6 +22,7 @@ import {
 	systemEmailOwnerId,
 } from './system-email.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
@@ -95,13 +96,12 @@ async function seedVerifiedAccount(username: string) {
 	const email = `${username}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-		 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(username) DO UPDATE SET
 			email = excluded.email,
 			email_verified_at = excluded.email_verified_at,
 			stable_user_id = excluded.stable_user_id,
-			plan = excluded.plan,
 			updated_at = CURRENT_TIMESTAMP`,
 	)
 		.bind(
@@ -110,9 +110,13 @@ async function seedVerifiedAccount(username: string) {
 			'test-password-hash',
 			new Date().toISOString(),
 			userId,
-			'max',
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	return userId
 }
 

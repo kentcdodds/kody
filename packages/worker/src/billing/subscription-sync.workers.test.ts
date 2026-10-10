@@ -11,6 +11,7 @@ import {
 	refreshStripePlanForUser,
 } from './subscription-sync.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -48,27 +49,29 @@ async function seedUser(label: string, input: SeedInput = {}) {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${label}-${crypto.randomUUID()}@example.com`
 	const stableUserId = testStableUserIdFromEmail(email)
+	const username = `billing-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_price_id, stripe_plan_refreshed_at,
-			entitlement_ladder
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
-			`billing-${crypto.randomUUID().slice(0, 8)}`,
+			username,
 			email,
 			'test-password-hash',
 			new Date().toISOString(),
 			stableUserId,
-			input.plan ?? 'max',
-			input.stripeCustomerId ?? null,
-			input.stripePlan ?? null,
-			input.stripePriceId ?? null,
-			null,
-			input.entitlementLadder ?? 'public',
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: input.plan ?? 'max',
+		stripeCustomerId: input.stripeCustomerId ?? null,
+		stripePlan: input.stripePlan ?? null,
+		stripePriceId: input.stripePriceId ?? null,
+		entitlementLadder: input.entitlementLadder ?? 'public',
+	})
 	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
 		.bind(email)
 		.first<{ id: number }>()
@@ -82,7 +85,12 @@ async function seedUser(label: string, input: SeedInput = {}) {
 }
 
 function readUser(userId: number, columns: string) {
-	return env.APP_DB.prepare(`SELECT ${columns} FROM users WHERE id = ?`)
+	return env.APP_DB.prepare(
+		`SELECT ${columns}
+		 FROM orgs o
+		 INNER JOIN users u ON u.stable_user_id = o.id
+		 WHERE u.id = ?`,
+	)
 		.bind(userId)
 		.first()
 }

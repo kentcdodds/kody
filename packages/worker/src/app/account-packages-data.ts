@@ -279,8 +279,9 @@ async function loadPackageCreditAttributionRow(input: {
 	if (typeof input.env.APP_DB?.prepare !== 'function') return null
 	try {
 		const userRow = await input.env.APP_DB.prepare(
-			`SELECT ${userEntitlementColumnsSql()}
-			 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT ${userEntitlementColumnsSql('o')}
+			 FROM orgs o
+			 WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
 		)
 			.bind(input.stableUserId)
 			.first<UserEntitlementRow>()

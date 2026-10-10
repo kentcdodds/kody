@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { expect, test } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
@@ -21,8 +22,8 @@ async function seedVerifiedAccount(input: { email: string }) {
 	const username = `sender-${crypto.randomUUID().slice(0, 8)}`
 	const stableUserId = testStableUserIdFromEmail(input.email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, 'max', ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			username,
@@ -32,6 +33,11 @@ async function seedVerifiedAccount(input: { email: string }) {
 			stableUserId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: 'max',
+	})
 	return { username, from: `${username}@${platformDomain}` }
 }
 

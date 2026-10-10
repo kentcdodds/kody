@@ -31,6 +31,7 @@ import {
 	updateCreditWalletSettings,
 } from './credit-wallet.ts'
 import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -52,24 +53,29 @@ async function seedUser(input: {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${input.label}-${crypto.randomUUID()}@example.com`
 	const stableUserId = testStableUserIdFromEmail(email)
+	const username = `${input.label}-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_credits_eligible
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
-			`${input.label}-${crypto.randomUUID().slice(0, 8)}`,
+			username,
 			email,
 			'test-password-hash',
 			now.toISOString(),
 			stableUserId,
-			input.plan ?? 'free',
-			input.stripeCustomerId ?? null,
-			input.stripePlan ?? null,
-			input.creditsEligible ? 1 : 0,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: input.plan ?? 'free',
+		stripeCustomerId: input.stripeCustomerId ?? null,
+		stripePlan: input.stripePlan ?? null,
+		stripeCreditsEligible: input.creditsEligible ? 1 : 0,
+		createdAt: now.toISOString(),
+	})
 	return { email, stableUserId }
 }
 
@@ -102,7 +108,7 @@ async function setRollup(
 
 function setReferralOverlay(userId: string) {
 	return env.APP_DB.prepare(
-		`UPDATE users SET referral_standard_credit_expires_at = ? WHERE stable_user_id = ?`,
+		`UPDATE orgs SET referral_standard_credit_expires_at = ? WHERE id = ?`,
 	)
 		.bind('2099-01-01T00:00:00.000Z', userId)
 		.run()
@@ -453,10 +459,10 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 
 	// Cancel purchasable Pro while a referral overlay is active.
 	await env.APP_DB.prepare(
-		`UPDATE users
+		`UPDATE orgs
 		 SET stripe_plan = NULL, stripe_credits_eligible = 0,
 		     referral_standard_credit_expires_at = ?
-		 WHERE stable_user_id = ?`,
+		 WHERE id = ?`,
 	)
 		.bind('2099-01-01T00:00:00.000Z', userId)
 		.run()
@@ -472,10 +478,10 @@ test('gift overlay usage above credits include is not back-charged on resubscrib
 	// Resubscribe with the remaining funded balance: gift-period days
 	// between 350 and 600 must stay forgiven.
 	await env.APP_DB.prepare(
-		`UPDATE users
+		`UPDATE orgs
 		 SET stripe_plan = 'pro', stripe_credits_eligible = 1,
 		     referral_standard_credit_expires_at = NULL
-		 WHERE stable_user_id = ?`,
+		 WHERE id = ?`,
 	)
 		.bind(userId)
 		.run()
@@ -520,10 +526,10 @@ test('gift overlay with no prior wallet row is not skipped by debit and is not b
 	expect(Number(progress?.accounted_units)).toBe(250)
 
 	await env.APP_DB.prepare(
-		`UPDATE users
+		`UPDATE orgs
 		 SET stripe_plan = 'pro', stripe_credits_eligible = 1,
 		     referral_standard_credit_expires_at = NULL
-		 WHERE stable_user_id = ?`,
+		 WHERE id = ?`,
 	)
 		.bind(userId)
 		.run()
@@ -740,14 +746,14 @@ test('admin eligibility unlocks a manual Pro wallet without Stripe, survives Str
 
 	// A Stripe refresh rewrites only the Stripe projection.
 	await env.APP_DB.prepare(
-		`UPDATE users SET stripe_credits_eligible = 0 WHERE stable_user_id = ?`,
+		`UPDATE orgs SET stripe_credits_eligible = 0 WHERE id = ?`,
 	)
 		.bind(userId)
 		.run()
 	expect((await entitlementFor(user)).creditWallet).toBe('funded')
 	const stripeColumns = await env.APP_DB.prepare(
 		`SELECT id, stripe_customer_id, stripe_plan, stripe_price_id
-		 FROM users WHERE stable_user_id = ?`,
+		 FROM orgs WHERE id = ?`,
 	)
 		.bind(userId)
 		.first<{ id: number }>()
@@ -756,12 +762,17 @@ test('admin eligibility unlocks a manual Pro wallet without Stripe, survives Str
 		stripe_plan: null,
 		stripe_price_id: null,
 	})
+	const account = await env.APP_DB.prepare(
+		`SELECT id FROM users WHERE stable_user_id = ?`,
+	)
+		.bind(userId)
+		.first<{ id: number }>()
 	// Admin eligibility funds the wallet but never enables buying credits.
 	expect(
 		(
 			await loadAccountCreditsUser({
 				env,
-				userId: stripeColumns?.id ?? 0,
+				userId: account?.id ?? 0,
 				now,
 			})
 		)?.canBuyCredits,
@@ -1023,7 +1034,7 @@ test('base entitlement never pairs an overlay plan with Stripe-only eligibility'
 	const base = async (stableUserId: string) => {
 		const row = await env.APP_DB.prepare(
 			`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible
-			 FROM users WHERE stable_user_id = ?`,
+			 FROM orgs WHERE id = ?`,
 		)
 			.bind(stableUserId)
 			.first<{

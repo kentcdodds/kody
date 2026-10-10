@@ -88,7 +88,7 @@ export type BillingPageOrg = {
 	id: OwnerId
 	slug: string
 	displayName: string | null
-	/** Signup organization: its plan columns live on the person's users row. */
+	/** Signup organization: its plan columns live on the personal org row. */
 	personal: boolean
 }
 
@@ -114,12 +114,13 @@ async function readPersonalPlanState(
 	userId: number,
 ): Promise<PlanState & { stableUserId: OwnerId | null }> {
 	const row = await env.APP_DB.prepare(
-		`SELECT plan, username, stripe_plan, stripe_credits_eligible,
-		        stripe_customer_id, stripe_plan_refreshed_at,
-		        stable_user_id, second_agent_standard_gift_expires_at,
-		        referral_standard_credit_expires_at
-		 FROM users
-		 WHERE id = ?${andLiveDeletedAtSql()}`,
+		`SELECT o.plan, u.username, o.stripe_plan, o.stripe_credits_eligible,
+		        o.stripe_customer_id, o.stripe_plan_refreshed_at,
+		        u.stable_user_id, o.second_agent_standard_gift_expires_at,
+		        o.referral_standard_credit_expires_at
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(userId)
 		.first<BillingUserRow>()

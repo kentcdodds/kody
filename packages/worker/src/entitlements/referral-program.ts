@@ -38,7 +38,6 @@ type ReferralParty = {
 	email: string
 	email_verified_at: string | null
 	stripe_customer_id: string | null
-	account_type: string | null
 	referral_standard_credit_expires_at: string | null
 }
 
@@ -153,22 +152,17 @@ export async function attributeReferralAtSignup(input: {
 	}
 	const referrer = await input.db
 		.prepare(
-			`SELECT stable_user_id, account_type
+			`SELECT stable_user_id
 			 FROM users
 			 WHERE username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(code)
-		.first<{ stable_user_id: string; account_type: string | null }>()
+		.first<{ stable_user_id: string }>()
 	if (!referrer?.stable_user_id) {
 		return { outcome: 'ignored', reason: 'unknown_referrer' }
 	}
 	if (referrer.stable_user_id === input.refereeStableUserId) {
 		return { outcome: 'ignored', reason: 'self' }
-	}
-	// Former platform accounts keep a `users` row with no person behind it
-	// until Teams P9 deletes it (#3084).
-	if (referrer.account_type === 'platform') {
-		return { outcome: 'ignored', reason: 'unknown_referrer' }
 	}
 	const now = input.now ?? new Date()
 	try {
@@ -200,11 +194,12 @@ async function loadParty(
 ): Promise<ReferralParty | null> {
 	return db
 		.prepare(
-			`SELECT stable_user_id, username, email, email_verified_at,
-			        stripe_customer_id, account_type,
-			        referral_standard_credit_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
+			        o.stripe_customer_id,
+			        o.referral_standard_credit_expires_at
+			 FROM users u
+			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)
 		.first<ReferralParty>()
@@ -216,11 +211,6 @@ function rejectReasonForParties(
 ): ReferralRejectReason | null {
 	if (referrer.stable_user_id === referee.stable_user_id) {
 		return 'self_referral'
-	}
-	// Former platform accounts keep a `users` row with no person behind it
-	// until Teams P9 deletes it (#3084).
-	if (referrer.account_type === 'platform') {
-		return 'platform_referrer'
 	}
 	if (
 		normalizeEmailForReferralFraud(referrer.email) ===
@@ -262,12 +252,10 @@ function stackReferralCreditStatement(input: {
 	referralId: number
 	invoiceId: string
 	now: Date
-	table: 'users' | 'orgs'
 }) {
-	const idColumn = input.table === 'users' ? 'stable_user_id' : 'id'
 	return input.db
 		.prepare(
-			`UPDATE ${input.table}
+			`UPDATE orgs
 			 SET referral_standard_credit_expires_at = strftime(
 			       '%Y-%m-%dT%H:%M:%fZ',
 			       max(
@@ -278,7 +266,8 @@ function stackReferralCreditStatement(input: {
 			       'unixepoch'
 			     ),
 			     updated_at = ?
-			 WHERE ${idColumn} = ?
+			 WHERE id = ?
+			   AND deleted_at IS NULL
 			   AND EXISTS (
 			     SELECT 1 FROM referrals
 			     WHERE id = ?
@@ -295,20 +284,6 @@ function stackReferralCreditStatement(input: {
 			input.referralId,
 			input.invoiceId,
 		)
-}
-
-function stackReferralCreditDualWriteStatements(input: {
-	db: D1Database
-	stableUserId: string
-	paidPeriodEndAt: string | null
-	referralId: number
-	invoiceId: string
-	now: Date
-}) {
-	return [
-		stackReferralCreditStatement({ ...input, table: 'users' }),
-		stackReferralCreditStatement({ ...input, table: 'orgs' }),
-	]
 }
 
 export async function rewardReferralForPaidInvoice(input: {
@@ -387,7 +362,7 @@ export async function rewardReferralForPaidInvoice(input: {
 				 WHERE id = ? AND (status = 'pending' OR credits_granted_at IS NULL)`,
 			)
 			.bind(rewardedAt, invoiceId, pending.id),
-		...stackReferralCreditDualWriteStatements({
+		stackReferralCreditStatement({
 			db: input.db,
 			stableUserId: referrer.stable_user_id,
 			paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
@@ -395,7 +370,7 @@ export async function rewardReferralForPaidInvoice(input: {
 			invoiceId,
 			now,
 		}),
-		...stackReferralCreditDualWriteStatements({
+		stackReferralCreditStatement({
 			db: input.db,
 			stableUserId: referee.stable_user_id,
 			paidPeriodEndAt: input.paidPeriodEndAt ?? null,
@@ -500,8 +475,8 @@ export async function loadReferralProgramSummary(input: {
 	const creditRow = await input.db
 		.prepare(
 			`SELECT referral_standard_credit_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.stableUserId)
 		.first<{ referral_standard_credit_expires_at: string | null }>()

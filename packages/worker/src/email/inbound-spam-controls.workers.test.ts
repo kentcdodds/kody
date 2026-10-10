@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { expect, test, vi } from 'vitest'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import type * as PackageSubscriptionsModule from './package-subscriptions.ts'
@@ -50,13 +51,12 @@ async function seedVerifiedAccount(prefix: string) {
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-			 VALUES (?, ?, ?, ?, ?, ?)
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			 VALUES (?, ?, ?, ?, ?)
 			 ON CONFLICT(email) DO UPDATE SET
 			   username = excluded.username,
 			   email_verified_at = excluded.email_verified_at,
 			   stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-			   plan = excluded.plan,
 			   updated_at = CURRENT_TIMESTAMP`,
 	)
 		.bind(
@@ -65,9 +65,13 @@ async function seedVerifiedAccount(prefix: string) {
 			'test-password-hash',
 			new Date().toISOString(),
 			userId,
-			'max',
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	return { userId, address: `${username}@${platformDomain}` }
 }
 

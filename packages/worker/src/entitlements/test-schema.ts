@@ -4,8 +4,8 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 /**
  * Non-destructive schema for entitlement primitives in workers-unit tests,
  * where the D1 database starts empty and each suite provisions the tables it
- * needs. Mirrors Stripe billing columns (0066) on top of the shared `users`
- * schema. Daily counters live only in UserMeter.
+ * needs. Billing columns live on `orgs` (provisioned with `users`). Daily
+ * counters live only in UserMeter.
  *
  * Also provisions `user_storage_buckets` because entitlement suites that touch
  * StorageRunner writes register ownership through that table, and `referrals`
@@ -14,14 +14,7 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: [
-			'email_verified_at',
-			'account_type',
-			'stripe_customer_id',
-			'stripe_plan',
-			'stripe_price_id',
-			'stripe_plan_refreshed_at',
-		],
+		columns: ['email_verified_at'],
 	})
 	await db
 		.prepare(

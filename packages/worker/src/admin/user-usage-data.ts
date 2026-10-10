@@ -78,8 +78,10 @@ export async function loadAdminUserUsageData(
 	now: Date = new Date(),
 ): Promise<AdminUserUsageLoaderData | null> {
 	const row = await env.APP_DB.prepare(
-		`SELECT id, username, email, stripe_price_id, stable_user_id, ${userEntitlementColumnsSql()}
-		 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		`SELECT u.id, u.username, u.email, o.stripe_price_id, u.stable_user_id, ${userEntitlementColumnsSql('o')}
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(stableUserId)
 		.first<AdminUserUsageUserRow>()

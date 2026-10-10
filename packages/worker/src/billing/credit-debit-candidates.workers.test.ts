@@ -11,6 +11,7 @@ import {
 	runCreditDebits,
 } from './credit-debits.ts'
 import { applyCreditPayment, readCreditWallet } from './credit-wallet.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -40,21 +41,29 @@ async function seedPersonalPro(label: string, stripeCustomerId: string) {
 	await ensureSchema()
 	const email = `${label}-${crypto.randomUUID()}@example.com`
 	const stableUserId = testStableUserIdFromEmail(email)
+	const username = `${label}-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_credits_eligible
-		) VALUES (?, ?, ?, ?, ?, 'free', ?, 'pro', 1)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
-			`${label}-${crypto.randomUUID().slice(0, 8)}`,
+			username,
 			email,
 			'test-password-hash',
 			now.toISOString(),
 			stableUserId,
-			stripeCustomerId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: 'free',
+		stripeCustomerId,
+		stripePlan: 'pro',
+		stripeCreditsEligible: 1,
+		createdAt: now.toISOString(),
+	})
 	return { email, stableUserId, stripeCustomerId }
 }
 
@@ -222,36 +231,23 @@ test('a team org wallet with no matching user is settled once, including budget 
 	expect(replay.users[orgId]).toBe(oneBillableDayMicroUsd)
 })
 
-test('a personal wallet with no org row is still settled once', async () => {
-	const stripeCustomerId = `cus_${crypto.randomUUID().slice(0, 8)}`
-	const user = await seedPersonalPro('personal-wallet', stripeCustomerId)
-	expect(
-		await env.APP_DB.prepare(`SELECT 1 AS present FROM orgs WHERE id = ?`)
-			.bind(user.stableUserId)
-			.first(),
-	).toBeNull()
-
-	const starting = await fund(user.stableUserId)
-	const candidates = await candidatesFor(user.stableUserId)
-	expect(candidates).toHaveLength(1)
-	expect(candidates[0]).toMatchObject({
-		user_id: user.stableUserId,
-		email: user.email,
-		stripe_customer_id: stripeCustomerId,
-		stripe_plan: 'pro',
-		stripe_credits_eligible: 1,
-	})
-	await expectSettledOnce(user.stableUserId, starting)
+test('a wallet with no org row is not a debit candidate', async () => {
+	await ensureSchema()
+	const email = `no-org-${crypto.randomUUID()}@example.com`
+	const stableUserId = testStableUserIdFromEmail(email)
+	await env.APP_DB.prepare(
+		`INSERT INTO users (username, email, password_hash, stable_user_id)
+		 VALUES (?, ?, 'hash', ?)`,
+	)
+		.bind(`no-org-${stableUserId.slice(0, 8)}`, email, stableUserId)
+		.run()
+	await fund(stableUserId)
+	expect(await candidatesFor(stableUserId)).toEqual([])
 })
 
 test('a personal org that shares stable_user_id is settled once', async () => {
 	const stripeCustomerId = `cus_${crypto.randomUUID().slice(0, 8)}`
 	const user = await seedPersonalPro('overlap-wallet', stripeCustomerId)
-	await insertPurchasableProOrg({
-		id: user.stableUserId,
-		slug: `person-${user.stableUserId.slice(0, 8)}`,
-		stripeCustomerId,
-	})
 	const starting = await fund(user.stableUserId)
 	expect(await candidatesFor(user.stableUserId)).toHaveLength(1)
 	const settled = await expectSettledOnce(user.stableUserId, starting)
@@ -264,23 +260,18 @@ test('a personal org that shares stable_user_id is settled once', async () => {
 	expect(spend.users[user.stableUserId]).toBe(oneBillableDayMicroUsd)
 })
 
-test('a live org row supplies every billing column, even when the user row disagrees', async () => {
+test('candidate billing columns come from the org row', async () => {
 	const user = await seedPersonalPro(
 		'org-row-wins',
 		`cus_${crypto.randomUUID().slice(0, 8)}`,
 	)
 	await env.APP_DB.prepare(
-		`INSERT INTO orgs (
-			id, slug, plan, entitlement_ladder, stripe_customer_id, stripe_plan,
-			stripe_credits_eligible, created_at, updated_at
-		) VALUES (?, ?, 'free', 'public', NULL, NULL, 0, ?, ?)`,
+		`UPDATE orgs
+		 SET plan = 'free', stripe_customer_id = NULL, stripe_plan = NULL,
+		     stripe_credits_eligible = 0
+		 WHERE id = ?`,
 	)
-		.bind(
-			user.stableUserId,
-			`partial-${user.stableUserId.slice(0, 8)}`,
-			now.toISOString(),
-			now.toISOString(),
-		)
+		.bind(user.stableUserId)
 		.run()
 	await fund(user.stableUserId)
 	const candidates = await candidatesFor(user.stableUserId)

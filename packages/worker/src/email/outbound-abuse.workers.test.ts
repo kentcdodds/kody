@@ -11,6 +11,7 @@ import { mailboxRpc } from './mailbox-client.ts'
 import { baseMessage } from './mailbox-test-helpers.ts'
 import { sendOutboundEmail } from './outbound.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -20,17 +21,18 @@ const platformBaseUrl = 'https://kody.example.com'
 async function seedVerifiedAccount(label: string) {
 	const email = `${label}-${crypto.randomUUID()}@example.com`
 	const stableUserId = testStableUserIdFromEmail(email)
+	const username = `sender-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, 'test-password-hash', ?, 'max', ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
-		.bind(
-			`sender-${crypto.randomUUID().slice(0, 8)}`,
-			email,
-			new Date().toISOString(),
-			stableUserId,
-		)
+		.bind(username, email, new Date().toISOString(), stableUserId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: 'max',
+	})
 	return { email, stableUserId }
 }
 
@@ -116,7 +118,7 @@ function pause(
 
 async function readPauseTimestamp(stableUserId: string) {
 	const row = await env.APP_DB.prepare(
-		`SELECT email_outbound_paused_at FROM users WHERE stable_user_id = ?`,
+		`SELECT email_outbound_paused_at FROM orgs WHERE id = ?`,
 	)
 		.bind(stableUserId)
 		.first<{ email_outbound_paused_at: string | null }>()

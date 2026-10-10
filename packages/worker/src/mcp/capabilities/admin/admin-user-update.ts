@@ -19,7 +19,7 @@ const inputSchema = z
 		plan: planNameSchema
 			.nullable()
 			.describe(
-				'Manual entitlement grant to set (users.plan). Null maps to free (never persists NULL). Does not change the Stripe subscription.',
+				'Manual entitlement grant to set (orgs.plan on the personal org). Null maps to free (never persists NULL). Does not change the Stripe subscription.',
 			),
 	})
 	.refine(
