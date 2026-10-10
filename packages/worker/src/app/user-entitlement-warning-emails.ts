@@ -228,6 +228,7 @@ async function warnOneUserIfNeeded(input: {
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
 			creditWallet: entitlement.creditWallet,
+			seats: entitlement.seats,
 			now: input.now,
 		}),
 		readComputeOverageWarnings({

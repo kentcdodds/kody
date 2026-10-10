@@ -46,26 +46,42 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const recentLedgerLimit = 10
 
 /**
- * The Pro include and how far credits can carry usage past it, for the rate
- * limits credits apply to. Numbers only, framed as a ceiling on credits (not
- * a tier a balance unlocks). Stock is on the Pro subscription, not listed.
+ * The org's Pro include (pooled across `seats`) and how far credits can
+ * carry usage past it, for the rate limits credits apply to. Numbers only,
+ * framed as a ceiling on credits (not a tier a balance unlocks). Stock is on
+ * the Pro subscription, not listed.
  */
-export function listCreditsCeilingLimits(): Array<AccountCreditsLimit> {
+export function listCreditsCeilingLimits(
+	seats = 1,
+): Array<AccountCreditsLimit> {
 	const limits: Array<AccountCreditsLimit> = []
 	for (const resource of creditsUnlockedResources) {
 		limits.push({
 			resource,
 			label: entitlementResourceLabels[resource],
-			included: resolvePlanLimit('pro', resource, 'public', 'empty'),
-			creditsCeiling: resolvePlanLimit('pro', resource, 'public', 'funded'),
+			included: resolvePlanLimit('pro', resource, 'public', 'empty', seats),
+			creditsCeiling: resolvePlanLimit(
+				'pro',
+				resource,
+				'public',
+				'funded',
+				seats,
+			),
 		})
 		if (!isWeeklyComputeWindowResource(resource)) continue
-		const included = resolveWeeklyPlanLimit('pro', resource, 'public', 'empty')
+		const included = resolveWeeklyPlanLimit(
+			'pro',
+			resource,
+			'public',
+			'empty',
+			seats,
+		)
 		const creditsCeiling = resolveWeeklyPlanLimit(
 			'pro',
 			resource,
 			'public',
 			'funded',
+			seats,
 		)
 		if (included === null || creditsCeiling === null) continue
 		limits.push({
@@ -211,7 +227,7 @@ export async function loadAccountUsageCredits(input: {
 				hasPaymentMethod: Boolean(wallet.autoRefillPaymentMethodId),
 			},
 			notify: wallet.notify,
-			limits: listCreditsCeilingLimits(),
+			limits: listCreditsCeilingLimits(input.entitlement.seats),
 			debitMeters: input.computeOverage
 				? toCreditsDebitMeters(input.computeOverage.meters)
 				: [],

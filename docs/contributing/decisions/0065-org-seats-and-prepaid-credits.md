@@ -34,6 +34,10 @@ keeps its full include and is never downgraded.
   falls back to Free limits.
 - **Seats:** The existing Pro subscription with **quantity = live Owners +
   Members**. Billing-only and outside collaborators are **not** seats.
+- **Rate pool (2026-10-10):** Daily and weekly rate limits are one org-wide pool
+  of live seats × the per-seat Pro include, and the credits ceiling scales the
+  same way ([0051](./0051-include-credits-stop.md)). They are not keyed per
+  member. The monthly Worker compute and Rows read includes stay one per org.
 - **Kody-only Stripe mutations:** Billing code may only read-modify
   subscriptions that carry a known Kody price (purchasable Pro or retired
   Standard/Pro ids) or Kody metadata (`kody_org_id`, `kody_stable_user_id`,

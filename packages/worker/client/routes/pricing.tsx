@@ -303,6 +303,12 @@ export function PricingRoute(handle: Handle) {
 						&ldquo;Pro + credits&rdquo; column. When credits run out, usage past
 						the include stops. No overage invoices.
 					</p>
+					<p mix={css(limitsFootnoteCss)} data-credits-seats>
+						In an organization, daily and weekly limits are one shared pool for
+						everyone: each paid seat adds the Pro numbers above, and the
+						&ldquo;Pro + credits&rdquo; cap, to the pool. Credits come from one
+						organization wallet.
+					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Unique execute workers and outbound fetches count per day and per
 						week; whichever window fills first applies. Durable Object duration

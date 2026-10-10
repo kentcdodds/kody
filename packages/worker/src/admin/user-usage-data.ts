@@ -122,6 +122,7 @@ export async function loadAdminUserUsageData(
 				plan,
 				ladder: entitlement.ladder,
 				creditWallet: entitlement.creditWallet,
+				seats: entitlement.seats,
 				now,
 			}),
 			userHasAdminRole(env.APP_DB, usageUserId),

@@ -7,6 +7,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { resolvePastIncludeStop } from '#universal/compute-overage.ts'
 import {
+	isCreditsUnlockedResource,
 	isPastIncludeStopResource,
 	isWeeklyComputeWindowResource,
 	parseEntitlementLadder,
@@ -38,6 +39,7 @@ import {
 	isBudgetLimitError,
 } from './errors.ts'
 import { orgBillingPath } from '#universal/org-pages.ts'
+import { countLiveSeats } from '#worker/orgs/billing.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	assertWithinOrgBudget,
@@ -241,11 +243,15 @@ export async function resolveUserEntitlementFromRow(input: {
 		input.row,
 		input.now,
 	)
-	const balanceMicroUsd = !creditsEligible
-		? 0
-		: input.balanceMicroUsd !== undefined
+	if (!creditsEligible) {
+		return { plan, ladder, creditWallet: 'none' }
+	}
+	const [balanceMicroUsd, seats] = await Promise.all([
+		input.balanceMicroUsd !== undefined
 			? input.balanceMicroUsd
-			: await readCreditWalletBalanceMicroUsd(input.db, input.stableUserId)
+			: readCreditWalletBalanceMicroUsd(input.db, input.stableUserId),
+		readPaidSeats(input.db, input.stableUserId),
+	])
 	return {
 		plan,
 		ladder,
@@ -254,7 +260,16 @@ export async function resolveUserEntitlementFromRow(input: {
 			creditsEligible,
 			balanceMicroUsd,
 		}),
+		seats,
 	}
+}
+
+/**
+ * Paid seats for the org's rate pool: live owners + members, the same count
+ * seat sync bills (at least 1).
+ */
+async function readPaidSeats(db: D1Database, orgId: string): Promise<number> {
+	return Math.max(1, await countLiveSeats(db, orgId))
 }
 
 /**
@@ -1441,6 +1456,7 @@ export async function assertWithinEntitlement(
 		input.resource,
 		entitlement.ladder,
 		entitlement.creditWallet,
+		entitlement.seats,
 	)
 	const now = input.now ?? new Date()
 	const requested = input.requested ?? 1
@@ -1600,7 +1616,7 @@ async function resolveDailyEntitlementWindow(input: {
 		email: input.email,
 	})
 	// Before the counter so a stopped attempt does not spend daily quota.
-	const entitlement = isPastIncludeStopResource(resource)
+	const checkedEntitlement = isPastIncludeStopResource(resource)
 		? await assertWithinPastIncludeCredits({
 				db: input.db,
 				env: input.env,
@@ -1610,11 +1626,22 @@ async function resolveDailyEntitlementWindow(input: {
 				orgBudget: input.orgBudget,
 			})
 		: cachedEntitlement
+	// The pool is seats × the per-seat include, so seats are read live: a
+	// removed seat shrinks the pool on the next check, not after the cache.
+	const entitlement =
+		checkedEntitlement.creditWallet !== 'none' &&
+		isCreditsUnlockedResource(resource)
+			? {
+					...checkedEntitlement,
+					seats: await readPaidSeats(input.db, input.userId),
+				}
+			: checkedEntitlement
 	const limit = resolvePlanLimit(
 		entitlement.plan,
 		resource,
 		entitlement.ladder,
 		entitlement.creditWallet,
+		entitlement.seats,
 	)
 	const weekLimit = isWeeklyComputeWindowResource(resource)
 		? resolveWeeklyPlanLimit(
@@ -1622,6 +1649,7 @@ async function resolveDailyEntitlementWindow(input: {
 				resource,
 				entitlement.ladder,
 				entitlement.creditWallet,
+				entitlement.seats,
 			)
 		: null
 	return {
