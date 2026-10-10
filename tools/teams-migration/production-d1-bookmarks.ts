@@ -2,6 +2,10 @@
  * Read-only D1 Time Travel bookmarks, sealed to the operator's public key.
  * Take immediately before the Teams P9 contract deploy.
  *
+ * Bookmarks are captured sequentially (APP → AUDIT → JOBS). Cloudflare has no
+ * cross-database atomic bookmark API, so run during a quiet window the same
+ * way preview-migration-rehearsal.md describes for restore points.
+ *
  * Env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
  *
  * Usage:
@@ -45,7 +49,7 @@ function requireEnv(name: string) {
 function readFlag(argv: ReadonlyArray<string>, flag: string) {
 	const index = argv.indexOf(flag)
 	const value = index === -1 ? undefined : argv[index + 1]
-	if (!value) fail(`Missing ${flag} <value>.`)
+	if (!value || value.startsWith('-')) fail(`Missing ${flag} <value>.`)
 	return value
 }
 
@@ -84,6 +88,8 @@ export async function takeSealedD1Bookmarks(input: {
 					uuid: db.uuid,
 				}))
 
+	// Sequential on purpose: no cross-DB atomic bookmark exists. Operator
+	// quiet window keeps the three restore points close enough for DR.
 	const snapshots = []
 	for (const database of databases) {
 		const bookmark = await getD1Bookmark(client, database.uuid)

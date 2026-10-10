@@ -49,8 +49,15 @@ jobs:
         env:
           ACTOR: ${{ github.actor }}
           CONFIRM: ${{ inputs.confirm }}
+          REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          # The CI token reaches production for every target, so only main's
+          # reviewed script runs with it.
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Run from main only, got $REF." >&2
+            exit 1
+          fi
           if [ "$TARGET" = "production" ]; then
             case "$ACTOR" in
               kentcdodds|cursor) ;;
