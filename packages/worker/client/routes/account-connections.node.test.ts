@@ -360,7 +360,11 @@ test('account rail holds only the person: profile, security, organizations, expe
 })
 
 test('workspace rail groups what the organization owns and keeps its slug in every link', () => {
-	const groups = workspaceRailGroups({ orgSlug: 'jane', personal: true })
+	const groups = workspaceRailGroups({
+		orgSlug: 'jane',
+		personal: true,
+		role: 'owner',
+	})
 	expect(
 		groups.map((group) => [group.label, group.items.map((item) => item.label)]),
 	).toEqual([
@@ -378,6 +382,11 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
 		'/@jane/secret-providers',
 	)
+	const billing = items.find((item) => item.label === 'Billing')
+	expect(billing?.href).toBe('/@jane/billing')
+	expect(billing && isAccountNavItemActive(billing, '/@jane/billing')).toBe(
+		true,
+	)
 	const usage = items.find((item) => item.label === 'Usage')
 	expect(usage && isAccountNavItemActive(usage, '/account/credits')).toBe(true)
 	const connections = items.find((item) => item.label === 'Connections')
@@ -392,8 +401,23 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
 })
 
-test('workspace rail is empty for a team organization until its storage lands (#3073)', () => {
-	expect(workspaceRailGroups({ orgSlug: 'acme', personal: false })).toEqual([])
+test('a team organization rail has only Billing, for roles that manage it (#3073)', () => {
+	expect(
+		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: 'owner' }),
+	).toEqual([
+		{
+			label: 'Organization',
+			items: [{ href: '/@acme/billing', label: 'Billing', icon: 'wallet' }],
+		},
+	])
+	expect(
+		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: 'billing' }),
+	).toHaveLength(1)
+	for (const role of ['member', null] as const) {
+		expect(
+			workspaceRailGroups({ orgSlug: 'acme', personal: false, role }),
+		).toEqual([])
+	}
 })
 
 test('account rail org slug prefers the path org over username', () => {

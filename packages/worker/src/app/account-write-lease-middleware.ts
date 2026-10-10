@@ -7,11 +7,9 @@ import {
 import { loadResolvedRequestAuth } from './request-auth-cache.ts'
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
-const mutatingGetPaths = new Set([
-	'/account/mcp-servers/oauth/callback',
-	'/account/billing/success',
-	'/account/billing/portal',
-])
+const mutatingGetPaths = new Set(['/account/mcp-servers/oauth/callback'])
+/** Checkout return links the Stripe customer; the portal can change plans. */
+const mutatingBillingGetPath = /^\/@[^/]+\/billing\/(?:success|portal)$/
 
 function accountDeletingResponse(status: number) {
 	return Response.json(
@@ -29,7 +27,9 @@ function accountDeletingResponse(status: number) {
 export function createAccountWriteLeaseMiddleware(env: Env): Middleware {
 	return async ({ request, url }, next) => {
 		const mutating =
-			unsafeMethods.has(request.method) || mutatingGetPaths.has(url.pathname)
+			unsafeMethods.has(request.method) ||
+			mutatingGetPaths.has(url.pathname) ||
+			mutatingBillingGetPath.test(url.pathname)
 		if (
 			!mutating ||
 			url.pathname === '/account/delete' ||

@@ -1,15 +1,29 @@
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
-import { loadAccountBillingData } from '#app/account-billing-data.ts'
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
+import {
+	loadAccountBillingData,
+	type BillingPageOrg,
+} from '#app/account-billing-data.ts'
 import {
 	auditDatabaseFromEnv,
 	getRequestIp,
 	logAuditEvent,
 } from '#worker/audit-log.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
 import { userHasMcpOAuthGrants } from '#app/onboarding-data.ts'
+import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import {
+	authorize,
+	AuthorizationError,
+} from '#worker/authorization/authorize.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
 import {
 	createBillingPortalSession,
@@ -28,6 +42,13 @@ import {
 	subscriptionHasPrice,
 } from '#worker/billing/billing-config.ts'
 import {
+	existingSubscriptionPromoRejection,
+	parsePromoCodeInput,
+	promoIntervalRejection,
+	promoRejectedByStripe,
+	resolveCheckoutPromotionCode,
+} from '#worker/billing/checkout-promo.ts'
+import {
 	BillingLinkError,
 	linkStripeCustomerFromCheckoutSessionAttribution,
 } from '#worker/billing/subscription-sync.ts'
@@ -40,14 +61,146 @@ import {
 	countLiveSeats,
 	readOrgStripeCustomerId,
 } from '#worker/orgs/billing.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 
-function billingErrorRedirect(request: Request, errorCode: string) {
-	const url = new URL('/account/billing', request.url)
+type OrgBillingAccess =
+	| { ok: true; org: BillingPageOrg }
+	| { ok: false; status: 403 | 404; error: string }
+
+/**
+ * The organization a `/@slug/billing...` request acts on, when the person may
+ * use `permission` there. The request context binds that organization
+ * (org-request-binding.ts), so `authorize` is the same check MCP billing
+ * capabilities run. A slug the person cannot reach is a 404, never a silent
+ * fall back to their signup organization.
+ */
+async function resolveOrgBillingAccess(input: {
+	request: Request
+	env: Env
+	user: AuthenticatedAppUser
+	permission: Extract<OrgPermission, 'billing:read' | 'billing:write'>
+}): Promise<OrgBillingAccess> {
+	const resolution = await loadRequestOrgResolution(
+		input.request,
+		input.env,
+		input.user.mcpUser.userId,
+	)
+	if (typeof resolution === 'string') {
+		return { ok: false, status: 404, error: 'Organization unavailable.' }
+	}
+	const slug = resolution.org.slug ?? input.user.username
+	try {
+		await authorize(
+			{ env: input.env, request: input.user.request },
+			input.permission,
+		)
+	} catch (error) {
+		if (!(error instanceof AuthorizationError)) throw error
+		return {
+			ok: false,
+			status: 403,
+			error: `Only owners and billing admins can manage billing for @${slug}.`,
+		}
+	}
+	const record = await getOrgById(input.env.APP_DB, resolution.org.id)
+	if (!record) {
+		throw new Error(`Cannot load billing: missing org ${resolution.org.id}.`)
+	}
+	return {
+		ok: true,
+		org: {
+			id: resolution.org.id,
+			slug: record.slug,
+			displayName: record.display_name,
+			personal: resolution.org.id === personalOrgId(input.user.mcpUser.userId),
+		},
+	}
+}
+
+async function canManageBilling(env: Env, user: AuthenticatedAppUser) {
+	try {
+		await authorize({ env, request: user.request }, 'billing:write')
+		return true
+	} catch (error) {
+		if (error instanceof AuthorizationError) return false
+		throw error
+	}
+}
+
+function orgBillingUrl(request: Request, slug: string, step = '') {
+	return new URL(
+		step ? `${orgBillingPath(slug)}/${step}` : orgBillingPath(slug),
+		request.url,
+	)
+}
+
+function billingErrorRedirect(
+	request: Request,
+	slug: string,
+	errorCode: string,
+) {
+	const url = orgBillingUrl(request, slug)
 	url.searchParams.set('error', errorCode)
 	return Response.redirect(url.toString(), 302)
 }
 
-export function createAccountBillingHandler(env: Env) {
+async function loadOrgBillingPageData(input: {
+	request: Request
+	env: Env
+	user: AuthenticatedAppUser
+	org: BillingPageOrg
+}) {
+	const searchParams = new URL(input.request.url).searchParams
+	return await loadAccountBillingData({
+		env: input.env,
+		userId: input.user.userId,
+		org: input.org,
+		seats: Math.max(1, await countLiveSeats(input.env.APP_DB, input.org.id)),
+		canManage: await canManageBilling(input.env, input.user),
+		errorCode: searchParams.get('error'),
+		noticeCode: searchParams.get('billing'),
+	})
+}
+
+function renderBillingDenied(
+	request: Request,
+	env: Env,
+	access: Extract<OrgBillingAccess, { ok: false }>,
+) {
+	return renderAppPage({
+		request,
+		env,
+		title: access.status === 404 ? 'Organization unavailable' : 'Billing',
+		...(access.status === 404 ? { notFound: true } : { unauthorized: true }),
+		status: access.status,
+	})
+}
+
+/**
+ * `/account/billing` and its pre-move Checkout return URL open the signup
+ * organization's billing page, keeping the query (`session_id`, `error`).
+ */
+export function createAccountBillingRedirectHandler(env: Env, step = '') {
+	return {
+		middleware: [],
+		async handler({ request }: { request: Request }) {
+			const user = await requireAuthenticatedPageUser(request, env)
+			if (user instanceof Response) return user
+			const requestUrl = new URL(request.url)
+			// `/account/*` binds the signup organization, whose slug survives
+			// username changes.
+			const destination = orgBillingUrl(
+				request,
+				user.request.org.slug || user.username,
+				step,
+			)
+			destination.search = requestUrl.search
+			return Response.redirect(destination.toString(), 302)
+		},
+	}
+}
+
+export function createOrgBillingHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -55,13 +208,18 @@ export function createAccountBillingHandler(env: Env) {
 			if (user instanceof Response) {
 				return user
 			}
-
-			const searchParams = new URL(request.url).searchParams
-			const accountBilling = await loadAccountBillingData({
+			const access = await resolveOrgBillingAccess({
+				request,
 				env,
-				userId: user.userId,
-				errorCode: searchParams.get('error'),
-				noticeCode: searchParams.get('billing'),
+				user,
+				permission: 'billing:read',
+			})
+			if (!access.ok) return renderBillingDenied(request, env, access)
+			const accountBilling = await loadOrgBillingPageData({
+				request,
+				env,
+				user,
+				org: access.org,
 			})
 			return renderAppPage({
 				request,
@@ -70,10 +228,10 @@ export function createAccountBillingHandler(env: Env) {
 				loaderData: { accountBilling },
 			})
 		},
-	} satisfies Action<typeof routes.accountBilling>
+	} satisfies Action<typeof routes.orgBilling>
 }
 
-export function createAccountBillingApiHandler(env: Env) {
+export function createOrgBillingApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -81,24 +239,23 @@ export function createAccountBillingApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-
-			if (request.method !== 'GET') {
-				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
-			}
-
-			const searchParams = new URL(request.url).searchParams
-			const accountBilling = await loadAccountBillingData({
+			const access = await resolveOrgBillingAccess({
+				request,
 				env,
-				userId: user.userId,
-				errorCode: searchParams.get('error'),
-				noticeCode: searchParams.get('billing'),
+				user,
+				permission: 'billing:read',
 			})
-			return jsonResponse(accountBilling)
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+			return jsonResponse(
+				await loadOrgBillingPageData({ request, env, user, org: access.org }),
+			)
 		},
-	} satisfies Action<typeof routes.accountBillingApi>
+	} satisfies Action<typeof routes.orgBillingApi>
 }
 
-export function createAccountBillingCheckoutApiHandler(env: Env) {
+export function createOrgBillingCheckoutApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -111,9 +268,20 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				return jsonResponse({ ok: false, error: 'Method not allowed.' }, 405)
 			}
 
+			const access = await resolveOrgBillingAccess({
+				request,
+				env,
+				user,
+				permission: 'billing:write',
+			})
+			if (!access.ok) {
+				return jsonResponse({ ok: false, error: access.error }, access.status)
+			}
+
 			const body = (await request.json().catch(() => null)) as {
 				plan?: unknown
 				interval?: unknown
+				promoCode?: unknown
 			} | null
 			const plan = body?.plan === 'pro' ? body.plan : null
 			if (!plan) {
@@ -126,6 +294,16 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					400,
 				)
 			}
+			const promo = parsePromoCodeInput(body?.promoCode)
+			if (!promo.ok) {
+				return jsonResponse({ ok: false, error: promo.error }, 400)
+			}
+			if (promo.code) {
+				const intervalRejection = promoIntervalRejection(interval)
+				if (intervalRejection) {
+					return jsonResponse({ ok: false, error: intervalRejection }, 400)
+				}
+			}
 			const priceId = getPriceIdForPlan(env, plan, interval)
 			if (!isBillingConfigured(env) || !priceId) {
 				return jsonResponse(
@@ -137,11 +315,11 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				)
 			}
 
-			const orgId = user.request.org.id
+			const { org } = access
 			const customerId =
-				(await readOrgStripeCustomerId(env.APP_DB, orgId)) || undefined
-			const seatQuantity = Math.max(1, await countLiveSeats(env.APP_DB, orgId))
-			const billingUrl = new URL('/account/billing', request.url).toString()
+				(await readOrgStripeCustomerId(env.APP_DB, org.id)) || undefined
+			const seatQuantity = Math.max(1, await countLiveSeats(env.APP_DB, org.id))
+			const billingUrl = orgBillingUrl(request, org.slug).toString()
 			const requestIp = getRequestIp(request) ?? undefined
 			const requestPath = new URL(request.url).pathname
 
@@ -159,6 +337,12 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 						env,
 						await listSubscriptions(env, customerId),
 					)
+					if (planRetaining.length > 0 && promo.code) {
+						return jsonResponse(
+							{ ok: false, error: existingSubscriptionPromoRejection },
+							409,
+						)
+					}
 					if (planRetaining.length === 1) {
 						const subscription = planRetaining[0]!
 						if (subscriptionHasPrice(subscription, priceId)) {
@@ -224,26 +408,60 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 					}
 				}
 
+				let promotionCodeId: string | undefined
+				if (promo.code) {
+					const resolved = await resolveCheckoutPromotionCode(env, {
+						code: promo.code,
+						now: new Date(),
+					})
+					if (!resolved.ok) {
+						return jsonResponse({ ok: false, error: resolved.error }, 400)
+					}
+					promotionCodeId = resolved.id
+				}
+
 				// Org is the billing subject; the signed-in member only authorizes.
-				const clientReferenceId = await createBillingLinkReference(env, orgId)
-				const successUrl = `${new URL('/account/billing/success', request.url).toString()}?session_id={CHECKOUT_SESSION_ID}`
-				const session = await createCheckoutSession(env, {
-					priceId,
-					clientReferenceId,
-					successUrl,
-					cancelUrl: billingUrl,
-					quantity: seatQuantity,
-					...(customerId ? { customerId } : { customerEmail: user.email }),
-					// Org identity on Stripe objects (ADR 0065). HMAC client_reference_id
-					// is also org-backed and verified on link.
-					metadata: {
-						...buildOrgBillingMetadata(orgId),
-						kody_plan: plan,
-					},
-				})
+				const clientReferenceId = await createBillingLinkReference(env, org.id)
+				const successUrl = `${orgBillingUrl(request, org.slug, 'success').toString()}?session_id={CHECKOUT_SESSION_ID}`
+				let session: { id: string; url: string }
+				try {
+					session = await createCheckoutSession(env, {
+						priceId,
+						clientReferenceId,
+						successUrl,
+						cancelUrl: billingUrl,
+						quantity: seatQuantity,
+						...(customerId ? { customerId } : { customerEmail: user.email }),
+						...(promotionCodeId ? { promotionCodeId } : {}),
+						// Org identity on Stripe objects (ADR 0065). HMAC client_reference_id
+						// is also org-backed and verified on link.
+						metadata: {
+							...buildOrgBillingMetadata(org.id),
+							kody_plan: plan,
+						},
+					})
+				} catch (error) {
+					// The code passed Kody's checks, so a 400 here is Stripe's own
+					// coupon rule (product restriction, first-time-only).
+					if (
+						promotionCodeId &&
+						error instanceof StripeApiError &&
+						error.status === 400
+					) {
+						console.error('billing_checkout_promo_rejected', {
+							orgId: org.id,
+							code: error.code,
+						})
+						return jsonResponse(
+							{ ok: false, error: promoRejectedByStripe },
+							400,
+						)
+					}
+					throw error
+				}
 				recordCheckoutFunnelEvent(env, {
 					stage: 'checkout_started',
-					userId: orgId,
+					userId: org.id,
 					plan,
 				})
 				void logAuditEvent({
@@ -273,7 +491,7 @@ export function createAccountBillingCheckoutApiHandler(env: Env) {
 				throw error
 			}
 		},
-	} satisfies Action<typeof routes.accountBillingCheckoutPost>
+	} satisfies Action<typeof routes.orgBillingCheckoutPost>
 }
 
 export function createAccountBillingCancellationFeedbackApiHandler(env: Env) {
@@ -353,7 +571,7 @@ export function createAccountBillingCancellationFeedbackApiHandler(env: Env) {
 	} satisfies Action<typeof routes.accountBillingCancellationFeedbackPost>
 }
 
-export function createAccountBillingSuccessHandler(env: Env) {
+export function createOrgBillingSuccessHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -361,26 +579,33 @@ export function createAccountBillingSuccessHandler(env: Env) {
 			if (user instanceof Response) {
 				return user
 			}
+			const access = await resolveOrgBillingAccess({
+				request,
+				env,
+				user,
+				permission: 'billing:write',
+			})
+			if (!access.ok) return renderBillingDenied(request, env, access)
+			const { org } = access
 
 			if (!isBillingConfigured(env)) {
-				return billingErrorRedirect(request, 'billing_not_configured')
+				return billingErrorRedirect(request, org.slug, 'billing_not_configured')
 			}
 
 			const sessionId =
 				new URL(request.url).searchParams.get('session_id')?.trim() ?? ''
 			if (!sessionId) {
-				return billingErrorRedirect(request, 'missing_session')
+				return billingErrorRedirect(request, org.slug, 'missing_session')
 			}
 
 			const requestIp = getRequestIp(request) ?? undefined
-			const orgId = user.request.org.id
 			try {
 				// Link the Stripe customer onto the request-bound org. The member
 				// is the authorizing actor only (audit email below).
 				await linkStripeCustomerFromCheckoutSessionAttribution({
 					env,
 					sessionId,
-					orgId,
+					orgId: org.id,
 				})
 				void logAuditEvent({
 					db: auditDatabaseFromEnv(env),
@@ -420,13 +645,13 @@ export function createAccountBillingSuccessHandler(env: Env) {
 					path: new URL(request.url).pathname,
 					reason: code,
 				})
-				return billingErrorRedirect(request, code)
+				return billingErrorRedirect(request, org.slug, code)
 			}
 		},
-	} satisfies Action<typeof routes.accountBillingSuccess>
+	} satisfies Action<typeof routes.orgBillingSuccess>
 }
 
-export function createAccountBillingPortalHandler(env: Env) {
+export function createOrgBillingPortalHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler({ request }) {
@@ -434,22 +659,28 @@ export function createAccountBillingPortalHandler(env: Env) {
 			if (user instanceof Response) {
 				return user
 			}
+			const access = await resolveOrgBillingAccess({
+				request,
+				env,
+				user,
+				permission: 'billing:write',
+			})
+			if (!access.ok) return renderBillingDenied(request, env, access)
+			const { org } = access
 
 			if (!isBillingConfigured(env)) {
-				return billingErrorRedirect(request, 'billing_not_configured')
+				return billingErrorRedirect(request, org.slug, 'billing_not_configured')
 			}
 
-			const orgId = user.request.org.id
-			const customerId = await readOrgStripeCustomerId(env.APP_DB, orgId)
+			const customerId = await readOrgStripeCustomerId(env.APP_DB, org.id)
 			if (!customerId) {
-				return billingErrorRedirect(request, 'no_customer')
+				return billingErrorRedirect(request, org.slug, 'no_customer')
 			}
 
-			const returnUrl = new URL('/account/billing', request.url).toString()
 			try {
 				const portal = await createBillingPortalSession(env, {
 					customerId,
-					returnUrl,
+					returnUrl: orgBillingUrl(request, org.slug).toString(),
 					configuration: getBillingPortalConfigurationId(env),
 				})
 				// Trust assumption: portal.url comes from the Stripe API host,
@@ -460,14 +691,18 @@ export function createAccountBillingPortalHandler(env: Env) {
 				return Response.redirect(portal.url, 302)
 			} catch (error) {
 				if (error instanceof BillingNotConfiguredError) {
-					return billingErrorRedirect(request, 'billing_not_configured')
+					return billingErrorRedirect(
+						request,
+						org.slug,
+						'billing_not_configured',
+					)
 				}
 				console.error('billing_portal_failed', {
 					stableUserId: user.mcpUser.userId,
 					error: error instanceof Error ? error.message : String(error),
 				})
-				return billingErrorRedirect(request, 'portal_failed')
+				return billingErrorRedirect(request, org.slug, 'portal_failed')
 			}
 		},
-	} satisfies Action<typeof routes.accountBillingPortal>
+	} satisfies Action<typeof routes.orgBillingPortal>
 }

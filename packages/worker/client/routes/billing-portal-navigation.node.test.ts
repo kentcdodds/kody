@@ -25,10 +25,10 @@ test('Manage subscription primary click hard-navigates and modified clicks do no
 	vi.stubGlobal('window', { location: { assign } })
 
 	const primary = click({})
-	navigateBillingPortalOnPrimaryClick(primary as unknown as Event)
+	navigateBillingPortalOnPrimaryClick(primary as unknown as Event, 'acme')
 	expect(primary.preventDefault).toHaveBeenCalledOnce()
 	expect(assign).toHaveBeenCalledOnce()
-	expect(assign).toHaveBeenCalledWith('/account/billing/portal')
+	expect(assign).toHaveBeenCalledWith('/@acme/billing/portal')
 
 	for (const modified of [
 		click({ metaKey: true }),
@@ -37,7 +37,7 @@ test('Manage subscription primary click hard-navigates and modified clicks do no
 		click({ altKey: true }),
 		click({ button: 1 }),
 	]) {
-		navigateBillingPortalOnPrimaryClick(modified as unknown as Event)
+		navigateBillingPortalOnPrimaryClick(modified as unknown as Event, 'acme')
 		expect(modified.preventDefault).not.toHaveBeenCalled()
 	}
 	expect(assign).toHaveBeenCalledOnce()

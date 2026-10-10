@@ -2419,6 +2419,17 @@ export type AppLoaderData = {
 	onboardingAgentChooser?: OnboardingAgentChooserPick
 }
 
+type AccountBillingOrg = {
+	slug: string
+	/** Null for the signup organization, which shows the person's own name. */
+	displayName: string | null
+	personal: boolean
+	/** Owners and members: the Pro quantity checkout charges for. */
+	seats: number
+	/** Holds `billing:write`: subscribe, switch plans, open the Stripe portal. */
+	canManage: boolean
+}
+
 export type AccountBillingLoaderData = {
 	ok: true
 	configured: boolean
@@ -2437,11 +2448,12 @@ export type AccountBillingLoaderData = {
 	purchasablePlans: Array<'pro'>
 	/** Stripe subscription uses the purchasable Pro price (credit wallet). */
 	creditsEligible: boolean
-	/** Deep link to the Credits section of the usage page. */
-	creditsHref: '/account/usage#credits'
-	/** Deep link to the account usage page (limits / consumption). */
-	usageHref: '/account/usage'
+	/** Deep link to the Credits section of the usage page; null off the signup org. */
+	creditsHref: '/account/usage#credits' | null
+	/** Account usage page (limits / consumption); null off the signup org. */
+	usageHref: '/account/usage' | null
 	referralProgram: ReferralProgramSummary | null
+	org: AccountBillingOrg
 	error?: string
 	/** Success notice mapped from `?billing=<code>` (e.g. a completed plan change). */
 	notice?: string

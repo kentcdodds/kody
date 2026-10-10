@@ -130,13 +130,14 @@ import {
 	createAccountTwoFactorHandler,
 } from '#app/handlers/account-two-factor.ts'
 import {
-	createAccountBillingApiHandler,
 	createAccountBillingCancellationFeedbackApiHandler,
-	createAccountBillingCheckoutApiHandler,
-	createAccountBillingHandler,
-	createAccountBillingPortalHandler,
-	createAccountBillingSuccessHandler,
-} from '#app/handlers/account-billing.ts'
+	createAccountBillingRedirectHandler,
+	createOrgBillingApiHandler,
+	createOrgBillingCheckoutApiHandler,
+	createOrgBillingHandler,
+	createOrgBillingPortalHandler,
+	createOrgBillingSuccessHandler,
+} from '#app/handlers/org-billing.ts'
 import { createAdminUserCreditsApiHandler } from '#app/handlers/admin-user-credits.ts'
 import {
 	createAccountCreditsHandler,
@@ -471,13 +472,14 @@ export function createAppRouter(env: Env) {
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
-			accountBilling: createAccountBillingHandler(env),
-			accountBillingApi: createAccountBillingApiHandler(env),
-			accountBillingCheckoutPost: createAccountBillingCheckoutApiHandler(env),
+			accountBilling: createAccountBillingRedirectHandler(env),
 			accountBillingCancellationFeedbackPost:
 				createAccountBillingCancellationFeedbackApiHandler(env),
-			accountBillingSuccess: createAccountBillingSuccessHandler(env),
-			accountBillingPortal: createAccountBillingPortalHandler(env),
+			accountBillingSuccess: createAccountBillingRedirectHandler(
+				env,
+				'success',
+			),
+			accountBillingPortal: createAccountBillingRedirectHandler(env, 'portal'),
 			accountCredits: createAccountCreditsHandler(),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
@@ -608,6 +610,11 @@ export function createAppRouter(env: Env) {
 			communityFeatureApiPost: createCommunityFeatureApiPostHandler(env),
 			communityInstallApiPost: createCommunityInstallApiPostHandler(env),
 			orgActivity: createOrgSectionHandler(env, 'activity'),
+			orgBilling: createOrgBillingHandler(env),
+			orgBillingApi: createOrgBillingApiHandler(env),
+			orgBillingCheckoutPost: createOrgBillingCheckoutApiHandler(env),
+			orgBillingSuccess: createOrgBillingSuccessHandler(env),
+			orgBillingPortal: createOrgBillingPortalHandler(env),
 			orgConnections: createOrgSectionHandler(env, 'connections'),
 			orgEmail: createOrgSectionHandler(env, 'email'),
 			orgIntegrations: createOrgSectionHandler(env, 'integrations'),

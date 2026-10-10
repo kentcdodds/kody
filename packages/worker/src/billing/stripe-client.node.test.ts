@@ -15,6 +15,7 @@ import {
 	creditNoteCapFitAttempts,
 	creditNoteListMaxPages,
 	deleteCustomer,
+	findActivePromotionCode,
 	getCheckoutSession,
 	getCreditTopUpCheckoutSession,
 	isAccountDeletionCreditNote,
@@ -33,8 +34,8 @@ const checkoutInput = {
 	priceId: 'price_pro',
 	clientReferenceId: 'signed-ref',
 	successUrl:
-		'https://app.example.com/account/billing/success?session_id={CHECKOUT_SESSION_ID}',
-	cancelUrl: 'https://app.example.com/account/billing',
+		'https://app.example.com/@ada/billing/success?session_id={CHECKOUT_SESSION_ID}',
+	cancelUrl: 'https://app.example.com/@ada/billing',
 	customerEmail: 'user@example.com',
 }
 
@@ -138,12 +139,15 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 			'line_items[0][quantity]': '1',
 			client_reference_id: 'signed-ref',
 			success_url: checkoutInput.successUrl,
-			cancel_url: 'https://app.example.com/account/billing',
+			cancel_url: 'https://app.example.com/@ada/billing',
 			customer_email: 'user@example.com',
 			customer: null,
 			'automatic_tax[enabled]': 'true',
 			'tax_id_collection[enabled]': 'true',
-			allow_promotion_codes: 'true',
+			// Kody validates promo codes itself (monthly only); Stripe's code
+			// box would let one-month codes apply to annual.
+			allow_promotion_codes: null,
+			'discounts[0][promotion_code]': null,
 			'customer_update[address]': null,
 			'customer_update[name]': null,
 		}
@@ -161,6 +165,28 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 		expect(
 			formFields(fetchMock.mock.calls[0]?.[1], ['line_items[0][quantity]']),
 		).toEqual({ 'line_items[0][quantity]': '3' })
+	}
+
+	{
+		using fetchMock = fetchReturning(
+			jsonResponse({
+				id: 'cs_promo',
+				url: 'https://checkout.stripe.com/c/pay/cs_promo',
+			}),
+		)
+		await createCheckoutSession(env, {
+			...checkoutInput,
+			promotionCodeId: 'promo_agency_1',
+		})
+		expect(
+			formFields(fetchMock.mock.calls[0]?.[1], [
+				'discounts[0][promotion_code]',
+				'allow_promotion_codes',
+			]),
+		).toEqual({
+			'discounts[0][promotion_code]': 'promo_agency_1',
+			allow_promotion_codes: null,
+		})
 	}
 
 	// Existing Stripe customers must send customer, never customer_email.
@@ -1061,4 +1087,41 @@ test('credit top-up checkout and off-session refill send the expected Stripe con
 	expect(
 		(refillInit.headers as Record<string, string>)['idempotency-key'],
 	).toBe('kody-credit-auto-refill:user-1:2026-09:1')
+})
+
+test('findActivePromotionCode looks up an active code by its customer-facing text', async () => {
+	{
+		using fetchMock = fetchReturning(
+			jsonResponse({
+				data: [
+					{
+						id: 'promo_agency_1',
+						code: 'AGENCY-1',
+						active: true,
+						expires_at: 1_800_000_000,
+						max_redemptions: 1,
+						times_redeemed: 0,
+						coupon: { id: 'kody-agency-first-month' },
+					},
+				],
+			}),
+		)
+		expect(await findActivePromotionCode(env, ' agency-1 ')).toEqual({
+			id: 'promo_agency_1',
+			code: 'AGENCY-1',
+			active: true,
+			expires_at: 1_800_000_000,
+			max_redemptions: 1,
+			times_redeemed: 0,
+		})
+		const [url, init] = fetchMock.mock.calls[0]!
+		expect(String(url)).toBe(
+			'https://api.stripe.com/v1/promotion_codes?code=agency-1&active=true&limit=1',
+		)
+		expect(init?.method).toBe('GET')
+	}
+	{
+		using _fetchMock = fetchReturning(jsonResponse({ data: [] }))
+		expect(await findActivePromotionCode(env, 'NOPE')).toBeNull()
+	}
 })

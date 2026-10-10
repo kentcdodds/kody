@@ -18,15 +18,21 @@ import {
 	stackedPageCss,
 } from '#universal/styles/style-primitives.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import { orgBillingPath, parseOrgBillingPath } from '#universal/org-pages.ts'
 
-const billingPath = '/account/billing'
 const onboardingPath = '/onboarding'
+
+/** `/@acme/billing/success` → `/@acme/billing`. */
+function billingPathFor(pathname: string) {
+	const slug = parseOrgBillingPath(pathname)?.slug
+	return slug ? orgBillingPath(slug) : '/account/billing'
+}
 
 export async function accountBillingSuccessRouteLoader(
 	url: URL,
 ): Promise<RouteLoaderResult> {
 	if (!url.searchParams.get('session_id')?.trim()) {
-		return routeLoaderRedirect(billingPath)
+		return routeLoaderRedirect(billingPathFor(url.pathname))
 	}
 	return {
 		accountBillingSuccess: {
@@ -41,6 +47,9 @@ export function AccountBillingSuccessRoute(handle: Handle) {
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
+		const billingPath = billingPathFor(
+			new URL(href, 'http://localhost').pathname,
+		)
 		const routeData = tryConsumeRouteLoaderData(
 			handle,
 			'accountBillingSuccess',

@@ -82,10 +82,27 @@ test('organization resource pages outrank a package url with the same shape', as
 		'orgSecrets',
 		'orgPackages',
 		'orgPackagesApi',
+		'orgBilling',
+		'orgBillingApi',
+		'orgBillingSuccess',
+		'orgBillingPortal',
+		'accountBilling',
+		'accountBillingSuccess',
+		'accountBillingPortal',
 		'communityPackage',
+		'communityPackageFiles',
 		'profile',
 	])
 	expect(await resolve('/@ada/secrets')).toBe('orgSecrets')
+	expect(await resolve('/@acme/billing')).toBe('orgBilling')
+	expect(await resolve('/@acme/billing.json')).toBe('orgBillingApi')
+	expect(await resolve('/@acme/billing/success')).toBe('orgBillingSuccess')
+	expect(await resolve('/@acme/billing/portal')).toBe('orgBillingPortal')
+	expect(await resolve('/account/billing')).toBe('accountBilling')
+	expect(await resolve('/account/billing/success')).toBe(
+		'accountBillingSuccess',
+	)
+	expect(await resolve('/account/billing/portal')).toBe('accountBillingPortal')
 	expect(await resolve('/@ada/secrets/new')).toBe('orgSecrets')
 	expect(await resolve('/@ada/packages')).toBe('orgPackages')
 	expect(await resolve('/@ada/packages.json')).toBe('orgPackagesApi')

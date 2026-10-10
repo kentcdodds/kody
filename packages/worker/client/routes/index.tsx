@@ -19,6 +19,7 @@ import {
 	packageFilesArea,
 } from '#client/lazy-route.tsx'
 import { InternalErrorPage } from '#client/internal-error-page.tsx'
+import { routeLoaderRedirect } from '#client/route-loader.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -45,14 +46,10 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountRouteLoader,
 	),
-	[routePattern(routes.accountBilling)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountBillingRouteLoader,
-	),
-	[routePattern(routes.accountBillingSuccess)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountBillingSuccessRouteLoader,
-	),
+	// The server redirects `/account/billing` to the signup organization's
+	// billing page, so in-app links load it as a document.
+	[routePattern(routes.accountBilling)]: async (url) =>
+		routeLoaderRedirect(`${url.pathname}${url.search}`),
 	[routePattern(routes.accountUsage)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountUsageRouteLoader,
@@ -409,12 +406,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountData)]: (
 		<LazyAccountRoute render={(m) => <m.AccountRoute />} />
-	),
-	[routePattern(routes.accountBilling)]: (
-		<LazyAccountRoute render={(m) => <m.AccountBillingRoute />} />
-	),
-	[routePattern(routes.accountBillingSuccess)]: (
-		<LazyAccountRoute render={(m) => <m.AccountBillingSuccessRoute />} />
 	),
 	[routePattern(routes.accountUsage)]: (
 		<LazyAccountRoute render={(m) => <m.AccountUsageRoute />} />

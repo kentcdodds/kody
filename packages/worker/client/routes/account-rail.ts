@@ -1,6 +1,9 @@
+import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import {
 	accountAliasPath,
+	orgBillingPath,
 	orgResourcePath,
+	orgRoleManagesBilling,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -97,18 +100,31 @@ export function accountRailGroups(): Array<AccountRailGroup> {
 	return [{ label: null, items: accountRailItems }]
 }
 
+function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSlug ? orgBillingPath(orgSlug) : routes.accountBilling.href(),
+		label: 'Billing',
+		icon: 'wallet',
+	}
+}
+
 /**
  * The workspace rail: everything the organization owns, grouped by job.
  * Storage still keys by person id (#3073), so a non-personal organization
- * has none of these pages yet and gets an empty rail.
+ * has only Billing (for owners and billing admins) until its resources move.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
 	/** True when `orgSlug` is the signup (personal) organization. */
 	personal: boolean
+	role: OrgRole | null
 }): Array<AccountRailGroup> {
-	if (!input.personal) return []
 	const { orgSlug } = input
+	if (!input.personal) {
+		return orgSlug && orgRoleManagesBilling(input.role)
+			? [{ label: 'Organization', items: [billingRailItem(orgSlug)] }]
+			: []
+	}
 	return [
 		{
 			label: 'Build',
@@ -239,11 +255,7 @@ export function workspaceRailGroups(input: {
 		{
 			label: 'Organization',
 			items: [
-				{
-					href: routes.accountBilling.href(),
-					label: 'Billing',
-					icon: 'wallet',
-				},
+				billingRailItem(orgSlug),
 				{
 					href: routes.accountUsage.href(),
 					label: 'Usage',

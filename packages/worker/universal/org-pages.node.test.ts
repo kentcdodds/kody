@@ -4,10 +4,13 @@ import {
 	accountResourceRedirectPath,
 	currentSwitcherSlug,
 	orderOrganizations,
+	orgBillingPath,
 	orgIdentity,
 	orgRoleLabel,
+	orgRoleManagesBilling,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
+	parseOrgBillingPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -77,6 +80,10 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/secrets', 'other')).toBe('/@other/secrets')
 	expect(switchOrgPath('/@acme/secrets/new', 'other')).toBe(
 		'/@other/secrets/new',
+	)
+	expect(switchOrgPath('/@acme/billing', 'other')).toBe('/@other/billing')
+	expect(switchOrgPath('/@acme/billing/success', 'other')).toBe(
+		'/@other/billing',
 	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
@@ -167,4 +174,29 @@ test('a session without memberships still lists the signup organization', () => 
 	expect(
 		organizationsWithSignupFallback({ organizations: [], username: '' }),
 	).toEqual([])
+})
+
+test('billing paths bind to the organization in the URL', () => {
+	expect(orgBillingPath('acme')).toBe('/@acme/billing')
+	for (const pathname of [
+		'/@acme/billing',
+		'/@acme/billing/',
+		'/@acme/billing.json',
+		'/@acme/billing/checkout.json',
+		'/@acme/billing/success',
+		'/@acme/billing/portal',
+	]) {
+		expect(parseOrgBillingPath(pathname)).toEqual({ slug: 'acme' })
+	}
+	expect(parseOrgBillingPath('/account/billing')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/billing/portal/extra')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/billings')).toBeNull()
+	expect(parseOrgBillingPath('/@Not A Slug/billing')).toBeNull()
+})
+
+test('only owners and billing admins see billing management links', () => {
+	expect(orgRoleManagesBilling('owner')).toBe(true)
+	expect(orgRoleManagesBilling('billing')).toBe(true)
+	expect(orgRoleManagesBilling('member')).toBe(false)
+	expect(orgRoleManagesBilling(null)).toBe(false)
 })

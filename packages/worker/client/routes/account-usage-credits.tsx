@@ -14,6 +14,7 @@ import {
 import { renderCreditsDebitRateCard } from '#client/routes/account-credits-rate-card.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { requestProCheckout } from '#client/routes/billing-checkout.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
 import {
 	formatCentsForInput,
 	formatSignedMicroUsd,
@@ -223,7 +224,18 @@ export function AccountUsageCreditsSection(
 		switchPending = true
 		message = null
 		handle.update()
-		const result = await requestProCheckout()
+		// Credits are metered per person, so this is the signup organization.
+		const session = readAppSession(handle)?.session
+		const orgSlug =
+			session?.organizations?.find((org) => org.personal)?.slug ??
+			session?.username
+		if (!orgSlug) {
+			switchPending = false
+			setMessage('Sign in again to switch plans.', 'error')
+			handle.update()
+			return
+		}
+		const result = await requestProCheckout({ orgSlug })
 		if (result.ok) {
 			window.location.assign(result.url)
 			return

@@ -7,7 +7,10 @@ import {
 	type BillingInterval,
 } from '#worker/billing/billing-config.ts'
 import { scheduleStripePlanRefreshBackstop } from '#worker/billing/stripe-plan-refresh-client.ts'
-import { refreshStripePlanForUser } from '#worker/billing/subscription-sync.ts'
+import {
+	refreshStripePlanForOrg,
+	refreshStripePlanForUser,
+} from '#worker/billing/subscription-sync.ts'
 import {
 	parseStoredPlanName,
 	parseStripePlanName,
@@ -72,9 +75,98 @@ type BillingUserRow = {
 	referral_standard_credit_expires_at: string | null
 }
 
+type BillingOrgRow = {
+	plan: string
+	stripe_plan: string | null
+	stripe_credits_eligible: number | null
+	stripe_customer_id: string | null
+}
+
+/** The organization whose subscription the billing page shows. */
+export type BillingPageOrg = {
+	id: string
+	slug: string
+	displayName: string | null
+	/** Signup organization: its plan columns live on the person's users row. */
+	personal: boolean
+}
+
+type PlanState = {
+	manualPlan: PlanName
+	stripePlan: PlanName | null
+	creditsEligible: boolean
+	customerId: string | null
+	overlayExpiresAt: string | null
+	referral: { stableUserId: string; username: string } | null
+}
+
+type RefreshedPlan = {
+	stripePlan: PlanName | null
+	creditsEligible: boolean
+	stripeInterval: BillingInterval | null
+	cancelAt: string | null
+	subscriptionStatus: string | null
+}
+
+async function readPersonalPlanState(
+	env: Env,
+	userId: number,
+): Promise<PlanState & { stableUserId: string | null }> {
+	const row = await env.APP_DB.prepare(
+		`SELECT plan, username, stripe_plan, stripe_credits_eligible,
+		        stripe_customer_id, stripe_plan_refreshed_at,
+		        stable_user_id, second_agent_standard_gift_expires_at,
+		        referral_standard_credit_expires_at
+		 FROM users
+		 WHERE id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(userId)
+		.first<BillingUserRow>()
+	return {
+		manualPlan: row ? parseStoredPlanName(row.plan) : 'max',
+		stripePlan: parseStripePlanName(row?.stripe_plan),
+		creditsEligible: Number(row?.stripe_credits_eligible) === 1,
+		customerId: row?.stripe_customer_id?.trim() || null,
+		overlayExpiresAt: laterIsoTimestamp(
+			row?.second_agent_standard_gift_expires_at,
+			row?.referral_standard_credit_expires_at,
+		),
+		referral:
+			row?.stable_user_id && row.username
+				? { stableUserId: row.stable_user_id, username: row.username }
+				: null,
+		stableUserId: row?.stable_user_id ?? null,
+	}
+}
+
+async function readTeamPlanState(env: Env, orgId: string): Promise<PlanState> {
+	const row = await env.APP_DB.prepare(
+		`SELECT plan, stripe_plan, stripe_credits_eligible, stripe_customer_id
+		 FROM orgs
+		 WHERE id = ?${andLiveDeletedAtSql()}`,
+	)
+		.bind(orgId)
+		.first<BillingOrgRow>()
+	if (!row) {
+		throw new Error(`Cannot load billing: missing org ${orgId}.`)
+	}
+	return {
+		manualPlan: parseStoredPlanName(row.plan),
+		stripePlan: parseStripePlanName(row.stripe_plan),
+		creditsEligible: Number(row.stripe_credits_eligible) === 1,
+		customerId: row.stripe_customer_id?.trim() || null,
+		overlayExpiresAt: null,
+		referral: null,
+	}
+}
+
 export async function loadAccountBillingData(input: {
 	env: Env
+	/** `users.id` of the signed-in person (signup-organization plan columns). */
 	userId: number
+	org: BillingPageOrg
+	seats: number
+	canManage: boolean
 	errorCode?: string | null
 	noticeCode?: string | null
 	now?: Date
@@ -83,32 +175,27 @@ export async function loadAccountBillingData(input: {
 	const configured = isBillingConfigured(input.env)
 	const error = resolveBillingErrorMessage(input.errorCode)
 	const notice = resolveBillingNoticeMessage(input.noticeCode)
+	const { org } = input
 
-	const row = await input.env.APP_DB.prepare(
-		`SELECT plan, username, stripe_plan, stripe_credits_eligible,
-		        stripe_customer_id, stripe_plan_refreshed_at,
-		        stable_user_id, second_agent_standard_gift_expires_at,
-		        referral_standard_credit_expires_at
-		 FROM users
-		 WHERE id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(input.userId)
-		.first<BillingUserRow>()
-
-	const manualPlan: PlanName = row ? parseStoredPlanName(row.plan) : 'max'
-	let stripePlan: PlanName | null = parseStripePlanName(row?.stripe_plan)
-	let creditsEligible = Number(row?.stripe_credits_eligible) === 1
-	let stripeInterval: BillingInterval | null = null
-	let cancelAt: string | null = null
-	let subscriptionStatus: string | null = null
-	const customerId = row?.stripe_customer_id?.trim() || null
-	const hasStripeCustomer = Boolean(customerId)
+	const personal = org.personal
+		? await readPersonalPlanState(input.env, input.userId)
+		: null
+	const state = personal ?? (await readTeamPlanState(input.env, org.id))
+	let refreshed: RefreshedPlan = {
+		stripePlan: state.stripePlan,
+		creditsEligible: state.creditsEligible,
+		stripeInterval: null,
+		cancelAt: null,
+		subscriptionStatus: null,
+	}
+	const { customerId } = state
 
 	if (configured && customerId) {
-		if (row?.stable_user_id) {
+		const backstopId = personal ? personal.stableUserId : org.id
+		if (backstopId) {
 			await scheduleStripePlanRefreshBackstop({
 				env: input.env,
-				userId: row.stable_user_id,
+				userId: backstopId,
 				now,
 			})
 		}
@@ -118,20 +205,23 @@ export async function loadAccountBillingData(input: {
 		// that one Stripe call per view is fine; failures fall back to the
 		// stored plan with null status.
 		try {
-			const refreshed = await refreshStripePlanForUser({
-				env: input.env,
-				userId: input.userId,
-				customerId,
-				now,
-			})
-			stripePlan = refreshed.stripePlan
-			creditsEligible = refreshed.creditsEligible
-			stripeInterval = refreshed.stripeInterval
-			cancelAt = refreshed.cancelAt
-			subscriptionStatus = refreshed.subscriptionStatus
+			refreshed = personal
+				? await refreshStripePlanForUser({
+						env: input.env,
+						userId: input.userId,
+						customerId,
+						now,
+					})
+				: await refreshStripePlanForOrg({
+						env: input.env,
+						orgId: org.id,
+						customerId,
+						now,
+					})
 		} catch (refreshError) {
 			console.error('account_billing_refresh_failed', {
 				userId: input.userId,
+				orgId: org.id,
 				error:
 					refreshError instanceof Error
 						? refreshError.message
@@ -141,51 +231,55 @@ export async function loadAccountBillingData(input: {
 	}
 
 	const purchasablePlans = configured ? getPurchasablePlans(input.env) : []
-	const overlayExpiresAt = laterIsoTimestamp(
-		row?.second_agent_standard_gift_expires_at,
-		row?.referral_standard_credit_expires_at,
-	)
 	const origin = getCanonicalAppBaseUrl({ env: input.env })
-	const referralProgram =
-		row?.stable_user_id && row.username
-			? await loadReferralProgramSummary({
-					db: input.env.APP_DB,
-					stableUserId: row.stable_user_id,
-					username: row.username,
-					origin,
-					now,
-				}).catch((referralError) => {
-					console.error('account_billing_referral_failed', {
-						userId: input.userId,
-						error:
-							referralError instanceof Error
-								? referralError.message
-								: String(referralError),
-					})
-					return null
+	const referralProgram = state.referral
+		? await loadReferralProgramSummary({
+				db: input.env.APP_DB,
+				stableUserId: state.referral.stableUserId,
+				username: state.referral.username,
+				origin,
+				now,
+			}).catch((referralError) => {
+				console.error('account_billing_referral_failed', {
+					userId: input.userId,
+					error:
+						referralError instanceof Error
+							? referralError.message
+							: String(referralError),
 				})
-			: null
+				return null
+			})
+		: null
 
 	return {
 		ok: true,
 		configured,
-		manualPlan,
-		stripePlan,
-		stripeInterval,
+		manualPlan: state.manualPlan,
+		stripePlan: refreshed.stripePlan,
+		stripeInterval: refreshed.stripeInterval,
 		effectivePlan: resolveEffectivePlanWithSecondAgentGift(
-			manualPlan,
-			stripePlan,
-			overlayExpiresAt,
+			state.manualPlan,
+			refreshed.stripePlan,
+			state.overlayExpiresAt,
 			now,
 		),
-		hasStripeCustomer,
-		cancelAt,
-		subscriptionStatus,
+		hasStripeCustomer: Boolean(customerId),
+		cancelAt: refreshed.cancelAt,
+		subscriptionStatus: refreshed.subscriptionStatus,
 		purchasablePlans,
-		creditsEligible: stripePlan === 'pro' && creditsEligible,
-		creditsHref: accountCreditsPath,
-		usageHref: '/account/usage',
+		creditsEligible:
+			refreshed.stripePlan === 'pro' && refreshed.creditsEligible,
+		// Credits and usage are still metered per person.
+		creditsHref: org.personal ? accountCreditsPath : null,
+		usageHref: org.personal ? '/account/usage' : null,
 		referralProgram,
+		org: {
+			slug: org.slug,
+			displayName: org.displayName,
+			personal: org.personal,
+			seats: input.seats,
+			canManage: input.canManage,
+		},
 		...(error ? { error } : {}),
 		...(notice ? { notice } : {}),
 	}

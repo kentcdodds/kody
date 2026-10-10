@@ -129,12 +129,14 @@ export const routes = route({
 	accountTwoFactor: '/account/two-factor',
 	accountTwoFactorApi: '/account/two-factor.json',
 	accountTwoFactorApiPost: post('/account/two-factor.json'),
+	// Signup-organization billing. Redirects to `/@<signup slug>/billing`;
+	// emails and plan-limit errors link here.
 	accountBilling: '/account/billing',
-	accountBillingApi: '/account/billing.json',
-	accountBillingCheckoutPost: post('/account/billing/checkout.json'),
 	accountBillingCancellationFeedbackPost: post(
 		'/account/billing/cancellation-feedback.json',
 	),
+	// Return URL of Checkout Sessions created before billing moved to
+	// `/@slug/billing/success`, and older Manage subscription links.
 	accountBillingSuccess: '/account/billing/success',
 	accountBillingPortal: '/account/billing/portal',
 	accountCredits: '/account/credits',
@@ -238,6 +240,11 @@ export const routes = route({
 	// Organization resource pages. Static sections outrank `/@:username/:kodyId`.
 	// `packages` and `webhooks` are index-only so package apps and ingress stay put.
 	orgActivity: get('/@:orgSlug/activity(/*rest)'),
+	orgBilling: get('/@:orgSlug/billing'),
+	orgBillingApi: get('/@:orgSlug/billing.json'),
+	orgBillingCheckoutPost: post('/@:orgSlug/billing/checkout.json'),
+	orgBillingSuccess: get('/@:orgSlug/billing/success'),
+	orgBillingPortal: get('/@:orgSlug/billing/portal'),
 	orgConnections: get('/@:orgSlug/connections(/*rest)'),
 	orgEmail: get('/@:orgSlug/email(/*rest)'),
 	orgIntegrations: get('/@:orgSlug/integrations(/*rest)'),

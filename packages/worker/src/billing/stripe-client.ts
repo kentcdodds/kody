@@ -406,6 +406,8 @@ export async function createCheckoutSession(
 		/** Opaque session metadata (e.g. kody_org_id for webhook lookup). */
 		metadata?: Record<string, string>
 		quantity?: number
+		/** A promotion code Kody already validated (`promo_...`). */
+		promotionCodeId?: string
 	},
 ): Promise<{ id: string; url: string }> {
 	const priceId = input.priceId.trim()
@@ -445,10 +447,17 @@ export async function createCheckoutSession(
 		// Stripe Tax is active on the account; with no registrations it computes
 		// 0 and tracks thresholds, and once a registration exists Checkout starts
 		// collecting without a code change. Tax IDs let business customers apply
-		// reverse charge. Promotion codes cost nothing to allow.
+		// reverse charge.
 		'automatic_tax[enabled]': 'true',
 		'tax_id_collection[enabled]': 'true',
-		allow_promotion_codes: 'true',
+	}
+	// No `allow_promotion_codes`: coupons can only be limited by product, and
+	// monthly and annual are one product, so Stripe's own code box would let a
+	// one-month code zero out a year. Kody checks the interval first
+	// (checkout-promo.ts) and attaches the code here.
+	const promotionCodeId = input.promotionCodeId?.trim()
+	if (promotionCodeId) {
+		form['discounts[0][promotion_code]'] = promotionCodeId
 	}
 	// Stripe accepts either `customer` or `customer_email`, never both.
 	if (customerId) {
@@ -487,6 +496,45 @@ export async function createCheckoutSession(
 		})
 	}
 	return { id: parsed.value.id, url }
+}
+
+const promotionCodeSchema = object({
+	id: string(),
+	code: string(),
+	active: boolean(),
+	expires_at: optional(nullable(number())),
+	max_redemptions: optional(nullable(number())),
+	times_redeemed: optional(number()),
+})
+
+const promotionCodeListSchema = object({
+	data: array(promotionCodeSchema),
+})
+
+export type StripePromotionCode = InferOutput<typeof promotionCodeSchema>
+
+/**
+ * The active promotion code a customer typed. Stripe matches `code`
+ * case-insensitively. Null when no active code has that text.
+ */
+export async function findActivePromotionCode(
+	env: StripeEnv,
+	code: string,
+): Promise<StripePromotionCode | null> {
+	const trimmed = code.trim()
+	if (!trimmed) return null
+	const body = await stripeRequest(env, {
+		method: 'GET',
+		path: '/v1/promotion_codes',
+		query: { code: trimmed, active: 'true', limit: '1' },
+	})
+	const parsed = parseSafe(promotionCodeListSchema, body)
+	if (!parsed.success) {
+		throw new StripeApiError('Unexpected Stripe promotion code list shape.', {
+			status: 502,
+		})
+	}
+	return parsed.value.data[0] ?? null
 }
 
 /**

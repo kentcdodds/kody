@@ -426,17 +426,20 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 	})
 	// No slug yet means `/account/...` fallbacks, which redirect to the
 	// signup organization.
+	const org = organizations.find((entry) => entry.slug === orgSlug)
 	const personal =
-		orgSlug === null ||
-		(organizations.find((org) => org.slug === orgSlug)?.personal ??
-			orgSlug === input.session?.username)
+		orgSlug === null || (org?.personal ?? orgSlug === input.session?.username)
 	return {
 		label: 'Workspace sections',
 		heading: {
 			eyebrow: 'Workspace',
 			name: orgSlug ? `@${orgSlug}` : undefined,
 		},
-		groups: workspaceRailGroups({ orgSlug, personal }),
+		groups: workspaceRailGroups({
+			orgSlug,
+			personal,
+			role: org?.role ?? (personal ? 'owner' : null),
+		}),
 	}
 }
 
