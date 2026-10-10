@@ -560,6 +560,14 @@ test('softDeleteUserAccount resumes after a sole-member org lease refusal', asyn
 		.bind(stableUserId)
 		.first<{ deleted_at: string | null }>()
 	expect(orgAfterResume?.deleted_at).toBe(now.toISOString())
+	const audits = await env.AUDIT_DB.prepare(
+		`SELECT action, details_json FROM org_audit_events
+		 WHERE org_id = ? AND action = 'user.deleted'`,
+	)
+		.bind(stableUserId)
+		.all<{ action: string; details_json: string }>()
+	expect(audits.results).toHaveLength(1)
+	expect(audits.results?.[0]?.details_json).toContain('"resumed":true')
 })
 
 test('softDeleteOrg refuses while an org OwnerId write lease is held', async () => {

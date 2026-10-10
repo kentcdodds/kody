@@ -611,19 +611,24 @@ export async function softDeleteUserAccount(input: {
 		})
 	}
 
-	if (createdPersonTombstone) {
-		await logOrgAuditEvent({
-			env: input.env,
-			orgId: input.userId,
-			action: 'user.deleted',
-			result: 'success',
-			actorUserId: input.actorUserId ?? input.userId,
-			actorUsername: input.actorUsername,
-			targetUserId: input.userId,
-			detailsJson: JSON.stringify({ deletedAt, deletedOrgIds }),
-			createdAt: deletedAt,
-		})
-	}
+	// Log on every successful completion, including resume after a lease
+	// refuse — otherwise a first attempt that tombstones the person then
+	// throws never writes user.deleted, and the retry skips it too.
+	await logOrgAuditEvent({
+		env: input.env,
+		orgId: input.userId,
+		action: 'user.deleted',
+		result: 'success',
+		actorUserId: input.actorUserId ?? input.userId,
+		actorUsername: input.actorUsername,
+		targetUserId: input.userId,
+		detailsJson: JSON.stringify({
+			deletedAt,
+			deletedOrgIds,
+			resumed: !createdPersonTombstone,
+		}),
+		createdAt: (input.now ?? new Date()).toISOString(),
+	})
 
 	invalidatePackageAppOwnerCache({ stableUserId: input.userId })
 	await cancelKodySubscriptionsForSoftDelete({
