@@ -709,7 +709,8 @@ export function isPastIncludeStopResource(
  * Whether the funded ceiling ({@link planLimits.max} rate fields) grows with
  * paid seats like the include does. When true, a funded org runs up to
  * seats × the per-seat ceiling (25,000 unique execute workers a day and
- * 175,000 a week per seat); when false, every org shares one ceiling.
+ * 175,000 a week per seat, though 50× the weekly include binds first); when
+ * false, every org shares one ceiling.
  */
 export const creditsCeilingScalesWithSeats = true
 

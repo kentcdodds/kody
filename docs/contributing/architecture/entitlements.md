@@ -279,13 +279,14 @@ drops to Free limits.
   (`unlockCreditsLimits`) can reach `creditsUnlockMultiplier` (50)× the pooled
   include, capped at the `max` daily ceilings × seats (per seat: execute 25,000
   a day and 175,000 a week, outbound 80,000 / 560,000, job runs 40,000,
-  automation 200,000; weekly is seven capped days). A funded 3-seat org gets
-  75,000 execute a day. `creditsCeilingScalesWithSeats` is the one switch for
-  whether the ceiling grows with seats. At $0 `resolvePlanLimits` returns the
-  pooled include (500 execute/day and 1,200/week per seat), and every one of
-  those fields stops at the include (within the 60s enforcement cache) with
-  `EntitlementLimitError` copy that says to add credits
-  (`entitlementCreditsOffer`).
+  automation 200,000; weekly is seven capped days). Whichever is lower wins: a
+  funded 3-seat org gets 75,000 execute a day (both bounds agree) and 180,000 a
+  week (50 × 3,600; the 525,000 ceiling never binds for execute).
+  `creditsCeilingScalesWithSeats` is the one switch for whether the ceiling
+  grows with seats. At $0 `resolvePlanLimits` returns the pooled include (500
+  execute/day and 1,200/week per seat), and every one of those fields stops at
+  the include (within the 60s enforcement cache) with `EntitlementLimitError`
+  copy that says to add credits (`entitlementCreditsOffer`).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
   funded wallet (see Debits). At
   $0, `consumeDailyEntitlement` throws

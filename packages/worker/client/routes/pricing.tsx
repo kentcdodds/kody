@@ -305,8 +305,9 @@ export function PricingRoute(handle: Handle) {
 					</p>
 					<p mix={css(limitsFootnoteCss)} data-credits-seats>
 						In an organization, daily and weekly limits are one shared pool for
-						everyone: each paid seat adds the Pro numbers above, and the
-						&ldquo;Pro + credits&rdquo; cap, to the pool. Credits come from one
+						everyone. Each paid seat adds the Pro unique execute workers,
+						outbound fetches, job runs, and automation invocations (and their
+						&ldquo;Pro + credits&rdquo; caps) to the pool. Credits come from one
 						organization wallet.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
