@@ -18,13 +18,17 @@ test('machine namespaces claim only their multi-segment paths', () => {
 	expect(isNamespacedAppEndpointPath('/community/listing-1')).toBe(false)
 
 	// Including the ids that spell a namespace segment: the two-segment form is
-	// the public page, not a truncated machine path.
+	// the public page, not a truncated machine path. Org pages under `/-/` are
+	// also not machine surfaces.
 	for (const pathname of [
 		'/@kody/devin',
 		'/@kody/packages',
 		'/@kody/connectors',
 		'/@kody/webhooks',
 		'/@kody/api',
+		'/@kody/-/packages',
+		'/@kody/-/webhooks',
+		'/@kody/-/billing',
 	]) {
 		expect(isNamespacedAppEndpointPath(pathname)).toBe(false)
 		expect(parsePackageAppPath(pathname)).toBeNull()

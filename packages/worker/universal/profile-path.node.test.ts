@@ -8,8 +8,8 @@ test('profile paths are /@username only, not package URLs', () => {
 	expect(isProfilePathname('/@jane')).toBe(true)
 	expect(getProfileUsernameFromPathname('/@jane')).toBe('jane')
 
-	expect(isProfilePathname('/@jane/packages')).toBe(true)
-	expect(getProfileUsernameFromPathname('/@jane/packages')).toBe('jane')
+	expect(isProfilePathname('/@jane/-/packages')).toBe(true)
+	expect(getProfileUsernameFromPathname('/@jane/-/packages')).toBe('jane')
 	expect(isProfilePathname('/@jane/helper')).toBe(false)
 	expect(getProfileUsernameFromPathname('/@jane/helper')).toBeNull()
 	expect(isProfilePathname('/@jane/helper/settings')).toBe(false)

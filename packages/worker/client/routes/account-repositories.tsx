@@ -7,7 +7,7 @@ import {
 import { ProfileRoute } from '#client/routes/profile.tsx'
 
 /**
- * The workspace's repository list (`/@slug/packages`), in the workspace rail.
+ * The workspace's repository list (`/@slug/-/packages`), in the workspace rail.
  * The public profile at `/@slug` lists the same repositories for visitors.
  */
 export function AccountRepositoriesRoute(handle: Handle) {

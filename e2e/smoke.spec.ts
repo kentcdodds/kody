@@ -70,7 +70,7 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		.getByRole('link', { name: 'Secrets', exact: true })
 		.click()
 	await expect(page).toHaveURL(
-		new RegExp(`/@${primaryTestUser.username}/secrets$`),
+		new RegExp(`/@${primaryTestUser.username}/-/secrets$`),
 	)
 	// The list is a named region; it replaced the sidebar heading that used to
 	// carry this name, and it is present whether or not the account has rows.

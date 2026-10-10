@@ -12,9 +12,9 @@ export function getProfileUsernameFromPathname(pathname: string) {
 	const matched = profileMatcher.match(new URL(pathname, 'http://localhost'))
 		?.params.username
 	if (matched) return matched
-	// `/@slug/packages` is the signed-in repository list for that organization.
+	// `/@slug/-/packages` is the signed-in repository list for that organization.
 	const packages =
-		/^\/@([a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9]))\/packages\/?$/.exec(pathname)
+		/^\/@([a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9]))\/-\/packages\/?$/.exec(pathname)
 	return packages?.[1] ?? null
 }
 

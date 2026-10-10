@@ -14,4 +14,6 @@ test('kody instance names normalize and validate dashed lowercase ids', () => {
 	expect(isValidKodyInstanceName('home-')).toBe(false)
 	expect(isValidKodyInstanceName('home_hub')).toBe(false)
 	expect(isValidKodyInstanceName('a'.repeat(65))).toBe(false)
+	// Org page separator `/@owner/-/<section>` must never be a valid id.
+	expect(isValidKodyInstanceName('-')).toBe(false)
 })

@@ -62,7 +62,7 @@ function signInAs(personId: string, username: string) {
 }
 
 async function getPackages(env: Env, orgSlug: string) {
-	const request = new Request(`https://kody.test/@${orgSlug}/packages.json`)
+	const request = new Request(`https://kody.test/@${orgSlug}/-/packages.json`)
 	return createOrgPackagesApiHandler(env).handler({
 		request,
 		params: { orgSlug },

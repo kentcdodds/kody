@@ -142,12 +142,14 @@ test('grouped rail names its groups and whose settings they are', async () => {
 				{
 					label: 'Build',
 					items: [
-						{ href: '/@jane/packages', label: 'Repositories', active: true },
+						{ href: '/@jane/-/packages', label: 'Repositories', active: true },
 					],
 				},
 				{
 					label: 'Data',
-					items: [{ href: '/@jane/secrets', label: 'Secrets', active: false }],
+					items: [
+						{ href: '/@jane/-/secrets', label: 'Secrets', active: false },
+					],
 				},
 			],
 		}),

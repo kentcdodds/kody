@@ -4,8 +4,8 @@ Plan, checkout, portal, prepaid credits, and entitlement usage.
 
 ## How to get there
 
-`/@:orgSlug/billing` (success `/@:orgSlug/billing/success`, portal
-`/@:orgSlug/billing/portal`) and `/account/usage` (credits are its `#credits`
+`/@:orgSlug/-/billing` (success `/@:orgSlug/-/billing/success`, portal
+`/@:orgSlug/-/billing/portal`) and `/account/usage` (credits are its `#credits`
 section). Billing belongs to the organization in the URL. Owners and billing
 admins subscribe and manage; members get 403 from checkout and the portal. Team
 organizations buy one Pro seat per owner and member. `/account/billing` (and its
@@ -17,7 +17,7 @@ user's referral share link and reward status.
 ## Drive it
 
 ```bash
-node tools/control-kody.ts request GET /@user-me/billing.json
+node tools/control-kody.ts request GET /@user-me/-/billing.json
 node tools/control-kody.ts request GET /account/usage.json
 ```
 
@@ -68,8 +68,8 @@ dashboard filter is `usageByPackageGet` (`GET /v1/account/usage/by-package`).
 
 ## APIs
 
-- `GET /@:orgSlug/billing.json`
-- `POST /@:orgSlug/billing/checkout.json` (`{ plan, interval, promoCode? }`)
+- `GET /@:orgSlug/-/billing.json`
+- `POST /@:orgSlug/-/billing/checkout.json` (`{ plan, interval, promoCode? }`)
 - `POST /account/billing/cancellation-feedback.json`
 - `POST /account/credits/top-up.json`
 - `POST /account/credits/settings.json`

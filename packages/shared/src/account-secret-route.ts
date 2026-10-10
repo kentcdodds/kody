@@ -104,7 +104,7 @@ export function joinOriginAndEncodedPath(baseUrl: string, pathname: string) {
 }
 
 function accountSecretPathname(pathname: string) {
-	const org = /^\/@[^/]+\/secrets(\/.*)?$/.exec(pathname)
+	const org = /^\/@[^/]+\/-\/secrets(\/.*)?$/.exec(pathname)
 	if (!org) return pathname
 	return `/account/secrets${org[1] ?? ''}`
 }

@@ -12,9 +12,9 @@ Pages about the person, split from the org workspace:
 
 The account rail ("Account sections") lists only those pages. Workspace pages
 (Repositories, Jobs, Secrets, Connections, Billing, and the rest) sit on a
-separate "Workspace sections" rail under `/@<slug>/...`; Repositories is
-`/@<slug>/packages`, distinct from the public profile at `/@<slug>`. Both rails
-come from `account-rail.ts` and render through `AccountPageHeader` in
+separate "Workspace sections" rail under `/@<slug>/-/…`; Repositories is
+`/@<slug>/-/packages`, distinct from the public profile at `/@<slug>`. Both
+rails come from `account-rail.ts` and render through `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
@@ -34,7 +34,7 @@ A non-personal org handle (`/@<slug>`) renders the org home for its members and
 `request.org.id` (#3073), so a team org's workspace rail is empty for now.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/...`. The old `/account/...` resource URLs redirect there for a short
+`/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
 time.
 
 ## Drive it

@@ -83,6 +83,7 @@ test('buildBudgetHitEmailContent matches budget limit copy without em dashes', (
 	expect(user.text).toContain(
 		'@sam reached their monthly budget in org @acme ($50.00 of $50.00). An org Owner or Billing member can raise it.',
 	)
+	expect(user.text).toContain('https://kody.test/@acme/-/billing')
 	expect(user.text).not.toMatch(/—/)
 	const automation = buildBudgetHitEmailContent({
 		details: {

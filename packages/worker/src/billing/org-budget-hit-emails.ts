@@ -39,7 +39,10 @@ export function buildBudgetHitEmailContent(input: {
 	appBaseUrl: string
 }) {
 	const line = buildBudgetLimitMessage(input.details)
-	const billingUrl = new URL('/account/billing', input.appBaseUrl).toString()
+	const billingUrl = new URL(
+		`/@${input.details.orgSlug}/-/billing`,
+		input.appBaseUrl,
+	).toString()
 	const subject = 'Organization monthly budget reached'
 	const text = `${line}\n\nManage billing: ${billingUrl}`
 	const html = `<p>${escapeHtml(line)}</p><p><a href="${escapeHtml(billingUrl)}">Manage billing</a></p>`
