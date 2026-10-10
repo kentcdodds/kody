@@ -477,7 +477,7 @@ test('mint prunes long-dead rows before reclaim', async () => {
 	expect(remaining.count).toBe(1)
 })
 
-test('a token row without org_id fails closed instead of using user_id', async () => {
+test('a token row with a blank org_id fails closed instead of using user_id', async () => {
 	const { sqlite, db } = createDb()
 	const minted = await mintApiToken({
 		db,
@@ -508,8 +508,9 @@ test('a token row without org_id fails closed instead of using user_id', async (
 		(await getApiTokenRecord({ db, userId, tokenId: team.id }))?.org_id,
 	).toBe(teamOrgId)
 
+	// Schema stores org_id NOT NULL; blank strings still fail closed in mapRow.
 	sqlite
-		.prepare(`UPDATE api_tokens SET org_id = NULL WHERE id = ?`)
+		.prepare(`UPDATE api_tokens SET org_id = '   ' WHERE id = ?`)
 		.run(minted.id)
 	await expect(
 		getApiTokenRecord({ db, userId, tokenId: minted.id }),
@@ -517,10 +518,6 @@ test('a token row without org_id fails closed instead of using user_id', async (
 	await expect(
 		authenticateApiToken({ db, token: minted.token, now: at(1) }),
 	).rejects.toThrow(/org_id is required/)
-
-	sqlite
-		.prepare(`UPDATE api_tokens SET org_id = '   ' WHERE id = ?`)
-		.run(minted.id)
 	await expect(listApiTokens({ db, userId, now: at(1) })).rejects.toThrow(
 		/org_id is required/,
 	)
