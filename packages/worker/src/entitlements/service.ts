@@ -273,6 +273,29 @@ async function readPaidSeats(db: D1Database, orgId: string): Promise<number> {
 }
 
 /**
+ * The rate pool is seats × the per-seat include, so seats are read live for
+ * pooled resources: a removed seat shrinks the pool on the next check, not
+ * after the entitlement cache.
+ */
+async function withLiveSeats(input: {
+	db: D1Database
+	orgId: string
+	entitlement: UserEntitlement
+	resource: EntitlementResource
+}): Promise<UserEntitlement> {
+	if (
+		input.entitlement.creditWallet === 'none' ||
+		!isCreditsUnlockedResource(input.resource)
+	) {
+		return input.entitlement
+	}
+	return {
+		...input.entitlement,
+		seats: await readPaidSeats(input.db, input.orgId),
+	}
+}
+
+/**
  * Resolve the effective plan, entitlement ladder, and credit wallet state
  * for a user. Missing userId, invalid stable ids, and no matching row
  * resolve to public `free` without warning. Stored plan values go through
@@ -1557,21 +1580,28 @@ export async function readExecuteUniqueWorkerUsage(input: {
 }): Promise<ExecuteUniqueWorkerUsage> {
 	const resource = executeUniqueWorkersResource
 	const now = input.now ?? new Date()
-	const entitlement = await getCachedUserEntitlement(input.db, {
-		userId: input.userId,
-		email: input.email,
+	const entitlement = await withLiveSeats({
+		db: input.db,
+		orgId: input.userId,
+		entitlement: await getCachedUserEntitlement(input.db, {
+			userId: input.userId,
+			email: input.email,
+		}),
+		resource,
 	})
 	const limit = resolvePlanLimit(
 		entitlement.plan,
 		resource,
 		entitlement.ladder,
 		entitlement.creditWallet,
+		entitlement.seats,
 	)
 	const weekLimit = resolveWeeklyPlanLimit(
 		entitlement.plan,
 		resource,
 		entitlement.ladder,
 		entitlement.creditWallet,
+		entitlement.seats,
 	)
 	const [used, weekUsed] = await Promise.all([
 		readDailyEntitlementResourceUsage({
@@ -1677,16 +1707,12 @@ async function resolveDailyEntitlementWindow(input: {
 				orgBudget: input.orgBudget,
 			})
 		: cachedEntitlement
-	// The pool is seats × the per-seat include, so seats are read live: a
-	// removed seat shrinks the pool on the next check, not after the cache.
-	const entitlement =
-		checkedEntitlement.creditWallet !== 'none' &&
-		isCreditsUnlockedResource(resource)
-			? {
-					...checkedEntitlement,
-					seats: await readPaidSeats(input.db, input.userId),
-				}
-			: checkedEntitlement
+	const entitlement = await withLiveSeats({
+		db: input.db,
+		orgId: input.userId,
+		entitlement: checkedEntitlement,
+		resource,
+	})
 	const limit = resolvePlanLimit(
 		entitlement.plan,
 		resource,
