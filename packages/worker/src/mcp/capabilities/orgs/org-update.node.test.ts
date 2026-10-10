@@ -52,7 +52,7 @@ function context(input: {
 	}
 }
 
-test('orgUpdate changes a team org and refuses a personal org', async () => {
+test('orgUpdate changes a team org display name, keeps the handle permanent, and refuses a personal org', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	await provisionPersonalOrg(db, {
@@ -76,7 +76,7 @@ test('orgUpdate changes a team org and refuses a personal org', async () => {
 		},
 	)
 	const updated = await orgUpdateCapability.handler(
-		{ display_name: 'Zeta Company', slug: 'zeta-company' },
+		{ display_name: 'Zeta Company' },
 		context({
 			db,
 			userId: ada,
@@ -85,9 +85,26 @@ test('orgUpdate changes a team org and refuses a personal org', async () => {
 	)
 	expect(updated.org).toEqual({
 		id: created.org.id,
-		slug: 'zeta-company',
+		slug: 'zeta-co',
 		display_name: 'Zeta Company',
 	})
+
+	await expect(
+		orgUpdateCapability.handler(
+			{ slug: 'zeta-company' },
+			context({
+				db,
+				userId: ada,
+				org: { id: created.org.id, slug: created.org.slug, role: 'owner' },
+			}),
+		),
+	).rejects.toThrow(/permanent/)
+	expect(
+		await db
+			.prepare(`SELECT slug FROM orgs WHERE id = ?`)
+			.bind(created.org.id)
+			.first(),
+	).toEqual({ slug: 'zeta-co' })
 
 	await expect(
 		orgUpdateCapability.handler(

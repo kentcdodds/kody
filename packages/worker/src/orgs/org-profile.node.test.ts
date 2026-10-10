@@ -17,7 +17,7 @@ async function createDb() {
 
 const env = {} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 
-test('updateOrgProfile renames a team org and its handle together', async () => {
+test('updateOrgProfile changes the display name and keeps the handle permanent', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	const created = await createOrganization(db, env, {
@@ -31,37 +31,41 @@ test('updateOrgProfile renames a team org and its handle together', async () => 
 		.prepare(`SELECT id FROM orgs WHERE slug = 'zeta-co'`)
 		.first<{ id: string }>()
 
-	const updated = await updateOrgProfile(db, env, {
+	expect(
+		await updateOrgProfile(db, {
+			orgId: org!.id,
+			displayName: 'Zeta Company',
+			slug: 'Zeta-Co',
+		}),
+	).toEqual({ ok: true, slug: 'zeta-co', displayName: 'Zeta Company' })
+
+	const renamed = await updateOrgProfile(db, {
 		orgId: org!.id,
-		displayName: 'Zeta Company',
+		displayName: 'Zeta Renamed',
 		slug: 'zeta-company',
 	})
-	expect(updated).toEqual({
-		ok: true,
-		slug: 'zeta-company',
-		displayName: 'Zeta Company',
+	expect(renamed).toEqual({
+		ok: false,
+		code: 'validation',
+		error:
+			'Organization handles are permanent and cannot be changed. You can change the display name instead.',
 	})
 	expect(
 		await db
 			.prepare(`SELECT slug, display_name FROM orgs WHERE id = ?`)
 			.bind(org!.id)
 			.first(),
-	).toEqual({ slug: 'zeta-company', display_name: 'Zeta Company' })
+	).toEqual({ slug: 'zeta-co', display_name: 'Zeta Company' })
 	expect(
 		await db
-			.prepare(
-				`SELECT handle, org_id FROM handles WHERE handle = 'zeta-company'`,
-			)
-			.first(),
-	).toEqual({ handle: 'zeta-company', org_id: org!.id })
-	expect(
-		await db
-			.prepare(`SELECT handle FROM handles WHERE handle = 'zeta-co'`)
-			.first(),
-	).toBeNull()
+			.prepare(`SELECT handle, org_id FROM handles WHERE org_id = ?`)
+			.bind(org!.id)
+			.all()
+			.then((result) => result.results),
+	).toEqual([{ handle: 'zeta-co', org_id: org!.id }])
 })
 
-test('updateOrgProfile refuses a personal org and a taken handle', async () => {
+test('updateOrgProfile refuses a personal org and rejects a different handle', async () => {
 	const db = await createDb()
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	await provisionPersonalOrg(db, {
@@ -81,7 +85,7 @@ test('updateOrgProfile refuses a personal org and a taken handle', async () => {
 		.first<{ id: string }>()
 
 	expect(
-		await updateOrgProfile(db, env, {
+		await updateOrgProfile(db, {
 			orgId: ada,
 			displayName: 'Ada Org',
 			slug: 'ada-renamed',
@@ -89,14 +93,14 @@ test('updateOrgProfile refuses a personal org and a taken handle', async () => {
 	).toMatchObject({ ok: false, code: 'personal' })
 
 	expect(
-		await updateOrgProfile(db, env, {
+		await updateOrgProfile(db, {
 			orgId: team!.id,
 			slug: 'ada',
 		}),
-	).toMatchObject({ ok: false, code: 'conflict' })
+	).toMatchObject({ ok: false, code: 'validation' })
 
 	expect(
-		await updateOrgProfile(db, env, {
+		await updateOrgProfile(db, {
 			orgId: team!.id,
 			slug: 'no',
 		}),
@@ -120,7 +124,7 @@ test('isPersonalOrg stays true after the founding membership is soft-deleted', a
 		.run()
 	expect(await isPersonalOrg(db, ada)).toBe(true)
 	expect(
-		await updateOrgProfile(db, env, {
+		await updateOrgProfile(db, {
 			orgId: ada,
 			displayName: 'Nope',
 		}),

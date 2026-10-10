@@ -1,8 +1,6 @@
-import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import {
-	getEffectiveUsernameValidationError,
-	getUsernameFormatValidationError,
 	normalizeUsername,
+	orgSlugPermanentError,
 } from '#worker/identity/username.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isPersonalOrg } from './is-personal-org.ts'
@@ -21,27 +19,17 @@ export type UpdateOrgProfileResult =
 	| {
 			ok: false
 			error: string
-			code: 'not_found' | 'personal' | 'validation' | 'conflict'
+			code: 'not_found' | 'personal' | 'validation'
 	  }
 
-function slugValidationMessage(message: string) {
-	if (message.toLowerCase().includes('reserved')) {
-		return 'This name is reserved.'
-	}
-	if (message.toLowerCase().includes('taken')) {
-		return 'That name is taken.'
-	}
-	return 'Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number.'
-}
-
 /**
- * Update a team organization's public identity. Signup (personal) orgs keep
+ * Update a team organization's display name. Handles (slugs) are permanent:
+ * a request that names a different slug is rejected. Signup (personal) orgs keep
  * the person's profile as their name, photo, and handle — edit those on
  * Account instead.
  */
 export async function updateOrgProfile(
 	db: D1Database,
-	env: Pick<Env, 'BUNDLE_ARTIFACTS_KV'> | undefined,
 	input: UpdateOrgProfileInput,
 ): Promise<UpdateOrgProfileResult> {
 	const existing = await getOrgById(db, input.orgId)
@@ -75,88 +63,26 @@ export async function updateOrgProfile(
 		}
 	}
 
-	let nextSlug = existing.slug
-	if (input.slug !== undefined) {
-		const slug = normalizeUsername(input.slug)
-		const formatError = getUsernameFormatValidationError(slug)
-		if (formatError) {
-			return {
-				ok: false,
-				error: slugValidationMessage(formatError),
-				code: 'validation',
-			}
-		}
-		const reservedError = await getEffectiveUsernameValidationError(slug, env)
-		if (reservedError) {
-			return {
-				ok: false,
-				error: slugValidationMessage(reservedError),
-				code: 'validation',
-			}
-		}
-		if (slug !== existing.slug) {
-			const taken = await db
-				.prepare(`SELECT handle FROM handles WHERE handle = ?`)
-				.bind(slug)
-				.first<{ handle: string }>()
-			if (taken) {
-				return { ok: false, error: 'That name is taken.', code: 'conflict' }
-			}
-		}
-		nextSlug = slug
+	if (
+		input.slug !== undefined &&
+		normalizeUsername(input.slug) !== existing.slug
+	) {
+		return { ok: false, error: orgSlugPermanentError, code: 'validation' }
 	}
 
 	const now = new Date().toISOString()
-	try {
-		if (nextSlug === existing.slug) {
-			await db
-				.prepare(
-					`UPDATE orgs
-					 SET display_name = ?, updated_at = ?
-					 WHERE id = ?${andLiveDeletedAtSql()}`,
-				)
-				.bind(nextDisplayName, now, input.orgId)
-				.run()
-		} else {
-			const handleRow = await db
-				.prepare(`SELECT handle FROM handles WHERE org_id = ? AND handle = ?`)
-				.bind(input.orgId, existing.slug)
-				.first<{ handle: string }>()
-			if (!handleRow) {
-				return {
-					ok: false,
-					error: 'Unable to rename that organization handle.',
-					code: 'validation',
-				}
-			}
-			await db.batch([
-				db
-					.prepare(
-						`UPDATE orgs
-						 SET slug = ?, display_name = ?, updated_at = ?
-						 WHERE id = ?${andLiveDeletedAtSql()}`,
-					)
-					.bind(nextSlug, nextDisplayName, now, input.orgId),
-				db
-					.prepare(
-						`UPDATE handles
-						 SET handle = ?
-						 WHERE org_id = ? AND handle = ?`,
-					)
-					.bind(nextSlug, input.orgId, existing.slug),
-			])
-		}
-	} catch (error) {
-		const field = getUniqueConstraintField(error)
-		if (field) {
-			return { ok: false, error: 'That name is taken.', code: 'conflict' }
-		}
-		throw error
-	}
+	await db
+		.prepare(
+			`UPDATE orgs
+			 SET display_name = ?, updated_at = ?
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(nextDisplayName, now, input.orgId)
+		.run()
 
 	return {
 		ok: true,
-		slug: nextSlug,
+		slug: existing.slug,
 		displayName: nextDisplayName,
 	}
 }

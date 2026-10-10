@@ -1,3 +1,7 @@
+import {
+	handlePermanentNote,
+	handleUrlPreview,
+} from '@kody-internal/shared/handle-permanence.ts'
 import { css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { passwordManagerIgnoreProps } from '#client/password-manager-ignore.ts'
@@ -6,7 +10,13 @@ import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import { renderIcon } from '#universal/icon.tsx'
-import { colors, radius, shadows, spacing } from '#universal/styles/tokens.ts'
+import {
+	colors,
+	radius,
+	shadows,
+	spacing,
+	typography,
+} from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -29,7 +39,6 @@ export type AccountProfilePanelProps = {
 	email: string
 	emailVerified: boolean
 	username: string
-	draftUsername: string
 	draftDisplayName: string
 	draftBio: string
 	draftProfileVisibility: ProfileVisibility
@@ -40,17 +49,14 @@ export type AccountProfilePanelProps = {
 	isSaving: boolean
 	isSendingEmailChange: boolean
 	profileUnchanged: boolean
-	normalizedDraftUsername: string
 	normalizedDraftEmail: string
 	emailChangeMessage: string | null
 	emailChangeTone: 'error' | 'info'
 	emailChangeOpen: boolean
-	usernameFieldError: string | null
 	onProfileSubmit: (event: SubmitEvent) => void
 	onEmailChangeSubmit: (event: SubmitEvent) => void
 	onAvatarSelected: (event: Event) => void
 	onRemoveAvatar: () => void
-	onDraftUsernameInput: (event: InputEvent) => void
 	onDraftDisplayNameChange: (value: string) => void
 	onDraftBioChange: (value: string) => void
 	onDraftProfileVisibilityChange: (value: ProfileVisibility) => void
@@ -64,7 +70,6 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 		email,
 		emailVerified,
 		username,
-		draftUsername,
 		draftDisplayName,
 		draftBio,
 		draftProfileVisibility,
@@ -75,17 +80,14 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 		isSaving,
 		isSendingEmailChange,
 		profileUnchanged,
-		normalizedDraftUsername,
 		normalizedDraftEmail,
 		emailChangeMessage,
 		emailChangeTone,
 		emailChangeOpen,
-		usernameFieldError,
 		onProfileSubmit,
 		onEmailChangeSubmit,
 		onAvatarSelected,
 		onRemoveAvatar,
-		onDraftUsernameInput,
 		onDraftDisplayNameChange,
 		onDraftBioChange,
 		onDraftProfileVisibilityChange,
@@ -96,7 +98,7 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 	return (
 		<AccountManagementPanel
 			title="Profile details"
-			description="Your username is unique. Display name, bio, avatar, and visibility control your public community profile."
+			description="Your username is permanent. Display name, bio, avatar, and visibility control your public community profile."
 		>
 			<form
 				mix={[
@@ -155,35 +157,21 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						</button>
 					) : null}
 				</div>
-				<label mix={css(accountFieldCss)}>
+				<div mix={css(accountFieldCss)}>
 					<span mix={css(accountFieldLabelCss)}>Username</span>
-					<input
-						type="text"
-						name="username"
+					<p
 						id="account-username"
-						data-field-ring
-						required
-						autoComplete="username"
-						pattern={'[A-Za-z0-9][A-Za-z0-9\\-]{1,30}[A-Za-z0-9]'}
-						title="Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number."
-						value={draftUsername}
-						aria-invalid={usernameFieldError ? 'true' : undefined}
-						aria-describedby={
-							usernameFieldError ? 'account-username-error' : undefined
-						}
-						mix={[css(accountInputCss), on('input', onDraftUsernameInput)]}
-					/>
-					{usernameFieldError ? (
-						<p
-							id="account-username-error"
-							role="alert"
-							data-testid="account-username-error"
-							mix={css({ color: colors.error, margin: 0 })}
-						>
-							{usernameFieldError}
-						</p>
-					) : null}
-				</label>
+						data-testid="account-username"
+						aria-describedby="account-username-note"
+						mix={css(usernameValueCss)}
+					>
+						{handleUrlPreview(username)}
+					</p>
+					<p id="account-username-note" mix={css(accountFieldNoteCss)}>
+						{handlePermanentNote} Change your display name below to change how
+						you appear.
+					</p>
+				</div>
 				<label mix={css(accountFieldCss)}>
 					<span mix={css(accountFieldLabelCss)}>Display name</span>
 					<input
@@ -283,16 +271,6 @@ export function renderAccountProfilePanel(props: AccountProfilePanelProps) {
 						View public profile
 					</a>
 				</p>
-				{normalizedDraftUsername !== username ? (
-					<p mix={css({ color: colors.textMuted, margin: 0 })}>
-						Changing your username updates every saved package to the new{' '}
-						<code>@{normalizedDraftUsername}</code> scope with an automatic
-						commit. That can affect third-party integrations and dynamic
-						invocations that still reference <code>@{username}</code>. Community
-						listings already pinned to the latest package commit are republished
-						automatically.
-					</p>
-				) : null}
 				<div>
 					<button
 						type="submit"
@@ -460,4 +438,10 @@ const avatarEditAffordanceCss = {
 
 function avatarEditIcon() {
 	return renderIcon('edit', { size: '16' })
+}
+
+const usernameValueCss = {
+	margin: 0,
+	fontFamily: typography.fontFamilyMono,
+	color: colors.text,
 }

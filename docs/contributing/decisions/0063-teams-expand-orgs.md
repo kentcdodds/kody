@@ -23,9 +23,10 @@ Soft-delete columns land additively; enforced read filters are phase 7.
 - **Entitlements** read billing columns from `orgs` first, with a logged
   fallback to `users` if a row is missing. Writes that change plan, Stripe, or
   related entitlement columns dual-write to `orgs` with the same id.
-- **Handles** share the username namespace: personal org slugs are immutable on
-  rename; the live username moves to a new handle row while the original handle
-  keeps `org_id` for the org slug.
+- **Handles** share the username namespace and are permanent: a personal org's
+  slug is the username chosen at signup and a team org's slug is the one chosen
+  at creation. Neither can be renamed afterwards; only display names change.
+  Handles left behind by renames that happened before this rule stay reserved.
 - **Org audit** (`org_audit_events` in AUDIT_DB) is separate from platform
   `audit_events`. Backfill records `org.migrated` per org.
 

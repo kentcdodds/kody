@@ -7,7 +7,6 @@ import {
 	resolveCommunityPackageUrl,
 	resolvePackagePageUrl,
 	retirePackageSlug,
-	retireUsername,
 } from './package-url.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -169,49 +168,6 @@ test('canonical pairs resolve, miss, delist, and case-correct to the listing', a
 			resolved: await resolve(username, kodyId),
 		}).toEqual({ username, kodyId, resolved: null })
 	}
-})
-
-test('retired usernames redirect through rename chains until a reclaim wins', async () => {
-	const pkg = await createPublishedPackage()
-	const middle = `middle${uniqueSuffix()}`
-	const latest = `latest${uniqueSuffix()}`
-
-	for (const [oldUsername, newUsername] of [
-		[pkg.username, middle],
-		[middle, latest],
-	] as const) {
-		await runSql(
-			`UPDATE users SET username = ? WHERE stable_user_id = ?`,
-			newUsername,
-			pkg.userId,
-		)
-		await retireUsername({
-			db: env.APP_DB,
-			oldUsername,
-			newUsername,
-			userId: pkg.userId,
-		})
-	}
-
-	for (const oldUsername of [pkg.username, middle]) {
-		await expect(resolve(oldUsername, pkg.kodyId)).resolves.toEqual({
-			kind: 'redirect',
-			listingId: pkg.listingId,
-			username: latest,
-			kodyId: pkg.kodyId,
-		})
-	}
-
-	// Someone else takes the released username and publishes under it.
-	const claimed = await createPublishedPackage(pkg.kodyId, {
-		owner: await insertUser(pkg.username),
-	})
-	await expect(resolve(pkg.username, pkg.kodyId)).resolves.toEqual({
-		kind: 'listing',
-		listingId: claimed.listingId,
-		username: pkg.username,
-		kodyId: pkg.kodyId,
-	})
 })
 
 test('retired kody ids follow the package, die when unpublished, and clear on claim or delete', async () => {

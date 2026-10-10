@@ -34,8 +34,7 @@ export async function resolvePackageOwnerContext(
 ): Promise<PackageOwnerContext> {
 	const { user, request } = input
 	const isPersonalOrg = request.org.id === personalOrgId(user.userId)
-	// A personal org's package scope follows the username, which can change
-	// after signup (old names keep resolving through `username_redirects`).
+	// A personal org's package scope is the (permanent) username.
 	const ownerScope = isPersonalOrg
 		? await getMcpUserPackageScope(env.APP_DB, user)
 		: request.org.slug

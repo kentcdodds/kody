@@ -1,3 +1,7 @@
+import {
+	handlePermanentNote,
+	handleUrlPreview,
+} from '@kody-internal/shared/handle-permanence.ts'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -155,6 +159,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 	// A slug the person typed (or one sent back with an error) is theirs; only
 	// an untouched slug follows the name.
 	let slugEdited = draftSlug.length > 0
+	let confirming = false
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -165,6 +170,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 			loaderError = null
 			;({ draftName, draftSlug } = draftFromHref(href))
 			slugEdited = draftSlug.length > 0
+			confirming = false
 		}
 		const error =
 			loaderError ?? new URL(href, 'http://localhost').searchParams.get('error')
@@ -185,7 +191,17 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 						method="post"
 						action={routes.accountOrganizationsNewPost.href()}
 						data-testid="create-organization-form"
-						mix={css(formCss)}
+						mix={[
+							css(formCss),
+							on('submit', (event) => {
+								// Handles are permanent, so the first submit shows the final
+								// URL and asks once before the organization is created.
+								if (confirming) return
+								event.preventDefault()
+								confirming = true
+								handle.update()
+							}),
+						]}
 					>
 						<label mix={css(accountFieldCss)}>
 							<span mix={css(accountFieldLabelCss)}>Name</span>
@@ -234,6 +250,7 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 												event.currentTarget as HTMLInputElement
 											).value.toLowerCase()
 											slugEdited = draftSlug.length > 0
+											confirming = false
 											handle.update()
 										}),
 									]}
@@ -243,13 +260,30 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 								id="create-organization-slug-note"
 								mix={css(accountFieldNoteCss)}
 							>
-								3 to 32 letters, numbers, and hyphens. The handle is the
-								organization's address and cannot be changed later.
+								3 to 32 letters, numbers, and hyphens. {handlePermanentNote}{' '}
+								Your organization's URL will be{' '}
+								<strong data-testid="create-organization-url-preview">
+									{handleUrlPreview(draftSlug || 'your-handle')}
+								</strong>
+								.
 							</p>
 						</label>
+						{confirming ? (
+							<p
+								role="status"
+								data-testid="create-organization-confirm"
+								mix={css(accountFieldNoteCss)}
+							>
+								Your organization URL will be{' '}
+								<strong>{handleUrlPreview(draftSlug)}</strong>. This can't be
+								changed. Create it?
+							</p>
+						) : null}
 						<div mix={css(accountActionsCss)}>
 							<button type="submit" mix={css(getPillButtonCss({ size: 'sm' }))}>
-								Create organization
+								{confirming
+									? 'Yes, create organization'
+									: 'Create organization'}
 							</button>
 							<a
 								href={routes.accountOrganizations.href()}

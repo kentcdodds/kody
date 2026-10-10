@@ -1,22 +1,7 @@
 import { beforeAll, expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-	updatePackagesForUsernameChange: vi.fn(async () => ({
-		updatedPackages: [] as Array<unknown>,
-		skippedPackages: [],
-	})),
-	republishCommunityListingsAfterUsernameChange: vi.fn(async () => ({
-		republishedPackageIds: [] as Array<string>,
-		warnings: [],
-	})),
 	updateCommunityProfile: vi.fn(),
-}))
-
-vi.mock('#worker/package-registry/username-change-packages.ts', () => ({
-	updatePackagesForUsernameChange: (...args: Array<unknown>) =>
-		mocks.updatePackagesForUsernameChange(...(args as [])),
-	republishCommunityListingsAfterUsernameChange: (...args: Array<unknown>) =>
-		mocks.republishCommunityListingsAfterUsernameChange(...(args as [])),
 }))
 
 vi.mock('#worker/community/profile-service.ts', () => ({
@@ -29,7 +14,6 @@ import { createAccountProfileApiHandler } from './account-profile.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { reservedUsernamesKvKey } from '#worker/identity/reserved-username-settings.ts'
 import { executePreparedD1Batch } from '#worker/test-support/d1-prepared-batch.ts'
 import {
 	isOrgBindingMembershipQuery,
@@ -241,57 +225,25 @@ test('account profile API returns email and username for the signed-in user', as
 	})
 	// Reads are not audited.
 	expect(logAuditEventSpy).not.toHaveBeenCalled()
-	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
 })
 
-test('account profile API updates username for the signed-in user', async () => {
-	const { post, username } = createProfileClient(['current-user'])
-	mocks.updatePackagesForUsernameChange.mockResolvedValueOnce({
-		updatedPackages: [
+test('account profile API rejects any username change because usernames are permanent', async () => {
+	const { post, username } = createProfileClient(['current-user', 'taken-jane'])
+
+	for (const requested of ['Next-Jane', 'taken-jane', 'bad username', 'kody']) {
+		const response = await post({ username: requested })
+		expect([response.status, await response.json()]).toEqual([
+			400,
 			{
-				packageId: 'pkg-1',
-				kodyId: 'demo',
-				previousName: '@current-user/demo',
-				nextName: '@next-jane/demo',
-				publishedCommit: 'abc',
-				changedPaths: ['package.json'],
-				shouldRepublishCommunityListing: true,
+				ok: false,
+				error:
+					'Usernames are permanent and cannot be changed. You can change your display name instead.',
 			},
-		],
-		skippedPackages: [],
-	})
-	mocks.republishCommunityListingsAfterUsernameChange.mockResolvedValueOnce({
-		republishedPackageIds: ['pkg-1'],
-		warnings: [],
-	})
-
-	const response = await post({ username: 'Next-Jane' })
-
-	expect(response.status).toBe(200)
-	expect(await response.json()).toMatchObject({
-		ok: true,
-		email: 'current-user@example.com',
-		username: 'next-jane',
-		displayName: 'next-jane',
-		bio: null,
-		profileVisibility: 'public',
-		packagesUpdated: 1,
-		communityListingsRepublished: 1,
-		packageUpdateMessage: 'Updated 1 package to the new @next-jane scope.',
-	})
-	expect(username()).toBe('next-jane')
+		])
+	}
+	expect(username()).toBe('current-user')
 	expect(mocks.updateCommunityProfile).not.toHaveBeenCalled()
-	expect(mocks.updatePackagesForUsernameChange).toHaveBeenCalledWith(
-		expect.objectContaining({
-			previousUsername: 'current-user',
-			nextUsername: 'next-jane',
-		}),
-	)
-	expect(
-		mocks.republishCommunityListingsAfterUsernameChange,
-	).toHaveBeenCalledWith(expect.objectContaining({ packageIds: ['pkg-1'] }))
-	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
-	expectAccountAudit('update_username', 'success')
+	expect(logAuditEventSpy).not.toHaveBeenCalled()
 })
 
 test('account profile API treats an unchanged username as a no-op so grandfathered reserved usernames can still save profile fields', async () => {
@@ -319,65 +271,6 @@ test('account profile API treats an unchanged username as a no-op so grandfather
 	expect(logAuditEventSpy).not.toHaveBeenCalledWith(
 		expect.objectContaining({ action: 'update_username' }),
 	)
-	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
-})
-
-test('account profile API rejects username changes when package updates fail or the rename does not persist', async () => {
-	const failing = createProfileClient(['current-user'])
-	mocks.updatePackagesForUsernameChange.mockRejectedValueOnce(
-		new Error('sync failed'),
-	)
-
-	const response = await failing.post({ username: 'next-jane' })
-
-	expect(response.status).toBe(500)
-	expect(await response.json()).toEqual({
-		ok: false,
-		error:
-			'Username was not changed because package updates failed: sync failed',
-	})
-	expect(failing.username()).toBe('current-user')
-	expectAccountAudit('update_username', 'failure', {
-		reason: 'package_scope_update_failed',
-	})
-
-	mocks.updatePackagesForUsernameChange.mockClear()
-	const unpersisted = createProfileClient(['jklotz08'], {
-		persistUsernameUpdates: false,
-	})
-	const unpersistedResponse = await unpersisted.post({ username: 'jklotz' })
-	expect(unpersistedResponse.status).toBe(500)
-	expect(await unpersistedResponse.json()).toEqual({
-		ok: false,
-		error: 'Username was not changed to `jklotz`.',
-	})
-	expect(unpersisted.username()).toBe('jklotz08')
-	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
-})
-
-test('account profile API rejects invalid, reserved, or duplicate usernames', async () => {
-	const { post, username } = createProfileClient(['current-user', 'taken-jane'])
-
-	expect((await post({ username: 'bad username' })).status).toBe(400)
-
-	const rejections: Array<[string, number, string]> = [
-		['kody', 400, '`kody` is reserved.'],
-		['Taken-Jane', 409, '`taken-jane` is taken.'],
-	]
-	for (const [requested, status, error] of rejections) {
-		const response = await post({ username: requested })
-		expect([response.status, await response.json()]).toEqual([
-			status,
-			{ ok: false, error },
-		])
-	}
-	expect(username()).toBe('current-user')
-	expect(mocks.updatePackagesForUsernameChange).not.toHaveBeenCalled()
-	// Only the duplicate attempt is audited; validation rejections are not.
-	expect(logAuditEventSpy).toHaveBeenCalledTimes(1)
-	expectAccountAudit('update_username', 'failure', {
-		reason: 'username_exists',
-	})
 })
 
 test('account profile API round trips and validates displayName, bio, and visibility', async () => {
@@ -451,30 +344,4 @@ test('account profile API round trips and validates displayName, bio, and visibi
 		ok: false,
 		error: 'Display name must be at most 50 characters.',
 	})
-})
-
-test('account profile username change consults KV reserved additions and removals', async () => {
-	const kv = {
-		async get(key: string, type?: string) {
-			if (key !== reservedUsernamesKvKey) return null
-			const raw = JSON.stringify({
-				added: ['brandnew'],
-				removed: ['faq'],
-				updatedAt: '2026-09-02T00:00:00.000Z',
-				updatedBy: 'admin-stable-id',
-			})
-			return type === 'json' ? JSON.parse(raw) : raw
-		},
-	} as unknown as KVNamespace
-	const { post, username } = createProfileClient(['current-user'], { kv })
-
-	const addedResponse = await post({ username: 'brandnew' })
-	expect(addedResponse.status).toBe(400)
-	expect(await addedResponse.json()).toEqual({
-		ok: false,
-		error: '`brandnew` is reserved.',
-	})
-
-	expect((await post({ username: 'faq' })).status).toBe(200)
-	expect(username()).toBe('faq')
 })

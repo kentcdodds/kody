@@ -1,3 +1,4 @@
+import { handleUrlPreview } from '@kody-internal/shared/handle-permanence.ts'
 import { startAuthentication } from '@simplewebauthn/browser'
 import { type Handle, css } from 'remix/component'
 import {
@@ -67,6 +68,10 @@ export function LoginRoute(handle: Handle) {
 	let routePath: string | null = null
 	let activeSignupSearch = readRouterSearch(handle)
 	let signupStartedTracked = false
+	let signupUsername = ''
+	// Handles are permanent: the first signup submit shows the final URL and
+	// asks once; the next submit creates the account.
+	let signupConfirmPending = false
 
 	function maybeTrackSignupStarted() {
 		if (signupStartedTracked) return
@@ -165,6 +170,14 @@ export function LoginRoute(handle: Handle) {
 		}
 		if (mode === 'signup' && !username) {
 			setState('error', 'Username is required.')
+			return
+		}
+		if (mode === 'signup' && !signupConfirmPending) {
+			signupConfirmPending = true
+			setState(
+				'idle',
+				`Your profile URL will be ${handleUrlPreview(username.toLowerCase())}. This can't be changed. Submit again to create your account.`,
+			)
 			return
 		}
 
@@ -387,7 +400,11 @@ export function LoginRoute(handle: Handle) {
 		const description = isSignup
 			? 'Create an account and start building automations you own.'
 			: 'Sign in to pick up where you left off.'
-		const submitLabel = isSignup ? 'Create account' : 'Sign in'
+		const submitLabel = isSignup
+			? signupConfirmPending
+				? 'Yes, create account'
+				: 'Create account'
+			: 'Sign in'
 		const submitBusyLabel = isSignup ? 'Creating account…' : 'Signing in…'
 		const showSocial = authProviders.length > 0
 
@@ -422,6 +439,15 @@ export function LoginRoute(handle: Handle) {
 							onSubmit: handleSubmit,
 							onPasskeySignIn: handlePasskeySignIn,
 							onFieldEdit: clearFieldError,
+							signupUsername,
+							onSignupUsernameInput: (value) => {
+								signupUsername = value
+								if (signupConfirmPending) {
+									signupConfirmPending = false
+									resetAuthState()
+								}
+								handle.update()
+							},
 						})}
 
 						{showSocial

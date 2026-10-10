@@ -52,7 +52,7 @@ export const orgCreateCapability = defineDomainCapability(
 		name: 'orgCreate',
 		orgPermission: 'org:write',
 		description:
-			'Create an organization you own. The id is new and separate from your personal organization. Calls that change the new organization need a request bound to it.',
+			'Create an organization you own. The slug becomes the permanent handle (kody.codes/@<slug>) and cannot be changed later; only the display name can. The id is new and separate from your personal organization. Calls that change the new organization need a request bound to it.',
 		keywords: ['org', 'organization', 'create', 'team'],
 		readOnly: false,
 		idempotent: false,
@@ -61,7 +61,9 @@ export const orgCreateCapability = defineDomainCapability(
 			slug: z
 				.string()
 				.min(1)
-				.describe('Public handle for the organization. Lowercased.'),
+				.describe(
+					'Public handle for the organization, lowercased. Permanent: it cannot be changed after creation, so pick it deliberately. The org lives at kody.codes/@<slug>.',
+				),
 			display_name: z.string().min(1).optional(),
 		}),
 		outputSchema: z.object({

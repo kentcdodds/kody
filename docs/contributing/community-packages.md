@@ -340,9 +340,9 @@ Client routes: `packages/worker/client/routes/community*`
 - `/@:username/:kodyId` — the canonical package page, resolved from the owner
   plus the package slug (the saved package by name leaf, then its listing by
   `package_id`; JSON companion: `/profiles/:username/packages/:kodyId.json`).
-  The listing slug stays the public pair until republish. `username_redirects`
-  and `package_slug_redirects` map prior owner usernames and package slugs to a
-  redirect at that URL
+  The listing slug stays the public pair until republish.
+  `package_slug_redirects` maps prior package slugs to a redirect at that URL
+  (usernames are permanent, so there is no username redirect)
 - `/@:username/:kodyId/tree/:ref(/*relativePath)` — GitHub-lite source explorer
   (default-branch name from git, SHA, or another branch). `HEAD` and leftover
   `/files` URLs 301 to `/tree/{defaultBranch}` (`main` when lookup misses).

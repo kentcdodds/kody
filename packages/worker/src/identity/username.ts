@@ -1,3 +1,7 @@
+export {
+	orgSlugPermanentError,
+	usernamePermanentError,
+} from '@kody-internal/shared/handle-permanence.ts'
 import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { getEffectiveReservedUsernameError } from '#worker/identity/reserved-username-settings.ts'
 import { getReservedUsernameError } from '#worker/identity/reserved-usernames.ts'

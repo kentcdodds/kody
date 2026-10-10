@@ -11,8 +11,8 @@ export const orgUpdateCapability = defineDomainCapability(
 		name: 'orgUpdate',
 		orgPermission: 'org:write',
 		description:
-			'Update the display name and handle of the organization this request is bound to. Signup organizations keep the person’s account profile as their identity.',
-		keywords: ['org', 'organization', 'rename', 'slug', 'handle', 'profile'],
+			'Update the display name of the organization this request is bound to. The handle (slug, kody.codes/@<slug>) is permanent and cannot be changed; passing any other handle fails. Signup organizations keep the person’s account profile as their identity.',
+		keywords: ['org', 'organization', 'display name', 'profile'],
 		readOnly: false,
 		idempotent: true,
 		destructive: false,
@@ -21,7 +21,9 @@ export const orgUpdateCapability = defineDomainCapability(
 			slug: z
 				.string()
 				.min(1)
-				.describe('Public handle for the organization. Lowercased.')
+				.describe(
+					'Must match the current handle. Handles are permanent and cannot be changed.',
+				)
 				.optional(),
 		}),
 		outputSchema: z.object({
@@ -36,7 +38,7 @@ export const orgUpdateCapability = defineDomainCapability(
 			if (args.display_name === undefined && args.slug === undefined) {
 				throw new McpCallerError('Pass display_name or slug.')
 			}
-			const updated = await updateOrgProfile(ctx.env.APP_DB, ctx.env, {
+			const updated = await updateOrgProfile(ctx.env.APP_DB, {
 				orgId: request.org.id,
 				displayName: args.display_name,
 				slug: args.slug,

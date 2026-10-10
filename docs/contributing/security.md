@@ -239,12 +239,12 @@ brand, infrastructure, mailbox, and trust labels (`autodiscover`, `mta-sts`,
 cannot become package-app subdomains or inbound mailboxes. Operators add or
 unreserve names at runtime through `platform-settings:v1:reserved-usernames`
 without a deploy; system-email locals and `kody`-prefixed built-in names stay
-permanently locked. Signup, username change, admin user creation, and social
-username generation consult the effective set (built-in plus KV). Inbound
-mailbox routing (`resolveInboundMailboxRoute`) uses only the RFC 5233 base local
-with `isPermanentlyReservedUsername` / `isSystemEmailLocal` — never the plus-tag
-and never the claim-denylist substring matcher — so `alice+kody@inbox…` is user
-mail for `alice`.
+permanently locked. Signup, admin user creation, and social username generation
+consult the effective set (built-in plus KV). Inbound mailbox routing
+(`resolveInboundMailboxRoute`) uses only the RFC 5233 base local with
+`isPermanentlyReservedUsername` / `isSystemEmailLocal` — never the plus-tag and
+never the claim-denylist substring matcher — so `alice+kody@inbox…` is user mail
+for `alice`.
 
 A new claim fails when the case-insensitive (lowercase-trimmed) username is an
 exact reserved token or when the hyphen/underscore-stripped form equals a
