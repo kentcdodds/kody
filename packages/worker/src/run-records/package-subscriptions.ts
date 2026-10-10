@@ -1,5 +1,6 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { routes } from '#universal/routes.ts'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
+import { readSignupOrgSlugOrNull } from '#worker/orgs/signup-org-slug.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
 	loadMatchingPackageSubscriptions,
@@ -72,10 +73,16 @@ function buildSubscriptionIdempotencyKey(input: {
 	return `run-error:${input.runId}:${input.packageId}:${runErrorRecordedTopic}`
 }
 
-function buildActivityUrl(input: { baseUrl: string; runId: string }) {
-	return `${input.baseUrl}${routes.accountActivityDetail.href({
-		runId: input.runId,
-	})}`
+function buildActivityUrl(input: {
+	baseUrl: string
+	orgSlug: string
+	runId: string
+}) {
+	return `${input.baseUrl}${orgSectionRestPath(
+		input.orgSlug,
+		'activity',
+		input.runId,
+	)}`
 }
 
 async function loadMatchingRunErrorSubscriptions(input: {
@@ -105,6 +112,7 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
 	userId: string
 	run: RunLogRowInput
+	orgSlug?: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	if (input.run.status !== 'error') return []
@@ -117,9 +125,35 @@ export async function dispatchRunErrorSubscriptionEvents(input: {
 			baseUrl,
 			userId: input.userId,
 		})
+	const orgSlug = await readSignupOrgSlugOrNull(
+		input.env.APP_DB,
+		input.userId,
+		input.orgSlug,
+	)
+	if (!orgSlug) {
+		if (discoveryErrors.length > 0) {
+			console.warn(
+				'run.error.recorded package subscription discovery incomplete',
+				{
+					runId: input.run.id,
+					errorCount: discoveryErrors.length,
+					error: discoveryErrors[0],
+				},
+			)
+		}
+		console.warn('run error subscription missing org slug', {
+			userId: input.userId,
+			runId: input.run.id,
+		})
+		return []
+	}
 	const eventPayload = buildRunErrorEventPayload({
 		run: input.run,
-		activityUrl: buildActivityUrl({ baseUrl, runId: input.run.id }),
+		activityUrl: buildActivityUrl({
+			baseUrl,
+			orgSlug,
+			runId: input.run.id,
+		}),
 	})
 	const settled = await runQueueableDynamicWorkerWork(
 		async () =>

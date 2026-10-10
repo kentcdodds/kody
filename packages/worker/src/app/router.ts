@@ -51,43 +51,23 @@ import {
 } from '#app/handlers/admin-system-email.ts'
 import { createAccountHandler } from '#app/handlers/account.ts'
 import { createAccountDeleteHandler } from '#app/handlers/account-delete.ts'
-import {
-	createAccountEmailApiHandler,
-	createAccountEmailHandler,
-} from '#app/handlers/account-email.ts'
+import { createAccountEmailApiHandler } from '#app/handlers/account-email.ts'
 import { createAccountEmailChangeHandler } from '#app/handlers/account-email-change.ts'
 import { createAccountEmailClaimReleaseHandler } from '#app/handlers/account-email-claim-release.ts'
 import { createAccountPasswordHandler } from '#app/handlers/account-password.ts'
 import { createAccountExportHandler } from '#app/handlers/account-export.ts'
-import {
-	createAccountIntegrationsApiHandler,
-	createAccountIntegrationsHandler,
-} from '#app/handlers/account-integrations.ts'
-import {
-	createAccountActivityApiHandler,
-	createAccountActivityHandler,
-} from '#app/handlers/account-activity.ts'
-import {
-	createAccountJobsApiHandler,
-	createAccountJobsHandler,
-} from '#app/handlers/account-jobs.ts'
-import {
-	createAccountWorkflowsApiHandler,
-	createAccountWorkflowsHandler,
-} from '#app/handlers/account-workflows.ts'
-import {
-	createAccountWebhooksApiHandler,
-	createAccountWebhooksHandler,
-} from '#app/handlers/account-webhooks.ts'
+import { createAccountIntegrationsApiHandler } from '#app/handlers/account-integrations.ts'
+import { createAccountActivityApiHandler } from '#app/handlers/account-activity.ts'
+import { createAccountJobsApiHandler } from '#app/handlers/account-jobs.ts'
+import { createAccountWorkflowsApiHandler } from '#app/handlers/account-workflows.ts'
+import { createAccountWebhooksApiHandler } from '#app/handlers/account-webhooks.ts'
 import {
 	createAccountMcpServersApiHandler,
-	createAccountMcpServersHandler,
 	createAccountMcpServersOauthCallbackHandler,
 } from '#app/handlers/account-mcp-servers.ts'
 import {
 	createAccountMemoriesApiHandler,
 	createAccountMemoriesExportHandler,
-	createAccountMemoriesHandler,
 } from '#app/handlers/account-memories.ts'
 import {
 	createAccountPackageApprovePublishApiHandler,
@@ -119,10 +99,7 @@ import {
 	createAccountMcpOauthClientsHandler,
 } from '#app/handlers/account-mcp-oauth-clients.ts'
 import { createAccountConnectionsApiHandler } from '#app/handlers/account-connections.ts'
-import {
-	createAccountConnectedAgentsApiHandler,
-	createAccountConnectionsHandler,
-} from '#app/handlers/account-connected-agents.ts'
+import { createAccountConnectedAgentsApiHandler } from '#app/handlers/account-connected-agents.ts'
 import { createAccountAvatarApiPostHandler } from '#app/handlers/account-avatar.ts'
 import { createAccountProfileApiHandler } from '#app/handlers/account-profile.ts'
 import {
@@ -131,7 +108,6 @@ import {
 } from '#app/handlers/account-two-factor.ts'
 import {
 	createAccountBillingCancellationFeedbackApiHandler,
-	createAccountBillingRedirectHandler,
 	createOrgBillingApiHandler,
 	createOrgBillingCheckoutApiHandler,
 	createOrgBillingHandler,
@@ -151,7 +127,6 @@ import {
 import {
 	createAccountWaitingApiHandler,
 	createAccountWaitingClickHandler,
-	createAccountWaitingHandler,
 } from '#app/handlers/account-waiting.ts'
 import {
 	createAccountExperimentsApiHandler,
@@ -160,18 +135,9 @@ import {
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
 import { createAccountResendVerificationHandler } from '#app/handlers/account-resend-verification.ts'
 import { createPendingVerificationHandler } from '#app/handlers/pending-verification.ts'
-import {
-	createAccountSecretsApiHandler,
-	createAccountSecretsHandler,
-} from '#app/handlers/account-secrets.ts'
-import {
-	createAccountSecretProvidersApiHandler,
-	createAccountSecretProvidersHandler,
-} from '#app/handlers/account-secret-providers.ts'
-import {
-	createAccountValuesApiHandler,
-	createAccountValuesHandler,
-} from '#app/handlers/account-values.ts'
+import { createAccountSecretsApiHandler } from '#app/handlers/account-secrets.ts'
+import { createAccountSecretProvidersApiHandler } from '#app/handlers/account-secret-providers.ts'
+import { createAccountValuesApiHandler } from '#app/handlers/account-values.ts'
 import { createAuthHandler } from '#app/handlers/auth.ts'
 import {
 	createAuthProviderCallbackHandler,
@@ -311,7 +277,6 @@ import { createSignupHandler } from '#app/handlers/signup.ts'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
-import { createOrgAccountRedirectMiddleware } from '#app/org-account-redirect.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 import {
 	createAccountOrganizationsApiHandler,
@@ -342,7 +307,6 @@ export function createAppRouter(env: Env) {
 	const router = createRouter({
 		middleware: [
 			remixCrossOriginProtection,
-			createOrgAccountRedirectMiddleware(env),
 			createReferralCookieMiddleware(),
 			createAccountWriteLeaseMiddleware(env),
 		],
@@ -434,21 +398,13 @@ export function createAppRouter(env: Env) {
 				createAccountOrganizationsNewPostHandler(env),
 			accountDelete: createAccountDeleteHandler(env),
 			accountExport: createAccountExportHandler(env),
-			accountIntegrations: createAccountIntegrationsHandler(env),
-			accountOauthAppDetail: createAccountIntegrationsHandler(env),
-			accountIntegrationsApprove: createAccountIntegrationsHandler(env),
-			accountIntegrationDetail: createAccountIntegrationsHandler(env),
 			accountIntegrationsApi: createAccountIntegrationsApiHandler(env),
 			accountIntegrationsApiPost: createAccountIntegrationsApiHandler(env),
-			accountMcpServers: createAccountMcpServersHandler(env),
-			accountMcpServerNew: createAccountMcpServersHandler(env),
 			accountMcpServerLogo: createMcpServerLogoHandler(env),
-			accountMcpServerDetail: createAccountMcpServersHandler(env),
 			accountMcpServersOauthCallback:
 				createAccountMcpServersOauthCallbackHandler(env),
 			accountMcpServersApi: createAccountMcpServersApiHandler(env),
 			accountMcpServersApiPost: createAccountMcpServersApiHandler(env),
-			accountPackages: createAccountPackagesHandler(env),
 			accountPackageDetail: createAccountPackagesHandler(env),
 			accountPackageApprovePublish:
 				createAccountPackageApprovePublishHandler(env),
@@ -466,9 +422,6 @@ export function createAppRouter(env: Env) {
 			accountPackageFilesApi: createAccountPackageFilesApiHandler(env),
 			accountPackagesApi: createAccountPackagesApiHandler(env),
 			accountPackagesApiPost: createAccountPackagesApiHandler(env),
-			accountConnections: createAccountConnectionsHandler(env),
-			accountConnectionNew: createAccountConnectionsHandler(env),
-			accountConnectionNewAgent: createAccountConnectionsHandler(env),
 			accountConnectionsApi: createAccountConnectionsApiHandler(env),
 			accountConnectionsApiPost: createAccountConnectionsApiHandler(env),
 			accountConnectedAgentsApi: createAccountConnectedAgentsApiHandler(env),
@@ -487,20 +440,13 @@ export function createAppRouter(env: Env) {
 			accountTwoFactor: createAccountTwoFactorHandler(env),
 			accountTwoFactorApi: createAccountTwoFactorApiHandler(env),
 			accountTwoFactorApiPost: createAccountTwoFactorApiHandler(env),
-			accountBilling: createAccountBillingRedirectHandler(env),
 			accountBillingCancellationFeedbackPost:
 				createAccountBillingCancellationFeedbackApiHandler(env),
-			accountBillingSuccess: createAccountBillingRedirectHandler(
-				env,
-				'success',
-			),
-			accountBillingPortal: createAccountBillingRedirectHandler(env, 'portal'),
 			accountCredits: createAccountCreditsHandler(),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
 			accountUsage: createAccountUsageHandler(env),
 			accountUsageApi: createAccountUsageApiHandler(env),
-			accountWaiting: createAccountWaitingHandler(env),
 			accountWaitingApi: createAccountWaitingApiHandler(env),
 			accountWaitingClickPost: createAccountWaitingClickHandler(env),
 			accountExperiments: createAccountExperimentsHandler(env),
@@ -513,48 +459,26 @@ export function createAppRouter(env: Env) {
 			accountEmailClaimRelease: createAccountEmailClaimReleaseHandler(env),
 			accountPassword: createAccountPasswordHandler(env),
 			accountResendVerification: createAccountResendVerificationHandler(env),
-			accountSecrets: createAccountSecretsHandler(env),
-			accountSecretNew: createAccountSecretsHandler(env),
-			accountSecretsApprove: createAccountSecretsHandler(env),
-			accountSecretUserDetail: createAccountSecretsHandler(env),
-			accountSecretSessionDetail: createAccountSecretsHandler(env),
-			accountSecretPackageDetail: createAccountSecretsHandler(env),
 			accountSecretsApi: createAccountSecretsApiHandler(env),
 			accountSecretsApiPost: createAccountSecretsApiHandler(env),
-			accountSecretProviders: createAccountSecretProvidersHandler(env),
-			accountSecretProvidersApprove: createAccountSecretProvidersHandler(env),
 			accountSecretProvidersApi: createAccountSecretProvidersApiHandler(env),
 			accountSecretProvidersApiPost:
 				createAccountSecretProvidersApiHandler(env),
-			accountValues: createAccountValuesHandler(env),
-			accountValueNew: createAccountValuesHandler(env),
-			accountValueDetail: createAccountValuesHandler(env),
 			accountValuesApi: createAccountValuesApiHandler(env),
 			accountValuesApiPost: createAccountValuesApiHandler(env),
-			accountJobs: createAccountJobsHandler(env),
-			accountJobDetail: createAccountJobsHandler(env),
 			accountJobsApi: createAccountJobsApiHandler(env),
 			accountJobsApiPost: createAccountJobsApiHandler(env),
-			accountWorkflows: createAccountWorkflowsHandler(env),
-			accountWorkflowDetail: createAccountWorkflowsHandler(env),
 			accountWorkflowsApi: createAccountWorkflowsApiHandler(env),
 			accountWorkflowsApiPost: createAccountWorkflowsApiHandler(env),
-			accountWebhooks: createAccountWebhooksHandler(env),
 			accountWebhooksApi: createAccountWebhooksApiHandler(env),
 			accountWebhooksApproveApplyApi:
 				createAccountWebhooksApproveApplyApiHandler(env),
 			accountWebhooksApproveApplyApiPost:
 				createAccountWebhooksApproveApplyApiHandler(env),
-			accountActivity: createAccountActivityHandler(env),
-			accountActivityDetail: createAccountActivityHandler(env),
 			accountActivityApi: createAccountActivityApiHandler(env),
-			accountMemories: createAccountMemoriesHandler(env),
 			accountMemoriesExport: createAccountMemoriesExportHandler(env),
-			accountMemoryDetail: createAccountMemoriesHandler(env),
 			accountMemoriesApi: createAccountMemoriesApiHandler(env),
 			accountMemoriesApiPost: createAccountMemoriesApiHandler(env),
-			accountEmail: createAccountEmailHandler(env),
-			accountEmailDetail: createAccountEmailHandler(env),
 			accountEmailApi: createAccountEmailApiHandler(env),
 			admin: createAdminHandler(env),
 			adminUsers: createAdminUsersHandler(env),

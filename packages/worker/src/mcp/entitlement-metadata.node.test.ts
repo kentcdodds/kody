@@ -13,7 +13,7 @@ import {
 } from './entitlement-metadata.ts'
 
 test('entitlement metadata is only for known plan-limit and quota denials', () => {
-	const upgradeHint = 'Upgrade at /account/billing.'
+	const upgradeHint = 'Upgrade at /@<slug>/-/billing.'
 	const stockDenial = new EntitlementLimitError({
 		resource: 'saved_packages',
 		plan: 'free',

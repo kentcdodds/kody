@@ -41,7 +41,13 @@ function parseClassification(value: string): EmailClassification | null {
 export function createAccountEmailHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request, params }) {
+		async handler({
+			request,
+			params,
+		}: {
+			request: Request
+			params?: { messageId?: string }
+		}) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -72,9 +78,7 @@ export function createAccountEmailHandler(env: Env) {
 				},
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountEmail | typeof routes.accountEmailDetail
-	>
+	}
 }
 
 /**

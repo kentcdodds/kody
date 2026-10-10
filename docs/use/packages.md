@@ -399,7 +399,7 @@ A package app is a hosted Worker entry:
 
 ## Attached MCP servers
 
-Enabled MCP servers from `/account/mcp-servers` are available as
+Enabled MCP servers from `/@<slug>/-/mcp-servers` are available as
 `kody.mcp["name"]` in execute and in package runtimes that build caller context:
 package apps (when capabilities or nested package imports need them), package
 subscription handlers, package-owned jobs, workflows, and webhook delivery.

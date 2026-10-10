@@ -56,7 +56,7 @@ hosts so a return visit cannot hide Cursor or Claude Desktop. A selected-agent
 card names only that host: another client's connection does not mark this one
 connected and does not put its logo on the card. A remembered picker choice is
 not a grant. When a different host actually authorized, Step 2 and Step 3 follow
-that grant instead of the pick. Account → Connections (`/account/connections`)
+that grant instead of the pick. Account → Connections (`/@<slug>/-/connections`)
 lists those inbound hosts grouped by display name, with public logos for known
 kinds, newest-first sort, best-effort labels, per-`clientId` revoke, and **View
 connect steps** for known kinds (same install path as Add connection). That list
@@ -68,7 +68,7 @@ is not `users.mcp_client_name` (first-touch) and not
 `onboarding_first_win` and `search({ entity: "guide:first_win" })` serves the
 guide.
 
-Waiting (`/account/waiting` and `waitingSummary`) is a separate current-state
+Waiting (`/@<slug>/-/waiting` and `waitingSummary`) is a separate current-state
 queue. Wizard-resume and first-use cards live there. See
 [Waiting](../../use/waiting.md).
 

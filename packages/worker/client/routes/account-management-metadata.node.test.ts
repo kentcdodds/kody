@@ -213,7 +213,7 @@ test('account page header puts the phone section menu above the heading', async 
 			title: 'Connections',
 			description:
 				'The agents connected to this Kody account, and how to connect another.',
-			currentHref: routes.accountConnections.href(),
+			currentHref: '/account/connections',
 		}),
 	)
 	const menu = connectionsHtml.indexOf('>Workspace</span>')
@@ -233,7 +233,7 @@ test('account page header puts the phone section menu above the heading', async 
 		jsx(AccountPageHeader, {
 			title: 'Billing',
 			description: 'Plan and invoices.',
-			currentHref: routes.accountBilling.href(),
+			currentHref: '/account/billing',
 		}),
 	)
 	expect(billingHtml.indexOf('<h1')).toBeGreaterThan(

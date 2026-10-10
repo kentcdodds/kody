@@ -10,11 +10,11 @@ import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 
 test('entity explainers resolve on entity pages, render collapsed, and skip settings-only routes', async () => {
-	expect(resolveEntityExplainer(routes.accountEmail.href())?.id).toBe('email')
+	expect(resolveEntityExplainer('/account/email')?.id).toBe('email')
 	expect(resolveEntityExplainer(routes.community.href())?.id).toBe('community')
 
 	expect(resolveEntityExplainer(routes.account.href())).toBeNull()
-	expect(resolveEntityExplainer(routes.accountBilling.href())).toBeNull()
+	expect(resolveEntityExplainer('/account/billing')).toBeNull()
 	expect(resolveEntityExplainer(routes.accountPasskeys.href())).toBeNull()
 	expect(resolveEntityExplainer(routes.login.href())).toBeNull()
 	expect(resolveEntityExplainer(routes.admin.href())).toBeNull()
@@ -25,12 +25,10 @@ test('entity explainers resolve on entity pages, render collapsed, and skip sett
 	).toBeNull()
 
 	const comparisonHref = docHref('packages-integrations-mcp')
-	const integrationsCopy = resolveEntityExplainer(
-		routes.accountIntegrations.href(),
-	)
+	const integrationsCopy = resolveEntityExplainer('/account/integrations')
 	expect(integrationsCopy?.id).toBe('integrations')
 
-	const mcpCopy = resolveEntityExplainer(routes.accountMcpServers.href())
+	const mcpCopy = resolveEntityExplainer('/account/mcp-servers')
 	expect(mcpCopy?.id).toBe('mcp-servers')
 
 	const explainerHtml = await renderToString(

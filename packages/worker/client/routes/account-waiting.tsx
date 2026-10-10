@@ -105,8 +105,8 @@ function renderWaitingBody(items: Array<WaitingItem>) {
 				description="Connections are healthy, and no publishes or grants need a click."
 			>
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
-					<a href={routes.accountActivity.href()}>Activity</a> is run history.{' '}
-					<a href={routes.accountEmail.href()}>Email</a> is your mailbox.
+					<a href={'/account/activity'}>Activity</a> is run history.{' '}
+					<a href={'/account/email'}>Email</a> is your mailbox.
 				</p>
 			</AccountManagementPanel>
 		)

@@ -23,6 +23,8 @@ import {
 	type AccountUsageWeekWindow,
 } from '#universal/loader-data.ts'
 import { loadCreditAttributionBreakdown } from '#worker/usage/credit-attribution.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 
 type UsageUserRow = UserEntitlementRow & {
 	id: number
@@ -96,6 +98,8 @@ export async function loadAccountUsageData(input: {
 		entitlement,
 		stripeCustomerId: row.stripe_customer_id?.trim() || null,
 	})
+	const signupOrg = await getOrgById(input.env.APP_DB, usageUserId)
+	const billingHref = orgBillingPath(signupOrg?.slug?.trim() || row.username)
 	const { credits, wallet: creditsWallet } = await loadAccountUsageCredits({
 		env: input.env,
 		stableUserId: usageUserId,
@@ -103,6 +107,7 @@ export async function loadAccountUsageData(input: {
 		canBuyCredits,
 		computeOverage,
 		now,
+		billingHref,
 		...(wallet ? { wallet } : {}),
 	})
 	const [story, whereItWent] = await Promise.all([

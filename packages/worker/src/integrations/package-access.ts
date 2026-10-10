@@ -1,4 +1,5 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { readSignupOrgSlug } from '#worker/orgs/signup-org-slug.ts'
 import { buildIntegrationAccountUrl } from './account-identity.ts'
 import { getJoinedIntegrationByName } from './repo.ts'
 import { normalizeIntegrationUsageMode } from './usage-mode.ts'
@@ -12,11 +13,15 @@ export class IntegrationPackageAccessDeniedError extends McpCallerError {
 
 export function buildIntegrationPackageApprovalUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	name: string
 	packageId: string
 	kodyId?: string | null
 }) {
-	const url = new URL('/account/integrations/approve', input.baseUrl)
+	const url = new URL(
+		`/@${input.orgSlug}/-/integrations/approve`,
+		input.baseUrl,
+	)
 	url.searchParams.set('name', input.name)
 	url.searchParams.set('package_id', input.packageId)
 	if (input.kodyId) {
@@ -27,10 +32,12 @@ export function buildIntegrationPackageApprovalUrl(input: {
 
 export function buildIntegrationUsageUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	name: string
 }) {
 	return buildIntegrationAccountUrl({
 		baseUrl: input.baseUrl,
+		orgSlug: input.orgSlug,
 		integrationName: input.name,
 	})
 }
@@ -61,6 +68,7 @@ export async function assertCanUseIntegration(input: {
 	name: string
 	packageId?: string | null
 	packageKodyId?: string | null
+	orgSlug?: string
 }): Promise<void> {
 	const joined = await getJoinedIntegrationByName({
 		db: input.env.APP_DB,
@@ -81,6 +89,9 @@ export async function assertCanUseIntegration(input: {
 	if (joined.connection.allowedPackageIds.includes(packageId)) return
 	const approvalUrl = buildIntegrationPackageApprovalUrl({
 		baseUrl: input.baseUrl,
+		orgSlug:
+			input.orgSlug ??
+			(await readSignupOrgSlug(input.env.APP_DB, input.userId)),
 		name: joined.connection.name,
 		packageId,
 		kodyId: input.packageKodyId,

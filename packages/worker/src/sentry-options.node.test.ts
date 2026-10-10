@@ -364,7 +364,7 @@ test('filterSentryEvent drops expected platform and caller noise and keeps real 
 		limit: 67_108_864,
 		current: 449_966_219,
 		upgradeHint:
-			'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /account/billing.',
+			'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /@<slug>/-/billing.',
 	})
 	const entitlementEvent = exceptionEvent({
 		type: 'EntitlementLimitError',

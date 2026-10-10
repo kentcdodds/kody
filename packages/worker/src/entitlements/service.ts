@@ -26,6 +26,8 @@ import {
 	buildEntitlementUpgradeHint,
 	isBudgetLimitError,
 } from './errors.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	assertWithinOrgBudget,
 	orgBudgetFromGateContext,
@@ -1443,6 +1445,10 @@ export async function assertWithinEntitlement(
 				now,
 			})
 	if (current + requested > limit) {
+		const org = await getOrgById(input.db, input.userId)
+		const billingPath = org?.slug
+			? orgBillingPath(org.slug)
+			: '/@<slug>/-/billing'
 		throw new EntitlementLimitError({
 			resource: input.resource,
 			plan,
@@ -1452,6 +1458,7 @@ export async function assertWithinEntitlement(
 				input.resource,
 				plan,
 				entitlement.creditWallet,
+				billingPath,
 			),
 		})
 	}

@@ -280,7 +280,7 @@ export function ConnectSecretsRoute(handle: Handle) {
 						</div>
 						{showBackToSecrets ? (
 							<a
-								href={routes.accountSecrets.href()}
+								href={'/account/secrets'}
 								mix={css(connectSecretsSecondaryButtonCss)}
 							>
 								Back to secrets

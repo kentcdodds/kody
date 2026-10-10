@@ -89,7 +89,14 @@ function createHarness(userId: string) {
 	const accessToken = () =>
 		resolveIntegrationAccessToken({ env, userId, name: 'google' })
 	const canUse = (pkg?: { packageId: string; packageKodyId?: string }) =>
-		assertCanUseIntegration({ env, baseUrl, userId, name: 'google', ...pkg })
+		assertCanUseIntegration({
+			env,
+			baseUrl,
+			userId,
+			name: 'google',
+			orgSlug: 'ada',
+			...pkg,
+		})
 	const grant = (packageId: string) =>
 		grantIntegrationPackage({ env, userId, name: 'google', packageId })
 	return {
@@ -186,6 +193,7 @@ test('integration-owned credentials persist as ciphertext, stay off secret lists
 	).rejects.toThrow(
 		buildIntegrationPackageApprovalUrl({
 			baseUrl,
+			orgSlug: 'ada',
 			name: 'google',
 			packageId: 'pkg-docs',
 			kodyId: 'docs',

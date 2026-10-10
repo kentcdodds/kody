@@ -129,23 +129,32 @@ export function orgResourcePath(
 }
 
 /**
- * Short-lived redirect from an `/account/...` resource page to the person's
- * signup organization. JSON stays on `/account`. Package detail URLs keep
- * their existing canonical redirect.
+ * Canonical `/@slug/-/<section>` URL for an account-shaped section path.
+ * Loaders still parse the `/account/...` shape (see {@link accountAliasPath});
+ * links use this so they do not point at a path that no longer has a route.
+ * JSON, package detail, and person-only pages are not org section links.
  */
-export function isAccountResourceRedirectPath(pathname: string) {
-	return accountResourceRedirectPath(pathname, 'org') !== null
-}
-
-export function accountResourceRedirectPath(
+export function orgResourcePathForAccountPath(
 	pathname: string,
 	personalSlug: string,
 ) {
 	if (!isOrganizationSlug(personalSlug)) return null
-	if (pathname === '/account/packages' || pathname === '/account/packages/') {
+	const normalized =
+		pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+	if (normalized === '/account/packages') {
 		return orgResourcePath(personalSlug, 'packages')
 	}
-	const match = /^\/account\/([^/]+)(\/.*)?$/.exec(pathname)
+	if (
+		normalized === '/account/billing' ||
+		normalized === '/account/billing/success' ||
+		normalized === '/account/billing/portal'
+	) {
+		const step = normalized.slice('/account/billing'.length).replace(/^\//, '')
+		return step
+			? `${orgBillingPath(personalSlug)}/${step}`
+			: orgBillingPath(personalSlug)
+	}
+	const match = /^\/account\/([^/]+)(\/.*)?$/.exec(normalized)
 	if (!match) return null
 	const section = match[1] ?? ''
 	if (section.endsWith('.json') || section === 'packages') return null
@@ -153,6 +162,21 @@ export function accountResourceRedirectPath(
 	const rest = (match[2] ?? '').replace(/^\//, '').replace(/\/$/, '')
 	if (exactOrgSections.has(section) && rest) return null
 	return orgResourcePath(personalSlug, section, rest)
+}
+
+/**
+ * Rewrite an href when the person is already on an organization URL.
+ * Account-shaped section paths become `/@slug/-/<section>`. Anything else
+ * (APIs, person pages, package detail) stays as written.
+ */
+export function relocateAccountHref(href: string, currentHref: string) {
+	const current = new URL(currentHref, 'http://localhost')
+	const slug = orgSlugFromPathname(current.pathname)
+	if (!slug) return href
+	const target = new URL(href, 'http://localhost')
+	const orgPath = orgResourcePathForAccountPath(target.pathname, slug)
+	if (!orgPath) return href
+	return `${orgPath}${target.search}${target.hash}`
 }
 
 /**

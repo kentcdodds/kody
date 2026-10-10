@@ -19,7 +19,7 @@ const accountWebhooksApiPath = routes.accountWebhooksApi.href()
 export const webhooksDocHref = `${docHref('triggers')}#inbound-webhooks-the-external-http-knock`
 
 /** Activity filtered to webhook deliveries (metadata only; bodies are never stored). */
-export const webhookDeliveriesHref = `${routes.accountActivity.href()}?view=recent&status=all&surface=webhook`
+export const webhookDeliveriesHref = `${'/account/activity'}?view=recent&status=all&surface=webhook`
 
 export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
 

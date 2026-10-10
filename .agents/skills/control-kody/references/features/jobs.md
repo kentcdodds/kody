@@ -4,8 +4,8 @@ Package-owned schedules and their run history.
 
 ## How to get there
 
-`/@<slug>/-/jobs` and `/@<slug>/-/jobs/:jobId`. `/account/jobs` redirects there.
-JSON stays at `/account/jobs.json`.
+`/@<slug>/-/jobs` and `/@<slug>/-/jobs/:jobId`. JSON stays at
+`/account/jobs.json`.
 
 ## Drive it
 

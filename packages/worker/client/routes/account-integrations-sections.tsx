@@ -101,7 +101,7 @@ export function renderApprovalCard(props: {
 			>
 				{approval.alreadyGranted ? (
 					<a
-						href={routes.accountIntegrations.href()}
+						href={'/account/integrations'}
 						mix={css({
 							...getPillButtonCss({ size: 'sm' }),
 							display: 'inline-flex',
@@ -124,7 +124,7 @@ export function renderApprovalCard(props: {
 							{submitting ? 'Approving…' : 'Approve'}
 						</button>
 						<a
-							href={routes.accountIntegrations.href()}
+							href={'/account/integrations'}
 							mix={css({
 								...getPillButtonCss({ size: 'sm' }),
 								display: 'inline-flex',

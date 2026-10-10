@@ -284,7 +284,9 @@ export function AccountValuesRoute(handle: Handle) {
 			deleteValueCheck.reset()
 			saveState = 'idle'
 			setMessage('Deleted value.')
-			syncRouterLocation(valuesRoute.buildListHref(getCurrentSearch()))
+			syncRouterLocation(
+				valuesRoute.buildListHref(getCurrentSearch(), getCurrentHref()),
+			)
 			handle.update()
 		} catch (error) {
 			saveState = 'idle'
@@ -406,7 +408,11 @@ export function AccountValuesRoute(handle: Handle) {
 							// the selection until it settles.
 							href: isMutating
 								? undefined
-								: valuesRoute.buildDetailHref(entry.id, getCurrentSearch()),
+								: valuesRoute.buildDetailHref(
+										entry.id,
+										getCurrentSearch(),
+										getCurrentHref(),
+									),
 							cells: {
 								name: entry.name,
 								description: (

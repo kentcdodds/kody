@@ -143,7 +143,7 @@ above when Access protects a browser authorization flow.
 
 Follow [Connect remote MCP servers to Kody](../use/mcp-client-servers.md):
 
-1. Open `/account/mcp-servers`, or ask the agent to call `mcpServerAdd`.
+1. Open `/@<slug>/-/mcp-servers`, or ask the agent to call `mcpServerAdd`.
 2. Choose a short kebab-case name such as `home` or `obsidian` and enter the
    public HTTPS MCP URL. Create a separate connection for each Kody account.
 3. Open the returned authorization link, pass Cloudflare Access, and approve the

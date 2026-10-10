@@ -13,21 +13,18 @@ import { routes } from '#universal/routes.ts'
 import { type IconName } from '#universal/icon.tsx'
 
 /**
- * The repository list for an organization. `/account/packages` only 302s
- * there, so it is the fallback when the session has no org slug yet.
+ * The repository list for an organization. Without a slug yet, the link
+ * opens the person hub instead of a removed `/account/packages` page.
  */
 export function accountPackagesNavHref(orgSlug: string | null | undefined) {
-	return orgSlug
-		? orgResourcePath(orgSlug, 'packages')
-		: routes.accountPackages.href()
+	return orgSlug ? orgResourcePath(orgSlug, 'packages') : routes.account.href()
 }
 
 function orgSectionHref(
 	orgSlug: string | null | undefined,
 	section: OrgOwnedAccountSection,
-	fallback: string,
 ) {
-	return orgSlug ? orgResourcePath(orgSlug, section) : fallback
+	return orgSlug ? orgResourcePath(orgSlug, section) : routes.account.href()
 }
 
 /**
@@ -104,7 +101,7 @@ export function accountRailGroups(): Array<AccountRailGroup> {
 
 function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
-		href: orgSlug ? orgBillingPath(orgSlug) : routes.accountBilling.href(),
+		href: orgSlug ? orgBillingPath(orgSlug) : routes.account.href(),
 		label: 'Billing',
 		icon: 'wallet',
 	}
@@ -151,25 +148,17 @@ export function workspaceRailGroups(input: {
 					icon: 'box',
 				},
 				{
-					href: orgSectionHref(orgSlug, 'jobs', routes.accountJobs.href()),
+					href: orgSectionHref(orgSlug, 'jobs'),
 					label: 'Jobs',
 					icon: 'briefcase',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'workflows',
-						routes.accountWorkflows.href(),
-					),
+					href: orgSectionHref(orgSlug, 'workflows'),
 					label: 'Workflows',
 					icon: 'refresh',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'webhooks',
-						routes.accountWebhooks.href(),
-					),
+					href: orgSectionHref(orgSlug, 'webhooks'),
 					label: 'Webhooks',
 					icon: 'cloud',
 				},
@@ -179,30 +168,18 @@ export function workspaceRailGroups(input: {
 			label: 'Access',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'connections',
-						routes.accountConnections.href(),
-					),
+					href: orgSectionHref(orgSlug, 'connections'),
 					label: 'Connections',
 					icon: 'link',
 					alsoActiveFor: [routes.accountMcpOauthClients.href()],
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'integrations',
-						routes.accountIntegrations.href(),
-					),
+					href: orgSectionHref(orgSlug, 'integrations'),
 					label: 'Integrations',
 					icon: 'plug',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'mcp-servers',
-						routes.accountMcpServers.href(),
-					),
+					href: orgSectionHref(orgSlug, 'mcp-servers'),
 					label: 'MCP servers',
 					icon: 'server',
 				},
@@ -212,34 +189,22 @@ export function workspaceRailGroups(input: {
 			label: 'Data',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'secrets',
-						routes.accountSecrets.href(),
-					),
+					href: orgSectionHref(orgSlug, 'secrets'),
 					label: 'Secrets',
 					icon: 'key',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'secret-providers',
-						routes.accountSecretProviders.href(),
-					),
+					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',
 					icon: 'key',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'memories',
-						routes.accountMemories.href(),
-					),
+					href: orgSectionHref(orgSlug, 'memories'),
 					label: 'Memories',
 					icon: 'book',
 				},
 				{
-					href: orgSectionHref(orgSlug, 'email', routes.accountEmail.href()),
+					href: orgSectionHref(orgSlug, 'email'),
 					label: 'Email',
 					icon: 'mail',
 				},
@@ -249,20 +214,12 @@ export function workspaceRailGroups(input: {
 			label: 'Activity',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'activity',
-						routes.accountActivity.href(),
-					),
+					href: orgSectionHref(orgSlug, 'activity'),
 					label: 'Activity',
 					icon: 'trending-up',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'waiting',
-						routes.accountWaiting.href(),
-					),
+					href: orgSectionHref(orgSlug, 'waiting'),
 					label: 'Waiting',
 					icon: 'clock',
 				},

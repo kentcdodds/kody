@@ -12,6 +12,11 @@ export async function loadAccountWaitingData(input: {
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<AccountWaitingLoaderData> {
+	const orgSlug =
+		input.user.request.org.slug?.trim() || input.user.username.trim()
+	if (!orgSlug) {
+		throw new Error('Waiting links need the signup organization slug.')
+	}
 	const items = await deriveWaitingItems({
 		env: input.env,
 		user: {
@@ -21,6 +26,7 @@ export async function loadAccountWaitingData(input: {
 			username: input.user.username,
 			emailVerified: input.user.emailVerified,
 		},
+		orgSlug,
 		now: input.now,
 		waitUntil: input.waitUntil,
 	})

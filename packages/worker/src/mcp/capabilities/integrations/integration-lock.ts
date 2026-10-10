@@ -63,6 +63,10 @@ export const integrationLockCapability = defineDomainCapability(
 					allowed_package_ids: updated.allowedPackageIds,
 					usage_url: buildIntegrationUsageUrl({
 						baseUrl: ctx.callerContext.baseUrl,
+						orgSlug:
+							ctx.callerContext.request?.org.slug?.trim() ||
+							user.username?.trim() ||
+							'',
 						name: updated.name,
 					}),
 				}

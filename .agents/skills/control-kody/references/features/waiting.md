@@ -6,7 +6,7 @@ another inbox.
 
 ## How to get there
 
-`/account/waiting`. Not a notifications product — fold connection-health and
+`/@<slug>/-/waiting`. Not a notifications product — fold connection-health and
 approve-publish here instead of inventing another inbox.
 
 ## Drive it
@@ -14,7 +14,7 @@ approve-publish here instead of inventing another inbox.
 ```bash
 node tools/control-kody.ts preview -- \
   --request 'GET /account/waiting.json' \
-  --check /account/waiting
+  --check /@<slug>/-/waiting
 ```
 
 ## APIs

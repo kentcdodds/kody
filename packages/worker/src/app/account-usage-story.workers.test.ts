@@ -75,6 +75,7 @@ async function loadStoryAndCredits(userId: number) {
 		canBuyCredits: user.canBuyCredits,
 		computeOverage,
 		now,
+		billingHref: '/@usage/-/billing',
 	})
 	const story = await loadAccountUsageStory({
 		db: env.APP_DB,

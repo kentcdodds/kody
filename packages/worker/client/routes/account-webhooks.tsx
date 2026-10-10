@@ -27,7 +27,7 @@ import { colors, spacing } from '#universal/styles/tokens.ts'
 
 const clampedCellCss = css(recordCellClamp(28))
 
-const listPath = routes.accountWebhooks.href()
+const listPath = '/account/webhooks'
 
 /** The index shares one payload regardless of query string. */
 function getWebhooksDataLatchKey(_href: string) {

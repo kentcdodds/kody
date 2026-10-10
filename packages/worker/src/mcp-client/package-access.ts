@@ -1,6 +1,7 @@
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { routes } from '#universal/routes.ts'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
+import { readSignupOrgSlug } from '#worker/orgs/signup-org-slug.ts'
 import { getMcpServerSettingRowById } from './settings-repo.ts'
 import { type McpServerSettingMetadata } from './settings-types.ts'
 import {
@@ -22,10 +23,11 @@ export class McpServerPackageAccessDeniedError extends McpCallerError {
 
 export function buildMcpServerUsageUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	serverId: string
 }) {
 	return new URL(
-		routes.accountMcpServerDetail.href({ serverId: input.serverId }),
+		orgSectionRestPath(input.orgSlug, 'mcp-servers', input.serverId),
 		input.baseUrl,
 	).toString()
 }
@@ -86,6 +88,7 @@ export async function assertCanUseMcpServer(input: {
 	serverName: string
 	packageId?: string | null
 	packageKodyId?: string | null
+	orgSlug?: string
 }): Promise<void> {
 	const row = await getMcpServerSettingRowById({
 		db: input.env.APP_DB,
@@ -97,6 +100,9 @@ export async function assertCanUseMcpServer(input: {
 	if (usageMode === 'any') return
 	const usageUrl = buildMcpServerUsageUrl({
 		baseUrl: input.baseUrl,
+		orgSlug:
+			input.orgSlug?.trim() ||
+			(await readSignupOrgSlug(input.env.APP_DB, input.userId)),
 		serverId: row.id,
 	})
 	const packageId = input.packageId?.trim() ?? ''

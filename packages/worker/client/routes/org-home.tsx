@@ -4,10 +4,10 @@ import { type IconName, renderIcon } from '#universal/icon.tsx'
 import {
 	orgBillingPath,
 	orgMembersPath,
+	orgResourcePath,
 	orgRoleManagesBilling,
 	orgSettingsPath,
 } from '#universal/org-pages.ts'
-import { routes } from '#universal/routes.ts'
 import {
 	colors,
 	radius,
@@ -40,7 +40,7 @@ export function renderOrgHomeMain(input: {
 							body: `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`,
 							action: (
 								<a
-									href={routes.accountConnections.href()}
+									href={orgResourcePath(input.slug, 'connections')}
 									mix={css(getGhostButtonCss({ size: 'sm' }))}
 								>
 									Connect an agent

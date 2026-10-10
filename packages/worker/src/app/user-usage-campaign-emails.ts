@@ -12,6 +12,7 @@ import {
 } from '#universal/referral-program.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { portabilityGuideHref } from '#universal/onboarding-process.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
 import {
 	evaluateUsageCampaign,
 	nextUsageCampaignRow,
@@ -42,6 +43,7 @@ import {
 	tipsUnsubscribeLabel,
 } from '#worker/usage/tips-unsubscribe.ts'
 import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type UserUsageCampaignEmailResult =
@@ -59,6 +61,7 @@ export function buildUsageCampaignEmail(input: {
 	template: UsageCampaignMailTemplate
 	clientLabel: string
 	trialGiftLive: boolean
+	orgSlug?: string
 	shareUrl?: string
 	unsubscribe?: { label: string; url: string }
 }) {
@@ -67,7 +70,10 @@ export function buildUsageCampaignEmail(input: {
 		portabilityGuideHref,
 		input.appBaseUrl,
 	).toString()
-	const billingUrl = new URL('/account/billing', input.appBaseUrl).toString()
+	const billingUrl =
+		input.orgSlug && input.trialGiftLive
+			? new URL(orgBillingPath(input.orgSlug), input.appBaseUrl).toString()
+			: undefined
 	switch (input.template) {
 		case 'verified_no_mcp':
 			return buildConnectAgentEmail({
@@ -86,7 +92,7 @@ export function buildUsageCampaignEmail(input: {
 			return buildSecondAgentEmail({
 				appBaseUrl: input.appBaseUrl,
 				portabilityUrl,
-				trialUrl: input.trialGiftLive ? billingUrl : undefined,
+				trialUrl: billingUrl,
 				unsubscribe: input.unsubscribe,
 			})
 		case 'cooling':
@@ -412,8 +418,10 @@ async function sendClaimedCampaignEmail(input: {
 		})
 		return false
 	}
+	const org = await getOrgById(input.env.APP_DB, input.user.stable_user_id)
 	const email = buildUsageCampaignEmail({
 		appBaseUrl: input.emailConfig.appBaseUrl,
+		orgSlug: org?.slug,
 		template,
 		clientLabel: campaignClientLabel(input.user.mcp_client_name),
 		trialGiftLive: isPackagedSingleClientTrialCtaLive({

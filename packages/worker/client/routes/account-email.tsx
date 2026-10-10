@@ -200,7 +200,10 @@ export function AccountEmailRoute(handle: Handle) {
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to delete message.')
 			}
-			const listHref = emailRoute.buildListHref(getCurrentSearch())
+			const listHref = emailRoute.buildListHref(
+				getCurrentSearch(),
+				getCurrentHref(),
+			)
 			applyPayload(payload, listHref)
 			deleteState = 'idle'
 			message = 'Message deleted.'
@@ -464,6 +467,7 @@ export function AccountEmailRoute(handle: Handle) {
 								href: emailRoute.buildDetailHref(
 									emailMessage.id,
 									getCurrentSearch(),
+									getCurrentHref(),
 								),
 								cells: {
 									subject: (

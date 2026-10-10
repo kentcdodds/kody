@@ -4,9 +4,9 @@ Saved OAuth connections and the hosted connect start.
 
 ## How to get there
 
-`/account/integrations` → `/account/integrations/:integrationName`. OAuth apps:
-`/account/integrations/apps/:appSlug`. One-click grant:
-`/account/integrations/approve`. Start connect: `/connect/oauth`.
+`/@<slug>/-/integrations` → `/@<slug>/-/integrations/:integrationName`. OAuth
+apps: `/@<slug>/-/integrations/apps/:appSlug`. One-click grant:
+`/@<slug>/-/integrations/approve`. Start connect: `/connect/oauth`.
 
 ## Drive it
 

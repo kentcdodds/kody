@@ -176,30 +176,6 @@ function renderBillingDenied(
 	})
 }
 
-/**
- * `/account/billing` and its pre-move Checkout return URL open the signup
- * organization's billing page, keeping the query (`session_id`, `error`).
- */
-export function createAccountBillingRedirectHandler(env: Env, step = '') {
-	return {
-		middleware: [],
-		async handler({ request }: { request: Request }) {
-			const user = await requireAuthenticatedPageUser(request, env)
-			if (user instanceof Response) return user
-			const requestUrl = new URL(request.url)
-			// `/account/*` binds the signup organization, whose slug survives
-			// username changes.
-			const destination = orgBillingUrl(
-				request,
-				user.request.org.slug || user.username,
-				step,
-			)
-			destination.search = requestUrl.search
-			return Response.redirect(destination.toString(), 302)
-		},
-	}
-}
-
 export function createOrgBillingHandler(env: Env) {
 	return {
 		middleware: [],
@@ -360,7 +336,11 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 								returnUrl: billingUrl,
 								configuration: getBillingPortalConfigurationId(env),
 							})
-							return jsonResponse({ ok: true, url: portal.url, mode: 'portal' })
+							return jsonResponse({
+								ok: true,
+								url: portal.url,
+								mode: 'portal',
+							})
 						}
 						const updatedUrl = new URL(billingUrl)
 						updatedUrl.searchParams.set('billing', 'updated')

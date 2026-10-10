@@ -468,7 +468,11 @@ export function AccountJobsRoute(handle: Handle) {
 							// editor owns the selection until it settles.
 							href: isMutating
 								? undefined
-								: jobsRoute.buildDetailHref(item.id, getCurrentSearch()),
+								: jobsRoute.buildDetailHref(
+										item.id,
+										getCurrentSearch(),
+										getCurrentHref(),
+									),
 							cells: {
 								name: <span mix={clampedCellCss}>{item.name}</span>,
 								status: (
@@ -496,13 +500,19 @@ export function AccountJobsRoute(handle: Handle) {
 							detail
 								? renderAccountJobDetail({
 										username,
+										currentHref: getCurrentHref(),
 										detail,
 										isMutating,
 										retention,
 										deleteJobCheck,
 										postAction,
 										navigateToList: () => {
-											navigate(jobsRoute.buildListHref(getCurrentSearch()))
+											navigate(
+												jobsRoute.buildListHref(
+													getCurrentSearch(),
+													getCurrentHref(),
+												),
+											)
 										},
 									})
 								: waitingForDetail

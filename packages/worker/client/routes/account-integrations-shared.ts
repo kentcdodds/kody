@@ -18,7 +18,7 @@ export const integrationsRoute = createListDetailRoute(
 	'/account/integrations',
 	{
 		parseDetailId(pathname) {
-			const prefix = `${routes.accountIntegrations.href()}/`
+			const prefix = `${'/account/integrations'}/`
 			if (!pathname.startsWith(prefix)) return null
 			const segment = pathname.slice(prefix.length)
 			if (!segment || segment.includes('/') || segment === 'approve') {
@@ -29,7 +29,7 @@ export const integrationsRoute = createListDetailRoute(
 	},
 )
 
-const oauthAppsPathPrefix = `${routes.accountIntegrations.href()}/apps/`
+const oauthAppsPathPrefix = `${'/account/integrations'}/apps/`
 
 function decodePathSegment(value: string) {
 	try {
@@ -48,10 +48,8 @@ function readSelectedOauthAppSlug(href: string): string | null {
 }
 
 function buildOauthAppHref(appSlug: string, search = '') {
-	return routes.accountOauthAppDetail.href(
-		{ appSlug },
-		{ searchParams: new URLSearchParams(search) },
-	)
+	const path = `/account/integrations/apps/${encodeURIComponent(appSlug)}`
+	return search ? `${path}?${new URLSearchParams(search).toString()}` : path
 }
 
 export function oauthAppTitle(app: AccountOauthAppListItem) {
@@ -87,7 +85,7 @@ export function buildIntegrationHref(
 		const first = app.connections[0]
 		return first
 			? integrationsRoute.buildDetailHref(first.name, search)
-			: routes.accountIntegrations.href()
+			: '/account/integrations'
 	}
 	return buildOauthAppHref(app.slug, search)
 }
@@ -193,7 +191,7 @@ export const dangerButtonCss = getDangerPillCss({ size: 'sm' })
  */
 export function getDataLatchKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+	if (url.pathname === '/account/integrations/approve') {
 		return `${url.pathname}?${url.searchParams.get('name') ?? ''}&${url.searchParams.get('package_id') ?? ''}`
 	}
 	return '/account/integrations'
@@ -202,7 +200,7 @@ export function getDataLatchKey(href: string) {
 export function buildIntegrationsApiHref(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const requestUrl = new URL(accountIntegrationsApiPath, url.origin)
-	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+	if (url.pathname === '/account/integrations/approve') {
 		const name = url.searchParams.get('name')
 		const packageId = url.searchParams.get('package_id')
 		if (name) requestUrl.searchParams.set('name', name)

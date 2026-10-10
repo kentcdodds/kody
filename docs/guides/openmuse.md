@@ -127,7 +127,7 @@ There are two ways to do that.
 
 **Approving gives that agent full access to your Kody account**, not a limited
 permission set. Connect it only to an OpenMuse deployment you control, and
-revoke it from Account → Connections (`/account/connections`) when you stop
+revoke it from Account → Connections (`/@<slug>/-/connections`) when you stop
 using it.
 
 ### Option A: add Kody to OpenMuse's built-in agent
@@ -208,8 +208,8 @@ OpenMuse's browser and computer tools.
    saved. That is the whole point: the phone conversation furnished a home your
    other agents already share. [Second agent](/docs/portability) is the
    playbook.
-4. **Find the connection.** Account → Connections (`/account/connections`) lists
-   the client your OpenMuse deployment registered, with a revoke button.
+4. **Find the connection.** Account → Connections (`/@<slug>/-/connections`)
+   lists the client your OpenMuse deployment registered, with a revoke button.
 
 ## A worked example
 

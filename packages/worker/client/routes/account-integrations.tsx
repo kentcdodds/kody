@@ -134,7 +134,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 	}
 
 	function listHref() {
-		return `${routes.accountIntegrations.href()}${getCurrentSearch()}`
+		return `${'/account/integrations'}${getCurrentSearch()}`
 	}
 
 	function currentSelectionMissing() {
@@ -264,7 +264,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 				}
 			})
 			approval = approval ? { ...approval, alreadyGranted: true } : approval
-			navigate(routes.accountIntegrations.href())
+			navigate('/account/integrations')
 		} catch (error) {
 			message =
 				error instanceof Error

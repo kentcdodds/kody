@@ -342,7 +342,7 @@ const packageApprovalSecondaryButtonCss = getSecondaryButtonCss({
 
 export function isPackageApprovalHref(href: string) {
 	const url = new URL(href, 'http://localhost')
-	if (url.pathname === routes.accountSecretsApprove.href()) return true
+	if (url.pathname === '/account/secrets/approve') return true
 	if (!url.searchParams.get('package_id')?.trim()) return false
 	return parseAccountSecretPath(url.pathname)?.scope === 'user'
 }
@@ -481,7 +481,7 @@ export function renderPackageSecretApprovalPage(props: {
 					</div>
 					{view.showBackToSecrets ? (
 						<a
-							href={routes.accountSecrets.href()}
+							href={'/account/secrets'}
 							mix={css(packageApprovalSecondaryButtonCss)}
 						>
 							Back to secrets

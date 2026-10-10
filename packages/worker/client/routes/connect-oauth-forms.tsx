@@ -352,9 +352,7 @@ export function renderSuccessCard(input: {
 				/>
 			</div>
 			<a
-				href={routes.accountIntegrationDetail.href({
-					integrationName: input.config.providerKey,
-				})}
+				href={`/account/integrations/${encodeURIComponent(input.config.providerKey)}`}
 				mix={css(primaryLinkCss)}
 			>
 				View this connection

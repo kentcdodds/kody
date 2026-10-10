@@ -44,7 +44,7 @@ A saved package may declare it can serve a provider id:
 ```
 
 Declaring metadata does **not** bind the provider. The account owner pins one
-saved package identity to that provider id on `/account/secret-providers` (or
+saved package identity to that provider id on `/@<slug>/-/secret-providers` (or
 `secretProviderBind`), plus the **Kody user secret** that holds the door key and
 optional non-secret config (for example a Connect base URL).
 
@@ -67,7 +67,7 @@ websites fail closed.
   spirit as unlocked user secrets).
 - Saved packages need an explicit `(provider, canonicalRef) → package` grant.
   `secretProviderLock` returns the approval URL; only the owner can grant or
-  revoke on `/account/secret-providers`. Unbind, and rebind to a different
+  revoke on `/@<slug>/-/secret-providers`. Unbind, and rebind to a different
   provider package, drop every grant for that provider.
 - A package runs in the org that owns it, so a collaborator holding a grant uses
   that org's binding and grants, not their own.

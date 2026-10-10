@@ -59,5 +59,5 @@ Remix/blog/UI-only uploads skip jobs.
 Verify cron ticks (jobs-worker logs show `scheduled` invocations every 5 minutes
 and queue consumption on `kody-scheduled-dispatch`), a due job running
 end-to-end (`JobManager` alarm → `HOST.runDueJobsForUser` → a run in the user's
-activity), and dashboards (`/account/jobs`) plus MCP `jobs_*` listing `JOBS_DB`
-rows.
+activity), and dashboards (`/@<slug>/-/jobs`) plus MCP `jobs_*` listing
+`JOBS_DB` rows.

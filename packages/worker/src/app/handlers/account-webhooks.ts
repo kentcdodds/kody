@@ -13,7 +13,7 @@ import { type routes } from '#universal/routes.ts'
 export function createAccountWebhooksHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -30,7 +30,7 @@ export function createAccountWebhooksHandler(env: Env) {
 				loaderData: { accountWebhooks },
 			})
 		},
-	} satisfies Action<typeof routes.accountWebhooks>
+	}
 }
 
 /**

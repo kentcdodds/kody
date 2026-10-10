@@ -147,8 +147,8 @@ Kent's grok-bot handler:
 | ---------------------------- | --------------------------------------------------------------------- |
 | `{you}@inbox.kody.codes`     | The address you give other people and systems                         |
 | `{you}+tag@inbox.kody.codes` | The same inbox, with a tag the handler can branch on                  |
-| `/account/email`             | Stored inbound and outbound copies, destinations, sender rules        |
-| `/account/activity`          | Subscription runs for `email.message.received`                        |
+| `/@<slug>/-/email`           | Stored inbound and outbound copies, destinations, sender rules        |
+| `/@<slug>/-/activity`        | Subscription runs for `email.message.received`                        |
 | Chat (`execute`)             | `emailMessageSearch` / `emailMessageGet`, or a dry-run of the handler |
 
 The homepage card is a tile with the kicker **Email** and the title **Agent

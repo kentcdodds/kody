@@ -15,6 +15,7 @@ import {
 	type AccountJobDetail,
 	type AccountJobsLoaderData,
 } from '#universal/loader-data.ts'
+import { relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	cardTitleCss,
@@ -84,6 +85,7 @@ export function renderJobDetailPlaceholder(title: string, body: string) {
 
 export function renderAccountJobDetail(input: {
 	username: string
+	currentHref: string
 	detail: AccountJobDetail
 	isMutating: boolean
 	retention: AccountJobsLoaderData['retention']
@@ -310,9 +312,10 @@ export function renderAccountJobDetail(input: {
 											})}
 										>
 											<a
-												href={routes.accountActivityDetail.href({
-													runId: run.id,
-												})}
+												href={relocateAccountHref(
+													`/account/activity/${encodeURIComponent(run.id)}`,
+													input.currentHref,
+												)}
 												mix={css(primaryLinkCss)}
 											>
 												Logs

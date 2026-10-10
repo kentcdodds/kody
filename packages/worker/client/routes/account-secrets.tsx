@@ -370,6 +370,7 @@ export function AccountSecretsRoute(handle: Handle) {
 					buildSecretHref(
 						payload.selectedSecret,
 						wasCreating ? '' : getCurrentSearch(),
+						getCurrentHref(),
 					),
 				)
 			}
@@ -420,7 +421,7 @@ export function AccountSecretsRoute(handle: Handle) {
 			)
 			deleteSecretCheck.reset()
 			handle.update()
-			navigate(buildBaseSecretsHref(getCurrentSearch()))
+			navigate(buildBaseSecretsHref(getCurrentSearch(), getCurrentHref()))
 		} catch (error) {
 			saveState = 'idle'
 			message =
@@ -586,7 +587,9 @@ export function AccountSecretsRoute(handle: Handle) {
 							mix={[
 								on('click', () => {
 									if (isMutating) return
-									navigate(buildNewSecretHref(getCurrentSearch()))
+									navigate(
+										buildNewSecretHref(getCurrentSearch(), getCurrentHref()),
+									)
 								}),
 								css(primaryButtonCss),
 							]}
@@ -707,7 +710,7 @@ export function AccountSecretsRoute(handle: Handle) {
 							? {
 									href: isMutating
 										? undefined
-										: buildNewSecretHref(getCurrentSearch()),
+										: buildNewSecretHref(getCurrentSearch(), getCurrentHref()),
 									label: 'New secret',
 								}
 							: undefined
@@ -718,7 +721,7 @@ export function AccountSecretsRoute(handle: Handle) {
 						// the selection until it settles.
 						href: isMutating
 							? undefined
-							: buildSecretHref(secret, getCurrentSearch()),
+							: buildSecretHref(secret, getCurrentSearch(), getCurrentHref()),
 						cells: {
 							name: <span mix={clampedCellCss}>{secret.name}</span>,
 							scope: getScopeLabel(secret.scope),

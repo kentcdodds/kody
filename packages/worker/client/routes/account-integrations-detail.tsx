@@ -437,6 +437,7 @@ export function renderIntegrationRecord(props: IntegrationRecordProps) {
 											href={integrationsRoute.buildDetailHref(
 												connectionRef.name,
 												currentSearch,
+												currentHref,
 											)}
 											data-prevent-scroll-reset
 											mix={css(primaryLinkCss)}

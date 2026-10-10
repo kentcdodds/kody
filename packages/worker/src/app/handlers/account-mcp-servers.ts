@@ -14,6 +14,7 @@ import {
 	mcpOAuthReturnCookie,
 	readMcpOAuthReturnCookie,
 } from '#universal/mcp-oauth-return.ts'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
 import { routes } from '#universal/routes.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
@@ -35,7 +36,7 @@ type AuthenticatedUser = NonNullable<
 export function createAccountMcpServersHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -54,11 +55,7 @@ export function createAccountMcpServersHandler(env: Env) {
 				loaderData: { accountMcpServers },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountMcpServers
-		| typeof routes.accountMcpServerNew
-		| typeof routes.accountMcpServerDetail
-	>
+	}
 }
 
 export function createAccountMcpServersApiHandler(env: Env) {
@@ -211,14 +208,17 @@ export function createAccountMcpServersOauthCallbackHandler(env: Env) {
 
 			const returnToOnboarding =
 				readMcpOAuthReturnCookie(request.headers.get('Cookie')) != null
+			const orgSlug = user.request.org.slug?.trim() || user.username
 			const target = returnToOnboarding
 				? new URL(routes.onboardingStep2.href(), request.url)
-				: serverId
-					? new URL(
-							routes.accountMcpServerDetail.href({ serverId }),
-							request.url,
-						)
-					: new URL(routes.accountMcpServers.href(), request.url)
+				: new URL(
+						orgSectionRestPath(
+							orgSlug,
+							'mcp-servers',
+							serverId ? serverId : '',
+						),
+						request.url,
+					)
 			if (authorizationNeeded) {
 				target.searchParams.set('auth', serverId ? 'required' : 'retry')
 			} else if (authSuccess) {

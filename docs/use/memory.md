@@ -82,6 +82,6 @@ document URLs such as GitHub files, R2 object URLs, or Notion pages.
 
 ## Account download and categories
 
-Download memories as JSON from `/account/memories`. Categories are freeform;
+Download memories as JSON from `/@<slug>/-/memories`. Categories are freeform;
 suggested values and the account-download details are in
 [Shared memory](../guides/memory.md).

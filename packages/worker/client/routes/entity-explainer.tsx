@@ -2,6 +2,7 @@ import { css, type Handle } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { dismissOpenPopoverPanel } from '#client/site-header.tsx'
 import { renderIcon } from '#universal/icon.tsx'
+import { accountAliasPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { docHref } from '#universal/docs-nav.ts'
 import { hoverMq } from '#universal/styles/style-primitives.ts'
@@ -34,15 +35,17 @@ type EntityExplainerDefinition = EntityExplainerCopy & {
 }
 
 function accountSection(href: string) {
-	return (pathname: string) =>
-		pathname === href || pathname.startsWith(`${href}/`)
+	return (pathname: string) => {
+		const aliased = accountAliasPath(pathname)
+		return aliased === href || aliased.startsWith(`${href}/`)
+	}
 }
 
 const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'email',
 		question: 'What is email?',
-		match: accountSection(routes.accountEmail.href()),
+		match: accountSection('/account/email'),
 		paragraphs: [
 			"Every Kody account gets a personal inbox at your username on this deployment's email domain. Inbound mail is stored so automations can react to it, and your agent can send you notify-self messages or reply to stored threads.",
 		],
@@ -56,7 +59,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'jobs',
 		question: 'What is a job?',
-		match: accountSection(routes.accountJobs.href()),
+		match: accountSection('/account/jobs'),
 		paragraphs: [
 			'A job is scheduled work that runs in the cloud on Cloudflare Workers, whether or not your computer is on. Package-owned jobs live with the saved package that declares them.',
 		],
@@ -70,7 +73,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'workflows',
 		question: 'What is a workflow?',
-		match: accountSection(routes.accountWorkflows.href()),
+		match: accountSection('/account/workflows'),
 		paragraphs: [
 			'A workflow is one-shot durable work, not a recurring schedule. Inline workflows carry their code; package workflows call a published export.',
 		],
@@ -84,7 +87,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'webhooks',
 		question: 'What is a webhook?',
-		match: accountSection(routes.accountWebhooks.href()),
+		match: accountSection('/account/webhooks'),
 		paragraphs: [
 			'A webhook is an inbound HTTP endpoint a package declares. The minted URL is a credential: when a provider POSTs to it, Kody runs that package’s export.',
 		],
@@ -98,7 +101,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'secrets',
 		question: 'What is a secret?',
-		match: accountSection(routes.accountSecrets.href()),
+		match: accountSection('/account/secrets'),
 		paragraphs: [
 			'A secret is a credential Kody stores for you — an API key or token. Your agent references it by name; Kody substitutes the value at the network boundary and never returns it to chat.',
 		],
@@ -112,7 +115,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'integrations',
 		question: 'What is an integration?',
-		match: accountSection(routes.accountIntegrations.href()),
+		match: accountSection('/account/integrations'),
 		paragraphs: [
 			'An integration is a connected service — usually OAuth — so Kody can act as you on that provider. The connection is yours: packages use it, they do not own it.',
 		],
@@ -127,7 +130,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'connections',
 		question: 'What is a connection?',
-		match: accountSection(routes.accountConnections.href()),
+		match: accountSection('/account/connections'),
 		paragraphs: [
 			'A connection is an AI host — Cursor, Claude, ChatGPT, Codex, a CLI — that has authorized against this Kody account over MCP. Every connected host reaches the same memories, secrets, packages, jobs, and email; Kody is the home they share, not a gateway.',
 		],
@@ -142,7 +145,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'mcp-servers',
 		question: 'What is an MCP server?',
-		match: accountSection(routes.accountMcpServers.href()),
+		match: accountSection('/account/mcp-servers'),
 		paragraphs: [
 			'An MCP server here is a remote server Kody calls for you. Its tools become callable from your agent, the inverse of connecting your agent to Kody.',
 		],
@@ -151,7 +154,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'memories',
 		question: 'What is a memory?',
-		match: accountSection(routes.accountMemories.href()),
+		match: accountSection('/account/memories'),
 		paragraphs: [
 			'A memory is a durable fact or preference Kody keeps about you across conversations. Agents retrieve a few relevant ones per task. Do not store secrets here.',
 		],
@@ -165,7 +168,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'waiting',
 		question: 'What is waiting?',
-		match: accountSection(routes.accountWaiting.href()),
+		match: accountSection('/account/waiting'),
 		paragraphs: [
 			'Waiting is the queue of things only you can clear: verify email, reconnect an MCP server, promote a locked-package publish, confirm a pending email change, or finish setup.',
 		],
@@ -181,7 +184,7 @@ const entityExplainerDefinitions: Array<EntityExplainerDefinition> = [
 	{
 		id: 'activity',
 		question: 'What is activity?',
-		match: accountSection(routes.accountActivity.href()),
+		match: accountSection('/account/activity'),
 		paragraphs: [
 			'Activity is a short execution history for jobs, package apps, webhooks, and other runtimes: open errors with logs and triage, plus the last week of runs.',
 		],

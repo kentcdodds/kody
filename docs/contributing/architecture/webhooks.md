@@ -213,7 +213,7 @@ so a stray click cannot rotate a provider's URL; `reveal` refuses mints without
 `url_secret_encrypted` and points at Rotate. The client keeps revealed URLs in
 memory only and drops them on Hide or when the settings page changes package.
 
-`/account/webhooks` (`packages/worker/client/routes/account-webhooks.tsx`,
+`/@<slug>/-/webhooks` (`packages/worker/client/routes/account-webhooks.tsx`,
 `packages/worker/src/app/handlers/account-webhooks.ts`) is a thin cross-package
 index. `GET /account/webhooks.json` lists every declared webhook (never a URL)
 and each row deep-links to `/@:username/:kodyId/settings#webhook-<name>`. The

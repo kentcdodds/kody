@@ -16,7 +16,7 @@ npm run control-kody -- doctor
 npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
-npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
+npm run control-kody -- request GET /@user-me/-/waiting --dump --contains 'Waiting'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
 npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
