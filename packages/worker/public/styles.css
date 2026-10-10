@@ -1508,82 +1508,9 @@ html.is-settled {
 	text-decoration-color: oklch(from var(--primitive-color) l c h / 0.3);
 }
 
-/* One panel under the word list for every primitive: the same box
-   whichever word opened it, aligned with the dots. */
-.landing-primitive-popover {
-	position: absolute;
-	left: 0;
-	top: calc(100% + 0.9rem);
-	z-index: 4;
-	box-sizing: border-box;
-	width: min(21rem, 80vw);
-	margin: 0;
-	padding: 0.85rem 1.05rem 0.95rem;
-	text-align: left;
-	white-space: normal;
-	font-size: 0.93rem;
-	font-weight: 400;
-	line-height: 1.5;
-	color: var(--color-text);
-	background: var(--color-surface);
-	border: 1px solid var(--color-border);
-	border-radius: 12px;
-	box-shadow:
-		var(--shadow-md),
-		0 0 0 1px oklch(from var(--primitive-color) l c h / 0.18);
-	visibility: hidden;
-	opacity: 0;
-	/* Hidden and fading panels must not catch clicks on the link below.
-	   Open state turns pointer events back on. */
-	pointer-events: none;
-	translate: 0 -0.3rem;
-	transition:
-		opacity 0.2s ease,
-		translate 0.2s ease,
-		visibility 0.2s;
-}
-
-.landing-primitive-popover-title {
-	display: flex;
-	align-items: center;
-	gap: 0.45rem;
-	margin-bottom: 0.25rem;
-	font-size: 0.78rem;
-	font-weight: 700;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: oklch(from var(--primitive-color) var(--primitive-text-l) c h);
-}
-
-.landing-primitive-popover-title::before {
-	content: '';
-	width: 0.55rem;
-	height: 0.55rem;
-	border-radius: 50%;
-	background: var(--primitive-color);
-	box-shadow: 0 0 0.5rem oklch(from var(--primitive-color) l c h / 0.7);
-}
-
-.landing-primitive:hover .landing-primitive-popover,
-.landing-primitive:focus-within .landing-primitive-popover,
-.landing-primitive[data-open] .landing-primitive-popover {
-	visibility: visible;
-	opacity: 1;
-	translate: 0 0;
-	pointer-events: auto;
-}
-
-.landing-primitive[data-dismissed] .landing-primitive-popover {
-	visibility: hidden;
-	opacity: 0;
-	pointer-events: none;
-}
-
 .landing-primitives-more {
 	position: relative;
-	/* Stay under the words layer so the mobile bottom sheet (inside that
-	   layer) can paint over this line. The extra top margin clears the
-	   desktop panel and its shadow on a short lantern. */
+	/* Stay under the words layer. Extra top margin clears a short lantern. */
 	z-index: 0;
 	margin: clamp(3.5rem, 6vw, 4.5rem) 0 0;
 	color: var(--color-text-muted);
@@ -3024,23 +2951,6 @@ html.is-settled {
 
 	.landing-primitive-item {
 		justify-content: center;
-	}
-
-	/* Narrow screens: a bottom sheet instead of a panel under the list, so
-	   nothing below the words is covered and there is no layout shift.
-	   Sits above the sticky header (z 10). */
-	.landing-primitive-popover {
-		position: fixed;
-		left: 0.75rem;
-		right: 0.75rem;
-		top: auto;
-		bottom: max(0.75rem, env(safe-area-inset-bottom));
-		z-index: 20;
-		width: auto;
-		translate: 0 0.5rem;
-		box-shadow:
-			var(--shadow-md),
-			0 0 0 1px oklch(from var(--primitive-color) l c h / 0.28);
 	}
 
 	.landing-proof-split {

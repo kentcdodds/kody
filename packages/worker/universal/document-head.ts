@@ -36,6 +36,8 @@ type DocumentHeadLink = {
 	hrefPath: string
 	type?: string
 	title?: string
+	/** Keep href origin-relative for same-origin assets (e.g. stylesheets under CSP). */
+	sameOrigin?: boolean
 }
 
 type DocumentHeadOg = {
@@ -166,6 +168,24 @@ function publicPageHead(
 			imagePath: `/og/${pageId}.png`,
 		},
 		links: extra?.links,
+	}
+}
+
+function featurePageHead(
+	pageId: PublicOgPageId,
+	title: string,
+): DocumentHeadDescriptor {
+	return {
+		...publicPageHead(pageId, title, {
+			links: [
+				{
+					rel: 'stylesheet',
+					hrefPath: '/feature-pages.css',
+					sameOrigin: true,
+				},
+			],
+		}),
+		description: publicOgPages[pageId].ogDescription,
 	}
 }
 
@@ -398,6 +418,34 @@ const routeDocumentHeads = {
 		'Get started',
 	),
 	[routePattern(routes.pendingVerification)]: titleOnly('Verify your email'),
+	[routePattern(routes.features)]: featurePageHead(
+		'features',
+		'Kody features for your AI agents | Kody',
+	),
+	[routePattern(routes.featureMemory)]: featurePageHead(
+		'feature-memory',
+		'Shared memory for your AI agents | Kody',
+	),
+	[routePattern(routes.featureSecrets)]: featurePageHead(
+		'feature-secrets',
+		'API secrets for your AI agents | Kody',
+	),
+	[routePattern(routes.featurePackages)]: featurePageHead(
+		'feature-packages',
+		'Reusable packages for your AI agents | Kody',
+	),
+	[routePattern(routes.featureTriggers)]: featurePageHead(
+		'feature-triggers',
+		'Triggers and automation for your AI agents | Kody',
+	),
+	[routePattern(routes.featureIntegrations)]: featurePageHead(
+		'feature-integrations',
+		'Service connections for your AI agents | Kody',
+	),
+	[routePattern(routes.featureApps)]: featurePageHead(
+		'feature-apps',
+		'Package apps for your AI agents | Kody',
+	),
 	[routePattern(routes.business)]: publicPageHead(
 		'business',
 		'AI Agent Cloud for Business and Agencies | Kody',
@@ -580,7 +628,7 @@ export function absolutizeDocumentHead(
 			: undefined,
 		links: descriptor.links?.map((link) => ({
 			rel: link.rel,
-			href: toAbsolute(link.hrefPath),
+			href: link.sameOrigin ? link.hrefPath : toAbsolute(link.hrefPath),
 			type: link.type,
 			title: link.title,
 		})),

@@ -1,12 +1,9 @@
 import { type Handle, ref } from 'remix/component'
-import { on } from '#client/event-mixin.ts'
-import { docHref } from '#universal/docs-nav.ts'
 import {
 	landingHomePrimitives,
 	landingPrimitivesIntroLead,
 	landingPrimitivesMoreLead,
 	landingPrimitivesMoreLink,
-	type LandingHomePrimitive,
 } from '#universal/landing-home-copy.ts'
 import {
 	landingLanternGlass,
@@ -18,19 +15,14 @@ import {
 	landingPrimitiveIds,
 	type LandingPrimitiveId,
 } from '#universal/landing-lantern.ts'
-import {
-	LandingLantern,
-	hoverPointer,
-} from '#client/routes/landing-lantern.tsx'
+import { LandingLantern } from '#client/routes/landing-lantern.tsx'
 import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
 
 /**
  * Homepage primitives block: the locked intro line, then the five-orb
- * lantern with the five words listed beside it, then the learn-more line.
- * Each orb and each word is a disclosure for the same popover: hover, focus, or click opens one; Escape, blur, and leaving close
- * it. Escape does not move focus, so a hovered trigger stays dismissed
- * instead of reopening on focusin. Opening another primitive dismisses the
- * previous one so :hover and :focus-within cannot stack two panels.
+ * lantern with the six words listed beside it, then the learn-more line.
+ * Orbs highlight a primitive and draw leader lines to its word; each word
+ * links to that primitive's feature page.
  *
  * Leader lines run from each orb to the colored dot before its word. They
  * are measured from layout and redrawn on resize and font load, so they
@@ -40,8 +32,6 @@ import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
  */
 
 export const landingPrimitivesSectionId = 'primitives'
-
-const whatIsKodyHref = docHref('what-is-kody')
 
 /** Measure orbs and words, then write the leader paths in section pixels. */
 function leaderFollow() {
@@ -155,10 +145,6 @@ export function LandingPrimitives(handle: Handle) {
 	let openedAt = 0
 	const follow = leaderFollow()
 
-	function panelId(id: LandingPrimitiveId) {
-		return `${handle.id}-${id}-panel`
-	}
-
 	function setOpen(id: LandingPrimitiveId | null) {
 		if (openId === id) return
 		if (id) {
@@ -210,7 +196,6 @@ export function LandingPrimitives(handle: Handle) {
 			<div class="landing-primitives-stage">
 				<LandingLantern
 					activeId={openId}
-					panelId={panelId}
 					onOpen={setOpen}
 					onToggle={toggle}
 					onClose={close}
@@ -223,14 +208,7 @@ export function LandingPrimitives(handle: Handle) {
 						<li key={primitive.id} class="landing-primitive-item">
 							<LandingPrimitiveWord
 								primitive={primitive}
-								panelId={panelId(primitive.id)}
-								open={openId === primitive.id}
-								dismissed={dismissedId === primitive.id}
-								onOpen={() => setOpen(primitive.id)}
-								onToggle={() => toggle(primitive.id)}
-								onClose={() => close(primitive.id)}
-								onDismiss={() => dismiss(primitive.id)}
-								onResume={() => clearDismissed(primitive.id)}
+								highlighted={openId === primitive.id}
 							/>
 						</li>
 					))}
@@ -238,7 +216,7 @@ export function LandingPrimitives(handle: Handle) {
 			</div>
 			<p class="landing-primitives-more">
 				{landingPrimitivesMoreLead}{' '}
-				<a href={whatIsKodyHref} class="landing-inline-link">
+				<a href="/features" class="landing-inline-link">
 					{landingPrimitivesMoreLink}
 				</a>
 			</p>
@@ -248,95 +226,32 @@ export function LandingPrimitives(handle: Handle) {
 
 function LandingPrimitiveWord(
 	handle: Handle<{
-		primitive: LandingHomePrimitive
-		panelId: string
-		open: boolean
-		dismissed: boolean
-		onOpen: () => void
-		onToggle: () => void
-		onClose: () => void
-		onDismiss: () => void
-		onResume: () => void
+		primitive: (typeof landingHomePrimitives)[number]
+		highlighted: boolean
 	}>,
 ) {
-	function closeIfLeaving(
-		current: EventTarget | null,
-		next: EventTarget | null,
-	) {
-		if (!(current instanceof Element)) return
-		if (next instanceof Node && current.contains(next)) return
-		handle.props.onClose()
-		handle.props.onResume()
-	}
-
 	return () => {
-		const { primitive, panelId, open, dismissed, onOpen } = handle.props
+		const { primitive, highlighted } = handle.props
 		return (
 			<span
 				class="landing-primitive"
-				data-open={open ? '' : undefined}
-				data-dismissed={dismissed ? '' : undefined}
+				data-open={highlighted ? '' : undefined}
 				style={{
 					'--primitive-color': landingPrimitiveColorVar(primitive.id),
 				}}
-				mix={[
-					on('pointerenter', (event: PointerEvent) => {
-						if (hoverPointer(event)) onOpen()
-					}),
-					on('pointerleave', (event: PointerEvent) => {
-						if (!hoverPointer(event)) return
-						closeIfLeaving(event.currentTarget, event.relatedTarget)
-					}),
-					on('focusin', onOpen),
-					on('focusout', (event: FocusEvent) => {
-						closeIfLeaving(event.currentTarget, event.relatedTarget)
-					}),
-					ref((node: Element, signal: AbortSignal) => {
-						const onKeydown = (event: Event) => {
-							if (!(event instanceof KeyboardEvent)) return
-							if (event.key !== 'Escape') return
-							if (
-								!handle.props.open &&
-								!node.matches(':hover, :focus-within')
-							) {
-								return
-							}
-							event.preventDefault()
-							handle.props.onDismiss()
-						}
-						document.addEventListener('keydown', onKeydown, { signal })
-					}),
-				]}
 			>
 				<span
 					class="landing-primitive-dot"
 					data-dot={primitive.id}
 					aria-hidden="true"
 				></span>
-				<button
-					type="button"
+				<a
+					href={`/features/${primitive.id}`}
 					class="landing-primitive-word"
 					data-word={primitive.id}
-					aria-expanded={open ? 'true' : 'false'}
-					aria-controls={panelId}
-					aria-describedby={panelId}
-					mix={[
-						on('click', () => handle.props.onToggle()),
-						on('keydown', (event: KeyboardEvent) => {
-							if (event.key !== 'Escape') return
-							event.preventDefault()
-							handle.props.onDismiss()
-						}),
-					]}
 				>
 					{primitive.word}
-				</button>
-				<span id={panelId} role="tooltip" class="landing-primitive-popover">
-					<span class="landing-primitive-popover-title" aria-hidden="true">
-						{primitive.word}
-					</span>
-					{primitive.body}
-				</span>
+				</a>
 			</span>
 		)
 	}

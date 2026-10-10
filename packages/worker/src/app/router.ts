@@ -245,6 +245,7 @@ import {
 	createDiscordApiHandler,
 	createDiscordHandler,
 } from '#app/handlers/discord.ts'
+import { createFeaturesHandler } from '#app/handlers/features.ts'
 import { createBusinessHandler } from '#app/handlers/business.ts'
 import { createPricingHandler } from '#app/handlers/pricing.ts'
 import { createFaqHandler } from '#app/handlers/faq.ts'
@@ -377,6 +378,13 @@ export function createAppRouter(env: Env) {
 			legacyGuidesApi: createLegacyGuidesApiRedirectHandler(env),
 			legacyGuidesMarkdown: createLegacyGuidesMarkdownRedirectHandler(env),
 			legacyGuidesPath: createLegacyGuidesPathRedirectHandler(env),
+			features: createFeaturesHandler(env),
+			featureMemory: createFeaturesHandler(env),
+			featureSecrets: createFeaturesHandler(env),
+			featurePackages: createFeaturesHandler(env),
+			featureTriggers: createFeaturesHandler(env),
+			featureIntegrations: createFeaturesHandler(env),
+			featureApps: createFeaturesHandler(env),
 			business: createBusinessHandler(env),
 			pricing: createPricingHandler(env),
 			faq: createFaqHandler(env),

@@ -71,6 +71,69 @@ export const publicOgPages = {
 			"For all the agents you use today, and the ones you'll use tomorrow.",
 		path: '/signup',
 	},
+	features: {
+		imageTitle: 'Your agents’ cloud',
+		imageSubtitle:
+			'Memory, secrets, packages, triggers, integrations, and apps for your connected AI agents.',
+		ogTitle: 'Kody features for your AI agents | Kody',
+		ogDescription:
+			'Memory, secrets, packages, triggers, integrations, and apps for your connected AI agents.',
+		path: '/features',
+	},
+	'feature-memory': {
+		imageTitle: 'New agent. Same you.',
+		imageSubtitle:
+			'Save facts and preferences in Kody and use them with agents connected to your account.',
+		ogTitle: 'Shared memory for your AI agents | Kody',
+		ogDescription:
+			'Save facts and preferences in Kody and use them with agents connected to your account.',
+		path: '/features/memory',
+	},
+	'feature-secrets': {
+		imageTitle: 'Your agent can use the key. It can’t read it.',
+		imageSubtitle:
+			'Keep credentials out of the conversation and send them only to hosts you approve.',
+		ogTitle: 'API secrets for your AI agents | Kody',
+		ogDescription:
+			'Keep credentials out of the conversation and send them only to hosts you approve.',
+		path: '/features/secrets',
+	},
+	'feature-packages': {
+		imageTitle: 'Work worth keeping.',
+		imageSubtitle:
+			'Save reusable code, review its source, publish changes, and share access to your packages.',
+		ogTitle: 'Reusable packages for your AI agents | Kody',
+		ogDescription:
+			'Save reusable code, review its source, publish changes, and share access to your packages.',
+		path: '/features/packages',
+	},
+	'feature-triggers': {
+		imageTitle: 'When it happens, your work starts.',
+		imageSubtitle:
+			'Start saved packages from schedules, webhooks, incoming email, and package events.',
+		ogTitle: 'Triggers and automation for your AI agents | Kody',
+		ogDescription:
+			'Start saved packages from schedules, webhooks, incoming email, and package events.',
+		path: '/features/triggers',
+	},
+	'feature-integrations': {
+		imageTitle: 'Connect once. Keep working.',
+		imageSubtitle:
+			'Connect service accounts so saved packages can use the authorization your work needs.',
+		ogTitle: 'Service connections for your AI agents | Kody',
+		ogDescription:
+			'Connect service accounts so saved packages can use the authorization your work needs.',
+		path: '/features/integrations',
+	},
+	'feature-apps': {
+		imageTitle: 'Give your work an interface.',
+		imageSubtitle:
+			'Build browser interfaces backed by saved packages and durable package storage.',
+		ogTitle: 'Package apps for your AI agents | Kody',
+		ogDescription:
+			'Build browser interfaces backed by saved packages and durable package storage.',
+		path: '/features/apps',
+	},
 	business: {
 		imageTitle: 'The agent cloud\nfor your business',
 		imageSubtitle:

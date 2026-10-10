@@ -1,3 +1,4 @@
+import { FeaturesMenu } from '#client/features-menu.tsx'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -538,6 +539,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						<span>Kody</span>
 					</a>
 					<div mix={css(navLinksCss)}>
+						<FeaturesMenu currentPathname={handle.props.currentPathname} />
 						{marketingLinks.map((link) => (
 							<a
 								key={link.href}
@@ -611,6 +613,10 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						mix={[css(menuPanelCss), on('toggle', onMenuToggle)]}
 					>
 						<div data-menu-group mix={css(menuGroupCss)}>
+							<FeaturesMenu
+								currentPathname={handle.props.currentPathname}
+								mobile
+							/>
 							{marketingLinks.map((link) => (
 								<a
 									key={link.href}
@@ -677,6 +683,7 @@ const navCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: '1.8rem',
+	'@media (min-width: 821px) and (max-width: 1000px)': { gap: '.8rem' },
 	flexWrap: 'wrap' as const,
 }
 
@@ -701,7 +708,9 @@ const headerNavMq = '@media (max-width: 820px)'
 
 const navLinksCss = {
 	display: 'flex',
+	alignItems: 'center',
 	gap: '1.6rem',
+	'@media (min-width: 821px) and (max-width: 1000px)': { gap: '.8rem' },
 	marginRight: 'auto',
 	'& a': {
 		color: colors.textMuted,

@@ -12,16 +12,13 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	const html = await renderToString(jsx(LandingPrimitives, {}))
 
 	expect(html).toContain('id="primitives"')
-	expect(html).toContain('href="/docs"')
-	expect(html.match(/role="tooltip"/g)).toHaveLength(
-		landingHomePrimitives.length,
-	)
+	expect(html).toContain('href="/features"')
+	expect(html).not.toContain('role="tooltip"')
 	expect(html.match(/class="landing-lantern-orb"/g)).toHaveLength(
 		landingLanternOrbs.length,
 	)
-	expect(html.match(/aria-expanded="false"/g)).toHaveLength(
-		landingHomePrimitives.length * 2,
-	)
+	expect(html).not.toContain('aria-expanded')
+	expect(html).not.toContain('aria-controls')
 	expect(html).toContain('kody-primitives-lantern-480.webp')
 	expect(html).toContain('kody-primitives-lantern.webp 863w')
 	expect(html).toContain('clip-path: polygon(')
@@ -36,8 +33,8 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	)
 
 	for (const primitive of landingHomePrimitives) {
+		expect(html).toContain(`href="/features/${primitive.id}"`)
 		expect(html).toContain(`>${primitive.word}<`)
-		expect(html).toContain(primitive.body)
 		expect(html).toContain(`data-word="${primitive.id}"`)
 		expect(html).toContain(`data-orb="${primitive.id}"`)
 		expect(html).toContain(`data-orb-art="${primitive.id}"`)
@@ -46,15 +43,6 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 		expect(html).toContain(
 			`--primitive-color: var(--primitive-${primitive.id})`,
 		)
-		const controls = [...html.matchAll(/aria-controls="([^"]+)"/g)].map(
-			(match) => match[1],
-		)
-		const panelIds = controls.filter((id) =>
-			id?.endsWith(`-${primitive.id}-panel`),
-		)
-		expect(panelIds).toHaveLength(2)
-		expect(new Set(panelIds).size).toBe(1)
-		expect(html).toContain(`id="${panelIds[0]}"`)
 	}
 
 	// Unitless so Firefox can divide art by size. Percentages need typed
@@ -72,13 +60,7 @@ test('primitives sentence pairs lantern orbs with words and ships empty leaders'
 	expect(html).not.toMatch(/class="landing-leader-flow"[^>]*\sd="/)
 	expect(html).not.toContain('data-dismissed')
 	expect(html).not.toContain('data-active')
-	expect(html).toContain(
-		'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
-	)
-	expect(
-		html.replace(
-			'Subscriptions, emails, webhooks, and schedules that wake packages you own — no chat left open.',
-			'',
-		),
-	).not.toContain('\u2014')
+	for (const primitive of landingHomePrimitives) {
+		expect(html).not.toContain(primitive.body)
+	}
 })
