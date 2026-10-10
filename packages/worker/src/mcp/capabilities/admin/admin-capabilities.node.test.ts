@@ -32,6 +32,8 @@ import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { adminUserVerifyCapability } from './admin-user-verify.ts'
+import { adminEmailDestinationVerifyCapability } from './admin-email-destination-verify.ts'
+import { addEmailNotificationDestination } from '#worker/email/destinations.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { createInMemoryRepoSessionIndexEnv } from '#worker/test-support/repo-session-index.ts'
@@ -603,6 +605,41 @@ test('adminUserUpdate sets plan, maps null clear to free, and rejects unknown us
 			action: 'adminUserUpdate',
 			result: 'failure',
 			reason: 'User not found.',
+		},
+	])
+})
+
+test('adminEmailDestinationVerify marks an additional destination verified with audit metadata', async () => {
+	const t = createAdminCapabilityTest([
+		admin,
+		{ ...jane, emailVerifiedAt: '2026-01-03T00:00:00.000Z' },
+	])
+	const janeRow = t.userRow('jane@example.com')
+	expect(janeRow).toBeTruthy()
+	const added = await addEmailNotificationDestination({
+		db: t.db,
+		dbUserId: Number(janeRow!['id']),
+		email: 'pager@example.com',
+	})
+	expect(added.destination.verified).toBe(false)
+
+	const marked = await adminEmailDestinationVerifyCapability.handler(
+		{
+			stableUserId: janeStableId,
+			destinationEmail: 'pager@example.com',
+		},
+		t.ctx,
+	)
+	expect(marked.destination).toMatchObject({
+		id: added.destination.id,
+		email: 'pager@example.com',
+		verified: true,
+	})
+	expect(t.auditEvents()).toEqual([
+		{
+			action: 'adminEmailDestinationVerify',
+			result: 'success',
+			reason: `target_stable_user_id=${janeStableId};destination=pager@example.com`,
 		},
 	])
 })

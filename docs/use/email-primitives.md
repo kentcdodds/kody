@@ -58,8 +58,11 @@ Use the MCP `email` domain:
   before `emailSend` can use them. Cap is 5 extras besides the account email.
   Mail comes from `{username}@<platform domain>`.
 - `emailDestinationAdd` starts verification for an extra address, or resends the
-  verification email if that address is already pending. Unused links from
-  earlier sends stay valid until they expire or the address is verified.
+  verification email if that address is already pending. The verification
+  message is sent from your platform address (`{username}@<platform domain>`) on
+  the same Cloudflare Email binding path as `emailSend` / `emailReply` — not
+  from the apex transactional sender. Unused links from earlier sends stay valid
+  until they expire or the address is verified.
 - `emailDestinationSetDefault` picks the destination used when `emailSend` omits
   `to`.
 - `emailDestinationRemove` removes an extra destination. The identity email

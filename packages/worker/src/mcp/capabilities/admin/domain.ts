@@ -35,6 +35,7 @@ import { adminUserGetCapability } from './admin-user-get.ts'
 import { adminUserListCapability } from './admin-user-list.ts'
 import { adminUserUpdateCapability } from './admin-user-update.ts'
 import { adminUserVerifyCapability } from './admin-user-verify.ts'
+import { adminEmailDestinationVerifyCapability } from './admin-email-destination-verify.ts'
 import { adminAccountDeletionAbortCapability } from './admin-account-deletion-abort.ts'
 import { adminAccountWriteLeaseListCapability } from './admin-account-write-lease-list.ts'
 import { adminAccountWriteLeaseRepairCapability } from './admin-account-write-lease-repair.ts'
@@ -96,6 +97,7 @@ export const adminDomain = defineDomain({
 		adminUserCreateCapability,
 		adminUserUpdateCapability,
 		adminUserVerifyCapability,
+		adminEmailDestinationVerifyCapability,
 		adminUserMeterParityCapability,
 		adminRunLogSqlBillingCapability,
 		adminUserMeterStorageReconcileCapability,

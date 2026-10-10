@@ -30,6 +30,10 @@ import {
 	mintAdminEmailVerificationUrl,
 } from '#worker/identity/email-verification-admin.ts'
 import {
+	AdminEmailDestinationVerificationError,
+	markAdminEmailDestinationVerified,
+} from '#worker/email/destination-verification-admin.ts'
+import {
 	parsePlanName,
 	planNames,
 	resolvePlanWrite,
@@ -186,6 +190,15 @@ export function createAdminUsersApiHandler(env: Env) {
 				}
 				if (action === 'mint_verify_url') {
 					return handleMintVerifyUrlAction({
+						env,
+						request,
+						url,
+						actor,
+						body,
+					})
+				}
+				if (action === 'mark_email_destination_verified') {
+					return handleMarkEmailDestinationVerifiedAction({
 						env,
 						request,
 						url,
@@ -637,6 +650,61 @@ async function handleMintVerifyUrlAction(input: {
 			verifyUrlExpiresAt: minted.expiresAt,
 		},
 	)
+}
+
+async function handleMarkEmailDestinationVerifiedAction(input: {
+	env: Env
+	request: Request
+	url: URL
+	actor: Awaited<ReturnType<typeof requireUserWithPermission>>
+	body: object
+}) {
+	const targetStableUserId = readStableUserIdField(input.body)
+	if (!targetStableUserId) {
+		return jsonResponse(
+			{ ok: false, error: 'Stable user id is required.' },
+			400,
+		)
+	}
+	const destinationEmail =
+		readNonEmptyTrimmedStringOrNumber(input.body, 'destinationEmail') ?? ''
+	if (!destinationEmail) {
+		return jsonResponse(
+			{ ok: false, error: 'Destination email is required.' },
+			400,
+		)
+	}
+
+	let marked: Awaited<ReturnType<typeof markAdminEmailDestinationVerified>>
+	try {
+		marked = await markAdminEmailDestinationVerified({
+			db: input.env.APP_DB,
+			target: { stableUserId: targetStableUserId },
+			destinationEmail,
+		})
+	} catch (error) {
+		if (error instanceof AdminEmailDestinationVerificationError) {
+			return jsonResponse(
+				{ ok: false, error: error.message },
+				error.code === 'not_found' ? 404 : 400,
+			)
+		}
+		throw error
+	}
+
+	const requestIp = getRequestIp(input.request) ?? undefined
+	void logAuditEvent({
+		db: auditDatabaseFromEnv(input.env),
+		category: 'admin',
+		action: 'mark_email_destination_verified',
+		result: 'success',
+		email: input.actor.email,
+		ip: requestIp,
+		path: input.url.pathname,
+		reason: `target_stable_user_id=${targetStableUserId};destination=${marked.destination.email}`,
+	})
+
+	return buildMutationResponse(input.env, input.request.url, targetStableUserId)
 }
 
 async function handleCreateUserAction(input: {

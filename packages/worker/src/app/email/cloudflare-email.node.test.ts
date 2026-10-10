@@ -157,6 +157,73 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 	expect(consoleInfo).toHaveBeenCalledTimes(1)
 }, 75_000)
 
+test('sendCloudflareEmail treats permanent_bounces as failure even when success is true', async () => {
+	using _server = createMswNodeServer(
+		[
+			http.post(
+				`https://api.cloudflare.test/client/v4/accounts/${mockAccountId}/email/sending/send`,
+				() =>
+					HttpResponse.json({
+						success: true,
+						result: {
+							message_id: 'bounce-1',
+							delivered: [],
+							queued: [],
+							permanent_bounces: ['recipient@example.com'],
+						},
+					}),
+			),
+		],
+		{ onUnhandledFrame: 'bypass' },
+	)
+	consoleWarn.mockImplementation(() => {})
+	expect(
+		await sendCloudflareEmail(testApiConfig, message('Bounced destination')),
+	).toEqual({
+		ok: false,
+		messageId: 'bounce-1',
+		error:
+			'Cloudflare Email API permanently bounced every recipient (recipient@example.com).',
+	})
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'cloudflare-email-api-permanent-bounce',
+		expect.stringContaining('permanent_bounces'),
+	)
+	expect(String(consoleWarn.mock.calls[0]?.[1])).not.toContain(
+		'recipient@example.com',
+	)
+})
+
+test('sendCloudflareEmail keeps success when only some recipients permanently bounce', async () => {
+	using _server = createMswNodeServer(
+		[
+			http.post(
+				`https://api.cloudflare.test/client/v4/accounts/${mockAccountId}/email/sending/send`,
+				() =>
+					HttpResponse.json({
+						success: true,
+						result: {
+							message_id: 'partial-1',
+							delivered: ['alice@example.com'],
+							queued: [],
+							permanent_bounces: ['bob@example.com'],
+						},
+					}),
+			),
+		],
+		{ onUnhandledFrame: 'bypass' },
+	)
+	expect(
+		await sendCloudflareEmail(testApiConfig, {
+			to: ['alice@example.com', 'bob@example.com'],
+			from: 'owner@inbox.example.com',
+			subject: 'Partial bounce',
+			html: '<p>body</p>',
+			text: 'body',
+		}),
+	).toEqual({ ok: true, messageId: 'partial-1' })
+})
+
 test('sendCloudflareEmail defaults Reply-To to support@ when From is kody@ unless overridden', async () => {
 	const payloads: Array<Record<string, unknown>> = []
 	using _server = createMswNodeServer(

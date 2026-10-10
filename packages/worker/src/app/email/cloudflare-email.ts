@@ -127,10 +127,64 @@ async function sendViaCloudflareApi(
 		}
 	}
 
+	const bounceError = permanentBounceError(message.to, payload.result)
+	if (bounceError) {
+		console.warn(
+			'cloudflare-email-api-permanent-bounce',
+			JSON.stringify({
+				to: redactRecipients(message.to),
+				from: message.from,
+				subject: message.subject,
+				permanent_bounces: redactRecipients(
+					payload.result?.permanent_bounces ?? [],
+				),
+				message_id: payload.result?.message_id ?? null,
+			}),
+		)
+		return {
+			ok: false,
+			error: bounceError,
+			messageId: payload.result?.message_id ?? null,
+		}
+	}
+
 	return {
 		ok: true,
 		messageId: payload.result?.message_id ?? null,
 	}
+}
+
+/**
+ * Cloudflare Email Sending can return `success: true` with every recipient in
+ * `permanent_bounces` (HTTP accepted, delivery rejected). Treat total bounce as
+ * a send failure so callers do not report success. Partial bounce with at least
+ * one delivered/queued recipient stays ok so multi-recipient outbound is not
+ * marked failed and retried for addresses that already received the message.
+ */
+function permanentBounceError(
+	to: string | Array<string>,
+	result: CloudflareApiEnvelope['result'] | undefined,
+): string | null {
+	const recipients = (Array.isArray(to) ? to : [to]).map((value) =>
+		value.trim().toLowerCase(),
+	)
+	if (recipients.length === 0) return null
+	const permanentBounces = (result?.permanent_bounces ?? []).map((value) =>
+		value.trim().toLowerCase(),
+	)
+	if (permanentBounces.length === 0) return null
+	const bounced = new Set(permanentBounces)
+	const accepted = new Set(
+		[...(result?.delivered ?? []), ...(result?.queued ?? [])].map((value) =>
+			value.trim().toLowerCase(),
+		),
+	)
+	const failedRecipients = recipients.filter(
+		(recipient) => bounced.has(recipient) && !accepted.has(recipient),
+	)
+	if (failedRecipients.length === 0) return null
+	if (failedRecipients.length !== recipients.length) return null
+	return `Cloudflare Email API permanently bounced every recipient (${failedRecipients.join(', ')}).`
 }
 
 export async function sendCloudflareEmail(
