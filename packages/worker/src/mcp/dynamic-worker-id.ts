@@ -59,39 +59,46 @@ function canonicalJsonStringify(value: unknown) {
 	return JSON.stringify(canonicalizeForHash(value, '$'))
 }
 
+const hashTagKey = '__kodyType'
+
 /**
- * Every non-primitive becomes a tagged array (`['object', ...]`,
- * `['bytes', ...]`), so user JSON can never spell another value's encoding.
- * Only plain objects are walked: anything else (a compiled
- * `WebAssembly.Module`, Map, class instance) exposes no hashable contents
- * and would collide with every other value of its kind.
+ * JSON-shaped canonical form; bytes, `undefined`, and bigint become
+ * `{ __kodyType, value }` records. A plain object that carries its own
+ * `__kodyType` key is escaped as `{ __kodyType: 'object', value }` so module
+ * JSON can never spell another value's tag. Every other value keeps the
+ * encoding ids have always used, so live ids do not change. Only plain
+ * objects are walked: anything else (a compiled `WebAssembly.Module`, Map,
+ * class instance) exposes no hashable contents and would collide with every
+ * other value of its kind.
  */
 function canonicalizeForHash(value: unknown, path: string): unknown {
-	if (value === undefined) return ['undefined']
+	if (value === undefined) return { [hashTagKey]: 'undefined' }
 	if (value === null) return null
-	if (typeof value === 'bigint') return ['bigint', String(value)]
+	if (typeof value === 'bigint') {
+		return { [hashTagKey]: 'bigint', value: String(value) }
+	}
 	if (typeof value === 'function' || typeof value === 'symbol') {
 		throw unhashableModuleValue(path, `a ${typeof value}`)
 	}
 	if (typeof value !== 'object') return value
 	if (value instanceof ArrayBuffer) {
-		return ['bytes', bytesToBase64Url(new Uint8Array(value))]
+		return {
+			[hashTagKey]: 'arrayBuffer',
+			value: bytesToBase64Url(new Uint8Array(value)),
+		}
 	}
 	if (ArrayBuffer.isView(value)) {
-		return [
-			'bytes',
-			bytesToBase64Url(
+		return {
+			[hashTagKey]: 'arrayBuffer',
+			value: bytesToBase64Url(
 				new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
 			),
-		]
+		}
 	}
 	if (Array.isArray(value)) {
-		return [
-			'array',
-			...value.map((entry, index) =>
-				canonicalizeForHash(entry, `${path}[${index}]`),
-			),
-		]
+		return value.map((entry, index) =>
+			canonicalizeForHash(entry, `${path}[${index}]`),
+		)
 	}
 	const prototype: unknown = Object.getPrototypeOf(value)
 	if (prototype !== Object.prototype && prototype !== null) {
@@ -101,12 +108,14 @@ function canonicalizeForHash(value: unknown, path: string): unknown {
 		)
 	}
 	const record = value as Record<string, unknown>
-	return [
-		'object',
-		...Object.keys(record)
+	const entries = Object.fromEntries(
+		Object.keys(record)
 			.sort((left, right) => left.localeCompare(right))
 			.map((key) => [key, canonicalizeForHash(record[key], `${path}.${key}`)]),
-	]
+	)
+	return Object.hasOwn(record, hashTagKey)
+		? { [hashTagKey]: 'object', value: entries }
+		: entries
 }
 
 function unhashableModuleValue(path: string, kind: string) {
