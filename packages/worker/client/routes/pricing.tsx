@@ -8,11 +8,10 @@ import {
 	creditsUnlockMultiplier,
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
-	planLimits,
-	proCreditsPlanLimits,
 	weeklyComputeWindowNote,
 	type PlanLimits,
 } from '#universal/plans.ts'
+import { pricingLimitColumns } from '#universal/pricing-limits.ts'
 import {
 	publicSignupPrimaryCta,
 	type PublicSignupCta,
@@ -86,6 +85,10 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 			{
 				label: 'Automation invocations per day',
 				key: 'maxAutomationInvocationsPerDay',
+			},
+			{
+				label: 'Worker compute per month (unique worker days)',
+				key: 'maxUniqueWorkerDaysPerMonth',
 			},
 			{
 				label: 'Durable Object rows read per month',
@@ -234,33 +237,38 @@ export function PricingRoute(handle: Handle) {
 									<th scope="col">
 										<span mix={css(visuallyHiddenCss)}>Resource</span>
 									</th>
-									<th scope="col">
-										<span data-limits-plan>Free</span>
-										<span data-limits-price>$0</span>
-									</th>
-									<th scope="col">
-										<span data-limits-plan>Pro</span>
-										<span data-limits-price>$12/mo</span>
-										<span data-limits-annual>or $120/yr</span>
-									</th>
+									{pricingLimitColumns.map((column) => (
+										<th scope="col" key={column.id}>
+											<span data-limits-plan>{column.plan}</span>
+											<span data-limits-price>{column.price}</span>
+											{column.priceNote ? (
+												<span data-limits-annual>{column.priceNote}</span>
+											) : null}
+										</th>
+									))}
 								</tr>
 							</thead>
 							<tbody>
 								{limitGroups.flatMap((group) => [
 									<tr key={group.title} data-group>
-										<th colspan={3}>{group.title}</th>
+										<th colspan={pricingLimitColumns.length + 1}>
+											{group.title}
+										</th>
 									</tr>,
 									...group.rows.map((row) => (
 										<tr key={row.key}>
 											<th scope="row">{row.label}</th>
-											{renderLimitCell(row, planLimits.free)}
-											{renderLimitCell(row, proCreditsPlanLimits)}
+											{pricingLimitColumns.map((column) =>
+												renderLimitCell(row, column.limits),
+											)}
 										</tr>
 									)),
 									...(group.note
 										? [
 												<tr key={`${group.title}-note`} data-note>
-													<td colspan={3}>{group.note}</td>
+													<td colspan={pricingLimitColumns.length + 1}>
+														{group.note}
+													</td>
 												</tr>,
 											]
 										: []),
@@ -277,10 +285,10 @@ export function PricingRoute(handle: Handle) {
 					</p>
 					<p mix={css(limitsFootnoteCss)} data-credits-small-print>
 						Usage past the include is charged from credits (Worker compute and
-						Rows read). Daily and weekly limits can go up to{' '}
-						{creditsUnlockMultiplier}× Pro&rsquo;s included limits on credits.
-						When credits run out, rate and compute limits match Free until you
-						top up. No overage invoices.
+						Rows read). On credits, daily and weekly limits go up to{' '}
+						{creditsUnlockMultiplier}× Pro&rsquo;s include, capped at the
+						&ldquo;Pro + credits&rdquo; column. When credits run out, rate and
+						compute limits match Free until you top up. No overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Execute calls and outbound fetches count per day and per week;
@@ -588,8 +596,8 @@ const limitsTableCss = {
 		display: 'block',
 		color: colors.text,
 	},
-	/* Third column is Pro, the featured plan — the accent follows its panel. */
-	'& thead th:nth-child(3) [data-limits-plan]': {
+	/* Pro columns are the featured plan — the accent follows its panel. */
+	'& thead th:nth-child(n + 3) [data-limits-plan]': {
 		color: colors.primaryText,
 	},
 	'& [data-limits-price]': {
