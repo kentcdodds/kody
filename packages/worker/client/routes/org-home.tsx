@@ -18,10 +18,10 @@ import {
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 
 /**
- * Main column of a non-personal organization's home. Secrets, jobs, and the
- * other org sections read that org. Repositories and connected agents still
- * read the signed-in person. Grant-only collaborators see what was shared
- * with them instead of member management.
+ * Main column of a non-personal organization's home. Repositories,
+ * connections, secrets, jobs, and the other org sections read that org.
+ * Grant-only collaborators see what was shared with them instead of member
+ * management.
  */
 export function renderOrgHomeMain(input: {
 	slug: string
@@ -137,21 +137,33 @@ export function renderOrgHomeMain(input: {
 					: null}
 				{renderStep({
 					icon: 'box',
-					title: 'Secrets and jobs',
-					body: `Secrets, jobs, and the rest of ${input.handle}'s workspace are on this organization. Repositories and connected agents still live in your personal account.`,
+					title: 'Repositories, connections, secrets, and jobs',
+					body: `${input.handle} has its own repositories, connected agents, secrets, and jobs, separate from your personal account.`,
 					action: (
 						<div mix={css(stepActionsCss)}>
 							<a
-								href={orgResourcePath(input.slug, 'secrets')}
+								href={orgResourcePath(input.slug, 'packages')}
 								mix={css(getGhostButtonCss({ size: 'sm' }))}
 							>
-								Secrets
+								Repositories
 							</a>
 							<a
 								href={orgResourcePath(input.slug, 'jobs')}
 								mix={css(getGhostButtonCss({ size: 'sm' }))}
 							>
 								Jobs
+							</a>
+							<a
+								href={orgResourcePath(input.slug, 'connections')}
+								mix={css(getGhostButtonCss({ size: 'sm' }))}
+							>
+								Connections
+							</a>
+							<a
+								href={orgResourcePath(input.slug, 'secrets')}
+								mix={css(getGhostButtonCss({ size: 'sm' }))}
+							>
+								Secrets
 							</a>
 						</div>
 					),
