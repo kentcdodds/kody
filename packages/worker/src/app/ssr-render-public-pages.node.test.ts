@@ -131,7 +131,7 @@ test('renderAppPage renders the public Discord connect page', async () => {
 })
 
 test('acquisition pages render crawlable HTML, metadata, navigation, and matching markdown', async () => {
-	resetDataCacheForTests()
+	invalidateCommunityPublicCache()
 	setAuthSessionSecret(testCookieSecret)
 	const env = createTestEnv()
 	const sitemap = buildSitemapXml('https://example.com')

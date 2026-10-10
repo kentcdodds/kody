@@ -1,3 +1,5 @@
+import { on } from '#client/event-mixin.ts'
+import { trackAcquisitionOnboardingClick } from '#client/acquisition-analytics.ts'
 import { UseCasesPage } from './acquisition/useCases.tsx'
 import { type Handle } from 'remix/component'
 import { N8nAlternativesPage } from './acquisition/n8nAlternatives.tsx'
@@ -12,7 +14,7 @@ import { ClaudeIntegrationsPage } from './acquisition/claudeIntegrations.tsx'
 import { AutomationPage } from './acquisition/automation.tsx'
 
 export function AcquisitionRoute(handle: Handle<{ pageKey: string }>) {
-	return () => {
+	function renderPage() {
 		switch (handle.props.pageKey) {
 			case 'useCases':
 				return <UseCasesPage />
@@ -40,4 +42,18 @@ export function AcquisitionRoute(handle: Handle<{ pageKey: string }>) {
 				return null
 		}
 	}
+	return () => (
+		<div
+			style={{ display: 'contents' }}
+			mix={on('click', (event) => {
+				const target = event.target instanceof Element ? event.target : null
+				const link = target?.closest('a')
+				if (link?.getAttribute('href') === '/onboarding') {
+					trackAcquisitionOnboardingClick(handle.props.pageKey)
+				}
+			})}
+		>
+			{renderPage()}
+		</div>
+	)
 }
