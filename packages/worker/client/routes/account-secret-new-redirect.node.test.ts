@@ -16,6 +16,7 @@ test('account secrets loader redirects prefilled /new links and keeps bare /new 
 		}),
 	)
 	vi.stubGlobal('fetch', fetchMock)
+	vi.stubGlobal('window', { location: { origin: 'https://example.com' } })
 
 	const redirected = await accountSecretsRouteLoader(
 		new URL(

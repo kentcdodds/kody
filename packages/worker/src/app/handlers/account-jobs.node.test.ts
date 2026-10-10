@@ -2,12 +2,15 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { DatabaseSync } from 'node:sqlite'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as appBaseUrl from '#worker/app-base-url.ts'
 import type * as jobRetention from '#worker/jobs/job-retention-cleanup.ts'
 import type * as packageRepo from '#worker/package-registry/repo.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const adHocJob = {
@@ -463,4 +466,46 @@ test('jobs API mutations are user-scoped for non-package jobs and kill switch', 
 		userId: ownerIdFromStored('stable-user-1'),
 		jobId: adHocJob.id,
 	})
+})
+
+test('a stale page for an org the person cannot open gets a 404, not the personal org', async () => {
+	stubInspection([adHocJob])
+	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
+	await ensureOrgsTestSchema(db)
+	const { handler } = createAccountJobsApiHandler({
+		APP_DB: db,
+		COOKIE_SECRET: 'secret',
+	} as Env)
+	mockModule.inspectJobsForUser.mockClear()
+	mockModule.updateJob.mockClear()
+	mockModule.deleteJob.mockClear()
+	const referer = 'https://example.com/@ghost/-/jobs'
+	const requests = [
+		new Request(jobsUrl, { headers: { Referer: referer } }),
+		new Request(jobsUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Referer: referer },
+			body: JSON.stringify({
+				action: 'set_enabled',
+				id: adHocJob.id,
+				enabled: false,
+			}),
+		}),
+		new Request(jobsUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Referer: referer },
+			body: JSON.stringify({ action: 'delete', id: adHocJob.id }),
+		}),
+	]
+	for (const request of requests) {
+		const response = await handler(new RequestContext(request))
+		expect(response.status, request.method).toBe(404)
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: 'Organization not found.',
+		})
+	}
+	expect(mockModule.inspectJobsForUser).not.toHaveBeenCalled()
+	expect(mockModule.updateJob).not.toHaveBeenCalled()
+	expect(mockModule.deleteJob).not.toHaveBeenCalled()
 })

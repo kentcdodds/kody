@@ -21,7 +21,7 @@ import {
 import {
 	type AccountJobsActionPayload,
 	accountJobsApiPath,
-	buildJobsApiRequestUrl,
+	fetchAccountJobsPayload,
 	emptyJobsMessage,
 	getDataLatchKey,
 	jobsRoute,
@@ -92,17 +92,8 @@ export function AccountJobsRoute(handle: Handle) {
 		key: 'accountJobs',
 		locationKey: getDataLatchKey,
 		async load(href, signal) {
-			const response = await fetch(buildJobsApiRequestUrl(href), {
-				headers: { Accept: 'application/json' },
-				credentials: 'include',
-				signal,
-			})
-			if (response.status === 401) return routeDataRedirect('/login')
-			const payload = await readJson<AccountJobsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load scheduled jobs.')
-			}
-			return payload
+			const payload = await fetchAccountJobsPayload(href, signal)
+			return payload ?? routeDataRedirect('/login')
 		},
 	})
 
