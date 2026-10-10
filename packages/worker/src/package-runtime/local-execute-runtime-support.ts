@@ -407,6 +407,25 @@ function __kodyIsCallerByteStream(body) {
 	);
 }
 
+// String, Blob, and bytes bodies inside a Request are byte streams. A caller
+// ReadableStream is not, so BYOB acquisition fails. Probe before any read so
+// the body stays usable.
+function __kodyIsNonByteStream(body) {
+	if (!body || typeof body.getReader !== "function") return false;
+	let reader;
+	try {
+		reader = body.getReader({ mode: "byob" });
+	} catch (error) {
+		return error instanceof TypeError;
+	}
+	try {
+		reader.releaseLock();
+	} catch {
+		// The body stays a byte stream either way.
+	}
+	return false;
+}
+
 function __kodyConcatBytes(chunks) {
 	let length = 0;
 	for (const chunk of chunks) length += chunk.byteLength;
@@ -663,12 +682,19 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			}
 		}
 	} else {
+		// Probe the caller's body before copying it into a new Request. That
+		// copy drops BYOB, so a string body would look like a caller stream.
+		const inputRequest = input instanceof Request ? input : null;
+		const requestStream =
+			(init == null || init.body == null) &&
+			inputRequest != null &&
+			__kodyIsNonByteStream(inputRequest.body);
 		const merged = new Request(input, init);
 		url = merged.url;
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
 		if (method !== "GET" && method !== "HEAD" && merged.body) {
-			if (__kodyIsCallerByteStream(init?.body)) {
+			if (__kodyIsCallerByteStream(init?.body) || requestStream) {
 				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
 					throw __kodyStreamingHeaderError();
 				}
@@ -717,7 +743,13 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 					: requestSource
 						? requestSource[key]
 						: null;
-			if (value != null) fallbackInit[key] = value;
+			if (value == null) continue;
+			// workerd fetch rejects cache: "default". Only the modes it
+			// implements are forwarded.
+			if (key === "cache" && value !== "no-store" && value !== "no-cache") {
+				continue;
+			}
+			fallbackInit[key] = value;
 		}
 		return __kodyNativeFetch(url, fallbackInit);
 	}

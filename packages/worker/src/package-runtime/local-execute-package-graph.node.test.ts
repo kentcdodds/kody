@@ -601,6 +601,51 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
+		const wrappedStream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('wrapped-hello'))
+				controller.close()
+			},
+		})
+		const wrappedRequest = new Request('https://api.example.com/post', {
+			method: 'POST',
+			body: wrappedStream,
+			duplex: 'half',
+		} as RequestInit & { duplex: 'half' })
+		await __kodyGatewayFetch(wrappedRequest)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls[0]?.input).toBe('https://api.example.com/post')
+		const wrappedInit = ambientCalls[0]?.init as RequestInit & {
+			cache?: string
+		}
+		expect(wrappedInit.body).toBeInstanceOf(ReadableStream)
+		expect(wrappedInit.cache).toBeUndefined()
+		expect(
+			new TextDecoder().decode(
+				await new Response(wrappedInit.body as ReadableStream).arrayBuffer(),
+			),
+		).toBe('wrapped-hello')
+
+		ambientCalls.length = 0
+		const storedStream = new ReadableStream({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode('stored'))
+				controller.close()
+			},
+		})
+		const storedRequest = new Request('https://api.example.com/post', {
+			method: 'POST',
+			body: storedStream,
+			cache: 'no-store',
+			duplex: 'half',
+		} as RequestInit & { duplex: 'half' })
+		await __kodyGatewayFetch(storedRequest)
+		expect(
+			(ambientCalls[0]?.init as RequestInit & { cache?: string }).cache,
+		).toBe('no-store')
+
+		ambientCalls.length = 0
+		gatewayCalls.length = 0
 		const largePayload = `${'b'.repeat(5000)}tail`
 		const largeRequest = new Request('https://api.example.com/post', {
 			method: 'POST',
