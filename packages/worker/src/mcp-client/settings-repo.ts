@@ -13,7 +13,7 @@ import {
 
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const selectColumns =
-	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json, last_error'
+	'id, user_id, name, url, enabled, created_at, updated_at, logo_key, logo_content_type, logo_source, favicon_source_host, usage_mode, allowed_packages_json, last_error, oauth_client_id'
 
 export async function listMcpServerSettingRows(input: {
 	db: D1Database
@@ -186,6 +186,26 @@ export async function updateMcpServerSettingLastErrorRow(input: {
 	return (result.meta.changes ?? 0) > 0
 }
 
+export async function updateMcpServerSettingOAuthClientIdRow(input: {
+	db: D1Database
+	userId: string
+	id: string
+	oauthClientId: string | null
+	updatedAt?: string
+}): Promise<boolean> {
+	const now = new Date().toISOString()
+	const result = await input.db
+		.prepare(
+			`UPDATE mcp_server_settings
+			SET oauth_client_id = ?,
+				updated_at = ?
+			WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.oauthClientId, input.updatedAt ?? now, input.userId, input.id)
+		.run()
+	return (result.meta.changes ?? 0) > 0
+}
+
 export async function deleteMcpServerSettingRow(input: {
 	db: D1Database
 	userId: string
@@ -234,5 +254,7 @@ function mapMcpServerSettingRow(
 				: String(row['allowed_packages_json']),
 		),
 		last_error: row['last_error'] == null ? null : String(row['last_error']),
+		oauth_client_id:
+			row['oauth_client_id'] == null ? null : String(row['oauth_client_id']),
 	}
 }

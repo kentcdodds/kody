@@ -79,6 +79,7 @@ async function createHarness() {
 			usage_mode: 'any' as const,
 			allowedPackageIds: [],
 			last_error: null,
+			oauth_client_id: null,
 		},
 	})
 	const readRow = () => getMcpServerSettingRowById({ db, userId, id: serverId })
