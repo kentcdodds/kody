@@ -521,6 +521,26 @@ export does not list them.
    attribution on the event (or rely on the `usageEventBlobs()` defaults) so
    these columns are not left null when actor or automation context exists.
 
+4. **D1 `usage_connection_daily`** (per-connection usage for the Connections
+   page) stores daily units per org billing id, connection (`credential_kind`,
+   `holder_user_id`, `credential_id` split from `blob12`), package (`blob9`),
+   and event type (`execute`, `dynamic_worker_day`, `dynamic_worker_invoke`).
+   The hourly `usage_aggregation` lane runs `aggregateConnectionUsageDaily`
+   (`packages/worker/src/usage/connection-usage-rollup.ts`): it rewrites
+   yesterday and today with absolute `_sample_interval` sums, writes only rows
+   that changed, deletes yesterday's rows Analytics Engine no longer reports
+   (only when it returned rows for yesterday; today's rows are never deleted
+   because ingestion lags), and prunes days older than 14. Local dev upserts on
+   each `recordUsage` write. Rows with an empty `credential_kind` predate
+   connection tracking. `/account/connection-usage.json` (`loadConnectionUsage`
+   in `connection-usage.ts`) reads it for the page org: everyone sees their own
+   connections; `billing:read` adds Automation, other people by username only,
+   and untracked units. The org comes from the Referer on
+   `/@slug/-/connections`, like `/account/connected-agents.json`. Package names
+   follow the team Repositories rule (`canSeeResource`): a package the viewer
+   cannot see keeps its units under a generic label, and team packages do not
+   link until they have detail pages.
+
 ## Agent package conversation uses
 
 Separate from `usage_rollups`, D1 table `agent_package_conversation_uses` (also

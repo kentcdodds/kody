@@ -10,6 +10,7 @@ import {
 } from '@kody-internal/shared/account-secret-route.ts'
 import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { accountAliasPath, relocateAccountHref } from '#universal/org-pages.ts'
 import {
 	routeLoaderRedirect,
@@ -298,7 +299,7 @@ export function getDataRefreshKey(href: string) {
 	return `${url.pathname}?allowed-host=${requestedHost}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
 }
 
-export function buildSecretsApiRequestUrl(href: string) {
+function buildSecretsApiRequestUrl(href: string) {
 	const pageUrl = new URL(href, 'http://localhost')
 	const selection = secretsRoute.getSelection(href)
 	const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')
@@ -309,6 +310,26 @@ export function buildSecretsApiRequestUrl(href: string) {
 		requestUrl.searchParams.delete('selected')
 	}
 	return requestUrl
+}
+
+/** `/account/secrets.json` for the page at `href`, or null when signed out. */
+export async function fetchAccountSecretsPayload(
+	href: string,
+	signal: AbortSignal,
+) {
+	const requestUrl = buildSecretsApiRequestUrl(href)
+	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
+		signal,
+	})
+	if (response.status === 401) return null
+	const payload = await readJson<AccountSecretsLoaderData>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load your secrets.')
+	}
+	return payload
 }
 
 export async function accountSecretsRouteLoader(
@@ -322,20 +343,11 @@ export async function accountSecretsRouteLoader(
 	) {
 		return routeLoaderRedirect(`/connect/secret-set${url.search}`)
 	}
-	const href = `${url.pathname}${url.search}`
-	const requestUrl = buildSecretsApiRequestUrl(href)
-	const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
-		headers: { Accept: 'application/json' },
-		credentials: 'include',
+	const payload = await fetchAccountSecretsPayload(
+		`${url.pathname}${url.search}`,
 		signal,
-	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
-	const payload = await readJson<AccountSecretsLoaderData>(response)
-	if (!response.ok || !payload?.ok) {
-		throw new Error('Unable to load your secrets.')
-	}
+	)
+	if (!payload) return routeLoaderRedirect('/login')
 	return { accountSecrets: payload }
 }
 

@@ -43,6 +43,12 @@ export const accountRetentionDispositions: ReadonlyArray<AccountRetentionDisposi
 				'Operator-owned D1 threads are pruned from the dedicated authority when orphaned.',
 		},
 		{
+			table: 'usage_connection_daily',
+			kind: 'alternate_cleanup',
+			reason:
+				'The hourly usage aggregation lane prunes per-connection usage rows older than 14 days.',
+		},
+		{
 			table: 'mcp_memories',
 			kind: 'durable_forever',
 			reason:

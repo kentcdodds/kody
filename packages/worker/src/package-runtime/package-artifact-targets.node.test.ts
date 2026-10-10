@@ -73,3 +73,27 @@ test('kody.app.assets alone adds no artifact target because static files are ser
 		'importable-module',
 	])
 })
+
+test('export artifact names are normalized so bare keys match import lookups', () => {
+	const targets = collectPublishedPackageArtifactTargets(
+		parseAuthoredPackageJson({
+			content: JSON.stringify({
+				name: '@kody/agent-mail',
+				exports: {
+					'.': './src/index.ts',
+					'add-rule': './src/add-rule.ts',
+					'./create-webhook': './src/create-webhook.ts',
+				},
+				kody: {
+					id: 'agent-mail',
+					description: 'AgentMail helpers',
+				},
+			}),
+		}),
+	)
+	expect(
+		targets
+			.filter((target) => target.kind === 'importable-module')
+			.map((target) => target.artifactName),
+	).toEqual(['.', './add-rule', './create-webhook'])
+})

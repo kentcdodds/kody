@@ -46,6 +46,8 @@ export async function readAdminEntitlementConsumption(input: {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
+	/** Paid seats pooling the rate limits (`UserEntitlement.seats`). */
+	seats?: number
 	now: Date
 	/**
 	 * Base-plan entitlement for `email_receives_per_day` when it differs from
@@ -79,6 +81,7 @@ export async function readAdminEntitlementConsumption(input: {
 				resource,
 				limitEntitlement.ladder,
 				limitEntitlement.creditWallet,
+				input.seats,
 			)
 			const percentOfLimit = limit === 0 ? null : current / limit
 			return {

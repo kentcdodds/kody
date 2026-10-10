@@ -456,6 +456,7 @@ async function collectEntitlementCaps(
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
 			creditWallet: entitlement.creditWallet,
+			seats: entitlement.seats,
 			now,
 		})
 		return snapshot.resources

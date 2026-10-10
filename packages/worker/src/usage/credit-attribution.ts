@@ -324,7 +324,7 @@ export async function loadCreditAttributionBreakdown(input: {
 	})
 }
 
-async function loadPackageAttributionLabels(input: {
+export async function loadPackageAttributionLabels(input: {
 	db: D1Database
 	stableUserId: string
 	username: string

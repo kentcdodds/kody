@@ -83,9 +83,13 @@ Org-owned storage and usage billing read `ownerIdFromCaller`
 (`packages/worker/src/request-context/owner-id.ts`): `request.org.id` when the
 request has an org, otherwise the acting person. Personal orgs reuse the person
 id, so those keys do not move. Package import lookup, account resource pages,
-secrets, jobs, and execute usage go through that function. Packages and
-connected agents on `/@slug/-/` read the person. A same-origin
+secrets, jobs, and execute usage go through that function. A same-origin
 `/account/<section>.json` fetch from an org page binds that org via Referer.
+Route loaders run before the client router commits the URL, so they pass the
+destination page as `referrer` (`orgAccountApiReferrer`). When the Referer names
+an org the person cannot use, the handler returns 404
+(`deniedOrgAccountApiResponse`) instead of the signup-org fallback in
+`readAuthenticatedAppUser`.
 
 ## What to read when changing it
 

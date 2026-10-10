@@ -2,6 +2,7 @@ import {
 	getPackageAppClientEntryPath,
 	getPackageAppEntryPath,
 	listPackageSubscriptions,
+	normalizePackageExportKey,
 	normalizePackageWorkspacePath,
 } from '#worker/package-registry/manifest.ts'
 import {
@@ -50,15 +51,16 @@ export function collectPublishedPackageArtifactTargets(
 		const entryPoint = resolvePackageExportRuntimeEntryPoint(exportTarget)
 		if (!entryPoint) continue
 		const normalizedEntryPoint = normalizePackageWorkspacePath(entryPoint)
+		const artifactName = normalizePackageExportKey(exportName)
 		targets.push({
 			kind: 'module',
-			artifactName: exportName,
+			artifactName,
 			entryPoint: normalizedEntryPoint,
 			bundleKind: 'module',
 		})
 		targets.push({
 			kind: 'importable-module',
-			artifactName: exportName,
+			artifactName,
 			entryPoint: normalizedEntryPoint,
 			bundleKind: 'importable-module',
 		})

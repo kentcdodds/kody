@@ -13,7 +13,7 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
+import { deniedOrgAccountApiResponse } from '#app/org-request-binding.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
@@ -156,19 +156,12 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-			// A denied org falls back to the personal org on `user.request`;
-			// listing or revoking there from a stale team page is the wrong org.
-			const resolution = await loadRequestOrgResolution(
+			const denied = await deniedOrgAccountApiResponse(
 				request,
 				env,
 				user.mcpUser.userId,
 			)
-			if (resolution === 'denied') {
-				return jsonResponse(
-					{ ok: false, error: 'Organization not found.' },
-					404,
-				)
-			}
+			if (denied) return denied
 
 			if (request.method === 'GET') {
 				return jsonResponse(

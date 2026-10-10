@@ -1,3 +1,4 @@
+import { jsonResponse } from '#worker/json-response.ts'
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
 	orgOwnedAccountApiSection,
@@ -24,6 +25,22 @@ export function loadRequestOrgResolution(
 	const pending = resolveRequestOrg(request, env, personId)
 	resolutions.set(request, pending)
 	return pending
+}
+
+/**
+ * 404 for an org-owned `/account/<section>.json` call whose Referer names an
+ * org this person cannot use, otherwise null. `readAuthenticatedAppUser` falls
+ * back to the signup org for a denied org, so a stale team page would
+ * otherwise read or write the personal org.
+ */
+export async function deniedOrgAccountApiResponse(
+	request: Request,
+	env: Env,
+	personId: string,
+): Promise<Response | null> {
+	const resolution = await loadRequestOrgResolution(request, env, personId)
+	if (resolution !== 'denied') return null
+	return jsonResponse({ ok: false, error: 'Organization not found.' }, 404)
 }
 
 function orgSlugFromPageUrl(pathname: string): string | null {

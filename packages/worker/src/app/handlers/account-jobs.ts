@@ -7,6 +7,7 @@ import {
 } from '#app/account-jobs-data.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { deniedOrgAccountApiResponse } from '#app/org-request-binding.ts'
 import { type AccountJobsLoaderData as AppAccountJobsLoaderData } from '#universal/loader-data.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
@@ -85,6 +86,12 @@ export function createAccountJobsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
+			const denied = await deniedOrgAccountApiResponse(
+				request,
+				env,
+				user.mcpUser.userId,
+			)
+			if (denied) return denied
 
 			if (request.method === 'GET') {
 				const serverTiming: Array<ServerTimingEntry> = []

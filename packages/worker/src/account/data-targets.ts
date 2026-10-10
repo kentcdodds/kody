@@ -220,6 +220,12 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'usage_attribution_daily',
 		columns: ['actor_user_id'],
 	},
+	{ kind: 'user_id', table: 'usage_connection_daily' },
+	{
+		kind: 'user_columns',
+		table: 'usage_connection_daily',
+		columns: ['holder_user_id'],
+	},
 	{ kind: 'user_id', table: 'durable_object_duration_daily' },
 	{
 		kind: 'user_columns',
@@ -932,6 +938,7 @@ export const accountExportForeignUserIdColumnsByTable: Readonly<
 	community_activity_events: ['actor_user_id'],
 	durable_object_duration_daily: ['actor_user_id'],
 	usage_attribution_daily: ['actor_user_id'],
+	usage_connection_daily: ['holder_user_id'],
 	usage_rollups: ['actor_user_id'],
 	community_reports: ['listing_owner_user_id', 'resolved_by_user_id'],
 	account_write_lease_repairs: ['target_user_id', 'repaired_by_user_id'],

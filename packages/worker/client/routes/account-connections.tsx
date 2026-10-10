@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/component'
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import {
@@ -48,15 +49,11 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
 const connectYourAgentDocHref = docHref('connect-your-agent')
 
-/**
- * The JSON route binds the org from the Referer. A route loader runs before
- * the router commits the URL, so name the destination page explicitly.
- */
 async function fetchConnectedAgents(href: string, signal: AbortSignal) {
 	const response = await fetch(connectedAgentsApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
-		referrer: new URL(href, window.location.origin).href,
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) return { kind: 'unauthorized' as const }

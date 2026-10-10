@@ -142,6 +142,56 @@ async function countRedirects(packageId: string) {
 	return counts
 }
 
+test('team org handles resolve package pages without a users row (P9)', async () => {
+	await ensureCommunityFlowSchema(env.APP_DB)
+	const suffix = uniqueSuffix()
+	const orgId = `org-team-${suffix}`
+	const handle = `team${suffix}`
+	const kodyId = 'agent-mail'
+	const now = new Date().toISOString()
+	await runSql(
+		`INSERT INTO orgs (id, slug, display_name, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
+		orgId,
+		handle,
+		'Team Org',
+		now,
+		now,
+	)
+	await runSql(
+		`INSERT INTO handles (handle, user_id, org_id, created_at)
+		 VALUES (?, NULL, ?, ?)`,
+		handle,
+		orgId,
+		now,
+	)
+	const packageId = await insertPackage(
+		{ userId: orgId, username: handle },
+		kodyId,
+	)
+	const listingId = await insertListing(
+		{ userId: orgId, username: handle },
+		packageId,
+		kodyId,
+	)
+
+	await expect(resolve(handle, kodyId)).resolves.toEqual({
+		kind: 'listing',
+		listingId,
+		username: handle,
+		kodyId,
+	})
+	await expect(resolvePage(handle, kodyId)).resolves.toEqual(
+		expect.objectContaining({
+			kind: 'package',
+			username: handle,
+			kodyId,
+			userId: orgId,
+			listingId,
+		}),
+	)
+})
+
 test('canonical pairs resolve, miss, delist, and case-correct to the listing', async () => {
 	const pkg = await createPublishedPackage()
 	const delisted = await createPublishedPackage('devin', {
