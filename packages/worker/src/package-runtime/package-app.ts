@@ -8,7 +8,10 @@ import {
 	waitUntil as scheduleWorkerWaitUntil,
 } from 'cloudflare:workers'
 import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
-import { packageAppRuntimeRunIdHeader } from '#worker/package-runtime/package-app-diagnostics.ts'
+import {
+	packageAppRuntimeErrorHeader,
+	packageAppRuntimeRunIdHeader,
+} from '#worker/package-runtime/package-app-diagnostics.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
@@ -816,10 +819,36 @@ async function readRuntimeRunId(runtimeRun) {
 	}
 }
 
+function withoutAuthorRuntimeErrorHeader(response) {
+	if (!response?.headers?.has(${JSON.stringify(packageAppRuntimeErrorHeader)})) {
+		return response;
+	}
+	try {
+		const headers = new Headers(response.headers);
+		headers.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	} catch (error) {
+		// Body may be locked/disturbed; still drop the internal marker so serve
+		// does not treat an authored 5xx as a runtime throw.
+		const fallbackHeaders = new Headers(response.headers);
+		fallbackHeaders.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		return new Response(null, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: fallbackHeaders,
+		});
+	}
+}
+
 function tagPackageAppRuntimeRun(response, runtimeRunId) {
 	if (!runtimeRunId || !response || response.status < 500) return response;
 	try {
 		const headers = new Headers(response.headers);
+		headers.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
 		headers.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
 		return new Response(response.body, {
 			status: response.status,
@@ -827,7 +856,14 @@ function tagPackageAppRuntimeRun(response, runtimeRunId) {
 			headers,
 		});
 	} catch (error) {
-		return response;
+		const fallbackHeaders = new Headers(response.headers);
+		fallbackHeaders.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		fallbackHeaders.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
+		return new Response(null, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: fallbackHeaders,
+		});
 	}
 }
 
@@ -867,14 +903,16 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				}
 				return await fetchHandler(request, runtimeEnv, this.ctx);
 			});
-			let outgoing = response;
-			if (response && response.status >= 500) {
+			// Authors (or proxied upstreams) must not set the internal throw
+			// marker; only the catch path below may attach it.
+			let outgoing = withoutAuthorRuntimeErrorHeader(response);
+			if (outgoing && outgoing.status >= 500) {
 				const runtimeRunId = await readRuntimeRunId(runtimeRun);
 				console.error('package-app-runtime-http-error', {
 					runtimeRunId,
-					httpStatus: response.status,
+					httpStatus: outgoing.status,
 				});
-				outgoing = tagPackageAppRuntimeRun(response, runtimeRunId);
+				outgoing = tagPackageAppRuntimeRun(outgoing, runtimeRunId);
 			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
@@ -889,20 +927,22 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			const runtimeRunId = await readRuntimeRunId(runtimeRun);
 			console.error('package-app-runtime-threw', { runtimeRunId });
-			if (enrichedError && typeof enrichedError === 'object') {
-				try {
-					enrichedError.kodyRuntimeRunId = runtimeRunId;
-				} catch (assignError) {
-					// Some thrown values are frozen. The log line above still has the id.
-				}
-			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw enrichedError;
+			// Dynamic Worker fetch does not preserve custom Error properties.
+			// Return a tagged 500 so the serve path can log runtimeRunId and
+			// render the package-entrypoint error page.
+			const headers = new Headers({
+				[${JSON.stringify(packageAppRuntimeErrorHeader)}]: '1',
+			});
+			if (runtimeRunId) {
+				headers.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
+			}
+			return new Response(null, { status: 500, headers });
 		} finally {
 			consoleCapture.restore();
 		}

@@ -9,7 +9,6 @@ import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
 	isPublishedPackageArtifactBuiltForCommit,
 	reusePublishedPackageArtifactIfUnchanged,
-	type PublishedPackageArtifactDependencySourceCache,
 	type PublishedPackageArtifactReuseSnapshotCache,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
 import {
@@ -186,9 +185,14 @@ async function filterTargetsNeedingRebuild(input: {
 	}
 	const remaining: Array<PublishedPackageArtifactBuildTarget> = []
 	const alreadyBuilt: Array<PublishedPackageArtifactBuildTarget> = []
+	if (input.targets.length === 0) {
+		return { remaining, alreadyBuilt }
+	}
 	// Load this rebuild's published snapshot once and pass that value to every
-	// target. A later rebuild loads again. Prior-commit snapshots and
-	// dependency rows are shared only for this call.
+	// target. A later rebuild loads again. Prior-commit snapshots are shared
+	// for this call. Dependency source rows are not: a dependency can publish
+	// between sequential targets, and a shared row would let later targets
+	// copy a bundle that still embeds the older dependency commit.
 	const publishedSnapshot: PublishedSourceSnapshot | null | undefined =
 		hasPublishedRuntimeArtifacts(input.env)
 			? await readPublishedSourceSnapshot({
@@ -200,8 +204,6 @@ async function filterTargetsNeedingRebuild(input: {
 	const sharedSnapshot =
 		publishedSnapshot !== undefined ? { publishedSnapshot } : {}
 	const snapshotCache: PublishedPackageArtifactReuseSnapshotCache = new Map()
-	const dependencySourceCache: PublishedPackageArtifactDependencySourceCache =
-		new Map()
 	for (const target of input.targets) {
 		const built = await isPublishedPackageArtifactBuiltForCommit({
 			env: input.env,
@@ -222,7 +224,6 @@ async function filterTargetsNeedingRebuild(input: {
 			publishedCommit: input.publishedCommit,
 			target,
 			snapshotCache,
-			dependencySourceCache,
 			...sharedSnapshot,
 		})
 		if (reused) {

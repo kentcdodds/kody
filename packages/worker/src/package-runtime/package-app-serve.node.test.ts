@@ -4,6 +4,10 @@ import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { parseServerTimingHeader } from '#worker/server-timing.ts'
+import {
+	packageAppRuntimeErrorHeader,
+	packageAppRuntimeRunIdHeader,
+} from './package-app-diagnostics.ts'
 import { servePackageAppRequest } from './package-app-serve.ts'
 
 // Existing serve tests exercise the local construction path (index/platform/
@@ -707,6 +711,72 @@ test('published leftover kody.app.runtime does not brick host-setup', async () =
 	expect(response.status).toBe(200)
 	expect(await response.text()).toBe('ok')
 	expect(mockModule.buildPackageAppWorker).toHaveBeenCalled()
+})
+
+test('a tagged runtime throw becomes the package-entrypoint page with the run id', async () => {
+	consoleError.mockImplementation(() => {})
+	seedFixture({ kodyId: 'runtime-throw-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					return new Response(null, {
+						status: 500,
+						headers: {
+							[packageAppRuntimeErrorHeader]: '1',
+							[packageAppRuntimeRunIdHeader]: 'run-thrown-1',
+						},
+					})
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({
+		kodyId: 'runtime-throw-app',
+		init: { headers: { Accept: 'application/json' } },
+	})
+	expect(response.status).toBe(500)
+	expect(response.headers.get(packageAppRuntimeErrorHeader)).toBeNull()
+	expect(response.headers.get(packageAppRuntimeRunIdHeader)).toBeNull()
+	await expect(response.json()).resolves.toMatchObject({
+		error: 'Package app crashed',
+		package: { kody_id: 'runtime-throw-app' },
+	})
+	const logged = consoleError.mock.calls.find(
+		(call) => call[0] === 'package-app-http-error',
+	)
+	expect(logged?.[1]).toMatchObject({
+		status: 500,
+		phase: 'package-entrypoint',
+		runtimeRunId: 'run-thrown-1',
+	})
+})
+
+test('author 200 responses that set the runtime-error header stay successful', async () => {
+	seedFixture({ kodyId: 'author-marker-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					return new Response('ok', {
+						status: 200,
+						headers: { [packageAppRuntimeErrorHeader]: '1' },
+					})
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({ kodyId: 'author-marker-app' })
+	expect(response.status).toBe(200)
+	expect(await response.text()).toBe('ok')
+	expect(consoleError).not.toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.anything(),
+	)
 })
 
 test('synthetic host-setup failures return JSON with the underlying cause', async () => {

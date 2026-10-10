@@ -9,6 +9,15 @@ export const packageAppRequestIdHeader = 'x-kody-request-id'
  */
 export const packageAppRuntimeRunIdHeader = 'x-kody-runtime-run-id'
 
+/**
+ * Marks a Dynamic Worker fetch response that stands in for a thrown package
+ * handler error. Fetch semantics do not preserve custom Error properties, so
+ * the runtime returns this tagged 500 instead of throwing across APP_LOADER.
+ * Serve converts it to the package-entrypoint error page; strip before the
+ * browser.
+ */
+export const packageAppRuntimeErrorHeader = 'x-kody-runtime-error'
+
 const requestIdPattern =
 	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -83,11 +92,16 @@ export function stripPackageAppRuntimeRunId(response: Response): {
 	runtimeRunId: string | null
 } {
 	const runtimeRunId = response.headers.get(packageAppRuntimeRunIdHeader)
-	if (!runtimeRunId || response.webSocket || response.status === 101) {
+	const runtimeError = response.headers.get(packageAppRuntimeErrorHeader)
+	if (response.webSocket || response.status === 101) {
+		return { response, runtimeRunId }
+	}
+	if (!runtimeRunId && !runtimeError) {
 		return { response, runtimeRunId }
 	}
 	const headers = new Headers(response.headers)
 	headers.delete(packageAppRuntimeRunIdHeader)
+	headers.delete(packageAppRuntimeErrorHeader)
 	return {
 		runtimeRunId,
 		response: new Response(response.body, {
@@ -96,6 +110,13 @@ export function stripPackageAppRuntimeRunId(response: Response): {
 			headers,
 		}),
 	}
+}
+
+export function isPackageAppRuntimeThrownResponse(response: Response): boolean {
+	return (
+		response.status >= 500 &&
+		response.headers.get(packageAppRuntimeErrorHeader) === '1'
+	)
 }
 
 /**

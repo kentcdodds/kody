@@ -883,3 +883,51 @@ test('rebuildPublishedPackageArtifacts shares snapshot reads across already-buil
 	)
 	expect(mockModule.getEntitySourceByIdForUser).not.toHaveBeenCalled()
 })
+
+test('sequential reuse checks without a shared dependency cache see a dependency publish', async () => {
+	const depArtifact = priorModuleArtifact({
+		artifactName: '.',
+		entryPoint: 'src/a.ts',
+		publishedCommit: 'commit-old',
+	})
+	depArtifact.artifact.dependencies = [
+		{ sourceId: 'source-dep-a', publishedCommit: 'dep-1', kodyId: 'dep-a' },
+	]
+	depArtifact.row.publishedCommit = 'commit-old'
+	mockModule.getPublishedBundleArtifactByIdentity.mockResolvedValue(
+		depArtifact.row,
+	)
+	mockModule.readPublishedBundleArtifact.mockResolvedValue(depArtifact.artifact)
+	stubSnapshots({ 'commit-old': {}, 'commit-reuse': {} })
+	mockModule.writePublishedBundleArtifact.mockResolvedValue('kv:reused')
+	mockModule.updatePublishedBundleArtifactRow.mockResolvedValue(true)
+
+	let depCommit = 'dep-1'
+	mockModule.listEntitySourcesByIds.mockImplementation(async () => [
+		{
+			id: 'source-dep-a',
+			user_id: ownerIdFromStored('user-1'),
+			published_commit: depCommit,
+		},
+	])
+
+	const reuseInput = {
+		env: kvEnv,
+		userId: ownerIdFromStored('user-1'),
+		sourceId: 'source-1',
+		publishedCommit: 'commit-reuse',
+		target: {
+			kind: 'module' as const,
+			artifactName: '.',
+			entryPoint: 'src/a.ts',
+			bundleKind: 'module' as const,
+		},
+	}
+
+	// External rebuild filters targets without sharing dependencySourceCache
+	// across sequential targets, so each check loads current dependency rows.
+	expect(await reusePublishedPackageArtifactIfUnchanged(reuseInput)).toBe(true)
+	depCommit = 'dep-2'
+	expect(await reusePublishedPackageArtifactIfUnchanged(reuseInput)).toBe(false)
+	expect(mockModule.listEntitySourcesByIds).toHaveBeenCalledTimes(2)
+})

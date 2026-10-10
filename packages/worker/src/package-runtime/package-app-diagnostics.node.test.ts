@@ -6,8 +6,10 @@ import {
 } from '#worker/test-support/console-spies.ts'
 import {
 	forwardRuntimeWorkerFetch,
+	isPackageAppRuntimeThrownResponse,
 	logPackageAppAuthFailed,
 	packageAppRequestIdHeader,
+	packageAppRuntimeErrorHeader,
 	packageAppRuntimeRunIdHeader,
 	stripPackageAppRuntimeRunId,
 	withPackageAppRequestId,
@@ -65,19 +67,31 @@ test('auth failure log names the cookie presence and omits its value', () => {
 	expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('token=secret')
 })
 
-test('stripPackageAppRuntimeRunId removes the correlation header', () => {
+test('stripPackageAppRuntimeRunId removes correlation and thrown-error headers', () => {
 	const response = new Response('nope', {
 		status: 500,
 		headers: {
 			[packageAppRuntimeRunIdHeader]: 'run-1',
+			[packageAppRuntimeErrorHeader]: '1',
 			'content-type': 'text/plain',
 		},
 	})
+	expect(isPackageAppRuntimeThrownResponse(response)).toBe(true)
+	expect(
+		isPackageAppRuntimeThrownResponse(
+			new Response('ok', {
+				status: 200,
+				headers: { [packageAppRuntimeErrorHeader]: '1' },
+			}),
+		),
+	).toBe(false)
 	const stripped = stripPackageAppRuntimeRunId(response)
 	expect(stripped.runtimeRunId).toBe('run-1')
 	expect(stripped.response.headers.get(packageAppRuntimeRunIdHeader)).toBeNull()
+	expect(stripped.response.headers.get(packageAppRuntimeErrorHeader)).toBeNull()
 	expect(stripped.response.headers.get('content-type')).toBe('text/plain')
 	expect(stripped.response.status).toBe(500)
+	expect(isPackageAppRuntimeThrownResponse(stripped.response)).toBe(false)
 })
 
 test('runtime worker forward logs a 500 with request id and run id, not cookies', async () => {
