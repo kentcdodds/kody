@@ -72,6 +72,7 @@ function templateUsesLiveDeletedAtHelper(node: ts.TemplateExpression): boolean {
 			if (
 				name === 'liveDeletedAtSql' ||
 				name === 'andLiveDeletedAtSql' ||
+				name === 'andActiveOrgSql' ||
 				name === 'withLiveDeletedAt'
 			) {
 				return true

@@ -6,7 +6,10 @@ import {
 	type OrgRole,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import {
+	andActiveOrgSql,
+	andLiveDeletedAtSql,
+} from '#worker/soft-delete/live-sql.ts'
 
 export type OrgRecord = {
 	id: string
@@ -28,11 +31,6 @@ export type PersonOrg = OrgRecord & {
 }
 
 const orgSelect = `id, slug, display_name, avatar_key, plan, entitlement_ladder`
-
-/** Live org filter: not soft-deleted and not suspended. */
-function andActiveOrgSql(alias: string): string {
-	return `${andLiveDeletedAtSql(alias)} AND ${alias}.suspended_at IS NULL`
-}
 
 export async function getOrgById(db: D1Database, orgId: string) {
 	return await db
