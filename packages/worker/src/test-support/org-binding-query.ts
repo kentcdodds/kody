@@ -9,6 +9,11 @@ export function isOrgBindingMembershipQuery(normalizedQuery: string) {
 	)
 }
 
+/** Recognize the `isOrgActive` SELECT. */
+export function isActiveOrgQuery(normalizedQuery: string) {
+	return normalizedQuery.startsWith('select 1 as ok from orgs o where o.id = ?')
+}
+
 export function mockPersonalOrgBindingRow(
 	personId: string,
 	slug: string | null = null,
@@ -21,8 +26,9 @@ export function mockPersonalOrgBindingRow(
 }
 
 /**
- * D1 stub where every person is a live Owner of their personal org, so
- * `resolveCredential`'s org access check passes. Other queries find nothing.
+ * D1 stub where every org is active and every person is a live Owner of
+ * their personal org, so `resolveCredential`'s org access check passes.
+ * Other queries find nothing.
  */
 export function personalOrgAccessD1(): D1Database {
 	return {
@@ -32,6 +38,7 @@ export function personalOrgAccessD1(): D1Database {
 				bind(...params: Array<unknown>) {
 					return {
 						async first() {
+							if (isActiveOrgQuery(normalizedQuery)) return { ok: 1 }
 							return isOrgBindingMembershipQuery(normalizedQuery)
 								? mockPersonalOrgBindingRow(String(params[1]))
 								: null

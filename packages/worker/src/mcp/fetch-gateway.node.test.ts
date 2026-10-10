@@ -16,6 +16,7 @@ import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
 import {
+	isActiveOrgQuery,
 	isOrgBindingMembershipQuery,
 	mockPersonalOrgBindingRow,
 } from '#worker/test-support/org-binding-query.ts'
@@ -40,6 +41,7 @@ const env = {
 							return { meta: { changes: 1 } }
 						},
 						async first() {
+							if (isActiveOrgQuery(normalizedQuery)) return { ok: 1 }
 							if (isOrgBindingMembershipQuery(normalizedQuery)) {
 								return mockPersonalOrgBindingRow(String(params[1]), 'ada')
 							}

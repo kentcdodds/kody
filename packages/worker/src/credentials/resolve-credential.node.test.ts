@@ -12,6 +12,7 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { upsertGrant } from '#worker/orgs/access-writes.ts'
+import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
@@ -396,6 +397,77 @@ test('automation and platform resolutions keep today’s rules and are audited',
 		packageStampKind: 'attested',
 		packageId: t.packageId,
 	})
+})
+
+test('a package app in a team org acts as the org’s own account; a deleted org is denied', async () => {
+	const t = await setup()
+	const created = await createOrganization(
+		t.db,
+		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+		{
+			personId: personIdFromStored(t.ownerStableId),
+			audit: createTestOrgAuditWriter(),
+			slug: 'zeta-co',
+			displayName: 'Zeta Co',
+		},
+	)
+	if (!created.ok) throw new Error(created.error)
+	const teamOrg = await t.db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'zeta-co'`)
+		.first<{ id: string }>()
+	const teamOrgId = ownerIdFromStored(teamOrg!.id)
+	const teamPackageId = 'pkg-team-app'
+	await t.db
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES (?, ?, 'team-app', 'team-app', '', 'source-pkg-team-app')`,
+		)
+		.bind(teamPackageId, teamOrgId)
+		.run()
+	await saveSecret({
+		env: t.env,
+		userId: teamOrgId,
+		scope: 'user',
+		name: 'teamToken',
+		value: secretValue,
+	})
+	// What `PackageAppRuntimeBridge` builds: the org id as the request user.
+	const packageAppRequest = () =>
+		deriveRequestContext({
+			user: { userId: personIdFromStored(teamOrg!.id) },
+			source: { kind: 'package-app' },
+			orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
+		})
+	const resolve = () =>
+		resolveCredential({
+			env: t.env,
+			orgId: teamOrgId,
+			actor: packageAppRequest(),
+			packageStamp: attestedPackageStamp(teamPackageId),
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'teamToken',
+				storageContext: {
+					sessionId: null,
+					appId: null,
+					packageId: teamPackageId,
+				},
+			},
+		})
+
+	await expect(resolve()).resolves.toMatchObject({ value: secretValue })
+	await t.db
+		.prepare(`UPDATE orgs SET deleted_at = ? WHERE id = ?`)
+		.bind(now, teamOrgId)
+		.run()
+	await expect(resolve()).rejects.toMatchObject({ code: 'wrong_org' })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => [row.org_id, row.result])).toEqual([
+		[teamOrgId, 'success'],
+		[teamOrgId, 'denied'],
+	])
 })
 
 test('an actor from another org is denied before any credential read', async () => {

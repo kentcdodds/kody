@@ -43,8 +43,8 @@ import {
 } from '#worker/integrations/token-refresh.ts'
 import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
-import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
-import { assertIntegrationHostAllowed } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import {
 	assertPackageCanAccessResolvedSecret,
@@ -365,12 +365,17 @@ async function assertActorHasOrgAccess(
 	let check = orgAccessByRequest.get(request)
 	if (!check) {
 		check = (async () => {
-			const binding = await loadOrgBindingForOrg(
-				input.env.APP_DB,
-				person.userId,
-				input.orgId,
-			)
-			if (binding) return
+			// Package apps run as the org's own account (actor id = org id), which
+			// has no membership row in a team org; only the org's status applies.
+			const hasAccess =
+				String(person.userId) === String(input.orgId)
+					? await isOrgActive(input.env.APP_DB, input.orgId)
+					: (await loadOrgBindingForOrg(
+							input.env.APP_DB,
+							person.userId,
+							input.orgId,
+						)) !== null
+			if (hasAccess) return
 			throw new AuthorizationError({
 				code: 'wrong_org',
 				permission,
@@ -656,13 +661,13 @@ async function resolveIntegrationToken(
 				createMissingIntegrationAccessTokenMessage(credential.name),
 			)
 		}
-		assertIntegrationHostAllowed(
+		assertIntegrationAllowsHost(
 			credential.name,
 			{
 				requiredHosts: joined.connection.requiredHosts,
 				apiBaseUrl: joined.app.apiBaseUrl,
 			},
-			`https://${credential.requestHost}/`,
+			credential.requestHost,
 		)
 	}
 	return token
