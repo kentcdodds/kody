@@ -1,10 +1,9 @@
 import { expect, test } from 'vitest'
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
-	assignRoleInMcpTestDatabase,
 	createMcpClient,
-	createTestDatabase,
-	startDevServer,
+	createUniqueTestUser,
+	getSharedMcpE2eServer,
 } from '../../../../tools/mcp-test-support.ts'
 
 /**
@@ -17,8 +16,7 @@ import {
  */
 
 test('mcp endpoint requires OAuth bearer auth', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
+	const server = await getSharedMcpE2eServer()
 
 	const response = await fetch(new URL('/mcp', server.origin), {
 		headers: {
@@ -32,17 +30,16 @@ test('mcp endpoint requires OAuth bearer auth', async () => {
 })
 
 test('authenticated MCP search shows admin capabilities only to admin users', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	const regularUser = {
-		email: 'jane@example.com',
-		username: 'jane',
-		password: 'ilikecode',
-	}
+	const server = await getSharedMcpE2eServer()
+	const regularUser = createUniqueTestUser()
 	await using regularClient = await createMcpClient(
 		server.origin,
 		regularUser,
-		{ persistDir: database.persistDir },
+		{
+			ensureUser: server.ensureUser,
+			markEmailVerified: server.markEmailVerified,
+			clearAuthRateLimits: server.clearAuthRateLimits,
+		},
 	)
 
 	const regularSearch = await regularClient.client.callTool({
@@ -54,28 +51,28 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 	})
 	expect(searchMatchIds(regularSearch)).not.toContain('adminUserList')
 
+	const adminUser = createUniqueTestUser()
 	await using bootstrapClient = await createMcpClient(
 		server.origin,
-		database.user,
-		{ persistDir: database.persistDir },
+		adminUser,
+		{
+			ensureUser: server.ensureUser,
+			markEmailVerified: server.markEmailVerified,
+			clearAuthRateLimits: server.clearAuthRateLimits,
+		},
 	)
 	void bootstrapClient
-	await assignRoleInMcpTestDatabase({
-		persistDir: database.persistDir,
-		email: database.user.email,
-		role: 'admin',
+	await server.assignRole(adminUser.email, 'admin')
+	await using adminClient = await createMcpClient(server.origin, adminUser, {
+		ensureUser: server.ensureUser,
+		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
-	await using adminClient = await createMcpClient(
-		server.origin,
-		database.user,
-		{ persistDir: database.persistDir },
-	)
 
-	// Role writes go through a separate `wrangler d1 execute --persist-to`
-	// process. Auth and the capability registry load roles per request
-	// (`request-auth-cache` is a WeakMap; registry cache is not keyed by
-	// role), so this is local D1 snapshot lag, not a production stale-role
-	// cache. Poll until the running worker observes the grant.
+	// Role was written through the live harness D1. Auth and the capability
+	// registry load roles per request (`request-auth-cache` is a WeakMap;
+	// registry cache is not keyed by role). Poll until the grant is visible
+	// the same way production would observe a freshly assigned role.
 	await expect
 		.poll(
 			async () => {

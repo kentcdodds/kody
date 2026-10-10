@@ -34,7 +34,7 @@ succeeds and an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fail
 the job if the host is configured but unreachable or unauthorized, so validate
 can still pass before the worker exists or after a token rotation that has not
 been synced yet. Cached npm scripts (`test:node`, `test:workers`,
-`test:e2e:run`, `test:mcp`, `test`, and `worker:typecheck`) run through
+`test:e2e:run`, `test:mcp`, `test`, and `typecheck`) run through
 `tools/run-nx.ts`. A transport error talking to `/v1/cache/{hash}` after Nx
 already printed `Successfully ran target` is treated as success. The same
 transport error before tasks finish retries once with `--skipRemoteCache` and
@@ -45,6 +45,23 @@ misconfigured-cache errors still fail.
 runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
 and asserts the second run is a `[remote cache]` hit that restores outputs
 without re-running the command.
+
+## Interpreting hit rates
+
+A PR that **introduces or renames Nx tasks** (or expands their `inputs`) will
+show `Cache: 0/N` on first run even when remote cache is enabled — those hashes
+have never been stored. Same-repo validate uses the write token (decision 0040),
+so that first run **PUTs**; the next identical tree on `main` or another PR
+should show `[remote cache]` hits. Example after parallel typecheck (#3209): the
+PR logged `0/12`, and the following `main` validate logged `12/12`.
+
+Do **not** treat a cold `0/N` alone as a token, Nx Cloud, or `--skip-nx-cache`
+bug. Check the setup step for
+`Nx remote cache enabled (https://nx-cache.kody.codes)` first. Fork PRs use the
+read token only and cannot populate new hashes. Suite targets that hash
+`{workspaceRoot}/**/*` (notably `test-node` after #3207) miss whenever any
+workspace file changes — that is intentional correctness, not a transport
+failure.
 
 ## Retention
 

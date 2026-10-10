@@ -385,7 +385,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(accountPackagesNavHref(null)).toBe('/account')
 })
 
-test('workspace rail for a team organization is Settings, Members, and Billing', () => {
+test('workspace rail for a team organization is Jobs, Secrets, and its management links', () => {
 	expect(
 		workspaceRailGroups({
 			orgSlug: 'acme',
@@ -393,6 +393,8 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 			role: 'owner',
 		}).map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
+		['Build', ['/@acme/-/jobs']],
+		['Data', ['/@acme/-/secrets']],
 		[
 			'Organization',
 			[
@@ -413,7 +415,15 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 		})
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
-	).toEqual(['Settings', 'Members', 'Grants', 'Collaborators', 'Billing'])
+	).toEqual([
+		'Jobs',
+		'Secrets',
+		'Settings',
+		'Members',
+		'Grants',
+		'Collaborators',
+		'Billing',
+	])
 	expect(
 		workspaceRailGroups({
 			orgSlug: 'acme',
@@ -422,10 +432,29 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 		})
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
-	).toEqual(['Settings', 'Members', 'Teams', 'Grants', 'Collaborators'])
+	).toEqual([
+		'Jobs',
+		'Secrets',
+		'Settings',
+		'Members',
+		'Teams',
+		'Grants',
+		'Collaborators',
+	])
+	// Collaborators cannot open org sections, so they get no rail.
 	expect(
 		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: null }),
 	).toEqual([])
+	// Repositories and Connections still read the person, so they stay off.
+	const teamLabels = workspaceRailGroups({
+		orgSlug: 'acme',
+		personal: false,
+		role: 'owner',
+	})
+		.flatMap((group) => group.items)
+		.map((item) => item.label)
+	expect(teamLabels).not.toContain('Repositories')
+	expect(teamLabels).not.toContain('Connections')
 })
 
 test('account rail org slug prefers the path org over username', () => {

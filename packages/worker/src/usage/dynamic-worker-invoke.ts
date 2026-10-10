@@ -84,6 +84,7 @@ export async function recordDynamicWorkerInvoke(input: {
 	paramsChars?: number
 	actorUserId?: string | null
 	automationSource?: string | null
+	connectionKey?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<void> {
 	try {
@@ -106,6 +107,7 @@ export async function recordDynamicWorkerInvoke(input: {
 				...(input.automationSource != null
 					? { automationSource: input.automationSource }
 					: {}),
+				...(input.connectionKey ? { connectionKey: input.connectionKey } : {}),
 			},
 			{ waitUntil: input.waitUntil },
 		)

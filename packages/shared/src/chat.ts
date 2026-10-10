@@ -68,6 +68,12 @@ export const mcpCallerContextSchema = object({
 	 */
 	connectionProfileName: optional(nullable(string())),
 	/**
+	 * OAuth client the bearer grant was issued to (MCP host or `kody login`
+	 * CLI). Becomes the request credential id so usage can be attributed to
+	 * the connection. Absent for sessions, API tokens, and Automation.
+	 */
+	oauthClientId: optional(nullable(string())),
+	/**
 	 * DB-backed org membership the request acts in. Absent / null derives the
 	 * person's personal org from `user`.
 	 */
@@ -104,10 +110,11 @@ type McpCallerContextInferred = InferOutput<typeof mcpCallerContextSchema>
  */
 export type McpCallerContextWire = Omit<
 	McpCallerContextInferred,
-	'user' | 'connectionProfileName' | 'orgBinding'
+	'user' | 'connectionProfileName' | 'oauthClientId' | 'orgBinding'
 > & {
 	user?: McpUserContext | null
 	connectionProfileName?: string | null
+	oauthClientId?: string | null
 	orgBinding?: McpOrgBinding | null
 }
 

@@ -128,6 +128,7 @@ export const builtInReservedUsernameList = [
 	'mailerdaemon',
 	'marketing',
 	'mcp',
+	'me',
 	'media',
 	'member',
 	'members',

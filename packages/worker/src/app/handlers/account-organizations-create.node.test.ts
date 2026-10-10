@@ -151,6 +151,34 @@ test('web create organization POST requires org:write like MCP orgCreate', async
 	)
 })
 
+test('web create organization form rejects the reserved `me` handle in any case', async () => {
+	signIn()
+	for (const slug of ['me', 'ME']) {
+		const request = new Request(
+			`https://kody.test${routes.accountOrganizationsNewPost.href()}`,
+			{
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({ displayName: 'Me Co', slug }),
+			},
+		)
+		const response = await createAccountOrganizationsNewPostHandler({
+			APP_DB: db,
+			AUDIT_DB: createAuditTestDb(),
+			BUNDLE_ARTIFACTS_KV: undefined,
+		} as unknown as Env).handler({ request } as never)
+		expect(response.status).toBe(302)
+		const location = new URL(response.headers.get('Location')!, request.url)
+		expect(location.pathname).toBe(routes.accountOrganizationsNew.href())
+		expect(location.searchParams.get('error')).toBe('This name is reserved.')
+	}
+	expect(
+		await db
+			.prepare(`SELECT COUNT(*) AS count FROM orgs WHERE lower(slug) = 'me'`)
+			.first<{ count: number }>(),
+	).toEqual({ count: 0 })
+})
+
 test('web create organization form enforces the free-org ownership cap', async () => {
 	signIn()
 	const env = { APP_DB: db } as Pick<Env, 'BUNDLE_ARTIFACTS_KV'> & {

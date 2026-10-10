@@ -34,6 +34,7 @@ import {
 	getExecutionErrorDetails,
 	limitExecutionResultValue,
 	runWithDynamicWorkerEvaluationBudget,
+	type ClaimWorkerDayAttribution,
 } from './executor.ts'
 import {
 	durableObjectCodeUpdatedResetMessage,
@@ -734,26 +735,22 @@ test('createExecuteExecutor reuses stable dynamic worker ids until binding conte
 			statsFor(2, 2),
 		],
 		[
-			'non-hashable module',
+			'binary module bytes',
 			[
 				{
 					modules: {
-						'entry.js': {
-							js: entryModules['entry.js'],
-							onLoad: async () => 'not-hashable',
-						},
+						...entryModules,
+						'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
 					} as never,
 				},
 				{
 					modules: {
-						'entry.js': {
-							js: entryModules['entry.js'],
-							onLoad: async () => 'not-hashable',
-						},
+						...entryModules,
+						'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
 					} as never,
 				},
 			],
-			statsFor(2, 2),
+			statsFor(2, 1),
 		],
 	]
 	const bundledStats = []
@@ -994,18 +991,22 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id 
 test('createExecuteExecutor awaits a capped worker-day claim before load and skips the attribution claim', async () => {
 	const usage = createUsageBindings({ meter: true })
 	const claimed: Array<string> = []
+	const attributions: Array<ClaimWorkerDayAttribution> = []
 	const allowedLoader = createFakeWorkerLoader()
 	const allowed = await runExecutor({
 		env: createExecutorTestEnv(allowedLoader.loader, usage.bindings),
 		recordExecuteUsage: false,
-		claimWorkerDay: async (workerId) => {
+		packageId: 'pkg-1',
+		claimWorkerDay: async (workerId, attribution) => {
 			claimed.push(workerId)
+			attributions.push(attribution)
 			expect(allowedLoader.ids).toEqual([])
 			return { created: true }
 		},
 	})
 	expect(allowed.error).toBeUndefined()
 	expect(allowedLoader.ids).toEqual(claimed)
+	expect(attributions).toEqual([{ packageId: 'pkg-1' }])
 	expect(usage.dataPoints.map((point) => point.blobs?.[1])).toEqual([
 		'dynamic_worker_invoke',
 	])
