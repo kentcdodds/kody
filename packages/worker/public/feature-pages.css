@@ -2525,7 +2525,8 @@
 	outline: none;
 }
 .feature-overview .demo button,
-.feature-overview .demo input {
+.feature-overview .demo input,
+.feature-overview .demo label {
 	position: relative;
 	z-index: 2;
 }

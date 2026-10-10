@@ -18,6 +18,11 @@ export function AppsFeature(handle: Handle) {
 	let opened: Brief | undefined
 	let saved = false
 	let nextId = 1
+	function focusSavedBriefHeading() {
+		queueMicrotask(() => {
+			document.getElementById('saved-brief-heading')?.focus()
+		})
+	}
 	function save() {
 		if (!draft.name.trim()) return
 		draft = { ...draft, name: draft.name.trim() }
@@ -31,9 +36,7 @@ export function AppsFeature(handle: Handle) {
 		saved = true
 		view = 'detail'
 		handle.update()
-		queueMicrotask(() => {
-			document.getElementById('saved-brief-heading')?.focus()
-		})
+		focusSavedBriefHeading()
 	}
 	function newBrief() {
 		draft = {
@@ -57,6 +60,7 @@ export function AppsFeature(handle: Handle) {
 					draft = { ...record }
 					view = 'detail'
 					handle.update()
+					focusSavedBriefHeading()
 				})}
 			>
 				<span>

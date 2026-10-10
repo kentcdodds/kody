@@ -27,7 +27,7 @@ import {
 /** Hover opens for mice and pens only. A touch tap fires synthetic enter
  *  and leave events around its click, which would close what the tap just
  *  opened, so touch pointers are ignored here and handled by click. */
-export function hoverPointer(event: PointerEvent) {
+function hoverPointer(event: PointerEvent) {
 	return event.pointerType !== 'touch'
 }
 
