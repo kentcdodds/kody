@@ -240,6 +240,24 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 		).status,
 	).toBe(403)
 
+	const invalidRoleInvite = new Request(
+		'https://kody.test/@zeta-co/-/members/invite.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ invitee: 'eve@example.com', role: 'admin' }),
+		},
+	)
+	await signIn('ada', invalidRoleInvite)
+	const rejectedRole = await createOrgMembersInvitePostHandler(env).handler({
+		request: invalidRoleInvite,
+	} as never)
+	expect(rejectedRole.status).toBe(400)
+	expect(await rejectedRole.json()).toMatchObject({
+		ok: false,
+		error: 'Choose a valid role.',
+	})
+
 	const ownerInvite = new Request(
 		'https://kody.test/@zeta-co/-/members/invite.json',
 		{

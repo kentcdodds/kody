@@ -13,6 +13,7 @@ import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -27,6 +28,8 @@ const mocks = vi.hoisted(() => ({
 		),
 	),
 	softDeleteOrg: vi.fn(),
+	processUserAvatar: vi.fn(),
+	saveOrgAvatar: vi.fn(),
 }))
 
 vi.mock('#app/authenticated-user.ts', () => ({
@@ -43,9 +46,22 @@ vi.mock('#app/ssr-render.tsx', () => ({
 vi.mock('#worker/orgs/soft-delete.ts', () => ({
 	softDeleteOrg: (...args: Array<unknown>) => mocks.softDeleteOrg(...args),
 }))
+vi.mock('#worker/community/avatar.ts', () => ({
+	processUserAvatar: (...args: Array<unknown>) =>
+		mocks.processUserAvatar(...args),
+}))
+vi.mock('#worker/orgs/org-avatar.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/orgs/org-avatar.ts')>()
+	return {
+		...actual,
+		saveOrgAvatar: (...args: Array<unknown>) => mocks.saveOrgAvatar(...args),
+	}
+})
 
 const {
 	createOrgSettingsApiHandler,
+	createOrgSettingsAvatarPostHandler,
 	createOrgSettingsDeletePostHandler,
 	createOrgSettingsPostHandler,
 } = await import('./org-settings.ts')
@@ -165,6 +181,8 @@ beforeEach(async () => {
 	mocks.requireAuthenticatedPageUser.mockReset()
 	mocks.renderAppPage.mockClear()
 	mocks.softDeleteOrg.mockClear()
+	mocks.processUserAvatar.mockReset()
+	mocks.saveOrgAvatar.mockReset()
 	await seed()
 })
 
@@ -270,6 +288,65 @@ test('owner can update team settings and cannot delete a personal org', async ()
 		).status,
 	).toBe(200)
 	expect(mocks.softDeleteOrg).toHaveBeenCalled()
+})
+
+test('org avatar upload keeps validation as 400 and storage failures as 500', async () => {
+	const env = createEnv()
+	consoleError.mockImplementation(() => {})
+	mocks.processUserAvatar.mockImplementation(() => {
+		throw new Error('Avatars must be PNG, JPEG, or WebP images.')
+	})
+	const invalidForm = new FormData()
+	invalidForm.set(
+		'avatar',
+		new File([Uint8Array.from([1])], 'avatar.svg', { type: 'image/svg+xml' }),
+	)
+	const invalid = new Request(
+		'https://kody.test/@zeta-co/-/settings/avatar.json',
+		{ method: 'POST', body: invalidForm },
+	)
+	await signIn('ada', invalid)
+	const invalidResponse = await createOrgSettingsAvatarPostHandler(env).handler(
+		{ request: invalid } as never,
+	)
+	expect(invalidResponse.status).toBe(400)
+	expect(await invalidResponse.json()).toMatchObject({
+		ok: false,
+		error: 'Avatars must be PNG, JPEG, or WebP images.',
+	})
+	expect(mocks.saveOrgAvatar).not.toHaveBeenCalled()
+
+	mocks.processUserAvatar.mockReturnValue({
+		bytes: Uint8Array.from([1, 2, 3]),
+		contentType: 'image/png',
+	})
+	mocks.saveOrgAvatar.mockRejectedValue(
+		new Error('Organization was not found.'),
+	)
+	const form = new FormData()
+	form.set(
+		'avatar',
+		new File([Uint8Array.from([1, 2, 3])], 'avatar.png', {
+			type: 'image/png',
+		}),
+	)
+	const failing = new Request(
+		'https://kody.test/@zeta-co/-/settings/avatar.json',
+		{ method: 'POST', body: form },
+	)
+	await signIn('ada', failing)
+	const failed = await createOrgSettingsAvatarPostHandler(env).handler({
+		request: failing,
+	} as never)
+	expect(failed.status).toBe(500)
+	expect(await failed.json()).toMatchObject({
+		ok: false,
+		error: 'Unable to save avatar.',
+	})
+	expect(consoleError).toHaveBeenCalledWith(
+		'org-avatar-save-failed',
+		expect.any(Error),
+	)
 })
 
 test('a second owner still treats a signup org as personal', async () => {

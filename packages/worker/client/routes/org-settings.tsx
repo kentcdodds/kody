@@ -284,8 +284,7 @@ export function OrgSettingsRoute(handle: Handle) {
 					? error.message
 					: 'Unable to delete this organization.'
 			messageTone = 'error'
-			deleting = false
-			handle.update()
+			closeDialog()
 		}
 	}
 

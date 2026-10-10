@@ -155,7 +155,12 @@ export function OrgMembersRoute(handle: Handle) {
 		return payload
 	}
 
-	async function changeRole(userId: string, role: string) {
+	async function changeRole(
+		userId: string,
+		role: string,
+		select: HTMLSelectElement,
+		previousRole: string,
+	) {
 		message = null
 		handle.update()
 		try {
@@ -163,6 +168,7 @@ export function OrgMembersRoute(handle: Handle) {
 			message = 'Role updated.'
 			messageTone = 'info'
 		} catch (error) {
+			select.value = previousRole
 			message =
 				error instanceof Error ? error.message : 'Unable to update role.'
 			messageTone = 'error'
@@ -299,10 +305,14 @@ export function OrgMembersRoute(handle: Handle) {
 															mix={[
 																css(selectCss),
 																on('change', (event) => {
-																	const next = (
+																	const select =
 																		event.currentTarget as HTMLSelectElement
-																	).value
-																	void changeRole(member.userId, next)
+																	void changeRole(
+																		member.userId,
+																		select.value,
+																		select,
+																		member.role,
+																	)
 																}),
 															]}
 														>
