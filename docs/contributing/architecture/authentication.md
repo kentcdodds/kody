@@ -770,10 +770,12 @@ routed from `packages/worker/src/index.ts`.
   email link is opened elsewhere, so the original OAuth query remains resumable.
   Signed-in vs signed-out chrome on that page comes from the SSR-embedded app
   session; the route does not wait on a separate browser `/session` fetch before
-  rendering approve or login. The approve control stays inert until hydration so
-  the visible button cannot submit a GET that drops `client_id`. Inline
-  authorize login was always password-only until the GitHub-consent fix; that
-  was the original design, not a recent regression from Teams P4 (#3060).
+  rendering approve or login. Social buttons use the same SSR-embedded provider
+  list as `/login`, so a full-document load does not wait on
+  `/auth/providers.json`. The approve control stays inert until hydration so the
+  visible button cannot submit a GET that drops `client_id`. Inline authorize
+  login was always password-only until the GitHub-consent fix; that was the
+  original design, not a recent regression from Teams P4 (#3060).
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 

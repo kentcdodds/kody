@@ -468,6 +468,13 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	}
 
 	return () => {
+		const currentHref = readCurrentRouterHref(handle)
+		const currentSearch = readRouterSearch(handle)
+		// Consume on every render so same-path preload-then-commit refreshes
+		// (unchanged search) still apply fresh loader data. Do this before
+		// scheduling /auth/providers.json: an SSR embed or SPA preload is
+		// the provider list, and the fetch is only the miss path.
+		const appliedRouteData = applyRouteLoaderData(currentHref)
 		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
 			handle.queueTask(loadProtectionConfig)
 		}
@@ -475,11 +482,6 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 			handle.queueTask(() => renderTurnstileWidgets(turnstileSiteKey ?? null))
 		}
 		const { session, sessionStatus } = readEffectiveSession()
-		const currentHref = readCurrentRouterHref(handle)
-		const currentSearch = readRouterSearch(handle)
-		// Consume on every render so same-path preload-then-commit refreshes
-		// (unchanged search) still apply fresh loader data.
-		const appliedRouteData = applyRouteLoaderData(currentHref)
 		// A same-path refresh whose loader failed leaves no preload and no
 		// search change; the stale marker forces the fallback refetch.
 		const needsStaleRefresh =

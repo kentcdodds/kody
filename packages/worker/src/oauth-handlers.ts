@@ -21,9 +21,11 @@ import {
 import { isAccountEmailVerified } from '#worker/identity/email-verification-state.ts'
 import { getEnv } from '#app/env.ts'
 import {
+	type AuthProvidersLoaderData,
 	type OAuthAuthorizeConsentOrg,
 	type OAuthAuthorizeLoaderData,
 } from '#universal/loader-data.ts'
+import { publicAuthProvidersLoaderData } from '#app/public-auth-providers.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
@@ -189,7 +191,10 @@ function renderSpaShell(
 	env: Env,
 	options: {
 		status?: number
-		loaderData?: { oauthAuthorize: OAuthAuthorizeLoaderData }
+		loaderData?: {
+			oauthAuthorize: OAuthAuthorizeLoaderData
+			authProviders?: AuthProvidersLoaderData
+		}
 		setCookie?: string | null
 	} = {},
 ) {
@@ -1352,7 +1357,10 @@ export async function handleAuthorizeRequest(
 		if (silentOrError) return silentOrError
 		const { data, setCookie } = await loadOAuthAuthorizeData(request, env)
 		return renderSpaShell(request, env, {
-			loaderData: { oauthAuthorize: data },
+			loaderData: {
+				oauthAuthorize: data,
+				authProviders: publicAuthProvidersLoaderData(env),
+			},
 			setCookie,
 		})
 	}

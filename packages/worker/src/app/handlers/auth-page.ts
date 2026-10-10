@@ -1,11 +1,7 @@
 import { normalizeRedirectTo } from '#app/auth-redirect.ts'
-import {
-	getEnabledOauthProviders,
-	oauthProviderDefinitions,
-} from '#app/oauth-providers.ts'
+import { publicAuthProvidersLoaderData } from '#app/public-auth-providers.ts'
 import { loadSessionInfo } from '#app/session-info.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { getTurnstileSiteKey } from '#app/public-form-protection.ts'
 
 export function createAuthPageHandler(
 	env: Env,
@@ -50,14 +46,7 @@ export function createAuthPageHandler(
 				env,
 				extraSetCookies: setCookie ? [setCookie] : undefined,
 				loaderData: {
-					authProviders: {
-						ok: true,
-						turnstileSiteKey: getTurnstileSiteKey(env),
-						providers: getEnabledOauthProviders(env).map((provider) => ({
-							id: provider,
-							label: oauthProviderDefinitions[provider].label,
-						})),
-					},
+					authProviders: publicAuthProvidersLoaderData(env),
 				},
 			})
 		},

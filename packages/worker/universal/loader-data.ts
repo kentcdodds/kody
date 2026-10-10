@@ -2312,7 +2312,7 @@ export type AccountEmailLoaderData = {
 	classification: 'accepted' | 'quarantined' | null
 }
 
-type AuthProvidersLoaderData = {
+export type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
 	turnstileSiteKey: string | null
