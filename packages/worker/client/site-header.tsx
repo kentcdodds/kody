@@ -1,3 +1,4 @@
+import { FeaturesMenu } from '#client/features-menu.tsx'
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
@@ -57,7 +58,6 @@ export type SiteHeaderProps = {
  * hairline is a static CSS border so it paints before JS.
  */
 const marketingLinks = [
-	{ href: '/features', label: 'Features' },
 	{ href: '/community', label: 'Community' },
 	{ href: '/docs', label: 'Docs' },
 	{ href: '/pricing', label: 'Pricing' },
@@ -539,6 +539,7 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						<span>Kody</span>
 					</a>
 					<div mix={css(navLinksCss)}>
+						<FeaturesMenu currentPathname={handle.props.currentPathname} />
 						{marketingLinks.map((link) => (
 							<a
 								key={link.href}
@@ -612,6 +613,10 @@ export function SiteHeader(handle: Handle<SiteHeaderProps>) {
 						mix={[css(menuPanelCss), on('toggle', onMenuToggle)]}
 					>
 						<div data-menu-group mix={css(menuGroupCss)}>
+							<FeaturesMenu
+								currentPathname={handle.props.currentPathname}
+								mobile
+							/>
 							{marketingLinks.map((link) => (
 								<a
 									key={link.href}
@@ -702,6 +707,7 @@ const headerNavMq = '@media (max-width: 820px)'
 
 const navLinksCss = {
 	display: 'flex',
+	alignItems: 'center',
 	gap: '1.6rem',
 	marginRight: 'auto',
 	'& a': {
