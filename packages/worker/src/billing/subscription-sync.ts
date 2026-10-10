@@ -35,10 +35,7 @@ import {
 	StripeApiError,
 } from './stripe-client.ts'
 import { scheduleStripePlanRefreshBackstop } from './stripe-plan-refresh-client.ts'
-import {
-	batchUsersAndPersonalOrgBillingUpdate,
-	updateOrgBillingColumns,
-} from '#worker/orgs/billing-dual-write.ts'
+import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
 import { sendToOrgBillingRecipients } from './org-billing-emails.ts'
 import { resolveOrgIdFromStripeMetadata } from './org-stripe-metadata.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -81,9 +78,11 @@ export async function refreshStripePlanForUser(input: {
 }): Promise<ResolvedSubscriptionPlan> {
 	const now = input.now ?? new Date()
 	const previous = await input.env.APP_DB.prepare(
-		`SELECT email, stable_user_id, stripe_price_id,
-		        ${userEntitlementColumnsSql()}
-		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		`SELECT u.email, u.stable_user_id, o.stripe_price_id,
+		        ${userEntitlementColumnsSql('o')}
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(input.userId)
 		.first<
@@ -126,26 +125,12 @@ export async function refreshStripePlanForUser(input: {
 	}
 	const stripePlanRefreshedAt = now.toISOString()
 	const stripeCreditsEligible = resolved.creditsEligible ? 1 : 0
-	await batchUsersAndPersonalOrgBillingUpdate({
+	await updateOrgBillingColumns({
 		db: input.env.APP_DB,
-		stableUserId: previous.stable_user_id,
-		usersStatement: input.env.APP_DB.prepare(
-			`UPDATE users
-			 SET stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
-			     stripe_plan_refreshed_at = ?, entitlement_ladder = ?
-			 WHERE id = ? AND stripe_customer_id = ?${andLiveDeletedAtSql()}`,
-		).bind(
-			resolved.stripePlan,
-			resolved.stripePriceId,
-			stripeCreditsEligible,
-			stripePlanRefreshedAt,
-			nextLadder,
-			input.userId,
-			input.customerId,
-		),
-		orgSetClause: `stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
+		orgId: previous.stable_user_id,
+		setClause: `stripe_plan = ?, stripe_price_id = ?, stripe_credits_eligible = ?,
 		     stripe_plan_refreshed_at = ?, entitlement_ladder = ?, updated_at = ?`,
-		orgValues: [
+		values: [
 			resolved.stripePlan,
 			resolved.stripePriceId,
 			stripeCreditsEligible,
@@ -153,21 +138,8 @@ export async function refreshStripePlanForUser(input: {
 			nextLadder,
 			stripePlanRefreshedAt,
 		],
-		// Allow null org customer ids only while the users row still holds
-		// this customer (dual-write lag). A stale refresh whose users UPDATE
-		// matches zero rows must not write plan columns onto a null org.
-		orgWhereSuffix: ` AND (
-			stripe_customer_id = ?
-			OR (
-				stripe_customer_id IS NULL
-				AND EXISTS (
-					SELECT 1 FROM users u
-					WHERE u.stable_user_id = orgs.id
-					  AND u.stripe_customer_id = ?
-				)
-			)
-		)`,
-		orgWhereValues: [input.customerId, input.customerId],
+		orgWhereSuffix: ' AND stripe_customer_id = ?',
+		orgWhereValues: [input.customerId],
 	})
 	waitUntil(
 		maybeSyncDiscordGuildRolesForUser({
@@ -300,20 +272,6 @@ export async function resolveBillingUserForCheckoutLink(input: {
 
 	const customerId = input.customerId?.trim()
 	if (customerId) {
-		const userRow = await input.env.APP_DB.prepare(
-			`SELECT id, email, stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
-		)
-			.bind(customerId)
-			.first<{ id: number; email: string; stable_user_id: OwnerId }>()
-		await pushCandidate(
-			userRow
-				? {
-						id: userRow.id,
-						email: userRow.email,
-						stableUserId: userRow.stable_user_id,
-					}
-				: null,
-		)
 		const orgRow = await input.env.APP_DB.prepare(
 			`SELECT o.id AS org_id, u.id, u.email, u.stable_user_id
 			 FROM orgs o
@@ -376,12 +334,6 @@ export async function findUserIdByStripeCustomerId(input: {
 }): Promise<number | null> {
 	const customerId = input.customerId.trim()
 	if (!customerId) return null
-	const userRow = await input.env.APP_DB.prepare(
-		`SELECT id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(customerId)
-		.first<{ id: number }>()
-	if (userRow?.id != null) return userRow.id
 	const orgRow = await input.env.APP_DB.prepare(
 		`SELECT u.id
 		 FROM orgs o
@@ -412,13 +364,7 @@ export async function findOrgIdByStripeCustomerId(input: {
 	)
 		.bind(customerId)
 		.first<{ id: OwnerId }>()
-	if (orgRow?.id) return orgRow.id
-	const userRow = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(customerId)
-		.first<{ stable_user_id: OwnerId }>()
-	return userRow?.stable_user_id ? trimmedOwnerId(userRow.stable_user_id) : null
+	return orgRow?.id ? trimmedOwnerId(orgRow.id) : null
 }
 
 /**
@@ -571,9 +517,7 @@ async function refreshAfterCheckoutLink(input: {
 /**
  * Link a completed Checkout Session's Stripe customer onto the org row
  * identified by `orgId`. `client_reference_id` must be the org-backed HMAC.
- * Personal orgs (org id = owner stable user id) still dual-write the users
- * row; team orgs write the team org row only — the authorizing member is
- * never the link target.
+ * The customer is stored on `orgs` only — never on a member `users` row.
  */
 export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 	env: SyncEnv
@@ -610,19 +554,13 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 		)
 	}
 
-	const personalUser = await input.env.APP_DB.prepare(
-		`SELECT id, stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(orgId)
-		.first<{ id: number; stripe_customer_id: string | null }>()
-
 	const orgRow = await input.env.APP_DB.prepare(
 		`SELECT id, stripe_customer_id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 	)
 		.bind(orgId)
 		.first<{ id: string; stripe_customer_id: string | null }>()
 
-	if (!orgRow && !personalUser) {
+	if (!orgRow) {
 		throw new BillingLinkError(
 			'user_not_found',
 			'No Kody organization matched this checkout session attribution.',
@@ -644,23 +582,7 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 		)
 	}
 
-	const claimedByOtherUser = await input.env.APP_DB.prepare(
-		`SELECT id FROM users
-		 WHERE stripe_customer_id = ?
-		   AND stable_user_id != ?${andLiveDeletedAtSql()}`,
-	)
-		.bind(customerId, orgId)
-		.first<{ id: number }>()
-	if (claimedByOtherUser) {
-		throw new BillingLinkError(
-			'customer_already_linked',
-			'This Stripe customer is already linked to another Kody account.',
-		)
-	}
-
-	const existingOrgCustomer = orgRow?.stripe_customer_id?.trim() || null
-	const existingUserCustomer = personalUser?.stripe_customer_id?.trim() || null
-	const existingCustomerId = existingOrgCustomer ?? existingUserCustomer
+	const existingCustomerId = orgRow.stripe_customer_id?.trim() || null
 	if (existingCustomerId && existingCustomerId !== customerId) {
 		throw new BillingLinkError(
 			'account_already_linked',
@@ -680,28 +602,12 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 	})
 
 	try {
-		if (personalUser) {
-			// Personal org: one dual-write to users + personal org row.
-			await batchUsersAndPersonalOrgBillingUpdate({
-				db: input.env.APP_DB,
-				stableUserId: orgId,
-				usersStatement: input.env.APP_DB.prepare(
-					`UPDATE users
-					 SET stripe_customer_id = ?, updated_at = ?
-					 WHERE id = ?${andLiveDeletedAtSql()}`,
-				).bind(customerId, updatedAt, personalUser.id),
-				orgSetClause: 'stripe_customer_id = ?, updated_at = ?',
-				orgValues: [customerId, updatedAt],
-			})
-		} else if (orgRow) {
-			// Team org: org row only. Do not touch any member users row.
-			await updateOrgBillingColumns({
-				db: input.env.APP_DB,
-				orgId,
-				setClause: 'stripe_customer_id = ?, updated_at = ?',
-				values: [customerId, updatedAt],
-			})
-		}
+		await updateOrgBillingColumns({
+			db: input.env.APP_DB,
+			orgId,
+			setClause: 'stripe_customer_id = ?, updated_at = ?',
+			values: [customerId, updatedAt],
+		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		if (/UNIQUE constraint failed/i.test(message)) {
@@ -819,8 +725,9 @@ export async function linkStripeCustomerFromCheckoutSessionAttribution(input: {
 }
 
 /**
- * Refresh stripe_plan columns for an org. Personal orgs dual-write through
- * {@link refreshStripePlanForUser}; team orgs update the orgs row only.
+ * Refresh stripe_plan columns for an org. Personal orgs (a live users row
+ * whose stable id is the org id) also sync Discord roles for that person.
+ * Both paths write `orgs` only.
  */
 export async function refreshStripePlanForOrg(input: {
 	env: SyncEnv

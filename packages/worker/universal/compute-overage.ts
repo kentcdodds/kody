@@ -62,10 +62,9 @@ export type ComputeOverageWarningResource =
 	(typeof computeOverageWarningResources)[number]
 
 /**
- * Monthly meters on `/account/usage`, `usageGet`, credits rates, and
- * customer entitlement-warning emails. Pricing comparison tables still omit
- * these (execute + hard caps lead); debit surfaces must show both so
- * credits never move on an invisible meter.
+ * Monthly meters on `/account/usage`, `usageGet`, credits rates, the
+ * pricing table, and customer entitlement-warning emails. Debit surfaces
+ * must show both so credits never move on an invisible meter.
  */
 export const customerFacingComputeOverageMeters = [
 	'unique_worker_days',

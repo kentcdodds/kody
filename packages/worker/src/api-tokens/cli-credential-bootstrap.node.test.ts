@@ -399,6 +399,77 @@ test('bootstrap long lifetime clamps absolute max to a shorter API-token parent'
 	)
 })
 
+test('bootstrap redeem keeps the stored org_id and rejects a missing one', async () => {
+	const { db, sqlite } = createDb()
+	const orgId = ownerIdFromStored('org-bootstrap-team')
+	const minted = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		orgId: `  ${orgId}  `,
+		lifetime: 'short',
+		now: start,
+	})
+	const redeemed = await redeemCliCredentialBootstrap({
+		db,
+		code: minted.bootstrap_code,
+		lifetime: 'short',
+		now: at(10),
+	})
+	expect(redeemed.token.org_id).toBe(orgId)
+
+	const missing = await mintCliCredentialBootstrap({
+		db,
+		userId,
+		orgId,
+		lifetime: 'short',
+		now: start,
+	})
+	const missingId = parseCliBootstrapCode(missing.bootstrap_code)?.codeId
+	if (!missingId) throw new Error('expected a bootstrap code id')
+	sqlite
+		.prepare(
+			`UPDATE cli_credential_bootstrap_codes SET org_id = NULL WHERE id = ?`,
+		)
+		.run(missingId)
+	await expect(
+		redeemCliCredentialBootstrap({
+			db,
+			code: missing.bootstrap_code,
+			lifetime: 'short',
+			now: at(20),
+		}),
+	).rejects.toThrow(/missing an org binding/)
+	expect(
+		sqlite
+			.prepare(
+				`SELECT consumed_at FROM cli_credential_bootstrap_codes WHERE id = ?`,
+			)
+			.get(missingId),
+	).toMatchObject({ consumed_at: null })
+
+	sqlite
+		.prepare(
+			`UPDATE cli_credential_bootstrap_codes SET org_id = '   ' WHERE id = ?`,
+		)
+		.run(missingId)
+	await expect(
+		redeemCliCredentialBootstrap({
+			db,
+			code: missing.bootstrap_code,
+			lifetime: 'short',
+			now: at(30),
+		}),
+	).rejects.toThrow(/missing an org binding/)
+	expect(
+		sqlite.prepare(`SELECT COUNT(*) AS count FROM api_tokens`).get() as {
+			count: number
+		},
+	).toMatchObject({ count: 1 })
+	expect(
+		sqlite.prepare(`SELECT org_id FROM api_tokens`).get() as { org_id: string },
+	).toEqual({ org_id: orgId })
+})
+
 test('bootstrap still rejects an explicit idle TTL longer than the parent', async () => {
 	const { db } = createDb()
 	await expect(

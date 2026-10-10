@@ -69,6 +69,8 @@ export type McpHubServerSnapshot = {
 	hasRefreshToken?: boolean
 	instructions: string | null
 	tools: Array<McpServerToolDescriptor>
+	/** Public id of the admin's pre-registered OAuth client, when one is set. */
+	oauthClientId?: string | null
 }
 
 export type McpHubSnapshot = {
@@ -99,6 +101,18 @@ export type McpClientHubSnapshot = {
 
 export type McpServerConnectResult = Omit<McpHubConnectResult, 'authUrl'> &
 	McpAuthorizationPending
+
+/** `changed` is false when a remove found no client, so nothing ran. */
+export type McpHubOAuthClientChange = {
+	changed: boolean
+	previousClientId: string | null
+	connection: McpHubConnectResult
+}
+
+export type McpServerOAuthClientChange = Omit<
+	McpHubOAuthClientChange,
+	'connection'
+> & { connection: McpServerConnectResult }
 
 /** What the consent page shows, plus the provider URL Continue redirects to. */
 export type McpServerPendingAuthorization = {

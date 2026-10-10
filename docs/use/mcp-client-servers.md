@@ -25,9 +25,10 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 3. If the server needs OAuth, Kody returns an authorization link to a Kody page,
    `/@<slug>/-/mcp-servers/:serverId/authorize`. Open it while signed in. It
    shows the server name, the authorization server it will send you to, and how
-   Kody identifies itself there (a Client ID Metadata Document or Dynamic Client
-   Registration). Click Continue, sign in at the provider, and approve access.
-   Kody never sends you to the provider before you click Continue.
+   Kody identifies itself there (a Client ID Metadata Document, Dynamic Client
+   Registration, or a pre-registered OAuth client). Click Continue, sign in at
+   the provider, and approve access. Kody never sends you to the provider before
+   you click Continue.
 4. Confirm with `mcpServerList` (or refresh the account page). The connected
    server shows up in `search` as an **mcp-server** hit (name and server
    instructions). List its tools with `search({ entity: "mcp-server:<name>" })`
@@ -91,6 +92,31 @@ On HTTPS deployments, Kody presents that CIMD URL as `client_id` when the remote
 authorization server advertises `client_id_metadata_document_supported`.
 Otherwise it falls back to Dynamic Client Registration. Local `http` origins
 skip CIMD and use DCR only.
+
+## Pre-registered OAuth client (GitHub and similar)
+
+Some authorization servers support neither Client ID Metadata Documents nor
+Dynamic Client Registration, so Kody cannot register itself. GitHub's remote MCP
+server is the common case. Status then says to add a pre-registered OAuth
+client.
+
+1. Register an OAuth app with the provider (for GitHub, an OAuth App or GitHub
+   App). Set its callback or redirect URI to
+   `{origin}/account/mcp-servers/oauth/callback`, as shown on the MCP servers
+   page.
+2. On `/@<slug>/-/mcp-servers/:serverId`, under **OAuth client**, enter the
+   client ID and client secret and click Save. You need permission to manage
+   integrations in that organization.
+3. Kody starts a fresh authorization with that client. Open the authorization
+   link, check that the page says **Pre-registered OAuth client**, and click
+   Continue.
+
+The secret is stored sealed and is never shown again. The page shows the client
+as configured with its client ID, and offers Replace and Remove. Agents cannot
+set or read it: no capability takes or returns the secret. A configured client
+is always used, even when the server also supports CIMD or DCR. Saving,
+replacing, or removing one signs the server out and asks for authorization
+again.
 
 Many authorization servers (including FusionAuth "authorized origins" / redirect
 URI settings, and other providers with similar allowlists) reject the authorize

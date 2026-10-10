@@ -798,13 +798,13 @@ GROUP BY stage
   observe-only `dynamic_worker_invoke` and Durable Object meters), per-metric
   duration leaders, and an entitlement-pressure panel that reuses
   `readAdminEntitlementConsumption` for the top ~15 users by those same customer
-  event counts, passing each row's `users.entitlement_ladder` so legacy
+  event counts, passing each row's `orgs.entitlement_ladder` so legacy
   Standard/Pro is scored against `legacyPlanLimits`. Queries are
   `LIMIT`-bounded; entitlement reads run with modest concurrency.
 - **Launch signals** (`/admin/insights`, loader in
   `packages/worker/src/admin/launch-signals.ts`): COUNT / GROUP BY over indexed
   `users` columns and `platform_feedback.status`. Rough MRR maps
-  `users.stripe_price_id` through the known Standard/Pro catalog (public
+  `orgs.stripe_price_id` through the known Standard/Pro catalog (public
   $12 /
   $120 and $49 / $480, plus retired list prices) and never calls Stripe
   or pages the user table. `plan`, `stripe_plan`, and overlay-aware

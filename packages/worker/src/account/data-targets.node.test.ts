@@ -337,6 +337,11 @@ test('final schema drops retired tables without stale deletion/export inventory 
 			.all() as Array<{ name: string }>
 	).map((table) => table.name)
 	expect(tables.filter((table) => retiredTables.includes(table))).toEqual([])
+	expect([...accountUserDataPendingDropTables]).toEqual([])
+	for (const table of accountUserDataPendingDropTables) {
+		expect(inventorySql).not.toMatch(new RegExp(`\\b${table}\\b`, 'u'))
+		expect(tables).toContain(table)
+	}
 
 	const liveUserColumns = new Set(
 		tables.flatMap((table) => {

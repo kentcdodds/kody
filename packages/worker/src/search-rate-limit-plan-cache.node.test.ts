@@ -15,8 +15,8 @@ test('back-to-back searches resolve the rate-limit plan from the hot-path cache'
 	const db = createD1FromSqlite(sqlite)
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan)
-			VALUES ('cached', 'cached@example.com', 'x', ?, 'standard')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			VALUES ('cached', 'cached@example.com', 'x', ?)`,
 		)
 		.bind(stableUserId)
 		.run()

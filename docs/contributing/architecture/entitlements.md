@@ -71,21 +71,19 @@ tiers and no env-var backstops.
 There is deliberately no uncapped plan; the live registry stays finite `max`
 only.
 
-`users.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
+`orgs.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
 constraint for the registered names (squashed baseline plus
-`0002-restructure-plan-tiers.sql`). The same plan, ladder, Stripe, gift, and
-credit-eligibility columns live on `orgs` (personal orgs reuse
-`users.stable_user_id` as `orgs.id`). Entitlement reads prefer the org row and
-fall back to `users` when that join misses. Writers that change those columns
-write both tables with the same id. **Live DDL defaults and writers always
-persist a known plan name (never NULL); normal creation and reset paths default
-to `free`.**
+`0002-restructure-plan-tiers.sql`). Plan, ladder, Stripe, gift, and
+credit-eligibility columns live only on `orgs` (personal orgs reuse
+`users.stable_user_id` as `orgs.id`). Entitlement reads and writers use the org
+row. **Live DDL defaults and writers always persist a known plan name (never
+NULL); normal creation and reset paths default to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
 `free`, which is the default for new accounts, admin-created accounts, seed SQL,
 and admin plan resets. Explicit `max` remains a valid deliberate assignment.
 
-**Reading stored values:** D1 constrains `users.plan` to the registered names.
+**Reading stored values:** D1 constrains `orgs.plan` to the registered names.
 Reads use strict `parseStoredPlanName`: known names pass through unchanged,
 while a value that violates the storage contract throws without including the
 raw value or user data. Untrusted admin/API input uses `parsePlanName` so typos,
@@ -94,15 +92,15 @@ unknown strings, and retired plan names are rejected as validation failures.
 Migration `0002-restructure-plan-tiers.sql` maps stored `pro` values to
 `standard`, stored `partner` values to `pro`, and rebuilds both CHECK
 constraints for the current registry. Migration
-`0043-users-entitlement-ladder.sql` adds `users.entitlement_ladder` and
-backfills `legacy` for then-active Stripe Standard/Pro subscribers and manual
-Pro grants.
+`0043-users-entitlement-ladder.sql` introduced the entitlement ladder (now
+`orgs.entitlement_ladder`) and backfilled `legacy` for then-active Stripe
+Standard/Pro subscribers and manual Pro grants.
 
-`users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
+`orgs.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
 (`parseStripePlanName` rejects it, along with any retired or unknown name).
 
-`users.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
+`orgs.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
 `'public'`). The public table in `planLimits` is what `/pricing` renders and
 what new Standard/Pro subscribers get. `legacy` keeps the pre-cut Standard/Pro
 ceilings from `legacyPlanLimits` only while the same Stripe subscription
@@ -112,19 +110,20 @@ other price/product switch writes `public`. A remaining manual Pro grant without
 a paid Stripe tier still keeps `legacy` until that grant is removed. The
 one-shot backfill in `0043-users-entitlement-ladder.sql` sets `legacy` for those
 accounts. Resubscribing does not restore `legacy`.
-`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` so Stripe refresh
-can detect those subscription changes. The first observation of a continuing
-subscription writes the current price and leaves `legacy` in place. Free and
-`max` always use `planLimits`; the ladder is ignored for those plans.
-Unique-worker-day and Durable Object rows-read numbers live on `PlanLimits` for
-the public table. They are not hard-cut and not billed for legacy accounts.
+`0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
+`orgs.stripe_price_id`) so Stripe refresh can detect those subscription changes.
+The first observation of a continuing subscription writes the current price and
+leaves `legacy` in place. Free and `max` always use `planLimits`; the ladder is
+ignored for those plans. Unique-worker-day and Durable Object rows-read numbers
+live on `PlanLimits` for the public table. They are not hard-cut and not billed
+for legacy accounts.
 
 `getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
 Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
 reserve, job interval floors) resolves limits through that pair.
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
-`parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
+`parseStoredPlanName`) with `orgs.stripe_plan`. Manual `max` always wins over
 Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 `stripe_plan` values contribute nothing. Admin user list/get (page and MCP)
 expose the grant, Stripe tier, effective plan, and whether a Stripe customer is
@@ -136,8 +135,8 @@ When a user first reaches two known connected agent ecosystems, Kody records one
 14-day overlay of Pro. The gate is that second ecosystem (activation), not day-0
 signup and not a second OAuth `clientId` for the same ecosystem. Two Cursor auth
 contexts are one ecosystem. An unlabeled client does not add an ecosystem.
-`users.second_agent_standard_gift_granted_at` is the write-once ledger (one gift
-per user). `users.second_agent_standard_gift_expires_at` is set only when the
+`orgs.second_agent_standard_gift_granted_at` is the write-once ledger (one gift
+per user). `orgs.second_agent_standard_gift_expires_at` is set only when the
 base effective plan is still `free`; NULL means the account was already
 Standard/Pro/max and Stripe was not touched. There is no existing helper that
 extends a remaining Stripe period, and mutating `trial_end` / period end is
@@ -169,7 +168,7 @@ First-touch UTMs stay write-once and do not carry the referral code. Reward runs
 on `invoice.paid` after the referee's first qualifying paid Stripe invoice
 (`amount_paid > 0`, not a $0 trial, not a historical compute-overage invoice).
 Both the referrer and the referee receive one stacked month (30 days) of Pro via
-`users.referral_standard_credit_expires_at` (retired Pro ceilings, no credit
+`orgs.referral_standard_credit_expires_at` (retired Pro ceilings, no credit
 wallet — same as the second-agent gift). There is no annual or lifetime cap on
 how many months a referrer can earn. Paid subscribers stack from the later of an
 existing credit and the current paid period end so the month starts after paid
@@ -238,9 +237,9 @@ subscribers keep their plan and table until they change plan
 **Eligibility keys off the Stripe price or an admin decision.**
 `resolveSubscriptionPlan` sets `creditsEligible` when the granting subscription
 uses a configured Pro price, and every Stripe refresh writes it to
-`users.stripe_credits_eligible` (`0069-prepaid-credits.sql`). That separates Pro
+`orgs.stripe_credits_eligible` (`0069-prepaid-credits.sql`). That separates Pro
 from retired Standard at the same $12. Because Stripe refreshes overwrite that
-column, admins set the separate `users.admin_credits_eligible`
+column, admins set the separate `orgs.admin_credits_eligible`
 (`0070-admin-credits-eligible.sql`) with `adminCreditEligibilitySet`; Stripe
 never writes it. `hasStoredCreditsEligibility` ORs the two. `getUserEntitlement`
 returns `creditWallet` (`resolveCreditWalletState`): `none` unless the effective
@@ -366,7 +365,7 @@ deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 The balance is held until the account is credit-eligible Pro (include → credits
 → stop); this is not a Free prepaid wallet product and does not unlock spend on
 Free. The grant runs at account creation as best-effort: person-account inserts
-set `users.signup_welcome_credits_pending = 1` in the same write, then clear it
+set `orgs.signup_welcome_credits_pending = 1` in the same write, then clear it
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
 wallet loads call `reconcileSignupWelcomeCreditsIfPending`, which retries only
@@ -554,7 +553,7 @@ instead of one RPC per resource:
   ~15 active users by current-month event count. The sweep resolves each
   account's **effective** plan (manual grant, Stripe, and unexpired second-agent
   / referral Pro overlays) via `resolveUserEntitlementFromRow`, and selects
-  `users.entitlement_ladder` so legacy Standard/Pro is scored against
+  `orgs.entitlement_ladder` so legacy Standard/Pro is scored against
   `legacyPlanLimits` (the same table enforcement uses). Gifted Pro therefore
   does not page Free-cap crossings while the overlay is active, except
   `email_receives_per_day`, which inbound mail still enforces against the base
@@ -789,17 +788,18 @@ The pre-squash plan-column evolution (NULL rows → `'unlimited'` backfill → N
 NULL → `'unlimited'` renamed to `'max'` → DEFAULT `'free'` → CHECK constraints)
 is collapsed into the squashed baseline; the individual migration files live in
 Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
-`standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and the
+`standard` and `partner` to `pro` (plan and Stripe plan columns, and the
 since-dropped `invites.plan`) and rebuilds both CHECK constraints for `free`,
-`standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
-`users.entitlement_ladder` (`public` | `legacy`, default `public`) and backfills
-`legacy` for then-active Stripe Standard/Pro subscribers and manual Pro grants.
-`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` for the granting
-Stripe price so a later refresh can drop `legacy` on a subscription change.
+`standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` introduced the
+entitlement ladder (`public` | `legacy`, default `public`; now on `orgs`) and
+backfilled `legacy` for then-active Stripe Standard/Pro subscribers and manual
+Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
+on `orgs`) for the granting Stripe price so a later refresh can drop `legacy` on
+a subscription change.
 
 ## Assigning plans
 
-New accounts start with `users.plan = 'free'`. Password and social signup write
+New accounts start with `orgs.plan = 'free'`. Password and social signup write
 that default via `resolvePlanWrite`. Admin-created accounts and seed SQL follow
 the same `resolvePlanWrite` default. Admins assign or reset plans on existing
 users from `/admin/users` (validated with strict `parsePlanName`).
@@ -822,7 +822,7 @@ Daily counters accumulate for every user regardless of plan, so assigning a
 recognized plan later binds immediately against the usage already counted that
 day.
 
-Paid upgrades via Stripe write `users.stripe_plan` (not `users.plan`); see
+Paid upgrades via Stripe write `orgs.stripe_plan` (not `orgs.plan`); see
 [Billing](#billing). Effective entitlement uses the higher-ranked of the two
 when a manual plan is set.
 
@@ -1193,8 +1193,8 @@ redemptions, and attached as `discounts[0][promotion_code]`. Codes are for new
 subscriptions only; a customer with a plan-retaining subscription gets 409.
 There is no public Payment Link path — checkout requires a signed-in session so
 unauthenticated card-testing is not possible. `GET /@<slug>/-/billing/success`
-verifies `client_reference_id` before linking `users.stripe_customer_id`, then
-refreshes `users.stripe_plan` and renders a thank-you page (Discord invite;
+verifies `client_reference_id` before linking `orgs.stripe_customer_id`, then
+refreshes `orgs.stripe_plan` and renders a thank-you page (Discord invite;
 connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
 also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
 has a Discord social-login connection (see
@@ -1284,7 +1284,7 @@ Handled event types:
   `metadata.kody_stable_user_id`, existing `stripe_customer_id`, or customer
   email), then run the same link+refresh helper as the success redirect
 - `customer.subscription.updated` / `customer.subscription.deleted` — look up
-  the user by `users.stripe_customer_id` and call `refreshStripePlanForUser`
+  the user by `orgs.stripe_customer_id` and call `refreshStripePlanForUser`
 - `invoice.payment_failed` — same customer lookup + refresh (surfaces
   `subscriptionStatus` such as `past_due` for UX; does not email users)
 - `invoice.paid` — customer lookup, then the referral reward path when the
@@ -1324,22 +1324,22 @@ existing subscribers only. Env vars and deploy wiring are documented in
 
 ## Related tables and coordination
 
-- `users.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
+- `orgs.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
   rename). The entitlements module is the consumer of that column (manual /
   admin grant).
-- `users.stripe_customer_id`, `users.stripe_plan`, `users.stripe_price_id`,
-  `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
+- `orgs.stripe_customer_id`, `orgs.stripe_plan`, `orgs.stripe_price_id`,
+  `orgs.stripe_plan_refreshed_at` — Stripe billing columns owned by
   `packages/worker/src/billing/`, read by `getUserEntitlement` via
   `resolveEffectivePlan`. `stripe_plan` stays nullable because it is
   Stripe-derived; `max` is manual-only. `stripe_price_id` is the granting
   configured or retired price so a later refresh can drop `legacy` when the
   subscription changes.
-- `users.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
+- `orgs.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
   entitlements module; Stripe refresh clears `legacy` when paid access ends or
   the granting subscription changes plan, price, product, or interval. Admin
   plan writes clear `legacy` when a remaining manual Pro grant is removed
   without a paid Stripe tier.
-- `users.referral_standard_credit_expires_at` and `referrals` — uncapped
-  referral program ledger. Attribution is persisted at signup from the last-wins
+- `orgs.referral_standard_credit_expires_at` and `referrals` — uncapped referral
+  program ledger. Attribution is persisted at signup from the last-wins
   `kody_ref` cookie; reward is invoice-gated. See
   [Referral Pro credit](#referral-pro-credit).

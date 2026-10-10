@@ -29,7 +29,6 @@ type SeedUser = {
 	email?: string
 	stableUserId: string
 	verifiedAt?: string | null
-	accountType?: 'person' | 'platform'
 	deletingAt?: string | null
 	deliveryStatus?: string | null
 	deliveryAt?: string | null
@@ -40,23 +39,22 @@ async function createUsersDb(users: Array<SeedUser>) {
 	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
 	await ensureUsersTestSchema({
 		db,
-		columns: ['email_verified_at', 'account_type'],
+		columns: ['email_verified_at'],
 	})
 	for (const user of users) {
 		await db
 			.prepare(
 				`INSERT INTO users (
 					username, email, password_hash, stable_user_id, email_verified_at,
-					account_type, deleting_at, email_verification_delivery_status,
+					deleting_at, email_verification_delivery_status,
 					email_verification_delivery_at
-				) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?, ?)`,
+				) VALUES (?, ?, 'hash', ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				user.username,
 				user.email ?? `${user.username}@example.com`,
 				user.stableUserId,
 				user.verifiedAt ?? null,
-				user.accountType ?? 'person',
 				user.deletingAt ?? null,
 				user.deliveryStatus ?? 'accepted',
 				user.deliveryAt ?? '2026-09-01T08:00:00.000Z',
@@ -102,12 +100,6 @@ test('hourly stall scan fans accepted sends older than the threshold and skips f
 			username: 'bounced',
 			stableUserId: ownerIdFromStored('b').repeat(64),
 			deliveryStatus: 'bounced',
-		},
-		{
-			username: 'platform',
-			email: 'ops@kody.codes',
-			stableUserId: ownerIdFromStored('p').repeat(64),
-			accountType: 'platform',
 		},
 		{
 			username: 'leaving',

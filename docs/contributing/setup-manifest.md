@@ -516,7 +516,7 @@ automatically:
   login and Stripe plan refresh. The bot needs Create Instant Invite and Manage
   Roles. See `docs/contributing/social-login.md`.)
 - `STRIPE_SECRET_KEY` (optional Worker secret; enables Stripe checkout linking,
-  billing portal, and `users.stripe_plan` refresh. When unset, billing degrades
+  billing portal, and `orgs.stripe_plan` refresh. When unset, billing degrades
   to manual plans.)
 - `STRIPE_WEBHOOK_SECRET` (optional Worker secret; Stripe webhook signing secret
   for `POST /webhooks/stripe`. When unset, the webhook endpoint returns 503.)

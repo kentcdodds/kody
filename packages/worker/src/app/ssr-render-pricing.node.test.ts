@@ -92,8 +92,17 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 		'Pro includes the usage in the table. Need more? Add prepaid credits and keep going until they run out. Free stops at its limits.',
 	)
 	expect(html).toContain(
-		'Usage past the include is charged from credits (Worker compute and Rows read). Daily and weekly limits can go up to 50× Pro’s included limits on credits. When credits run out, usage past the include stops. No overage invoices.',
+		'Usage past the include is charged from credits (Worker compute and Rows read). On credits, daily and weekly limits go up to 50× Pro’s include, capped at the “Pro + credits” column. When credits run out, usage past the include stops. No overage invoices.',
 	)
+	// Every column is the limit table enforced for that plan.
+	expect(html).toContain('Pro + credits')
+	expect(html).toContain('Worker compute per month')
+	expect(html).not.toContain('unique worker days')
+	// Monthly compute keeps running past the include on credits; not a cap.
+	expect(html).toContain('350 + credits')
+	expect(html).toContain('5B + credits')
+	expect(html).toContain('25,000')
+	expect(html).toContain('60,000')
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')

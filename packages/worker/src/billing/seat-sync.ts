@@ -21,8 +21,6 @@ import {
 	type StripeSubscription,
 } from './stripe-client.ts'
 import { sendSeatChangeEmail } from './org-billing-emails.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-
 type SeatSyncEnv = BillingEnv & StripeEnv
 
 type OrgBillingRow = {
@@ -35,7 +33,7 @@ async function loadOrgBillingRow(
 	db: D1Database,
 	orgId: string,
 ): Promise<OrgBillingRow | null> {
-	const org = await db
+	return await db
 		.prepare(
 			`SELECT plan, stripe_customer_id, slug
 			 FROM orgs
@@ -44,18 +42,6 @@ async function loadOrgBillingRow(
 		)
 		.bind(orgId)
 		.first<OrgBillingRow>()
-	if (org) return org
-	const user = await db
-		.prepare(
-			`SELECT plan, stripe_customer_id, username AS slug
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(orgId)
-		.first<OrgBillingRow>()
-	return user
-		? { ...user, slug: user.slug?.trim().toLowerCase() ?? null }
-		: null
 }
 
 function primarySubscriptionItemId(

@@ -8,11 +8,13 @@ import {
 	creditsUnlockMultiplier,
 	formatDurableObjectRowsRead,
 	formatMinJobInterval,
-	planLimits,
-	proCreditsPlanLimits,
 	weeklyComputeWindowNote,
 	type PlanLimits,
 } from '#universal/plans.ts'
+import {
+	pricingLimitColumns,
+	type PricingLimitColumn,
+} from '#universal/pricing-limits.ts'
 import {
 	publicSignupPrimaryCta,
 	type PublicSignupCta,
@@ -46,6 +48,8 @@ type LimitRow = {
 	label: string
 	key: keyof PlanLimits
 	format?: (value: number) => LimitValue
+	/** Monthly meter that keeps running past the include, debiting credits. */
+	chargedPastInclude?: true
 }
 
 type LimitGroup = {
@@ -94,9 +98,15 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 				key: 'maxAutomationInvocationsPerDay',
 			},
 			{
+				label: 'Worker compute per month',
+				key: 'maxUniqueWorkerDaysPerMonth',
+				chargedPastInclude: true,
+			},
+			{
 				label: 'Durable Object rows read per month',
 				key: 'maxDurableObjectRowsReadPerMonth',
 				format: (value) => ({ text: formatDurableObjectRowsRead(value) }),
+				chargedPastInclude: true,
 			},
 		],
 	},
@@ -240,33 +250,38 @@ export function PricingRoute(handle: Handle) {
 									<th scope="col">
 										<span mix={css(visuallyHiddenCss)}>Resource</span>
 									</th>
-									<th scope="col">
-										<span data-limits-plan>Free</span>
-										<span data-limits-price>$0</span>
-									</th>
-									<th scope="col">
-										<span data-limits-plan>Pro</span>
-										<span data-limits-price>$12/mo</span>
-										<span data-limits-annual>or $120/yr</span>
-									</th>
+									{pricingLimitColumns.map((column) => (
+										<th scope="col" key={column.id}>
+											<span data-limits-plan>{column.plan}</span>
+											<span data-limits-price>{column.price}</span>
+											{column.priceNote ? (
+												<span data-limits-annual>{column.priceNote}</span>
+											) : null}
+										</th>
+									))}
 								</tr>
 							</thead>
 							<tbody>
 								{limitGroups.flatMap((group) => [
 									<tr key={group.title} data-group>
-										<th colspan={3}>{group.title}</th>
+										<th colspan={pricingLimitColumns.length + 1}>
+											{group.title}
+										</th>
 									</tr>,
 									...group.rows.map((row) => (
 										<tr key={row.key}>
 											<th scope="row">{row.label}</th>
-											{renderLimitCell(row, planLimits.free)}
-											{renderLimitCell(row, proCreditsPlanLimits)}
+											{pricingLimitColumns.map((column) =>
+												renderLimitCell(row, column),
+											)}
 										</tr>
 									)),
 									...(group.note
 										? [
 												<tr key={`${group.title}-note`} data-note>
-													<td colspan={3}>{group.note}</td>
+													<td colspan={pricingLimitColumns.length + 1}>
+														{group.note}
+													</td>
 												</tr>,
 											]
 										: []),
@@ -283,10 +298,10 @@ export function PricingRoute(handle: Handle) {
 					</p>
 					<p mix={css(limitsFootnoteCss)} data-credits-small-print>
 						Usage past the include is charged from credits (Worker compute and
-						Rows read). Daily and weekly limits can go up to{' '}
-						{creditsUnlockMultiplier}× Pro&rsquo;s included limits on credits.
-						When credits run out, usage past the include stops. No overage
-						invoices.
+						Rows read). On credits, daily and weekly limits go up to{' '}
+						{creditsUnlockMultiplier}× Pro&rsquo;s include, capped at the
+						&ldquo;Pro + credits&rdquo; column. When credits run out, usage past
+						the include stops. No overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Unique execute workers and outbound fetches count per day and per
@@ -343,18 +358,22 @@ function renderPaidPlanCta(
 	)
 }
 
-function renderLimitCell(row: LimitRow, limits: PlanLimits) {
-	const value = limits[row.key]
+function renderLimitCell(row: LimitRow, column: PricingLimitColumn) {
+	const value = column.limits[row.key]
 	if (value == null) {
 		return <td>—</td>
 	}
 	const cell = row.format ? row.format(value) : { text: count.format(value) }
+	const text =
+		row.chargedPastInclude && column.chargesPastInclude
+			? `${cell.text} + credits`
+			: cell.text
 	return (
 		<td>
 			{cell.muted ? (
-				<span mix={css({ color: colors.textMuted })}>{cell.text}</span>
+				<span mix={css({ color: colors.textMuted })}>{text}</span>
 			) : (
-				cell.text
+				text
 			)}
 		</td>
 	)
@@ -594,8 +613,8 @@ const limitsTableCss = {
 		display: 'block',
 		color: colors.text,
 	},
-	/* Third column is Pro, the featured plan — the accent follows its panel. */
-	'& thead th:nth-child(3) [data-limits-plan]': {
+	/* Pro columns are the featured plan — the accent follows its panel. */
+	'& thead th:nth-child(n + 3) [data-limits-plan]': {
 		color: colors.primaryText,
 	},
 	'& [data-limits-price]': {

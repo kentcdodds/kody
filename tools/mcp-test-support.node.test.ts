@@ -23,9 +23,10 @@ test('seedMcpTestUser upserts a verified user with the default role', async () =
 	expect(
 		sqlite
 			.prepare(
-				`SELECT username, plan, email_verified_at IS NOT NULL AS verified
-FROM users
-WHERE email = ?`,
+				`SELECT u.username, o.plan, u.email_verified_at IS NOT NULL AS verified
+FROM users u
+INNER JOIN orgs o ON o.id = u.stable_user_id
+WHERE u.email = ?`,
 			)
 			.get(user.email),
 	).toEqual({

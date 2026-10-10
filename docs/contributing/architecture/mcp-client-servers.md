@@ -15,6 +15,7 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
   Agents SDK `MCPClientManager`, which persists registered servers, OAuth client
   registrations, and tokens in the DO's SQLite storage. Exposes RPC methods:
   `addServer`, `reconnectServer`, `refreshServer`, `removeServer`,
+  `setPreRegisteredOAuthClient`, `readPendingAuthorization`,
   `handleOAuthCallback`, `getSnapshot`, `callTool`, and
   `purgeForAccountDeletion`.
 - **D1 `mcp_server_settings` table**
@@ -78,9 +79,13 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    when the authorization server advertises
    `client_id_metadata_document_supported` and the callback origin is HTTPS:
    Kody presents `{canonical-app-origin}/oauth/client-metadata.json` as
-   `client_id`. Otherwise it falls back to Dynamic Client Registration. The
-   connection parks in state `authenticating`, and the hub keeps the provider
-   authorization URL in its SQL row.
+   `client_id`. Otherwise it falls back to Dynamic Client Registration. A server
+   whose authorization server offers neither (GitHub's remote MCP is the main
+   case) can use a pre-registered OAuth client instead (see
+   [Pre-registered OAuth clients](#pre-registered-oauth-clients)). Without one,
+   the connect fails and Status says to add one. The connection parks in state
+   `authenticating`, and the hub keeps the provider authorization URL in its SQL
+   row.
 3. The provider URL never leaves the hub client
    (`packages/worker/src/mcp-client/hub-client.ts`): callers get
    `authorizationPending`. Every `authUrl` that the account UI and the
@@ -90,7 +95,8 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    requires a signed-in member of the org in the URL with `integration:write` on
    it. It reads the pending authorization through the hub's
    `readPendingAuthorization` RPC and shows the server name, the authorization
-   server host, and the client mode (`cimd` or `dcr`, read from the URL's
+   server host, and the client mode (`pre-registered` when the URL's `client_id`
+   is the server's configured client, otherwise `cimd` or `dcr` from that
    `client_id`). Nothing redirects to the provider until the person clicks
    Continue. Continue posts a form token: an HMAC over the person, org, server,
    and pending provider URL
@@ -183,6 +189,39 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 `client_id` matches its URL and lists the same redirect URI. See
 [Connect remote MCP servers](../../use/mcp-client-servers.md).
 
+### Pre-registered OAuth clients
+
+An admin can give one server an OAuth client ID and secret that they registered
+with its authorization server. It is set, replaced, and removed only from that
+server's settings page (`set-oauth-client` / `remove-oauth-client` on
+`/account/mcp-servers.json`, which requires `integration:write`). No capability,
+API response, MCP tool, or page returns the secret after save.
+
+- **Storage.** The worker seals the secret with `SECRET_STORE_KEY` (purpose
+  `mcp-server-oauth-client-secret`, AAD bound to the server id) before it calls
+  the hub. The hub stores only `{ clientId, sealedClientSecret }`, next to the
+  tokens the client is used to obtain
+  (`packages/worker/src/mcp-client/preregistered-oauth-client.ts`). The hub is
+  the only store for the client. Its snapshot carries the public client id so
+  the settings page can show the client as configured, with Replace and Remove.
+- **Use.** The hub's OAuth provider answers `clientInformation()` with the
+  configured client, which the MCP SDK reads before it considers CIMD or DCR. So
+  a configured client always wins. The SDK then authenticates the token request
+  with `client_secret_basic` or `client_secret_post`, whichever the
+  authorization server supports. The SDK's re-save of that client info is
+  skipped, so the opened secret never lands in plain DO storage.
+- **Changes.** Saving, replacing, or removing a client drops the server's tokens
+  and any CIMD or DCR registration, because the authorization server issued them
+  to the previous client, and it starts a fresh connection episode so the parked
+  approval is not reported as a failed token refresh. It then starts a fresh
+  authorization. Once the new client is stored the change is committed; if the
+  restart fails, the server reports that as its last error instead of rolling
+  back. Changes to one server run one at a time in the hub.
+- **Audit.** Each write records an org audit event
+  (`mcp_server.oauth_client_set`, `mcp_server.oauth_client_replaced`,
+  `mcp_server.oauth_client_removed`) with the server name and client id, never
+  the secret.
+
 ## Capability synthesis and invocation
 
 - Registry: `getCapabilityRegistryForContext` loads enabled server refs from D1
@@ -211,9 +250,10 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 ## Management surfaces
 
 - **UI**: `/@<slug>/-/mcp-servers` (add with optional bearer token, authorize,
-  reconnect, refresh tools, enable/disable, set package usage, remove; shows
-  live state, discovered tools, and the server mark next to the name — catalog
-  first, then favicon, then a letter).
+  reconnect, refresh tools, enable/disable, set package usage, set a
+  pre-registered OAuth client, remove; shows live state, discovered tools, and
+  the server mark next to the name — catalog first, then favicon, then a
+  letter).
 - **Capabilities**: the `mcpServers` domain (`mcpServerAdd`, `mcpServerList`,
   `mcpServerReconnect`, `mcpServerRefresh`, `mcpServerRemove`,
   `mcpServerSetEnabled`, `mcpServerLock`). `mcpServerAdd` accepts optional

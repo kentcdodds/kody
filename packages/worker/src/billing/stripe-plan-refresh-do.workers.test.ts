@@ -5,6 +5,7 @@ import {
 	scheduleStripePlanRefreshBackstop,
 	stripePlanRefreshBackstopDelayMs,
 } from './stripe-plan-refresh-client.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -20,20 +21,20 @@ async function seedStripeRefreshUser(prefix: string, stripeCustomerId: string) {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
+	const username = `${prefix}-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id,
-			plan, stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, 'test-password-hash', ?, ?, 'free', ?, NULL, NULL)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
-		.bind(
-			`${prefix}-${crypto.randomUUID().slice(0, 8)}`,
-			email,
-			new Date().toISOString(),
-			userId,
-			stripeCustomerId,
-		)
+		.bind(username, email, new Date().toISOString(), userId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'free',
+		stripeCustomerId,
+	})
 	const stub = env.STRIPE_PLAN_REFRESH.get(
 		env.STRIPE_PLAN_REFRESH.idFromName(userId),
 	)
@@ -95,8 +96,8 @@ test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', 
 
 	const row = await env.APP_DB.prepare(
 		`SELECT stripe_plan, stripe_plan_refreshed_at
-		 FROM users
-		 WHERE stable_user_id = ?`,
+		 FROM orgs
+		 WHERE id = ?`,
 	)
 		.bind(userId)
 		.first<{

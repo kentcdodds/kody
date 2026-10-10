@@ -21,7 +21,6 @@ import {
 	AccountDeletionInventoryError,
 	deleteUserAccount,
 } from '#app/account-deletion.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 export { shouldRunRetentionCron as shouldRunUnverifiedAccountPurgeCron }
 
@@ -49,7 +48,16 @@ const millisecondsPerDay = 24 * 60 * 60 * 1000
 
 const unverifiedPersonEligibilitySql = [
 	'email_verified_at IS NULL',
-	personUserRowSql(),
+	// Leftover platform accounts are ordinary orgs whose creator is null.
+	// They never complete email login, so this unverified sweep would delete
+	// those users rows. A missing org row stays eligible: person signups
+	// always set created_by_user_id.
+	`NOT EXISTS (
+			SELECT 1
+			FROM orgs
+			WHERE orgs.id = users.stable_user_id
+				AND orgs.created_by_user_id IS NULL
+		)`,
 	// Exempting any oauth_connections row is sound only because signed-in
 	// linking requires a live verified email (the insert is fenced on
 	// email_verified_at IS NOT NULL) and unauthenticated social sign-in
