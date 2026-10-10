@@ -1,9 +1,10 @@
 /**
- * Per-resource credential use checks for actor-attributed resolution.
+ * Per-resource credential use checks for actor-attributed ad-hoc resolution.
  *
- * Ambient ad-hoc execute (no package secret authority) must hold
- * `secret:use` / `integration:use` on the concrete org resource. Package
- * authority keeps the package attachment / usageMode / provider-grant gates;
+ * Ad-hoc execute (no package secret authority) must hold `secret:use` /
+ * `integration:use` on the concrete org resource. A package's slot binding /
+ * allowlist / usageMode / provider grant is itself the grant for package
+ * runs: the runner needs `package:execute`, not per-credential Use.
  * Automation is Owner and passes `authorize`. See ADR 0021 (amended).
  */
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -36,8 +37,8 @@ export function integrationUseResource(input: {
 
 /**
  * When there is no package secret authority, the acting person must hold
- * `secret:use` on this secret. Package-authority runs skip this and use
- * package attachment instead.
+ * `secret:use` on this secret. Package-authority runs skip this: package
+ * attachment / mounts are the grant for that path.
  */
 export async function authorizeAmbientSecretUse(input: {
 	env: Env
@@ -60,8 +61,8 @@ export async function authorizeAmbientSecretUse(input: {
 /**
  * When there is no package secret authority, the acting person must hold
  * `integration:use` on this integration (or MCP server named as integration
- * resource id). Package-authority runs skip this and use usageMode /
- * allowed packages instead.
+ * resource id). Package-authority runs skip this: usageMode / allowed
+ * packages are the grant for that path.
  */
 export async function authorizeAmbientIntegrationUse(input: {
 	env: Env

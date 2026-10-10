@@ -502,11 +502,11 @@ async function buildKodyMcpServerMetadata(input: {
 	callerContext: McpCallerContext
 	capabilityMap: Record<string, Capability>
 }): Promise<Array<KodyMcpServerMetadata>> {
-	const userId = input.callerContext.user?.userId ?? null
+	const userId = ownerIdFromCaller(input.callerContext) || null
 	const servers = new Map<string, KodyMcpServerMetadata>()
 
 	if (userId) {
-		// Per-user 30s cache: runtime metadata assembly runs on every execute /
+		// Per-org 30s cache: runtime metadata assembly runs on every execute /
 		// package invocation, so this must not cost a D1 read per call.
 		// List every enabled server (including package-locked). Call-time
 		// assertCanUseMcpServer + stamp ALS deny execute / unapproved packages;

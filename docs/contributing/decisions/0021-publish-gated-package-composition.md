@@ -31,20 +31,24 @@ Keep Kody publish-gated and snapshot-isolated:
   decide.
 - Packages remain the declared-authority unit for _which_ credentials a run may
   touch (`kody.secretMounts`, host approval, integration allowlists, provider
-  grants, `kody.dependencies`). Ad hoc `execute` has no package attachment: it
-  may still resolve org credentials by name, but only when the acting person
-  holds `secret:use` / `integration:use` on that concrete resource
-  ([ADR 0062](./0062-one-access-check.md)). There is no ambient skip of org
-  RBAC.
+  grants, `kody.dependencies`). A package's slot binding / allowlist is itself
+  the grant for package runs: the binder needs Use at bind time; the runner
+  needs `package:execute`, not per-credential Use. Ad hoc `execute` has no
+  package attachment: it may still resolve org credentials by name, but only
+  when the acting person holds `secret:use` / `integration:use` on that concrete
+  resource ([ADR 0062](./0062-one-access-check.md)). There is no ambient skip of
+  org RBAC.
 
 **Amended (2026-10-10):** Before Teams, "ad hoc execute stays ambient" was read
 as skipping per-resource use checks. With org members and outside collaborators,
 that skipped `authorize` on placeholder expansion and let any actor with
 `org:execute` use every unlocked org secret and integration. Resolution now
-calls `authorize` for ambient (no package secret authority) paths in the fetch
+calls `authorize` for ad-hoc (no package secret authority) paths in the fetch
 gateway, JWT sign, provider door keys, and connected MCP servers.
-Package-authority runs keep package attachment only. Automation acts as Owner
-and keeps using the org's attachments.
+Package-authority runs keep package attachment / mounts / usageMode only — do
+not require the runner to hold Use on each bound credential. Automation acts as
+Owner and keeps using the org's attachments. Credential storage lookups use
+`ownerIdFromCaller` (org), not the acting person id.
 
 ## Consequences
 
@@ -58,6 +62,8 @@ and keeps using the org's attachments.
   "permanently inactive."
 - A member or outside collaborator who can run ad hoc execute cannot expand
   `{{secret:…}}` / `{{integration-token:…}}` (or ambient provider / MCP use)
-  without a Use grant on that resource. Owners and Automation are unchanged.
+  without a Use grant on that resource. Running a package with `package:execute`
+  still uses that package's attachments only. Owners and Automation are
+  unchanged.
 - Revisit only if a concrete user need requires live in-process composition or a
   package-wide kill switch that is not delete.

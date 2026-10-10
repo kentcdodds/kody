@@ -5,6 +5,7 @@ import {
 } from '#mcp/runtime-helper-manifest.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	createPackageStorageAccessDeniedMessage,
 	createPackageStorageKodyTools,
@@ -35,8 +36,8 @@ async function authorizeLocalExecutePackageId(input: {
 	callerContext: McpCallerContext
 	packageId: string
 }) {
-	const userId = input.callerContext.user?.userId
-	if (!userId) {
+	const orgUserId = ownerIdFromCaller(input.callerContext)
+	if (!orgUserId) {
 		throw new Error(
 			'packageStorage / packageSecrets require an authenticated user.',
 		)
@@ -47,11 +48,11 @@ async function authorizeLocalExecutePackageId(input: {
 	}
 	const authorizedPackageId = await authorizeLocalExecuteOwnedPackageId({
 		db: input.env.APP_DB,
-		callerUserId: userId,
+		callerUserId: orgUserId,
 		packageId,
 	})
 	return {
-		userId,
+		userId: orgUserId,
 		packageId: authorizedPackageId,
 		grantedPackageIds: new Set([authorizedPackageId]),
 	}
@@ -94,8 +95,8 @@ export async function createCapabilityProxyPackageHostTools(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<AdditionalKodyTools> {
-	const userId = input.callerContext.user?.userId
-	if (!userId) return {}
+	const orgUserId = ownerIdFromCaller(input.callerContext)
+	if (!orgUserId) return {}
 
 	const storageToolsByPackageId = new Map<
 		string,

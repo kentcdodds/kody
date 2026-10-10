@@ -4,6 +4,7 @@ import {
 	type OAuthClientCredentialsInput,
 } from '#mcp/execute-modules/kody-runtime-utils.ts'
 import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { authorizeLocalExecuteOwnedPackageId } from './capability-proxy-package-grants.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { invalidRequest } from './errors.ts'
@@ -109,7 +110,7 @@ async function authorizeOauthClientCredentialsPackageId(input: {
 }) {
 	return await authorizeLocalExecuteOwnedPackageId({
 		db: input.ctx.env.APP_DB,
-		callerUserId: input.ctx.callerContext.user.userId,
+		callerUserId: ownerIdFromCaller(input.ctx.callerContext),
 		packageId: input.packageId,
 	})
 }
@@ -125,6 +126,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 			'oauthClientCredentials requires an authenticated user.',
 		)
 	}
+	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
 	const packageId = call.packageId
 		? await authorizeOauthClientCredentialsPackageId({
 				ctx: input.ctx,
@@ -148,7 +150,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 				env: input.ctx.env,
 				props: {
 					baseUrl: input.ctx.callerContext.baseUrl,
-					userId: user.userId,
+					userId: orgUserId,
 					email: user.email,
 					request: input.ctx.callerContext.request,
 					storageContext,
@@ -162,7 +164,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 			env: input.ctx.env,
 			props: {
 				baseUrl: input.ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: orgUserId,
 				email: user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,
