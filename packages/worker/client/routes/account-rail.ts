@@ -166,11 +166,32 @@ export function teamOrgManagementItems(input: {
 	return items
 }
 
+function repositoriesRailItem(
+	orgSlug: string | null | undefined,
+): AccountRailItem {
+	return {
+		href: accountPackagesNavHref(orgSlug),
+		label: 'Repositories',
+		icon: 'box',
+	}
+}
+
 function jobsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
 		href: orgSectionHref(orgSlug, 'jobs'),
 		label: 'Jobs',
 		icon: 'briefcase',
+	}
+}
+
+function connectionsRailItem(
+	orgSlug: string | null | undefined,
+): AccountRailItem {
+	return {
+		href: orgSectionHref(orgSlug, 'connections'),
+		label: 'Connections',
+		icon: 'link',
+		alsoActiveFor: [routes.accountMcpOauthClients.href()],
 	}
 }
 
@@ -185,10 +206,10 @@ function secretsRailItem(orgSlug: string | null | undefined): AccountRailItem {
 /**
  * The workspace rail: everything the organization owns, grouped by job.
  * Personal orgs get every Build / Access / Data / Activity section. Team orgs
- * get Jobs and Secrets (keyed on `request.org.id`, open to every member role
- * like `/@slug/-/<section>`) above the Organization management links; their
- * other sections stay off until they follow the org. Collaborators get
- * nothing.
+ * get the sections `/@slug/-/<section>` opens for them: Repositories, Jobs,
+ * Connections, and Secrets for every member role, above the Organization
+ * management links. Grant-only collaborators (`role` null) get Connections
+ * only, which is how they use what was shared with them.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -198,26 +219,28 @@ export function workspaceRailGroups(input: {
 }): Array<AccountRailGroup> {
 	const { orgSlug } = input
 	if (!input.personal) {
-		const items = teamOrgManagementItems({
-			orgSlug,
-			role: input.role,
-		})
-		if (items.length === 0) return []
+		if (!orgSlug) return []
+		if (input.role === null) {
+			return [{ label: 'Access', items: [connectionsRailItem(orgSlug)] }]
+		}
 		return [
-			{ label: 'Build', items: [jobsRailItem(orgSlug)] },
+			{
+				label: 'Build',
+				items: [repositoriesRailItem(orgSlug), jobsRailItem(orgSlug)],
+			},
+			{ label: 'Access', items: [connectionsRailItem(orgSlug)] },
 			{ label: 'Data', items: [secretsRailItem(orgSlug)] },
-			{ label: 'Organization', items },
+			{
+				label: 'Organization',
+				items: teamOrgManagementItems({ orgSlug, role: input.role }),
+			},
 		]
 	}
 	return [
 		{
 			label: 'Build',
 			items: [
-				{
-					href: accountPackagesNavHref(orgSlug),
-					label: 'Repositories',
-					icon: 'box',
-				},
+				repositoriesRailItem(orgSlug),
 				jobsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'workflows'),
@@ -234,12 +257,7 @@ export function workspaceRailGroups(input: {
 		{
 			label: 'Access',
 			items: [
-				{
-					href: orgSectionHref(orgSlug, 'connections'),
-					label: 'Connections',
-					icon: 'link',
-					alsoActiveFor: [routes.accountMcpOauthClients.href()],
-				},
+				connectionsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'integrations'),
 					label: 'Integrations',

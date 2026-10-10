@@ -388,7 +388,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	expect(accountPackagesNavHref(null)).toBe('/account')
 })
 
-test('workspace rail for a team organization is Jobs, Secrets, and its management links', () => {
+test('workspace rail for a team organization follows each section page gate', () => {
 	expect(
 		workspaceRailGroups({
 			orgSlug: 'acme',
@@ -396,7 +396,8 @@ test('workspace rail for a team organization is Jobs, Secrets, and its managemen
 			role: 'owner',
 		}).map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
-		['Build', ['/@acme/-/jobs']],
+		['Build', ['/@acme/-/packages', '/@acme/-/jobs']],
+		['Access', ['/@acme/-/connections']],
 		['Data', ['/@acme/-/secrets']],
 		[
 			'Organization',
@@ -419,7 +420,9 @@ test('workspace rail for a team organization is Jobs, Secrets, and its managemen
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
 	).toEqual([
+		'Repositories',
 		'Jobs',
+		'Connections',
 		'Secrets',
 		'Settings',
 		'Members',
@@ -436,7 +439,9 @@ test('workspace rail for a team organization is Jobs, Secrets, and its managemen
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
 	).toEqual([
+		'Repositories',
 		'Jobs',
+		'Connections',
 		'Secrets',
 		'Settings',
 		'Members',
@@ -444,20 +449,18 @@ test('workspace rail for a team organization is Jobs, Secrets, and its managemen
 		'Grants',
 		'Collaborators',
 	])
-	// Collaborators cannot open org sections, so they get no rail.
+	// Grant-only collaborators can open Connections (their own agents bound
+	// to the org) but get a 404 on Repositories and the rest.
 	expect(
-		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: null }),
+		workspaceRailGroups({
+			orgSlug: 'acme',
+			personal: false,
+			role: null,
+		}).map((group) => [group.label, group.items.map((item) => item.href)]),
+	).toEqual([['Access', ['/@acme/-/connections']]])
+	expect(
+		workspaceRailGroups({ orgSlug: null, personal: false, role: 'owner' }),
 	).toEqual([])
-	// Repositories and Connections still read the person, so they stay off.
-	const teamLabels = workspaceRailGroups({
-		orgSlug: 'acme',
-		personal: false,
-		role: 'owner',
-	})
-		.flatMap((group) => group.items)
-		.map((item) => item.label)
-	expect(teamLabels).not.toContain('Repositories')
-	expect(teamLabels).not.toContain('Connections')
 })
 
 test('account rail org slug prefers the path org over username', () => {
