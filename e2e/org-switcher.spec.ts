@@ -114,4 +114,14 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		page.getByLabel('Workspace sections').getByText(`@pinned-${runId}`),
 	).toBeVisible()
 	await expect(page.getByTestId('delete-org')).toBeVisible()
+
+	// Connections are org-keyed: the team page opens and lists only agents
+	// approved for that org (none yet), instead of the old 404.
+	const connections = await page.goto(`/@pinned-${runId}/-/connections`)
+	expect(connections?.status()).toBe(200)
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toBeVisible()
+	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
 })

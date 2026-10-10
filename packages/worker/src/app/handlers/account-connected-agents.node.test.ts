@@ -255,3 +255,123 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	} as never)
 	expect(unauthorized.status).toBe(401)
 })
+
+test('connected agents API on a team org lists and revokes only agents approved for that org', async () => {
+	setAuthSessionSecret(testCookieSecret)
+	const personId = userOneSession.stableUserId
+	const teamOrgId = 'org-acme'
+	const grants: Array<{
+		id: string
+		clientId: string
+		scope: Array<string>
+		createdAt: number
+		metadata?: unknown
+	}> = [
+		{
+			id: 'grant-personal',
+			clientId: 'client-a',
+			scope: ['profile'],
+			createdAt: 1_700_000_000,
+		},
+		{
+			id: 'grant-team',
+			clientId: 'client-a',
+			scope: ['profile'],
+			createdAt: 1_700_000_100,
+			metadata: { orgId: teamOrgId },
+		},
+		{
+			id: 'grant-chatgpt',
+			clientId: 'client-b',
+			scope: ['profile'],
+			createdAt: 1_700_000_200,
+			metadata: { orgId: personId },
+		},
+	]
+	const helpers = {
+		listUserGrants: vi.fn(async () => ({ items: [...grants] })),
+		revokeGrant: vi.fn(async (grantId: string) => {
+			const index = grants.findIndex((grant) => grant.id === grantId)
+			if (index >= 0) grants.splice(index, 1)
+		}),
+		lookupClient: vi.fn(async (clientId: string) => ({
+			clientId,
+			clientName: clientId === 'client-a' ? 'Cursor' : 'ChatGPT',
+		})),
+	}
+	const signInTo = (orgId: string) =>
+		mockModule.readAuthenticatedAppUser.mockResolvedValue({
+			email: userOneSession.email,
+			emailVerified: true,
+			mcpUser: { userId: personId },
+			request: { org: { id: orgId, slug: 'acme' } },
+		})
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
+	sqlite
+		.prepare(
+			`INSERT INTO mcp_event_subscriptions (
+				id, user_id, oauth_client_id, event_name, arguments_json,
+				callback_url, secret_encrypted
+			) VALUES ('sub_a', ?, 'client-a', 'demo.ping', '{}', 'https://hooks.example.com/kody', 'x')`,
+		)
+		.run(personId)
+	const { handler } = createAccountConnectedAgentsApiHandler(
+		createAppEnv(helpers, undefined, createD1FromSqlite(sqlite)),
+	)
+	const url = 'https://example.com/account/connected-agents.json'
+	const call = async (body?: unknown) => {
+		const response = await handler({
+			request: new Request(url, {
+				method: body ? 'POST' : 'GET',
+				headers: { 'Content-Type': 'application/json' },
+				...(body ? { body: JSON.stringify(body) } : {}),
+			}),
+			url: new URL(url),
+			params: {},
+		} as never)
+		return {
+			status: response.status,
+			body: (await response.json()) as {
+				agents?: Array<{ clientId: string; grantIds: Array<string> }>
+				connectionProfilesEnabled?: boolean
+				error?: string
+			},
+		}
+	}
+
+	signInTo(teamOrgId)
+	const team = await call()
+	expect(team.status).toBe(200)
+	expect(team.body.agents).toEqual([
+		expect.objectContaining({ clientId: 'client-a', grantIds: ['grant-team'] }),
+	])
+	expect(team.body.connectionProfilesEnabled).toBe(false)
+
+	const profileCreate = await call({ intent: 'create', name: 'work' })
+	expect(profileCreate.status).toBe(404)
+
+	const notInTeam = await call({ intent: 'revoke', clientId: 'client-b' })
+	expect(notInTeam.status).toBe(404)
+	expect(helpers.revokeGrant).not.toHaveBeenCalled()
+
+	const revoked = await call({ intent: 'revoke', clientId: 'client-a' })
+	expect(revoked.status).toBe(200)
+	expect(helpers.revokeGrant).toHaveBeenCalledTimes(1)
+	expect(helpers.revokeGrant).toHaveBeenCalledWith('grant-team', personId)
+	expect(revoked.body.agents).toEqual([])
+	// Cursor is still connected to the signup org, so its subscriptions stay.
+	expect(
+		sqlite
+			.prepare(`SELECT id FROM mcp_event_subscriptions`)
+			.all()
+			.map((row) => row['id']),
+	).toEqual(['sub_a'])
+
+	signInTo(personId)
+	const personal = await call()
+	expect(personal.body.agents?.map((agent) => agent.grantIds)).toEqual([
+		['grant-chatgpt'],
+		['grant-personal'],
+	])
+})

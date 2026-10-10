@@ -64,17 +64,17 @@ function isOrgOwnedAccountSection(
 }
 
 /**
- * Packages and connected agents still read the signed-in person. Other org
- * sections read `request.org.id`.
+ * Packages still read the signed-in person. Other org sections read
+ * `request.org.id`.
  */
 export function orgSectionKeysOnPerson(
 	section: OrgOwnedAccountSection,
 ): boolean {
 	switch (section) {
 		case 'packages':
-		case 'connections':
 			return true
 		case 'activity':
+		case 'connections':
 		case 'email':
 		case 'integrations':
 		case 'jobs':
@@ -94,13 +94,19 @@ export function orgSectionKeysOnPerson(
 	}
 }
 
-/** `/account/secrets.json` and the other org-owned account JSON routes. */
+/**
+ * `/account/secrets.json` and the other org-owned account JSON routes. The
+ * Connections page reads `/account/connected-agents.json`;
+ * `/account/connections.json` is the person's sign-in providers.
+ */
 export function orgOwnedAccountApiSection(
 	pathname: string,
 ): OrgOwnedAccountSection | null {
 	const match = /^\/account\/([^/.]+)\.json$/.exec(pathname)
-	const section = match?.[1] ?? ''
-	return isOrgOwnedAccountSection(section) ? section : null
+	const name = match?.[1] ?? ''
+	if (name === 'connected-agents') return 'connections'
+	if (name === 'connections') return null
+	return isOrgOwnedAccountSection(name) ? name : null
 }
 
 export type ParsedOrgResourcePath = {

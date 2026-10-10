@@ -309,10 +309,15 @@ test('billing paths bind to the organization in the URL', () => {
 test('org account JSON names the section, and packages still key on the person', () => {
 	expect(orgOwnedAccountApiSection('/account/secrets.json')).toBe('secrets')
 	expect(orgOwnedAccountApiSection('/account/jobs.json')).toBe('jobs')
+	expect(orgOwnedAccountApiSection('/account/connected-agents.json')).toBe(
+		'connections',
+	)
+	// Sign-in providers belong to the person, not the Connections page.
+	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/@acme/-/secrets')).toBeNull()
 	expect(orgSectionKeysOnPerson('packages')).toBe(true)
-	expect(orgSectionKeysOnPerson('connections')).toBe(true)
+	expect(orgSectionKeysOnPerson('connections')).toBe(false)
 	expect(orgSectionKeysOnPerson('secrets')).toBe(false)
 	expect(orgSectionKeysOnPerson('jobs')).toBe(false)
 })

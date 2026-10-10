@@ -197,8 +197,8 @@ function teamOrgSwitchHref(input: {
 		return orgSettingsPath(input.slug)
 	}
 	const section = parseOrgResourcePath(input.pathname)?.section
-	// Packages and connected agents still key on the person — land on Settings
-	// so management stays one click away instead of a bare org home.
+	// Packages still key on the person — land on Settings so management stays
+	// one click away instead of a bare org home.
 	if (section && orgSectionKeysOnPerson(section)) {
 		return orgSettingsPath(input.slug)
 	}

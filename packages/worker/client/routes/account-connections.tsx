@@ -32,6 +32,7 @@ import {
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
 import { docHref } from '#universal/docs-nav.ts'
+import { orgSlugFromOrgOwnedPath } from '#universal/org-pages.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
 import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import {
@@ -72,9 +73,15 @@ export async function accountConnectionsRouteLoader(
 	return { accountConnectedAgents: result.payload }
 }
 
-/** The list, grid, and per-agent views all read one connected-agents payload. */
-function connectionsLatchKey() {
-	return '/account/connections'
+/**
+ * The list, grid, and per-agent views all read one connected-agents payload.
+ * Each organization lists its own agents, so switching orgs is a new load.
+ */
+function connectionsLatchKey(href: string) {
+	const slug = orgSlugFromOrgOwnedPath(
+		new URL(href, 'http://localhost').pathname,
+	)
+	return slug ? `/@${slug}/-/connections` : '/account/connections'
 }
 
 function readView(href: string): AccountConnectionsView | null {
