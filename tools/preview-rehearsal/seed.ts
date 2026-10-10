@@ -21,7 +21,6 @@ import {
 	rehearsalOrg,
 	rehearsalUser,
 	rehearsalUsers,
-	renamedDaveUsername,
 	type RehearsalOrigins,
 	type RehearsalUser,
 } from './rehearsal-env.ts'
@@ -151,7 +150,6 @@ export type SeedManifest = {
 		/** carol's org invites alice to Use carol's package (pending). */
 		pendingInviteId: string
 	}
-	renamed: { from: string; to: string }
 	autoRefill: { role: RehearsalUser['role'] }
 }
 
@@ -163,10 +161,7 @@ export type SeedCredentials = {
 		role: RehearsalUser['role']
 		email: string
 		username: string
-		/**
-		 * Personal org slug for `?org=` on consent. Stays the signup username
-		 * forever (dave stays `rh-dave` after rename).
-		 */
+		/** Personal org slug for `?org=` on consent; handles are permanent. */
 		orgSlug: string
 		password: string
 		cliToken: string
@@ -514,19 +509,20 @@ export type RehearsalSeedStatus = {
 	state: RehearsalSeedState
 	count: number
 	expected: number
-	daveUsername: string | null
+	carolAutoRefill: boolean
 	app: RehearsalDatabase
 }
 
 export function classifyRehearsalSeed(input: {
 	count: number
-	daveUsername: string | null
+	carolAutoRefill: boolean
 }): RehearsalSeedState {
 	if (!Number.isFinite(input.count) || input.count <= 0) return 'empty'
 	if (input.count < rehearsalSeedRosterSize) return 'partial'
-	// Dave's rename is the last durable APP_DB write in seedRehearsal. Every
-	// account can exist earlier; that is still an incomplete seed.
-	if (input.daveUsername === renamedDaveUsername) return 'complete'
+	// Carol's auto-refill settings are the last durable APP_DB write in
+	// seedRehearsal. Every account can exist earlier; that is still an
+	// incomplete seed.
+	if (input.carolAutoRefill) return 'complete'
 	return 'partial'
 }
 
@@ -539,20 +535,20 @@ export async function rehearsalSeedStatus(
 	)
 	if (!app) throw new Error('No app database for this preview.')
 	const emails = rehearsalSeedEmails.map((email) => `'${email}'`).join(', ')
-	const daveEmail = rehearsalUser('dave').email
-	const rows = await queryD1<{ n: number; dave_username: string | null }>(
+	const carolEmail = rehearsalUser('carol').email
+	const rows = await queryD1<{ n: number; carol_auto_refill: number | null }>(
 		client,
 		app.uuid,
-		`SELECT (SELECT COUNT(*) FROM users WHERE email IN (${emails})) AS n, (SELECT username FROM users WHERE email = '${daveEmail}') AS dave_username`,
+		`SELECT (SELECT COUNT(*) FROM users WHERE email IN (${emails})) AS n, (SELECT w.auto_refill_enabled FROM credit_wallets w INNER JOIN users u ON u.stable_user_id = w.user_id WHERE u.email = '${carolEmail}') AS carol_auto_refill`,
 	)
 	const count = Number(rows[0]?.n ?? 0)
-	const daveUsername = rows[0]?.dave_username ?? null
+	const carolAutoRefill = Number(rows[0]?.carol_auto_refill ?? 0) === 1
 	return {
 		workerName,
-		state: classifyRehearsalSeed({ count, daveUsername }),
+		state: classifyRehearsalSeed({ count, carolAutoRefill }),
 		count,
 		expected: rehearsalSeedRosterSize,
-		daveUsername,
+		carolAutoRefill,
 		app,
 	}
 }
@@ -842,16 +838,6 @@ export async function seedRehearsal(
 			`UPDATE credit_wallets SET auto_refill_enabled = 1, auto_refill_threshold_cents = 500, auto_refill_amount_cents = 2000, auto_refill_monthly_cap_cents = 10000 WHERE user_id = '${stableIds.get('carol')}'`,
 		)
 
-		log(`Username history: dave renames to ${renamedDaveUsername}...`)
-		await requestOk(daveSession, '/account/profile.json', {
-			body: { username: renamedDaveUsername },
-		})
-		const davePerson = people.find((person) => person.role === 'dave')
-		if (davePerson) {
-			davePerson.username = renamedDaveUsername
-			davePerson.packageName = `@${renamedDaveUsername}/${personalPackageLeaf}`
-		}
-
 		const credentials: SeedCredentials = {
 			version: 1,
 			workerName: input.workerName,
@@ -859,7 +845,7 @@ export async function seedRehearsal(
 			users: rehearsalUsers.map((user) => ({
 				role: user.role,
 				email: user.email,
-				username: user.role === 'dave' ? renamedDaveUsername : user.username,
+				username: user.username,
 				orgSlug: user.username,
 				password: passwords.get(user.role) ?? '',
 				cliToken: tokens.get(user.role)?.cliToken ?? '',
@@ -897,10 +883,6 @@ export async function seedRehearsal(
 				forkPackageId,
 			},
 			grants: { useGrantId, pendingInviteId },
-			renamed: {
-				from: rehearsalUser('dave').username,
-				to: renamedDaveUsername,
-			},
 			autoRefill: { role: 'carol' },
 		}
 		return { manifest, credentials }

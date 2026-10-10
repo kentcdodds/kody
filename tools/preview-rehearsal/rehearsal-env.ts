@@ -29,7 +29,7 @@ export type RehearsalUser = {
  * - carol: paid; holds a Use grant on alice's package and ran it; has a
  *   pending grant invite to alice; admin-created (random id); auto-refill
  *   configured.
- * - dave: real signup (random id); forked the org listing; renamed.
+ * - dave: real signup (random id); forked the org listing.
  */
 export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 	{
@@ -68,9 +68,6 @@ export const rehearsalUsers: ReadonlyArray<RehearsalUser> = [
 		siteAdmin: false,
 	},
 ]
-
-/** Dave renames during the seed so `username_redirects` has a row. */
-export const renamedDaveUsername = 'rh-dave-renamed'
 
 /**
  * An ordinary org owned by bob. Slug matches the former platform account

@@ -19,7 +19,6 @@ import { openRehearsalSession } from './kody-session.ts'
 import {
 	deriveRehearsalPassword,
 	rehearsalUsers,
-	renamedDaveUsername,
 	resolveRehearsalOrigins,
 	type RehearsalOrigins,
 } from './rehearsal-env.ts'
@@ -129,7 +128,7 @@ async function derivedUsers(workerName: string): Promise<Array<SnapshotUser>> {
 		users.push({
 			role: user.role,
 			email: user.email,
-			username: user.role === 'dave' ? renamedDaveUsername : user.username,
+			username: user.username,
 			orgSlug: user.username,
 			password,
 		})
@@ -139,8 +138,8 @@ async function derivedUsers(workerName: string): Promise<Array<SnapshotUser>> {
 
 /**
  * Opened seed credentials must carry `orgSlug` for consent. Older sealed
- * blobs may omit it; fall back to the roster signup username so dave's
- * rename never becomes `?org=`. Unknown roles fail loudly.
+ * blobs may omit it; fall back to the roster signup username. Unknown roles
+ * fail loudly.
  */
 export function snapshotUsersFromOpenedCredentials(
 	users: ReadonlyArray<{

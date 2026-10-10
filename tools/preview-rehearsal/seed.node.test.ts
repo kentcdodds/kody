@@ -1,5 +1,4 @@
 import { expect, test } from 'vitest'
-import { renamedDaveUsername } from './rehearsal-env.ts'
 import {
 	assertNotSeeded,
 	classifyRehearsalSeed,
@@ -10,7 +9,7 @@ import {
 
 function fakeSeedStatusApi(input: {
 	userCount: number
-	daveUsername?: string | null
+	carolAutoRefill?: boolean
 }) {
 	const querySql: Array<string> = []
 	const fetcher: typeof fetch = async (inputUrl, init) => {
@@ -38,7 +37,7 @@ function fakeSeedStatusApi(input: {
 						results: [
 							{
 								n: input.userCount,
-								dave_username: input.daveUsername ?? null,
+								carol_auto_refill: input.carolAutoRefill ? 1 : null,
 							},
 						],
 					},
@@ -72,73 +71,77 @@ test('roster emails are the five people (the rehearsal org has no users row)', (
 	])
 })
 
-test('classifyRehearsalSeed requires the renamed dave username for complete', () => {
-	expect(classifyRehearsalSeed({ count: 0, daveUsername: null })).toBe('empty')
-	expect(classifyRehearsalSeed({ count: Number.NaN, daveUsername: null })).toBe(
+test('classifyRehearsalSeed requires the carol auto-refill write for complete', () => {
+	expect(classifyRehearsalSeed({ count: 0, carolAutoRefill: false })).toBe(
 		'empty',
 	)
-	expect(classifyRehearsalSeed({ count: -1, daveUsername: null })).toBe('empty')
-	expect(classifyRehearsalSeed({ count: 1, daveUsername: null })).toBe(
-		'partial',
-	)
-	expect(classifyRehearsalSeed({ count: 4, daveUsername: null })).toBe(
-		'partial',
-	)
-	expect(classifyRehearsalSeed({ count: 5, daveUsername: 'rh-dave' })).toBe(
-		'partial',
-	)
-	expect(classifyRehearsalSeed({ count: 5, daveUsername: null })).toBe(
-		'partial',
-	)
 	expect(
-		classifyRehearsalSeed({ count: 5, daveUsername: renamedDaveUsername }),
-	).toBe('complete')
-	expect(
-		classifyRehearsalSeed({ count: 6, daveUsername: renamedDaveUsername }),
-	).toBe('complete')
+		classifyRehearsalSeed({ count: Number.NaN, carolAutoRefill: false }),
+	).toBe('empty')
+	expect(classifyRehearsalSeed({ count: -1, carolAutoRefill: false })).toBe(
+		'empty',
+	)
+	expect(classifyRehearsalSeed({ count: 1, carolAutoRefill: false })).toBe(
+		'partial',
+	)
+	expect(classifyRehearsalSeed({ count: 4, carolAutoRefill: false })).toBe(
+		'partial',
+	)
+	expect(classifyRehearsalSeed({ count: 5, carolAutoRefill: false })).toBe(
+		'partial',
+	)
+	expect(classifyRehearsalSeed({ count: 5, carolAutoRefill: false })).toBe(
+		'partial',
+	)
+	expect(classifyRehearsalSeed({ count: 5, carolAutoRefill: true })).toBe(
+		'complete',
+	)
+	expect(classifyRehearsalSeed({ count: 6, carolAutoRefill: true })).toBe(
+		'complete',
+	)
 })
 
-test('rehearsalSeedStatus counts every roster email and reads dave username', async () => {
+test('rehearsalSeedStatus counts every roster email and reads the carol auto-refill flag', async () => {
 	const empty = fakeSeedStatusApi({ userCount: 0 })
 	await expect(rehearsalSeedStatus(empty.client, worker)).resolves.toEqual({
 		workerName: worker,
 		state: 'empty',
 		count: 0,
 		expected: 5,
-		daveUsername: null,
+		carolAutoRefill: false,
 		app: { role: 'app', name: `${worker}-db`, uuid: 'app-uuid' },
 	})
 	expect(empty.querySql).toHaveLength(1)
 	for (const email of rehearsalSeedEmails) {
 		expect(empty.querySql[0]).toContain(`'${email}'`)
 	}
-	expect(empty.querySql[0]).toContain("email = 'rh-dave@example.com'")
+	expect(empty.querySql[0]).toContain("email = 'rh-carol@example.com'")
 
-	const partial = fakeSeedStatusApi({ userCount: 3, daveUsername: null })
+	const partial = fakeSeedStatusApi({ userCount: 3, carolAutoRefill: false })
 	await expect(
 		rehearsalSeedStatus(partial.client, worker),
 	).resolves.toMatchObject({
 		state: 'partial',
 		count: 3,
 		expected: 5,
-		daveUsername: null,
+		carolAutoRefill: false,
 	})
 
 	const usersOnly = fakeSeedStatusApi({
 		userCount: 5,
-		daveUsername: 'rh-dave',
+		carolAutoRefill: false,
 	})
 	await expect(
 		rehearsalSeedStatus(usersOnly.client, worker),
 	).resolves.toMatchObject({
 		state: 'partial',
 		count: 5,
-		daveUsername: 'rh-dave',
+		carolAutoRefill: false,
 	})
 
 	const complete = fakeSeedStatusApi({
 		userCount: 5,
-		daveUsername: renamedDaveUsername,
+		carolAutoRefill: true,
 	})
 	await expect(
 		rehearsalSeedStatus(complete.client, worker),
@@ -146,7 +149,7 @@ test('rehearsalSeedStatus counts every roster email and reads dave username', as
 		state: 'complete',
 		count: 5,
 		expected: 5,
-		daveUsername: renamedDaveUsername,
+		carolAutoRefill: true,
 	})
 })
 
@@ -163,7 +166,7 @@ test('assertNotSeeded allows an empty roster and refuses partial or complete', a
 	).rejects.toThrow('partial rehearsal roster (3/5)')
 	await expect(
 		assertNotSeeded(
-			fakeSeedStatusApi({ userCount: 5, daveUsername: 'rh-dave' }).client,
+			fakeSeedStatusApi({ userCount: 5, carolAutoRefill: false }).client,
 			worker,
 		),
 	).rejects.toThrow('partial rehearsal roster (5/5)')
@@ -171,7 +174,7 @@ test('assertNotSeeded allows an empty roster and refuses partial or complete', a
 		assertNotSeeded(
 			fakeSeedStatusApi({
 				userCount: 5,
-				daveUsername: renamedDaveUsername,
+				carolAutoRefill: true,
 			}).client,
 			worker,
 		),

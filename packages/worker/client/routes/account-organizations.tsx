@@ -216,7 +216,12 @@ export function AccountOrganizationsNewRoute(handle: Handle) {
 									css(accountInputCss),
 									on('input', (event) => {
 										draftName = (event.currentTarget as HTMLInputElement).value
-										if (!slugEdited) draftSlug = slugFromName(draftName)
+										if (!slugEdited) {
+											const nextSlug = slugFromName(draftName)
+											// A handle the person has not seen confirmed is not confirmed.
+											if (nextSlug !== draftSlug) confirming = false
+											draftSlug = nextSlug
+										}
 										handle.update()
 									}),
 								]}

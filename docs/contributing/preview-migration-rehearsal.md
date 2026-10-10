@@ -84,10 +84,10 @@ uploads `preview-rehearsal-<action>` and writes the D1 table to the run summary.
 
 A `seed` run's artifact holds the **pre-seed** bookmarks only when the roster
 was empty. A failed mid-seed is retried by restoring that run and seeding again.
-A second `seed` is a no-op only when the full roster exists **and** dave has
-been renamed to `rh-dave-renamed` (the last durable APP_DB write). Five accounts
-without that rename is still partial. A no-op does not take a new bookmark, so
-it cannot overwrite the real pre-seed snapshot. A partial roster still fails —
+A second `seed` is a no-op only when the full roster exists **and** carol's
+auto-refill settings are stored (the last durable APP_DB write). Five accounts
+without that write is still partial. A no-op does not take a new bookmark, so it
+cannot overwrite the real pre-seed snapshot. A partial roster still fails —
 restore the last successful seed run, then seed again. The `seed` command itself
 still refuses to write into a non-empty roster.
 
@@ -100,7 +100,7 @@ still refuses to write into a non-empty roster.
 | `rh-alice` | Seed SQL path (legacy id), Pro                                            | Granted carol `use` on her package, $25 grant                                                                  |
 | `rh-bob`   | Seed SQL path (legacy id)                                                 | Owner of `@rh-org`; published there                                                                            |
 | `rh-carol` | `adminUserCreate` + setup link (random id), Pro                           | Ran alice's package through her `use` grant (bound to alice's org); pending grant invite to alice; auto-refill |
-| `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing; renamed to `rh-dave-renamed`                                                           |
+| `rh-dave`  | `/auth` signup + `adminUserVerify` (random id)                            | Forked the org listing                                                                                         |
 | `@rh-org`  | `orgCreate` by bob (an ordinary org, no `users` row)                      | Public (listed), private, and hidden packages                                                                  |
 
 Each of alice, bob, carol, and dave has: a package with an inline app, a
