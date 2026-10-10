@@ -1183,7 +1183,7 @@ export type AccountOrganizationsLoaderData = {
 	invites: Array<AccountInviteSummary>
 }
 
-export type OrgManagementOrg = {
+type OrgManagementOrg = {
 	id: string
 	slug: string
 	displayName: string | null
