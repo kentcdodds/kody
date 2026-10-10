@@ -125,7 +125,7 @@ type ConnectionUsageAnalyticsRow = {
 }
 
 export type ConnectionUsageAggregationResult =
-	| { skipped: true; reason: string }
+	| { skipped: true; reason: string; pruned: number }
 	| {
 			skipped: false
 			upserted: number
@@ -137,10 +137,22 @@ export async function aggregateConnectionUsageDaily(
 	env: UsageAggregationEnv,
 	now: Date = new Date(),
 ): Promise<ConnectionUsageAggregationResult> {
+	// Local `recordUsage` writes rows without Analytics Engine, so retention
+	// runs either way.
+	const pruned = await runD1WithRetry(() =>
+		env.APP_DB.prepare(`DELETE FROM usage_connection_daily WHERE day < ?`)
+			.bind(connectionUsageRetentionCutoffDay(now))
+			.run(),
+	)
+	const prunedCount = Number(pruned.meta.changes ?? 0)
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!env.USAGE_EVENTS || !accountId || !apiToken) {
-		return { skipped: true, reason: 'missing-analytics-config' }
+		return {
+			skipped: true,
+			reason: 'missing-analytics-config',
+			pruned: prunedCount,
+		}
 	}
 	const today = utcDayKey(now)
 	const yesterday = utcDayKey(new Date(now.getTime() - utcDayMs))
@@ -207,12 +219,16 @@ export async function aggregateConnectionUsageDaily(
 			),
 		)
 	}
-	// An empty Analytics Engine result is more likely ingestion lag than a
-	// usage-free fleet; keep stored rows rather than wiping them.
+	// Analytics Engine ingestion lags, so a missing group is only treated as
+	// gone for yesterday, and only when the query returned rows for that day.
+	// Today keeps its stored rows until it becomes yesterday.
+	const yesterdayReported = [...present.values()].some(
+		(row) => row.day === yesterday,
+	)
 	const deletes: Array<D1PreparedStatement> = []
-	if (analyticsRows.length > 0) {
+	if (yesterdayReported) {
 		for (const row of stored.results ?? []) {
-			if (present.has(rowKey(row))) continue
+			if (row.day !== yesterday || present.has(rowKey(row))) continue
 			deletes.push(env.APP_DB.prepare(deleteRowStatement).bind(...bindKey(row)))
 		}
 	}
@@ -222,16 +238,11 @@ export async function aggregateConnectionUsageDaily(
 			env.APP_DB.batch(writes.slice(index, index + writeBatchSize)),
 		)
 	}
-	const pruned = await runD1WithRetry(() =>
-		env.APP_DB.prepare(`DELETE FROM usage_connection_daily WHERE day < ?`)
-			.bind(connectionUsageRetentionCutoffDay(now))
-			.run(),
-	)
 	const result = {
 		skipped: false as const,
 		upserted: upserts.length,
 		deleted: deletes.length,
-		pruned: Number(pruned.meta.changes ?? 0),
+		pruned: prunedCount,
 	}
 	console.info('connection-usage-aggregation', JSON.stringify(result))
 	return result

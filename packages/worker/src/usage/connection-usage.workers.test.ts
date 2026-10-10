@@ -216,10 +216,30 @@ test('aggregateConnectionUsageDaily skips without Analytics Engine credentials',
 	await ensureSchema()
 	expect(
 		await aggregateConnectionUsageDaily({ ...env, USAGE_EVENTS: undefined }),
-	).toEqual({ skipped: true, reason: 'missing-analytics-config' })
+	).toEqual({ skipped: true, reason: 'missing-analytics-config', pruned: 0 })
 })
 
-test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished rows, and prunes old days', async () => {
+test('aggregateConnectionUsageDaily prunes old local rows without Analytics Engine', async () => {
+	await ensureSchema()
+	const { personId } = await seedPerson('local-prune')
+	const { orgId } = await seedTeamOrg()
+	await insertUsageRow({
+		orgId,
+		day: '2026-09-20',
+		connectionKey: ['cli', personId, ''],
+		eventType: 'execute',
+		units: 4,
+	})
+	expect(
+		await aggregateConnectionUsageDaily(
+			{ ...env, USAGE_EVENTS: undefined },
+			now,
+		),
+	).toEqual({ skipped: true, reason: 'missing-analytics-config', pruned: 1 })
+	expect(await listStoredRows(orgId)).toEqual([])
+})
+
+test('aggregateConnectionUsageDaily rewrites yesterday and today, drops rows gone from yesterday, and prunes old days', async () => {
 	await ensureSchema()
 	const { personId } = await seedPerson('holder')
 	const { orgId } = await seedTeamOrg()
@@ -233,8 +253,16 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 	})
 	await insertUsageRow({
 		orgId,
-		day: '2026-10-07',
+		day: '2026-10-06',
 		connectionKey: ['cli', personId, 'gone'],
+		eventType: 'execute',
+		units: 2,
+	})
+	// Today's groups can lag in Analytics Engine, so a missing one stays.
+	await insertUsageRow({
+		orgId,
+		day: '2026-10-07',
+		connectionKey: ['cli', personId, 'lagging'],
 		eventType: 'execute',
 		units: 2,
 	})
@@ -309,6 +337,15 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 		},
 		{
 			day: '2026-10-07',
+			credential_kind: 'cli',
+			holder_user_id: personId,
+			credential_id: 'lagging',
+			package_id: '',
+			event_type: 'execute',
+			units: 2,
+		},
+		{
+			day: '2026-10-07',
 			credential_kind: 'mcp-oauth',
 			holder_user_id: personId,
 			credential_id: client,
@@ -355,7 +392,7 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 	// An empty result looks like ingestion lag; stored rows stay.
 	stubAnalytics([])
 	await aggregateConnectionUsageDaily(credentialedEnv, now)
-	expect(await listStoredRows(orgId)).toHaveLength(3)
+	expect(await listStoredRows(orgId)).toHaveLength(4)
 })
 
 test('recordUsage without Analytics Engine adds units to the connection row', async () => {
