@@ -193,9 +193,7 @@ export async function listOrganizationsForPerson(
 			 FROM org_memberships m
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
-			   AND m.deleted_at IS NULL
-			   AND o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL`,
+			   AND m.deleted_at IS NULL${andActiveOrgSql('o')}`,
 		)
 		.bind(personId, personId)
 		.all<{
@@ -213,9 +211,7 @@ export async function listOrganizationsForPerson(
 			 INNER JOIN orgs o ON o.id = g.org_id
 			 WHERE g.deleted_at IS NULL
 			   AND g.subject_type = 'user'
-			   AND g.subject_id = ?
-			   AND o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL
+			   AND g.subject_id = ?${andActiveOrgSql('o')}
 			   AND NOT EXISTS (
 			     SELECT 1 FROM org_memberships m
 			     WHERE m.org_id = o.id
@@ -236,9 +232,7 @@ export async function listOrganizationsForPerson(
 			  AND g.deleted_at IS NULL
 			 INNER JOIN orgs o ON o.id = t.org_id
 			 WHERE tm.user_id = ?
-			   AND tm.deleted_at IS NULL
-			   AND o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL
+			   AND tm.deleted_at IS NULL${andActiveOrgSql('o')}
 			   AND NOT EXISTS (
 			     SELECT 1 FROM org_memberships m
 			     WHERE m.org_id = o.id
@@ -285,9 +279,7 @@ export async function countPendingInvitesForPerson(
 			 FROM invites i
 			 INNER JOIN orgs o ON o.id = i.org_id
 			 WHERE i.status = 'pending'
-			   AND i.expires_at > ?
-			   AND o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL
+			   AND i.expires_at > ?${andActiveOrgSql('o')}
 			   AND (
 			     lower(COALESCE(i.invitee_email, '')) = lower(?)
 			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)
@@ -318,9 +310,7 @@ export async function listPendingInvitesForPerson(
 			 FROM invites i
 			 INNER JOIN orgs o ON o.id = i.org_id
 			 WHERE i.status = 'pending'
-			   AND i.expires_at > ?
-			   AND o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL
+			   AND i.expires_at > ?${andActiveOrgSql('o')}
 			   AND (
 			     lower(COALESCE(i.invitee_email, '')) = lower(?)
 			     OR lower(COALESCE(i.invitee_username, '')) = lower(?)
@@ -439,12 +429,10 @@ export async function listOrgsForPerson(
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
 			  AND m.deleted_at IS NULL
-			 WHERE o.deleted_at IS NULL
-			   AND o.suspended_at IS NULL
-			   AND (
+			 WHERE (
 			     m.user_id IS NOT NULL
 			     OR EXISTS (${liveGrantForPersonSql('o.id')})
-			   )
+			   )${andActiveOrgSql('o')}
 			 ORDER BY o.slug ASC, o.id ASC`,
 		)
 		.bind(personId, personId, personId)

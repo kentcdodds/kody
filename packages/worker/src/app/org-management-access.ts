@@ -8,7 +8,7 @@ import {
 	AuthorizationError,
 } from '#worker/authorization/authorize.ts'
 import { buildOrgAvatarUrl } from '#worker/orgs/org-avatar.ts'
-import { isPersonalOrg } from '#worker/orgs/org-profile.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 
 export type ManagedOrg = {

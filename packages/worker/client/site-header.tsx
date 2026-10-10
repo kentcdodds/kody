@@ -412,13 +412,11 @@ function OrgSwitcher(
 		const body = (
 			<>
 				<p mix={css(switcherEyebrowCss)}>Organizations</p>
-				<div
-					role="group"
-					aria-label="Organizations"
-					mix={css(switcherGroupCss)}
-				>
-					{orgRows.map(renderSwitcherRow)}
-				</div>
+				<ul role="list" aria-label="Organizations" mix={css(switcherListCss)}>
+					{orgRows.map((row) => (
+						<li key={row.key}>{renderSwitcherRow(row)}</li>
+					))}
+				</ul>
 				{manageRows.length > 0 && manageDetailHandle ? (
 					<div
 						role="group"
@@ -475,6 +473,7 @@ function OrgSwitcher(
 				<button
 					type="button"
 					popovertarget={orgSwitcherPanelId}
+					aria-controls={orgSwitcherPanelId}
 					aria-label={
 						manageRows.length > 0
 							? `${label}: organizations, manage, and account`
@@ -991,9 +990,12 @@ const switcherEyebrowCss = {
 	color: colors.textMuted,
 }
 
-const switcherGroupCss = {
+const switcherListCss = {
 	display: 'grid',
 	gap: '0.15rem',
+	listStyle: 'none',
+	margin: 0,
+	padding: 0,
 }
 
 const switcherActionsCss = {

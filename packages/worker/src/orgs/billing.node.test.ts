@@ -80,22 +80,52 @@ test('isPaidOrg treats every non-free plan as paid', () => {
 	expect(isPaidOrg('standard')).toBe(true)
 })
 
-test('countLiveSeats counts owners and members but not billing', async () => {
+async function insertUser(
+	db: D1Database,
+	input: { email: string; deletedAt?: string | null },
+) {
+	const stableUserId = testStableUserIdFromEmail(input.email)
+	const username = input.email.split('@')[0] ?? input.email
+	await db
+		.prepare(
+			`INSERT INTO users (id, username, email, password_hash, stable_user_id, display_name, deleted_at)
+			 VALUES (?, ?, ?, 'x', ?, ?, ?)`,
+		)
+		.bind(
+			`user-${username}`,
+			username,
+			input.email,
+			stableUserId,
+			username,
+			input.deletedAt ?? null,
+		)
+		.run()
+	return stableUserId
+}
+
+test('countLiveSeats counts live owners and members but not billing or deleted people', async () => {
 	const db = await createDb()
 	const orgId = ownerIdFromStored('org-seats')
-	const owner = testStableUserIdFromEmail('owner@example.com')
-	const member = testStableUserIdFromEmail('member@example.com')
-	const billing = testStableUserIdFromEmail('billing@example.com')
+	const owner = await insertUser(db, { email: 'owner@example.com' })
+	const member = await insertUser(db, { email: 'member@example.com' })
+	const billing = await insertUser(db, { email: 'billing@example.com' })
+	const gone = await insertUser(db, { email: 'gone@example.com' })
+	const tombstoned = await insertUser(db, {
+		email: 'tombstoned@example.com',
+		deletedAt: now,
+	})
 	await insertOrg(db, { id: orgId, slug: 'seats-org' })
 	await insertMembership(db, { orgId, userId: owner, role: 'owner' })
 	await insertMembership(db, { orgId, userId: member, role: 'member' })
 	await insertMembership(db, { orgId, userId: billing, role: 'billing' })
 	await insertMembership(db, {
 		orgId,
-		userId: testStableUserIdFromEmail('gone@example.com'),
+		userId: gone,
 		role: 'member',
 		deletedAt: now,
 	})
+	// A membership left behind on a deleted account must not bill a seat.
+	await insertMembership(db, { orgId, userId: tombstoned, role: 'member' })
 
 	expect(await countLiveSeats(db, orgId)).toBe(2)
 })
