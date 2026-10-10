@@ -82,6 +82,17 @@ const spoofFrames = [
 	{ function: '<anonymous>' },
 	{ function: 'spoofBrowserAndPlatform' },
 ]
+const cspUnsafeEvalMessage =
+	"Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self' 'sha256-abc' https://cdn.usefathom.com https://static.cloudflareinsights.com https://challenges.cloudflare.com\"."
+const cspUnsafeEvalKody8yFrames = [
+	fr(
+		'sentryWrapped',
+		'https://kody.codes/node_modules/@sentry/browser/build/npm/esm/prod/helpers.js',
+	),
+	fr('next', '<anonymous>'),
+	fr('predicate', '<anonymous>'),
+	fr('eval', '<anonymous>'),
+]
 const replayCrossOriginElementMessage = `Failed to read a named property 'Element' from 'Window': Blocked a frame with origin "https://kody.codes" from accessing a cross-origin frame.`
 const replayCrossOriginPrototypeMessage =
 	"Cannot read properties of undefined (reading 'prototype')"
@@ -383,6 +394,30 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		// CrabApple navigator.userAgent hard-spoof noise (KODY-80).
 		['Error', crabAppleMessage, spoofFrames],
 		['Error', 'something else', undefined, new Error(crabAppleMessage)],
+		// CSP unsafe-eval refusal from extension-injected eval (KODY-8Y).
+		['EvalError', cspUnsafeEvalMessage, cspUnsafeEvalKody8yFrames],
+		[
+			'EvalError',
+			`EvalError: ${cspUnsafeEvalMessage}`,
+			[
+				fr('eval', '<anonymous>'),
+				fr('sentryWrapped', '/node_modules/@sentry/browser/helpers.js'),
+			],
+		],
+		// Anonymous-only stack with the CSP wording (no named eval frame).
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[{ filename: '<anonymous>' }, { filename: '[native code]' }],
+		],
+		[
+			'EvalError',
+			'something else',
+			cspUnsafeEvalKody8yFrames,
+			Object.assign(new EvalError(cspUnsafeEvalMessage), {
+				stack: `EvalError: ${cspUnsafeEvalMessage}\n    at eval (<anonymous>)\n    at sentryWrapped (https://kody.codes/node_modules/@sentry/browser/helpers.js:1:1)`,
+			}),
+		],
 		// Sentry Replay cross-origin iframe Element read (KODY-8W / #23795).
 		[
 			'SecurityError',
@@ -511,6 +546,41 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			'TypeError',
 			'TypeError: Cannot redefine property: userAgent',
 			spoofFrames,
+		],
+		// Same CSP EvalError with a first-party bundle frame stays visible.
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[...cspUnsafeEvalKody8yFrames, minifiedEntryFrame],
+		],
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[fr('eval', 'https://kody.codes/assets/entry-abc123.js')],
+		],
+		// URL-less frames could be first-party — keep (conservative).
+		['EvalError', cspUnsafeEvalMessage, [{ function: 'eval' }]],
+		// Missing stack could be first-party — keep.
+		['EvalError', cspUnsafeEvalMessage],
+		// Unrelated EvalError / other errors stay visible.
+		[
+			'EvalError',
+			'Unexpected eval()',
+			[fr('eval', '<anonymous>'), fr('sentryWrapped', '@sentry/browser')],
+		],
+		['TypeError', cspUnsafeEvalMessage, cspUnsafeEvalKody8yFrames],
+		// Sentry + anonymous named frames without `eval` stay visible.
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[
+				fr(
+					'sentryWrapped',
+					'https://kody.codes/node_modules/@sentry/browser/build/npm/esm/prod/helpers.js',
+				),
+				fr('next', '<anonymous>'),
+				fr('predicate', '<anonymous>'),
+			],
 		],
 		// Replay Element SecurityError without onIframeLoad / observeAttachShadow
 		// frames stays visible (could be app cross-origin access).

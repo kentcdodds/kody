@@ -1562,6 +1562,146 @@ function filterSentryReplayCrossOriginIframeSentryEvent<
 }
 
 /**
+ * Browser extensions (and other page-injected scripts) that call `eval` /
+ * `new Function` in page context trip our CSP: `script-src` intentionally
+ * omits `'unsafe-eval'` (see `security-headers.ts`). Chromium surfaces the
+ * block as an unhandled `EvalError`. Signature from production issue
+ * 7783818887 / KODY-8Y on `/signup` — mechanism
+ * `auto.browser.global_handlers.onunhandledrejection`; stack is exclusively
+ * `<anonymous>` frames plus Sentry's `sentryWrapped` helper in
+ * `@sentry/browser/…/helpers.js` (inApp false), with a frame function named
+ * `eval`. Breadcrumbs showed Backpack wallet extension chatter every 5s.
+ * First-party client code does not use `eval` / `new Function`.
+ *
+ * Match is intentionally narrow: EvalError (or the CSP `'unsafe-eval'`
+ * refusal wording) on the **same** exception value AND every reported stack
+ * frame is either `<anonymous>` / native or a Sentry SDK frame (`@sentry/`
+ * path / `sentryWrapped`), with at least one frame function named `eval` or
+ * anonymous-only frames. Keep the event when any first-party
+ * `kody.codes/assets/…` frame is present, and keep it when the stack is
+ * missing or URL-less in a way that could be first-party (`beforeSend` sees
+ * minified frames — same pitfall as KODY-8A). Never blanket-drop EvalError.
+ */
+const cspUnsafeEvalRefusalMessage =
+	/^(?:EvalError:\s*)?Refused to evaluate a string as JavaScript because ['"]unsafe-eval['"] is not an allowed source of script in the following Content Security Policy directive:/i
+
+function isCspUnsafeEvalRefusalMessage(message: string) {
+	return cspUnsafeEvalRefusalMessage.test(message.trim())
+}
+
+function isEvalErrorName(name: string | undefined) {
+	return name === 'EvalError'
+}
+
+function isSentrySdkStackFrameUrl(url: string) {
+	const normalized = url.replace(/\\/g, '/')
+	return (
+		normalized.includes('/@sentry/') ||
+		normalized.includes('/node_modules/@sentry/') ||
+		// Minified / CDN paths sometimes keep the package segment without a
+		// leading slash (e.g. `…npm/esm/prod/helpers.js` still carries `@sentry`).
+		normalized.includes('@sentry/')
+	)
+}
+
+function isFirstPartyKodyAssetStackFrameUrl(url: string) {
+	try {
+		const parsed = new URL(url, 'https://sentry.invalid')
+		const host = parsed.hostname
+		if (host !== 'kody.codes' && !host.endsWith('.kody.codes')) {
+			return false
+		}
+		return parsed.pathname.includes('/assets/')
+	} catch {
+		return /(?:^|[/.])kody\.codes\/assets\//i.test(url.replace(/\\/g, '/'))
+	}
+}
+
+function isAnonymousNativeOrSentrySdkStackFrameUrl(url: string) {
+	return isAnonymousOrNativeStackFrameUrl(url) || isSentrySdkStackFrameUrl(url)
+}
+
+function isAnonymousOrSentryOnlyReportedStack(event: SentryErrorEventLike) {
+	const frames = sentryEventStackFrames(event)
+	if (frames.length === 0) return false
+
+	let hasEvalFunction = false
+	let allFrameUrlsAnonymousOrNative = true
+
+	for (const frame of frames) {
+		const urls = stackFrameUrls(frame)
+		// URL-less frames are unknown (possibly first-party) — keep the event.
+		if (urls.length === 0) return false
+		if (urls.some(isFirstPartyKodyAssetStackFrameUrl)) return false
+		const isSentryWrapped = frame.function === 'sentryWrapped'
+		if (
+			!isSentryWrapped &&
+			!urls.every(isAnonymousNativeOrSentrySdkStackFrameUrl)
+		) {
+			return false
+		}
+		if (!urls.every(isAnonymousOrNativeStackFrameUrl)) {
+			allFrameUrlsAnonymousOrNative = false
+		}
+		if (frame.function === 'eval') {
+			hasEvalFunction = true
+		}
+	}
+
+	return hasEvalFunction || allFrameUrlsAnonymousOrNative
+}
+
+function isCspUnsafeEvalRefusalError(error: unknown) {
+	if (typeof error === 'string') {
+		return isCspUnsafeEvalRefusalMessage(error)
+	}
+	if (typeof error !== 'object' || error === null) return false
+	const name =
+		'name' in error && typeof error.name === 'string' ? error.name : undefined
+	const message =
+		'message' in error && typeof error.message === 'string'
+			? error.message
+			: undefined
+	if (!message || !isCspUnsafeEvalRefusalMessage(message)) return false
+	// Prefer EvalError when a name is present; bare string messages already
+	// matched above. Non-EvalError names with this wording are still CSP
+	// refusal (Chromium always uses EvalError, but tolerate missing name).
+	if (name && !isEvalErrorName(name)) return false
+	return true
+}
+
+function isCspUnsafeEvalRefusalSentryEvent(
+	event: SentryErrorEventLike,
+	originalException?: unknown,
+) {
+	const hasCspEvalMessage =
+		isCspUnsafeEvalRefusalError(originalException) ||
+		(event.exception?.values?.some(
+			(value) =>
+				typeof value.value === 'string' &&
+				isCspUnsafeEvalRefusalMessage(value.value) &&
+				(value.type === undefined || isEvalErrorName(value.type)),
+		) ??
+			false) ||
+		(typeof event.message === 'string' &&
+			isCspUnsafeEvalRefusalMessage(event.message) &&
+			(event.exception?.values?.length ?? 0) === 0)
+
+	if (!hasCspEvalMessage) return false
+	return isAnonymousOrSentryOnlyReportedStack(event)
+}
+
+function filterCspUnsafeEvalRefusalSentryEvent<T extends SentryErrorEventLike>(
+	event: T,
+	originalException?: unknown,
+): T | null {
+	if (isCspUnsafeEvalRefusalSentryEvent(event, originalException)) {
+		return null
+	}
+	return event
+}
+
+/**
  * Drop CrabApple's failed hard-spoof of `navigator.userAgent`. An injected
  * script labeled CrabApple redefines that property; modern Safari throws
  * `TypeError: Cannot redefine property: userAgent`, and the script wraps it
@@ -1757,6 +1897,11 @@ export function filterBrowserSentryEvent<T extends SentryErrorEventLike>(
 	}
 	if (
 		filterCrabAppleUserAgentSpoofSentryEvent(event, originalException) === null
+	) {
+		return null
+	}
+	if (
+		filterCspUnsafeEvalRefusalSentryEvent(event, originalException) === null
 	) {
 		return null
 	}
