@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { loadAccountPackagesData } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadPublicTreeFiles } from '#app/package-files-data.ts'
@@ -33,7 +34,10 @@ export async function loadAccountPackageApprovePublishData(input: {
 }): Promise<
 	AccountPackageApprovePublishLoaderData | { ok: false; error: string }
 > {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId,
 		packageId: input.packageId,
@@ -167,7 +171,10 @@ export async function handleAccountPackagePublishLockAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId,
 		packageId,

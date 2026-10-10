@@ -29,9 +29,10 @@ Soft-delete columns land additively; enforced read filters are phase 7.
 - **Org audit** (`org_audit_events` in AUDIT_DB) is separate from platform
   `audit_events`. Backfill records `org.migrated` per org.
 
-We do **not** yet switch storage reads to `request.org.id` when it could differ
-from a person id, filter soft-deleted org rows on reads, or drop legacy `users`
-billing columns.
+Storage reads and usage billing that have an org on the request use
+`ownerIdFromCaller` (`request.org.id`). Packages and connected agents on org
+section pages still read the person. We do **not** yet filter every soft-deleted
+org row on reads, or drop legacy `users` billing columns.
 
 ## Consequences
 
@@ -39,3 +40,9 @@ billing columns.
 membership is now the DB-backed source for “which org” on interactive paths,
 while `personalOrgId` remains the sync fallback. Follow-up phases wire team
 grants, org switching, storage key migration, and soft-delete enforcement.
+
+`org.migrated` rows are an operator command, not a deploy step.
+`backfillOrgMigratedAuditEvents` writes one success row per org, and a repeat
+inserts nothing new. The command and the `workflow_dispatch` workflow are
+documented in
+[Teams org.migrated audit backfill](../teams-org-migrated-audit-backfill.md).

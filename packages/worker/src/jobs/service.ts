@@ -87,6 +87,7 @@ import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
@@ -1043,13 +1044,14 @@ export async function updateJob(input: {
 	body: JobUpdateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
+	const ownerId = ownerIdFromCaller(callerContext)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
-		stableUserId: callerContext.user.userId,
+		stableUserId: ownerId,
 		env: input.env,
 		async write() {
 			const existingRow = await jobsData(input.env).getJobById({
-				userId: callerContext.user.userId,
+				userId: ownerId,
 				jobId: input.body.id,
 			})
 			if (!existingRow) {
@@ -1136,7 +1138,7 @@ export async function updateJob(input: {
 			if (shouldSyncJobSourceForUpdate(input.body)) {
 				const source = await getEntitySourceByIdForUser(input.env.APP_DB, {
 					id: updated.sourceId,
-					userId: callerContext.user.userId,
+					userId: ownerId,
 				})
 				// Package-owned jobs share the package entity source. Metadata
 				// updates (schedule, timezone, params, enabled) must not
@@ -1152,7 +1154,7 @@ export async function updateJob(input: {
 				} else {
 					const syncedPublishedCommit = await syncArtifactSourceSnapshot({
 						env: input.env,
-						userId: callerContext.user.userId,
+						userId: ownerId,
 						baseUrl: callerContext.baseUrl,
 						sourceId: updated.sourceId,
 						bootstrapAccess: null,
@@ -1168,7 +1170,7 @@ export async function updateJob(input: {
 			}
 			const nextCallerContextJson = serializeCallerContext(callerContext)
 			const didUpdate = await jobsData(input.env).updateJob({
-				userId: callerContext.user.userId,
+				userId: ownerId,
 				job: updated,
 				callerContextJson: nextCallerContextJson,
 			})
@@ -1177,7 +1179,7 @@ export async function updateJob(input: {
 			}
 			await upsertJobVector(input.env, {
 				jobId: updated.id,
-				userId: callerContext.user.userId,
+				userId: ownerId,
 				embedText: buildJobEmbedText({
 					name: updated.name,
 					scheduleSummary: toJobView(updated).scheduleSummary,
@@ -1187,7 +1189,7 @@ export async function updateJob(input: {
 			})
 			await syncJobManagerAlarm({
 				env: input.env,
-				userId: callerContext.user.userId,
+				userId: ownerId,
 			})
 			return toJobView(updated)
 		},

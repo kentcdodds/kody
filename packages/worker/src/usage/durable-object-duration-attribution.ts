@@ -30,6 +30,7 @@ import {
 } from '#worker/user-scoped-durable-object-name.ts'
 
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { liveBillingOwnerSql } from '#worker/usage/live-billing-owner.ts'
 export const durableObjectDurationAttributionObjectLimit = 10_000
 const graphqlTimeoutMs = 30_000
 
@@ -111,11 +112,16 @@ export async function buildDurableObjectOwnerMap(
 	env: DurableObjectDurationAttributionEnv,
 ): Promise<Map<string, DurableObjectOwner>> {
 	const owners = new Map<string, DurableObjectOwner>()
-	const [users, buckets, apps] = await Promise.all([
+	const [users, orgs, buckets, apps] = await Promise.all([
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
 				`SELECT stable_user_id FROM users WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
 			).all<{ stable_user_id: string }>(),
+		),
+		runD1WithRetry(() =>
+			env.APP_DB.prepare(
+				`SELECT id FROM orgs WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
+			).all<{ id: string }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
@@ -129,12 +135,19 @@ export async function buildDurableObjectOwnerMap(
 		),
 	])
 	const namespaces = perUserNamespaces(env)
+	const ownerIds = new Set<string>()
 	for (const { stable_user_id: userId } of users.results ?? []) {
+		ownerIds.add(userId)
+	}
+	// Team orgs have no users row. Personal orgs repeat stable_user_id.
+	for (const { id } of orgs.results ?? []) ownerIds.add(id)
+	for (const userId of ownerIds) {
 		for (const [doClass, namespace, name] of namespaces) {
 			addOwner(owners, namespace, name(userId), { userId, doClass })
 		}
 	}
 	for (const bucket of buckets.results ?? []) {
+		if (!ownerIds.has(bucket.user_id)) continue
 		if (bucket.kind === 'repo_session') {
 			const sessionId = readRepoSessionId(bucket.storage_id)
 			if (sessionId) {
@@ -155,6 +168,7 @@ export async function buildDurableObjectOwnerMap(
 		)
 	}
 	for (const app of apps.results ?? []) {
+		if (!ownerIds.has(app.user_id)) continue
 		addOwner(
 			owners,
 			env.PACKAGE_REALTIME_SESSION,
@@ -385,16 +399,13 @@ export async function runDurableObjectDurationAttribution(input: {
 				`DELETE FROM durable_object_duration_daily WHERE day = ?`,
 			).bind(day),
 			...attribution.rows.map((row) =>
-				// The owner map is a snapshot; skip users whose deletion started
-				// since so account cleanup is not undone.
+				// The owner map is a snapshot. Skip owners whose deletion or
+				// soft-delete started since, including team orgs with no users row.
 				input.env.APP_DB.prepare(
 					`INSERT INTO durable_object_duration_daily
 						(user_id, do_class, day, active_ms, object_count, updated_at)
 					 SELECT ?1, ?2, ?3, ?4, ?5, ?6
-					 WHERE EXISTS (
-						SELECT 1 FROM users
-						WHERE stable_user_id = ?1 AND deleting_at IS NULL
-					 )`,
+					 WHERE ${liveBillingOwnerSql('?1')}`,
 				).bind(
 					row.userId,
 					row.doClass,

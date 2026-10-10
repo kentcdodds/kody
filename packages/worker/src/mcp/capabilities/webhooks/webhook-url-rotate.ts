@@ -6,6 +6,7 @@ import {
 	requireMcpUser,
 } from '#mcp/capabilities/meta/require-user.ts'
 import { rotateWebhookUrlForUser } from '#worker/webhooks/service.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	mintedWebhookHandleSchema,
 	requirePackageRef,
@@ -49,7 +50,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 			const rotated = await rotateWebhookUrlForUser({
 				env: ctx.env,
 				request: requireMcpRequest(ctx.callerContext),
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				email: user.email,
 				username: user.username,
 				packageId: args.packageId,

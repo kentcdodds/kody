@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { accountAliasPath } from '#universal/org-pages.ts'
 import { getValue, listValues } from '#mcp/values/service.ts'
@@ -118,7 +119,10 @@ export async function loadAccountValuesData(input: {
 	url?: string
 	selectedValueId?: string | null
 }): Promise<AccountValuesLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const selectedValueId = input.url
 		? readAccountValuesSelectedValueId(input.url, input.selectedValueId)
 		: input.selectedValueId === undefined

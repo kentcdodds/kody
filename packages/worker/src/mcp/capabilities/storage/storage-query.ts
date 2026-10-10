@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -67,7 +68,7 @@ export const storageQueryCapability = defineDomainCapability(
 			})
 			const packageId = packageIdFromStorageId(storageId)
 			if (packageId) {
-				const ownerId = ctx.callerContext.request?.org.id ?? user.userId
+				const ownerId = ownerIdFromCaller(ctx.callerContext)
 				const saved = await getSavedPackageById(ctx.env.APP_DB, {
 					userId: ownerId,
 					packageId,
@@ -95,7 +96,7 @@ export const storageQueryCapability = defineDomainCapability(
 			try {
 				const result = await storageRunnerRpc({
 					env: ctx.env,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					storageId,
 				}).sqlQuery({
 					query: args.query,

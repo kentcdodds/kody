@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -73,14 +74,14 @@ export const mcpServerAddCapability = defineDomainCapability(
 			args: { name: string; url: string; bearerToken?: string },
 			ctx: CapabilityContext,
 		) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const oauth = resolveMcpServerOAuthClientUrls({
 				env: ctx.env,
 				requestUrl: ctx.callerContext.baseUrl,
 			})
 			const { setting, connection } = await addMcpServer({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				name: args.name,
 				url: args.url,
 				baseUrl: oauth.clientOrigin,

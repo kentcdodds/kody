@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -30,11 +31,11 @@ export const webhookListCapability = defineDomainCapability(
 			webhooks: z.array(listedWebhookSchema),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const webhooks = await listWebhooksForUser({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				packageId: args.packageId,
 				kodyId: args.kodyId,
 			})

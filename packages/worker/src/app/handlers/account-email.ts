@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { loadAccountEmailData } from '#app/account-email-data.ts'
@@ -120,7 +121,10 @@ export function createAccountEmailApiHandler(env: Env) {
 				const deleted = await deleteEmailMessage({
 					env,
 					db: env.APP_DB,
-					userId: user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: user.request,
+						user: user.mcpUser,
+					}),
 					messageId,
 				})
 				if (!deleted) {
@@ -154,7 +158,10 @@ export function createAccountEmailApiHandler(env: Env) {
 			const updated = await setEmailMessageClassification({
 				env,
 				db: env.APP_DB,
-				userId: user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: user.request,
+					user: user.mcpUser,
+				}),
 				messageId,
 				classification,
 				classificationReason:

@@ -79,11 +79,13 @@ wire-shaped: `request` is derived, never serialized (`toMcpCallerContextWire`,
 
 ## Storage keys
 
-Package import lookup and ad-hoc execute bundling read `request.org.id` (via
-`packageStorageOwnerIdFromCaller`) so a Use-grant outside collaborator bound to
-the owner's org resolves that org's packages. Other storage paths may still read
-`callerContext.user.userId`; that still equals `request.org.id` for a
-personal-org connection. Prefer `request.org.id` whenever the data is org-keyed.
+Org-owned storage and usage billing read `ownerIdFromCaller`
+(`packages/worker/src/request-context/owner-id.ts`): `request.org.id` when the
+request has an org, otherwise the acting person. Personal orgs reuse the person
+id, so those keys do not move. Package import lookup, account resource pages,
+secrets, jobs, and execute usage go through that function. Packages and
+connected agents on `/@slug/-/` still read the person. A same-origin
+`/account/<section>.json` fetch from an org page binds that org via Referer.
 
 ## What to read when changing it
 

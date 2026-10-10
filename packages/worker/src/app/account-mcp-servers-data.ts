@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type AccountMcpServersLoaderData } from '#universal/loader-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -27,7 +28,10 @@ export async function loadAccountMcpServersData(input: {
 	requestUrl?: string | URL | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<AccountMcpServersLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const oauth = resolveMcpServerOAuthClientUrls({
 		env: input.env,
 		requestUrl: input.requestUrl,

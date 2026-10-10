@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -114,12 +115,12 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 			deliveries: z.array(webhookDeliverySchema),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const webhookName = args.webhookName.trim()
 			const packageIdOrKodyId = (args.packageId ?? args.kodyId ?? '').trim()
 			const savedPackage = await resolveSavedPackage({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				packageIdOrKodyId,
 			})
 			if (!savedPackage) {
@@ -129,7 +130,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 			}
 			const mint = await getWebhookEndpointByKey({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				packageId: savedPackage.id,
 				webhookName,
 			})
@@ -141,7 +142,7 @@ export const webhookDeliveryListCapability = defineDomainCapability(
 			const limit = args.limit ?? 25
 			const page = await listRunRecords({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				filter: {
 					surface: 'webhook',
 					packageId: savedPackage.id,

@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
 	loadAccountBillingData: vi.fn(async (input: Record<string, unknown>) => ({
 		ok: true,
 		org: input.org,
-		canManage: input.canManage,
 		seats: input.seats,
 	})),
 	createCheckoutSession:
@@ -647,7 +646,6 @@ test('billing data is readable by owners and billing admins of the org in the UR
 			displayName: 'Acme',
 			personal: false,
 		},
-		canManage: true,
 		seats: 2,
 	})
 
