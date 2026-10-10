@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { mintWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import {
 	mintedWebhookHandleSchema,
@@ -48,6 +51,7 @@ export const webhookUrlMintCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const minted = await mintWebhookUrlForUser({
 				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
 				userId: user.userId,
 				email: user.email,
 				username: user.username,

@@ -21,6 +21,10 @@ vi.mock('#worker/entitlements/service.ts', () => ({
 	estimateEntitlementStorageSqlWriteBytes: () => 0,
 }))
 
+vi.mock('#worker/package-registry/repo.ts', () => ({
+	getSavedPackageById: vi.fn(async () => null),
+}))
+
 const { storageQueryCapability } = await import('./storage-query.ts')
 
 function createCallerContext() {

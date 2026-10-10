@@ -47,8 +47,14 @@ synchronous, for callers that already hold the compiled permissions.
    job, webhook, or subscription. The result is also cached per request context.
 4. **Credential scopes.** Non-null `credential.scopes` narrow the result.
 5. **Connection profile.** A bound profile narrows package resources to the
-   packages and actions it lists. Profiles list packages only, so they do not
-   narrow other resources or org-level checks.
+   packages and actions it lists (`read`, `execute`, `write`). Profiles list
+   packages only, so they do not narrow other resources or org-level checks.
+   `package:write` handlers call `authorizePackageWrite` once the saved package
+   row is known, so a profile that grants only `read` cannot mutate that
+   package. `package:delete` and `package:publish` have no profile action.
+   Creating a package (`package:create`, or `packageSave` /
+   `packageGetGitRemote` when the package does not exist yet) is not narrowed by
+   a profile, because a profile names existing packages only.
 
 A surface check without a resource (capability `orgPermission`, Open API
 `x-kody-permission`) passes when the permission is held at org level **or on any

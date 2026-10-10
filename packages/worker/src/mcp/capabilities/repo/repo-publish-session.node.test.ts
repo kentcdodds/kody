@@ -8,6 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	getMcpUserPackageScope: vi.fn(),
 	rebuildPublishedPackageArtifactsViaRepoSession: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
+	getRepoSessionById: vi.fn(),
 	absorbCommunityForkUpstream: vi.fn(),
 }))
 
@@ -29,6 +30,11 @@ vi.mock('./package-artifact-rebuild.ts', () => ({
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceByIdForUser: (...args: Array<unknown>) =>
 		mockModule.getEntitySourceByIdForUser(...args),
+}))
+
+vi.mock('#worker/repo/repo-sessions.ts', () => ({
+	getRepoSessionById: (...args: Array<unknown>) =>
+		mockModule.getRepoSessionById(...args),
 }))
 
 vi.mock('#worker/community/service.ts', () => ({
@@ -63,8 +69,15 @@ function resetMocks() {
 	mockModule.rebuildPublishedPackageArtifactsViaRepoSession.mockResolvedValue(
 		undefined,
 	)
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-1',
+	})
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
 		entity_id: 'package-1',
 	})
 	mockModule.absorbCommunityForkUpstream.mockResolvedValue(undefined)

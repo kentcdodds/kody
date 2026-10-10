@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -253,6 +254,16 @@ export const savePackageCapability = defineDomainCapability(
 						}),
 					)
 				}
+			}
+			if (existing) {
+				await authorizePackageWrite(
+					{ env: ctx.env, request: ctx.callerContext.request },
+					{
+						id: existing.id,
+						userId: existing.userId,
+						label: existing.name,
+					},
+				)
 			}
 			if (!existing) {
 				await assertWithinEntitlement({

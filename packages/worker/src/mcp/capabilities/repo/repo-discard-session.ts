@@ -1,6 +1,7 @@
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeRepoSessionPackageWrite } from './authorize-repo-session-package-write.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import {
 	repoSessionIdSchema,
@@ -22,6 +23,13 @@ export const repoDiscardSessionCapability = defineDomainCapability(
 		outputSchema: repoDiscardSessionOutputSchema,
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			await authorizeRepoSessionPackageWrite({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				userId: user.userId,
+				sessionId: args.session_id,
+				allowMissingSession: true,
+			})
 			const result = await repoSessionRpc(
 				ctx.env,
 				args.session_id,

@@ -13,6 +13,9 @@ import {
 import { estimateEntitlementStorageSqlWriteBytes } from '#worker/entitlements/service.ts'
 import { isUserStorageSqlCallerMessage } from '#worker/storage-sql-caller-error.ts'
 import { authorizeCapabilityStorageId } from '#mcp/capabilities/storage-access.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { packageIdFromStorageId } from '#worker/storage-ids.ts'
 import { storageIdSchema } from './shared.ts'
 
 const outputSchema = z.object({
@@ -62,6 +65,20 @@ export const storageQueryCapability = defineDomainCapability(
 				capabilityName: 'storageQuery',
 				storageId: args.storage_id,
 			})
+			const packageId = packageIdFromStorageId(storageId)
+			if (packageId) {
+				const ownerId = ctx.callerContext.request?.org.id ?? user.userId
+				const saved = await getSavedPackageById(ctx.env.APP_DB, {
+					userId: ownerId,
+					packageId,
+				})
+				if (saved) {
+					await authorizePackageWrite(
+						{ env: ctx.env, request: ctx.callerContext.request },
+						{ id: saved.id, userId: saved.userId, label: saved.name },
+					)
+				}
+			}
 			const writable = args.writable ?? false
 			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({

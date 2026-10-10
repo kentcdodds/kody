@@ -12,6 +12,7 @@ import {
 	revealWebhookUrlForWebsite,
 } from './service.ts'
 import { parseWebhookUrlHandle } from './handle.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const integrationMocks = vi.hoisted(() => ({
@@ -47,21 +48,23 @@ vi.mock('#worker/integrations/token-refresh.ts', () => ({
 }))
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) => {
-		if (
-			input.packageIdOrKodyId === 'pkg-1' ||
-			input.packageIdOrKodyId === 'sentry-bridge'
-		) {
-			return {
-				id: 'pkg-1',
-				kodyId: 'sentry-bridge',
-				name: '@owner/sentry-bridge',
-				userId: 'ignored',
-				sourceId: 'src-1',
+	resolveSavedPackage: vi.fn(
+		async (input: { userId: string; packageIdOrKodyId: string }) => {
+			if (
+				input.packageIdOrKodyId === 'pkg-1' ||
+				input.packageIdOrKodyId === 'sentry-bridge'
+			) {
+				return {
+					id: 'pkg-1',
+					kodyId: 'sentry-bridge',
+					name: '@owner/sentry-bridge',
+					userId: input.userId,
+					sourceId: 'src-1',
+				}
 			}
-		}
-		return null
-	}),
+			return null
+		},
+	),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -277,6 +280,7 @@ async function setupOwner(
 	}
 	const { handle } = await mintWebhookUrlForUser({
 		env,
+		request: sessionRequestContext(userId),
 		userId,
 		username: 'owner',
 		kodyId: 'sentry-bridge',
@@ -302,6 +306,7 @@ async function setupOwner(
 		apply: (destination: Destination) =>
 			applyWebhookUrlForUser({
 				env,
+				request: sessionRequestContext(userId),
 				userId,
 				username: 'owner',
 				handle,

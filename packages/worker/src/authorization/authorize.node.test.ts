@@ -194,19 +194,30 @@ test('a resource in another org is denied before permissions are read', () => {
 	expect(error.message).toBe('package @kent/invoices belongs to another org.')
 })
 
-test("a stored package carries its owning org, so another org's package is wrong_org", async () => {
-	const otherOrgPackage = storedPackageResource({
-		id: 'pkg-9',
-		userId: 'org-2',
-		label: '@acme/invoices',
-	})
-	expect(otherOrgPackage.orgId).toBe(ownerIdFromStored('org-2'))
-	const error = denial(
-		checkPermission(access(), 'package:execute', otherOrgPackage),
-	)
-	expect(error.code).toBe('wrong_org')
-	expect(error.message).toBe('package @acme/invoices belongs to another org.')
-	expect(canSeeResource(access(), otherOrgPackage)).toBe(false)
+test('delegation, shares, and platform packages are stored packages, so another org is wrong_org', async () => {
+	// Those routes no longer exist. A package reached through any of them is
+	// the row's owning org, and a request bound to a different org is wrong_org.
+	for (const label of [
+		'@platform/delegated',
+		'@owner/shared',
+		'@kody/builtin',
+	]) {
+		const foreign = storedPackageResource({
+			id: 'pkg-9',
+			userId: 'org-2',
+			label,
+		})
+		expect(foreign.orgId).toBe(ownerIdFromStored('org-2'))
+		const error = denial(checkPermission(access(), 'package:execute', foreign))
+		expect(error.code).toBe('wrong_org')
+		expect(error.message).toBe(`package ${label} belongs to another org.`)
+	}
+	expect(
+		canSeeResource(
+			access(),
+			storedPackageResource({ id: 'pkg-9', userId: 'org-2' }),
+		),
+	).toBe(false)
 
 	const request = sessionRequestContext('user-1')
 	stubCompile(request)
@@ -265,6 +276,25 @@ test('a connection profile narrows the package resources it lists', () => {
 			packageResource({ id: 'pkg-2', label: undefined }),
 		).allowed,
 	).toBe(false)
+	const writeDenied = denial(
+		checkPermission(profiled, 'package:write', packageResource()),
+	)
+	expect(writeDenied.code).toBe('connection_profile')
+	expect(writeDenied.message).toBe(
+		'This connection profile cannot write package @kent/invoices.',
+	)
+	const writeGranted = access({
+		profileGrants: [
+			{
+				resourceType: 'package',
+				resourceId: 'pkg-1',
+				actions: ['read', 'write'],
+			},
+		],
+	})
+	expect(
+		checkPermission(writeGranted, 'package:write', packageResource()).allowed,
+	).toBe(true)
 	// Profiles list packages only, so other resources and org-level checks
 	// are left to the role and credential.
 	expect(checkPermission(profiled, 'package:read').allowed).toBe(true)
