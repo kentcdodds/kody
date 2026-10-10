@@ -57,6 +57,7 @@ export type SiteHeaderProps = {
  * hairline is a static CSS border so it paints before JS.
  */
 const marketingLinks = [
+	{ href: '/features', label: 'Features' },
 	{ href: '/community', label: 'Community' },
 	{ href: '/docs', label: 'Docs' },
 	{ href: '/pricing', label: 'Pricing' },

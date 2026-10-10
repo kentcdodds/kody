@@ -400,6 +400,27 @@ export const clientRoutes = {
 	[routePattern(routes.pendingVerification)]: (
 		<LazyAuthRoute render={(m) => <m.PendingVerificationRoute />} />
 	),
+	[routePattern(routes.features)]: (
+		<LazyMarketingRoute render={(m) => <m.FeaturesRoute />} />
+	),
+	[routePattern(routes.featureMemory)]: (
+		<LazyMarketingRoute render={(m) => <m.MemoryRoute />} />
+	),
+	[routePattern(routes.featureSecrets)]: (
+		<LazyMarketingRoute render={(m) => <m.SecretsRoute />} />
+	),
+	[routePattern(routes.featurePackages)]: (
+		<LazyMarketingRoute render={(m) => <m.PackagesRoute />} />
+	),
+	[routePattern(routes.featureTriggers)]: (
+		<LazyMarketingRoute render={(m) => <m.TriggersRoute />} />
+	),
+	[routePattern(routes.featureIntegrations)]: (
+		<LazyMarketingRoute render={(m) => <m.IntegrationsRoute />} />
+	),
+	[routePattern(routes.featureApps)]: (
+		<LazyMarketingRoute render={(m) => <m.AppsRoute />} />
+	),
 	[routePattern(routes.business)]: (
 		<LazyMarketingRoute render={(m) => <m.BusinessRoute />} />
 	),

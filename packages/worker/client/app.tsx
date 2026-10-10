@@ -80,6 +80,13 @@ function isAcquisitionPath(pathname: string) {
 function isRedesignedMarketingPath(pathname: string) {
 	return (
 		pathname === '/' ||
+		pathname === '/features' ||
+		pathname === '/features/memory' ||
+		pathname === '/features/secrets' ||
+		pathname === '/features/packages' ||
+		pathname === '/features/triggers' ||
+		pathname === '/features/integrations' ||
+		pathname === '/features/apps' ||
 		pathname === '/for/business' ||
 		pathname === '/pricing' ||
 		pathname === '/faq' ||

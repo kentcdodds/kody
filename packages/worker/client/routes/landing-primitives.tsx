@@ -1,6 +1,5 @@
 import { type Handle, ref } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
-import { docHref } from '#universal/docs-nav.ts'
 import {
 	landingHomePrimitives,
 	landingPrimitivesIntroLead,
@@ -40,8 +39,6 @@ import { lanternOrbMotionEvent } from '#client/routes/landing-lantern-motion.ts'
  */
 
 export const landingPrimitivesSectionId = 'primitives'
-
-const whatIsKodyHref = docHref('what-is-kody')
 
 /** Measure orbs and words, then write the leader paths in section pixels. */
 function leaderFollow() {
@@ -238,7 +235,7 @@ export function LandingPrimitives(handle: Handle) {
 			</div>
 			<p class="landing-primitives-more">
 				{landingPrimitivesMoreLead}{' '}
-				<a href={whatIsKodyHref} class="landing-inline-link">
+				<a href="/features" class="landing-inline-link">
 					{landingPrimitivesMoreLink}
 				</a>
 			</p>
@@ -313,15 +310,14 @@ function LandingPrimitiveWord(
 					data-dot={primitive.id}
 					aria-hidden="true"
 				></span>
-				<button
-					type="button"
+				<a
+					href={`/features/${primitive.id}`}
 					class="landing-primitive-word"
 					data-word={primitive.id}
 					aria-expanded={open ? 'true' : 'false'}
 					aria-controls={panelId}
 					aria-describedby={panelId}
 					mix={[
-						on('click', () => handle.props.onToggle()),
 						on('keydown', (event: KeyboardEvent) => {
 							if (event.key !== 'Escape') return
 							event.preventDefault()
@@ -330,7 +326,7 @@ function LandingPrimitiveWord(
 					]}
 				>
 					{primitive.word}
-				</button>
+				</a>
 				<span id={panelId} role="tooltip" class="landing-primitive-popover">
 					<span class="landing-primitive-popover-title" aria-hidden="true">
 						{primitive.word}

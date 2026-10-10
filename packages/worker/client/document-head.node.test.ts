@@ -167,3 +167,29 @@ test('missing public packages and their settings use the shared not-found title'
 		]),
 	).toEqual(cases.map(([, pending]) => [NOT_FOUND_DOCUMENT_TITLE, pending]))
 })
+
+test.each([
+	'',
+	'/memory',
+	'/secrets',
+	'/packages',
+	'/triggers',
+	'/integrations',
+	'/apps',
+])('feature page %s has canonical metadata and its stylesheet', (suffix) => {
+	const path = `/features${suffix}`
+	const head = absolutizeDocumentHead(
+		resolveDocumentHead(path),
+		'https://kody.codes',
+	)
+	expect(head.title).not.toBe(NOT_FOUND_DOCUMENT_TITLE)
+	expect(head.description).toBeTruthy()
+	expect(head.canonicalUrl).toBe(`https://kody.codes${path}`)
+	expect(head.og?.imageUrl).toBe(
+		`https://kody.codes/og/${suffix ? `feature-${suffix.slice(1)}` : 'features'}.png`,
+	)
+	expect(head.links).toContainEqual({
+		rel: 'stylesheet',
+		href: 'https://kody.codes/feature-pages.css',
+	})
+})
