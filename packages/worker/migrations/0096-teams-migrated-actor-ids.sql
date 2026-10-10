@@ -27,6 +27,10 @@
 --                     WHERE m.org_id = g.org_id AND m.role = 'owner' AND m.deleted_at IS NULL);
 --   -- invites, eligible / skipped: same two queries over invites i with
 --   -- i.invited_by_user_id = i.org_id in place of g.created_by_user_id = g.org_id.
+--
+-- Reverse (restore the org id as the actor on the migrated rows):
+--   UPDATE grants SET created_by_user_id = org_id WHERE id LIKE 'p8-share-%' AND created_by_user_id <> org_id;
+--   UPDATE invites SET invited_by_user_id = org_id WHERE id LIKE 'p8-share-%' AND invited_by_user_id <> org_id;
 
 UPDATE grants
 SET created_by_user_id = (
