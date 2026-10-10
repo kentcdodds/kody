@@ -1089,7 +1089,9 @@ export async function updateJob(input: {
 	body: JobUpdateInput
 }) {
 	const callerContext = requirePersistableJobCallerContext(input.callerContext)
-	const ownerId = ownerIdFromCaller(callerContext)
+	// The job lives under the org the request is bound to (a team org for a
+	// team member), not under the caller's personal org.
+	const ownerId = ownerIdFromCaller(input.callerContext)
 	return await withAccountWriteLease({
 		db: input.env.APP_DB,
 		stableUserId: ownerId,

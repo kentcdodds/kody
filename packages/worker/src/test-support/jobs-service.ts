@@ -2,6 +2,7 @@ import {
 	personIdFromStored,
 	ownerIdFromStored,
 	personalOrgId,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 export * from './jobs-service-mocks.ts'
 import { repoMockModule } from './jobs-service-mocks.ts'
@@ -1202,6 +1203,8 @@ export function createBaseCallerContext() {
 export async function insertLeftoverJob(input: {
 	env: Env
 	callerContext: PersistedJobCallerContext
+	/** Org that owns the job; defaults to the caller's personal org. */
+	ownerId?: OwnerId
 	body: {
 		name: string
 		schedule: JobSchedule
@@ -1218,10 +1221,12 @@ export async function insertLeftoverJob(input: {
 	const sourceId = input.body.sourceId ?? `job-${jobId}`
 	const publishedCommit = input.body.publishedCommit ?? 'published-commit-1'
 	const timezone = input.body.timezone ?? 'UTC'
+	const ownerId =
+		input.ownerId ?? personalOrgId(input.callerContext.user.userId)
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
-		userId: personalOrgId(input.callerContext.user.userId),
+		userId: ownerId,
 		name: input.body.name,
 		sourceId,
 		publishedCommit,
@@ -1248,7 +1253,7 @@ export async function insertLeftoverJob(input: {
 		await insertPublishedEntitySource({
 			db: input.env.APP_DB as ReturnType<typeof createDatabase>,
 			env: input.env.BUNDLE_ARTIFACTS_KV ? input.env : undefined,
-			userId: input.callerContext.user.userId,
+			userId: ownerId,
 			sourceId,
 			entityKind: 'job',
 			entityId: jobId,
@@ -1263,7 +1268,7 @@ export async function insertLeftoverJob(input: {
 		})
 	}
 	await jobsData(input.env).insertJob({
-		userId: input.callerContext.user.userId,
+		userId: ownerId,
 		job,
 		callerContextJson: JSON.stringify(input.callerContext),
 	})

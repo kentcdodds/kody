@@ -7,6 +7,7 @@ import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import * as registry from '#mcp/run-kody-registry.ts'
+import { createMcpCallerContext } from '#worker/mcp/context.ts'
 import { planLimits } from '#universal/plans.ts'
 import {
 	AccountSuspendedError,
@@ -26,7 +27,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 import { TransientJobExecutionError } from './execution-safety.ts'
 import * as schedule from './schedule.ts'
-import { executeJobOnce, runJobNow } from './service.ts'
+import { executeJobOnce, runJobNow, updateJob } from './service.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 import {
 	identityMockModule,
@@ -40,6 +41,7 @@ import {
 	insertPublishedEntitySource,
 	createBaseCallerContext,
 	insertLeftoverJob,
+	withCallerUser,
 } from '#worker/test-support/jobs-service.ts'
 
 vi.mock('#worker/repo/source-service.ts', async () =>
@@ -1104,4 +1106,85 @@ test('executeJobOnce re-resolves the org binding at run time instead of trusting
 
 	expect(executeSpy).not.toHaveBeenCalled()
 	expect(recordUsageSpy).not.toHaveBeenCalled()
+})
+
+test("a team-org job runs for an active member and a run-now uses the member's current role", async () => {
+	silenceIncidentalRuntimeWarnings()
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const base = createBaseCallerContext()
+	const teamOrgId = ownerIdFromStored('org-team')
+	const { db, env } = createExecuteEnv({
+		orgs: [{ id: teamOrgId, slug: 'team', plan: 'free' }],
+		org_memberships: [
+			{ org_id: teamOrgId, user_id: base.user.userId, role: 'member' },
+		],
+	})
+	// The request is bound to the team org; the stored blob (pre-change) still
+	// carries the Owner role the member held when the job was created.
+	const teamContext = withCallerUser(
+		createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: base.baseUrl,
+			user: base.user,
+			storageContext: base.storageContext,
+			orgBinding: { org: { id: teamOrgId, slug: 'team' }, role: 'owner' },
+		}),
+	)
+	if (!teamContext.request) throw new Error('Expected a request context.')
+	mockRepoPersistence()
+	const jobView = await insertLeftoverJob({
+		env,
+		callerContext: teamContext,
+		ownerId: teamOrgId,
+		body: {
+			name: 'Team job',
+			code: 'export default async () => ({ ok: true })',
+			schedule: { type: 'interval', every: '1h' },
+		},
+	})
+	const row = await getJobRowById(db, teamOrgId, jobView.id)
+	if (!row) throw new Error('Expected the job under the team org.')
+
+	const executeSpy = vi
+		.spyOn(registry, 'runBundledModuleWithRegistry')
+		.mockResolvedValue({ result: { ok: true }, error: undefined, logs: [] })
+	const legacyBlob = {
+		...row.callerContext,
+		orgBinding: { org: { id: teamOrgId, slug: 'team' }, role: 'owner' },
+	} as PersistedJobCallerContext
+
+	// Scheduled tick: team automation with no actor keeps running.
+	const scheduled = await executeJobOnce({
+		source: { kind: 'schedule', jobId: row.record.id },
+		env,
+		job: row.record,
+		callerContext: legacyBlob,
+	})
+	expect(scheduled.execution).toMatchObject({ ok: true })
+	expect(executeSpy).toHaveBeenCalledTimes(1)
+	expect(executeSpy.mock.calls[0]?.[1]).toMatchObject({
+		orgBinding: { org: { id: teamOrgId }, role: null },
+	})
+
+	// Run-now by the (now demoted) member runs with the role they hold today.
+	const runNow = await executeJobOnce({
+		source: inheritRequest(teamContext.request),
+		env,
+		job: row.record,
+		callerContext: legacyBlob,
+	})
+	expect(runNow.execution).toMatchObject({ ok: true })
+	expect(executeSpy).toHaveBeenCalledTimes(2)
+	expect(executeSpy.mock.calls[1]?.[1]).toMatchObject({
+		orgBinding: { org: { id: teamOrgId }, role: 'member' },
+	})
+
+	// A member's update targets the team's job, not a personal one.
+	await updateJob({
+		env,
+		callerContext: teamContext,
+		body: { id: jobView.id, enabled: false },
+	})
+	const updated = await getJobRowById(db, teamOrgId, jobView.id)
+	expect(updated?.record.enabled).toBe(false)
 })
