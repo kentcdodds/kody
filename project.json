@@ -1,0 +1,13 @@
+{
+	"$schema": "./node_modules/nx/schemas/project-schema.json",
+	"name": "tools",
+	"targets": {
+		"typecheck": {
+			"executor": "nx:run-commands",
+			"inputs": ["workspace"],
+			"options": {
+				"command": "tsc -p tsconfig-tools-typecheck.json"
+			}
+		}
+	}
+}
