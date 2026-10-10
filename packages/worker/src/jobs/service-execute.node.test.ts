@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { inheritRequest } from '#worker/request-context/request-context.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -92,8 +93,10 @@ afterEach(() => {
 
 const onceSchedule = { type: 'once', runAt: '2026-04-17T15:00:00Z' } as const
 
-function createExecuteEnv() {
-	const db = createDatabase()
+function createExecuteEnv(
+	initialRows: Parameters<typeof createDatabase>[0] = {},
+) {
+	const db = createDatabase(initialRows)
 	const bundleKv = createBundleArtifactsKv()
 	const env = createJobServiceTestEnv({
 		APP_DB: db,
@@ -818,8 +821,10 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 
 test('executeJobOnce loads the published source by job owner id, not the caller person', async () => {
 	silenceIncidentalRuntimeWarnings()
-	const { db, env } = createExecuteEnv()
 	const orgId = ownerIdFromStored('org-owner')
+	const { db, env } = createExecuteEnv({
+		orgs: [{ id: orgId, slug: 'org-owner', plan: 'free' }],
+	})
 	await insertPublishedEntitySource({
 		db,
 		userId: orgId,
@@ -1038,4 +1043,65 @@ test('runJobNow can use a one-off repo check policy override without changing th
 	const row = await getJobRowById(db, callerContext.user.userId, jobView.id)
 	expect(row?.record.repoCheckPolicy).toBeUndefined()
 	expect(executeSpy).toHaveBeenCalledTimes(1)
+})
+
+test('executeJobOnce re-resolves the org binding at run time instead of trusting the stored one', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const recordUsageSpy = vi
+		.spyOn(usageModule, 'recordUsage')
+		.mockResolvedValue(undefined)
+	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
+	const callerContext = createBaseCallerContext()
+	if (!callerContext.request) throw new Error('Expected a request context.')
+	const orgId = 'org-gone'
+	// Blobs persisted before this change still carry a binding and role.
+	const legacyBlob = (orgBinding: unknown) =>
+		({ ...callerContext, orgBinding }) as PersistedJobCallerContext
+	const job = (id: string, owner: string) =>
+		createJob({
+			id,
+			name: id,
+			sourceId: `source-${id}`,
+			schedule: { type: 'interval', every: '1h' },
+			userId: ownerIdFromStored(owner),
+		})
+
+	// The stored blob still names the org, but the org was soft-deleted.
+	const { env } = createExecuteEnv({
+		orgs: [{ id: orgId, slug: 'gone', plan: 'free', deleted_at: '2026-01-01' }],
+	})
+	const missingOrg = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'job-org-gone' },
+		env,
+		job: job('job-org-gone', orgId),
+		callerContext: legacyBlob({
+			org: { id: orgId, slug: 'gone' },
+			role: 'owner',
+		}),
+	})
+	expect(missingOrg.execution).toMatchObject({
+		ok: false,
+		error: expect.stringContaining('no longer active'),
+	})
+
+	// Run-now by a person who no longer holds the org fails closed.
+	const { env: orgEnv } = createExecuteEnv({
+		orgs: [{ id: 'org-live', slug: 'live', plan: 'free' }],
+	})
+	const lostAccess = await executeJobOnce({
+		source: inheritRequest(callerContext.request),
+		env: orgEnv,
+		job: job('job-lost-access', 'org-live'),
+		callerContext: legacyBlob({
+			org: { id: 'org-live', slug: 'live' },
+			role: 'owner',
+		}),
+	})
+	expect(lostAccess.execution).toMatchObject({
+		ok: false,
+		error: expect.stringContaining('no longer has access'),
+	})
+
+	expect(executeSpy).not.toHaveBeenCalled()
+	expect(recordUsageSpy).not.toHaveBeenCalled()
 })

@@ -5,6 +5,7 @@ import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	parseRequestLineage,
+	type RequestOrgBinding,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
 import {
@@ -69,7 +70,11 @@ import {
 	consumeDailyEntitlement,
 	getCachedUserEntitlement,
 } from '#worker/entitlements/service.ts'
-import { getOrgById } from '#worker/orgs/repo.ts'
+import {
+	getOrgById,
+	loadOrgBindingForOrg,
+	type OrgRecord,
+} from '#worker/orgs/repo.ts'
 import {
 	resolvePlanLimits,
 	type CreditWalletState,
@@ -89,6 +94,7 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
@@ -131,7 +137,8 @@ export { getJob, getJobInspection, inspectJobsForUser, listJobs }
 function requirePersistableJobCallerContext(
 	callerContext: McpCallerContext,
 ): PersistedJobCallerContext {
-	const wire = parseMcpCallerContextWire(callerContext)
+	const { orgBinding: _derivedAtRequestTime, ...wire } =
+		parseMcpCallerContextWire(callerContext)
 	if (!wire.user) {
 		throw new Error('Authenticated MCP user is required for job operations.')
 	}
@@ -667,16 +674,53 @@ async function createPackageJobCallerContext(input: {
 	return { ...wire, user }
 }
 
+class JobOrgAccessError extends Error {
+	override readonly name = 'JobOrgAccessError'
+}
+
+/**
+ * The org binding a run executes under, resolved from APP_DB at run time.
+ * The persisted blob's binding (and role) is never authoritative: the job's
+ * org must be live, and a run-now actor must still hold access to it.
+ * Schedule and other automation runs carry no actor, so their binding has no
+ * role, exactly as a fresh schedule tick derives it.
+ */
+async function resolveJobRunOrgBinding(input: {
+	db: D1Database
+	job: JobRecord
+	org: OrgRecord | null
+	source: RequestSource
+}): Promise<RequestOrgBinding> {
+	if (!input.org) {
+		throw new JobOrgAccessError(
+			`Job "${input.job.id}" belongs to an organization that is no longer active.`,
+		)
+	}
+	const org = { id: ownerIdFromStored(input.org.id), slug: input.org.slug }
+	const actor =
+		input.source.kind === 'inherited' ? input.source.lineage.actor : null
+	if (!actor) return { org, role: null }
+	const binding = await loadOrgBindingForOrg(input.db, actor.userId, org.id)
+	if (!binding) {
+		throw new JobOrgAccessError(
+			`Job "${input.job.id}" cannot run: the requesting person no longer has access to its organization.`,
+		)
+	}
+	return binding
+}
+
 async function resolveJobRuntimeCallerContext(input: {
 	env: Env
 	job: JobRecord
 	callerContext: PersistedJobCallerContext
 	backgroundUser: NonNullable<PersistedJobCallerContext['user']>
-}): Promise<PersistedJobCallerContext> {
+	orgBinding: RequestOrgBinding
+}): Promise<PersistedJobCallerContext & { orgBinding: RequestOrgBinding }> {
 	return {
 		...input.callerContext,
 		executionOrigin: 'background',
 		user: input.backgroundUser,
+		orgBinding: input.orgBinding,
 		storageContext: {
 			sessionId: input.callerContext.storageContext?.sessionId ?? null,
 			appId: input.callerContext.storageContext?.appId ?? null,
@@ -1314,13 +1358,25 @@ export async function executeJobOnce(input: {
 					).catch((error: unknown) => {
 						throw markPreExecutionTransientError(error)
 					})
+					const orgRecord = await getOrgById(
+						input.env.APP_DB,
+						input.job.userId,
+					).catch((error: unknown) => {
+						throw markPreExecutionTransientError(error)
+					})
+					const orgBinding = await resolveJobRunOrgBinding({
+						db: input.env.APP_DB,
+						job: input.job,
+						org: orgRecord,
+						source: input.source,
+					})
 					const runtimeCallerContext = await resolveJobRuntimeCallerContext({
 						env: input.env,
 						job: input.job,
 						callerContext: input.callerContext,
 						backgroundUser,
+						orgBinding,
 					})
-					const orgRecord = await getOrgById(input.env.APP_DB, input.job.userId)
 					const orgSlug =
 						orgRecord?.slug?.trim() || backgroundUser.username?.trim() || null
 					// Daily job-run quota before sandbox work so over-limit
@@ -1400,15 +1456,16 @@ export async function executeJobOnce(input: {
 					error: formatJobError(error),
 					logs: [],
 				}
-				// Daily job-run quota denials and account suspension happen
-				// before sandbox work. Still return an error outcome so
-				// schedules advance, but do not emit job_run usage or else
-				// every denied tick inflates rollups.
+				// Daily job-run quota denials, account suspension, and org
+				// access checks happen before sandbox work. Still return an
+				// error outcome so schedules advance, but do not emit job_run
+				// usage or else every denied tick inflates rollups.
 				if (
 					!isEntitlementLimitError(error) &&
 					!isComputeOverageLimitError(error) &&
 					!isBudgetLimitError(error) &&
-					!isAccountSuspendedError(error)
+					!isAccountSuspendedError(error) &&
+					!(error instanceof JobOrgAccessError)
 				) {
 					completedOccurrence = true
 				}
