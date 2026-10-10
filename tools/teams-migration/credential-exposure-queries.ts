@@ -1,0 +1,228 @@
+/**
+ * Read-only D1 counts for ambient credential-use blast radius after Teams.
+ * Counts and ids only. Reuses assertReadOnlySql from production-queries.
+ *
+ * Usage (same Cloudflare env as teams-production-queries):
+ *   node tools/teams-migration/credential-exposure-queries.ts \
+ *     --target production|kody-branch-* \
+ *     --recipient-public-key <base64 SPKI> --out report.sealed.json
+ */
+import { writeFile } from 'node:fs/promises'
+import { isExecutedDirectly } from '../node-runtime.ts'
+import { fail } from '../ci/resource-utils.ts'
+import {
+	assertRehearsalWorkerName,
+	type CloudflareClient,
+} from '../preview-rehearsal/d1-rehearsal.ts'
+import {
+	importRecipientPublicKey,
+	sealJson,
+} from '../preview-rehearsal/seal.ts'
+import {
+	assertReadOnlySql,
+	parseQueryTarget,
+	readOnlyD1Query,
+	resolveD1Uuid,
+	targetResourceNames,
+	type QueryTarget,
+} from './production-queries.ts'
+import { buildPreviewResourceNames } from '../ci/preview-resources.ts'
+
+/** Orgs with more than one live member (personal org alone is always 1). */
+export const multiMemberOrgsSql = `SELECT o.id AS org_id, o.slug AS slug,
+	(SELECT COUNT(*) FROM org_memberships m
+	 WHERE m.org_id = o.id AND m.deleted_at IS NULL) AS member_count
+FROM orgs o
+WHERE o.deleted_at IS NULL
+	AND (SELECT COUNT(*) FROM org_memberships m
+	     WHERE m.org_id = o.id AND m.deleted_at IS NULL) > 1
+ORDER BY member_count DESC, o.slug`
+
+/** Live grants whose subject is not a live member of that org (outside collab). */
+export const outsideGrantsSql = `SELECT g.org_id AS org_id, g.id AS grant_id,
+	g.resource_type AS resource_type, g.resource_id AS resource_id,
+	g.subject_type AS subject_type, g.subject_id AS subject_id, g.preset AS preset
+FROM grants g
+WHERE g.deleted_at IS NULL
+	AND g.subject_type = 'user'
+	AND NOT EXISTS (
+		SELECT 1 FROM org_memberships m
+		WHERE m.org_id = g.org_id
+			AND m.user_id = g.subject_id
+			AND m.deleted_at IS NULL
+	)
+ORDER BY g.org_id, g.resource_type, g.resource_id`
+
+/** Orgs that have any outside grant (distinct). */
+export const orgsWithOutsideGrantsSql = `SELECT DISTINCT g.org_id AS org_id
+FROM grants g
+WHERE g.deleted_at IS NULL
+	AND g.subject_type = 'user'
+	AND NOT EXISTS (
+		SELECT 1 FROM org_memberships m
+		WHERE m.org_id = g.org_id
+			AND m.user_id = g.subject_id
+			AND m.deleted_at IS NULL
+	)`
+
+/**
+ * Org audit rows that look like secret/integration use by a non-owner actor.
+ * Ambient placeholder expansion did not historically write these; expect 0 or
+ * only capability-surface events (secretJwtSign, integrationTokenRefresh).
+ */
+export const nonOwnerCredentialAuditSql = `SELECT e.org_id AS org_id,
+	e.action AS action, e.resource_type AS resource_type,
+	e.resource_id AS resource_id, e.actor_user_id AS actor_user_id,
+	e.result AS result, e.created_at AS created_at
+FROM org_audit_events e
+WHERE e.resource_type IN ('secret', 'integration')
+	AND e.actor_user_id IS NOT NULL
+	AND e.actor_user_id != e.org_id
+	AND NOT EXISTS (
+		SELECT 1 FROM org_memberships m
+		WHERE m.org_id = e.org_id
+			AND m.user_id = e.actor_user_id
+			AND m.role = 'owner'
+			AND m.deleted_at IS NULL
+	)
+ORDER BY e.created_at DESC
+LIMIT 500`
+
+export type CredentialExposureReport = {
+	version: 1
+	target: string
+	ranAt: string
+	multiMemberOrgs: { count: number; rows: Array<Record<string, unknown>> }
+	outsideGrants: { count: number; rows: Array<Record<string, unknown>> }
+	orgsWithOutsideGrants: { count: number }
+	nonOwnerCredentialAudit: {
+		count: number
+		rows: Array<Record<string, unknown>>
+		note: string
+	}
+}
+
+async function resolveAuditD1Uuid(
+	client: CloudflareClient,
+	target: QueryTarget,
+) {
+	const name =
+		target.kind === 'production'
+			? 'kody-audit'
+			: buildPreviewResourceNames(target.workerName).auditD1DatabaseName
+	try {
+		return await resolveD1Uuid(client, name)
+	} catch {
+		return null
+	}
+}
+
+export async function runCredentialExposureQueries(input: {
+	client: CloudflareClient
+	target: QueryTarget
+	now?: () => Date
+}): Promise<CredentialExposureReport> {
+	const names = await targetResourceNames(input.target)
+	const appUuid = await resolveD1Uuid(input.client, names.appD1Name)
+	assertReadOnlySql(multiMemberOrgsSql)
+	assertReadOnlySql(outsideGrantsSql)
+	assertReadOnlySql(orgsWithOutsideGrantsSql)
+	assertReadOnlySql(nonOwnerCredentialAuditSql)
+
+	const multiMemberRows = await readOnlyD1Query<Record<string, unknown>>(
+		input.client,
+		appUuid,
+		multiMemberOrgsSql,
+	)
+	const outsideGrantRows = await readOnlyD1Query<Record<string, unknown>>(
+		input.client,
+		appUuid,
+		outsideGrantsSql,
+	)
+	const orgsWithOutside = await readOnlyD1Query<Record<string, unknown>>(
+		input.client,
+		appUuid,
+		orgsWithOutsideGrantsSql,
+	)
+
+	const auditUuid = await resolveAuditD1Uuid(input.client, input.target)
+	let auditRows: Array<Record<string, unknown>> = []
+	if (auditUuid) {
+		try {
+			auditRows = await readOnlyD1Query<Record<string, unknown>>(
+				input.client,
+				auditUuid,
+				nonOwnerCredentialAuditSql,
+			)
+		} catch {
+			auditRows = []
+		}
+	}
+
+	return {
+		version: 1,
+		target:
+			input.target.kind === 'production'
+				? 'production'
+				: input.target.workerName,
+		ranAt: (input.now ?? (() => new Date()))().toISOString(),
+		multiMemberOrgs: {
+			count: multiMemberRows.length,
+			rows: multiMemberRows,
+		},
+		outsideGrants: {
+			count: outsideGrantRows.length,
+			rows: outsideGrantRows,
+		},
+		orgsWithOutsideGrants: { count: orgsWithOutside.length },
+		nonOwnerCredentialAudit: {
+			count: auditRows.length,
+			rows: auditRows,
+			note: 'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present.',
+		},
+	}
+}
+
+const usage = [
+	'Usage: node tools/teams-migration/credential-exposure-queries.ts --target <production|kody-branch-*> --recipient-public-key <base64 SPKI> --out <report.sealed.json>',
+	'',
+	'Env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.',
+].join('\n')
+
+function readFlag(argv: ReadonlyArray<string>, flag: string) {
+	const index = argv.indexOf(flag)
+	const value = index === -1 ? undefined : argv[index + 1]
+	if (!value || value.startsWith('--'))
+		fail(`Missing ${flag} <value>.\n${usage}`)
+	return value
+}
+
+function requireEnv(name: string) {
+	const value = process.env[name]?.trim()
+	if (!value) fail(`${name} is required.\n${usage}`)
+	return value
+}
+
+if (isExecutedDirectly(import.meta.url)) {
+	const argv = process.argv.slice(2)
+	const target = parseQueryTarget(readFlag(argv, '--target'))
+	if (target.kind === 'preview') {
+		assertRehearsalWorkerName(target.workerName)
+	}
+	const publicKey = await importRecipientPublicKey(
+		readFlag(argv, '--recipient-public-key'),
+	)
+	const outPath = readFlag(argv, '--out')
+	const client: CloudflareClient = {
+		accountId: requireEnv('CLOUDFLARE_ACCOUNT_ID'),
+		apiToken: requireEnv('CLOUDFLARE_API_TOKEN'),
+	}
+	const report = await runCredentialExposureQueries({ client, target })
+	await writeFile(
+		outPath,
+		`${JSON.stringify(await sealJson(report, publicKey), null, 2)}\n`,
+	)
+	console.log(
+		`Wrote the sealed report to ${outPath}. Open it with node tools/preview-rehearsal/seal.ts open.`,
+	)
+}
