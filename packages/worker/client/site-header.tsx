@@ -683,6 +683,7 @@ const navCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: '1.8rem',
+	'@media (min-width: 821px) and (max-width: 1000px)': { gap: '.8rem' },
 	flexWrap: 'wrap' as const,
 }
 
@@ -709,6 +710,7 @@ const navLinksCss = {
 	display: 'flex',
 	alignItems: 'center',
 	gap: '1.6rem',
+	'@media (min-width: 821px) and (max-width: 1000px)': { gap: '.8rem' },
 	marginRight: 'auto',
 	'& a': {
 		color: colors.textMuted,
