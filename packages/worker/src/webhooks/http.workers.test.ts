@@ -20,6 +20,8 @@ import type * as DispatchQueueProducerModule from './dispatch-queue-producer.ts'
 import { retirePackageSlug } from '#worker/community/package-url.ts'
 import { handleWebhookIngressRequest } from './http.ts'
 import { webhookRateLimitConfig } from './types.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -230,10 +232,14 @@ async function mintWebhook(input: {
 
 async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	await ensureSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	for (const table of [
 		'webhook_endpoints',
 		'saved_packages',
 		'users',
+		'handles',
+		'org_memberships',
+		'orgs',
 		'package_slug_redirects',
 		'package_kody_id_redirects',
 	]) {
@@ -246,6 +252,11 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	)
 		.bind(userId)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username: 'alice',
+		plan: 'max',
+	})
 	await env.APP_DB.prepare(
 		`INSERT OR REPLACE INTO saved_packages (
 			id, user_id, name, kody_id, description, tags_json, source_id,
