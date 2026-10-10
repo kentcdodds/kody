@@ -50,3 +50,22 @@ export async function resolvePackageOwnerContext(
 		actorUserId: user.userId,
 	}
 }
+
+/**
+ * Email to pass into plan / entitlement lookups for this owner.
+ *
+ * Personal orgs keep the actor email so a mismatched caller context cannot
+ * inherit another account's plan (`getUserEntitlement` requires email +
+ * stable id). Team orgs have no `users` row at `ownerUserId`, so the same
+ * pair always misses and falls through to public free — pass a blank email
+ * so lookup reverse-resolves the org plan by OwnerId, matching background
+ * job paths.
+ */
+export function packageOwnerEntitlementEmail(
+	owner: PackageOwnerContext,
+): string | null {
+	if (owner.ownerUserId === personalOrgId(owner.actorUserId)) {
+		return owner.ownerEmail
+	}
+	return null
+}

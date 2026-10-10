@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as sourceSafetyPolicyModule from '#worker/repo/source-safety-policy.ts'
@@ -88,7 +91,10 @@ const now = '2026-04-18T00:00:00.000Z'
 function createDatabase(
 	users: Array<Row>,
 	savedPackages: Array<Row>,
-	{ failInsertWithUniqueName = false } = {},
+	{
+		failInsertWithUniqueName = false,
+		orgs = [],
+	}: { failInsertWithUniqueName?: boolean; orgs?: Array<Row> } = {},
 ) {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, migrationsDirectory)
@@ -106,6 +112,20 @@ function createDatabase(
 				now,
 				String(user['plan'] ?? 'free'),
 				String(user['stable_user_id']),
+			)
+	}
+	for (const org of orgs) {
+		sqlite
+			.prepare(
+				`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?)`,
+			)
+			.run(
+				String(org['id']),
+				String(org['slug']),
+				String(org['plan'] ?? 'free'),
+				now,
+				now,
 			)
 	}
 	for (const row of savedPackages) {
@@ -228,12 +248,14 @@ async function setup({
 	username = 'planned',
 	savedPackages = () => [],
 	failInsertWithUniqueName = false,
+	teamOrg,
 }: {
 	email?: string
 	plan?: string
 	username?: string
 	savedPackages?: (userId: string) => Array<Row>
 	failInsertWithUniqueName?: boolean
+	teamOrg?: { id: string; slug: string; plan: string }
 } = {}) {
 	for (const mock of [
 		mockModule.ensureEntitySource,
@@ -280,11 +302,17 @@ async function setup({
 	mockModule.loadPriorPackageManifestContent.mockResolvedValue(null)
 
 	const userId = testStableUserIdFromEmail(email)
-	const seedRows = savedPackages(userId)
+	const ownerUserId = teamOrg ? ownerIdFromStored(teamOrg.id) : userId
+	const seedRows = savedPackages(ownerUserId)
 	const { db, sqlite } = createDatabase(
 		[{ email, plan, username, stable_user_id: userId }],
 		seedRows,
-		{ failInsertWithUniqueName },
+		{
+			failInsertWithUniqueName,
+			orgs: teamOrg
+				? [{ id: teamOrg.id, slug: teamOrg.slug, plan: teamOrg.plan }]
+				: [],
+		},
 	)
 	const ctx = {
 		env: { APP_DB: db } as Env,
@@ -296,6 +324,12 @@ async function setup({
 				email,
 				displayName: 'Planned User',
 			},
+			orgBinding: teamOrg
+				? {
+						org: { id: ownerIdFromStored(teamOrg.id), slug: teamOrg.slug },
+						role: 'owner',
+					}
+				: undefined,
 		}),
 	}
 	const save = (args: Record<string, unknown>) =>
@@ -305,8 +339,8 @@ async function setup({
 			.prepare(
 				`SELECT * FROM saved_packages WHERE user_id = ? ORDER BY rowid DESC LIMIT 1`,
 			)
-			.get(userId) as Row | null
-	return { userId, save, latestPackage }
+			.get(ownerUserId) as Row | null
+	return { userId, ownerUserId, save, latestPackage }
 }
 
 const rejection = (promise: Promise<unknown>) =>
@@ -321,6 +355,31 @@ function readSyncedPackageJson() {
 	const files = (syncCall[0] as { files: Record<string, string> }).files
 	return JSON.parse(files['package.json'] ?? '{}') as Record<string, unknown>
 }
+
+test('packageSave under a paid team org enforces the org plan, not free', async () => {
+	const teamOrgId = 'c'.repeat(64)
+	const freeLimit = planLimits.free.maxSavedPackages
+	const { save, ownerUserId } = await setup({
+		email: 'member@example.com',
+		plan: 'free',
+		username: 'member',
+		teamOrg: { id: teamOrgId, slug: 'acme', plan: 'max' },
+		savedPackages: (ownerId) => filledPackages(ownerId, freeLimit),
+	})
+	expect(ownerUserId).toBe(ownerIdFromStored(teamOrgId))
+	// At the free ceiling under a max org: the old actor-email pairing denied
+	// this create; blank entitlement email resolves the org's max plan.
+	await save({
+		files: buildPackageFiles('team-org-package', { username: 'acme' }),
+	})
+	expect(mockModule.ensureEntitySource).toHaveBeenCalled()
+	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: ownerIdFromStored(teamOrgId),
+			userEmail: null,
+		}),
+	)
+})
 
 test('packageSave allows below-limit creates and denies creates at the pro and max plan ceilings', async () => {
 	const below = await setup({

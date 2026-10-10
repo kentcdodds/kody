@@ -8,7 +8,10 @@ import { expect, test } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
-import { resolvePackageOwnerContext } from './package-owner.ts'
+import {
+	packageOwnerEntitlementEmail,
+	resolvePackageOwnerContext,
+} from './package-owner.ts'
 
 function personUsername() {
 	return `person-${crypto.randomUUID().replaceAll('-', '').slice(0, 8)}`
@@ -63,17 +66,27 @@ test('resolvePackageOwnerContext owns packages in the org the request is bound t
 	})
 
 	const orgId = ownerIdFromStored(`org-${crypto.randomUUID()}`)
-	expect(
-		await resolvePackageOwnerContext(env, {
-			user,
-			request: orgBoundRequest(personalRequest, { id: orgId, slug: 'acme' }),
-		}),
-	).toEqual({
+	const teamOwner = await resolvePackageOwnerContext(env, {
+		user,
+		request: orgBoundRequest(personalRequest, { id: orgId, slug: 'acme' }),
+	})
+	expect(teamOwner).toEqual({
 		ownerUserId: orgId,
 		ownerScope: 'acme',
 		ownerEmail: person.email,
 		actorUserId: person.stableUserId,
 	})
+	// Actor email stays on the owner context for display/audit, but
+	// entitlement lookups must blank it so the team org plan resolves.
+	expect(packageOwnerEntitlementEmail(teamOwner)).toBeNull()
+	expect(
+		packageOwnerEntitlementEmail(
+			await resolvePackageOwnerContext(env, {
+				user,
+				request: personalRequest,
+			}),
+		),
+	).toBe(person.email)
 
 	await expect(
 		resolvePackageOwnerContext(env, {

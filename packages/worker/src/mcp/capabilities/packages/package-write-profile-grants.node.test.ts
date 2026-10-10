@@ -34,10 +34,14 @@ vi.mock('#worker/connection-profiles/repo.ts', () => ({
 		mocks.resolveConnectionProfileGrants(...args),
 }))
 
-vi.mock('#worker/package-registry/package-owner.ts', () => ({
-	resolvePackageOwnerContext: (...args: Array<unknown>) =>
-		mocks.resolvePackageOwnerContext(...args),
-}))
+vi.mock('#worker/package-registry/package-owner.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		resolvePackageOwnerContext: (...args: Array<unknown>) =>
+			mocks.resolvePackageOwnerContext(...args),
+	}
+})
 
 vi.mock('#worker/package-registry/repo.ts', async (importOriginal) => {
 	const actual = await importOriginal()

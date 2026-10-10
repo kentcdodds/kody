@@ -4,7 +4,10 @@ import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { buildSavedPackageEmbedText } from '#worker/package-registry/embed.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
-import { type PackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import {
+	packageOwnerEntitlementEmail,
+	type PackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
@@ -90,7 +93,7 @@ export async function createStubSavedPackage(input: {
 	await assertWithinEntitlement({
 		db: input.env.APP_DB,
 		userId: input.owner.ownerUserId,
-		email: input.owner.ownerEmail,
+		email: packageOwnerEntitlementEmail(input.owner),
 		resource: 'saved_packages',
 	})
 	const name = `@${input.owner.ownerScope}/${kodyId}`
@@ -161,7 +164,7 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.owner.ownerUserId,
-		userEmail: input.owner.ownerEmail,
+		userEmail: packageOwnerEntitlementEmail(input.owner),
 		packageId,
 		sourceId: ensuredSource.id,
 	})
