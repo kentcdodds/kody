@@ -6,22 +6,21 @@ import {
 import { expect, test } from 'vitest'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
+import { offboardOrgMember } from './offboarding.ts'
 import {
 	addOrgMember,
 	createOrg,
-	softDeleteOrgMember,
 	updateOrgMemberRole,
 	upsertGrant,
 } from './access-writes.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
-	const db = createD1FromSqlite(sqlite)
-	await ensureOrgsTestSchema(db)
-	return db
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	return createD1FromSqlite(sqlite)
 }
 
 test('createOrg and upsertGrant are visible when access is compiled', async () => {
@@ -91,13 +90,14 @@ test('protectLastOwner blocks demotion and removal when only one owner remains',
 		}),
 	).rejects.toThrow(/last Owner cannot be demoted/)
 	await expect(
-		softDeleteOrgMember({
-			db,
+		offboardOrgMember({
+			appDb: db,
+			env: { APP_DB: db } as Env,
 			orgId: org.id,
-			userId: ownerId,
-			protectLastOwner: true,
+			memberUserId: ownerId,
+			memberLeftVoluntarily: true,
 		}),
-	).rejects.toThrow(/last Owner cannot be removed/)
+	).rejects.toThrow('cannot_remove_last_owner')
 	const stillOwner = await db
 		.prepare(
 			`SELECT role, deleted_at FROM org_memberships
@@ -135,10 +135,12 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		permissions: null,
 		createdByUserId: ownerId,
 	})
-	await softDeleteOrgMember({
-		db,
+	await offboardOrgMember({
+		appDb: db,
+		env: { APP_DB: db } as Env,
 		orgId: org.id,
-		userId: memberId,
+		memberUserId: memberId,
+		memberLeftVoluntarily: true,
 	})
 	const membership = await db
 		.prepare(

@@ -6,6 +6,7 @@ import {
 // Bundled as text by tools/build-jobs-test-service.ts (esbuild `.sql` loader).
 import jobsInitSql from '../packages/jobs-worker/migrations/0001-jobs-init.sql'
 import jobsSoftDeleteSql from '../packages/jobs-worker/migrations/0002-teams-expand-actor-and-soft-delete.sql'
+import jobsEnabledBeforeSoftDeleteSql from '../packages/jobs-worker/migrations/0003-job-enabled-before-soft-delete.sql'
 
 /**
  * Auxiliary worker for the workers-unit vitest pool: the main worker's test
@@ -31,6 +32,7 @@ function migrationStatements(sql: string) {
 const schemaStatements = [
 	...migrationStatements(jobsInitSql),
 	...migrationStatements(jobsSoftDeleteSql),
+	...migrationStatements(jobsEnabledBeforeSoftDeleteSql),
 ]
 
 // Runs on every call (not memoized): the pool's isolated storage can reset

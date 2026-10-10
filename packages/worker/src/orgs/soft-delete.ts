@@ -51,6 +51,34 @@ export type SoftDeleteOrgResult = {
 	deletedAt: string
 	resourceRowsSoftDeleted: number
 	jobsSoftDeleted: number
+	/** True when this call finished a generation that was already stamped. */
+	resumed: boolean
+}
+
+async function claimSoftDeleteGeneration(input: {
+	db: D1Database
+	selectSql: string
+	id: string
+	nowIso: string
+	missingError: string
+	stamp: (deletedAt: string) => Promise<number>
+}): Promise<{ deletedAt: string; resumed: boolean }> {
+	const existing = await input.db
+		.prepare(input.selectSql)
+		.bind(input.id)
+		.first<{ deleted_at: string | null }>()
+	if (!existing) throw new Error(input.missingError)
+	if (existing.deleted_at) {
+		return { deletedAt: existing.deleted_at, resumed: true }
+	}
+	const changes = await input.stamp(input.nowIso)
+	if (changes > 0) return { deletedAt: input.nowIso, resumed: false }
+	const again = await input.db
+		.prepare(input.selectSql)
+		.bind(input.id)
+		.first<{ deleted_at: string | null }>()
+	if (!again?.deleted_at) throw new Error(input.missingError)
+	return { deletedAt: again.deleted_at, resumed: true }
 }
 
 async function softDeleteOrgOwnedAppRows(input: {
@@ -221,55 +249,61 @@ export async function softDeleteOrg(input: {
 	actorUsername?: string | null
 	now?: Date
 }): Promise<SoftDeleteOrgResult> {
-	const deletedAt = (input.now ?? new Date()).toISOString()
 	const appDb = input.env.APP_DB
+	const nowIso = (input.now ?? new Date()).toISOString()
+	const already = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(input.orgId)
+		.first<{ deleted_at: string | null }>()
+	if (!already) throw new Error('org_not_found_or_already_deleted')
 
-	// Fence org-id (and personal-user) write leases before sweeping so a
-	// concurrent packageSave cannot insert after its table was tombstoned.
-	const marked = await markOrgDeleting({
-		db: appDb,
-		orgId: input.orgId,
-		now: new Date(deletedAt),
-		env: input.env,
-	})
-	if (marked.leaseCount > 0) {
-		try {
-			if (marked.created) {
-				await abortOrgDeleting({
-					db: appDb,
-					orgId: input.orgId,
-					now: new Date(deletedAt),
-					env: input.env,
-					expectedDeletingAt: marked.deletingAt,
-				})
+	// Fence live orgs before the tombstone so a concurrent packageSave cannot
+	// insert after its table was swept. A generation that is already stamped
+	// is resumed without a new fence: deleted_at already blocks OwnerId writes.
+	if (!already.deleted_at) {
+		const marked = await markOrgDeleting({
+			db: appDb,
+			orgId: input.orgId,
+			now: new Date(nowIso),
+			env: input.env,
+		})
+		if (marked.leaseCount > 0) {
+			try {
+				if (marked.created) {
+					await abortOrgDeleting({
+						db: appDb,
+						orgId: input.orgId,
+						now: new Date(nowIso),
+						env: input.env,
+						expectedDeletingAt: marked.deletingAt,
+					})
+				}
+			} finally {
+				// Prefer the lease-busy signal even when abort's UserMeter RPC fails;
+				// leftover heal clears meter tombstones once D1 is live again.
+				throw new AccountDeletionWritersActiveError(marked.leaseCount)
 			}
-		} finally {
-			// Prefer the lease-busy signal even when abort's UserMeter RPC fails;
-			// leftover heal clears meter tombstones once D1 is live again.
-			throw new AccountDeletionWritersActiveError(marked.leaseCount)
 		}
 	}
 
-	const orgUpdate = await appDb
-		.prepare(
-			`UPDATE orgs
-			 SET deleted_at = ?, updated_at = ?
-			 WHERE id = ? AND deleted_at IS NULL`,
-		)
-		.bind(deletedAt, deletedAt, input.orgId)
-		.run()
-	if ((orgUpdate.meta.changes ?? 0) === 0) {
-		if (marked.created) {
-			await abortOrgDeleting({
-				db: appDb,
-				orgId: input.orgId,
-				now: new Date(deletedAt),
-				env: input.env,
-				expectedDeletingAt: marked.deletingAt,
-			})
-		}
-		throw new Error('org_not_found_or_already_deleted')
-	}
+	const { deletedAt, resumed } = await claimSoftDeleteGeneration({
+		db: appDb,
+		selectSql: `SELECT deleted_at FROM orgs WHERE id = ?`,
+		id: input.orgId,
+		nowIso,
+		missingError: 'org_not_found_or_already_deleted',
+		stamp: async (stampAt) => {
+			const orgUpdate = await appDb
+				.prepare(
+					`UPDATE orgs
+					 SET deleted_at = ?, updated_at = ?
+					 WHERE id = ? AND deleted_at IS NULL`,
+				)
+				.bind(stampAt, stampAt, input.orgId)
+				.run()
+			return orgUpdate.meta.changes ?? 0
+		},
+	})
 
 	// Spec §10.1 / §10.3: revoke credentials bound to the org. Team-bound tokens
 	// store the person on user_id and the org on org_id (same COALESCE match as
@@ -300,9 +334,9 @@ export async function softDeleteOrg(input: {
 		const members = await appDb
 			.prepare(
 				`SELECT user_id FROM org_memberships
-				 WHERE org_id = ? AND deleted_at IS NULL`,
+				 WHERE org_id = ? AND (deleted_at IS NULL OR deleted_at = ?)`,
 			)
-			.bind(input.orgId)
+			.bind(input.orgId, deletedAt)
 			.all<{ user_id: string }>()
 		for (const member of members.results ?? []) {
 			await revokeOAuthGrantsForOrg({
@@ -347,6 +381,7 @@ export async function softDeleteOrg(input: {
 		actorUsername: input.actorUsername,
 		detailsJson: JSON.stringify({
 			deletedAt,
+			resumed,
 			resourceRowsSoftDeleted,
 			jobsSoftDeleted,
 			stripeSubscriptionsCanceled: billing.canceled,
@@ -359,6 +394,7 @@ export async function softDeleteOrg(input: {
 		deletedAt,
 		resourceRowsSoftDeleted,
 		jobsSoftDeleted,
+		resumed,
 	}
 }
 
@@ -539,52 +575,61 @@ export async function softDeleteUserAccount(input: {
 		userId: input.userId,
 	})
 	const appDb = input.env.APP_DB
-	const existing = await appDb
-		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
-		.bind(input.userId)
-		.first<{ deleted_at: string | null }>()
-	if (!existing) {
-		throw new Error('user_not_found_or_already_deleted')
-	}
-
-	let deletedAt: string
-	let createdPersonTombstone = false
-	if (existing.deleted_at) {
-		deletedAt = existing.deleted_at
-	} else {
-		deletedAt = (input.now ?? new Date()).toISOString()
-		const userUpdate = await appDb
-			.prepare(
-				`UPDATE users
-				 SET deleted_at = ?, updated_at = ?
-				 WHERE stable_user_id = ? AND deleted_at IS NULL`,
-			)
-			.bind(deletedAt, deletedAt, input.userId)
-			.run()
-		if ((userUpdate.meta.changes ?? 0) === 0) {
-			throw new Error('user_not_found_or_already_deleted')
-		}
-		createdPersonTombstone = true
-	}
+	const { deletedAt, resumed } = await claimSoftDeleteGeneration({
+		db: appDb,
+		selectSql: `SELECT deleted_at FROM users WHERE stable_user_id = ?`,
+		id: input.userId,
+		nowIso: (input.now ?? new Date()).toISOString(),
+		missingError: 'user_not_found_or_already_deleted',
+		stamp: async (stampAt) => {
+			const userUpdate = await appDb
+				.prepare(
+					`UPDATE users
+					 SET deleted_at = ?, updated_at = ?
+					 WHERE stable_user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(stampAt, stampAt, input.userId)
+				.run()
+			return userUpdate.meta.changes ?? 0
+		},
+	})
 	const fenceAt = new Date(deletedAt)
 
+	// A shared org is sole-owned only while this membership is still live and
+	// no other member is. A membership already tombstoned in this generation
+	// stays on the offboard path unless the org itself was tombstoned then.
+	// Otherwise a later departure of the remaining members would make a retry
+	// delete their org.
 	const soleMemberOrgs = await appDb
 		.prepare(
 			`SELECT m.org_id AS org_id
 			 FROM org_memberships m
-			 INNER JOIN orgs org ON org.id = m.org_id AND org.deleted_at IS NULL
+			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
-			   AND m.deleted_at IS NULL
 			   AND (
-			     SELECT COUNT(*) FROM org_memberships peers
-			     WHERE peers.org_id = m.org_id AND peers.deleted_at IS NULL
-			   ) = 1`,
+			     (
+			       m.deleted_at IS NULL
+			       AND o.deleted_at IS NULL
+			       AND NOT EXISTS (
+			         SELECT 1 FROM org_memberships other
+			         WHERE other.org_id = m.org_id
+			           AND other.user_id != ?
+			           AND other.deleted_at IS NULL
+			       )
+			     )
+			     OR (
+			       o.deleted_at = ?
+			       AND (m.deleted_at IS NULL OR m.deleted_at = ?)
+			     )
+			   )`,
 		)
-		.bind(input.userId)
+		.bind(input.userId, input.userId, deletedAt, deletedAt)
 		.all<{ org_id: string }>()
 
 	const deletedOrgIds: Array<string> = []
+	const soleOrgIds = new Set<string>()
 	for (const row of soleMemberOrgs.results ?? []) {
+		soleOrgIds.add(row.org_id)
 		await softDeleteOrg({
 			env: input.env,
 			orgId: row.org_id,
@@ -598,16 +643,18 @@ export async function softDeleteUserAccount(input: {
 	const otherMemberships = await appDb
 		.prepare(
 			`SELECT org_id FROM org_memberships
-			 WHERE user_id = ? AND deleted_at IS NULL`,
+			 WHERE user_id = ? AND (deleted_at IS NULL OR deleted_at = ?)`,
 		)
-		.bind(input.userId)
+		.bind(input.userId, deletedAt)
 		.all<{ org_id: string }>()
 	for (const row of otherMemberships.results ?? []) {
+		if (soleOrgIds.has(row.org_id)) continue
 		await onMemberSoftRemoved({
 			env: input.env,
 			orgId: row.org_id,
 			userId: input.userId,
 			deletedAt,
+			resume: true,
 		})
 	}
 
@@ -622,11 +669,7 @@ export async function softDeleteUserAccount(input: {
 		actorUserId: input.actorUserId ?? input.userId,
 		actorUsername: input.actorUsername,
 		targetUserId: input.userId,
-		detailsJson: JSON.stringify({
-			deletedAt,
-			deletedOrgIds,
-			resumed: !createdPersonTombstone,
-		}),
+		detailsJson: JSON.stringify({ deletedAt, deletedOrgIds, resumed }),
 		createdAt: (input.now ?? new Date()).toISOString(),
 	})
 
@@ -636,7 +679,7 @@ export async function softDeleteUserAccount(input: {
 		ownerId: input.userId,
 	})
 
-	return { userId: input.userId, deletedAt, deletedOrgIds }
+	return { userId: input.userId, deletedAt, deletedOrgIds, resumed }
 }
 
 /**

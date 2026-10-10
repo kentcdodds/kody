@@ -147,39 +147,17 @@ export async function previewMemberOffboarding(input: {
 	}
 }
 
-async function assertNotLastLiveOwner(input: {
-	appDb: D1Database
-	orgId: string
-	memberUserId: string
-}) {
-	const membership = await input.appDb
-		.prepare(
-			`SELECT role FROM org_memberships
-			 WHERE org_id = ? AND user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.orgId, input.memberUserId)
-		.first<{ role: string }>()
-	if (!membership) {
-		throw new Error('member_not_found')
-	}
-	if (membership.role !== 'owner') return
-	const otherOwners = await input.appDb
-		.prepare(
-			`SELECT COUNT(*) AS count FROM org_memberships
-			 WHERE org_id = ? AND role = 'owner' AND user_id != ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.orgId, input.memberUserId)
-		.first<{ count: number }>()
-	if (Number(otherOwners?.count ?? 0) === 0) {
-		throw new Error('cannot_remove_last_owner')
-	}
-}
-
 async function softDeleteMembershipGraph(input: {
 	appDb: D1Database
 	orgId: string
 	memberUserId: string
 	nowIso: string
+	/**
+	 * When set, a membership already tombstoned at this timestamp continues
+	 * credential and integration cleanup instead of failing. A live last Owner
+	 * still fails.
+	 */
+	resumeDeletedAt?: string
 }): Promise<{
 	membershipSoftDeleted: boolean
 	teamMembershipsSoftDeleted: number
@@ -191,10 +169,34 @@ async function softDeleteMembershipGraph(input: {
 		.prepare(
 			`UPDATE org_memberships
 			 SET deleted_at = ?
-			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL
+			   AND (
+			     role != 'owner'
+			     OR (
+			       SELECT COUNT(*) FROM org_memberships
+			       WHERE org_id = ? AND role = 'owner' AND deleted_at IS NULL
+			     ) > 1
+			   )`,
 		)
-		.bind(input.nowIso, input.orgId, input.memberUserId)
+		.bind(input.nowIso, input.orgId, input.memberUserId, input.orgId)
 		.run()
+	const membershipSoftDeleted = (membership.meta.changes ?? 0) > 0
+	if (!membershipSoftDeleted) {
+		const row = await input.appDb
+			.prepare(
+				`SELECT role, deleted_at FROM org_memberships
+				 WHERE org_id = ? AND user_id = ?`,
+			)
+			.bind(input.orgId, input.memberUserId)
+			.first<{ role: string; deleted_at: string | null }>()
+		if (!row || row.deleted_at == null) {
+			if (row?.role === 'owner') throw new Error('cannot_remove_last_owner')
+			throw new Error('member_not_found')
+		}
+		if (row.deleted_at !== input.resumeDeletedAt) {
+			throw new Error('member_not_found')
+		}
+	}
 
 	const teamMembers = await input.appDb
 		.prepare(
@@ -212,13 +214,13 @@ async function softDeleteMembershipGraph(input: {
 	const grants = await input.appDb
 		.prepare(
 			`UPDATE grants
-			 SET deleted_at = ?
+			 SET deleted_at = ?, updated_at = ?
 			 WHERE org_id = ?
 			   AND subject_type = 'user'
 			   AND subject_id = ?
 			   AND deleted_at IS NULL`,
 		)
-		.bind(input.nowIso, input.orgId, input.memberUserId)
+		.bind(input.nowIso, input.nowIso, input.orgId, input.memberUserId)
 		.run()
 
 	const budgets = await input.appDb
@@ -240,7 +242,7 @@ async function softDeleteMembershipGraph(input: {
 		.run()
 
 	return {
-		membershipSoftDeleted: (membership.meta.changes ?? 0) > 0,
+		membershipSoftDeleted,
 		teamMembershipsSoftDeleted: teamMembers.meta.changes ?? 0,
 		grantsSoftDeleted: grants.meta.changes ?? 0,
 		budgetsSoftDeleted: budgets.meta.changes ?? 0,
@@ -438,23 +440,21 @@ export async function offboardOrgMember(input: {
 	jobChoices?: Array<OffboardingJobChoice>
 	oauthHelpers?: OAuthGrantHelpers | null
 	now?: Date
+	/**
+	 * Continue when this membership was already tombstoned at `now` (a retry
+	 * of the same removal). Omit it to fail if the member is already gone.
+	 */
+	resumeDeletedAt?: string
 }): Promise<OffboardingResult> {
 	const nowIso = (input.now ?? new Date()).toISOString()
-	await assertNotLastLiveOwner({
-		appDb: input.appDb,
-		orgId: input.orgId,
-		memberUserId: input.memberUserId,
-	})
 
 	const graph = await softDeleteMembershipGraph({
 		appDb: input.appDb,
 		orgId: input.orgId,
 		memberUserId: input.memberUserId,
 		nowIso,
+		resumeDeletedAt: input.resumeDeletedAt,
 	})
-	if (!graph.membershipSoftDeleted) {
-		throw new Error('member_not_found')
-	}
 
 	const credentials = await revokeOrgBoundCredentials({
 		appDb: input.appDb,
