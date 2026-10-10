@@ -50,6 +50,13 @@ not require the runner to hold Use on each bound credential. Automation acts as
 Owner and keeps using the org's attachments. Credential storage lookups use
 `ownerIdFromCaller` (org), not the acting person id.
 
+**Amended (2026-10-10, local execute):** CLI `execute --local` CapabilityProxy
+hops may stamp a client-supplied package id. That stamp is **not** bundler
+provenance: origin verifies `package:execute` when present, but never skips
+`secret:use` / `integration:use` from it. Only cloud / hosted package runs,
+where the bundler proves package identity, keep package-attachment credential
+semantics.
+
 ## Consequences
 
 - Package delete is the inverse of a package existing. Closing leftover
@@ -62,8 +69,8 @@ Owner and keeps using the org's attachments. Credential storage lookups use
   "permanently inactive."
 - A member or outside collaborator who can run ad hoc execute cannot expand
   `{{secret:…}}` / `{{integration-token:…}}` (or ambient provider / MCP use)
-  without a Use grant on that resource. Running a package with `package:execute`
-  still uses that package's attachments only. Owners and Automation are
-  unchanged.
+  without a Use grant on that resource. Hosted package runs with
+  `package:execute` still use that package's attachments only. CLI `--local`
+  package stamps never skip Use. Owners and Automation are unchanged.
 - Revisit only if a concrete user need requires live in-process composition or a
   package-wide kill switch that is not delete.

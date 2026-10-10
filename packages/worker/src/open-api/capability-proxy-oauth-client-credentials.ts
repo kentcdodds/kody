@@ -14,9 +14,9 @@ import { invalidRequest } from './errors.ts'
  * secret placeholders through the fetch gateway (same as cloud execute), so
  * client id/secret values never enter local workerd.
  *
- * Optional `packageId` is stamped saved-package identity (same provenance as
- * createAuthenticatedFetch / packageSecrets). It becomes the fetch-gateway
- * storage context and secret-authority grant.
+ * Optional `packageId` is a client stamp: origin verifies `package:execute`
+ * when present, but never grants secret authority from it. Local expansion
+ * requires `secret:use` like ad-hoc.
  */
 
 export type CapabilityProxyOauthClientCredentialsRequest =
@@ -129,7 +129,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 		)
 	}
 	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
-	const packageId = call.packageId
+	const stampedPackageId = call.packageId
 		? await authorizeOauthClientCredentialsPackageId({
 				ctx: input.ctx,
 				packageId: call.packageId,
@@ -139,29 +139,14 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: packageId ?? existingStorage?.packageId ?? null,
+		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const { packageId: _ignoredPackageId, ...oauthInput } = call
 	const gatewayFetch: typeof fetch = async (requestInput, init) => {
 		const request = new Request(requestInput, init)
-		if (packageId) {
-			const headers = new Headers(request.headers)
-			headers.set(secretAuthorityHeaderName, packageId)
-			return executeGatewayFetch({
-				env: input.ctx.env,
-				props: {
-					baseUrl: input.ctx.callerContext.baseUrl,
-					userId: orgUserId,
-					email: user.email,
-					request: input.ctx.callerContext.request,
-					storageContext,
-					grantedSecretAuthorityPackageIds: [packageId],
-				},
-				request: new Request(request, { headers }),
-				...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
-			})
-		}
+		const headers = new Headers(request.headers)
+		headers.delete(secretAuthorityHeaderName)
 		return executeGatewayFetch({
 			env: input.ctx.env,
 			props: {
@@ -170,8 +155,9 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 				email: user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,
+				requireActorCredentialUse: true,
 			},
-			request,
+			request: new Request(request, { headers }),
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
 		})
 	}

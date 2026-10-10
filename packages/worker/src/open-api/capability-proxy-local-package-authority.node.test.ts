@@ -19,7 +19,14 @@ vi.mock('#worker/storage-runner.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/package-access.ts', () => ({
-	resolvePackageMountedSecret: async () => ({ ref: 'owned-secret-ref' }),
+	resolvePackageMountedSecret: async () => ({
+		ref: 'owned-secret-ref',
+		name: 'client-token',
+		alias: 'client-token',
+		scope: 'user',
+		packageId: 'owned-package',
+		kodyId: 'owned-package',
+	}),
 }))
 
 vi.mock('#mcp/run-kody-registry.ts', () => ({
