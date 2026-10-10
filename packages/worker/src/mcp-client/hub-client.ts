@@ -79,11 +79,33 @@ export type McpClientHubClient = {
 	readPendingAuthorization(input: {
 		serverId: string
 	}): Promise<McpServerPendingAuthorization | null>
-	callTool(input: {
+}
+
+/**
+ * Call a tool with the org's stored MCP OAuth credentials. Only
+ * `resolveCredential` may call this (credential-storage-boundary test).
+ */
+export async function callMcpServerTool(
+	input: McpClientHubClientInput & {
 		serverId: string
 		toolName: string
 		args: Record<string, unknown>
-	}): Promise<CallToolResult>
+	},
+): Promise<CallToolResult> {
+	const stub = getMcpClientHubStub(input)
+	try {
+		const result = (await stub.callTool({
+			serverId: input.serverId,
+			toolName: input.toolName,
+			args: input.args,
+		})) as CallToolResult
+		await emitPendingConnectionEvents(input, stub)
+		return result
+	} catch (error) {
+		invalidateMcpClientHubSnapshotCache(input)
+		await emitPendingConnectionEvents(input, stub)
+		throw error
+	}
 }
 
 export function createMcpClientHubClient(
@@ -135,17 +157,6 @@ export function createMcpClientHubClient(
 		},
 		async readPendingAuthorization(readInput) {
 			return await stub.readPendingAuthorization(readInput)
-		},
-		async callTool(callInput) {
-			try {
-				const result = (await stub.callTool(callInput)) as CallToolResult
-				await emitPendingConnectionEvents(input, stub)
-				return result
-			} catch (error) {
-				invalidateMcpClientHubSnapshotCache(input)
-				await emitPendingConnectionEvents(input, stub)
-				throw error
-			}
 		},
 	}
 }

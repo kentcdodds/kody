@@ -142,8 +142,8 @@ test('usageGet returns self-scoped entitlement snapshot', async () => {
 	})
 	expect(resource('saved_packages')?.current).toBe(1)
 	expect(resource('saved_packages')?.limit).toBeGreaterThan(0)
-	expect(resource('execute_calls_per_day')?.limit).toBe(1_500)
-	expect(resource('execute_calls_per_day')?.week).toEqual({
+	expect(resource('execute_unique_workers_per_day')?.limit).toBe(1_500)
+	expect(resource('execute_unique_workers_per_day')?.week).toEqual({
 		current: 0,
 		limit: 4_000,
 		percent: 0,
@@ -158,8 +158,8 @@ test('usageGet reports legacy Standard ceilings for grandfathered accounts', asy
 		entitlementLadder: 'legacy',
 	})
 	expect(result.plan).toBe('standard')
-	expect(resource('execute_calls_per_day')?.limit).toBe(500)
-	expect(resource('execute_calls_per_day')?.week).toBeUndefined()
+	expect(resource('execute_unique_workers_per_day')?.limit).toBe(500)
+	expect(resource('execute_unique_workers_per_day')?.week).toBeUndefined()
 })
 
 test('usageGet lists Free Worker compute as informational, never as a warning', async () => {

@@ -32,16 +32,16 @@ test('formatDurableObjectRowsRead uses billion-scale labels', () => {
 test('resolvePlanLimit uses public numbers unless the legacy ladder applies', () => {
 	expect(
 		limitMismatches([
-			[150, 'free', 'execute_calls_per_day'],
-			[500, 'standard', 'execute_calls_per_day'],
-			[500, 'standard', 'execute_calls_per_day', 'public'],
-			[500, 'standard', 'execute_calls_per_day', 'legacy'],
-			[1_500, 'pro', 'execute_calls_per_day'],
+			[150, 'free', 'execute_unique_workers_per_day'],
+			[500, 'standard', 'execute_unique_workers_per_day'],
+			[500, 'standard', 'execute_unique_workers_per_day', 'public'],
+			[500, 'standard', 'execute_unique_workers_per_day', 'legacy'],
+			[1_500, 'pro', 'execute_unique_workers_per_day'],
 			[50_000, 'pro', 'outbound_fetches_per_day'],
 			[150, 'pro', 'scheduled_jobs', 'legacy'],
 			[75, 'pro', 'scheduled_jobs', 'public'],
-			[150, 'free', 'execute_calls_per_day', 'legacy'],
-			[25_000, 'max', 'execute_calls_per_day', 'legacy'],
+			[150, 'free', 'execute_unique_workers_per_day', 'legacy'],
+			[25_000, 'max', 'execute_unique_workers_per_day', 'legacy'],
 		]),
 	).toEqual([])
 	expect(resolvePlanLimits('standard', 'legacy').minJobIntervalMs).toBe(0)
@@ -53,15 +53,19 @@ test('resolvePlanLimit uses public numbers unless the legacy ladder applies', ()
 test('public Free/Standard/Pro have weekly execute and outbound windows; max and legacy do not', () => {
 	for (const plan of ['free', 'standard', 'pro'] as const) {
 		for (const resource of [
-			'execute_calls_per_day',
+			'execute_unique_workers_per_day',
 			'outbound_fetches_per_day',
 		] as const) {
 			expect(resolveWeeklyPlanLimit(plan, resource)).toBeGreaterThan(0)
 		}
 	}
 	expect([
-		resolveWeeklyPlanLimit('max', 'execute_calls_per_day'),
-		resolveWeeklyPlanLimit('standard', 'execute_calls_per_day', 'legacy'),
+		resolveWeeklyPlanLimit('max', 'execute_unique_workers_per_day'),
+		resolveWeeklyPlanLimit(
+			'standard',
+			'execute_unique_workers_per_day',
+			'legacy',
+		),
 		resolveWeeklyPlanLimit('pro', 'outbound_fetches_per_day', 'legacy'),
 		resolveWeeklyPlanLimit('free', 'job_runs_per_day'),
 		resolveWeeklyPlanLimit('free', 'automation_invocations_per_day'),
@@ -200,18 +204,23 @@ test('purchasable Pro has Max stock always; empty wallet keeps the full Pro incl
 			[20_000, 'pro', 'repo_sessions', 'public', 'empty'],
 			[100 * 1024 * 1024 * 1024, 'pro', 'storage_bytes', 'public', 'empty'],
 			[200, 'pro', 'concurrent_workflows', 'public', 'empty'],
-			[500, 'pro', 'execute_calls_per_day', 'public', 'empty'],
+			[500, 'pro', 'execute_unique_workers_per_day', 'public', 'empty'],
 			[15_000, 'pro', 'outbound_fetches_per_day', 'public', 'empty'],
 			[1_500, 'pro', 'job_runs_per_day', 'public', 'empty'],
 			[10_000, 'pro', 'automation_invocations_per_day', 'public', 'empty'],
 			[200, 'pro', 'email_sends_per_day', 'public', 'empty'],
 			[1_000, 'pro', 'email_receives_per_day', 'public', 'empty'],
-			[25_000, 'pro', 'execute_calls_per_day', 'public', 'funded'],
+			[25_000, 'pro', 'execute_unique_workers_per_day', 'public', 'funded'],
 			[200, 'pro', 'email_sends_per_day', 'public', 'funded'],
 		]),
 	).toEqual([])
 	expect([
-		resolveWeeklyPlanLimit('pro', 'execute_calls_per_day', 'public', 'empty'),
+		resolveWeeklyPlanLimit(
+			'pro',
+			'execute_unique_workers_per_day',
+			'public',
+			'empty',
+		),
 		resolveWeeklyPlanLimit(
 			'pro',
 			'outbound_fetches_per_day',
@@ -250,7 +259,12 @@ test('purchasable Pro has Max stock always; empty wallet keeps the full Pro incl
 		maxDurableObjectRowsReadPerMonth: 5_000_000_000,
 	})
 	expect(
-		resolveWeeklyPlanLimit('pro', 'execute_calls_per_day', 'public', 'funded'),
+		resolveWeeklyPlanLimit(
+			'pro',
+			'execute_unique_workers_per_day',
+			'public',
+			'funded',
+		),
 	).toBe(60_000)
 	// Non-credits-eligible Pro and non-Pro tables are unchanged by wallet state.
 	expect(resolvePlanLimits('free', 'public', 'funded')).toEqual(planLimits.free)

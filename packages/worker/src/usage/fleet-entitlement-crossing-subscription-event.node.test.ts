@@ -62,8 +62,8 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 
 	const daily = buildFleetEntitlementResourceCrossedEvent({
 		user,
-		resource: 'execute_calls_per_day',
-		label: 'execute calls per day',
+		resource: 'execute_unique_workers_per_day',
+		label: 'unique execute workers per day',
 		threshold: 'reached',
 		current: 250,
 		limit: 250,
@@ -72,7 +72,7 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 	})
 	const repeated = buildFleetRepeatedEntitlementCrossedEvent({
 		user,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		daysAtLimit: 3,
 		windowDays: 7,
 		thresholdDays: 3,
@@ -92,8 +92,11 @@ test('fleet entitlement crossing builders keep a metadata-only operator snapshot
 	const keyCases = [
 		[entitlement, 'entitlement:reached:saved_packages'],
 		[runtime, 'runtime_duration:2026-08'],
-		[daily, 'entitlement:reached:execute_calls_per_day:2026-08-24'],
-		[repeated, 'repeated_entitlement:execute_calls_per_day:2026-08-24'],
+		[daily, 'entitlement:reached:execute_unique_workers_per_day:2026-08-24'],
+		[
+			repeated,
+			'repeated_entitlement:execute_unique_workers_per_day:2026-08-24',
+		],
 		[cost, 'dynamic_worker_cost:2026-08'],
 	] as const
 	expect(

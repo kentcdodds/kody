@@ -10,6 +10,7 @@ import { planLimits } from '#universal/plans.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	consumeExecuteUniqueWorkerDay,
 	readDailyEntitlementResourceUsage,
 	refundDailyEntitlement,
 } from './service.ts'
@@ -33,15 +34,23 @@ async function seedFreeUser(emailPrefix: string) {
 		stableUserId: userId,
 	})
 	const meter = userMeterRpc({ env, userId: ownerIdFromStored(userId) })
-	const consume = (resource: DailyResource, now: Date) =>
-		consumeDailyEntitlement({
+	const consume = async (resource: DailyResource, now: Date) => {
+		const input = {
 			db: env.APP_DB,
 			env,
 			userId: ownerIdFromStored(userId),
 			email,
-			resource,
 			now,
-		})
+		}
+		if (resource === 'execute_unique_workers_per_day') {
+			await consumeExecuteUniqueWorkerDay({
+				...input,
+				workerId: `kody-${crypto.randomUUID()}`,
+			})
+			return
+		}
+		await consumeDailyEntitlement({ ...input, resource })
+	}
 	const readDaily = (resource: DailyResource, now: Date) =>
 		meter.read({ resource, day: utcDayKey(now), now: now.toISOString() })
 	return { email, userId, meter, consume, readDaily }
@@ -95,13 +104,13 @@ function sqliteNames(state: DurableObjectState, where: string) {
 		.map((row) => row.name)
 }
 
-function expectSchemaV13(state: DurableObjectState) {
+function expectSchemaV14(state: DurableObjectState) {
 	const version = state.storage.sql
 		.exec<{ value: number }>(
 			`SELECT value FROM user_meter_meta WHERE key = 'schema_version' LIMIT 1`,
 		)
 		.toArray()[0]
-	expect(Number(version?.value)).toBe(13)
+	expect(Number(version?.value)).toBe(14)
 	expect(
 		state.storage.sql
 			.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
@@ -111,9 +120,13 @@ function expectSchemaV13(state: DurableObjectState) {
 	expect(
 		sqliteNames(
 			state,
-			`type = 'table' AND name IN ('dynamic_worker_days', 'inbound_mcp_connection_last_used') ORDER BY name`,
+			`type = 'table' AND name IN ('dynamic_worker_days', 'execute_call_days', 'inbound_mcp_connection_last_used') ORDER BY name`,
 		),
-	).toEqual(['dynamic_worker_days', 'inbound_mcp_connection_last_used'])
+	).toEqual([
+		'dynamic_worker_days',
+		'execute_call_days',
+		'inbound_mcp_connection_last_used',
+	])
 }
 
 /**
@@ -130,13 +143,13 @@ function recentDailyCounterNow(): Date {
 	)
 }
 
-test('fresh UserMeter schema is v12 and warm v7 upgrades to v12 preserving leases', async () => {
+test('fresh UserMeter schema is v14 and warm v7 upgrades to v14 preserving leases', async () => {
 	const fresh = await seedFreeUser('meter-schema-v12-fresh')
 	await runInDurableObject(
 		meterStub(fresh.userId),
 		async (instance: UserMeter, state) => {
 			expect(instance).toBeInstanceOf(UserMeter)
-			expectSchemaV13(state)
+			expectSchemaV14(state)
 		},
 	)
 
@@ -183,7 +196,7 @@ test('fresh UserMeter schema is v12 and warm v7 upgrades to v12 preserving lease
 			}
 			proto.initializeSchema.call(instance)
 
-			expectSchemaV13(state)
+			expectSchemaV14(state)
 			expect(
 				state.storage.sql
 					.exec(
@@ -308,7 +321,7 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 	const monday = new Date('2026-07-06T15:00:00.000Z')
 	const tuesday = new Date('2026-07-07T15:00:00.000Z')
 	const wednesday = new Date('2026-07-08T15:00:00.000Z')
-	const resource = 'execute_calls_per_day'
+	const resource = 'execute_unique_workers_per_day'
 	const user = await seedFreeUser('meter-weekly-execute')
 	for (const [day, count] of [
 		[monday, 150],
@@ -331,11 +344,115 @@ test('UserMeter consume denies public execute when the UTC week hits first', asy
 		}),
 	).toEqual({ outcome: 'ready', count: 399 })
 
-	await user.consume(resource, wednesday)
-	const denied = await catchError(user.consume(resource, wednesday))
+	const claim = (workerId: string) =>
+		consumeExecuteUniqueWorkerDay({
+			db: env.APP_DB,
+			env,
+			userId: ownerIdFromStored(user.userId),
+			email: user.email,
+			workerId,
+			now: wednesday,
+		})
+	await expect(claim('kody-week-a')).resolves.toEqual({
+		created: true,
+		used: 100,
+		limit: 150,
+		weekUsed: 400,
+		weekLimit: 400,
+	})
+	const denied = await catchError(claim('kody-week-b'))
 	expect(denied).toBeInstanceOf(EntitlementLimitError)
 	expect(denied).toMatchObject({
 		details: { resource, limit: 400, current: 400, window: 'week' },
+	})
+}, 30_000)
+
+test('consumeExecuteUniqueWorkerDay spends one unit per new worker per day, repeats free, and leaves denied workers unclaimed', async () => {
+	const now = recentDailyCounterNow()
+	const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+	const user = await seedFreeUser('meter-execute-unique-workers')
+	const limit = planLimits.free.maxExecuteUniqueWorkersPerDay
+	const claim = (workerId: string, at = now) =>
+		consumeExecuteUniqueWorkerDay({
+			db: env.APP_DB,
+			env,
+			userId: ownerIdFromStored(user.userId),
+			email: user.email,
+			workerId,
+			now: at,
+		})
+
+	await expect(claim('kody-a')).resolves.toMatchObject({
+		created: true,
+		used: 1,
+	})
+	await expect(claim('kody-a')).resolves.toMatchObject({
+		created: false,
+		used: 1,
+	})
+	await runInDurableObject(
+		meterStub(user.userId),
+		async (_instance: UserMeter, state) => {
+			state.storage.sql.exec(
+				`UPDATE daily_counters SET count = ? WHERE resource = ? AND day = ?`,
+				limit,
+				'execute_unique_workers_per_day',
+				utcDayKey(now),
+			)
+		},
+	)
+	await expect(claim('kody-a')).resolves.toMatchObject({
+		created: false,
+		used: limit,
+	})
+	const denied = await catchError(claim('kody-b'))
+	expect(denied).toMatchObject({
+		details: {
+			resource: 'execute_unique_workers_per_day',
+			limit,
+			current: limit,
+		},
+	})
+	await runInDurableObject(
+		meterStub(user.userId),
+		async (_instance: UserMeter, state) => {
+			expect(
+				state.storage.sql
+					.exec(
+						`SELECT worker_id FROM dynamic_worker_days WHERE day = ? ORDER BY worker_id`,
+						utcDayKey(now),
+					)
+					.toArray(),
+			).toEqual([{ worker_id: 'kody-a' }])
+		},
+	)
+	await expect(claim('kody-b', nextDay)).resolves.toMatchObject({
+		created: true,
+		used: 1,
+	})
+}, 30_000)
+
+test('UserMeter admitExecuteCall admits up to the per-minute limit and resets on the next minute', async () => {
+	const user = await seedFreeUser('meter-execute-admission')
+	const minuteStart = Date.parse('2026-10-10T12:00:00.000Z')
+	const admit = (nowMs: number) =>
+		user.meter.admitExecuteCall({ nowMs, limitPerMinute: 2 })
+	await expect(admit(minuteStart + 1_000)).resolves.toEqual({
+		admitted: true,
+		count: 1,
+	})
+	await expect(admit(minuteStart + 2_000)).resolves.toEqual({
+		admitted: true,
+		count: 2,
+	})
+	await expect(admit(minuteStart + 45_000)).resolves.toEqual({
+		admitted: false,
+		count: 2,
+		retryAfterMs: 15_000,
+	})
+	await expect(admit(minuteStart + 60_000)).resolves.toEqual({
+		admitted: true,
+		count: 1,
 	})
 }, 30_000)
 
@@ -344,13 +461,13 @@ test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call
 	const tuesday = new Date('2026-07-07T15:00:00.000Z')
 	const user = await seedFreeUser('meter-usage-snapshot')
 	await user.meter.initialize({
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: utcDayKey(monday),
 		count: 10,
 		updatedAt: monday.toISOString(),
 	})
 	await user.meter.initialize({
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: utcDayKey(tuesday),
 		count: 7,
 		updatedAt: tuesday.toISOString(),
@@ -369,14 +486,14 @@ test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call
 	const snapshot = await user.meter.readUsageSnapshot({
 		day: utcDayKey(tuesday),
 		weekStart: utcDayKey(monday),
-		dailyResources: ['execute_calls_per_day', 'email_sends_per_day'],
-		weeklyResources: ['execute_calls_per_day'],
+		dailyResources: ['execute_unique_workers_per_day', 'email_sends_per_day'],
+		weeklyResources: ['execute_unique_workers_per_day'],
 		includeStorageBytes: true,
 		now: tuesday.toISOString(),
 	})
 	expect(snapshot.daily).toEqual([
 		expect.objectContaining({
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			outcome: 'ready',
 			count: 7,
 		}),
@@ -388,7 +505,7 @@ test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call
 	])
 	expect(snapshot.weekly).toEqual([
 		{
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			outcome: 'ready',
 			count: 17,
 		},
@@ -424,7 +541,7 @@ test('UserMeter readDailyTrend returns counters and unique worker days for the r
 	const yesterday = new Date('2026-10-06T15:00:00.000Z')
 	const user = await seedFreeUser('meter-daily-trend')
 	await user.meter.initialize({
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: utcDayKey(yesterday),
 		count: 11,
 		updatedAt: yesterday.toISOString(),
@@ -451,13 +568,35 @@ test('UserMeter readDailyTrend returns counters and unique worker days for the r
 		createdAt: now.toISOString(),
 	})
 
+	for (const nowMs of [yesterday.getTime(), now.getTime(), now.getTime()]) {
+		await user.meter.admitExecuteCall({ nowMs, limitPerMinute: 300 })
+	}
+	// Pre-deploy call counts under the retired per-call counter still show.
+	await runInDurableObject(
+		meterStub(user.userId),
+		async (_instance: UserMeter, state) => {
+			for (const [day, count] of [
+				[utcDayKey(yesterday), 40],
+				[utcDayKey(now), 5],
+			] as const) {
+				state.storage.sql.exec(
+					`INSERT INTO daily_counters (resource, day, count, revision, updated_at)
+					 VALUES ('execute_calls_per_day', ?, ?, 1, ?)`,
+					day,
+					count,
+					now.toISOString(),
+				)
+			}
+		},
+	)
+
 	const trend = await user.meter.readDailyTrend({ now: now.toISOString() })
 	expect(trend.retentionDays).toBeGreaterThan(0)
 	expect(trend.endDay).toBe(utcDayKey(now))
 	expect(trend.counters).toEqual(
 		expect.arrayContaining([
 			{
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				day: utcDayKey(yesterday),
 				count: 11,
 			},
@@ -471,6 +610,10 @@ test('UserMeter readDailyTrend returns counters and unique worker days for the r
 	expect(trend.uniqueWorkerDays).toEqual([
 		{ day: utcDayKey(yesterday), count: 2 },
 		{ day: utcDayKey(now), count: 1 },
+	])
+	expect(trend.executeCalls).toEqual([
+		{ day: utcDayKey(yesterday), count: 41 },
+		{ day: utcDayKey(now), count: 7 },
 	])
 }, 30_000)
 
@@ -528,12 +671,12 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	expect(await readA()).toMatchObject({ outcome: 'ready', count: 0 })
 
 	await userA.consume(resource, now)
-	await userA.consume('execute_calls_per_day', now)
+	await userA.consume('execute_unique_workers_per_day', now)
 	expect((await userA.meter.exportCounters({})).counters).toEqual(
 		expect.arrayContaining([
 			expect.objectContaining({ resource, day, count: 1 }),
 			expect.objectContaining({
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				day,
 				count: 1,
 			}),
@@ -724,7 +867,7 @@ test('UserMeter storage RPCs, authoritative export state, and purge work additiv
 	for (const resource of [
 		'email_receives_per_day',
 		'email_sends_per_day',
-		'execute_calls_per_day',
+		'execute_unique_workers_per_day',
 		'job_runs_per_day',
 		'automation_invocations_per_day',
 		'outbound_fetches_per_day',

@@ -14,7 +14,7 @@ import { type EntitlementResource } from '#universal/plans.ts'
 export const dailyEntitlementResources = [
 	'email_sends_per_day',
 	'email_receives_per_day',
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
@@ -39,7 +39,7 @@ export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 13
+const userMeterSchemaVersion = 14
 /** Singleton row id for monthly org budget spend (schema v13). */
 const budgetSpendStateRowId = 1
 const utcMonthKeyPattern = /^\d{4}-\d{2}$/
@@ -101,6 +101,25 @@ export type UserMeterConsumeResult =
 			weekCount?: number
 	  })
 
+/**
+ * Result of {@link UserMeterRpc.claimDynamicWorkerDayWithinLimit}. `created`
+ * means this call loads a new worker for the day and spent one unit; a
+ * repeat of an already-claimed id returns `created: false` without spending.
+ * A denial (`consumed: false` with `deniedWindow`) leaves the id unclaimed.
+ */
+export type UserMeterWorkerDayConsumeResult =
+	| UserMeterBootstrapState
+	| (UserMeterReadyState & {
+			created: boolean
+			consumed: boolean
+			deniedWindow?: UserMeterDeniedWindow
+			weekCount?: number
+	  })
+
+export type UserMeterExecuteAdmissionResult =
+	| { admitted: true; count: number }
+	| { admitted: false; count: number; retryAfterMs: number }
+
 export type UserMeterReadResult = UserMeterBootstrapState | UserMeterReadyState
 
 /** One daily counter entry from {@link UserMeterRpc.readUsageSnapshot}. */
@@ -160,6 +179,8 @@ export type UserMeterDailyTrendResult = {
 	endDay: string
 	counters: Array<UserMeterDailyTrendCounterRow>
 	uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow>
+	/** Admitted hosted execute calls per UTC day, repeats included. */
+	executeCalls: Array<UserMeterDailyTrendUniqueWorkerDayRow>
 }
 
 export type UserMeterRefundResult = UserMeterReadyState
@@ -733,6 +754,14 @@ class UserMeterBase extends DurableObject<Env> {
 				micro_usd INTEGER NOT NULL
 			)
 		`)
+		// Admitted hosted execute calls per UTC day (schema v14). The plan cap
+		// counts unique workers; this keeps the per-call usage trend.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS execute_call_days (
+				day TEXT PRIMARY KEY NOT NULL,
+				count INTEGER NOT NULL
+			)
+		`)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -788,6 +817,10 @@ class UserMeterBase extends DurableObject<Env> {
 		)
 		this.ctx.storage.sql.exec(
 			`DELETE FROM dynamic_worker_days WHERE day < ?`,
+			cutoffDay,
+		)
+		this.ctx.storage.sql.exec(
+			`DELETE FROM execute_call_days WHERE day < ?`,
 			cutoffDay,
 		)
 	}
@@ -912,52 +945,24 @@ class UserMeterBase extends DurableObject<Env> {
 			return { outcome: 'needs_bootstrap' }
 		}
 
-		const weekLimit =
-			typeof input.weekLimit === 'number' && Number.isFinite(input.weekLimit)
-				? input.weekLimit
-				: null
-		const weekStart = input.weekStart ? assertUtcDayKey(input.weekStart) : null
-		const weekCount =
-			weekStart && weekLimit !== null
-				? this.sumRange(resource, weekStart, day)
-				: undefined
-
-		if (input.limit < 1 || existing.count + 1 > input.limit) {
+		const window = this.checkDailyWindows({ ...input, resource, day, existing })
+		if (window.deniedWindow) {
 			return {
 				...readyState(existing.count, existing.revision),
 				consumed: false,
-				deniedWindow: 'day',
-				weekCount,
-			}
-		}
-		if (
-			weekStart &&
-			weekLimit !== null &&
-			(weekLimit < 1 || (weekCount ?? 0) + 1 > weekLimit)
-		) {
-			return {
-				...readyState(existing.count, existing.revision),
-				consumed: false,
-				deniedWindow: 'week',
-				weekCount,
+				deniedWindow: window.deniedWindow,
+				weekCount: window.weekCount,
 			}
 		}
 
 		const nextCount = existing.count + 1
 		const nextRevision = existing.revision + 1
-		this.ctx.storage.sql.exec(
-			`UPDATE daily_counters
-			SET count = ?,
-				revision = ?,
-				updated_at = ?
-			WHERE resource = ? AND day = ? AND revision = ?`,
-			nextCount,
-			nextRevision,
-			input.updatedAt,
+		this.incrementCounterRow({
 			resource,
 			day,
-			existing.revision,
-		)
+			existing,
+			updatedAt: input.updatedAt,
+		})
 		const row = this.readRow(resource, day)
 		if (!row) {
 			throw new Error('UserMeter consume lost the counter row.')
@@ -965,8 +970,188 @@ class UserMeterBase extends DurableObject<Env> {
 		return {
 			...readyState(row.count, row.revision),
 			consumed: row.count === nextCount && row.revision === nextRevision,
-			weekCount: weekCount === undefined ? undefined : weekCount + 1,
+			weekCount:
+				window.weekCount === undefined ? undefined : window.weekCount + 1,
 		}
+	}
+
+	/**
+	 * Claim `workerId` for `day` and spend one `resource` unit only when the
+	 * claim is new. A repeat of an id already claimed today (by any surface)
+	 * is free; a new id over the daily or weekly limit is denied and stays
+	 * unclaimed, so a later retry after the window resets still counts. The
+	 * counter increment and the claim insert commit together.
+	 */
+	async claimDynamicWorkerDayWithinLimit(input: {
+		workerId: string
+		resource: string
+		day: string
+		limit: number
+		createdAt: string
+		weekStart?: string
+		weekLimit?: number | null
+	}): Promise<UserMeterWorkerDayConsumeResult> {
+		const workerId = assertDynamicWorkerId(input.workerId)
+		const resource = assertDailyResource(input.resource)
+		const day = assertUtcDayKey(input.day)
+		const now = new Date(input.createdAt)
+		this.deleteStaleCounters(Number.isNaN(now.valueOf()) ? new Date() : now)
+
+		const existing = this.readRow(resource, day)
+		const alreadyClaimed =
+			this.ctx.storage.sql
+				.exec(
+					`SELECT 1 FROM dynamic_worker_days WHERE day = ? AND worker_id = ?`,
+					day,
+					workerId,
+				)
+				.toArray().length > 0
+		if (alreadyClaimed) {
+			const weekStart = input.weekStart
+				? assertUtcDayKey(input.weekStart)
+				: null
+			return {
+				...readyState(existing?.count ?? 0, existing?.revision ?? 0),
+				created: false,
+				consumed: false,
+				weekCount: weekStart
+					? this.sumRange(resource, weekStart, day)
+					: undefined,
+			}
+		}
+		if (!existing) {
+			return { outcome: 'needs_bootstrap' }
+		}
+
+		const window = this.checkDailyWindows({
+			...input,
+			resource,
+			day,
+			existing,
+		})
+		if (window.deniedWindow) {
+			return {
+				...readyState(existing.count, existing.revision),
+				created: false,
+				consumed: false,
+				deniedWindow: window.deniedWindow,
+				weekCount: window.weekCount,
+			}
+		}
+
+		this.ctx.storage.transactionSync(() => {
+			const counted = this.incrementCounterRow({
+				resource,
+				day,
+				existing,
+				updatedAt: input.createdAt,
+			})
+			// Throwing rolls back the claim so a worker is never free-loaded.
+			if (counted < 1) {
+				throw new Error('UserMeter worker-day consume lost the revision race.')
+			}
+			this.ctx.storage.sql.exec(
+				`INSERT INTO dynamic_worker_days (worker_id, day, created_at)
+				VALUES (?, ?, ?)`,
+				workerId,
+				day,
+				input.createdAt,
+			)
+		})
+		const row = this.readRow(resource, day)
+		if (!row) {
+			throw new Error('UserMeter worker-day consume lost the counter row.')
+		}
+		return {
+			...readyState(row.count, row.revision),
+			created: true,
+			consumed: true,
+			weekCount:
+				window.weekCount === undefined ? undefined : window.weekCount + 1,
+		}
+	}
+
+	/**
+	 * Per-minute runaway brake for hosted execute calls. Held in memory: an
+	 * evicted meter starts the minute over, which only ever admits more, so
+	 * this stays a safety net rather than a billed counter.
+	 */
+	async admitExecuteCall(input: {
+		nowMs: number
+		limitPerMinute: number
+	}): Promise<UserMeterExecuteAdmissionResult> {
+		const minute = Math.floor(input.nowMs / 60_000)
+		if (this.executeCallMinute?.minute !== minute) {
+			this.executeCallMinute = { minute, count: 0 }
+		}
+		const window = this.executeCallMinute
+		if (window.count >= input.limitPerMinute) {
+			return {
+				admitted: false,
+				count: window.count,
+				retryAfterMs: (minute + 1) * 60_000 - input.nowMs,
+			}
+		}
+		window.count += 1
+		this.ctx.storage.sql.exec(
+			`INSERT INTO execute_call_days (day, count) VALUES (?, 1)
+			ON CONFLICT(day) DO UPDATE SET count = count + 1`,
+			utcDayKey(new Date(input.nowMs)),
+		)
+		return { admitted: true, count: window.count }
+	}
+
+	private executeCallMinute: { minute: number; count: number } | null = null
+
+	private checkDailyWindows(input: {
+		resource: DailyEntitlementResource
+		day: string
+		limit: number
+		weekStart?: string
+		weekLimit?: number | null
+		existing: { count: number }
+	}): { deniedWindow?: UserMeterDeniedWindow; weekCount?: number } {
+		const weekLimit =
+			typeof input.weekLimit === 'number' && Number.isFinite(input.weekLimit)
+				? input.weekLimit
+				: null
+		const weekStart = input.weekStart ? assertUtcDayKey(input.weekStart) : null
+		const weekCount =
+			weekStart && weekLimit !== null
+				? this.sumRange(input.resource, weekStart, input.day)
+				: undefined
+		if (input.limit < 1 || input.existing.count + 1 > input.limit) {
+			return { deniedWindow: 'day', weekCount }
+		}
+		if (
+			weekStart &&
+			weekLimit !== null &&
+			(weekLimit < 1 || (weekCount ?? 0) + 1 > weekLimit)
+		) {
+			return { deniedWindow: 'week', weekCount }
+		}
+		return { weekCount }
+	}
+
+	private incrementCounterRow(input: {
+		resource: DailyEntitlementResource
+		day: string
+		existing: { count: number; revision: number }
+		updatedAt: string
+	}): number {
+		return this.ctx.storage.sql.exec(
+			`UPDATE daily_counters
+			SET count = ?,
+				revision = ?,
+				updated_at = ?
+			WHERE resource = ? AND day = ? AND revision = ?`,
+			input.existing.count + 1,
+			input.existing.revision + 1,
+			input.updatedAt,
+			input.resource,
+			input.day,
+			input.existing.revision,
+		).rowsWritten
 	}
 
 	/**
@@ -1123,12 +1308,37 @@ class UserMeterBase extends DurableObject<Env> {
 				count: Math.max(0, Number(row.count ?? 0)),
 			}))
 
+		// Calls were counted under the retired `execute_calls_per_day` counter
+		// before execute_call_days existed. Those rows stop growing at deploy and
+		// age out with retention, so summing both keeps the 14-day history whole.
+		const executeCalls = this.ctx.storage.sql
+			.exec<{ day: string; count: number }>(
+				`SELECT day, SUM(count) AS count
+				FROM (
+					SELECT day, count FROM execute_call_days
+					UNION ALL
+					SELECT day, count FROM daily_counters
+					WHERE resource = 'execute_calls_per_day'
+				)
+				WHERE day >= ? AND day <= ?
+				GROUP BY day
+				ORDER BY day ASC`,
+				startDay,
+				endDay,
+			)
+			.toArray()
+			.map((row) => ({
+				day: String(row.day),
+				count: Math.max(0, Number(row.count ?? 0)),
+			}))
+
 		return {
 			retentionDays: userMeterDailyCounterRetentionDays,
 			startDay,
 			endDay,
 			counters,
 			uniqueWorkerDays,
+			executeCalls,
 		}
 	}
 
@@ -1231,7 +1441,8 @@ class UserMeterBase extends DurableObject<Env> {
 	/**
 	 * Claim one unique Dynamic Worker id for a UTC day. First insert wins;
 	 * later claims for the same `(day, worker_id)` return `created: false`.
-	 * Used only for cost attribution — not an entitlement cap.
+	 * Cost attribution for uncapped surfaces; hosted execute claims through
+	 * {@link claimDynamicWorkerDayWithinLimit} instead.
 	 */
 	async claimDynamicWorkerDay(input: {
 		workerId: string
@@ -2328,6 +2539,21 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		day: string
 		createdAt: string
 	}) => Promise<{ created: boolean }>
+	/** Claim a worker day and spend one unit only when the claim is new. */
+	claimDynamicWorkerDayWithinLimit: (input: {
+		workerId: string
+		resource: string
+		day: string
+		limit: number
+		createdAt: string
+		weekStart?: string
+		weekLimit?: number | null
+	}) => Promise<UserMeterWorkerDayConsumeResult>
+	/** In-memory per-minute hosted execute admission. */
+	admitExecuteCall: (input: {
+		nowMs: number
+		limitPerMinute: number
+	}) => Promise<UserMeterExecuteAdmissionResult>
 	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	initializeStorageBytes: (input: {
 		bytes: number

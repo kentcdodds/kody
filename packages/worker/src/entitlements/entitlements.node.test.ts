@@ -25,6 +25,7 @@ import {
 	assertWithinEntitlement,
 	assertWithinStorageBytesEntitlement,
 	consumeDailyEntitlement,
+	consumeExecuteUniqueWorkerDay,
 	estimateEntitlementStorageEntryByteDelta,
 	findCachedUserAccountByStableUserId,
 	getCachedUserEntitlement,
@@ -273,12 +274,15 @@ test('entitlement limit messages always identify a known plan name', () => {
 
 	const weeklyDetails = {
 		code: 'entitlement_limit_exceeded' as const,
-		resource: 'execute_calls_per_day' as const,
+		resource: 'execute_unique_workers_per_day' as const,
 		plan: 'free' as const,
 		limit: 400,
 		current: 400,
 		window: 'week' as const,
-		upgradeHint: buildEntitlementUpgradeHint('execute_calls_per_day', 'free'),
+		upgradeHint: buildEntitlementUpgradeHint(
+			'execute_unique_workers_per_day',
+			'free',
+		),
 	}
 	expect(
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
@@ -297,9 +301,13 @@ test('entitlement limit messages always identify a known plan name', () => {
 
 test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrades', () => {
 	expect(
-		buildEntitlementUpgradeHint('execute_calls_per_day', 'pro', 'empty'),
+		buildEntitlementUpgradeHint(
+			'execute_unique_workers_per_day',
+			'pro',
+			'empty',
+		),
 	).toBe(
-		'Remove or finish existing execute calls per day you no longer need, or add credits at /account/usage#credits to keep going past your include.',
+		'Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'pro', 'empty')).toBe(
 		'Run fewer jobs today, space them out, or add credits at /account/usage#credits to keep going past your include.',
@@ -310,8 +318,10 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 		)
 	}
 	// Free stays hard-capped: the next step is Pro, not credits.
-	expect(buildEntitlementUpgradeHint('execute_calls_per_day', 'free')).toBe(
-		'Remove or finish existing execute calls per day you no longer need, or upgrade your plan at /@<slug>/-/billing.',
+	expect(
+		buildEntitlementUpgradeHint('execute_unique_workers_per_day', 'free'),
+	).toBe(
+		'Rerun code you already ran today and vary params; repeats are free, or upgrade your plan at /@<slug>/-/billing.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'free')).toBe(
 		'Run fewer jobs today, space them out, or upgrade your plan.',
@@ -319,7 +329,10 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	// Retired and gift/referral Pro have no wallet: Pro with credits runs past
 	// its include.
 	for (const plan of ['standard', 'pro'] as const) {
-		const hint = buildEntitlementUpgradeHint('execute_calls_per_day', plan)
+		const hint = buildEntitlementUpgradeHint(
+			'execute_unique_workers_per_day',
+			plan,
+		)
 		expect(hint).toMatch(
 			/Pro with prepaid credits at \/account\/usage#credits runs past its include\.$/,
 		)
@@ -331,16 +344,20 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 		['max', 'none'],
 	] as const) {
 		const hint = buildEntitlementUpgradeHint(
-			'execute_calls_per_day',
+			'execute_unique_workers_per_day',
 			plan,
 			wallet,
 		)
 		expect(hint).not.toMatch(/credits|upgrade/i)
 		expect(
-			buildEntitlementHowToReduce('execute_calls_per_day', plan, wallet),
+			buildEntitlementHowToReduce(
+				'execute_unique_workers_per_day',
+				plan,
+				wallet,
+			),
 		).not.toMatch(/credits|upgrade/i)
 		const denial = new EntitlementLimitError({
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			plan,
 			limit: 400,
 			current: 400,
@@ -753,38 +770,48 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 		day: Date,
 		count: number,
 	) => meter.seed({ userId, resource, day: utcDayKey(day), count })
-	const consume = (
+	let workerSeq = 0
+	const consume = async (
 		userId: string,
 		email: string,
 		resource: DailyEntitlementResource,
-	) =>
-		consumeDailyEntitlement({
+	) => {
+		const input = {
 			db,
 			env: meter.env,
 			userId: ownerIdFromStored(userId),
 			email,
-			resource,
 			now: wednesday,
-		})
+		}
+		if (resource === 'execute_unique_workers_per_day') {
+			workerSeq += 1
+			await consumeExecuteUniqueWorkerDay({
+				...input,
+				workerId: `kody-weekly-${workerSeq}`,
+			})
+			return
+		}
+		await consumeDailyEntitlement({ ...input, resource })
+	}
 	const count = (userId: string, resource: DailyEntitlementResource) =>
 		readMeterDailyCount(meter.env, userId, resource, wednesday)
 
-	await seed(freeUserId, 'execute_calls_per_day', monday, 150)
-	await seed(freeUserId, 'execute_calls_per_day', tuesday, 150)
-	await seed(freeUserId, 'execute_calls_per_day', wednesday, 99)
-	await consume(freeUserId, freeEmail, 'execute_calls_per_day')
-	expect(await count(freeUserId, 'execute_calls_per_day')).toBe(100)
+	await seed(freeUserId, 'execute_unique_workers_per_day', monday, 150)
+	await seed(freeUserId, 'execute_unique_workers_per_day', tuesday, 150)
+	await seed(freeUserId, 'execute_unique_workers_per_day', wednesday, 99)
+	await consume(freeUserId, freeEmail, 'execute_unique_workers_per_day')
+	expect(await count(freeUserId, 'execute_unique_workers_per_day')).toBe(100)
 	const weeklyDenied = await expectLimitError(
-		consume(freeUserId, freeEmail, 'execute_calls_per_day'),
+		consume(freeUserId, freeEmail, 'execute_unique_workers_per_day'),
 	)
 	expect(weeklyDenied.details).toMatchObject({
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		plan: 'free',
 		limit: 400,
 		current: 400,
 		window: 'week',
 	})
-	expect(weeklyDenied.message).toContain('execute calls this week')
+	expect(weeklyDenied.message).toContain('unique execute workers this week')
 
 	await seed(dailyUserId, 'outbound_fetches_per_day', wednesday, 1_000)
 	const dailyDenied = await expectLimitError(
@@ -798,9 +825,9 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 	})
 	expect(dailyDenied.details.window).toBeUndefined()
 
-	await seed(legacyUserId, 'execute_calls_per_day', monday, 400)
-	await consume(legacyUserId, legacyEmail, 'execute_calls_per_day')
-	expect(await count(legacyUserId, 'execute_calls_per_day')).toBe(1)
+	await seed(legacyUserId, 'execute_unique_workers_per_day', monday, 400)
+	await consume(legacyUserId, legacyEmail, 'execute_unique_workers_per_day')
+	expect(await count(legacyUserId, 'execute_unique_workers_per_day')).toBe(1)
 
 	await seed(maxUserId, 'outbound_fetches_per_day', monday, 10_000)
 	await consume(maxUserId, maxEmail, 'outbound_fetches_per_day')
@@ -1153,7 +1180,7 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 		assertWithinEntitlement({
 			db,
 			...context(user),
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			requested,
 			getCurrent: async () => current,
 		})
@@ -1169,8 +1196,8 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 		creditWallet: 'none',
 	})
 
-	const legacyLimit = legacyPlanLimits.standard.maxExecuteCallsPerDay
-	const publicLimit = planLimits.standard.maxExecuteCallsPerDay
+	const legacyLimit = legacyPlanLimits.standard.maxExecuteUniqueWorkersPerDay
+	const publicLimit = planLimits.standard.maxExecuteUniqueWorkersPerDay
 	await expect(check(legacy!, 0, publicLimit)).resolves.toBeUndefined()
 	await expect(check(publicUser!, 1, publicLimit)).rejects.toMatchObject({
 		details: {

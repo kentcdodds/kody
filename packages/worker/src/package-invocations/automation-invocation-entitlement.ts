@@ -1,7 +1,7 @@
 /**
  * Sibling daily quota for always-on automation entrypoints (webhooks,
  * subscriptions, package-backed workflows). Distinct from MCP ad-hoc
- * `execute_calls_per_day` and from scheduled `job_runs_per_day`.
+ * `execute_unique_workers_per_day` and from scheduled `job_runs_per_day`.
  */
 export const automationInvocationsPerDayResource =
 	'automation_invocations_per_day' as const

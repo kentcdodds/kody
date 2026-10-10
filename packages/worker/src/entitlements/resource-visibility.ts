@@ -32,7 +32,7 @@ export const entitlementResourceGroupNotes: Partial<
 	monthly:
 		'Included Worker compute and Rows read this UTC month. On Pro, usage past the include is charged from prepaid credits and stops when they run out; Free is asked to upgrade.',
 	daily:
-		'Daily counters reset at UTC midnight. Execute and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
+		'Daily counters reset at UTC midnight. Unique execute workers and outbound fetches also have a this-week cap (UTC Monday–Sunday). High daily headroom for bursts; weekly total keeps it sustainable.',
 }
 
 export type EntitlementResourceVisibility = {
@@ -136,12 +136,13 @@ export const entitlementResourceVisibility: Record<
 		howToReduce:
 			'Wait for workflows to finish or cancel runs you no longer need.',
 	},
-	execute_calls_per_day: {
+	execute_unique_workers_per_day: {
 		group: 'daily',
 		kind: 'counter',
 		whatCounts:
-			'MCP execute tool runs today (UTC), including failed attempts. Does not include webhooks, package-export HTTP invocations, subscriptions, or jobs. Public plans also cap the UTC week.',
-		howToReduce: 'Run fewer execute calls today or this week.',
+			'Distinct code your MCP execute calls ran today (UTC). Each new module graph loads one sandbox worker and counts once per day; running the same code again (any params, success or failure) is free. Calls that never load a worker (refused before running) do not count. Does not include webhooks, package-export HTTP invocations, subscriptions, or jobs. Public plans also cap the UTC week.',
+		howToReduce:
+			'Reuse the same code and vary params instead of writing new code for each call.',
 		upgradeOffer: ', or upgrade your plan.',
 	},
 	outbound_fetches_per_day: {
@@ -201,7 +202,7 @@ export function buildEntitlementHowToReduce(
 export const accountUsageEntitlementResources = [
 	'email_sends_per_day',
 	'email_receives_per_day',
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',

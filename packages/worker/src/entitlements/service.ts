@@ -351,7 +351,7 @@ export type StableUserAccount = {
 
 /**
  * Short-TTL caches for the plan / account lookups that run on metered hot
- * paths (every execute call and every sandbox outbound fetch pays one). The
+ * paths (every new execute worker and every sandbox outbound fetch pays one). The
  * quota counter write itself stays atomic and uncached; only the plan-limit
  * resolution tolerates staleness, so a plan change takes effect for quota
  * checks within {@link entitlementLookupCacheTtlMs} instead of immediately.
@@ -1116,7 +1116,7 @@ export async function readEntitlementResourceUsage(input: {
 			)
 		case 'email_sends_per_day':
 		case 'email_receives_per_day':
-		case 'execute_calls_per_day':
+		case 'execute_unique_workers_per_day':
 		case 'outbound_fetches_per_day':
 		case 'job_runs_per_day':
 		case 'automation_invocations_per_day':
@@ -1491,11 +1491,109 @@ export async function consumeDailyEntitlement(
 	input: ConsumeDailyEntitlementInput,
 ): Promise<void> {
 	const resource = assertDailyEntitlementResource(input.resource)
+	if (resource === executeUniqueWorkersResource) {
+		throw new Error(
+			'execute_unique_workers_per_day counts unique workers; use consumeExecuteUniqueWorkerDay.',
+		)
+	}
+	const window = await resolveDailyEntitlementWindow({ ...input, resource })
+	const consumeInput = {
+		resource,
+		day: window.day,
+		limit: window.limit,
+		updatedAt: window.updatedAt,
+		weekStart: window.weekStart,
+		weekLimit: window.weekLimit,
+	}
+	const result = await withUserMeterCounterBootstrap({
+		...input,
+		resource,
+		window,
+		run: (meter) => meter.consume(consumeInput),
+	})
+	if (!result.consumed) {
+		await throwDailyEntitlementDenial({ ...input, resource, window, result })
+	}
+}
+
+export type ExecuteUniqueWorkerDayUsage = {
+	/** True when this call loads a new worker today and spent one unit. */
+	created: boolean
+	used: number
+	limit: number
+	weekUsed: number | null
+	weekLimit: number | null
+}
+
+const executeUniqueWorkersResource =
+	'execute_unique_workers_per_day' satisfies DailyEntitlementResource
+
+/**
+ * Hosted execute cap: spend one unit only when `workerId` is a new Dynamic
+ * Worker for this org today (the unit Cloudflare bills). Repeats of code
+ * already loaded today are free. Throws EntitlementLimitError when a new
+ * worker would exceed the daily or weekly limit; the worker stays unclaimed.
+ */
+export async function consumeExecuteUniqueWorkerDay(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: OwnerId
+	email: string | null | undefined
+	workerId: string
+	now?: Date
+	orgBudget?: OrgBudgetGateContext
+}): Promise<ExecuteUniqueWorkerDayUsage> {
+	const resource = executeUniqueWorkersResource
+	const window = await resolveDailyEntitlementWindow({ ...input, resource })
+	const result = await withUserMeterCounterBootstrap({
+		...input,
+		resource,
+		window,
+		run: (meter) =>
+			meter.claimDynamicWorkerDayWithinLimit({
+				workerId: input.workerId,
+				resource,
+				day: window.day,
+				limit: window.limit,
+				createdAt: window.updatedAt,
+				weekStart: window.weekStart,
+				weekLimit: window.weekLimit,
+			}),
+	})
+	if (result.deniedWindow) {
+		await throwDailyEntitlementDenial({ ...input, resource, window, result })
+	}
+	return {
+		created: result.created,
+		used: result.count,
+		limit: window.limit,
+		weekUsed: window.weekLimit === null ? null : (result.weekCount ?? 0),
+		weekLimit: window.weekLimit,
+	}
+}
+
+type DailyEntitlementWindow = {
+	entitlement: UserEntitlement
+	day: string
+	updatedAt: string
+	limit: number
+	weekStart: string | undefined
+	weekLimit: number | null
+}
+
+async function resolveDailyEntitlementWindow(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: OwnerId
+	email: string | null | undefined
+	resource: DailyEntitlementResource
+	now?: Date
+	orgBudget?: OrgBudgetGateContext
+}): Promise<DailyEntitlementWindow> {
+	const resource = input.resource
 	const now = input.now ?? new Date()
-	const day = utcDayKey(now)
-	const updatedAt = now.toISOString()
-	// Cached plan resolution: this runs on every execute call and every
-	// sandbox outbound fetch; the UserMeter consume below is the only
+	// Cached plan resolution: this runs on every new execute worker and every
+	// sandbox outbound fetch; the UserMeter call after it is the only
 	// counter state that must be fresh.
 	const cachedEntitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
@@ -1512,77 +1610,91 @@ export async function consumeDailyEntitlement(
 				orgBudget: input.orgBudget,
 			})
 		: cachedEntitlement
-	const plan = entitlement.plan
 	const limit = resolvePlanLimit(
-		plan,
+		entitlement.plan,
 		resource,
 		entitlement.ladder,
 		entitlement.creditWallet,
 	)
 	const weekLimit = isWeeklyComputeWindowResource(resource)
 		? resolveWeeklyPlanLimit(
-				plan,
+				entitlement.plan,
 				resource,
 				entitlement.ladder,
 				entitlement.creditWallet,
 			)
 		: null
-	const weekStart = weekLimit === null ? undefined : utcWeekStart(now)
-	const meter = userMeterRpc({ env: input.env, userId: input.userId })
-	const consumeInput = {
-		resource,
-		day,
+	return {
+		entitlement,
+		day: utcDayKey(now),
+		updatedAt: now.toISOString(),
 		limit,
-		updatedAt,
-		weekStart,
+		weekStart: weekLimit === null ? undefined : utcWeekStart(now),
 		weekLimit,
 	}
-	let result = await meter.consume(consumeInput)
+}
+
+async function withUserMeterCounterBootstrap<
+	T extends { outcome: 'ready' } | { outcome: 'needs_bootstrap' },
+>(input: {
+	env: UserMeterEnv
+	userId: OwnerId
+	resource: DailyEntitlementResource
+	window: DailyEntitlementWindow
+	run: (meter: ReturnType<typeof userMeterRpc>) => Promise<T>
+}): Promise<Exclude<T, { outcome: 'needs_bootstrap' }>> {
+	const meter = userMeterRpc({ env: input.env, userId: input.userId })
+	let result = await input.run(meter)
 	if (result.outcome === 'needs_bootstrap') {
 		await ensureUserMeterCounterInitializedAtZero({
 			env: input.env,
 			userId: input.userId,
-			resource,
-			day,
-			updatedAt,
+			resource: input.resource,
+			day: input.window.day,
+			updatedAt: input.window.updatedAt,
 		})
-		result = await meter.consume(consumeInput)
+		result = await input.run(meter)
 		if (result.outcome === 'needs_bootstrap') {
 			throw new Error(
 				'UserMeter consume still needs bootstrap after initialize.',
 			)
 		}
 	}
-	if (!result.consumed) {
-		const billingPath = await entitlementBillingPath(input.db, input.userId)
-		if (result.deniedWindow === 'week' && weekLimit !== null) {
-			throw new EntitlementLimitError({
-				resource,
-				plan,
-				limit: weekLimit,
-				current: result.weekCount ?? 0,
-				window: 'week',
-				upgradeHint: buildEntitlementUpgradeHint(
-					resource,
-					plan,
-					entitlement.creditWallet,
-					billingPath,
-				),
-			})
-		}
+	return result as Exclude<T, { outcome: 'needs_bootstrap' }>
+}
+
+async function throwDailyEntitlementDenial(input: {
+	db: D1Database
+	userId: OwnerId
+	resource: DailyEntitlementResource
+	window: DailyEntitlementWindow
+	result: { count: number; deniedWindow?: 'day' | 'week'; weekCount?: number }
+}): Promise<never> {
+	const { entitlement, limit, weekLimit } = input.window
+	const billingPath = await entitlementBillingPath(input.db, input.userId)
+	const upgradeHint = buildEntitlementUpgradeHint(
+		input.resource,
+		entitlement.plan,
+		entitlement.creditWallet,
+		billingPath,
+	)
+	if (input.result.deniedWindow === 'week' && weekLimit !== null) {
 		throw new EntitlementLimitError({
-			resource,
-			plan,
-			limit,
-			current: result.count,
-			upgradeHint: buildEntitlementUpgradeHint(
-				resource,
-				plan,
-				entitlement.creditWallet,
-				billingPath,
-			),
+			resource: input.resource,
+			plan: entitlement.plan,
+			limit: weekLimit,
+			current: input.result.weekCount ?? 0,
+			window: 'week',
+			upgradeHint,
 		})
 	}
+	throw new EntitlementLimitError({
+		resource: input.resource,
+		plan: entitlement.plan,
+		limit,
+		current: input.result.count,
+		upgradeHint,
+	})
 }
 
 const cachedMonthlyComputeUsage =

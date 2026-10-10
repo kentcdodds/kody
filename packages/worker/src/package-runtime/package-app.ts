@@ -65,10 +65,10 @@ import {
 	createDynamicCallableWorkflow,
 	type PackageWorkflowCreateInput,
 } from './package-workflows.ts'
-import {
-	isPackageSecretAccessUnavailableError,
-	resolvePackageMountedSecret,
-} from '#mcp/secrets/package-access.ts'
+import { isPackageSecretAccessUnavailableError } from '#mcp/secrets/package-access.ts'
+import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	resolveSecretAuthorityPackageId,
 	runWithCurrentSecretAuthority,
@@ -1481,17 +1481,30 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 		})
 	}
 
-	async packageSecretGet(input: { alias: string; packageId?: string }) {
+	private async resolvePackageSecretMount(input: {
+		alias: string
+		packageId?: string
+	}) {
 		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
 			this.ctx.props.packageId,
 		)
-		const resolved = await resolvePackageMountedSecret({
+		return await resolveCredential({
 			env: this.env,
-			callerContext,
-			packageId,
-			alias: input.alias,
+			orgId: ownerIdFromCaller(callerContext),
+			actor: callerContext.request,
+			packageStamp: attestedPackageStamp(packageId),
+			baseUrl: callerContext.baseUrl,
+			credential: {
+				use: 'package-secret-mount',
+				alias: input.alias,
+				callerContext,
+			},
 		})
+	}
+
+	async packageSecretGet(input: { alias: string; packageId?: string }) {
+		const resolved = await this.resolvePackageSecretMount(input)
 		// Opaque placeholder string only — never track or return plaintext.
 		return {
 			value: resolved.ref,
@@ -1499,17 +1512,8 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	}
 
 	async packageSecretHas(input: { alias: string; packageId?: string }) {
-		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
-		const callerContext = await this.createCallerContext(
-			this.ctx.props.packageId,
-		)
 		try {
-			await resolvePackageMountedSecret({
-				env: this.env,
-				callerContext,
-				packageId,
-				alias: input.alias,
-			})
+			await this.resolvePackageSecretMount(input)
 			return {
 				has: true,
 			}

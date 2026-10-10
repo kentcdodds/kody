@@ -273,13 +273,13 @@ package code is reused, so calls through them are metered per call:
 Execution surfaces nest. A package job funnels through the bundled-module runner
 and the sandbox executor, so it produces one `job_run` and one `package_export`.
 It does **not** also emit `execute` — that metric is MCP `execute` tool work
-only, matching `execute_calls_per_day` and `first_execute_at`. A bundled
-execute-tool run that calls statically imported package exports still produces
-one `package_static_call` per call **inside** that run's `execute` span. Each
-metric answers its own question (`execute` is ad-hoc execute-tool volume;
-`job_run` is job activity; `package_export` is saved-package entrypoints;
-`package_static_call` is per-callee reuse). `dynamic_worker_day` is the
-Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
+only, matching `execute_unique_workers_per_day` and `first_execute_at`. A
+bundled execute-tool run that calls statically imported package exports still
+produces one `package_static_call` per call **inside** that run's `execute`
+span. Each metric answers its own question (`execute` is ad-hoc execute-tool
+volume; `job_run` is job activity; `package_export` is saved-package
+entrypoints; `package_static_call` is per-callee reuse). `dynamic_worker_day` is
+the Cloudflare bill unit: one unique Dynamic Worker id per user per UTC day, on
 every sandbox surface that creates a worker. `dynamic_worker_invoke` is the
 observe-only reuse meter: one event per execute-sandbox LOADER evaluate,
 including later claims of the same id on the same UTC day. Do not add it to
@@ -832,11 +832,11 @@ GROUP BY stage
   account's unique Dynamic Worker cost for the month first reaches the
   plan-aware threshold (Free $2 / 1,000 unique days, Standard
   $12, Pro $49), or
-  when a non-admin account hits 100% of `execute_calls_per_day` on three of the
-  last seven UTC days. Staying over the same threshold does not emit again.
-  Admin-role dogfooding stays on `/admin/insights` rankings and can still appear
-  as an entitlement crossing, but does not page the runtime-duration,
-  unique-worker-cost, or repeated- execute signals. KV prefix
+  when a non-admin account hits 100% of `execute_unique_workers_per_day` on
+  three of the last seven UTC days. Staying over the same threshold does not
+  emit again. Admin-role dogfooding stays on `/admin/insights` rankings and can
+  still appear as an entitlement crossing, but does not page the
+  runtime-duration, unique-worker-cost, or repeated- execute signals. KV prefix
   `fleet-entitlement-crossing:v1` claims each crossing. Execute-cap trains also
   write `fleet-entitlement-hit:v1` day keys so a later drop below 100% the same
   day does not erase the count. Admin links in the payload are built with

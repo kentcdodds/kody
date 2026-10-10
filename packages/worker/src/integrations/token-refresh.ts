@@ -10,7 +10,6 @@ import {
 	resolveUserOauthAppClientSecret,
 } from './credentials.ts'
 import { writeIntegrationAuthFailure } from './repo.ts'
-import { assertCanUseIntegration } from './package-access.ts'
 import {
 	buildOAuthTokenExchangeRequest,
 	resolveTokenExchangeStyle,
@@ -352,9 +351,6 @@ export async function refreshIntegrationTokens(input: {
 	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
-	baseUrl?: string
-	packageId?: string | null
-	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
 	const key = integrationTokenRefreshDedupeKey(input.userId, input.name)
@@ -384,9 +380,6 @@ async function refreshIntegrationTokensAttempt(input: {
 	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
-	baseUrl?: string
-	packageId?: string | null
-	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
 	try {
@@ -415,21 +408,8 @@ async function refreshIntegrationTokensOrThrow(input: {
 	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
-	baseUrl?: string
-	packageId?: string | null
-	packageKodyId?: string | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<IntegrationTokenRefreshResult> {
-	if (input.baseUrl) {
-		await assertCanUseIntegration({
-			env: input.env,
-			baseUrl: input.baseUrl,
-			userId: input.userId,
-			name: input.name,
-			packageId: input.packageId,
-			packageKodyId: input.packageKodyId,
-		})
-	}
 	const joined = await getJoinedIntegration({
 		env: input.env,
 		userId: input.userId,

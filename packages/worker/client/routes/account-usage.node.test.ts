@@ -32,8 +32,8 @@ function entitlement(
 	overrides: Partial<AccountUsageEntitlementConsumption> = {},
 ): AccountUsageEntitlementConsumption {
 	return {
-		resource: 'execute_calls_per_day',
-		label: 'execute calls per day',
+		resource: 'execute_unique_workers_per_day',
+		label: 'unique execute workers per day',
 		group: 'daily',
 		kind: 'counter',
 		whatCounts: 'Execute calls today (UTC).',
@@ -118,7 +118,7 @@ test('credits action follows the wallet: add, switch, subscribe, or nothing', ()
 
 test('warning credits links only on limits credits can raise', () => {
 	const raisable = [
-		'execute_calls_per_day',
+		'execute_unique_workers_per_day',
 		'outbound_fetches_per_day',
 		'job_runs_per_day',
 		'automation_invocations_per_day',
@@ -160,7 +160,7 @@ test('usage resource name keeps the explanation in a popover', async () => {
 	const whatCounts = 'MCP execute tool runs today (UTC).'
 	const html = await renderToString(
 		jsx(UsageResourceName, {
-			id: 'execute_calls_per_day',
+			id: 'execute_unique_workers_per_day',
 			label: 'Execute calls',
 			whatCounts,
 			howToReduce: 'Run fewer execute calls today or this week.',
@@ -168,10 +168,12 @@ test('usage resource name keeps the explanation in a popover', async () => {
 		}),
 	)
 	expect(html).toContain('>Execute calls</span>')
-	expect(html).toContain('popovertarget="usage-resource-execute_calls_per_day"')
+	expect(html).toContain(
+		'popovertarget="usage-resource-execute_unique_workers_per_day"',
+	)
 	expect(html).toContain('aria-label="What counts toward Execute calls"')
 	const panelAt = html.indexOf(
-		'data-usage-resource-panel="execute_calls_per_day"',
+		'data-usage-resource-panel="execute_unique_workers_per_day"',
 	)
 	expect(panelAt).toBeGreaterThan(-1)
 	expect(html.slice(panelAt)).toContain(whatCounts)

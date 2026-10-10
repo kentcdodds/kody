@@ -199,13 +199,13 @@ like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
-(`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
-`concurrent_workflows`) are operator runaway caps sized from production usage
-with at least 2× busy-day headroom, and they still dominate every paid plan.
-`automation_invocations_per_day` on `max` is the public burst-friendly ceiling
-above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays at the
-job-matched values. All other resources use the ordinary `planLimits.max`
-numbers.
+(`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
+`job_runs_per_day`, `concurrent_workflows`) are operator runaway caps sized from
+production usage with at least 2× busy-day headroom, and they still dominate
+every paid plan. `automation_invocations_per_day` on `max` is the public
+burst-friendly ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro
+automation stays at the job-matched values. All other resources use the ordinary
+`planLimits.max` numbers.
 
 | Resource                         | Limit   |
 | -------------------------------- | ------- |
@@ -219,7 +219,7 @@ numbers.
 | `repo_sessions`                  | 20,000  |
 | `secrets`                        | 10,000  |
 | `storage_bytes`                  | 100 GiB |
-| `execute_calls_per_day`          | 25,000  |
+| `execute_unique_workers_per_day` | 25,000  |
 | `outbound_fetches_per_day`       | 80,000  |
 | `job_runs_per_day`               | 40,000  |
 | `automation_invocations_per_day` | 200,000 |
@@ -387,19 +387,37 @@ the change up within the 60s entitlement cache.
 
 ## Compute rate limits
 
-`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`, and
-`automation_invocations_per_day` are daily-counter resources (same mechanism as
-`email_sends_per_day`, consumed atomically with `consumeDailyEntitlement`).
-Public Free/Standard/Pro also apply a UTC-week hard cap on execute and outbound
-fetches (Monday–Sunday, summed from the same UserMeter daily rows). Whichever
-window hits first blocks. `max` and legacy Standard/Pro stay daily-only. They
-close the metering → enforcement loop for the compute surfaces
-`usage-metering.md` already observes:
+`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
+`job_runs_per_day`, and `automation_invocations_per_day` are daily-counter
+resources (same mechanism as `email_sends_per_day`, consumed atomically with
+`consumeDailyEntitlement`; execute uses `consumeExecuteUniqueWorkerDay`, which
+spends a unit only for a worker not yet claimed that UTC day). Public
+Free/Standard/Pro also apply a UTC-week hard cap on execute and outbound fetches
+(Monday–Sunday, summed from the same UserMeter daily rows). Whichever window
+hits first blocks. `max` and legacy Standard/Pro stay daily-only. They close the
+metering → enforcement loop for the compute surfaces `usage-metering.md` already
+observes:
 
-- **Execute calls** are consumed at the top of the MCP `execute` tool handler
-  (`packages/worker/src/mcp/tools/execute.ts`) before any bundling or sandbox
-  work, so over-limit calls cost nothing. The `EntitlementLimitError` propagates
-  as a structured MCP error.
+- **Unique execute workers** (`execute_unique_workers_per_day`) count what
+  Cloudflare bills: one unit per new Dynamic Worker (module graph) per org per
+  UTC day. The MCP `execute` tool passes a capped claim
+  (`packages/worker/src/mcp/execute-admission.ts`) into the executor, which
+  awaits it once the worker id is minted and before `LOADER.get`.
+  `UserMeter.claimDynamicWorkerDayWithinLimit` claims the `(day, workerId)` row
+  and increments the counter in one transaction only when the id is new; repeats
+  of code already loaded today (any params, success or failure) are free, and
+  calls refused before load (rate brake, bundle errors, flag failures) never
+  count. A denial leaves the worker unclaimed and propagates as a structured MCP
+  `EntitlementLimitError`; a keyed call's idempotency key is released. Nested
+  computed-import evaluations keep the uncapped attribution claim. The meter is
+  keyed by the billing org (`ownerIdFromCaller`), like outbound fetches and
+  jobs.
+- **Execute runaway brake**: before any claim, bundle, or sandbox work, the tool
+  calls `UserMeter.admitExecuteCall`, an in-memory per-org counter that refuses
+  past `executeCallsPerMinutePerOrg` (300) calls in a UTC minute. It counts
+  every call, including warm repeats the plan cap does not, and is a safety net
+  rather than a plan limit (busiest production org-minute over the 30 days to
+  2026-10-10: 64 calls).
 - **Outbound fetches** are consumed at the top of `executeGatewayFetch`
   (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch passes
   through, before secret expansion. `FetchGatewayProps.email` carries the acting
@@ -420,7 +438,7 @@ close the metering → enforcement loop for the compute surfaces
   webhooks, package subscriptions, and package-backed workflow steps. Nested
   invokes from MCP execute or package runtime do not consume again. This meter
   is a sibling of execute and jobs — webhook floods do not burn
-  `execute_calls_per_day`, and MCP execute does not burn
+  `execute_unique_workers_per_day`, and MCP execute does not burn
   `automation_invocations_per_day`. Public Free sits modestly above
   `job_runs_per_day`. Public Standard, Pro, and `max` are burst-friendly above
   job runs. Legacy Standard/Pro stay at the job-matched ceilings.
@@ -438,9 +456,9 @@ authoritative in the per-user `UserMeter` Durable Object; see
 ## UserMeter
 
 Daily rate-style resources (`email_sends_per_day`, `email_receives_per_day`,
-`execute_calls_per_day`, `outbound_fetches_per_day`, `job_runs_per_day`,
-`automation_invocations_per_day`) are **authoritative in the per-user
-`UserMeter` Durable Object** (`USER_METER` binding). Code lives in
+`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
+`job_runs_per_day`, `automation_invocations_per_day`) are **authoritative in the
+per-user `UserMeter` Durable Object** (`USER_METER` binding). Code lives in
 `packages/worker/src/entitlements/user-meter-do.ts` and `user-meter-client.ts`;
 storage layout and naming are documented in [Data storage](./data-storage.md).
 UserMeter also stores first-seen Dynamic Worker ids per UTC day so usage
@@ -892,10 +910,10 @@ hint is always reduce-only (Free and Pro share 15 minutes).
 
 Rate limit example (purchasable Pro with $0):
 
-> Plan limit reached: your "pro" plan allows at most 500 execute calls per day
-> and you currently have 500. Remove or finish existing execute calls per day
-> you no longer need, or add credits at /account/usage#credits to keep going
-> past your include.
+> Plan limit reached: your "pro" plan allows at most 500 unique execute workers
+> per day and you currently have 500. Rerun code you already ran today and vary
+> params; repeats are free, or add credits at /account/usage#credits to keep
+> going past your include.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
@@ -950,16 +968,20 @@ Rules:
   `countActiveWorkflowProjections` through
   `readCurrentEntitlementResourceUsage`. D1 has no `workflow_runs` table. See
   [Run records](./run-records.md).
-- **Rate-style limits** (email sends/receives per day, execute calls per day,
-  outbound fetches per day, job runs per day) are **authoritative in the
-  per-user UserMeter Durable Object** (UTC day keys). Call
+- **Rate-style limits** (email sends/receives per day, unique execute workers
+  per day, outbound fetches per day, job runs per day) are **authoritative in
+  the per-user UserMeter Durable Object** (UTC day keys). Call
   `consumeDailyEntitlement` on every attempt: it resolves the plan limit,
   atomically checks and increments inside the DO, and throws
-  `EntitlementLimitError` when over limit. Public Free/Standard/Pro execute and
-  outbound also check a UTC-week sum of those same daily rows; whichever window
-  hits first blocks. Every resolved plan has a finite numeric limit. Counting
-  attempts rather than successes keeps the limit abuse-resistant for permanent
-  rejects (parse failures, entitlement/quota rejects).
+  `EntitlementLimitError` when over limit. Unique execute workers are the
+  exception: `consumeExecuteUniqueWorkerDay` runs at the load gate once the
+  worker id is known, and spends only for a new worker that UTC day, so repeats
+  and calls refused earlier (rate brake, parse errors) never count. Public
+  Free/Standard/Pro execute and outbound also check a UTC-week sum of those same
+  daily rows; whichever window hits first blocks. Every resolved plan has a
+  finite numeric limit. Counting attempts rather than successes keeps the limit
+  abuse-resistant for permanent rejects (parse failures, entitlement/quota
+  rejects).
 
   **Cold bootstrap:** missing `(resource, day)` rows trigger
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
@@ -1129,7 +1151,7 @@ workflows via RunLog, and similar).
 | `email_message_bytes`            | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                                                                      |
 | `secrets`                        | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                                                                    |
 | `concurrent_workflows`           | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                                                                             |
-| `execute_calls_per_day`          | MCP `execute` tool handler (`consumeDailyEntitlement` before bundling/sandbox)                                                                                                                                                                                                                                                                                                      |
+| `execute_unique_workers_per_day` | executor capped claim from the MCP `execute` tool (`consumeExecuteUniqueWorkerDay` after the worker id is minted, before load; repeats free)                                                                                                                                                                                                                                        |
 | `outbound_fetches_per_day`       | `executeGatewayFetch` (`consumeDailyEntitlement` before secret expansion)                                                                                                                                                                                                                                                                                                           |
 | `job_runs_per_day`               | `executeJobOnce` (`consumeDailyEntitlement` before sandbox work; cron, interval, and run-now)                                                                                                                                                                                                                                                                                       |
 | `automation_invocations_per_day` | `runSavedPackageModuleOnce` (`consumeDailyEntitlement` before sandbox for top-level webhook / package-export / subscription / workflow invokes; not nested execute or package-runtime invokes)                                                                                                                                                                                      |

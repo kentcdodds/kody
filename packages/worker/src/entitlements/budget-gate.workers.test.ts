@@ -4,7 +4,7 @@ import { expect, test } from 'vitest'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { ensureEntitlementTestSchema } from './test-schema.ts'
-import { consumeDailyEntitlement } from './service.ts'
+import { consumeExecuteUniqueWorkerDay } from './service.ts'
 import { isBudgetLimitError } from './errors.ts'
 import {
 	recordOrgBudgetSpend,
@@ -18,7 +18,7 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-03-15T12:00:00.000Z')
 const month = utcMonthKey(now)
 
-test('over user budget denies new execute via consumeDailyEntitlement', async () => {
+test('over user budget denies a new execute worker via consumeExecuteUniqueWorkerDay', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
 	await ensureOrgsTestSchema(env.APP_DB)
 	const email = `budget-gate-${crypto.randomUUID()}@example.com`
@@ -55,12 +55,12 @@ test('over user budget denies new execute via consumeDailyEntitlement', async ()
 		orgSlug: 'acme',
 	})
 
-	const error = await consumeDailyEntitlement({
+	const error = await consumeExecuteUniqueWorkerDay({
 		db: env.APP_DB,
 		env,
 		userId: ownerIdFromStored(userId),
 		email,
-		resource: 'execute_calls_per_day',
+		workerId: 'kody-budget-gate',
 		now,
 		orgBudget: {
 			orgId: ownerIdFromStored(orgId),

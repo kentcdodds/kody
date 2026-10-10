@@ -141,7 +141,7 @@ test('readEntitlementUsageSnapshot warns at 80% and includes the account resourc
 		accountUsageEntitlementResources,
 	)
 	expect(snapshot.weekStart).toBe('2026-07-20')
-	expect(resource(snapshot, 'execute_calls_per_day')?.week).toEqual({
+	expect(resource(snapshot, 'execute_unique_workers_per_day')?.week).toEqual({
 		current: 0,
 		limit: 400,
 		percentOfLimit: 0,
@@ -171,16 +171,18 @@ test('readEntitlementUsageSnapshot uses the requested entitlement ladder', async
 					{ plan: 'standard', ladder },
 					undefined,
 				),
-				'execute_calls_per_day',
+				'execute_unique_workers_per_day',
 			),
 		),
 	)
-	expect(publicExecute?.limit).toBe(planLimits.standard.maxExecuteCallsPerDay)
+	expect(publicExecute?.limit).toBe(
+		planLimits.standard.maxExecuteUniqueWorkersPerDay,
+	)
 	expect(legacyExecute?.limit).toBe(
-		legacyPlanLimits.standard.maxExecuteCallsPerDay,
+		legacyPlanLimits.standard.maxExecuteUniqueWorkersPerDay,
 	)
 	expect(publicExecute?.week?.limit).toBe(
-		planLimits.standard.maxExecuteCallsPerWeek,
+		planLimits.standard.maxExecuteUniqueWorkersPerWeek,
 	)
 	expect(legacyExecute?.week).toBeUndefined()
 })
@@ -196,7 +198,7 @@ test('readEntitlementUsageSnapshot uses one UserMeter RPC for daily, weekly, and
 	for (const resource of [
 		'email_sends_per_day',
 		'email_receives_per_day',
-		'execute_calls_per_day',
+		'execute_unique_workers_per_day',
 		'outbound_fetches_per_day',
 		'job_runs_per_day',
 		'automation_invocations_per_day',
@@ -205,7 +207,7 @@ test('readEntitlementUsageSnapshot uses one UserMeter RPC for daily, weekly, and
 			userId: stableUserId,
 			resource,
 			day: utcDayKey(now),
-			count: resource === 'execute_calls_per_day' ? 4 : 0,
+			count: resource === 'execute_unique_workers_per_day' ? 4 : 0,
 		})
 	}
 	await env.meter.seedStorageBytes({ userId: stableUserId, bytes: 2_000 })
@@ -255,8 +257,10 @@ test('readEntitlementUsageSnapshot uses one UserMeter RPC for daily, weekly, and
 		readStorageBytes: 0,
 		readUsageSnapshot: 1,
 	})
-	expect(resource(snapshot, 'execute_calls_per_day')?.current).toBe(4)
-	expect(resource(snapshot, 'execute_calls_per_day')?.week?.current).toBe(4)
+	expect(resource(snapshot, 'execute_unique_workers_per_day')?.current).toBe(4)
+	expect(
+		resource(snapshot, 'execute_unique_workers_per_day')?.week?.current,
+	).toBe(4)
 	expect(resource(snapshot, 'storage_bytes')?.current).toBe(3_000)
 })
 
@@ -271,13 +275,13 @@ test('readEntitlementUsageSnapshot warns when the weekly window is hotter than t
 	] as const) {
 		await env.meter.seed({
 			userId: stableUserId,
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			day,
 			count,
 		})
 	}
 	const snapshot = await readSnapshot(db, env, stableUserId)
-	const execute = resource(snapshot, 'execute_calls_per_day')
+	const execute = resource(snapshot, 'execute_unique_workers_per_day')
 	expect(execute?.current).toBe(10)
 	expect(execute?.percentOfLimit).toBe(10 / 150)
 	expect(execute?.week).toEqual({
@@ -287,5 +291,5 @@ test('readEntitlementUsageSnapshot warns when the weekly window is hotter than t
 		overEightyPercent: true,
 	})
 	expect(execute?.overEightyPercent).toBe(true)
-	expect(hasWarning(snapshot, 'execute_calls_per_day')).toBe(true)
+	expect(hasWarning(snapshot, 'execute_unique_workers_per_day')).toBe(true)
 })

@@ -259,7 +259,7 @@ test('runtime duration crossings emit once per UTC month and daily resources key
 	const now = '2026-08-24T12:00:00.000Z'
 	setSnapshots(
 		snapshot({
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			current: 250,
 			limit: 250,
 			runtimeDurationMs: 90_000_000,
@@ -270,7 +270,7 @@ test('runtime duration crossings emit once per UTC month and daily resources key
 		store.get(
 			entitlementKey(
 				'reached',
-				'execute_calls_per_day',
+				'execute_unique_workers_per_day',
 				utcDayKey(new Date(now)),
 			),
 		),
@@ -305,7 +305,7 @@ test('repeated execute-cap days and unique-worker cost emit once, then rematch a
 	const env = createEnv(kv)
 	const executeSnapshot = (current: number, uniqueWorkerDays: number) =>
 		snapshot({
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			current,
 			limit: 100,
 			uniqueWorkerDays,
@@ -319,7 +319,7 @@ test('repeated execute-cap days and unique-worker cost emit once, then rematch a
 		store.get(
 			fleetEntitlementHitKvKey({
 				userId: ownerIdFromStored('user-a'),
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				day: utcDayKey(new Date(day1)),
 			}),
 		),
@@ -342,7 +342,7 @@ test('repeated execute-cap days and unique-worker cost emit once, then rematch a
 	])
 	expect(dispatchedEvent(3)).toMatchObject({
 		kind: 'repeated_entitlement',
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		days_at_limit: 3,
 		window_days: 7,
 		threshold_days: 3,
@@ -355,7 +355,7 @@ test('repeated execute-cap days and unique-worker cost emit once, then rematch a
 	})
 	const repeatedKey = crossingKey({
 		kind: 'repeated_entitlement',
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 	})
 	expect(store.get(repeatedKey)).toBe(at(day3))
 
@@ -377,7 +377,7 @@ test('admin accounts do not page repeated-execute or unique-worker cost trains',
 		snapshot({
 			isAdmin: true,
 			plan: 'max',
-			resource: 'execute_calls_per_day',
+			resource: 'execute_unique_workers_per_day',
 			current: 100,
 			limit: 100,
 			uniqueWorkerDays: 50_000,

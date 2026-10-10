@@ -287,16 +287,21 @@ export type PlanLimits = {
 	maxStorageBytes: number
 	/** Maximum concurrently active workflow runs. */
 	maxConcurrentWorkflows: number
-	/** Maximum MCP execute-tool runs per UTC day. */
-	maxExecuteCallsPerDay: number
 	/**
-	 * Maximum MCP execute-tool runs per UTC week (Monday–Sunday). `null`
+	 * Maximum unique sandbox workers MCP execute loads per UTC day: one per
+	 * distinct module graph per day (`dynamic_worker_day` on the execute
+	 * surface), which is what Cloudflare bills. Repeats of code already
+	 * loaded today are free.
+	 */
+	maxExecuteUniqueWorkersPerDay: number
+	/**
+	 * Maximum unique execute workers per UTC week (Monday–Sunday). `null`
 	 * means no weekly window — daily is the only hard cap. Public
 	 * Free/Standard/Pro set a weekly total so a 1–2 day burst cannot spend
 	 * a full week of daily headroom. `max` and legacy Standard/Pro leave
 	 * this unset so their daily-only behavior stays unchanged.
 	 */
-	maxExecuteCallsPerWeek: number | null
+	maxExecuteUniqueWorkersPerWeek: number | null
 	/**
 	 * Maximum sandbox outbound fetches (through the fetch gateway) per UTC
 	 * day. Bounds cost abuse and third-party hammering from user code; the
@@ -307,7 +312,7 @@ export type PlanLimits = {
 	/**
 	 * Maximum sandbox outbound fetches per UTC week (Monday–Sunday).
 	 * `null` means no weekly window. Same public-vs-legacy/`max` rule as
-	 * {@link PlanLimits.maxExecuteCallsPerWeek}.
+	 * {@link PlanLimits.maxExecuteUniqueWorkersPerWeek}.
 	 */
 	maxOutboundFetchesPerWeek: number | null
 	/**
@@ -320,7 +325,7 @@ export type PlanLimits = {
 	 * Maximum always-on automation invocations per UTC day: inbound
 	 * webhooks, HTTP package-export invocations, package subscriptions,
 	 * and package-backed workflow steps. Sibling of
-	 * {@link PlanLimits.maxExecuteCallsPerDay} (MCP execute only) and
+	 * {@link PlanLimits.maxExecuteUniqueWorkersPerDay} (MCP execute only) and
 	 * {@link PlanLimits.maxJobRunsPerDay} (scheduled jobs). Daily only —
 	 * no weekly window. Public Free sits modestly above job runs. Public
 	 * Standard, Pro, and `max` are burst-friendly above job runs. Legacy
@@ -364,7 +369,7 @@ export const entitlementResources = [
 	'secrets',
 	'storage_bytes',
 	'concurrent_workflows',
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
@@ -385,7 +390,7 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 	secrets: 'secrets',
 	storage_bytes: 'storage bytes',
 	concurrent_workflows: 'concurrent workflows',
-	execute_calls_per_day: 'execute calls per day',
+	execute_unique_workers_per_day: 'unique execute workers per day',
 	outbound_fetches_per_day: 'outbound fetches per day',
 	job_runs_per_day: 'job runs per day',
 	automation_invocations_per_day: 'automation invocations per day',
@@ -455,11 +460,11 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Concurrent active runs (not lifetime or daily). One at a time on
 		// free; a second deferred workflow is the upgrade nudge.
 		maxConcurrentWorkflows: 1,
-		// Unique execute is the Dynamic Worker bill. Daily headroom covers a
-		// bursty agent morning; the weekly total keeps a free account from
-		// spending a full week of that headroom every day.
-		maxExecuteCallsPerDay: 150,
-		maxExecuteCallsPerWeek: 400,
+		// Unique execute workers are the Dynamic Worker bill. Daily headroom
+		// covers a bursty agent morning; the weekly total keeps a free account
+		// from spending a full week of that headroom every day.
+		maxExecuteUniqueWorkersPerDay: 150,
+		maxExecuteUniqueWorkersPerWeek: 400,
 		maxOutboundFetchesPerDay: 1_000,
 		maxOutboundFetchesPerWeek: 2_500,
 		maxJobRunsPerDay: 500,
@@ -484,8 +489,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Public Standard execute is a try-paid rung with bursty daily
 		// headroom and a weekly total. Continuous pre-cut subscribers keep
 		// {@link legacyPlanLimits} (daily-only, no weekly window).
-		maxExecuteCallsPerDay: 500,
-		maxExecuteCallsPerWeek: 1_200,
+		maxExecuteUniqueWorkersPerDay: 500,
+		maxExecuteUniqueWorkersPerWeek: 1_200,
 		maxOutboundFetchesPerDay: 15_000,
 		maxOutboundFetchesPerWeek: 40_000,
 		maxJobRunsPerDay: 1_500,
@@ -508,8 +513,8 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
 		// Retired $49 Pro. Execute is a hard daily + weekly cap.
-		maxExecuteCallsPerDay: 1_500,
-		maxExecuteCallsPerWeek: 4_000,
+		maxExecuteUniqueWorkersPerDay: 1_500,
+		maxExecuteUniqueWorkersPerWeek: 4_000,
 		maxOutboundFetchesPerDay: 50_000,
 		maxOutboundFetchesPerWeek: 120_000,
 		maxJobRunsPerDay: 8_000,
@@ -542,9 +547,10 @@ export const planLimits: Record<PlanName, PlanLimits> = {
 		// Operator runaway cap. kentcdodds August 2026 rollup avg ~3,800
 		// execute/day (116k/month); entitlement meter today ~1,810. Daily
 		// peak is not stored; 25,000 is at least 2× a ~12,500 peak (~3×
-		// August avg). Unique-DW ceiling is $50/day ($0.002 × 25,000).
-		maxExecuteCallsPerDay: 25_000,
-		maxExecuteCallsPerWeek: null,
+		// August avg). Unique-DW ceiling is $50/day ($0.002 × 25,000). Sized
+		// against calls; unique workers are never more than calls.
+		maxExecuteUniqueWorkersPerDay: 25_000,
+		maxExecuteUniqueWorkersPerWeek: null,
 		// 2× pro (40_000). Today's fetch spike (~17,000) stays well under.
 		maxOutboundFetchesPerDay: 80_000,
 		maxOutboundFetchesPerWeek: null,
@@ -583,8 +589,8 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxSecrets: 100,
 		maxStorageBytes: 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 50,
-		maxExecuteCallsPerDay: 500,
-		maxExecuteCallsPerWeek: null,
+		maxExecuteUniqueWorkersPerDay: 500,
+		maxExecuteUniqueWorkersPerWeek: null,
 		maxOutboundFetchesPerDay: 20_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 10_000,
@@ -605,8 +611,8 @@ export const legacyPlanLimits: Record<'standard' | 'pro', PlanLimits> = {
 		maxSecrets: 200,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024,
 		maxConcurrentWorkflows: 100,
-		maxExecuteCallsPerDay: 800,
-		maxExecuteCallsPerWeek: null,
+		maxExecuteUniqueWorkersPerDay: 800,
+		maxExecuteUniqueWorkersPerWeek: null,
 		maxOutboundFetchesPerDay: 40_000,
 		maxOutboundFetchesPerWeek: null,
 		maxJobRunsPerDay: 20_000,
@@ -651,8 +657,8 @@ export const proCreditsPlanLimits: PlanLimits = {
 export const creditsUnlockMultiplier = 50
 
 const creditsUnlockedLimitFields = [
-	'maxExecuteCallsPerDay',
-	'maxExecuteCallsPerWeek',
+	'maxExecuteUniqueWorkersPerDay',
+	'maxExecuteUniqueWorkersPerWeek',
 	'maxOutboundFetchesPerDay',
 	'maxOutboundFetchesPerWeek',
 	'maxJobRunsPerDay',
@@ -661,7 +667,7 @@ const creditsUnlockedLimitFields = [
 
 /** Entitlement resources credits can carry past the include (rates only). */
 export const creditsUnlockedResources = [
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
@@ -682,7 +688,7 @@ export function isCreditsUnlockedResource(
  * admitted, and failing them mid-run would strand half-done work.
  */
 const pastIncludeStopResources = [
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
@@ -706,13 +712,13 @@ function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
 	const ceiling = planLimits.max
 	return {
 		...limits,
-		maxExecuteCallsPerDay: scale(
-			limits.maxExecuteCallsPerDay,
-			ceiling.maxExecuteCallsPerDay,
+		maxExecuteUniqueWorkersPerDay: scale(
+			limits.maxExecuteUniqueWorkersPerDay,
+			ceiling.maxExecuteUniqueWorkersPerDay,
 		),
-		maxExecuteCallsPerWeek: scaleWeekly(
-			limits.maxExecuteCallsPerWeek,
-			ceiling.maxExecuteCallsPerDay,
+		maxExecuteUniqueWorkersPerWeek: scaleWeekly(
+			limits.maxExecuteUniqueWorkersPerWeek,
+			ceiling.maxExecuteUniqueWorkersPerDay,
 		),
 		maxOutboundFetchesPerDay: scale(
 			limits.maxOutboundFetchesPerDay,
@@ -821,8 +827,8 @@ export function resolvePlanLimit(
 			return limits.maxStorageBytes
 		case 'concurrent_workflows':
 			return limits.maxConcurrentWorkflows
-		case 'execute_calls_per_day':
-			return limits.maxExecuteCallsPerDay
+		case 'execute_unique_workers_per_day':
+			return limits.maxExecuteUniqueWorkersPerDay
 		case 'outbound_fetches_per_day':
 			return limits.maxOutboundFetchesPerDay
 		case 'job_runs_per_day':
@@ -838,7 +844,7 @@ export function resolvePlanLimit(
 
 /** Daily resources that also have a public-ladder weekly hard cap. */
 const weeklyComputeWindowResources = [
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 ] as const satisfies ReadonlyArray<EntitlementResource>
 
@@ -874,8 +880,8 @@ export function resolveWeeklyPlanLimit(
 	if (!isWeeklyComputeWindowResource(resource)) return null
 	const limits = resolvePlanLimits(plan, ladder, creditWallet)
 	switch (resource) {
-		case 'execute_calls_per_day':
-			return limits.maxExecuteCallsPerWeek
+		case 'execute_unique_workers_per_day':
+			return limits.maxExecuteUniqueWorkersPerWeek
 		case 'outbound_fetches_per_day':
 			return limits.maxOutboundFetchesPerWeek
 		default: {
@@ -890,8 +896,8 @@ export function weeklyEntitlementResourceLabel(
 	resource: WeeklyComputeWindowResource,
 ): string {
 	switch (resource) {
-		case 'execute_calls_per_day':
-			return 'execute calls this week'
+		case 'execute_unique_workers_per_day':
+			return 'unique execute workers this week'
 		case 'outbound_fetches_per_day':
 			return 'outbound fetches this week'
 		default: {

@@ -1,10 +1,6 @@
-import {
-	ownerIdFromStored,
-	personIdFromStored,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import {
 	parsePackageAccessRequiredBatchMessage,
 	parsePackageAccessRequiredMessage,
@@ -14,7 +10,7 @@ const mockModule = vi.hoisted(() => ({
 	getSavedPackageById: vi.fn(),
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
-	resolveSecret: vi.fn(),
+	findSecret: vi.fn(),
 	getOrgById: vi.fn(),
 }))
 
@@ -34,7 +30,7 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 }))
 
 vi.mock('./service.ts', () => ({
-	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
+	findSecret: (...args: Array<unknown>) => mockModule.findSecret(...args),
 }))
 
 vi.mock('#worker/orgs/repo.ts', () => ({
@@ -47,7 +43,6 @@ const {
 	buildPackageApprovalErrorForMounts,
 	findMissingPackageApprovals,
 	PackageSecretAccessDeniedError,
-	resolvePackageMountedSecret,
 	resolveSecretPageOrgSlug,
 } = await import('./package-access.ts')
 
@@ -125,46 +120,6 @@ function lookups(pkg: unknown, fork: unknown) {
 function clearLookups() {
 	mockModule.getSavedPackageById.mockClear()
 	mockModule.getCommunityForkByForkedPackageId.mockClear()
-}
-
-function mountManifest(
-	name: string,
-	kodyId: string,
-	secretMounts: Record<string, { name: string; scope: 'user' | 'package' }>,
-) {
-	mockModule.loadPackageManifestBySourceId.mockResolvedValueOnce({
-		manifest: {
-			name,
-			exports: { '.': './src/index.ts' },
-			kody: { id: kodyId, description: kodyId, secretMounts },
-		},
-	})
-}
-
-function mountCaller(
-	storagePackageId: string | null,
-	options: { userId?: string | null; storageId?: string } = {},
-) {
-	const userId = options.userId === undefined ? 'user-1' : options.userId
-	return createMcpCallerContext({
-		source: { kind: 'mcp-oauth' },
-		baseUrl: 'https://example.com',
-		user: userId
-			? {
-					userId: personIdFromStored(userId),
-					username: 'ada',
-					email: `${userId}@example.com`,
-					displayName: userId,
-				}
-			: undefined,
-		repoContext: null,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: storagePackageId,
-			storageId: options.storageId ?? storagePackageId ?? 'pkg-1',
-		},
-	})
 }
 
 test('package secret access grants cover owned, self-authored, forked, adopted, and mutate intents', async () => {
@@ -281,7 +236,7 @@ test("package secret access does not resolve another org's package", async () =>
 test('assertCanSetSecrets fails closed for mutate grants before any provider work', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(savedPackage)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
-	mockModule.resolveSecret.mockResolvedValue(userSecretResolved)
+	mockModule.findSecret.mockResolvedValue(userSecretResolved)
 	await expect(
 		assertCanSetSecrets({
 			env: {
@@ -298,72 +253,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 			storageContext: { sessionId: null, appId: null, packageId: 'pkg-1' },
 		}),
 	).rejects.toBeInstanceOf(PackageSecretAccessDeniedError)
-	expect(mockModule.resolveSecret).toHaveBeenCalled()
-})
-
-test('resolvePackageMountedSecret uses the stamped package id even when the run is another package', async () => {
-	const mount = { packageId: 'pkg-1', alias: 'discordBotToken' }
-	await expect(
-		resolvePackageMountedSecret({
-			env: {} as Env,
-			...mount,
-			packageId: '',
-			callerContext: mountCaller(null),
-		}),
-	).rejects.toThrow(
-		'Package secret access requires a matching server-side package runtime context.',
-	)
-	await expect(
-		resolvePackageMountedSecret({
-			env: {} as Env,
-			...mount,
-			callerContext: mountCaller('pkg-1', { userId: null }),
-		}),
-	).rejects.toThrow(
-		'Package secret access requires an authenticated package caller context.',
-	)
-
-	for (const runPackageId of ['pkg-1', 'pkg-2']) {
-		mockModule.getSavedPackageById.mockResolvedValueOnce(savedPackage)
-		mountManifest(
-			'@kentcdodds/discord-gateway',
-			'discord-gateway',
-			discordMount,
-		)
-		mockModule.resolveSecret.mockResolvedValueOnce({
-			found: true,
-			value: 'bot-token',
-			scope: 'user',
-			allowedPackages: ['pkg-1'],
-		})
-		await expect(
-			resolvePackageMountedSecret({
-				env,
-				...mount,
-				callerContext: mountCaller(runPackageId),
-			}),
-		).resolves.toMatchObject({
-			alias: 'discordBotToken',
-			name: 'discordBotTokenKentPersonalAutomation',
-			ref: '{{secret:discordBotTokenKentPersonalAutomation|scope=user}}',
-			scope: 'user',
-			packageId: 'pkg-1',
-			kodyId: 'discord-gateway',
-		})
-		expect(mockModule.resolveSecret).toHaveBeenLastCalledWith(
-			expect.objectContaining({
-				userId: ownerIdFromStored('user-1'),
-				name: 'discordBotTokenKentPersonalAutomation',
-				scope: 'user',
-				storageContext: {
-					sessionId: null,
-					appId: null,
-					packageId: 'pkg-1',
-					storageId: runPackageId,
-				},
-			}),
-		)
-	}
+	expect(mockModule.findSecret).toHaveBeenCalled()
 })
 
 test('package approval helpers parse structured messages and skip trusted packages', async () => {
@@ -425,10 +315,10 @@ test('package approval helpers parse structured messages and skip trusted packag
 			[],
 		)
 	}
-	expect(mockModule.resolveSecret).not.toHaveBeenCalled()
+	expect(mockModule.findSecret).not.toHaveBeenCalled()
 
 	lookups(savedPackage, communityFork)
-	mockModule.resolveSecret.mockResolvedValueOnce({
+	mockModule.findSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'bot-token',
 		scope: 'user',
@@ -465,7 +355,7 @@ test('resolveSecretPageOrgSlug prefers the org row over a renamed username', asy
 
 test('findMissingPackageApprovals uses the team org slug and keeps empty links safe', async () => {
 	lookups(savedPackage, communityFork)
-	mockModule.resolveSecret.mockResolvedValueOnce({
+	mockModule.findSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'bot-token',
 		scope: 'user',
@@ -490,7 +380,7 @@ test('findMissingPackageApprovals uses the team org slug and keeps empty links s
 	)
 
 	lookups(savedPackage, communityFork)
-	mockModule.resolveSecret.mockResolvedValueOnce({
+	mockModule.findSecret.mockResolvedValueOnce({
 		found: true,
 		value: 'bot-token',
 		scope: 'user',

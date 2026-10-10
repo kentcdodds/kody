@@ -23,7 +23,7 @@ import { createStableDynamicWorkerId } from '#mcp/dynamic-worker-id.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { PackageSecretMountError } from '#mcp/secrets/package-access.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
-import * as packageAccess from '#mcp/secrets/package-access.ts'
+import * as credentialDoor from '#worker/credentials/resolve-credential.ts'
 import { type JobRecord } from '#worker/jobs/types.ts'
 import {
 	insertRepoSession,
@@ -697,8 +697,12 @@ test('runModuleWithRegistry forwards package context and resolves package secret
 	const mountedRef =
 		'{{secret:discordBotTokenKentPersonalAutomation|scope=user}}'
 	const resolveMountedSpy = vi
-		.spyOn(packageAccess, 'resolvePackageMountedSecret')
-		.mockImplementation(async ({ alias }) => {
+		.spyOn(credentialDoor, 'resolveCredential')
+		.mockImplementation(async ({ credential }) => {
+			if (credential.use !== 'package-secret-mount') {
+				throw new Error(`Unexpected credential use: ${credential.use}`)
+			}
+			const { alias } = credential
 			if (alias === 'missing-token') {
 				throw new PackageSecretMountError(
 					'Secret "missing-token" was not found.',
@@ -754,9 +758,15 @@ export default async function run() {
 		})
 		expect(resolveMountedSpy).toHaveBeenCalledExactlyOnceWith({
 			env,
-			callerContext,
-			packageId: 'package-123',
-			alias: 'token',
+			orgId: callerContext.request?.org.id,
+			actor: callerContext.request,
+			packageStamp: { kind: 'attested', packageId: 'package-123' },
+			baseUrl: callerContext.baseUrl,
+			credential: {
+				use: 'package-secret-mount',
+				alias: 'token',
+				callerContext,
+			},
 		})
 	}
 })

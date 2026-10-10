@@ -19,13 +19,17 @@ import {
 } from '#mcp/secrets/errors.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as unresolvedSecret from '#mcp/secrets/unresolved-secret.ts'
+import { personalOrgAccessD1 } from '#worker/test-support/org-binding-query.ts'
 import { jwtSignCapability } from './jwt-sign.ts'
 import { decodeHmacKeyMaterial, extractSecretMaterial } from './jwt-signing.ts'
 
 const pem = { type: 'pkcs8', format: 'pem' } as const
 const spki = { type: 'spki', format: 'pem' } as const
 const ctx = {
-	env: {} as Env,
+	env: {
+		APP_DB: personalOrgAccessD1(),
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env,
 	callerContext: createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
