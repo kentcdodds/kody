@@ -78,6 +78,8 @@ export const routes = route({
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',
 	accountConnectedAgentsApiPost: post('/account/connected-agents.json'),
+	// Per-connection usage for the Connections page (same org binding).
+	accountConnectionUsageApi: '/account/connection-usage.json',
 	accountPasskeys: '/account/passkeys',
 	accountPasskeysApi: '/account/passkeys.json',
 	accountPasskeysApiPost: post('/account/passkeys.json'),

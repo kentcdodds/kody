@@ -387,6 +387,10 @@
 		{
 			"filename": "0096-teams-migrated-actor-ids.sql",
 			"sha256": "c7da3f2d37b72a75595711e2728e49a799f696c6c5edb2f4fb37efc06eb8ab0f"
+		},
+		{
+			"filename": "0097-usage-connection-daily.sql",
+			"sha256": "370322c201b9e5592d0f1e05d74331024e716e442dea01eb61971d080475520f"
 		}
 	]
 }

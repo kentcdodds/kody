@@ -37,6 +37,10 @@ import {
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
 import {
+	connectionKeyColumns,
+	isConnectionUsageEventType,
+} from '#universal/connection-usage.ts'
+import {
 	creditAttributionMeterFromUsageEventType,
 	normalizeCreditAttributionPackageId,
 } from '#universal/credit-attribution.ts'
@@ -321,6 +325,19 @@ ON CONFLICT (user_id, day, package_id, meter) DO UPDATE SET
 	automation_source = excluded.automation_source
 `.trim()
 
+const usageConnectionDailyUpsertStatement = `
+INSERT INTO usage_connection_daily (
+	user_id, day, credential_kind, holder_user_id, credential_id,
+	package_id, event_type, units, updated_at
+) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+ON CONFLICT (
+	user_id, day, credential_kind, holder_user_id, credential_id,
+	package_id, event_type
+) DO UPDATE SET
+	units = units + excluded.units,
+	updated_at = excluded.updated_at
+`.trim()
+
 /**
  * Record one usage event.
  *
@@ -483,6 +500,7 @@ async function writeUsageRollup(
 			)
 			.run()
 		await writeUsageAttributionDaily(env, event, timestamp, eventCount)
+		await writeUsageConnectionDaily(env, event, timestamp, eventCount)
 	} catch (error) {
 		console.warn('usage-rollup-failed', error)
 	}
@@ -518,6 +536,38 @@ async function writeUsageAttributionDaily(
 			.run()
 	} catch (error) {
 		console.warn('usage-attribution-daily-failed', error)
+	}
+}
+
+/**
+ * Local/dev path: add one event's units to its `usage_connection_daily` row
+ * so the Connections page shows usage without Analytics Engine. Production
+ * recomputes this table from AE hourly (`connection-usage-rollup.ts`).
+ */
+async function writeUsageConnectionDaily(
+	env: UsageEnv,
+	event: UsageEvent,
+	timestamp: string,
+	eventCount: number,
+) {
+	if (!env.APP_DB || !isConnectionUsageEventType(event.eventType)) return
+	const columns = connectionKeyColumns(event.connectionKey)
+	try {
+		await env.APP_DB.prepare(usageConnectionDailyUpsertStatement)
+			.bind(
+				event.userId,
+				timestamp.slice(0, 'YYYY-MM-DD'.length),
+				columns.credential_kind,
+				columns.holder_user_id,
+				columns.credential_id,
+				event.packageId?.trim() || '',
+				event.eventType,
+				eventCount,
+				timestamp,
+			)
+			.run()
+	} catch (error) {
+		console.warn('usage-connection-daily-failed', error)
 	}
 }
 
