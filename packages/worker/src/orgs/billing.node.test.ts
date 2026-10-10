@@ -22,6 +22,19 @@ async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
+	await db
+		.prepare(
+			`CREATE TABLE users (
+				id TEXT PRIMARY KEY NOT NULL,
+				username TEXT NOT NULL UNIQUE,
+				email TEXT NOT NULL UNIQUE,
+				password_hash TEXT NOT NULL,
+				stable_user_id TEXT NOT NULL UNIQUE,
+				display_name TEXT,
+				deleted_at TEXT
+			)`,
+		)
+		.run()
 	return db
 }
 

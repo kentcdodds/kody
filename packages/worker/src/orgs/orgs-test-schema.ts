@@ -175,18 +175,4 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 			)`,
 		)
 		.run()
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS users (
-				id TEXT PRIMARY KEY NOT NULL,
-				username TEXT NOT NULL UNIQUE,
-				email TEXT NOT NULL UNIQUE,
-				password_hash TEXT NOT NULL,
-				stable_user_id TEXT NOT NULL UNIQUE,
-				display_name TEXT,
-				account_type TEXT NOT NULL DEFAULT 'person',
-				deleted_at TEXT
-			)`,
-		)
-		.run()
 }
