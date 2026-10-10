@@ -466,6 +466,9 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 						signInStatus,
 					)
 					if (next === signInStatus) return
+					// Provider/passkey start spends the Turnstile token before
+					// navigate; bfcache keeps the spent widget (same as setSignInError).
+					resetTurnstileWidgets()
 					signInStatus = next
 					handle.update()
 				},
