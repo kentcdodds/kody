@@ -13,6 +13,7 @@ import {
 	orgSectionKeysOnPerson,
 	orgSettingsPath,
 	orgSwitcherEntries,
+	orgTeamsPath,
 	organizationsWithSignupFallback,
 	parseOrgBillingPath,
 	parseOrgResourcePath,
@@ -183,11 +184,14 @@ function moveSwitcherFocus(event: KeyboardEvent, panel: HTMLElement | null) {
 function teamOrgSwitchHref(input: {
 	pathname: string
 	slug: string
+	role: OrganizationSummary['role']
 	personal: boolean
 	onBillingPage: boolean
 	managesBilling: boolean
 }) {
 	if (input.personal) return switchOrgPath(input.pathname, input.slug)
+	// Grant-only collaborators can open the org home, not Settings/Teams.
+	if (input.role === null) return `/@${input.slug}`
 	if (input.onBillingPage && !input.managesBilling) {
 		return orgSettingsPath(input.slug)
 	}
@@ -198,6 +202,10 @@ function teamOrgSwitchHref(input: {
 		return orgSettingsPath(input.slug)
 	}
 	const next = switchOrgPath(input.pathname, input.slug)
+	// Billing has member:read but not team:read.
+	if (input.role === 'billing' && next === orgTeamsPath(input.slug)) {
+		return orgSettingsPath(input.slug)
+	}
 	if (next === `/@${input.slug}`) return orgSettingsPath(input.slug)
 	return next
 }
@@ -299,6 +307,7 @@ function OrgSwitcher(
 						href: teamOrgSwitchHref({
 							pathname: handle.props.currentPathname,
 							slug: entry.org.slug,
+							role: entry.org.role,
 							personal: entry.org.personal,
 							onBillingPage,
 							managesBilling: orgRoleManagesBilling(entry.org.role),

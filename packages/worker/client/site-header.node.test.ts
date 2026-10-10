@@ -210,6 +210,86 @@ test('org switcher keeps Manage links for a team org on account pages', async ()
 	expect(acmeRow).toContain('href="/@acme/-/settings"')
 })
 
+test('org switcher sends collaborators to org home and billing off Teams', async () => {
+	const collaborator = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: null,
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+		}),
+	)
+	const collaboratorRow = collaborator.slice(
+		collaborator.lastIndexOf(
+			'<a',
+			collaborator.indexOf('data-testid="org-switcher-acme"'),
+		),
+		collaborator.indexOf(
+			'>',
+			collaborator.indexOf('data-testid="org-switcher-acme"'),
+		) + 1,
+	)
+	expect(collaboratorRow).toContain('href="/@acme"')
+	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
+	expect(collaborator).not.toContain('data-testid="org-switcher-manage-group"')
+
+	const billing = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Cara',
+			username: 'cara',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@zeta/-/teams',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: 'billing',
+					personal: false,
+				},
+				{
+					slug: 'cara',
+					displayName: 'Cara',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'acme',
+		}),
+	)
+	const billingRow = billing.slice(
+		billing.lastIndexOf(
+			'<a',
+			billing.indexOf('data-testid="org-switcher-acme"'),
+		),
+		billing.indexOf('>', billing.indexOf('data-testid="org-switcher-acme"')) +
+			1,
+	)
+	expect(billingRow).toContain('href="/@acme/-/settings"')
+	expect(billing).not.toContain('href="/@acme/-/teams"')
+})
+
 test('logged-out header shows Log in without an Account link', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {
