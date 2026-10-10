@@ -2,10 +2,13 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import {
 	accountAliasPath,
 	orgBillingPath,
+	orgCollaboratorsPath,
+	orgGrantsPath,
 	orgMembersPath,
 	orgResourcePath,
 	orgRoleManagesBilling,
 	orgSettingsPath,
+	orgTeamsPath,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -108,9 +111,61 @@ function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 }
 
 /**
+ * Management links for a team (non-personal) organization. Same order as the
+ * Organization rail: Settings, Members, Teams (owners/members), Grants,
+ * Collaborators, Billing (owners/billing). Empty for collaborators (`role`
+ * null) or when `orgSlug` is missing. Used by the rail, org switcher, and org
+ * home so discovery stays consistent.
+ */
+export function teamOrgManagementItems(input: {
+	orgSlug: string | null | undefined
+	role: OrgRole | null
+}): Array<AccountRailItem> {
+	const { orgSlug } = input
+	if (!orgSlug || input.role === null) return []
+	const items: Array<AccountRailItem> = [
+		{
+			href: orgSettingsPath(orgSlug),
+			label: 'Settings',
+			icon: 'edit',
+		},
+		{
+			href: orgMembersPath(orgSlug),
+			label: 'Members',
+			icon: 'users',
+		},
+	]
+	// Billing has member:read but not team:read.
+	if (input.role === 'owner' || input.role === 'member') {
+		items.push({
+			href: orgTeamsPath(orgSlug),
+			label: 'Teams',
+			icon: 'users',
+		})
+	}
+	items.push(
+		{
+			href: orgGrantsPath(orgSlug),
+			label: 'Grants',
+			icon: 'key',
+		},
+		{
+			href: orgCollaboratorsPath(orgSlug),
+			label: 'Collaborators',
+			icon: 'share',
+		},
+	)
+	if (orgRoleManagesBilling(input.role)) {
+		items.push(billingRailItem(orgSlug))
+	}
+	return items
+}
+
+/**
  * The workspace rail: everything the organization owns, grouped by job.
- * Storage still keys by person id (#3073), so a non-personal organization
- * has only Billing (for owners and billing admins) until its resources move.
+ * Team orgs get the Organization management links. Personal orgs keep the
+ * Build / Access / Data / Activity groups (packages and connections still key
+ * on the person; other sections read `request.org.id`).
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -120,23 +175,11 @@ export function workspaceRailGroups(input: {
 }): Array<AccountRailGroup> {
 	const { orgSlug } = input
 	if (!input.personal) {
-		if (!orgSlug || input.role === null) return []
-		const items: Array<AccountRailItem> = [
-			{
-				href: orgSettingsPath(orgSlug),
-				label: 'Settings',
-				icon: 'edit',
-			},
-			{
-				href: orgMembersPath(orgSlug),
-				label: 'Members',
-				icon: 'users',
-			},
-		]
-		if (orgRoleManagesBilling(input.role)) {
-			items.push(billingRailItem(orgSlug))
-		}
-		return [{ label: 'Organization', items }]
+		const items = teamOrgManagementItems({
+			orgSlug,
+			role: input.role,
+		})
+		return items.length > 0 ? [{ label: 'Organization', items }] : []
 	}
 	return [
 		{

@@ -284,6 +284,9 @@ registerPreloadPatterns(
 		// Static `/-/` outranks `/@:username/:kodyId/settings` (kodyId would be `-`).
 		routePattern(routes.orgSettings),
 		routePattern(routes.orgMembers),
+		routePattern(routes.orgTeams),
+		routePattern(routes.orgGrants),
+		routePattern(routes.orgCollaborators),
 	],
 	{
 		name: 'account-area',

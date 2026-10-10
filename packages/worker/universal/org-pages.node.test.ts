@@ -7,7 +7,10 @@ import {
 	orderOrganizations,
 	orgBillingPath,
 	orgIdentity,
+	orgCollaboratorsPath,
+	orgGrantsPath,
 	orgMembersPath,
+	orgTeamsPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgRoleManagesOrg,
@@ -116,6 +119,13 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/-/members.json', 'other')).toBe(
 		'/@other/-/members',
 	)
+	expect(switchOrgPath('/@acme/-/teams', 'other')).toBe('/@other/-/teams')
+	expect(switchOrgPath('/@acme/-/grants.json', 'other')).toBe(
+		'/@other/-/grants',
+	)
+	expect(switchOrgPath('/@acme/-/collaborators', 'other')).toBe(
+		'/@other/-/collaborators',
+	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
@@ -138,11 +148,26 @@ test('management paths name settings and members under the /- separator', () => 
 		slug: 'acme',
 		section: 'members',
 	})
+	expect(parseOrgManagementPath('/@acme/-/teams')).toEqual({
+		slug: 'acme',
+		section: 'teams',
+	})
+	expect(parseOrgManagementPath('/@acme/-/grants/revoke.json')).toEqual({
+		slug: 'acme',
+		section: 'grants',
+	})
+	expect(parseOrgManagementPath('/@acme/-/collaborators.json')).toEqual({
+		slug: 'acme',
+		section: 'collaborators',
+	})
 	expect(parseOrgManagementPath('/@acme/settings')).toBeNull()
 	expect(parseOrgManagementPath('/@acme/secrets')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/settings')).toBeNull()
 	expect(orgSettingsPath('acme')).toBe('/@acme/-/settings')
 	expect(orgMembersPath('acme')).toBe('/@acme/-/members')
+	expect(orgTeamsPath('acme')).toBe('/@acme/-/teams')
+	expect(orgGrantsPath('acme')).toBe('/@acme/-/grants')
+	expect(orgCollaboratorsPath('acme')).toBe('/@acme/-/collaborators')
 	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
 	expect(orgRoleManagesOrg('owner')).toBe(true)
 	expect(orgRoleManagesOrg('member')).toBe(false)

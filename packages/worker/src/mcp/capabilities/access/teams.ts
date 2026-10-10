@@ -11,12 +11,56 @@ import {
 	createTeam,
 	removeTeamMember,
 } from '#worker/orgs/access-writes.ts'
+import { listTeams } from '#worker/orgs/org-teams-list.ts'
 import {
 	requireOrgPermission,
 	resolvePersonId,
 	resolveTeamId,
 	rethrowAccessError,
 } from './shared.ts'
+
+const teamSummarySchema = z.object({
+	id: z.string(),
+	slug: z.string(),
+	name: z.string(),
+	description: z.string().nullable(),
+	member_count: z.number().int().nonnegative(),
+})
+
+export const teamListCapability = defineDomainCapability(
+	capabilityDomainNames.access,
+	{
+		name: 'teamList',
+		orgPermission: 'team:read',
+		description:
+			'List live teams in the organization this request is bound to, with live member counts.',
+		keywords: ['team', 'list', 'group'],
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		inputSchema: z.object({}),
+		outputSchema: z.object({
+			teams: z.array(teamSummarySchema),
+		}),
+		async handler(_args, ctx) {
+			try {
+				const { request, db } = await requireOrgPermission(ctx, 'team:read')
+				const teams = await listTeams(db, request.org.id)
+				return {
+					teams: teams.map((team) => ({
+						id: team.id,
+						slug: team.slug,
+						name: team.name,
+						description: team.description,
+						member_count: team.memberCount,
+					})),
+				}
+			} catch (error) {
+				rethrowAccessError(error)
+			}
+		},
+	},
+)
 
 export const teamCreateCapability = defineDomainCapability(
 	capabilityDomainNames.access,

@@ -170,6 +170,14 @@ export async function removeTeamMember(input: {
 	teamId: string
 	userId: string
 }) {
+	const team = await input.db
+		.prepare(
+			`SELECT id FROM teams
+			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.teamId, input.orgId)
+		.first<{ id: string }>()
+	if (!team) throw new Error('Team was not found in this org.')
 	const now = new Date().toISOString()
 	await runBatch(input.db, [
 		input.db

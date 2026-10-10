@@ -19,24 +19,29 @@ rails come from `account-rail.ts` and render through `AccountPageHeader` in
 rail collapses to a `<details>` menu.
 
 The site header has one avatar: the org switcher (`data-testid="org-switcher"`).
-Its popover lists orgs, Create organization, an invites row when you have any,
-then a "Your account" group (Your profile, Account settings, Log out). Narrow
-viewports show the same rows in the menu panel.
+Its popover lists orgs, then Manage links for the current team org (Settings,
+Members, Teams, Grants, Collaborators, Billing when the role allows), Create
+organization, an invites row when you have any, then a "Your account" group
+(Your profile, Account settings, Log out). Narrow viewports show the same rows
+in the menu panel.
 
 ## How to get there
 
 `/account` after login. Create an organization at `/account/organizations/new`
 (`POST` the same path with `displayName` and `slug`); it redirects to the org
-home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings and
-members are `/@<slug>/-/settings` and `/@<slug>/-/members`.
+home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings,
+members, teams, grants, and collaborators are `/@<slug>/-/settings`,
+`/@<slug>/-/members`, `/@<slug>/-/teams`, `/@<slug>/-/grants`, and
+`/@<slug>/-/collaborators`.
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Secrets, jobs, and the other org resource pages read
 `request.org.id`. Packages and connected agents stay 404 on a team org because
 those two sections still read the person. Team orgs still get an Organization
-rail: Settings (`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and
-Billing (`/@<slug>/-/billing`, owners; the page lands with #3135). Personal orgs
-keep Billing/Usage on the account rail.
+rail: Settings, Members, Teams (owners/members), Grants, Collaborators, and
+Billing (`/@<slug>/-/billing`, owners). The org switcher, org home, and
+`/account/organizations` also link into those sections. Personal orgs keep
+Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. Old `/account/...` resource pages 404.
@@ -50,6 +55,9 @@ node tools/control-kody.ts request GET /account/profile.json
 node tools/control-kody.ts request GET /account/organizations.json
 node tools/control-kody.ts request GET /@<slug>/-/settings.json
 node tools/control-kody.ts request GET /@<slug>/-/members.json
+node tools/control-kody.ts request GET /@<slug>/-/teams.json
+node tools/control-kody.ts request GET /@<slug>/-/grants.json
+node tools/control-kody.ts request GET /@<slug>/-/collaborators.json
 node tools/control-kody.ts request GET /account/connections.json
 ```
 
@@ -65,6 +73,13 @@ node tools/control-kody.ts request GET /account/connections.json
 - `POST /@<slug>/-/members/role.json`
 - `POST /@<slug>/-/members/remove.json`
 - `POST /@<slug>/-/members/invite.json`
+- `GET /@<slug>/-/teams.json`
+- `POST /@<slug>/-/teams/create.json`
+- `POST /@<slug>/-/teams/member-add.json`
+- `POST /@<slug>/-/teams/member-remove.json`
+- `GET /@<slug>/-/grants.json`
+- `POST /@<slug>/-/grants/revoke.json`
+- `GET /@<slug>/-/collaborators.json`
 - `POST /account/profile/avatar.json`
 - `POST /account/email-change.json`
 - `POST /account/email-claim-release.json`

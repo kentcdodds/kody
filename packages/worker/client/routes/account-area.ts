@@ -80,3 +80,9 @@ export {
 export { AccountRepositoriesRoute } from './account-repositories.tsx'
 export { OrgSettingsRoute, orgSettingsRouteLoader } from './org-settings.tsx'
 export { OrgMembersRoute, orgMembersRouteLoader } from './org-members.tsx'
+export { OrgTeamsRoute, orgTeamsRouteLoader } from './org-teams.tsx'
+export { OrgGrantsRoute, orgGrantsRouteLoader } from './org-grants.tsx'
+export {
+	OrgCollaboratorsRoute,
+	orgCollaboratorsRouteLoader,
+} from './org-collaborators.tsx'

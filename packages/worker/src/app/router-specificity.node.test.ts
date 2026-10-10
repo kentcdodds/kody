@@ -115,6 +115,12 @@ test('organization settings and members live under /- and leave package urls fre
 		'orgSettingsApi',
 		'orgMembers',
 		'orgMembersApi',
+		'orgTeams',
+		'orgTeamsApi',
+		'orgGrants',
+		'orgGrantsApi',
+		'orgCollaborators',
+		'orgCollaboratorsApi',
 		'communityPackage',
 		'profile',
 	])
@@ -122,8 +128,17 @@ test('organization settings and members live under /- and leave package urls fre
 	expect(await resolve('/@acme/-/settings.json')).toBe('orgSettingsApi')
 	expect(await resolve('/@acme/-/members')).toBe('orgMembers')
 	expect(await resolve('/@acme/-/members.json')).toBe('orgMembersApi')
+	expect(await resolve('/@acme/-/teams')).toBe('orgTeams')
+	expect(await resolve('/@acme/-/teams.json')).toBe('orgTeamsApi')
+	expect(await resolve('/@acme/-/grants')).toBe('orgGrants')
+	expect(await resolve('/@acme/-/grants.json')).toBe('orgGrantsApi')
+	expect(await resolve('/@acme/-/collaborators')).toBe('orgCollaborators')
+	expect(await resolve('/@acme/-/collaborators.json')).toBe(
+		'orgCollaboratorsApi',
+	)
 	expect(await resolve('/@acme/settings')).toBe('communityPackage')
 	expect(await resolve('/@acme/members')).toBe('communityPackage')
+	expect(await resolve('/@acme/teams')).toBe('communityPackage')
 	expect(await resolve('/@acme/devin')).toBe('communityPackage')
 })
 
