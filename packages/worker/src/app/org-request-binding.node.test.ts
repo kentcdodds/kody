@@ -31,13 +31,14 @@ async function createEnv() {
 	return { APP_DB: db } as unknown as Env
 }
 
-test('package JSON from a team page binds that org', async () => {
+test('account package JSON stays on the signup org from a team page', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/packages.json', {
 		headers: { referer: 'https://kody.test/@acme/-/packages' },
 	})
-	const resolution = await loadRequestOrgResolution(request, env, adaId)
-	expect(resolution).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
+	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
+		'personal',
+	)
 })
 
 test('account JSON from an org page binds that org', async () => {

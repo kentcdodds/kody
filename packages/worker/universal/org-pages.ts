@@ -67,6 +67,8 @@ function isOrgOwnedAccountSection(
  * `/account/secrets.json` and the other org-owned account JSON routes. The
  * Connections page reads `/account/connected-agents.json`;
  * `/account/connections.json` is the person's sign-in providers.
+ * `/account/packages.json` lists and mutates without per-package authz, so it
+ * stays on the person; team Repositories read `/@slug/-/packages.json`.
  */
 export function orgOwnedAccountApiSection(
 	pathname: string,
@@ -74,7 +76,7 @@ export function orgOwnedAccountApiSection(
 	const match = /^\/account\/([^/.]+)\.json$/.exec(pathname)
 	const name = match?.[1] ?? ''
 	if (name === 'connected-agents') return 'connections'
-	if (name === 'connections') return null
+	if (name === 'connections' || name === 'packages') return null
 	return isOrgOwnedAccountSection(name) ? name : null
 }
 

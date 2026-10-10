@@ -313,6 +313,7 @@ test('org account JSON names the section', () => {
 	)
 	// Sign-in providers belong to the person, not the Connections page.
 	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
+	expect(orgOwnedAccountApiSection('/account/packages.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/@acme/-/secrets')).toBeNull()
 })
