@@ -54,7 +54,7 @@ runs:
             ;;
           *)
             echo "Nx remote cache skipped: $server rejected cache auth (HTTP ${probe_status:-curl-error})."
-            echo "Validate will use local .nx + actions/cache until the worker secret matches."
+            echo "Validate will run without an Nx cache until the worker secret matches."
             ;;
         esac
 
