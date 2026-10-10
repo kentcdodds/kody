@@ -111,7 +111,7 @@ test('resolveBackgroundMcpUser treats a live team org as a writable owner', asyn
 	})
 })
 
-test('resolveBackgroundMcpUser fails closed for a missing owner and a deleted org', async () => {
+test('resolveBackgroundMcpUser fails closed for a missing owner and a deleted, deleting, or suspended org', async () => {
 	await ensureUsersTestSchema({ db: env.APP_DB })
 	const missingId = testStableUserIdFromEmail(
 		`bg-missing-${crypto.randomUUID()}@example.com`,
@@ -120,19 +120,55 @@ test('resolveBackgroundMcpUser fails closed for a missing owner and a deleted or
 		`Background MCP user was not found: ${missingId}`,
 	)
 
-	const orgId = testStableUserIdFromEmail(
-		`bg-deleted-org-${crypto.randomUUID()}@example.com`,
-	)
 	const now = new Date().toISOString()
-	await env.APP_DB.prepare(
-		`INSERT INTO orgs (id, slug, plan, deleted_at, created_at, updated_at)
-		 VALUES (?, ?, 'free', ?, ?, ?)`,
+	const insertOrg = async (
+		suffix: string,
+		fields: {
+			deleted_at?: string
+			deleting_at?: string
+			suspended_at?: string
+		},
+	) => {
+		const orgId = testStableUserIdFromEmail(
+			`bg-${suffix}-${crypto.randomUUID()}@example.com`,
+		)
+		await env.APP_DB.prepare(
+			`INSERT INTO orgs (id, slug, plan, deleted_at, deleting_at, suspended_at, created_at, updated_at)
+			 VALUES (?, ?, 'free', ?, ?, ?, ?, ?)`,
+		)
+			.bind(
+				orgId,
+				`bg-${suffix}-${crypto.randomUUID().slice(0, 8)}`,
+				fields.deleted_at ?? null,
+				fields.deleting_at ?? null,
+				fields.suspended_at ?? null,
+				now,
+				now,
+			)
+			.run()
+		return orgId
+	}
+
+	const deletedId = await insertOrg('deleted-org', { deleted_at: now })
+	await expect(resolveBackgroundMcpUser(env.APP_DB, deletedId)).rejects.toThrow(
+		`Background MCP user was not found: ${deletedId}`,
 	)
-		.bind(orgId, `bg-del-${crypto.randomUUID().slice(0, 8)}`, now, now, now)
-		.run()
-	await expect(resolveBackgroundMcpUser(env.APP_DB, orgId)).rejects.toThrow(
-		`Background MCP user was not found: ${orgId}`,
-	)
+
+	const deletingId = await insertOrg('deleting-org', { deleting_at: now })
+	await expect(
+		resolveBackgroundMcpUser(env.APP_DB, deletingId),
+	).rejects.toThrow(`Background MCP user was not found: ${deletingId}`)
+
+	const suspendedId = await insertOrg('suspended-org', { suspended_at: now })
+	const suspendedError = await resolveBackgroundMcpUser(
+		env.APP_DB,
+		suspendedId,
+	).catch((caught: unknown) => caught)
+	expect(suspendedError).toBeInstanceOf(AccountSuspendedError)
+	expect(suspendedError).toMatchObject({
+		code: 'account_suspended',
+		message: accountSuspendedMessage,
+	})
 })
 
 test('resolveBackgroundMcpUser does not fall through a deleting or deleted person to a leftover personal org', async () => {

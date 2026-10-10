@@ -5,7 +5,7 @@
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
-import { getOrgById } from '#worker/orgs/repo.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { getUserRolesAndPermissions } from './permissions-db.ts'
 import { resolveDisplayName } from './username.ts'
 
@@ -72,9 +72,24 @@ async function loadBackgroundMcpUser(
 			throw new AccountSuspendedError()
 		}
 	} else {
-		const org = await getOrgById(db, userId)
-		if (!org) {
+		const org = await db
+			.prepare(
+				`SELECT slug, display_name, suspended_at, deleting_at
+				 FROM orgs
+				 WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(userId)
+			.first<{
+				slug: string
+				display_name: string | null
+				suspended_at: string | null
+				deleting_at: string | null
+			}>()
+		if (!org || org.deleting_at) {
 			throw backgroundMcpUserNotFound(userId)
+		}
+		if (org.suspended_at) {
+			throw new AccountSuspendedError()
 		}
 		const displayName = org.display_name?.trim() || org.slug
 		return {
