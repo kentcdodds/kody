@@ -18,7 +18,6 @@ import {
 import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
-	usernameRequirements,
 } from './username.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -134,10 +133,10 @@ test('reserved username KV overrides, fallback, memo, permanent lock, and confli
 	const reservedMessage = 'This username is reserved.'
 	const swearValidationCases = [
 		{ username: 'fuckyou', expected: reservedMessage },
-		{ username: 'FuckYou', expected: usernameRequirements },
+		{ username: 'FuckYou', expected: reservedMessage },
 		{ username: normalizeUsername('FuckYou'), expected: reservedMessage },
 		{ username: normalizeUsername('SUPERFUCK'), expected: reservedMessage },
-		{ username: 'fuck_you', expected: usernameRequirements },
+		{ username: 'fuck_you', expected: reservedMessage },
 		{ username: 'super-fuck', expected: reservedMessage },
 		{ username: 'fu-ck', expected: reservedMessage },
 	]
