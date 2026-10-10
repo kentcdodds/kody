@@ -56,6 +56,18 @@ test('every non-eager route pattern resolves to a registered lazy area', () => {
 	}
 })
 
+test('org management under /- is account-area, not package settings', () => {
+	// `/@slug/-/settings` also matches `/@:username/:kodyId/settings` with
+	// kodyId `-`. Static `/-/` must win so SPA nav loads org settings.
+	expect(clientRouteAreaNameForPath('/@zeta-co/-/settings')).toBe(
+		'account-area',
+	)
+	expect(clientRouteAreaNameForPath('/@zeta-co/-/members')).toBe('account-area')
+	expect(clientRouteAreaNameForPath('/@zeta-co/my-pkg/settings')).toBe(
+		'community-area',
+	)
+})
+
 test('a cold lazy route defers handle.update, renders a fallback, and retries once before navigation recovery', async () => {
 	vi.useFakeTimers()
 	const previousWindow = globalThis.window
