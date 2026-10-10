@@ -8,10 +8,7 @@
 		"sharedGlobals": [
 			"{workspaceRoot}/package.json",
 			"{workspaceRoot}/package-lock.json",
-			"{workspaceRoot}/tsconfig*.json",
-			{
-				"env": "CI"
-			}
+			"{workspaceRoot}/tsconfig*.json"
 		],
 		"default": ["{projectRoot}/**/*", "sharedGlobals"],
 		"workspace": [
@@ -19,10 +16,7 @@
 			"{workspaceRoot}/.agents/**/*",
 			"{workspaceRoot}/.cursor/**/*",
 			"{workspaceRoot}/.github/**/*",
-			"{workspaceRoot}/.husky/**/*",
-			{
-				"env": "CI"
-			}
+			"{workspaceRoot}/.husky/**/*"
 		],
 		"suiteSupport": [
 			"{workspaceRoot}/vitest*.ts",
@@ -66,12 +60,20 @@
 				"workspace",
 				{
 					"env": "KODY_VALIDATE_LOAD"
+				},
+				{
+					"env": "CI"
 				}
 			]
 		},
 		"test-node": {
 			"cache": true,
-			"inputs": ["workspace"]
+			"inputs": [
+				"workspace",
+				{
+					"env": "CI"
+				}
+			]
 		},
 		"test-workers": {
 			"cache": true,
@@ -81,12 +83,22 @@
 				{
 					"env": "KODY_VALIDATE_LOAD"
 				},
-				"suiteSupport"
+				"suiteSupport",
+				{
+					"env": "CI"
+				}
 			]
 		},
 		"test-mcp": {
 			"cache": true,
-			"inputs": ["default", "^default", "suiteSupport"]
+			"inputs": [
+				"default",
+				"^default",
+				"suiteSupport",
+				{
+					"env": "CI"
+				}
+			]
 		},
 		"prepare-e2e-env": {
 			"cache": true
@@ -101,7 +113,10 @@
 				"^default",
 				"suiteSupport",
 				"{workspaceRoot}/e2e/**/*",
-				"{workspaceRoot}/playwright.config.ts"
+				"{workspaceRoot}/playwright.config.ts",
+				{
+					"env": "CI"
+				}
 			]
 		},
 		"dev": {

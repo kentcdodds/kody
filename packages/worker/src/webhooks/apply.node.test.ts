@@ -4,7 +4,9 @@ import {
 	decryptWebhookHmacSecret,
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import {
 	applyWebhookUrlForUser,
@@ -24,7 +26,6 @@ const integrationMocks = vi.hoisted(() => ({
 }))
 
 const secretMocks = vi.hoisted(() => ({
-	resolveSecretForHost: vi.fn(),
 	resolveSecret: vi.fn(),
 }))
 
@@ -38,12 +39,18 @@ vi.mock('#worker/integrations/credentials.ts', () => ({
 		integrationMocks.resolveIntegrationAccessToken(...args),
 }))
 
-vi.mock('#worker/integrations/package-access.ts', () => ({
+vi.mock('#worker/integrations/package-access.ts', async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import('#worker/integrations/package-access.ts')
+	>()),
 	assertCanUseIntegration: (...args: Array<unknown>) =>
 		integrationMocks.assertCanUseIntegration(...args),
 }))
 
-vi.mock('#worker/integrations/token-refresh.ts', () => ({
+vi.mock('#worker/integrations/token-refresh.ts', async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import('#worker/integrations/token-refresh.ts')
+	>()),
 	refreshIntegrationTokens: (...args: Array<unknown>) =>
 		integrationMocks.refreshIntegrationTokens(...args),
 }))
@@ -74,8 +81,6 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 }))
 
 vi.mock('#mcp/secrets/service.ts', () => ({
-	resolveSecretForHost: (...args: Array<unknown>) =>
-		secretMocks.resolveSecretForHost(...args),
 	resolveSecret: (...args: Array<unknown>) =>
 		secretMocks.resolveSecret(...args),
 }))
@@ -105,12 +110,6 @@ function mockIntegration(name = 'github', host = 'api.github.com') {
 }
 
 function mockSecret(value: string, host = 'api.github.com') {
-	secretMocks.resolveSecretForHost.mockResolvedValue({
-		found: true,
-		value,
-		allowedHosts: [host],
-		scope: 'user',
-	})
 	secretMocks.resolveSecret.mockResolvedValue({
 		found: true,
 		value,
@@ -230,40 +229,14 @@ async function setupOwner(
 	} as never)
 	const userId = testStableUserIdFromEmail('owner@example.com')
 	const sqlite = new DatabaseSync(':memory:')
-	sqlite.exec(`
-		CREATE TABLE webhook_endpoints (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			webhook_name TEXT NOT NULL,
-			url_secret_hash TEXT NOT NULL,
-			url_secret_encrypted TEXT,
-			hmac_secret_encrypted TEXT,
-			previous_url_secret_hash TEXT,
-			previous_url_secret_expires_at TEXT,
-			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-			deleted_at TEXT,
-
-			created_at TEXT NOT NULL,
-			rotated_at TEXT NOT NULL
-		);
-		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
-		ON webhook_endpoints(user_id, package_id, webhook_name);
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			username TEXT NOT NULL UNIQUE,
-			email TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL,
-			stable_user_id TEXT NOT NULL,
-			deleted_at TEXT
-		);
-	`)
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
 	const env = {
 		APP_DB: db,
 		APP_BASE_URL: 'https://heykody.dev',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)
@@ -271,6 +244,10 @@ async function setupOwner(
 		)
 		.bind(userId)
 		.run()
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: userId,
+		username: 'owner',
+	})
 	if (legacyMintHmac) {
 		secretMocks.resolveSecret.mockResolvedValue({
 			found: true,
@@ -287,7 +264,6 @@ async function setupOwner(
 		kodyId: 'sentry-bridge',
 		webhookName: 'sentry',
 	})
-	secretMocks.resolveSecretForHost.mockReset()
 	secretMocks.resolveSecret.mockReset()
 	return {
 		userId,
@@ -673,7 +649,6 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(injected).not.toEqual(url)
 	expect(JSON.stringify(applied)).not.toContain(injected)
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
-	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 })
 
 test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a live secrets lookup', async () => {
@@ -709,12 +684,11 @@ test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a liv
 	// Apply must not re-resolve verification.secretName (prevents post-Allow
 	// secret swaps into an already-approved destination).
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
-	expect(secretMocks.resolveSecretForHost).not.toHaveBeenCalled()
 })
 
 test('webhookUrlApply still requires host Allow for destination.secretName Bearer auth', async () => {
 	const { apply } = await setupOwner()
-	secretMocks.resolveSecretForHost.mockResolvedValue({
+	secretMocks.resolveSecret.mockResolvedValue({
 		found: true,
 		value: 'tok_unapproved',
 		allowedHosts: [],

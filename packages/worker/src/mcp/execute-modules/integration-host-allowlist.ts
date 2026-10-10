@@ -75,6 +75,16 @@ export function assertIntegrationHostAllowed(
 
 	if (!requestHost) return
 
+	assertIntegrationAllowsHost(integrationName, integration, requestHost)
+}
+
+/** Like `assertIntegrationHostAllowed`, for an already-parsed hostname. */
+export function assertIntegrationAllowsHost(
+	integrationName: string,
+	integration: IntegrationAllowlistInput,
+	host: string,
+): void {
+	const requestHost = normalizeHost(host)
 	const allowedHosts = getIntegrationAllowedHosts(integration)
 	if (allowedHosts.length === 0) {
 		throw new Error(

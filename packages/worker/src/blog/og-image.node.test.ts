@@ -26,14 +26,17 @@ test('blog OG renderer produces PNG for catalog posts with and without JPEG artw
 		}),
 	)
 
-	for (const slug of ['kody-vs-executor', 'openclaw-2-needs-a-home'] as const) {
+	for (const slug of [
+		'openclaw-2-needs-a-home',
+		'how-to-turn-agent-work-into-software-you-own',
+	] as const) {
 		const withArt = getBlogPost(slug)
 		expect(withArt).toBeDefined()
-		expect(withArt!.ogImage).toBe(`/images/${slug}-og.jpg`)
+		expect(withArt!.ogImage).toMatch(/^\/images\/.+\.jpe?g$/)
 		const artwork = readFileSync(
 			join(
 				dirname(fileURLToPath(import.meta.url)),
-				`../../public/images/${slug}-og.jpg`,
+				`../../public${withArt!.ogImage}`,
 			),
 		)
 		assertPng(

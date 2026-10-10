@@ -337,6 +337,8 @@ export async function mintWebhookUrlForUser(input: {
 		)
 		const hmacSecretEncrypted = await resolveHmacCiphertextForMint({
 			env: input.env,
+			request: input.request,
+			baseUrl,
 			userId: input.userId,
 			endpointId,
 			packageId: savedPackage.id,
@@ -585,6 +587,7 @@ export async function applyWebhookUrlForUser(input: {
 	})
 	return dispatchWebhookUrlApply({
 		env: input.env,
+		request: input.request,
 		userId: input.userId,
 		userEmail: input.email,
 		baseUrl: resolved.baseUrl,

@@ -6,7 +6,10 @@ import {
 	encryptWebhookHmacSecret,
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
 	resolveHmacCiphertextForMint,
 	resolveWebhookHmacSigningSecret,
@@ -135,6 +138,11 @@ test('inbound resolve may fall back to verification.secretName', async () => {
 
 test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', async () => {
 	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: 'user-1',
+		username: 'ada',
+	})
 	const db = createD1FromSqlite(sqlite)
 	const env = {
 		APP_DB: db,
@@ -143,6 +151,8 @@ test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', 
 	vi.mocked(resolveSecret).mockClear()
 	const encrypted = await resolveHmacCiphertextForMint({
 		env,
+		request: sessionRequestContext('user-1', 'ada'),
+		baseUrl: 'https://example.com',
 		userId: ownerIdFromStored('user-1'),
 		endpointId: 'ep-1',
 		packageId: 'pkg-1',

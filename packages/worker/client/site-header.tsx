@@ -11,13 +11,11 @@ import {
 	orgIdentity,
 	orgRoleLabel,
 	orgRoleManagesBilling,
-	orgSectionKeysOnPerson,
 	orgSettingsPath,
 	orgSwitcherEntries,
 	orgTeamsPath,
 	organizationsWithSignupFallback,
 	parseOrgBillingPath,
-	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
 	type OrgSwitcherEntry,
@@ -194,12 +192,6 @@ function teamOrgSwitchHref(input: {
 	// Grant-only collaborators can open the org home, not Settings/Teams.
 	if (input.role === null) return `/@${input.slug}`
 	if (input.onBillingPage && !input.managesBilling) {
-		return orgSettingsPath(input.slug)
-	}
-	const section = parseOrgResourcePath(input.pathname)?.section
-	// Packages still key on the person — land on Settings so management stays
-	// one click away instead of a bare org home.
-	if (section && orgSectionKeysOnPerson(section)) {
 		return orgSettingsPath(input.slug)
 	}
 	const next = switchOrgPath(input.pathname, input.slug)

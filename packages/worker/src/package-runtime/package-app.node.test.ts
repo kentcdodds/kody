@@ -402,7 +402,7 @@ const packageAppRuntimeMock = vi.hoisted(() => ({
 	assertPublishedSourceCanRebuildWithoutInstallingDeps: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	packageAppRuntimeBridge: vi.fn((input: unknown) => input),
-	resolvePackageMountedSecret: vi.fn(),
+	resolveCredential: vi.fn(),
 	beginRunRecord: vi.fn(),
 	finishRunRecord: vi.fn(
 		async (
@@ -480,8 +480,11 @@ vi.mock('#worker/repo/entity-sources.ts', () => ({
 vi.mock('#mcp/secrets/package-access.ts', () => ({
 	isPackageSecretAccessUnavailableError: (error: unknown) =>
 		error instanceof Error && error.message === 'secret-unavailable',
-	resolvePackageMountedSecret: (...args: Array<unknown>) =>
-		packageAppRuntimeMock.resolvePackageMountedSecret(...args),
+}))
+
+vi.mock('#worker/credentials/resolve-credential.ts', () => ({
+	resolveCredential: (...args: Array<unknown>) =>
+		packageAppRuntimeMock.resolveCredential(...args),
 }))
 
 vi.mock('#worker/mcp-auth-user-context.ts', async (importOriginal) => {
@@ -1054,7 +1057,7 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 
 test('package app runtime bridge returns opaque secret refs and merges metadata via waitUntil', async () => {
 	const opaqueRef = '{{secret:apiToken|scope=user}}'
-	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
 		ref: opaqueRef,
@@ -1131,7 +1134,7 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
 	const ref = '{{secret:apiToken|scope=user}}'
-	packageAppRuntimeMock.resolvePackageMountedSecret.mockResolvedValue({
+	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
 		ref,
@@ -1156,16 +1159,17 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 		],
 	]
 	for (const [input, resolvedPackageId] of cases) {
-		packageAppRuntimeMock.resolvePackageMountedSecret.mockClear()
+		packageAppRuntimeMock.resolveCredential.mockClear()
 		await expect(bridge.packageSecretGet(input)).resolves.toEqual({
 			value: ref,
 		})
-		expect(
-			packageAppRuntimeMock.resolvePackageMountedSecret,
-		).toHaveBeenCalledWith(
+		expect(packageAppRuntimeMock.resolveCredential).toHaveBeenCalledWith(
 			expect.objectContaining({
-				packageId: resolvedPackageId,
-				alias: 'api-token',
+				packageStamp: { kind: 'attested', packageId: resolvedPackageId },
+				credential: expect.objectContaining({
+					use: 'package-secret-mount',
+					alias: 'api-token',
+				}),
 			}),
 		)
 	}

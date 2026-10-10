@@ -13,7 +13,6 @@ import {
 } from './allowed-packages.ts'
 import {
 	normalizeAllowedHosts,
-	normalizeHost,
 	parseAllowedHosts,
 	stringifyAllowedHosts,
 } from './allowed-hosts.ts'
@@ -642,9 +641,9 @@ export async function listSecrets(
 	return listed
 }
 
-export async function resolveSecret(
-	input: ResolveSecretInput,
-): Promise<ResolvedSecret> {
+export type FoundSecret = Omit<ResolvedSecret, 'value'>
+
+async function findSecretEntry(input: ResolveSecretInput) {
 	assertSecretNameAllowed(input.name)
 	const scopes = input.scope
 		? [input.scope]
@@ -667,18 +666,7 @@ export async function resolveSecret(
 			if (!input.includeExpired && isSecretExpired(entry.expires_at)) {
 				return null
 			}
-			const decrypted = await decryptSecretValue(
-				input.env,
-				entry.encrypted_value,
-				userSecretContext(input.userId),
-			)
-			return {
-				found: true as const,
-				value: decrypted,
-				scope,
-				allowedHosts: parseAllowedHosts(entry.allowed_hosts),
-				allowedPackages: parseAllowedPackages(entry.allowed_packages),
-			}
+			return { scope, entry }
 		}),
 	)
 	// Preserve sequential precedence semantics: a lower-precedence failure must
@@ -688,12 +676,52 @@ export async function resolveSecret(
 		if (result.status === 'rejected') throw result.reason
 		if (result.value) return result.value
 	}
+	return null
+}
+
+/**
+ * Whether a secret exists, and its scope and allowlists, without decrypting
+ * the value. Existence and policy checks use this; only `resolveCredential`
+ * and account management read values.
+ */
+export async function findSecret(
+	input: ResolveSecretInput,
+): Promise<FoundSecret> {
+	const found = await findSecretEntry(input)
+	if (!found) {
+		return { found: false, scope: null, allowedHosts: [], allowedPackages: [] }
+	}
 	return {
-		found: false,
-		value: null,
-		scope: null,
-		allowedHosts: [],
-		allowedPackages: [],
+		found: true,
+		scope: found.scope,
+		allowedHosts: parseAllowedHosts(found.entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(found.entry.allowed_packages),
+	}
+}
+
+export async function resolveSecret(
+	input: ResolveSecretInput,
+): Promise<ResolvedSecret> {
+	const found = await findSecretEntry(input)
+	if (!found) {
+		return {
+			found: false,
+			value: null,
+			scope: null,
+			allowedHosts: [],
+			allowedPackages: [],
+		}
+	}
+	return {
+		found: true,
+		value: await decryptSecretValue(
+			input.env,
+			found.entry.encrypted_value,
+			userSecretContext(input.userId),
+		),
+		scope: found.scope,
+		allowedHosts: parseAllowedHosts(found.entry.allowed_hosts),
+		allowedPackages: parseAllowedPackages(found.entry.allowed_packages),
 	}
 }
 
@@ -1201,18 +1229,4 @@ export async function lockSecretToPackage(input: {
 		scope: 'user',
 		allowedPackages: [...state.secret.allowedPackages, state.savedPackage.id],
 	})
-}
-
-export async function resolveSecretForHost(
-	input: ResolveSecretInput & {
-		host: string
-	},
-) {
-	const normalizedHost = normalizeHost(input.host)
-	const resolved = await resolveSecret(input)
-	if (!resolved.found) return resolved
-	return {
-		...resolved,
-		allowedForHost: resolved.allowedHosts.includes(normalizedHost),
-	}
 }

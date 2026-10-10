@@ -1,11 +1,14 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	decryptWebhookHmacSecret,
 	encryptWebhookHmacSecret,
 	userWebhookHmacSecretContext,
 } from '#mcp/secrets/crypto.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
+import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { type PackageWebhookManifestEntry } from '#worker/package-registry/manifest.ts'
 import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
@@ -48,15 +51,13 @@ export async function resolveWebhookHmacSigningSecret(input: {
 		)
 	}
 
-	const resolved = await resolveSecret({
+	const resolved = await resolveCredential({
 		env: input.env,
-		userId: input.userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.endpoint.packageId,
-		},
+		orgId: input.userId,
+		actor: null,
+		packageStamp: attestedPackageStamp(input.endpoint.packageId),
+		baseUrl: getAppBaseUrl({ env: input.env }),
+		credential: { use: 'webhook-secret', name: secretName },
 	})
 	if (!resolved.found || !resolved.value) {
 		throw new McpCallerError(
@@ -89,6 +90,8 @@ export async function mintPackageOwnedWebhookHmacCiphertext(input: {
  */
 export async function resolveHmacCiphertextForMint(input: {
 	env: Env
+	request: RequestContext
+	baseUrl: string
 	userId: OwnerId
 	endpointId: string
 	packageId: string
@@ -109,15 +112,13 @@ export async function resolveHmacCiphertextForMint(input: {
 		).encrypted
 	}
 
-	const resolved = await resolveSecret({
+	const resolved = await resolveCredential({
 		env: input.env,
-		userId: input.userId,
-		name: secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageId,
-		},
+		orgId: input.userId,
+		actor: input.request,
+		packageStamp: attestedPackageStamp(input.packageId),
+		baseUrl: input.baseUrl,
+		credential: { use: 'webhook-secret', name: secretName },
 	})
 	if (!resolved.found || !resolved.value) return undefined
 
