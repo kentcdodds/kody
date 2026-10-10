@@ -410,14 +410,6 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 			cspUnsafeEvalMessage,
 			[{ filename: '<anonymous>' }, { filename: '[native code]' }],
 		],
-		[
-			'EvalError',
-			'something else',
-			cspUnsafeEvalKody8yFrames,
-			Object.assign(new EvalError(cspUnsafeEvalMessage), {
-				stack: `EvalError: ${cspUnsafeEvalMessage}\n    at eval (<anonymous>)\n    at sentryWrapped (https://kody.codes/node_modules/@sentry/browser/helpers.js:1:1)`,
-			}),
-		],
 		// Sentry Replay cross-origin iframe Element read (KODY-8W / #23795).
 		[
 			'SecurityError',
@@ -562,6 +554,16 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		['EvalError', cspUnsafeEvalMessage, [{ function: 'eval' }]],
 		// Missing stack could be first-party — keep.
 		['EvalError', cspUnsafeEvalMessage],
+		// originalException CSP message must not borrow frames from a
+		// non-matching exception value (Devin on #3204).
+		[
+			'EvalError',
+			'something else',
+			cspUnsafeEvalKody8yFrames,
+			Object.assign(new EvalError(cspUnsafeEvalMessage), {
+				stack: `EvalError: ${cspUnsafeEvalMessage}\n    at eval (<anonymous>)`,
+			}),
+		],
 		// Unrelated EvalError / other errors stay visible.
 		[
 			'EvalError',
@@ -645,5 +647,34 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 	}
 	expect(filterBrowserSentryEvent(replayCrossValueEvent)).toBe(
 		replayCrossValueEvent,
+	)
+
+	// CSP EvalError wording on one value + eval frames only on another
+	// value must not drop (same-entry type/message/frame gate; Devin on #3204).
+	const cspEvalCrossValueEvent = {
+		exception: {
+			values: [
+				{
+					type: 'EvalError',
+					value: cspUnsafeEvalMessage,
+					stacktrace: {
+						frames: [
+							fr(
+								'sentryWrapped',
+								'https://kody.codes/node_modules/@sentry/browser/helpers.js',
+							),
+						],
+					},
+				},
+				{
+					type: 'TypeError',
+					value: 'unrelated app failure',
+					stacktrace: { frames: [fr('eval', '<anonymous>')] },
+				},
+			],
+		},
+	}
+	expect(filterBrowserSentryEvent(cspEvalCrossValueEvent)).toBe(
+		cspEvalCrossValueEvent,
 	)
 })

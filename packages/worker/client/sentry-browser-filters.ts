@@ -1574,11 +1574,15 @@ function filterSentryReplayCrossOriginIframeSentryEvent<
  * First-party client code does not use `eval` / `new Function`.
  *
  * Match is intentionally narrow: EvalError (or the CSP `'unsafe-eval'`
- * refusal wording) on the **same** exception value AND every reported stack
- * frame is either `<anonymous>` / native or a Sentry SDK frame (`@sentry/`
- * path / `sentryWrapped`), with at least one frame function named `eval` or
- * anonymous-only frames. Keep the event when any first-party
- * `kody.codes/assets/…` frame is present, and keep it when the stack is
+ * refusal wording) on the **same** exception value AND that value's stack
+ * frames are each either `<anonymous>` / native or a Sentry SDK frame
+ * (`@sentry/` path / `sentryWrapped`), with at least one frame function
+ * named `eval` or anonymous-only frames. Type, message, and frames must
+ * agree on one `exception.values` entry — never pair a CSP message from
+ * one value with an `eval` frame from another (same-entry gate as KODY-8W).
+ * Multi-value events drop only when **every** value fully matches; an
+ * unrelated sibling keeps the event. Keep when any first-party
+ * `kody.codes/assets/…` frame is present, and keep when the stack is
  * missing or URL-less in a way that could be first-party (`beforeSend` sees
  * minified frames — same pitfall as KODY-8A). Never blanket-drop EvalError.
  */
@@ -1621,16 +1625,22 @@ function isAnonymousNativeOrSentrySdkStackFrameUrl(url: string) {
 	return isAnonymousOrNativeStackFrameUrl(url) || isSentrySdkStackFrameUrl(url)
 }
 
-function isAnonymousOrSentryOnlyReportedStack(event: SentryErrorEventLike) {
-	const frames = sentryEventStackFrames(event)
-	if (frames.length === 0) return false
+/**
+ * Drop-safe only when every reported frame is present and is either
+ * anonymous/native or a Sentry SDK frame (`@sentry/` / `sentryWrapped`),
+ * with an `eval` function or anonymous-only URLs. URL-less frames are
+ * unknown (possibly first-party) and keep the event.
+ */
+function isAnonymousOrSentryOnlyReportedFrames(
+	frames: Array<SentryStackFrame> | undefined,
+) {
+	if (!frames || frames.length === 0) return false
 
 	let hasEvalFunction = false
 	let allFrameUrlsAnonymousOrNative = true
 
 	for (const frame of frames) {
 		const urls = stackFrameUrls(frame)
-		// URL-less frames are unknown (possibly first-party) — keep the event.
 		if (urls.length === 0) return false
 		if (urls.some(isFirstPartyKodyAssetStackFrameUrl)) return false
 		const isSentryWrapped = frame.function === 'sentryWrapped'
@@ -1649,6 +1659,13 @@ function isAnonymousOrSentryOnlyReportedStack(event: SentryErrorEventLike) {
 	}
 
 	return hasEvalFunction || allFrameUrlsAnonymousOrNative
+}
+
+function exceptionValueIsCspUnsafeEvalRefusal(value: SentryExceptionValue) {
+	if (typeof value.value !== 'string') return false
+	if (!isCspUnsafeEvalRefusalMessage(value.value)) return false
+	if (value.type !== undefined && !isEvalErrorName(value.type)) return false
+	return isAnonymousOrSentryOnlyReportedFrames(value.stacktrace?.frames)
 }
 
 function isCspUnsafeEvalRefusalError(error: unknown) {
@@ -1670,25 +1687,31 @@ function isCspUnsafeEvalRefusalError(error: unknown) {
 	return true
 }
 
+/**
+ * Drop only when type + message + frames agree on the same exception.values
+ * entry (and every sibling value also fully matches). Never pair a CSP
+ * message from one value with frames from another. originalException /
+ * bare event.message alone cannot borrow frames from an unrelated value.
+ */
 function isCspUnsafeEvalRefusalSentryEvent(
 	event: SentryErrorEventLike,
 	originalException?: unknown,
 ) {
-	const hasCspEvalMessage =
-		isCspUnsafeEvalRefusalError(originalException) ||
-		(event.exception?.values?.some(
-			(value) =>
-				typeof value.value === 'string' &&
-				isCspUnsafeEvalRefusalMessage(value.value) &&
-				(value.type === undefined || isEvalErrorName(value.type)),
-		) ??
-			false) ||
-		(typeof event.message === 'string' &&
-			isCspUnsafeEvalRefusalMessage(event.message) &&
-			(event.exception?.values?.length ?? 0) === 0)
+	const values = event.exception?.values ?? []
+	if (values.length > 0) {
+		return values.every(exceptionValueIsCspUnsafeEvalRefusal)
+	}
 
-	if (!hasCspEvalMessage) return false
-	return isAnonymousOrSentryOnlyReportedStack(event)
+	// No structured exception values: originalException / event.message
+	// without frames stay visible (could be first-party).
+	if (isCspUnsafeEvalRefusalError(originalException)) return false
+	if (
+		typeof event.message === 'string' &&
+		isCspUnsafeEvalRefusalMessage(event.message)
+	) {
+		return false
+	}
+	return false
 }
 
 function filterCspUnsafeEvalRefusalSentryEvent<T extends SentryErrorEventLike>(
