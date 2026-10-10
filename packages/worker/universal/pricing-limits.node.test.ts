@@ -13,8 +13,8 @@ test('pricing columns show the limits enforced for each purchasable plan', () =>
 	})
 	expect(byId.free).toBe(planLimits.free)
 	expect(byId.pro).not.toEqual(planLimits.pro)
-	expect(byId['pro-credits']!.maxExecuteCallsPerDay).toBeGreaterThan(
-		proCreditsPlanLimits.maxExecuteCallsPerDay,
+	expect(byId['pro-credits']!.maxExecuteUniqueWorkersPerDay).toBeGreaterThan(
+		proCreditsPlanLimits.maxExecuteUniqueWorkersPerDay,
 	)
 	expect(
 		pricingLimitColumns
