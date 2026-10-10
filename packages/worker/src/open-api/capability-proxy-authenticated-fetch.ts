@@ -185,7 +185,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
+		packageId: null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const gatewayFetch: typeof fetch = async (requestInput, init) => {
@@ -200,7 +200,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 				email: input.ctx.callerContext.user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,
-				requireActorCredentialUse: true,
+				claimedPackageId: stampedPackageId,
 			},
 			request: new Request(request, { headers }),
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),

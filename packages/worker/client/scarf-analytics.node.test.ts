@@ -11,7 +11,7 @@ test('only public marketing paths on the production host are eligible', () => {
 		'/pricing',
 		'/faq',
 		'/community',
-		'/blog/kody-vs-executor',
+		'/blog/openclaw-2-needs-a-home',
 		'/docs/memory',
 		'/docs/connect',
 	]) {

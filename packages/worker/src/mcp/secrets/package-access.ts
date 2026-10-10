@@ -1,7 +1,6 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
 import { getOrgById } from '#worker/orgs/repo.ts'
 import {
@@ -13,9 +12,7 @@ import {
 	createPackageSecretAccessDeniedBatchMessage,
 	createPackageSecretAccessDeniedMessage,
 } from './errors.ts'
-import { buildSecretPlaceholder } from './placeholders.ts'
-import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
-import { resolveSecret, type ResolvedSecret } from './service.ts'
+import { findSecret, type FoundSecret } from './service.ts'
 import { type SecretScope } from './types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { resolveCallerSecretAuthority } from './secret-authority.ts'
@@ -137,7 +134,7 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		| null
 		| undefined
 	secretName: string
-	resolved: ResolvedSecret
+	resolved: FoundSecret
 	/** Default `'use'` (read/resolve). `'mutate'` always requires allowed_packages. */
 	intent?: 'use' | 'mutate'
 	/**
@@ -238,7 +235,7 @@ export async function assertCanSetSecrets(input: {
 		const name = secret.name.trim()
 		if (!name) throw new Error('Secret name is required.')
 		if (secret.scope === 'user' && authorityPackageId) {
-			const resolved = await resolveSecret({
+			const resolved = await findSecret({
 				env: input.env,
 				userId: input.userId,
 				name,
@@ -305,88 +302,6 @@ export async function loadPackageSecretMounts(input: {
 	}
 }
 
-export async function resolvePackageMountedSecret(input: {
-	env: Env
-	callerContext: McpCallerContext
-	packageId: string
-	alias: string
-}) {
-	const packageId = input.packageId.trim()
-	if (!packageId) {
-		throw new Error(
-			'Package secret access requires a matching server-side package runtime context.',
-		)
-	}
-	const userId = ownerIdFromCaller(input.callerContext)
-	if (!userId) {
-		throw new Error(
-			'Package secret access requires an authenticated package caller context.',
-		)
-	}
-	const packageInfo = await loadPackageSecretMounts({
-		env: input.env,
-		baseUrl: input.callerContext.baseUrl,
-		userId,
-		packageId,
-	})
-	const mount = packageInfo.mounts[input.alias]
-	if (!mount) {
-		throw new PackageSecretMountError(
-			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${input.alias}".`,
-		)
-	}
-	const storageContext = {
-		sessionId: input.callerContext.storageContext?.sessionId ?? null,
-		appId: input.callerContext.storageContext?.appId ?? null,
-		packageId,
-		storageId: input.callerContext.storageContext?.storageId ?? null,
-	}
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId,
-		name: mount.name,
-		scope: mount.scope,
-		storageContext,
-	})
-	if (!resolved.found || typeof resolved.value !== 'string') {
-		throw new PackageSecretMissingError(
-			await createUnresolvedSecretMessage({
-				env: input.env,
-				userId,
-				name: mount.name,
-				scope: mount.scope,
-				storageContext,
-				baseUrl: input.callerContext.baseUrl,
-			}),
-		)
-	}
-	await assertPackageCanAccessResolvedSecret({
-		env: input.env,
-		baseUrl: input.callerContext.baseUrl,
-		orgSlug: secretPageOrgSlugFromCaller(input.callerContext),
-		userId,
-		storageContext,
-		authorityPackageId: packageId,
-		secretName: mount.name,
-		resolved,
-	})
-	// Opaque ref only — decrypted plaintext stays on the host. Package /
-	// execute JS must never observe `resolved.value`. The placeholder carries
-	// name+scope only (never owner id — that would be caller-forgeable).
-	const scope = resolved.scope ?? mount.scope ?? 'user'
-	return {
-		alias: input.alias,
-		name: mount.name,
-		ref: buildSecretPlaceholder({
-			name: mount.name,
-			scope,
-		}),
-		scope,
-		packageId: packageInfo.savedPackage.id,
-		kodyId: packageInfo.savedPackage.kodyId,
-	}
-}
-
 export async function findMissingPackageApprovals(input: {
 	env: Env
 	baseUrl: string
@@ -426,7 +341,7 @@ export async function findMissingPackageApprovals(input: {
 	})
 	const entries = await Promise.all(
 		Object.values(input.mounts).map(async (mount) => {
-			const resolved = await resolveSecret({
+			const resolved = await findSecret({
 				env: input.env,
 				userId: input.userId,
 				name: mount.name,

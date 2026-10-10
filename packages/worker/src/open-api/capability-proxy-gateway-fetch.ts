@@ -19,9 +19,9 @@ import { invalidRequest } from './errors.ts'
  * secrets fail closed before any third-party request.
  *
  * Optional `packageId` is a client stamp from local workerd. Origin verifies
- * `package:execute` and may bind package-scoped secrets / package-limited
- * integrations to that id, but `requireActorCredentialUse` always enforces
- * `secret:use` / `integration:use`. Only cloud bundler provenance may skip Use.
+ * `package:execute`, then passes it as a `claimed` package stamp: it binds
+ * package-scoped secrets / package-limited integrations, but the actor still
+ * needs `secret:use` / `integration:use`. Only attested packages skip Use.
  */
 
 export type CapabilityProxyGatewayFetchRequest = {
@@ -149,9 +149,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		// Binding only: package-scoped secrets / package-limited integrations.
-		// requireActorCredentialUse prevents Use-skip from this client stamp.
-		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
+		packageId: null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const requestBody =
@@ -168,7 +166,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 			email: input.ctx.callerContext.user.email,
 			request: input.ctx.callerContext.request,
 			storageContext,
-			requireActorCredentialUse: true,
+			claimedPackageId: stampedPackageId,
 		},
 		request: new Request(call.request.url, {
 			method: call.request.method,

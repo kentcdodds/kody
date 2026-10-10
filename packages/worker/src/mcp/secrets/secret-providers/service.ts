@@ -1,7 +1,6 @@
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
-import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
+import { findSecret, resolveSecret } from '#mcp/secrets/service.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -25,6 +24,7 @@ import {
 	createProviderPackageMismatchMessage,
 	createProviderPackageNotGrantedMessage,
 	SecretProviderError,
+	SecretProviderGrantDeniedError,
 } from './errors.ts'
 import { normalizeProviderHosts } from './hosts.ts'
 import {
@@ -66,7 +66,7 @@ export type SecretProviderInvoker = (
 	},
 ) => Promise<SealedProviderCanonicalizeResult | SealedProviderResolveResult>
 
-function normalizeProviderId(providerId: string) {
+export function normalizeProviderId(providerId: string) {
 	const trimmed = providerId.trim().toLowerCase()
 	if (!secretProviderIdPattern.test(trimmed)) {
 		throw new SecretProviderError(
@@ -176,7 +176,7 @@ export async function bindSecretProvider(input: {
 			}),
 		)
 	}
-	const doorSecret = await resolveSecret({
+	const doorSecret = await findSecret({
 		env: input.env,
 		userId: input.userId,
 		name: doorSecretName,
@@ -356,6 +356,11 @@ function requireLocalCanonicalRef(providerId: string, ref: string) {
 	return canonicalRef
 }
 
+/**
+ * Vault storage read. Only `resolveCredential` calls this; it checks Use on
+ * the door key first. `authorityPackageId` is the stamped package (attested or
+ * claimed), whose provider grant is checked here.
+ */
 export async function resolveProviderSecret(input: {
 	env: Env
 	baseUrl: string
@@ -380,17 +385,6 @@ export async function resolveProviderSecret(input: {
 		throw new SecretProviderError(
 			createMissingProviderBindingMessage(providerId),
 		)
-	}
-	if (!authorityPackageId) {
-		// Ad-hoc: require secret:use on the door key before any decrypt or
-		// provider invoke (canonicalize uses the door key).
-		await authorizeAmbientSecretUse({
-			env: input.env,
-			request: input.request,
-			orgUserId: ownerUserId,
-			secretName: binding.doorSecretName,
-			authorityPackageId: null,
-		})
 	}
 	const providerPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: ownerUserId,
@@ -604,7 +598,7 @@ async function assertProviderGrant(input: {
 		packageId: input.packageId,
 		kodyId: savedPackage?.kodyId ?? null,
 	})
-	throw new SecretProviderError(
+	throw new SecretProviderGrantDeniedError(
 		createProviderPackageNotGrantedMessage({
 			providerId: input.providerId,
 			canonicalRef: input.canonicalRef,

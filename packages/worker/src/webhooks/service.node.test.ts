@@ -5,7 +5,9 @@ import {
 	decryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { hashWebhookUrlSecret } from './crypto.ts'
@@ -102,52 +104,22 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 
 function createEnv() {
 	const sqlite = new DatabaseSync(':memory:')
-	// Mirrors the webhook_endpoints schema in
-	// packages/worker/migrations/0001-squashed-init.sql.
-	sqlite.exec(`
-		CREATE TABLE webhook_endpoints (
-			id TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			package_id TEXT NOT NULL,
-			webhook_name TEXT NOT NULL,
-			url_secret_hash TEXT NOT NULL,
-			url_secret_encrypted TEXT,
-			hmac_secret_encrypted TEXT,
-			previous_url_secret_hash TEXT,
-			previous_url_secret_expires_at TEXT,
-			enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-			deleted_at TEXT,
-
-			created_at TEXT NOT NULL,
-			rotated_at TEXT NOT NULL
-		);
-		CREATE UNIQUE INDEX idx_webhook_endpoints_user_package_name
-		ON webhook_endpoints(user_id, package_id, webhook_name);
-		CREATE INDEX idx_webhook_endpoints_user_created_at
-		ON webhook_endpoints(user_id, created_at);
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-			username TEXT NOT NULL UNIQUE,
-			email TEXT NOT NULL UNIQUE,
-			password_hash TEXT NOT NULL,
-			stable_user_id TEXT NOT NULL,
-			deleted_at TEXT
-		);
-	`)
+	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
 	const env = {
 		APP_DB: db,
 		APP_BASE_URL: 'https://heykody.dev',
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as Env
-	return { env, db }
+		SENTRY_ENVIRONMENT: 'test',
+	} as unknown as Env
+	return { env, db, sqlite }
 }
 
 const sentryHook = { kodyId: 'sentry-bridge', webhookName: 'sentry' }
 
 async function setupOwner(email: string, username: string) {
 	const userId = testStableUserIdFromEmail(email)
-	const { env, db } = createEnv()
+	const { env, db, sqlite } = createEnv()
 	await db
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)
@@ -155,6 +127,10 @@ async function setupOwner(email: string, username: string) {
 		)
 		.bind(username, email, userId)
 		.run()
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: userId,
+		username,
+	})
 	const input = {
 		env,
 		request: sessionRequestContext(userId),
@@ -358,7 +334,11 @@ test('clearing rotate overlap ignores a stale current-hash snapshot', async () =
 
 test('first mint that loses the id race retries with the persisted endpoint id', async () => {
 	const userId = testStableUserIdFromEmail('race@example.com')
-	const { env, db } = createEnv()
+	const { env, db, sqlite } = createEnv()
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: userId,
+		username: 'racer',
+	})
 	const winnerId = '11111111-1111-1111-1111-111111111111'
 	await db
 		.prepare(
@@ -431,7 +411,11 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 
 test('concurrent first mints converge on one handle', async () => {
 	const userId = testStableUserIdFromEmail('parallel@example.com')
-	const { env } = createEnv()
+	const { env, sqlite } = createEnv()
+	await provisionPersonalOrgForSqliteUser(sqlite, {
+		stableUserId: userId,
+		username: 'parallel',
+	})
 	const mint = () =>
 		mintWebhookUrlForUser({
 			env,

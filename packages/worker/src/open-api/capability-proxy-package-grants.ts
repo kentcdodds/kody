@@ -12,8 +12,8 @@ import {
 	createPackageStorageAccessDeniedMessage,
 	createPackageStorageKodyTools,
 } from '#worker/storage-runner.ts'
-import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
-import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
+import { claimedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 
 /**
  * Local-execute CapabilityProxy packageStorage / packageSecrets host tools.
@@ -21,10 +21,10 @@ import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.
  * Cloud execute builds a bundler provenance grant set once per run. Local
  * execute has no sandbox graph on origin per hop, so each call validates the
  * stamped package id is in the org and the actor holds `package:execute` on
- * it before packageStorage. Client-stamped package ids are not secret
- * authority: packageSecrets also require `secret:use` on the mounted secret
+ * it before packageStorage. Client-stamped package ids are `claimed` package
+ * stamps: packageSecrets also require `secret:use` on the mounted secret
  * (same as ad-hoc). Gateway / authenticatedFetch / oauthClientCredentials
- * never promote a client stamp to Use-skip either.
+ * pass the same claimed stamp.
  */
 
 function isPackageSecretAvailabilityError(error: unknown) {
@@ -161,31 +161,22 @@ export async function createCapabilityProxyPackageHostTools(input: {
 		})
 	}
 
-	const requireUseForMountedSecret = async (inputMount: {
+	const resolveClaimedMount = (inputMount: {
 		packageId: string
 		alias: string
-	}) => {
-		const orgUserId = ownerIdFromCaller(input.callerContext)
-		if (!orgUserId) {
-			throw new Error('packageSecrets require an authenticated user.')
-		}
-		const mounted = await resolvePackageMountedSecret({
+	}) =>
+		resolveCredential({
 			env: input.env,
-			callerContext: input.callerContext,
-			packageId: inputMount.packageId,
-			alias: inputMount.alias,
+			orgId: orgUserId,
+			actor: input.callerContext.request,
+			packageStamp: claimedPackageStamp(inputMount.packageId),
+			baseUrl: input.callerContext.baseUrl,
+			credential: {
+				use: 'package-secret-mount',
+				alias: inputMount.alias,
+				callerContext: input.callerContext,
+			},
 		})
-		// Client-claimed package identity is not bundler provenance: ad-hoc Use
-		// still applies for org-shared credentials.
-		await authorizeAmbientSecretUse({
-			env: input.env,
-			request: input.callerContext.request,
-			orgUserId,
-			secretName: mounted.name,
-			authorityPackageId: null,
-		})
-		return mounted
-	}
 
 	const packageSecretTools: PackageSecretToolOptions = {
 		runPackageId: null,
@@ -194,7 +185,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				requestedPackageId ?? null,
 			)
 			return (
-				await requireUseForMountedSecret({
+				await resolveClaimedMount({
 					packageId: authorized.packageId,
 					alias,
 				})
@@ -205,7 +196,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				requestedPackageId ?? null,
 			)
 			try {
-				await requireUseForMountedSecret({
+				await resolveClaimedMount({
 					packageId: authorized.packageId,
 					alias,
 				})

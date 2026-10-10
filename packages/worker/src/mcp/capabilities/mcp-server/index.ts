@@ -9,10 +9,8 @@ import {
 } from '#mcp/capabilities/synthesized-domain.ts'
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
-import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
-import { authorizeAmbientIntegrationUse } from '#worker/authorization/credential-use.ts'
-import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
-import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
+import { attestedPackageStampFromCaller } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	mcpServerCapabilityId,
@@ -102,33 +100,25 @@ function createCapabilityFromTool(input: {
 			// callerContext (no storageContext.packageId). The bundler stamp
 			// installs ALS secret authority for the callee package id; honor
 			// that so mcpServerLock grants still allow the approved package.
-			const { authorityPackageId } = resolveCallerSecretAuthority({
+			const { packageStamp } = attestedPackageStampFromCaller({
 				storageContext: ctx.callerContext.storageContext,
 			})
-			await authorizeAmbientIntegrationUse({
+			const connection = await resolveCredential({
 				env: ctx.env,
-				request: ctx.callerContext.request,
-				orgUserId,
-				integrationName: ref.name,
-				authorityPackageId,
-			})
-			await assertCanUseMcpServer({
-				env: ctx.env,
+				orgId: orgUserId,
+				actor: ctx.callerContext.request,
+				packageStamp,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: orgUserId,
-				serverId: binding.serverId,
-				serverName: ref.name,
-				packageId: authorityPackageId,
-			})
-			const hub = createMcpClientHubClient({
-				env: ctx.env,
-				userId: orgUserId,
-				waitUntil: ctx.waitUntil,
-			})
-			let result: Awaited<ReturnType<typeof hub.callTool>>
-			try {
-				result = await hub.callTool({
+				credential: {
+					use: 'mcp-connection',
 					serverId: binding.serverId,
+					serverName: ref.name,
+					waitUntil: ctx.waitUntil,
+				},
+			})
+			let result: Awaited<ReturnType<typeof connection.callTool>>
+			try {
+				result = await connection.callTool({
 					toolName: tool.name,
 					args: (args ?? {}) as Record<string, unknown>,
 				})

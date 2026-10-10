@@ -2,6 +2,7 @@ import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
+import { personalOrgAccessD1 } from '#worker/test-support/org-binding-query.ts'
 import { type McpServerSnapshot } from '#worker/mcp-client/types.ts'
 import type * as McpClientStatus from '#worker/mcp-client/status.ts'
 
@@ -12,15 +13,27 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('#worker/mcp-client/hub-client.ts', () => ({
-	createMcpClientHubClient: () => ({
-		callTool: (...args: Array<unknown>) => mocks.callTool(...args),
-	}),
+	callMcpServerTool: ({
+		serverId,
+		toolName,
+		args,
+	}: {
+		serverId: string
+		toolName: string
+		args: Record<string, unknown>
+	}) => mocks.callTool({ serverId, toolName, args }),
 }))
 
-vi.mock('#worker/mcp-client/package-access.ts', () => ({
-	assertCanUseMcpServer: (...args: Array<unknown>) =>
-		mocks.assertCanUseMcpServer(...args),
-}))
+vi.mock('#worker/mcp-client/package-access.ts', async () => {
+	const actual = await vi.importActual<
+		typeof import('#worker/mcp-client/package-access.ts')
+	>('#worker/mcp-client/package-access.ts')
+	return {
+		...actual,
+		assertCanUseMcpServer: (...args: Array<unknown>) =>
+			mocks.assertCanUseMcpServer(...args),
+	}
+})
 
 vi.mock('#worker/mcp-client/status.ts', async () => {
 	const actual = await vi.importActual<typeof McpClientStatus>(
@@ -58,7 +71,10 @@ function createSnapshot(): McpServerSnapshot {
 
 function createContext() {
 	return {
-		env: {} as Env,
+		env: {
+			APP_DB: personalOrgAccessD1(),
+			SENTRY_ENVIRONMENT: 'test',
+		} as unknown as Env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://example.com',
