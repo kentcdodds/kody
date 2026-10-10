@@ -45,6 +45,7 @@ import {
 } from '#worker/server-timing.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
+import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
 
 /**
@@ -522,6 +523,14 @@ export async function handlePackageAppOriginRequest(
 	request: Request,
 	env: Env,
 ) {
+	const response = await dispatchPackageAppOriginRequest(request, env)
+	if (!response) return null
+	// servePackageAppRequest logs x-kody-runtime-run-id, then this boundary
+	// strips it so a browser on the package-app origin never sees the header.
+	return stripPackageAppRuntimeRunId(response).response
+}
+
+async function dispatchPackageAppOriginRequest(request: Request, env: Env) {
 	const url = new URL(request.url)
 	const requestHost = parsePackageAppRequestHost({ env, url })
 	const packagePath = parsePackageAppPath(url.pathname)
