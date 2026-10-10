@@ -145,7 +145,9 @@ export function OrgTeamsRoute(handle: Handle) {
 			.catch(() => null)) as TeamsPayload | null
 		if (response.status === 401) {
 			window.location.assign('/login')
-			return
+			// Throw so callers do not clear the form or show a success banner
+			// while the redirect is pending.
+			throw new Error('Sign in again to continue.')
 		}
 		if (!response.ok || !payload?.ok) {
 			throw new Error(payload?.error || 'Unable to update teams.')

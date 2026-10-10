@@ -176,9 +176,14 @@ export function OrgGrantsRoute(handle: Handle) {
 								No grants yet. Grant access with{' '}
 								<code mix={css(codeCss)}>accessGrant</code> or invite someone to
 								a package. Outside collaborators appear on{' '}
-								<a href={orgCollaboratorsPath(data.org.slug)}>Collaborators</a>;
-								team subjects are managed under{' '}
-								<a href={orgTeamsPath(data.org.slug)}>Teams</a>.
+								<a href={orgCollaboratorsPath(data.org.slug)}>Collaborators</a>
+								{data.org.role === 'owner' || data.org.role === 'member' ? (
+									<>
+										; team subjects are managed under{' '}
+										<a href={orgTeamsPath(data.org.slug)}>Teams</a>
+									</>
+								) : null}
+								.
 							</p>
 						) : (
 							<ul mix={css(listCss)} data-testid="org-grants">
