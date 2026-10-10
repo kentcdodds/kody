@@ -104,6 +104,9 @@ export function OrgMembersRoute(handle: Handle) {
 	})
 
 	const removeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
+	/** Latest role known saved for a member; survives until membersData reloads. */
+	const confirmedRoles = new Map<string, string>()
+	const roleChangeInFlight = new Set<string>()
 	let invitee = ''
 	let inviteRole: (typeof memberRoles)[number] = 'member'
 	let inviting = false
@@ -117,6 +120,10 @@ export function OrgMembersRoute(handle: Handle) {
 		const created = createDoubleCheck(handle)
 		removeChecks.set(userId, created)
 		return created
+	}
+
+	function displayedRole(userId: string, fetchedRole: string) {
+		return confirmedRoles.get(userId) ?? fetchedRole
 	}
 
 	async function postMember(
@@ -159,12 +166,20 @@ export function OrgMembersRoute(handle: Handle) {
 		userId: string,
 		role: string,
 		select: HTMLSelectElement,
-		previousRole: string,
+		fetchedRole: string,
 	) {
+		if (roleChangeInFlight.has(userId)) {
+			select.value = displayedRole(userId, fetchedRole)
+			return
+		}
+		const previousRole = displayedRole(userId, fetchedRole)
+		if (role === previousRole) return
+		roleChangeInFlight.add(userId)
 		message = null
 		handle.update()
 		try {
 			await postMember('role', { userId, role })
+			confirmedRoles.set(userId, role)
 			message = 'Role updated.'
 			messageTone = 'info'
 		} catch (error) {
@@ -172,8 +187,10 @@ export function OrgMembersRoute(handle: Handle) {
 			message =
 				error instanceof Error ? error.message : 'Unable to update role.'
 			messageTone = 'error'
+		} finally {
+			roleChangeInFlight.delete(userId)
+			handle.update()
 		}
-		handle.update()
 	}
 
 	async function removeMember(userId: string) {
@@ -300,8 +317,11 @@ export function OrgMembersRoute(handle: Handle) {
 													<span mix={css(rowActionsCss)}>
 														<select
 															aria-label={`Role for ${memberName(member)}`}
-															value={member.role}
-															disabled={lastOwner}
+															value={displayedRole(member.userId, member.role)}
+															disabled={
+																lastOwner ||
+																roleChangeInFlight.has(member.userId)
+															}
 															mix={[
 																css(selectCss),
 																on('change', (event) => {
