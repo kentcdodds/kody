@@ -137,7 +137,9 @@ export async function runCapabilityProxyGatewayFetch(input: {
 	const packageId = call.packageId
 		? await authorizeLocalExecuteOwnedPackageId({
 				db: input.ctx.env.APP_DB,
-				callerUserId: orgUserId,
+				env: input.ctx.env,
+				request: input.ctx.callerContext.request,
+				orgUserId,
 				packageId: call.packageId,
 			})
 		: null

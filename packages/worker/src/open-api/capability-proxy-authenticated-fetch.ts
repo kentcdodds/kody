@@ -161,7 +161,9 @@ async function authorizeAuthenticatedFetchPackageId(input: {
 }) {
 	return await authorizeLocalExecuteOwnedPackageId({
 		db: input.ctx.env.APP_DB,
-		callerUserId: ownerIdFromCaller(input.ctx.callerContext),
+		env: input.ctx.env,
+		request: input.ctx.callerContext.request,
+		orgUserId: ownerIdFromCaller(input.ctx.callerContext),
 		packageId: input.packageId,
 	})
 }
