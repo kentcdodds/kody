@@ -160,19 +160,6 @@ export function getUtf8ByteLength(value: string) {
 	return new TextEncoder().encode(value).byteLength
 }
 
-function truncateUtf8String(value: string, maxBytes: number) {
-	const encoder = new TextEncoder()
-	let usedBytes = 0
-	let result = ''
-	for (const character of value) {
-		const characterBytes = encoder.encode(character).byteLength
-		if (usedBytes + characterBytes > maxBytes) break
-		result += character
-		usedBytes += characterBytes
-	}
-	return result
-}
-
 /**
  * Estimate untrusted content payload size without decoding base64 (`atob`).
  * Used to reject oversized payloads before `ContentBlockSchema.safeParse`.
@@ -292,7 +279,7 @@ function truncateTextContentBlocksToFit(
 	blocks: Array<ContentBlock>,
 	limitBytes: number,
 	note: string,
-): Array<ContentBlock> {
+): Array<ContentBlock> | null {
 	const notice = `\n\n--- TRUNCATED ---\n${note}`
 	const textBlocks = blocks.filter(isTextContentBlock)
 
@@ -301,23 +288,19 @@ function truncateTextContentBlocksToFit(
 		if (measureMcpContentBytes(noticeOnly) <= limitBytes) {
 			return noticeOnly
 		}
-		return [
-			{
-				type: 'text',
-				text: truncateUtf8String(notice.trim(), Math.max(0, limitBytes - 64)),
-			},
-		]
+		return null
 	}
 
 	for (let count = textBlocks.length; count >= 1; count--) {
-		const prefixTexts = textBlocks.slice(0, count).map((block) => block.text)
+		const prefix = textBlocks.slice(0, count)
+		const prefixTexts = prefix.map((block) => block.text)
 		let lo = 0
 		let hi = prefixTexts.reduce((sum, text) => sum + text.length, 0)
 		let best: Array<ContentBlock> | null = null
 
 		while (lo <= hi) {
 			const mid = (lo + hi) >> 1
-			const candidate = applyTextCharBudget(prefixTexts, mid, notice)
+			const candidate = applyTextCharBudget(prefix, prefixTexts, mid, notice)
 			if (measureMcpContentBytes(candidate) <= limitBytes) {
 				best = candidate
 				lo = mid + 1
@@ -333,15 +316,11 @@ function truncateTextContentBlocksToFit(
 	if (measureMcpContentBytes(noticeOnly) <= limitBytes) {
 		return noticeOnly
 	}
-	return [
-		{
-			type: 'text',
-			text: truncateUtf8String(notice.trim(), Math.max(0, limitBytes - 64)),
-		},
-	]
+	return null
 }
 
 function applyTextCharBudget(
+	blocks: ReadonlyArray<ContentBlock & { type: 'text'; text: string }>,
 	texts: ReadonlyArray<string>,
 	charBudget: number,
 	notice: string,
@@ -353,15 +332,19 @@ function applyTextCharBudget(
 		const take = Math.min(text.length, Math.max(0, remaining))
 		remaining -= take
 		const isLast = index === texts.length - 1
-		result.push({
-			type: 'text',
-			text: isLast ? text.slice(0, take) + notice : text.slice(0, take),
-		})
+		const source = blocks[index]
+		const nextText = isLast ? text.slice(0, take) + notice : text.slice(0, take)
+		result.push(
+			source
+				? ({ ...source, type: 'text', text: nextText } as ContentBlock)
+				: { type: 'text', text: nextText },
+		)
 		if (remaining <= 0 && !isLast) {
 			// Budget exhausted before the final prefix slot: still attach notice.
 			const last = result[result.length - 1]
 			if (last && last.type === 'text' && !last.text.endsWith(notice)) {
 				result[result.length - 1] = {
+					...last,
 					type: 'text',
 					text: last.text + notice,
 				}
@@ -403,6 +386,13 @@ export function wrapDownstreamMcpToolResult(
 		Array.isArray(result.content) &&
 		untrustedContentLooksTextOnly(result.content)
 	) {
+		// Text is discarded on this path — still enforce the block-count cap
+		// without schema-parsing (or size-checking) the unused payload.
+		if (result.content.length > maxMcpContentBlockCount) {
+			throw new McpCallerError(
+				`${sourcePrefix(source)} returned too many MCP content blocks (${result.content.length.toLocaleString()} > limit ${maxMcpContentBlockCount.toLocaleString()}).`,
+			)
+		}
 		return structuredRecord
 	}
 
@@ -527,6 +517,13 @@ export function limitMcpContentBlocks(
 			limitBytes,
 			note,
 		)
+		if (!truncatedBlocks) {
+			return {
+				ok: false,
+				returnedBytes,
+				note: `MCP text content was ${returnedBytes.toLocaleString()} bytes, exceeding content limit ${limitBytes.toLocaleString()} bytes; content could not be truncated to fit. Narrow the query or use pagination.`,
+			}
+		}
 		return {
 			ok: true,
 			blocks: truncatedBlocks,

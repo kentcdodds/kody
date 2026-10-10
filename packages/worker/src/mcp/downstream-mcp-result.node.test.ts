@@ -415,6 +415,51 @@ test('oversized text-only downstream results truncate instead of failing the cal
 	expect(structuredWrapped).toEqual({ hits: 12, query: 'production' })
 	expect(extractMcpPassthrough(structuredWrapped)).toBeNull()
 
+	// Structured fast path still enforces the block-count cap.
+	expect(() =>
+		wrapDownstreamMcpToolResult(
+			{
+				content: Array.from({ length: maxMcpContentBlockCount + 1 }, () => ({
+					type: 'text' as const,
+					text: 'x',
+				})),
+				structuredContent: { ok: true },
+			},
+			mcpServer('flood:structured'),
+		),
+	).toThrow(/flood:structured[\s\S]*too many MCP content blocks/)
+
+	// Truncation preserves annotations on retained text blocks.
+	const annotated = [
+		{
+			type: 'text' as const,
+			text: 'A'.repeat(defaultMcpContentLimitBytes + 10_000),
+			annotations: {
+				audience: ['assistant'] as Array<'assistant'>,
+				priority: 1,
+			},
+		},
+	]
+	const annotatedLimited = limitMcpContentBlocks(
+		annotated,
+		defaultMcpContentLimitBytes,
+	)
+	expect(annotatedLimited.ok && annotatedLimited.truncated).toBe(true)
+	if (annotatedLimited.ok) {
+		expect(annotatedLimited.blocks[0]).toMatchObject({
+			type: 'text',
+			annotations: { audience: ['assistant'], priority: 1 },
+		})
+	}
+
+	// Pathological tiny caps cannot claim success when nothing fits.
+	expect(
+		limitMcpContentBlocks([{ type: 'text', text: 'long' }], 1),
+	).toMatchObject({
+		ok: false,
+		note: expect.stringContaining('could not be truncated to fit'),
+	})
+
 	// Media oversize still fails as a caller error (not a bare Error).
 	expect(() =>
 		wrapDownstreamMcpToolResult(

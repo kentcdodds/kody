@@ -683,11 +683,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									responseLimitBytes,
 								)
 					const isError = passthrough?.isError ?? false
-					const truncationNote = contentLimited.truncated
-						? contentLimited.note
-						: companionLimited?.truncated
-							? companionLimited.note
-							: undefined
+					const truncationNote =
+						contentLimited.truncated && companionLimited?.truncated
+							? `${contentLimited.note} ${companionLimited.note}`
+							: contentLimited.truncated
+								? contentLimited.note
+								: companionLimited?.truncated
+									? companionLimited.note
+									: undefined
 					if (!isError) {
 						await scheduleFleetExecuteLastSuccess({
 							waitUntil,
