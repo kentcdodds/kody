@@ -140,3 +140,22 @@ test('external artifact rebuild reads the published snapshot once per rebuild an
 		targets.length,
 	)
 })
+
+test('empty artifact target list skips the published snapshot read', async () => {
+	mockModule.listPublishedPackageArtifactTargets.mockResolvedValue([])
+	mockModule.readPublishedSourceSnapshot.mockRejectedValue(
+		new Error('transient kv get failed'),
+	)
+
+	await rebuildPublishedPackageArtifactsViaRepoSession({
+		env,
+		rpcSessionId: 'session-1',
+		sourceId,
+		userId: ownerIdFromStored('user-1'),
+		publishedCommit,
+		baseUrl: 'https://kody.test',
+	})
+
+	expect(mockModule.readPublishedSourceSnapshot).not.toHaveBeenCalled()
+	expect(mockModule.rebuildPublishedPackageArtifact).not.toHaveBeenCalled()
+})

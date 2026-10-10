@@ -8,7 +8,10 @@ import {
 	waitUntil as scheduleWorkerWaitUntil,
 } from 'cloudflare:workers'
 import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
-import { packageAppRuntimeRunIdHeader } from '#worker/package-runtime/package-app-diagnostics.ts'
+import {
+	packageAppRuntimeErrorHeader,
+	packageAppRuntimeRunIdHeader,
+} from '#worker/package-runtime/package-app-diagnostics.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
@@ -889,20 +892,22 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 			const enrichedError = enrichUnboundPackagesInvokeError(error);
 			const runtimeRunId = await readRuntimeRunId(runtimeRun);
 			console.error('package-app-runtime-threw', { runtimeRunId });
-			if (enrichedError && typeof enrichedError === 'object') {
-				try {
-					enrichedError.kodyRuntimeRunId = runtimeRunId;
-				} catch (assignError) {
-					// Some thrown values are frozen. The log line above still has the id.
-				}
-			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
 				error: serializeRuntimeError(enrichedError),
 				logs: consoleCapture.logs,
 			});
-			throw enrichedError;
+			// Dynamic Worker fetch does not preserve custom Error properties.
+			// Return a tagged 500 so the serve path can log runtimeRunId and
+			// render the package-entrypoint error page.
+			const headers = new Headers({
+				[${JSON.stringify(packageAppRuntimeErrorHeader)}]: '1',
+			});
+			if (runtimeRunId) {
+				headers.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
+			}
+			return new Response(null, { status: 500, headers });
 		} finally {
 			consoleCapture.restore();
 		}

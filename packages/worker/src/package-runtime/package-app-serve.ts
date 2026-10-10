@@ -12,6 +12,7 @@ import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
+	isPackageAppRuntimeThrownResponse,
 	logPackageAppHttpError,
 	packageAppRuntimeRunIdHeader,
 	runtimeRunIdFromError,
@@ -767,6 +768,18 @@ export async function servePackageAppRequest(input: {
 		const fetched = await pushServerTiming(serverTiming, 'entrypoint', () =>
 			entrypoint.fetch(forwardedRequest),
 		)
+		if (isPackageAppRuntimeThrownResponse(fetched)) {
+			return attachPackageAppServerTiming(
+				createPackageAppErrorResponse({
+					request,
+					kind: 'package-entrypoint',
+					kodyId: savedPackage.kodyId,
+					packageName: savedPackage.name,
+					runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
+				}),
+				serverTiming,
+			)
+		}
 		// Leave x-kody-runtime-run-id on the response. The origin forward reads
 		// it for the runtime-worker hop log, then strips it before the browser.
 		logPackageAppHttpError({
