@@ -177,10 +177,15 @@ function subscriptionStatusBadgeCss(tone: SubscriptionStatusTone) {
 	}
 }
 
+function billingSlugFromHref(href: string) {
+	return (
+		parseOrgBillingPath(new URL(href, 'http://localhost').pathname)?.slug ??
+		null
+	)
+}
+
 function billingOrgSlug(href: string) {
-	const slug = parseOrgBillingPath(
-		new URL(href, 'http://localhost').pathname,
-	)?.slug
+	const slug = billingSlugFromHref(href)
 	if (!slug) throw new Error(`Not an organization billing URL: ${href}`)
 	return slug
 }
@@ -325,6 +330,10 @@ export function AccountBillingRoute(handle: Handle) {
 
 	return () => {
 		const currentHref = readCurrentRouterHref(handle)
+		// The router can keep this route mounted while a destination lazy
+		// module is still loading. The href is already the next page then.
+		const orgSlug = billingSlugFromHref(currentHref)
+		if (!orgSlug) return null
 		const snapshot = billingData.read(handle, currentHref)
 		if (snapshot.data && snapshot.data !== appliedPayload) {
 			appliedPayload = snapshot.data
@@ -344,12 +353,10 @@ export function AccountBillingRoute(handle: Handle) {
 					: 'ready'
 
 		const billing = snapshot.data
-		const orgSlug = billingOrgSlug(currentHref)
 		// Only team organizations show this name; the signup one reads "you".
 		const orgName = billing
 			? orgIdentity(billing.org, { displayName: '', avatarUrl: null }).name
 			: `@${orgSlug}`
-		const canManage = billing?.org.canManage ?? false
 		const subscriptionStatus = billing?.subscriptionStatus?.trim() || null
 		const statusInfo = subscriptionStatus
 			? describeSubscriptionStatus(subscriptionStatus)
@@ -360,12 +367,11 @@ export function AccountBillingRoute(handle: Handle) {
 		const retiredPlan = isRetiredPaidSubscription(billing)
 		const canSwitchToPro =
 			retiredPlan &&
-			canManage &&
 			billing != null &&
 			billing.purchasablePlans.includes('pro') &&
 			!paymentActionNeeded
 		const showManageCta = Boolean(
-			canManage && billing?.configured && billing.hasStripeCustomer,
+			billing?.configured && billing.hasStripeCustomer,
 		)
 		const planSourcesDiffer =
 			billing != null &&
@@ -722,12 +728,6 @@ export function AccountBillingRoute(handle: Handle) {
 									</a>
 								</div>
 							</AccountManagementPanel>
-						) : null}
-
-						{!canManage ? (
-							<AccountManagementMessage tone="info">
-								Only owners and billing admins can change {orgName}'s plan.
-							</AccountManagementMessage>
 						) : null}
 
 						{renderAccountBillingPlans({
