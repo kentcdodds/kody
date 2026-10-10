@@ -42,8 +42,6 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      STRIPE_SECRET_KEY:
-        ${{ inputs.target == 'production' && secrets.STRIPE_SECRET_KEY || '' }}
       TARGET: ${{ inputs.target }}
       RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
       OUT_DIR: queries-out
@@ -83,11 +81,21 @@ jobs:
 
       - name: 🔑 Note missing Stripe secret (P8 Stripe count only)
         if: inputs.target == 'production'
+        env:
+          # Direct assignment on this production-only step. A job-level
+          # `condition && secrets.X || ''` can evaluate empty for environment
+          # secrets, and a job-level assignment would expose the key on
+          # preview targets.
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
-            echo "::warning title=Missing Actions secret::STRIPE_SECRET_KEY is empty on this environment, so the P8 Stripe subscription count is skipped. Credential-exposure and other D1/KV queries still run. Add the secret under Settings > Secrets and variables > Actions (and the production environment), then re-run for a full P8 report."
+          key="${STRIPE_SECRET_KEY-}"
+          trimmed="${key#"${key%%[![:space:]]*}"}"
+          trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+          if [ -z "$trimmed" ]; then
+            echo "::warning title=Missing Actions secret::STRIPE_SECRET_KEY is empty on this environment, so the P8 Stripe subscription count is skipped. Credential-exposure and other D1/KV queries still run. Add the secret under Settings > Secrets and variables > Actions (and the production environment), then re-run for a full P8 report." >&2
+            echo "STRIPE_SECRET_MISSING=1" >> "$GITHUB_ENV"
           fi
 
       - name: 📦 Checkout
@@ -105,6 +113,19 @@ jobs:
         run: npm ci
 
       - name: 🔎 Run the read-only queries (sealed)
+        if: inputs.target != 'production'
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT_DIR"
+          # P8 conversion report (Stripe skipped when the Actions secret is empty).
+          node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json"
+          # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
+          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json"
+
+      - name: 🔎 Run the read-only queries (sealed)
+        if: inputs.target == 'production'
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
           set -euo pipefail
           mkdir -p "$OUT_DIR"
@@ -127,6 +148,10 @@ jobs:
               echo "Artifact \`teams-production-queries\` (run $RUN_ID) holds the sealed reports (P8 conversion + credential-exposure). Counts stay out of this public summary."
               echo ""
               echo "Open with \`node tools/preview-rehearsal/seal.ts open --private-key <key> --in report.sealed.json --out report.json\` (and the same for \`credential-exposure.sealed.json\`)."
+              if [ "${STRIPE_SECRET_MISSING:-}" = "1" ]; then
+                echo ""
+                echo "Stripe subscription counts were skipped because \`STRIPE_SECRET_KEY\` is unset."
+              fi
             else
               echo "No report was written; see the failed step."
             fi
