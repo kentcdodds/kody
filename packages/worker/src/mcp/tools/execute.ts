@@ -68,6 +68,8 @@ import {
 	admitHostedExecuteCall,
 	createExecuteWorkerDayClaim,
 	executeAdmissionStructuredContent,
+	executeLoopDetectedErrorCode,
+	executeRateLimitedErrorCode,
 	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
@@ -168,6 +170,15 @@ export const executeToolOutputSchema = {
 		.optional()
 		.describe(
 			'Focused plan-limit or quota fields when a call is denied. Omitted from ordinary successes.',
+		),
+	admission: z
+		.object({
+			code: z.enum([executeRateLimitedErrorCode, executeLoopDetectedErrorCode]),
+			retryAfterMs: z.number(),
+		})
+		.optional()
+		.describe(
+			'Set when a runaway or loop brake refused the call before it ran: the refusal code and how long to wait before the same call is admitted.',
 		),
 	logs: z
 		.array(z.unknown())
