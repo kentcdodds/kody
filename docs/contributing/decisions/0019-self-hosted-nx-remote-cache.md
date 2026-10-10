@@ -22,7 +22,9 @@ spec and stores artifacts in R2. Clients set
 cross-run cache: Nx 23 keeps the local cache under `~/.nx/<workspace>/cache`, so
 an `actions/cache` step on `.nx/cache` never had anything to save and was
 removed. Test hashes include `{env:CI}` and CI pins `CI=1` so agent `validate` /
-`test:push` and GitHub Actions share keys.
+`test:push` and GitHub Actions share keys. Typecheck and build hashes ignore
+`CI` because nothing they run reads it, so `npm run typecheck` from validate or
+the pre-commit hook (which do not set `CI=1`) shares keys with CI too.
 
 ## Consequences
 
