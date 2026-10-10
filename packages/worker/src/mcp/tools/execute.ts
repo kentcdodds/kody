@@ -72,6 +72,7 @@ import {
 	admitHostedExecuteCall,
 	buildExecuteUsageReport,
 	createExecuteWorkerDayClaim,
+	executeAdmissionStructuredContent,
 	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
@@ -371,6 +372,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							error: error.message,
 							...(errorDetails ? { errorDetails } : {}),
 							...entitlementStructuredContent(error),
+							...executeAdmissionStructuredContent(error),
 						},
 						isError: true,
 					}

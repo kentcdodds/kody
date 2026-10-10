@@ -27,8 +27,9 @@ export class ExecuteRepeatWindow {
 		const starts = (this.#startsByKey.get(input.key) ?? []).filter(
 			(startMs) => startMs > cutoff,
 		)
-		this.#startsByKey.delete(input.key)
 		if (starts.length >= input.limit) {
+			// Updating an existing key keeps its Map position, so a refused
+			// retry does not count as recent use for eviction.
 			this.#startsByKey.set(input.key, starts)
 			const oldestBlocking = starts[starts.length - input.limit]!
 			return {
@@ -41,6 +42,7 @@ export class ExecuteRepeatWindow {
 			}
 		}
 		starts.push(input.nowMs)
+		this.#startsByKey.delete(input.key)
 		this.#startsByKey.set(input.key, starts)
 		if (this.#startsByKey.size > this.#maxKeys) {
 			const leastRecent = this.#startsByKey.keys().next().value

@@ -1141,6 +1141,9 @@ test('execute tool refuses past the per-minute runaway limit before any run work
 			`^Execute rate limit: this account started ${executeCallsPerMinutePerOrg} execute calls in the last minute`,
 		),
 	)
+	expect(refused.structuredContent).toMatchObject({
+		admission: { code: 'execute_rate_limited' },
+	})
 })
 
 test('execute tool refuses an identical call loop but still runs changed params', async () => {
@@ -1169,6 +1172,12 @@ test('execute tool refuses an identical call loop but still runs changed params'
 	expect(refused.structuredContent.error).toMatch(
 		`Execute loop detected: this connection ran the same code with the same params ${identicalExecuteCallsPerWindow} times in the last 60s.`,
 	)
+	expect(refused.structuredContent).toMatchObject({
+		admission: {
+			code: 'execute_loop_detected',
+			retryAfterMs: expect.any(Number),
+		},
+	})
 	expect(mockModule.runModuleWithRegistry).toHaveBeenCalledTimes(
 		identicalExecuteCallsPerWindow,
 	)

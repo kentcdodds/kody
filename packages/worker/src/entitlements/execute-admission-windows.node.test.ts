@@ -43,6 +43,22 @@ test('the repeat window forgets the least recently admitted key past its key bou
 	).toBe(false)
 })
 
+test('a refused retry does not keep its key from being evicted first', () => {
+	const window = new ExecuteRepeatWindow(2)
+	window.admit({ key: 'a', nowMs: 1, limit: 1, windowMs })
+	window.admit({ key: 'b', nowMs: 2, limit: 1, windowMs })
+	expect(
+		window.admit({ key: 'a', nowMs: 3, limit: 1, windowMs }).admitted,
+	).toBe(false)
+	window.admit({ key: 'c', nowMs: 4, limit: 1, windowMs })
+	expect(
+		window.admit({ key: 'b', nowMs: 5, limit: 1, windowMs }).admitted,
+	).toBe(false)
+	expect(
+		window.admit({ key: 'a', nowMs: 6, limit: 1, windowMs }).admitted,
+	).toBe(true)
+})
+
 test('admission refuses repeats without spending the per-minute count, and the rate limit wins over repeats', () => {
 	const minuteWindow = { minute: 0, count: 0 }
 	const repeatWindow = new ExecuteRepeatWindow()
