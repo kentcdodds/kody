@@ -1,9 +1,10 @@
 /**
  * `/account/connections` views. The page is one payload
- * (`/account/connected-agents.json`) rendered three exclusive ways: the
- * connected list, the full client grid on `/new` (Add connection), and one
- * host's install steps on `/new/:agent`. The add views are their own pages,
- * not nested chrome on the list.
+ * (`/account/connected-agents.json`) rendered four exclusive ways: the
+ * connected list, the full client grid on `/new` (Add connection), one
+ * host's install steps on `/new/:agent`, and per-connection usage on
+ * `/usage` (which also reads `/account/connection-usage.json`). The add and
+ * usage views are their own pages, not nested chrome on the list.
  */
 
 import {
@@ -19,6 +20,7 @@ import {
 export type AccountConnectionsView =
 	| { kind: 'list' }
 	| { kind: 'new'; agent: McpClientKind | null }
+	| { kind: 'usage' }
 
 /**
  * Every named client, in catalog order, with no viewport split and nothing
@@ -58,6 +60,23 @@ export function accountConnectionsNewHref(
 	return `/account/connections/new/${encodeURIComponent(agent)}`
 }
 
+/**
+ * Usage drill-in. `connection` (a `ConnectionUsageEntry.id`) narrows it to
+ * one connection.
+ */
+export function accountConnectionsUsageHref(
+	pathname?: string | null,
+	connection?: string | null,
+) {
+	const slug = pathname ? orgSlugFromPathname(pathname) : null
+	const base = slug
+		? orgResourcePath(slug, 'connections', 'usage')
+		: '/account/connections/usage'
+	return connection
+		? `${base}?connection=${encodeURIComponent(connection)}`
+		: base
+}
+
 /** `null` when the pathname is under the page but names an unknown agent. */
 export function parseAccountConnectionsPathname(
 	pathname: string,
@@ -65,6 +84,9 @@ export function parseAccountConnectionsPathname(
 	pathname = accountAliasPath(pathname)
 	const base = '/account/connections'
 	if (pathname === base || pathname === `${base}/`) return { kind: 'list' }
+	if (pathname === `${base}/usage` || pathname === `${base}/usage/`) {
+		return { kind: 'usage' }
+	}
 	const newBase = '/account/connections/new'
 	if (pathname === newBase || pathname === `${newBase}/`) {
 		return { kind: 'new', agent: null }

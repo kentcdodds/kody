@@ -25,6 +25,7 @@ import { type PackageFilesContentKind } from '#universal/package-file-media.ts'
 import { type WalkthroughHostPick } from '#universal/walkthrough-hosts.ts'
 import { type LandingHeroVideo } from '#universal/landing-hero-copy.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import { type AccountConnectionUsageLoaderData } from '#universal/connection-usage.ts'
 import { type ReferralProgramSummary } from '#universal/referral-program.ts'
 import { type SecondAgentStandardGiftState } from '#universal/second-agent-standard-gift.ts'
 import { type OnboardingAgentChooserPick } from '#universal/onboarding-mcp-clients.ts'
@@ -2529,6 +2530,7 @@ export type AppLoaderData = {
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
+	accountConnectionUsage?: AccountConnectionUsageLoaderData
 	accountWebhooks?: AccountWebhooksLoaderData
 	connectWebhookApply?: ConnectWebhookApplyLoaderData
 	onboarding?: OnboardingLoaderData

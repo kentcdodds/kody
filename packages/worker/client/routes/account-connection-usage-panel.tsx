@@ -1,0 +1,581 @@
+import { type Handle, type RemixNode, css } from 'remix/component'
+import { readJson } from '#client/routes/account-approval-shared.ts'
+import {
+	AccountManagementPanel,
+	TimestampValue,
+} from '#client/routes/account-management-components.tsx'
+import { accountConnectionsUsageHref } from '#universal/account-connections.ts'
+import {
+	connectionUsageWindowKeys,
+	type AccountConnectionUsageLoaderData,
+	type ConnectionUsageCountKey,
+	type ConnectionUsageTotals,
+	type ConnectionUsageWindow,
+} from '#universal/connection-usage.ts'
+import {
+	connectionUsageCountKeys,
+	connectionUsageCountNoun,
+	connectionUsageEntryLabel,
+	connectionUsageHasActivity,
+	connectionUsageKindLabel,
+	connectionUsageWindowLabels,
+	formatConnectionUsageCount,
+	formatConnectionUsageQuantity,
+} from '#universal/connection-usage-presentation.ts'
+import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
+import {
+	descriptionCss,
+	primaryLinkCss,
+} from '#universal/styles/style-primitives.ts'
+import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+
+export const connectionUsageApiPath = '/account/connection-usage.json'
+
+/** Rows on the Connections list before "View usage details". */
+const summaryRowLimit = 6
+
+export async function fetchConnectionUsage(signal: AbortSignal) {
+	const response = await fetch(connectionUsageApiPath, {
+		headers: { Accept: 'application/json' },
+		credentials: 'include',
+		signal,
+	})
+	if (response.status === 401) return { kind: 'unauthorized' as const }
+	const payload = await readJson<AccountConnectionUsageLoaderData>(response)
+	if (!response.ok || !payload?.ok) {
+		throw new Error('Unable to load connection usage.')
+	}
+	return { kind: 'ok' as const, payload }
+}
+
+type Agents = ReadonlyArray<Pick<ConnectedMcpAgent, 'clientId' | 'label'>>
+
+export type ConnectionUsageState =
+	| { kind: 'loading' }
+	| { kind: 'error'; message: string }
+	| { kind: 'ready'; usage: AccountConnectionUsageLoaderData }
+
+type UsageRow = {
+	id: string
+	name: string
+	detail: string
+	href: string | null
+	totals: ConnectionUsageTotals
+}
+
+function formatDay(day: string) {
+	const date = new Date(`${day}T00:00:00.000Z`)
+	if (Number.isNaN(date.getTime())) return day
+	return date.toLocaleString('en-US', {
+		month: 'short',
+		day: 'numeric',
+		timeZone: 'UTC',
+	})
+}
+
+function formatWindow(window: ConnectionUsageWindow) {
+	return window.startDay === window.endDay
+		? formatDay(window.startDay)
+		: `${formatDay(window.startDay)} – ${formatDay(window.endDay)}`
+}
+
+function capWeekTotal(row: UsageRow, capCountKey: ConnectionUsageCountKey) {
+	return row.totals.capWeek[capCountKey]
+}
+
+function usageRows(input: {
+	usage: AccountConnectionUsageLoaderData
+	agents: Agents
+	pathname: string
+}): Array<UsageRow> {
+	const { usage } = input
+	const rows: Array<UsageRow> = usage.connections.map((entry) => ({
+		id: entry.id,
+		name: connectionUsageEntryLabel(entry, input.agents),
+		detail: connectionUsageKindLabel(entry.credentialKind),
+		href: accountConnectionsUsageHref(input.pathname, entry.id),
+		totals: entry.totals,
+	}))
+	for (const automation of usage.automations ?? []) {
+		rows.push({
+			id: automation.id,
+			name: automation.label,
+			detail: 'Automation',
+			href: accountConnectionsUsageHref(input.pathname, automation.id),
+			totals: automation.totals,
+		})
+	}
+	for (const person of usage.people ?? []) {
+		rows.push({
+			id: `person:${person.username ?? 'unknown'}`,
+			name: person.username ? `@${person.username}` : 'Former member',
+			detail: 'Teammate',
+			href: null,
+			totals: person.totals,
+		})
+	}
+	return rows
+		.filter((row) => connectionUsageHasActivity(row.totals))
+		.sort(
+			(a, b) =>
+				capWeekTotal(b, usage.capCountKey) - capWeekTotal(a, usage.capCountKey),
+		)
+}
+
+function UsageTable(
+	handle: Handle<{
+		caption: string
+		rowHeader: string
+		rows: Array<UsageRow>
+		capCountKey: ConnectionUsageCountKey
+		testId: string
+	}>,
+) {
+	return () => {
+		const { capCountKey } = handle.props
+		return (
+			<div mix={css(tableScrollCss)}>
+				<table data-testid={handle.props.testId} mix={css(tableCss)}>
+					<caption mix={css(captionCss)}>{handle.props.caption}</caption>
+					<thead>
+						<tr>
+							<th scope="col">{handle.props.rowHeader}</th>
+							{connectionUsageWindowKeys.map((key) => (
+								<th key={key} scope="col" mix={css(numericCss)}>
+									{connectionUsageWindowLabels[key]}
+								</th>
+							))}
+						</tr>
+					</thead>
+					<tbody>
+						{handle.props.rows.map((row) => (
+							<tr key={row.id} data-connection-usage-row={row.id}>
+								<th scope="row">
+									<span mix={css(rowHeaderCss)}>
+										{row.href ? (
+											<a href={row.href} mix={css(primaryLinkCss)}>
+												{row.name}
+											</a>
+										) : (
+											<span>{row.name}</span>
+										)}
+										<span mix={css(rowDetailCss)}>{row.detail}</span>
+									</span>
+								</th>
+								{connectionUsageWindowKeys.map((key) => (
+									<td
+										key={key}
+										mix={css(numericCss)}
+										data-connection-usage-window={key}
+									>
+										{formatConnectionUsageCount(row.totals[key][capCountKey])}
+									</td>
+								))}
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		)
+	}
+}
+
+function RawCountsTable(
+	handle: Handle<{ caption: string; totals: ConnectionUsageTotals }>,
+) {
+	return () => (
+		<div mix={css(tableScrollCss)}>
+			<table data-testid="connection-usage-raw-counts" mix={css(tableCss)}>
+				<caption mix={css(captionCss)}>{handle.props.caption}</caption>
+				<thead>
+					<tr>
+						<th scope="col">Count</th>
+						{connectionUsageWindowKeys.map((key) => (
+							<th key={key} scope="col" mix={css(numericCss)}>
+								{connectionUsageWindowLabels[key]}
+							</th>
+						))}
+					</tr>
+				</thead>
+				<tbody>
+					{connectionUsageCountKeys.map((countKey) => (
+						<tr key={countKey} data-connection-usage-count={countKey}>
+							<th scope="row" mix={css(rawCountHeaderCss)}>
+								{capitalize(connectionUsageCountNoun(countKey))}
+							</th>
+							{connectionUsageWindowKeys.map((key) => (
+								<td key={key} mix={css(numericCss)}>
+									{formatConnectionUsageCount(
+										handle.props.totals[key][countKey],
+									)}
+								</td>
+							))}
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	)
+}
+
+function capitalize(value: string) {
+	return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function capUnitSentence(usage: AccountConnectionUsageLoaderData) {
+	return `Counts are ${connectionUsageCountNoun(usage.capCountKey)}, the unit the hosted execute cap counts.`
+}
+
+function renderUpdated(usage: AccountConnectionUsageLoaderData) {
+	return (
+		<p mix={css(descriptionCss)} data-testid="connection-usage-updated">
+			{usage.updatedAt ? (
+				<>
+					Updated <TimestampValue value={usage.updatedAt} />. Usage refreshes
+					hourly and is kept {usage.retentionDays} days.
+				</>
+			) : (
+				`Usage refreshes hourly and is kept ${usage.retentionDays} days.`
+			)}
+		</p>
+	)
+}
+
+function renderState(state: ConnectionUsageState, ready: () => RemixNode) {
+	switch (state.kind) {
+		case 'loading':
+			return <p mix={css(descriptionCss)}>Loading usage…</p>
+		case 'error':
+			return (
+				<p role="alert" mix={css(descriptionCss)}>
+					{state.message}
+				</p>
+			)
+		case 'ready':
+			return ready()
+		default: {
+			const exhaustive: never = state
+			return exhaustive
+		}
+	}
+}
+
+/** Connections list: who used the cap this week, heaviest first. */
+export function ConnectionUsageSummaryPanel(
+	handle: Handle<{
+		state: ConnectionUsageState
+		agents: Agents
+		pathname: string
+	}>,
+) {
+	return () => {
+		const { state } = handle.props
+		return (
+			<AccountManagementPanel
+				title="Usage by connection"
+				description="Which agents, CLI logins, API tokens, and automations ran code here, so you can see what is using your execute cap."
+				ariaLabel="Usage by connection"
+			>
+				<div data-testid="connection-usage-summary" mix={css(stackCss)}>
+					{renderState(state, () => {
+						if (state.kind !== 'ready') return null
+						const rows = usageRows({
+							usage: state.usage,
+							agents: handle.props.agents,
+							pathname: handle.props.pathname,
+						})
+						return (
+							<>
+								{rows.length === 0 ? (
+									<p mix={css(descriptionCss)}>
+										No usage through these connections in the last 7 days.
+									</p>
+								) : (
+									<UsageTable
+										caption={capUnitSentence(state.usage)}
+										rowHeader="Connection"
+										rows={rows.slice(0, summaryRowLimit)}
+										capCountKey={state.usage.capCountKey}
+										testId="connection-usage-summary-table"
+									/>
+								)}
+								{renderUpdated(state.usage)}
+							</>
+						)
+					})}
+					<p mix={css({ margin: 0 })}>
+						<a
+							href={accountConnectionsUsageHref(handle.props.pathname)}
+							data-testid="connection-usage-details-link"
+							mix={css(primaryLinkCss)}
+						>
+							View usage details
+						</a>
+					</p>
+				</div>
+			</AccountManagementPanel>
+		)
+	}
+}
+
+/** `/connections/usage`: per-connection totals and what called through each. */
+export function ConnectionUsageDetails(
+	handle: Handle<{
+		state: ConnectionUsageState
+		agents: Agents
+		pathname: string
+		/** `ConnectionUsageEntry.id` from `?connection=`. */
+		focus: string | null
+	}>,
+) {
+	return () => {
+		const { state } = handle.props
+		if (state.kind !== 'ready') {
+			return (
+				<AccountManagementPanel
+					title="Connection usage"
+					ariaLabel="Connection usage"
+				>
+					{renderState(state, () => null)}
+				</AccountManagementPanel>
+			)
+		}
+		const { usage } = state
+		const focus = handle.props.focus
+		const connections = usage.connections.filter(
+			(entry) => !focus || entry.id === focus,
+		)
+		const automations = (usage.automations ?? []).filter(
+			(entry) => !focus || entry.id === focus,
+		)
+		const focusMissing =
+			focus !== null && connections.length === 0 && automations.length === 0
+		const windowsText = connectionUsageWindowKeys
+			.map(
+				(key) =>
+					`${connectionUsageWindowLabels[key]}: ${formatWindow(usage.windows[key])} (UTC)`,
+			)
+			.join(' · ')
+		return (
+			<>
+				<AccountManagementPanel
+					title="Connection usage"
+					description={`${capUnitSentence(usage)} ${windowsText}.`}
+					ariaLabel="Connection usage"
+				>
+					<div mix={css(stackCss)}>
+						{renderUpdated(usage)}
+						{focus ? (
+							<p mix={css({ margin: 0 })}>
+								<a
+									href={accountConnectionsUsageHref(handle.props.pathname)}
+									data-testid="connection-usage-show-all"
+									mix={css(primaryLinkCss)}
+								>
+									Show all connections
+								</a>
+							</p>
+						) : null}
+						{focusMissing ? (
+							<p mix={css(descriptionCss)}>
+								No usage for that connection in the last 7 days.
+							</p>
+						) : null}
+						{usage.automations === null ? (
+							<p
+								mix={css(descriptionCss)}
+								data-testid="connection-usage-own-only"
+							>
+								You see usage for your own connections. Owners and billing
+								admins also see automations and teammates.
+							</p>
+						) : null}
+					</div>
+				</AccountManagementPanel>
+				{connections.length === 0 && !focus ? (
+					<AccountManagementPanel
+						title="Your connections"
+						ariaLabel="Your connections"
+					>
+						<p mix={css(descriptionCss)}>
+							No usage through your connections in the last 7 days.
+						</p>
+					</AccountManagementPanel>
+				) : null}
+				{connections.map((entry) => {
+					const name = connectionUsageEntryLabel(entry, handle.props.agents)
+					return (
+						<AccountManagementPanel
+							key={entry.id}
+							title={name}
+							description={connectionUsageKindLabel(entry.credentialKind)}
+							ariaLabel={`${name} usage`}
+						>
+							<div
+								data-testid="connection-usage-entry"
+								data-connection-usage-entry={entry.id}
+								mix={css(stackCss)}
+							>
+								<RawCountsTable
+									caption={`${name}: all counts`}
+									totals={entry.totals}
+								/>
+								<UsageTable
+									caption={`What ran through ${name}, in ${connectionUsageCountNoun(usage.capCountKey)}`}
+									rowHeader="Package"
+									rows={entry.callers.map((caller) => ({
+										id: caller.packageId || 'adhoc',
+										name: caller.label,
+										detail: caller.packageId ? 'Package' : 'Ad hoc execute',
+										href: caller.href,
+										totals: caller.totals,
+									}))}
+									capCountKey={usage.capCountKey}
+									testId="connection-usage-callers"
+								/>
+							</div>
+						</AccountManagementPanel>
+					)
+				})}
+				{usage.automations !== null && (!focus || automations.length > 0) ? (
+					<AccountManagementPanel
+						title="Automations"
+						description="Scheduled jobs, webhooks, inbound email, and event subscriptions run without a connection."
+						ariaLabel="Automations"
+					>
+						{automations.length === 0 ? (
+							<p mix={css(descriptionCss)}>
+								No automation usage in the last 7 days.
+							</p>
+						) : (
+							<UsageTable
+								caption={`Automation usage, in ${connectionUsageCountNoun(usage.capCountKey)}`}
+								rowHeader="Automation"
+								rows={automations.map((automation) => ({
+									id: automation.id,
+									name: automation.label,
+									detail: connectionUsageAutomationDetail(automation.callers),
+									href: automation.href,
+									totals: automation.totals,
+								}))}
+								capCountKey={usage.capCountKey}
+								testId="connection-usage-automations"
+							/>
+						)}
+					</AccountManagementPanel>
+				) : null}
+				{usage.people !== null && !focus ? (
+					<AccountManagementPanel
+						title="Teammates"
+						description="Usage by other people in this organization, through their own connections."
+						ariaLabel="Teammates"
+					>
+						{usage.people.length === 0 ? (
+							<p mix={css(descriptionCss)}>
+								No teammate usage in the last 7 days.
+							</p>
+						) : (
+							<UsageTable
+								caption={`Teammate usage, in ${connectionUsageCountNoun(usage.capCountKey)}`}
+								rowHeader="Person"
+								rows={usage.people.map((person) => ({
+									id: `person:${person.username ?? 'unknown'}`,
+									name: person.username
+										? `@${person.username}`
+										: 'Former member',
+									detail: 'Teammate',
+									href: null,
+									totals: person.totals,
+								}))}
+								capCountKey={usage.capCountKey}
+								testId="connection-usage-people"
+							/>
+						)}
+					</AccountManagementPanel>
+				) : null}
+				{usage.unattributed &&
+				!focus &&
+				connectionUsageHasActivity(usage.unattributed) ? (
+					<p
+						mix={css(descriptionCss)}
+						data-testid="connection-usage-unattributed"
+					>
+						{`${formatConnectionUsageQuantity(usage.capCountKey, usage.unattributed.last7Days[usage.capCountKey])} in the last 7 days were recorded before connection tracking started and are not tied to a connection.`}
+					</p>
+				) : null}
+			</>
+		)
+	}
+}
+
+function connectionUsageAutomationDetail(
+	callers: ReadonlyArray<{ packageId: string; label: string }>,
+) {
+	const packages = callers
+		.filter((caller) => caller.packageId)
+		.map((caller) => caller.label)
+	return packages.length > 0 ? `Runs ${packages.join(', ')}` : 'Automation'
+}
+
+const stackCss = {
+	display: 'grid',
+	gap: spacing.md,
+	minWidth: 0,
+}
+
+const tableScrollCss = {
+	display: 'block',
+	minWidth: 0,
+	maxWidth: '100%',
+	overflowX: 'auto' as const,
+}
+
+const tableCss = {
+	width: '100%',
+	borderCollapse: 'collapse' as const,
+	fontSize: typography.fontSize.sm,
+	color: colors.text,
+	'& th, & td': {
+		padding: `${spacing.xs} ${spacing.sm}`,
+		borderBottom: `1px solid ${colors.border}`,
+		textAlign: 'start' as const,
+		verticalAlign: 'top' as const,
+	},
+	'& thead th': {
+		color: colors.textMuted,
+		fontWeight: typography.fontWeight.semibold,
+		whiteSpace: 'nowrap' as const,
+	},
+}
+
+const captionCss = {
+	captionSide: 'top' as const,
+	textAlign: 'start' as const,
+	color: colors.textMuted,
+	fontSize: typography.fontSize.sm,
+	paddingBottom: spacing.xs,
+}
+
+const numericCss = {
+	textAlign: 'end' as const,
+	fontVariantNumeric: 'tabular-nums' as const,
+	whiteSpace: 'nowrap' as const,
+}
+
+const rowHeaderCss = {
+	display: 'grid',
+	gap: '0.15rem',
+	fontWeight: typography.fontWeight.medium,
+	minWidth: '10rem',
+}
+
+const rawCountHeaderCss = {
+	fontWeight: typography.fontWeight.medium,
+	whiteSpace: 'nowrap' as const,
+}
+
+const rowDetailCss = {
+	color: colors.textMuted,
+	fontWeight: typography.fontWeight.normal,
+	fontSize: typography.fontSize.xs,
+}

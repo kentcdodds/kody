@@ -520,6 +520,7 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgConnections)]: ({ pathname }) => {
 		const rest = pathname.split('/-/connections/')[1]?.replace(/\/$/, '') ?? ''
 		if (rest === 'new') return titleOnly('Add connection')
+		if (rest === 'usage') return titleOnly('Connection usage')
 		if (rest.startsWith('new/')) {
 			const agent = rest.slice('new/'.length).split('/')[0] ?? ''
 			let decoded = agent

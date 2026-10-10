@@ -7,6 +7,12 @@ import {
 } from '#client/routes/account-approval-shared.ts'
 import { createAccountConnectedAgents } from '#client/routes/account-connected-agents-panel.tsx'
 import {
+	ConnectionUsageDetails,
+	ConnectionUsageSummaryPanel,
+	fetchConnectionUsage,
+	type ConnectionUsageState,
+} from '#client/routes/account-connection-usage-panel.tsx'
+import {
 	AccountManagementMessage,
 	AccountManagementPanel,
 	AccountManagementShell,
@@ -65,11 +71,30 @@ export async function accountConnectionsRouteLoader(
 	_url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const result = await fetchConnectedAgents(signal)
+	const [result, usage] = await Promise.all([
+		fetchConnectedAgents(signal),
+		// Usage is a secondary panel: its own fallback fetch retries a failure.
+		fetchConnectionUsage(signal).catch(() => null),
+	])
 	if (result.kind === 'unauthorized') {
 		return routeLoaderRedirect('/login')
 	}
-	return { accountConnectedAgents: result.payload }
+	return {
+		accountConnectedAgents: result.payload,
+		...(usage?.kind === 'ok' ? { accountConnectionUsage: usage.payload } : {}),
+	}
+}
+
+/** Every view reads one usage payload; only the list and usage views ask. */
+function connectionUsageLatchKey() {
+	return '/account/connections/usage'
+}
+
+function readUsageFocus(href: string) {
+	return (
+		new URL(href, 'http://localhost').searchParams.get('connection')?.trim() ||
+		null
+	)
 }
 
 /** The list, grid, and per-agent views all read one connected-agents payload. */
@@ -112,6 +137,28 @@ export function AccountConnectionsRoute(handle: Handle) {
 		},
 	})
 
+	const usageData = createRouteData({
+		key: 'accountConnectionUsage',
+		locationKey: connectionUsageLatchKey,
+		async load(_href, signal) {
+			const result = await fetchConnectionUsage(signal)
+			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
+			return result.payload
+		},
+	})
+
+	function readUsageState(currentHref: string): ConnectionUsageState {
+		const usage = usageData.read(handle, currentHref)
+		if (usage.data) return { kind: 'ready', usage: usage.data }
+		if (usage.kind === 'error') {
+			return {
+				kind: 'error',
+				message: usage.error?.message ?? 'Unable to load connection usage.',
+			}
+		}
+		return { kind: 'loading' }
+	}
+
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
 		connectedAgents.applyPayload(payload)
 		mcpServerUrl = payload.mcpServerUrl
@@ -131,6 +178,10 @@ export function AccountConnectionsRoute(handle: Handle) {
 			appliedError = snapshot.error
 			message = snapshot.error.message
 		}
+		const usage =
+			view?.kind === 'list' || view?.kind === 'usage'
+				? readUsageState(currentHref)
+				: null
 		const pending = snapshot.kind === 'pending'
 		const status: AccountStatus =
 			snapshot.kind === 'error'
@@ -164,6 +215,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 							connectedAgents,
 							mcpServerUrl,
 							connectionProfiles,
+							usage,
+							usageFocus: readUsageFocus(currentHref),
 							pathname: new URL(currentHref, 'http://localhost').pathname,
 						})
 					: null}
@@ -189,6 +242,8 @@ function renderReadyView(input: {
 	connectedAgents: ReturnType<typeof createAccountConnectedAgents>
 	mcpServerUrl: string
 	connectionProfiles: ReturnType<typeof createConnectionProfiles>
+	usage: ConnectionUsageState | null
+	usageFocus: string | null
 	pathname: string
 }) {
 	if (input.view === null) {
@@ -215,6 +270,13 @@ function renderReadyView(input: {
 							</a>
 						),
 					})}
+					{input.usage ? (
+						<ConnectionUsageSummaryPanel
+							state={input.usage}
+							agents={input.connectedAgents.listAgents()}
+							pathname={input.pathname}
+						/>
+					) : null}
 					{renderMcpUrlPanel({ mcpServerUrl: input.mcpServerUrl })}
 					{input.connectionProfiles.render({
 						agents: input.connectedAgents.listAgents(),
@@ -237,6 +299,18 @@ function renderReadyView(input: {
 								mcpServerUrl: input.mcpServerUrl,
 								pathname: input.pathname,
 							})}
+				</>
+			)
+		case 'usage':
+			return (
+				<>
+					{renderBackToConnections(input.pathname)}
+					<ConnectionUsageDetails
+						state={input.usage ?? { kind: 'loading' }}
+						agents={input.connectedAgents.listAgents()}
+						pathname={input.pathname}
+						focus={input.usageFocus}
+					/>
 				</>
 			)
 		default: {
