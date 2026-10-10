@@ -34,7 +34,7 @@ import {
 import { describeEmailVerificationDelivery } from '#universal/email-verification-delivery.ts'
 import { formatUsageLimit, formatUsagePercent } from './admin-users-shared.ts'
 import { AdminUserCreditsPanel } from './admin-users-credits.tsx'
-import { renderAdminUserDestinationPanel } from './admin-users-destination-panel.tsx'
+import { AdminUserDestinationPanel } from './admin-users-destination-panel.tsx'
 import {
 	costVsPayFootnote,
 	formatDynamicWorkerUsd,
@@ -81,9 +81,6 @@ export type AdminUserDetailProps = {
 	onSubmitVerificationAction: (
 		action: 'mark_email_verified' | 'mint_verify_url',
 	) => void
-	destinationEmailDraft: string
-	onDestinationEmailDraftChange: (email: string) => void
-	onSubmitMarkDestinationVerified: () => void
 	onPlanChoiceChange: (plan: AdminPlanName) => void
 	onSubmitPlanAction: () => void
 	onCreditsGranted: () => void
@@ -389,13 +386,10 @@ export function renderAdminUserDetail(props: AdminUserDetailProps) {
 					) : null}
 				</AccountManagementPanel>
 			) : null}
-			{renderAdminUserDestinationPanel({
-				isVerifying: actionState === 'verifying',
-				isMutating,
-				destinationEmailDraft: props.destinationEmailDraft,
-				onDestinationEmailDraftChange: props.onDestinationEmailDraftChange,
-				onSubmitMarkDestinationVerified: props.onSubmitMarkDestinationVerified,
-			})}
+			<AdminUserDestinationPanel
+				key={selectedUser.stableUserId}
+				stableUserId={selectedUser.stableUserId}
+			/>
 			<AccountManagementPanel
 				title="Manage plan"
 				description="Sets the admin grant (users.plan). Ordinary Stripe subscribers keep this as free; their paid tier lives on the subscription plan. The effective plan is the higher of the two."
