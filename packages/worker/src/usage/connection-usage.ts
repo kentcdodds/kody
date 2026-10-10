@@ -216,6 +216,10 @@ function automationLabel(
  * (holder = viewer). `includeOrgWide` (billing readers) adds Automation,
  * per-person totals for other people (username only, no connection
  * details), and units recorded before connection tracking.
+ *
+ * Package names follow the org Repositories list: a package the viewer
+ * cannot see (`canSeePackage`) keeps its units but not its name.
+ * `packageLinks` is false where packages have no detail page (team orgs).
  */
 export async function loadConnectionUsage(input: {
 	env: Env
@@ -223,6 +227,8 @@ export async function loadConnectionUsage(input: {
 	orgSlug: string
 	viewerPersonId: string
 	includeOrgWide: boolean
+	canSeePackage: (packageId: string) => boolean
+	packageLinks: boolean
 	now?: Date
 }): Promise<AccountConnectionUsageLoaderData> {
 	const now = input.now ?? new Date()
@@ -300,14 +306,26 @@ export async function loadConnectionUsage(input: {
 			: Promise.resolve(new Map<string, string>()),
 	])
 
+	function callerLabel(packageId: string) {
+		if (!packageId) return { label: 'Ad hoc code', href: null }
+		const name = packageLabels.names.get(packageId)
+		if (name === undefined) return { label: 'Deleted package', href: null }
+		if (!input.canSeePackage(packageId)) {
+			return { label: 'Package you cannot see', href: null }
+		}
+		return {
+			label: name,
+			href: input.packageLinks
+				? (packageLabels.hrefs.get(packageId) ?? null)
+				: null,
+		}
+	}
+
 	function callersFor(group: Group): Array<ConnectionUsageCaller> {
 		return [...group.callers.entries()]
 			.map(([packageId, totals]) => ({
 				packageId,
-				label: packageId
-					? (packageLabels.names.get(packageId) ?? 'Deleted package')
-					: 'Ad hoc code',
-				href: packageId ? (packageLabels.hrefs.get(packageId) ?? null) : null,
+				...callerLabel(packageId),
 				totals,
 			}))
 			.sort((a, b) => compareUsage(a.totals, b.totals))

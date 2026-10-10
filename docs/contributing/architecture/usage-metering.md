@@ -535,7 +535,11 @@ export does not list them.
    `/account/connection-usage.json` (`loadConnectionUsage` in
    `connection-usage.ts`) reads it for the page org: everyone sees their own
    connections; `billing:read` adds Automation, other people by username only,
-   and untracked units.
+   and untracked units. The org comes from the Referer on
+   `/@slug/-/connections`, like `/account/connected-agents.json`. Package names
+   follow the team Repositories rule (`canSeeResource`): a package the viewer
+   cannot see keeps its units under a generic label, and team packages do not
+   link until they have detail pages.
 
 ## Agent package conversation uses
 

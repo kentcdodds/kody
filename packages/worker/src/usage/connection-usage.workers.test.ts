@@ -511,6 +511,8 @@ test('members see only their own connections, never teammates or Automation', as
 		orgSlug: slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: false,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.windows).toEqual({
@@ -585,6 +587,36 @@ test('members see only their own connections, never teammates or Automation', as
 	expect(JSON.stringify(usage)).not.toContain('tok_teammate')
 })
 
+test('team packages the viewer cannot see keep their units but not their name', async () => {
+	const { viewer, orgId, slug, pollerId } = await seedTeamUsage()
+	async function pollerCaller(canSee: boolean) {
+		const usage = await loadConnectionUsage({
+			env: envWithoutJobsService,
+			orgId,
+			orgSlug: slug,
+			viewerPersonId: viewer.personId,
+			includeOrgWide: false,
+			canSeePackage: (packageId) => canSee || packageId !== pollerId,
+			packageLinks: false,
+			now,
+		})
+		return usage.connections[0]?.callers.find(
+			(caller) => caller.packageId === pollerId,
+		)
+	}
+	expect(await pollerCaller(true)).toMatchObject({
+		label: 'slack-poller',
+		href: null,
+	})
+	const hidden = await pollerCaller(false)
+	expect(hidden).toMatchObject({
+		label: 'Package you cannot see',
+		href: null,
+		totals: { last7Days: counts(40, 1) },
+	})
+	expect(JSON.stringify(hidden)).not.toContain('slack-poller')
+})
+
 test('billing readers also see Automation, teammates by username only, and untracked units', async () => {
 	const { viewer, teammate, orgId, slug, jobId, viewerTokenId } =
 		await seedTeamUsage()
@@ -594,6 +626,8 @@ test('billing readers also see Automation, teammates by username only, and untra
 		orgSlug: slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.connections.map((entry) => entry.id)).toEqual([
@@ -642,6 +676,8 @@ test('connection usage never reads another org', async () => {
 		orgSlug: other.slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.connections).toEqual([])
