@@ -603,7 +603,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 			storageContext: stalePackageStorageContext,
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
-	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockResolvedValueOnce({
 		userId: personIdFromStored(userId),
 		email,
 		username: userId,

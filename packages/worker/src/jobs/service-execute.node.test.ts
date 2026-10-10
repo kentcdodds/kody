@@ -286,7 +286,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 
 	// Transient background identity lookup failures are retried by the caller.
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
-	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockRejectedValueOnce(
 		new Error('D1_ERROR: Network connection lost.'),
 	)
 	await expect(
@@ -299,7 +299,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 	).rejects.toBeInstanceOf(TransientJobExecutionError)
 
 	// A suspended owner halts the job.
-	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockRejectedValueOnce(
 		new AccountSuspendedError(),
 	)
 	const suspended = await executeJobOnce({
