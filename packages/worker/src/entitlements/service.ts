@@ -1286,6 +1286,18 @@ const storageBytesBootstrapMaxAttempts = 2
  * The `env` / `USER_METER` binding is required for the DO reserve path and
  * throws immediately when absent — failing closed for real users.
  */
+/** Signup org billing page, or a placeholder when the org cannot be read. */
+export async function entitlementBillingPath(db: D1Database, userId: string) {
+	try {
+		const org = await getOrgById(db, userId)
+		if (org?.slug) return orgBillingPath(org.slug)
+	} catch {
+		// A test double that does not model orgs still owes the caller a limit
+		// error. Production D1 returns null when the org is missing.
+	}
+	return '/@<slug>/-/billing'
+}
+
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
 	userId: string
@@ -1359,6 +1371,7 @@ export async function assertWithinStorageBytesEntitlement(input: {
 						'storage_bytes',
 						plan,
 						entitlement.creditWallet,
+						await entitlementBillingPath(input.db, input.userId),
 					),
 				})
 			}
@@ -1381,6 +1394,7 @@ export async function assertWithinStorageBytesEntitlement(input: {
 					'storage_bytes',
 					plan,
 					entitlement.creditWallet,
+					await entitlementBillingPath(input.db, input.userId),
 				),
 			})
 		}
@@ -1445,14 +1459,7 @@ export async function assertWithinEntitlement(
 				now,
 			})
 	if (current + requested > limit) {
-		let billingPath = '/@<slug>/-/billing'
-		try {
-			const org = await getOrgById(input.db, input.userId)
-			if (org?.slug) billingPath = orgBillingPath(org.slug)
-		} catch {
-			// A test double that does not model orgs still owes the caller a
-			// limit error. Production D1 returns null when the org is missing.
-		}
+		const billingPath = await entitlementBillingPath(input.db, input.userId)
 		throw new EntitlementLimitError({
 			resource: input.resource,
 			plan,
@@ -1553,6 +1560,7 @@ export async function consumeDailyEntitlement(
 		}
 	}
 	if (!result.consumed) {
+		const billingPath = await entitlementBillingPath(input.db, input.userId)
 		if (result.deniedWindow === 'week' && weekLimit !== null) {
 			throw new EntitlementLimitError({
 				resource,
@@ -1564,6 +1572,7 @@ export async function consumeDailyEntitlement(
 					resource,
 					plan,
 					entitlement.creditWallet,
+					billingPath,
 				),
 			})
 		}
@@ -1576,6 +1585,7 @@ export async function consumeDailyEntitlement(
 				resource,
 				plan,
 				entitlement.creditWallet,
+				billingPath,
 			),
 		})
 	}
