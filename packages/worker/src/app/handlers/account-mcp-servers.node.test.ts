@@ -33,6 +33,7 @@ const mockModule = await vi.hoisted(async () => {
 		usageMode: 'any',
 		allowedPackageIds: [],
 		lastError: null,
+		oauthClientId: null,
 		...overrides,
 	})
 	const mcpUser = {
@@ -345,6 +346,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 				catalogLogoPath: null,
 				usageMode: 'any',
 				allowedPackageIds: [],
+				oauthClientId: null,
 			},
 		],
 		savedPackages: [{ id: 'pkg-drafts', kodyId: 'gmail-drafts' }],
