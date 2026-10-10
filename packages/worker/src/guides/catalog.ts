@@ -34,6 +34,7 @@ import lockedMcpServer from '../../../../docs/guides/locked-mcp-server.md'
 import oauth from '../../../../docs/guides/oauth.md'
 import openapiIntegrations from '../../../../docs/guides/openapi-integrations.md'
 import packageAuthoring from '../../../../docs/guides/package-authoring.md'
+import organizations from '../../../../docs/guides/organizations.md'
 import packageSharing from '../../../../docs/guides/package-sharing.md'
 import packageSkills from '../../../../docs/guides/package-skills.md'
 import packageApps from '../../../../docs/guides/package-apps.md'
@@ -90,6 +91,7 @@ const guideSources: Array<{ slug: string; raw: string }> = [
 	{ slug: 'secrets', raw: secrets },
 	{ slug: 'secret-providers', raw: secretProviders },
 	{ slug: 'packages-integrations-mcp', raw: packagesIntegrationsMcp },
+	{ slug: 'organizations', raw: organizations },
 	{ slug: 'text-your-agent', raw: textYourAgent },
 	{ slug: 'openmuse', raw: openmuse },
 	{ slug: 'triggers', raw: triggers },

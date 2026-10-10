@@ -11,6 +11,7 @@ import {
 	createTeam,
 	removeTeamMember,
 } from '#worker/orgs/access-writes.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listTeams } from '#worker/orgs/org-teams-list.ts'
 import {
@@ -19,6 +20,15 @@ import {
 	resolveTeamId,
 	rethrowAccessError,
 } from './shared.ts'
+
+const personalOrgTeamWriteMessage =
+	'Teams belong to team organizations. Create a team organization to group people.'
+
+async function assertTeamOrg(db: D1Database, orgId: string) {
+	if (await isPersonalOrg(db, orgId)) {
+		throw new McpCallerError(personalOrgTeamWriteMessage)
+	}
+}
 
 const teamSummarySchema = z.object({
 	id: z.string(),
@@ -92,6 +102,7 @@ export const teamCreateCapability = defineDomainCapability(
 					ctx,
 					'team:write',
 				)
+				await assertTeamOrg(db, request.org.id)
 				const slug = normalizeUsername(args.slug)
 				const formatError = getUsernameFormatValidationError(slug)
 				if (formatError) throw new McpCallerError(formatError)
@@ -147,6 +158,7 @@ export const teamMemberAddCapability = defineDomainCapability(
 					ctx,
 					'team:write',
 				)
+				await assertTeamOrg(db, request.org.id)
 				const teamId = await resolveTeamId(db, request.org.id, {
 					teamId: args.team_id,
 					teamSlug: args.team_slug,
@@ -196,6 +208,7 @@ export const teamMemberRemoveCapability = defineDomainCapability(
 		async handler(args, ctx) {
 			try {
 				const { request, db } = await requireOrgPermission(ctx, 'team:delete')
+				await assertTeamOrg(db, request.org.id)
 				const teamId = await resolveTeamId(db, request.org.id, {
 					teamId: args.team_id,
 					teamSlug: args.team_slug,

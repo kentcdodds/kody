@@ -105,6 +105,11 @@ approve several pending secrets for one package in a click.
   outside an active package run. Search does not return or rank those
   references.
 
+A Use collaborator running your package in **your** org uses **your** org's
+secrets and integrations under the same host and package allowlists — they still
+cannot read secret values. Details:
+[Share a package](/docs/package-sharing#secrets-and-integrations-on-a-granted-run).
+
 OAuth access and refresh tokens are different: they live on the integration,
 rotate through `createAuthenticatedFetch`, and do not appear in the secrets
 list. A pasted API key is a secret; a Slack login is an integration. See

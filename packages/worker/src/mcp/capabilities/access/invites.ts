@@ -30,6 +30,7 @@ import {
 	type StoredInvite,
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import { isPersonalOrg } from '#worker/orgs/is-personal-org.ts'
 import { isOrgActive } from '#worker/orgs/repo.ts'
 import {
 	orgAuditWriterFromRequest,
@@ -337,6 +338,11 @@ export const inviteCreateCapability = defineDomainCapability(
 				switch (kind) {
 					case 'membership': {
 						await authorize({ env: ctx.env, request }, 'member:write')
+						if (await isPersonalOrg(db, request.org.id)) {
+							throw new McpCallerError(
+								'Membership for your personal organization is managed with your account. Create a team organization to invite people.',
+							)
+						}
 						if (args.resource_type || args.resource_id || args.preset) {
 							throw new McpCallerError(
 								'Membership invites do not take a resource or preset. Use kind grant for that.',
