@@ -24,6 +24,7 @@ import {
 } from '#client/routes/account-management-components.tsx'
 import { RecordTable } from '#client/routes/record-table.tsx'
 import { chartColor, formatIntegerNumber } from '#client/charts/chart-theme.ts'
+import { isUnlimitedLimit } from '#universal/plans.ts'
 import {
 	colors,
 	radius,
@@ -163,7 +164,13 @@ function formatCurrentValue(item: AccountUsageEntitlementConsumption) {
 }
 
 function formatLimitValue(item: AccountUsageEntitlementConsumption) {
-	return formatUsageValue(item.resource, item.limit)
+	return formatLimitNumber(item.resource, item.limit)
+}
+
+function formatLimitNumber(resource: string, limit: number) {
+	return isUnlimitedLimit(limit)
+		? 'Unlimited'
+		: formatUsageValue(resource, limit)
 }
 
 function usageProgressPercent(item: AccountUsageEntitlementConsumption) {
@@ -528,7 +535,7 @@ export function AccountUsageRoute(handle: Handle) {
 										<li key={item.resource}>
 											<strong>{item.label}</strong>:{' '}
 											{item.week
-												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatIntegerNumber(item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
+												? `${formatCurrentValue(item)} / ${formatLimitValue(item)} today (${formatUsagePercent(item.percentOfLimit)}) · ${formatIntegerNumber(item.week.current)} / ${formatLimitNumber(item.resource, item.week.limit)} this week (${formatUsagePercent(item.week.percentOfLimit)})`
 												: `${formatCurrentValue(item)} / ${formatLimitValue(item)} (${formatUsagePercent(item.percentOfLimit)})`}
 											. {item.howToReduce}
 											{warningAction && warningOffersCredits(item.resource) ? (
@@ -586,7 +593,7 @@ export function AccountUsageRoute(handle: Handle) {
 												? `${formatCurrentValue(item)} today · ${formatIntegerNumber(item.week.current)} this week`
 												: formatCurrentValue(item),
 											limit: item.week
-												? `${formatLimitValue(item)} / day · ${formatIntegerNumber(item.week.limit)} / week`
+												? `${formatLimitValue(item)} / day · ${formatLimitNumber(item.resource, item.week.limit)} / week`
 												: formatLimitValue(item),
 											used: (
 												<span

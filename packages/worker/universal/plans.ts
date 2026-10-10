@@ -246,6 +246,11 @@ export type UserEntitlement = {
 	 * the rate pool is this many per-seat includes. Absent means one seat.
 	 */
 	seats?: number
+	/**
+	 * Admin per-org limit overrides ({@link applyLimitOverrides}). Absent
+	 * or empty means plan limits only.
+	 */
+	limitOverrides?: ReadonlyArray<LimitOverride>
 }
 
 /**
@@ -857,7 +862,17 @@ export function resolvePlanLimit(
 	creditWallet: CreditWalletState = 'none',
 	seats = 1,
 ): number {
-	const limits = resolvePlanLimits(plan, ladder, creditWallet, seats)
+	return limitForResource(
+		resolvePlanLimits(plan, ladder, creditWallet, seats),
+		resource,
+	)
+}
+
+/** The limit for one resource from a resolved limit table. */
+export function limitForResource(
+	limits: PlanLimits,
+	resource: EntitlementResource,
+): number {
 	switch (resource) {
 		case 'repos':
 			return limits.maxRepos
@@ -932,8 +947,18 @@ export function resolveWeeklyPlanLimit(
 	creditWallet: CreditWalletState = 'none',
 	seats = 1,
 ): number | null {
+	return weeklyLimitForResource(
+		resolvePlanLimits(plan, ladder, creditWallet, seats),
+		resource,
+	)
+}
+
+/** The weekly window from a resolved limit table (`null` when none). */
+export function weeklyLimitForResource(
+	limits: PlanLimits,
+	resource: EntitlementResource,
+): number | null {
 	if (!isWeeklyComputeWindowResource(resource)) return null
-	const limits = resolvePlanLimits(plan, ladder, creditWallet, seats)
 	switch (resource) {
 		case 'execute_unique_workers_per_day':
 			return limits.maxExecuteUniqueWorkersPerWeek
@@ -960,4 +985,196 @@ export function weeklyEntitlementResourceLabel(
 			throw new Error(`Unknown weekly compute resource: ${String(exhaustive)}`)
 		}
 	}
+}
+
+/**
+ * Daily, weekly, and monthly caps an admin can override per org
+ * (`org_limit_overrides`). Stock, concurrency, per-message size, and the job
+ * interval floor are not overridable.
+ */
+export const limitOverrideKeys = [
+	'execute_unique_workers_per_day',
+	'execute_unique_workers_per_week',
+	'outbound_fetches_per_day',
+	'outbound_fetches_per_week',
+	'job_runs_per_day',
+	'automation_invocations_per_day',
+	'email_sends_per_day',
+	'email_receives_per_day',
+	'unique_worker_days_per_month',
+	'durable_object_rows_read_per_month',
+] as const
+
+export type LimitOverrideKey = (typeof limitOverrideKeys)[number]
+
+export function parseLimitOverrideKey(value: unknown): LimitOverrideKey | null {
+	return typeof value === 'string' &&
+		(limitOverrideKeys as ReadonlyArray<string>).includes(value)
+		? (value as LimitOverrideKey)
+		: null
+}
+
+export const limitOverrideKeyLabels: Record<LimitOverrideKey, string> = {
+	execute_unique_workers_per_day: 'Unique execute workers per day',
+	execute_unique_workers_per_week: 'Unique execute workers per week',
+	outbound_fetches_per_day: 'Outbound fetches per day',
+	outbound_fetches_per_week: 'Outbound fetches per week',
+	job_runs_per_day: 'Job runs per day',
+	automation_invocations_per_day: 'Automation invocations per day',
+	email_sends_per_day: 'Email sends per day',
+	email_receives_per_day: 'Email receives per day',
+	unique_worker_days_per_month: 'Worker compute per month (stop at $0)',
+	durable_object_rows_read_per_month: 'Rows read per month (stop at $0)',
+}
+
+type LimitOverrideField =
+	| 'maxExecuteUniqueWorkersPerDay'
+	| 'maxExecuteUniqueWorkersPerWeek'
+	| 'maxOutboundFetchesPerDay'
+	| 'maxOutboundFetchesPerWeek'
+	| 'maxJobRunsPerDay'
+	| 'maxAutomationInvocationsPerDay'
+	| 'maxEmailSendsPerDay'
+	| 'maxEmailReceivesPerDay'
+	| 'maxUniqueWorkerDaysPerMonth'
+	| 'maxDurableObjectRowsReadPerMonth'
+
+function limitOverrideField(key: LimitOverrideKey): LimitOverrideField {
+	switch (key) {
+		case 'execute_unique_workers_per_day':
+			return 'maxExecuteUniqueWorkersPerDay'
+		case 'execute_unique_workers_per_week':
+			return 'maxExecuteUniqueWorkersPerWeek'
+		case 'outbound_fetches_per_day':
+			return 'maxOutboundFetchesPerDay'
+		case 'outbound_fetches_per_week':
+			return 'maxOutboundFetchesPerWeek'
+		case 'job_runs_per_day':
+			return 'maxJobRunsPerDay'
+		case 'automation_invocations_per_day':
+			return 'maxAutomationInvocationsPerDay'
+		case 'email_sends_per_day':
+			return 'maxEmailSendsPerDay'
+		case 'email_receives_per_day':
+			return 'maxEmailReceivesPerDay'
+		case 'unique_worker_days_per_month':
+			return 'maxUniqueWorkerDaysPerMonth'
+		case 'durable_object_rows_read_per_month':
+			return 'maxDurableObjectRowsReadPerMonth'
+		default: {
+			const exhaustive: never = key
+			throw new Error(`Unknown limit override key: ${String(exhaustive)}`)
+		}
+	}
+}
+
+/** The limit a resolved table holds for an override key (null = no window). */
+export function limitForOverrideKey(
+	limits: PlanLimits,
+	key: LimitOverrideKey,
+): number | null {
+	return limits[limitOverrideField(key)]
+}
+
+/**
+ * The limit an `unlimited` override resolves to. A finite number so it
+ * survives JSON and Durable Object RPC; no counter reaches it.
+ */
+export const unlimitedLimit = Number.MAX_SAFE_INTEGER
+
+export function isUnlimitedLimit(limit: number): boolean {
+	return limit >= unlimitedLimit
+}
+
+export type LimitOverrideValue = number | 'unlimited'
+
+export type LimitOverride = {
+	key: LimitOverrideKey
+	value: LimitOverrideValue
+	/** ISO timestamp; the override stops applying at this instant. */
+	expiresAt: string | null
+}
+
+export function isLimitOverrideActive(
+	override: Pick<LimitOverride, 'expiresAt'>,
+	now: Date = new Date(),
+): boolean {
+	if (override.expiresAt === null) return true
+	const expiresAtMs = Date.parse(override.expiresAt)
+	return Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime()
+}
+
+/**
+ * Plan limits with active overrides applied on top. An override only
+ * raises: each field becomes the larger of the plan limit and the override,
+ * so a growing seat pool is never cut back by an older override. A weekly
+ * field the plan leaves `null` (no weekly window) stays `null`. Expired
+ * overrides are skipped here as well as in the D1 read, so a cached
+ * entitlement cannot keep one alive past its expiry.
+ */
+export function applyLimitOverrides(
+	limits: PlanLimits,
+	overrides: ReadonlyArray<LimitOverride> | undefined,
+	now: Date = new Date(),
+): PlanLimits {
+	if (!overrides || overrides.length === 0) return limits
+	const next: PlanLimits = { ...limits }
+	for (const override of overrides) {
+		if (!isLimitOverrideActive(override, now)) continue
+		const field = limitOverrideField(override.key)
+		const planValue = next[field]
+		if (planValue === null) continue
+		const overrideValue =
+			override.value === 'unlimited' ? unlimitedLimit : override.value
+		next[field] = Math.max(planValue, overrideValue)
+	}
+	return next
+}
+
+/**
+ * The effective limit table for an entitlement: plan limits (ladder,
+ * wallet, seat pool, credits ceiling), then admin overrides on top. Every
+ * enforcement and display path that has an entitlement resolves through
+ * here; the `resolvePlan*` helpers answer "what does this plan give".
+ */
+export function resolveEntitlementLimits(
+	entitlement: UserEntitlement,
+	now: Date = new Date(),
+): PlanLimits {
+	return applyLimitOverrides(
+		resolvePlanLimits(
+			entitlement.plan,
+			entitlement.ladder,
+			entitlement.creditWallet,
+			entitlement.seats,
+		),
+		entitlement.limitOverrides,
+		now,
+	)
+}
+
+export function resolveEntitlementLimit(
+	entitlement: UserEntitlement,
+	resource: EntitlementResource,
+	now: Date = new Date(),
+): number {
+	return limitForResource(resolveEntitlementLimits(entitlement, now), resource)
+}
+
+export function resolveWeeklyEntitlementLimit(
+	entitlement: UserEntitlement,
+	resource: EntitlementResource,
+	now: Date = new Date(),
+): number | null {
+	return weeklyLimitForResource(
+		resolveEntitlementLimits(entitlement, now),
+		resource,
+	)
+}
+
+/** Entitlement resources whose limit an override can raise. */
+export function isLimitOverrideResource(
+	resource: EntitlementResource,
+): boolean {
+	return (limitOverrideKeys as ReadonlyArray<string>).includes(resource)
 }

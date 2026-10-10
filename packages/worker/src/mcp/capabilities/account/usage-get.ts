@@ -78,10 +78,7 @@ export const usageGetCapability = defineDomainCapability(
 					db,
 					env: ctx.env,
 					usageUserId: personalOrgId(user.userId),
-					plan: entitlement.plan,
-					ladder: entitlement.ladder,
-					creditWallet: entitlement.creditWallet,
-					seats: entitlement.seats,
+					entitlement,
 				}),
 				readAccountComputeOverage({
 					db,

@@ -81,10 +81,7 @@ export async function loadAccountUsageData(input: {
 			db: input.env.APP_DB,
 			env: input.env,
 			usageUserId,
-			plan: entitlement.plan,
-			ladder: entitlement.ladder,
-			creditWallet: entitlement.creditWallet,
-			seats: entitlement.seats,
+			entitlement,
 			now,
 		}),
 		readAccountComputeOverage({

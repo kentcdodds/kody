@@ -120,6 +120,7 @@ import {
 	createOrgBillingSuccessHandler,
 } from '#app/handlers/org-billing.ts'
 import { createAdminUserCreditsApiHandler } from '#app/handlers/admin-user-credits.ts'
+import { createAdminOrgLimitsApiHandler } from '#app/handlers/admin-org-limits.ts'
 import {
 	createAccountCreditsHandler,
 	createAccountCreditsSettingsApiHandler,
@@ -558,6 +559,8 @@ export function createAppRouter(env: Env) {
 			adminUserUsageApi: createAdminUserUsageApiHandler(env),
 			adminUserCreditsApi: createAdminUserCreditsApiHandler(env),
 			adminUserCreditsApiPost: createAdminUserCreditsApiHandler(env),
+			adminOrgLimitsApi: createAdminOrgLimitsApiHandler(env),
+			adminOrgLimitsApiPost: createAdminOrgLimitsApiHandler(env),
 			adminInsights: createAdminInsightsHandler(env),
 			adminInsightsApi: createAdminInsightsApiHandler(env),
 			adminPlatformFeedback: createAdminPlatformFeedbackHandler(env),

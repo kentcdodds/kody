@@ -119,10 +119,7 @@ export async function loadAdminUserUsageData(
 			readAdminEntitlementConsumption({
 				env,
 				usageUserId,
-				plan,
-				ladder: entitlement.ladder,
-				creditWallet: entitlement.creditWallet,
-				seats: entitlement.seats,
+				entitlement,
 				now,
 			}),
 			userHasAdminRole(env.APP_DB, usageUserId),

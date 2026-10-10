@@ -225,10 +225,7 @@ async function warnOneUserIfNeeded(input: {
 		readAdminEntitlementConsumption({
 			env: input.env,
 			usageUserId: input.user.stable_user_id,
-			plan: entitlement.plan,
-			ladder: entitlement.ladder,
-			creditWallet: entitlement.creditWallet,
-			seats: entitlement.seats,
+			entitlement,
 			now: input.now,
 		}),
 		readComputeOverageWarnings({

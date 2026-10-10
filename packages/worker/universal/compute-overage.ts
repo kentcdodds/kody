@@ -19,9 +19,11 @@ import {
 	type CreditDebitMeter,
 } from './credits.ts'
 import {
+	applyLimitOverrides,
 	creditsUnlockedResources,
 	type CreditWalletState,
 	type EntitlementLadder,
+	type LimitOverride,
 	type PlanName,
 	resolvePlanLimits,
 } from './plans.ts'
@@ -213,6 +215,12 @@ export type PastIncludeStop = {
  * wallet, or `null` when nothing is stopped. Only `empty` stops: a funded
  * wallet pays past the include, and plans without a wallet keep their hard
  * rate caps instead. Worker compute wins when both meters are past.
+ *
+ * The stop fires past the include, or past an admin override of that
+ * monthly cap when one is set (`unique_worker_days_per_month`,
+ * `durable_object_rows_read_per_month`). Overrides move only the stop:
+ * debits always settle against the plan include
+ * ({@link computeMonthlyOverageForDebit}).
  */
 export function resolvePastIncludeStop(input: {
 	plan: PlanName
@@ -220,21 +228,29 @@ export function resolvePastIncludeStop(input: {
 	creditWallet: CreditWalletState
 	uniqueWorkerDays: number
 	durableObjectRowsRead: number
+	limitOverrides?: ReadonlyArray<LimitOverride>
+	now?: Date
 }): PastIncludeStop | null {
 	if (input.creditWallet !== 'empty') return null
-	const overage = computeMonthlyOverage(input)
-	if (overage.billableUniqueWorkerDays > 0) {
+	const stopAt = applyLimitOverrides(
+		resolvePlanLimits(input.plan, input.ladder, input.creditWallet),
+		input.limitOverrides,
+		input.now,
+	)
+	const uniqueWorkerDays = nonNegativeInteger(input.uniqueWorkerDays)
+	if (uniqueWorkerDays > stopAt.maxUniqueWorkerDaysPerMonth) {
 		return {
 			resource: 'unique_worker_days',
-			limit: overage.includedUniqueWorkerDays,
-			current: nonNegativeInteger(input.uniqueWorkerDays),
+			limit: stopAt.maxUniqueWorkerDaysPerMonth,
+			current: uniqueWorkerDays,
 		}
 	}
-	if (overage.billableDurableObjectRowsRead > 0) {
+	const durableObjectRowsRead = nonNegativeInteger(input.durableObjectRowsRead)
+	if (durableObjectRowsRead > stopAt.maxDurableObjectRowsReadPerMonth) {
 		return {
 			resource: 'durable_object_rows_read',
-			limit: overage.includedDurableObjectRowsRead,
-			current: nonNegativeInteger(input.durableObjectRowsRead),
+			limit: stopAt.maxDurableObjectRowsReadPerMonth,
+			current: durableObjectRowsRead,
 		}
 	}
 	return null

@@ -4,7 +4,10 @@ import { resolveUserEntitlementFromRow } from '#worker/entitlements/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
-import { parseStripePlanName, resolvePlanLimits } from '#universal/plans.ts'
+import {
+	parseStripePlanName,
+	resolveEntitlementLimits,
+} from '#universal/plans.ts'
 import { countDistinctInboundClientIds } from './campaign-inbound-clients.ts'
 import {
 	usageCampaignLimitAwareThreshold,
@@ -173,11 +176,7 @@ async function readNearStockCap(input: {
 			row: input.user,
 			now: input.now,
 		})
-		const limits = resolvePlanLimits(
-			entitlement.plan,
-			entitlement.ladder,
-			entitlement.creditWallet,
-		)
+		const limits = resolveEntitlementLimits(entitlement, input.now)
 		const [packages, secrets] = await Promise.all([
 			input.db
 				.prepare(

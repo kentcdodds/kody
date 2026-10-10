@@ -140,6 +140,8 @@ export const routes = route({
 	adminUserUsageApi: '/admin/users/usage.json',
 	adminUserCreditsApi: '/admin/users/credits.json',
 	adminUserCreditsApiPost: post('/admin/users/credits.json'),
+	adminOrgLimitsApi: '/admin/orgs/limits.json',
+	adminOrgLimitsApiPost: post('/admin/orgs/limits.json'),
 	adminInsights: '/admin/insights',
 	adminInsightsApi: '/admin/insights.json',
 	adminPlatformFeedback: '/admin/platform-feedback',

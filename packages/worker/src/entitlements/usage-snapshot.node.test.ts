@@ -109,9 +109,11 @@ function readSnapshot(
 		db,
 		env: env as Env,
 		usageUserId: ownerIdFromStored(usageUserId),
-		plan: options.plan ?? 'free',
-		ladder: options.ladder ?? 'public',
-		creditWallet: 'none',
+		entitlement: {
+			plan: options.plan ?? 'free',
+			ladder: options.ladder ?? 'public',
+			creditWallet: 'none',
+		},
 		now: at,
 	})
 }
