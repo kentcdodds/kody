@@ -10,8 +10,12 @@ import {
 	AccountSuspendedError,
 	accountSuspendedMessage,
 } from '#worker/account/account-suspension.ts'
-import { resolveBackgroundMcpUser } from './background-mcp-user.ts'
+import {
+	resolveBackgroundMcpUser,
+	resolveBackgroundMcpUserForOwner,
+} from './background-mcp-user.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 
 test('resolveBackgroundMcpUser loads admin roles only for assigned accounts', async () => {
 	await ensureUsersTestSchema({ db: env.APP_DB })
@@ -85,4 +89,58 @@ test('resolveBackgroundMcpUser fails closed for suspended accounts and recovers 
 	await expect(
 		resolveBackgroundMcpUser(env.APP_DB, stableUserId),
 	).resolves.toMatchObject({ userId: stableUserId, email })
+})
+
+test('resolveBackgroundMcpUserForOwner prefers actor then org Owner for team orgs', async () => {
+	await ensureUsersTestSchema({ db: env.APP_DB })
+	await ensureRbacTestSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
+
+	const ownerEmail = `bg-org-owner-${crypto.randomUUID()}@example.com`
+	const ownerId = testStableUserIdFromEmail(ownerEmail)
+	await seedAccount({
+		db: env.APP_DB,
+		email: ownerEmail,
+		username: `bgorgown-${crypto.randomUUID().slice(0, 8)}`,
+		stableUserId: ownerId,
+		plan: 'pro',
+	})
+	const teamOrgId = `team-org-${crypto.randomUUID().replaceAll('-', '')}`
+	const now = new Date().toISOString()
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, created_at, updated_at)
+		 VALUES (?, ?, ?, ?)`,
+	)
+		.bind(teamOrgId, `acme-${crypto.randomUUID().slice(0, 8)}`, now, now)
+		.run()
+	await env.APP_DB.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, 'owner', ?)`,
+	)
+		.bind(teamOrgId, ownerId, now)
+		.run()
+
+	await expect(resolveBackgroundMcpUser(env.APP_DB, teamOrgId)).rejects.toThrow(
+		/Background MCP user was not found/,
+	)
+
+	await expect(
+		resolveBackgroundMcpUserForOwner(env.APP_DB, { ownerId: teamOrgId }),
+	).resolves.toMatchObject({ userId: ownerId, email: ownerEmail })
+
+	const otherEmail = `bg-org-actor-${crypto.randomUUID()}@example.com`
+	const otherId = testStableUserIdFromEmail(otherEmail)
+	await seedAccount({
+		db: env.APP_DB,
+		email: otherEmail,
+		username: `bgorgact-${crypto.randomUUID().slice(0, 8)}`,
+		stableUserId: otherId,
+		plan: 'pro',
+	})
+	await expect(
+		resolveBackgroundMcpUserForOwner(env.APP_DB, {
+			ownerId: teamOrgId,
+			actorUserId: otherId,
+		}),
+	).resolves.toMatchObject({ userId: otherId, email: otherEmail })
 })

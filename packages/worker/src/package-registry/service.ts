@@ -239,6 +239,8 @@ export async function refreshSavedPackageProjection(input: {
 	env: Env
 	baseUrl: string
 	userId: string
+	/** Acting person when `userId` is a team org OwnerId (job sync identity). */
+	actorUserId?: string | null
 	userEmail?: string | null
 	packageId: string
 	sourceId: string
@@ -533,6 +535,7 @@ export async function refreshSavedPackageProjection(input: {
 			const schedulerStateChanged = await syncPackageJobsForPackage({
 				env: input.env,
 				userId: input.userId,
+				actorUserId: input.actorUserId,
 				baseUrl: input.baseUrl,
 				packageId: input.packageId,
 				sourceId: input.sourceId,

@@ -130,6 +130,15 @@ function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
 			displayName: id,
 		}),
 	)
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockImplementation(
+		async (
+			db: D1Database,
+			input: { ownerId: string; actorUserId?: string | null },
+		) => {
+			const id = input.actorUserId?.trim() || input.ownerId
+			return await identityMockModule.resolveBackgroundMcpUser(db, id)
+		},
+	)
 }
 
 function createPlanUserCallerContext(input: { userId: string; email: string }) {

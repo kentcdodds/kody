@@ -109,6 +109,15 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 		username: 'owner',
 		displayName: 'Owner',
 	}),
+	resolveBackgroundMcpUserForOwner: async (
+		_db: D1Database,
+		input: { ownerId: string; actorUserId?: string | null },
+	) => ({
+		userId: input.actorUserId?.trim() || input.ownerId,
+		email: 'owner@example.com',
+		username: 'owner',
+		displayName: 'Owner',
+	}),
 }))
 
 function invalidateSeededInvokeContract() {
