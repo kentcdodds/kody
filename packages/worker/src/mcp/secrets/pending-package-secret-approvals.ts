@@ -27,6 +27,7 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 	userId: OwnerId
 	packageId: string
 	kodyId: string
+	orgSlug?: string | null
 	secretMounts?: Record<
 		string,
 		{
@@ -52,6 +53,7 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 	const missing = await findMissingPackageApprovals({
 		env: input.env,
 		baseUrl: input.baseUrl,
+		orgSlug: input.orgSlug,
 		userId: input.userId,
 		packageId: input.packageId,
 		mounts: toSecretMountsFromUserRefs(refs),
@@ -63,10 +65,19 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 		secret_name: entry.secretName,
 		approval_url: entry.approvalUrl,
 	}))
-	const orgSlug = missing[0]
-		? /^\/@([^/]+)\/-\/secrets(?:\/|$)/.exec(
-				new URL(missing[0].approvalUrl).pathname,
-			)?.[1]
+	const firstApprovalUrl = missing[0]?.approvalUrl?.trim() ?? ''
+	const orgSlug = firstApprovalUrl
+		? (() => {
+				try {
+					return (
+						/^\/@([^/]+)\/-\/secrets(?:\/|$)/.exec(
+							new URL(firstApprovalUrl).pathname,
+						)?.[1] ?? null
+					)
+				} catch {
+					return null
+				}
+			})()
 		: null
 	return {
 		package_id: input.packageId,

@@ -15,6 +15,7 @@ const mockModule = vi.hoisted(() => ({
 	getCommunityForkByForkedPackageId: vi.fn(),
 	loadPackageManifestBySourceId: vi.fn(),
 	resolveSecret: vi.fn(),
+	getOrgById: vi.fn(),
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
@@ -36,6 +37,10 @@ vi.mock('./service.ts', () => ({
 	resolveSecret: (...args: Array<unknown>) => mockModule.resolveSecret(...args),
 }))
 
+vi.mock('#worker/orgs/repo.ts', () => ({
+	getOrgById: (...args: Array<unknown>) => mockModule.getOrgById(...args),
+}))
+
 const {
 	assertCanSetSecrets,
 	assertPackageCanAccessResolvedSecret,
@@ -43,6 +48,7 @@ const {
 	findMissingPackageApprovals,
 	PackageSecretAccessDeniedError,
 	resolvePackageMountedSecret,
+	resolveSecretPageOrgSlug,
 } = await import('./package-access.ts')
 
 const env = { APP_DB: {} as D1Database } as Env
@@ -436,4 +442,73 @@ test('package approval helpers parse structured messages and skip trusted packag
 		kodyId: 'discord-gateway',
 	})
 	expect(mockModule.loadPackageManifestBySourceId).not.toHaveBeenCalled()
+})
+
+test('resolveSecretPageOrgSlug prefers the org row over a renamed username', async () => {
+	mockModule.getOrgById.mockResolvedValueOnce({ slug: 'ada' })
+	await expect(
+		resolveSecretPageOrgSlug({
+			db: {} as D1Database,
+			userId: ownerIdFromStored('user-1'),
+			orgSlug: 'ada2',
+			caller: {
+				request: { org: { slug: 'ada2' } },
+				user: { username: 'ada2' },
+			},
+		}),
+	).resolves.toBe('ada')
+	expect(mockModule.getOrgById).toHaveBeenCalledWith(
+		{},
+		ownerIdFromStored('user-1'),
+	)
+})
+
+test('findMissingPackageApprovals uses the team org slug and keeps empty links safe', async () => {
+	lookups(savedPackage, communityFork)
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'bot-token',
+		scope: 'user',
+		allowedPackages: [],
+	})
+	mockModule.getOrgById.mockResolvedValueOnce({ slug: 'acme' })
+	const teamEntries = await findMissingPackageApprovals({
+		env,
+		baseUrl: 'https://example.com',
+		userId: ownerIdFromStored('org-acme'),
+		packageId: 'pkg-1',
+		mounts: discordMount,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	})
+	expect(teamEntries[0]?.approvalUrl).toBe(
+		'https://example.com/@acme/-/secrets/user/discordBotTokenKentPersonalAutomation?package_id=pkg-1&package=discord-gateway',
+	)
+
+	lookups(savedPackage, communityFork)
+	mockModule.resolveSecret.mockResolvedValueOnce({
+		found: true,
+		value: 'bot-token',
+		scope: 'user',
+		allowedPackages: [],
+	})
+	mockModule.getOrgById.mockResolvedValueOnce(null)
+	const unresolved = await findMissingPackageApprovals({
+		env,
+		baseUrl: 'https://example.com',
+		userId: ownerIdFromStored('org-acme'),
+		packageId: 'pkg-1',
+		mounts: discordMount,
+		storageContext: {
+			sessionId: null,
+			appId: null,
+			packageId: 'pkg-1',
+			storageId: 'pkg-1',
+		},
+	})
+	expect(unresolved[0]?.approvalUrl).toBe('')
 })

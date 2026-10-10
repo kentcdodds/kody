@@ -9,11 +9,10 @@ import {
 	createSecretPackageGrantAlreadyPresentMessage,
 	createSecretPackageGrantRequiresWebsiteMessage,
 } from '#mcp/secrets/errors.ts'
-import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
+import { resolveSecretPageOrgSlug } from '#mcp/secrets/package-access.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretUsageUrl,
-	secretPageOrgSlugFromCaller,
 } from '#mcp/secrets/package-approval-url.ts'
 import { inspectUserSecretPackageGrant } from '#mcp/secrets/service.ts'
 
@@ -59,7 +58,7 @@ export const secretLockCapability = defineDomainCapability(
 			args: { name: string; package_id: string },
 			ctx: CapabilityContext,
 		) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			try {
 				const state = await inspectUserSecretPackageGrant({
 					env: ctx.env,
@@ -67,13 +66,16 @@ export const secretLockCapability = defineDomainCapability(
 					name: args.name,
 					packageId: args.package_id,
 				})
-				const orgSlug =
-					secretPageOrgSlugFromCaller(ctx.callerContext) ??
-					user.username?.trim() ??
-					(await getPackageScopeByUserId(
-						ctx.env.APP_DB,
-						ownerIdFromCaller(ctx.callerContext),
-					))
+				const orgSlug = await resolveSecretPageOrgSlug({
+					db: ctx.env.APP_DB,
+					userId: ownerIdFromCaller(ctx.callerContext),
+					caller: ctx.callerContext,
+				})
+				if (!orgSlug) {
+					throw new McpCallerError(
+						'Unable to build a secrets page URL because this account has no org slug.',
+					)
+				}
 				const approvalUrl = buildSecretPackageApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
 					orgSlug,

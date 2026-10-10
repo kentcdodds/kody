@@ -5,6 +5,7 @@ import {
 	buildSecretPackageBulkApprovalUrlIfNeeded,
 	buildSecretUsageUrl,
 	normalizeBulkPackageSecretApprovalNames,
+	secretPageOrgSlugFromCaller,
 } from './package-approval-url.ts'
 
 test('buildSecretUsageUrl keeps Remix %2E encoding for dotted secret names', () => {
@@ -70,6 +71,20 @@ test('bulk package approval URL lists unique secret names on the approve route',
 			packageId: 'pkg-1',
 			kodyId: 'release',
 			names: ['onlyOne'],
+		}),
+	).toBeNull()
+})
+
+test('secretPageOrgSlugFromCaller uses the bound org slug, not the username', () => {
+	expect(
+		secretPageOrgSlugFromCaller({
+			request: { org: { slug: 'ada' } },
+			user: { username: 'ada2' },
+		}),
+	).toBe('ada')
+	expect(
+		secretPageOrgSlugFromCaller({
+			user: { username: 'ada2' },
 		}),
 	).toBeNull()
 })

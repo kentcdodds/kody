@@ -167,3 +167,45 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		'pkg-notes',
 	])
 })
+
+test('secretLock uses the org slug when it differs from the username', async () => {
+	const { sqlite, env } = createHarness()
+	const userId = ownerIdFromStored('user-secret-lock-rename')
+	const now = '2026-01-01T00:00:00.000Z'
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, created_at, updated_at) VALUES (?, 'ada', ?, ?)`,
+		)
+		.run(userId, now, now)
+	seedPackage(sqlite, { id: 'pkg-notes', userId, kodyId: 'notes' })
+	await saveSecret({
+		env,
+		userId,
+		scope: 'user',
+		name: 'openai-api-key',
+		value: 'sk-test',
+	})
+
+	const pending = await secretLockCapability.handler(
+		{ name: 'openai-api-key', package_id: 'pkg-notes' },
+		{
+			env,
+			callerContext: createMcpCallerContext({
+				source: { kind: 'mcp-oauth' },
+				baseUrl: 'https://kody.codes',
+				user: {
+					userId: personIdFromStored('user-secret-lock-rename'),
+					username: 'ada2',
+					email: 'ada2@example.com',
+					displayName: 'Ada',
+				},
+			}),
+		},
+	)
+	expect(pending.usage_url).toBe(
+		'https://kody.codes/@ada/-/secrets/user/openai-api-key',
+	)
+	expect(pending.approval_url).toBe(
+		'https://kody.codes/@ada/-/secrets/user/openai-api-key?package_id=pkg-notes&package=notes',
+	)
+})

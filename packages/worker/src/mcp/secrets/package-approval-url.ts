@@ -14,9 +14,7 @@ export function secretPageOrgSlugFromCaller(caller: {
 	request?: { org?: { slug?: string | null } | null } | null
 	user?: { username?: string } | null
 }) {
-	const requestSlug = caller.request?.org?.slug?.trim()
-	if (requestSlug) return requestSlug
-	return caller.user?.username?.trim() || null
+	return caller.request?.org?.slug?.trim() || null
 }
 
 function toOrgSecretPageUrl(input: {

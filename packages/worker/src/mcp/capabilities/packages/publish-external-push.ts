@@ -43,6 +43,7 @@ import {
 	type PublishPhaseTimings,
 } from '#worker/repo/publish-phase-timing.ts'
 import { destructiveOverwriteConfirmationDescription } from '#worker/repo/source-safety-policy.ts'
+import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import {
 	buildPendingPackageSecretApprovalsSummary,
 	type PendingPackageSecretApprovalsSummary,
@@ -482,6 +483,7 @@ async function getPendingSecretApprovalsForPublishedPackage(input: {
 	env: Env
 	baseUrl: string
 	userId: OwnerId
+	orgSlug?: string | null
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -496,6 +498,7 @@ async function getPendingSecretApprovalsForPublishedPackage(input: {
 			env: input.env,
 			baseUrl: input.baseUrl,
 			userId: input.userId,
+			orgSlug: input.orgSlug,
 			packageId: input.packageId,
 			kodyId: input.kodyId,
 			secretMounts: readSecretMountsFromPackageJson(
@@ -578,6 +581,7 @@ async function runExternalPublishAttempt(input: {
 	baseUrl: string
 	ownerUserId: OwnerId
 	ownerScope: string
+	orgSlug?: string | null
 	ownerEmail: string
 	expectedPackageScope: string
 	packageId: string
@@ -698,6 +702,7 @@ async function runExternalPublishAttempt(input: {
 										env: input.env,
 										baseUrl: input.baseUrl,
 										userId: input.ownerUserId,
+										orgSlug: input.orgSlug,
 										packageId: input.packageId,
 										kodyId: input.kodyId,
 										sourceId: input.source.id,
@@ -824,6 +829,7 @@ async function runExternalPublishAttempt(input: {
 									env: input.env,
 									baseUrl: input.baseUrl,
 									userId: input.ownerUserId,
+									orgSlug: input.orgSlug,
 									packageId: input.packageId,
 									kodyId: input.kodyId,
 									sourceId: input.source.id,
@@ -931,6 +937,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 				baseUrl: ctx.callerContext.baseUrl,
 				ownerUserId: owner.ownerUserId,
 				ownerScope: owner.ownerScope,
+				orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 				ownerEmail: owner.ownerEmail,
 				expectedPackageScope,
 				packageId,

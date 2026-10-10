@@ -102,8 +102,7 @@ export const secretSetManyCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
 				baseUrl: ctx.callerContext.baseUrl,
-				orgSlug:
-					secretPageOrgSlugFromCaller(ctx.callerContext) ?? user.username,
+				orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 				secrets: parsed.secrets.map((secret) => ({
 					name: secret.name,
 					scope: secret.scope,

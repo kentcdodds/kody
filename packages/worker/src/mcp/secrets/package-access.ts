@@ -3,7 +3,7 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
-import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
@@ -100,23 +100,26 @@ async function savedPackageHasImplicitUserSecretReadAccess(input: {
 	return !communityFork || Boolean(communityFork.adoptedAt)
 }
 
-async function resolveSecretPageOrgSlug(input: {
+export async function resolveSecretPageOrgSlug(input: {
 	db: D1Database
 	userId: OwnerId
 	orgSlug?: string | null
 	caller?: Parameters<typeof secretPageOrgSlugFromCaller>[0]
 }) {
+	try {
+		const org = await getOrgById(input.db, input.userId)
+		const slug = org?.slug?.trim()
+		if (slug) return slug
+	} catch {
+		// Test doubles that do not model orgs keep the provided or username slug.
+	}
 	const provided = input.orgSlug?.trim()
 	if (provided) return provided
 	if (input.caller) {
 		const fromCaller = secretPageOrgSlugFromCaller(input.caller)
 		if (fromCaller) return fromCaller
 	}
-	try {
-		return await getPackageScopeByUserId(input.db, input.userId)
-	} catch {
-		return null
-	}
+	return input.caller?.user?.username?.trim() || null
 }
 
 export async function assertPackageCanAccessResolvedSecret(input: {
