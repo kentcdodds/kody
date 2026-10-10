@@ -67,7 +67,7 @@ async function fetchMembers(
 }
 
 function slugFromHref(href: string) {
-	const match = /^\/@([^/]+)\/members/.exec(
+	const match = /^\/@([^/]+)\/-\/members/.exec(
 		new URL(href, 'http://localhost').pathname,
 	)
 	return match?.[1] ?? ''

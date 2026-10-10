@@ -169,7 +169,7 @@ beforeEach(async () => {
 
 test('members JSON is 404 for collaborators and readable by billing', async () => {
 	const env = createEnv()
-	const collab = new Request('https://kody.test/@zeta-co/members.json')
+	const collab = new Request('https://kody.test/@zeta-co/-/members.json')
 	await signIn('dan', collab)
 	expect(
 		(
@@ -179,7 +179,7 @@ test('members JSON is 404 for collaborators and readable by billing', async () =
 		).status,
 	).toBe(404)
 
-	const billing = new Request('https://kody.test/@zeta-co/members.json')
+	const billing = new Request('https://kody.test/@zeta-co/-/members.json')
 	await signIn('cara', billing)
 	const readable = await createOrgMembersApiHandler(env).handler({
 		request: billing,
@@ -201,11 +201,14 @@ test('members JSON is 404 for collaborators and readable by billing', async () =
 
 test('member cannot change roles, invite, or remove; owner can; last owner is protected', async () => {
 	const env = createEnv()
-	const roleReq = new Request('https://kody.test/@zeta-co/members/role.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ userId: people.bob.personId, role: 'billing' }),
-	})
+	const roleReq = new Request(
+		'https://kody.test/@zeta-co/-/members/role.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ userId: people.bob.personId, role: 'billing' }),
+		},
+	)
 	await signIn('bob', roleReq)
 	expect(
 		(
@@ -216,7 +219,7 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 	).toBe(403)
 
 	const billingInvite = new Request(
-		'https://kody.test/@zeta-co/members/invite.json',
+		'https://kody.test/@zeta-co/-/members/invite.json',
 		{
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -233,7 +236,7 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 	).toBe(403)
 
 	const ownerInvite = new Request(
-		'https://kody.test/@zeta-co/members/invite.json',
+		'https://kody.test/@zeta-co/-/members/invite.json',
 		{
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -251,7 +254,7 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 	})
 
 	const ownerRole = new Request(
-		'https://kody.test/@zeta-co/members/role.json',
+		'https://kody.test/@zeta-co/-/members/role.json',
 		{
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -268,7 +271,7 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 	).toBe(200)
 
 	const lastOwner = new Request(
-		'https://kody.test/@zeta-co/members/remove.json',
+		'https://kody.test/@zeta-co/-/members/remove.json',
 		{
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -294,7 +297,7 @@ test('signup org membership writes stay off the web even for a second owner', as
 		)
 		.run(people.ada.personId, people.bob.personId, '2026-01-02T00:00:00.000Z')
 
-	const list = new Request('https://kody.test/@ada/members.json')
+	const list = new Request('https://kody.test/@ada/-/members.json')
 	await signIn('bob', list)
 	expect(
 		await (
@@ -306,7 +309,7 @@ test('signup org membership writes stay off the web even for a second owner', as
 		canManage: false,
 	})
 
-	const invite = new Request('https://kody.test/@ada/members/invite.json', {
+	const invite = new Request('https://kody.test/@ada/-/members/invite.json', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ invitee: 'eve@example.com', role: 'member' }),

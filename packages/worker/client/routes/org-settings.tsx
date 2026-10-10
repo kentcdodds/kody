@@ -63,7 +63,7 @@ async function fetchSettings(
 }
 
 function slugFromHref(href: string) {
-	const match = /^\/@([^/]+)\/settings/.exec(
+	const match = /^\/@([^/]+)\/-\/settings/.exec(
 		new URL(href, 'http://localhost').pathname,
 	)
 	return match?.[1] ?? ''

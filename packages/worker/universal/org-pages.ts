@@ -172,16 +172,16 @@ const orgManagementSections = ['settings', 'members'] as const
 export type OrgManagementSection = (typeof orgManagementSections)[number]
 
 /**
- * `/@acme/settings`, `/@acme/members.json`, and mutation paths under those
- * sections. Not an `orgOwnedAccountSection` — those pages bind any live org
- * the person can reach, including team orgs.
+ * `/@acme/-/settings`, `/@acme/-/members.json`, and mutation paths under those
+ * sections. Uses the same `/-/` separator as other org pages so they cannot
+ * collide with `/@owner/<kody-id>`. Not an `orgOwnedAccountSection`.
  */
 export function parseOrgManagementPath(
 	pathname: string,
 ): { slug: string; section: OrgManagementSection } | null {
-	const match = /^\/@([^/]+)\/(settings|members)(?:\.json|\/[^/]+)?\/?$/.exec(
-		pathname,
-	)
+	const match = new RegExp(
+		`^/@([^/]+)/${orgPageSeparator}/(settings|members)(?:\\.json|/[^/]+)?/?$`,
+	).exec(pathname)
 	if (!match) return null
 	const slug = match[1] ?? ''
 	const section = match[2]
@@ -195,11 +195,11 @@ export function parseOrgManagementPath(
 }
 
 export function orgSettingsPath(slug: string) {
-	return `/@${slug}/settings`
+	return `/@${slug}/${orgPageSeparator}/settings`
 }
 
 export function orgMembersPath(slug: string) {
-	return `/@${slug}/members`
+	return `/@${slug}/${orgPageSeparator}/members`
 }
 
 /** Owners manage org profile and members. */

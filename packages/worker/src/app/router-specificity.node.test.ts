@@ -114,7 +114,7 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/@ada')).toBe('profile')
 })
 
-test('organization settings and members outrank a package named settings or members', async () => {
+test('organization settings and members live under /- and leave package urls free', async () => {
 	const resolve = makeRouter([
 		'orgSettings',
 		'orgSettingsApi',
@@ -123,10 +123,12 @@ test('organization settings and members outrank a package named settings or memb
 		'communityPackage',
 		'profile',
 	])
-	expect(await resolve('/@acme/settings')).toBe('orgSettings')
-	expect(await resolve('/@acme/settings.json')).toBe('orgSettingsApi')
-	expect(await resolve('/@acme/members')).toBe('orgMembers')
-	expect(await resolve('/@acme/members.json')).toBe('orgMembersApi')
+	expect(await resolve('/@acme/-/settings')).toBe('orgSettings')
+	expect(await resolve('/@acme/-/settings.json')).toBe('orgSettingsApi')
+	expect(await resolve('/@acme/-/members')).toBe('orgMembers')
+	expect(await resolve('/@acme/-/members.json')).toBe('orgMembersApi')
+	expect(await resolve('/@acme/settings')).toBe('communityPackage')
+	expect(await resolve('/@acme/members')).toBe('communityPackage')
 	expect(await resolve('/@acme/devin')).toBe('communityPackage')
 })
 

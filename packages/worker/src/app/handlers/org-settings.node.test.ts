@@ -168,7 +168,7 @@ beforeEach(async () => {
 
 test('settings JSON is 404 for an unknown slug, collaborator, and 403 for a member write', async () => {
 	const env = createEnv()
-	const unknown = new Request('https://kody.test/@missing/settings.json')
+	const unknown = new Request('https://kody.test/@missing/-/settings.json')
 	await signIn('ada', unknown)
 	expect(
 		(
@@ -178,7 +178,7 @@ test('settings JSON is 404 for an unknown slug, collaborator, and 403 for a memb
 		).status,
 	).toBe(404)
 
-	const collab = new Request('https://kody.test/@zeta-co/settings.json')
+	const collab = new Request('https://kody.test/@zeta-co/-/settings.json')
 	await signIn('dan', collab)
 	expect(
 		(
@@ -188,7 +188,7 @@ test('settings JSON is 404 for an unknown slug, collaborator, and 403 for a memb
 		).status,
 	).toBe(404)
 
-	const memberGet = new Request('https://kody.test/@zeta-co/settings.json')
+	const memberGet = new Request('https://kody.test/@zeta-co/-/settings.json')
 	await signIn('bob', memberGet)
 	const readable = await createOrgSettingsApiHandler(env).handler({
 		request: memberGet,
@@ -200,11 +200,14 @@ test('settings JSON is 404 for an unknown slug, collaborator, and 403 for a memb
 		org: { slug: 'zeta-co', personal: false },
 	})
 
-	const memberWrite = new Request('https://kody.test/@zeta-co/settings.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ displayName: 'Nope' }),
-	})
+	const memberWrite = new Request(
+		'https://kody.test/@zeta-co/-/settings.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ displayName: 'Nope' }),
+		},
+	)
 	await signIn('bob', memberWrite)
 	expect(
 		(
@@ -217,7 +220,7 @@ test('settings JSON is 404 for an unknown slug, collaborator, and 403 for a memb
 
 test('owner can update team settings and cannot delete a personal org', async () => {
 	const env = createEnv()
-	const update = new Request('https://kody.test/@zeta-co/settings.json', {
+	const update = new Request('https://kody.test/@zeta-co/-/settings.json', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ displayName: 'Acme Co' }),
@@ -232,11 +235,14 @@ test('owner can update team settings and cannot delete a personal org', async ()
 		org: { displayName: 'Acme Co', slug: 'zeta-co' },
 	})
 
-	const personal = new Request('https://kody.test/@ada/settings/delete.json', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ confirmation: 'ada' }),
-	})
+	const personal = new Request(
+		'https://kody.test/@ada/-/settings/delete.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ confirmation: 'ada' }),
+		},
+	)
 	await signIn('ada', personal)
 	const blocked = await createOrgSettingsDeletePostHandler(env).handler({
 		request: personal,
@@ -248,7 +254,7 @@ test('owner can update team settings and cannot delete a personal org', async ()
 	})
 	expect(mocks.softDeleteOrg).not.toHaveBeenCalled()
 
-	const del = new Request('https://kody.test/@zeta-co/settings/delete.json', {
+	const del = new Request('https://kody.test/@zeta-co/-/settings/delete.json', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ confirmation: 'zeta-co' }),
@@ -273,7 +279,7 @@ test('a second owner still treats a signup org as personal', async () => {
 		)
 		.run(people.ada.personId, people.bob.personId, '2026-01-02T00:00:00.000Z')
 
-	const get = new Request('https://kody.test/@ada/settings.json')
+	const get = new Request('https://kody.test/@ada/-/settings.json')
 	await signIn('bob', get)
 	const body = await (
 		await createOrgSettingsApiHandler(env).handler({ request: get } as never)
@@ -284,7 +290,7 @@ test('a second owner still treats a signup org as personal', async () => {
 		canManage: false,
 	})
 
-	const del = new Request('https://kody.test/@ada/settings/delete.json', {
+	const del = new Request('https://kody.test/@ada/-/settings/delete.json', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ confirmation: 'ada' }),
