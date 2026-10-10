@@ -63,7 +63,7 @@ const props = {
 	baseUrl: 'https://example.com',
 	userId: ownerIdFromStored('user-123'),
 	email: null,
-	request: sessionRequestContext('user-123'),
+	request: sessionRequestContext('user-123', 'ada'),
 	storageContext: null,
 }
 

@@ -325,6 +325,7 @@ function createCallerContext(userId: string) {
 		baseUrl: 'https://kody.dev',
 		user: {
 			userId: personIdFromStored(userId),
+			username: 'worker-test',
 			email: 'worker@example.com',
 			displayName: 'Worker Test',
 		},

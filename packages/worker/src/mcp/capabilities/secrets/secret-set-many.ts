@@ -5,6 +5,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { assertCanSetSecrets } from '#mcp/secrets/package-access.ts'
+import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
@@ -101,6 +102,7 @@ export const secretSetManyCapability = defineDomainCapability(
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
 				baseUrl: ctx.callerContext.baseUrl,
+				orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 				secrets: parsed.secrets.map((secret) => ({
 					name: secret.name,
 					scope: secret.scope,

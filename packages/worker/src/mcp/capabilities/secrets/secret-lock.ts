@@ -9,6 +9,7 @@ import {
 	createSecretPackageGrantAlreadyPresentMessage,
 	createSecretPackageGrantRequiresWebsiteMessage,
 } from '#mcp/secrets/errors.ts'
+import { resolveSecretPageOrgSlug } from '#mcp/secrets/package-access.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretUsageUrl,
@@ -65,8 +66,19 @@ export const secretLockCapability = defineDomainCapability(
 					name: args.name,
 					packageId: args.package_id,
 				})
+				const orgSlug = await resolveSecretPageOrgSlug({
+					db: ctx.env.APP_DB,
+					userId: ownerIdFromCaller(ctx.callerContext),
+					caller: ctx.callerContext,
+				})
+				if (!orgSlug) {
+					throw new McpCallerError(
+						'Unable to build a secrets page URL because this account has no org slug.',
+					)
+				}
 				const approvalUrl = buildSecretPackageApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
+					orgSlug,
 					name: state.secret.name,
 					scope: 'user',
 					packageId: state.savedPackage.id,
@@ -75,6 +87,7 @@ export const secretLockCapability = defineDomainCapability(
 				})
 				const usageUrl = buildSecretUsageUrl({
 					baseUrl: ctx.callerContext.baseUrl,
+					orgSlug,
 					name: state.secret.name,
 				})
 				if (state.alreadyGranted) {

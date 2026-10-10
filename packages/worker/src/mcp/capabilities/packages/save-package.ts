@@ -50,6 +50,7 @@ import { resolvePackageOwnerContext } from '#worker/package-registry/package-own
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
+import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import {
 	buildPendingPackageSecretApprovalsSummary,
 	formatPendingPackageSecretApprovalsGuidance,
@@ -478,6 +479,7 @@ export const savePackageCapability = defineDomainCapability(
 					env: ctx.env,
 					baseUrl: ctx.callerContext.baseUrl,
 					userId: owner.ownerUserId,
+					orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 					packageId: saved.id,
 					kodyId: saved.kodyId,
 					secretMounts: manifest.kody.secretMounts,

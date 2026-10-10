@@ -234,5 +234,10 @@ test('failed pool events name the legs that exited non-zero', () => {
 		]),
 	).toEqual(['typecheck'])
 	expect(() => failedValidateLegNames('nope')).toThrow(/close-event list/)
-	expect(() => failedValidateLegNames([{ exitCode: 0 }])).toThrow(/named leg/)
+	expect(
+		failedValidateLegNames([
+			{ exitCode: null, command: { name: 'typecheck' } },
+		]),
+	).toEqual(['typecheck'])
+	expect(failedValidateLegNames([{ exitCode: 0 }])).toEqual(['validate-pool'])
 })

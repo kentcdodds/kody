@@ -6,6 +6,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
 	resolveSecret,
@@ -112,6 +113,7 @@ export const secretSetCapability = defineDomainCapability(
 				await assertPackageCanAccessResolvedSecret({
 					env: ctx.env,
 					baseUrl: ctx.callerContext.baseUrl,
+					orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 					userId: ownerIdFromCaller(ctx.callerContext),
 					storageContext,
 					authorityPackageId,

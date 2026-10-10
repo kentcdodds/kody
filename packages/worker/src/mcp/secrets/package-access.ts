@@ -3,9 +3,11 @@ import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
+import { getOrgById } from '#worker/orgs/repo.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
+	secretPageOrgSlugFromCaller,
 } from './package-approval-url.ts'
 import {
 	createPackageSecretAccessDeniedBatchMessage,
@@ -98,9 +100,32 @@ async function savedPackageHasImplicitUserSecretReadAccess(input: {
 	return !communityFork || Boolean(communityFork.adoptedAt)
 }
 
+export async function resolveSecretPageOrgSlug(input: {
+	db: D1Database
+	userId: OwnerId
+	orgSlug?: string | null
+	caller?: Parameters<typeof secretPageOrgSlugFromCaller>[0]
+}) {
+	try {
+		const org = await getOrgById(input.db, input.userId)
+		const slug = org?.slug?.trim()
+		if (slug) return slug
+	} catch {
+		// Test doubles that do not model orgs keep the provided or username slug.
+	}
+	const provided = input.orgSlug?.trim()
+	if (provided) return provided
+	if (input.caller) {
+		const fromCaller = secretPageOrgSlugFromCaller(input.caller)
+		if (fromCaller) return fromCaller
+	}
+	return input.caller?.user?.username?.trim() || null
+}
+
 export async function assertPackageCanAccessResolvedSecret(input: {
 	env: Pick<Env, 'APP_DB'>
 	baseUrl: string
+	orgSlug?: string | null
 	userId: OwnerId
 	storageContext:
 		| {
@@ -149,19 +174,27 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		return
 	}
 
-	const approvalUrl = buildSecretPackageApprovalUrl({
-		baseUrl: input.baseUrl,
-		name: input.secretName,
-		scope: 'user',
-		packageId: savedPackage.id,
-		kodyId: savedPackage.kodyId,
-		storageContext: {
-			sessionId: input.storageContext?.sessionId ?? null,
-			appId: input.storageContext?.appId ?? null,
-			packageId,
-			storageId: input.storageContext?.storageId ?? null,
-		},
+	const orgSlug = await resolveSecretPageOrgSlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		orgSlug: input.orgSlug,
 	})
+	const approvalUrl = orgSlug
+		? buildSecretPackageApprovalUrl({
+				baseUrl: input.baseUrl,
+				orgSlug,
+				name: input.secretName,
+				scope: 'user',
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				storageContext: {
+					sessionId: input.storageContext?.sessionId ?? null,
+					appId: input.storageContext?.appId ?? null,
+					packageId,
+					storageId: input.storageContext?.storageId ?? null,
+				},
+			})
+		: null
 	throw new PackageSecretAccessDeniedError(
 		createPackageSecretAccessDeniedMessage({
 			secretName: input.secretName,
@@ -181,6 +214,7 @@ export async function assertCanSetSecrets(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
 	userId: OwnerId
 	baseUrl: string
+	orgSlug?: string | null
 	secrets: Array<{
 		name: string
 		scope: SecretScope
@@ -219,6 +253,7 @@ export async function assertCanSetSecrets(input: {
 			await assertPackageCanAccessResolvedSecret({
 				env: input.env,
 				baseUrl: input.baseUrl,
+				orgSlug: input.orgSlug,
 				userId: input.userId,
 				storageContext: authorityStorageContext,
 				authorityPackageId,
@@ -328,6 +363,7 @@ export async function resolvePackageMountedSecret(input: {
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
+		orgSlug: secretPageOrgSlugFromCaller(input.callerContext),
 		userId,
 		storageContext,
 		authorityPackageId: packageId,
@@ -354,6 +390,7 @@ export async function resolvePackageMountedSecret(input: {
 export async function findMissingPackageApprovals(input: {
 	env: Env
 	baseUrl: string
+	orgSlug?: string | null
 	userId: OwnerId
 	packageId: string
 	mounts: Record<string, SecretMountDefinition>
@@ -382,6 +419,11 @@ export async function findMissingPackageApprovals(input: {
 		packageId: input.storageContext?.packageId ?? null,
 		storageId: input.storageContext?.storageId ?? null,
 	}
+	const orgSlug = await resolveSecretPageOrgSlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		orgSlug: input.orgSlug,
+	})
 	const entries = await Promise.all(
 		Object.values(input.mounts).map(async (mount) => {
 			const resolved = await resolveSecret({
@@ -400,18 +442,30 @@ export async function findMissingPackageApprovals(input: {
 				secretName: mount.name,
 				packageId: savedPackage.id,
 				kodyId: savedPackage.kodyId,
-				approvalUrl: buildSecretPackageApprovalUrl({
-					baseUrl: input.baseUrl,
-					name: mount.name,
-					scope: resolved.scope ?? mount.scope ?? 'user',
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					storageContext,
-				}),
+				approvalUrl: orgSlug
+					? buildSecretPackageApprovalUrl({
+							baseUrl: input.baseUrl,
+							orgSlug,
+							name: mount.name,
+							scope: resolved.scope ?? mount.scope ?? 'user',
+							packageId: savedPackage.id,
+							kodyId: savedPackage.kodyId,
+							storageContext,
+						})
+					: '',
 			}
 		}),
 	)
 	return entries.filter((entry) => entry != null)
+}
+
+function orgSlugFromSecretPageUrl(url: string) {
+	try {
+		const match = /^\/@([^/]+)\/-\/secrets(?:\/|$)/.exec(new URL(url).pathname)
+		return match?.[1] ?? null
+	} catch {
+		return null
+	}
 }
 
 export function buildPackageApprovalErrorForMounts(input: {
@@ -422,6 +476,7 @@ export function buildPackageApprovalErrorForMounts(input: {
 		approvalUrl: string
 	}>
 	baseUrl?: string
+	orgSlug?: string | null
 }) {
 	if (input.entries.length === 0) {
 		return null
@@ -448,10 +503,14 @@ export function buildPackageApprovalErrorForMounts(input: {
 					}
 				})()
 			: null)
+	const orgSlug =
+		input.orgSlug?.trim() ||
+		(first ? orgSlugFromSecretPageUrl(first.approvalUrl) : null)
 	const bulkApprovalUrl =
-		packageIds.size === 1 && first && baseUrl
+		packageIds.size === 1 && first && baseUrl && orgSlug
 			? buildSecretPackageBulkApprovalUrlIfNeeded({
 					baseUrl,
+					orgSlug,
 					packageId: first.packageId,
 					kodyId: first.kodyId,
 					names: input.entries.map((entry) => entry.secretName),

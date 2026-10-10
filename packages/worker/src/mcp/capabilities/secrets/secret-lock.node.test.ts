@@ -65,6 +65,12 @@ async function allowedPackagesFor(
 test('secretLock returns an approval URL without widening allowed_packages', async () => {
 	const { sqlite, env } = createHarness()
 	const userId = ownerIdFromStored('user-secret-lock')
+	const now = '2026-01-01T00:00:00.000Z'
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, created_at, updated_at) VALUES (?, 'ada', ?, ?)`,
+		)
+		.run(userId, now, now)
 	seedPackage(sqlite, { id: 'pkg-notes', userId, kodyId: 'notes' })
 	seedPackage(sqlite, { id: 'pkg-mail', userId, kodyId: 'mail' })
 	await saveSecret({
@@ -82,6 +88,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 			baseUrl: 'https://kody.codes',
 			user: {
 				userId: personIdFromStored('user-secret-lock'),
+				username: 'alice',
 				email: 'alice@example.com',
 				displayName: 'Alice',
 			},
@@ -89,7 +96,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 	}
 
 	const approvalUrl =
-		'https://kody.codes/account/secrets/user/openai-api-key?package_id=pkg-notes&package=notes'
+		'https://kody.codes/@ada/-/secrets/user/openai-api-key?package_id=pkg-notes&package=notes'
 	const pending = await secretLockCapability.handler(
 		{ name: 'openai-api-key', package_id: 'pkg-notes' },
 		ctx,
@@ -98,7 +105,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		name: 'openai-api-key',
 		scope: 'user',
 		allowed_packages: [],
-		usage_url: 'https://kody.codes/account/secrets/user/openai-api-key',
+		usage_url: 'https://kody.codes/@ada/-/secrets/user/openai-api-key',
 		status: 'approval_required',
 		approval_url: approvalUrl,
 		message: expect.stringContaining(approvalUrl),
@@ -121,7 +128,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 		name: 'openai-api-key',
 		scope: 'user',
 		allowed_packages: ['pkg-notes'],
-		usage_url: 'https://kody.codes/account/secrets/user/openai-api-key',
+		usage_url: 'https://kody.codes/@ada/-/secrets/user/openai-api-key',
 		status: 'already_granted',
 		approval_url: approvalUrl,
 		message: expect.any(String),
@@ -137,7 +144,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 	expect(additional.status).toBe('approval_required')
 	expect(additional.allowed_packages).toEqual(['pkg-notes'])
 	expect(additional.approval_url).toBe(
-		'https://kody.codes/account/secrets/user/openai-api-key?package_id=pkg-mail&package=mail',
+		'https://kody.codes/@ada/-/secrets/user/openai-api-key?package_id=pkg-mail&package=mail',
 	)
 	expect(await allowedPackagesFor(env, userId, 'openai-api-key')).toEqual([
 		'pkg-notes',
