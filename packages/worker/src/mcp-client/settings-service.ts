@@ -9,6 +9,10 @@ import {
 	type McpServerRef,
 } from '@kody-internal/shared/mcp-servers.ts'
 import { normalizeAllowedPackages } from '#mcp/secrets/allowed-packages.ts'
+import {
+	encryptMcpServerOAuthClientSecret,
+	mcpServerOAuthClientSecretContext,
+} from '#mcp/secrets/crypto.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
@@ -46,6 +50,7 @@ import {
 } from './settings-types.ts'
 import {
 	type McpServerConnectResult,
+	type McpServerOAuthClientChange,
 	type McpServerLastError,
 } from './types.ts'
 import {
@@ -361,6 +366,67 @@ export async function deleteMcpServer(input: {
 	})
 	invalidateEnabledMcpServerRefsCache({ userId: input.userId })
 	return deleted
+}
+
+/**
+ * Save, replace, or remove (`client: null`) a server's pre-registered OAuth
+ * client and restart authorization with it. The secret is sealed here and
+ * only the sealed form reaches the hub, which is the one store for the
+ * client; its snapshot carries the public client id.
+ */
+export async function setMcpServerPreRegisteredOAuthClient(input: {
+	env: Env
+	userId: OwnerId
+	id: string
+	callbackUrl: string
+	client: { clientId: string; clientSecret: string } | null
+}): Promise<
+	McpServerOAuthClientChange & { setting: McpServerSettingMetadata }
+> {
+	const existing = await getMcpServerSettingRowById({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		id: input.id,
+	})
+	if (!existing) {
+		throw new Error('MCP server setting not found.')
+	}
+	const sealed = input.client
+		? {
+				clientId: input.client.clientId,
+				sealedClientSecret: await encryptMcpServerOAuthClientSecret(
+					input.env,
+					input.client.clientSecret,
+					mcpServerOAuthClientSecretContext(existing.id),
+				),
+			}
+		: null
+	const hub = createMcpClientHubClient({
+		env: input.env,
+		userId: input.userId,
+	})
+	let change: McpServerOAuthClientChange
+	try {
+		change = await hub.setPreRegisteredOAuthClient({
+			serverId: existing.id,
+			callbackUrl: input.callbackUrl,
+			client: sealed,
+		})
+	} catch (error) {
+		throw new Error(
+			`Unable to update the OAuth client: ${getErrorMessage(error)}`,
+		)
+	}
+	if (change.changed) {
+		await persistMcpServerLastErrorIfChanged({
+			env: input.env,
+			userId: input.userId,
+			id: existing.id,
+			state: change.connection.state,
+			lastError: change.connection.lastError ?? null,
+		})
+	}
+	return { ...change, setting: toMetadata(existing) }
 }
 
 export async function getMcpServerSettingById(input: {

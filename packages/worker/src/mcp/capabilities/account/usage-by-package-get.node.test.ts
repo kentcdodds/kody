@@ -27,10 +27,16 @@ function createAttributionEnv() {
 	)
 	sqlite
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan)
-			 VALUES (?, ?, 'hash', ?, 'free')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, 'hash', ?)`,
 		)
 		.run(username, email, stableUserId)
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES (?, ?, 'free', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z')`,
+		)
+		.run(stableUserId, username)
 	sqlite
 		.prepare(
 			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)

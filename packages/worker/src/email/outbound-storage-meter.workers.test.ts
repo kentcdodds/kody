@@ -1,4 +1,5 @@
 import { env } from 'cloudflare:workers'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { expect, test } from 'vitest'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
@@ -26,18 +27,22 @@ async function seedVerifiedAccount(email: string) {
 	const username = `meter-${crypto.randomUUID().slice(0, 8)}`
 	const stableUserId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			username,
 			email,
 			'test-password-hash',
 			new Date().toISOString(),
-			'max',
 			stableUserId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: 'max',
+	})
 	return {
 		username,
 		from: `${username}@${platformDomain}`,

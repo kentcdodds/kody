@@ -66,25 +66,90 @@ test('createStableDynamicWorkerId is stable for the same modules, user, and stor
 	expect(await mintId({ userId: null, storageContext: null })).toBe(
 		variants.missingUser,
 	)
+})
 
-	const nonHashableModules = {
-		'executor.js': {
-			js: 'export default class Executor {}',
-			onLoad: async () => 'not-hashable',
+test('createStableDynamicWorkerId hashes binary and untyped module fields deterministically', async () => {
+	const binaryModules = () => ({
+		'executor.js': 'export default class Executor {}',
+		'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
+		'data.bin': { data: new Uint8Array([1, 2, 3]).buffer },
+		'config.json': { json: { b: [1, 2n], a: 'x' } },
+	})
+	const first = await mintId({ modules: binaryModules() })
+	expect(await mintId({ modules: binaryModules() })).toBe(first)
+	expect(
+		await mintId({
+			modules: {
+				...binaryModules(),
+				'data.bin': { data: new Uint8Array([1, 2, 4]).buffer },
+			},
+		}),
+	).not.toBe(first)
+})
+
+test('createStableDynamicWorkerId rejects function-valued module fields instead of minting a one-off id', async () => {
+	await expect(
+		mintId({
+			modules: {
+				'executor.js': {
+					js: 'export default class Executor {}',
+					onLoad: async () => 'not-hashable',
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Dynamic Worker id input $.modules.executor.js.onLoad is a function',
+	)
+})
+
+test('createStableDynamicWorkerId keeps JSON that spells an encoding tag distinct from the value it imitates', async () => {
+	const bytes = await mintId({
+		modules: { ...modules, 'data.json': { json: new Uint8Array([1]) } },
+	})
+	const imitation = await mintId({
+		modules: {
+			...modules,
+			'data.json': { json: { __kodyType: 'arrayBuffer', value: 'AQ' } },
 		},
-	}
-	const nonHashableFirst = await mintId({
-		storageContext: null,
-		modules: { 'executor.js': 'export default class Executor {}' },
 	})
-	const nonHashable = await mintId({
-		storageContext: null,
-		modules: nonHashableModules,
+	const escapedImitation = await mintId({
+		modules: {
+			...modules,
+			'data.json': {
+				json: { __kodyType: 'object', value: { __kodyType: 'arrayBuffer' } },
+			},
+		},
 	})
-	const nonHashableAgain = await mintId({
-		storageContext: null,
-		modules: nonHashableModules,
+	expect(new Set([bytes, imitation, escapedImitation]).size).toBe(3)
+})
+
+test('createStableDynamicWorkerId keeps the ids already minted for hashable module graphs', async () => {
+	const id = await createStableDynamicWorkerId({
+		userId: 'user-1',
+		storageContext: { sessionId: 's', appId: 'a', storageId: 'st' },
+		workerOptions: {
+			compatibilityDate: '2026-01-01',
+			compatibilityFlags: ['nodejs_compat'],
+			mainModule: 'executor.js',
+			modules: {
+				'executor.js': 'export default 1',
+				'lib.js': { js: 'export const a = 1' },
+				'config.json': { json: { b: [1, null, true], a: 'x' } },
+				'data.bin': { data: new Uint8Array([1, 2, 3]).buffer },
+			},
+		},
 	})
-	expect(nonHashable).not.toBe(nonHashableAgain)
-	expect(nonHashable).not.toBe(nonHashableFirst)
+	// Minted by the pre-change implementation for the same inputs.
+	expect(id).toBe('kody-tWMSfyhWrwFOyXYMhEBR6J4teIHwoIzK-vgsSRYPprA')
+})
+
+test('createStableDynamicWorkerId rejects compiled WebAssembly modules, which expose no bytes to hash', async () => {
+	const compiled = new WebAssembly.Module(
+		new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+	)
+	await expect(
+		mintId({ modules: { ...modules, 'lib.wasm': { wasm: compiled } } }),
+	).rejects.toThrow(
+		'Dynamic Worker id input $.modules.lib.wasm.wasm is a Module object',
+	)
 })

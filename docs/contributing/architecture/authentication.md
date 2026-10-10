@@ -629,7 +629,7 @@ connections also best-effort join the official Kody Discord (`guilds.join` plus
 the operator bot) and assign or remove configured guild roles
 (`packages/worker/src/discord/guild-role.ts`) without persisting the login
 token. The member role is assigned on connect; Standard and Pro roles follow
-`users.stripe_plan`.
+`orgs.stripe_plan`.
 
 - `POST /auth/:provider` starts the flow (CSRF state + PKCE verifier in the
   signed `kody_oauth_login` cookie); `GET /auth/:provider/callback` completes it

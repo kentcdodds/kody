@@ -318,7 +318,10 @@ async function listUserVectorIds(env: Env, userId: OwnerId) {
 async function getUserBillingIdentity(env: Env, dbUserId: number) {
 	// Look up by primary key during deletion/purge; do not require a live row.
 	const row = await env.APP_DB.prepare(
-		`SELECT stripe_customer_id, email FROM users WHERE id = ?`,
+		`SELECT o.stripe_customer_id, u.email
+		 FROM users u
+		 LEFT JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id = ?`,
 	)
 		.bind(dbUserId)
 		.first<{ stripe_customer_id: string | null; email: string | null }>()

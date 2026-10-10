@@ -130,8 +130,8 @@ test('resolveUserPlatformSender sends from an unreserved built-in username and b
 		const userId = testStableUserIdFromEmail(email)
 		await db
 			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-				 VALUES (?, ?, 'hash', ?, ?, 'max')`,
+				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+				 VALUES (?, ?, 'hash', ?, ?)`,
 			)
 			.bind(username, email, new Date().toISOString(), userId)
 			.run()

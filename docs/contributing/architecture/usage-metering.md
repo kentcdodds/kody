@@ -407,9 +407,18 @@ so two users (or two storage contexts) with the same module graph still get
 distinct ids. UWD metering stays `(userId, workerId, day)` via
 `claimDynamicWorkerDay` and is independent of this hash.
 
-When modules are not deterministically hashable, the id is a UUID and is not
-reused. Hashable modules still produce a stable id when `userId` is null or
-`APP_COMMIT_SHA` is unset.
+Every module value is hashed deterministically: strings, `ArrayBuffer` and
+typed-array bytes (including fields such as `wasm`), and JSON values. A function
+or symbol inside a module throws instead of minting a one-off id, because a
+one-off id would bill and count as a new worker on every call. Ids stay stable
+when `userId` is null or `APP_COMMIT_SHA` is unset.
+
+Tailed isolates load under `${workerId}-cpu1` (see `dynamic_worker_cpu`). Every
+deployed script that runs metered sandboxes (origin, platform, runtime) binds
+`USAGE_EVENTS` and exports `DynamicWorkerUsageTail`, so a counted id always
+loads under that one suffixed LOADER id: Cloudflare sees one worker per metered
+id per day. Untailed loads happen only without a user (no metering) or without
+the binding (local and tests).
 
 The customer-facing monthly meters are unique worker days plus Durable Object
 rows-read. Usage above the include debits a funded purchasable-Pro credit wallet
@@ -805,13 +814,13 @@ GROUP BY stage
   observe-only `dynamic_worker_invoke` and Durable Object meters), per-metric
   duration leaders, and an entitlement-pressure panel that reuses
   `readAdminEntitlementConsumption` for the top ~15 users by those same customer
-  event counts, passing each row's `users.entitlement_ladder` so legacy
+  event counts, passing each row's `orgs.entitlement_ladder` so legacy
   Standard/Pro is scored against `legacyPlanLimits`. Queries are
   `LIMIT`-bounded; entitlement reads run with modest concurrency.
 - **Launch signals** (`/admin/insights`, loader in
   `packages/worker/src/admin/launch-signals.ts`): COUNT / GROUP BY over indexed
   `users` columns and `platform_feedback.status`. Rough MRR maps
-  `users.stripe_price_id` through the known Standard/Pro catalog (public
+  `orgs.stripe_price_id` through the known Standard/Pro catalog (public
   $12 /
   $120 and $49 / $480, plus retired list prices) and never calls Stripe
   or pages the user table. `plan`, `stripe_plan`, and overlay-aware

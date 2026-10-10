@@ -4,7 +4,7 @@
  * `users.suspended_at` is an operator-set kill switch checked at the
  * browser-session, MCP, package-app, webhook-ingress, background-identity
  * (`resolveBackgroundMcpUser`), and email chokepoints (unlike a community
- * ban, which only blocks community-surface actions). `users.email_outbound_paused_at`
+ * ban, which only blocks community-surface actions). `orgs.email_outbound_paused_at`
  * is the automatic outbound-email pause set by the delivery-event abuse
  * monitor (see `#worker/email/outbound-abuse.ts`); both are cleared by an
  * admin from the admin users page.
@@ -56,8 +56,10 @@ export async function getAccountRestrictionsByStableUserId(input: {
 	if (!stableUserId) return null
 	const row = await input.db
 		.prepare(
-			`SELECT suspended_at, email_outbound_paused_at FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.suspended_at, o.email_outbound_paused_at
+			 FROM users u
+			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)
 		.first<{

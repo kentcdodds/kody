@@ -40,8 +40,8 @@ function seedUnverifiedUser(
 	sqlite
 		.prepare(
 			`INSERT INTO users (
-				username, email, password_hash, stable_user_id, account_type, created_at
-			) VALUES (?, ?, 'hash', ?, 'person', ?)`,
+				username, email, password_hash, stable_user_id, created_at
+			) VALUES (?, ?, 'hash', ?, ?)`,
 		)
 		.run(input.username, input.email, stableUserId, input.createdAt)
 	return { stableUserId, ...input }

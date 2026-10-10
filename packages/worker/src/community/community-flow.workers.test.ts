@@ -42,6 +42,7 @@ import {
 	type CommunityListingPublishedDispatchQueueMessage,
 } from './listing-published-dispatch-queue-producer.ts'
 import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -70,15 +71,18 @@ async function insertTestUser(input: {
 	const userId = testStableUserIdFromEmail(input.email)
 	await runSql(
 		`INSERT INTO users
-			(username, email, stable_user_id, password_hash, plan, account_type)
-			VALUES (?, ?, ?, ?, ?, ?)`,
+			(username, email, stable_user_id, password_hash)
+			VALUES (?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		userId,
 		'test-password-hash',
-		'max',
-		'person',
 	)
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username: input.username,
+		plan: 'max',
+	})
 	return {
 		userId: personIdFromStored(userId),
 		email: input.email,

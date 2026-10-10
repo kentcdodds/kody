@@ -176,7 +176,7 @@ export type ResolvedSubscriptionPlan = {
 	/**
 	 * True when the subscription that granted `stripePlan` uses the
 	 * configured (purchasable) Pro price. Persisted on
-	 * `users.stripe_credits_eligible`; the only path to a credit wallet.
+	 * `orgs.stripe_credits_eligible`; the only path to a credit wallet.
 	 */
 	creditsEligible: boolean
 	/**

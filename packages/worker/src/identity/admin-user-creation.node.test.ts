@@ -62,8 +62,10 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 	expect(
 		sqlite
 			.prepare(
-				`SELECT email, username, email_verified_at, password_hash, plan
-				FROM users WHERE id = ?`,
+				`SELECT u.email, u.username, u.email_verified_at, u.password_hash, o.plan
+				FROM users u
+				INNER JOIN orgs o ON o.id = u.stable_user_id
+				WHERE u.id = ?`,
 			)
 			.get(created.userId),
 	).toEqual({
@@ -109,7 +111,7 @@ test('adminCreateUserWithPasswordSetup creates verified user and seven-day setup
 		sqlite
 			.prepare(
 				`SELECT signup_welcome_credits_pending AS pending
-				 FROM users WHERE stable_user_id = ?`,
+				 FROM orgs WHERE id = ?`,
 			)
 			.get(created.stableUserId),
 	).toEqual({ pending: 0 })

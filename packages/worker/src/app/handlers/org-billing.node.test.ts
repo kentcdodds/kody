@@ -140,7 +140,7 @@ let db: D1Database
 async function seed() {
 	sqlite = new DatabaseSync(':memory:')
 	db = createD1FromSqlite(sqlite)
-	await ensureUsersTestSchema({ db, columns: ['stripe_customer_id'] })
+	await ensureUsersTestSchema({ db })
 	for (const [username, person] of Object.entries(people)) {
 		sqlite
 			.prepare(
@@ -184,9 +184,6 @@ async function seed() {
 function linkCustomer(orgId: string, customerId: string) {
 	sqlite
 		.prepare(`UPDATE orgs SET stripe_customer_id = ? WHERE id = ?`)
-		.run(customerId, orgId)
-	sqlite
-		.prepare(`UPDATE users SET stripe_customer_id = ? WHERE stable_user_id = ?`)
 		.run(customerId, orgId)
 }
 

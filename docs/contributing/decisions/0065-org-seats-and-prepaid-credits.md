@@ -1,8 +1,7 @@
-# 0065 — Org seats, prepaid credits, and free-tier fallback
+# 0065 — Org seats and prepaid credits
 
-- **Status:** accepted
+- **Status:** accepted (amended 2026-10-10)
 - **Date:** 2026-10-09
-- **Supersedes:** [0051](./0051-include-credits-stop.md)
 
 ## Context
 
@@ -15,17 +14,24 @@ one monthly include per paid org, two free orgs per user, billing emails to
 owners plus the billing role, and budgets that apply to outside collaborators.
 
 [ADR 0051](./0051-include-credits-stop.md) chose **include → credits → stop**
-for purchasable Pro on personal accounts. Org billing needs the same customer
-story for usage past the include, but at **$0 credits** the org should fall back
-to **free-tier limits** rather than hard-stopping all usage. Stripe must resolve
-org identity on new objects via `kody_org_id`; migrated personal orgs keep
-`kody_stable_user_id` in metadata (same id as `orgs.id`).
+for purchasable Pro on personal accounts. Org billing uses the same customer
+story for usage past the include. Stripe must resolve org identity on new
+objects via `kody_org_id`; migrated personal orgs keep `kody_stable_user_id` in
+metadata (same id as `orgs.id`).
+
+As first accepted, this record dropped a paid org with
+$0 credits to Free rate,
+compute, email, and job-interval limits. That cut paying Pro accounts below the
+include they pay for. Kent reversed it on 2026-10-10: a Pro org at $0
+keeps its full include and is never downgraded.
 
 ## Decision
 
-- **Usage path for paid orgs:** **include → credits → free-tier limits** (not
-  stop). When prepaid balance is zero, meters and rates behave like the free
-  plan caps instead of throwing overage errors or burning unmetered compute.
+- **Usage path for paid orgs:** **include → credits → stop**
+  ([0051](./0051-include-credits-stop.md)). At $0 credits the org keeps every
+  Pro include (rates, email, job interval, monthly Worker compute and Rows
+  read). Usage past the include stops with a message to add credits; it never
+  falls back to Free limits.
 - **Seats:** The existing Pro subscription with **quantity = live Owners +
   Members**. Billing-only and outside collaborators are **not** seats.
 - **Kody-only Stripe mutations:** Billing code may only read-modify
@@ -52,13 +58,13 @@ org identity on new objects via `kody_org_id`; migrated personal orgs keep
 ## Consequences
 
 - Entitlement and metering code must branch on org plan, wallet balance, and
-  seat count; free-tier fallback replaces the empty-wallet hard stop from 0051
-  for org-scoped billing.
+  seat count. An empty wallet resolves to the Pro include table; the 0051 stop
+  covers usage past it.
 - Seat quantity sync must ignore billing-only and collaborator memberships.
 - Seat sync, checkout portal updates, and account-deletion cancels must use
   {@link selectKodyPlanRetainingSubscriptions} (or equivalent); status-only
   filtering is unsafe on the shared Stripe account.
 - Webhooks and checkout success handlers resolve org id from metadata
   (`kody_org_id` first, then `kody_stable_user_id`).
-- Customer copy must not use em dashes; describe fallback as free-tier limits,
-  not as unlocking or lifting tiers.
+- Customer copy must not use em dashes. Describe the $0 state as usage past the
+  include stopping until credits are added, not as unlocking or lifting tiers.

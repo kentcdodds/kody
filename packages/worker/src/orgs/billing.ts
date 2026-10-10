@@ -22,15 +22,7 @@ export async function readOrgStripeCustomerId(
 		)
 		.bind(orgId)
 		.first<{ stripe_customer_id: string | null }>()
-	const orgCustomer = org?.stripe_customer_id?.trim()
-	if (orgCustomer) return orgCustomer
-	const user = await db
-		.prepare(
-			`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(orgId)
-		.first<{ stripe_customer_id: string | null }>()
-	return user?.stripe_customer_id?.trim() || null
+	return org?.stripe_customer_id?.trim() || null
 }
 
 export class FreeOrgLimitError extends Error {

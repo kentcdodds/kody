@@ -114,21 +114,32 @@ function createAdminCapabilityTest(
 		),
 	)
 	const insertUser = sqlite.prepare(
-		`INSERT INTO users (id, username, email, password_hash, stable_user_id, plan, email_verified_at, created_at, updated_at)
-		 VALUES (?, ?, ?, 'hash', ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (id, username, email, password_hash, stable_user_id, email_verified_at, created_at, updated_at)
+		 VALUES (?, ?, ?, 'hash', ?, ?, ?, ?)`,
+	)
+	const insertOrg = sqlite.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?)`,
 	)
 	const insertRole = sqlite.prepare(
 		`INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)`,
 	)
 	users.forEach((user, index) => {
 		const email = `${user.username}@example.com`
+		const stableUserId = testStableUserIdFromEmail(email)
 		insertUser.run(
 			index + 1,
 			user.username,
 			email,
-			testStableUserIdFromEmail(email),
-			user.plan ?? 'free',
+			stableUserId,
 			user.emailVerifiedAt ?? null,
+			user.createdAt,
+			user.createdAt,
+		)
+		insertOrg.run(
+			stableUserId,
+			user.username,
+			user.plan ?? 'free',
 			user.createdAt,
 			user.createdAt,
 		)
@@ -173,7 +184,10 @@ function createAdminCapabilityTest(
 		userRow: (email: string) =>
 			sqlite
 				.prepare(
-					'SELECT id, email, stable_user_id, plan, email_verified_at FROM users WHERE email = ?',
+					`SELECT u.id, u.email, u.stable_user_id, o.plan, u.email_verified_at
+					 FROM users u
+					 LEFT JOIN orgs o ON o.id = u.stable_user_id
+					 WHERE u.email = ?`,
 				)
 				.get(email) as Record<string, unknown> | undefined,
 	}

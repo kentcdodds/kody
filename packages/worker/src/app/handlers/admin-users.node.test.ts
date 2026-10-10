@@ -117,10 +117,20 @@ function createAdminTestEnv(input: {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../../migrations/', import.meta.url))
 	for (const user of input.users) {
+		const {
+			plan,
+			stripe_plan,
+			stripe_customer_id,
+			email_outbound_paused_at,
+			second_agent_standard_gift_expires_at,
+			referral_standard_credit_expires_at,
+			...identity
+		} = user
+		const stableUser = stableUserId(user.id)
 		const row = {
 			password_hash: 'test-password-hash',
-			stable_user_id: stableUserId(user.id),
-			...user,
+			stable_user_id: stableUser,
+			...identity,
 		}
 		const columns = Object.keys(row)
 		sqlite
@@ -128,6 +138,26 @@ function createAdminTestEnv(input: {
 				`INSERT INTO users (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
 			)
 			.run(...Object.values(row))
+		sqlite
+			.prepare(
+				`INSERT INTO orgs (
+					id, slug, plan, stripe_plan, stripe_customer_id,
+					email_outbound_paused_at, second_agent_standard_gift_expires_at,
+					referral_standard_credit_expires_at, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				stableUser,
+				user.username,
+				plan ?? 'free',
+				stripe_plan ?? null,
+				stripe_customer_id ?? null,
+				email_outbound_paused_at ?? null,
+				second_agent_standard_gift_expires_at ?? null,
+				referral_standard_credit_expires_at ?? null,
+				user.created_at,
+				user.updated_at,
+			)
 	}
 	for (const [userId, role] of input.userRoles) {
 		sqlite

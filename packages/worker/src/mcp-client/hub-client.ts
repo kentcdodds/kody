@@ -3,12 +3,14 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
+import { type SealedMcpPreRegisteredOAuthClient } from './preregistered-oauth-client.ts'
 import {
 	type McpClientHubSnapshot,
 	type McpHubConnectResult,
 	type McpHubServerSnapshot,
 	type McpServerConnectResult,
 	type McpServerOAuthCallbackOutcome,
+	type McpServerOAuthClientChange,
 	type McpServerPendingAuthorization,
 	type McpServerSnapshot,
 } from './types.ts'
@@ -64,6 +66,11 @@ export type McpClientHubClient = {
 	}): Promise<McpServerConnectResult>
 	refreshServer(input: { serverId: string }): Promise<McpServerConnectResult>
 	removeServer(input: { serverId: string }): Promise<void>
+	setPreRegisteredOAuthClient(input: {
+		serverId: string
+		callbackUrl: string
+		client: SealedMcpPreRegisteredOAuthClient | null
+	}): Promise<McpServerOAuthClientChange>
 	handleOAuthCallback(input: {
 		url: string
 		callbackUrl: string
@@ -105,6 +112,17 @@ export function createMcpClientHubClient(
 		async removeServer(removeInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			await stub.removeServer(removeInput)
+		},
+		async setPreRegisteredOAuthClient(clientInput) {
+			invalidateMcpClientHubSnapshotCache(input)
+			const change = await stub.setPreRegisteredOAuthClient(clientInput)
+			// A read during the change may have cached the old client.
+			invalidateMcpClientHubSnapshotCache(input)
+			await emitPendingConnectionEvents(input, stub)
+			return {
+				...change,
+				connection: toMcpServerConnectResult(change.connection),
+			}
 		},
 		async handleOAuthCallback(callbackInput) {
 			invalidateMcpClientHubSnapshotCache(input)

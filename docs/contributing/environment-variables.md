@@ -241,7 +241,7 @@ Optional Worker secrets (see `packages/worker/src/app/oauth-providers.ts` and
   Discord guild join and role sync. Bot token + guild id enable Add Guild Member
   during Discord social login; at least one role id enables role writes. The bot
   needs Create Instant Invite and Manage Roles. Standard/Pro follow
-  `users.stripe_plan`.)
+  `orgs.stripe_plan`.)
 
 A provider's login button only renders when both of its values are set. A
 `MOCK_`-prefixed client id activates the in-worker mock provider flow on
@@ -272,7 +272,7 @@ Optional Worker secret and vars for account subscription billing
 (`packages/worker/src/billing/`, routes under `/@<slug>/-/billing`). When
 `STRIPE_SECRET_KEY` is unset, billing is disabled: the account billing page
 shows plan info plus a "not configured" notice, and success/portal/cron skip
-safely. Manual `users.plan` grants apply regardless.
+safely. Manual `orgs.plan` grants apply regardless.
 
 - `STRIPE_SECRET_KEY` — Stripe secret API key. Required for checkout linking,
   portal sessions, and `stripe_plan` refresh. Synced as a Worker secret from the
@@ -286,7 +286,7 @@ safely. Manual `users.plan` grants apply regardless.
 - `STRIPE_PRO_PRICE_ID` — Stripe Price id for the purchasable $12/month Pro
   (`price_1UKHxZLAQpAnsYszwwqZTCCT` on `prod_VKxtLxMdjEkOdu` in production), the
   only self-serve paid plan and the only Stripe price that grants the prepaid
-  credit wallet (`users.stripe_credits_eligible`). Reusing a retired Standard or
+  credit wallet (`orgs.stripe_credits_eligible`). Reusing a retired Standard or
   Pro id here would make those subscribers wallet-eligible.
 - `STRIPE_PRO_YEARLY_PRICE_ID` — Stripe Price id for the purchasable $120/year
   Pro (`price_1UKHxaLAQpAnsYszlsVHHXjK`).
