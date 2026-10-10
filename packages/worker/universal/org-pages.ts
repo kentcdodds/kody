@@ -35,6 +35,8 @@ export type OrganizationSummary = {
 	role: OrgRole | null
 	/** Signup organization (org id equals the person id). Not a user-facing label. */
 	personal: boolean
+	/** Team-org avatar. Signup organizations use the viewer's photo instead. */
+	avatarUrl?: string | null
 }
 
 export type OrgSwitcherEntry =
@@ -165,10 +167,68 @@ export function accountAliasPath(pathname: string) {
 		: `/account/${parsed.section}`
 }
 
+const orgManagementSections = ['settings', 'members'] as const
+
+export type OrgManagementSection = (typeof orgManagementSections)[number]
+
+/**
+ * `/@acme/settings`, `/@acme/members.json`, and mutation paths under those
+ * sections. Not an `orgOwnedAccountSection` — those pages bind any live org
+ * the person can reach, including team orgs.
+ */
+export function parseOrgManagementPath(
+	pathname: string,
+): { slug: string; section: OrgManagementSection } | null {
+	const match = /^\/@([^/]+)\/(settings|members)(?:\.json|\/[^/]+)?\/?$/.exec(
+		pathname,
+	)
+	if (!match) return null
+	const slug = match[1] ?? ''
+	const section = match[2]
+	if (
+		!isOrganizationSlug(slug) ||
+		(section !== 'settings' && section !== 'members')
+	) {
+		return null
+	}
+	return { slug, section }
+}
+
+export function orgSettingsPath(slug: string) {
+	return `/@${slug}/settings`
+}
+
+export function orgMembersPath(slug: string) {
+	return `/@${slug}/members`
+}
+
+/** Owners manage org profile and members. */
+export function orgRoleManagesOrg(role: OrgRole | null) {
+	return role === 'owner'
+}
+
+/** Live members can read the members list. Collaborators cannot. */
+export function orgRoleReadsMembers(role: OrgRole | null) {
+	return role === 'owner' || role === 'member' || role === 'billing'
+}
+
 /** Same kind of page in `targetSlug` when the path is an org resource; otherwise that organization's home. */
 export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
 	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
+	const management = parseOrgManagementPath(pathname)
+	if (management) {
+		switch (management.section) {
+			case 'settings':
+				return orgSettingsPath(targetSlug)
+			case 'members':
+				return orgMembersPath(targetSlug)
+			default: {
+				const exhaustive: never = management.section
+				return exhaustive
+			}
+		}
+	}
 	const parsed = parseOrgResourcePath(pathname)
 	if (!parsed) return `/@${targetSlug}`
 	return orgResourcePath(targetSlug, parsed.section, parsed.rest)
@@ -251,7 +311,9 @@ export function organizationsWithSignupFallback(input: {
  * name wins there.
  */
 export function orgIdentity(
-	org: Pick<OrganizationSummary, 'slug' | 'displayName' | 'personal'>,
+	org: Pick<OrganizationSummary, 'slug' | 'displayName' | 'personal'> & {
+		avatarUrl?: string | null
+	},
 	viewer: { displayName: string; avatarUrl: string | null },
 ) {
 	const name =
@@ -263,7 +325,7 @@ export function orgIdentity(
 		handle: `@${org.slug}`,
 		hasName: name !== null,
 		avatarName: name ?? org.slug,
-		avatarUrl: org.personal ? viewer.avatarUrl : null,
+		avatarUrl: org.personal ? viewer.avatarUrl : (org.avatarUrl ?? null),
 	}
 }
 

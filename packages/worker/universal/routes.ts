@@ -237,6 +237,7 @@ export const routes = route({
 	communityTrustApiPost: post('/community/:listingId/trust.json'),
 	communityFeatureApiPost: post('/community/:listingId/feature.json'),
 	communityInstallApiPost: post('/community/:listingId/install.json'),
+<<<<<<< HEAD
 	// Organization section pages under `/@:orgSlug/-/…` so they never collide
 	// with a package's canonical public URL at `/@:username/:kodyId`.
 	// `packages` and `webhooks` are index-only so package apps and ingress
@@ -261,6 +262,42 @@ export const routes = route({
 	orgWaiting: get('/@:orgSlug/-/waiting(/*rest)'),
 	orgWebhooks: get('/@:orgSlug/-/webhooks'),
 	orgWorkflows: get('/@:orgSlug/-/workflows(/*rest)'),
+=======
+	// Organization resource pages. Static sections outrank `/@:username/:kodyId`.
+	// `packages` and `webhooks` are index-only so package apps and ingress stay put.
+	orgActivity: get('/@:orgSlug/activity(/*rest)'),
+	orgBilling: get('/@:orgSlug/billing'),
+	orgBillingApi: get('/@:orgSlug/billing.json'),
+	orgBillingCheckoutPost: post('/@:orgSlug/billing/checkout.json'),
+	orgBillingSuccess: get('/@:orgSlug/billing/success'),
+	orgBillingPortal: get('/@:orgSlug/billing/portal'),
+	orgConnections: get('/@:orgSlug/connections(/*rest)'),
+	orgEmail: get('/@:orgSlug/email(/*rest)'),
+	orgIntegrations: get('/@:orgSlug/integrations(/*rest)'),
+	orgJobs: get('/@:orgSlug/jobs(/*rest)'),
+	orgMcpServers: get('/@:orgSlug/mcp-servers(/*rest)'),
+	orgMemories: get('/@:orgSlug/memories(/*rest)'),
+	orgPackages: get('/@:orgSlug/packages'),
+	orgPackagesApi: get('/@:orgSlug/packages.json'),
+	orgSecretProviders: get('/@:orgSlug/secret-providers(/*rest)'),
+	orgSecrets: get('/@:orgSlug/secrets(/*rest)'),
+	orgValues: get('/@:orgSlug/values(/*rest)'),
+	orgWaiting: get('/@:orgSlug/waiting(/*rest)'),
+	orgWebhooks: get('/@:orgSlug/webhooks'),
+	orgWorkflows: get('/@:orgSlug/workflows(/*rest)'),
+	// Org settings and members. Static nouns outrank `/@:username/:kodyId`.
+	orgSettings: get('/@:orgSlug/settings'),
+	orgSettingsApi: get('/@:orgSlug/settings.json'),
+	orgSettingsPost: post('/@:orgSlug/settings.json'),
+	orgSettingsAvatarPost: post('/@:orgSlug/settings/avatar.json'),
+	orgSettingsDeletePost: post('/@:orgSlug/settings/delete.json'),
+	orgMembers: get('/@:orgSlug/members'),
+	orgMembersApi: get('/@:orgSlug/members.json'),
+	orgMembersRolePost: post('/@:orgSlug/members/role.json'),
+	orgMembersRemovePost: post('/@:orgSlug/members/remove.json'),
+	orgMembersInvitePost: post('/@:orgSlug/members/invite.json'),
+	orgAvatar: get('/orgs/:orgSlug/avatar/:hash.:ext'),
+>>>>>>> 786a2f445 (Add org settings and members pages)
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and
 	// package name leaf (`/@acme/devin`) rather than the listing uuid. Deeper

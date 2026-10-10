@@ -13,7 +13,9 @@ import {
 	readTombstonedOrgMembership,
 } from '#worker/orgs/member-offboarding.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
+import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import {
 	orgRoleSchema,
 	requireLiveOrg,
@@ -91,6 +93,54 @@ export const orgCreateCapability = defineDomainCapability(
 						slug: org.slug,
 						display_name: org.display_name ?? org.slug,
 					},
+				}
+			} catch (error) {
+				rethrowAccessError(error)
+			}
+		},
+	},
+)
+
+export const orgMemberListCapability = defineDomainCapability(
+	capabilityDomainNames.access,
+	{
+		name: 'orgMemberList',
+		orgPermission: 'member:read',
+		description:
+			'List live members of the organization this request is bound to, with username, display name, and role.',
+		keywords: ['member', 'members', 'list', 'role'],
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		inputSchema: z.object({}),
+		outputSchema: z.object({
+			members: z.array(
+				z.object({
+					user_id: z.string(),
+					username: z.string().nullable(),
+					display_name: z.string().nullable(),
+					avatar_url: z.string().nullable(),
+					role: orgRoleSchema,
+				}),
+			),
+		}),
+		async handler(_args, ctx) {
+			try {
+				const { db, request } = await requireOrgPermission(ctx, 'member:read')
+				const members = await listOrgMembers(db, request.org.id)
+				return {
+					members: members.map((member) => ({
+						user_id: member.userId,
+						username: member.username,
+						display_name: member.displayName,
+						avatar_url: member.username
+							? buildUserAvatarUrl({
+									username: member.username,
+									avatarKey: member.avatarKey,
+								})
+							: null,
+						role: member.role,
+					})),
 				}
 			} catch (error) {
 				rethrowAccessError(error)

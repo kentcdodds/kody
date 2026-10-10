@@ -15,7 +15,8 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { accessGrantCapability } from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
-import { orgCreateCapability } from './org-members.ts'
+import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
+import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -200,4 +201,78 @@ test('inviteCreate prompt names the org and inviteAccept writes membership', asy
 		.first<{ token_hash: string; status: string }>()
 	expect(stored?.status).toBe('accepted')
 	expect(stored?.token_hash).not.toBe(invited.token)
+})
+
+test('orgMemberList returns live members and requires member:read', async () => {
+	const db = await createDb()
+	await ensureUsersTestSchema({ db, columns: ['avatar_key'] })
+	const ownerId = testStableUserIdFromEmail('lister@example.com')
+	const guestId = testStableUserIdFromEmail('listed@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'lister',
+	})
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, display_name)
+			 VALUES ('lister', 'lister@example.com', 'x', ?, 'Lister')`,
+		)
+		.bind(ownerId)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id, display_name)
+			 VALUES ('listed', 'listed@example.com', 'x', ?, 'Listed')`,
+		)
+		.bind(guestId)
+		.run()
+	const created = await orgCreateCapability.handler(
+		{ slug: 'listed-co' },
+		capabilityContext({
+			db,
+			userId: ownerId,
+			email: 'lister@example.com',
+			username: 'lister',
+		}),
+	)
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'member', '2026-01-02T00:00:00.000Z')`,
+		)
+		.bind(created.org.id, guestId)
+		.run()
+	const listed = await orgMemberListCapability.handler(
+		{},
+		capabilityContext({
+			db,
+			userId: ownerId,
+			email: 'lister@example.com',
+			username: 'lister',
+			org: { id: created.org.id, slug: created.org.slug, role: 'owner' },
+		}),
+	)
+	expect(
+		listed.members.map((member) => [member.username, member.role]),
+	).toEqual([
+		['lister', 'owner'],
+		['listed', 'member'],
+	])
+
+	await expect(
+		orgMemberListCapability.handler(
+			{},
+			capabilityContext({
+				db,
+				userId: guestId,
+				email: 'listed@example.com',
+				username: 'listed',
+				org: { id: created.org.id, slug: created.org.slug, role: 'member' },
+			}),
+		),
+	).resolves.toMatchObject({
+		members: expect.arrayContaining([
+			expect.objectContaining({ username: 'lister' }),
+		]),
+	})
 })

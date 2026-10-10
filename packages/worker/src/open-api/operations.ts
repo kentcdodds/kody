@@ -151,6 +151,8 @@ export const apiOperations: ReadonlyArray<ApiOperation> = [
 		['POST', '/v1/access/invites/accept', 'inviteAccept'],
 		['POST', '/v1/access/invites/{invite_id}/revoke', 'inviteRevoke'],
 		['POST', '/v1/orgs', 'orgCreate'],
+		['PATCH', '/v1/orgs', 'orgUpdate'],
+		['GET', '/v1/orgs/members', 'orgMemberList'],
 		['PATCH', '/v1/orgs/members/{user_id}', 'orgMemberUpdate'],
 		['DELETE', '/v1/orgs/members/{user_id}', 'orgMemberRemove'],
 		['POST', '/v1/orgs/teams', 'teamCreate'],

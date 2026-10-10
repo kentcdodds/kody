@@ -114,6 +114,22 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/@ada')).toBe('profile')
 })
 
+test('organization settings and members outrank a package named settings or members', async () => {
+	const resolve = makeRouter([
+		'orgSettings',
+		'orgSettingsApi',
+		'orgMembers',
+		'orgMembersApi',
+		'communityPackage',
+		'profile',
+	])
+	expect(await resolve('/@acme/settings')).toBe('orgSettings')
+	expect(await resolve('/@acme/settings.json')).toBe('orgSettingsApi')
+	expect(await resolve('/@acme/members')).toBe('orgMembers')
+	expect(await resolve('/@acme/members.json')).toBe('orgMembersApi')
+	expect(await resolve('/@acme/devin')).toBe('communityPackage')
+})
+
 test('the create-organization form posts to the create action, not back to the page', async () => {
 	const router = createRouter()
 	router.map(
