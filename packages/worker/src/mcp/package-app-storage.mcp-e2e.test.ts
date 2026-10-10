@@ -3,8 +3,8 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createAppSessionCookie,
 	createMcpClient,
-	createTestDatabase,
-	startDevServer,
+	createUniqueTestUser,
+	getSharedMcpE2eServer,
 } from '../../../../tools/mcp-test-support.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 
@@ -110,16 +110,14 @@ test('package app fetch handler can use packageStorage against a real local work
 	silenceExpectedConsoleWarns([
 		/Ignoring duplicate module:.*generated\/esbuild\.wasm/,
 	])
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir, {
-		withCloudflareMock: true,
-	})
-	await using mcp = await createMcpClient(server.origin, database.user, {
-		persistDir: database.persistDir,
+	const server = await getSharedMcpE2eServer()
+	const user = createUniqueTestUser()
+	await using mcp = await createMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
-	const { username } = database.user
+	const { username } = user
 	const files = buildPackageFiles(username)
 	let packageId: string | undefined
 
@@ -143,7 +141,7 @@ export default async function main(input) {
 		packageId = saved.package_id
 		const expectedBucketId = `package:${encodeURIComponent(packageId)}`
 
-		const cookie = await createAppSessionCookie(server.origin, database.user)
+		const cookie = await createAppSessionCookie(server.origin, user)
 		const appBasePath = `/@${username}/packages/${kodyId}`
 		const appUrl = `${server.origin}${appBasePath}?audio=1`
 
