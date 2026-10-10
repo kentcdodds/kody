@@ -124,20 +124,25 @@ async function readPersonalPlanState(
 	)
 		.bind(userId)
 		.first<BillingUserRow>()
+	if (!row) {
+		throw new Error(
+			`Cannot load billing: missing personal org for user ${String(userId)}.`,
+		)
+	}
 	return {
-		manualPlan: row ? parseStoredPlanName(row.plan) : 'max',
-		stripePlan: parseStripePlanName(row?.stripe_plan),
-		creditsEligible: Number(row?.stripe_credits_eligible) === 1,
-		customerId: row?.stripe_customer_id?.trim() || null,
+		manualPlan: parseStoredPlanName(row.plan),
+		stripePlan: parseStripePlanName(row.stripe_plan),
+		creditsEligible: Number(row.stripe_credits_eligible) === 1,
+		customerId: row.stripe_customer_id?.trim() || null,
 		overlayExpiresAt: laterIsoTimestamp(
-			row?.second_agent_standard_gift_expires_at,
-			row?.referral_standard_credit_expires_at,
+			row.second_agent_standard_gift_expires_at,
+			row.referral_standard_credit_expires_at,
 		),
 		referral:
-			row?.stable_user_id && row.username
+			row.stable_user_id && row.username
 				? { stableUserId: row.stable_user_id, username: row.username }
 				: null,
-		stableUserId: row?.stable_user_id ?? null,
+		stableUserId: row.stable_user_id ?? null,
 	}
 }
 
