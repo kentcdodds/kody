@@ -129,6 +129,7 @@ function resolveClientEntryFromSourceFiles(input: {
 		parseAuthoredPackageJson({
 			content: manifestContent,
 			manifestPath: input.manifestPath,
+			mode: 'published',
 		}),
 	)
 }

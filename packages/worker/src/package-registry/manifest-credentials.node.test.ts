@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
+import { readRootPackage } from '#worker/package-runtime/module-graph-workspace.ts'
 import { parseAuthoredPackageJson } from './manifest.ts'
 
 function manifestWithCredentials(credentials: unknown) {
@@ -82,6 +83,9 @@ test('publish rejects invalid kody.credentials slots and names the slot', () => 
 
 test('published snapshots load when an old kody.credentials key predates the schema', () => {
 	const content = manifestWithCredentials({ GOOGLE: 'my google account' })
+	expect(
+		readRootPackage({ 'package.json': content })?.manifest.kody.credentials,
+	).toBeUndefined()
 	expect(
 		parseAuthoredPackageJson({ content, mode: 'published' }).kody.credentials,
 	).toBeUndefined()
