@@ -1,4 +1,5 @@
 import { expect, test, vi } from 'vitest'
+import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	boundRawContentForPersistence,
 	defaultMcpContentLimitBytes,
@@ -13,6 +14,7 @@ import {
 	persistableExecutionArtifacts,
 	reservedStructuredFieldCollisionKey,
 	sanitizeStructuredContentRecord,
+	untrustedContentLooksTextOnly,
 	validateDownstreamMcpContentBlocks,
 	wrapDownstreamMcpToolResult,
 } from '#mcp/downstream-mcp-result.ts'
@@ -320,6 +322,12 @@ test('untrusted content is bounded by block count and payload size before schema
 			tooManyBlocks,
 			mcpServer('flood:blocks'),
 		),
+	).toThrow(McpCallerError)
+	expect(() =>
+		validateDownstreamMcpContentBlocks(
+			tooManyBlocks,
+			mcpServer('flood:blocks'),
+		),
 	).toThrow(/flood:blocks[\s\S]*too many MCP content blocks/)
 	expect(atobSpy).not.toHaveBeenCalled()
 
@@ -335,6 +343,9 @@ test('untrusted content is bounded by block count and payload size before schema
 	)
 	expect(() =>
 		validateDownstreamMcpContentBlocks(hugePayload, mcpServer('flood:bytes')),
+	).toThrow(McpCallerError)
+	expect(() =>
+		validateDownstreamMcpContentBlocks(hugePayload, mcpServer('flood:bytes')),
 	).toThrow(/flood:bytes[\s\S]*exceeding content limit/)
 	expect(atobSpy).not.toHaveBeenCalled()
 
@@ -348,6 +359,77 @@ test('untrusted content is bounded by block count and payload size before schema
 			label: 'default export (__mcpContent)',
 		}),
 	).toHaveLength(maxMcpContentBlockCount)
+})
+
+test('oversized text-only downstream results truncate instead of failing the call (KODY-90)', () => {
+	const hugeText = 'L'.repeat(defaultMcpContentLimitBytes + 200_000)
+	const textOnlyBlocks = [{ type: 'text' as const, text: hugeText }]
+	expect(untrustedContentLooksTextOnly(textOnlyBlocks)).toBe(true)
+	expect(
+		estimateUntrustedMcpContentPayloadBytes(textOnlyBlocks),
+	).toBeGreaterThan(defaultMcpContentLimitBytes)
+
+	// Pre-validation byte cap is for media/atob — text-only validates.
+	expect(
+		validateDownstreamMcpContentBlocks(
+			textOnlyBlocks,
+			mcpServer('sentry:search_logs'),
+		),
+	).toEqual(textOnlyBlocks)
+
+	const wrapped = wrapDownstreamMcpToolResult(
+		{ content: textOnlyBlocks },
+		mcpServer('sentry:search_logs'),
+	)
+	expect(wrapped[mcpContentMarker]).toEqual(textOnlyBlocks)
+
+	const limited = limitMcpContentBlocks(
+		textOnlyBlocks,
+		defaultMcpContentLimitBytes,
+	)
+	expect(limited.ok).toBe(true)
+	if (!limited.ok || !limited.truncated) {
+		throw new Error('expected truncated text-only limit result')
+	}
+	expect(limited.note).toMatch(/text was truncated/)
+	expect(limited.note).toMatch(/Narrow the query or use pagination/)
+	expect(measureMcpContentBytes(limited.blocks)).toBeLessThanOrEqual(
+		defaultMcpContentLimitBytes,
+	)
+	expect(limited.blocks.some((block) => block.type === 'text')).toBe(true)
+	const truncatedText = limited.blocks
+		.filter((block) => block.type === 'text')
+		.map((block) => block.text)
+		.join('')
+	expect(truncatedText).toContain('--- TRUNCATED ---')
+	expect(truncatedText.length).toBeLessThan(hugeText.length)
+
+	// structuredContent + text-only: text is discarded; huge text must not throw.
+	const structuredWrapped = wrapDownstreamMcpToolResult(
+		{
+			content: textOnlyBlocks,
+			structuredContent: { hits: 12, query: 'production' },
+		},
+		mcpServer('sentry:search_logs'),
+	)
+	expect(structuredWrapped).toEqual({ hits: 12, query: 'production' })
+	expect(extractMcpPassthrough(structuredWrapped)).toBeNull()
+
+	// Media oversize still fails as a caller error (not a bare Error).
+	expect(() =>
+		wrapDownstreamMcpToolResult(
+			{
+				content: [
+					{
+						type: 'image',
+						data: oversizedBase64(defaultMcpContentLimitBytes + 50_000),
+						mimeType: 'image/png',
+					},
+				],
+			},
+			mcpServer('vision:shot'),
+		),
+	).toThrow(McpCallerError)
 })
 
 test('persistence bounds or omits rawContent and strips markers from stored result', () => {

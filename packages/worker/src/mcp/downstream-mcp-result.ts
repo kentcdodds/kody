@@ -3,6 +3,7 @@ import {
 	type ContentBlock,
 } from '@modelcontextprotocol/sdk/types.js'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
+import { McpCallerError } from '#mcp/caller-error.ts'
 
 /**
  * Explicit markers used at the synthesized MCP-server
@@ -28,6 +29,9 @@ export const reservedStructuredFieldCollisionKey =
  * Rationale: MCP image/audio `data` is base64 (~4/3 expansion). A ~132,550-byte
  * WebP is ~177 KiB of base64 JSON — comfortably under 512 KiB — while multi-MiB
  * dumps are rejected before `ContentBlockSchema` runs `atob`.
+ *
+ * Text-only content skips this pre-validation byte cap (no `atob`) and is
+ * truncated to this limit at egress instead of failing the call.
  */
 export const defaultMcpContentLimitBytes = 524_288
 
@@ -61,6 +65,26 @@ export type PersistedRawContentBound = {
 		blockCount: number
 	}
 }
+
+export type LimitMcpContentBlocksResult =
+	| {
+			ok: true
+			blocks: Array<ContentBlock>
+			returnedBytes: number
+			truncated?: false
+	  }
+	| {
+			ok: true
+			blocks: Array<ContentBlock>
+			returnedBytes: number
+			truncated: true
+			note: string
+	  }
+	| {
+			ok: false
+			returnedBytes: number
+			note: string
+	  }
 
 function isReservedMarkerKey(key: string) {
 	return (
@@ -136,6 +160,19 @@ export function getUtf8ByteLength(value: string) {
 	return new TextEncoder().encode(value).byteLength
 }
 
+function truncateUtf8String(value: string, maxBytes: number) {
+	const encoder = new TextEncoder()
+	let usedBytes = 0
+	let result = ''
+	for (const character of value) {
+		const characterBytes = encoder.encode(character).byteLength
+		if (usedBytes + characterBytes > maxBytes) break
+		result += character
+		usedBytes += characterBytes
+	}
+	return result
+}
+
 /**
  * Estimate untrusted content payload size without decoding base64 (`atob`).
  * Used to reject oversized payloads before `ContentBlockSchema.safeParse`.
@@ -171,9 +208,23 @@ export function estimateUntrustedMcpContentPayloadBytes(
 }
 
 /**
+ * Untrusted content that claims only `type: "text"` blocks — no base64 `atob`
+ * path. Used to skip the media payload byte cap (text is truncated at egress).
+ */
+export function untrustedContentLooksTextOnly(
+	content: ReadonlyArray<unknown>,
+): boolean {
+	return (
+		content.length > 0 &&
+		content.every((entry) => isRecord(entry) && entry.type === 'text')
+	)
+}
+
+/**
  * Validate MCP content blocks from a downstream tool result or execute return.
- * Bounds block count and payload size before schema parse (avoids unbounded
- * `atob`); does not fetch URLs or rewrite shapes.
+ * Bounds block count and (for non-text) payload size before schema parse
+ * (avoids unbounded `atob`); does not fetch URLs or rewrite shapes.
+ * Text-only payloads skip the pre-validation byte cap.
  */
 export function validateDownstreamMcpContentBlocks(
 	content: unknown,
@@ -188,22 +239,25 @@ export function validateDownstreamMcpContentBlocks(
 		options?.maxPayloadBytes ?? defaultMcpContentLimitBytes
 
 	if (!Array.isArray(content)) {
-		throw new Error(
+		throw new McpCallerError(
 			`${sourcePrefix(source)} returned invalid MCP content (expected an array of content blocks).`,
 		)
 	}
 
 	if (content.length > maxBlockCount) {
-		throw new Error(
+		throw new McpCallerError(
 			`${sourcePrefix(source)} returned too many MCP content blocks (${content.length.toLocaleString()} > limit ${maxBlockCount.toLocaleString()}).`,
 		)
 	}
 
-	const estimatedBytes = estimateUntrustedMcpContentPayloadBytes(content)
-	if (estimatedBytes > maxPayloadBytes) {
-		throw new Error(
-			`${sourcePrefix(source)} returned MCP content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding content limit ${maxPayloadBytes.toLocaleString()} bytes before validation. Reduce image/audio payload size or split the response.`,
-		)
+	const textOnly = untrustedContentLooksTextOnly(content)
+	if (!textOnly) {
+		const estimatedBytes = estimateUntrustedMcpContentPayloadBytes(content)
+		if (estimatedBytes > maxPayloadBytes) {
+			throw new McpCallerError(
+				`${sourcePrefix(source)} returned MCP content estimated at ${estimatedBytes.toLocaleString()} bytes, exceeding content limit ${maxPayloadBytes.toLocaleString()} bytes before validation. Reduce image/audio payload size or split the response.`,
+			)
+		}
 	}
 
 	const blocks: Array<ContentBlock> = []
@@ -211,7 +265,7 @@ export function validateDownstreamMcpContentBlocks(
 		const entry = content[index]
 		const parsed = ContentBlockSchema.safeParse(entry)
 		if (!parsed.success) {
-			throw new Error(
+			throw new McpCallerError(
 				`${sourcePrefix(source)} returned malformed MCP content: ${formatContentBlockIssue(entry, index)}.`,
 			)
 		}
@@ -224,11 +278,109 @@ function hasNonTextContent(blocks: Array<ContentBlock>) {
 	return blocks.some((block) => block.type !== 'text')
 }
 
+function isTextContentBlock(
+	block: ContentBlock,
+): block is ContentBlock & { type: 'text'; text: string } {
+	return block.type === 'text'
+}
+
+/**
+ * Shrink text-only content so its JSON serialization fits `limitBytes`,
+ * appending a truncation notice to the last retained text block.
+ */
+function truncateTextContentBlocksToFit(
+	blocks: Array<ContentBlock>,
+	limitBytes: number,
+	note: string,
+): Array<ContentBlock> {
+	const notice = `\n\n--- TRUNCATED ---\n${note}`
+	const textBlocks = blocks.filter(isTextContentBlock)
+
+	if (textBlocks.length === 0) {
+		const noticeOnly = [{ type: 'text' as const, text: notice.trim() }]
+		if (measureMcpContentBytes(noticeOnly) <= limitBytes) {
+			return noticeOnly
+		}
+		return [
+			{
+				type: 'text',
+				text: truncateUtf8String(notice.trim(), Math.max(0, limitBytes - 64)),
+			},
+		]
+	}
+
+	for (let count = textBlocks.length; count >= 1; count--) {
+		const prefixTexts = textBlocks.slice(0, count).map((block) => block.text)
+		let lo = 0
+		let hi = prefixTexts.reduce((sum, text) => sum + text.length, 0)
+		let best: Array<ContentBlock> | null = null
+
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1
+			const candidate = applyTextCharBudget(prefixTexts, mid, notice)
+			if (measureMcpContentBytes(candidate) <= limitBytes) {
+				best = candidate
+				lo = mid + 1
+			} else {
+				hi = mid - 1
+			}
+		}
+
+		if (best) return best
+	}
+
+	const noticeOnly = [{ type: 'text' as const, text: notice.trim() }]
+	if (measureMcpContentBytes(noticeOnly) <= limitBytes) {
+		return noticeOnly
+	}
+	return [
+		{
+			type: 'text',
+			text: truncateUtf8String(notice.trim(), Math.max(0, limitBytes - 64)),
+		},
+	]
+}
+
+function applyTextCharBudget(
+	texts: ReadonlyArray<string>,
+	charBudget: number,
+	notice: string,
+): Array<ContentBlock> {
+	const result: Array<ContentBlock> = []
+	let remaining = charBudget
+	for (let index = 0; index < texts.length; index++) {
+		const text = texts[index] ?? ''
+		const take = Math.min(text.length, Math.max(0, remaining))
+		remaining -= take
+		const isLast = index === texts.length - 1
+		result.push({
+			type: 'text',
+			text: isLast ? text.slice(0, take) + notice : text.slice(0, take),
+		})
+		if (remaining <= 0 && !isLast) {
+			// Budget exhausted before the final prefix slot: still attach notice.
+			const last = result[result.length - 1]
+			if (last && last.type === 'text' && !last.text.endsWith(notice)) {
+				result[result.length - 1] = {
+					type: 'text',
+					text: last.text + notice,
+				}
+			}
+			break
+		}
+	}
+	return result
+}
+
 /**
  * Convert a downstream MCP CallToolResult into a capability return value.
  * Non-text content and isError are preserved via explicit markers; structured
  * content remains available for code (spread + companion marker). Reserved
  * marker keys inside structuredContent are isolated, never trusted as control.
+ *
+ * On structured success with text-only content, text is discarded (existing
+ * passthrough rule) without validating those unused blocks — so a large log
+ * dump alongside structuredContent does not fail the capability call.
  */
 export function wrapDownstreamMcpToolResult(
 	result: DownstreamMcpToolResult,
@@ -241,12 +393,24 @@ export function wrapDownstreamMcpToolResult(
 		? sanitizeStructuredContentRecord(structuredContent)
 		: null
 
+	const isError = result.isError === true
+
+	if (
+		hasStructured &&
+		structuredRecord &&
+		!isError &&
+		result.content !== undefined &&
+		Array.isArray(result.content) &&
+		untrustedContentLooksTextOnly(result.content)
+	) {
+		return structuredRecord
+	}
+
 	const contentBlocks =
 		result.content === undefined
 			? null
 			: validateDownstreamMcpContentBlocks(result.content, source)
 
-	const isError = result.isError === true
 	const needsContentPassthrough =
 		contentBlocks !== null &&
 		(hasNonTextContent(contentBlocks) || !hasStructured || isError)
@@ -349,22 +513,29 @@ export function measureMcpContentBytes(blocks: Array<ContentBlock>) {
 
 export function limitMcpContentBlocks(
 	blocks: Array<ContentBlock>,
-	limitBytes: number,
-):
-	| {
-			ok: true
-			blocks: Array<ContentBlock>
-			returnedBytes: number
-	  }
-	| {
-			ok: false
-			returnedBytes: number
-			note: string
-	  } {
+	limitBytes: number = defaultMcpContentLimitBytes,
+): LimitMcpContentBlocksResult {
 	const returnedBytes = measureMcpContentBytes(blocks)
 	if (returnedBytes <= limitBytes) {
 		return { ok: true, blocks, returnedBytes }
 	}
+
+	if (!hasNonTextContent(blocks)) {
+		const note = `MCP text content was ${returnedBytes.toLocaleString()} bytes, exceeding content limit ${limitBytes.toLocaleString()} bytes; text was truncated. Narrow the query or use pagination.`
+		const truncatedBlocks = truncateTextContentBlocksToFit(
+			blocks,
+			limitBytes,
+			note,
+		)
+		return {
+			ok: true,
+			blocks: truncatedBlocks,
+			returnedBytes,
+			truncated: true,
+			note,
+		}
+	}
+
 	return {
 		ok: false,
 		returnedBytes,
@@ -375,6 +546,7 @@ export function limitMcpContentBlocks(
 /**
  * Bound protocol content before durable package-invocation persistence.
  * Oversized media is omitted with safe metadata (never stored unbounded).
+ * Oversized text-only content is truncated to the limit.
  */
 export function boundRawContentForPersistence(
 	content: Array<ContentBlock> | null,
