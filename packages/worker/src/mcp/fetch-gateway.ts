@@ -94,6 +94,13 @@ type FetchGatewayProps = {
 	 */
 	grantedSecretAuthorityPackageIds?: ReadonlyArray<string>
 	/**
+	 * CapabilityProxy / CLI `--local`: keep `storageContext.packageId` for
+	 * package-scoped secret buckets and package-limited integrations, but
+	 * never skip `secret:use` / `integration:use` from that client stamp.
+	 * Hosted bundler provenance leaves this unset.
+	 */
+	requireActorCredentialUse?: boolean
+	/**
 	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
 	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
 	 * raise this so a single slow upstream can finish under their larger
@@ -386,6 +393,11 @@ export async function expandSecretPlaceholders(input: {
 		grantedPackageIds: grantedSecretAuthorityPackageIds,
 		runPackageId: input.props.storageContext?.packageId,
 	})
+	// Use-skip authority vs package binding: local CapabilityProxy stamps are
+	// binding only (`requireActorCredentialUse`); hosted provenance may skip.
+	const authorityForUseSkip = input.props.requireActorCredentialUse
+		? null
+		: authorityPackageId
 	const storageContext = storageContextWithSecretAuthority(
 		input.props.storageContext,
 		authorityPackageId,
@@ -460,14 +472,14 @@ export async function expandSecretPlaceholders(input: {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
-			// Ambient ad-hoc execute: acting person needs secret:use on this
-			// secret. Package authority keeps package attachment only.
+			// Ambient ad-hoc / local stamps: acting person needs secret:use.
+			// Hosted package authority keeps package attachment only.
 			await authorizeAmbientSecretUse({
 				env: input.env as Env,
 				request: input.props.request,
 				orgUserId: callerUserId,
 				secretName: referenced.name,
-				authorityPackageId,
+				authorityPackageId: authorityForUseSkip,
 			})
 			const resolved = await resolveSecret({
 				env: input.env,
@@ -513,7 +525,7 @@ export async function expandSecretPlaceholders(input: {
 				request: input.props.request,
 				orgUserId: callerUserId,
 				integrationName: name,
-				authorityPackageId,
+				authorityPackageId: authorityForUseSkip,
 			})
 			await assertCanUseIntegration({
 				env: input.env,
@@ -547,7 +559,7 @@ export async function expandSecretPlaceholders(input: {
 				provider: referenced.provider,
 				ref: referenced.ref,
 				storageContext,
-				authorityPackageId,
+				authorityPackageId: authorityForUseSkip,
 			})
 			return { referenced, resolved }
 		}),

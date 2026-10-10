@@ -135,11 +135,13 @@ test('runCapabilityProxyGatewayFetch verifies package stamp but does not grant s
 		request: Request
 		props: {
 			grantedSecretAuthorityPackageIds?: Array<string>
+			requireActorCredentialUse?: boolean
 			storageContext: { packageId: string | null }
 		}
 	}
 	expect(gatewayArg.props.grantedSecretAuthorityPackageIds).toBeUndefined()
-	expect(gatewayArg.props.storageContext.packageId).toBeNull()
+	expect(gatewayArg.props.requireActorCredentialUse).toBe(true)
+	expect(gatewayArg.props.storageContext.packageId).toBe('pkg-owned')
 	expect(gatewayArg.request.headers.get('x-kody-secret-authority')).toBeNull()
 	expect(result.status).toBe(200)
 	expect(JSON.parse(atob(result.bodyBase64))).toEqual({ ok: true })

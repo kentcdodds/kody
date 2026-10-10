@@ -263,19 +263,33 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 			role: 'member',
 		},
 	})
-	const granted = await runCapabilityProxyGatewayFetch({
-		ctx: buildCtx(memberAfterGrant),
-		args: [
-			{
-				packageId,
-				request: {
-					url: 'https://example.com/',
-					headers: {
-						authorization: 'Bearer {{secret:orgEcho|scope=user}}',
+	const outbound: Array<Request> = []
+	const fetchSpy = vi
+		.spyOn(globalThis, 'fetch')
+		.mockImplementation(async (input, init) => {
+			outbound.push(new Request(input, init))
+			return new Response('ok', { status: 200 })
+		})
+	try {
+		const granted = await runCapabilityProxyGatewayFetch({
+			ctx: buildCtx(memberAfterGrant),
+			args: [
+				{
+					packageId,
+					request: {
+						url: 'https://example.com/',
+						headers: {
+							authorization: 'Bearer {{secret:orgEcho|scope=user}}',
+						},
 					},
 				},
-			},
-		],
-	})
-	expect(granted.status).toBe(200)
+			],
+		})
+		expect(granted.status).toBe(200)
+		expect(outbound.at(-1)?.headers.get('authorization')).toBe(
+			'Bearer org-secret-value',
+		)
+	} finally {
+		fetchSpy.mockRestore()
+	}
 })

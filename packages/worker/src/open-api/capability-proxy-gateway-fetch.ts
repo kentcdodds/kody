@@ -136,24 +136,22 @@ export async function runCapabilityProxyGatewayFetch(input: {
 }): Promise<CapabilityProxyAuthenticatedFetchResult> {
 	const call = parseCapabilityProxyGatewayFetchArgs(input.args)
 	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
-	if (call.packageId) {
-		// Prove the stamp is an org package the actor may execute — never
-		// promote it to secret authority (client-supplied, not bundler-proven).
-		await authorizeLocalExecuteOwnedPackageId({
-			db: input.ctx.env.APP_DB,
-			env: input.ctx.env,
-			request: input.ctx.callerContext.request,
-			orgUserId,
-			packageId: call.packageId,
-		})
-	}
+	const stampedPackageId = call.packageId
+		? await authorizeLocalExecuteOwnedPackageId({
+				db: input.ctx.env.APP_DB,
+				env: input.ctx.env,
+				request: input.ctx.callerContext.request,
+				orgUserId,
+				packageId: call.packageId,
+			})
+		: null
 	const existingStorage = input.ctx.callerContext.storageContext
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		// Do not copy a client stamp into runPackageId: resolveSecretAuthority
-		// falls back to storageContext.packageId and would skip Use.
-		packageId: existingStorage?.packageId ?? null,
+		// Binding only: package-scoped secrets / package-limited integrations.
+		// requireActorCredentialUse prevents Use-skip from this client stamp.
+		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const requestBody =
@@ -170,6 +168,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 			email: input.ctx.callerContext.user.email,
 			request: input.ctx.callerContext.request,
 			storageContext,
+			requireActorCredentialUse: true,
 		},
 		request: new Request(call.request.url, {
 			method: call.request.method,

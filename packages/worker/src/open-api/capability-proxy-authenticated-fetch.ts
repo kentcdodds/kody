@@ -174,18 +174,18 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 }): Promise<CapabilityProxyAuthenticatedFetchResult> {
 	const call = parseCapabilityProxyAuthenticatedFetchArgs(input.args)
 	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
-	if (call.packageId) {
-		await authorizeAuthenticatedFetchPackageId({
-			ctx: input.ctx,
-			packageId: call.packageId,
-		})
-	}
+	const stampedPackageId = call.packageId
+		? await authorizeAuthenticatedFetchPackageId({
+				ctx: input.ctx,
+				packageId: call.packageId,
+			})
+		: null
 	const kody = await buildKodyFns(input.ctx.env, input.ctx.callerContext)
 	const existingStorage = input.ctx.callerContext.storageContext
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: existingStorage?.packageId ?? null,
+		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const gatewayFetch: typeof fetch = async (requestInput, init) => {
@@ -200,6 +200,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 				email: input.ctx.callerContext.user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,
+				requireActorCredentialUse: true,
 			},
 			request: new Request(request, { headers }),
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),
