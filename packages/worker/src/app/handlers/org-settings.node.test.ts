@@ -263,3 +263,36 @@ test('owner can update team settings and cannot delete a personal org', async ()
 	).toBe(200)
 	expect(mocks.softDeleteOrg).toHaveBeenCalled()
 })
+
+test('a second owner still treats a signup org as personal', async () => {
+	const env = createEnv()
+	sqlite
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?)`,
+		)
+		.run(people.ada.personId, people.bob.personId, '2026-01-02T00:00:00.000Z')
+
+	const get = new Request('https://kody.test/@ada/settings.json')
+	await signIn('bob', get)
+	const body = await (
+		await createOrgSettingsApiHandler(env).handler({ request: get } as never)
+	).json()
+	expect(body).toMatchObject({
+		ok: true,
+		org: { slug: 'ada', personal: true },
+		canManage: false,
+	})
+
+	const del = new Request('https://kody.test/@ada/settings/delete.json', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ confirmation: 'ada' }),
+	})
+	await signIn('bob', del)
+	const blocked = await createOrgSettingsDeletePostHandler(env).handler({
+		request: del,
+	} as never)
+	expect(blocked.status).toBe(400)
+	expect(mocks.softDeleteOrg).not.toHaveBeenCalled()
+})

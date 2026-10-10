@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -8,6 +7,7 @@ import {
 	AuthorizationError,
 } from '#worker/authorization/authorize.ts'
 import { buildOrgAvatarUrl } from '#worker/orgs/org-avatar.ts'
+import { isPersonalOrg } from '#worker/orgs/org-profile.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 
 export type ManagedOrg = {
@@ -79,7 +79,7 @@ export async function resolveOrgManagementAccess(input: {
 				slug,
 				avatarKey: record.avatar_key,
 			}),
-			personal: resolution.org.id === personalOrgId(input.user.mcpUser.userId),
+			personal: await isPersonalOrg(input.env.APP_DB, resolution.org.id),
 			role: resolution.role,
 		},
 	}

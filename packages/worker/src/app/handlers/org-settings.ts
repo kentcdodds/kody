@@ -57,11 +57,16 @@ async function loadOrgSettingsData(input: {
 	user: Parameters<typeof orgHasPermission>[1]
 	org: ManagedOrg
 }): Promise<OrgSettingsLoaderData> {
+	// Signup orgs keep identity and deletion on Account pages even when
+	// another owner somehow holds org:write on that org.
+	const teamOrg = !input.org.personal
 	return {
 		ok: true,
 		org: input.org,
-		canManage: await orgHasPermission(input.env, input.user, 'org:write'),
-		canDelete: await orgHasPermission(input.env, input.user, 'org:delete'),
+		canManage:
+			teamOrg && (await orgHasPermission(input.env, input.user, 'org:write')),
+		canDelete:
+			teamOrg && (await orgHasPermission(input.env, input.user, 'org:delete')),
 	}
 }
 

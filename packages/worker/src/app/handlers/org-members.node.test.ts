@@ -279,3 +279,39 @@ test('member cannot change roles, invite, or remove; owner can; last owner is pr
 		error: 'The last Owner cannot be removed.',
 	})
 })
+
+test('signup org membership writes stay off the web even for a second owner', async () => {
+	const env = createEnv()
+	sqlite
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?)`,
+		)
+		.run(people.ada.personId, people.bob.personId, '2026-01-02T00:00:00.000Z')
+
+	const list = new Request('https://kody.test/@ada/members.json')
+	await signIn('bob', list)
+	expect(
+		await (
+			await createOrgMembersApiHandler(env).handler({ request: list } as never)
+		).json(),
+	).toMatchObject({
+		ok: true,
+		org: { personal: true },
+		canManage: false,
+	})
+
+	const invite = new Request('https://kody.test/@ada/members/invite.json', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ invitee: 'eve@example.com', role: 'member' }),
+	})
+	await signIn('bob', invite)
+	const invited = await createOrgMembersInvitePostHandler(env).handler({
+		request: invite,
+	} as never)
+	expect(invited.status).toBe(400)
+	expect(await invited.json()).toMatchObject({
+		error: expect.stringMatching(/personal organization/),
+	})
+})

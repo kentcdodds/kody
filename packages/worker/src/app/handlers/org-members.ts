@@ -129,11 +129,11 @@ async function loadOrgMembersData(input: {
 	user: Parameters<typeof orgHasPermission>[1]
 	org: ManagedOrg
 }): Promise<OrgMembersLoaderData> {
-	const canManage = await orgHasPermission(
-		input.env,
-		input.user,
-		'member:write',
-	)
+	// Signup orgs keep membership management off the web — invite flows there
+	// would let a second owner treat the account org like a team org.
+	const canManage =
+		!input.org.personal &&
+		(await orgHasPermission(input.env, input.user, 'member:write'))
 	const [members, invites] = await Promise.all([
 		listOrgMembers(input.env.APP_DB, input.org.id),
 		canManage
@@ -147,6 +147,17 @@ async function loadOrgMembersData(input: {
 		invites: invites.map(toInviteView),
 		canManage,
 	}
+}
+
+function personalOrgMembershipWriteResponse() {
+	return jsonResponse(
+		{
+			ok: false,
+			error:
+				'Membership for your personal organization is managed with your account. Create a team organization to invite people.',
+		},
+		400,
+	)
 }
 
 export function createOrgMembersHandler(env: Env) {
@@ -229,6 +240,7 @@ export function createOrgMembersRolePostHandler(env: Env) {
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
 			const body = await readJsonObject(request)
 			const userId = typeof body?.userId === 'string' ? body.userId.trim() : ''
 			const role = body?.role
@@ -327,6 +339,7 @@ export function createOrgMembersRemovePostHandler(env: Env) {
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
 			const body = await readJsonObject(request)
 			const userId = typeof body?.userId === 'string' ? body.userId.trim() : ''
 			if (!userId) {
@@ -411,6 +424,7 @@ export function createOrgMembersInvitePostHandler(env: Env) {
 			if (!access.ok) {
 				return jsonResponse({ ok: false, error: access.error }, access.status)
 			}
+			if (access.org.personal) return personalOrgMembershipWriteResponse()
 			const body = await readJsonObject(request)
 			const invitee =
 				typeof body?.invitee === 'string' ? body.invitee.trim() : ''

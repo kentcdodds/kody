@@ -31,7 +31,12 @@ function slugValidationMessage(message: string) {
 	return 'Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number.'
 }
 
-async function isPersonalOrg(db: D1Database, orgId: string) {
+/**
+ * Signup organizations have `org_id = user_id` for the founding owner.
+ * That is a property of the org row, not of the current viewer — another
+ * owner of Ada's signup org must still treat it as personal.
+ */
+export async function isPersonalOrg(db: D1Database, orgId: string) {
 	const row = await db
 		.prepare(
 			`SELECT 1 AS ok
@@ -129,6 +134,17 @@ export async function updateOrgProfile(
 				.bind(nextDisplayName, now, input.orgId)
 				.run()
 		} else {
+			const handleRow = await db
+				.prepare(`SELECT handle FROM handles WHERE org_id = ? AND handle = ?`)
+				.bind(input.orgId, existing.slug)
+				.first<{ handle: string }>()
+			if (!handleRow) {
+				return {
+					ok: false,
+					error: 'Unable to rename that organization handle.',
+					code: 'validation',
+				}
+			}
 			await db.batch([
 				db
 					.prepare(
