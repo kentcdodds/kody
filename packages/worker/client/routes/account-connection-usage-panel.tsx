@@ -8,6 +8,7 @@ import { accountConnectionsUsageHref } from '#universal/account-connections.ts'
 import {
 	connectionUsageWindowKeys,
 	type AccountConnectionUsageLoaderData,
+	type ConnectionUsageCaller,
 	type ConnectionUsageCountKey,
 	type ConnectionUsageTotals,
 	type ConnectionUsageWindow,
@@ -69,20 +70,23 @@ type UsageRow = {
 	totals: ConnectionUsageTotals
 }
 
-function formatDay(day: string) {
+function formatDay(day: string, withYear: boolean) {
 	const date = new Date(`${day}T00:00:00.000Z`)
 	if (Number.isNaN(date.getTime())) return day
 	return date.toLocaleString('en-US', {
 		month: 'short',
 		day: 'numeric',
+		...(withYear ? { year: 'numeric' } : {}),
 		timeZone: 'UTC',
 	})
 }
 
+/** Years appear only when the window spans New Year: `Dec 29, 2026 – Jan 4, 2027`. */
 function formatWindow(window: ConnectionUsageWindow) {
+	const withYear = window.startDay.slice(0, 4) !== window.endDay.slice(0, 4)
 	return window.startDay === window.endDay
-		? formatDay(window.startDay)
-		: `${formatDay(window.startDay)} – ${formatDay(window.endDay)}`
+		? formatDay(window.startDay, false)
+		: `${formatDay(window.startDay, withYear)} – ${formatDay(window.endDay, withYear)}`
 }
 
 function capWeekTotal(row: UsageRow, capCountKey: ConnectionUsageCountKey) {
@@ -111,9 +115,9 @@ function usageRows(input: {
 			totals: automation.totals,
 		})
 	}
-	for (const person of usage.people ?? []) {
+	for (const [index, person] of (usage.people ?? []).entries()) {
 		rows.push({
-			id: `person:${person.username ?? 'unknown'}`,
+			id: personRowId(person.username, index),
 			name: person.username ? `@${person.username}` : 'Former member',
 			detail: 'Teammate',
 			href: null,
@@ -433,19 +437,11 @@ export function ConnectionUsageDetails(
 									caption={`${name}: all counts`}
 									totals={entry.totals}
 								/>
-								<UsageTable
-									caption={`What ran through ${name}, in ${connectionUsageCountNoun(usage.capCountKey)}`}
-									rowHeader="Package"
-									rows={entry.callers.map((caller) => ({
-										id: caller.packageId || 'adhoc',
-										name: caller.label,
-										detail: caller.packageId ? 'Package' : 'Ad hoc execute',
-										href: caller.href,
-										totals: caller.totals,
-									}))}
-									capCountKey={usage.capCountKey}
-									testId="connection-usage-callers"
-								/>
+								{renderCallersTable({
+									name,
+									callers: entry.callers,
+									capCountKey: usage.capCountKey,
+								})}
 							</div>
 						</AccountManagementPanel>
 					)
@@ -475,6 +471,25 @@ export function ConnectionUsageDetails(
 								testId="connection-usage-automations"
 							/>
 						)}
+						{focus
+							? automations.map((automation) => (
+									<div
+										key={automation.id}
+										data-testid="connection-usage-automation-entry"
+										mix={css(stackCss)}
+									>
+										<RawCountsTable
+											caption={`${automation.label}: all counts`}
+											totals={automation.totals}
+										/>
+										{renderCallersTable({
+											name: automation.label,
+											callers: automation.callers,
+											capCountKey: usage.capCountKey,
+										})}
+									</div>
+								))
+							: null}
 					</AccountManagementPanel>
 				) : null}
 				{usage.people !== null && !focus ? (
@@ -491,8 +506,8 @@ export function ConnectionUsageDetails(
 							<UsageTable
 								caption={`Teammate usage, in ${connectionUsageCountNoun(usage.capCountKey)}`}
 								rowHeader="Person"
-								rows={usage.people.map((person) => ({
-									id: `person:${person.username ?? 'unknown'}`,
+								rows={usage.people.map((person, index) => ({
+									id: personRowId(person.username, index),
 									name: person.username
 										? `@${person.username}`
 										: 'Former member',
@@ -513,12 +528,51 @@ export function ConnectionUsageDetails(
 						mix={css(descriptionCss)}
 						data-testid="connection-usage-unattributed"
 					>
-						{`${formatConnectionUsageQuantity(usage.capCountKey, usage.unattributed.last7Days[usage.capCountKey])} in the last 7 days were recorded before connection tracking started and are not tied to a connection.`}
+						{`${unattributedQuantity(usage.unattributed, usage.capCountKey)} in the last 7 days were recorded before connection tracking started and are not tied to a connection.`}
 					</p>
 				) : null}
 			</>
 		)
 	}
+}
+
+function personRowId(username: string | null, index: number) {
+	return username ? `person:${username}` : `person:former:${index}`
+}
+
+/** The cap unit, plus any other counts so runs-only history does not read as zero. */
+function unattributedQuantity(
+	totals: ConnectionUsageTotals,
+	capCountKey: ConnectionUsageCountKey,
+) {
+	const cap = totals.last7Days[capCountKey]
+	const other = connectionUsageOtherCounts(totals, capCountKey)
+	if (cap > 0 || !other) {
+		return formatConnectionUsageQuantity(capCountKey, cap)
+	}
+	return other
+}
+
+function renderCallersTable(input: {
+	name: string
+	callers: ReadonlyArray<ConnectionUsageCaller>
+	capCountKey: ConnectionUsageCountKey
+}) {
+	return (
+		<UsageTable
+			caption={`What ran through ${input.name}, in ${connectionUsageCountNoun(input.capCountKey)}`}
+			rowHeader="Package"
+			rows={input.callers.map((caller) => ({
+				id: caller.packageId || 'adhoc',
+				name: caller.label,
+				detail: caller.packageId ? 'Package' : 'Ad hoc execute',
+				href: caller.href,
+				totals: caller.totals,
+			}))}
+			capCountKey={input.capCountKey}
+			testId="connection-usage-callers"
+		/>
+	)
 }
 
 function connectionUsageAutomationDetail(

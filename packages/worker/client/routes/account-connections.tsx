@@ -76,8 +76,9 @@ export async function accountConnectionsRouteLoader(
 ): Promise<RouteLoaderResult> {
 	const [result, usage] = await Promise.all([
 		fetchConnectedAgents(url.href, signal),
-		// Usage is a secondary panel: its own fallback fetch retries a failure.
-		fetchConnectionUsage(url.href, signal).catch(() => null),
+		viewShowsUsage(readView(url.href))
+			? loadUsageWithinBudget(url.href, signal)
+			: null,
 	])
 	if (result.kind === 'unauthorized') {
 		return routeLoaderRedirect('/login')
@@ -86,6 +87,32 @@ export async function accountConnectionsRouteLoader(
 		accountConnectedAgents: result.payload,
 		...(usage?.kind === 'ok' ? { accountConnectionUsage: usage.payload } : {}),
 	}
+}
+
+/**
+ * Usage is a secondary panel. The loader waits for it only briefly so a slow
+ * usage request never holds the Connections navigation; after a miss or a
+ * failure the route data fallback fetches it once the page commits.
+ */
+const loaderUsageBudgetMs = 1500
+
+async function loadUsageWithinBudget(href: string, signal: AbortSignal) {
+	const controller = new AbortController()
+	const abort = () => controller.abort()
+	signal.addEventListener('abort', abort, { once: true })
+	const timer = setTimeout(abort, loaderUsageBudgetMs)
+	try {
+		return await fetchConnectionUsage(href, controller.signal)
+	} catch {
+		return null
+	} finally {
+		clearTimeout(timer)
+		signal.removeEventListener('abort', abort)
+	}
+}
+
+function viewShowsUsage(view: AccountConnectionsView | null) {
+	return view?.kind === 'list' || view?.kind === 'usage'
 }
 
 /**
@@ -161,7 +188,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 
 	function readUsageState(currentHref: string): ConnectionUsageState {
 		const usage = usageData.read(handle, currentHref)
-		if (usage.data) return { kind: 'ready', usage: usage.data }
+		// Stale data belongs to another org (the latch key is per org).
+		if (usage.data && !usage.stale) return { kind: 'ready', usage: usage.data }
 		if (usage.kind === 'error') {
 			return {
 				kind: 'error',
@@ -190,10 +218,7 @@ export function AccountConnectionsRoute(handle: Handle) {
 			appliedError = snapshot.error
 			message = snapshot.error.message
 		}
-		const usage =
-			view?.kind === 'list' || view?.kind === 'usage'
-				? readUsageState(currentHref)
-				: null
+		const usage = viewShowsUsage(view) ? readUsageState(currentHref) : null
 		const pending = snapshot.kind === 'pending'
 		const status: AccountStatus =
 			snapshot.kind === 'error'

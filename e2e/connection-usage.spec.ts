@@ -32,8 +32,9 @@ test('team org usage shows members only their own connections, and owners the wh
 		orgId: string,
 		[kind, holder, credential]: [string, string, string],
 		units: number,
+		eventType = 'execute',
 	) =>
-		`(${[orgId, day, kind, holder, credential, '', 'execute']
+		`(${[orgId, day, kind, holder, credential, '', eventType]
 			.map(sqlString)
 			.join(', ')}, ${units})`
 	executeE2eD1Command(`
@@ -49,6 +50,7 @@ INSERT INTO usage_connection_daily (
 	${usageRow(teamId, ['mcp-oauth', memberId, 'https://slack-bot.example/client.json'], 1440)},
 	${usageRow(teamId, ['api-token', ownerId, 'tok_owner_private'], 9)},
 	${usageRow(teamId, ['schedule', '', 'job-poll'], 30)},
+	${usageRow(teamId, ['', '', ''], 5, 'dynamic_worker_invoke')},
 	${usageRow(memberId, ['cli', memberId, ''], 77)};
 `)
 
@@ -94,4 +96,19 @@ INSERT INTO usage_connection_daily (
 	await expect(people).toContainText(`@${member.username}`)
 	await expect(people).toContainText('1,440')
 	await expect(people).not.toContainText('slack-bot.example')
+	// Units from before tracking are runs only, so the note names them.
+	await expect(page.getByTestId('connection-usage-unattributed')).toContainText(
+		'5 runs',
+	)
+
+	// Focusing an automation shows what it ran.
+	await page.goto(
+		`/@${slug}/-/connections/usage?connection=${encodeURIComponent('schedule:job-poll')}`,
+	)
+	await waitForClientHydration(page)
+	const automation = page.getByTestId('connection-usage-automation-entry')
+	await expect(automation).toHaveCount(1)
+	await expect(
+		automation.getByTestId('connection-usage-callers'),
+	).toContainText('Ad hoc code')
 })
