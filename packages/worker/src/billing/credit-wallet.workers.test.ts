@@ -528,6 +528,35 @@ test('include → credits → stop: credits pay past the include, and the stop r
 	expect(await balance(resumed.stableUserId)).toBe(5_000_000)
 })
 
+test('a top-up past the monthly include applies funded rates right away, not the cached $0 include', async () => {
+	const user = await seedPro('credits-stop-topup-rates')
+	await consumeTimes(user, 'execute_calls_per_day', 500)
+	// Expire the 60s entitlement and monthly-usage caches warmed above, so
+	// the stop sees the rollup and the cache holds the $0 entitlement.
+	vi.useFakeTimers({ toFake: ['Date'] })
+	try {
+		vi.setSystemTime(Date.now() + 61_000)
+		await setRollup(user.stableUserId, 420)
+		await expectStopped(user, 'execute_calls_per_day', {
+			resource: 'unique_worker_days',
+			limit: 350,
+			current: 420,
+		})
+		await topUp(user.stableUserId, 500)
+		await consume(user, 'execute_calls_per_day')
+	} finally {
+		vi.useRealTimers()
+	}
+	expect(
+		await readDailyEntitlementResourceUsage({
+			env,
+			userId: ownerIdFromStored(user.stableUserId),
+			resource: 'execute_calls_per_day',
+			now,
+		}),
+	).toBe(501)
+}, 60_000)
+
 test('plans without a wallet are never stopped past the monthly include, and retired balances are never debited', async () => {
 	const walletless = [
 		await seedUser({ label: 'credits-stop-free' }),

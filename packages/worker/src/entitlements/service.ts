@@ -1515,21 +1515,21 @@ export async function consumeDailyEntitlement(
 	// Cached plan resolution: this runs on every execute call and every
 	// sandbox outbound fetch; the UserMeter consume below is the only
 	// counter state that must be fresh.
-	const entitlement = await getCachedUserEntitlement(input.db, {
+	const cachedEntitlement = await getCachedUserEntitlement(input.db, {
 		userId: input.userId,
 		email: input.email,
 	})
 	// Before the counter so a stopped attempt does not spend daily quota.
-	if (isPastIncludeStopResource(resource)) {
-		await assertWithinPastIncludeCredits({
-			db: input.db,
-			env: input.env,
-			userId: input.userId,
-			entitlement,
-			now,
-			orgBudget: input.orgBudget,
-		})
-	}
+	const entitlement = isPastIncludeStopResource(resource)
+		? await assertWithinPastIncludeCredits({
+				db: input.db,
+				env: input.env,
+				userId: input.userId,
+				entitlement: cachedEntitlement,
+				now,
+				orgBudget: input.orgBudget,
+			})
+		: cachedEntitlement
 	const plan = entitlement.plan
 	const limit = resolvePlanLimit(
 		plan,
@@ -1615,7 +1615,8 @@ const cachedMonthlyComputeUsage =
  * usage by about an hour; a later top-up forgives that overshoot instead of
  * charging it. A stop is confirmed against an uncached entitlement so a
  * top-up in another isolate resumes work right away. Org budgets are
- * checked after the include stop.
+ * checked after the include stop. Returns the entitlement callers should
+ * resolve limits from: the uncached one when the stop re-read it.
  */
 async function assertWithinPastIncludeCredits(input: {
 	db: D1Database
@@ -1624,7 +1625,8 @@ async function assertWithinPastIncludeCredits(input: {
 	entitlement: UserEntitlement
 	now: Date
 	orgBudget?: OrgBudgetGateContext
-}) {
+}): Promise<UserEntitlement> {
+	let entitlement = input.entitlement
 	if (input.entitlement.creditWallet === 'empty') {
 		const month = utcMonthKey(input.now)
 		const usage = await cachedMonthlyComputeUsage.getOrCreate(
@@ -1657,6 +1659,7 @@ async function assertWithinPastIncludeCredits(input: {
 					creditsStatus: 'add_credits',
 				})
 			}
+			entitlement = fresh
 		}
 	}
 	const budget = orgBudgetFromGateContext(input.userId, input.orgBudget)
@@ -1671,6 +1674,7 @@ async function assertWithinPastIncludeCredits(input: {
 		estimatedDeltaMicroUsd: 0,
 		now: input.now,
 	})
+	return entitlement
 }
 
 /**
