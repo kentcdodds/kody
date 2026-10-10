@@ -8,6 +8,10 @@ import {
 } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
+import {
+	authorize,
+	AuthorizationError,
+} from '#worker/authorization/authorize.ts'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
@@ -43,6 +47,11 @@ export function createAccountOrganizationsNewHandler(env: Env) {
 	} satisfies Action<typeof routes.accountOrganizationsNew>
 }
 
+/**
+ * Same authorization as MCP `orgCreate`: `org:write` on the bound request org
+ * (the signup organization for `/account/...`), then {@link createOrganization}
+ * which calls shared {@link createOrg}.
+ */
 export function createAccountOrganizationsNewPostHandler(env: Env) {
 	return {
 		middleware: [],
@@ -50,6 +59,18 @@ export function createAccountOrganizationsNewPostHandler(env: Env) {
 			const user = await readAuthenticatedAppUser(request, env)
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
+			}
+			try {
+				await authorize({ env, request: user.request }, 'org:write')
+			} catch (error) {
+				if (error instanceof AuthorizationError) {
+					return redirectWithError(
+						request,
+						'You do not have permission to create an organization.',
+						{ displayName: '', slug: '' },
+					)
+				}
+				throw error
 			}
 			const body = await request.formData().catch(() => null)
 			if (!body) {
