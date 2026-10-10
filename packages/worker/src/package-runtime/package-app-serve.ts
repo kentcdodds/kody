@@ -10,6 +10,11 @@ import {
 import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { packageAppHandoffQueryParam } from '#app/package-app-handoff.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import {
+	logPackageAppHttpError,
+	packageAppRuntimeRunIdHeader,
+	runtimeRunIdFromError,
+} from '#worker/package-runtime/package-app-diagnostics.ts'
 import { isComputeOverageLimitError } from '#worker/entitlements/errors.ts'
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
@@ -244,6 +249,7 @@ function createPackageAppErrorResponse(input: {
 	packageName: string
 	synthetic?: boolean
 	cause?: string
+	runtimeRunId?: string | null
 }) {
 	const messages = {
 		'host-setup': {
@@ -279,6 +285,12 @@ function createPackageAppErrorResponse(input: {
 	>
 	const message = messages[input.kind]
 	const status = input.kind === 'include-used-up' ? 429 : 500
+	logPackageAppHttpError({
+		request: input.request,
+		status,
+		phase: input.kind,
+		runtimeRunId: input.runtimeRunId ?? null,
+	})
 	const requestPath = new URL(input.request.url).pathname
 	const body = {
 		error: message.title,
@@ -525,20 +537,21 @@ export async function servePackageAppRequest(input: {
 	const packageRealtimePath = parsePackageRealtimePath(packageRealtimeRestPath)
 	if (packageRealtimePath && isWebSocketUpgradeRequest(request)) {
 		try {
-			return attachPackageAppServerTiming(
-				await packageRealtimeSessionRpc({
-					env,
-					userId: owner.userId,
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					sourceId: savedPackage.sourceId,
-					baseUrl,
-				}).connect(
-					createPackageCodeRequest(request),
-					packageRealtimePath.facet,
-				),
-				serverTiming,
-			)
+			const connected = await packageRealtimeSessionRpc({
+				env,
+				userId: owner.userId,
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				sourceId: savedPackage.sourceId,
+				baseUrl,
+			}).connect(createPackageCodeRequest(request), packageRealtimePath.facet)
+			logPackageAppHttpError({
+				request,
+				status: connected.status,
+				phase: 'realtime-response',
+				runtimeRunId: connected.headers.get(packageAppRuntimeRunIdHeader),
+			})
+			return attachPackageAppServerTiming(connected, serverTiming)
 		} catch (error) {
 			console.error('Package realtime handler failed:', error)
 			reportPackageAppFailure({
@@ -560,6 +573,7 @@ export async function servePackageAppRequest(input: {
 					packageName: savedPackage.name,
 					synthetic: dispatch?.synthetic === true,
 					cause: getErrorMessage(error),
+					runtimeRunId: runtimeRunIdFromError(error),
 				}),
 				serverTiming,
 			)
@@ -647,6 +661,7 @@ export async function servePackageAppRequest(input: {
 					packageName: savedPackage.name,
 					synthetic: dispatch?.synthetic === true,
 					cause: getErrorMessage(error),
+					runtimeRunId: runtimeRunIdFromError(error),
 				}),
 				serverTiming,
 			)
@@ -741,16 +756,25 @@ export async function servePackageAppRequest(input: {
 				packageName: savedPackage.name,
 				synthetic: dispatch?.synthetic === true,
 				cause: getErrorMessage(error),
+				runtimeRunId: runtimeRunIdFromError(error),
 			}),
 			serverTiming,
 		)
 	}
 
 	try {
-		const response = await pushServerTiming(serverTiming, 'entrypoint', () =>
+		const fetched = await pushServerTiming(serverTiming, 'entrypoint', () =>
 			entrypoint.fetch(forwardedRequest),
 		)
-		return attachPackageAppServerTiming(response, serverTiming)
+		// Leave x-kody-runtime-run-id on the response. The origin forward reads
+		// it for the runtime-worker hop log, then strips it before the browser.
+		logPackageAppHttpError({
+			request,
+			status: fetched.status,
+			phase: 'entrypoint-response',
+			runtimeRunId: fetched.headers.get(packageAppRuntimeRunIdHeader),
+		})
+		return attachPackageAppServerTiming(fetched, serverTiming)
 	} catch (error) {
 		console.error('Package app entrypoint failed:', error)
 		return attachPackageAppServerTiming(
@@ -759,6 +783,7 @@ export async function servePackageAppRequest(input: {
 				kind: 'package-entrypoint',
 				kodyId: savedPackage.kodyId,
 				packageName: savedPackage.name,
+				runtimeRunId: runtimeRunIdFromError(error),
 			}),
 			serverTiming,
 		)

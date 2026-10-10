@@ -4,7 +4,10 @@ import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import type * as AppBaseUrl from '#worker/app-base-url.ts'
 import type * as ModuleArtifacts from '#worker/package-invocations/module-artifacts.ts'
 import type * as PackageSource from '#worker/package-registry/source.ts'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 
 // Handler tests exercise the local construction path. Slim-origin forward
 // coverage lives in package-app-serve-slim-origin.node.test.ts.
@@ -118,6 +121,9 @@ vi.mock('#app/authenticated-user.ts', () => ({
 vi.mock('#app/auth-redirect.ts', () => ({
 	redirectToLogin: (...args: Parameters<typeof AuthRedirect.redirectToLogin>) =>
 		mockModule.redirectToLogin(...args),
+	redirectToLoginWhenUnauthenticated: (
+		...args: Parameters<typeof AuthRedirect.redirectToLogin>
+	) => mockModule.redirectToLogin(...args),
 }))
 
 vi.mock('#worker/app-base-url.ts', () => ({
@@ -246,12 +252,77 @@ test('handlePackageAppRequest reports host setup failures with helpful responses
 		},
 		request_path: '/@test-user/packages/example/api/data',
 	})
-	// Both host-setup failures are logged for operators.
-	expect(consoleError).toHaveBeenCalledTimes(2)
+	// Both host-setup failures are logged for operators, plus a structured
+	// package-app-http-error line that carries the request id.
+	expect(consoleError).toHaveBeenCalledTimes(4)
 	expect(consoleError).toHaveBeenCalledWith(
 		expect.any(String),
 		expect.any(Error),
 	)
+	expect(consoleError).toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.objectContaining({
+			status: 500,
+			phase: 'host-setup',
+			pathname: '/@test-user/packages/example/report',
+			runtimeRunId: null,
+		}),
+	)
+})
+
+test('handlePackageAppRequest logs auth failure when a session cookie is present', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
+	const response = await request('/@test-user/packages/example', {
+		headers: { Cookie: 'kody_session=super-secret; theme=dark' },
+	})
+	expect(response.status).toBe(302)
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'package-app-auth-failed',
+		expect.objectContaining({
+			method: 'GET',
+			pathname: '/@test-user/packages/example',
+			sessionCookiePresent: true,
+		}),
+	)
+	expect(JSON.stringify(consoleWarn.mock.calls)).not.toContain('super-secret')
+})
+
+test('handlePackageAppRequest does not log auth failure without a session cookie', async () => {
+	consoleWarn.mockImplementation(() => {})
+	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce(null as never)
+	const response = await request('/@test-user/packages/example')
+	expect(response.status).toBe(302)
+	expect(consoleWarn).not.toHaveBeenCalled()
+})
+
+test('handlePackageAppRequest logs an entrypoint 500 and keeps the runtime run id for the origin hop', async () => {
+	consoleError.mockImplementation(() => {})
+	servePackageEntrypoint(
+		async () =>
+			new Response('nope', {
+				status: 500,
+				headers: { 'x-kody-runtime-run-id': 'run-9' },
+			}),
+	)
+	const response = await request('/@test-user/packages/example', {
+		headers: {
+			'x-kody-request-id': '11111111-1111-4111-8111-111111111111',
+		},
+	})
+	expect(response.status).toBe(500)
+	expect(response.headers.get('x-kody-runtime-run-id')).toBe('run-9')
+	expect(consoleError).toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.objectContaining({
+			requestId: '11111111-1111-4111-8111-111111111111',
+			status: 500,
+			pathname: '/@test-user/packages/example',
+			runtimeRunId: 'run-9',
+			phase: 'entrypoint-response',
+		}),
+	)
+	expect(JSON.stringify(consoleError.mock.calls)).not.toContain('kody_session')
 })
 
 test('handlePackageAppRequest does not report package entrypoint failures to Kody Sentry', async () => {

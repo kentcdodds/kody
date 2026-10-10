@@ -5,6 +5,7 @@ import {
 	waitUntil as scheduleWorkerWaitUntil,
 } from 'cloudflare:workers'
 import { requireLocalPackageAppRuntimeBridge } from '#worker/runtime-worker-service.ts'
+import { packageAppRuntimeRunIdHeader } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
@@ -802,6 +803,31 @@ function resolveRealtimeHandler(userModule, facetName) {
 	return null;
 }
 
+async function readRuntimeRunId(runtimeRun) {
+	try {
+		const run = await runtimeRun;
+		return run && typeof run.id === 'string' ? run.id : null;
+	} catch (error) {
+		console.warn('package-app-run-record-read-failed', error);
+		return null;
+	}
+}
+
+function tagPackageAppRuntimeRun(response, runtimeRunId) {
+	if (!runtimeRunId || !response || response.status < 500) return response;
+	try {
+		const headers = new Headers(response.headers);
+		headers.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	} catch (error) {
+		return response;
+	}
+}
+
 export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 	async fetch(request) {
 		const runtimeBridge = this.env.${packageAppRuntimeBindingName};
@@ -838,6 +864,15 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				}
 				return await fetchHandler(request, runtimeEnv, this.ctx);
 			});
+			let outgoing = response;
+			if (response && response.status >= 500) {
+				const runtimeRunId = await readRuntimeRunId(runtimeRun);
+				console.error('package-app-runtime-http-error', {
+					runtimeRunId,
+					httpStatus: response.status,
+				});
+				outgoing = tagPackageAppRuntimeRun(response, runtimeRunId);
+			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'success',
@@ -846,9 +881,18 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				},
 				logs: consoleCapture.logs,
 			});
-			return response;
+			return outgoing;
 		} catch (error) {
 			const enrichedError = enrichUnboundPackagesInvokeError(error);
+			const runtimeRunId = await readRuntimeRunId(runtimeRun);
+			console.error('package-app-runtime-threw', { runtimeRunId });
+			if (enrichedError && typeof enrichedError === 'object') {
+				try {
+					enrichedError.kodyRuntimeRunId = runtimeRunId;
+				} catch (assignError) {
+					// Some thrown values are frozen. The log line above still has the id.
+				}
+			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,
 				status: 'error',
