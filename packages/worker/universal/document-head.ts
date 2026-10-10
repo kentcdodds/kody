@@ -36,6 +36,8 @@ type DocumentHeadLink = {
 	hrefPath: string
 	type?: string
 	title?: string
+	/** Keep href origin-relative for same-origin assets (e.g. stylesheets under CSP). */
+	sameOrigin?: boolean
 }
 
 type DocumentHeadOg = {
@@ -175,7 +177,13 @@ function featurePageHead(
 ): DocumentHeadDescriptor {
 	return {
 		...publicPageHead(pageId, title, {
-			links: [{ rel: 'stylesheet', hrefPath: '/feature-pages.css' }],
+			links: [
+				{
+					rel: 'stylesheet',
+					hrefPath: '/feature-pages.css',
+					sameOrigin: true,
+				},
+			],
 		}),
 		description: publicOgPages[pageId].ogDescription,
 	}
@@ -620,7 +628,7 @@ export function absolutizeDocumentHead(
 			: undefined,
 		links: descriptor.links?.map((link) => ({
 			rel: link.rel,
-			href: toAbsolute(link.hrefPath),
+			href: link.sameOrigin ? link.hrefPath : toAbsolute(link.hrefPath),
 			type: link.type,
 			title: link.title,
 		})),

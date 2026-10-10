@@ -190,6 +190,6 @@ test.each([
 	)
 	expect(head.links).toContainEqual({
 		rel: 'stylesheet',
-		href: 'https://kody.codes/feature-pages.css',
+		href: '/feature-pages.css',
 	})
 })
