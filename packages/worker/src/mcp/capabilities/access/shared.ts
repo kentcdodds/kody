@@ -207,8 +207,6 @@ const ownerOnlyOrgGrantPermissions: ReadonlySet<OrgPermission> =
 		'org:write',
 		'member:write',
 		'member:delete',
-		'billing:read',
-		'billing:write',
 	])
 
 /**
