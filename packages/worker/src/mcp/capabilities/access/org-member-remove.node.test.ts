@@ -198,3 +198,88 @@ test('orgMemberRemove retries credential revoke after the membership is already 
 		.first<{ deleted_at: string | null }>()
 	expect(owner?.deleted_at).toBeNull()
 })
+
+test('a non-owner cannot resume offboarding of a tombstoned owner', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyAllMigrations(
+		sqlite,
+		new URL('../../../../migrations/', import.meta.url),
+	)
+	const db = createD1FromSqlite(sqlite)
+	const orgId = 'org-owner-retry'
+	const ownerId = testStableUserIdFromEmail('tomb-owner@example.com')
+	const memberId = testStableUserIdFromEmail('tomb-member@example.com')
+	const ts = '2026-01-01T00:00:00.000Z'
+	const deletedAt = '2026-10-01T12:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO orgs (
+				id, slug, display_name, plan, entitlement_ladder, created_at, updated_at
+			) VALUES (?, 'owner-retry', 'Owners', 'free', 'public', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'owner', ?, ?), (?, ?, 'member', ?, NULL)`,
+		)
+		.bind(orgId, ownerId, ts, deletedAt, orgId, memberId, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO grants (
+				id, org_id, resource_type, resource_id, subject_type, subject_id,
+				created_by_user_id, created_at, updated_at
+			) VALUES (
+				'grant-member-delete', ?, 'org', ?, 'user', ?, ?, ?, ?
+			)`,
+		)
+		.bind(orgId, orgId, memberId, ownerId, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO grant_permissions (grant_id, permission)
+			 VALUES ('grant-member-delete', 'member:delete')`,
+		)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-owner-retry', ?, ?, 'owner token', 'hash', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(ownerId, orgId, ts, ts, ts, ts)
+		.run()
+
+	await expect(
+		orgMemberRemoveCapability.handler(
+			{ user_id: ownerId },
+			{
+				env: { APP_DB: db } as Env,
+				callerContext: createMcpCallerContext({
+					source: { kind: 'mcp-oauth' },
+					baseUrl: 'https://heykody.dev',
+					user: {
+						userId: personIdFromStored(memberId),
+						email: 'tomb-member@example.com',
+						displayName: 'Member',
+					},
+					orgBinding: {
+						org: { id: ownerIdFromStored(orgId), slug: 'owner-retry' },
+						role: 'member',
+					},
+				}),
+			},
+		),
+	).rejects.toThrow(/Only an Owner can remove an Owner/)
+	const token = await db
+		.prepare(`SELECT revoked_at FROM api_tokens WHERE id = 'token-owner-retry'`)
+		.first<{ revoked_at: string | null }>()
+	expect(token?.revoked_at).toBeNull()
+})

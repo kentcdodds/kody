@@ -216,6 +216,15 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 							'That person is not a member of this organization.',
 						)
 					}
+					if (tombstone.role === 'owner') {
+						const access = await computeEffectivePermissions({
+							env: ctx.env,
+							request,
+						})
+						if (!access.isOwner) {
+							throw new McpCallerError('Only an Owner can remove an Owner.')
+						}
+					}
 					await onMemberSoftRemoved({
 						env: ctx.env,
 						orgId: request.org.id,
