@@ -9,13 +9,8 @@ import {
 	uniqueOauthScopes,
 } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
-import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
-import {
-	organizationsWithSignupFallback,
-	type OrganizationSummary,
-} from '#universal/org-pages.ts'
+import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
@@ -81,32 +76,9 @@ import {
 
 export { connectOauthRouteLoader } from './connect-oauth-shared.ts'
 
-/** Org integrations page for a connection that just finished OAuth. */
-export function connectOauthConnectionHref(
-	session: {
-		organizations?: ReadonlyArray<OrganizationSummary>
-		username: string
-	} | null,
-	providerKey: string,
-) {
-	if (!session) return '/account'
-	const organizations = organizationsWithSignupFallback({
-		organizations: session.organizations ?? [],
-		username: session.username,
-	})
-	const slug =
-		organizations.find((org) => org.personal)?.slug ?? organizations[0]?.slug
-	return slug
-		? orgSectionRestPath(slug, 'integrations', providerKey)
-		: '/account'
-}
-
 export function ConnectOauthRoute(handle: Handle) {
-	// The real status arrives once the query config and any stored/built-in
-	// provider config resolve; starting on "Ready to connect." flashed a
-	// misleading state on slow connections. Provider visits resolve during
-	// render from SSR-embedded / SPA-preloaded loader data, so this fallback
-	// only shows on callback returns and loader-failure refetches.
+	// Stay on "Loading…" until provider config resolves. "Ready to connect."
+	// flashed on slow connections. The fallback only shows on callback returns.
 	let statusMessage = 'Loading provider configuration…'
 	let statusTone: ConnectOauthStatusTone = 'info'
 	let currentStep: ConnectOauthStep = 'setup'
@@ -806,7 +778,7 @@ export function ConnectOauthRoute(handle: Handle) {
 								void approveAllHostApprovals()
 							},
 							connectionHref: connectOauthConnectionHref(
-								readAppSession(handle).session,
+								handle,
 								currentConfig.providerKey,
 							),
 						})

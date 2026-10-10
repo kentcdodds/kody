@@ -10,7 +10,6 @@ import {
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
 import { docHref } from '#universal/docs-nav.ts'
-import { relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { colors } from '#universal/styles/tokens.ts'
 
@@ -18,14 +17,6 @@ const accountWebhooksApiPath = routes.accountWebhooksApi.href()
 
 /** The triggers guide section on inbound webhooks (`docs/guides/triggers.md`). */
 export const webhooksDocHref = `${docHref('triggers')}#inbound-webhooks-the-external-http-knock`
-
-/** Activity filtered to webhook deliveries (metadata only; bodies are never stored). */
-export function webhookDeliveriesHref(currentHref: string) {
-	return relocateAccountHref(
-		'/account/activity?view=recent&status=all&surface=webhook',
-		currentHref,
-	)
-}
 
 export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
 

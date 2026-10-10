@@ -24,7 +24,7 @@ import {
 	summarizeStoredSetupState,
 } from './connect-oauth-config.ts'
 import { renderSuccessCard } from './connect-oauth-forms.tsx'
-import { connectOauthConnectionHref } from './connect-oauth.tsx'
+import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 
 function makeQuery(
 	provider: string,
@@ -784,34 +784,54 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 	expect(fallbackHtml).not.toContain(prompt)
 })
 
+function sessionHandle(
+	session: {
+		username: string
+		organizations: Array<{
+			slug: string
+			displayName: string | null
+			role: 'owner' | 'member'
+			personal: boolean
+		}>
+	} | null,
+) {
+	return {
+		context: {
+			get: () => ({ session, status: 'ready' as const }),
+		},
+	} as unknown as Parameters<typeof connectOauthConnectionHref>[0]
+}
+
 test('oauth success link uses the signup org when memberships are missing', () => {
-	expect(connectOauthConnectionHref(null, 'google-work')).toBe('/account')
+	expect(connectOauthConnectionHref(sessionHandle(null), 'google-work')).toBe(
+		'/account',
+	)
 	expect(
 		connectOauthConnectionHref(
-			{ username: 'ada', organizations: [] },
+			sessionHandle({ username: 'ada', organizations: [] }),
 			'google-work',
 		),
 	).toBe('/@ada/-/integrations/google-work')
 	expect(
 		connectOauthConnectionHref(
-			{
+			sessionHandle({
 				username: 'ada',
 				organizations: [
 					{ slug: 'acme', displayName: null, role: 'member', personal: false },
 				],
-			},
+			}),
 			'google-work',
 		),
 	).toBe('/@acme/-/integrations/google-work')
 	expect(
 		connectOauthConnectionHref(
-			{
+			sessionHandle({
 				username: 'ada',
 				organizations: [
 					{ slug: 'acme', displayName: null, role: 'member', personal: false },
 					{ slug: 'ada', displayName: null, role: 'owner', personal: true },
 				],
-			},
+			}),
 			'google-work',
 		),
 	).toBe('/@ada/-/integrations/google-work')

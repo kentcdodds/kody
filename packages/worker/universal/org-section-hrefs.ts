@@ -8,7 +8,7 @@ import {
  * One path segment, with Remix's dot encoding (`%2E`), so a name like
  * `google.personal` survives route matching.
  */
-export function encodedPathSegment(segment: string) {
+function encodedPathSegment(segment: string) {
 	return createHref('/:segment', { segment }).slice(1)
 }
 
