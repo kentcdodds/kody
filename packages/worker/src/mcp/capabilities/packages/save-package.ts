@@ -445,6 +445,8 @@ export const savePackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
+				actorUserId: owner.actorUserId,
+				userEmail: owner.ownerEmail,
 				packageId,
 				sourceId: ensuredSource.id,
 				waitUntil: ctx.waitUntil,

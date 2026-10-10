@@ -152,3 +152,49 @@ export async function resolveBackgroundMcpUser(
 	})
 	return await value
 }
+
+export function isBackgroundMcpUserNotFoundError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.message.startsWith('Background MCP user was not found:')
+	)
+}
+
+/**
+ * Resolve the person identity for a background run keyed by an OwnerId.
+ *
+ * Package storage, jobs, and invoke metering use the org OwnerId. Team orgs
+ * have no `users` row at that id, so prefer an explicit acting person when the
+ * caller has one; otherwise fall back to a live org Owner membership after the
+ * personal-org (ownerId === person id) lookup misses.
+ */
+export async function resolveBackgroundMcpUserForOwner(
+	db: D1Database,
+	input: { ownerId: string; actorUserId?: string | null },
+): Promise<McpUserContext> {
+	const actorUserId = input.actorUserId?.trim()
+	if (actorUserId) {
+		return await resolveBackgroundMcpUser(db, actorUserId)
+	}
+	try {
+		return await resolveBackgroundMcpUser(db, input.ownerId)
+	} catch (error) {
+		if (!isBackgroundMcpUserNotFoundError(error)) throw error
+	}
+	const ownerMember = await db
+		.prepare(
+			`SELECT user_id
+			 FROM org_memberships
+			 WHERE org_id = ?
+			   AND role = 'owner'
+			   AND deleted_at IS NULL
+			 ORDER BY created_at ASC
+			 LIMIT 1`,
+		)
+		.bind(input.ownerId)
+		.first<{ user_id: string }>()
+	if (!ownerMember?.user_id) {
+		throw new Error(`Background MCP user was not found: ${input.ownerId}`)
+	}
+	return await resolveBackgroundMcpUser(db, ownerMember.user_id)
+}

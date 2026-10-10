@@ -18,7 +18,7 @@ import {
 } from '#worker/run-records/types.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
-import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { resolveBackgroundMcpUserForOwner } from '#worker/identity/background-mcp-user.ts'
 import {
 	buildPackageInvocationStorageId,
 	resolveInvocationRuntimeName,
@@ -126,10 +126,14 @@ export async function invokeSavedPackageModule(input: {
 	// response nor leave a terminal denial that outlives the suspension.
 	// Other identity failures fall through to module execution, which
 	// reports them as before.
-	const suspension = await resolveBackgroundMcpUser(
-		input.env.APP_DB,
-		input.actor.orgId,
-	).then(
+	const actorPersonId =
+		input.actor.request.kind === 'inherited'
+			? (input.actor.request.lineage.actor?.userId ?? null)
+			: null
+	const suspension = await resolveBackgroundMcpUserForOwner(input.env.APP_DB, {
+		ownerId: input.actor.orgId,
+		actorUserId: actorPersonId,
+	}).then(
 		() => null,
 		(error: unknown) => (isAccountSuspendedError(error) ? error : null),
 	)

@@ -75,7 +75,7 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
-import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { resolveBackgroundMcpUserForOwner } from '#worker/identity/background-mcp-user.ts'
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -645,10 +645,16 @@ async function createPackageJobCallerContext(input: {
 	env: Env
 	db: D1Database
 	baseUrl: string
+	/** Package storage OwnerId (person or team org). */
 	userId: string
+	/** Acting person when `userId` is a team org OwnerId. */
+	actorUserId?: string | null
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
-	const user = await resolveBackgroundMcpUser(input.db, input.userId)
+	const user = await resolveBackgroundMcpUserForOwner(input.db, {
+		ownerId: input.userId,
+		actorUserId: input.actorUserId,
+	})
 	const wire = createMcpCallerContextWire({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
@@ -687,6 +693,8 @@ async function resolveJobRuntimeCallerContext(input: {
 export async function syncPackageJobsForPackage(input: {
 	env: Env
 	userId: string
+	/** Acting person when `userId` is a team org OwnerId. */
+	actorUserId?: string | null
 	baseUrl: string
 	packageId: string
 	sourceId: string
@@ -697,12 +705,26 @@ export async function syncPackageJobsForPackage(input: {
 		stableUserId: input.userId,
 		env: input.env,
 		async write() {
+			const desiredJobs = input.manifest.kody.jobs ?? {}
+			const existingRows = await jobsData(input.env).listJobsForUser({
+				userId: input.userId,
+			})
+			const packageRows = existingRows.filter(
+				(row) => row.source_id === input.sourceId,
+			)
+			// No jobs to create, update, or remove: skip person resolution so a
+			// team-org packageSave without jobs does not need a users row at the
+			// org OwnerId.
+			if (Object.keys(desiredJobs).length === 0 && packageRows.length === 0) {
+				return false
+			}
 			const [callerContext, source] = await Promise.all([
 				createPackageJobCallerContext({
 					env: input.env,
 					db: input.env.APP_DB,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
+					actorUserId: input.actorUserId,
 					packageId: input.packageId,
 				}),
 				getEntitySourceByIdForUser(input.env.APP_DB, {
@@ -712,13 +734,6 @@ export async function syncPackageJobsForPackage(input: {
 			])
 			const callerContextJson = serializeCallerContext(callerContext)
 			const publishedCommit = source?.published_commit ?? null
-			const desiredJobs = input.manifest.kody.jobs ?? {}
-			const existingRows = await jobsData(input.env).listJobsForUser({
-				userId: input.userId,
-			})
-			const packageRows = existingRows.filter(
-				(row) => row.source_id === input.sourceId,
-			)
 			const existingByName = new Map(
 				packageRows.map((row) => [row.name, row] as const),
 			)
@@ -1300,9 +1315,12 @@ export async function executeJobOnce(input: {
 					}
 					completedOccurrence = true
 				} else {
-					const backgroundUser = await resolveBackgroundMcpUser(
+					const backgroundUser = await resolveBackgroundMcpUserForOwner(
 						input.env.APP_DB,
-						input.job.userId,
+						{
+							ownerId: input.job.userId,
+							actorUserId: input.callerContext.user?.userId,
+						},
 					).catch((error: unknown) => {
 						throw markPreExecutionTransientError(error)
 					})

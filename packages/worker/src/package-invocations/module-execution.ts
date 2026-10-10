@@ -13,7 +13,7 @@ import {
 	getEmailMessageWithAttachmentsById,
 } from '#worker/email/service.ts'
 import { getInternalEmailMessageById } from '#worker/email/mailbox-internal-read.ts'
-import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
+import { resolveBackgroundMcpUserForOwner } from '#worker/identity/background-mcp-user.ts'
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { consumeDailyEntitlement } from '#worker/entitlements/service.ts'
 import {
@@ -142,10 +142,14 @@ export async function runSavedPackageModuleOnce(
 ): Promise<SavedPackageModuleRunOutcome> {
 	let executionStarted = false
 	try {
-		const user = await resolveBackgroundMcpUser(
-			input.env.APP_DB,
-			input.actor.orgId,
-		)
+		const actorPersonId =
+			input.actor.request.kind === 'inherited'
+				? (input.actor.request.lineage.actor?.userId ?? null)
+				: null
+		const user = await resolveBackgroundMcpUserForOwner(input.env.APP_DB, {
+			ownerId: input.actor.orgId,
+			actorUserId: actorPersonId,
+		})
 		const { artifact, source: sourceRow } =
 			input.preloadedModuleArtifact ??
 			(await ensureModuleArtifact({

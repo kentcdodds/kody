@@ -52,15 +52,33 @@ export const storageRunnerMockModule = {
 	})),
 }
 
-export const identityMockModule = {
-	resolveBackgroundMcpUser: vi.fn<
-		typeof backgroundMcpUserModule.resolveBackgroundMcpUser
-	>(async (_db, userId) => ({
+async function mockBackgroundMcpUser(
+	_db: D1Database,
+	userId: string,
+): Promise<{
+	userId: ReturnType<typeof personIdFromStored>
+	email: string
+	username: string
+	displayName: string
+}> {
+	return {
 		userId: personIdFromStored(userId),
 		email: `${userId}@example.com`,
 		username: userId,
 		displayName: userId,
-	})),
+	}
+}
+
+export const identityMockModule = {
+	resolveBackgroundMcpUser: vi.fn<
+		typeof backgroundMcpUserModule.resolveBackgroundMcpUser
+	>(mockBackgroundMcpUser),
+	resolveBackgroundMcpUserForOwner: vi.fn<
+		typeof backgroundMcpUserModule.resolveBackgroundMcpUserForOwner
+	>(async (db, input) => {
+		const userId = input.actorUserId?.trim() || input.ownerId
+		return await mockBackgroundMcpUser(db, userId)
+	}),
 }
 
 export function sourceServiceMock() {
@@ -129,6 +147,11 @@ export function backgroundMcpUserMock() {
 				typeof backgroundMcpUserModule.resolveBackgroundMcpUser
 			>
 		) => identityMockModule.resolveBackgroundMcpUser(...args),
+		resolveBackgroundMcpUserForOwner: (
+			...args: Parameters<
+				typeof backgroundMcpUserModule.resolveBackgroundMcpUserForOwner
+			>
+		) => identityMockModule.resolveBackgroundMcpUserForOwner(...args),
 	}
 }
 
@@ -202,12 +225,14 @@ export function resetJobServiceMocks() {
 	})
 	identityMockModule.resolveBackgroundMcpUser.mockReset()
 	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
-		async (_db: D1Database, userId: string) => ({
-			userId: personIdFromStored(userId),
-			email: `${userId}@example.com`,
-			username: userId,
-			displayName: userId,
-		}),
+		mockBackgroundMcpUser,
+	)
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockReset()
+	identityMockModule.resolveBackgroundMcpUserForOwner.mockImplementation(
+		async (db, input) => {
+			const userId = input.actorUserId?.trim() || input.ownerId
+			return await mockBackgroundMcpUser(db, userId)
+		},
 	)
 }
 
