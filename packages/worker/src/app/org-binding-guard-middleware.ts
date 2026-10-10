@@ -19,9 +19,10 @@ export function createOrgBindingGuardMiddleware(env: Env): Middleware {
 		if (!(await isOrgRequestDenied(request, env, auth.user.mcpUser.userId))) {
 			return await next()
 		}
-		if (url.pathname.endsWith('.json')) {
-			return jsonResponse({ ok: false, error: 'Organization not found.' }, 404)
+		// Page form posts (MCP consent) read JSON too; only page loads get HTML.
+		if (request.method === 'GET' && !url.pathname.endsWith('.json')) {
+			return renderIllustratedNotFoundPage({ request, env })
 		}
-		return renderIllustratedNotFoundPage({ request, env })
+		return jsonResponse({ ok: false, error: 'Organization not found.' }, 404)
 	}
 }

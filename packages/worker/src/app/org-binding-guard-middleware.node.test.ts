@@ -245,7 +245,10 @@ test('every org-scoped route 404s for an org the person cannot use', async () =>
 				)
 				continue
 			}
-			if (new URL(entry.href, origin).pathname.endsWith('.json')) {
+			const pageLoad =
+				method === 'GET' &&
+				!new URL(entry.href, origin).pathname.endsWith('.json')
+			if (!pageLoad) {
 				const body = JSON.stringify(await response.json())
 				if (body !== '{"ok":false,"error":"Organization not found."}') {
 					failures.push(`${entry.name} ${method}: ${body}`)
