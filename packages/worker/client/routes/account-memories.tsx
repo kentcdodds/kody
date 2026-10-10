@@ -53,7 +53,7 @@ const clampedCellCss = css(recordCellClamp(30))
 
 const accountMemoriesApiPath = routes.accountMemoriesApi.href()
 const accountMemoriesExportPath = routes.accountMemoriesExport.href()
-const memoriesRoute = createListDetailRoute(routes.accountMemories.href())
+const memoriesRoute = createListDetailRoute('/account/memories')
 
 type MessageTone = 'info' | 'error'
 type DeleteMode = 'soft' | 'hard' | null
@@ -265,7 +265,9 @@ export function AccountMemoriesRoute(handle: Handle) {
 			setMessage(
 				input.force ? 'Permanently deleted memory.' : 'Soft-deleted memory.',
 			)
-			navigate(memoriesRoute.buildListHref(getCurrentSearch()))
+			navigate(
+				memoriesRoute.buildListHref(getCurrentSearch(), getCurrentHref()),
+			)
 			handle.update()
 		} catch (error) {
 			actionState = 'idle'
@@ -425,7 +427,11 @@ export function AccountMemoriesRoute(handle: Handle) {
 								// the row being mutated would strand the confirmation.
 								href: isMutating
 									? undefined
-									: memoriesRoute.buildDetailHref(item.id, getCurrentSearch()),
+									: memoriesRoute.buildDetailHref(
+											item.id,
+											getCurrentSearch(),
+											getCurrentHref(),
+										),
 								cells: {
 									subject: <span mix={clampedCellCss}>{item.subject}</span>,
 									status: (

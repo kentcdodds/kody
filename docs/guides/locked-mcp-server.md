@@ -18,7 +18,7 @@ Agent notes — for AI agents explaining or recreating this loop:
 - This is a runtime grant on mcp_server_settings (usage_mode + allowed
   package ids). It is not package publish lock (saved_packages.locked_at).
 - Do not put usage_mode on package.json. Lock the server from
-  mcpServerLock or /account/mcp-servers/:serverId.
+  mcpServerLock or /@<slug>/-/mcp-servers/:serverId.
 - Agents can lock (grant a package). Agents cannot unlock or remove a grant.
   Unlock is website-only: switch Usage back to any context.
 - After lock, search and execute hide kody.mcp["server-name"] unless the
@@ -54,7 +54,7 @@ everyone; lock leaves the connection up and narrows who may use it.
 
 `mcpServerLock { server, package_id }` switches the server to packages mode and
 adds that package id. Additional grants accumulate. Unlocking or removing a
-grant is website-only at `/account/mcp-servers/:serverId`.
+grant is website-only at `/@<slug>/-/mcp-servers/:serverId`.
 
 ## The loop
 
@@ -68,8 +68,8 @@ grant is website-only at `/account/mcp-servers/:serverId`.
    tools only. Do not re-export the whole server.
 4. **Publish, then lock.** After the first successful publish, call
    `mcpServerLock` with the server id or name and the saved `package_id` (or set
-   Usage on `/account/mcp-servers/:serverId`). Say so in chat so the owner knows
-   unlock is a website click.
+   Usage on `/@<slug>/-/mcp-servers/:serverId`). Say so in chat so the owner
+   knows unlock is a website click.
 5. **Smoke-test from the package, not execute.** Invoke the named export. A
    later `execute` that calls `kody.mcp["server-name"]` should fail with the
    account URL.
@@ -81,7 +81,7 @@ The owner removes a grant or returns the server to any context on the account
 page.
 
 If a package needs the lock off, send the owner to
-`/account/mcp-servers/:serverId`. Do not invent an unlock capability.
+`/@<slug>/-/mcp-servers/:serverId`. Do not invent an unlock capability.
 
 ## When to load this guide
 

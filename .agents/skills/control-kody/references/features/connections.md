@@ -18,7 +18,7 @@ profile param).
 ## How to get there
 
 Canonical pages are `/@<slug>/-/connections` (and `/@<slug>/-/connections/new`,
-`/@<slug>/-/connections/new/:agent`). `/account/connections` redirects there.
+`/@<slug>/-/connections/new/:agent`).
 
 - `/@<slug>/-/connections` — connected list, Add connection button, MCP URL.
   Does not nest the add grid. Profiles (when flagged) sit under Unlimited.
@@ -35,8 +35,8 @@ Account rail → Connections; Overview keeps a "Manage connections" link.
 ```bash
 node tools/control-kody.ts login
 node tools/control-kody.ts request GET /account/connected-agents.json
-node tools/control-kody.ts request GET /account/connections/new
-node tools/control-kody.ts request GET /account/connections/new/cursor
+node tools/control-kody.ts request GET /@<slug>/-/connections/new
+node tools/control-kody.ts request GET /@<slug>/-/connections/new/cursor
 # Create a profile (experimenter + flag on):
 node tools/control-kody.ts request POST /account/connected-agents.json --json '{"intent":"create","name":"ci","grants":[{"resourceType":"package","resourceId":"<package-id>","actions":["read","execute"]}]}'
 ```

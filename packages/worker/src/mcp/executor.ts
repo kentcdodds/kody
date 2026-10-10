@@ -1631,7 +1631,7 @@ export function getExecutionErrorDetails(
 			message,
 			nextStep: reconnectHref
 				? `Send the user to ${reconnectHref} so they can reconnect ${name ?? 'this integration'}, then retry.`
-				: 'Ask the user to reconnect this integration from /account/waiting or /account/integrations, then retry.',
+				: 'Ask the user to reconnect this integration from /@<slug>/-/waiting or /@<slug>/-/integrations, then retry.',
 			integrationName: name,
 			reconnectHref,
 			suggestedAction: {

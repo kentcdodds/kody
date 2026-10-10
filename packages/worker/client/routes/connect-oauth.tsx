@@ -10,6 +10,7 @@ import {
 } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { connectOauthConnectionHref } from './connect-oauth-href.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
@@ -76,11 +77,8 @@ import {
 export { connectOauthRouteLoader } from './connect-oauth-shared.ts'
 
 export function ConnectOauthRoute(handle: Handle) {
-	// The real status arrives once the query config and any stored/built-in
-	// provider config resolve; starting on "Ready to connect." flashed a
-	// misleading state on slow connections. Provider visits resolve during
-	// render from SSR-embedded / SPA-preloaded loader data, so this fallback
-	// only shows on callback returns and loader-failure refetches.
+	// Stay on "Loading…" until provider config resolves. "Ready to connect."
+	// flashed on slow connections. The fallback only shows on callback returns.
 	let statusMessage = 'Loading provider configuration…'
 	let statusTone: ConnectOauthStatusTone = 'info'
 	let currentStep: ConnectOauthStep = 'setup'
@@ -779,6 +777,10 @@ export function ConnectOauthRoute(handle: Handle) {
 							onApproveAllHosts: () => {
 								void approveAllHostApprovals()
 							},
+							connectionHref: connectOauthConnectionHref(
+								handle,
+								currentConfig.providerKey,
+							),
 						})
 					: null}
 				{currentStep === 'success'

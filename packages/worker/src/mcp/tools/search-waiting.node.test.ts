@@ -34,7 +34,7 @@ test('search waiting markdown omits setup and caps then points at waitingSummary
 			title: 'one expired',
 			severity: 'degraded',
 			doLabel: 'Update secret',
-			href: '/account/secrets/user/one',
+			href: '/@ada/-/secrets/user/one',
 		}),
 		item({
 			id: 'secret-expired:two',
@@ -42,7 +42,7 @@ test('search waiting markdown omits setup and caps then points at waitingSummary
 			title: 'two expired',
 			severity: 'degraded',
 			doLabel: 'Update secret',
-			href: '/account/secrets/user/two',
+			href: '/@ada/-/secrets/user/two',
 		}),
 		item({
 			id: 'secret-expired:three',
@@ -50,7 +50,7 @@ test('search waiting markdown omits setup and caps then points at waitingSummary
 			title: 'three expired',
 			severity: 'degraded',
 			doLabel: 'Update secret',
-			href: '/account/secrets/user/three',
+			href: '/@ada/-/secrets/user/three',
 		}),
 		item({
 			id: 'onboarding:connect-agent',
@@ -83,7 +83,7 @@ test('search waiting markdown omits setup and caps then points at waitingSummary
 	expect(markdown).toContain('two expired')
 	expect(markdown).not.toContain('three expired')
 	expect(markdown).toContain('1 more · waitingSummary')
-	expect(markdown).toContain('/account/waiting')
+	expect(markdown).toContain('/@ada/-/waiting')
 
 	expect(
 		toSearchWaitingStructured({

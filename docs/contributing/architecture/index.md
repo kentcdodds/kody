@@ -104,7 +104,7 @@ wrote during that fetch) so the next cron can skip the synthetic.
   justification required for any new awaited D1 write on a hot invocation path.
 - [Run records](./run-records.md): per-user execution history and logs across
   every runtime surface (`RunLog` Durable Object, `runs` MCP domain,
-  `/account/activity`).
+  `/@<slug>/-/activity`).
 - [Runtime worker migration runbook](./runtime-worker-migration-runbook.md):
   ownership of the package runtime lane on `kody-runtime` and the deploy
   invariants later uploads must keep

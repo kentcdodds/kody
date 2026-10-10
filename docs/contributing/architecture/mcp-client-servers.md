@@ -151,10 +151,10 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    Authorization-server reuse of a rotating refresh token still requires a human
    re-auth. The account page offers Reconnect when automatic recovery cannot
    finish.
-6. The route redirects to `/account/mcp-servers/:serverId?auth=success|error`
+6. The route redirects to `/@<slug>/-/mcp-servers/:serverId?auth=success|error`
    when the callback resolves to a server (including failures), or
-   `/account/mcp-servers?auth=error` when it does not, for user feedback. Tokens
-   live only in the DO storage; they never reach D1 or the client.
+   `/@<slug>/-/mcp-servers?auth=error` when it does not, for user feedback.
+   Tokens live only in the DO storage; they never reach D1 or the client.
 
 Because the callback is resolved through the session cookie, the OAuth state is
 always looked up in the hub belonging to the signed-in user — cross-user
@@ -193,7 +193,7 @@ fetch `{canonical-app-origin}/oauth/client-metadata.json`; that document's
 
 ## Management surfaces
 
-- **UI**: `/account/mcp-servers` (add with optional bearer token, authorize,
+- **UI**: `/@<slug>/-/mcp-servers` (add with optional bearer token, authorize,
   reconnect, refresh tools, enable/disable, set package usage, remove; shows
   live state, discovered tools, and the server mark next to the name — catalog
   first, then favicon, then a letter).

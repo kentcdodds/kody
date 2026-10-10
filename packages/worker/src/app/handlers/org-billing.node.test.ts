@@ -111,7 +111,6 @@ vi.mock('#worker/billing/stripe-client.ts', async (importOriginal) => {
 
 const {
 	createAccountBillingCancellationFeedbackApiHandler,
-	createAccountBillingRedirectHandler,
 	createOrgBillingApiHandler,
 	createOrgBillingCheckoutApiHandler,
 	createOrgBillingPortalHandler,
@@ -720,38 +719,6 @@ test('the Stripe portal opens for the org in the URL and only for managers', asy
 	signInAs('dan')
 	expect((await getPortal()).status).toBe(404)
 	expect(mocks.createBillingPortalSession).toHaveBeenCalledTimes(1)
-})
-
-test('/account/billing URLs open the signup organization billing page', async () => {
-	const env = createEnv()
-	signInAs('ada')
-	const page = await call(
-		createAccountBillingRedirectHandler,
-		env,
-		'/account/billing?error=portal_failed',
-	)
-	expect(page.status).toBe(302)
-	expect(page.headers.get('location')).toBe(
-		'https://example.com/@ada/-/billing?error=portal_failed',
-	)
-
-	const success = await call(
-		(e) => createAccountBillingRedirectHandler(e, 'success'),
-		env,
-		'/account/billing/success?session_id=cs_old',
-	)
-	expect(success.headers.get('location')).toBe(
-		'https://example.com/@ada/-/billing/success?session_id=cs_old',
-	)
-
-	const portal = await call(
-		(e) => createAccountBillingRedirectHandler(e, 'portal'),
-		env,
-		'/account/billing/portal',
-	)
-	expect(portal.headers.get('location')).toBe(
-		'https://example.com/@ada/-/billing/portal',
-	)
 })
 
 test('billing cancellation feedback records platform feedback', async () => {

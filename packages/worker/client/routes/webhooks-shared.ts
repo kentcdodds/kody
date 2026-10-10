@@ -18,9 +18,6 @@ const accountWebhooksApiPath = routes.accountWebhooksApi.href()
 /** The triggers guide section on inbound webhooks (`docs/guides/triggers.md`). */
 export const webhooksDocHref = `${docHref('triggers')}#inbound-webhooks-the-external-http-knock`
 
-/** Activity filtered to webhook deliveries (metadata only; bodies are never stored). */
-export const webhookDeliveriesHref = `${routes.accountActivity.href()}?view=recent&status=all&surface=webhook`
-
 export type WebhookIntent = 'mint' | 'rotate' | 'reveal' | 'enable' | 'disable'
 
 /** Anchor of the Webhooks section on package settings. */

@@ -29,22 +29,21 @@ Then drive the surface with `login`, `request`, `preview`, and `health`. Run
 - [passkeys](./passkeys.md) — `/account/passkeys`
 - [account](./account.md) — `/account`
 - [connections](./connections.md) — `/@<slug>/-/connections`
-  (`/account/connections` redirects)
 - [packages](./packages.md) — `/@username`
-- [secrets](./secrets.md) — `/@<slug>/-/secrets` (`/account/secrets` redirects)
-- [integrations](./integrations.md) — `/account/integrations`
-- [mcp-servers](./mcp-servers.md) — `/account/mcp-servers`
-- [jobs](./jobs.md) — `/@<slug>/-/jobs` (`/account/jobs` redirects)
-- [workflows](./workflows.md) — `/account/workflows`
+- [secrets](./secrets.md) — `/@<slug>/-/secrets`
+- [integrations](./integrations.md) — `/@<slug>/-/integrations`
+- [mcp-servers](./mcp-servers.md) — `/@<slug>/-/mcp-servers`
+- [jobs](./jobs.md) — `/@<slug>/-/jobs`
+- [workflows](./workflows.md) — `/@<slug>/-/workflows`
 - [webhooks](./webhooks.md) — `/@username/kodyId/settings#webhooks` (index at
-  `/account/webhooks`; generic `http` apply approval at
+  `/@<slug>/-/webhooks`; generic `http` apply approval at
   `/connect/webhook-apply`)
-- [activity](./activity.md) — `/account/activity`
-- [waiting](./waiting.md) — `/account/waiting`
+- [activity](./activity.md) — `/@<slug>/-/activity`
+- [waiting](./waiting.md) — `/@<slug>/-/waiting`
 - [experiments](./experiments.md) — `/account/experiments`
-- [memories](./memories.md) — `/account/memories`
-- [email](./email.md) — `/account/email`
-- [values](./values.md) — `/account/values`
+- [memories](./memories.md) — `/@<slug>/-/memories`
+- [email](./email.md) — `/@<slug>/-/email`
+- [values](./values.md) — `/@<slug>/-/values`
 - [billing](./billing.md) — `/@:orgSlug/-/billing`
 - [admin](./admin.md) — `/admin` (seed user is 403)
 - [community](./community.md) — `/community`

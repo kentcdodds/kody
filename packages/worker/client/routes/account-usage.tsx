@@ -6,7 +6,9 @@ import {
 	type AccountUsageLoaderData,
 	type AdminPlanName,
 } from '#universal/loader-data.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { orgBillingPath } from '#universal/org-pages.ts'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import {
@@ -49,7 +51,13 @@ import {
 import { WhereItWentPanel } from '#client/routes/account-usage-where-it-went.tsx'
 
 const usageApiPath = '/account/usage.json'
-const billingPath = '/account/billing'
+
+function usageBillingHref(handle: Handle) {
+	const slug = readAppSession(handle).session?.organizations?.find(
+		(org) => org.personal,
+	)?.slug
+	return slug ? orgBillingPath(slug) : '/account'
+}
 
 const entitlementGroupOrder: Array<
 	AccountUsageEntitlementConsumption['group']
@@ -476,7 +484,7 @@ export function AccountUsageRoute(handle: Handle) {
 									gap: spacing.md,
 								})}
 							>
-								<a href={billingPath} mix={css(primaryLinkCss)}>
+								<a href={usageBillingHref(handle)} mix={css(primaryLinkCss)}>
 									Manage billing
 								</a>
 								{usage.computeOverage.creditWallet !== 'none' ? (

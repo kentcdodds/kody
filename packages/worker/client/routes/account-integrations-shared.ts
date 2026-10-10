@@ -3,6 +3,7 @@ import {
 	type AccountIntegrationsLoaderData,
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
+import { accountAliasPath, relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -18,7 +19,7 @@ export const integrationsRoute = createListDetailRoute(
 	'/account/integrations',
 	{
 		parseDetailId(pathname) {
-			const prefix = `${routes.accountIntegrations.href()}/`
+			const prefix = `${'/account/integrations'}/`
 			if (!pathname.startsWith(prefix)) return null
 			const segment = pathname.slice(prefix.length)
 			if (!segment || segment.includes('/') || segment === 'approve') {
@@ -29,7 +30,7 @@ export const integrationsRoute = createListDetailRoute(
 	},
 )
 
-const oauthAppsPathPrefix = `${routes.accountIntegrations.href()}/apps/`
+const oauthAppsPathPrefix = `${'/account/integrations'}/apps/`
 
 function decodePathSegment(value: string) {
 	try {
@@ -40,18 +41,19 @@ function decodePathSegment(value: string) {
 }
 
 function readSelectedOauthAppSlug(href: string): string | null {
-	const pathname = new URL(href, 'http://localhost').pathname
+	const pathname = accountAliasPath(new URL(href, 'http://localhost').pathname)
 	if (!pathname.startsWith(oauthAppsPathPrefix)) return null
 	const segment = pathname.slice(oauthAppsPathPrefix.length)
 	if (!segment || segment.includes('/')) return null
 	return decodePathSegment(segment)
 }
 
-function buildOauthAppHref(appSlug: string, search = '') {
-	return routes.accountOauthAppDetail.href(
-		{ appSlug },
-		{ searchParams: new URLSearchParams(search) },
-	)
+function buildOauthAppHref(appSlug: string, search = '', currentHref = '') {
+	const path = `/account/integrations/apps/${encodeURIComponent(appSlug)}`
+	const href = search
+		? `${path}?${new URLSearchParams(search).toString()}`
+		: path
+	return currentHref ? relocateAccountHref(href, currentHref) : href
 }
 
 export function oauthAppTitle(app: AccountOauthAppListItem) {
@@ -82,14 +84,15 @@ function findAppForConnection(
 export function buildIntegrationHref(
 	app: AccountOauthAppListItem,
 	search = '',
+	currentHref = '',
 ) {
 	if (isBuiltInApp(app)) {
 		const first = app.connections[0]
 		return first
-			? integrationsRoute.buildDetailHref(first.name, search)
-			: routes.accountIntegrations.href()
+			? integrationsRoute.buildDetailHref(first.name, search, currentHref)
+			: relocateAccountHref('/account/integrations', currentHref)
 	}
-	return buildOauthAppHref(app.slug, search)
+	return buildOauthAppHref(app.slug, search, currentHref)
 }
 
 export function accountsConnectedCopy(count: number) {
@@ -193,7 +196,7 @@ export const dangerButtonCss = getDangerPillCss({ size: 'sm' })
  */
 export function getDataLatchKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+	if (accountAliasPath(url.pathname) === '/account/integrations/approve') {
 		return `${url.pathname}?${url.searchParams.get('name') ?? ''}&${url.searchParams.get('package_id') ?? ''}`
 	}
 	return '/account/integrations'
@@ -202,7 +205,7 @@ export function getDataLatchKey(href: string) {
 export function buildIntegrationsApiHref(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const requestUrl = new URL(accountIntegrationsApiPath, url.origin)
-	if (url.pathname === routes.accountIntegrationsApprove.href()) {
+	if (accountAliasPath(url.pathname) === '/account/integrations/approve') {
 		const name = url.searchParams.get('name')
 		const packageId = url.searchParams.get('package_id')
 		if (name) requestUrl.searchParams.set('name', name)

@@ -9,6 +9,7 @@ import {
 	buildPaymentFailedEmail,
 } from '#app/email/messages.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
 import { formatCents, formatMicroUsd } from '#universal/credits.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
@@ -205,10 +206,15 @@ export async function sendConnectAgentEmail(input: {
 	return false
 }
 
+function orgBillingUrl(appBaseUrl: string, orgSlug: string) {
+	return new URL(orgBillingPath(orgSlug), appBaseUrl).toString()
+}
+
 export async function sendBillingSuccessEmail(input: {
 	env: Env
 	email: string
 	userId: string
+	orgSlug: string
 	planLabel: string
 }): Promise<boolean> {
 	return await claimAndSend({
@@ -220,7 +226,7 @@ export async function sendBillingSuccessEmail(input: {
 		build: (config) =>
 			buildBillingSuccessEmail({
 				appBaseUrl: config.appBaseUrl,
-				billingUrl: new URL('/account/billing', config.appBaseUrl).toString(),
+				billingUrl: orgBillingUrl(config.appBaseUrl, input.orgSlug),
 				discordUrl: kodyDiscordInviteUrl,
 				planLabel: input.planLabel,
 			}),
@@ -231,6 +237,7 @@ export async function sendPaymentFailedEmail(input: {
 	env: Env
 	email: string
 	userId: string
+	orgSlug: string
 	day: string
 }): Promise<boolean> {
 	return await claimAndSend({
@@ -242,7 +249,7 @@ export async function sendPaymentFailedEmail(input: {
 		build: (config) =>
 			buildPaymentFailedEmail({
 				appBaseUrl: config.appBaseUrl,
-				billingUrl: new URL('/account/billing', config.appBaseUrl).toString(),
+				billingUrl: orgBillingUrl(config.appBaseUrl, input.orgSlug),
 			}),
 	})
 }
@@ -251,6 +258,7 @@ export async function sendPastDueEmail(input: {
 	env: Env
 	email: string
 	userId: string
+	orgSlug: string
 	day: string
 }): Promise<boolean> {
 	return await claimAndSend({
@@ -262,7 +270,7 @@ export async function sendPastDueEmail(input: {
 		build: (config) =>
 			buildPastDueEmail({
 				appBaseUrl: config.appBaseUrl,
-				billingUrl: new URL('/account/billing', config.appBaseUrl).toString(),
+				billingUrl: orgBillingUrl(config.appBaseUrl, input.orgSlug),
 			}),
 	})
 }

@@ -23,7 +23,7 @@ type AuthenticatedUser = NonNullable<
 export function createAccountValuesHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -41,11 +41,7 @@ export function createAccountValuesHandler(env: Env) {
 				loaderData: { accountValues },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountValues
-		| typeof routes.accountValueNew
-		| typeof routes.accountValueDetail
-	>
+	}
 }
 
 /**

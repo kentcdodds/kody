@@ -15,6 +15,7 @@ import {
 	AccountPageHeader,
 	accountInputCss,
 } from '#client/routes/account-management-components.tsx'
+import { relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { type AccountSecretProvidersLoaderData } from '#universal/loader-data.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
@@ -71,7 +72,9 @@ export async function accountSecretProvidersRouteLoader(
 		return routeLoaderRedirect('/login')
 	}
 	if (response.status === 404) {
-		return routeLoaderRedirect(routes.accountSecrets.href())
+		return routeLoaderRedirect(
+			relocateAccountHref('/account/secrets', url.href),
+		)
 	}
 	const payload = await readJson<AccountSecretProvidersLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
@@ -91,7 +94,9 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 					return routeDataRedirect('/login')
 				}
 				if (error instanceof Error && error.message === 'Not enabled.') {
-					return routeDataRedirect(routes.accountSecrets.href())
+					return routeDataRedirect(
+						relocateAccountHref('/account/secrets', href),
+					)
 				}
 				throw error
 			}
@@ -221,7 +226,10 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 														ref: approval.canonicalRef,
 														packageId: approval.packageId,
 													},
-													routes.accountSecretProviders.href(),
+													relocateAccountHref(
+														'/account/secret-providers',
+														readCurrentRouterHref(handle),
+													),
 												)
 											},
 										},
@@ -246,7 +254,10 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 												ref: approval.canonicalRef,
 												packageId: approval.packageId,
 											},
-											routes.accountSecretProviders.href(),
+											relocateAccountHref(
+												'/account/secret-providers',
+												readCurrentRouterHref(handle),
+											),
 										)
 									}),
 								]}
@@ -294,7 +305,10 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 														action: 'unbind',
 														provider: binding.provider,
 													},
-													routes.accountSecretProviders.href(),
+													relocateAccountHref(
+														'/account/secret-providers',
+														readCurrentRouterHref(handle),
+													),
 												)
 											}),
 										]}
@@ -350,7 +364,10 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 																ref: grant.canonicalRef,
 																packageId: grant.packageId,
 															},
-															routes.accountSecretProviders.href(),
+															relocateAccountHref(
+																'/account/secret-providers',
+																readCurrentRouterHref(handle),
+															),
 														)
 													},
 												},
@@ -473,7 +490,10 @@ export function AccountSecretProvidersRoute(handle: Handle) {
 										doorSecretName: bindDoorSecret,
 										config,
 									},
-									routes.accountSecretProviders.href(),
+									relocateAccountHref(
+										'/account/secret-providers',
+										readCurrentRouterHref(handle),
+									),
 								)
 							}),
 						]}

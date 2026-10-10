@@ -113,9 +113,9 @@ Pass: the tool result has `ok: true` and `result: 42`. That path uses
 lane. The origin-only `/__maintenance/execute-smoke` is not a substitute.
 
 After a **jobs** rollback: a due job runs end-to-end (`JobManager` alarm →
-`HOST.runDueJobsForUser` → a run on `/account/activity`). The
+`HOST.runDueJobsForUser` → a run on `/@<slug>/-/activity`). The
 [jobs worker migration runbook](./architecture/jobs-worker-migration-runbook.md)
-also checks `/account/jobs` and MCP `jobs_*` listing `JOBS_DB` rows. The
+also checks `/@<slug>/-/jobs` and MCP `jobs_*` listing `JOBS_DB` rows. The
 five-minute cron on `kody-jobs` is the scheduler; `jobRunNow` from MCP can
 trigger an existing package job immediately. Check `/admin/insights` as well.
 

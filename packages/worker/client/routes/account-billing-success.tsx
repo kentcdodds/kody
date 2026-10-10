@@ -25,7 +25,7 @@ const onboardingPath = '/onboarding'
 /** `/@acme/-/billing/success` → `/@acme/-/billing`. */
 function billingPathFor(pathname: string) {
 	const slug = parseOrgBillingPath(pathname)?.slug
-	return slug ? orgBillingPath(slug) : '/account/billing'
+	return slug ? orgBillingPath(slug) : '/account'
 }
 
 export async function accountBillingSuccessRouteLoader(

@@ -21,7 +21,7 @@ type AuthenticatedUser = NonNullable<
 export function createAccountSecretProvidersHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -42,10 +42,7 @@ export function createAccountSecretProvidersHandler(env: Env) {
 				loaderData: { accountSecretProviders },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountSecretProviders
-		| typeof routes.accountSecretProvidersApprove
-	>
+	}
 }
 
 export function createAccountSecretProvidersApiHandler(env: Env) {

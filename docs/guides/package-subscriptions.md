@@ -377,9 +377,9 @@ type RunErrorRecordedEvent = {
 ```
 
 `activity_url` is built from the trusted deployment origin and links to
-`/account/activity/<runId>`. The event deliberately omits log lines and the full
-run `metadata` blob — fetch detail with `runGet` when needed. Error name and
-message use the same truncation budget as the stored run record.
+`/@<slug>/-/activity/<runId>`. The event deliberately omits log lines and the
+full run `metadata` blob — fetch detail with `runGet` when needed. Error name
+and message use the same truncation budget as the stored run record.
 
 Recursion guard: runs whose surface is `subscription` never emit this event.
 Subscription-handler failures themselves create run records; emitting again
@@ -445,7 +445,7 @@ type IntegrationAuthFailedEvent = {
 `reconnect_url` is built from the trusted deployment origin and links to
 `/connect/oauth?provider=<name>`. When `account_label` looks like an email it
 also adds `loginHint` so Google/OIDC can preselect that account. `account_url`
-is the connection detail page (`/account/integrations/<name>`). The event
+is the connection detail page (`/@<slug>/-/integrations/<name>`). The event
 deliberately omits token values, secret values, client secrets, and secret
 names. A short-lived access token that refreshes cleanly never emits. Successful
 Google refreshes persist `userinfo.email` onto an empty `account_label` so later
@@ -494,7 +494,7 @@ type IntegrationAuthSucceededEvent = {
 
 `source` is `refresh` for `refreshIntegrationTokens` and `oauth_connect` for the
 `/connect/oauth` persist path. `account_url` is built from the trusted
-deployment origin and links to `/account/integrations/<name>`. The event
+deployment origin and links to `/@<slug>/-/integrations/<name>`. The event
 deliberately omits token values, secret values, client secrets, and secret
 names.
 
@@ -549,7 +549,7 @@ type McpServerConnectionEvent = {
 ```
 
 `account_url` is built from the trusted deployment origin and links to
-`/account/mcp-servers/<id>`. The event omits server URLs, OAuth tokens, bearer
+`/@<slug>/-/mcp-servers/<id>`. The event omits server URLs, OAuth tokens, bearer
 headers, auth URLs, and discovered tool lists. Fetch live status with
 `mcpServerList` when needed. Idempotency keys include the topic, episode id, and
 subscriber package id, so one disconnected and one reconnected invoke per

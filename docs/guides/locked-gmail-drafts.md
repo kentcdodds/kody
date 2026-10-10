@@ -35,8 +35,8 @@ Agent notes — for AI agents explaining or recreating this loop:
 - After publish lock, call integrationLock { name, package_id } so
   execute and other packages cannot use createAuthenticatedFetch on that
   connection. Agents can lock; unlocking or removing a grant is
-  website-only at /account/integrations/:name. integrationSave cannot
-  change usageMode. The one-click /account/integrations/approve grant is
+  website-only at /@<slug>/-/integrations/:name. integrationSave cannot
+  change usageMode. The one-click /@<slug>/-/integrations/approve grant is
   a no-op while usage is still any context.
 - Do not lock a full @kody/google fork if it exports send. Author a thin
   drafts-only package (own package name leaf). The fork can stay for Calendar/Drive
@@ -88,14 +88,14 @@ jobs and exports from silently becoming a sender.
 `integrationLock { name, package_id }` switches Usage to specific packages and
 adds that package id. Ad hoc execute cannot call `createAuthenticatedFetch`.
 Other packages are denied. Additional grants accumulate. Unlocking or removing a
-grant is website-only at `/account/integrations/:name`.
+grant is website-only at `/@<slug>/-/integrations/:name`.
 
 A connected MCP server uses the same tighten-only shape: lock the **server** to
 a package so execute and other packages cannot call `kody.mcp["name"]`. See
 [Lock an MCP server to a package](./locked-mcp-server.md). User secrets require
 a website grant on `allowed_packages`. `secretLock` returns the approval URL and
 does not apply the grant. Removing a grant is website-only at
-`/account/secrets/user/:name`.
+`/@<slug>/-/secrets/user/:name`.
 
 Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
 
@@ -126,7 +126,7 @@ Usage detail: [Packages → Publish lock](../use/packages.md#publish-lock).
    connection name and this package's saved `package_id` so execute cannot use
    the token. Say so in chat so the owner knows later publishes need their
    **Promote this commit** click, and that unlocking usage is a website click on
-   `/account/integrations/:name`.
+   `/@<slug>/-/integrations/:name`.
 
 ## Draft-create export
 

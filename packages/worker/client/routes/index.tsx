@@ -19,7 +19,6 @@ import {
 	packageFilesArea,
 } from '#client/lazy-route.tsx'
 import { InternalErrorPage } from '#client/internal-error-page.tsx'
-import { routeLoaderRedirect } from '#client/route-loader.ts'
 import { NotFoundPage } from '#client/not-found-page.tsx'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
@@ -46,61 +45,13 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(m) => m.accountRouteLoader,
 	),
-	// The server redirects `/account/billing` to the signup organization's
-	// billing page, so in-app links load it as a document.
-	[routePattern(routes.accountBilling)]: async (url) =>
-		routeLoaderRedirect(`${url.pathname}${url.search}`),
 	[routePattern(routes.accountUsage)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountUsageRouteLoader,
 	),
-	[routePattern(routes.accountWaiting)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountWaitingRouteLoader,
-	),
 	[routePattern(routes.accountExperiments)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountExperimentsRouteLoader,
-	),
-	[routePattern(routes.accountConnections)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountConnectionsRouteLoader,
-	),
-	[routePattern(routes.accountConnectionNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountConnectionsRouteLoader,
-	),
-	[routePattern(routes.accountConnectionNewAgent)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountConnectionsRouteLoader,
-	),
-	[routePattern(routes.accountIntegrations)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountIntegrationsRouteLoader,
-	),
-	[routePattern(routes.accountOauthAppDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountIntegrationsRouteLoader,
-	),
-	[routePattern(routes.accountIntegrationsApprove)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountIntegrationsRouteLoader,
-	),
-	[routePattern(routes.accountIntegrationDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountIntegrationsRouteLoader,
-	),
-	[routePattern(routes.accountMcpServers)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountMcpServersRouteLoader,
-	),
-	[routePattern(routes.accountMcpServerNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountMcpServersRouteLoader,
-	),
-	[routePattern(routes.accountMcpServerDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountMcpServersRouteLoader,
 	),
 	[routePattern(routes.communityPackageApprovePublish)]: lazyRouteLoader(
 		accountArea,
@@ -117,94 +68,6 @@ export const clientRouteLoaders: Record<string, RouteLoader> = {
 	[routePattern(routes.accountMcpOauthClients)]: lazyRouteLoader(
 		accountArea,
 		(m) => m.accountMcpOauthClientsRouteLoader,
-	),
-	[routePattern(routes.accountSecrets)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountSecretNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountSecretsApprove)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountSecretProviders)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretProvidersRouteLoader,
-	),
-	[routePattern(routes.accountSecretProvidersApprove)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretProvidersRouteLoader,
-	),
-	[routePattern(routes.accountSecretUserDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountSecretPackageDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountSecretSessionDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountSecretsRouteLoader,
-	),
-	[routePattern(routes.accountValues)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountValuesRouteLoader,
-	),
-	[routePattern(routes.accountValueNew)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountValuesRouteLoader,
-	),
-	[routePattern(routes.accountValueDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountValuesRouteLoader,
-	),
-	[routePattern(routes.accountJobs)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountJobsRouteLoader,
-	),
-	[routePattern(routes.accountJobDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountJobsRouteLoader,
-	),
-	[routePattern(routes.accountWorkflows)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountWorkflowsRouteLoader,
-	),
-	[routePattern(routes.accountWorkflowDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountWorkflowsRouteLoader,
-	),
-	[routePattern(routes.accountWebhooks)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountWebhooksRouteLoader,
-	),
-	[routePattern(routes.accountActivity)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountActivityRouteLoader,
-	),
-	[routePattern(routes.accountActivityDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountActivityRouteLoader,
-	),
-	[routePattern(routes.accountMemories)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountMemoriesRouteLoader,
-	),
-	[routePattern(routes.accountMemoryDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountMemoriesRouteLoader,
-	),
-	[routePattern(routes.accountEmail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountEmailRouteLoader,
-	),
-	[routePattern(routes.accountEmailDetail)]: lazyRouteLoader(
-		accountArea,
-		(m) => m.accountEmailRouteLoader,
 	),
 	[routePattern(routes.accountTwoFactor)]: lazyRouteLoader(
 		accountArea,
@@ -410,41 +273,8 @@ export const clientRoutes = {
 	[routePattern(routes.accountUsage)]: (
 		<LazyAccountRoute render={(m) => <m.AccountUsageRoute />} />
 	),
-	[routePattern(routes.accountWaiting)]: (
-		<LazyAccountRoute render={(m) => <m.AccountWaitingRoute />} />
-	),
 	[routePattern(routes.accountExperiments)]: (
 		<LazyAccountRoute render={(m) => <m.AccountExperimentsRoute />} />
-	),
-	[routePattern(routes.accountConnections)]: (
-		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
-	),
-	[routePattern(routes.accountConnectionNew)]: (
-		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
-	),
-	[routePattern(routes.accountConnectionNewAgent)]: (
-		<LazyAccountRoute render={(m) => <m.AccountConnectionsRoute />} />
-	),
-	[routePattern(routes.accountIntegrations)]: (
-		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />
-	),
-	[routePattern(routes.accountOauthAppDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />
-	),
-	[routePattern(routes.accountIntegrationsApprove)]: (
-		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />
-	),
-	[routePattern(routes.accountIntegrationDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountIntegrationsRoute />} />
-	),
-	[routePattern(routes.accountMcpServers)]: (
-		<LazyAccountRoute render={(m) => <m.AccountMcpServersRoute />} />
-	),
-	[routePattern(routes.accountMcpServerNew)]: (
-		<LazyAccountRoute render={(m) => <m.AccountMcpServersRoute />} />
-	),
-	[routePattern(routes.accountMcpServerDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountMcpServersRoute />} />
 	),
 	[routePattern(routes.communityPackageApprovePublish)]: (
 		<LazyAccountRoute render={(m) => <m.AccountPackageApprovePublishRoute />} />
@@ -457,72 +287,6 @@ export const clientRoutes = {
 	),
 	[routePattern(routes.accountMcpOauthClients)]: (
 		<LazyAccountRoute render={(m) => <m.AccountMcpOauthClientsRoute />} />
-	),
-	[routePattern(routes.accountSecrets)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountSecretNew)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountSecretsApprove)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountSecretProviders)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretProvidersRoute />} />
-	),
-	[routePattern(routes.accountSecretProvidersApprove)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretProvidersRoute />} />
-	),
-	[routePattern(routes.accountSecretUserDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountSecretPackageDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountSecretSessionDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountSecretsRoute />} />
-	),
-	[routePattern(routes.accountValues)]: (
-		<LazyAccountRoute render={(m) => <m.AccountValuesRoute />} />
-	),
-	[routePattern(routes.accountValueNew)]: (
-		<LazyAccountRoute render={(m) => <m.AccountValuesRoute />} />
-	),
-	[routePattern(routes.accountValueDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountValuesRoute />} />
-	),
-	[routePattern(routes.accountJobs)]: (
-		<LazyAccountRoute render={(m) => <m.AccountJobsRoute />} />
-	),
-	[routePattern(routes.accountJobDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountJobsRoute />} />
-	),
-	[routePattern(routes.accountWorkflows)]: (
-		<LazyAccountRoute render={(m) => <m.AccountWorkflowsRoute />} />
-	),
-	[routePattern(routes.accountWorkflowDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountWorkflowsRoute />} />
-	),
-	[routePattern(routes.accountWebhooks)]: (
-		<LazyAccountRoute render={(m) => <m.AccountWebhooksRoute />} />
-	),
-	[routePattern(routes.accountActivity)]: (
-		<LazyAccountRoute render={(m) => <m.AccountActivityRoute />} />
-	),
-	[routePattern(routes.accountActivityDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountActivityRoute />} />
-	),
-	[routePattern(routes.accountMemories)]: (
-		<LazyAccountRoute render={(m) => <m.AccountMemoriesRoute />} />
-	),
-	[routePattern(routes.accountMemoryDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountMemoriesRoute />} />
-	),
-	[routePattern(routes.accountEmail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountEmailRoute />} />
-	),
-	[routePattern(routes.accountEmailDetail)]: (
-		<LazyAccountRoute render={(m) => <m.AccountEmailRoute />} />
 	),
 	[routePattern(routes.accountTwoFactor)]: (
 		<LazyAccountRoute render={(m) => <m.AccountTwoFactorRoute />} />

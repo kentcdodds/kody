@@ -264,7 +264,7 @@ test('entitlement limit messages always identify a known plan name', () => {
 		parseEntitlementLimitMessage(buildEntitlementLimitMessage(weeklyDetails)),
 	).toEqual(weeklyDetails)
 	expect(weeklyDetails.upgradeHint).toMatch(
-		/upgrade your plan at \/account\/billing/,
+		/upgrade your plan at \/@<slug>\/-\/billing/,
 	)
 	for (const scope of ['this deployment', 'your "enterprise" plan']) {
 		expect(
@@ -286,7 +286,7 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	)
 	// Free stays hard-capped: the next step is Pro, not credits.
 	expect(buildEntitlementUpgradeHint('execute_calls_per_day', 'free')).toBe(
-		'Remove or finish existing execute calls per day you no longer need, or upgrade your plan at /account/billing.',
+		'Remove or finish existing execute calls per day you no longer need, or upgrade your plan at /@<slug>/-/billing.',
 	)
 	expect(buildEntitlementHowToReduce('job_runs_per_day', 'free')).toBe(
 		'Run fewer jobs today, space them out, or upgrade your plan.',
@@ -327,7 +327,7 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 	// Stock is on the Pro subscription (not a credits unlock); only Free
 	// gets a billing upgrade offer.
 	expect(buildEntitlementUpgradeHint('saved_packages', 'free')).toMatch(
-		/\/account\/billing/,
+		/\/@<slug>\/-\/billing/,
 	)
 	for (const plan of ['standard', 'pro', 'max'] as const) {
 		expect(buildEntitlementUpgradeHint('saved_packages', plan)).not.toMatch(
@@ -341,9 +341,9 @@ test('rate/compute include hints: $0 Pro adds credits to keep going, Free upgrad
 
 test('job interval floor messages parse back to known plan and interval', () => {
 	for (const upgradeHint of [
-		'Space this job out, or upgrade at /account/billing.',
+		'Space this job out, or upgrade at /@<slug>/-/billing.',
 		'',
-		'Space this job out. Then upgrade at /account/billing.',
+		'Space this job out. Then upgrade at /@<slug>/-/billing.',
 	]) {
 		const details = {
 			code: jobIntervalFloorErrorCode,

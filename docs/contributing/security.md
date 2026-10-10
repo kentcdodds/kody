@@ -574,8 +574,8 @@ stored but suppresses `email.system-message.received`. Successful
 reserved-sender sends fan `email.system-message.sent` (admin-only) with the sent
 correspondence. Reclassification never retroactively fires subscription events.
 Users manage rules via `email_sender_rule_*` (200-rule cap), reclassify via
-`emailMessageClassify` or `/account/email`, and delete stored messages via
-`emailMessageDelete` or the delete action on `/account/email`; operators use
+`emailMessageClassify` or `/@<slug>/-/email`, and delete stored messages via
+`emailMessageDelete` or the delete action on `/@<slug>/-/email`; operators use
 `admin_system_email_sender_rule_*` for system inboxes. Upstream, Cloudflare
 Email Routing already rejects mail failing both SPF and DKIM and honors sender
 DMARC policy.

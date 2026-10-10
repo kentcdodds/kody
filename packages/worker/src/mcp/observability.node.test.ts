@@ -206,7 +206,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 				limit: 67_108_864,
 				current: 449_966_219,
 				upgradeHint:
-					'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /account/billing.',
+					'Remove or finish existing storage bytes you no longer need, or upgrade your plan at /@<slug>/-/billing.',
 			}),
 		),
 		handlerFailure(
@@ -220,7 +220,7 @@ test('logMcpEvent keeps sandbox and caller failures off Sentry and still reports
 					limit: 10,
 					current: 46,
 					upgradeHint:
-						'Remove or finish existing scheduled jobs you no longer need, or upgrade your plan at /account/billing.',
+						'Remove or finish existing scheduled jobs you no longer need, or upgrade your plan at /@<slug>/-/billing.',
 				}),
 			}),
 		),

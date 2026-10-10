@@ -269,7 +269,7 @@ See [`architecture/authentication.md`](./architecture/authentication.md).
 ## Stripe billing
 
 Optional Worker secret and vars for account subscription billing
-(`packages/worker/src/billing/`, routes under `/account/billing`). When
+(`packages/worker/src/billing/`, routes under `/@<slug>/-/billing`). When
 `STRIPE_SECRET_KEY` is unset, billing is disabled: the account billing page
 shows plan info plus a "not configured" notice, and success/portal/cron skip
 safely. Manual `users.plan` grants apply regardless.

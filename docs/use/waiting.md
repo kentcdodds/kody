@@ -1,8 +1,8 @@
 # Waiting
 
 Waiting is the current-state queue of things only **you** can clear. Open
-**`/account/waiting`** from Account while signed in. Desktop puts Account in the
-header to the left of the avatar; the avatar goes to your public profile
+**`/@<slug>/-/waiting`** from Account while signed in. Desktop puts Account in
+the header to the left of the avatar; the avatar goes to your public profile
 (`/@username`).
 
 Items are derived from live account state. They disappear when the gate clears.
@@ -55,8 +55,8 @@ secret _names_ stay off Waiting (the agent’s `nextStep` and
 
 OAuth last-failure **is** stored on the connection. A reconnectable grant shows
 a Waiting card with Reconnect. A provider 5xx or timeout is stored for
-[Integrations](https://kody.codes/account/integrations) as a service issue, but
-it does not appear here and does not emit `integration.auth.failed`.
+[Integrations](https://kody.codes/@<slug>/-/integrations) as a service issue,
+but it does not appear here and does not emit `integration.auth.failed`.
 
 ## Not Activity, not Email
 

@@ -68,7 +68,7 @@ behavior it runs:
   the repo — change them there and publish.
 
 Jobs do not hang off an integration or an MCP connection. If a "job" has no
-package, save the package first. Runs show up on `/account/jobs`.
+package, save the package first. Runs show up on `/@<slug>/-/jobs`.
 
 ## Workflows — deferred and durable one-shot work
 
@@ -96,7 +96,7 @@ export default async function main() {
 
 `workflows.create` takes either `code` (a complete module string) or
 `exportName` (a saved-package export). Inspect runs with `workflowRunList`,
-cancel with `workflowRunCancel`; they appear on `/account/workflows`. Unnamed
+cancel with `workflowRunCancel`; they appear on `/@<slug>/-/workflows`. Unnamed
 inline runs display as `inline-code` with the idempotency key as a subtitle.
 Recurring work is a job, not a workflow that reschedules itself.
 
@@ -123,7 +123,7 @@ request to the package export that owns it.
    (`/@<username>/<packageKodyId>/settings`, Webhooks section), where they can
    also reveal, rotate, disable, or enable it. Rotate keeps the previous URL
    live for 24 hours, or until the first accepted delivery arrives on the new
-   URL. `/account/webhooks` lists every webhook across packages and links to
+   URL. `/@<slug>/-/webhooks` lists every webhook across packages and links to
    those sections.
 
 Declaring a webhook does not open ingress; minting does. Deliveries are
@@ -162,7 +162,7 @@ nothing else. See [Email primitives](../use/email-primitives.md).
   package-local `dryRun` field on trusted-client POSTs).
 - Keep the wrapper quiet. Notify only when there is news; an empty digest every
   morning trains people to ignore the real one.
-- Failures and recent runs for every trigger live on `/account/activity`.
+- Failures and recent runs for every trigger live on `/@<slug>/-/activity`.
 
 ## Where to go next
 

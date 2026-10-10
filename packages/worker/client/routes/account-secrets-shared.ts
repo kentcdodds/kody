@@ -10,7 +10,7 @@ import {
 } from '@kody-internal/shared/account-secret-route.ts'
 import { normalizeSecretExpiresAt } from '@kody-internal/shared/secret-expires-at.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
-import { accountAliasPath } from '#universal/org-pages.ts'
+import { accountAliasPath, relocateAccountHref } from '#universal/org-pages.ts'
 import {
 	routeLoaderRedirect,
 	type RouteLoaderResult,
@@ -258,23 +258,27 @@ export function buildSecretHref(
 		packageId: string | null
 	},
 	search: string,
+	currentHref = '',
 ) {
-	return buildSecretsHref(
-		buildAccountSecretPath({
-			name: secret.name,
-			scope: secret.scope,
-			packageId: secret.packageId,
-		}),
-		search,
+	return relocateAccountHref(
+		buildSecretsHref(
+			buildAccountSecretPath({
+				name: secret.name,
+				scope: secret.scope,
+				packageId: secret.packageId,
+			}),
+			search,
+		),
+		currentHref,
 	)
 }
 
-export function buildNewSecretHref(search = '') {
-	return secretsRoute.buildNewHref(search)
+export function buildNewSecretHref(search = '', currentHref = '') {
+	return secretsRoute.buildNewHref(search, currentHref)
 }
 
-export function buildBaseSecretsHref(search = '') {
-	return secretsRoute.buildListHref(search)
+export function buildBaseSecretsHref(search = '', currentHref = '') {
+	return secretsRoute.buildListHref(search, currentHref)
 }
 
 export function getDataRefreshKey(href: string) {

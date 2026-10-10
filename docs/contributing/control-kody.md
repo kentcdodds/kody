@@ -9,14 +9,14 @@ npm run control-kody -- doctor
 npm run control-kody -- dev
 npm run control-kody -- login
 npm run control-kody -- request GET /account/waiting.json
-npm run control-kody -- request GET /account/waiting --dump --contains 'Waiting'
+npm run control-kody -- request GET /@<slug>/-/waiting --dump --contains 'Waiting'
 npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
-npm run control-kody -- preview --pr 42 --check /account/waiting
+npm run control-kody -- preview --pr 42 --check /@<slug>/-/waiting
 npm run control-kody -- browse --origin <preview> --path /@user-me/pkg [--record]
 npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
 npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]

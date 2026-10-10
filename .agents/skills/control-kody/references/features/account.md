@@ -35,12 +35,12 @@ A non-personal org handle (`/@<slug>`) renders the org home for its members and
 `request.org.id`. Packages and connected agents stay 404 on a team org because
 those two sections still read the person. Team orgs still get an Organization
 rail: Settings (`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and
-Billing (`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs
+Billing (`/@<slug>/-/billing`, owners; the page lands with #3135). Personal orgs
 keep Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
-time.
+`/@<slug>/-/…`. Old `/account/...` resource pages 404.
+`/account/packages/:packageId` still redirects to `/@username/:kodyId`.
 
 ## Drive it
 
@@ -83,7 +83,7 @@ node tools/control-kody.ts request GET /account/connections.json
   `data-testid="account-deleted-notice"` reads "Your Kody account has been
   deleted". Do not delete the shared preview seed to prove this.
 - Connected agents (inbound MCP hosts) are a workspace page:
-  [connections](./connections.md) at `/account/connections`.
+  [connections](./connections.md) at `/@<slug>/-/connections`.
 - Linking a sign-in provider returns to `/account/security?oauthLinked=<id>`.
 - Former-address release is `POST /account/email-claim-release.json`, then
   confirm at `/verify-email-claim-release`. It drops the claim without reminting

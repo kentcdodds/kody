@@ -110,6 +110,7 @@ test('run.error.recorded fans out only to owning-user packages with a lean paylo
 	const results = await dispatchRunErrorSubscriptionEvents({
 		env,
 		userId: 'user-1',
+		orgSlug: 'ada',
 		run: run as never,
 	})
 
@@ -125,7 +126,7 @@ test('run.error.recorded fans out only to owning-user packages with a lean paylo
 			source: 'run-records',
 			params: expect.objectContaining({
 				event: runErrorRecordedTopic,
-				activity_url: 'https://example.com/account/activity/run-1',
+				activity_url: 'https://example.com/@ada/-/activity/run-1',
 				run: expect.objectContaining({
 					id: 'run-1',
 					surface: 'job',
@@ -163,6 +164,7 @@ test('run.error.recorded skips recursion/non-errors and never throws on handler 
 		dispatchRunErrorSubscriptionEvents({
 			env: createEnv(),
 			userId: 'user-1',
+			orgSlug: 'ada',
 			run: run as never,
 		})
 

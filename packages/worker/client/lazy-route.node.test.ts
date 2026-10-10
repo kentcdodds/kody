@@ -20,9 +20,6 @@ const eagerPatterns = new Set([
 	routePattern(routes.notFoundPage),
 	routePattern(routes.internalErrorPage),
 	routePattern(routes.profile),
-	// Server-redirected to `/@slug/-/billing`; the client loader only forces a
-	// document navigation, so there is nothing to render.
-	routePattern(routes.accountBilling),
 	oauthPaths.callback,
 ])
 

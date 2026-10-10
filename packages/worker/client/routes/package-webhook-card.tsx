@@ -11,7 +11,6 @@ import {
 import {
 	packageWebhookCardId,
 	type WebhookIntent,
-	webhookDeliveriesHref,
 	webhookModeLabel,
 	webhookStatusColor,
 	webhookStatusLabel,
@@ -145,6 +144,7 @@ export function renderPackageWebhookCard(input: {
 	disableCheck: DoubleCheck
 	onIntent: (intent: WebhookIntent) => void
 	onHideUrl: () => void
+	deliveriesHref: string
 }) {
 	const {
 		webhook,
@@ -154,6 +154,7 @@ export function renderPackageWebhookCard(input: {
 		disableCheck,
 		onIntent,
 		onHideUrl,
+		deliveriesHref,
 	} = input
 	const webhookLabel = `${webhook.packageKodyId}/${webhook.name}`
 	const titleId = `${packageWebhookCardId(webhook.name)}-title`
@@ -297,7 +298,7 @@ export function renderPackageWebhookCard(input: {
 					>
 						{rotateCheck.doubleCheck ? 'Confirm rotate' : 'Rotate URL'}
 					</button>
-					<a href={webhookDeliveriesHref} mix={css(mutedLinkCss)}>
+					<a href={deliveriesHref} mix={css(mutedLinkCss)}>
 						Recent deliveries
 					</a>
 				</div>

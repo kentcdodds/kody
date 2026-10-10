@@ -26,7 +26,13 @@ function readPathRunId(params: unknown) {
 export function createAccountActivityHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request, params }) {
+		async handler({
+			request,
+			params,
+		}: {
+			request: Request
+			params?: { runId?: string }
+		}) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -50,9 +56,7 @@ export function createAccountActivityHandler(env: Env) {
 				serverTiming,
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountActivity | typeof routes.accountActivityDetail
-	>
+	}
 }
 
 /**
