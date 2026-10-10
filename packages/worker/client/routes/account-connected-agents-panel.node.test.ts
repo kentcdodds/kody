@@ -354,3 +354,19 @@ test('a later success with a stale agent list does not restore a sibling that al
 		toastOf('Agent disconnected.', 'success'),
 	])
 })
+
+test('switching orgs while a revoke is in flight keeps the same host connected in the other org', async () => {
+	using harness = createPanelWithDeferredRevokes()
+	const { panel, ids, respond } = harness
+
+	const revokePromise = panel.revokeAgent(cursorOld.clientId)
+	// The next org lists the same client under its own grant.
+	const otherOrgCursor = { ...cursorOld, grantIds: ['grant-other-org'] }
+	panel.applyPayload({ ...listedAgents, agents: [otherOrgCursor] })
+	expect(ids()).toEqual([cursorOld.clientId])
+
+	respond(cursorOld, okAgents([]))
+	await revokePromise
+	panel.applyPayload({ ...listedAgents, agents: [otherOrgCursor] })
+	expect(ids()).toEqual([cursorOld.clientId])
+})

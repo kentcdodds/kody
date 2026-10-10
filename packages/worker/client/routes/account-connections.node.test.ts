@@ -1,10 +1,13 @@
 import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { AppSessionProvider } from '#client/app-session-context.tsx'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
-import { AccountConnectionsRoute } from '#client/routes/account-connections.tsx'
+import {
+	AccountConnectionsRoute,
+	accountConnectionsRouteLoader,
+} from '#client/routes/account-connections.tsx'
 import {
 	accountPackagesNavHref,
 	accountRailGroups,
@@ -464,4 +467,31 @@ test('account rail org slug trusts org-owned URLs when the session list is stale
 			username: 'ada-new',
 		}),
 	).toBe('acme')
+})
+
+test('the connections loader names the destination org page as referrer', async () => {
+	vi.stubGlobal('window', { location: { origin: 'https://kody.test' } })
+	const fetchMock = vi.fn(
+		async (_input: RequestInfo | URL, _init?: RequestInit) =>
+			new Response(JSON.stringify({ ok: true, agents: [], mcpServerUrl: '' }), {
+				headers: { 'Content-Type': 'application/json' },
+			}),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+	try {
+		// A client navigation from another org: the loader runs before the URL
+		// commits, so the Referer would otherwise name the source org.
+		await accountConnectionsRouteLoader(
+			new URL('https://kody.test/@acme/-/connections'),
+			new AbortController().signal,
+		)
+		expect(fetchMock).toHaveBeenCalledWith(
+			'/account/connected-agents.json',
+			expect.objectContaining({
+				referrer: 'https://kody.test/@acme/-/connections',
+			}),
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
 })
