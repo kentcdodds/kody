@@ -1,5 +1,7 @@
-import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
-import { listBlogPosts } from '#worker/blog/catalog.ts'
+import {
+	listPublicWebsitePages,
+	listPublicBlogPages,
+} from '#app/public-content.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
 import { docHref, docsIntroSlug } from '#universal/docs-nav.ts'
@@ -171,48 +173,12 @@ type SitemapEntry = {
 	lastmod?: string
 }
 
-function staticPublicPages(): ReadonlyArray<SitemapEntry> {
-	return [
-		{ path: '/' },
-		{ path: '/docs' },
-		{ path: '/docs/connect' },
-		{ path: '/blog' },
-		{ path: '/community' },
-		{ path: '/pricing' },
-		{ path: '/features' },
-		{ path: '/features/memory' },
-		{ path: '/features/secrets' },
-		{ path: '/features/packages' },
-		{ path: '/features/triggers' },
-		{ path: '/features/integrations' },
-		{ path: '/features/apps' },
-		{ path: '/for/business' },
-		{ path: '/faq' },
-		{ path: '/case-studies' },
-		{ path: '/support' },
-		{ path: '/privacy' },
-		{ path: '/terms' },
-		{ path: '/discord' },
-		{ path: '/onboarding' },
-		{ path: authMdPath },
-	]
-}
-
 export function listPublicSitemapEntries(): ReadonlyArray<SitemapEntry> {
 	// The introduction is canonical at `/docs` (already in the static list).
 	const guides = listGuides()
 		.filter((guide) => guide.slug !== docsIntroSlug)
 		.map((guide) => ({ path: docHref(guide.slug) }))
-	const posts = listBlogPosts().map((post) => ({
-		path: `/blog/${post.slug}`,
-		lastmod: post.date,
-	}))
-	return [
-		...staticPublicPages(),
-		...acquisitionPageSummaries.map((page) => ({ path: page.path })),
-		...guides,
-		...posts,
-	]
+	return [...listPublicWebsitePages(), ...guides, ...listPublicBlogPages()]
 }
 
 function escapeXml(value: string): string {
