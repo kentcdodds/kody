@@ -1524,13 +1524,64 @@ export async function consumeDailyEntitlement(
 	}
 }
 
-export type ExecuteUniqueWorkerDayUsage = {
-	/** True when this call loads a new worker today and spent one unit. */
-	created: boolean
+export type ExecuteUniqueWorkerUsage = {
 	used: number
 	limit: number
 	weekUsed: number | null
 	weekLimit: number | null
+}
+
+export type ExecuteUniqueWorkerDayUsage = ExecuteUniqueWorkerUsage & {
+	/** True when this call loads a new worker today and spent one unit. */
+	created: boolean
+}
+
+/**
+ * Current hosted execute usage without spending, for execute responses that
+ * never reached the worker claim (refused or failed before load).
+ */
+export async function readExecuteUniqueWorkerUsage(input: {
+	db: D1Database
+	env: UserMeterEnv
+	userId: OwnerId
+	email: string | null | undefined
+	now?: Date
+}): Promise<ExecuteUniqueWorkerUsage> {
+	const resource = executeUniqueWorkersResource
+	const now = input.now ?? new Date()
+	const entitlement = await getCachedUserEntitlement(input.db, {
+		userId: input.userId,
+		email: input.email,
+	})
+	const limit = resolvePlanLimit(
+		entitlement.plan,
+		resource,
+		entitlement.ladder,
+		entitlement.creditWallet,
+	)
+	const weekLimit = resolveWeeklyPlanLimit(
+		entitlement.plan,
+		resource,
+		entitlement.ladder,
+		entitlement.creditWallet,
+	)
+	const [used, weekUsed] = await Promise.all([
+		readDailyEntitlementResourceUsage({
+			env: input.env,
+			userId: input.userId,
+			resource,
+			now,
+		}),
+		weekLimit === null
+			? null
+			: readWeeklyEntitlementResourceUsage({
+					env: input.env,
+					userId: input.userId,
+					resource,
+					now,
+				}),
+	])
+	return { used, limit, weekUsed, weekLimit }
 }
 
 const executeUniqueWorkersResource =
