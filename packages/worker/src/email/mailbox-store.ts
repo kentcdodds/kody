@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	assertMailboxCanonicalIsoTimestamp,
 	assertMailboxClassification,
@@ -182,9 +183,9 @@ export class MailboxStore {
 		initializeMailboxSchema(this.storage)
 	}
 
-	getOwnerId(): string | null {
+	getOwnerId(): OwnerId | null {
 		const row = this.sql
-			.exec<{ owner_id: string }>(
+			.exec<{ owner_id: OwnerId }>(
 				`SELECT owner_id FROM mailbox_owner_identity
 				WHERE singleton = 1
 				LIMIT 1`,
@@ -201,7 +202,7 @@ export class MailboxStore {
 	 * Persist owner once; reject cross-user writes. DO name is not
 	 * introspectable — see mailbox_owner_identity DDL comment.
 	 */
-	assertOwner(ownerId: string): string {
+	assertOwner(ownerId: OwnerId): OwnerId {
 		const id = assertMailboxNonEmptyString(ownerId, 'ownerId')
 		const existing = this.getOwnerId()
 		if (existing == null) {
@@ -236,7 +237,7 @@ export class MailboxStore {
 		}
 	}
 
-	beginRestore(ownerId: string): void {
+	beginRestore(ownerId: OwnerId): void {
 		this.assertOwner(ownerId)
 		this.clearDrillResult()
 		this.sql.exec(
@@ -247,7 +248,7 @@ export class MailboxStore {
 		)
 	}
 
-	finalizeRestore(ownerId: string): void {
+	finalizeRestore(ownerId: OwnerId): void {
 		this.assertOwner(ownerId)
 		this.sql.exec(
 			`DELETE FROM mailbox_meta WHERE key = ?`,
@@ -289,7 +290,7 @@ export class MailboxStore {
 		}
 	}
 
-	completeDrill(ownerId: string, result: MailboxCountResult): void {
+	completeDrill(ownerId: OwnerId, result: MailboxCountResult): void {
 		this.assertOwner(ownerId)
 		this.storage.transactionSync(() => {
 			this.sql.exec(`DELETE FROM email_delivery_events`)
@@ -320,7 +321,7 @@ export class MailboxStore {
 	}
 
 	validateMessageBlobKeys(input: {
-		ownerId: string
+		ownerId: OwnerId
 		message: MailboxMessageInput
 		attachments?: Array<MailboxAttachmentInput>
 	}) {

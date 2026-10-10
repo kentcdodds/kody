@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
@@ -38,7 +39,7 @@ test('outbound pause notify does not wait for package fan-out when waitUntil is 
 	await expect(
 		applyOutboundEmailAbusePause({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			deliveryStatus: 'complained',
 			eventRecorded: true,
 			waitUntil,

@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
@@ -137,7 +141,7 @@ async function parseAndStoreInboundEmail(input: {
 
 async function cleanupInboundDurability(input: {
 	env: UserInboundDeliveryAuthorityEnv & { EMAIL_BLOBS: R2Bucket }
-	userId: string
+	userId: OwnerId
 }) {
 	try {
 		await reconcileUserStaleInboundDeliveries(input)
@@ -228,7 +232,7 @@ export async function handleInboundEmail(
 		return
 	}
 
-	const userId = identity.mcpUserId
+	const userId = personalOrgId(identity.mcpUserId)
 	return await withAccountWriteLease({
 		db: env.APP_DB,
 		stableUserId: userId,

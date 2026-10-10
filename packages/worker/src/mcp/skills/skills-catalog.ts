@@ -4,6 +4,7 @@ import {
 	ResourceNotFoundError,
 } from '@modelcontextprotocol/server'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	checkPermission,
 	computeEffectivePermissions,
@@ -33,7 +34,7 @@ export const skillsResultCacheScope = 'private' as const
 
 /** One visible package's skills index plus what is needed to read its files. */
 export type CallerSkillsCatalogPackage = {
-	ownerUserId: string
+	ownerUserId: OwnerId
 	sourceId: string
 	packageId: string
 	index: PackageSkillsIndex

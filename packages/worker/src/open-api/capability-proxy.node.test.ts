@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -26,7 +29,7 @@ const bootstrapCode = `kody_bc_${'a'.repeat(16)}_${'B'.repeat(32)}`
 
 const ctx = {
 	env: {},
-	callerContext: { user: { userId: 'user-1' } },
+	callerContext: { user: { userId: ownerIdFromStored('user-1') } },
 	principal: { kind: 'mcp' },
 	getFeatureFlags: async () => ({}),
 } as unknown as ApiInvocationContext
@@ -156,7 +159,7 @@ test('CapabilityProxy preserves token scopes when minting CLI bootstrap credenti
 			kind: 'token',
 			token: {
 				id: 'parent-token',
-				user_id: 'user-1',
+				user_id: ownerIdFromStored('user-1'),
 				name: 'parent',
 				token_hash: 'hash',
 				scopes: ['org:execute'],
@@ -208,7 +211,7 @@ test('CapabilityProxy caps bootstrap token lifetime to the parent token lifetime
 			kind: 'token',
 			token: {
 				id: 'parent-token',
-				user_id: 'user-1',
+				user_id: ownerIdFromStored('user-1'),
 				name: 'parent',
 				token_hash: 'hash',
 				scopes: ['org:execute'],

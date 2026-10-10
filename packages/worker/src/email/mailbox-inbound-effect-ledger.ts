@@ -7,6 +7,7 @@
  * `mailbox-inbound-ledger.ts`.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { assertMailboxNonEmptyString } from './mailbox-types.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
 import {
@@ -28,7 +29,10 @@ import {
 export type MailboxClaimInboundUsageEffectResult =
 	| { status: 'claimed'; delivery: MailboxInboundDeliverySnapshot }
 	| { status: 'already-complete'; delivery: MailboxInboundDeliverySnapshot }
-	| { status: 'not-claimable'; delivery: MailboxInboundDeliverySnapshot | null }
+	| {
+			status: 'not-claimable'
+			delivery: MailboxInboundDeliverySnapshot | null
+	  }
 
 export type MailboxCompleteInboundUsageEffectResult =
 	| { status: 'recorded'; delivery: MailboxInboundDeliverySnapshot }
@@ -39,7 +43,10 @@ export type MailboxCompleteInboundUsageEffectResult =
 export type MailboxClaimInboundSubscriptionEffectResult =
 	| { status: 'claimed'; delivery: MailboxInboundDeliverySnapshot }
 	| { status: 'already-complete'; delivery: MailboxInboundDeliverySnapshot }
-	| { status: 'not-claimable'; delivery: MailboxInboundDeliverySnapshot | null }
+	| {
+			status: 'not-claimable'
+			delivery: MailboxInboundDeliverySnapshot | null
+	  }
 
 export type MailboxCompleteInboundSubscriptionEffectResult =
 	| { status: 'complete'; delivery: MailboxInboundDeliverySnapshot }
@@ -58,13 +65,13 @@ export type MailboxListDueInboundEffectWorkResult = {
 
 export type MailboxInboundEffectLedgerRpc = {
 	claimInboundUsageEffect: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedFinalizationToken?: string | null
 		now?: string
 	}) => Promise<MailboxClaimInboundUsageEffectResult>
 	completeInboundUsageEffect: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		usageEffectLease: string
 		/** Must match the delivery's current finalization token. */
@@ -76,13 +83,13 @@ export type MailboxInboundEffectLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxCompleteInboundUsageEffectResult>
 	claimInboundSubscriptionEffect: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedFinalizationToken?: string | null
 		now?: string
 	}) => Promise<MailboxClaimInboundSubscriptionEffectResult>
 	completeInboundSubscriptionEffect: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		subscriptionEffectLease: string
 		/** Must match the delivery's current finalization token. */
@@ -92,7 +99,7 @@ export type MailboxInboundEffectLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxCompleteInboundSubscriptionEffectResult>
 	failInboundSubscriptionEffect: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		subscriptionEffectLease: string
 		/** Must match the delivery's current finalization token. */
@@ -101,7 +108,7 @@ export type MailboxInboundEffectLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxFailInboundSubscriptionEffectResult>
 	listDueInboundEffectWork: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) => Promise<MailboxListDueInboundEffectWorkResult>

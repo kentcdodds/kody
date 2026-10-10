@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -13,7 +14,7 @@ test('activation stamps are write-once and keep the first client name', async ()
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
-	const stableUserId = 'a'.repeat(64)
+	const stableUserId = ownerIdFromStored('a').repeat(64)
 	sqlite
 		.prepare(
 			`INSERT INTO users (username, email, password_hash, stable_user_id)

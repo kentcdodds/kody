@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -60,7 +61,7 @@ const env = {
 
 const props = {
 	baseUrl: 'https://example.com',
-	userId: 'user-123',
+	userId: ownerIdFromStored('user-123'),
 	email: null,
 	request: sessionRequestContext('user-123'),
 	storageContext: null,
@@ -94,7 +95,7 @@ function savedPackage(
 ): SavedPackageRecord {
 	return {
 		id,
-		userId,
+		userId: ownerIdFromStored(userId),
 		kodyId,
 		name: `@${owner}/${kodyId}`,
 		description: '',
@@ -421,7 +422,10 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		expect.objectContaining({ name: 'google', packageId: 'pkg-1' }),
 	)
 	expect(tokenSpy).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'user-123', name: 'google' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-123'),
+			name: 'google',
+		}),
 	)
 	expect(resolveSpy).not.toHaveBeenCalled()
 	expect(packageSpy).not.toHaveBeenCalled()
@@ -475,7 +479,10 @@ test('fetch gateway gates integration tokens by the connection grant and require
 	).rejects.toThrow('does not have a stored access token')
 	expect(joinedSpy).toHaveBeenCalledTimes(4)
 	expect(joinedSpy).toHaveBeenLastCalledWith(
-		expect.objectContaining({ userId: 'user-123', name: 'google' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-123'),
+			name: 'google',
+		}),
 	)
 	expect(tokenSpy).toHaveBeenCalledTimes(4)
 })
@@ -832,7 +839,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	expect(takeUsage()).toEqual([
 		env,
 		{
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			actorUserId: 'user-123',
 			automationSource: '',
 			eventType: 'outbound_fetch',
@@ -848,7 +855,7 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		expect(usage).toEqual([
 			env,
 			expect.objectContaining({
-				userId: 'user-123',
+				userId: ownerIdFromStored('user-123'),
 				eventType: 'outbound_fetch',
 				entityId,
 				outcome,
@@ -1033,7 +1040,7 @@ test('executeGatewayFetch rejects when allowOutboundFetch is false', async () =>
 			env,
 			props: {
 				baseUrl: 'https://kody.example',
-				userId: 'user-123',
+				userId: ownerIdFromStored('user-123'),
 				email: 'user@example.com',
 				request: null,
 				storageContext: null,

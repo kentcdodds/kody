@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -186,7 +189,7 @@ test('package job sync reports scheduler changes for add, update, and remove onl
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		packageId: 'package-1',
 		sourceId: 'source-1',
@@ -253,7 +256,7 @@ test('package job sync preserves a runtime-enabled job when the manifest still s
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		packageId: 'package-1',
 		sourceId: 'source-1',
@@ -324,7 +327,7 @@ test('package job sync preflights the full addition set without partial inserts'
 	})
 	const env = createJobServiceTestEnv({ APP_DB: db })
 	const target = {
-		userId,
+		userId: ownerIdFromStored(userId),
 		packageId: 'new-package',
 		sourceId: 'new-package-source',
 	}
@@ -411,7 +414,7 @@ test('free and public Standard plans reject new or changed schedules faster than
 
 	// A later too-fast job in the same manifest means nothing is written.
 	const mixed = {
-		userId,
+		userId: ownerIdFromStored(userId),
 		packageId: 'mixed-interval-package',
 		sourceId: 'mixed-interval-source',
 	}
@@ -586,7 +589,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 	await expect(
 		saveValue({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			userEmail: stalePackageContext.user.email,
 			scope: 'app',
 			name: 'checkpoint',

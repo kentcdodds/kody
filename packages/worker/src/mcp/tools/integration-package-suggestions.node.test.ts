@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	collectIntegrationPackageSuggestions,
@@ -56,7 +57,7 @@ function createCommunityListing(input: {
 }) {
 	return {
 		id: input.id,
-		ownerUserId: 'owner-1',
+		ownerUserId: ownerIdFromStored('owner-1'),
 		packageId: `pkg-${input.id}`,
 		sourceId: `source-${input.id}`,
 		kodyId: input.kodyId,

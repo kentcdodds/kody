@@ -11,6 +11,7 @@ import {
 	userMeterDurableObjectName,
 } from '#worker/user-scoped-durable-object-name.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function expectPitrUnavailable(object: DurableObjectPitrRpc) {
 	await expect(
 		object.getRecoveryBookmark({ timestampMs: Date.now() }),
@@ -21,7 +22,7 @@ async function expectPitrUnavailable(object: DurableObjectPitrRpc) {
 }
 
 test('all user-scoped Durable Objects expose PITR RPCs and degrade clearly in local Workers', async () => {
-	const userId = `pitr-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`pitr-${crypto.randomUUID()}`)
 	const runLogNamespace = env.RUN_LOG as DurableObjectNamespace<RunLog>
 	const storageRunnerNamespace =
 		env.STORAGE_RUNNER as DurableObjectNamespace<StorageRunner>

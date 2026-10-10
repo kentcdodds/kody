@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { cachified } from '@epic-web/cachified'
 import {
 	assertAccountWritableDb,
@@ -90,7 +91,7 @@ export async function getIdentityIconObject(input: {
 	env: Env
 	repoId: string
 	iconCommit: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	leafName: string
 	includePackageAppIcon?: boolean
 	isServableCommit: () => Promise<boolean>
@@ -240,7 +241,7 @@ async function createIdentityIconDescriptor(input: {
 	env: Env
 	repoId: string
 	iconCommit: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	leafName: string
 	includePackageAppIcon?: boolean
 	isServableCommit: () => Promise<boolean>

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -63,17 +64,17 @@ test('getCommunityListingsByIds returns public listings in input order with batc
 		status: 'delisted',
 	})
 	await insertListing(db, 'listing-banned-owner', 'banned-pkg', {
-		ownerUserId: 'owner-banned',
+		ownerUserId: ownerIdFromStored('owner-banned'),
 	})
 	await insertCommunityBan(db, {
-		user_id: 'owner-banned',
+		user_id: ownerIdFromStored('owner-banned'),
 		banned_by_user_id: 'admin-1',
 		reason: 'spam',
 	})
 	await upsertCommunityRating(db, {
 		id: 'rating-b',
 		listing_id: 'listing-b',
-		user_id: 'rater-1',
+		user_id: ownerIdFromStored('rater-1'),
 		stars: 4,
 		adaptation_effort: 2,
 		note: null,

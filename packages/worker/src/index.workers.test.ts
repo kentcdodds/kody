@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import * as Sentry from '@sentry/cloudflare'
 import { env, runInDurableObject } from 'cloudflare:test'
@@ -208,7 +209,7 @@ test('platform lanes execute with their expected inputs and jobs-owned lanes are
 
 test('scheduled OAuth purge advances and revokes every grant token before the grant', async () => {
 	const scheduledTime = Date.parse('2026-07-05T10:05:00.000Z')
-	const userId = 'oauth-purge-user'
+	const userId = ownerIdFromStored('oauth-purge-user')
 	const clientId = 'oauth-purge-client'
 	const healthyGrantIds = Array.from(
 		{ length: 51 },

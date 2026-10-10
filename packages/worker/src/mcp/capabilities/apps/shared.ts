@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { z } from 'zod'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -71,7 +75,7 @@ export async function requirePackageRealtimeContext(input: {
 		input.explicitPackageId,
 	)
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
-		userId: user.userId,
+		userId: personalOrgId(user.userId),
 		packageId,
 	})
 	if (!savedPackage || !savedPackage.hasApp) {
@@ -84,7 +88,7 @@ export async function requirePackageRealtimeContext(input: {
 		savedPackage,
 		realtime: await createPackageRealtimeClient({
 			env: input.env,
-			userId: user.userId,
+			userId: personalOrgId(user.userId),
 			packageId: savedPackage.id,
 			kodyId: savedPackage.kodyId,
 			sourceId: savedPackage.sourceId,
@@ -95,7 +99,7 @@ export async function requirePackageRealtimeContext(input: {
 
 async function createPackageRealtimeClient(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	assertBackupDay,
 	type MailboxIndex,
@@ -146,17 +147,20 @@ function selectOwners(
 }
 
 function targetOwnerId(
-	sourceOwnerId: string,
+	sourceOwnerId: OwnerId,
 	day: string,
 	drill: boolean,
-): string {
-	return drill
+): OwnerId {
+	// Drill names are a prefix plus the source id. Non-drill restores use the
+	// source id bytes. Neither path trims.
+	const name = drill
 		? `${mailboxImportDrillOwnerPrefix}${day}:${encodeURIComponent(sourceOwnerId)}`
 		: sourceOwnerId
+	return name as OwnerId
 }
 
-function preflightOwnerId(sourceOwnerId: string, day: string): string {
-	return `${mailboxImportPreflightOwnerPrefix}${day}:${encodeURIComponent(sourceOwnerId)}`
+function preflightOwnerId(sourceOwnerId: string, day: string): OwnerId {
+	return `${mailboxImportPreflightOwnerPrefix}${day}:${encodeURIComponent(sourceOwnerId)}` as OwnerId
 }
 
 function mailboxThreadInput(thread: MailboxThreadRecord): MailboxThreadInput {
@@ -168,7 +172,7 @@ function mailboxThreadInput(thread: MailboxThreadRecord): MailboxThreadInput {
 
 function mailboxMessageInput(
 	message: MailboxMessageRecord,
-	drillTarget: string | null,
+	drillTarget: OwnerId | null,
 ): MailboxMessageInput {
 	return {
 		...message,
@@ -185,7 +189,7 @@ function mailboxMessageInput(
 
 function mailboxAttachmentInput(
 	attachment: MailboxAttachmentRecord,
-	drillTarget: string | null,
+	drillTarget: OwnerId | null,
 ): MailboxAttachmentInput {
 	return {
 		...attachment,
@@ -212,7 +216,7 @@ function mailboxDeliveryEventInput(
 
 async function restoreThread(input: {
 	mailbox: MailboxRpc
-	ownerId: string
+	ownerId: OwnerId
 	thread: MailboxThreadRecord
 	progress: MailboxImportTickResult['progress']
 }): Promise<void> {
@@ -232,10 +236,10 @@ async function restoreThread(input: {
 
 async function restoreMessage(input: {
 	mailbox: MailboxRpc
-	ownerId: string
+	ownerId: OwnerId
 	message: MailboxMessageRecord
 	attachments: Array<MailboxAttachmentRecord>
-	blobOwnerId: string | null
+	blobOwnerId: OwnerId | null
 	progress: MailboxImportTickResult['progress']
 }): Promise<number> {
 	const message = mailboxMessageInput(input.message, input.blobOwnerId)
@@ -259,7 +263,7 @@ async function restoreMessage(input: {
 
 async function restoreDeliveryEvents(input: {
 	mailbox: MailboxRpc
-	ownerId: string
+	ownerId: OwnerId
 	events: Array<MailboxDeliveryEventRecord>
 	progress: MailboxImportTickResult['progress']
 }): Promise<number> {
@@ -293,7 +297,7 @@ function mailboxCountsEqual(
 
 function assertCanonicalDumpBlobKeys(
 	dump: ParsedMailboxDump,
-	sourceOwnerId: string,
+	sourceOwnerId: OwnerId,
 ): void {
 	for (const message of dump.messages) {
 		const expectedRawMimeKey = emailRawMimeKey(sourceOwnerId, message.id)
@@ -593,10 +597,11 @@ export async function runMailboxImportTick(input: {
 	while (cursor.ownerIndex < owners.length && cursor.phase !== 'done') {
 		const owner = owners[cursor.ownerIndex]!
 		const dump = await loadVerifiedMailboxDump(s3, input.day, owner)
-		assertCanonicalDumpBlobKeys(dump, owner.ownerId)
+		const sourceOwnerId = owner.ownerId as OwnerId
+		assertCanonicalDumpBlobKeys(dump, sourceOwnerId)
 		validateCursorRowIndex(cursor, dump)
-		const target = targetOwnerId(owner.ownerId, input.day, drill)
-		const preflightId = preflightOwnerId(owner.ownerId, input.day)
+		const target = targetOwnerId(sourceOwnerId, input.day, drill)
+		const preflightId = preflightOwnerId(sourceOwnerId, input.day)
 		const mailbox = mailboxRpc({ env: input.env, userId: target })
 		const preflightMailbox = mailboxRpc({
 			env: input.env,

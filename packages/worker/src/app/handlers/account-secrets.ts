@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -571,7 +572,7 @@ async function handleConnectOauthAction(input: {
 
 async function emitConnectOauthAuthSucceeded(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	integration: {
 		name: string
 		lane: 'user' | 'platform'
@@ -807,7 +808,7 @@ async function exchangeOAuthToken(input: {
 
 async function saveIntegrationConfig(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	provider: string
 	tokenUrl: string
 	apiBaseUrl: string | null
@@ -854,7 +855,7 @@ async function saveIntegrationConfig(input: {
 
 async function resolveConnectClientSecret(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	provider: string
 	clientSecret?: string | null
 }): Promise<string | null> {
@@ -874,7 +875,7 @@ async function resolveConnectClientSecret(input: {
 
 async function listConnectClientSecretSlugs(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	provider: string
 }): Promise<Array<string>> {
 	const slugs: Array<string> = []

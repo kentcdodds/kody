@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import {
 	type AdminCodemodRunItemsLoaderData,
@@ -414,7 +415,10 @@ function parseScope(
 				error: 'scope.userId is required when scope is a user object.',
 			}
 		}
-		return { ok: true, scope: { kind: 'user', userId } }
+		return {
+			ok: true,
+			scope: { kind: 'user', userId: ownerIdFromStored(userId) },
+		}
 	}
 	return {
 		ok: false,

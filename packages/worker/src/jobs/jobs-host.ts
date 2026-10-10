@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	type JobsHostContract,
@@ -25,7 +26,7 @@ export class JobsHost
 	implements JobsHostContract
 {
 	async runDueJobsForUser(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<RunDueJobsResult> {
 		return runWithDynamicWorkerEvaluationBudget(
 			async () =>
@@ -34,7 +35,7 @@ export class JobsHost
 	}
 
 	async runJobNow(input: {
-		userId: string
+		userId: OwnerId
 		jobId: string
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null

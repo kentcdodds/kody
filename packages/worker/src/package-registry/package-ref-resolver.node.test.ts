@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { retirePackageSlug } from '#worker/community/package-url.ts'
@@ -10,7 +11,7 @@ import {
 } from './repo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const ownerId = 'owner-user'
+const ownerId = ownerIdFromStored('owner-user')
 const otherOwnerId = 'other-user'
 const notesId = '6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c'
 

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	isValidMcpServerName,
@@ -105,7 +106,7 @@ function toMetadata(row: McpServerSettingRow): McpServerSettingMetadata {
 
 export async function listMcpServerSettings(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }): Promise<Array<McpServerSettingMetadata>> {
 	const rows = await listMcpServerSettingRows({
 		db: input.env.APP_DB,
@@ -116,7 +117,7 @@ export async function listMcpServerSettings(input: {
 
 export async function listEnabledMcpServerRefs(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }): Promise<Array<EnabledMcpServerRef>> {
 	const rows = await listEnabledMcpServerSettingRows({
 		db: input.env.APP_DB,
@@ -153,7 +154,7 @@ const enabledMcpServerRefsCache = createEnabledMcpServerRefsCache()
  */
 export function listEnabledMcpServerRefsCached(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }): Promise<ReadonlyArray<EnabledMcpServerRef>> {
 	return enabledMcpServerRefsCache.getOrCreate({
 		cacheKey: input.userId,
@@ -163,7 +164,7 @@ export function listEnabledMcpServerRefsCached(input: {
 
 export async function listVisibleEnabledMcpServerRefsCached(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	packageId?: string | null
 }): Promise<ReadonlyArray<McpServerRef>> {
 	const refs = await listEnabledMcpServerRefsCached(input)
@@ -173,7 +174,9 @@ export async function listVisibleEnabledMcpServerRefsCached(input: {
 	})
 }
 
-export function invalidateEnabledMcpServerRefsCache(input: { userId: string }) {
+export function invalidateEnabledMcpServerRefsCache(input: {
+	userId: OwnerId
+}) {
 	enabledMcpServerRefsCache.delete(input.userId)
 }
 
@@ -192,7 +195,7 @@ function validateNameOrThrow(name: string) {
 
 export async function addMcpServer(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	name: string
 	url: string
 	baseUrl: string
@@ -300,7 +303,7 @@ export async function addMcpServer(input: {
 
 export async function setMcpServerEnabled(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	id: string
 	enabled: boolean
 }): Promise<McpServerSettingMetadata> {
@@ -331,7 +334,7 @@ export async function setMcpServerEnabled(input: {
 
 export async function deleteMcpServer(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<boolean> {
 	const existing = await getMcpServerSettingRowById({
@@ -362,7 +365,7 @@ export async function deleteMcpServer(input: {
 
 export async function getMcpServerSettingById(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<McpServerSettingMetadata | null> {
 	const row = await getMcpServerSettingRowById({
@@ -375,7 +378,7 @@ export async function getMcpServerSettingById(input: {
 
 export async function setMcpServerUsage(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	id: string
 	usageMode: McpServerUsageMode
 	allowedPackageIds?: Array<string>
@@ -418,7 +421,7 @@ export async function setMcpServerUsage(input: {
  */
 export async function lockMcpServerToPackage(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	id: string
 	packageId: string
 }): Promise<McpServerSettingMetadata> {
@@ -462,7 +465,7 @@ export async function lockMcpServerToPackage(input: {
 
 export async function setMcpServerLastError(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	id: string
 	lastError: McpServerLastError | null
 }): Promise<boolean> {
@@ -476,7 +479,7 @@ export async function setMcpServerLastError(input: {
 
 export async function persistMcpServerLastErrorIfChanged(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	id: string
 	state: string
 	lastError: McpServerLastError | null

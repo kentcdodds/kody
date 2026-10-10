@@ -17,6 +17,7 @@ import {
 	type RepoSessionRow,
 } from '#worker/repo/types.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function normalizeMockQuery(query: string): string {
 	return query
 		.replace(/\s+/g, ' ')
@@ -543,7 +544,7 @@ export function createEntitySourceRow(input: {
 }): EntitySourceRow {
 	return {
 		id: input.sourceId,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		entity_kind: 'job',
 		entity_id: input.jobId,
 		repo_id: input.repoId,
@@ -566,7 +567,7 @@ export function createRepoSessionRow(input: {
 }): RepoSessionRow {
 	return {
 		id: input.id,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		source_id: input.sourceId,
 		source_repo_id: input.sourceRepoId,
 		session_branch: `sessions/${input.id}`,

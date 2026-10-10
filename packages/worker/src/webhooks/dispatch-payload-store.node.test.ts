@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	createWebhookDispatchQueueMessage,
@@ -57,7 +58,7 @@ function createInput(body: string) {
 	return {
 		endpoint: {
 			id: 'endpoint-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'package-1',
 			webhookName: 'sentry',
 		},
@@ -97,7 +98,7 @@ test('ack queue messages drop reconstructed json and spill bodies that miss the 
 	const kv = createKv()
 	const payloadKvKey = await storeWebhookDispatchPayload({
 		kv,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		deliveryId: 'delivery-1',
 		body: largeBody,
 	})

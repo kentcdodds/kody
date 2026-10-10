@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import {
@@ -19,7 +20,7 @@ import {
  */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type McpEventSubscriptionKey = {
-	userId: string
+	userId: OwnerId
 	oauthClientId: string
 	connectionProfileName: string | null
 	eventName: string
@@ -29,7 +30,7 @@ export type McpEventSubscriptionKey = {
 
 export type McpEventSubscriptionRecord = {
 	id: string
-	userId: string
+	userId: OwnerId
 	oauthClientId: string
 	connectionProfileName: string | null
 	eventName: string
@@ -46,7 +47,7 @@ export type McpEventSubscriptionRecord = {
 
 type McpEventSubscriptionRow = {
 	id: string
-	user_id: string
+	user_id: OwnerId
 	oauth_client_id: string
 	connection_profile_name: string | null
 	event_name: string
@@ -132,7 +133,7 @@ export async function buildMcpEventSubscriptionId(
 
 export async function getMcpEventSubscription(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<McpEventSubscriptionRecord | null> {
 	const row = await input.db
@@ -147,7 +148,7 @@ export async function getMcpEventSubscription(input: {
 
 export async function countLiveMcpEventSubscriptionsForPrincipal(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	oauthClientId: string
 	now: Date
 }): Promise<number> {
@@ -171,7 +172,7 @@ export async function countLiveMcpEventSubscriptionsForPrincipal(input: {
 export async function findRecentMcpEventCallbackVerification(input: {
 	db: D1Database
 	env: Pick<Env, 'SECRET_STORE_KEY'>
-	userId: string
+	userId: OwnerId
 	oauthClientId: string
 	callbackUrl: string
 	secret: string
@@ -309,7 +310,7 @@ export async function upsertMcpEventSubscription(input: {
 
 export async function deleteMcpEventSubscription(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<boolean> {
 	const result = await input.db
@@ -323,7 +324,7 @@ export async function deleteMcpEventSubscription(input: {
 
 export async function deleteExpiredMcpEventSubscriptions(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	now: Date
 }): Promise<void> {
 	await input.db
@@ -338,7 +339,7 @@ export async function deleteExpiredMcpEventSubscriptions(input: {
 /** Active, unexpired, verified subscriptions for one user's event name. */
 export async function listDeliverableMcpEventSubscriptions(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	eventName: string
 	now: Date
 }): Promise<Array<McpEventSubscriptionRecord>> {
@@ -359,7 +360,7 @@ export async function listDeliverableMcpEventSubscriptions(input: {
 export async function mcpEventSubscriptionSecretMatches(input: {
 	db: D1Database
 	env: Pick<Env, 'SECRET_STORE_KEY'>
-	userId: string
+	userId: OwnerId
 	id: string
 	secret: string
 }): Promise<boolean> {
@@ -386,7 +387,7 @@ export async function mcpEventSubscriptionSecretMatches(input: {
 export async function readMcpEventSubscriptionSigningSecrets(input: {
 	db: D1Database
 	env: Pick<Env, 'SECRET_STORE_KEY'>
-	userId: string
+	userId: OwnerId
 	id: string
 	now: Date
 }): Promise<Array<string>> {
@@ -433,7 +434,7 @@ export async function readMcpEventSubscriptionSigningSecrets(input: {
 
 export async function recordMcpEventDeliveryOutcome(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	id: string
 	now: Date
 	outcome: { ok: true } | { ok: false; error: McpEventDeliveryErrorCategory }
@@ -491,7 +492,7 @@ export async function deleteMcpEventSubscriptionsForOauthClient(input: {
 /** Every grant of the user was revoked (password change / reset). */
 export async function deleteMcpEventSubscriptionsForUser(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 }): Promise<number> {
 	const result = await input.db
 		.prepare(

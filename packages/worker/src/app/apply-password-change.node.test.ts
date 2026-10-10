@@ -8,6 +8,7 @@ import { createDb } from '#worker/db.ts'
 import { applyPasswordChange } from './apply-password-change.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function seedUserWithFactors() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
@@ -48,7 +49,7 @@ test('a failed factor cleanup leaves the password, stamp, and reset token untouc
 			d1,
 			helpers,
 			userId: 1,
-			stableUserId,
+			stableUserId: ownerIdFromStored(stableUserId),
 			password: 'brand-new-password',
 			clearSecondFactorsAndConnections: true,
 		}),
@@ -85,7 +86,7 @@ test('factors are cleared before password_changed_at is stamped', async () => {
 		d1,
 		helpers,
 		userId: 1,
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		password: 'brand-new-password',
 		clearSecondFactorsAndConnections: true,
 	})
@@ -122,7 +123,7 @@ test('password change drops every MCP event subscription for the user with the g
 		d1,
 		helpers,
 		userId: 1,
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		password: 'brand-new-password',
 	})
 	expect(result.ok).toBe(true)

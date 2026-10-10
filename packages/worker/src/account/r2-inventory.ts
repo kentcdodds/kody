@@ -4,6 +4,7 @@
  * Account deletion / purge inventory must enumerate tombstoned rows so KV, R2,
  * and DO cleanup still run after soft-delete.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { accountUserOwnedR2Surfaces } from '#worker/account/user-owned-surfaces.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
 import {
@@ -56,7 +57,7 @@ function bindingFor(
 	return surface.binding
 }
 
-async function listUserCommunityListings(env: Env, userId: string) {
+async function listUserCommunityListings(env: Env, userId: OwnerId) {
 	const listings: Array<AccountCommunityListingSnapshot> = []
 	let afterRowid = 0
 	const pageSize = 500
@@ -97,7 +98,7 @@ async function listUserCommunityListings(env: Env, userId: string) {
 	}
 }
 
-async function listUserIdentityIcons(env: Env, userId: string) {
+async function listUserIdentityIcons(env: Env, userId: OwnerId) {
 	const icons: Array<AccountIdentityIconSnapshot> = []
 	let afterRowid = 0
 	const pageSize = 500
@@ -141,7 +142,7 @@ async function listUserIdentityIcons(env: Env, userId: string) {
 
 export async function collectAccountR2Inventory(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 }): Promise<{
 	objects: Array<AccountR2ObjectRef>

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
@@ -49,7 +50,7 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 
 	await recordDynamicWorkerInvoke({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		durationMs: 15,
 		outcome: 'success',
 		surface: 'execute',
@@ -61,7 +62,7 @@ test('recordDynamicWorkerInvoke writes numbers and closed enums only', async () 
 
 	expect(recordUsageSpy).toHaveBeenCalledTimes(1)
 	expect(recordUsageSpy.mock.calls[0]?.[1]).toEqual({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'dynamic_worker_invoke',
 		durationMs: 15,
 		outcome: 'success',
@@ -91,7 +92,7 @@ test('recordDynamicWorkerInvoke skips anonymous runs and never throws', async ()
 	spy.mockRejectedValueOnce(new Error('usage exploded'))
 	await recordDynamicWorkerInvoke({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		durationMs: 1,
 		outcome: 'error',
 		surface: 'job',

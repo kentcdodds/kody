@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	earliestSecretExpiresAt,
 	isSecretExpired,
@@ -52,7 +53,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { stampFirstSecret } from '#worker/identity/activation-stamps.ts'
 
 type SecretOwnerContext = {
-	userId: string
+	userId: OwnerId
 	storageContext?: StorageContext | null
 }
 
@@ -216,7 +217,7 @@ export async function saveSecret(
 
 export async function updateUserSecretForPackage(input: {
 	env: SecretWriteEnv
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	packageId: string
 	name: string
@@ -255,7 +256,7 @@ export async function updateUserSecretForPackage(input: {
  */
 export async function setSecretsAtomically(input: {
 	env: SecretWriteEnv
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	secrets: Array<{
 		name: string
@@ -336,7 +337,7 @@ export async function setSecretsAtomically(input: {
 
 export async function updateUserSecretsForPackageAtomically(input: {
 	env: SecretWriteEnv
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	packageId: string
 	secrets: Array<{
@@ -463,7 +464,7 @@ export async function updateUserSecretsForPackageAtomically(input: {
 
 async function saveSecretsAtomically(input: {
 	env: SecretWriteEnv
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	scope: SecretScope
 	secrets: Array<{
@@ -795,7 +796,7 @@ export async function updateSecret(
 
 export async function listUserSecretsForSearch(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }) {
 	const rows = await listUserScopeSecretMetadata({
 		db: input.env.APP_DB,
@@ -814,7 +815,7 @@ export async function listUserSecretsForSearch(input: {
 
 export async function listPackageSecretsByPackageIds(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	packageIds: Array<string>
 }) {
 	const rows = await listPackageScopeSecretMetadata({
@@ -847,7 +848,7 @@ export async function listPackageSecretsByPackageIds(input: {
 
 async function getAccessibleBuckets(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: SecretScope | null
 	storageContext: StorageContext | null
 }) {
@@ -869,7 +870,7 @@ async function getAccessibleBuckets(input: {
 
 async function listAccessibleBucketsForScope(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: SecretScope
 	storageContext: StorageContext | null
 }) {
@@ -892,7 +893,7 @@ async function listAccessibleBucketsForScope(input: {
 
 async function getExistingBucketForScope(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: SecretScope
 	storageContext: StorageContext | null
 }) {
@@ -908,7 +909,7 @@ async function getExistingBucketForScope(input: {
 
 async function getOrCreateSecretBucket(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: SecretScope
 	storageContext: StorageContext | null
 	sessionExpiresAt: string | null
@@ -993,7 +994,7 @@ function toSecretMetadata(input: {
 
 export async function setSecretAllowedHosts(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	name: string
 	scope: SecretScope
 	allowedHosts: Array<string>
@@ -1048,7 +1049,7 @@ export async function setSecretAllowedHosts(input: {
 
 export async function setSecretAllowedPackages(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	name: string
 	scope: SecretScope
 	allowedPackages: Array<string>
@@ -1120,7 +1121,7 @@ type UserSecretPackageGrantState = {
  */
 export async function inspectUserSecretPackageGrant(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	name: string
 	packageId: string
 }): Promise<UserSecretPackageGrantState> {
@@ -1185,7 +1186,7 @@ export async function inspectUserSecretPackageGrant(input: {
  */
 export async function lockSecretToPackage(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	name: string
 	packageId: string
 }): Promise<SecretMetadata> {

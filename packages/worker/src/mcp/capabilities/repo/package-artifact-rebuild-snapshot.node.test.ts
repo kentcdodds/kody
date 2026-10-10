@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactRepo from '#worker/repo/published-bundle-artifacts-repo.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -70,7 +71,7 @@ test('external artifact rebuild reads the published snapshot once per rebuild an
 			query: { entryPoint: string; artifactName: string | null },
 		) => ({
 			id: `row-${query.entryPoint}`,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId,
 			publishedCommit,
 			artifactKind: 'module',
@@ -117,7 +118,7 @@ test('external artifact rebuild reads the published snapshot once per rebuild an
 			env,
 			rpcSessionId: 'session-1',
 			sourceId,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			publishedCommit,
 			baseUrl: 'https://kody.test',
 		})

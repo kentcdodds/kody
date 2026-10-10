@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -83,7 +86,7 @@ function stubSources({ missingSourceId }: { missingSourceId?: string } = {}) {
 				? null
 				: {
 						id: input.id,
-						user_id: 'user-1',
+						user_id: ownerIdFromStored('user-1'),
 						entity_kind: 'package' as const,
 						entity_id: 'package-1',
 						repo_id: `repo-${input.id}`,
@@ -99,7 +102,7 @@ function stubSources({ missingSourceId }: { missingSourceId?: string } = {}) {
 	)
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@user/demo',
 		kodyId: 'demo',
 		description: 'Demo package',
@@ -126,7 +129,7 @@ test('repoListSessions defaults to active sessions for the signed-in user', asyn
 			updated_at: '2026-04-28T00:02:00.000Z',
 		}),
 		createSession('session-other-user', {
-			user_id: 'other-user',
+			user_id: ownerIdFromStored('other-user'),
 			updated_at: '2026-04-28T00:01:00.000Z',
 		}),
 	])
@@ -177,7 +180,9 @@ test('repoListSessions status all includes inactive sessions', async () => {
 test('repoListSessions does not return rows for another user even if storage is malformed', async () => {
 	stubSources()
 	mockModule.listRepoSessionsByUser.mockResolvedValue([
-		createSession('session-other-user', { user_id: 'other-user' }),
+		createSession('session-other-user', {
+			user_id: ownerIdFromStored('other-user'),
+		}),
 	])
 
 	expect((await listSessions()).sessions).toEqual([])
@@ -202,7 +207,7 @@ test('repoListSessions supports source_id narrowing and applies limit after drop
 	])
 	expect(mockModule.listRepoSessionsBySource).toHaveBeenCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', sourceId: 'source-2' },
+		{ userId: ownerIdFromStored('user-1'), sourceId: 'source-2' },
 	)
 	expect(mockModule.listRepoSessionsByUser).not.toHaveBeenCalled()
 

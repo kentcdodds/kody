@@ -3,6 +3,7 @@ import {
 	truncateToUtf8Bytes,
 	utf8ByteLength,
 } from '@kody-internal/shared/backup-restore-safety.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type PackageCodemodFinding } from './types.ts'
 
 export type PackageCodemodRunStatus =
@@ -27,7 +28,7 @@ export type PackageCodemodRunRecord = {
 export type PackageCodemodRunItemRecord = {
 	id: string
 	runId: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	status: string
@@ -145,7 +146,7 @@ function mapItemRow(row: Record<string, unknown>): PackageCodemodRunItemRecord {
 	return {
 		id: String(row['id']),
 		runId: String(row['run_id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		packageId: String(row['package_id']),
 		kodyId: String(row['kody_id']),
 		status: String(row['status']),
@@ -353,7 +354,7 @@ export async function insertPackageCodemodRunItem(
 	input: {
 		id: string
 		runId: string
-		userId: string
+		userId: OwnerId
 		packageId: string
 		kodyId: string
 		status: string

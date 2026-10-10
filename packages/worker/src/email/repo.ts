@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	maxRestorableTextColumnBytes,
 	truncateToUtf8Bytes,
@@ -135,7 +136,7 @@ export function mapMessageRow(
 	return {
 		id: String(row['id']),
 		direction: String(row['direction']) as EmailDirection,
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
 		threadId: row['thread_id'] == null ? null : String(row['thread_id']),
 		senderIdentityId:

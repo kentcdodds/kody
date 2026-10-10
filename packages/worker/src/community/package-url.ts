@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { routes } from '#universal/routes.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
@@ -44,7 +48,7 @@ export type PackagePageUrlTarget =
 			kind: 'package'
 			username: string
 			kodyId: string
-			userId: string
+			userId: OwnerId
 			savedPackage: SavedPackageRecord | null
 			listingId: string | null
 			listingKodyId: string | null
@@ -53,7 +57,7 @@ export type PackagePageUrlTarget =
 			kind: 'redirect'
 			username: string
 			kodyId: string
-			userId: string
+			userId: OwnerId
 			listingId: string | null
 			listingKodyId: string | null
 	  }
@@ -232,7 +236,7 @@ export async function resolvePackagePageUrl(input: {
 					: null)
 			if (!savedPackage && listing) {
 				savedPackage = await getSavedPackageById(input.db, {
-					userId: ownerUserId,
+					userId: personalOrgId(ownerUserId),
 					packageId: listing.packageId,
 				})
 			}
@@ -252,7 +256,7 @@ export async function resolvePackagePageUrl(input: {
 							kind: 'redirect',
 							username: identity.username,
 							kodyId: publicSlug,
-							userId: ownerUserId,
+							userId: personalOrgId(ownerUserId),
 							listingId: listing?.id ?? null,
 							listingKodyId,
 						}
@@ -260,7 +264,7 @@ export async function resolvePackagePageUrl(input: {
 							kind: 'package',
 							username: identity.username,
 							kodyId: servedSlug,
-							userId: ownerUserId,
+							userId: personalOrgId(ownerUserId),
 							savedPackage,
 							listingId: listing?.id ?? null,
 							listingKodyId,
@@ -278,7 +282,7 @@ export async function resolvePackagePageUrl(input: {
 				username: identity.username,
 				kodyId:
 					currentListing?.kodyId ?? getPackageNameLeaf(found.savedPackage.name),
-				userId: ownerUserId,
+				userId: personalOrgId(ownerUserId),
 				listingId: currentListing?.id ?? null,
 				listingKodyId: currentListing?.kodyId ?? null,
 			}

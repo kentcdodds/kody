@@ -1,8 +1,9 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
 import { parseRequestLineage } from '#worker/request-context/request-context.ts'
 
 export type PackageEventsDispatchQueueMessage = {
-	userId: string
+	userId: OwnerId
 	topic: string
 	idempotencyKey: string
 	payload: Record<string, unknown>
@@ -75,7 +76,7 @@ export function parsePackageEventsDispatchQueueMessage(
 	const emittedAt = record['emittedAt']
 	const lineage = parseRequestLineage(record['lineage'])
 	return {
-		userId: userId.trim(),
+		userId: userId.trim() as OwnerId,
 		topic: topic.trim(),
 		idempotencyKey: idempotencyKey.trim(),
 		payload: payload as Record<string, unknown>,

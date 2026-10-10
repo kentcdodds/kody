@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminCapabilityAccess,
+	adminStableOwnerId,
 	auditAdminCapabilityInvocation,
 } from './admin-shared.ts'
 
@@ -34,7 +35,7 @@ export const adminAccountWriteLeaseListCapability = defineDomainCapability(
 				async () => ({
 					leases: await listActiveAccountWriteLeases(
 						ctx.env,
-						args.stable_user_id,
+						adminStableOwnerId(args.stable_user_id),
 					),
 				}),
 			)

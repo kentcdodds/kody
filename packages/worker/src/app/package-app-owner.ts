@@ -14,7 +14,9 @@ import {
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import {
 	parsePersonId,
+	personalOrgId,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
@@ -28,7 +30,7 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type PackageAppOwner = {
 	/** Stable (hashed) user id used for every userId-scoped read. */
-	userId: string
+	userId: OwnerId
 	username: string
 	email: string
 	displayName: string
@@ -41,7 +43,7 @@ export type PackageAppOwner = {
  * account-state mutations invalidate eagerly.
  */
 type CachedPackageAppOwnerRow = {
-	userId: string
+	userId: OwnerId
 	username: string
 	email: string
 	deletingAt: string | null
@@ -144,7 +146,7 @@ async function loadPackageAppOwnerRowWithCache(input: {
 				return null
 			}
 			return {
-				userId: personIdFromStored(userRecord.stable_user_id),
+				userId: personalOrgId(personIdFromStored(userRecord.stable_user_id)),
 				username: userRecord.username,
 				email: userRecord.email,
 				deletingAt: userRecord.deleting_at ?? null,

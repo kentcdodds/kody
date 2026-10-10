@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -136,7 +139,7 @@ test('values API lists, selects, and deletes leftover user-scoped rows', async (
 	})
 	expect(mockModule.listValues).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			scope: 'user',
 			storageContext: { sessionId: null, appId: null },
 		}),
@@ -159,7 +162,7 @@ test('values API lists, selects, and deletes leftover user-scoped rows', async (
 	expect(deleteResponse.status).toBe(200)
 	expect(mockModule.deleteValue).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			scope: 'user',
 			name: 'theme',
 		}),

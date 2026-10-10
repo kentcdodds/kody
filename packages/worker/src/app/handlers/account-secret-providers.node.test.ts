@@ -15,6 +15,7 @@ import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 const itemId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
 const canonicalRef = `i/${itemId}/password`
@@ -124,7 +125,7 @@ test('secret providers API lists grants and revokes them on the website', async 
 		)
 	await grantSecretProviderToPackage({
 		env,
-		userId: ownerStableId,
+		userId: ownerIdFromStored(ownerStableId),
 		providerId: '1password',
 		ref: canonicalRef,
 		packageId: 'pkg-consumer',

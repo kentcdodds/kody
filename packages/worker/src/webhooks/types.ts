@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	webhookDefaultRateLimitPerMinute as defaultRateLimitPerMinute,
 	webhookMaxRateLimitPerMinute as maxRateLimitPerMinute,
@@ -44,7 +45,7 @@ export const webhookDefaultReplayToleranceSeconds = 300
 /** Minted URL state for a declared package webhook. */
 export type WebhookEndpointRecord = {
 	id: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	webhookName: string
 	urlSecretHash: string
@@ -90,7 +91,7 @@ export type WebhookDeliveryOutcome = 'delivered' | 'rejected' | 'failed'
 export type WebhookDeliveryRecord = {
 	id: string
 	endpointId: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	webhookName: string
 	receivedAt: string

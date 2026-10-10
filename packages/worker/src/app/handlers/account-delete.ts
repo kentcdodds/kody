@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import {
 	auditDatabaseFromEnv,
@@ -116,8 +117,8 @@ export function createAccountDeleteHandler(env: Env) {
 			try {
 				result = await softDeleteUserAccount({
 					env,
-					userId: user.mcpUser.userId,
-					actorUserId: user.mcpUser.userId,
+					userId: personalOrgId(user.mcpUser.userId),
+					actorUserId: personalOrgId(user.mcpUser.userId),
 					actorUsername: user.username,
 				})
 			} catch (error) {
@@ -149,7 +150,7 @@ export function createAccountDeleteHandler(env: Env) {
 			scheduleUserDeletedEvent({
 				env,
 				user: {
-					id: user.mcpUser.userId,
+					id: personalOrgId(user.mcpUser.userId),
 					username: user.username,
 					email: user.email,
 				},

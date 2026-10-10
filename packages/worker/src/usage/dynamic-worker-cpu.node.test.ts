@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
@@ -10,7 +11,7 @@ beforeEach(() => {
 	recordUsage.mockClear()
 })
 
-const props = { userId: 'user-1', workerId: 'dw_abc' }
+const props = { userId: ownerIdFromStored('user-1'), workerId: 'dw_abc' }
 const usageEnv = { USAGE_EVENTS: { writeDataPoint() {} } }
 
 test('records the platform cpuTime, with wall time only as duration', async () => {
@@ -20,7 +21,7 @@ test('records the platform cpuTime, with wall time only as duration', async () =
 		event: { cpuTime: 12.6, wallTime: 830.2, outcome: 'ok' },
 	})
 	expect(recordUsage).toHaveBeenCalledWith(usageEnv, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'dynamic_worker_cpu',
 		entityId: 'dw_abc',
 		cpuMs: 12.6,
@@ -49,7 +50,7 @@ test('missing users, non-numeric CPU, and no Analytics Engine are skipped', asyn
 	})
 	await recordDynamicWorkerCpu({
 		env: usageEnv as never,
-		props: { userId: '', workerId: 'dw_abc' },
+		props: { userId: ownerIdFromStored(''), workerId: 'dw_abc' },
 		event: { cpuTime: 4, wallTime: 5, outcome: 'ok' },
 	})
 	await recordDynamicWorkerCpu({

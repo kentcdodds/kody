@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 /**
  * Platform DR dumps address StorageRunner durable objects by a composite id
  * `userId/storageId`. Stable user ids are hex digests (no `/`); logical
@@ -8,7 +10,7 @@ export function encodeStorageIdentity(userId: string, storageId: string) {
 }
 
 export function decodeStorageIdentity(identity: string): {
-	userId: string
+	userId: OwnerId
 	storageId: string
 } {
 	const separator = identity.indexOf('/')
@@ -16,7 +18,7 @@ export function decodeStorageIdentity(identity: string): {
 		throw new Error(`invalid storage identity: ${identity}`)
 	}
 	return {
-		userId: identity.slice(0, separator),
+		userId: identity.slice(0, separator) as OwnerId,
 		storageId: identity.slice(separator + 1),
 	}
 }

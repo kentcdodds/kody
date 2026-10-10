@@ -4,6 +4,7 @@
  * Soft-delete and restore must read and update tombstoned rows.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import {
 	AccountDeletionWritersActiveError,
@@ -37,8 +38,8 @@ export class OrgRestoreWindowExpiredError extends Error {
 }
 
 export class UserDeleteBlockedSoleOwnerError extends Error {
-	readonly blockers: Array<{ orgId: string; orgSlug: string }>
-	constructor(blockers: Array<{ orgId: string; orgSlug: string }>) {
+	readonly blockers: Array<{ orgId: OwnerId; orgSlug: string }>
+	constructor(blockers: Array<{ orgId: OwnerId; orgSlug: string }>) {
 		const names = blockers.map((b) => `@${b.orgSlug}`).join(', ')
 		super(`user_deletion_blocked_sole_owner:${names}`)
 		this.name = 'UserDeleteBlockedSoleOwnerError'
@@ -47,7 +48,7 @@ export class UserDeleteBlockedSoleOwnerError extends Error {
 }
 
 export type SoftDeleteOrgResult = {
-	orgId: string
+	orgId: OwnerId
 	deletedAt: string
 	resourceRowsSoftDeleted: number
 	jobsSoftDeleted: number
@@ -83,7 +84,7 @@ async function claimSoftDeleteGeneration(input: {
 
 async function softDeleteOrgOwnedAppRows(input: {
 	appDb: D1Database
-	orgId: string
+	orgId: OwnerId
 	deletedAt: string
 }): Promise<number> {
 	let total = 0
@@ -157,7 +158,7 @@ async function softDeleteOrgOwnedAppRows(input: {
 
 async function restoreOrgOwnedAppRows(input: {
 	appDb: D1Database
-	orgId: string
+	orgId: OwnerId
 	deletedAt: string
 }): Promise<number> {
 	let total = 0
@@ -244,7 +245,7 @@ async function restoreOrgOwnedAppRows(input: {
 
 export async function softDeleteOrg(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	actorUserId?: string | null
 	actorUsername?: string | null
 	now?: Date
@@ -405,7 +406,7 @@ export async function softDeleteOrg(input: {
  */
 export async function assertActorCanRestoreSoftDeletedOrg(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	actorUserId: string
 }): Promise<{ deletedAt: string }> {
 	const row = await input.db
@@ -430,7 +431,7 @@ export async function assertActorCanRestoreSoftDeletedOrg(input: {
 
 export async function restoreOrg(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	actorUserId?: string | null
 	actorUsername?: string | null
 	now?: Date
@@ -506,7 +507,7 @@ export async function restoreOrg(input: {
 
 export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 }) {
 	const memberships = await input.db
 		.prepare(
@@ -518,9 +519,9 @@ export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
 			   AND o.deleted_at IS NULL`,
 		)
 		.bind(input.userId)
-		.all<{ org_id: string; role: string; slug: string }>()
+		.all<{ org_id: OwnerId; role: string; slug: string }>()
 
-	const blockers: Array<{ orgId: string; orgSlug: string }> = []
+	const blockers: Array<{ orgId: OwnerId; orgSlug: string }> = []
 	for (const membership of memberships.results ?? []) {
 		if (membership.role !== 'owner') continue
 		const others = await input.db
@@ -565,7 +566,7 @@ export async function assertUserDeleteNotBlockedAsSoleOwner(input: {
  */
 export async function softDeleteUserAccount(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	actorUserId?: string | null
 	actorUsername?: string | null
 	now?: Date
@@ -624,7 +625,7 @@ export async function softDeleteUserAccount(input: {
 			   )`,
 		)
 		.bind(input.userId, input.userId, deletedAt, deletedAt)
-		.all<{ org_id: string }>()
+		.all<{ org_id: OwnerId }>()
 
 	const deletedOrgIds: Array<string> = []
 	const soleOrgIds = new Set<string>()
@@ -646,7 +647,7 @@ export async function softDeleteUserAccount(input: {
 			 WHERE user_id = ? AND (deleted_at IS NULL OR deleted_at = ?)`,
 		)
 		.bind(input.userId, deletedAt)
-		.all<{ org_id: string }>()
+		.all<{ org_id: OwnerId }>()
 	for (const row of otherMemberships.results ?? []) {
 		if (soleOrgIds.has(row.org_id)) continue
 		await onMemberSoftRemoved({
@@ -688,7 +689,7 @@ export async function softDeleteUserAccount(input: {
  */
 export async function restoreUserAccount(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	actorUserId?: string | null
 	actorUsername?: string | null
 	now?: Date
@@ -723,7 +724,7 @@ export async function restoreUserAccount(input: {
 		`SELECT id FROM orgs WHERE deleted_at = ?`,
 	)
 		.bind(deletedAt)
-		.all<{ id: string }>()
+		.all<{ id: OwnerId }>()
 	const restoredOrgIds: Array<string> = []
 	for (const row of deletedOrgs.results ?? []) {
 		const membership = await input.env.APP_DB.prepare(
@@ -772,7 +773,7 @@ const resourceRestoreTableByType: Record<string, string> = {
 /** Minimal P7 restore for one org-owned resource row (stub for MCP). */
 export async function restoreResourceRow(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	resourceType: string
 	resourceId: string
 	now?: Date

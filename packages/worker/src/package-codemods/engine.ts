@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	listSavedPackagesByUserId,
@@ -35,7 +36,7 @@ import { type PackageCodemod, type PackageCodemodFinding } from './types.ts'
 export type PackageCodemodRunMode = 'scan' | 'dry-run' | 'apply' | 'revert'
 
 export type PackageCodemodRunScope =
-	| { kind: 'user'; userId: string }
+	| { kind: 'user'; userId: OwnerId }
 	| { kind: 'fleet' }
 
 export type PackageCodemodRunFilters = {
@@ -57,7 +58,7 @@ export type PackageCodemodItemStatus =
 
 export type PackageCodemodRunItemResult = {
 	itemId: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	status: PackageCodemodItemStatus
@@ -92,14 +93,14 @@ const revertSnapshotTtlSeconds = 90 * 24 * 60 * 60
 
 type CodemodRevertSnapshot = {
 	codemodId: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	beforeCommit: string | null
 	files: Record<string, string>
 }
 
 export function buildPackageCodemodRevertSnapshotKvKey(input: {
-	userId: string
+	userId: OwnerId
 	itemId: string
 }) {
 	return `package-codemod-revert:${input.userId}:${input.itemId}`
@@ -156,7 +157,7 @@ function computeCheckSummary(input: {
 }
 
 function matchesCodemodTargetFilters(
-	target: { userId: string; packageId: string },
+	target: { userId: OwnerId; packageId: string },
 	filters: PackageCodemodRunFilters | undefined,
 ) {
 	if (!filters) return true
@@ -189,7 +190,7 @@ function matchesFilters(
 
 function emptyItemResult(input: {
 	itemId: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	status: PackageCodemodItemStatus
@@ -491,7 +492,7 @@ async function persistItem(
 async function runChecksOnFiles(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	files: Record<string, string>
 	manifestPath: string
 	sourceRoot: string

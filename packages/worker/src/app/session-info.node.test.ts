@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	createAuthCookie,
@@ -12,7 +13,7 @@ const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 test('loadSessionInfo signs out a deleting account and clears the session cookie', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		stableUserId: 'a'.repeat(64),
+		stableUserId: ownerIdFromStored('a').repeat(64),
 		email: 'deleting@example.com',
 		rememberMe: false,
 	}

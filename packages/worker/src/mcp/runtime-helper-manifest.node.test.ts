@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	createRuntimeHelperPreludes,
@@ -8,7 +9,7 @@ import {
 test('packages helper is never bound: no prelude and always unbound', () => {
 	const context = {
 		env: {} as Env,
-		callerContext: { user: { userId: 'user-1' } } as never,
+		callerContext: { user: { userId: ownerIdFromStored('user-1') } } as never,
 		capabilityMap: {},
 	}
 	const preludes = createRuntimeHelperPreludes(context).join('\n')
@@ -25,7 +26,7 @@ test('packages helper is never bound: no prelude and always unbound', () => {
 test('packageSecrets prelude reads the run package id from evaluate invocation', () => {
 	const first = createRuntimeHelperPreludes({
 		env: {} as Env,
-		callerContext: { user: { userId: 'user-1' } } as never,
+		callerContext: { user: { userId: ownerIdFromStored('user-1') } } as never,
 		capabilityMap: {},
 		packageSecretTools: {
 			get: async () => '',
@@ -35,7 +36,7 @@ test('packageSecrets prelude reads the run package id from evaluate invocation',
 	}).join('\n')
 	const second = createRuntimeHelperPreludes({
 		env: {} as Env,
-		callerContext: { user: { userId: 'user-1' } } as never,
+		callerContext: { user: { userId: ownerIdFromStored('user-1') } } as never,
 		capabilityMap: {},
 		packageSecretTools: {
 			get: async () => '',
@@ -53,7 +54,7 @@ test('computed package import helper prelude forwards callDefault to the host br
 	const callDefault = vi.fn(async (input: unknown) => input)
 	const preludes = createRuntimeHelperPreludes({
 		env: {} as Env,
-		callerContext: { user: { userId: 'user-1' } } as never,
+		callerContext: { user: { userId: ownerIdFromStored('user-1') } } as never,
 		capabilityMap: {},
 		computedPackageImportTools: { callDefault },
 	})

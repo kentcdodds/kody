@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -152,18 +156,18 @@ function createLeaseHarness(
 		env,
 		// Getters so RPC stubs are only opened when a test reads the meter.
 		get meterA() {
-			return userMeterRpc({ env, userId: 'user-a' })
+			return userMeterRpc({ env, userId: ownerIdFromStored('user-a') })
 		},
 		get meterB() {
-			return userMeterRpc({ env, userId: 'user-b' })
+			return userMeterRpc({ env, userId: ownerIdFromStored('user-b') })
 		},
 		lease<T>(
 			write: () => Promise<T>,
-			input: { stableUserId?: string; holder?: string } = {},
+			input: { stableUserId?: OwnerId; holder?: string } = {},
 		) {
 			return withAccountWriteLease({
 				db,
-				stableUserId: 'user-a',
+				stableUserId: ownerIdFromStored('user-a'),
 				env,
 				write,
 				...input,
@@ -186,10 +190,10 @@ function createLeaseHarness(
 				.get()
 		},
 		async countA() {
-			const meterA = userMeterRpc({ env, userId: 'user-a' })
+			const meterA = userMeterRpc({ env, userId: ownerIdFromStored('user-a') })
 			return (await meterA.countActiveWriteLeases()).count
 		},
-		activeHolders(stableUserId = 'user-a') {
+		activeHolders(stableUserId = ownerIdFromStored('user-a')) {
 			return listActiveAccountWriteLeases(env, stableUserId).then((leases) =>
 				leases.map((lease) => lease.holder),
 			)
@@ -211,7 +215,10 @@ function holdDoWriteLease(h: LeaseHarness, holder: string) {
 	const lease = { token: '', acquiredAt: '' }
 	const operation = h.lease(
 		async () => {
-			const [active] = await listActiveAccountWriteLeases(h.env, 'user-a')
+			const [active] = await listActiveAccountWriteLeases(
+				h.env,
+				ownerIdFromStored('user-a'),
+			)
 			lease.token = active!.token
 			lease.acquiredAt = active!.acquired_at
 			started()
@@ -238,7 +245,7 @@ type HeldLease = ReturnType<typeof holdDoWriteLease>
 function repairHeld(h: LeaseHarness, held: HeldLease) {
 	return repairAccountWriteLease({
 		db: h.db,
-		stableUserId: 'user-a',
+		stableUserId: ownerIdFromStored('user-a'),
 		token: held.token,
 		expectedAcquiredAt: held.acquiredAt,
 		repairedByUserId: 'admin-user',
@@ -326,7 +333,7 @@ test('env is required: UserMeter authoritative for acquire/held/release with D1 
 	)
 	await expect(
 		h.lease(async () => 'ok', {
-			stableUserId: 'user-b',
+			stableUserId: ownerIdFromStored('user-b'),
 			holder: 'test:other-user',
 		}),
 	).resolves.toBe('ok')
@@ -427,15 +434,20 @@ test('nested lease for a different user and sequential siblings each acquire the
 					expect(await h.meterB.countActiveWriteLeases()).toEqual({
 						count: 1,
 					})
-					expect(await h.activeHolders('user-b')).toEqual(['test:other-user'])
+					expect(await h.activeHolders(ownerIdFromStored('user-b'))).toEqual([
+						'test:other-user',
+					])
 				},
-				{ stableUserId: 'user-b', holder: 'test:other-user' },
+				{
+					stableUserId: ownerIdFromStored('user-b'),
+					holder: 'test:other-user',
+				},
 			)
 		},
 		{ holder: 'test:outer' },
 	)
-	expect(await h.activeHolders('user-a')).toEqual([])
-	expect(await h.activeHolders('user-b')).toEqual([])
+	expect(await h.activeHolders(ownerIdFromStored('user-a'))).toEqual([])
+	expect(await h.activeHolders(ownerIdFromStored('user-b'))).toEqual([])
 
 	for (const holder of ['test:first', 'test:second']) {
 		await h.lease(
@@ -556,7 +568,7 @@ test('USER_METER failures fail closed (missing binding throws)', async () => {
 	await expect(
 		withAccountWriteLease({
 			db: h.db,
-			stableUserId: 'user-a',
+			stableUserId: ownerIdFromStored('user-a'),
 			env: {},
 			async write() {
 				return 'blocked'
@@ -803,7 +815,7 @@ test('abortAccountDeleting clears the D1 gate and UserMeter tombstone only for t
 	await h.markDeleting()
 	await abortAccountDeletingByStableUserId({
 		db: h.db,
-		stableUserId: 'user-a',
+		stableUserId: ownerIdFromStored('user-a'),
 		now: atMinute(2),
 		env: h.env,
 	})
@@ -812,28 +824,31 @@ test('abortAccountDeleting clears the D1 gate and UserMeter tombstone only for t
 	await expect(
 		abortAccountDeletingByStableUserId({
 			db: h.db,
-			stableUserId: 'missing-user',
+			stableUserId: ownerIdFromStored('missing-user'),
 			env: h.env,
 		}),
 	).rejects.toThrow('User not found.')
 	await expect(
-		clearUserMeterDeletionTombstone({ env: {}, stableUserId: 'user-a' }),
+		clearUserMeterDeletionTombstone({
+			env: {},
+			stableUserId: ownerIdFromStored('user-a'),
+		}),
 	).resolves.toEqual({ cleared: false })
 })
 
 test('assertAccountWritableDb allows a live team org OwnerId with no users row', async () => {
 	const h = createLeaseHarness()
 	await expect(
-		assertAccountWritableDb(h.db, 'team-org-a'),
+		assertAccountWritableDb(h.db, ownerIdFromStored('team-org-a')),
 	).resolves.toBeUndefined()
 	await expect(
-		assertAccountWritableDb(h.db, 'missing-id'),
+		assertAccountWritableDb(h.db, ownerIdFromStored('missing-id')),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 	h.sqlite
 		.prepare(`UPDATE orgs SET deleting_at = ? WHERE id = ?`)
 		.run(fence, 'team-org-a')
 	await expect(
-		assertAccountWritableDb(h.db, 'team-org-a'),
+		assertAccountWritableDb(h.db, ownerIdFromStored('team-org-a')),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 })
 
@@ -842,9 +857,9 @@ test('assertAccountWritableDb rejects a soft-deleted person even when their pers
 	h.sqlite
 		.prepare(`UPDATE users SET deleted_at = ? WHERE stable_user_id = ?`)
 		.run(fence, 'user-a')
-	await expect(assertAccountWritableDb(h.db, 'user-a')).rejects.toBeInstanceOf(
-		AccountDeletionInProgressError,
-	)
+	await expect(
+		assertAccountWritableDb(h.db, ownerIdFromStored('user-a')),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 	await expect(h.lease(async () => 'should-not-run')).rejects.toBeInstanceOf(
 		AccountDeletionInProgressError,
 	)
@@ -855,9 +870,9 @@ test('assertAccountWritableDb rejects a live person whose personal org is deleti
 	h.sqlite
 		.prepare(`UPDATE orgs SET deleting_at = ? WHERE id = ?`)
 		.run(fence, 'user-a')
-	await expect(assertAccountWritableDb(h.db, 'user-a')).rejects.toBeInstanceOf(
-		AccountDeletionInProgressError,
-	)
+	await expect(
+		assertAccountWritableDb(h.db, ownerIdFromStored('user-a')),
+	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
 })
 
 test('withAccountWriteLease does not clear a leftover meter tombstone for a soft-deleted person', async () => {
@@ -877,16 +892,23 @@ test('withAccountWriteLease does not clear a leftover meter tombstone for a soft
 test('withAccountWriteLease leases package writes under a team org OwnerId', async () => {
 	const h = createLeaseHarness()
 	await expect(
-		h.lease(async () => 'saved', { stableUserId: 'team-org-a' }),
+		h.lease(async () => 'saved', {
+			stableUserId: ownerIdFromStored('team-org-a'),
+		}),
 	).resolves.toBe('saved')
 })
 
 test('withAccountWriteLease drops a leftover team-org meter tombstone when the org is live', async () => {
 	const h = createLeaseHarness()
-	const meterOrg = userMeterRpc({ env: h.env, userId: 'team-org-a' })
+	const meterOrg = userMeterRpc({
+		env: h.env,
+		userId: ownerIdFromStored('team-org-a'),
+	})
 	await meterOrg.markDeleting({ deletingAt: '2026-08-31 15:22:12' })
 	await expect(
-		h.lease(async () => 'saved', { stableUserId: 'team-org-a' }),
+		h.lease(async () => 'saved', {
+			stableUserId: ownerIdFromStored('team-org-a'),
+		}),
 	).resolves.toBe('saved')
 	expect(await meterOrg.readDeletionState()).toEqual({ deletingAt: null })
 })

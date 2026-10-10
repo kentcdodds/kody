@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -34,7 +35,7 @@ test('recordAgentPackageConversationUse upserts idempotently per conversation', 
 	await recordAgentPackageConversationUse(
 		{ APP_DB: db },
 		{
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			packageId: 'pkg-1',
 			conversationId: 'conv-1',
 			usedAt: '2026-07-01T10:00:00.000Z',
@@ -43,7 +44,7 @@ test('recordAgentPackageConversationUse upserts idempotently per conversation', 
 	await recordAgentPackageConversationUse(
 		{ APP_DB: db },
 		{
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			packageId: 'pkg-1',
 			conversationId: 'conv-1',
 			usedAt: '2026-07-01T12:00:00.000Z',
@@ -64,7 +65,7 @@ test('recordAgentPackageConversationUse upserts idempotently per conversation', 
 	}>
 	expect(rows).toHaveLength(1)
 	expect(rows[0]).toMatchObject({
-		user_id: 'user-a',
+		user_id: ownerIdFromStored('user-a'),
 		package_id: 'pkg-1',
 		first_used_at: '2026-07-01T10:00:00.000Z',
 		last_used_at: '2026-07-01T12:00:00.000Z',
@@ -79,7 +80,7 @@ test('recordAgentPackageConversationUses batches distinct package ids and skips 
 		recordAgentPackageConversationUse(
 			{},
 			{
-				userId: 'user-a',
+				userId: ownerIdFromStored('user-a'),
 				packageId: 'pkg-1',
 				conversationId: 'conv-1',
 			},
@@ -94,7 +95,7 @@ test('recordAgentPackageConversationUses batches distinct package ids and skips 
 	await recordAgentPackageConversationUses(
 		{ APP_DB: db },
 		{
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			packageIds: ['pkg-a', 'pkg-a', 'pkg-b'],
 			conversationId: 'c1',
 			usedAt: '2026-07-10T00:00:00.000Z',

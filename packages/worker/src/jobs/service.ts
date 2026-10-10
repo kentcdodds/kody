@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
@@ -186,7 +187,7 @@ function normalizeJobRepoCheckPolicy(
 async function buildPublishedJobBundle(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	sourceFiles: Record<string, string>
 	entryPoint: string
 	rootPackageId?: string | null
@@ -592,7 +593,7 @@ async function cleanupArchivedJobArtifacts(input: { env: Env; now?: Date }) {
 
 async function cleanupAdHocJobSource(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 	sourceId: string | null | undefined
 }) {
@@ -647,7 +648,7 @@ async function createPackageJobCallerContext(input: {
 	db: D1Database
 	baseUrl: string
 	/** Package storage OwnerId (person or team org). */
-	userId: string
+	userId: OwnerId
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
 	const user = await resolveBackgroundMcpUser(input.db, input.userId)
@@ -688,7 +689,7 @@ async function resolveJobRuntimeCallerContext(input: {
 
 export async function syncPackageJobsForPackage(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	baseUrl: string
 	packageId: string
 	sourceId: string
@@ -1198,7 +1199,7 @@ export async function updateJob(input: {
 
 export async function deleteJob(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 }) {
 	assertJobDeleteAllowsJobId(input.jobId)
@@ -1513,7 +1514,7 @@ async function runRepoBackedJob(input: {
 
 export async function runJobNow(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null
@@ -1707,7 +1708,7 @@ async function executeClaimedScheduledJob(input: {
 
 export async function runDueJobsForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
@@ -1850,7 +1851,7 @@ export async function runDueJobsForUser(input: {
 
 export async function getNextRunnableJob(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	now?: Date
 }) {
 	const now = input.now ?? new Date()

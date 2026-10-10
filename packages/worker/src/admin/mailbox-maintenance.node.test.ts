@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -198,12 +199,12 @@ test('maintenance USER delete removes Mailbox/R2 data and only the thin provider
 
 	const result = await runAdminMailboxMaintenanceDeleteMessage({
 		env,
-		stableUserId: 'user-1',
+		stableUserId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 	})
 
 	expect(deleteMessageWithBlobs).toHaveBeenCalledWith({
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 	})
 	expect(mocks.deleteOutboundProviderIndexByMessageId).toHaveBeenCalledWith({

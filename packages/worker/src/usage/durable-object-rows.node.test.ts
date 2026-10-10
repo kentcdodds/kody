@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
@@ -23,14 +24,14 @@ beforeEach(() => {
 test('without Analytics Engine each read records directly with the truncated count', () => {
 	recordDurableObjectRowsRead({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'StorageRunner',
 		rowsRead: 12.9,
 	})
 	expect(recordUsage).toHaveBeenCalledWith(
 		{},
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			eventType: 'durable_object_rows_read',
 			entityId: 'StorageRunner',
 			eventCount: 12,
@@ -42,7 +43,7 @@ test('without Analytics Engine each read records directly with the truncated cou
 test('platform rows-read needs Analytics Engine (no per-statement D1 fallback)', () => {
 	recordDurableObjectPlatformRowsRead({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'RunLog',
 		rowsRead: 40,
 	})
@@ -52,13 +53,13 @@ test('platform rows-read needs Analytics Engine (no per-statement D1 fallback)',
 test('empty user ids and zero-row reads are skipped', () => {
 	recordDurableObjectRowsRead({
 		env: {},
-		userId: '',
+		userId: ownerIdFromStored(''),
 		doClass: 'StorageRunner',
 		rowsRead: 9,
 	})
 	recordDurableObjectRowsRead({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'StorageRunner',
 		rowsRead: 0,
 	})
@@ -70,20 +71,20 @@ test('with Analytics Engine a burst of reads writes one point per metric and cla
 	for (let index = 0; index < 300; index += 1) {
 		recordDurableObjectRowsRead({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			doClass: 'StorageRunner',
 			rowsRead: 2,
 		})
 	}
 	recordDurableObjectPlatformRowsRead({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'RunLog',
 		rowsRead: 40,
 	})
 	recordDurableObjectPlatformRowsRead({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'RunLog',
 		rowsRead: 2,
 	})
@@ -92,7 +93,7 @@ test('with Analytics Engine a burst of reads writes one point per metric and cla
 	await flushDurableObjectUsageWrites()
 	expect(recordUsage).toHaveBeenCalledTimes(2)
 	expect(recordUsage).toHaveBeenCalledWith(env, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'durable_object_rows_read',
 		entityId: 'StorageRunner',
 		eventCount: 600,
@@ -100,7 +101,7 @@ test('with Analytics Engine a burst of reads writes one point per metric and cla
 		timestamp: expect.any(String),
 	})
 	expect(recordUsage).toHaveBeenCalledWith(env, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'durable_object_platform_rows_read',
 		entityId: 'RunLog',
 		eventCount: 42,

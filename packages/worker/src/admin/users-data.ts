@@ -42,7 +42,10 @@ import {
 	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
-import { parsePersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	parsePersonId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export const adminUserRowSelectSql = `id, stable_user_id, username, email, email_verified_at, plan, stripe_plan, entitlement_ladder, stripe_customer_id, suspended_at,
@@ -94,7 +97,7 @@ export type AdminUserListItemFieldName =
 	(typeof adminUserListItemFieldNames)[number]
 
 export type AdminUserListItem = Record<AdminUserListItemFieldName, unknown> & {
-	stableUserId: string
+	stableUserId: OwnerId
 	username: string
 	email: string
 	email_verified: boolean
@@ -522,7 +525,7 @@ export async function loadRolesByUserIds(
 
 type AdminUserRow = {
 	id: number
-	stable_user_id: string
+	stable_user_id: OwnerId
 	username: string
 	email: string
 	email_verified_at: string | null

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -166,7 +167,7 @@ function resolve(
 ) {
 	return resolvePackageIdentitySearch({
 		db: {} as D1Database,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		query: packageId,
 		baseUrl: 'https://heykody.dev',
 		username: 'user',
@@ -205,7 +206,10 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 		},
 	)
 	await expect(
-		resolve({ userId: 'user-2', includeHiddenPackages: true }),
+		resolve({
+			userId: ownerIdFromStored('user-2'),
+			includeHiddenPackages: true,
+		}),
 	).resolves.toEqual(noMatch)
 	await expect(resolve({ query: 'daily-notes' })).resolves.toMatchObject({
 		recognized: true,
@@ -217,7 +221,7 @@ test('package identity resolution is user-scoped, gates hidden matches, and skip
 	expect(mockModule.getSavedPackageById).toHaveBeenNthCalledWith(
 		4,
 		{},
-		{ userId: 'user-2', packageId },
+		{ userId: ownerIdFromStored('user-2'), packageId },
 	)
 
 	for (const input of [

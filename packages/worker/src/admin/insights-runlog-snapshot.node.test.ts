@@ -9,6 +9,7 @@ import {
 	refreshAdminInsightsRunLogSnapshot,
 } from './insights-runlog-snapshot.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const runLogMocks = vi.hoisted(() => ({
 	getAdminInsightsSnapshot:
 		vi.fn<
@@ -72,7 +73,10 @@ function createUsersDb(
 }
 
 function verifiedUser(stable_user_id: string) {
-	return { stable_user_id, email_verified_at: '2026-09-01T00:00:00.000Z' }
+	return {
+		stable_user_id: ownerIdFromStored(stable_user_id),
+		email_verified_at: '2026-09-01T00:00:00.000Z',
+	}
 }
 
 const now = new Date('2026-09-10T18:00:00.000Z')
@@ -185,7 +189,10 @@ test('foldRunLogSnapshots still reports partial fanout without user content', ()
 	const folded = foldRunLogSnapshots([
 		{ user: verifiedUser('u1'), snapshot: emptySnapshot() },
 		{
-			user: { stable_user_id: 'u2', email_verified_at: null },
+			user: {
+				stable_user_id: ownerIdFromStored('u2'),
+				email_verified_at: null,
+			},
 			snapshot: null,
 		},
 	])

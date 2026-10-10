@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	createExecuteExecutor,
@@ -165,7 +166,7 @@ function search(
 		callerContext: {
 			baseUrl: 'https://example.com',
 			user: {
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 				username: 'user',
@@ -174,7 +175,7 @@ function search(
 		conversationId: 'conv-search',
 		query: 'skills',
 		limit: 15,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		includeHiddenPackages: false,
 		...overrides,
 	})
@@ -245,7 +246,7 @@ async function runThreeBlockingEvaluations(env: Env) {
 					} as never,
 					gatewayProps: {
 						baseUrl: 'https://example.com',
-						userId: 'user-1',
+						userId: ownerIdFromStored('user-1'),
 						email: null,
 						request: null,
 						storageContext: null,

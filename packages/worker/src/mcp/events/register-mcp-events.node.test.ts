@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	Client,
 	type ClientCapabilities,
@@ -243,7 +246,7 @@ test('flag on and client capability advertises events and serves events/list', a
 	})
 	expect(mocks.recordMcpEventsClientsFlagExposure).toHaveBeenCalledWith(
 		expect.objectContaining({
-			stableUserId: 'stable-user-1',
+			stableUserId: ownerIdFromStored('stable-user-1'),
 			evaluation: expect.objectContaining({ enabled: true }),
 		}),
 	)

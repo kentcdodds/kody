@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 
@@ -108,7 +109,7 @@ async function seedCompleteDay(
 		day,
 		'CREATE TABLE t(id INTEGER);\n',
 	)
-	const ownerId = 'user-owner-1'
+	const ownerId = ownerIdFromStored('user-owner-1')
 	const index = (entries: Array<unknown>) =>
 		JSON.stringify({ schemaVersion: backupStagingSchemaVersion, day, entries })
 	const storageEntry = {

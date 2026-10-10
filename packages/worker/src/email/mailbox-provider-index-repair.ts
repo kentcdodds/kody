@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 
@@ -113,7 +114,7 @@ export function nextMailboxProviderIndexRepairDueAtMs(
 export async function repairPendingMailboxProviderIndexes(input: {
 	sql: SqlStorage
 	db: D1Database
-	ownerId: string
+	ownerId: OwnerId
 	now?: Date
 	limit?: number
 }): Promise<{ attempted: number; repaired: number; failed: number }> {

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type McpServerSettingMetadata } from '#worker/mcp-client/settings-types.ts'
@@ -52,7 +53,10 @@ function snapshot(overrides: Record<string, unknown>) {
 	}
 }
 
-const owner = { env: { APP_DB: {} as D1Database }, userId: 'user-1' }
+const owner = {
+	env: { APP_DB: {} as D1Database },
+	userId: ownerIdFromStored('user-1'),
+}
 
 test('resolveMcpServerSetting resolves by id/name and rejects blank or unknown servers', async () => {
 	const blank = resolveMcpServerSetting({

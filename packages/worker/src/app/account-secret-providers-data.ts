@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { listSecrets } from '#mcp/secrets/service.ts'
 import {
 	inspectSecretProviderPackageGrant,
@@ -11,7 +12,7 @@ import { type AccountSecretProvidersLoaderData } from '#universal/loader-data.ts
 
 export async function loadAccountSecretProvidersData(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email: string
 	url: string
 }): Promise<AccountSecretProvidersLoaderData> {
@@ -69,7 +70,7 @@ export async function loadAccountSecretProvidersData(input: {
 
 async function loadApprovalCard(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	searchParams: URLSearchParams
 }): Promise<AccountSecretProvidersLoaderData['approval']> {
 	const provider = input.searchParams.get('provider')?.trim() ?? ''

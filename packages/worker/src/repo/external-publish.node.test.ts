@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
 import type * as CommunityIcon from '#worker/community/community-icon.ts'
@@ -114,7 +115,7 @@ const kvEnv = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} as KVNamespace } as Env
 function source(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -147,7 +148,7 @@ function publish(
 	return publishFromExternalRef({
 		env: { APP_DB: {} } as Env,
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		newCommit: 'commit-new',
 		isFastForward: async () => true,
 		workspace: {
@@ -187,7 +188,7 @@ test('publishes an external fast-forward ref after checks pass', async () => {
 	// community republish.
 	expect(mockModule.refreshCommunityIconForPackagePublish).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'package-1',
 			publishedCommit: 'commit-new',
 		}),
@@ -390,7 +391,7 @@ test('locked package finishes checks then withholds published_commit unless allo
 	mockModule.runRepoChecks.mockResolvedValue(passingChecks)
 	mockModule.loadLockedSavedPackage.mockResolvedValue({
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@scope/demo',
 		kodyId: 'demo',
 		description: 'Demo',

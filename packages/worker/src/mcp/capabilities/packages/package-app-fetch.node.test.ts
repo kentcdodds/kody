@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { base64ToBytes, bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -55,7 +58,7 @@ type ContextInput = {
 
 function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		ownerScope: 'kody',
 		ownerEmail: 'kody@example.com',
 		actorUserId: 'user-1',
@@ -87,7 +90,7 @@ function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 function savedPackage(overrides?: { hasApp?: boolean }) {
 	return {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@kody/demo-app',
 		kodyId: 'demo-app',
 		description: 'Demo app',
@@ -104,7 +107,7 @@ function savedPackage(overrides?: { hasApp?: boolean }) {
 
 function invalidateDemoPackageCache() {
 	invalidateInvokeContractFreshness({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageIdOrKodyIds: ['package-1', 'demo-app', '@kody/demo-app'],
 	})
 }
@@ -148,7 +151,7 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 		expect.objectContaining({
 			dispatch: { synthetic: true },
 			owner: expect.objectContaining({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				username: 'kody',
 			}),
 			packagePath: {
@@ -201,7 +204,7 @@ test('packageAppFetch resolves owned packages by package_id', async () => {
 	})
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},
-		{ userId: 'user-1', packageId: 'package-1' },
+		{ userId: ownerIdFromStored('user-1'), packageId: 'package-1' },
 	)
 	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 })

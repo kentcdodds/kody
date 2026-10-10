@@ -16,6 +16,7 @@ import {
 } from '#worker/test-support/workers-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const systemDomain = 'kody.example.com'
 const systemTopic = 'email.system-message.received'
@@ -218,13 +219,21 @@ test(
 		using _kv = useBundleKv(bundleKv)
 
 		await deliverSystemMailAndDrain('postmaster', 'Delivery report')
-		const [stored] = await listSystemEmailMessages({ db: env.APP_DB, limit: 1 })
+		const [stored] = await listSystemEmailMessages({
+			db: env.APP_DB,
+			limit: 1,
+		})
 		if (!stored) throw new Error('Expected stored system message')
 
 		// The keyed idempotency ledger lives in each owner's RunLog DO now.
 		const invocationsFor = async (userId: string) =>
-			(await exportRunRecords({ env, userId, pageSize: 100 }))
-				.packageInvocations
+			(
+				await exportRunRecords({
+					env,
+					userId: ownerIdFromStored(userId),
+					pageSize: 100,
+				})
+			).packageInvocations
 		expect(await invocationsFor(regularStableId)).toHaveLength(0)
 		const adminInvocations = await invocationsFor(adminStableId)
 		expect(adminInvocations).toHaveLength(1)

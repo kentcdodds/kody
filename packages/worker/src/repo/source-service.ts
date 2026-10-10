@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildEntityRepoId,
 	hasArtifactsAccess,
@@ -21,7 +22,7 @@ export type EnsuredEntitySource = EntitySourceRow & {
 
 function buildEntitySourceRow(input: {
 	id?: string
-	userId: string
+	userId: OwnerId
 	entityKind: EntityKind
 	entityId: string
 	repoId?: string
@@ -62,7 +63,7 @@ export async function ensureEntitySource(input: {
 	db: D1Database
 	env: Env
 	id?: string
-	userId: string
+	userId: OwnerId
 	entityKind: EntityKind
 	entityId: string
 	repoId?: string

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -53,7 +54,7 @@ test('dedicated system thread and message reads remain owner-isolated', async ()
 		getSystemEmailMessageById({ db: env.APP_DB, messageId: message.id }),
 	).resolves.toMatchObject({
 		id: message.id,
-		userId: 'system:email',
+		userId: ownerIdFromStored('system:email'),
 		threadId: thread.id,
 	})
 })

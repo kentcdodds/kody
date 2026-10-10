@@ -16,6 +16,7 @@ import {
 } from './profile-service.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const fixedNow = '2026-07-01T00:00:00.000Z'
 
 type TestUser = Awaited<ReturnType<typeof insertUser>>
@@ -146,7 +147,7 @@ async function insertTestJob(userId: string, packageId: string) {
 		job: {
 			version: 1,
 			id,
-			userId,
+			userId: ownerIdFromStored(userId),
 			name: `job for ${packageId}`,
 			sourceId: `source-${packageId}`,
 			publishedCommit: null,

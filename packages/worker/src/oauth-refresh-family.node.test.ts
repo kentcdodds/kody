@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { expect, test, vi } from 'vitest'
 import {
@@ -14,7 +15,7 @@ import {
 
 function snapshot(overrides: Partial<RefreshFamilySnapshot> = {}) {
 	return {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		grantId: 'grant-1',
 		currentRefreshTokenHash: 'hash-rt2',
 		refreshToken: 'user-1:grant-1:rt2',
@@ -37,7 +38,7 @@ function grant(overrides: Partial<RefreshFamilyGrantIds> = {}) {
 
 test('refresh family keys and token parsing stay grant-scoped', async () => {
 	expect(parseOAuthRefreshToken('user-1:grant-1:rt1')).toEqual({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		grantId: 'grant-1',
 	})
 	expect(parseOAuthRefreshToken('not-a-token')).toBeNull()

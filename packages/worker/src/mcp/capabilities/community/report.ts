@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { reportCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -32,7 +33,7 @@ export const communityReportCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const report = await reportCommunityListing({
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				listingId: args.listing_id,
 				reason: args.reason,
 			})

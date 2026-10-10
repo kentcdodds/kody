@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as IsolatedArtifactRebuildModule from '#worker/repo/isolated-artifact-rebuild.ts'
@@ -96,7 +97,7 @@ function rebuild(
 		env: isolatedEnv,
 		rpcSessionId: 'session-1',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		publishedCommit: 'commit-1',
 		baseUrl: 'https://kody.test',
 		...overrides,
@@ -177,7 +178,7 @@ test('isolated rebuild lists then stages once, chunks targets per isolate with b
 		expect.objectContaining({
 			stagingKey,
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			publishedCommit: 'commit-1',
 			targets: sampleTargets.slice(0, 4),
 		}),

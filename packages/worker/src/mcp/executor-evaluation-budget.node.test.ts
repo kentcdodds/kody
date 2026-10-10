@@ -6,6 +6,7 @@ import {
 	runWithDynamicWorkerEvaluationBudget,
 } from './executor.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const concurrencyLimitMessage =
 	'Dynamic worker concurrency limit exceeded: each request may have up to 4 concurrent dynamic worker invocations.'
 const exports = {
@@ -33,7 +34,7 @@ function executeAs(env: Env, userId: string, code: string) {
 		exports,
 		gatewayProps: {
 			baseUrl: 'https://heykody.dev',
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: null,
 			request: null,
 			storageContext: null,

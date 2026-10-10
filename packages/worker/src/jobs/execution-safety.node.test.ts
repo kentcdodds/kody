@@ -1,3 +1,4 @@
+import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	buildScheduledJobIdempotencyKey,
@@ -91,7 +92,7 @@ test('running scheduled run backs off without duplicate execution', async () => 
 
 test('scheduled runs keep a legacy caller context whose user is not the row owner', () => {
 	const callerContext = {
-		user: { userId: 'person-1' },
+		user: { userId: personIdFromStored('person-1') },
 	} as PersistedJobCallerContext
 	expect(resolveScheduledJobCallerContext({ callerContext })).toBe(
 		callerContext,

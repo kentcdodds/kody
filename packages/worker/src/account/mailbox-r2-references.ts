@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type MailboxEnv } from '#worker/email/mailbox-client.ts'
 import { listInternalUserEmailBlobReferences } from '#worker/email/mailbox-internal-read.ts'
 import {
@@ -99,7 +100,7 @@ function assertMailboxBlobReferencePageAdvanced(input: {
 
 export async function listMailboxEmailObjectRefPage(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	pageSize: number
 	startAfter: string | null
 }): Promise<{
@@ -138,7 +139,7 @@ export async function listMailboxEmailObjectRefPage(input: {
 
 async function visitMailboxBlobReferencePages(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	visit: (page: MailboxBlobReferencePage) => void
 }) {
 	let startAfter: string | null = null
@@ -167,7 +168,7 @@ async function visitMailboxBlobReferencePages(input: {
 
 export async function listAllMailboxEmailObjectRefs(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 }): Promise<Array<AccountMailboxEmailObjectRef>> {
 	const references: Array<AccountMailboxEmailObjectRef> = []
 	await visitMailboxBlobReferencePages({
@@ -183,7 +184,7 @@ export async function listAllMailboxEmailObjectRefs(input: {
 
 export async function countMailboxEmailObjectRefs(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 }): Promise<number> {
 	let count = 0
 	await visitMailboxBlobReferencePages({
@@ -197,7 +198,7 @@ export async function countMailboxEmailObjectRefs(input: {
 
 export async function resolveMailboxEmailObjectRef(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	source: AccountMailboxEmailObjectSource
 	expectedKey: string
 }): Promise<AccountMailboxEmailObjectRef | null> {

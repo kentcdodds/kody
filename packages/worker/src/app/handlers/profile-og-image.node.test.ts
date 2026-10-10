@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -25,7 +26,7 @@ vi.mock('#worker/community/profile-og-image.ts', () => ({
 }))
 
 const publicProfile = {
-	userId: 'stable-alice',
+	userId: ownerIdFromStored('stable-alice'),
 	username: 'alice',
 	displayName: 'Alice',
 	bio: 'Hello from Alice',

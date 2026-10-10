@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	collectUserSecretRefsFromPackageSource,
@@ -23,7 +24,7 @@ export type PendingPackageSecretApprovalsSummary = {
 export async function buildPendingPackageSecretApprovalsSummary(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	secretMounts?: Record<

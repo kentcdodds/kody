@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -107,7 +110,7 @@ test('emailMessageSearch requires a signed-in, verified user and forwards the qu
 
 	expect(mockModule.searchOwnerEmailMessages).toHaveBeenCalledWith({
 		env,
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		query: 'invoice',
 		inboxId: 'inbox-1',
 		direction: 'inbound',

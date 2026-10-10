@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isNonProductionRuntime } from '#app/deployment-env.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildVerificationEmail } from '#app/email/messages.ts'
@@ -157,7 +158,7 @@ export type VerifyEmailResult =
 			ok: true
 			userId: number
 			email: string
-			stableUserId: string
+			stableUserId: OwnerId
 			newlyVerified: boolean
 	  }
 	| { ok: false; reason: 'missing_token' | 'invalid_token' | 'expired_token' }
@@ -185,7 +186,7 @@ export async function verifyEmailToken(input: {
 			user_id: number
 			expires_at: number
 			email: string
-			stable_user_id: string
+			stable_user_id: OwnerId
 			email_verified_at: string | null
 		}>()
 	const now = input.now ?? new Date()

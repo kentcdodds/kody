@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
@@ -32,7 +33,7 @@ async function seedPackage(
 	const id = crypto.randomUUID()
 	await insertSavedPackage(db, {
 		id,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		name: input.name,
 		kody_id: input.kodyId,
 		description: `${input.name} test package`,
@@ -54,17 +55,17 @@ function resolve(db: D1Database, userId: string, specifier: string) {
 test("resolveSavedPackageImport resolves only the caller's own org packages", async () => {
 	const { db } = createHarness()
 	const ownId = await seedPackage(db, {
-		userId: 'caller-user',
+		userId: ownerIdFromStored('caller-user'),
 		name: '@caller/github',
 		kodyId: 'github',
 	})
 	await seedPackage(db, {
-		userId: 'kody-org',
+		userId: ownerIdFromStored('kody-org'),
 		name: '@kody/github',
 		kodyId: 'github',
 	})
 	await seedPackage(db, {
-		userId: 'someone-else',
+		userId: ownerIdFromStored('someone-else'),
 		name: '@someoneelse/tools',
 		kodyId: 'tools',
 	})
@@ -85,12 +86,12 @@ test("resolveSavedPackageImport resolves only the caller's own org packages", as
 test("an import resolved under another org's storage is wrong_org for the bound request", async () => {
 	const { db } = createHarness()
 	await seedPackage(db, {
-		userId: 'caller-user',
+		userId: ownerIdFromStored('caller-user'),
 		name: '@caller/notes',
 		kodyId: 'notes',
 	})
 	await seedPackage(db, {
-		userId: 'other-org',
+		userId: ownerIdFromStored('other-org'),
 		name: '@other/notes',
 		kodyId: 'notes',
 	})

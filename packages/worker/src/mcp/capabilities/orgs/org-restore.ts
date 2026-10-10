@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -43,7 +44,7 @@ export const orgRestoreCapability = defineDomainCapability(
 			try {
 				await assertActorCanRestoreSoftDeletedOrg({
 					db: ctx.env.APP_DB,
-					orgId: args.orgId,
+					orgId: args.orgId as OwnerId,
 					actorUserId: user.userId,
 				})
 			} catch (error) {
@@ -60,7 +61,7 @@ export const orgRestoreCapability = defineDomainCapability(
 			try {
 				await restoreOrg({
 					env: ctx.env,
-					orgId: args.orgId,
+					orgId: args.orgId as OwnerId,
 					actorUserId: user.userId,
 				})
 			} catch (error) {

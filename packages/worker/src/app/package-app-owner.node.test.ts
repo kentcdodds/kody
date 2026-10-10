@@ -15,6 +15,7 @@ import {
 } from './package-app-owner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function seedOwnerUser() {
 	const sqlite = new DatabaseSync(':memory:')
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
@@ -155,7 +156,7 @@ test('applyPasswordChange invalidates sessions issued before the stamp', async (
 		d1,
 		helpers: oauthHelpers,
 		userId: 1,
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		password: 'new-password-ok',
 	})
 	expect(result.ok).toBe(true)

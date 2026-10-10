@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -47,7 +48,7 @@ export const repoDeleteCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				args,
 			})
 			if (source.entity_kind !== 'repo') {
@@ -57,7 +58,7 @@ export const repoDeleteCapability = defineDomainCapability(
 			}
 			const cleanup = await cleanupArtifactReposForSource({
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				sourceId: source.id,
 			}).then(
 				() => 'ok' as const,
@@ -65,10 +66,10 @@ export const repoDeleteCapability = defineDomainCapability(
 			)
 			await deleteEntitySource(ctx.env, {
 				id: source.id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 			}).catch(() => undefined)
 			await deleteUserRepo(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				repoId: userRepo.id,
 			})
 			return {

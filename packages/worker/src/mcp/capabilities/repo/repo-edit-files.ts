@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
@@ -45,12 +46,12 @@ export const repoEditFilesCapability = defineDomainCapability(
 			await authorizeRepoSessionPackageWrite({
 				env: ctx.env,
 				request: ctx.callerContext.request,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				sessionId: args.session_id,
 			})
 			const result = await repoSessionRpc(ctx.env, args.session_id).applyEdits({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				edits: args.edits.map((edit) => {
 					switch (edit.kind) {
 						case 'write':

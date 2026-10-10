@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -192,7 +193,9 @@ export const searchCapability = defineDomainCapability(
 			const query = args.query?.trim() ?? ''
 			const domainFilter = args.domain?.trim() || undefined
 			const conversationId = resolveConversationId(args.conversationId)
-			const userId = ctx.callerContext.user?.userId ?? null
+			const userId = ctx.callerContext.user
+				? personalOrgId(ctx.callerContext.user.userId)
+				: null
 			const includeHiddenPackages = !!args.includeHiddenPackages
 			const startedAt = performance.now()
 			// Deliberately dynamic: search-execution loads the capability registry,

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { refreshCommunityIconForPackagePublish } from '#worker/community/community-icon.ts'
 import { refreshIdentityIconForSource } from '#worker/repo/identity-icon.ts'
@@ -186,7 +187,7 @@ export async function finalizePublishedEntitySource(
 export async function publishFromExternalRef(input: {
 	env: Env
 	sourceId: string
-	userId: string
+	userId: OwnerId
 	newCommit: string
 	isFastForward(input: { previousCommit: string }): Promise<boolean>
 	allowForce?: boolean

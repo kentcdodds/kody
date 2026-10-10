@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	formatOnboardingSearchNotice,
 	remainingOnboardingWizardLabels,
@@ -21,7 +22,7 @@ import { type OAuthGrantListHelpers } from '#worker/oauth-grants.ts'
 
 export async function buildOnboardingSearchNotice(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	/** Deployment origin for the details link, e.g. https://kody.codes */
 	baseUrl: string
 }): Promise<string | null> {

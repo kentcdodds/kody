@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -23,7 +24,7 @@ function createEnv() {
 	}
 }
 
-const userId = 'a'.repeat(64)
+const userId = ownerIdFromStored('a'.repeat(64))
 
 async function seedUser(db: D1Database, stableUserId = userId) {
 	await db
@@ -186,9 +187,13 @@ test('checklist derives wizard steps from grants and an access win, not integrat
 		{ label: 'two ecosystems', notice: null },
 	])
 
-	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
-	await dismissOnboardingChecklist({ env, userId })
-	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(true)
+	expect(await readOnboardingChecklistDismissed({ env, userId: userId })).toBe(
+		false,
+	)
+	await dismissOnboardingChecklist({ env, userId: userId })
+	expect(await readOnboardingChecklistDismissed({ env, userId: userId })).toBe(
+		true,
+	)
 	expect(await readDismissedAt(env.APP_DB)).toMatch(/^\d{4}-\d{2}-\d{2}T/)
 })
 
@@ -200,7 +205,9 @@ test('search onboarding notice lists remaining steps without writing dismissal a
 	const notice = await noticeWith(env, noGrants)
 	expect(notice).toContain('3 steps left')
 	expect(notice).toContain('/onboarding')
-	expect(await readOnboardingChecklistDismissed({ env, userId })).toBe(false)
+	expect(await readOnboardingChecklistDismissed({ env, userId: userId })).toBe(
+		false,
+	)
 	expect(await readDismissedAt(env.APP_DB)).toBe(null)
 
 	expect(
@@ -212,7 +219,7 @@ test('search onboarding notice lists remaining steps without writing dismissal a
 	).toBe(null)
 	expect(await noticeWith(env)).toBe(null)
 
-	await dismissOnboardingChecklist({ env, userId })
+	await dismissOnboardingChecklist({ env, userId: userId })
 	expect(await noticeWith(env, noGrants)).toBe(null)
 })
 

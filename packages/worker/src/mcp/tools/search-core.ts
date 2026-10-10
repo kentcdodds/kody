@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	deterministicEmbedding,
@@ -169,7 +170,7 @@ export async function searchUnified(input: {
 	query: string
 	limit: number
 	/** Authenticated user; required for fail-closed package Vectorize isolation. */
-	userId?: string
+	userId?: OwnerId
 	registry: Awaited<ReturnType<typeof getCapabilityRegistryForContext>>
 	optionalRows: Pick<
 		OptionalSearchRowsResult,
@@ -497,7 +498,7 @@ export async function searchPackages(input: {
 	baseUrl: string
 	query: string
 	limit: number
-	userId?: string
+	userId?: OwnerId
 	rows: Array<PackageSearchRow>
 }): Promise<{ matches: Array<SearchMatch>; offline: boolean }> {
 	const result = await searchUnified({

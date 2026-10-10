@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -226,7 +227,7 @@ function messageToListItem(
 async function loadUsage(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
-	userId: string
+	userId: OwnerId
 	email: string
 }): Promise<AccountEmailUsage> {
 	const now = new Date()
@@ -297,7 +298,7 @@ async function loadUsage(input: {
 
 async function loadInboxes(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 }): Promise<Array<AccountEmailInbox>> {
 	const [inboxes, addresses] = await Promise.all([
 		listEmailInboxesForUser(input),
@@ -323,7 +324,7 @@ async function loadInboxes(input: {
 
 async function loadSelectedMessage(input: {
 	env: Env
-	stableUserId: string
+	stableUserId: OwnerId
 	messageId: string
 }): Promise<AccountEmailMessageDetail | null> {
 	const message = await getOwnerEmailMessageById({

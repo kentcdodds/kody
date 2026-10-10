@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { d1LockRetryBaseDelayMs } from '#worker/d1-retry.ts'
@@ -24,17 +27,17 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 	const db = createD1FromSqlite(sqlite)
 	await registerMcpAgentSession({
 		db,
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		doId: 'do-a',
 	})
 	await registerMcpAgentSession({
 		db,
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		doId: 'do-a',
 	})
 	await registerMcpAgentSession({
 		db,
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		doId: 'do-b',
 	})
 	await expect(listMcpAgentSessionsForUser(db, 'user-a')).resolves.toEqual([
@@ -46,7 +49,7 @@ test('MCP agent session registry is idempotent and user scoped', async () => {
 	await expect(
 		registerMcpAgentSession({
 			db,
-			userId: 'user-b',
+			userId: ownerIdFromStored('user-b'),
 			doId: 'do-a',
 		}),
 	).rejects.toThrow('ownership conflict')
@@ -83,7 +86,7 @@ test('registerMcpAgentSession retries a transient D1 internal error with an unde
 	try {
 		const resultPromise = registerMcpAgentSession({
 			db,
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			doId: 'do-a',
 		})
 		await vi.advanceTimersByTimeAsync(d1LockRetryBaseDelayMs)
@@ -116,7 +119,7 @@ test('cold MCP session owner discovery reads persisted Agents SDK props', async 
 			storage,
 			doId: 'cold-do',
 		}),
-	).resolves.toEqual({ doId: 'cold-do', userId: 'user-a' })
+	).resolves.toEqual({ doId: 'cold-do', userId: ownerIdFromStored('user-a') })
 	let purged = false
 	await purgePersistedMcpAgentSession({
 		storage: {
@@ -126,7 +129,7 @@ test('cold MCP session owner discovery reads persisted Agents SDK props', async 
 			},
 		},
 		doId: 'cold-do',
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 	})
 	expect(purged).toBe(true)
 })

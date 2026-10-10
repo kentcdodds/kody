@@ -7,7 +7,13 @@
  *
  * JSON-tuple names use {@link durableObjectNameFromParts} so components that
  * may contain `/` or `:` round-trip unambiguously.
+ *
+ * Callers pass an `OwnerId` they already have (`request.org.id`, or a storage
+ * read that branded the id). These builders do not brand and, except
+ * McpClientHub, do not trim: RunLog, UserMeter, Mailbox, RepoSessionIndex,
+ * and JobManager names are the stored id bytes.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 
 /**
  * Encode Durable Object name parts as a JSON tuple. Prefer the typed helpers
@@ -21,43 +27,43 @@ export function durableObjectNameFromParts(
 }
 
 /** JobManager — one scheduler DO per user. */
-export function jobManagerDurableObjectName(userId: string) {
+export function jobManagerDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** RunLog — one execution-history DO per user. */
-export function runLogDurableObjectName(userId: string) {
+export function runLogDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** UserMeter — one daily-entitlement meter DO per user (untrimmed, like RunLog). */
-export function userMeterDurableObjectName(userId: string) {
+export function userMeterDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** StripePlanRefresh — one activity-driven refresh alarm per user. */
-export function stripePlanRefreshDurableObjectName(userId: string) {
+export function stripePlanRefreshDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** Mailbox — one email-metadata DO per user (untrimmed, like RunLog). */
-export function mailboxDurableObjectName(userId: string) {
+export function mailboxDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** RepoSessionIndex — one catalog DO per user (untrimmed, like RunLog). */
-export function repoSessionIndexDurableObjectName(userId: string) {
+export function repoSessionIndexDurableObjectName(userId: OwnerId) {
 	return userId
 }
 
 /** McpClientHub — one client-hub DO per user (trimmed). */
-export function mcpClientHubDurableObjectName(userId: string) {
+export function mcpClientHubDurableObjectName(userId: OwnerId) {
 	return userId.trim()
 }
 
 /** StorageRunner — isolated SQLite DO per (userId, storageId). */
 export function storageRunnerDurableObjectName(
-	userId: string,
+	userId: OwnerId,
 	storageId: string,
 ) {
 	return durableObjectNameFromParts([userId, storageId])
@@ -65,7 +71,7 @@ export function storageRunnerDurableObjectName(
 
 /** PackageRealtimeSession — live app session DO per (userId, packageId). */
 export function packageRealtimeSessionDurableObjectName(input: {
-	userId: string
+	userId: OwnerId
 	packageId: string
 }) {
 	return durableObjectNameFromParts([input.userId, input.packageId])

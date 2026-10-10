@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { Resvg } from '@resvg/resvg-wasm'
@@ -16,7 +17,7 @@ import { tinyWebpBytes } from '#worker/test-support/images-binding.ts'
 test('community icon resolves a cachified descriptor to R2 bytes', async () => {
 	const listing = {
 		id: `listing-${crypto.randomUUID()}`,
-		ownerUserId: 'owner-1',
+		ownerUserId: ownerIdFromStored('owner-1'),
 		packageId: 'package-1',
 		sourceId: 'source-1',
 		kodyId: 'github-tools',

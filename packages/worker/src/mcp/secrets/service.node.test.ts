@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -26,7 +27,7 @@ import { createUnresolvedSecretMessage } from './unresolved-secret.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const migrationsDirectory = new URL('../../../migrations/', import.meta.url)
-const userId = 'user-123'
+const userId = ownerIdFromStored('user-123')
 const executeContext = ctx()
 
 function ctx(packageId: string | null = null, sessionId: string | null = null) {
@@ -179,7 +180,7 @@ test('listSecrets from execute lists caller-owned package metadata without weake
 	})
 	await saveSecret({
 		env,
-		userId: 'user-other',
+		userId: ownerIdFromStored('user-other'),
 		scope: 'package',
 		name: 'foreignToken',
 		value: 'other-user-value',
@@ -389,7 +390,7 @@ test('saveSecret enforces plan secret quotas including updates and max ceiling',
 	const save = (targetEnv: typeof env, name: string, value = 'secret-value') =>
 		saveSecret({
 			env: targetEnv,
-			userId: plannedUserId,
+			userId: ownerIdFromStored(plannedUserId),
 			userEmail: email,
 			scope: 'user',
 			name,
@@ -413,7 +414,7 @@ test('saveSecret enforces plan secret quotas including updates and max ceiling',
 	await expect(
 		saveSecret({
 			env,
-			userId: plannedUserId,
+			userId: ownerIdFromStored(plannedUserId),
 			userEmail: email,
 			scope: 'user',
 			name: 'quota-secret-0',

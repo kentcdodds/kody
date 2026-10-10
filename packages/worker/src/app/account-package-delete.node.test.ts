@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -46,7 +49,7 @@ function createUser(): AuthenticatedAppUser {
 function createSavedPackage() {
 	return {
 		id: 'pkg-1',
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		name: '@user/notes',
 		kodyId: 'notes',
 		description: 'Personal notes',
@@ -127,12 +130,12 @@ test('account package delete requires the typed package name then removes the pa
 		packageId: 'pkg-1',
 	})
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		packageId: 'pkg-1',
 	})
 	expect(mockModule.deleteSavedPackageProjection).toHaveBeenCalledWith({
 		env,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		actorUserId: 'stable-user-1',
 		packageId: 'pkg-1',
 	})

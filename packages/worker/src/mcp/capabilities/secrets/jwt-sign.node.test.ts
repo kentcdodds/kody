@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	constants,
 	createHmac,
@@ -123,7 +126,11 @@ test('secretJwtSign resolves keys and never leaks key material', async () => {
 	const rs256 = jwtParts(signed.jwt)
 	expect(signed.jwt.split('.').every(Boolean)).toBe(true)
 	expect(signed.algorithm).toBe('RS256')
-	expect(rs256.header).toMatchObject({ alg: 'RS256', typ: 'JWT', kid: 'key-1' })
+	expect(rs256.header).toMatchObject({
+		alg: 'RS256',
+		typ: 'JWT',
+		kid: 'key-1',
+	})
 	expect(rs256.claims).toMatchObject({
 		iss: 'service@example.com',
 		sub: 'user@example.com',
@@ -482,7 +489,7 @@ test('secretJwtSign accepts opaque {{secret:…}} refs and remaps share-grant gu
 	expect(signed.jwt.split('.')).toHaveLength(3)
 	expect(secretService.resolveSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			name: 'serviceAccountKey',
 			scope: 'user',
 		}),

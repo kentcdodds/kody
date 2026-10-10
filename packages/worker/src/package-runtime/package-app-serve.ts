@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { html } from 'remix/html-template'
@@ -53,7 +54,7 @@ import {
 } from '#worker/runtime-worker-service.ts'
 
 export type PackageAppServeOwner = {
-	userId: string
+	userId: OwnerId
 	username: string
 	email: string
 	displayName: string

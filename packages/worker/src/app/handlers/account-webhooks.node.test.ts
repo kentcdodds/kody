@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -31,7 +32,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 const savedPackages = [
 	{
 		id: 'pkg-1',
-		userId: 'set-per-test',
+		userId: ownerIdFromStored('set-per-test'),
 		name: '@owner/sentry-bridge',
 		kodyId: 'sentry-bridge',
 		description: 'Sentry bridge',
@@ -46,7 +47,7 @@ const savedPackages = [
 	},
 	{
 		id: 'pkg-2',
-		userId: 'set-per-test',
+		userId: ownerIdFromStored('set-per-test'),
 		name: '@owner/raycast',
 		kodyId: 'raycast',
 		description: 'Raycast bridge',

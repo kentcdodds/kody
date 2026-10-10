@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { repoSessionStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
@@ -21,7 +22,7 @@ export async function insertRepoSession(
 export async function getRepoSessionById(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		sessionId: string
 	},
 ): Promise<RepoSessionRow | null> {
@@ -37,7 +38,7 @@ export async function getRepoSessionById(
 export async function getActiveRepoSessionByConversation(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		conversationId: string
 	},
 ): Promise<RepoSessionRow | null> {
@@ -53,7 +54,7 @@ export async function getActiveRepoSessionByConversation(
 export async function listRepoSessionsBySource(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		sourceId: string
 	},
 ): Promise<Array<RepoSessionRow>> {
@@ -69,7 +70,7 @@ export async function listRepoSessionsBySource(
 export async function deleteRepoSessionsBySourceForUser(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		sourceId: string
 	},
 ): Promise<number> {
@@ -99,7 +100,7 @@ export async function deleteRepoSessionsBySourceForUser(
 
 export async function listRepoSessionsByUser(
 	env: RepoSessionCatalogEnv,
-	userId: string,
+	userId: OwnerId,
 ): Promise<Array<RepoSessionRow>> {
 	return await repoSessionIndexRpc({
 		env,
@@ -111,7 +112,7 @@ export async function updateRepoSession(
 	env: RepoSessionCatalogEnv,
 	input: {
 		id: string
-		userId: string
+		userId: OwnerId
 		sessionBranch?: string | null
 		sourceBranch?: string
 		baseCommit?: string
@@ -148,7 +149,7 @@ export async function updateRepoSession(
 export async function deleteRepoSession(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		sessionId: string
 	},
 ): Promise<boolean> {
@@ -163,7 +164,7 @@ export async function deleteRepoSession(
 
 export async function countActiveRepoSessions(
 	env: RepoSessionCatalogEnv,
-	userId: string,
+	userId: OwnerId,
 ): Promise<number> {
 	return await repoSessionIndexRpc({ env, userId }).countActive({
 		ownerId: userId,
@@ -173,7 +174,7 @@ export async function countActiveRepoSessions(
 export async function hasActiveRepoSessionForSource(
 	env: RepoSessionCatalogEnv,
 	input: {
-		userId: string
+		userId: OwnerId
 		sourceId: string
 	},
 ): Promise<boolean> {

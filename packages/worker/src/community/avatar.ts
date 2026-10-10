@@ -1,4 +1,5 @@
 import { toHex } from '@kody-internal/shared/hex.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import {
 	normalizeUserAvatarContentType,
@@ -46,7 +47,7 @@ function extensionForContentType(contentType: UserAvatarContentType) {
 }
 
 export function buildUserAvatarR2Key(input: {
-	stableUserId: string
+	stableUserId: OwnerId
 	contentHash: string
 	contentType: UserAvatarContentType
 }) {
@@ -148,7 +149,7 @@ async function sha256Hex(bytes: Uint8Array) {
 export async function saveUserAvatar(input: {
 	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> & UserMeterEnv
 	numericUserId: number
-	stableUserId: string
+	stableUserId: OwnerId
 	bytes: Uint8Array
 	contentType: UserAvatarContentType
 }): Promise<string> {
@@ -229,7 +230,7 @@ export async function saveUserAvatar(input: {
 export async function deleteUserAvatar(input: {
 	env: Pick<Env, 'APP_DB' | 'COMMUNITY_ASSETS'> & UserMeterEnv
 	numericUserId: number
-	stableUserId: string
+	stableUserId: OwnerId
 }): Promise<void> {
 	await withAccountWriteLease({
 		db: input.env.APP_DB,

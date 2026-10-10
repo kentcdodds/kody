@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
@@ -167,7 +168,9 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 	// Get stays open even when ownKeys is empty (Node destructure uses Get).
 	const { home: openGetHome } = withoutNames.mcp as McpNamespace
 	if (!openGetHome) throw new Error('Expected open Get for mcp.home.')
-	await expect(openGetHome.set_pin({ pin: '9' })).resolves.toEqual({ ok: true })
+	await expect(openGetHome.set_pin({ pin: '9' })).resolves.toEqual({
+		ok: true,
+	})
 
 	for (const [names, pin] of [
 		[['home', 'mediarss'], '2'],
@@ -180,7 +183,9 @@ test('package app kody.mcp supports calls, advertises connected servers, and ded
 			'home',
 		) as McpNamespace[string]
 		expect(advertisedHome).toBeTypeOf('object')
-		await expect(advertisedHome.set_pin({ pin })).resolves.toEqual({ ok: true })
+		await expect(advertisedHome.set_pin({ pin })).resolves.toEqual({
+			ok: true,
+		})
 	}
 
 	expect(calls).toEqual(
@@ -515,7 +520,7 @@ vi.mock('#worker/run-records/service.ts', async (importOriginal) => {
 function createPackageAppTestSource() {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package' as const,
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -619,7 +624,7 @@ function makeBuildInput(
 	return {
 		env,
 		baseUrl: 'https://example.com',
-		userId: `user-${key}`,
+		userId: ownerIdFromStored(`user-${key}`),
 		source: createPackageAppTestSource(),
 		manifest: createPackageAppTestManifest(),
 		runtime: {
@@ -653,7 +658,7 @@ function createPackageAppRuntimeBridgeForTest(input?: {
 		{
 			props: {
 				baseUrl: 'https://example.com',
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 				packageId: 'package-1',
@@ -696,7 +701,7 @@ test('buildPackageAppWorker serves an artifactName-null artifact hit and reuses 
 		packageAppRuntimeMock.loadPublishedBundleArtifactByIdentity,
 	).toHaveBeenCalledWith({
 		env,
-		userId: 'user-artifact-hit',
+		userId: ownerIdFromStored('user-artifact-hit'),
 		sourceId: 'source-1',
 		kind: 'app',
 		artifactName: null,
@@ -760,7 +765,7 @@ test('buildPackageAppWorker claims the unique Dynamic Worker day with its surfac
 		expect(recordSpy).toHaveBeenCalledTimes(1)
 		expect(recordSpy).toHaveBeenCalledWith(
 			expect.objectContaining({
-				userId: 'user-uwd-surface',
+				userId: ownerIdFromStored('user-uwd-surface'),
 				surface: 'app_realtime',
 				workerId: expect.stringMatching(/^package-app-/),
 			}),
@@ -970,7 +975,7 @@ test('an app artifact rebuild persists artifactName null using the fresh source 
 
 	await buildPackageAppWorker(
 		makeBuildInput(env, 'rebuild-entry', {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			manifest: createPackageAppTestManifest('stale.js'),
 			loadSourceFiles: sourceFilesFor(freshManifest),
 		}),
@@ -985,7 +990,7 @@ test('an app artifact rebuild persists artifactName null using the fresh source 
 		packageAppRuntimeMock.persistPublishedBundleArtifact,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			source: freshSource,
 			kind: 'app',
 			artifactName: null,
@@ -1064,7 +1069,7 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 	const { bridge, waitUntilTasks } = createPackageAppRuntimeBridgeForTest()
 	const runHandle = {
 		id: 'run-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		startedAt: '2026-07-26T00:00:00.000Z',
 		persistence: 'eager' as const,
 		context: {

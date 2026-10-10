@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	loadAccountActivityData,
@@ -179,7 +182,7 @@ test('loadAccountActivityData maps filters, summary, pagination, detail, and cur
 		'/account/activity/run-1?status=error&surface=job',
 		env,
 	)
-	const owner = { env, userId: 'stable-user-1' }
+	const owner = { env, userId: ownerIdFromStored('stable-user-1') }
 	expect(mockModule.summarizeRunRecords).toHaveBeenCalledWith({
 		...owner,
 		since: weekAgo,

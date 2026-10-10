@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { type AdminPlatformFeedbackLoaderData } from '#universal/loader-data.ts'
@@ -50,7 +51,7 @@ const detailPayload = {
 		id: 'feedback-1',
 		submitter_user_id: 'stable-submitter',
 		submitter: {
-			user_id: 'stable-submitter',
+			user_id: ownerIdFromStored('stable-submitter'),
 			username: 'submitter',
 			email: 'submitter@example.com',
 		},

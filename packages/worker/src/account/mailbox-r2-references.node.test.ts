@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type MailboxBlobReference } from '#worker/email/mailbox-types.ts'
 import type * as MailboxInternalReadModule from '#worker/email/mailbox-internal-read.ts'
@@ -52,7 +53,10 @@ test('Mailbox R2 helpers share pagination, mapping, and revalidation semantics',
 	const env = {} as Env
 
 	expect(
-		await listAllMailboxEmailObjectRefs({ env, ownerId: 'user-a' }),
+		await listAllMailboxEmailObjectRefs({
+			env,
+			ownerId: ownerIdFromStored('user-a'),
+		}),
 	).toEqual([
 		{
 			surfaceId: 'email_raw_mime',
@@ -65,11 +69,16 @@ test('Mailbox R2 helpers share pagination, mapping, and revalidation semantics',
 			key: attachment.key,
 		},
 	])
-	expect(await countMailboxEmailObjectRefs({ env, ownerId: 'user-a' })).toBe(2)
+	expect(
+		await countMailboxEmailObjectRefs({
+			env,
+			ownerId: ownerIdFromStored('user-a'),
+		}),
+	).toBe(2)
 
 	const page = await listMailboxEmailObjectRefPage({
 		env,
-		ownerId: 'user-a',
+		ownerId: ownerIdFromStored('user-a'),
 		pageSize: 1,
 		startAfter: null,
 	})
@@ -82,7 +91,7 @@ test('Mailbox R2 helpers share pagination, mapping, and revalidation semantics',
 	expect(
 		await resolveMailboxEmailObjectRef({
 			env,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			source: stableRef.source,
 			expectedKey: stableRef.key,
 		}),
@@ -90,7 +99,7 @@ test('Mailbox R2 helpers share pagination, mapping, and revalidation semantics',
 	expect(
 		await resolveMailboxEmailObjectRef({
 			env,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			source: stableRef.source,
 			expectedKey: 'changed-key',
 		}),
@@ -146,7 +155,7 @@ test('stable Mailbox R2 refs revalidate later items from their preceding cursor'
 	const env = {} as Env
 	const page = await listMailboxEmailObjectRefPage({
 		env,
-		ownerId: 'user-a',
+		ownerId: ownerIdFromStored('user-a'),
 		pageSize: 3,
 		startAfter: null,
 	})
@@ -157,7 +166,7 @@ test('stable Mailbox R2 refs revalidate later items from their preceding cursor'
 		await expect(
 			resolveMailboxEmailObjectRef({
 				env,
-				ownerId: 'user-a',
+				ownerId: ownerIdFromStored('user-a'),
 				source: stableReference.source,
 				expectedKey: stableReference.key,
 			}),
@@ -184,7 +193,7 @@ test.each([
 		await expect(
 			countMailboxEmailObjectRefs({
 				env: {} as Env,
-				ownerId: 'user-a',
+				ownerId: ownerIdFromStored('user-a'),
 			}),
 		).rejects.toThrow(/pagination did not advance/)
 	},

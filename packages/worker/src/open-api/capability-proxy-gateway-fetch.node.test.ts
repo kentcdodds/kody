@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	parseCapabilityProxyGatewayFetchArgs,
@@ -103,7 +104,10 @@ test('runCapabilityProxyGatewayFetch hops to executeGatewayFetch with stamped pa
 			env: { APP_DB: {} },
 			callerContext: {
 				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-1', email: 'user@example.com' },
+				user: {
+					userId: ownerIdFromStored('user-1'),
+					email: 'user@example.com',
+				},
 				storageContext: null,
 			},
 		} as never,
@@ -122,7 +126,7 @@ test('runCapabilityProxyGatewayFetch hops to executeGatewayFetch with stamped pa
 
 	expect(authorizeLocalExecuteOwnedPackageId).toHaveBeenCalledWith(
 		expect.objectContaining({
-			orgUserId: 'user-1',
+			orgUserId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-owned',
 		}),
 	)
@@ -149,7 +153,10 @@ test('runCapabilityProxyGatewayFetch propagates missing-secret caller errors fro
 				env: { APP_DB: {} },
 				callerContext: {
 					baseUrl: 'https://heykody.dev',
-					user: { userId: 'user-1', email: 'user@example.com' },
+					user: {
+						userId: ownerIdFromStored('user-1'),
+						email: 'user@example.com',
+					},
 					storageContext: null,
 				},
 			} as never,
@@ -183,7 +190,10 @@ test('runCapabilityProxyGatewayFetch without packageId does not grant secret aut
 			env: { APP_DB: {} },
 			callerContext: {
 				baseUrl: 'https://heykody.dev',
-				user: { userId: 'user-1', email: 'user@example.com' },
+				user: {
+					userId: ownerIdFromStored('user-1'),
+					email: 'user@example.com',
+				},
 				storageContext: null,
 			},
 		} as never,

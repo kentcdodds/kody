@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	WorkerEntrypoint,
 	exports as workerExports,
@@ -974,7 +977,7 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 
 type PackageAppRuntimeBridgeProps = {
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	email: string
 	displayName: string
 	packageId: string
@@ -1021,7 +1024,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 			baseUrl: this.ctx.props.baseUrl,
 			executionOrigin: 'background',
 			user: {
-				userId: personIdFromStored(this.ctx.props.userId),
+				userId: personIdFromStored(this.ctx.props.userId as string),
 				email: this.ctx.props.email,
 				username: undefined,
 				displayName: this.ctx.props.displayName,
@@ -1610,7 +1613,7 @@ export async function createPackageAppWorkerId(input: {
 }
 
 function createPackageAppWorkerCacheKey(input: {
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -1717,7 +1720,7 @@ function resolvePackageAppManifest(input: {
 
 async function resolvePersistablePackageSource(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	source?: EntitySourceRow
 	sourceId: string
 }) {
@@ -1733,7 +1736,7 @@ async function resolvePersistablePackageSource(input: {
 
 async function resolvePackageAppBundledArtifact(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	source?: EntitySourceRow
 	manifest: AuthoredPackageJson
 	savedPackage: {
@@ -1881,7 +1884,7 @@ async function resolvePackageAppSourceFiles(input: {
 async function buildPackageAppWorkerOptionsUncached(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	savedPackage: {
 		id: string
 		kodyId: string
@@ -2021,7 +2024,7 @@ async function buildPackageAppWorkerOptionsUncached(input: {
 export async function buildPackageAppWorker(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	savedPackage: {
 		id: string
 		kodyId: string
@@ -2140,7 +2143,7 @@ export async function buildPackageAppWorker(input: {
 
 function schedulePackageAppUniqueWorkerDay(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	workerId: string
 	surface: 'app_fetch' | 'app_realtime'
 	packageId: string
@@ -2162,7 +2165,7 @@ function schedulePackageAppUniqueWorkerDay(input: {
 export async function createPackageAppCallerContext(input: {
 	baseUrl: string
 	user: {
-		userId: string
+		userId: OwnerId
 		email: string
 		username?: string
 		displayName?: string
@@ -2173,7 +2176,7 @@ export async function createPackageAppCallerContext(input: {
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
 		user: {
-			userId: personIdFromStored(input.user.userId),
+			userId: personIdFromStored(input.user.userId as string),
 			email: input.user.email,
 			username: input.user.username,
 			displayName: input.user.displayName ?? `package:${input.packageId}`,

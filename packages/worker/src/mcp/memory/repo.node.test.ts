@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -43,32 +44,32 @@ test('listMemoriesByUserIdPage is user-scoped, status-filtered, and keyset-paged
 	const { sqlite, db } = createMemoryDb()
 	insertMemory(sqlite, {
 		id: 'mem-a',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		status: 'active',
 		subject: 'Owned active',
 	})
 	insertMemory(sqlite, {
 		id: 'mem-b',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		status: 'deleted',
 		subject: 'Owned deleted',
 	})
 	insertMemory(sqlite, {
 		id: 'mem-c',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		status: 'archived',
 		subject: 'Owned archived',
 	})
 	insertMemory(sqlite, {
 		id: 'mem-other',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		status: 'active',
 		subject: 'Foreign active',
 	})
 
 	const firstPage = await listMemoriesByUserIdPage({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		afterId: null,
 		limit: 2,
 		statuses: ['active', 'archived'],
@@ -78,7 +79,7 @@ test('listMemoriesByUserIdPage is user-scoped, status-filtered, and keyset-paged
 
 	const secondPage = await listMemoriesByUserIdPage({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		afterId: firstPage.at(-1)?.id ?? null,
 		limit: 2,
 		statuses: ['active', 'archived'],
@@ -87,7 +88,7 @@ test('listMemoriesByUserIdPage is user-scoped, status-filtered, and keyset-paged
 
 	const withDeleted = await listMemoriesByUserIdPage({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		afterId: null,
 		limit: 10,
 		statuses: ['active', 'archived', 'deleted'],

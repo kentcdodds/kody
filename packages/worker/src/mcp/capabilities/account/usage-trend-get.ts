@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -66,7 +67,7 @@ export const usageTrendGetCapability = defineDomainCapability(
 			const trend = await readAccountUsageTrend({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 			})
 			return {
 				days: trend.days.map((day) => ({

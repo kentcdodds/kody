@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { maxRestorableTextColumnBytes } from '@kody-internal/shared/backup-restore-safety.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -270,7 +271,7 @@ const scopeUnavailable = (scope: string) =>
 test('value service respects storage context precedence and deletion', async () => {
 	const { env } = createValueEnv()
 	const storageContext = { sessionId: 'session-123', appId: 'app-123' }
-	const userId = 'user-123'
+	const userId = ownerIdFromStored('user-123')
 	const name = 'workspaceSlug'
 
 	await saveValue({
@@ -339,7 +340,7 @@ test('value service rejects unavailable scoped storage and cannot read legacy ap
 		await expect(
 			saveValue({
 				env,
-				userId: 'user-123',
+				userId: ownerIdFromStored('user-123'),
 				scope,
 				name: 'workspaceSlug',
 				value: 'unavailable',
@@ -354,7 +355,7 @@ test('value service rejects unavailable scoped storage and cannot read legacy ap
 	const bucketId = 'legacy-job-app-bucket'
 	testDb.buckets.set('user-123:app:job:job-123', {
 		id: bucketId,
-		user_id: 'user-123',
+		user_id: ownerIdFromStored('user-123'),
 		scope: 'app',
 		binding_key: 'job:job-123',
 		expires_at: null,
@@ -371,7 +372,7 @@ test('value service rejects unavailable scoped storage and cannot read legacy ap
 	})
 	const lookup = {
 		env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		name: 'workspaceSlug',
 		storageContext: jobStorageContext,
 	}
@@ -385,7 +386,7 @@ test('value service rejects values too large for restorable D1 backups', async (
 	const saveUserValue = (name: string, bytes: number) =>
 		saveValue({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			scope: 'user',
 			name,
 			value: 'x'.repeat(bytes),
@@ -411,7 +412,7 @@ test('deleteAllAppScopedValues removes all app-scoped values for one app', async
 	for (const appId of ['app-1', 'app-2']) {
 		await saveValue({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			scope: 'app',
 			name: 'token',
 			value: appId === 'app-1' ? 'app-one' : 'app-two',
@@ -420,12 +421,16 @@ test('deleteAllAppScopedValues removes all app-scoped values for one app', async
 	}
 
 	await expect(
-		deleteAllAppScopedValues({ env, userId: 'user-123', appId: 'app-1' }),
+		deleteAllAppScopedValues({
+			env,
+			userId: ownerIdFromStored('user-123'),
+			appId: 'app-1',
+		}),
 	).resolves.toBe(true)
 	const readToken = (appId: string) =>
 		getValue({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			name: 'token',
 			scope: 'app',
 			storageContext: appContext(appId),
@@ -437,7 +442,7 @@ test('deleteAllAppScopedValues removes all app-scoped values for one app', async
 test('listValues uses one metadata query across buckets and preserves ordering', async () => {
 	const { testDb, env } = createValueEnv()
 	const storageContext = { sessionId: 'session-456', appId: 'app-456' }
-	const userId = 'user-456'
+	const userId = ownerIdFromStored('user-456')
 	for (const [scope, name, value] of [
 		['user', 'zebra', 'user-zebra'],
 		['user', 'alpha', 'user-alpha'],
@@ -469,14 +474,24 @@ test('listValues uses one metadata query across buckets and preserves ordering',
 		'user:zebra:user-zebra',
 	])
 
-	await deleteValue({ env, userId, name: 'beta', scope: 'app', storageContext })
+	await deleteValue({
+		env,
+		userId,
+		name: 'beta',
+		scope: 'app',
+		storageContext,
+	})
 	expect(
 		(await listValues({ env, userId, storageContext })).map(
 			(value) => `${value.scope}:${value.name}`,
 		),
 	).toEqual(['session:gamma', 'user:alpha', 'user:zebra'])
 	expect(
-		await listValues({ env, userId: 'user-missing', storageContext }),
+		await listValues({
+			env,
+			userId: ownerIdFromStored('user-missing'),
+			storageContext,
+		}),
 	).toEqual([])
 })
 
@@ -487,7 +502,7 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	await expect(
 		saveValue({
 			env,
-			userId: 'user-platform',
+			userId: ownerIdFromStored('user-platform'),
 			scope: 'user',
 			description: 'Scratch widgets config',
 			...stored,
@@ -496,7 +511,7 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 	await expect(
 		getValue({
 			env,
-			userId: 'user-platform',
+			userId: ownerIdFromStored('user-platform'),
 			name: stored.name,
 			scope: 'user',
 		}),
@@ -506,7 +521,7 @@ test('saveValue permits underscore-prefixed ordinary value names', async () => {
 test('saveValue awaits the UserMeter atomic reserve and never writes the retired D1 mirror', async () => {
 	const testDb = createValueTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const userId = 'a'.repeat(64)
+	const userId = ownerIdFromStored('a').repeat(64)
 	await meter.seedStorageBytes({ userId, bytes: 7 })
 
 	const d1StorageWrites: Array<string> = []
@@ -549,7 +564,7 @@ test('saveValue awaits the UserMeter atomic reserve and never writes the retired
 	const env = { APP_DB: testDb.db, ...meter.env }
 	const saved = await saveValue({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		userEmail: 'value-storage@example.com',
 		scope: 'user',
 		name: 'metered-value',
@@ -559,7 +574,7 @@ test('saveValue awaits the UserMeter atomic reserve and never writes the retired
 	// DO reserve completed synchronously.
 	const meterBytesAfterReserve = await userMeterRpc({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 	}).readStorageBytes()
 	expect(meterBytesAfterReserve).toMatchObject({ outcome: 'ready' })
 	if (meterBytesAfterReserve.outcome !== 'ready')

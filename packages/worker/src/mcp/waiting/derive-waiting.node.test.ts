@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as memoryRepo from '#mcp/memory/repo.ts'
@@ -151,7 +152,7 @@ function createStubDb(
 
 const user = {
 	userId: 11,
-	stableUserId: 'user-aaa',
+	stableUserId: ownerIdFromStored('user-aaa'),
 	email: 'waiting@example.com',
 	username: 'waiting',
 	emailVerified: true,
@@ -161,13 +162,13 @@ test('waiting signals read MCP OAuth grants from OAUTH_KV when the provider help
 	const { kv } = createMemoryKvNamespace({
 		'grant:user-aaa:grant-1': JSON.stringify({
 			id: 'grant-1',
-			userId: 'user-aaa',
+			userId: ownerIdFromStored('user-aaa'),
 			clientId: 'host-client',
 			scope: ['mcp'],
 		}),
 		'grant:user-bbb:grant-2': JSON.stringify({
 			id: 'grant-2',
-			userId: 'user-bbb',
+			userId: ownerIdFromStored('user-bbb'),
 			clientId: 'host-client',
 			scope: ['mcp'],
 		}),
@@ -180,7 +181,7 @@ test('waiting signals read MCP OAuth grants from OAUTH_KV when the provider help
 
 	const disconnected = await collectWaitingSignals({
 		env: { APP_DB: createStubDb(), OAUTH_KV: kv } as Env,
-		user: { ...user, stableUserId: 'user-ccc' },
+		user: { ...user, stableUserId: ownerIdFromStored('user-ccc') },
 	})
 	expect(disconnected.onboardingRemaining).toContain('connect-agent')
 
@@ -201,7 +202,7 @@ const allStamped = {
 const fixtureTimestamp = '2026-08-01T00:00:00.000Z'
 const demoPackage: SavedPackageRecord = {
 	id: 'pkg-1',
-	userId: 'user-aaa',
+	userId: ownerIdFromStored('user-aaa'),
 	name: 'demo',
 	kodyId: 'demo',
 	description: '',
@@ -219,7 +220,7 @@ const demoPackage: SavedPackageRecord = {
 
 const commuteMemory: McpMemoryRow = {
 	id: 'mem-1',
-	user_id: 'user-aaa',
+	user_id: ownerIdFromStored('user-aaa'),
 	category: null,
 	status: 'active',
 	subject: 'Commute',
@@ -237,7 +238,7 @@ const commuteMemory: McpMemoryRow = {
 const githubIntegration: JoinedIntegration = {
 	lane: 'user',
 	app: {
-		userId: 'user-aaa',
+		userId: ownerIdFromStored('user-aaa'),
 		slug: 'github',
 		provider: 'github',
 		label: null,
@@ -255,7 +256,7 @@ const githubIntegration: JoinedIntegration = {
 		updatedAt: fixtureTimestamp,
 	},
 	connection: {
-		userId: 'user-aaa',
+		userId: ownerIdFromStored('user-aaa'),
 		name: 'github',
 		appSlug: 'github',
 		platformAppSlug: null,

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -39,7 +40,10 @@ const { loadPackagePage } = await import('./package-page.ts')
 
 const request = new Request('https://example.com/@owner/notes')
 const env = {} as Env
-const ownerUser = { username: 'owner', mcpUser: { userId: 'owner-1' } }
+const ownerUser = {
+	username: 'owner',
+	mcpUser: { userId: ownerIdFromStored('owner-1') },
+}
 
 function resolvesTo(
 	kind: 'package' | 'redirect',
@@ -54,7 +58,7 @@ function resolvesTo(
 		kind,
 		username: 'owner',
 		kodyId: 'notes',
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		listingId: null,
 		...(kind === 'package'
 			? { savedPackage: { id: 'pkg-1', hidden: false, isPrivate: false } }
@@ -188,7 +192,7 @@ test('loadPackagePage hides a private package from a signed-in non-owner', async
 	mockModule.loadAccountPackageDetail.mockClear()
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'guest@example.com',
-		mcpUser: { userId: 'guest-1' },
+		mcpUser: { userId: ownerIdFromStored('guest-1') },
 	})
 	resolvesTo('package', pkg({ isPrivate: true }))
 	expect(await load()).toEqual({ kind: 'not_found' })

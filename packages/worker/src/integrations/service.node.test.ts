@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -157,14 +158,20 @@ test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch,
 			requiredHosts: ['www.googleapis.com'],
 		}),
 	)
-	const apps = await listOauthApps({ env, userId: 'user-upsert' })
+	const apps = await listOauthApps({
+		env,
+		userId: ownerIdFromStored('user-upsert'),
+	})
 	expect(apps).toHaveLength(1)
 	expect(apps[0]).toMatchObject({
 		slug: 'google',
 		connectionCount: 2,
 		clientId: 'google-client-id-value',
 	})
-	const listed = await listIntegrations({ env, userId: 'user-upsert' })
+	const listed = await listIntegrations({
+		env,
+		userId: ownerIdFromStored('user-upsert'),
+	})
 	expect(listed.map((entry) => [entry.name, entry.clientId]).sort()).toEqual([
 		['google', 'google-client-id-value'],
 		['google-calendar', 'google-client-id-value'],
@@ -188,14 +195,18 @@ test('upsertIntegration reuses matching app tuples, splits on endpoint mismatch,
 		['google', 'https://oauth2.googleapis.com/token'],
 		['google-legacy', 'https://oauth2.googleapis.com/token/legacy'],
 	] as const) {
-		const integration = await getIntegration({ env, userId: splitUserId, name })
+		const integration = await getIntegration({
+			env,
+			userId: splitUserId,
+			name,
+		})
 		expect(integration?.tokenUrl).toBe(tokenUrl)
 	}
 })
 
 test('rotateOauthAppClientCredentials updates sibling joins, blocks delete while connected, and canonicalizes slugs', async () => {
 	const { env, save } = createEnv()
-	const userId = 'user-rotate'
+	const userId = ownerIdFromStored('user-rotate')
 	await save(userId, baseGoogleConfig)
 	await save(userId, google({ name: 'google-mail' }))
 
@@ -285,7 +296,10 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 		requiredHosts: ['api.canva.com'],
 		tokenExchangeStyle: 'basic-form',
 	})
-	const apps = await listOauthApps({ env, userId: 'user-reuse' })
+	const apps = await listOauthApps({
+		env,
+		userId: ownerIdFromStored('user-reuse'),
+	})
 	expect(apps).toHaveLength(1)
 	expect(apps[0]).toMatchObject({
 		slug: 'canva',
@@ -293,7 +307,10 @@ test('upsertIntegration reuses a confidential app that stored usePkce false as N
 		usePkce: null,
 		flow: 'confidential',
 	})
-	const joined = await listJoinedIntegrations({ env, userId: 'user-reuse' })
+	const joined = await listJoinedIntegrations({
+		env,
+		userId: ownerIdFromStored('user-reuse'),
+	})
 	expect(
 		joined.map(({ connection, app }) => [connection.name, app?.slug]).sort(),
 	).toEqual([
@@ -527,7 +544,7 @@ test('upsertOauthAppWithoutConnection covers setup, client-id reuse, and connect
 
 test('findOauthAppForProviderSetup prefers an exact-slug setup app over family prefill', async () => {
 	const { env, save } = createEnv()
-	const userId = 'user-family-prefill'
+	const userId = ownerIdFromStored('user-family-prefill')
 	await save(userId, baseGoogleConfig)
 	await upsertOauthAppWithoutConnection({
 		env,
@@ -571,13 +588,19 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 	})
 	expect(saved.requiredHosts).toEqual(['api.github.com', 'github.com'])
 	expect(saved.authorization?.scopes).toEqual(['read:user', 'repo'])
-	const listed = await listIntegrations({ env, userId: 'user-platform' })
+	const listed = await listIntegrations({
+		env,
+		userId: ownerIdFromStored('user-platform'),
+	})
 	expect(listed).toHaveLength(1)
 	expect(listed[0]?.platform).toBe(true)
 	expect(JSON.stringify(listed)).not.toContain(
 		'platform-github-client-secret-value',
 	)
-	const joined = await listJoinedIntegrations({ env, userId: 'user-platform' })
+	const joined = await listJoinedIntegrations({
+		env,
+		userId: ownerIdFromStored('user-platform'),
+	})
 	expect(joined[0]?.lane).toBe('platform')
 	expect(joined[0]?.connection.platformAppSlug).toBe('github')
 	expect(joined[0]?.connection.appSlug).toBeNull()
@@ -619,9 +642,15 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 
 	await connectPlatform(env, 'user-deletes', [])
 	expect(
-		await deleteIntegration({ env, userId: 'user-deletes', name: 'github' }),
+		await deleteIntegration({
+			env,
+			userId: ownerIdFromStored('user-deletes'),
+			name: 'github',
+		}),
 	).toBe(true)
-	expect(await listIntegrations({ env, userId: 'user-deletes' })).toEqual([])
+	expect(
+		await listIntegrations({ env, userId: ownerIdFromStored('user-deletes') }),
+	).toEqual([])
 	// The shared app survives; draft keeps it off discovery until published.
 	expect(await getAvailablePlatformApp({ env, slug: 'github' })).toBeNull()
 	await upsertPlatformOauthApp({
@@ -660,7 +689,7 @@ test('upsertPlatformIntegration enforces connect policy, hides secrets, and dele
 
 test('loading a platform integration adds current app hosts without removing connection hosts', async () => {
 	const { env, sqlite, query } = createEnv()
-	const userId = 'user-stale-platform-hosts'
+	const userId = ownerIdFromStored('user-stale-platform-hosts')
 	await provisionGithubPlatformApp(env)
 	await connectPlatform(env, userId, [])
 	sqlite

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import type * as AccountIntegrationsData from '#app/account-integrations-data.ts'
@@ -96,7 +97,7 @@ function visit(search = '') {
 function signIn() {
 	mockModule.requirePageSession.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	mockModule.renderAppPage.mockResolvedValue(new Response('ok'))
 }

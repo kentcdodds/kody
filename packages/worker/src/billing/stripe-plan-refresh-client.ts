@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	AccountDeletionInProgressError,
 	withAccountWriteLease,
@@ -7,13 +8,25 @@ import { stripePlanRefreshDurableObjectName } from '#worker/user-scoped-durable-
 
 export const stripePlanRefreshBackstopDelayMs = 60 * 60 * 1000
 
+/**
+ * Stripe plan refresh already keys its alarm on the trimmed owner id.
+ * An `OwnerId` from `request.org.id` is already trimmed, so this is a
+ * no-op there. A stored id with surrounding spaces keeps the trimmed name
+ * this client has always used. The name builder itself does not trim.
+ */
+function stripePlanRefreshOwnerId(ownerId: OwnerId): OwnerId | null {
+	const trimmed = ownerId.trim()
+	if (!trimmed) return null
+	return trimmed === ownerId ? ownerId : (trimmed as OwnerId)
+}
+
 export async function scheduleStripePlanRefreshBackstop(input: {
 	env: Env
 	/** Personal org id (= owner stable user id) or team org id. */
-	userId: string
+	userId: OwnerId
 	now?: Date
 }) {
-	const userId = input.userId.trim()
+	const userId = stripePlanRefreshOwnerId(input.userId)
 	if (!userId) return false
 	try {
 		const activityAt = input.now?.getTime() ?? Date.now()
@@ -64,11 +77,12 @@ export async function scheduleStripePlanRefreshBackstop(input: {
 
 export async function purgeStripePlanRefreshForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }) {
 	const namespace = (input.env as Partial<Env>).STRIPE_PLAN_REFRESH
 	if (!namespace) return { purged: false }
-	const userId = input.userId.trim()
+	const userId = stripePlanRefreshOwnerId(input.userId)
+	if (!userId) return { purged: false }
 	const id = namespace.idFromName(stripePlanRefreshDurableObjectName(userId))
 	await namespace.get(id).purgeUser({ userId })
 	return { purged: true }

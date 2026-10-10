@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { resolveKodyDependenciesForEntryPoint } from './module-graph-workspace.ts'
@@ -7,7 +8,7 @@ function createLoadedPackage(input: {
 	exports: Record<string, string>
 	files: Record<string, string>
 }) {
-	const ownerUserId = 'user-1'
+	const ownerUserId = ownerIdFromStored('user-1')
 	const name = `@kentcdodds/${input.kodyId}`
 	const packageId = `pkg-${input.kodyId}-${ownerUserId}`
 	const sourceId = `source-${input.kodyId}-${ownerUserId}`
@@ -63,7 +64,7 @@ function resolveDependencies(input: {
 	return resolveKodyDependenciesForEntryPoint({
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceFiles: { 'entry.ts': input.entrySource },
 		entryPoint: 'entry.ts',
 		loadedPackages: input.loadedPackages,

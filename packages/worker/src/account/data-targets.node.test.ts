@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
@@ -33,7 +34,7 @@ function columnNames(db: DatabaseSync, table: string) {
 function matchFor(target: UserScopedDataTarget) {
 	return buildUserScopedTargetMatch({
 		target,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 		dbUserId: 42,
 	})
 }
@@ -286,7 +287,7 @@ test('account deletion statements never bind a LIKE or GLOB pattern (D1 caps pat
 	// 68 bytes, which D1 rejects with "LIKE or GLOB pattern too complex". The
 	// production purge lane failed on exactly this until the JSON-column
 	// target switched to instr().
-	const stableUserId = 'f'.repeat(64)
+	const stableUserId = ownerIdFromStored('f').repeat(64)
 	for (const target of accountUserDataTargets) {
 		const match = buildUserScopedTargetMatch({
 			target,

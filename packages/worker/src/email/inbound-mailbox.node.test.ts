@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
@@ -37,7 +38,7 @@ test('received USER terminal work dispatches Mailbox-authoritative effects throu
 
 	await scheduleInboundReceivedTerminalWork({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		deliveryId: 'delivery-1',
 		expectedFinalizationToken: 'token-1',
@@ -50,7 +51,7 @@ test('received USER terminal work dispatches Mailbox-authoritative effects throu
 	expect(waitUntilPromises).toHaveLength(1)
 	expect(mocks.processInboundDeliveryEffects).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		deliveryId: 'delivery-1',
 		expectedFinalizationToken: 'token-1',
 		durationMs: 12,
@@ -70,7 +71,7 @@ test('received terminal work contains effect failures and rejected terminal work
 
 	await scheduleInboundReceivedTerminalWork({
 		env,
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		messageId: 'message-2',
 		deliveryId: 'delivery-2',
 		ctx,
@@ -78,7 +79,7 @@ test('received terminal work contains effect failures and rejected terminal work
 	})
 	await scheduleInboundRejectedTerminalWork({
 		env,
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		deliveryId: 'delivery-3',
 		ctx,
 	})

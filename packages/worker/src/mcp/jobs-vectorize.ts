@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
@@ -19,7 +20,7 @@ export async function upsertJobVector(
 	env: Env,
 	input: {
 		jobId: string
-		userId: string
+		userId: OwnerId
 		embedText: string
 	},
 ): Promise<void> {

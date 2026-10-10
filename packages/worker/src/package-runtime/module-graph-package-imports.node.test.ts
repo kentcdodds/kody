@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
@@ -43,7 +44,7 @@ const { buildKodyImportableModuleBundle, buildKodyModuleBundle } =
 const graphInput = {
 	env: { APP_DB: {}, REPO_SESSION: {} } as Env,
 	baseUrl: 'https://heykody.dev',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 }
 
 type Manifest = {
@@ -189,7 +190,10 @@ test('buildKodyModuleBundle resolves scoped package imports by full package name
 
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
-		{ userId: 'user-1', name: '@kentcdodds/example-package' },
+		{
+			userId: ownerIdFromStored('user-1'),
+			name: '@kentcdodds/example-package',
+		},
 	)
 	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 	const rootEntry = bundlerFiles()['.__kody_root__/index.js']
@@ -610,7 +614,7 @@ test('buildKodyModuleBundle resolves transitive imports back to the root package
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledTimes(1)
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
-		{ userId: 'user-1', name: '@kentcdodds/journaling' },
+		{ userId: ownerIdFromStored('user-1'), name: '@kentcdodds/journaling' },
 	)
 })
 

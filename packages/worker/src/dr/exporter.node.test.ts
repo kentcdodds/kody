@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { createD1JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { expect, test, vi } from 'vitest'
 import {
@@ -250,8 +251,8 @@ function createEnv(overrides: Record<string, unknown> = {}) {
 const twoJobsDb = () =>
 	createDb({
 		jobs: [
-			{ userId: 'user-a', storageId: 'job:1' },
-			{ userId: 'user-a', storageId: 'job:2' },
+			{ userId: ownerIdFromStored('user-a'), storageId: 'job:1' },
+			{ userId: ownerIdFromStored('user-a'), storageId: 'job:2' },
 		],
 	})
 
@@ -343,12 +344,12 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	const env = createEnv({
 		APP_COMMIT_SHA: 'abcdef1',
 		APP_DB: createDb({
-			users: [{ ownerId: 'user-a' }],
-			jobs: [{ userId: 'user-a', storageId: 'job:1' }],
+			users: [{ ownerId: ownerIdFromStored('user-a') }],
+			jobs: [{ userId: ownerIdFromStored('user-a'), storageId: 'job:1' }],
 			artifacts: [
 				{
 					sourceId: 'src-1',
-					userId: 'user-a',
+					userId: ownerIdFromStored('user-a'),
 					entityKind: 'package',
 					entityId: 'pkg-1',
 					publishedCommit: 'commit-1',
@@ -385,7 +386,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	const mailboxIndex = JSON.parse(await readText(stagingMailboxIndexKey(day)))
 	expect(mailboxIndex.entries).toEqual([
 		{
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			objectKey: mailboxDumpKey,
 			entryCount: 1,
 			bytes: byteLength(mailboxDump),
@@ -415,7 +416,7 @@ test('exporter progresses phases with mocked bindings and S3, writing summary la
 	const runLogIndex = JSON.parse(await readText(stagingRunLogIndexKey(day)))
 	expect(runLogIndex.entries).toEqual([
 		{
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			objectKey: runLogDumpKey,
 			entryCount: 3,
 			bytes: byteLength(runLogDump),
@@ -718,7 +719,9 @@ test('mailbox paging resumes without duplicate or missing rows', async () => {
 		return true
 	})
 	const env = createEnv({
-		APP_DB: createDb({ users: [{ ownerId: 'user/with space' }] }),
+		APP_DB: createDb({
+			users: [{ ownerId: ownerIdFromStored('user/with space') }],
+		}),
 		MAILBOX: {},
 		RUN_LOG: {},
 	})
@@ -764,8 +767,8 @@ test('inventory drift between ticks neither duplicates nor skips storage dumps',
 	using budget = useBudgetClock(client, isStorageDump)
 	// Sorted inventory starts as [job:2, job:3]; tick 1 completes job:2.
 	const jobs = [
-		{ userId: 'user-a', storageId: 'job:2' },
-		{ userId: 'user-a', storageId: 'job:3' },
+		{ userId: ownerIdFromStored('user-a'), storageId: 'job:2' },
+		{ userId: ownerIdFromStored('user-a'), storageId: 'job:3' },
 	]
 	const env = createEnv({ APP_DB: createDb({ jobs }) })
 
@@ -780,7 +783,7 @@ test('inventory drift between ticks neither duplicates nor skips storage dumps',
 	// A job registers a new bucket mid-window that sorts BEFORE the
 	// completed identity. A positional cursor would re-dump job:2
 	// (duplicate index entry) and never dump job:1.
-	jobs.unshift({ userId: 'user-a', storageId: 'job:1' })
+	jobs.unshift({ userId: ownerIdFromStored('user-a'), storageId: 'job:1' })
 
 	budget.clock.nowMs = 1_000_000
 	const tick2 = await runDrExportTick({
@@ -815,7 +818,9 @@ test('exporter skips oversized storage dumps with a summary warning', async () =
 	const { client, readText } = createMemoryS3()
 	const identity = encodeStorageIdentity('user-a', 'job:huge')
 	const env = createEnv({
-		APP_DB: createDb({ jobs: [{ userId: 'user-a', storageId: 'job:huge' }] }),
+		APP_DB: createDb({
+			jobs: [{ userId: ownerIdFromStored('user-a'), storageId: 'job:huge' }],
+		}),
 	})
 
 	const result = await runDrExportTick({
@@ -856,7 +861,9 @@ test('exporter aborts quietly when progress If-Match precondition fails', async 
 	}
 	using budget = useBudgetClock(client, () => false)
 	const env = createEnv({
-		APP_DB: createDb({ jobs: [{ userId: 'user-a', storageId: 'job:1' }] }),
+		APP_DB: createDb({
+			jobs: [{ userId: ownerIdFromStored('user-a'), storageId: 'job:1' }],
+		}),
 	})
 
 	expect(
@@ -1027,7 +1034,7 @@ test('R2 export reuses unchanged objects from the latest sealed index', async ()
 
 test('DR inventory includes registry storage and excludes deleting owners', async () => {
 	storageBucketMocks.listPlatformStorageBuckets.mockResolvedValueOnce([
-		{ userId: 'user-a', storageId: 'exec:adhoc-only' },
+		{ userId: ownerIdFromStored('user-a'), storageId: 'exec:adhoc-only' },
 	])
 	const inventoryDb = createDb({})
 	const inventory = await listPlatformStorageInventory({
@@ -1036,11 +1043,13 @@ test('DR inventory includes registry storage and excludes deleting owners', asyn
 	})
 	expect(
 		inventory.map(({ userId, storageId }) => ({ userId, storageId })),
-	).toEqual([{ userId: 'user-a', storageId: 'exec:adhoc-only' }])
+	).toEqual([
+		{ userId: ownerIdFromStored('user-a'), storageId: 'exec:adhoc-only' },
+	])
 
 	const prepare = vi.fn((sql: string) => ({
 		all: async () => ({
-			results: [{ ownerId: 'active-owner' }],
+			results: [{ ownerId: ownerIdFromStored('active-owner') }],
 		}),
 		sql,
 	}))

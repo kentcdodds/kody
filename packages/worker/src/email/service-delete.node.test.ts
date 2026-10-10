@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { systemEmailOwnerId } from './email-owner.ts'
 
@@ -66,13 +67,13 @@ test('deleteEmailMessage deletes the owner Mailbox message and outbound index', 
 		deleteEmailMessage({
 			env,
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			messageId: 'message-1',
 		}),
 	).resolves.toBe(true)
 
 	expect(mocks.deleteMessageWithBlobs).toHaveBeenCalledWith({
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 	})
 	expect(mocks.deleteOutboundProviderIndexByMessageId).toHaveBeenCalledWith({
@@ -94,7 +95,7 @@ test('deleteEmailMessage reports missing and foreign Mailbox messages', async ()
 		deleteEmailMessage({
 			env,
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			messageId: 'foreign-or-missing',
 		}),
 	).resolves.toBe(false)

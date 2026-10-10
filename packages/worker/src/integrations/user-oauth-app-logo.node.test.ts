@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -65,7 +66,7 @@ async function createHarness() {
 	} as Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY' | 'COMMUNITY_ASSETS' | 'IMAGES'>
 	const app = await upsertOauthAppWithoutConnection({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		config: {
 			name: 'dropbox',
 			tokenUrl: 'https://api.dropboxapi.com/oauth2/token',

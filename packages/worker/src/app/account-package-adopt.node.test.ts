@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -82,7 +85,7 @@ test('the signed-in owner adopts a community fork from the account API', async (
 	})
 	expect(mockModule.adoptCommunityFork).toHaveBeenCalledWith({
 		env,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		packageId: 'pkg-1',
 		reviewSummary: 'Read src/ and package.json; no exfiltration.',
 	})

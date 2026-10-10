@@ -13,6 +13,7 @@ import {
 } from './service.ts'
 import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 // The first Durable Object RPC in a fresh test isolate lazily loads the whole
 // worker main module (several seconds), which would otherwise trip the
 // backfill's bounded per-read estimate timeout and the default test timeout.
@@ -33,7 +34,7 @@ test(
 		// backfill's 2s-bounded estimate reads measure steady-state behavior.
 		await storageRunnerRpc({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			storageId: bucketA,
 		}).getEstimatedBytes()
 		const sessionEstimate = (
@@ -63,7 +64,10 @@ test(
 
 		// Registration alone leaves estimates NULL (unmeasured).
 		await expect(
-			listUserStorageBucketEstimates({ env, userId }),
+			listUserStorageBucketEstimates({
+				env,
+				userId: ownerIdFromStored(userId),
+			}),
 		).resolves.toEqual(expectedRows(() => null))
 
 		// The bound is respected: batchSize 1 measures exactly one bucket.
@@ -79,7 +83,10 @@ test(
 			failed: 0,
 		})
 		await expect(
-			listUserStorageBucketEstimates({ env, userId }),
+			listUserStorageBucketEstimates({
+				env,
+				userId: ownerIdFromStored(userId),
+			}),
 		).resolves.toEqual(
 			expectedRows((storageId) =>
 				storageId === sessionBucket

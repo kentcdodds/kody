@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -42,13 +46,13 @@ export const repoPublishSessionCapability = defineDomainCapability(
 			await authorizeRepoSessionPackageWrite({
 				env: ctx.env,
 				request: ctx.callerContext.request,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				sessionId: args.session_id,
 			})
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 			})
 			const isPackageSession = sessionInfo.entity_type === 'package'
 			const progressTotal = isPackageSession ? 3 : 2
@@ -60,7 +64,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 			})
 			const result = await session.publishSession({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				rebuildPackageArtifacts: false,
 				expectedPackageScope:
 					sessionInfo.entity_type === 'package'
@@ -82,14 +86,14 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						rpcSessionId: args.session_id,
 						repoSessionId: args.session_id,
 						sourceId: sessionInfo.source_id,
-						userId: user.userId,
+						userId: personalOrgId(user.userId),
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
 					const absorbNotice = args.absorbed_upstream_commit
 						? await absorbForkUpstreamAfterPublish({
 								env: ctx.env,
-								userId: user.userId,
+								userId: personalOrgId(user.userId),
 								sourceId: sessionInfo.source_id,
 								originCommit: args.absorbed_upstream_commit,
 							})
@@ -109,7 +113,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
 					id: sessionInfo.source_id,
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 				})
 				const packageShaped = source
 					? await isPlainRepoPackageShapedAtCommit({
@@ -138,7 +142,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				const [username, savedPackage] = await Promise.all([
 					getMcpUserPackageScope(ctx.env.APP_DB, user),
 					getSavedPackageById(ctx.env.APP_DB, {
-						userId: user.userId,
+						userId: personalOrgId(user.userId),
 						packageId: result.packageId,
 					}),
 				])
@@ -204,7 +208,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 
 async function absorbForkUpstreamAfterPublish(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	originCommit: string
 }) {

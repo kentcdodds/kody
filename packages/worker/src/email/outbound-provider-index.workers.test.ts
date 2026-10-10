@@ -9,6 +9,7 @@ import {
 } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 test('thin provider index persists after the USER graph is removed', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
 	const userId = `index-user-${crypto.randomUUID()}`
@@ -19,7 +20,7 @@ test('thin provider index persists after the USER graph is removed', async () =>
 	await upsertOutboundProviderIndexRow({
 		db: env.APP_DB,
 		providerMessageId,
-		userId,
+		userId: ownerIdFromStored(userId),
 		messageId,
 		inboxId: null,
 		now,

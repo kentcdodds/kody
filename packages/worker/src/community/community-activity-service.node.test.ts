@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -141,7 +142,7 @@ test('admin community activity reads forks and latest ratings newest-first with 
 		upsertCommunityRating(db, {
 			id,
 			listing_id: 'listing-1',
-			user_id: 'user-rater',
+			user_id: ownerIdFromStored('user-rater'),
 			stars,
 			adaptation_effort: effort,
 			note: 'not exposed',

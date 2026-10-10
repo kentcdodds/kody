@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobManagerDebugState } from '@kody-internal/shared/jobs/manager-debug.ts'
 import {
 	type JobExecutionResult,
@@ -35,13 +36,13 @@ type JobManagerRpc = {
 }
 
 /**
- * Frozen id contract: one JobManager per user, named by the raw userId.
- * Mirrors `jobManagerDurableObjectName` in the main worker — changing it
- * strands the transferred Durable Object storage.
+ * Frozen id contract: one JobManager per user, named by the raw owner id.
+ * Mirrors `jobManagerDurableObjectName` in the main worker. Do not trim:
+ * existing objects were named with the stored id bytes.
  */
 export function jobManagerStub(
 	env: JobsWorkerEnv,
-	userId: string,
+	userId: OwnerId,
 ): JobManagerRpc {
 	return env.JOB_MANAGER.get(
 		env.JOB_MANAGER.idFromName(userId),

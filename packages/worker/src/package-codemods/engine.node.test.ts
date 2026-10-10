@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -56,7 +57,10 @@ const { buildPackageCodemodRevertSnapshotKvKey, runPackageCodemodStep } =
 	await import('./engine.ts')
 
 const codemodId = '0001-ambient-storage-to-package-storage'
-const userScope = { kind: 'user', userId: 'user-1' } as const
+const userScope = {
+	kind: 'user',
+	userId: ownerIdFromStored('user-1'),
+} as const
 const fleetScope = { kind: 'fleet' } as const
 
 function createKv() {
@@ -261,7 +265,7 @@ async function insertAppliedItems(
 		await insertPackageCodemodRunItem(db, {
 			id: item.id,
 			runId,
-			userId: item.userId,
+			userId: ownerIdFromStored(item.userId),
 			packageId: `pkg-${item.id}`,
 			kodyId: item.id,
 			status: 'applied',
@@ -292,7 +296,9 @@ test('package codemod engine covers lifecycle, drift, isolation, snapshot keys, 
 		'pkg-unpublished',
 		'pkg-fail',
 	].map((id) => savedPackage(id))
-	const pkgOtherUser = savedPackage('pkg-other', { userId: 'user-2' })
+	const pkgOtherUser = savedPackage('pkg-other', {
+		userId: ownerIdFromStored('user-2'),
+	})
 	mocks.listSavedPackagesByUserId.mockImplementation(
 		async (_db: D1Database, input: { userId: string }) =>
 			input.userId === 'user-1'
@@ -390,7 +396,7 @@ test('package codemod engine covers lifecycle, drift, isolation, snapshot keys, 
 	})
 	const applyItemId = apply.items[0]!.itemId
 	const revertKey = buildPackageCodemodRevertSnapshotKvKey({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		itemId: applyItemId,
 	})
 	expect(revertKey).toBe(`package-codemod-revert:user-1:${applyItemId}`)
@@ -418,7 +424,7 @@ test('package codemod engine covers lifecycle, drift, isolation, snapshot keys, 
 	const user2CannotRevertUser1 = await step(env, {
 		...revertInput,
 		initiatedByUserId: 'user-2',
-		scope: { kind: 'user', userId: 'user-2' },
+		scope: { kind: 'user', userId: ownerIdFromStored('user-2') },
 	})
 	expect(user2CannotRevertUser1.items).toEqual([])
 })
@@ -458,7 +464,7 @@ test('package codemod engine enforces resume scope, binary paging, fleet progres
 			if (start > 250) return []
 			return Array.from({ length: input.limit }, (_, index) =>
 				savedPackage(`fleet-${String(start + index).padStart(4, '0')}`, {
-					userId: 'user-9',
+					userId: ownerIdFromStored('user-9'),
 					kodyId: `nope-${start + index}`,
 				}),
 			)
@@ -492,7 +498,7 @@ test('package codemod engine enforces resume scope, binary paging, fleet progres
 	)
 	expect(failedItem?.revertSnapshotKey).toBe(
 		buildPackageCodemodRevertSnapshotKvKey({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			itemId: failedPublish.items[0]!.itemId,
 		}),
 	)
@@ -527,7 +533,10 @@ test('package codemod revert skips when HEAD no longer matches applied afterComm
 		branch: 'main',
 		commit: 'commit-user-moved-head',
 	})
-	const revert = await step(env, { mode: 'revert', revertOfRunId: apply.runId })
+	const revert = await step(env, {
+		mode: 'revert',
+		revertOfRunId: apply.runId,
+	})
 	expect(revert.items[0]?.status).toBe('skipped_drift')
 	expect(mocks.syncArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
 })
@@ -631,10 +640,10 @@ test('package codemod revert page ceiling and user-scoped SQL filter for sparse 
 	await insertAppliedItems(env.APP_DB, 'prior-fleet', [
 		...Array.from({ length: 40 }, (_, index) => ({
 			id: `other-${String(index).padStart(4, '0')}`,
-			userId: 'user-other',
+			userId: ownerIdFromStored('user-other'),
 		})),
-		{ id: 'mine-0001', userId: 'user-1' },
-		{ id: 'mine-0002', userId: 'user-1' },
+		{ id: 'mine-0001', userId: ownerIdFromStored('user-1') },
+		{ id: 'mine-0002', userId: ownerIdFromStored('user-1') },
 	])
 
 	const sparse = await revertOf('prior-fleet')
@@ -653,7 +662,7 @@ test('package codemod revert page ceiling and user-scoped SQL filter for sparse 
 		'prior-dense',
 		Array.from({ length: 30 }, (_, index) => ({
 			id: `dense-${String(index).padStart(4, '0')}`,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		})),
 	)
 
@@ -670,9 +679,21 @@ test('package codemod fleet revert applies packageIds filters and leaves others 
 	const { env, kv } = createEnv()
 	await createPriorFleetApply(env.APP_DB, 'prior-canary-apply')
 	const priorItems = [
-		{ id: 'item-pkg-keep-a', userId: 'user-1', kodyId: 'keep-a' },
-		{ id: 'item-pkg-revert', userId: 'user-1', kodyId: 'revert-me' },
-		{ id: 'item-pkg-keep-b', userId: 'user-2', kodyId: 'keep-b' },
+		{
+			id: 'item-pkg-keep-a',
+			userId: ownerIdFromStored('user-1'),
+			kodyId: 'keep-a',
+		},
+		{
+			id: 'item-pkg-revert',
+			userId: ownerIdFromStored('user-1'),
+			kodyId: 'revert-me',
+		},
+		{
+			id: 'item-pkg-keep-b',
+			userId: ownerIdFromStored('user-2'),
+			kodyId: 'keep-b',
+		},
 	].map((prior) => ({
 		...prior,
 		packageId: `pkg-${prior.kodyId}`,

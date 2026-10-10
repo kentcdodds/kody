@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -37,7 +38,7 @@ test('cancelKodySubscriptionsForSoftDelete finds customer on soft-deleted org', 
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const db = createD1FromSqlite(sqlite)
 	const ts = '2026-01-01T00:00:00.000Z'
-	const orgId = 'org-soft-billing'
+	const orgId = ownerIdFromStored('org-soft-billing')
 	await db
 		.prepare(
 			`INSERT INTO orgs (

@@ -109,7 +109,7 @@ test('Use grant: grantee bound to owner org resolves and execute looks up that o
 	const packageName = '@rh-alice/rehearsal-notes'
 	await insertSavedPackage(db, {
 		id: packageId,
-		user_id: ownerId,
+		user_id: ownerIdFromStored(ownerId),
 		name: packageName,
 		kody_id: 'rehearsal-notes',
 		description: 'rehearsal notes',

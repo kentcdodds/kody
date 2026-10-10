@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -43,7 +44,7 @@ export const emailMessageSearchCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const messages = await searchOwnerEmailMessages({
 				env: ctx.env,
-				ownerId: user.userId,
+				ownerId: personalOrgId(user.userId),
 				query: args.query,
 				inboxId: args.inbox_id ?? null,
 				direction: args.direction ?? null,

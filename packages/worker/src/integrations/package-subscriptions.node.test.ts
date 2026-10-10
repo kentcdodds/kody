@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as PackageInvocationsService from '#worker/package-invocations/service.ts'
@@ -39,7 +40,7 @@ const env = {
 function pkg(index: number, kodyId: string) {
 	return {
 		id: `package-${index}`,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		orgSlug: 'ada',
 		sourceId: `source-${index}`,
 		kodyId,
@@ -133,7 +134,7 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 	}
 	const results = await dispatchIntegrationAuthFailedSubscriptionEvents({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		orgSlug: 'ada',
 		eventId: 'event-1',
 		occurredAt: '2026-08-18T17:00:00.000Z',
@@ -144,7 +145,7 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 
 	expect(results).toHaveLength(1)
 	expect(mocks.listSavedPackagesByUserId).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({
@@ -177,7 +178,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 	await expect(
 		dispatchIntegrationAuthFailedSubscriptionEvents({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			orgSlug: 'ada',
 			eventId: 'event-2',
 			occurredAt: '2026-08-18T17:00:00.000Z',
@@ -218,7 +219,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 	await expect(
 		dispatchIntegrationAuthFailedSubscriptionEvents({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			orgSlug: 'ada',
 			eventId: 'event-3',
 			occurredAt: '2026-08-18T17:00:00.000Z',
@@ -265,7 +266,7 @@ test('integration.auth.succeeded fans out a lean payload only to packages on tha
 
 	const results = await dispatchIntegrationAuthSucceededSubscriptionEvents({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		orgSlug: 'ada',
 		eventId: 'event-4',
 		occurredAt: '2026-08-18T18:00:00.000Z',

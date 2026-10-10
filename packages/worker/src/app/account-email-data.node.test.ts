@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import type * as EntitlementPlans from '#universal/plans.ts'
@@ -9,7 +12,7 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 const messageRecord = {
 	id: 'msg-1',
 	direction: 'inbound' as const,
-	userId: 'stable-user-1',
+	userId: ownerIdFromStored('stable-user-1'),
 	inboxId: 'inbox-1',
 	threadId: null,
 	senderIdentityId: null,
@@ -152,12 +155,12 @@ test('loadAccountEmailData reads USER message graph only through owner Mailbox r
 	expect(mocks.listOwnerEmailMessagesPage).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env,
-			ownerId: 'stable-user-1',
+			ownerId: ownerIdFromStored('stable-user-1'),
 		}),
 	)
 	expect(mocks.getOwnerEmailMessageById).toHaveBeenCalledWith({
 		env,
-		ownerId: 'stable-user-1',
+		ownerId: ownerIdFromStored('stable-user-1'),
 		messageId: 'msg-1',
 	})
 	expect(prepare).not.toHaveBeenCalled()

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -47,7 +48,7 @@ function createRetrieverEntry(input: {
 	scopes?: Array<'search' | 'context'>
 }) {
 	return {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 		sourceId: `source-${input.packageId}`,
@@ -66,7 +67,7 @@ function createRetrieverEntry(input: {
 function createSavedPackage(input: { packageId: string; kodyId: string }) {
 	return {
 		id: input.packageId,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: input.kodyId,
 		kodyId: input.kodyId,
 		description: input.kodyId,
@@ -84,7 +85,7 @@ function createSavedPackage(input: { packageId: string; kodyId: string }) {
 function createEntitySource(input: { packageId: string }) {
 	return {
 		id: `source-${input.packageId}`,
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		repo_id: `repo-${input.packageId}`,
 		entity_kind: 'package',
 		entity_id: input.packageId,
@@ -164,7 +165,7 @@ test('runPackageRetrievers soft-fails a timed-out retriever and keeps healthy re
 	const run = await runPackageRetrievers({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		request: sessionRequestContext('user-1'),
 		scope: 'context',
 		query: 'notes',

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 import { type PackageCodemodRunStepResult } from '#worker/package-codemods/engine.ts'
@@ -71,7 +72,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: ownerIdFromStored('stable-admin'),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',
@@ -190,7 +191,7 @@ test('admin codemods GET requires admin and returns codemods, recent runs, and p
 	const items = Array.from({ length: 2 }, (_, index) => ({
 		id: `item-${index}`,
 		runId: 'run-1',
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		packageId: `pkg-${index}`,
 		kodyId: `app-${index}`,
 		status: 'detected',
@@ -231,7 +232,7 @@ test('admin codemods run POST requires admin, rejects invalid requests, audits, 
 		items: [
 			{
 				itemId: 'item-1',
-				userId: 'user-a',
+				userId: ownerIdFromStored('user-a'),
 				packageId: 'pkg-1',
 				kodyId: 'demo-app',
 				status: 'detected',

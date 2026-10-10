@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
@@ -39,14 +40,14 @@ import {
 } from '#app/account-billing-data.ts'
 
 const personalOrg = {
-	id: 'stable-user-id',
+	id: ownerIdFromStored('stable-user-id'),
 	slug: 'billing-user',
 	displayName: null,
 	personal: true,
 }
 
 const teamOrg = {
-	id: 'org-acme',
+	id: ownerIdFromStored('org-acme'),
 	slug: 'acme',
 	displayName: 'Acme',
 	personal: false,
@@ -156,7 +157,7 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 	)
 	expect(scheduleStripePlanRefreshBackstop).toHaveBeenCalledWith({
 		env,
-		userId: 'stable-user-id',
+		userId: ownerIdFromStored('stable-user-id'),
 		now,
 	})
 
@@ -228,7 +229,10 @@ test("a team organization reads and refreshes its own Stripe customer, not the v
 		},
 	})
 	expect(refreshStripePlanForOrg).toHaveBeenCalledWith(
-		expect.objectContaining({ orgId: 'org-acme', customerId: 'cus_acme' }),
+		expect.objectContaining({
+			orgId: ownerIdFromStored('org-acme'),
+			customerId: 'cus_acme',
+		}),
 	)
 	expect(refreshStripePlanForUser).not.toHaveBeenCalled()
 })

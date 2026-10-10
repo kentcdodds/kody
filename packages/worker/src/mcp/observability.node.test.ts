@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
@@ -77,7 +78,7 @@ const callerFailureBase = {
 	durationMs: 3,
 	baseUrl: 'https://example.com',
 	hasUser: true,
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 } as const
 
 type McpEvent = Parameters<typeof logMcpEvent>[0]

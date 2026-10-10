@@ -5,6 +5,10 @@ import {
 } from '@cloudflare/codemode'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	createExecuteHelperPrelude,
 	getExecuteHelperCapabilityNames,
 } from '#mcp/execute-modules/kody-runtime-utils.ts'
@@ -493,7 +497,9 @@ const runtimeHelperManifest: Array<RuntimeHelperManifestEntry> = [
 			}),
 		createKodyTools: (context) => {
 			const packageStorageTools = context.packageStorageTools
-			const packageStorageUserId = context.callerContext.user?.userId ?? ''
+			const packageStorageUserId = context.callerContext.user
+				? personalOrgId(context.callerContext.user.userId)
+				: ('' as OwnerId)
 			if (!packageStorageTools || !packageStorageUserId) return {}
 			return createPackageStorageKodyTools({
 				env: context.env,

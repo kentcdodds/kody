@@ -6,6 +6,7 @@ import {
 } from '#worker/caller-disconnect.ts'
 import { createExecuteExecutor, createNamedExecutionError } from './executor.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 type FakeWorkerOptions = Record<string, unknown>
 
 function createExecutorTestEnv(loader: Env['LOADER']) {
@@ -24,7 +25,7 @@ function createExecutorTestExports() {
 function createGatewayProps(userId: string) {
 	return {
 		baseUrl: 'https://heykody.dev',
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: `${userId}@example.com`,
 		request: null,
 		storageContext: null,

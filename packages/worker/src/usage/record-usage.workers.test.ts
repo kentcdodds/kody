@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -244,7 +245,11 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 	await expect(
 		recordUsage(
 			{ APP_DB: env.APP_DB },
-			{ userId: '', eventType: 'execute', outcome: 'success' },
+			{
+				userId: ownerIdFromStored(''),
+				eventType: 'execute',
+				outcome: 'success',
+			},
 		),
 	).resolves.toBeUndefined()
 	expect(await listRollups(env.APP_DB, '')).toEqual([])

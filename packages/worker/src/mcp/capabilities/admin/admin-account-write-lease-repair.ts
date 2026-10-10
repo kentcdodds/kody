@@ -4,6 +4,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminMutationCapabilityAccess,
+	adminStableOwnerId,
 	auditAdminCapabilityInvocation,
 } from './admin-shared.ts'
 
@@ -35,7 +36,7 @@ export const adminAccountWriteLeaseRepairCapability = defineDomainCapability(
 				async () => {
 					const result = await repairAccountWriteLease({
 						db: ctx.env.APP_DB,
-						stableUserId: args.stable_user_id,
+						stableUserId: adminStableOwnerId(args.stable_user_id),
 						token: args.token,
 						expectedAcquiredAt: args.expected_acquired_at,
 						repairedByUserId,

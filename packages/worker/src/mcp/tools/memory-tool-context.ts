@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
@@ -59,7 +63,7 @@ function selectAutomaticMemories<
 async function loadAutomaticMemories(input: {
 	env: Pick<Env, 'APP_DB'> & Partial<Pick<Env, 'CAPABILITY_VECTOR_INDEX'>>
 	callerContext: McpCallerContext
-	userId: string
+	userId: OwnerId
 	query: string
 	conversationId: string
 	limit?: number
@@ -92,7 +96,7 @@ async function loadAutomaticMemories(input: {
 async function runContextPackageRetrievers(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	request: RequestContext | null
 	query: string
 	memoryContext?: {
@@ -132,7 +136,9 @@ export async function loadRelevantMemoriesForTool(input: {
 	acknowledgeSurfaced?: boolean
 	embedText?: EmbedTextFn
 }): Promise<MemoryToolSummary | null> {
-	const userId = input.callerContext.user?.userId ?? null
+	const userId = input.callerContext.user
+		? personalOrgId(input.callerContext.user.userId)
+		: null
 	if (!userId) return null
 	const retrievalQuery = buildMemoryRetrievalQuery(input.memoryContext)
 	if (!retrievalQuery) return null
@@ -181,7 +187,9 @@ export async function acknowledgeToolMemories(input: {
 	conversationId: string
 	memoryIds: Array<string>
 }) {
-	const userId = input.callerContext.user?.userId ?? null
+	const userId = input.callerContext.user
+		? personalOrgId(input.callerContext.user.userId)
+		: null
 	if (!userId || input.memoryIds.length === 0) return
 	await acknowledgeSurfacedMemories({
 		env: input.env,
@@ -198,7 +206,9 @@ export async function surfaceToolMemories(input: {
 	retrievalQuery: string
 	limit?: number
 }) {
-	const userId = input.callerContext.user?.userId ?? null
+	const userId = input.callerContext.user
+		? personalOrgId(input.callerContext.user.userId)
+		: null
 	if (!userId) return null
 	const retrievalQuery = input.retrievalQuery.trim()
 	if (!retrievalQuery) return null

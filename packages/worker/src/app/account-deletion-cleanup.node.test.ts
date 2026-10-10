@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	AccountDeletionCleanupError,
@@ -22,7 +23,11 @@ type DeletionEnv = Parameters<typeof deleteUserAccount>[0]['env']
 const userA = { id: 1, email: 'a@example.com', stable_user_id: 'user-aaa' }
 
 function deleteUserA(env: DeletionEnv) {
-	return deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' })
+	return deleteUserAccount({
+		env,
+		dbUserId: 1,
+		mcpUserId: ownerIdFromStored('user-aaa'),
+	})
 }
 
 function oauthProvider(overrides: Record<string, unknown> = {}) {
@@ -70,7 +75,11 @@ test('deleteUserAccount deletes owned OAuth clients and fails closed on critical
 	expect(deleteClient).toHaveBeenCalledWith('owned-client')
 	expect(deleteClient).toHaveBeenCalledWith('already-revoked')
 
-	const job = { id: 'job-1', user_id: 'user-aaa', storage_id: null }
+	const job = {
+		id: 'job-1',
+		user_id: ownerIdFromStored('user-aaa'),
+		storage_id: null,
+	}
 	const { db: missingDeleteDb, rows: missingDeleteRows } = createTestDb({
 		users: [userA],
 		jobs: [job],
@@ -111,10 +120,18 @@ test('deleteUserAccount deletes owned OAuth clients and fails closed on critical
 	const { db: kvFailureDb, rows: kvFailureRows } = createTestDb({
 		users: [userA],
 		published_bundle_artifacts: [
-			{ id: 'pba-1', user_id: 'user-aaa', kv_key: 'bundle-artifact:v1:src-1' },
+			{
+				id: 'pba-1',
+				user_id: ownerIdFromStored('user-aaa'),
+				kv_key: 'bundle-artifact:v1:src-1',
+			},
 		],
 		archived_job_artifacts: [
-			{ id: 'aja-1', user_id: 'user-aaa', kv_key: 'archived:src-1' },
+			{
+				id: 'aja-1',
+				user_id: ownerIdFromStored('user-aaa'),
+				kv_key: 'archived:src-1',
+			},
 		],
 	})
 	await expect(
@@ -208,7 +225,9 @@ test('account deletion reports missing bindings and remains retryable', async ()
 	for (const [overrides, ErrorClass, fields, fence] of cases) {
 		const { db, rows } = createTestDb({
 			users: [userA],
-			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
+			mcp_memories: [
+				{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+			],
 		})
 		const error = await deleteUserA(
 			createSuccessfulDeletionEnv(db, overrides),
@@ -216,7 +235,9 @@ test('account deletion reports missing bindings and remains retryable', async ()
 		expect(error).toBeInstanceOf(ErrorClass)
 		expect(error).toMatchObject(fields)
 		expect(rows.users).toEqual([fence ? fencedUser : unfencedUser])
-		expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+		expect(rows.mcp_memories).toEqual([
+			{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+		])
 	}
 })
 
@@ -224,8 +245,16 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	const { db, rows } = createTestDb(
 		{
 			users: [userA],
-			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
-			jobs: [{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' }],
+			mcp_memories: [
+				{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+			],
+			jobs: [
+				{
+					id: 'job-a',
+					user_id: ownerIdFromStored('user-aaa'),
+					storage_id: 'job:job-a',
+				},
+			],
 		},
 		{ failSelectContaining: 'select id from mcp_memories where user_id = ?' },
 	)
@@ -247,12 +276,18 @@ test('deleteUserAccount fails closed when preflight inventory cannot be read', a
 	expect(
 		await userMeterRpc({
 			env: userMeter.env,
-			userId: 'user-aaa',
+			userId: ownerIdFromStored('user-aaa'),
 		}).readDeletionState(),
 	).toEqual({ deletingAt: null })
-	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+	expect(rows.mcp_memories).toEqual([
+		{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+	])
 	expect(rows.jobs).toEqual([
-		{ id: 'job-a', user_id: 'user-aaa', storage_id: 'job:job-a' },
+		{
+			id: 'job-a',
+			user_id: ownerIdFromStored('user-aaa'),
+			storage_id: 'job:job-a',
+		},
 	])
 	expect(deleteVectors).not.toHaveBeenCalled()
 	expect(clearStorage).not.toHaveBeenCalled()
@@ -262,8 +297,10 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 	const { db, rows } = createTestDb(
 		{
 			users: [{ id: 1, email: 'a@example.com' }],
-			secret_buckets: [{ id: 'sb-a', user_id: 'user-aaa' }],
-			mcp_memories: [{ id: 'memory-a', user_id: 'user-aaa' }],
+			secret_buckets: [{ id: 'sb-a', user_id: ownerIdFromStored('user-aaa') }],
+			mcp_memories: [
+				{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+			],
 		},
 		{ failRunContaining: 'delete from mcp_memories where user_id = ?' },
 	)
@@ -275,8 +312,12 @@ test('atomic D1 deletion rolls back every row when one statement fails', async (
 		],
 	})
 	expect(rows.users).toEqual([fencedUser])
-	expect(rows.secret_buckets).toEqual([{ id: 'sb-a', user_id: 'user-aaa' }])
-	expect(rows.mcp_memories).toEqual([{ id: 'memory-a', user_id: 'user-aaa' }])
+	expect(rows.secret_buckets).toEqual([
+		{ id: 'sb-a', user_id: ownerIdFromStored('user-aaa') },
+	])
+	expect(rows.mcp_memories).toEqual([
+		{ id: 'memory-a', user_id: ownerIdFromStored('user-aaa') },
+	])
 })
 
 test('account deletion quiesces a concurrent user write before inventory', async () => {
@@ -296,7 +337,7 @@ test('account deletion quiesces a concurrent user write before inventory', async
 				}
 				raceAttempted = true
 				try {
-					await assertAccountWritable(env, 'user-aaa')
+					await assertAccountWritable(env, ownerIdFromStored('user-aaa'))
 					writeCommitted = true
 				} catch (error) {
 					writeError = error
@@ -315,7 +356,11 @@ test('account deletion waits for active writers, releases only the fence it crea
 	function seed(users: RowMap['users']) {
 		const { db, rows } = createTestDb({ users })
 		const env = createSuccessfulDeletionEnv(db)
-		return { env, rows, meter: userMeterRpc({ env, userId: 'user-aaa' }) }
+		return {
+			env,
+			rows,
+			meter: userMeterRpc({ env, userId: ownerIdFromStored('user-aaa') }),
+		}
 	}
 	// A crashed writer still holds a lease: the fence this attempt created is
 	// released in both D1 and the UserMeter.
@@ -432,7 +477,7 @@ test('account deletion empties the user RunLog DO and leaves other users untouch
 })
 
 test('account deletion purges a StorageRunner known only via user_storage_buckets', async () => {
-	const userId = 'user-bucket-only'
+	const userId = ownerIdFromStored('user-bucket-only')
 	const clearStorage = vi.fn(async () => ({ ok: true as const }))
 	const idFromName = vi.fn((name: string) => name as unknown as DurableObjectId)
 	const { db } = createTestDb({

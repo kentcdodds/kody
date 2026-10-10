@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { replaceRepoSessionDueOwner } from '#worker/repo/repo-session-due-owners.ts'
@@ -102,7 +103,7 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 	expect(() =>
 		registerStorageBucket({
 			env: {} as Env,
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			storageId: 'bucket-a',
 		}),
 	).not.toThrow()
@@ -110,7 +111,7 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 	expect(() =>
 		registerStorageBucket({
 			env: failing.env,
-			userId: 'user-a',
+			userId: ownerIdFromStored('user-a'),
 			storageId: 'bucket-a',
 			kind: 'execute',
 		}),
@@ -138,17 +139,23 @@ test('storage bucket registration soft-fails, dedupes, and lists by user', async
 
 	expect(counting.insertCount).toBe(3)
 	await expect(
-		listUserStorageBucketIds({ env: counting.env, userId: 'user-a' }),
+		listUserStorageBucketIds({
+			env: counting.env,
+			userId: ownerIdFromStored('user-a'),
+		}),
 	).resolves.toEqual(['bucket-a', 'exec:same'])
 	await expect(
-		listUserStorageBucketIds({ env: counting.env, userId: 'user-b' }),
+		listUserStorageBucketIds({
+			env: counting.env,
+			userId: ownerIdFromStored('user-b'),
+		}),
 	).resolves.toEqual(['bucket-b'])
 	await expect(
 		listPlatformStorageBuckets({ db: counting.db }),
 	).resolves.toEqual([
-		{ userId: 'user-a', storageId: 'bucket-a' },
-		{ userId: 'user-a', storageId: 'exec:same' },
-		{ userId: 'user-b', storageId: 'bucket-b' },
+		{ userId: ownerIdFromStored('user-a'), storageId: 'bucket-a' },
+		{ userId: ownerIdFromStored('user-a'), storageId: 'exec:same' },
+		{ userId: ownerIdFromStored('user-b'), storageId: 'bucket-b' },
 	])
 })
 
@@ -197,18 +204,18 @@ test('index-backed storage-bucket reconcile pages owners with a persisted cursor
 			now,
 		})
 		await repoSessionIndexStub(indexEnv, userId).insertSession({
-			ownerId: userId,
+			ownerId: ownerIdFromStored(userId),
 			row: catalogSessionRow({
 				id: `${userId}-active`,
-				user_id: userId,
+				user_id: ownerIdFromStored(userId),
 			}),
 		})
 	}
 	await repoSessionIndexStub(indexEnv, 'user-a').insertSession({
-		ownerId: 'user-a',
+		ownerId: ownerIdFromStored('user-a'),
 		row: catalogSessionRow({
 			id: 'user-a-discarded',
-			user_id: 'user-a',
+			user_id: ownerIdFromStored('user-a'),
 			status: 'discarded',
 		}),
 	})
@@ -228,7 +235,7 @@ test('index-backed storage-bucket reconcile pages owners with a persisted cursor
 				(
 					await listUserStorageBucketEstimates({
 						env: { APP_DB: db } as Env,
-						userId,
+						userId: ownerIdFromStored(userId),
 					})
 				).map((row) => ({ userId, ...row })),
 			),

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import * as registryModule from '#mcp/capabilities/registry.ts'
@@ -254,7 +257,7 @@ test('runBundledModuleWithRegistry passes params and injects runtime helpers', a
 	expect(created[0]?.params).toEqual(
 		expect.objectContaining({
 			sourceType: 'inline',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			params: { greeting: 'hello' },
 		}),
 	)
@@ -342,7 +345,7 @@ test('runBundledModuleWithRegistry records package_export usage for bundled runs
 		expect(recordUsageSpy).toHaveBeenCalledWith(
 			env,
 			expect.objectContaining({
-				userId: 'user-metered',
+				userId: ownerIdFromStored('user-metered'),
 				eventType: 'package_export',
 				entityId: 'pkg-metered',
 				outcome,
@@ -477,7 +480,7 @@ test('runBundledModuleWithRegistry records execute run success, failure, and cal
 	const callerContext = callerFor('user-execute-records')
 	const handle = {
 		id: 'run-execute-1',
-		userId: 'user-execute-records',
+		userId: ownerIdFromStored('user-execute-records'),
 		startedAt: '2026-07-26T00:00:00.000Z',
 		persistence: 'eager' as const,
 		context: {
@@ -514,7 +517,7 @@ test('runBundledModuleWithRegistry records execute run success, failure, and cal
 	expect(success.runId).toBe(handle.id)
 	expect(beginSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-execute-records',
+			userId: ownerIdFromStored('user-execute-records'),
 			context: expect.objectContaining({
 				surface: 'execute',
 				storageId: 'storage-1',
@@ -586,7 +589,7 @@ test('runBundledModuleWithRegistry leaves claimed job transient failures running
 	const callerContext = callerFor('user-job-estimate')
 	const handle = {
 		id: 'run-job-estimate-1',
-		userId: 'user-job-estimate',
+		userId: ownerIdFromStored('user-job-estimate'),
 		startedAt: '2026-08-21T14:40:00.000Z',
 		persistence: 'eager' as const,
 		context: {
@@ -668,7 +671,7 @@ test('runBundledModuleWithRegistry retries transient Durable Object isolate rese
 	silenceIncidentalRuntimeWarnings()
 	const handle = {
 		id: 'run-do-reset-1',
-		userId: 'user-do-reset',
+		userId: ownerIdFromStored('user-do-reset'),
 		startedAt: '2026-08-18T00:00:00.000Z',
 		persistence: 'on-failure' as const,
 		context: { surface: 'export' as const, name: './scan', metadata: {} },
@@ -753,7 +756,7 @@ test('runBundledModuleWithRegistry schedules finish via waitUntil when provided'
 	silenceIncidentalRuntimeWarnings()
 	const handle = {
 		id: 'run-wait-until-1',
-		userId: 'user-wait-until',
+		userId: ownerIdFromStored('user-wait-until'),
 		startedAt: '2026-07-26T00:00:00.000Z',
 		persistence: 'eager' as const,
 		context: {

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	chunkArray,
 	maxD1BoundParameters,
@@ -11,7 +12,7 @@ import {
 function mapMemoryRow(row: Record<string, unknown>): McpMemoryRow {
 	return {
 		id: String(row['id']),
-		user_id: String(row['user_id']),
+		user_id: String(row['user_id']) as OwnerId,
 		category: row['category'] == null ? null : String(row['category']),
 		status: String(row['status']) as McpMemoryRow['status'],
 		subject: String(row['subject']),

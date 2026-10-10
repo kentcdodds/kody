@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import type * as PageAuth from '#app/page-auth.ts'
@@ -44,7 +45,7 @@ test('prefilled /account/secrets/new redirects; bare /new stays on the editor', 
 	expect(mockModule.requireAuthenticatedPageUser).not.toHaveBeenCalled()
 
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	const bare = await createAccountSecretsHandler(env).handler(
 		new RequestContext(new Request('https://example.com/account/secrets/new')),

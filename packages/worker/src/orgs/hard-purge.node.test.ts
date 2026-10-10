@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -7,7 +8,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	purgeJobManagerForUser: vi.fn(async () => ({
 		ok: true as const,
-		userId: 'mock',
+		userId: ownerIdFromStored('mock'),
 		purged: false,
 	})),
 }))
@@ -39,7 +40,7 @@ test('hardPurgeOrg deletes org-owned children and the org graph from one invento
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	const appDb = createD1FromSqlite(sqlite)
 	const auditDb = createAuditDb()
-	const orgId = 'org-hard-purge'
+	const orgId = ownerIdFromStored('org-hard-purge')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
 		.prepare(

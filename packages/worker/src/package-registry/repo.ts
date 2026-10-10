@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -55,7 +56,7 @@ const savedPackageCommunityProvenanceJoins = `LEFT JOIN community_forks
 function mapSavedPackageRow(row: Record<string, unknown>): SavedPackageRecord {
 	return {
 		id: String(row['id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		name: String(row['name']),
 		kodyId: String(row['kody_id']),
 		description: String(row['description']),

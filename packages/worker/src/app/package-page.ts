@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { loadAccountPackageDetail } from '#app/account-packages-data.ts'
 import { loadCommunityDetailData } from '#app/community-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -117,7 +118,7 @@ async function loadPackagePageUncached(input: {
 
 	if (target.kind === 'redirect') {
 		const viewerOwnsRedirect =
-			viewerUserId != null && viewerUserId === target.userId
+			viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 		// A listing move is public. An unlisted rename must not leak the new
 		// pair: only the owner is sent to the current URL.
 		if (!target.listingId && !viewerOwnsRedirect) {
@@ -138,7 +139,8 @@ async function loadPackagePageUncached(input: {
 		}
 	}
 
-	const viewerIsOwner = viewerUserId != null && viewerUserId === target.userId
+	const viewerIsOwner =
+		viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 	const listingKodyId = target.listingKodyId
 	const savedKodyId = target.savedPackage?.kodyId ?? null
 	if (listingKodyId && savedKodyId && !sameKodyId(listingKodyId, savedKodyId)) {

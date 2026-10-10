@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	forgetInboundMcpConnectionLastUsed,
@@ -31,7 +32,7 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 		}),
 	).toThrow(/ISO datetime/)
 
-	const noMeter = { env: {}, userId: 'user-no-meter' }
+	const noMeter = { env: {}, userId: ownerIdFromStored('user-no-meter') }
 	await expect(
 		recordInboundMcpConnectionLastUsed({ ...noMeter, clientId: 'client-a' }),
 	).resolves.toBeUndefined()
@@ -48,13 +49,16 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 	const record = (forUserId: string, lastUsedAt: string, nowMs?: number) =>
 		recordInboundMcpConnectionLastUsed({
 			env: meter.env,
-			userId: forUserId,
+			userId: ownerIdFromStored(forUserId),
 			clientId,
 			lastUsedAt,
 			nowMs: nowMs ?? Date.parse(lastUsedAt),
 		})
 	const list = (forUserId: string) =>
-		listInboundMcpConnectionLastUsed({ env: meter.env, userId: forUserId })
+		listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId: ownerIdFromStored(forUserId),
+		})
 
 	await record(userId, firstUsedAt)
 	await record(
@@ -70,7 +74,11 @@ test('inbound MCP last-used debounce, record, list, and forget stay per user and
 	await record(otherUserId, firstUsedAt)
 	expect(await list(otherUserId)).toEqual(new Map([[clientId, firstUsedAt]]))
 
-	await forgetInboundMcpConnectionLastUsed({ env: meter.env, userId, clientId })
+	await forgetInboundMcpConnectionLastUsed({
+		env: meter.env,
+		userId: ownerIdFromStored(userId),
+		clientId,
+	})
 	expect(await list(userId)).toEqual(new Map())
 	expect(await list(otherUserId)).toEqual(new Map([[clientId, firstUsedAt]]))
 
@@ -111,7 +119,7 @@ test('inbound MCP last-used records again after a failed UserMeter touch', async
 	const recordFailing = () =>
 		recordInboundMcpConnectionLastUsed({
 			env: failingEnv,
-			userId,
+			userId: ownerIdFromStored(userId),
 			clientId,
 			lastUsedAt: usedAt,
 			nowMs: Date.parse(usedAt),
@@ -119,6 +127,9 @@ test('inbound MCP last-used records again after a failed UserMeter touch', async
 	await expect(recordFailing()).rejects.toThrow(/meter down/)
 	await recordFailing()
 	expect(
-		await listInboundMcpConnectionLastUsed({ env: meter.env, userId }),
+		await listInboundMcpConnectionLastUsed({
+			env: meter.env,
+			userId: ownerIdFromStored(userId),
+		}),
 	).toEqual(new Map([[clientId, usedAt]]))
 })

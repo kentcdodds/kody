@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -43,7 +46,7 @@ test('emailDeliveryEventList returns parsed events scoped to the signed-in user'
 		{
 			id: 'event-1',
 			messageId: 'message-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			inboxId: null,
 			eventType: 'bounced',
 			provider: 'cloudflare-email',
@@ -64,7 +67,7 @@ test('emailDeliveryEventList returns parsed events scoped to the signed-in user'
 
 	expect(mocks.listOwnerEmailDeliveryEvents).toHaveBeenCalledWith({
 		env: context.env,
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		eventType: 'bounced',
 		limit: 10,

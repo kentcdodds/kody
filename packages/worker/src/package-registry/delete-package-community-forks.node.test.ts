@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { communityForksDeleteCascadeStatements } from '#worker/community/community-forks-delete-cascade.ts'
@@ -295,7 +296,7 @@ test('package delete removes community_forks so Fork outdated does not linger', 
 
 	await deleteSavedPackageProjection({
 		env,
-		userId: 'user-kent',
+		userId: ownerIdFromStored('user-kent'),
 		packageId: 'package-live',
 	})
 

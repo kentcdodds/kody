@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	d1LockRetryBaseDelayMs,
@@ -54,7 +55,7 @@ const exportErrorMessage = `D1_ERROR: ${d1LongRunningExportMessage}.`
 
 const source = {
 	id: 'source-pkg-1',
-	user_id: 'user-1',
+	user_id: ownerIdFromStored('user-1'),
 	entity_kind: 'package' as const,
 	entity_id: 'package-source-pkg-1',
 	repo_id: 'repo-source-pkg-1',
@@ -79,7 +80,7 @@ function setupMocks() {
 	mockModule.listSavedPackagesPage.mockResolvedValue([
 		{
 			id: 'pkg-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@user/pkg-1',
 			kodyId: 'pkg-1',
 			description: 'Package pkg-1',

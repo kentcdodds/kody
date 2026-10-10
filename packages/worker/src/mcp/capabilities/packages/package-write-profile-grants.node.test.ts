@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -114,7 +117,7 @@ const { storageQueryCapability } =
 
 const savedPackage = {
 	id: 'pkg-1',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	name: '@user/pkg',
 	kodyId: 'pkg',
 	description: 'A package',
@@ -131,7 +134,7 @@ const savedPackage = {
 
 const sourceRow = {
 	id: 'source-1',
-	user_id: 'user-1',
+	user_id: ownerIdFromStored('user-1'),
 	entity_kind: 'package' as const,
 	entity_id: 'pkg-1',
 	repo_id: 'repo-1',
@@ -175,7 +178,7 @@ function grants(actions: Array<'read' | 'execute' | 'write'>) {
 function reset() {
 	for (const mock of Object.values(mocks)) mock.mockReset()
 	mocks.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		ownerScope: 'user',
 		ownerEmail: 'user@example.com',
 		actorUserId: 'user-1',
@@ -187,7 +190,7 @@ function reset() {
 	mocks.updateSavedPackage.mockResolvedValue(true)
 	mocks.getRepoSessionById.mockResolvedValue({
 		id: 'session-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		source_id: 'source-1',
 	})
 }
@@ -306,7 +309,7 @@ test('webhookEnable denies a read-only profile and allows write', async () => {
 		setWebhookEnabledForUser({
 			env: { APP_DB: {} } as Env,
 			request: request!,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			webhookName: 'hook',
 			enabled: true,
@@ -325,7 +328,7 @@ test('webhookEnable denies a read-only profile and allows write', async () => {
 		setWebhookEnabledForUser({
 			env: { APP_DB: {} } as Env,
 			request: callerContext().request!,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			webhookName: 'hook',
 			enabled: true,
@@ -340,7 +343,7 @@ test('repo session package writes deny a read-only profile and allow write', asy
 		authorizeRepoSessionPackageWrite({
 			env: { APP_DB: {} } as Env,
 			request: callerContext().request,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sessionId: 'session-1',
 		}),
 	)
@@ -351,7 +354,7 @@ test('repo session package writes deny a read-only profile and allow write', asy
 		authorizeRepoSessionPackageWrite({
 			env: { APP_DB: {} } as Env,
 			request: callerContext().request,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sessionId: 'session-1',
 		}),
 	).resolves.toBeUndefined()
@@ -362,7 +365,7 @@ test('repo session package writes deny a read-only profile and allow write', asy
 		authorizeRepoSessionPackageWrite({
 			env: { APP_DB: {} } as Env,
 			request: callerContext().request,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sessionId: 'session-1',
 		}),
 	).rejects.toThrow('Repo session was not found.')
@@ -370,7 +373,7 @@ test('repo session package writes deny a read-only profile and allow write', asy
 		authorizeRepoSessionPackageWrite({
 			env: { APP_DB: {} } as Env,
 			request: callerContext().request,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sessionId: 'session-1',
 			allowMissingSession: true,
 		}),

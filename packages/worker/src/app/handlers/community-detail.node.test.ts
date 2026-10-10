@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { createCommunityReportApiPostHandler } from './community-detail.tsx'
@@ -44,7 +45,7 @@ test('community report POST enforces auth, validation, and error mapping', async
 	expect(mockModule.reportCommunityListing).not.toHaveBeenCalled()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'stable-reporter-id' },
+		mcpUser: { userId: ownerIdFromStored('stable-reporter-id') },
 	})
 	const invalidReason = await handler.handler({
 		request: new Request(
@@ -79,7 +80,7 @@ test('community report POST enforces auth, validation, and error mapping', async
 	expect(await success.json()).toEqual({ ok: true })
 	expect(mockModule.reportCommunityListing).toHaveBeenCalledWith({
 		env,
-		userId: 'stable-reporter-id',
+		userId: ownerIdFromStored('stable-reporter-id'),
 		listingId: 'listing-1',
 		reason: 'Unsafe imports',
 	})

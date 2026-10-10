@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	buildWebhookDeliveryIdempotencyKey,
@@ -151,7 +152,7 @@ test('webhook replay timestamps parse unix, iso, and stripe formats and reject m
 	const [firstKey, sameKey, otherKey] = await Promise.all(
 		['delivery-1', 'delivery-1', 'delivery-2'].map((deliveryId) =>
 			buildWebhookDeliveryIdempotencyKey({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				packageId: 'pkg-1',
 				webhookName: 'github',
 				deliveryId,

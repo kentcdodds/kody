@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	estimateDynamicWorkerUsd,
 	fleetDynamicWorkerCostAlertUsd,
@@ -106,7 +107,7 @@ type RuntimeDurationRow = {
 }
 
 type ActiveUserRow = UserEntitlementRow & {
-	stable_user_id: string
+	stable_user_id: OwnerId
 	username: string
 	event_count: number
 }

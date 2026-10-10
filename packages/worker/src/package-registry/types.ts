@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { communityPackageCategories } from '#universal/community-categories.ts'
 import { type ForkListingRelation } from '#universal/community-listing-ahead.ts'
@@ -629,7 +630,7 @@ export type AuthoredPackageJson = Omit<
 
 export type SavedPackageRow = {
 	id: string
-	user_id: string
+	user_id: OwnerId
 	name: string
 	kody_id: string
 	description: string
@@ -647,7 +648,7 @@ export type SavedPackageRow = {
 
 export type SavedPackageRecord = {
 	id: string
-	userId: string
+	userId: OwnerId
 	name: string
 	kodyId: string
 	description: string

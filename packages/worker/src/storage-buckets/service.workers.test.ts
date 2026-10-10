@@ -16,6 +16,7 @@ import {
 } from './service.ts'
 import { ensureUserStorageBucketsTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function catalogSessionRow(
 	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
 ): RepoSessionRow {
@@ -59,7 +60,10 @@ async function setup() {
 			kind: Parameters<typeof registerStorageBucket>[0]['kind'],
 		) => registerStorageBucket({ env, userId, storageId, kind, waitUntil }),
 		estimates: (userId: string) =>
-			listUserStorageBucketEstimates({ env, userId }),
+			listUserStorageBucketEstimates({
+				env,
+				userId: ownerIdFromStored(userId),
+			}),
 	}
 }
 
@@ -79,8 +83,8 @@ test('user_storage_buckets CHECK rejects the retired service kind', async () => 
 
 test('registerStorageBucket upserts and list helpers scope correctly on real D1', async () => {
 	const { register, flush, estimates } = await setup()
-	const userA = `usb-a-${crypto.randomUUID()}`
-	const userB = `usb-b-${crypto.randomUUID()}`
+	const userA = ownerIdFromStored(`usb-a-${crypto.randomUUID()}`)
+	const userB = ownerIdFromStored(`usb-b-${crypto.randomUUID()}`)
 	const bucketA = `exec:${crypto.randomUUID()}`
 	const bucketB = `job:${crypto.randomUUID()}`
 	const sessionBucket = `repo-session:${crypto.randomUUID()}`
@@ -117,7 +121,7 @@ test('registerStorageBucket upserts and list helpers scope correctly on real D1'
 
 test('missing repo-session inventory reconciliation registers only active sessions', async () => {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
-	const userId = `usb-reconcile-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`usb-reconcile-${crypto.randomUUID()}`)
 	const activeSession = `rs-active-${crypto.randomUUID()}`
 	const discardedSession = `rs-discarded-${crypto.randomUUID()}`
 	const registeredSession = `rs-registered-${crypto.randomUUID()}`

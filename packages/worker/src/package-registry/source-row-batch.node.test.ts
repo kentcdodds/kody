@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -75,10 +76,13 @@ function createLoadEnv(db: D1Database) {
 test('queue-style concurrent manifest loads issue one entity_sources IN query', async () => {
 	const sqlite = new DatabaseSync(':memory:')
 	createEntitySourcesTable(sqlite)
-	insertSource(sqlite, { id: 'source-a', userId: 'user-1' })
-	insertSource(sqlite, { id: 'source-b', userId: 'user-1' })
-	insertSource(sqlite, { id: 'source-c', userId: 'user-1' })
-	insertSource(sqlite, { id: 'source-other', userId: 'user-2' })
+	insertSource(sqlite, { id: 'source-a', userId: ownerIdFromStored('user-1') })
+	insertSource(sqlite, { id: 'source-b', userId: ownerIdFromStored('user-1') })
+	insertSource(sqlite, { id: 'source-c', userId: ownerIdFromStored('user-1') })
+	insertSource(sqlite, {
+		id: 'source-other',
+		userId: ownerIdFromStored('user-2'),
+	})
 
 	const queries: Array<string> = []
 	const db = createD1FromSqlite(sqlite, { queries })
@@ -87,17 +91,17 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 	const [first, second, third] = await Promise.all([
 		loadPackageManifestBySourceId({
 			...loadEnv,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-a',
 		}),
 		loadPackageManifestBySourceId({
 			...loadEnv,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-b',
 		}),
 		loadPackageManifestBySourceId({
 			...loadEnv,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-c',
 		}),
 	])
@@ -118,14 +122,14 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 	await expect(
 		loadPackageSourceRowForUser({
 			env: loadEnv.env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-other',
 		}),
 	).rejects.toThrow('was not found')
 	await expect(
 		loadPackageSourceRowForUser({
 			env: loadEnv.env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-missing',
 		}),
 	).rejects.toThrow('was not found')
@@ -133,7 +137,7 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 	const loneQueriesStart = queries.length
 	const lone = await loadPackageSourceRowForUser({
 		env: loadEnv.env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-a',
 	})
 	expect(lone.id).toBe('source-a')
@@ -143,7 +147,7 @@ test('queue-style concurrent manifest loads issue one entity_sources IN query', 
 
 	const explicit = await loadPackageSourceRowsForUser({
 		env: loadEnv.env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceIds: ['source-a', 'source-c', 'source-other', 'source-a', 'missing'],
 	})
 	expect([...explicit.keys()].sort()).toEqual(['source-a', 'source-c'])

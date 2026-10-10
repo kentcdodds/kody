@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 /**
  * R2 object key for a message's raw MIME payload in the EMAIL_BLOBS
  * bucket. The userId prefix is part of the per-user isolation contract:
@@ -5,7 +7,7 @@
  * keys, and the key can never be forged to point at another user's mail.
  * Writers always store this canonical key in `raw_mime_key`.
  */
-export function emailRawMimeKey(userId: string, messageId: string) {
+export function emailRawMimeKey(userId: OwnerId, messageId: string) {
 	return `email-raw:v1:${userId}/${messageId}`
 }
 
@@ -16,7 +18,7 @@ export function emailRawMimeKey(userId: string, messageId: string) {
  * emailRawMimeKey.
  */
 export function emailAttachmentBlobKey(
-	userId: string,
+	userId: OwnerId,
 	messageId: string,
 	attachmentId: string,
 ) {

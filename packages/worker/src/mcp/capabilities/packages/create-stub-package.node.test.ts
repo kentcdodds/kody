@@ -132,14 +132,14 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({
 			resource: 'saved_packages',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			email: 'user-1@example.com',
 		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-new',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			files: expect.objectContaining({
 				'package.json': expect.stringContaining('"private": true'),
 				'README.md': expect.stringContaining('## Intent'),
@@ -150,7 +150,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			name: '@kentcdodds/my-package',
 			kody_id: 'my-package',
 			description: 'Does the thing.',
@@ -176,26 +176,26 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	})
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'org-owner',
+			userId: ownerIdFromStored('org-owner'),
 			email: 'acme@example.com',
 		}),
 	)
 	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'org-owner' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			user_id: 'org-owner',
+			user_id: ownerIdFromStored('org-owner'),
 			name: '@acme/team-tool',
 		}),
 		expect.anything(),
 	)
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ userId: 'org-owner' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'org-owner' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
 })

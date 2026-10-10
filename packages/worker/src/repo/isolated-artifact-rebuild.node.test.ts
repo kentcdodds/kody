@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	createIsolatedArtifactRebuildRunner,
@@ -12,13 +13,13 @@ test('staging keys are user-namespaced and ownership-checked', () => {
 	expect(
 		isolatedArtifactRebuildStagingKeyBelongsToUser({
 			stagingKey: key,
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 		}),
 	).toBe(false)
 	expect(
 		isolatedArtifactRebuildStagingKeyBelongsToUser({
 			stagingKey: 'repo-checks-staging:v1:user-1:abc',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).toBe(false)
 })
@@ -75,7 +76,7 @@ test('runner touches staging TTL, fans out one target chunk per throwaway DO, an
 	const runInput = {
 		stagingKey,
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		publishedCommit: 'commit-1',
 		targets: [target],
 	}

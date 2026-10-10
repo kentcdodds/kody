@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	backupBlobKey,
@@ -86,7 +87,7 @@ function artifactEntry(snapshotSha256: string) {
 		sourceId: 'src-1',
 		entityKind: 'package',
 		entityId: 'pkg-1',
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		publishedCommit: 'commit-1',
 		snapshotSha256,
 	} satisfies ArtifactsIndex['entries'][number]

@@ -1,12 +1,15 @@
 import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type PublicUserIdentity = {
 	userId: number
 	username: string
 	email: string
-	mcpUserId: string
+	mcpUserId: PersonId
 }
 
 export async function findPublicUserIdentityByStableUserId(input: {

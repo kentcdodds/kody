@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type WebhookExportParams } from './types.ts'
 
 // Cloudflare Queues caps a message (body + metadata) at 128,000 bytes. Keep
@@ -12,7 +13,7 @@ export const webhookDispatchPayloadTtlSeconds = 24 * 60 * 60
 export type WebhookDispatchQueueMessage = {
 	endpoint: {
 		id: string
-		userId: string
+		userId: OwnerId
 		packageId: string
 		webhookName: string
 	}
@@ -166,7 +167,7 @@ export function parseWebhookDispatchQueueMessage(
 	return {
 		endpoint: {
 			id,
-			userId,
+			userId: userId as OwnerId,
 			packageId,
 			webhookName,
 		},

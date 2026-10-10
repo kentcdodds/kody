@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -237,7 +240,7 @@ test('mergeIntegrationConfig and integrationSave create, canonicalize identity, 
 
 test('integrationSave reuses an existing app when credentials match and preserves unspecified fields on partial update', async () => {
 	const { env } = createEnv()
-	const userId = 'user-reuse'
+	const userId = ownerIdFromStored('user-reuse')
 
 	await integrationSaveCapability.handler(googleBase, ctx(env, userId))
 	await integrationSaveCapability.handler(
@@ -431,7 +434,7 @@ test('integrationSave refuses platform (built-in) connections and persists accou
 	})
 	await upsertPlatformIntegration({
 		env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		platformAppSlug: 'github',
 		scopes: ['read:user'],
 	})
@@ -451,7 +454,7 @@ test('integrationSave refuses platform (built-in) connections and persists accou
 	)
 	const joined = await getJoinedIntegration({
 		env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		name: 'spotify',
 	})
 	expect(joined?.connection.accountLabel).toBe('me@kentcdodds.com')

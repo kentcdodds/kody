@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { buildInboundDelivery } from './inbound-delivery.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
@@ -21,7 +22,7 @@ function authorityFor(
 			USER_METER: namespace(stubs.meter ?? {}),
 			MAILBOX: namespace(stubs.mailbox ?? {}),
 		},
-		userId,
+		userId: ownerIdFromStored(userId),
 	})
 }
 
@@ -29,7 +30,7 @@ const now = new Date('2026-08-02T12:00:00.000Z')
 
 async function createDelivery(userId: string, now: Date) {
 	return await buildInboundDelivery({
-		userId,
+		userId: ownerIdFromStored(userId),
 		inboxId: 'inbox-1',
 		recipient: 'owner@example.com',
 		envelopeFrom: 'sender@example.com',
@@ -40,7 +41,7 @@ async function createDelivery(userId: string, now: Date) {
 }
 
 test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER graph SQL', async () => {
-	const userId = 'user-1'
+	const userId = ownerIdFromStored('user-1')
 	const delivery = await createDelivery(userId, now)
 	const snapshot: MailboxInboundDeliverySnapshot = {
 		...delivery,
@@ -119,7 +120,7 @@ test('dedupe claim precedes UserMeter and a Mailbox retry does not prepare USER 
 })
 
 test('commitInboundMessageGraph forwards the active storage lease to one owner Mailbox RPC', async () => {
-	const userId = 'user-2'
+	const userId = ownerIdFromStored('user-2')
 	const delivery = {
 		...(await createDelivery(userId, now)),
 		state: 'storing' as const,
@@ -157,7 +158,7 @@ test('commitInboundMessageGraph forwards the active storage lease to one owner M
 })
 
 test('commitInboundMessageGraph rejects a delivery without an active lease', async () => {
-	const userId = 'user-3'
+	const userId = ownerIdFromStored('user-3')
 	await expect(
 		authorityFor(userId).commitInboundMessageGraph({
 			delivery: await createDelivery(userId, now),

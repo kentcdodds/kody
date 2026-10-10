@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -110,7 +113,7 @@ test('memory tool context surfaces retrievers, filters weak matches, fails on re
 	expect(mockModule.runPackageRetrievers).toHaveBeenCalledWith(
 		expect.objectContaining({
 			baseUrl: 'https://heykody.dev',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			scope: 'context',
 			query: 'sprinkler instructions',
 			maxProviders: 3,

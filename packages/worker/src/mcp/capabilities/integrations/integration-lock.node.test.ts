@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -47,7 +50,7 @@ test('integrationLock grants a package and rejects missing packages', async () =
 	})
 	expect(mockModule.lockIntegrationToPackage).toHaveBeenCalledWith({
 		env: ctx.env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'google',
 		packageId: 'pkg-drafts',
 	})

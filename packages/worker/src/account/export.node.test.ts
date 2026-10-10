@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -25,7 +26,7 @@ const exportFor = (env: Env, dbUserId = 1, mcpUserId = 'user-aaa') =>
 	createAccountExport({
 		env,
 		dbUserId,
-		mcpUserId,
+		mcpUserId: ownerIdFromStored(mcpUserId),
 		generatedAt: '2026-07-05T00:00:00.000Z',
 	})
 
@@ -226,12 +227,12 @@ test('account export separates listing-owner deletion cascades from participant 
 	insertTestUser(sqlite, {
 		id: 1,
 		username: 'owner',
-		stableUserId: 'user-owner',
+		stableUserId: ownerIdFromStored('user-owner'),
 	})
 	insertTestUser(sqlite, {
 		id: 2,
 		username: 'participant',
-		stableUserId: 'user-participant',
+		stableUserId: ownerIdFromStored('user-participant'),
 	})
 	sqlite.exec(`
 		INSERT INTO community_listings (
@@ -301,12 +302,12 @@ test('account write lease repair export redacts the foreign party for both persp
 	insertTestUser(sqlite, {
 		id: 1,
 		username: 'target',
-		stableUserId: 'user-target',
+		stableUserId: ownerIdFromStored('user-target'),
 	})
 	insertTestUser(sqlite, {
 		id: 2,
 		username: 'admin',
-		stableUserId: 'user-admin',
+		stableUserId: ownerIdFromStored('user-admin'),
 	})
 	sqlite.exec(`
 		INSERT INTO account_write_lease_repairs (
@@ -338,7 +339,7 @@ test('createAccountExport redacts secrets and credential-equivalent hashes', asy
 	insertTestUser(sqlite, {
 		id: 2,
 		username: 'user-b',
-		stableUserId: 'user-bbb',
+		stableUserId: ownerIdFromStored('user-bbb'),
 	})
 	sqlite.exec(`
 		INSERT INTO secret_buckets (id, user_id, scope, binding_key, created_at, updated_at)
@@ -450,7 +451,7 @@ test('createAccountExport records partial-failure warnings and section paginatio
 		readAccountExportSection({
 			env,
 			dbUserId: 1,
-			mcpUserId: 'user-aaa',
+			mcpUserId: ownerIdFromStored('user-aaa'),
 			section: 'd1_table',
 			table: 'value_entries',
 			pageSize: 1,
@@ -508,7 +509,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 		const page = await readAccountExportSection({
 			env,
 			dbUserId: 1,
-			mcpUserId: 'user-aaa',
+			mcpUserId: ownerIdFromStored('user-aaa'),
 			section: 'd1_table',
 			table: 'mcp_memories',
 			pageSize: 500,
@@ -543,7 +544,7 @@ test('D1 export reads large tables in bounded keyset pages', async () => {
 			},
 		} as unknown as Env,
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 	})
 	expect(manifest.sections['d1.mcp_memories']?.count).toBe(totalRows)
 	expect(manifest.sections).not.toHaveProperty('d1.email_messages')
@@ -583,7 +584,7 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 		'token:user-aaa:grant-1:tok-1': JSON.stringify({
 			id: 'tok-1',
 			grantId: 'grant-1',
-			userId: 'user-aaa',
+			userId: ownerIdFromStored('user-aaa'),
 			wrappedEncryptionKey: 'token-wrapped-key',
 		}),
 	})
@@ -595,7 +596,7 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 	const expectedGrants = ['grant-1', 'grant-2'].map((id) => ({
 		id,
 		clientId: 'host-client',
-		userId: 'user-aaa',
+		userId: ownerIdFromStored('user-aaa'),
 		scope: ['mcp'],
 		metadata: { label: id },
 		createdAt: 1_700_000_000,
@@ -617,7 +618,7 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 	const manifest = await createAccountExportManifest({
 		env,
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 	})
 	expect(manifest.sections.oauth_grants?.count).toBe(2)
 	expect(manifest.warnings).not.toEqual(oauthUnavailableWarning)
@@ -625,7 +626,7 @@ test('account export reads OAuth grant metadata from OAUTH_KV when the provider 
 	const section = await readAccountExportSection({
 		env,
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 		section: 'oauth_grants',
 	})
 	expect(section.items).toEqual(expectedGrants)

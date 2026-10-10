@@ -204,7 +204,7 @@ test('delegation, shares, and platform packages are stored packages, so another 
 	]) {
 		const foreign = storedPackageResource({
 			id: 'pkg-9',
-			userId: 'org-2',
+			userId: ownerIdFromStored('org-2'),
 			label,
 		})
 		expect(foreign.orgId).toBe(ownerIdFromStored('org-2'))
@@ -215,7 +215,10 @@ test('delegation, shares, and platform packages are stored packages, so another 
 	expect(
 		canSeeResource(
 			access(),
-			storedPackageResource({ id: 'pkg-9', userId: 'org-2' }),
+			storedPackageResource({
+				id: 'pkg-9',
+				userId: ownerIdFromStored('org-2'),
+			}),
 		),
 	).toBe(false)
 
@@ -225,14 +228,20 @@ test('delegation, shares, and platform packages are stored packages, so another 
 		authorize(
 			{ env, request },
 			'package:read',
-			storedPackageResource({ id: 'pkg-9', userId: 'org-2' }),
+			storedPackageResource({
+				id: 'pkg-9',
+				userId: ownerIdFromStored('org-2'),
+			}),
 		),
 	).rejects.toMatchObject({ code: 'wrong_org' })
 	await expect(
 		authorize(
 			{ env, request },
 			'package:read',
-			storedPackageResource({ id: 'pkg-1', userId: 'user-1' }),
+			storedPackageResource({
+				id: 'pkg-1',
+				userId: ownerIdFromStored('user-1'),
+			}),
 		),
 	).resolves.toBeUndefined()
 })
@@ -322,7 +331,10 @@ test('a request with no signed-in person is denied unless the surface touches no
 })
 
 test('lists show a package when the request holds any permission on it', () => {
-	const pkg = storedPackageResource({ id: 'pkg-1', userId: 'org-1' })
+	const pkg = storedPackageResource({
+		id: 'pkg-1',
+		userId: ownerIdFromStored('org-1'),
+	})
 	expect(canSeeResource(access(), pkg)).toBe(true)
 	const executeOnly = access({
 		profileGrants: [
@@ -335,7 +347,10 @@ test('lists show a package when the request holds any permission on it', () => {
 	expect(
 		canSeeResource(
 			access(),
-			storedPackageResource({ id: 'pkg-1', userId: 'org-2' }),
+			storedPackageResource({
+				id: 'pkg-1',
+				userId: ownerIdFromStored('org-2'),
+			}),
 		),
 	).toBe(false)
 	const grantedOnly = access({
@@ -365,7 +380,7 @@ test('Automation keeps the connection profile of the credential that created it'
 	const effective = await computeEffectivePermissions({ env, request })
 	expect(mocks.resolveConnectionProfileGrants).toHaveBeenCalledWith({
 		db: env.APP_DB,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		profileName: 'work',
 	})
 	expect(effective.profileGrants).toEqual(grants)

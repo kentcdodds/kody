@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	buildDiscoveryPrompt,
@@ -32,7 +33,7 @@ function loadWith(
 			},
 		},
 		requestUrl: 'http://localhost:3742/onboarding',
-		stableUserId: 'user-1',
+		stableUserId: ownerIdFromStored('user-1'),
 		username: 'u-b',
 		emailVerified: true,
 		...input,

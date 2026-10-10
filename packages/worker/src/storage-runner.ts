@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { DurableObject } from 'cloudflare:workers'
 import { getRecoveryBookmark, restoreToBookmark } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
@@ -693,7 +694,7 @@ export type StorageRunner = InstanceType<typeof StorageRunner>
 
 export function storageRunnerRpc(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	storageId: string
 }) {
 	const runner = createMeteredDurableObjectStub({
@@ -860,7 +861,7 @@ export function storageRunnerRpc(input: {
 
 async function readStorageEstimateChunkWithRetry(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	buckets: Array<{ storageId: string; kind: StorageBucketKind }>
 	/** Backoff pauses between attempts; attempts = length + 1. */
 	retryDelaysMs?: ReadonlyArray<number>
@@ -994,7 +995,7 @@ async function readStorageEstimateChunkWithRetry(input: {
  */
 export async function readStorageBucketEstimatedBytes(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	storageId: string
 	retryDelaysMs?: ReadonlyArray<number>
 }): Promise<number> {
@@ -1014,7 +1015,7 @@ export async function readStorageBucketEstimatedBytes(input: {
 
 export async function readInventoriedStorageBucketEstimatedBytes(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	storageId: string
 	kind: StorageBucketKind
 	retryDelaysMs?: ReadonlyArray<number>
@@ -1030,7 +1031,7 @@ export async function readInventoriedStorageBucketEstimatedBytes(input: {
 
 async function readStorageBytesEntitlementBaseline(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	storageId: string
 }) {
 	const [d1Bytes, bucketEstimates] = await Promise.all([
@@ -1119,7 +1120,7 @@ async function readStorageBytesEntitlementBaseline(input: {
 
 export async function assertStorageRunnerWriteWithinEntitlement(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email: string | null | undefined
 	storageId: string
 	requested?: number
@@ -1189,7 +1190,7 @@ export async function assertStorageRunnerWriteWithinEntitlement(input: {
 
 export function createStorageKodyTools(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	storageId: string
 	writable: boolean
@@ -1352,7 +1353,7 @@ export const packageStorageRetrieverReadOnlyMessage =
 
 export function createPackageStorageKodyTools(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	grantedPackageIds: ReadonlySet<string>
 	writable?: boolean

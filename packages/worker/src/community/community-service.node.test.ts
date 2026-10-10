@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { communityIndexOverviewCandidateLimitPerCategory } from '#universal/community-categories.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
@@ -248,7 +249,7 @@ function sampleListing(
 ): CommunityListingRecord {
 	return {
 		id: 'listing-1',
-		ownerUserId: 'owner-1',
+		ownerUserId: ownerIdFromStored('owner-1'),
 		packageId: 'package-1',
 		sourceId: 'source-1',
 		kodyId: 'discord-gateway',
@@ -307,7 +308,7 @@ function validPublishSource() {
 function validSavedPackage() {
 	return {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@owner/discord-gateway',
 		kodyId: 'discord-gateway',
 		description: 'Discord helpers',
@@ -326,7 +327,7 @@ function forkedSavedPackage() {
 	return {
 		...validSavedPackage(),
 		id: 'package-fork-1',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		kodyId: 'discord-gateway-fork',
 		name: '@jane/discord-gateway-fork',
 	}
@@ -362,7 +363,7 @@ function publish(overrides: Record<string, unknown> = {}) {
 	return publishCommunityListing({
 		env: createEnv(),
 		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
 		...overrides,
 	})
@@ -395,7 +396,7 @@ function fork(overrides: Record<string, unknown> = {}) {
 	return forkCommunityListing({
 		env: createEnv(),
 		baseUrl: 'https://heykody.dev',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		expectedPackageScope: 'jane',
 		listingId: 'listing-1',
 		...overrides,
@@ -433,7 +434,7 @@ function isActionError(message: string | RegExp) {
 
 test('community operations reject banned users', async () => {
 	const ban = {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		bannedByUserId: 'admin-1',
 		reason: 'spam',
 		createdAt: '2026-07-01T00:00:00.000Z',
@@ -449,12 +450,15 @@ test('community operations reject banned users', async () => {
 		async (_db: unknown, userId: unknown) => (userId === 'user-1' ? ban : null),
 	)
 	await expect(
-		publish({ userId: 'org-owner-1', actorUserId: 'user-1' }),
+		publish({
+			userId: ownerIdFromStored('org-owner-1'),
+			actorUserId: 'user-1',
+		}),
 	).rejects.toThrow(/banned from community participation/)
 	await expect(
 		unpublishCommunityListing({
 			env: createEnv(),
-			userId: 'org-owner-1',
+			userId: ownerIdFromStored('org-owner-1'),
 			actorUserId: 'user-1',
 			listingId: 'listing-1',
 		}),
@@ -477,7 +481,7 @@ test('publishCommunityListing rolls back D1 when KV snapshot write fails', async
 	expect(insertCallOrder).toEqual(['insert', 'snapshot'])
 	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ ownerUserId: 'user-1' }),
+		expect.objectContaining({ ownerUserId: ownerIdFromStored('user-1') }),
 	)
 
 	const existingListing = sampleListing({ version: '1.0.3' })
@@ -533,7 +537,7 @@ test('unpublishCommunityListing refuses delisted, missing, and unowned listings 
 	const unpublish = (listingId = 'listing-1') =>
 		unpublishCommunityListing({
 			env: createEnv(),
-			userId: 'owner-1',
+			userId: ownerIdFromStored('owner-1'),
 			listingId,
 		})
 
@@ -550,7 +554,7 @@ test('unpublishCommunityListing refuses delisted, missing, and unowned listings 
 	)
 
 	mockModule.getCommunityListingById.mockResolvedValue(
-		sampleListing({ ownerUserId: 'other-owner' }),
+		sampleListing({ ownerUserId: ownerIdFromStored('other-owner') }),
 	)
 	await expect(unpublish()).rejects.toBeInstanceOf(CommunityActionError)
 
@@ -567,14 +571,17 @@ test('publish and adopt treat missing packages as CommunityActionError', async (
 	)
 
 	await expect(
-		publish({ userId: 'owner-1', packageId: 'missing-package' }),
+		publish({
+			userId: ownerIdFromStored('owner-1'),
+			packageId: 'missing-package',
+		}),
 	).rejects.toSatisfy(notFound)
 	expect(mockModule.loadPackageSourceBySourceId).not.toHaveBeenCalled()
 
 	await expect(
 		adoptCommunityFork({
 			env: createEnv(),
-			userId: 'owner-1',
+			userId: ownerIdFromStored('owner-1'),
 			packageId: 'missing-package',
 			reviewSummary: 'Reviewed the fork source and trust the upstream listing.',
 		}),
@@ -590,13 +597,13 @@ test('unpublishCommunityListing deletes active listings and cascades cleanup', a
 
 	await unpublishCommunityListing({
 		env: createEnv(),
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		listingId: 'listing-1',
 	})
 
 	expect(mockModule.deleteCommunityListing).toHaveBeenCalledWith(
 		expect.anything(),
-		{ listingId: 'listing-1', ownerUserId: 'owner-1' },
+		{ listingId: 'listing-1', ownerUserId: ownerIdFromStored('owner-1') },
 	)
 	for (const cascade of [
 		mockModule.deleteCommunityRatingsByListingId,
@@ -981,7 +988,7 @@ test('rateCommunityListing requires a prior non-owner fork and persists valid ra
 	mockModule.upsertCommunityRating.mockResolvedValue({
 		id: 'rating-1',
 		listingId: 'listing-1',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		stars: 5,
 		adaptationEffort: 2,
 		note: null,
@@ -991,7 +998,7 @@ test('rateCommunityListing requires a prior non-owner fork and persists valid ra
 	const rate = (userId: string) =>
 		rateCommunityListing({
 			env: createEnv(),
-			userId,
+			userId: ownerIdFromStored(userId),
 			listingId: 'listing-1',
 			stars: 5,
 			adaptationEffort: 2,
@@ -1019,7 +1026,7 @@ test('rateCommunityListing requires a prior non-owner fork and persists valid ra
 		expect.anything(),
 		expect.objectContaining({
 			listing_id: 'listing-1',
-			user_id: 'user-2',
+			user_id: ownerIdFromStored('user-2'),
 			stars: 5,
 			adaptation_effort: 2,
 		}),
@@ -1048,7 +1055,10 @@ test('forkCommunityListing creates inert source without saved package row', asyn
 		{ file: 'src/index.ts', specifier: 'kody:@owner/' },
 	])
 	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'user-2', entityKind: 'package' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-2'),
+			entityKind: 'package',
+		}),
 	)
 	expect(mockModule.syncArtifactSourceSnapshot).toHaveBeenCalled()
 	expect(mockModule.insertCommunityFork).toHaveBeenCalledWith(
@@ -1102,7 +1112,7 @@ test('forkCommunityListing auto-picks a free leaf when an unrelated same-leaf pa
 	const unrelatedSameLeaf = {
 		...validSavedPackage(),
 		id: 'package-unrelated',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		name: '@jane/discord-gateway',
 		kodyId: 'discord-gateway',
 		sourceId: 'source-unrelated',
@@ -1138,7 +1148,7 @@ test('forkCommunityListing skips taken alternates and still rejects an explicit 
 			{
 				...validSavedPackage(),
 				id: 'package-unrelated',
-				userId: 'user-2',
+				userId: ownerIdFromStored('user-2'),
 				name: '@jane/discord-gateway',
 				kodyId: 'discord-gateway',
 			},
@@ -1148,7 +1158,7 @@ test('forkCommunityListing skips taken alternates and still rejects an explicit 
 			{
 				...validSavedPackage(),
 				id: 'package-alt',
-				userId: 'user-2',
+				userId: ownerIdFromStored('user-2'),
 				name: '@jane/discord-gateway-2',
 				kodyId: 'discord-gateway-2',
 			},
@@ -1197,7 +1207,7 @@ test('forkCommunityListing rejects a repeat default fork after an alternate leaf
 	const unrelatedSameLeaf = {
 		...validSavedPackage(),
 		id: 'package-unrelated',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		name: '@jane/discord-gateway',
 		kodyId: 'discord-gateway',
 		sourceId: 'source-unrelated',
@@ -1247,29 +1257,29 @@ test('forkCommunityListing cleans up entity source when snapshot sync fails', as
 	)
 	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		repoName: expect.stringMatching(/^package-/),
 	})
 	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		sourceId: 'fork-source-1',
 	})
 	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(
 		expect.anything(),
-		{ id: 'fork-source-1', userId: 'user-2' },
+		{ id: 'fork-source-1', userId: ownerIdFromStored('user-2') },
 	)
 	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		{
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			packageId: expect.any(String),
 			sourceId: 'fork-source-1',
 		},
 	)
 	expect(mockModule.deletePackageSlugRedirects).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		packageId: expect.any(String),
 	})
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
@@ -1293,14 +1303,14 @@ test('forkCommunityListing removes the community_forks row when persist fails af
 	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
 		expect.anything(),
 		{
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			packageId: expect.any(String),
 			sourceId: 'fork-source-1',
 		},
 	)
 	expect(mockModule.deletePackageSlugRedirects).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		packageId: expect.any(String),
 	})
 })
@@ -1319,7 +1329,7 @@ test('forkCommunityListing copies at the Artifacts layer when the origin repo ex
 	mockModule.ensureEntitySource.mockResolvedValue({
 		id: 'fork-source-1',
 		repo_id: 'package-dest',
-		user_id: 'user-2',
+		user_id: ownerIdFromStored('user-2'),
 	})
 	mockModule.persistForkedArtifactRepoContents.mockResolvedValue({
 		copiedOriginCommit: 'commit-head',
@@ -1365,12 +1375,12 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 		.mockResolvedValueOnce({
 			id: 'fork-source-1',
 			repo_id: 'package-dest',
-			user_id: 'user-2',
+			user_id: ownerIdFromStored('user-2'),
 		})
 		.mockResolvedValueOnce({
 			id: 'fork-source-1',
 			repo_id: 'package-dest',
-			user_id: 'user-2',
+			user_id: ownerIdFromStored('user-2'),
 			bootstrapAccess: {
 				remote: 'https://example.test/dest.git',
 				token: 'bootstrap',
@@ -1403,7 +1413,7 @@ test('forkCommunityListing falls back to full-tree sync when forked dest git clo
 	expect(mockModule.persistForkedArtifactRepoContents).toHaveBeenCalled()
 	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		repoName: expect.stringMatching(/^package-/),
 		waitUntilAbsent: true,
 	})
@@ -1440,12 +1450,12 @@ test('forkCommunityListing does not insert a fork when fallback snapshot sync re
 		.mockResolvedValueOnce({
 			id: 'fork-source-1',
 			repo_id: 'package-dest',
-			user_id: 'user-2',
+			user_id: ownerIdFromStored('user-2'),
 		})
 		.mockResolvedValueOnce({
 			id: 'fork-source-1',
 			repo_id: 'package-dest',
-			user_id: 'user-2',
+			user_id: ownerIdFromStored('user-2'),
 			bootstrapAccess: {
 				remote: 'https://example.test/dest.git',
 				token: 'bootstrap',
@@ -1469,7 +1479,7 @@ test('forkCommunityListing does not insert a fork when fallback snapshot sync re
 	expect(mockModule.insertCommunityFork).not.toHaveBeenCalled()
 	expect(mockModule.deleteUserScopedArtifactRepo).toHaveBeenCalledWith({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		repoName: expect.stringMatching(/^package-/),
 		waitUntilAbsent: true,
 	})
@@ -1511,7 +1521,7 @@ test('reportCommunityListing inserts denormalized listing metadata', async () =>
 
 	const report = await reportCommunityListing({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		listingId: 'listing-1',
 		reason: '  spam content  ',
 	})
@@ -1531,7 +1541,7 @@ test('reportCommunityListing inserts denormalized listing metadata', async () =>
 function adopt(reviewSummary: string, overrides: Record<string, unknown> = {}) {
 	return adoptCommunityFork({
 		env: createEnv(),
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		packageId: 'package-fork-1',
 		reviewSummary,
 		...overrides,
@@ -1566,7 +1576,7 @@ test('adoptCommunityFork marks a fork adopted with review note', async () => {
 test('adoptCommunityFork rejects self-authored packages and short review summaries', async () => {
 	mockModule.getSavedPackageById.mockResolvedValue(validSavedPackage())
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
-	const own = { userId: 'user-1', packageId: 'package-1' }
+	const own = { userId: ownerIdFromStored('user-1'), packageId: 'package-1' }
 
 	await expect(adopt('Looks fine', own)).rejects.toThrow(
 		/already self-authored/,
@@ -1591,7 +1601,9 @@ test('adoptCommunityFork is idempotent when already adopted and isolates by user
 	mockModule.getSavedPackageById.mockResolvedValue(null)
 	mockModule.getCommunityForkByForkedPackageId.mockResolvedValue(null)
 	await expect(
-		adopt('Trying to adopt someone else fork.', { userId: 'user-b' }),
+		adopt('Trying to adopt someone else fork.', {
+			userId: ownerIdFromStored('user-b'),
+		}),
 	).rejects.toThrow(/was not found/)
 	expect(mockModule.markCommunityForkAdopted).not.toHaveBeenCalled()
 })
@@ -1619,7 +1631,7 @@ test('inspectCommunityForkAdoption reports adoption state without writing and re
 	const inspect = (kodyId: string) =>
 		inspectCommunityForkAdoption({
 			env: createEnvWithUsername('jane'),
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			kodyId,
 		})
 
@@ -1645,7 +1657,7 @@ test('absorbCommunityForkUpstream records the current listing pin and is idempot
 	const absorb = () =>
 		absorbCommunityForkUpstream({
 			env: createEnv(),
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			packageId: 'package-fork-1',
 		})
 	mockModule.getSavedPackageById.mockResolvedValue(forkedSavedPackage())

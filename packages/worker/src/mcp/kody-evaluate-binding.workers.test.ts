@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -17,14 +20,14 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
  * Module executes already failed bare `kody`; this suite pins both paths.
  */
 
-const userId = 'user-evaluate-kody-binding'
+const userId = ownerIdFromStored('user-evaluate-kody-binding')
 
 function createCaller() {
 	return createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://kody.dev',
 		user: {
-			userId: personIdFromStored(userId),
+			userId: personIdFromStored('user-evaluate-kody-binding'),
 			email: 'binding@example.com',
 			displayName: 'Binding Test',
 		},

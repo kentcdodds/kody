@@ -1,4 +1,5 @@
 import { toJsonSafeValue } from '@kody-internal/shared/json-safe-value.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { packageInvocationStartedLog } from '#worker/caller-disconnect.ts'
 import { runLogDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RunLogAdminInsightsSnapshot } from './admin-insights-snapshot.ts'
@@ -55,6 +56,18 @@ export { runLogSqlBillingOps }
 export type { RunLogSqlBillingInspection, RunLogSqlBillingStats }
 
 const textEncoder = new TextEncoder()
+
+/**
+ * RunLog names are the owner id bytes. `begin` / `claim` / `record` already
+ * trim before naming the object; an `OwnerId` from `request.org.id` is
+ * already trimmed, so this keeps those bytes. A stored id with surrounding
+ * spaces keeps the trimmed name these entry points have always used.
+ */
+function runLogOwnerId(ownerId: OwnerId | null | undefined): OwnerId | null {
+	const trimmed = ownerId?.trim() ?? ''
+	if (!trimmed) return null
+	return trimmed === ownerId ? ownerId : (trimmed as OwnerId)
+}
 
 function normalizeOptionalString(value: string | null | undefined) {
 	const trimmed = value?.trim()
@@ -234,7 +247,7 @@ function runLogBinding(env: Env) {
 	return (env as Partial<Env>).RUN_LOG ?? null
 }
 
-export function runLogRpc(input: { env: Env; userId: string }): RunLogRpc {
+export function runLogRpc(input: { env: Env; userId: OwnerId }): RunLogRpc {
 	const namespace = runLogBinding(input.env)
 	if (!namespace) {
 		throw new Error('RUN_LOG Durable Object binding is not configured.')
@@ -251,12 +264,12 @@ export function runLogRpc(input: { env: Env; userId: string }): RunLogRpc {
  */
 export function beginRunRecord(input: {
 	env: Env
-	userId?: string | null
+	userId?: OwnerId | null
 	context?: RunRecordContext | null
 	waitUntil?: (promise: Promise<unknown>) => void
 }): RunRecordHandle | null {
 	const namespace = runLogBinding(input.env)
-	const userId = normalizeOptionalString(input.userId ?? undefined)
+	const userId = runLogOwnerId(input.userId)
 	const context = input.context
 	if (!namespace || !userId || !context) return null
 
@@ -314,7 +327,7 @@ export function beginRunRecord(input: {
  */
 export async function claimRunRecord(input: {
 	env: Env
-	userId?: string | null
+	userId?: OwnerId | null
 	context?: RunRecordContext | null
 }): Promise<
 	| { claimed: true; handle: RunRecordHandle }
@@ -322,7 +335,7 @@ export async function claimRunRecord(input: {
 	| null
 > {
 	const namespace = runLogBinding(input.env)
-	const userId = normalizeOptionalString(input.userId ?? undefined)
+	const userId = runLogOwnerId(input.userId)
 	const context = input.context
 	if (!namespace || !userId || !context) return null
 	const idempotencyKey = normalizeOptionalString(context.idempotencyKey)
@@ -454,7 +467,7 @@ export async function finishRunRecord(input: {
  */
 export async function recordRunRecord(input: {
 	env: Env
-	userId?: string | null
+	userId?: OwnerId | null
 	context?: RunRecordContext | null
 	status: RunTerminalStatus
 	logs?: Array<RunRecordLogInput>
@@ -464,7 +477,7 @@ export async function recordRunRecord(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<RunRecordHandle | null> {
 	const namespace = runLogBinding(input.env)
-	const userId = normalizeOptionalString(input.userId ?? undefined)
+	const userId = runLogOwnerId(input.userId)
 	const context = input.context
 	if (!namespace || !userId || !context) return null
 
@@ -496,7 +509,7 @@ export async function recordRunRecord(input: {
 
 export async function listRunRecords(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	filter?: RunRecordFilter | null
 	limit?: number | null
 	cursor?: string | null
@@ -533,7 +546,7 @@ export type UpdateRunErrorTriageOutcome =
  */
 export async function updateRunErrorTriage(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	runId: string
 	errorTriage: RunErrorTriage | null
 	triageNote?: string | null
@@ -564,7 +577,7 @@ export type BulkUpdateRunErrorTriageOutcome =
  */
 export async function bulkUpdateRunErrorTriage(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	runIds?: Array<string> | null
 	filter?: BulkUpdateRunErrorTriageFilter | null
 	errorTriage: RunErrorTriage | null
@@ -594,7 +607,7 @@ export async function bulkUpdateRunErrorTriage(input: {
 
 export async function getRunRecord(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	runId: string
 }): Promise<{ run: RunRecord; logs: Array<RunRecordLog> } | null> {
 	if (!runLogBinding(input.env)) return null
@@ -605,7 +618,7 @@ export async function getRunRecord(input: {
 
 export async function getRunRecordByIdempotencyKey(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	idempotencyKey: string
 	surface?: RunRecordContext['surface'] | null
 }): Promise<RunRecord | null> {
@@ -648,7 +661,7 @@ export async function abandonRunRecord(input: {
  */
 export async function claimPackageInvocationRecord(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	/** `null` when the caller owns the run record (workflow-sourced invokes). */
 	context: RunRecordContext | null
 	invocation: PackageInvocationClaimInput
@@ -720,7 +733,7 @@ export async function claimPackageInvocationRecord(input: {
 
 export async function getPackageInvocationRecord(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	key: PackageInvocationLedgerKey
 }): Promise<PackageInvocationLedgerRecord | null> {
 	return await runLogRpc({
@@ -739,7 +752,7 @@ export async function getPackageInvocationRecord(input: {
  */
 export async function finishPackageInvocationRecord(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	handle: RunRecordHandle | null
 	invocationId: string
 	claimUpdatedAt: string
@@ -823,7 +836,7 @@ export async function finishPackageInvocationRecord(input: {
  */
 export async function releasePackageInvocationRecord(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	invocationId: string
 	claimUpdatedAt: string
 	handle: RunRecordHandle | null
@@ -916,7 +929,7 @@ async function dispatchTerminalRunRecordSideEffects(input: {
 
 export async function summarizeRunRecords(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	since?: string | null
 }): Promise<RunRecordSummary> {
 	const since =
@@ -939,7 +952,7 @@ export async function summarizeRunRecords(input: {
 
 export async function listRunRecordStorageIds(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<Array<string>> {
 	if (!runLogBinding(input.env)) return []
 	return await runLogRpc({
@@ -950,7 +963,7 @@ export async function listRunRecordStorageIds(input: {
 
 export async function exportRunRecords(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	pageSize?: number
 	startAfter?: string | null
 }): Promise<{
@@ -996,7 +1009,7 @@ export async function exportRunRecords(input: {
 
 export async function clearRunRecords(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<void> {
 	if (!runLogBinding(input.env)) return
 	await runLogRpc({ env: input.env, userId: input.userId }).clearAll()
@@ -1008,7 +1021,7 @@ export async function clearRunRecords(input: {
  */
 export async function upsertWorkflowProjection(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	projection: WorkflowProjectionUpsertInput
 }): Promise<{ ok: true }> {
 	return await runLogRpc({
@@ -1019,7 +1032,7 @@ export async function upsertWorkflowProjection(input: {
 
 export async function releaseWorkflowProjectionIdempotencyKey(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<{ released: boolean; previousKey: string | null }> {
 	return await runLogRpc({
@@ -1030,7 +1043,7 @@ export async function releaseWorkflowProjectionIdempotencyKey(input: {
 
 export async function getWorkflowProjection(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<WorkflowProjectionRecord | null> {
 	return await runLogRpc({
@@ -1041,7 +1054,7 @@ export async function getWorkflowProjection(input: {
 
 export async function findWorkflowProjectionByIdempotencyKey(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	idempotencyKey: string
 	bindingName?: string | null
 }): Promise<WorkflowProjectionRecord | null> {
@@ -1060,7 +1073,7 @@ export async function findWorkflowProjectionByIdempotencyKey(input: {
  */
 export async function findWorkflowProjectionByBindingIdempotencyKey(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	bindingName: string
 	idempotencyKey: string
 }): Promise<WorkflowProjectionRecord | null> {
@@ -1075,7 +1088,7 @@ export async function findWorkflowProjectionByBindingIdempotencyKey(input: {
 
 export async function listWorkflowProjections(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	limit?: number | null
 	cursor?: string | null
 	status?: string | null
@@ -1101,7 +1114,7 @@ export async function listWorkflowProjections(input: {
 
 export async function countActiveWorkflowProjections(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<number> {
 	const result = await runLogRpc({
 		env: input.env,
@@ -1112,7 +1125,7 @@ export async function countActiveWorkflowProjections(input: {
 
 export async function reserveWorkflowProjectionSlot(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	projection: WorkflowProjectionUpsertInput
 }): Promise<WorkflowProjectionReserveResult> {
 	return await runLogRpc({
@@ -1123,7 +1136,7 @@ export async function reserveWorkflowProjectionSlot(input: {
 
 export async function deleteWorkflowProjectionIfCreating(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<{ deleted: boolean }> {
 	return await runLogRpc({
@@ -1137,7 +1150,7 @@ export async function deleteWorkflowProjectionIfCreating(input: {
  */
 export async function upsertJobRunObservability(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	outcome: JobRunObservabilityUpsertInput
 }): Promise<JobRunObservabilityRecord | null> {
 	if (!runLogBinding(input.env)) return null
@@ -1154,7 +1167,7 @@ export async function upsertJobRunObservability(input: {
 
 export async function getJobRunObservability(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 }): Promise<JobRunObservabilityRecord | null> {
 	if (!runLogBinding(input.env)) return null
@@ -1175,7 +1188,7 @@ export async function getJobRunObservability(input: {
  */
 export async function getAdminInsightsSnapshot(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<RunLogAdminInsightsSnapshot> {
 	if (!runLogBinding(input.env)) {
 		throw new Error('RUN_LOG Durable Object binding is not configured.')
@@ -1192,7 +1205,7 @@ export async function getAdminInsightsSnapshot(input: {
  */
 export async function getSqlBillingStats(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<RunLogSqlBillingStats> {
 	if (!runLogBinding(input.env)) {
 		throw new Error('RUN_LOG Durable Object binding is not configured.')
@@ -1209,7 +1222,7 @@ export async function getSqlBillingStats(input: {
  */
 export async function inspectRunLogSqlBilling(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<RunLogSqlBillingInspection> {
 	if (!runLogBinding(input.env)) {
 		throw new Error('RUN_LOG Durable Object binding is not configured.')
@@ -1222,7 +1235,7 @@ export async function inspectRunLogSqlBilling(input: {
 
 export async function getJobRunObservabilityBatch(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobIds: Array<string>
 }): Promise<Array<JobRunObservabilityRecord>> {
 	if (!runLogBinding(input.env)) return []
@@ -1243,7 +1256,7 @@ export async function getJobRunObservabilityBatch(input: {
  */
 export async function listPackageRunSuccesses(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<Array<PackageRunSuccessRecord>> {
 	if (!runLogBinding(input.env)) return []
 	try {
@@ -1259,7 +1272,7 @@ export async function listPackageRunSuccesses(input: {
 
 export async function listActivationMilestones(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<Array<ActivationMilestoneRecord>> {
 	if (!runLogBinding(input.env)) return []
 	try {

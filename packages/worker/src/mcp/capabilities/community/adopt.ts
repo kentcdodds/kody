@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { inspectCommunityForkAdoption } from '#worker/community/service.ts'
 import {
@@ -80,7 +81,7 @@ export const communityForkAdoptCapability = defineDomainCapability(
 			assertDirectMcpCaller(ctx.callerContext)
 			const state = await inspectCommunityForkAdoption({
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				packageId: args.package_id,
 				kodyId: args.kody_id,
 			})

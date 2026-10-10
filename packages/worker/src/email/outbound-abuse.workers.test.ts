@@ -14,6 +14,7 @@ import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 
 async function seedVerifiedAccount(label: string) {
@@ -73,7 +74,7 @@ async function seedProviderMessage(input: {
 	providerMessageId: string
 	sentAt: string
 }) {
-	const message = baseMessage(input.userId, {
+	const message = baseMessage(ownerIdFromStored(input.userId), {
 		direction: 'outbound',
 		inboxId: null,
 		processingStatus: 'sent',
@@ -81,14 +82,17 @@ async function seedProviderMessage(input: {
 		sentAt: input.sentAt,
 		createdAt: input.sentAt,
 	})
-	await mailboxRpc({ env, userId: input.userId }).upsertMessageGraph({
-		ownerId: input.userId,
+	await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(input.userId),
+	}).upsertMessageGraph({
+		ownerId: ownerIdFromStored(input.userId),
 		message,
 	})
 	await upsertOutboundProviderIndexRow({
 		db: env.APP_DB,
 		providerMessageId: input.providerMessageId,
-		userId: input.userId,
+		userId: ownerIdFromStored(input.userId),
 		messageId: message.id,
 		inboxId: null,
 		now: input.sentAt,
@@ -103,7 +107,7 @@ function pause(
 ) {
 	return applyOutboundEmailAbusePause({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		deliveryStatus,
 		eventRecorded,
 		now,
@@ -163,7 +167,7 @@ test('a spam complaint pauses outbound email once and blocks further sends', asy
 					},
 				},
 			},
-			userId,
+			userId: ownerIdFromStored(userId),
 			accountEmail: account.email,
 			recipientPolicy: 'self',
 			subject: 'Blocked while paused',

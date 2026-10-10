@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -96,7 +97,7 @@ test('account deletion coverage matches the migrated APP_DB schema', () => {
 test('deleteUserAccount enumerates job vectors through JOBS against the real post-0010 APP_DB schema', async () => {
 	const sqlite = migratedAppDb()
 	const db = createD1FromSqlite(sqlite)
-	const userId = 'user-post-0010'
+	const userId = ownerIdFromStored('user-post-0010')
 	const inserted = await db
 		.prepare(
 			`INSERT INTO users (
@@ -159,31 +160,31 @@ test('account deletion preserves operator-owned system email configuration', asy
 	const { db, rows } = createTestDb({
 		users: [{ id: 1, email: 'user@example.com' }],
 		email_inboxes: [
-			{ id: 'user-inbox', user_id: 'user-aaa' },
-			{ id: 'system-inbox', user_id: 'system:email' },
+			{ id: 'user-inbox', user_id: ownerIdFromStored('user-aaa') },
+			{ id: 'system-inbox', user_id: ownerIdFromStored('system:email') },
 		],
 		email_inbox_addresses: [
-			{ id: 'user-address', user_id: 'user-aaa' },
-			{ id: 'system-address', user_id: 'system:email' },
+			{ id: 'user-address', user_id: ownerIdFromStored('user-aaa') },
+			{ id: 'system-address', user_id: ownerIdFromStored('system:email') },
 		],
 	})
 
 	await deleteUserAccount({
 		env: createSuccessfulDeletionEnv(db),
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 	})
 
 	expect(rows.email_inboxes).toEqual([
-		{ id: 'system-inbox', user_id: 'system:email' },
+		{ id: 'system-inbox', user_id: ownerIdFromStored('system:email') },
 	])
 	expect(rows.email_inbox_addresses).toEqual([
-		{ id: 'system-address', user_id: 'system:email' },
+		{ id: 'system-address', user_id: ownerIdFromStored('system:email') },
 	])
 })
 
 test('deleteUserAccount cascades user-scoped rows for the requested user', async () => {
-	const userAaa = 'user-aaa'
+	const userAaa = ownerIdFromStored('user-aaa')
 	const userBbb = 'user-bbb'
 	const packageJobId =
 		'package-job:b2fda105-005a-4e2b-9f22-1513b6752da2:event-runner'
@@ -262,9 +263,13 @@ test('deleteUserAccount cascades user-scoped rows for the requested user', async
 			{ id: 'mem-2', user_id: userBbb },
 		],
 		secret_buckets: [{ id: 'sb-1', user_id: userAaa }],
-		secret_entries: [{ bucket_id: 'sb-1', name: 's', user_id: 'unused' }],
+		secret_entries: [
+			{ bucket_id: 'sb-1', name: 's', user_id: ownerIdFromStored('unused') },
+		],
 		value_buckets: [{ id: 'vb-1', user_id: userAaa }],
-		value_entries: [{ bucket_id: 'vb-1', name: 'v', user_id: 'unused' }],
+		value_entries: [
+			{ bucket_id: 'vb-1', name: 'v', user_id: ownerIdFromStored('unused') },
+		],
 		mcp_agent_sessions: [
 			{ do_id: 'do-user-a', user_id: userAaa },
 			{ do_id: 'do-user-b', user_id: userBbb },
@@ -911,7 +916,11 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 	})
 
 	await expect(
-		deleteUserAccount({ env, dbUserId: 1, mcpUserId: 'user-aaa' }),
+		deleteUserAccount({
+			env,
+			dbUserId: 1,
+			mcpUserId: ownerIdFromStored('user-aaa'),
+		}),
 	).rejects.toSatisfy(
 		(error: unknown) =>
 			error instanceof AccountDeletionCleanupError &&
@@ -953,7 +962,7 @@ test('account deletion preserves Mailbox references and retry marker when R2 del
 		deleteUserAccount({
 			env: unrelatedFailureEnv,
 			dbUserId: 1,
-			mcpUserId: 'user-bbb',
+			mcpUserId: ownerIdFromStored('user-bbb'),
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionCleanupError)
 	expect(purgeAfterUnrelatedFailure).not.toHaveBeenCalled()
@@ -977,7 +986,7 @@ test('deleteUserAccount revokes OAuth grants via provider helpers, falls back to
 			result: deleteUserAccount({
 				env: createSuccessfulDeletionEnv(db, overrides),
 				dbUserId: 1,
-				mcpUserId: 'user-aaa',
+				mcpUserId: ownerIdFromStored('user-aaa'),
 			}),
 		}
 	}

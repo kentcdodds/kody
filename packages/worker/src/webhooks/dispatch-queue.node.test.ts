@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
@@ -35,7 +36,7 @@ function createMessage(): WebhookDispatchQueueMessage {
 	return {
 		endpoint: {
 			id: 'endpoint-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'package-1',
 			webhookName: 'sentry',
 		},
@@ -306,7 +307,10 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 	]
 	expect(accepted.map(parseWebhookDispatchQueueMessage)).toEqual(accepted)
 	const rejected: Array<unknown> = [
-		{ ...message, endpoint: { ...message.endpoint, userId: '' } },
+		{
+			...message,
+			endpoint: { ...message.endpoint, userId: ownerIdFromStored('') },
+		},
 		{ ...message, payloadBytes: -1 },
 		{ ...message, params: [] },
 		{ ...message, idempotencyParamsHash: 'include' },

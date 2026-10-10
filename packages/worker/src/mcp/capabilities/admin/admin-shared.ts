@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import {
+	parseOwnerId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	auditDatabaseFromEnv,
 	logAuditEvent,
 	redactEmailRecipient,
@@ -37,6 +41,14 @@ export const adminMutationCapabilityAccess = {
 export const roleNameSchema = z.enum(roleNames)
 
 export const planNameSchema = z.enum(planNames)
+
+export function adminStableOwnerId(value: string): OwnerId {
+	const ownerId = parseOwnerId(value)
+	if (!ownerId) {
+		throw new Error('stable_user_id is invalid.')
+	}
+	return ownerId
+}
 
 export const stableUserIdSchema = z
 	.string()

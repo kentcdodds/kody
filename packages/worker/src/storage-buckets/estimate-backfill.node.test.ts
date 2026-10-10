@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import type * as StorageRunner from '#worker/storage-runner.ts'
@@ -48,13 +49,21 @@ const { backfillStorageBucketEstimates } =
 test('backfill tolerates per-bucket probe failures and keeps sweeping peers', async () => {
 	consoleWarn.mockImplementation(() => {})
 	mockModule.listStorageBucketsMissingEstimates.mockResolvedValue([
-		{ userId: 'user-1', storageId: 'package:healthy-a', kind: 'package' },
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
+			storageId: 'package:healthy-a',
+			kind: 'package',
+		},
+		{
+			userId: ownerIdFromStored('user-1'),
 			storageId: 'repo-session:unreachable',
 			kind: 'repo_session',
 		},
-		{ userId: 'user-2', storageId: 'exec:healthy-b', kind: 'execute' },
+		{
+			userId: ownerIdFromStored('user-2'),
+			storageId: 'exec:healthy-b',
+			kind: 'execute',
+		},
 	])
 	mockModule.readInventoriedStorageBucketEstimatedBytes.mockImplementation(
 		async (input) => {
@@ -82,14 +91,14 @@ test('backfill tolerates per-bucket probe failures and keeps sweeping peers', as
 	expect(mockModule.updateStorageBucketEstimate).toHaveBeenCalledTimes(2)
 	expect(mockModule.updateStorageBucketEstimate).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			storageId: 'package:healthy-a',
 			estimatedBytes: 2048,
 		}),
 	)
 	expect(mockModule.updateStorageBucketEstimate).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			storageId: 'exec:healthy-b',
 			estimatedBytes: 2048,
 		}),

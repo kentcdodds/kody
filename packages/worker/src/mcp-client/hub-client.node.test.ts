@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	type McpServerConnectionEvent,
@@ -78,7 +79,7 @@ function createEnv() {
 }
 
 function resetHub(userId = 'user-1') {
-	invalidateMcpClientHubSnapshotCache({ userId })
+	invalidateMcpClientHubSnapshotCache({ userId: ownerIdFromStored(userId) })
 	mocks.emitMcpServerConnectionEventsIfNeeded.mockClear()
 	mocks.ackConnectionEvents.mockClear()
 }
@@ -98,7 +99,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 
 	const peeked = await getCachedMcpClientHubServers({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		waitUntil,
 	})
 	expect(peeked.servers[0]).toMatchObject({
@@ -112,7 +113,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 	await waitUntil.mock.calls[0]?.[0]
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		events: [event],
 	})
 	expect(mocks.ackConnectionEvents).toHaveBeenCalledTimes(1)
@@ -122,7 +123,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 	mocks.peekConnectionEvents.mockClear()
 	const cached = await getCachedMcpClientHubServers({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		waitUntil,
 	})
 	expect(cached.servers[0]?.serverId).toBe('server-home')
@@ -136,7 +137,7 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 	})
 	const snapshot = await getCachedMcpClientHubSnapshot({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(snapshot.servers[0]?.state).toBe('ready')
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).not.toHaveBeenCalled()
@@ -144,10 +145,13 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 
 	resetHub('user-2')
 	queueAuthenticatingPeek()
-	await getCachedMcpClientHubServers({ env, userId: 'user-2' })
+	await getCachedMcpClientHubServers({
+		env,
+		userId: ownerIdFromStored('user-2'),
+	})
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).toHaveBeenCalledWith({
 		env,
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		events: [event],
 	})
 	expect(mocks.ackConnectionEvents).toHaveBeenCalledTimes(1)
@@ -160,7 +164,7 @@ test('waiting peek does not ack when dispatch reports incomplete', async () => {
 	queueAuthenticatingPeek()
 	await getCachedMcpClientHubServers({
 		env: createEnv(),
-		userId: 'user-incomplete',
+		userId: ownerIdFromStored('user-incomplete'),
 	})
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).toHaveBeenCalledTimes(1)
 	expect(mocks.ackConnectionEvents).not.toHaveBeenCalled()

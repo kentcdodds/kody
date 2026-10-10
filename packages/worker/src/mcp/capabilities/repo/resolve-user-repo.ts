@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { getEntitySourceByEntity } from '#worker/repo/entity-sources.ts'
 import { type EntitySourceRow } from '#worker/repo/types.ts'
@@ -22,7 +23,7 @@ function requireExactlyOneUserRepoIdentity(input: UserRepoIdentity) {
 
 export async function resolveOwnedUserRepo(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	args: UserRepoIdentity
 }): Promise<{ userRepo: UserRepoRecord; source: EntitySourceRow }> {
 	requireExactlyOneUserRepoIdentity(input.args)

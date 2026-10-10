@@ -23,6 +23,7 @@ import { webhookRateLimitConfig } from './types.ts'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const mocks = vi.hoisted(() => ({
 	enqueueWebhookDispatch: vi.fn(),
 	invokePackageExport: vi.fn(),
@@ -256,7 +257,7 @@ async function setupOwnerWithWebhooks(webhookNames: Array<string>) {
 	)
 		.bind(userId)
 		.run()
-	await clearRunRecords({ env, userId })
+	await clearRunRecords({ env, userId: ownerIdFromStored(userId) })
 	for (const webhookName of webhookNames) {
 		await mintWebhook({ userId, webhookName })
 	}
@@ -405,7 +406,7 @@ const invoked = (index: number): InvokedRequest =>
 async function listDeliveries(userId: string, webhookName: string) {
 	const page = await listRunRecords({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		filter: { surface: 'webhook' },
 		limit: 100,
 	})

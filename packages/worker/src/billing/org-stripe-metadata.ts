@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 /** Stripe object metadata keys for org-scoped billing (P6). */
 
 export const KODY_ORG_ID_METADATA_KEY = 'kody_org_id'
@@ -20,11 +22,11 @@ export function buildOrgBillingMetadata(orgId: string): Record<string, string> {
 
 export function resolveOrgIdFromStripeMetadata(
 	metadata: Record<string, string> | null | undefined,
-): string | null {
+): OwnerId | null {
 	const orgId = metadata?.[KODY_ORG_ID_METADATA_KEY]?.trim()
 	if (orgId) {
-		return orgId
+		return orgId as OwnerId
 	}
 	const stableUserId = metadata?.[KODY_STABLE_USER_ID_METADATA_KEY]?.trim()
-	return stableUserId || null
+	return stableUserId ? (stableUserId as OwnerId) : null
 }

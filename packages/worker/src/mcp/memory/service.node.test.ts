@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
@@ -146,7 +147,7 @@ function createMemoryTestDb() {
 								] = params as Array<string | null>
 								memories.set(String(id), {
 									id: String(id),
-									user_id: String(userId),
+									user_id: ownerIdFromStored(String(userId)),
 									category: category == null ? null : String(category),
 									status: String(status) as McpMemoryRow['status'],
 									subject: String(subject),
@@ -329,7 +330,7 @@ const memoryDocsUri =
 test('memory service upserts, verifies, soft deletes, and validates source uris', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
-	const base = { env: runtimeEnv, userId: 'user-123' }
+	const base = { env: runtimeEnv, userId: ownerIdFromStored('user-123') }
 
 	const created = await upsertMemory({
 		...base,
@@ -397,7 +398,7 @@ test('memory service upserts, verifies, soft deletes, and validates source uris'
 	// Rows stored before source URIs existed load with an empty list.
 	testDb.memories.set('legacy-memory', {
 		id: 'legacy-memory',
-		user_id: 'user-123',
+		user_id: ownerIdFromStored('user-123'),
 		category: 'profile',
 		status: 'active',
 		subject: 'Legacy memory',
@@ -418,7 +419,7 @@ test('memory service upserts, verifies, soft deletes, and validates source uris'
 test('memory search returns mutable user-owned ids and upsert rejects unknown ids', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
-	const base = { env: runtimeEnv, userId: 'user-123' }
+	const base = { env: runtimeEnv, userId: ownerIdFromStored('user-123') }
 
 	await upsertMemory({
 		...base,
@@ -429,7 +430,7 @@ test('memory search returns mutable user-owned ids and upsert rejects unknown id
 	})
 	await upsertMemory({
 		env: runtimeEnv,
-		userId: 'other-user',
+		userId: ownerIdFromStored('other-user'),
 		subject: 'Mutable memory id',
 		summary: 'This other-user memory must not leak through search.',
 		category: 'workflow',
@@ -479,7 +480,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 	const query = 'deployment preference after 4pm'
 	await upsertMemory({
 		env: runtimeEnv,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		subject: 'Deployment window',
 		summary: 'User prefers deployments after 4pm.',
 		category: 'workflow',
@@ -488,7 +489,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 	const surface = (conversationId: string) =>
 		surfaceRelevantMemories({
 			env: runtimeEnv,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			query,
 			conversationId,
 		})
@@ -507,7 +508,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 
 	const search = await searchMemoryRecords({
 		env: runtimeEnv,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		query,
 		conversationId: 'conv-123',
 	})
@@ -520,7 +521,7 @@ test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one b
 	const runtimeEnv = env(testDb.db)
 	const created = await upsertMemory({
 		env: runtimeEnv,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		subject: 'Ack batch',
 		summary: 'Atomic acknowledgement coverage.',
 		category: 'workflow',
@@ -530,7 +531,7 @@ test('acknowledgeSurfacedMemories writes suppressions and last_accessed in one b
 
 	await acknowledgeSurfacedMemories({
 		env: runtimeEnv,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		conversationId: 'conv-ack-batch',
 		memoryIds: [created.memory.id],
 	})
@@ -562,7 +563,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 		const timestamp = new Date(baseTime - ageMinutes * 60_000).toISOString()
 		testDb.memories.set(id, {
 			id,
-			user_id: 'user-123',
+			user_id: ownerIdFromStored('user-123'),
 			category: null,
 			status: 'active',
 			subject,
@@ -618,7 +619,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const result = await searchMemoryRecords({
 		env: runtimeEnv,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		query: 'deployment window',
 		limit: 5,
 	})

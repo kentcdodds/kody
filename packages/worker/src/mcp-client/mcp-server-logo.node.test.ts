@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -15,7 +16,7 @@ import {
 } from './settings-repo.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const userId = 'user-1'
+const userId = ownerIdFromStored('user-1')
 const serverId = 'server-1'
 const previousKey = `user-mcp-server-logos/${userId}/${serverId}/aaaaaaaaaaaaaaaa.png`
 

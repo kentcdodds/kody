@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -38,7 +39,7 @@ function delivery(id: string, now: Date): InboundDelivery {
 		messageId: `message-${id}`,
 		threadId: `thread-${id}`,
 		rawMimeKey: `email-raw:v1:system:email/message-${id}`,
-		userId: 'system:email',
+		userId: ownerIdFromStored('system:email'),
 		inboxId: 'system-transition-inbox',
 		recipient: 'support@example.com',
 		envelopeFrom: 'sender@example.net',

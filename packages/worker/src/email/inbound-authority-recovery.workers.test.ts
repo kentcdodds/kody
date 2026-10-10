@@ -24,6 +24,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const appBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
 
@@ -68,7 +69,10 @@ function inboundMessage(input: {
 }
 
 async function readReceiveCount(userId: string) {
-	const result = await userMeterRpc({ env, userId }).read({
+	const result = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).read({
 		resource: 'email_receives_per_day',
 		day: new Date().toISOString().slice(0, 10),
 	})
@@ -101,9 +105,12 @@ async function claimPendingDelivery(input: {
 	now: Date
 }) {
 	const { userId, now } = input
-	const authority = createUserInboundDeliveryAuthority({ env, userId })
+	const authority = createUserInboundDeliveryAuthority({
+		env,
+		userId: ownerIdFromStored(userId),
+	})
 	const delivery = await buildInboundDelivery({
-		userId,
+		userId: ownerIdFromStored(userId),
 		inboxId: `inbox-${crypto.randomUUID()}`,
 		recipient: input.recipient,
 		envelopeFrom: 'sender@example.net',
@@ -111,8 +118,11 @@ async function claimPendingDelivery(input: {
 		quotaDay: now.toISOString().slice(0, 10),
 		now,
 	})
-	await mailboxRpc({ env, userId }).insertChargedPendingInboundDelivery({
-		ownerId: userId,
+	await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).insertChargedPendingInboundDelivery({
+		ownerId: ownerIdFromStored(userId),
 		delivery,
 		now: now.toISOString(),
 	})
@@ -136,7 +146,7 @@ function graphFor(
 			inboxId: delivery.inboxId,
 			lastMessageAt: at,
 		}),
-		message: baseMessage(userId, {
+		message: baseMessage(ownerIdFromStored(userId), {
 			id: delivery.messageId,
 			inboxId: delivery.inboxId,
 			threadId: delivery.threadId,
@@ -202,7 +212,10 @@ test('identical MIME from distinct envelopes creates two Mailbox deliveries and 
 		)
 	}
 	expect(
-		await mailboxRpc({ env, userId: account.userId }).listMessages({
+		await mailboxRpc({
+			env,
+			userId: ownerIdFromStored(account.userId),
+		}).listMessages({
 			limit: 10,
 		}),
 	).toMatchObject({ messages: [{}, {}] })
@@ -242,7 +255,10 @@ test('stored-count and raw MIME read failures happen before quota; redelivery ch
 	).rejects.toThrow('simulated stored count failure')
 	expect(await readReceiveCount(account.userId)).toBe(0)
 	expect(
-		await mailboxRpc({ env, userId: account.userId }).listDeliveryEvents({
+		await mailboxRpc({
+			env,
+			userId: ownerIdFromStored(account.userId),
+		}).listDeliveryEvents({
 			limit: 10,
 		}),
 	).toEqual([])
@@ -266,7 +282,10 @@ test('stored-count and raw MIME read failures happen before quota; redelivery ch
 	)
 	expect(await readReceiveCount(account.userId)).toBe(1)
 	expect(
-		await mailboxRpc({ env, userId: account.userId }).listMessages({
+		await mailboxRpc({
+			env,
+			userId: ownerIdFromStored(account.userId),
+		}).listMessages({
 			limit: 10,
 		}),
 	).toMatchObject({ messages: [{}] })

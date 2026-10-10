@@ -1,6 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { RunLog } from './run-log-do.ts'
 import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
 import {
@@ -67,8 +71,8 @@ const legacyRunsColumnsDdl = `
 	metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL,
 	updated_at TEXT NOT NULL`
 
-function uniqueUserId(label: string) {
-	return `runlog-dedicated-${label}-${crypto.randomUUID()}`
+function uniqueUserId(label: string): OwnerId {
+	return ownerIdFromStored(`runlog-dedicated-${label}-${crypto.randomUUID()}`)
 }
 
 function runLogStub(userId: string) {
@@ -98,7 +102,7 @@ function upsertWorkflow(
 ) {
 	return upsertWorkflowProjection({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		projection: workflow(id, overrides),
 	})
 }
@@ -110,7 +114,7 @@ function finishBegunRun(
 ) {
 	return finishRunRecord({
 		env,
-		handle: beginRunRecord({ env, userId, context }),
+		handle: beginRunRecord({ env, userId: ownerIdFromStored(userId), context }),
 		status,
 	})
 }
@@ -123,7 +127,7 @@ async function claimInvocation(
 ) {
 	const claimed = await claimPackageInvocationRecord({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		context: { surface: 'export', packageId, name: 'handler', idempotencyKey },
 		invocation: {
 			id: crypto.randomUUID(),
@@ -142,7 +146,7 @@ async function claimInvocation(
 	return () =>
 		finishPackageInvocationRecord({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			handle: claimed.handle,
 			invocationId: claimed.invocationId,
 			claimUpdatedAt: claimed.claimUpdatedAt,
@@ -374,7 +378,7 @@ test('reserveWorkflowProjectionSlot serializes concurrent creating, prunes stale
 	) =>
 		reserveWorkflowProjectionSlot({
 			env,
-			userId: reserveUserId,
+			userId: ownerIdFromStored(reserveUserId),
 			projection: workflow(id, { status: 'creating', ...overrides }),
 		})
 	const results = await Promise.all(

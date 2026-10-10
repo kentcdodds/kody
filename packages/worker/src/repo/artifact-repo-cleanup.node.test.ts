@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createRepoSessionRow } from '#worker/test-support/run-kody-registry.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -96,7 +97,11 @@ const userSource = (userId: string, repoId: string, id = 'source-1') => ({
 	user_id: userId,
 	repo_id: repoId,
 })
-const sourceCleanupInput = { env, userId: 'user-1', sourceId: 'source-1' }
+const sourceCleanupInput = {
+	env,
+	userId: ownerIdFromStored('user-1'),
+	sourceId: 'source-1',
+}
 
 test('artifact repo cleanup deletes scoped repos and records warning-only failures', async () => {
 	mockModule.hasArtifactsAccess.mockReturnValue(true)
@@ -107,7 +112,11 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 
 	for (const repoName of ['package-src-1', 'package-src-1-session-abc']) {
 		await expect(
-			deleteUserScopedArtifactRepo({ env, userId: 'user-1', repoName }),
+			deleteUserScopedArtifactRepo({
+				env,
+				userId: ownerIdFromStored('user-1'),
+				repoName,
+			}),
 		).resolves.toBe(true)
 	}
 
@@ -117,7 +126,7 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 	mockModule.listRepoSessionsBySource.mockResolvedValueOnce([
 		createRepoSessionRow({
 			id: 'session-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-1',
 			sourceRepoId: 'package-pkg-1',
 		}),
@@ -134,13 +143,17 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 	mockModule.listRepoSessionsByUser.mockResolvedValueOnce([
 		createRepoSessionRow({
 			id: 'session-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-1',
 			sourceRepoId: 'package-pkg-1',
 		}),
 	])
 	await expect(
-		cleanupAllUserArtifactRepos({ env, userId: 'user-1', warnings: [] }),
+		cleanupAllUserArtifactRepos({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			warnings: [],
+		}),
 	).resolves.toBe(2)
 
 	mockModule.listRepoSessionsByUser.mockResolvedValue([])
@@ -166,7 +179,7 @@ test('artifact repo cleanup deletes scoped repos and records warning-only failur
 	await expect(
 		cleanupAllUserArtifactRepos({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			warnings: accountWarnings,
 		}),
 	).resolves.toBe(0)
@@ -230,7 +243,7 @@ test('deleteUserScopedArtifactRepo waitUntilAbsent polls until get reports not_f
 	await expect(
 		deleteUserScopedArtifactRepo({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			repoName: 'package-wait-1',
 			waitUntilAbsent: true,
 			waitUntilAbsentDelayMs: 1,
@@ -251,7 +264,7 @@ test('deleteUserScopedArtifactRepo waitUntilAbsent returns false when delete sta
 	await expect(
 		deleteUserScopedArtifactRepo({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			repoName: 'package-wait-stuck',
 			warnings,
 			waitUntilAbsent: true,
@@ -277,14 +290,18 @@ test('account cleanup deletes stored Artifacts push subscriptions before repos',
 	])
 	mockModule.getArtifactsPushSubscriptionBySourceId.mockResolvedValue({
 		source_id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		repo_id: 'package-pkg-1',
 		subscription_id: 'sub-1',
 		created_at: '2026-05-01T00:00:00.000Z',
 		updated_at: '2026-05-01T00:00:00.000Z',
 	} as never)
 
-	await cleanupAllUserArtifactRepos({ env, userId: 'user-1', warnings: [] })
+	await cleanupAllUserArtifactRepos({
+		env,
+		userId: ownerIdFromStored('user-1'),
+		warnings: [],
+	})
 
 	expect(mockModule.deleteArtifactsRepoPushSubscription).toHaveBeenCalledWith({
 		env,
@@ -293,6 +310,9 @@ test('account cleanup deletes stored Artifacts push subscriptions before repos',
 	})
 	expect(
 		mockModule.deleteArtifactsPushSubscriptionBySourceId,
-	).toHaveBeenCalledWith({}, { sourceId: 'source-1', userId: 'user-1' })
+	).toHaveBeenCalledWith(
+		{},
+		{ sourceId: 'source-1', userId: ownerIdFromStored('user-1') },
+	)
 	expect(mockModule.deleteArtifactRepo).toHaveBeenCalledWith('package-pkg-1')
 })

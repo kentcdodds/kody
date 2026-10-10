@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { assertBundleHasNoUnresolvedBareImports } from '#worker/package-runtime/module-graph-artifacts.ts'
 import {
@@ -116,7 +117,7 @@ test('undeclared bare package imports fail the dependencies check even when bund
 		deferBundleCheckToRebuild: true,
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 	expect(result.ok).toBe(false)
 	const dependencies = result.results.find(
@@ -141,7 +142,7 @@ test('undeclared bare imports reached only through relative require still fail d
 		deferBundleCheckToRebuild: true,
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 	expect(result.ok).toBe(false)
 	const dependencies = result.results.find(
@@ -165,7 +166,7 @@ test('declared bare package imports pass the dependencies check', async () => {
 		deferBundleCheckToRebuild: true,
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 	expect(result.ok).toBe(true)
 	const dependencies = result.results.find(
@@ -191,7 +192,7 @@ test('vendored node_modules packages count as resolvable without a package.json 
 		deferBundleCheckToRebuild: true,
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 	expect(result.ok).toBe(true)
 	expect(

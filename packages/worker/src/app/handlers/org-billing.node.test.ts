@@ -1,5 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
@@ -683,7 +686,10 @@ test('checkout return links the Stripe customer onto the org in the URL', async 
 	expect(
 		mocks.linkStripeCustomerFromCheckoutSessionAttribution,
 	).toHaveBeenCalledWith(
-		expect.objectContaining({ sessionId: 'cs_test', orgId: 'org-acme' }),
+		expect.objectContaining({
+			sessionId: 'cs_test',
+			orgId: ownerIdFromStored('org-acme'),
+		}),
 	)
 
 	signInAs('bob')

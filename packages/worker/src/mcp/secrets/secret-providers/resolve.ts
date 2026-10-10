@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { invokeSealedSecretProvider } from './sealed-invoke.ts'
@@ -10,7 +11,7 @@ import { resolveProviderSecret } from './service.ts'
 export async function resolveProviderSecretForFetch(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	request: RequestContext
 	provider: string
 	ref: string

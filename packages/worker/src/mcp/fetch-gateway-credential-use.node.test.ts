@@ -51,7 +51,8 @@ function userSecret(
 
 test('ambient fetch placeholders require secret:use / integration:use for members and outside collaborators', async () => {
 	const db = await createOrgDb()
-	const ownerId = testStableUserIdFromEmail('owner-a@example.com')
+	const ownerStableId = testStableUserIdFromEmail('owner-a@example.com')
+	const ownerId = ownerIdFromStored(ownerStableId)
 	const memberId = testStableUserIdFromEmail('member-b@example.com')
 	const collaboratorId = testStableUserIdFromEmail('collab-c@example.com')
 	const now = '2026-10-10T00:00:00.000Z'
@@ -148,12 +149,12 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 
 	const ownerRequest = deriveRequestContext({
 		user: {
-			userId: personIdFromStored(ownerId),
+			userId: personIdFromStored(ownerStableId),
 			username: 'ownera',
 		},
 		source: { kind: 'mcp-oauth' },
 		orgBinding: {
-			org: { id: ownerIdFromStored(ownerId), slug: 'ownera' },
+			org: { id: ownerId, slug: 'ownera' },
 			role: 'owner',
 		},
 	})
@@ -164,7 +165,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		source: { kind: 'mcp-oauth' },
 		orgBinding: {
-			org: { id: ownerIdFromStored(ownerId), slug: 'ownera' },
+			org: { id: ownerId, slug: 'ownera' },
 			role: 'member',
 		},
 	})
@@ -175,7 +176,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		source: { kind: 'mcp-oauth' },
 		orgBinding: {
-			org: { id: ownerIdFromStored(ownerId), slug: 'ownera' },
+			org: { id: ownerId, slug: 'ownera' },
 			role: null,
 		},
 	})
@@ -299,7 +300,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		source: { kind: 'mcp-oauth' },
 		orgBinding: {
-			org: { id: ownerIdFromStored(ownerId), slug: 'ownera' },
+			org: { id: ownerId, slug: 'ownera' },
 			role: 'member',
 		},
 	})

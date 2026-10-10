@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as SecretsRepo from './repo.ts'
 import {
@@ -27,7 +28,7 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 const { createUnresolvedSecretMessage } = await import('./unresolved-secret.ts')
 
 const env = { APP_DB: {} as D1Database }
-const userId = 'user-1'
+const userId = ownerIdFromStored('user-1')
 const secretName = 'discordBotToken'
 const noPackage = {
 	sessionId: null,

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	computeMailboxRetentionReschedule,
 	deleteMailboxRetentionCandidate,
@@ -210,7 +211,7 @@ export class MailboxMaintenanceCommands {
 	}
 
 	async runRetentionNow(
-		ownerId: string,
+		ownerId: OwnerId,
 	): Promise<MailboxRunRetentionNowResult> {
 		this.store.assertOwner(ownerId)
 		return await this.runRetentionPass()

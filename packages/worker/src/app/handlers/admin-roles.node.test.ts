@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type PermissionString, type RoleName } from '#universal/permissions.ts'
 
@@ -24,7 +25,7 @@ function createAdminActor(roles: Array<RoleName>) {
 		permissions,
 		artifactOwnerIds: ['1'],
 		mcpUser: {
-			userId: 'stable-admin',
+			userId: ownerIdFromStored('stable-admin'),
 			email: 'admin@example.com',
 			username: 'admin-user',
 			displayName: 'admin-user',

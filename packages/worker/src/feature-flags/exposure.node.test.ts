@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, type Mock } from 'vitest'
 import { recordFeatureFlagExposures } from './exposure.ts'
 import { recordPaidRankedSearchFlagExposure } from './paid-ranked-search-exposure.ts'
@@ -22,7 +23,7 @@ test('skips exposure recording without measured flags or a stable user id', asyn
 			APP_DB: { batch } as unknown as D1Database,
 		},
 		{
-			stableUserId: 'user-1',
+			stableUserId: ownerIdFromStored('user-1'),
 			evaluations: {
 				'demo-indicator': { enabled: true, source: 'global' },
 			},
@@ -33,7 +34,7 @@ test('skips exposure recording without measured flags or a stable user id', asyn
 	expect(batch).not.toHaveBeenCalled()
 
 	await recordFeatureFlagExposures(exposureEnv(writeDataPoint), {
-		stableUserId: '',
+		stableUserId: ownerIdFromStored(''),
 		evaluations: {
 			'demo-indicator': { enabled: true, source: 'default' },
 		},
@@ -44,7 +45,7 @@ test('skips exposure recording without measured flags or a stable user id', asyn
 test('evaluation chokepoint skips paid-ranked-search flags; dedicated site records them', async () => {
 	const writeDataPoint = vi.fn()
 	await recordFeatureFlagExposures(exposureEnv(writeDataPoint), {
-		stableUserId: 'a'.repeat(64),
+		stableUserId: ownerIdFromStored('a').repeat(64),
 		evaluations: {
 			[jevSearchRerankFlagKey]: { enabled: true, source: 'global' },
 			[executeInvokeFlagKey]: { enabled: true, source: 'global' },
@@ -59,7 +60,7 @@ test('evaluation chokepoint skips paid-ranked-search flags; dedicated site recor
 
 	writeDataPoint.mockClear()
 	await recordFeatureFlagExposures(exposureEnv(writeDataPoint), {
-		stableUserId: 'a'.repeat(64),
+		stableUserId: ownerIdFromStored('a').repeat(64),
 		evaluations: {
 			[jevSearchRerankFlagKey]: { enabled: true, source: 'global' },
 		},
@@ -77,7 +78,7 @@ test('recordPaidRankedSearchFlagExposure writes the caller evaluation for paid u
 	for (const planEligible of [false, true]) {
 		await recordPaidRankedSearchFlagExposure({
 			env: exposureEnv(writeDataPoint),
-			stableUserId: 'b'.repeat(64),
+			stableUserId: ownerIdFromStored('b').repeat(64),
 			planEligible,
 			evaluation: { enabled: true, source: 'global' },
 		})

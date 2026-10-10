@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { loadFittedMcpServerLogo } from '#worker/mcp-client/mcp-server-logo.ts'
@@ -19,7 +20,7 @@ export function createMcpServerLogoHandler(env: Env) {
 			}
 			const server = await getMcpServerSettingById({
 				env,
-				userId: user.mcpUser.userId,
+				userId: personalOrgId(user.mcpUser.userId),
 				id: params.serverId,
 			})
 			if (!server?.logoKey) {
@@ -28,7 +29,7 @@ export function createMcpServerLogoHandler(env: Env) {
 			const logo = await loadFittedMcpServerLogo({
 				db: env.APP_DB,
 				env,
-				userId: user.mcpUser.userId,
+				userId: personalOrgId(user.mcpUser.userId),
 				serverId: server.id,
 				logoKey: server.logoKey,
 				logoContentType: server.logoContentType,

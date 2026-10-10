@@ -15,6 +15,8 @@
  * bindings, not this RPC surface.
  */
 
+import { type OwnerId } from './owner-person-ids.ts'
+
 /** Healthcheck endpoint served by the runtime Worker. */
 export const runtimeWorkerHealthPath = '/__runtime/health'
 
@@ -41,7 +43,7 @@ export function buildRuntimeWorkerHealth(input: {
  * session). Runtime must not re-check package-app cookies for this path.
  */
 export type RuntimePackageAppServeOwner = {
-	userId: string
+	userId: OwnerId
 	username: string
 	email: string
 	displayName: string

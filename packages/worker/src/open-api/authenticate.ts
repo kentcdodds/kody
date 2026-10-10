@@ -1,4 +1,9 @@
 import {
+	ownerIdFromStored,
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	parseApiToken,
 	readBearerApiToken,
 } from '@kody-internal/shared/api-token-format.ts'
@@ -51,7 +56,7 @@ type McpOauthHelpers = {
 function unauthorized(
 	message: string,
 	invalidToken: boolean,
-	meteringUserId?: string,
+	meteringUserId?: OwnerId,
 ) {
 	return new ApiError({
 		status: 401,
@@ -113,7 +118,9 @@ async function authenticateWithApiToken(input: {
 		throw unauthorized(
 			describeFailure(authentication.reason),
 			true,
-			authentication.record?.user_id,
+			authentication.record?.user_id
+				? ownerIdFromStored(authentication.record.user_id)
+				: undefined,
 		)
 	}
 	const { record } = authentication
@@ -121,13 +128,17 @@ async function authenticateWithApiToken(input: {
 		userId: record.user_id,
 	})
 	if (!authContext)
-		throw unauthorized('Invalid API token.', true, record.user_id)
+		throw unauthorized(
+			'Invalid API token.',
+			true,
+			ownerIdFromStored(record.user_id),
+		)
 	if (!authContext.emailVerified) {
 		throw new ApiError({
 			status: 403,
 			code: 'email_verification_required',
 			message: `Your account email address is not verified, so API access is disabled. Verify it from ${input.appOrigin}/account.`,
-			meteringUserId: authContext.user.userId,
+			meteringUserId: personalOrgId(authContext.user.userId),
 		})
 	}
 	if (authContext.suspended) {
@@ -136,7 +147,7 @@ async function authenticateWithApiToken(input: {
 			code: 'account_suspended',
 			message:
 				'This account is suspended, so API access is disabled. Contact the operator of this Kody deployment to appeal.',
-			meteringUserId: authContext.user.userId,
+			meteringUserId: personalOrgId(authContext.user.userId),
 		})
 	}
 	if (
@@ -148,7 +159,7 @@ async function authenticateWithApiToken(input: {
 		throw unauthorized(
 			'API token predates a password change. Mint a new one.',
 			true,
-			authContext.user.userId,
+			personalOrgId(authContext.user.userId),
 		)
 	}
 	const slid = slideApiTokenExpiry(record, now)
@@ -171,7 +182,7 @@ async function authenticateWithApiToken(input: {
 		throw unauthorized(
 			'API token is not bound to an org you can access.',
 			true,
-			authContext.user.userId,
+			personalOrgId(authContext.user.userId),
 		)
 	}
 	return createApiInvocationContext({
@@ -221,7 +232,7 @@ async function authenticateWithMcpOauth(input: {
 			status: 403,
 			code: 'email_verification_required',
 			message: `Your account email address is not verified, so API access is disabled. Verify it from ${input.appOrigin}/account.`,
-			meteringUserId: authContext.user.userId,
+			meteringUserId: personalOrgId(authContext.user.userId),
 		})
 	}
 	if (authContext.suspended) {
@@ -230,7 +241,7 @@ async function authenticateWithMcpOauth(input: {
 			code: 'account_suspended',
 			message:
 				'This account is suspended, so API access is disabled. Contact the operator of this Kody deployment to appeal.',
-			meteringUserId: authContext.user.userId,
+			meteringUserId: personalOrgId(authContext.user.userId),
 		})
 	}
 	if (
@@ -242,7 +253,7 @@ async function authenticateWithMcpOauth(input: {
 		throw unauthorized(
 			'Access token predates a password change. Run kody login again.',
 			true,
-			authContext.user.userId,
+			personalOrgId(authContext.user.userId),
 		)
 	}
 	const grantScopes =
@@ -257,7 +268,7 @@ async function authenticateWithMcpOauth(input: {
 		throw unauthorized(
 			'Access token is not bound to an org you can access.',
 			true,
-			authContext.user.userId,
+			personalOrgId(authContext.user.userId),
 		)
 	}
 	return createApiInvocationContext({

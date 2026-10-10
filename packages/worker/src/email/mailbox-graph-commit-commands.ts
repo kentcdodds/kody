@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getMailboxInboundDelivery } from './mailbox-inbound-ledger.ts'
 import { type MailboxMaintenanceCommands } from './mailbox-maintenance-commands.ts'
 import { updateMailboxMessageDelivery } from './mailbox-mutations.ts'
@@ -64,7 +65,7 @@ export class MailboxGraphCommitCommands {
 	}
 
 	async commitInboundMessageGraph(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		thread: MailboxThreadInput
@@ -191,7 +192,7 @@ export class MailboxGraphCommitCommands {
 	}
 
 	async completeOutboundProviderIndexRepair(input: {
-		ownerId: string
+		ownerId: OwnerId
 		provider: string
 		providerMessageId: string
 	}): Promise<{ cleared: boolean }> {
@@ -203,7 +204,7 @@ export class MailboxGraphCommitCommands {
 		return result
 	}
 
-	getOutboundProviderIndexRepairStatus(ownerId: string) {
+	getOutboundProviderIndexRepairStatus(ownerId: OwnerId) {
 		this.store.assertOwner(ownerId)
 		return getMailboxProviderIndexRepairStatus(this.ctx.storage.sql)
 	}

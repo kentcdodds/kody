@@ -44,6 +44,7 @@ import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-
 import { createEvaluationSideEffectTracker } from '#mcp/evaluation-side-effects.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 type FakeWorkerOptions = Record<string, unknown>
 type Dispatchers = Record<string, { call: typeof ToolDispatcherCall }>
 type ExecutorInput = Parameters<typeof createExecuteExecutor>[0]
@@ -133,7 +134,7 @@ function createGatewayProps(
 ) {
 	return {
 		baseUrl: 'https://heykody.dev',
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: overrides?.email ?? `${userId}@example.com`,
 		request: null,
 		storageContext:
@@ -420,7 +421,9 @@ test('generated kody provider source wires mcp proxy dispatch', async () => {
 		expect('mcp' in kody).toBe(true)
 		const { home } = kody.mcp
 		if (!home) throw new Error('Expected home MCP server proxy')
-		await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({ ok: true })
+		await expect(home.set_pin?.({ pin: '5678' })).resolves.toEqual({
+			ok: true,
+		})
 		expect(() => kody.mcp['missing']).toThrow(
 			'Unknown MCP server "missing". Available MCP servers: "home".',
 		)

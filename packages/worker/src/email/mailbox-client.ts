@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { mailboxDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type MailboxRpc } from './mailbox-do.ts'
 
@@ -14,7 +15,7 @@ export function mailboxNamespace(
 /** Typed per-user Mailbox RPC stub; throws when `MAILBOX` is missing. */
 export function mailboxRpc(input: {
 	env: MailboxEnv
-	userId: string
+	userId: OwnerId
 }): MailboxRpc {
 	const namespace = mailboxNamespace(input.env)
 	if (!namespace) {

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { buildCapabilityRegistry } from '#mcp/capabilities/build-capability-registry.ts'
@@ -151,7 +154,7 @@ async function insertSavedPackage(input: {
 	)
 	return {
 		id: input.sourceId,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		entity_kind: 'package' as const,
 		entity_id: input.packageId,
 		repo_id: `repo-${input.sourceId}`,
@@ -303,12 +306,17 @@ async function publishDependent(
 async function saveWakeTokenLockedTo(userId: string, packageId: string) {
 	await saveSecret({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		scope: 'user',
 		name: 'wakeToken',
 		value: 'wake-secret-value',
 	})
-	await lockSecretToPackage({ env, userId, name: 'wakeToken', packageId })
+	await lockSecretToPackage({
+		env,
+		userId: ownerIdFromStored(userId),
+		name: 'wakeToken',
+		packageId,
+	})
 }
 
 function createCallerContext(userId: string) {
@@ -891,7 +899,7 @@ export default async function selfAdopt() {
 		})
 		await saveSecret({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			scope: 'user',
 			name: 'userToken',
 			value: 'user-secret-value',
@@ -982,7 +990,7 @@ export default async function wake(probe) {
 		}
 		await saveSecret({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			scope: 'package',
 			name: 'wakeToken',
 			value: 'package-wake-secret-value',
@@ -990,7 +998,7 @@ export default async function wake(probe) {
 		})
 		await setSecretAllowedHosts({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			scope: 'package',
 			name: 'wakeToken',
 			allowedHosts: ['example.com'],

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { getRecoveryBookmark, restoreToBookmark } from '#worker/dr/do-pitr.ts'
@@ -134,7 +135,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 * `alarm`; returns before/after counts with no row ids or content.
 	 */
 	async runRetentionNow(input: {
-		ownerId: string
+		ownerId: OwnerId
 	}): Promise<MailboxRunRetentionNowResult> {
 		this.assertReadable()
 		return await this.maintenance.runRetentionNow(input.ownerId)
@@ -147,7 +148,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async commitInboundMessageGraph(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		thread: MailboxThreadInput
@@ -166,7 +167,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async completeOutboundProviderIndexRepair(input: {
-		ownerId: string
+		ownerId: OwnerId
 		provider: string
 		providerMessageId: string
 	}): Promise<{ cleared: boolean }> {
@@ -174,13 +175,13 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return await this.graphCommits.completeOutboundProviderIndexRepair(input)
 	}
 
-	async getOutboundProviderIndexRepairStatus(input: { ownerId: string }) {
+	async getOutboundProviderIndexRepairStatus(input: { ownerId: OwnerId }) {
 		this.assertReadable()
 		return this.graphCommits.getOutboundProviderIndexRepairStatus(input.ownerId)
 	}
 
 	async recordBoundedRejection(input: {
-		ownerId: string
+		ownerId: OwnerId
 		inboxId: string
 		recipient: string
 		reason: string
@@ -290,7 +291,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async upsertDeliveryEvent(input: {
-		ownerId: string
+		ownerId: OwnerId
 		event: MailboxDeliveryEventInput
 		latestDeliveryStatus?: {
 			messageId: string
@@ -336,7 +337,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async upsertDeliveryEvents(input: {
-		ownerId: string
+		ownerId: OwnerId
 		events: Array<MailboxDeliveryEventInput>
 		restore?: true
 	}): Promise<MailboxUpsertDeliveryEventsResult> {
@@ -432,7 +433,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	 * interleaving across the asynchronous R2 delete boundary.
 	 */
 	async deleteMessageWithBlobs(input: {
-		ownerId: string
+		ownerId: OwnerId
 		messageId: string
 	}): Promise<MailboxDeleteMessageWithBlobsResult> {
 		this.assertReadable()
@@ -482,7 +483,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async tombstoneMissingMessage(input: {
-		ownerId: string
+		ownerId: OwnerId
 		messageId: string
 		deletedAt: string
 	}): Promise<MailboxTombstoneMissingMessageResult> {
@@ -615,7 +616,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async countDeliveryEvents(input: {
-		ownerId: string
+		ownerId: OwnerId
 		eventType: EmailDeliveryEventType
 		provider: string
 		createdAtGte: string
@@ -652,31 +653,31 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 		return this.store.countMailbox()
 	}
 
-	async inspectRestoreState(input: { ownerId: string }) {
+	async inspectRestoreState(input: { ownerId: OwnerId }) {
 		this.store.assertOwner(input.ownerId)
 		return this.store.inspectRestoreState()
 	}
 
-	async beginRestore(input: { ownerId: string }): Promise<{ ok: true }> {
+	async beginRestore(input: { ownerId: OwnerId }): Promise<{ ok: true }> {
 		this.store.beginRestore(input.ownerId)
 		return { ok: true }
 	}
 
-	async finalizeRestore(input: { ownerId: string }): Promise<{ ok: true }> {
+	async finalizeRestore(input: { ownerId: OwnerId }): Promise<{ ok: true }> {
 		this.store.finalizeRestore(input.ownerId)
 		await this.maintenance.markDirtyAndEnsure()
 		return { ok: true }
 	}
 
 	async readDrillResult(input: {
-		ownerId: string
+		ownerId: OwnerId
 	}): Promise<MailboxCountResult | null> {
 		this.store.assertOwner(input.ownerId)
 		return this.store.readDrillResult()
 	}
 
 	async completeDrill(input: {
-		ownerId: string
+		ownerId: OwnerId
 		result: MailboxCountResult
 	}): Promise<{ ok: true }> {
 		await this.maintenance.blockConcurrencySafely(async () => {
@@ -703,7 +704,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async getInboundDelivery(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 	}): Promise<MailboxInboundDeliverySnapshot | null> {
 		this.assertReadable()
@@ -711,7 +712,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async getInboundDeliveryWindow(input: {
-		ownerId: string
+		ownerId: OwnerId
 		fingerprint: string
 		now?: string
 	}): Promise<MailboxInboundDeliverySnapshot | null> {
@@ -720,7 +721,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async claimInboundDeliveryWindow(input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}): Promise<MailboxInboundDeliverySnapshot> {
@@ -729,7 +730,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async insertChargedPendingInboundDelivery(input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}) {
@@ -738,7 +739,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async claimInboundDeliveryStorage(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedAttachmentCount: number
 		usageStartedAt?: string | null
@@ -749,7 +750,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async releaseInboundDeliveryStorage(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		now?: string
@@ -759,7 +760,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async markInboundDeliveryRejected(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		reason: string
 		expectedStorageLease?: string | null
@@ -771,7 +772,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async markInboundDeliveryReceived(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		usageDurationMs: number
@@ -784,7 +785,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async pruneExpiredInboundDedupePointers(input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) {
@@ -793,7 +794,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async deferInboundDeliveryReconciliation(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		now?: string
 	}) {
@@ -802,7 +803,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async claimInboundDeliveryCleanup(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedState: MailboxInboundDeliveryState
 		expectedUpdatedAt: string
@@ -814,7 +815,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async releaseInboundDeliveryCleanup(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		cleanupLease: string
 		now?: string
@@ -824,7 +825,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async markInboundDeliveryOrphanCleaned(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		cleanupLease: string
 		outcome: 'deleted' | 'delete-failed'
@@ -835,7 +836,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async claimInboundUsageEffect(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedFinalizationToken?: string | null
 		now?: string
@@ -845,7 +846,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async completeInboundUsageEffect(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		usageEffectLease: string
 		expectedFinalizationToken: string
@@ -860,7 +861,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async claimInboundSubscriptionEffect(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedFinalizationToken?: string | null
 		now?: string
@@ -870,7 +871,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async completeInboundSubscriptionEffect(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		subscriptionEffectLease: string
 		expectedFinalizationToken: string
@@ -883,7 +884,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async failInboundSubscriptionEffect(input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		subscriptionEffectLease: string
 		expectedFinalizationToken: string
@@ -895,7 +896,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async listDueStaleInboundDeliveries(input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) {
@@ -904,7 +905,7 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async listDueInboundEffectWork(input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) {
@@ -913,14 +914,14 @@ class MailboxBase extends DurableObject<Env> implements MailboxRpc {
 	}
 
 	async getInboundDueWorkHint(input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 	}): Promise<{ dueAt: string | null }> {
 		this.assertReadable()
 		return this.inbound.getInboundDueWorkHint(input)
 	}
 
-	async purge(input: { ownerId: string }): Promise<{ ok: true }> {
+	async purge(input: { ownerId: OwnerId }): Promise<{ ok: true }> {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			this.store.assertOwner(input.ownerId)
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)

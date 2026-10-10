@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { systemEmailOwnerId } from './email-owner.ts'
 
 export const inboundDueOwnerBatchSize = 25
@@ -6,7 +7,7 @@ export const inboundDueOwnerFailureDelayMs = 5 * 60 * 1000
 export const mailboxInboundStaleDeliveryAgeMs = 48 * 60 * 60 * 1000
 
 export type InboundDueOwner = {
-	userId: string
+	userId: OwnerId
 	dueAt: string
 	reason: string
 	attemptCount: number
@@ -95,7 +96,7 @@ export async function listDueInboundOwners(input: {
 			input.limit ?? inboundDueOwnerBatchSize,
 		)
 		.all<{
-			user_id: string
+			user_id: OwnerId
 			due_at: string
 			reason: string
 			attempt_count: number

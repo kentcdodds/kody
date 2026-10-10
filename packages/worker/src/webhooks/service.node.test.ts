@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -54,7 +55,7 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	listSavedPackagesByUserId: vi.fn(async () => [
 		{
 			id: 'pkg-1',
-			userId: 'will-set',
+			userId: ownerIdFromStored('will-set'),
 			name: '@owner/sentry-bridge',
 			kodyId: 'sentry-bridge',
 			description: 'Sentry bridge',
@@ -157,7 +158,7 @@ async function setupOwner(email: string, username: string) {
 	const input = {
 		env,
 		request: sessionRequestContext(userId),
-		userId,
+		userId: ownerIdFromStored(userId),
 		username,
 		...sentryHook,
 	}
@@ -171,7 +172,7 @@ async function setupOwner(email: string, username: string) {
 			listWebhooksForUser({
 				env,
 				baseUrl: 'https://heykody.dev',
-				userId: forUserId,
+				userId: ownerIdFromStored(forUserId),
 			}),
 		readEndpoint: <T>(endpointId: string, columns: string) =>
 			db
@@ -201,7 +202,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const minted = await mintWebhookUrlForUser({
 		env,
 		request: sessionRequestContext(userId),
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: 'owner@example.com',
 		username: 'owner',
 		...sentryHook,
@@ -220,7 +221,13 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 
 	const reveal = (
 		target: Parameters<typeof revealWebhookUrlForWebsite>[0]['target'],
-	) => revealWebhookUrlForWebsite({ env, userId, username: 'owner', target })
+	) =>
+		revealWebhookUrlForWebsite({
+			env,
+			userId: ownerIdFromStored(userId),
+			username: 'owner',
+			target,
+		})
 	const revealed = await reveal({ handle: minted.handle })
 	expect(revealed.url).toContain('/@owner/webhooks/sentry-bridge/sentry/')
 	expect(revealed.urlHost).toBe('heykody.dev')
@@ -270,7 +277,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const rotatedSecret = await decryptWebhookUrlSecret(
 		env,
 		stored!.url_secret_encrypted,
-		userWebhookUrlSecretContext(userId, endpointId),
+		userWebhookUrlSecretContext(ownerIdFromStored(userId), endpointId),
 	)
 	const previousSecret = urlSecretOf(revealed.url)
 	expect(rotatedSecret).not.toBe(previousSecret)
@@ -290,7 +297,7 @@ test('mint/list/rotate/enable/disable webhooks are package-centered and user-sco
 	const disabled = await setWebhookEnabledForUser({
 		env,
 		request: sessionRequestContext(userId),
-		userId,
+		userId: ownerIdFromStored(userId),
 		...sentryHook,
 		enabled: false,
 	})
@@ -392,7 +399,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 	const minted = await mintWebhookUrlForUser({
 		env,
 		request: sessionRequestContext(userId),
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: 'race@example.com',
 		username: 'racer',
 		...sentryHook,
@@ -414,7 +421,7 @@ test('first mint that loses the id race retries with the persisted endpoint id',
 	const mintedSecret = await decryptWebhookUrlSecret(
 		env,
 		stored!.url_secret_encrypted,
-		userWebhookUrlSecretContext(userId, winnerId),
+		userWebhookUrlSecretContext(ownerIdFromStored(userId), winnerId),
 	)
 	expect(stored?.url_secret_hash).toBe(await hashWebhookUrlSecret(mintedSecret))
 
@@ -429,7 +436,7 @@ test('concurrent first mints converge on one handle', async () => {
 		mintWebhookUrlForUser({
 			env,
 			request: sessionRequestContext(userId),
-			userId,
+			userId: ownerIdFromStored(userId),
 			username: 'parallel',
 			...sentryHook,
 		})
@@ -445,7 +452,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 	const kodyIdFor = (index: number) => `many-${String(index).padStart(2, '0')}`
 	const packages = Array.from({ length: 20 }, (_, index) => ({
 		id: `pkg-many-${index}`,
-		userId,
+		userId: ownerIdFromStored(userId),
 		name: `@owner/many-${index}`,
 		kodyId: kodyIdFor(index),
 		description: 'Many',
@@ -489,7 +496,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 	const listed = await listWebhooksForUser({
 		env,
 		baseUrl: 'https://heykody.dev',
-		userId,
+		userId: ownerIdFromStored(userId),
 	})
 
 	warn.mockRestore()

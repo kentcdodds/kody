@@ -3,6 +3,7 @@
  * reads this instead of fanning out per-user Durable Object RPCs.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RunLogAdminInsightsSnapshot } from '#worker/run-records/admin-insights-snapshot.ts'
 import { getAdminInsightsSnapshot } from '#worker/run-records/service.ts'
 import {
@@ -25,7 +26,7 @@ export const adminInsightsRunLogMaxUsersPerTick = 1_500
 const hourMs = 60 * 60 * 1000
 
 type InsightsUserRow = {
-	stable_user_id: string
+	stable_user_id: OwnerId
 	email_verified_at: string | null
 }
 

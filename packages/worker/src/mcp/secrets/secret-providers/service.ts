@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
 import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
@@ -112,7 +113,7 @@ export function normalizeSecretProviderConfig(
 
 async function requireOwnedPackage(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	packageId: string
 }) {
 	const savedPackage = await getSavedPackageById(input.db, {
@@ -127,7 +128,7 @@ async function requireOwnedPackage(input: {
 
 async function requireBoundProvider(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	providerId: string
 }) {
 	const binding = await getSecretProviderBinding(input.db, {
@@ -145,7 +146,7 @@ async function requireBoundProvider(input: {
 export async function bindSecretProvider(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	providerId: string
 	packageId: string
 	doorSecretName: string
@@ -213,7 +214,7 @@ export async function bindSecretProvider(input: {
 
 export async function unbindSecretProvider(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	providerId: string
 }) {
 	const providerId = normalizeProviderId(input.providerId)
@@ -230,7 +231,7 @@ export async function unbindSecretProvider(input: {
 
 export async function listBoundSecretProviders(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }) {
 	return await listSecretProviderBindings(input.env.APP_DB, {
 		userId: input.userId,
@@ -239,7 +240,7 @@ export async function listBoundSecretProviders(input: {
 
 export async function grantSecretProviderToPackage(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	providerId: string
 	ref: string
 	packageId: string
@@ -272,7 +273,7 @@ export async function grantSecretProviderToPackage(input: {
 
 export async function revokeSecretProviderGrant(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	providerId: string
 	ref: string
 	packageId: string
@@ -294,7 +295,7 @@ export async function revokeSecretProviderGrant(input: {
 
 export async function inspectSecretProviderPackageGrant(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	providerId: string
 	ref: string
 	packageId: string
@@ -330,7 +331,7 @@ export async function inspectSecretProviderPackageGrant(input: {
 
 export async function listSecretProviderGrants(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	packageId: string
 }) {
 	return await listSecretProviderGrantsForPackage(input.env.APP_DB, input)
@@ -338,7 +339,7 @@ export async function listSecretProviderGrants(input: {
 
 export async function listAccountSecretProviderGrants(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }) {
 	return await listSecretProviderGrantsForUser(input.env.APP_DB, {
 		userId: input.userId,
@@ -358,7 +359,7 @@ function requireLocalCanonicalRef(providerId: string, ref: string) {
 export async function resolveProviderSecret(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	/** The fetching run; the provider export inherits it. */
 	request: RequestContext
 	provider: string
@@ -511,7 +512,7 @@ export async function resolveProviderSecret(input: {
 async function resolveCanonicalProviderRef(input: {
 	env: Env
 	baseUrl: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	request: RequestSource
 	providerId: string
 	rawRef: string

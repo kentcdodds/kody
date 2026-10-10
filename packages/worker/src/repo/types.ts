@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
 import { type ServerTimingEntry } from '#worker/server-timing.ts'
@@ -22,7 +23,13 @@ export const entitySourceRowSchema = z.object({
 	updated_at: z.string(),
 })
 
-export type EntitySourceRow = z.infer<typeof entitySourceRowSchema>
+export type EntitySourceRow = Omit<
+	z.infer<typeof entitySourceRowSchema>,
+	'user_id'
+> & {
+	/** Owner id bytes as stored. Storage keys use this value untrimmed. */
+	user_id: OwnerId
+}
 
 export const repoSessionStatusValues = [
 	'active',
@@ -52,7 +59,13 @@ export const repoSessionRowSchema = z.object({
 	updated_at: z.string(),
 })
 
-export type RepoSessionRow = z.infer<typeof repoSessionRowSchema>
+export type RepoSessionRow = Omit<
+	z.infer<typeof repoSessionRowSchema>,
+	'user_id'
+> & {
+	/** Owner id bytes as stored. RepoSessionIndex is named with this value untrimmed. */
+	user_id: OwnerId
+}
 
 export const repoContextSchema = z.object({
 	sourceId: z.string().nullable().optional(),

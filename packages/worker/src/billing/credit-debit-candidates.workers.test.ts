@@ -13,6 +13,7 @@ import {
 import { applyCreditPayment, readCreditWallet } from './credit-wallet.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-09-27T12:00:00.000Z')
 const month = utcMonthKey(now)
 const oneBillableDayMicroUsd =
@@ -202,14 +203,20 @@ test('a team org wallet with no matching user is settled once, including budget 
 	expect(await balance(deletedOrgId)).toBe(deletedStarting)
 	expect(await debitCount(deletedOrgId)).toBe(0)
 
-	const spend = await userMeterRpc({ env, userId: orgId }).getBudgetSpend({
+	const spend = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(orgId),
+	}).getBudgetSpend({
 		month,
 	})
 	expect(spend.users[orgId]).toBe(oneBillableDayMicroUsd)
 	expect(spend.automationMicroUsd).toBe(0)
 	await rewindDebitCursor()
 	await runCreditDebits({ env, now })
-	const replay = await userMeterRpc({ env, userId: orgId }).getBudgetSpend({
+	const replay = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(orgId),
+	}).getBudgetSpend({
 		month,
 	})
 	expect(replay.users[orgId]).toBe(oneBillableDayMicroUsd)
@@ -252,7 +259,7 @@ test('a personal org that shares stable_user_id is settled once', async () => {
 
 	const spend = await userMeterRpc({
 		env,
-		userId: user.stableUserId,
+		userId: ownerIdFromStored(user.stableUserId),
 	}).getBudgetSpend({ month })
 	expect(spend.users[user.stableUserId]).toBe(oneBillableDayMicroUsd)
 })

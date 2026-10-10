@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { type PackageAppServeOwner } from './package-app-serve.ts'
@@ -45,7 +46,7 @@ vi.mock('#worker/package-runtime/package-app.ts', () => ({
 const { servePackageAppRequest } = await import('./package-app-serve.ts')
 
 const owner: PackageAppServeOwner = {
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	username: 'demo',
 	email: 'demo@example.com',
 	displayName: 'Demo',

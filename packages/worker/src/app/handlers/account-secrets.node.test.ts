@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
@@ -115,7 +118,7 @@ const mockModule = vi.hoisted(() => ({
 	upsertOauthAppWithoutConnection: vi.fn<
 		typeof IntegrationsService.upsertOauthAppWithoutConnection
 	>(async (input) => ({
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		slug: String(input.config.name).toLowerCase().replace(/\s+/g, '-'),
 		provider:
 			String(input.config.name)
@@ -173,7 +176,7 @@ const mockModule = vi.hoisted(() => ({
 			return {
 				lane: 'user',
 				app: {
-					userId: 'stable-user-1',
+					userId: ownerIdFromStored('stable-user-1'),
 					slug: name,
 					provider: name,
 					label: null,
@@ -191,7 +194,7 @@ const mockModule = vi.hoisted(() => ({
 					updatedAt: new Date(0).toISOString(),
 				},
 				connection: {
-					userId: 'stable-user-1',
+					userId: ownerIdFromStored('stable-user-1'),
 					name,
 					appSlug: name,
 					platformAppSlug: null,
@@ -433,7 +436,7 @@ test('save_oauth_app persists the app (client id + endpoints) before authorize r
 	})
 	expect(mockModule.upsertOauthAppWithoutConnection).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			config: expect.objectContaining({
 				name: 'GitHub',
 				clientId: 'github-client-id-value',
@@ -469,7 +472,7 @@ test('save_oauth_app persists the app (client id + endpoints) before authorize r
 	expect(slackResponse.status).toBe(200)
 	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			slug: 'slack',
 			value: 'slack-client-secret',
 		}),
@@ -520,7 +523,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 	expect(mockModule.saveSecret).not.toHaveBeenCalled()
 	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			name: 'github',
 			accessToken: 'access-token',
 			refreshToken: 'refresh-token',
@@ -529,7 +532,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 	)
 	expect(mockModule.upsertIntegration).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			config: expect.objectContaining({
 				name: 'github',
 				tokenUrl: 'https://github.com/login/oauth/access_token',
@@ -551,7 +554,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 		mockModule.dispatchIntegrationAuthSucceededSubscriptionEvents,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			source: 'oauth_connect',
 			integration: expect.objectContaining({ name: 'github', lane: 'user' }),
 		}),
@@ -600,7 +603,7 @@ test('connect oauth saves tokens via the secret store and persists app+connectio
 	)
 	expect(mockModule.persistIntegrationTokens).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			name: 'spotify',
 			accessToken: 'newly-scoped-access-token',
 			refreshPolicy: 'not_applicable',
@@ -885,7 +888,7 @@ test('approval requests reject invalid targets and ignore stale capability query
 test('account secrets payload includes all packages and package titles and allowed packages', async () => {
 	const makePackage = (id: string, kodyId: string, hasApp: boolean) => ({
 		id,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		name: `@kentcdodds/${kodyId}`,
 		kodyId,
 		description: kodyId,
@@ -1091,7 +1094,7 @@ test('account secrets API loads selected secret values and deletes the selected 
 	})
 	expect(mockModule.deleteSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			name: 'myApiKey',
 			scope: 'user',
 			storageContext: userStorage,

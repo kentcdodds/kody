@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	chunkArray,
 	maxD1BoundParameters,
@@ -16,9 +17,10 @@ import {
 
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
-	return entitySourceRowSchema.parse({
+	const userId = String(row['user_id']) as OwnerId
+	const parsed = entitySourceRowSchema.parse({
 		id: String(row['id']),
-		user_id: String(row['user_id']),
+		user_id: userId,
 		entity_kind: String(row['entity_kind']),
 		entity_id: String(row['entity_id']),
 		repo_id: String(row['repo_id']),
@@ -39,6 +41,7 @@ function mapEntitySourceRow(row: Record<string, unknown>): EntitySourceRow {
 		created_at: String(row['created_at']),
 		updated_at: String(row['updated_at']),
 	})
+	return { ...parsed, user_id: userId }
 }
 
 export async function insertEntitySource(
@@ -110,7 +113,7 @@ export async function getEntitySourceByIdForUser(
 	db: D1Database,
 	input: {
 		id: string
-		userId: string
+		userId: OwnerId
 	},
 ): Promise<EntitySourceRow | null> {
 	const result = await db
@@ -125,7 +128,7 @@ export async function getEntitySourceByIdForUser(
 export async function getEntitySourceByEntity(
 	db: D1Database,
 	input: {
-		userId: string
+		userId: OwnerId
 		entityKind: EntityKind
 		entityId: string
 	},
@@ -156,7 +159,7 @@ export async function getEntitySourceByRepoId(
 
 export async function listEntitySourcesByUser(
 	db: D1Database,
-	userId: string,
+	userId: OwnerId,
 ): Promise<Array<EntitySourceRow>> {
 	const { results } = await db
 		.prepare(
@@ -173,7 +176,7 @@ export async function updateEntitySource(
 	db: D1Database,
 	input: {
 		id: string
-		userId: string
+		userId: OwnerId
 		repoId?: string
 		publishedCommit?: string | null
 		indexedCommit?: string | null
@@ -251,7 +254,7 @@ export async function markEntitySourcePendingExternalReconcile(
 	db: D1Database,
 	input: {
 		id: string
-		userId: string
+		userId: OwnerId
 		tokenExpiresAt: string
 	},
 ): Promise<boolean> {
@@ -339,7 +342,7 @@ export async function deleteEntitySource(
 	env: { APP_DB: D1Database } & Partial<RepoSessionIndexEnv>,
 	input: {
 		id: string
-		userId: string
+		userId: OwnerId
 	},
 ): Promise<boolean> {
 	if (repoSessionIndexNamespace(env as RepoSessionIndexEnv)) {

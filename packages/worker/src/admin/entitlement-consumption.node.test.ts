@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
@@ -25,7 +26,7 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 	const [publicConsumption, legacyConsumption] = await Promise.all([
 		readAdminEntitlementConsumption({
 			env,
-			usageUserId: 'grant',
+			usageUserId: ownerIdFromStored('grant'),
 			plan: 'standard',
 			ladder: 'public',
 			creditWallet: 'none',
@@ -33,7 +34,7 @@ test('readAdminEntitlementConsumption scores legacy Standard against legacyPlanL
 		}),
 		readAdminEntitlementConsumption({
 			env,
-			usageUserId: 'grant',
+			usageUserId: ownerIdFromStored('grant'),
 			plan: 'standard',
 			ladder: 'legacy',
 			creditWallet: 'none',
@@ -61,7 +62,7 @@ test('readAdminEntitlementConsumption scores inbound receives against an optiona
 	const now = new Date('2026-07-08T12:00:00.000Z')
 	const consumption = await readAdminEntitlementConsumption({
 		env,
-		usageUserId: 'gifted',
+		usageUserId: ownerIdFromStored('gifted'),
 		plan: 'pro',
 		ladder: 'public',
 		creditWallet: 'none',

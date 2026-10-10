@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
 import { buildSecretHostApprovalUrl } from '#mcp/secrets/host-approval.ts'
@@ -107,7 +108,7 @@ function assertDestinationHostAllowed(input: {
 async function loadDeclaredWebhookIfPresent(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	savedPackage: SavedPackageRecord
 	webhookName: string
 }): Promise<PackageWebhookManifestEntry | null> {
@@ -133,7 +134,7 @@ async function loadDeclaredWebhookIfPresent(input: {
 
 async function authorizeApplyRequest(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	baseUrl: string
 	packageId: string
@@ -730,7 +731,7 @@ function validateHttpDestinationTemplate(
 
 async function resolveWebhookVerificationSecretForDestination(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	baseUrl: string
 	savedPackage: SavedPackageRecord
 	endpoint: WebhookEndpointRecord
@@ -758,7 +759,7 @@ async function resolveWebhookVerificationSecretForDestination(input: {
 
 async function dispatchHttpApply(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	baseUrl: string
 	packageId: string
@@ -887,7 +888,7 @@ async function dispatchHttpApply(input: {
 
 export async function dispatchWebhookUrlApply(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	baseUrl: string
 	packageId: string

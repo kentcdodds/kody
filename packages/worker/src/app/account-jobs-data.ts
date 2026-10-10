@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -178,7 +179,7 @@ function toListItem(
 
 async function loadRecentRunsForJob(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 }): Promise<Array<AccountJobRecentRun>> {
 	const page = await listRunRecords({
@@ -199,7 +200,7 @@ async function loadRecentRunsForJob(input: {
 
 async function toDetail(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	job: JobView
 	packagesById: ReadonlyMap<string, { name: string; kodyId: string }>
 	serverTiming?: Array<ServerTimingEntry>

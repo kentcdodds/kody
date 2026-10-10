@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -17,7 +18,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 const messageRecord: EmailMessageRecord = {
 	id: 'msg-1',
 	direction: 'inbound' as const,
-	userId: 'stable-user-1',
+	userId: ownerIdFromStored('stable-user-1'),
 	inboxId: 'inbox-1',
 	threadId: null,
 	senderIdentityId: null,
@@ -117,7 +118,7 @@ const mockModule = await vi.hoisted(async () => {
 			async () => [
 				{
 					id: 'inbox-1',
-					userId: 'stable-user-1',
+					userId: ownerIdFromStored('stable-user-1'),
 					packageId: null,
 					name: 'default',
 					description: '',
@@ -133,7 +134,7 @@ const mockModule = await vi.hoisted(async () => {
 			{
 				id: 'addr-1',
 				inboxId: 'inbox-1',
-				userId: 'stable-user-1',
+				userId: ownerIdFromStored('stable-user-1'),
 				address: 'test-user@inbox.example.com',
 				localPart: 'test-user',
 				domain: 'inbox.example.com',
@@ -173,7 +174,7 @@ const mockModule = await vi.hoisted(async () => {
 			{
 				id: 'evt-1',
 				messageId: 'msg-1',
-				userId: 'stable-user-1',
+				userId: ownerIdFromStored('stable-user-1'),
 				inboxId: 'inbox-1',
 				eventType: 'received' as const,
 				provider: 'cloudflare',
@@ -364,7 +365,7 @@ function createEmailClient(env: Env) {
 test('email API lists messages with pagination, UserMeter usage, and owner-scoped selected detail', async () => {
 	using _frozenTime = useFrozenUtcTime('2026-07-31T15:00:00.000Z')
 	const day = utcDayKey()
-	const userId = 'stable-user-1'
+	const userId = ownerIdFromStored('stable-user-1')
 	const meter = createInMemoryUserMeterEnv()
 	await meter.seed({ userId, resource: 'email_sends_per_day', day, count: 13 })
 	await meter.seed({
@@ -511,7 +512,7 @@ test('email API lists classification filters and classifies inbound messages', a
 	) => ({
 		env,
 		db: env.APP_DB,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		messageId: 'msg-1',
 		classification,
 		classificationReason,
@@ -544,7 +545,7 @@ test('email API deletes an owned message and refreshes usage without a selection
 	const deleteCall = (messageId: string) => ({
 		env,
 		db: env.APP_DB,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		messageId,
 	})
 

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -98,7 +99,7 @@ async function runDeferred(files: Map<string, string>, env = {} as Env) {
 		sourceRoot: '/',
 		env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		phaseTimings,
 		deferBundleCheckToRebuild: true,
 	})

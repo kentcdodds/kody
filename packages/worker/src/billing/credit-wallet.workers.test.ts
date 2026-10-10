@@ -34,6 +34,7 @@ import { grantSignupWelcomeCredits } from './signup-welcome-credits.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-09-27T12:00:00.000Z')
 const month = utcMonthKey(now)
 
@@ -165,7 +166,7 @@ function consume(user: SeededUser, resource: DailyResource) {
 	return consumeDailyEntitlement({
 		db: env.APP_DB,
 		env,
-		userId: user.stableUserId,
+		userId: ownerIdFromStored(user.stableUserId),
 		email: user.email,
 		resource,
 		now,
@@ -242,7 +243,7 @@ test('credits carry rates past the include up to 50×; stock stays Max; at $0 ra
 	await settleCreditDebitMonth({
 		db: env.APP_DB,
 		env,
-		userId: user.stableUserId,
+		userId: ownerIdFromStored(user.stableUserId),
 		entitlement: funded,
 		month,
 		now,
@@ -324,7 +325,7 @@ test('include → credits → free-tier limits: empty Pro keeps Max stock and Fr
 		expect(
 			await readDailyEntitlementResourceUsage({
 				env,
-				userId: past.stableUserId,
+				userId: ownerIdFromStored(past.stableUserId),
 				resource,
 				now,
 			}),
@@ -336,7 +337,7 @@ test('include → credits → free-tier limits: empty Pro keeps Max stock and Fr
 			assertWithinComputeInclude({
 				db: env.APP_DB,
 				env,
-				userId: past.stableUserId,
+				userId: ownerIdFromStored(past.stableUserId),
 				now,
 			}),
 		),
@@ -344,7 +345,7 @@ test('include → credits → free-tier limits: empty Pro keeps Max stock and Fr
 	await assertWithinComputeInclude({
 		db: env.APP_DB,
 		env,
-		userId: within.stableUserId,
+		userId: ownerIdFromStored(within.stableUserId),
 		now,
 	})
 
@@ -396,7 +397,7 @@ test('include → credits → free-tier limits: credits pay past the include; at
 	await assertWithinComputeInclude({
 		db: env.APP_DB,
 		env,
-		userId: resumed.stableUserId,
+		userId: ownerIdFromStored(resumed.stableUserId),
 		now,
 	})
 	await debit()

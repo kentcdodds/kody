@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deriveOnboardingChecklist,
 	readOnboardingChecklistDismissed,
@@ -36,9 +37,9 @@ import { getOrgById } from '#worker/orgs/repo.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type DeriveWaitingUser = {
 	userId: number
-	stableUserId: string
+	stableUserId: OwnerId
 	/** Person id for probes that are not org-owned, such as agent OAuth grants. */
-	actorStableUserId?: string
+	actorStableUserId?: OwnerId
 	email: string
 	username: string
 	emailVerified: boolean
@@ -69,7 +70,7 @@ export async function deriveWaitingItems(input: {
  */
 export async function deriveWaitingItemsForStableUser(input: {
 	env: WaitingEnv
-	stableUserId: string
+	stableUserId: OwnerId
 	email: string
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
@@ -260,7 +261,7 @@ function combineFirstPackage(
  * run in the sessionful `MCP` Durable Object on kody-platform, where
  * `resolveOAuthHelpers` builds the same helpers through the library.
  */
-async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: string) {
+async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: OwnerId) {
 	try {
 		const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(env)
 		if (!helpers) return false
@@ -273,7 +274,7 @@ async function userHasMcpOAuthGrants(env: WaitingEnv, stableUserId: string) {
 
 async function collectMcpServerSignals(
 	env: Env,
-	userId: string,
+	userId: OwnerId,
 	waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<Array<WaitingMcpServerSignal>> {
 	const settings = await listMcpServerSettings({ env, userId }).catch(
@@ -355,7 +356,7 @@ type ActivationStampRow = {
 }
 
 /** `null` (missing row or read failure) means every stamp is unknown. */
-async function probeActivationStamps(db: D1Database, userId: string) {
+async function probeActivationStamps(db: D1Database, userId: OwnerId) {
 	try {
 		return await db
 			.prepare(
@@ -378,7 +379,7 @@ function activationStamp(
 	return row ? Boolean(row[column]) : null
 }
 
-async function probeHasMemory(db: D1Database, userId: string) {
+async function probeHasMemory(db: D1Database, userId: OwnerId) {
 	try {
 		const rows = await listMemoriesByUserId(db, userId, { limit: 1 })
 		return rows.length > 0
@@ -387,7 +388,7 @@ async function probeHasMemory(db: D1Database, userId: string) {
 	}
 }
 
-async function probeHasJob(env: WaitingEnv, userId: string) {
+async function probeHasJob(env: WaitingEnv, userId: OwnerId) {
 	try {
 		const count = await jobsData(env).countJobsForUser({ userId })
 		return count > 0
@@ -417,7 +418,7 @@ async function collectPendingEmailChange(env: Env, userId: number, now: Date) {
 	}
 }
 
-async function collectErrorRate(env: Env, userId: string, now: Date) {
+async function collectErrorRate(env: Env, userId: OwnerId, now: Date) {
 	try {
 		// Count open (untriaged) Activity errors in the same 7-day window as
 		// `/account/activity`. Monthly usage_rollups never drop when the user

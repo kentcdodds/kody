@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { McpServer, createMcpHandler } from '@modelcontextprotocol/server'
 import { CfWorkerJsonSchemaValidator } from '@modelcontextprotocol/server/validators/cf-worker'
 import { beforeEach, expect, test, vi } from 'vitest'
@@ -135,7 +138,7 @@ beforeEach(async () => {
 	})
 	const record = {
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'ship',
 		kodyId: '@owner/ship',
 		sourceId: 'source-1',
@@ -155,7 +158,7 @@ beforeEach(async () => {
 	})
 	kvStore.set(
 		buildPackageSkillsIndexKey({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			publishedCommit: 'commit-1',
 		}),

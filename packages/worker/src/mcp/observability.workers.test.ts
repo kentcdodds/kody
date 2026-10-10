@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -111,7 +114,7 @@ async function seedObservedPackageUser() {
 		db: env.APP_DB,
 		email: 'user@example.com',
 		username: 'user',
-		stableUserId: 'user-1',
+		stableUserId: ownerIdFromStored('user-1'),
 		plan: 'max',
 	})
 	const now = '2026-04-13T00:00:00.000Z'
@@ -210,7 +213,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 	).toMatchObject({
 		baseUrl: 'https://example.com',
 		hasUser: true,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(
 		callerContextFields(
@@ -230,7 +233,7 @@ test('callerContextFields exposes the caller user id and logMcpEvent serializes 
 		durationMs: 5,
 		baseUrl: 'https://example.com',
 		hasUser: true,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(takeMcpEvents()[0]?.userId).toBe('user-1')
 })
@@ -321,7 +324,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	takeMcpEvents()
 	repoMockModule.ensureEntitySource.mockResolvedValue({
 		id: 'package-package-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
@@ -350,7 +353,7 @@ test('packageSave logs parse failures, rejects invalid manifests, and logs succe
 	packageServiceMockModule.refreshSavedPackageProjection.mockResolvedValue({
 		record: {
 			id: 'package-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@user/observed-package',
 			kodyId: 'observed-package',
 			description: 'Observation test package.',

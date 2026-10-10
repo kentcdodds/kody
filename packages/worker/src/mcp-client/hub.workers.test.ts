@@ -2,8 +2,9 @@ import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 test('hub starts the agents lifecycle from native RPC methods', async () => {
-	const userId = `hub-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`hub-${crypto.randomUUID()}`)
 	const hub = env.MCP_CLIENT_HUB.get(
 		env.MCP_CLIENT_HUB.idFromName(mcpClientHubDurableObjectName(userId)),
 	)

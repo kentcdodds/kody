@@ -1,4 +1,8 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
@@ -59,8 +63,8 @@ type SeedRun = {
 const dayMs = 24 * 60 * 60 * 1000
 const iso = (ms: number) => new Date(ms).toISOString()
 
-function uniqueUserId(label: string) {
-	return `run-records-${label}-${crypto.randomUUID()}`
+function uniqueUserId(label: string): OwnerId {
+	return ownerIdFromStored(`run-records-${label}-${crypto.randomUUID()}`)
 }
 
 function baseContext(overrides?: Partial<RunRecordContext>): RunRecordContext {
@@ -84,7 +88,7 @@ function handleFor(
 ): RunRecordHandle {
 	return {
 		id,
-		userId,
+		userId: ownerIdFromStored(userId),
 		startedAt: iso(startedAtMs),
 		persistence: 'eager',
 		context: baseContext(context),
@@ -105,10 +109,10 @@ function finishOk(
 }
 
 const getRun = (userId: string, runId: string) =>
-	getRunRecord({ env, userId, runId })
+	getRunRecord({ env, userId: ownerIdFromStored(userId), runId })
 
 const listRuns = (userId: string, filter?: RunRecordFilter, limit?: number) =>
-	listRunRecords({ env, userId, filter, limit })
+	listRunRecords({ env, userId: ownerIdFromStored(userId), filter, limit })
 
 async function drainWaitUntil(pending: Array<Promise<unknown>>) {
 	await Promise.all(pending)
@@ -1303,7 +1307,7 @@ test(
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.dev',
 			user: {
-				userId: personIdFromStored(userId),
+				userId: personIdFromStored(String(userId)),
 				email: 'sandbox-fail-logs@example.com',
 				displayName: 'Sandbox Fail Logs',
 			},

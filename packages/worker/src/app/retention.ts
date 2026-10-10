@@ -4,6 +4,7 @@
  * Published-bundle retention must treat soft-deleted entity_sources as still
  * present so restore-window artifacts are not pruned before hard purge.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { accountRetentionDispositions } from '#app/account-retention-dispositions.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { agentPackagePopularityMaxAgeDays } from '#worker/usage/agent-package-conversation-uses.ts'
@@ -258,7 +259,7 @@ async function deletePublishedBundleArtifactRowIfStillStale(input: {
 	id: string
 	kvKey: string
 	cutoff: string
-	userId: string
+	userId: OwnerId
 	sourceId: string
 }) {
 	if (
@@ -383,7 +384,7 @@ export async function prunePublishedBundleArtifactsForRetention(input: {
 				id: string
 				kv_key: string
 				source_id: string
-				user_id: string
+				user_id: OwnerId
 				published_commit: string
 			}>(),
 	)

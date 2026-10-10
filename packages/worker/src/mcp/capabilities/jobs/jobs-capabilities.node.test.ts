@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { packageOwnedJobDeleteErrorMessage } from '#worker/jobs/job-retention.ts'
@@ -261,7 +264,7 @@ test('jobUpdate and jobDelete require authentication and mutate existing jobs fo
 	).resolves.toEqual({ job_id: 'job-123', deleted: true })
 	expect(mockModule.deleteJob).toHaveBeenCalledWith({
 		env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		jobId: 'job-123',
 	})
 	await expect(
@@ -405,7 +408,7 @@ test('jobRunNow executes jobs immediately and preserves failed one-off jobs for 
 	)
 	expect(mockModule.runJobNowViaManager).toHaveBeenCalledWith({
 		env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		jobId: 'job-123',
 		callerContext: appContext,
 	})
@@ -524,7 +527,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		expect(mockModule.listRunRecords).not.toHaveBeenCalled()
 		expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 		})
 		expect(listResult.jobs).toHaveLength(1)
 		expect(listResult.jobs[0]).toMatchObject({
@@ -547,13 +550,13 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		const getResult = await jobGetCapability.handler({ id: 'job-123' }, ctx)
 		expect(mockModule.getJobInspection).toHaveBeenCalledWith({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			jobId: 'job-123',
 			includeCode: false,
 		})
 		expect(mockModule.listRunRecords).toHaveBeenCalledWith({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			filter: { jobId: 'job-123', surface: 'job' },
 			limit: 10,
 		})
@@ -603,7 +606,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		)
 		expect(mockModule.getJobInspection).toHaveBeenLastCalledWith({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			jobId: 'job-123',
 			includeCode: true,
 		})
@@ -612,7 +615,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		mockModule.listWorkflowRunsForUser.mockResolvedValue([
 			{
 				id: 'dynwf-123',
-				userId: 'user-123',
+				userId: ownerIdFromStored('user-123'),
 				sourceType: 'inline',
 				packageId: null,
 				kodyId: null,
@@ -635,7 +638,7 @@ test('job inspection capabilities expose due-now state, history, alarm status, o
 		)
 		expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
 			env,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			limit: 5,
 		})
 		expect(workflowListResult.workflows).toEqual([

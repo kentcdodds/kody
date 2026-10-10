@@ -1,4 +1,5 @@
 import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import {
 	isPastIncludeStopResource,
@@ -49,6 +50,7 @@ import {
 	andLiveDeletedAtSql,
 	liveDeletedAtSql,
 } from '#worker/soft-delete/live-sql.ts'
+
 export type EntitlementUsageEnv = UserMeterEnv &
 	RepoSessionIndexEnv &
 	Pick<Env, 'RUN_LOG' | 'MAILBOX' | 'JOBS'>
@@ -515,7 +517,7 @@ function assertDailyEntitlementResource(
  */
 async function ensureUserMeterCounterInitializedAtZero(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	resource: DailyEntitlementResource
 	day: string
 	updatedAt: string
@@ -536,7 +538,7 @@ async function ensureUserMeterCounterInitializedAtZero(input: {
  */
 export async function readDailyEntitlementResourceUsage(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	resource: EntitlementResource
 	now?: Date
 }): Promise<number> {
@@ -578,7 +580,7 @@ export async function readDailyEntitlementResourceUsage(input: {
  */
 export async function readWeeklyEntitlementResourceUsage(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	resource: EntitlementResource
 	now?: Date
 }): Promise<number> {
@@ -613,7 +615,7 @@ export type UserMeterEntitlementUsageCounts = {
 export async function readUserMeterEntitlementUsageSnapshot(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
-	userId: string
+	userId: OwnerId
 	now: Date
 	dailyResources: ReadonlyArray<DailyEntitlementResource>
 	weeklyResources: ReadonlyArray<DailyEntitlementResource>
@@ -828,7 +830,7 @@ async function sumStorageBytes(
  */
 export async function calculateUserD1StorageBytes(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	/**
 	 * Jobs-data access for the jobs-worker database (ADR 0016). Job rows no
 	 * longer live in APP_DB; when provided, their byte estimate is included
@@ -948,7 +950,7 @@ export async function calculateUserD1StorageBytes(input: {
  */
 async function userAccountRowExists(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 }): Promise<boolean> {
 	const row = await input.db
 		.prepare(
@@ -978,7 +980,7 @@ async function userAccountRowExists(input: {
  */
 export async function reconcileUserD1StorageBytes(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	now?: Date
 	/** Required because UserMeter is the storage-usage authority. */
 	env: UserMeterEnv
@@ -1043,7 +1045,7 @@ export async function reconcileUserD1StorageBytes(input: {
 export async function listUsersForD1StorageReconciliation(input: {
 	db: D1Database
 	limit: number
-}): Promise<Array<{ userId: string }>> {
+}): Promise<Array<{ userId: OwnerId }>> {
 	const cursorRow = await input.db
 		.prepare(
 			`SELECT position FROM d1_storage_reconcile_cursor
@@ -1059,7 +1061,7 @@ export async function listUsersForD1StorageReconciliation(input: {
 			ORDER BY stable_user_id ASC LIMIT ?`,
 		)
 		.bind(lastUserId, input.limit)
-		.all<{ userId: string }>()
+		.all<{ userId: OwnerId }>()
 	const rows = page.results ?? []
 	if (rows.length > 0 || lastUserId === '') return rows
 	// Tail reached: wrap to the start of the keyset for the next full sweep.
@@ -1072,7 +1074,7 @@ export async function listUsersForD1StorageReconciliation(input: {
 			LIMIT ?`,
 		)
 		.bind(input.limit)
-		.all<{ userId: string }>()
+		.all<{ userId: OwnerId }>()
 	return wrapped.results ?? []
 }
 
@@ -1094,7 +1096,7 @@ export async function advanceD1StorageReconciliationCursor(input: {
 
 export async function readEntitlementResourceUsage(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	resource: EntitlementResource
 	now: Date
 }): Promise<number> {
@@ -1186,7 +1188,7 @@ export async function readEntitlementResourceUsage(input: {
 export async function readStorageBytesFromUserMeter(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
-	userId: string
+	userId: OwnerId
 	now: Date
 }): Promise<number> {
 	const meter = userMeterRpc({ env: input.env, userId: input.userId })
@@ -1217,7 +1219,7 @@ export async function readStorageBytesFromUserMeter(input: {
 export async function readCurrentEntitlementResourceUsage(input: {
 	db: D1Database
 	env: EntitlementUsageEnv
-	userId: string
+	userId: OwnerId
 	resource: EntitlementResource
 	now: Date
 }): Promise<number> {
@@ -1300,7 +1302,7 @@ export async function entitlementBillingPath(db: D1Database, userId: string) {
 
 export async function assertWithinStorageBytesEntitlement(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	email: string | null | undefined
 	requested?: number
 	getCurrent?: () => Promise<number>
@@ -1409,7 +1411,7 @@ export async function assertWithinStorageBytesEntitlement(input: {
 
 export type AssertWithinEntitlementInput = {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	/**
 	 * Real account email of the acting user. Plan lookup requires the email +
 	 * stable-id pair; absent or unknown identities fail closed to `free`.
@@ -1479,7 +1481,7 @@ export type ConsumeDailyEntitlementInput = {
 	db: D1Database
 	/** Must expose `USER_METER` (sole daily counter authority). */
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	email: string | null | undefined
 	resource: EntitlementResource
 	now?: Date
@@ -1600,7 +1602,7 @@ export async function consumeDailyEntitlement(
 async function assertWithinPastIncludeCredits(input: {
 	db: D1Database
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	entitlement: UserEntitlement
 	now: Date
 	orgBudget?: OrgBudgetGateContext
@@ -1628,7 +1630,7 @@ async function assertWithinPastIncludeCredits(input: {
 export async function assertWithinComputeInclude(input: {
 	db: D1Database
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	now?: Date
 	orgBudget?: OrgBudgetGateContext
 }) {
@@ -1650,7 +1652,7 @@ export { isBudgetLimitError }
 
 export type RefundDailyEntitlementInput = {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	resource: EntitlementResource
 	now?: Date
 }

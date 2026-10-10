@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deterministicEmbedding,
 	embedTextForVectorize,
@@ -19,7 +20,7 @@ import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
 
 function buildMemoryVectorFilter(input: {
-	userId: string
+	userId: OwnerId
 	statuses: ReadonlyArray<McpMemoryRow['status']>
 	category?: string | null
 }): VectorizeVectorMetadataFilter {
@@ -39,7 +40,7 @@ function buildMemoryVectorFilter(input: {
 export async function queryMemoryVectorIds(input: {
 	env: Env
 	query: string
-	userId: string
+	userId: OwnerId
 	statuses: ReadonlyArray<McpMemoryRow['status']>
 	category?: string | null
 	topK: number
@@ -75,7 +76,7 @@ export async function searchMemories(input: {
 	env: Env
 	query: string
 	limit: number
-	userId: string
+	userId: OwnerId
 	statuses: ReadonlyArray<McpMemoryRow['status']>
 	category?: string | null
 	rows: Array<McpMemoryRow>

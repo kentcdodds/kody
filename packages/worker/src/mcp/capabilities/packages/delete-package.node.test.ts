@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -50,7 +53,7 @@ function createCtx(userId = 'user-1') {
 function createSavedPackage() {
 	return {
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		kodyId: 'notes',
 		name: '@user/notes',
 		description: 'Personal notes',
@@ -97,7 +100,7 @@ test('packageDelete requires the owner-typed package name before deleting', asyn
 	})
 	expect(mockModule.deleteSavedPackageProjection).toHaveBeenCalledWith({
 		env: expect.objectContaining({ APP_DB: {} }),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		actorUserId: 'user-1',
 		packageId: 'pkg-1',
 	})

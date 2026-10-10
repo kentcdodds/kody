@@ -28,6 +28,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 type InboundEnv = Parameters<typeof handleInboundEmail>[1]
 
 const platformBaseUrl = 'https://kody.example.com'
@@ -128,8 +129,11 @@ async function systemInboxNames() {
 }
 
 async function listUserInbound(userId: string) {
-	return (await mailboxRpc({ env, userId }).listMessages({ limit: 10 }))
-		.messages
+	return (
+		await mailboxRpc({ env, userId: ownerIdFromStored(userId) }).listMessages({
+			limit: 10,
+		})
+	).messages
 }
 
 async function readSystemDailyReceiveCount(

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	getArtifactsBinding,
@@ -20,7 +21,7 @@ import {
 import { type EntitySourceRow } from './types.ts'
 
 function logArtifactRepoDeleted(input: {
-	userId: string
+	userId: OwnerId
 	repoName: string
 	result: ArtifactDeleteRepoResult
 }) {
@@ -38,7 +39,7 @@ function logArtifactRepoDeleted(input: {
 
 export async function deleteUserScopedArtifactRepo(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	repoName: string
 	warnings?: Array<string>
 	/**
@@ -116,7 +117,7 @@ function collectUniqueRepoNames(
 
 async function deletePushSubscriptionForSource(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	source: EntitySourceRow
 	warnings?: Array<string>
 }) {
@@ -163,7 +164,7 @@ async function deletePushSubscriptionForSource(input: {
 
 async function deleteReposForEntitySource(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	source: EntitySourceRow
 	warnings?: Array<string>
 }) {
@@ -205,7 +206,7 @@ async function deleteReposForEntitySource(input: {
 
 export async function cleanupArtifactReposForPackage(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	warnings?: Array<string>
 }) {
@@ -246,7 +247,7 @@ export async function cleanupArtifactReposForPackage(input: {
 
 export async function cleanupArtifactReposForSource(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	warnings?: Array<string>
 }): Promise<{
@@ -293,7 +294,7 @@ export async function cleanupArtifactReposForSource(input: {
 
 export async function cleanupAllUserArtifactRepos(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }) {
 	if (!hasArtifactsAccess(input.env)) {
@@ -337,7 +338,7 @@ export async function cleanupAllUserArtifactRepos(input: {
 	return deleted
 }
 
-async function countUserArtifactRepoReferences(env: Env, userId: string) {
+async function countUserArtifactRepoReferences(env: Env, userId: OwnerId) {
 	const [sources, sessions] = await Promise.all([
 		listEntitySourcesByUser(env.APP_DB, userId),
 		listRepoSessionsByUser(env, userId),

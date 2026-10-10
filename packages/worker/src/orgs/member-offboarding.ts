@@ -2,13 +2,14 @@
  * soft-delete-read-filter: opt-out
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { offboardOrgMember } from '#worker/orgs/offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 
 export type MemberSoftRemovedInput = {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	userId: string
 	deletedAt: string
 	/**
@@ -25,7 +26,7 @@ export type MemberSoftRemovedInput = {
 /** Membership already tombstoned, if this person was removed from the org. */
 export async function readTombstonedOrgMembership(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	userId: string
 }): Promise<{ role: string; deletedAt: string } | null> {
 	const row = await input.db

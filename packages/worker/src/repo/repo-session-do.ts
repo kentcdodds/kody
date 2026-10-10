@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { isUserCodeError } from '#worker/user-code-error.ts'
 import * as Sentry from '@sentry/cloudflare'
@@ -217,7 +218,7 @@ export async function readWithRetry<T>(
 
 async function readRepoSessionWithRetry(
 	env: Env,
-	input: { userId: string; sessionId: string },
+	input: { userId: OwnerId; sessionId: string },
 ) {
 	return readWithRetry(() => getRepoSessionById(env, input))
 }
@@ -414,7 +415,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		return this.ctx.storage.sql.databaseSize + r2Bytes
 	}
 
-	private refreshStoredEstimate(sessionId: string, userId: string): void {
+	private refreshStoredEstimate(sessionId: string, userId: OwnerId): void {
 		maybeRefreshStorageBucketEstimate({
 			env: this.env,
 			userId,
@@ -433,7 +434,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async deleteStorageInventory(
 		sessionId: string,
-		userId: string,
+		userId: OwnerId,
 	): Promise<void> {
 		await deleteStorageBucketInventory({
 			db: this.env.APP_DB,
@@ -483,7 +484,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	private async getSessionState(
 		sessionId: string,
-		userId: string,
+		userId: OwnerId,
 		options: {
 			allowedStatuses?: ReadonlyArray<RepoSessionRow['status']>
 		} = {},
@@ -955,7 +956,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async resolvePublishSource(input: {
 		sessionId?: string
 		sourceId?: string
-		userId: string
+		userId: OwnerId
 	}) {
 		if (input.sessionId) {
 			const { source } = await this.getSessionState(
@@ -1433,7 +1434,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async openSession(input: {
 		sessionId: string
 		sourceId: string
-		userId: string
+		userId: OwnerId
 		baseUrl: string
 		conversationId?: string | null
 		sourceRoot?: string | null
@@ -1612,7 +1613,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async bootstrapSource(input: {
 		sessionId: string
 		sourceId: string
-		userId: string
+		userId: OwnerId
 		bootstrapAccess?: ArtifactBootstrapAccess | null
 		existingHeadCommit?: string
 		/**
@@ -1845,7 +1846,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async getSessionInfo(input: { sessionId: string; userId: string }) {
+	async getSessionInfo(input: { sessionId: string; userId: OwnerId }) {
 		const { sessionRow, source } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
@@ -1857,7 +1858,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async discardSession(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 	}): Promise<RepoSessionDiscardResult> {
 		const sessionRow = await getRepoSessionById(this.env, {
 			userId: input.userId,
@@ -1893,7 +1894,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async purgeSession(input: { sessionId: string; userId: string }) {
+	async purgeSession(input: { sessionId: string; userId: OwnerId }) {
 		const sessionRow = await getRepoSessionById(this.env, {
 			userId: input.userId,
 			sessionId: input.sessionId,
@@ -1919,7 +1920,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async cleanupSessionBranch(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		reason: 'expired' | 'abandoned' | 'source_deleted'
 	}) {
 		const sessionRow = await getRepoSessionById(this.env, {
@@ -2040,7 +2041,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async readFile(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		path: string
 	}): Promise<{ path: string; content: string | null }> {
 		const { sessionRow } = await this.getSessionState(
@@ -2058,7 +2059,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async writeFile(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		path: string
 		content: string
 	}): Promise<{ ok: true; path: string }> {
@@ -2087,7 +2088,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async search(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		pattern: string
 		mode?: RepoSearchMode
 		glob?: string | null
@@ -2240,7 +2241,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async applyPatch(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		patch: string
 		dryRun?: boolean
 	}): Promise<RepoSessionApplyEditsResult> {
@@ -2263,19 +2264,19 @@ class RepoSessionBase extends DurableObject<Env> {
 		return result
 	}
 
-	async sessionStatus(input: { sessionId: string; userId: string }) {
+	async sessionStatus(input: { sessionId: string; userId: OwnerId }) {
 		await this.getSessionState(input.sessionId, input.userId)
 		return (await this.ensureGit()).status({ dir: repoSessionWorkspacePrefix })
 	}
 
-	async sessionDiff(input: { sessionId: string; userId: string }) {
+	async sessionDiff(input: { sessionId: string; userId: OwnerId }) {
 		await this.getSessionState(input.sessionId, input.userId)
 		return (await this.ensureGit()).diff({ dir: repoSessionWorkspacePrefix })
 	}
 
 	async sessionLog(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		depth?: number
 	}) {
 		await this.getSessionState(input.sessionId, input.userId)
@@ -2287,7 +2288,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async sessionCommit(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		message: string
 	}) {
 		const { sessionRow } = await this.getSessionState(
@@ -2325,7 +2326,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async restoreFiles(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		paths: Array<string>
 		commit?: string
 	}) {
@@ -2389,7 +2390,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async tree(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		path?: string | null
 		maxDepth?: number
 	}): Promise<RepoSessionTreeResult> {
@@ -2415,7 +2416,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async applyEdits(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		edits: Array<RepoSessionEdit>
 		dryRun?: boolean
 		rollbackOnError?: boolean
@@ -2438,7 +2439,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async runChecks(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		expectedPackageScope?: string
 		/**
 		 * Forwarded to `runRepoChecks`. Codemod / community lanes may pass
@@ -2503,7 +2504,7 @@ class RepoSessionBase extends DurableObject<Env> {
 		}
 	}
 
-	async getCheckStatus(input: { sessionId: string; userId: string }) {
+	async getCheckStatus(input: { sessionId: string; userId: OwnerId }) {
 		const { sessionRow } = await this.getSessionState(
 			input.sessionId,
 			input.userId,
@@ -2521,7 +2522,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	 */
 	async acceptCurrentTreeForPublish(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 	}): Promise<RepoSessionCheckStatus> {
 		const { sessionRow } = await this.getSessionState(
 			input.sessionId,
@@ -2614,7 +2615,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async listPublishedPackageArtifactTargets(input: {
 		sessionId?: string
 		sourceId?: string
-		userId: string
+		userId: OwnerId
 	}): Promise<Array<PublishedPackageArtifactBuildTarget>> {
 		const source = await this.resolvePublishSource(input)
 		return await this.listPackageArtifactTargetsForSource(source)
@@ -2629,7 +2630,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async stagePublishedPackageArtifactRebuild(input: {
 		sessionId?: string
 		sourceId?: string
-		userId: string
+		userId: OwnerId
 	}): Promise<{
 		stagingKey: string
 	}> {
@@ -2814,7 +2815,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async rebuildPublishedPackageArtifact(input: {
 		sessionId?: string
 		sourceId?: string
-		userId: string
+		userId: OwnerId
 		publishedCommit: string
 		target: PublishedPackageArtifactBuildTarget
 		baseUrl?: string
@@ -2857,7 +2858,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	private async persistPublishedPackageArtifactTargetFromFiles(input: {
 		source: EntitySourceRow
 		savedPackage: SavedPackageRecord
-		userId: string
+		userId: OwnerId
 		publishedCommit: string
 		target: PublishedPackageArtifactBuildTarget
 		baseUrl?: string
@@ -2922,7 +2923,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async rebaseSession(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 	}): Promise<RepoSessionRebaseResult> {
 		const { sessionRow, source, sessionAccess } = await this.getSessionState(
 			input.sessionId,
@@ -3092,7 +3093,7 @@ class RepoSessionBase extends DurableObject<Env> {
 
 	async publishSession(input: {
 		sessionId: string
-		userId: string
+		userId: OwnerId
 		force?: boolean
 		destructiveOverwriteConfirmed?: boolean
 		privateVisibilityChangeConfirmed?: boolean
@@ -3316,7 +3317,7 @@ class RepoSessionBase extends DurableObject<Env> {
 	async publishFromExternalRef(input: {
 		sessionId: string
 		sourceId: string
-		userId: string
+		userId: OwnerId
 		newCommit: string
 		expectedHead?: string | null
 		allowForce?: boolean

@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import {
 	resolveProvider,
@@ -333,7 +334,9 @@ export function createWorkflowTools(input: {
 	const packageContext = input.packageContext
 	return {
 		create: async (body) => {
-			const userId = input.callerContext.user?.userId
+			const userId = input.callerContext.user
+				? personalOrgId(input.callerContext.user.userId)
+				: undefined
 			const request = input.callerContext.request
 			if (!userId || !request) {
 				throw new Error('workflows.create requires an authenticated user.')

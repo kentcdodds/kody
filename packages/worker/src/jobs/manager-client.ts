@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type JobManagerDebugState,
 	type JobManagerDebugStatus,
@@ -23,7 +24,7 @@ export { type JobManagerDebugState, type JobManagerDebugStatus }
  */
 export async function purgeJobManagerForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }) {
 	const jobs = jobsService(input.env)
 	if (!jobs) {
@@ -39,7 +40,10 @@ export async function purgeJobManagerForUser(input: {
 	return jobs.purgeUser({ userId: input.userId })
 }
 
-export async function syncJobManagerAlarm(input: { env: Env; userId: string }) {
+export async function syncJobManagerAlarm(input: {
+	env: Env
+	userId: OwnerId
+}) {
 	const jobs = jobsService(input.env)
 	if (!jobs) {
 		logJobSchedulerEvent({
@@ -93,7 +97,7 @@ const missingBindingDebugState: JobManagerDebugState = {
 
 export async function getJobManagerDebugState(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }) {
 	const jobs = jobsService(input.env)
 	if (!jobs) {
@@ -106,7 +110,7 @@ export async function getJobManagerDebugState(input: {
 
 export async function exportJobManagerForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }) {
 	const jobs = jobsService(input.env)
 	if (!jobs) {
@@ -119,7 +123,7 @@ export async function exportJobManagerForUser(input: {
 
 export async function runJobNowViaManager(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 	callerContext?: McpCallerContext | null
 	repoCheckPolicyOverride?: JobRepoCheckPolicy | null

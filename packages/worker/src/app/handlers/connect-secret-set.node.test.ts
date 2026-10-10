@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import type * as AccountSecretsData from '#app/account-secrets-data.ts'
@@ -52,7 +53,7 @@ test('connect secret-set page requires a signed-in user and embeds secrets data'
 	expect(unauthenticated.status).toBe(302)
 	expect(unauthenticated.headers.get('location')).toContain('/login')
 
-	const user = { mcpUser: { userId: 'user-1' } }
+	const user = { mcpUser: { userId: ownerIdFromStored('user-1') } }
 	const accountSecrets = {
 		ok: true,
 		packageOptions: [],

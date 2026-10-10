@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
@@ -238,7 +239,7 @@ async function runWebhookAction(input: {
 
 async function revealForUi(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email: string
 	username: string
 	packageKodyId: string

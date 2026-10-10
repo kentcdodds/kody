@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -34,7 +35,7 @@ test('MCP server logo route is owner-scoped and private', async () => {
 	expect(anonymous.status).toBe(404)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	mockModule.getMcpServerSettingById.mockResolvedValueOnce(null)
 	const missing = await handler.handler({
@@ -44,7 +45,7 @@ test('MCP server logo route is owner-scoped and private', async () => {
 	expect(missing.status).toBe(404)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValueOnce({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	mockModule.getMcpServerSettingById.mockResolvedValueOnce({
 		id: 's1',
@@ -69,7 +70,7 @@ test('MCP server logo route is owner-scoped and private', async () => {
 	expect(ok.headers.get('Content-Type')).toBe('image/webp')
 	expect(mockModule.getMcpServerSettingById).toHaveBeenLastCalledWith({
 		env: {},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		id: 's1',
 	})
 })

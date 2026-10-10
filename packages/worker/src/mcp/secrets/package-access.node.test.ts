@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -89,7 +92,7 @@ function accessInput(
 	return {
 		env: { APP_DB: {} as D1Database },
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		storageContext: { sessionId: null, packageId: 'pkg-1' },
 		secretName: 'userToken',
 		resolved: userSecretResolved,
@@ -277,7 +280,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 				APP_DB: {} as D1Database,
 				SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 			},
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			baseUrl: 'https://example.com',
 			secrets: [
 				{ name: 'xRefreshToken', scope: 'user' },
@@ -340,7 +343,7 @@ test('resolvePackageMountedSecret uses the stamped package id even when the run 
 		})
 		expect(mockModule.resolveSecret).toHaveBeenLastCalledWith(
 			expect.objectContaining({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				name: 'discordBotTokenKentPersonalAutomation',
 				scope: 'user',
 				storageContext: {
@@ -396,7 +399,7 @@ test('package approval helpers parse structured messages and skip trusted packag
 	const approvalsInput = {
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		mounts: discordMount,
 		storageContext: {

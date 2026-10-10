@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
@@ -84,7 +85,7 @@ export const storageQueryCapability = defineDomainCapability(
 			if (writable && !isReadOnlyStorageSqlQuery(args.query)) {
 				await assertStorageRunnerWriteWithinEntitlement({
 					env: ctx.env,
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 					email: user.email,
 					storageId,
 					requested: estimateEntitlementStorageSqlWriteBytes({

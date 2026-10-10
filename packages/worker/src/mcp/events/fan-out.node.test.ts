@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { createHmac } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { http, HttpResponse } from 'msw'
@@ -50,7 +51,7 @@ vi.mock('#worker/package-registry/source.ts', () => ({
 const baseUrl = 'https://kody.example'
 
 const topic = '@kentcdodds/discord.message.created'
-const stableUserId = 'stable-user-1'
+const stableUserId = ownerIdFromStored('stable-user-1')
 const now = new Date('2026-10-07T12:00:00.000Z')
 const emittedAt = '2026-10-07T11:59:59.000Z'
 const secret = `whsec_${Buffer.alloc(32, 3).toString('base64')}`

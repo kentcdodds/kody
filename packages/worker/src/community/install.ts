@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import {
 	createSnapshotFilesWorkspace,
@@ -76,7 +77,7 @@ export type InstallCommunityListingResult =
 export async function installCommunityListing(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	expectedPackageScope: string
 	listingId: string

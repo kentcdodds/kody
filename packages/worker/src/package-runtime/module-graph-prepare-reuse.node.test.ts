@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as ModuleGraphWorkspace from './module-graph-workspace.ts'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
@@ -80,7 +81,7 @@ test('module and importable-module builders share one prepare per export graph',
 	const sharedInput = {
 		env: { APP_DB: {}, REPO_SESSION: {} } as Env,
 		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceFiles,
 		entryPoint: 'src/index.ts',
 		rootPackageId: 'pkg-1',

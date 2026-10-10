@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -87,7 +90,7 @@ test('communityForkAdopt returns a website adoption link and never adopts', asyn
 	})
 	expect(mocks.inspectCommunityForkAdoption).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'user-alice',
+		userId: ownerIdFromStored('user-alice'),
 		packageId: 'pkg-1',
 		kodyId: undefined,
 	})

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import type * as PlatformFeedbackOutcomeEmail from '#worker/platform-feedback/outcome-email.ts'
 import type * as PlatformFeedbackService from '#worker/platform-feedback/service.ts'
 import { expect, test, vi } from 'vitest'
@@ -158,7 +161,7 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 		await expect(
 			metaPlatformFeedbackSubmitCapability.handler(
 				invalid as never,
-				createCapabilityContext({ userId: 'user-1' }),
+				createCapabilityContext({ userId: ownerIdFromStored('user-1') }),
 			),
 		).rejects.toThrow(
 			'Invalid input for capability "metaPlatformFeedbackSubmit"',
@@ -166,10 +169,13 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	}
 	// Omitted origin, background, and package-app callers are all refused.
 	for (const context of [
-		{ userId: 'user-1' },
-		{ userId: 'user-1', executionOrigin: 'background' as const },
+		{ userId: ownerIdFromStored('user-1') },
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
+			executionOrigin: 'background' as const,
+		},
+		{
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'package-1',
 			executionOrigin: 'interactive' as const,
 		},
@@ -191,7 +197,7 @@ test('meta platform feedback submission gates consent and isolates post-persiste
 	).not.toHaveBeenCalled()
 
 	const interactive = createCapabilityContext({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		executionOrigin: 'interactive',
 	})
 	mockModule.submitPlatformFeedback.mockRejectedValueOnce(
@@ -245,7 +251,10 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 	await expect(
 		adminPlatformFeedbackListCapability.handler(
 			{},
-			createCapabilityContext({ userId: 'member-1', roles: ['user'] }),
+			createCapabilityContext({
+				userId: ownerIdFromStored('member-1'),
+				roles: ['user'],
+			}),
 		),
 	).rejects.toThrow('lacks required role "admin"')
 	expect(mockModule.listPlatformFeedbackForAdmin).not.toHaveBeenCalled()
@@ -279,7 +288,7 @@ test('admin platform feedback capabilities enforce role access, redact lists, pa
 		didChangeStatus: true,
 	})
 	const adminContext = createCapabilityContext({
-		userId: 'admin-1',
+		userId: ownerIdFromStored('admin-1'),
 		roles: ['admin'],
 	})
 
@@ -420,7 +429,7 @@ test('admin platform feedback resolve and dismiss email the submitter without fa
 		status: 'dismissed' as const,
 	}
 	const adminContext = createCapabilityContext({
-		userId: 'admin-1',
+		userId: ownerIdFromStored('admin-1'),
 		roles: ['admin'],
 	})
 
@@ -528,7 +537,9 @@ test('meta platform feedback get and list scope to the signed-in submitter and r
 		],
 	})
 
-	const context = createCapabilityContext({ userId: 'user-1' })
+	const context = createCapabilityContext({
+		userId: ownerIdFromStored('user-1'),
+	})
 	const got = await metaPlatformFeedbackGetCapability.handler(
 		{ feedback_id: 'feedback-1' },
 		context,

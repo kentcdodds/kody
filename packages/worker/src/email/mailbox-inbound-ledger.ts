@@ -7,6 +7,7 @@
  * effects.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import { mapMailboxDeliveryEventRow } from './mailbox-mappers.ts'
 import { isMailboxMessageTombstoned } from './mailbox-message-deletion-tombstones.ts'
@@ -128,39 +129,39 @@ export type MailboxListDueStaleInboundDeliveriesResult = {
 
 export type MailboxInboundDeliveryLedgerRpc = {
 	getInboundDelivery: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 	}) => Promise<MailboxInboundDeliverySnapshot | null>
 	getInboundDeliveryWindow: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		fingerprint: string
 		now?: string
 	}) => Promise<MailboxInboundDeliverySnapshot | null>
 	claimInboundDeliveryWindow: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}) => Promise<MailboxInboundDeliverySnapshot>
 	insertChargedPendingInboundDelivery: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	}) => Promise<MailboxInsertChargedPendingInboundDeliveryResult>
 	claimInboundDeliveryStorage: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedAttachmentCount: number
 		usageStartedAt?: string | null
 		now?: string
 	}) => Promise<MailboxClaimInboundDeliveryStorageResult>
 	releaseInboundDeliveryStorage: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		now?: string
 	}) => Promise<MailboxReleaseInboundDeliveryStorageResult>
 	markInboundDeliveryRejected: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		reason: string
 		expectedStorageLease?: string | null
@@ -168,7 +169,7 @@ export type MailboxInboundDeliveryLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxMarkInboundDeliveryRejectedResult>
 	markInboundDeliveryReceived: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		usageDurationMs: number
@@ -177,17 +178,17 @@ export type MailboxInboundDeliveryLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxMarkInboundDeliveryReceivedResult>
 	pruneExpiredInboundDedupePointers: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) => Promise<MailboxPruneExpiredInboundDedupeResult>
 	deferInboundDeliveryReconciliation: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		now?: string
 	}) => Promise<MailboxDeferInboundDeliveryReconcileResult>
 	claimInboundDeliveryCleanup: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		expectedState: MailboxInboundDeliveryState
 		expectedUpdatedAt: string
@@ -195,20 +196,20 @@ export type MailboxInboundDeliveryLedgerRpc = {
 		now?: string
 	}) => Promise<MailboxClaimInboundDeliveryCleanupResult>
 	releaseInboundDeliveryCleanup: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		cleanupLease: string
 		now?: string
 	}) => Promise<MailboxReleaseInboundDeliveryCleanupResult>
 	markInboundDeliveryOrphanCleaned: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		cleanupLease: string
 		outcome: 'deleted' | 'delete-failed'
 		now?: string
 	}) => Promise<MailboxMarkInboundDeliveryOrphanCleanedResult>
 	listDueStaleInboundDeliveries: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) => Promise<MailboxListDueStaleInboundDeliveriesResult>
@@ -227,7 +228,7 @@ export function resolveMailboxSubscriptionEffectFailure(attemptCount: number) {
 }
 
 function assertInsertInput(
-	ownerId: string,
+	ownerId: OwnerId,
 	delivery: MailboxInboundDeliveryInsertInput,
 ) {
 	const deliveryId = assertMailboxNonEmptyString(
@@ -326,7 +327,7 @@ export function getMailboxInboundDeliveryWindow(
 export function claimMailboxInboundDeliveryWindow(
 	sql: SqlStorage,
 	input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	},
@@ -396,7 +397,7 @@ export function claimMailboxInboundDeliveryWindow(
 export function insertMailboxChargedPendingInboundDelivery(
 	sql: SqlStorage,
 	input: {
-		ownerId: string
+		ownerId: OwnerId
 		delivery: MailboxInboundDeliveryInsertInput
 		now?: string
 	},

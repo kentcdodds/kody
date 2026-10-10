@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createAccountAvatarApiPostHandler } from './account-avatar.ts'
 
@@ -34,7 +35,7 @@ const authedUser = {
 	username: 'alice',
 	displayName: 'Alice',
 	mcpUser: {
-		userId: 'stable-alice',
+		userId: ownerIdFromStored('stable-alice'),
 		email: 'alice@example.com',
 		displayName: 'Alice',
 		username: 'alice',
@@ -102,7 +103,7 @@ test('account avatar API auth, upload, remove, and invalid type', async () => {
 	expect(mocks.saveUserAvatar).toHaveBeenCalledWith(
 		expect.objectContaining({
 			numericUserId: 1,
-			stableUserId: 'stable-alice',
+			stableUserId: ownerIdFromStored('stable-alice'),
 			contentType: 'image/png',
 		}),
 	)
@@ -126,7 +127,7 @@ test('account avatar API auth, upload, remove, and invalid type', async () => {
 	expect(mocks.deleteUserAvatar).toHaveBeenCalledWith(
 		expect.objectContaining({
 			numericUserId: 1,
-			stableUserId: 'stable-alice',
+			stableUserId: ownerIdFromStored('stable-alice'),
 		}),
 	)
 

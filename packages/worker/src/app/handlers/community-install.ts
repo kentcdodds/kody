@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
 import { waitUntil } from 'cloudflare:workers'
@@ -93,7 +94,7 @@ export function createCommunityInstallApiPostHandler(env: Env) {
 				const result = await installCommunityListing({
 					env,
 					baseUrl: getAppBaseUrl({ env, requestUrl: request.url }),
-					userId: user.mcpUser.userId,
+					userId: personalOrgId(user.mcpUser.userId),
 					userEmail: user.email,
 					expectedPackageScope,
 					listingId: listing.id,

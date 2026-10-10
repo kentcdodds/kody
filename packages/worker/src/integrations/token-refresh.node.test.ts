@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -115,7 +116,7 @@ async function readAuthFailure(env: Env, userId: string, name: string) {
 async function seedUserTokens(env: Env, userId: string, name: string) {
 	await persistIntegrationTokens({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		name,
 		accessToken: 'stale-access-token',
 		refreshToken: 'current-refresh-token',
@@ -145,7 +146,7 @@ function isCallerError(reason: string, ...messageParts: Array<string>) {
 
 test('platform-lane refresh uses the decrypted shared client secret and persists tokens', async () => {
 	const { env } = createHarness()
-	const userId = 'user-platform-refresh'
+	const userId = ownerIdFromStored('user-platform-refresh')
 	const tokens = { env, userId, name: 'github' }
 	await seedPlatformConnection(env, userId, 'github')
 
@@ -229,12 +230,15 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 
 	await upsertPlatformIntegration({
 		env,
-		userId: 'user-no-refresh',
+		userId: ownerIdFromStored('user-no-refresh'),
 		platformAppSlug: 'github',
 		scopes: [],
 	})
 	await expect(
-		refreshIntegrationTokens({ ...tokens, userId: 'user-no-refresh' }),
+		refreshIntegrationTokens({
+			...tokens,
+			userId: ownerIdFromStored('user-no-refresh'),
+		}),
 	).rejects.toSatisfy(
 		isCallerError(
 			'missing_refresh_token',
@@ -245,7 +249,7 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 	)
 	expect(failedEvents).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-no-refresh',
+			userId: ownerIdFromStored('user-no-refresh'),
 			reason: 'missing_refresh_token',
 			integration: expect.objectContaining({
 				name: 'github',
@@ -263,7 +267,7 @@ test('platform-lane refresh uses the decrypted shared client secret and persists
 
 test('provider HTTP status classifies refresh failures as caller errors or Sentry-visible Errors', async () => {
 	const { env } = createHarness()
-	const userId = 'user-google-provider-status'
+	const userId = ownerIdFromStored('user-google-provider-status')
 	await seedPlatformConnection(env, userId, 'google')
 	const fetchMock = vi
 		.fn()
@@ -346,7 +350,7 @@ test('provider HTTP status classifies refresh failures as caller errors or Sentr
 
 test('user-lane refresh resolves the ciphertext client secret and enforces required hosts', async () => {
 	const { env } = createHarness()
-	const userId = 'user-lane-refresh'
+	const userId = ownerIdFromStored('user-lane-refresh')
 	const googleConfig = {
 		name: 'google',
 		tokenUrl: 'https://oauth2.googleapis.com/token',
@@ -423,7 +427,7 @@ test('user-lane refresh resolves the ciphertext client secret and enforces requi
 
 test('successful Google refresh persists userinfo email as account_label when missing', async () => {
 	const { env } = createHarness()
-	const userId = 'user-google-label'
+	const userId = ownerIdFromStored('user-google-label')
 	await seedPlatformConnection(env, userId, 'google', {
 		app: {
 			requiredHosts: ['oauth2.googleapis.com', 'openidconnect.googleapis.com'],
@@ -467,7 +471,7 @@ test('successful Google refresh persists userinfo email as account_label when mi
 
 test('in-flight refreshes of the same connection share one provider POST and one succeeded emit', async () => {
 	const { env } = createHarness()
-	const userId = 'user-coalesce-refresh'
+	const userId = ownerIdFromStored('user-coalesce-refresh')
 	await seedPlatformConnection(env, userId, 'github')
 	let releaseTokenEndpoint: () => void = () => {}
 	const tokenEndpointOpened = new Promise<void>((resolve) => {
@@ -505,7 +509,7 @@ test('in-flight refreshes of the same connection share one provider POST and one
 
 test('refresh policy follows each connect: non-expiring grants skip refresh, expiring grants without a refresh token still wait', async () => {
 	const { env } = createHarness()
-	const userId = 'user-refresh-policy'
+	const userId = ownerIdFromStored('user-refresh-policy')
 	const name = 'github-kent'
 	await upsertIntegration({
 		env,

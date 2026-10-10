@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
@@ -56,7 +57,10 @@ export function createAccountResendVerificationHandler(env: Env) {
 			}
 
 			try {
-				await assertAccountWritableDb(env.APP_DB, user.mcpUser.userId)
+				await assertAccountWritableDb(
+					env.APP_DB,
+					personalOrgId(user.mcpUser.userId),
+				)
 			} catch (error) {
 				if (error instanceof AccountDeletionInProgressError) {
 					return jsonResponse(

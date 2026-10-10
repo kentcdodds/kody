@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { listingAheadSearchNotice } from '#universal/community-listing-ahead.ts'
 import {
@@ -308,7 +309,7 @@ async function queryPackageVectorScores(input: {
 	env: Env
 	query: string
 	rows: Array<PackageSearchRow>
-	userId: string
+	userId: OwnerId
 	limit: number
 	queryVector?: ReadonlyArray<number>
 }): Promise<Map<string, number> | null> {

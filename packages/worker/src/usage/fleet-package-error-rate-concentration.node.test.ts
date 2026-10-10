@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const queryAnalyticsEngineSql = vi.fn()
@@ -111,8 +112,8 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 
 	const folded = foldFleetPackageErrorRateConcentrationRows(
 		[
-			{ user_id: 'jett-user', error_count: 90 },
-			{ user_id: 'quiet-user', error_count: 2 },
+			{ user_id: ownerIdFromStored('jett-user'), error_count: 90 },
+			{ user_id: ownerIdFromStored('quiet-user'), error_count: 2 },
 		],
 		92,
 	)
@@ -120,7 +121,7 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 	expect(folded.ownerCount).toBe(2)
 	expect(folded.topOwnerShare).toBeCloseTo(90 / 92)
 	expect(folded.ranked[0]).toMatchObject({
-		ownerId: 'jett-user',
+		ownerId: ownerIdFromStored('jett-user'),
 		errors: 90,
 		entityIds: [],
 	})
@@ -161,11 +162,11 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 						[jettPackageIds.earth, 30],
 						[jettPackageIds.analysis, 20],
 					].map(([entity_id, error_count]) => ({
-						user_id: 'jett-user',
+						user_id: ownerIdFromStored('jett-user'),
 						entity_id,
 						error_count,
 					}))
-				: [{ user_id: 'jett-user', error_count: 90 }],
+				: [{ user_id: ownerIdFromStored('jett-user'), error_count: 90 }],
 	)
 	const concentration = await resolveConcentration(createConcentrationDb(), 90)
 	expect(concentration).toEqual({
@@ -207,17 +208,23 @@ test('fleet package error-rate concentration classifies, names, and stays identi
 		async (input: { query: string }) => {
 			if (input.query.includes("blob1 IN ('user-a')")) {
 				return Array.from({ length: 5 }, (_, index) => ({
-					user_id: 'user-a',
+					user_id: ownerIdFromStored('user-a'),
 					entity_id: `pkg-a-${index}`,
 					error_count: 10 - index,
 				}))
 			}
 			if (input.query.includes("blob1 IN ('user-b')")) {
-				return [{ user_id: 'user-b', entity_id: 'pkg-b', error_count: 1 }]
+				return [
+					{
+						user_id: ownerIdFromStored('user-b'),
+						entity_id: 'pkg-b',
+						error_count: 1,
+					},
+				]
 			}
 			return [
-				{ user_id: 'user-a', error_count: 50 },
-				{ user_id: 'user-b', error_count: 40 },
+				{ user_id: ownerIdFromStored('user-a'), error_count: 50 },
+				{ user_id: ownerIdFromStored('user-b'), error_count: 40 },
 			]
 		},
 	)

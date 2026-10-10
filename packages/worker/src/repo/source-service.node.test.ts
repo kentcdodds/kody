@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as CloudflareWorkers from 'cloudflare:workers'
 import type * as PushSubscriptions from './artifacts-push-subscriptions.ts'
@@ -36,7 +37,7 @@ const { ensureEntitySource } = await import('./source-service.ts')
 function createEntitySourceRow() {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
@@ -155,7 +156,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 		ensureEntitySource({
 			db: empty.db,
 			env: { APP_DB: empty.db } as Env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			entityKind: 'job',
 			entityId: 'job-1',
 			sourceRoot: '/',
@@ -172,7 +173,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 	const newSource = await ensureEntitySource({
 		db: newJob.db,
 		env: artifactsEnv(newJob.db),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		entityKind: 'job',
 		entityId: 'job-1',
 		sourceRoot: '/',
@@ -194,7 +195,7 @@ test('ensureEntitySource workflow: fail-closed, bootstrap, recreate missing repo
 	const recreate = makeDb(existingRow)
 	const recreateFetch = mockArtifactsFetch('package-package-1', true)
 	const packageInput = {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		entityKind: 'package',
 		entityId: 'package-1',
 		sourceRoot: '/',

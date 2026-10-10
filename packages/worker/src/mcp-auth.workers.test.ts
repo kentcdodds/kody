@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -531,7 +532,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
 		storageContext: null,
-		user: { userId: 'user' },
+		user: { userId: ownerIdFromStored('user') },
 	})
 	// Legacy agent props persist in Durable Object storage; derived ids do not.
 	expect(receivedProps).not.toHaveProperty('actor')
@@ -548,7 +549,7 @@ test('mcp request enforces token audience and forwards caller props', async () =
 			connectorRows: [
 				{
 					id: 'connector-1',
-					user_id: 'user',
+					user_id: ownerIdFromStored('user'),
 					instance_id: 'home',
 					enabled: 1,
 					attached: 1,
@@ -830,7 +831,7 @@ test('mcp request rejects access tokens issued before a password reset', async (
 })
 
 test('mcp request heals a leftover UserMeter tombstone for a live account', async () => {
-	const userId = 'leftover-meter-user'
+	const userId = ownerIdFromStored('leftover-meter-user')
 	const email = 'leftover@example.com'
 	const mcpEnv = tokenEnv(mcpToken({ userId, email }), {
 		...verified,
@@ -994,7 +995,10 @@ test('successful mcp bearer validation records inbound connection last-used', as
 		expectedStableUserId: userId,
 	})
 	const listLastUsed = () =>
-		userMeterRpc({ env: mcpEnv, userId }).listInboundConnectionLastUsed()
+		userMeterRpc({
+			env: mcpEnv,
+			userId: ownerIdFromStored(userId),
+		}).listInboundConnectionLastUsed()
 
 	expect((await callMcp(bearerRequest(), mcpEnv)).status).toBe(200)
 	const rows = await listLastUsed()

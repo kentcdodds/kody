@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildCommunityIconFallbackSvg,
 	renderCommunityIconFallbackPng,
@@ -15,7 +16,7 @@ export async function serveIdentityIcon(input: {
 	env: Env
 	repoId: string
 	iconCommit: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	leafName: string
 	includePackageAppIcon?: boolean
 	cacheControl?: string

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
@@ -15,7 +16,7 @@ export async function upsertSavedPackageVector(
 	env: Env,
 	input: {
 		packageId: string
-		userId: string
+		userId: OwnerId
 		embedText: string
 	},
 ) {

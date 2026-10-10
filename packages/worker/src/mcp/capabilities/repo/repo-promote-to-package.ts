@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -67,12 +68,12 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				args,
 			})
 			if (source.entity_kind !== 'repo') {
 				const existingPackage = await getSavedPackageById(ctx.env.APP_DB, {
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 					packageId: source.entity_id,
 				})
 				if (existingPackage) {
@@ -114,7 +115,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				throw new McpCallerError(getErrorMessage(error), { cause: error })
 			}
 			const kodyIdCollision = await resolveSavedPackageRef(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				ref: manifest.kody.id,
 				match: 'slug',
 			})
@@ -125,7 +126,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}
 			await assertWithinEntitlement({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				email: user.email,
 				resource: 'saved_packages',
 			})
@@ -134,17 +135,17 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			const opened = await session.openSession({
 				sessionId,
 				sourceId: source.id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				baseUrl: ctx.callerContext.baseUrl,
 			})
 			const checkRun = await session.runChecks({
 				sessionId,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				expectedPackageScope: packageScope,
 			})
 			if (!checkRun.ok) {
 				await session
-					.discardSession({ sessionId, userId: user.userId })
+					.discardSession({ sessionId, userId: personalOrgId(user.userId) })
 					.catch(() => undefined)
 				const failed = checkRun.results
 					.filter((entry) => !entry.ok)
@@ -160,7 +161,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				ctx.env.APP_DB,
 				{
 					id: packageId,
-					user_id: user.userId,
+					user_id: personalOrgId(user.userId),
 					name: manifest.name,
 					kody_id: manifest.kody.id,
 					description: manifest.kody.description,
@@ -184,7 +185,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			// though this is the first package publish.
 			await updateEntitySource(ctx.env.APP_DB, {
 				id: source.id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				entityKind: 'package',
 				entityId: packageId,
 				manifestPath: 'package.json',
@@ -193,18 +194,18 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			})
 			const publishResult = await session.publishSession({
 				sessionId,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				expectedPackageScope: packageScope,
 			})
 			if (publishResult.status !== 'ok') {
 				await ctx.env.APP_DB.prepare(
 					`DELETE FROM saved_packages WHERE user_id = ? AND id = ?${andLiveDeletedAtSql()}`,
 				)
-					.bind(user.userId, packageId)
+					.bind(personalOrgId(user.userId), packageId)
 					.run()
 				await updateEntitySource(ctx.env.APP_DB, {
 					id: source.id,
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 					entityKind: 'repo',
 					entityId: userRepo.id,
 					// Restore the exact pre-promotion columns so a failed promote
@@ -214,7 +215,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					publishedCommit: source.published_commit,
 				})
 				await session
-					.discardSession({ sessionId, userId: user.userId })
+					.discardSession({ sessionId, userId: personalOrgId(user.userId) })
 					.catch(() => undefined)
 				throw new McpCallerError(
 					publishResult.message || 'Failed to publish promoted package source.',
@@ -222,7 +223,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			}
 			await stampFirstSavedPackage(
 				ctx.env.APP_DB,
-				{ stableUserId: user.userId, at: now },
+				{ stableUserId: personalOrgId(user.userId), at: now },
 				ctx.env,
 			)
 			// Best-effort projections after the publish committed: a vector or
@@ -230,13 +231,13 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 			// Reindex lanes converge both later.
 			await upsertSavedPackageVector(ctx.env, {
 				packageId,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				embedText: buildSavedPackageEmbedText(manifest),
 			}).catch(() => undefined)
 			await refreshSavedPackageProjection({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				packageId,
 				sourceId: source.id,
 			}).catch(() => undefined)
@@ -250,8 +251,8 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 					await publishCommunityListing({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
-						userId: user.userId,
-						actorUserId: user.userId,
+						userId: personalOrgId(user.userId),
+						actorUserId: personalOrgId(user.userId),
 						packageId,
 					})
 				} catch (error) {
@@ -259,7 +260,7 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 				}
 			}
 			await deleteUserRepo(ctx.env.APP_DB, {
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				repoId: userRepo.id,
 			})
 			return {

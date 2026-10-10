@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -151,7 +152,7 @@ export function filterPackageOwnedStorageIdsFromInventory(input: {
 
 async function listPackageOwnedStorageIdsFromInventory(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 }): Promise<Array<string>> {
 	const storageIds = await listUserStorageBucketIds({
@@ -166,7 +167,7 @@ async function listPackageOwnedStorageIdsFromInventory(input: {
 
 export async function clearPackageOwnedStorageBucket(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	storageId: string
 }): Promise<boolean> {
@@ -213,7 +214,7 @@ export async function clearPackageOwnedStorageBucket(input: {
 
 function toSavedPackageInsertRow(input: {
 	packageId: string
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	manifest: AuthoredPackageJson
 	hasSkills?: boolean
@@ -238,7 +239,7 @@ function toSavedPackageInsertRow(input: {
 export async function refreshSavedPackageProjection(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	packageId: string
 	sourceId: string
@@ -603,7 +604,7 @@ export async function refreshSavedPackageProjection(input: {
 
 export async function deleteSavedPackageProjection(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	actorUserId?: string
 }) {

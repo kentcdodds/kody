@@ -101,14 +101,14 @@ test('org-bound discovery lists the bound org packages, not the acting person pa
 	const result = await loadSearchRowsAndRegistry({
 		env,
 		callerContext,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 
 	expect(mocks.listPackages).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'org-1',
+		userId: ownerIdFromStored('org-1'),
 	})
 	expect(mocks.buildRows).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'org-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-1') }),
 	)
 	expect(result.packageRows.map((row) => row.record.id)).toEqual(['org-pkg'])
 })
@@ -126,10 +126,10 @@ test('a personal connection still lists the person own packages', async () => {
 	const result = await loadSearchRowsAndRegistry({
 		env,
 		callerContext,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(mocks.listPackages).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(result.packageRows.map((row) => row.record.id)).toEqual(['person-pkg'])
 })

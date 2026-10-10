@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	alignToUtcHour,
@@ -120,7 +121,7 @@ test('fleet package error-rate detection stays anonymous and prefers day rises',
 	expect(
 		parseFleetPackageErrorRateSnapshot({
 			...snapshotHeader,
-			user_id: 'should-not-matter',
+			user_id: ownerIdFromStored('should-not-matter'),
 		}),
 	).toBeNull()
 	expect(

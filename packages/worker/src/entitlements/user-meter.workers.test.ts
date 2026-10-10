@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { runInDurableObject } from 'cloudflare:test'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
@@ -31,12 +32,12 @@ async function seedFreeUser(emailPrefix: string) {
 		plan: 'free',
 		stableUserId: userId,
 	})
-	const meter = userMeterRpc({ env, userId })
+	const meter = userMeterRpc({ env, userId: ownerIdFromStored(userId) })
 	const consume = (resource: DailyResource, now: Date) =>
 		consumeDailyEntitlement({
 			db: env.APP_DB,
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email,
 			resource,
 			now,
@@ -48,7 +49,9 @@ async function seedFreeUser(emailPrefix: string) {
 
 function meterStub(userId: string) {
 	return env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
+		env.USER_METER.idFromName(
+			userMeterDurableObjectName(ownerIdFromStored(userId)),
+		),
 	)
 }
 
@@ -275,7 +278,7 @@ test('cold, warm, and next-UTC-day daily consumes start at zero without preparin
 	await expect(
 		readDailyEntitlementResourceUsage({
 			env,
-			userId: warm.userId,
+			userId: ownerIdFromStored(warm.userId),
 			resource,
 			now: warmNow,
 		}),
@@ -480,9 +483,16 @@ test('UserMeter daily entitlement consume/refund/read/export/purge workflow is p
 	const userB = await seedFreeUser('meter-b')
 	const readA = () => userA.readDaily(resource, now)
 	const refundA = () =>
-		refundDailyEntitlement({ env, userId: userA.userId, resource, now })
+		refundDailyEntitlement({
+			env,
+			userId: ownerIdFromStored(userA.userId),
+			resource,
+			now,
+		})
 
-	expect(userMeterDurableObjectName(userA.userId)).toBe(userA.userId)
+	expect(userMeterDurableObjectName(ownerIdFromStored(userA.userId))).toBe(
+		userA.userId,
+	)
 	using prepares = countDailyCounterPrepares()
 
 	await userA.consume(resource, now)
@@ -630,7 +640,7 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 		assertWithinStorageBytesEntitlement({
 			db: env.APP_DB,
 			env,
-			userId: user.userId,
+			userId: ownerIdFromStored(user.userId),
 			email: user.email,
 			requested,
 		})
@@ -678,7 +688,7 @@ test('storage bytes are UserMeter-authoritative: cold zero bootstrap, denial, co
 	})
 
 	// Missing user (synthetic context) gets free-plan semantics.
-	const missing = { userId: 'a'.repeat(64), email: null }
+	const missing = { userId: ownerIdFromStored('a').repeat(64), email: null }
 	await expect(reserve(missing, 1)).resolves.toBeUndefined()
 	const missingDenied = await catchError(reserve(missing, storageLimit + 1))
 	expect(missingDenied).toBeInstanceOf(EntitlementLimitError)
@@ -788,7 +798,11 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	// markDeleting preserves tombstone; repeated calls return the first timestamp.
 	expect(
 		await meterA.markDeleting({ deletingAt: '2026-08-01 10:00:00' }),
-	).toEqual({ deletingAt: '2026-08-01 10:00:00', created: true, leaseCount: 0 })
+	).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		created: true,
+		leaseCount: 0,
+	})
 	expect(
 		await meterA.markDeleting({ deletingAt: '2026-08-01 11:00:00' }),
 	).toEqual({
@@ -813,7 +827,11 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	).toEqual({ cleared: true })
 	expect(
 		await meterA.markDeleting({ deletingAt: '2026-08-01 10:00:00' }),
-	).toEqual({ deletingAt: '2026-08-01 10:00:00', created: true, leaseCount: 0 })
+	).toEqual({
+		deletingAt: '2026-08-01 10:00:00',
+		created: true,
+		leaseCount: 0,
+	})
 
 	// acquireWriteLease is idempotent (same token).
 	for (const [token, holder, acquiredAt] of [
@@ -828,7 +846,11 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 2 })
 	expect(
 		await meterB.markDeleting({ deletingAt: '2026-08-01 09:00:00' }),
-	).toEqual({ deletingAt: '2026-08-01 09:00:00', created: true, leaseCount: 2 })
+	).toEqual({
+		deletingAt: '2026-08-01 09:00:00',
+		created: true,
+		leaseCount: 2,
+	})
 	await expect(
 		acquire(
 			meterB,

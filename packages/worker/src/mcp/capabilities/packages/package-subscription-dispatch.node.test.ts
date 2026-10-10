@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import type * as PackageInvocations from '#worker/package-invocations/service.ts'
@@ -63,7 +64,7 @@ const { packageSubscriptionDispatchCapability } =
 
 const savedPackage = {
 	id: 'pkg-1',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	sourceId: 'source-1',
 	kodyId: 'demo',
 	name: '@user/demo',
@@ -89,7 +90,7 @@ function createCtx(
 	}>,
 ) {
 	mocks.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		ownerScope: 'user',
 		ownerEmail: 'user@example.com',
 		actorUserId: 'user-1',
@@ -100,7 +101,7 @@ function createCtx(
 			baseUrl: 'https://heykody.dev',
 			executionOrigin: overrides?.executionOrigin ?? 'interactive',
 			user: {
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				email: 'user@example.com',
 				displayName: 'User',
 			},
@@ -287,7 +288,7 @@ test('packageSubscriptionDispatch resolves the package in the request org like p
 	mockDeclaredSubscription('repo.pushed')
 	const ctx = createCtx()
 	mocks.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'org-owner',
+		ownerUserId: ownerIdFromStored('org-owner'),
 		ownerScope: 'acme',
 		ownerEmail: 'acme@example.com',
 		actorUserId: 'user-1',
@@ -300,7 +301,7 @@ test('packageSubscriptionDispatch resolves the package in the request org like p
 		request: ctx.callerContext.request,
 	})
 	expect(mocks.resolveSavedPackageRef).toHaveBeenCalledWith(ctx.env.APP_DB, {
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		ref: 'demo',
 		match: 'slug',
 	})

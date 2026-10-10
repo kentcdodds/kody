@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	insufficientScope,
 	type OAuthHelpers,
@@ -479,7 +480,7 @@ export async function handleMcpRequest({
 		readConnectionProfileNameFromGrantProps(grantProps)
 	const orgBinding = await loadOrgBindingFromGrantProps({
 		db: env.APP_DB,
-		personId: mcpUser.userId,
+		personId: personalOrgId(mcpUser.userId),
 		grantProps,
 	})
 	if (!orgBinding) {
@@ -509,7 +510,7 @@ export async function handleMcpRequest({
 		clientName: classification.clientName,
 		clientVersion: classification.clientVersion,
 		packageIdentityParam: classification.packageIdentityParam,
-		userId: mcpUser.userId,
+		userId: personalOrgId(mcpUser.userId),
 		requestHost: (() => {
 			try {
 				return new URL(request.url).hostname
@@ -523,16 +524,16 @@ export async function handleMcpRequest({
 			const before = await env.APP_DB.prepare(
 				`SELECT first_mcp_connected_at FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 			)
-				.bind(mcpUser.userId)
+				.bind(personalOrgId(mcpUser.userId))
 				.first<{ first_mcp_connected_at: string | null }>()
 			await stampFirstMcpConnected(env.APP_DB, {
-				stableUserId: mcpUser.userId,
+				stableUserId: personalOrgId(mcpUser.userId),
 				clientName: classification.clientName || null,
 			})
 			if (!before?.first_mcp_connected_at) {
 				scheduleKitSubscriberSync({
 					env,
-					stableUserId: mcpUser.userId,
+					stableUserId: personalOrgId(mcpUser.userId),
 					email: mcpUser.email,
 				})
 			}
@@ -545,7 +546,7 @@ export async function handleMcpRequest({
 		ctx.waitUntil(
 			recordInboundMcpConnectionLastUsed({
 				env,
-				userId: mcpUser.userId,
+				userId: personalOrgId(mcpUser.userId),
 				clientId: inboundClientId,
 			}).catch((error) => {
 				console.warn('mcp-inbound-connection-last-used-failed', error)
@@ -584,13 +585,13 @@ export async function handleMcpRequest({
 		if (mcpParsedBodyNeedsAccountWriteLease(classification.parsedBody)) {
 			return await withAccountWriteLease({
 				db: env.APP_DB,
-				stableUserId: mcpUser.userId,
+				stableUserId: personalOrgId(mcpUser.userId),
 				holder: `mcp:${request.method} ${url.pathname}`,
 				env,
 				write: serveMcp,
 			})
 		}
-		await assertAccountWritableDb(env.APP_DB, mcpUser.userId)
+		await assertAccountWritableDb(env.APP_DB, personalOrgId(mcpUser.userId))
 		return await serveMcp()
 	} catch (error) {
 		if (error instanceof AccountDeletionInProgressError) {

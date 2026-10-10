@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { Script, createContext } from 'node:vm'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -142,7 +143,7 @@ function packageDetail(input: {
 		listingAhead: input.listingAhead ?? null,
 		record: {
 			id: input.recordId,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name,
 			kodyId,
 			description,

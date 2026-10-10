@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	userMeterRpc,
@@ -17,7 +18,7 @@ export type InboundDelivery = {
 	messageId: string
 	threadId: string
 	rawMimeKey: string
-	userId: string
+	userId: OwnerId
 	inboxId: string
 	recipient: string
 	envelopeFrom: string
@@ -73,7 +74,7 @@ function bytesToHex(bytes: Uint8Array) {
 }
 
 export async function buildInboundDelivery(input: {
-	userId: string
+	userId: OwnerId
 	inboxId: string
 	recipient: string
 	envelopeFrom?: string
@@ -318,7 +319,7 @@ async function readSystemEmailDailyCounter(input: {
 export async function readUserInboundReceiveCount(input: {
 	db: D1Database
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	day: string
 	now?: Date
 }) {

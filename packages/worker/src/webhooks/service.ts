@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -149,7 +150,7 @@ async function authorizeWebhookPackageWrite(input: {
 
 async function resolveOwnedPackage(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<SavedPackageRecord> {
@@ -173,7 +174,7 @@ async function resolveOwnedPackage(input: {
 async function loadDeclaredWebhook(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	savedPackage: SavedPackageRecord
 	webhookName: string
 }): Promise<PackageWebhookManifestEntry> {
@@ -197,7 +198,7 @@ async function loadDeclaredWebhook(input: {
 export async function listWebhooksForUser(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
@@ -282,7 +283,7 @@ export async function listWebhooksForUser(input: {
 export async function mintWebhookUrlForUser(input: {
 	env: Env
 	request: RequestContext
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	username?: string | null
 	packageId?: string
@@ -395,7 +396,7 @@ export async function mintWebhookUrlForUser(input: {
 /** Whether a URL secret already exists for this declared webhook. */
 export async function isWebhookUrlMinted(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 	webhookName: string
@@ -420,7 +421,7 @@ export async function isWebhookUrlMinted(input: {
 export async function rotateWebhookUrlForUser(input: {
 	env: Env
 	request: RequestContext
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	username?: string | null
 	packageId?: string
@@ -461,7 +462,7 @@ export async function rotateWebhookUrlForUser(input: {
 export async function setWebhookEnabledForUser(input: {
 	env: Env
 	request: RequestContext
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 	webhookName: string
@@ -497,7 +498,7 @@ export async function setWebhookEnabledForUser(input: {
 
 async function resolveMintedWebhookUrl(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	username?: string | null
 	handle: string
@@ -568,7 +569,7 @@ async function resolveMintedWebhookUrl(input: {
 export async function applyWebhookUrlForUser(input: {
 	env: Env
 	request: RequestContext
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	username?: string | null
 	handle: string
@@ -606,7 +607,7 @@ type WebhookUrlRevealTarget =
 
 async function resolveRevealHandle(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	target: WebhookUrlRevealTarget
 }) {
 	if ('handle' in input.target) return input.target.handle
@@ -638,7 +639,7 @@ async function resolveRevealHandle(input: {
  */
 export async function revealWebhookUrlForWebsite(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	email?: string | null
 	username?: string | null
 	target: WebhookUrlRevealTarget
@@ -686,7 +687,7 @@ export type SyntheticWebhookDispatchResult = {
  */
 export async function dispatchSyntheticWebhookForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	baseUrl: string
 	packageId?: string
 	kodyId?: string

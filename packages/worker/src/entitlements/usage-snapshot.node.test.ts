@@ -8,6 +8,7 @@ import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { accountUsageEntitlementResources } from '#worker/entitlements/resource-visibility.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function withUsageEnv(env: { APP_DB: D1Database } & Record<string, unknown>) {
 	const meter = createInMemoryUserMeterEnv()
 	const runLog = createInMemoryRunLogUsageEnv()
@@ -107,7 +108,7 @@ function readSnapshot(
 	return readEntitlementUsageSnapshot({
 		db,
 		env: env as Env,
-		usageUserId,
+		usageUserId: ownerIdFromStored(usageUserId),
 		plan: options.plan ?? 'free',
 		ladder: options.ladder ?? 'public',
 		creditWallet: 'none',

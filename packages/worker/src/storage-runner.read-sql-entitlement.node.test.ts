@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
@@ -136,7 +137,7 @@ function clearCalls() {
 function storageTools(writable: boolean) {
 	return createStorageKodyTools({
 		env: createEstimateEnv(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		email: null,
 		storageId: 'package:skills',
 		writable,
@@ -153,7 +154,7 @@ function assertWrite(
 ) {
 	return assertStorageRunnerWriteWithinEntitlement({
 		env: options.env ?? createEstimateEnv(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		email: null,
 		storageId,
 		requested: options.requested ?? 1,
@@ -248,7 +249,7 @@ test('writable storageSql skips read-only fan-out and enforces mutating entitlem
 	expect(mockModule.getEstimatedBytes).toHaveBeenCalledTimes(1)
 	expect(mockModule.recordStorageBucketEstimate).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		storageId: 'package:skills',
 		estimatedBytes: 64,
 	})

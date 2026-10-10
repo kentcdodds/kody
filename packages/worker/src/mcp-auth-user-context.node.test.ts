@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -101,7 +102,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 	}> = [
 		{
 			grantProps: {
-				userId: 'stable-admin-id',
+				userId: ownerIdFromStored('stable-admin-id'),
 				email: 'stale@example.com',
 				displayName: 'stale',
 			},
@@ -116,7 +117,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		},
 		{
 			grantProps: {
-				userId: 'stable-original',
+				userId: ownerIdFromStored('stable-original'),
 				email: 'reused-by-admin@example.com',
 				displayName: 'stale',
 			},
@@ -133,7 +134,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 			displayName: 'original',
 		},
 		{
-			grantProps: { userId: 'legacy-id' },
+			grantProps: { userId: ownerIdFromStored('legacy-id') },
 			row: account(9, 'legacy-id', 'resolved@example.com', 'resolved'),
 			roles: ['user'],
 			permissions: [],
@@ -177,7 +178,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 	const missingRow = await build(
 		{ row: null },
 		{
-			userId: 'orphan-id',
+			userId: ownerIdFromStored('orphan-id'),
 			email: 'missing@example.com',
 			displayName: 'missing',
 		},
@@ -189,7 +190,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 				deleting_at: '2026-07-22 22:00:00',
 			}),
 		},
-		{ userId: 'deleting-id', email: 'deleting@example.com' },
+		{ userId: ownerIdFromStored('deleting-id'), email: 'deleting@example.com' },
 	)
 	expect(deleting.result).toBeNull()
 
@@ -198,7 +199,7 @@ test('buildMcpUserContextFromGrantProps resolves identity from the stable user i
 		build(
 			{ reject: new Error('D1 unavailable') },
 			{
-				userId: 'resilient-id',
+				userId: ownerIdFromStored('resilient-id'),
 				email: 'resilient@example.com',
 				displayName: 'resilient',
 			},

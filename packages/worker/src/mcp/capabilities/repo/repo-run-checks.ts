@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -36,17 +37,17 @@ export const repoRunChecksCapability = defineDomainCapability(
 			await authorizeRepoSessionPackageWrite({
 				env: ctx.env,
 				request: ctx.callerContext.request,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				sessionId: args.session_id,
 			})
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 			})
 			const result = await session.runChecks({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				expectedPackageScope:
 					sessionInfo.entity_type === 'package'
 						? await getMcpUserPackageScope(ctx.env.APP_DB, user)

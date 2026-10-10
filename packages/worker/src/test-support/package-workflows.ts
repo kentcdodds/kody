@@ -13,6 +13,7 @@ import { dynamicCallableWorkflowsBindingName } from '#worker/package-runtime/pac
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 
 export const packageWorkflowsInvocationMocks = (() => ({
@@ -137,7 +138,7 @@ export const packageWorkflowsRunRecordMocks = (() => {
 		beginRunRecord: vi.fn<typeof runRecordsServiceModule.beginRunRecord>(
 			() => ({
 				id: 'run-1',
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				startedAt: '2026-05-03T12:34:56.000Z',
 				persistence: 'eager' as const,
 				context: { surface: 'workflow' as const },

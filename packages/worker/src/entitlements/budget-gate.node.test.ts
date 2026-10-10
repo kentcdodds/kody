@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	deriveRequestContext,
@@ -12,12 +15,12 @@ import {
 test('orgBudgetForJobExecution attributes scheduled runs to automation budget', () => {
 	expect(
 		orgBudgetForJobExecution({
-			orgId: 'org-1',
+			orgId: ownerIdFromStored('org-1'),
 			orgSlug: 'acme',
 			source: { kind: 'schedule', jobId: 'job-1' },
 		}),
 	).toEqual({
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		orgSlug: 'acme',
 		automationSource: 'schedule',
 		actorUserId: null,
@@ -28,7 +31,7 @@ test('orgBudgetForJobExecution uses inherited actor for run-now lineage', () => 
 	const userId = personIdFromStored('user-1')
 	expect(
 		orgBudgetForJobExecution({
-			orgId: 'org-1',
+			orgId: ownerIdFromStored('org-1'),
 			orgSlug: 'acme',
 			source: {
 				kind: 'inherited',
@@ -41,7 +44,7 @@ test('orgBudgetForJobExecution uses inherited actor for run-now lineage', () => 
 			},
 		}),
 	).toEqual({
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		orgSlug: 'acme',
 		actorUserId: userId,
 		actorUsername: 'sam',

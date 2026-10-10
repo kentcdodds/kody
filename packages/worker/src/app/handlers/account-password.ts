@@ -21,7 +21,10 @@ import { createDb, usersTable } from '#worker/db.ts'
 import { isUsablePasswordHash } from '#worker/identity/usable-password.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
 import { type routes } from '#universal/routes.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { verifyPassword } from '@kody-internal/shared/password-hash.ts'
 import { getPasswordPolicyError } from '@kody-internal/shared/password-policy.ts'
 
@@ -222,7 +225,9 @@ export function createAccountPasswordHandler(env: Env) {
 				d1: env.APP_DB,
 				helpers,
 				userId: user.userId,
-				stableUserId: personIdFromStored(userRecord.stable_user_id),
+				stableUserId: personalOrgId(
+					personIdFromStored(userRecord.stable_user_id),
+				),
 				password: newPassword,
 			})
 

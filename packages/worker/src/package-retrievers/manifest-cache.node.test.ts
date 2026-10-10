@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	deleteAllPackageRetrieverCacheEntriesForUser,
@@ -41,7 +42,7 @@ function createKv(pageSize = Number.POSITIVE_INFINITY) {
 function createSource(overrides?: Partial<EntitySourceRow>): EntitySourceRow {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -62,7 +63,7 @@ function createSavedPackage(
 ): SavedPackageRecord {
 	return {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@kentcdodds/personal-inbox',
 		kodyId: 'personal-inbox',
 		description: 'Personal inbox package',
@@ -116,7 +117,7 @@ function createHarness() {
 			const sourceId = id === 'package-1' ? 'source-1' : `source-${id}`
 			return refreshPackageRetrieverManifestCache({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				source: createSource({
 					id: sourceId,
 					published_commit: input.commit ?? 'commit-1',
@@ -134,7 +135,7 @@ function createHarness() {
 		list(scope: 'search' | 'context', limit?: number) {
 			return listPackageRetrieversForScope({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				scope,
 				limit,
 			})
@@ -145,7 +146,7 @@ function createHarness() {
 		remove(packageId: string) {
 			return removePackageRetrieverManifestCacheEntries({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				packageId,
 			})
 		},
@@ -229,7 +230,7 @@ test('listPackageRetrieversForScope filters stale, malformed, and prefix-collidi
 	cache.store.set(
 		'package-retriever-index-entry:v1:user-1:search:malformed:index',
 		JSON.stringify({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'malformed',
 			retrieverKey: 'index',
 			scopes: 'search',
@@ -238,7 +239,7 @@ test('listPackageRetrieversForScope filters stale, malformed, and prefix-collidi
 	cache.store.set(
 		'package-retriever-index-entry:v1:user-1:search:bad-manifest:notes',
 		JSON.stringify({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'bad-manifest',
 			kodyId: 'bad-manifest',
 			packageName: '@kentcdodds/bad-manifest',
@@ -254,7 +255,7 @@ test('listPackageRetrieversForScope filters stale, malformed, and prefix-collidi
 		'package-retriever-manifest:v1:user-1:bad-manifest:commit-bad',
 		JSON.stringify({
 			version: 1,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'bad-manifest',
 			revision: 'commit-bad',
 			retrievers: {},
@@ -281,7 +282,7 @@ test('account cleanup paginates user prefixes and removes historical package key
 	await expect(
 		deleteAllPackageRetrieverCacheEntriesForUser({
 			env: { BUNDLE_ARTIFACTS_KV: kv } as Env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).resolves.toBe(2)
 	expect([...store.keys()]).toEqual([

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import {
@@ -115,7 +116,7 @@ vi.mock('#worker/community/profile-repo.ts', async (importOriginal) => {
 
 const sampleListing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-mcp-id',
+	ownerUserId: ownerIdFromStored('owner-mcp-id'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'github-triage',
@@ -1482,7 +1483,7 @@ test('canonical package URL SSR renders the redesigned article', async () => {
 		kind: 'package',
 		username: 'kentcdodds',
 		kodyId: 'github-triage',
-		userId: 'owner-mcp-id',
+		userId: ownerIdFromStored('owner-mcp-id'),
 		savedPackage: null,
 		listingId: 'listing-detail-1',
 	})
@@ -1578,7 +1579,7 @@ test('listed package rename does not 301 anonymous visitors to the unpublished i
 	const listingTarget = {
 		username: 'kentcdodds',
 		kodyId: 'github-triage',
-		userId: 'owner-mcp-id',
+		userId: ownerIdFromStored('owner-mcp-id'),
 		listingId: 'listing-detail-1',
 		listingKodyId: 'github-triage',
 	}

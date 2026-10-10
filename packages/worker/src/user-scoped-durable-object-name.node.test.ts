@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	durableObjectNameFromParts,
 	jobManagerDurableObjectName,
@@ -21,6 +22,10 @@ const identityModuleRelativePath =
 test('user-scoped Durable Object name helpers preserve frozen idFromName contracts', () => {
 	// JobManager, RunLog, UserMeter, Mailbox, and RepoSessionIndex historically
 	// do not trim; the untrimmed userId is the frozen idFromName wire format.
+	// `ownerIdFromStored` would trim, so these existing ids are branded without
+	// changing bytes. The builders must keep returning those exact names.
+	const existingId = 'user-aaa' as OwnerId
+	const paddedExistingId = '  user-aaa  ' as OwnerId
 	const untrimmed = [
 		jobManagerDurableObjectName,
 		runLogDurableObjectName,
@@ -29,14 +34,14 @@ test('user-scoped Durable Object name helpers preserve frozen idFromName contrac
 		repoSessionIndexDurableObjectName,
 	]
 	expect(
-		untrimmed.map((name) => [name('user-aaa'), name('  user-aaa  ')]),
+		untrimmed.map((name) => [name(existingId), name(paddedExistingId)]),
 	).toEqual(untrimmed.map(() => ['user-aaa', '  user-aaa  ']))
 
 	expect([
-		mcpClientHubDurableObjectName('  user-aaa  '),
-		storageRunnerDurableObjectName('user-aaa', 'job:1'),
+		mcpClientHubDurableObjectName(paddedExistingId),
+		storageRunnerDurableObjectName(existingId, 'job:1'),
 		packageRealtimeSessionDurableObjectName({
-			userId: 'user-aaa',
+			userId: existingId,
 			packageId: 'pkg-1',
 		}),
 		repoSessionDurableObjectName('session-1'),

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createProfileApiHandler, createProfileHandler } from './profile.tsx'
 import { type CommunityProfileRecord } from '#worker/community/types.ts'
@@ -62,7 +63,7 @@ vi.mock('#app/frame-registry.ts', async (importOriginal) => {
 })
 
 const publicProfile = {
-	userId: 'stable-alice',
+	userId: ownerIdFromStored('stable-alice'),
 	username: 'alice',
 	displayName: 'Alice',
 	bio: 'Hello',
@@ -227,7 +228,7 @@ test('profile API respects visibility, ignores owner-only filters for guests, an
 	// Own private profile is visible to self, including private packages.
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
-		mcpUser: { userId: 'stable-alice' },
+		mcpUser: { userId: ownerIdFromStored('stable-alice') },
 	})
 	mockModule.listPublicProfilePackages.mockResolvedValue([])
 	mockModule.getProfileActivity.mockResolvedValue([])
@@ -321,7 +322,7 @@ test('an organization handle is a home for everyone its switcher lists and a 404
 	mockModule.getCommunityProfileByUsername.mockResolvedValue(null)
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
-		mcpUser: { userId: 'stable-alice' },
+		mcpUser: { userId: ownerIdFromStored('stable-alice') },
 	})
 	mockModule.listOrganizationsForPerson.mockResolvedValue([
 		{ slug: 'alice', displayName: null, role: 'owner', personal: true },

@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { getPackageAppBaseUrl } from '#worker/app-base-url.ts'
 import { stampFirstSearch } from '#worker/identity/activation-stamps.ts'
@@ -106,7 +110,7 @@ function resolveListGuidance(input: {
 
 async function stampFirstSearchIfAuthenticated(
 	agent: McpRegistrationAgent,
-	userId: string | null,
+	userId: OwnerId | null,
 ) {
 	if (!userId) return
 	const db = agent.getEnv().APP_DB
@@ -135,7 +139,7 @@ export async function runSearchTool(input: {
 		userId: callerUserId,
 		storageId,
 	} = callerContextFields(callerContext)
-	const userId = callerUserId ?? null
+	const userId = callerUserId ? personalOrgId(callerUserId) : null
 	const mcpCallerFields = {
 		baseUrl,
 		hasUser,

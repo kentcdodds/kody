@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { recordEmailReportingEvent } from './reporting-events.ts'
@@ -11,17 +12,17 @@ test('email reporting writes compact indexed send, receive, and delivery data po
 	}
 
 	recordEmailReportingEvent(env, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'email_send',
 		timestamp: '2026-07-30T10:00:00.000Z',
 	})
 	recordEmailReportingEvent(env, {
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		eventType: 'email_receive',
 		timestamp: '2026-07-30T11:00:00.000Z',
 	})
 	recordEmailReportingEvent(env, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		eventType: 'email_delivery',
 		outcome: 'bounced',
 		timestamp: '2026-07-31T00:00:00.000Z',
@@ -51,7 +52,7 @@ test('email reporting never throws when the binding is absent or fails', () => {
 		recordEmailReportingEvent(
 			{},
 			{
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				eventType: 'email_send',
 			},
 		),
@@ -66,7 +67,7 @@ test('email reporting never throws when the binding is absent or fails', () => {
 				} as unknown as AnalyticsEngineDataset,
 			},
 			{
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				eventType: 'email_delivery',
 				outcome: 'failed',
 			},

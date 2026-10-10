@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as packageInvocationsModule from '#worker/package-invocations/service.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -47,7 +48,7 @@ function createEnv() {
 
 const savedPackage = {
 	id: 'package-1',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	sourceId: 'source-1',
 	kodyId: 'home-watch',
 	name: '@user/home-watch',
@@ -81,7 +82,7 @@ function seedSubscribedPackage(topic: string) {
 function emit(event: McpServerConnectionEvent = disconnectedEvent) {
 	return emitMcpServerConnectionEventsIfNeeded({
 		env: createEnv(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		orgSlug: 'ada',
 		events: [event],
 	})
@@ -92,7 +93,7 @@ test('mcp.server.disconnected fans out a lean same-user payload', async () => {
 
 	const results = await dispatchMcpServerConnectionSubscriptionEvents({
 		env: createEnv(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		orgSlug: 'ada',
 		event: disconnectedEvent,
 	})

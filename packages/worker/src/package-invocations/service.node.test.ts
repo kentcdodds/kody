@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import {
@@ -105,7 +106,7 @@ const packageContext = {
 }
 const source1 = {
 	id: 'source-1',
-	user_id: 'user-123',
+	user_id: ownerIdFromStored('user-123'),
 	entity_kind: 'package',
 	entity_id: 'pkg-1',
 	repo_id: 'repo-1',
@@ -119,7 +120,7 @@ const source1 = {
 
 function invalidateSeededInvokeContract() {
 	invalidateInvokeContractFreshness({
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		packageIdOrKodyIds: ['pkg-1', 'discord-gateway'],
 		sourceId: 'source-1',
 	})
@@ -657,7 +658,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 
 	const savedPackage = {
 		id: 'pkg-1',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		name: '@kentcdodds/discord-gateway',
 		kodyId: 'discord-gateway',
 		description: 'Discord gateway helpers',
@@ -695,7 +696,7 @@ test('invokePackageSubscription uses the normal capability registry with package
 		expect.objectContaining({
 			baseUrl: 'https://kody.dev',
 			user: expect.objectContaining({
-				userId: 'user-123',
+				userId: ownerIdFromStored('user-123'),
 				email: 'owner@example.com',
 				displayName: 'Owner',
 			}),

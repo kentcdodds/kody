@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import {
 	AccountDeletionInProgressError,
@@ -102,7 +103,7 @@ async function retirePreviousWebhookUrlIfConfirmed(input: {
 	env: Env
 	endpoint: {
 		id: string
-		userId: string
+		userId: OwnerId
 		urlSecretHash: string
 		previousUrlSecretHash: string | null
 	}
@@ -315,7 +316,7 @@ function methodNotAllowedResponse(allow: string) {
 
 async function resolveWebhookChallengeSecret(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	secretName: string
 }) {

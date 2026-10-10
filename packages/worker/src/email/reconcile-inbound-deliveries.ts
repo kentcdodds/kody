@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { staleInboundDeliveryAgeMs } from './inbound-delivery.ts'
 import { reconcileInboundDeliveryEffectsForUser } from './inbound-effects.ts'
 import {
@@ -143,7 +144,7 @@ export async function sweepStaleInboundDeliveries(input: {
 			effectLeaseExpiredBefore,
 			systemEmailOwnerId,
 		)
-		.first<{ user_id: string; due_at: string }>()
+		.first<{ user_id: OwnerId; due_at: string }>()
 	const dueOwners = [
 		...userRows.map((row) => ({
 			user_id: row.userId,

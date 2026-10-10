@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
@@ -92,7 +93,7 @@ function createJobRecord(overrides: Partial<JobRecord> = {}): JobRecord {
 	return {
 		version: 1,
 		id: 'job-fenced',
-		userId: 'user-fenced',
+		userId: ownerIdFromStored('user-fenced'),
 		name: 'Fenced job',
 		sourceId: 'source-fenced',
 		publishedCommit: null,
@@ -197,7 +198,11 @@ function seedDueClaim(record: JobRecord) {
 }
 
 function runDue(userId: string) {
-	return runDueJobsForUser({ env: { APP_DB: {} } as Env, userId, now })
+	return runDueJobsForUser({
+		env: { APP_DB: {} } as Env,
+		userId: ownerIdFromStored(userId),
+		now,
+	})
 }
 
 const fencedOutcome = {

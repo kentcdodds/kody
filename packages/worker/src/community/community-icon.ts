@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { cachified } from '@epic-web/cachified'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import {
@@ -232,7 +233,7 @@ export async function deleteCommunityIconAssets(input: {
  */
 export async function refreshCommunityIconForPackagePublish(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	publishedCommit: string
 }) {

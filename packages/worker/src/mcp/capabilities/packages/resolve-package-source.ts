@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { normalizePackageNameInput } from '#worker/package-registry/package-name.ts'
@@ -26,12 +27,12 @@ function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 
 export async function resolveOwnedPackageSource(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	ownerScope?: string
 	args: PackageSourceIdentity
 }): Promise<{
 	packageId: string
-	userId: string
+	userId: OwnerId
 	kodyId: string
 	name: string
 	hasApp: boolean

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -25,7 +26,7 @@ test('thin provider index persists independently without a shared message graph 
 	await upsertOutboundProviderIndexRow({
 		db,
 		providerMessageId: 'provider-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		inboxId: 'inbox-1',
 		now: '2026-08-03T00:00:00.000Z',
@@ -33,7 +34,7 @@ test('thin provider index persists independently without a shared message graph 
 	await upsertOutboundProviderIndexRow({
 		db,
 		providerMessageId: 'provider-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		inboxId: 'inbox-2',
 		now: '2026-08-03T00:01:00.000Z',
@@ -47,7 +48,7 @@ test('thin provider index persists independently without a shared message graph 
 	).resolves.toEqual({
 		provider: 'cloudflare-email',
 		providerMessageId: 'provider-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		inboxId: 'inbox-2',
 		createdAt: '2026-08-03T00:00:00.000Z',

@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/cloudflare'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { runD1WithRetry } from '@kody-internal/shared/d1-retry.ts'
 import {
 	advanceStuckSkippedJobNextRunAt,
@@ -165,7 +166,7 @@ export async function runJobScheduleWatchdogTick(input: {
 	const scanTruncated = overduePage.truncated || stuckPage.truncated
 
 	let repairedStuckJobCount = 0
-	const usersNeedingSync = new Set<string>()
+	const usersNeedingSync = new Set<OwnerId>()
 	for (const row of overdueRows) {
 		usersNeedingSync.add(row.user_id)
 	}

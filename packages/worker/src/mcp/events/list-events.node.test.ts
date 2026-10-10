@@ -47,7 +47,7 @@ function createCallerContext(connectionProfileName: string | null) {
 function savedPackage(id: string, kodyId: string): SavedPackageRecord {
 	return {
 		id,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: `@kentcdodds/${kodyId}`,
 		kodyId,
 		description: kodyId,
@@ -177,7 +177,7 @@ test('only mcp: true topics from readable saved packages are listed, sorted by n
 	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledWith({
 		env,
 		baseUrl: 'https://kody.example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-pkg-gateway',
 	})
 })
@@ -200,19 +200,24 @@ test('an org-bound connection lists the org packages, not the acting person pack
 	mocks.listSavedPackagesByUserId.mockImplementation(
 		async (_db: unknown, input: { userId: string }) =>
 			input.userId === 'org-1'
-				? [{ ...savedPackage('pkg-alerts', 'alerts'), userId: 'org-1' }]
+				? [
+						{
+							...savedPackage('pkg-alerts', 'alerts'),
+							userId: ownerIdFromStored('org-1'),
+						},
+					]
 				: [],
 	)
 	const sources = await listMcpEventSources({ env, callerContext })
 	expect(mocks.listSavedPackagesByUserId).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'org-1',
+		userId: ownerIdFromStored('org-1'),
 	})
 	expect([...sources.keys()]).toEqual([
 		'@kentcdodds/alerts.fired',
 		'@kentcdodds/discord.message.created',
 	])
 	expect(mocks.loadPackageManifestBySourceId).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'org-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-1') }),
 	)
 })
 

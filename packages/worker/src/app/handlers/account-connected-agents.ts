@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
@@ -34,7 +38,7 @@ import {
 } from '#worker/connection-profiles/account.ts'
 
 type ConnectedAgentsUser = {
-	mcpUser: { userId: string }
+	mcpUser: { userId: PersonId }
 	emailVerified: boolean
 }
 
@@ -43,7 +47,7 @@ export async function loadAccountConnectedAgentsData(input: {
 	requestUrl: string | URL
 	user: ConnectedAgentsUser
 }): Promise<AccountConnectedAgentsLoaderData> {
-	const stableUserId = input.user.mcpUser.userId
+	const stableUserId = personalOrgId(input.user.mcpUser.userId)
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(input.env)
 	const state = await loadInboundMcpConnectionState(helpers, stableUserId, {
 		env: input.env,
@@ -151,7 +155,7 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 				const mutation = await applyConnectionProfileMutation({
 					env,
 					requestUrl: request.url,
-					userId: user.mcpUser.userId,
+					userId: personalOrgId(user.mcpUser.userId),
 					emailVerified: user.emailVerified,
 					body,
 				})
@@ -189,7 +193,7 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 
 			const revoked = await revokeConnectedMcpAgent({
 				helpers,
-				userId: user.mcpUser.userId,
+				userId: personalOrgId(user.mcpUser.userId),
 				clientId: parsed.value.clientId.trim(),
 				env,
 			})
@@ -199,7 +203,7 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 				await deleteMcpEventSubscriptionsForOauthClient({
 					db: env.APP_DB,
 					oauthClientId: parsed.value.clientId.trim(),
-					userId: user.mcpUser.userId,
+					userId: personalOrgId(user.mcpUser.userId),
 				})
 				return jsonResponse(
 					{ ok: false, error: 'Connected agent not found.' },
@@ -209,7 +213,7 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 			await deleteMcpEventSubscriptionsForOauthClient({
 				db: env.APP_DB,
 				oauthClientId: parsed.value.clientId.trim(),
-				userId: user.mcpUser.userId,
+				userId: personalOrgId(user.mcpUser.userId),
 			})
 
 			void logAuditEvent({

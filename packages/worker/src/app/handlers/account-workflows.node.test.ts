@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -6,7 +9,7 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const listedWorkflow = {
 	id: 'dynwf-1',
-	userId: 'stable-user-1',
+	userId: ownerIdFromStored('stable-user-1'),
 	bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS' as const,
 	sourceType: 'inline' as const,
 	packageId: null,
@@ -144,7 +147,7 @@ test('workflows API lists, cancels, and rejects unauthenticated or invalid reque
 	expect(cancelResponse.status).toBe(200)
 	expect(mockModule.cancelWorkflowRunForUser).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		workflowRunId: 'dynwf-1',
 	})
 	await expect(cancelResponse.json()).resolves.toMatchObject({

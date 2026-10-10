@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 
@@ -56,7 +57,7 @@ function savedPackage(input: {
 }) {
 	return {
 		id: input.id,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: `@user/${input.kodyId}`,
 		kodyId: input.kodyId,
 		description: input.kodyId,
@@ -129,7 +130,7 @@ test('wake miss fills KV then a second wake does not reload every manifest', asy
 	const first = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'email.message.received',
 	})
 	expect(
@@ -144,7 +145,7 @@ test('wake miss fills KV then a second wake does not reload every manifest', asy
 	const second = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'email.message.received',
 	})
 	expect(
@@ -177,7 +178,7 @@ test('KV miss still finds the right subscribers', async () => {
 	const result = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'repo.pushed',
 	})
 	expect(result.subscriptions).toHaveLength(1)
@@ -203,7 +204,7 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	const key = buildPackageSubscriptionTopicMapKey('user-1')
 	expect(store.has(key)).toBe(true)
@@ -221,14 +222,14 @@ test('publish refresh changes who matches without waiting for a TTL', async () =
 	await refreshPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 
 	mocks.loadPackageManifestBySourceId.mockClear()
 	const matched = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'integration.auth.failed',
 	})
 	expect(matched.subscriptions.map((entry) => entry.savedPackage.id)).toEqual([
@@ -273,7 +274,7 @@ test('incomplete scan does not cache a partial topic map', async () => {
 	const first = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'email.message.received',
 	})
 	expect(first.discoveryErrors).toHaveLength(1)
@@ -294,7 +295,7 @@ test('incomplete scan does not cache a partial topic map', async () => {
 	const second = await loadMatchingPackageSubscriptions({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		topic: 'email.message.received',
 	})
 	expect(
@@ -320,17 +321,20 @@ test('generation bump makes a late wake write a miss instead of overwriting publ
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 
 	const stale = {
 		version: 1 as const,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		generation: 0,
 		byTopic: { 'repo.pushed': ['pkg-stale'] },
 		cachedAt: '2026-10-02T00:00:00.000Z',
 	}
-	await bumpPackageSubscriptionTopicGeneration({ env, userId: 'user-1' })
+	await bumpPackageSubscriptionTopicGeneration({
+		env,
+		userId: ownerIdFromStored('user-1'),
+	})
 	await writePackageSubscriptionTopicMap({ env, map: stale })
 
 	// Stale write is rejected; the pre-bump map remains but reads as a miss.
@@ -338,7 +342,10 @@ test('generation bump makes a late wake write a miss instead of overwriting publ
 		store.get(buildPackageSubscriptionTopicMapKey('user-1')),
 	).not.toContain('pkg-stale')
 	await expect(
-		readPackageSubscriptionTopicMap({ env, userId: 'user-1' }),
+		readPackageSubscriptionTopicMap({
+			env,
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).resolves.toBeNull()
 
 	seedPackages([
@@ -351,7 +358,7 @@ test('generation bump makes a late wake write a miss instead of overwriting publ
 	const refreshed = await refreshPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(refreshed?.byTopic['repo.pushed']).toEqual(['pkg-a'])
 })
@@ -373,7 +380,7 @@ test('generation bump alone forces a miss when map delete fails', async () => {
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(store.has(buildPackageSubscriptionTopicMapKey('user-1'))).toBe(true)
 
@@ -385,7 +392,7 @@ test('generation bump alone forces a miss when map delete fails', async () => {
 		refreshPackageSubscriptionTopicMap({
 			env,
 			baseUrl: 'https://example.com',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).resolves.toEqual(
 		expect.objectContaining({
@@ -398,7 +405,7 @@ test('generation bump alone forces a miss when map delete fails', async () => {
 	expect(generationAfterRefresh).toBeGreaterThan(0)
 	expect(consoleWarn).toHaveBeenCalledWith(
 		'package-subscription-topic-map-invalidate-failed',
-		expect.objectContaining({ userId: 'user-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 	)
 })
 
@@ -418,11 +425,11 @@ test('concurrent refreshes mint distinct generations so the earlier scan cannot 
 
 	const genA = await bumpPackageSubscriptionTopicGeneration({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	const genB = await bumpPackageSubscriptionTopicGeneration({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(genA).not.toBe(genB)
 	expect(store.get(buildPackageSubscriptionTopicGenerationKey('user-1'))).toBe(
@@ -434,7 +441,7 @@ test('concurrent refreshes mint distinct generations so the earlier scan cannot 
 		env,
 		map: {
 			version: 1,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			generation: genA,
 			byTopic: { 'repo.pushed': ['pkg-stale'] },
 			cachedAt: '2026-10-02T00:00:00.000Z',
@@ -446,7 +453,7 @@ test('concurrent refreshes mint distinct generations so the earlier scan cannot 
 		env,
 		map: {
 			version: 1,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			generation: genB,
 			byTopic: { 'repo.pushed': ['pkg-a'] },
 			cachedAt: '2026-10-03T00:00:00.000Z',
@@ -454,7 +461,7 @@ test('concurrent refreshes mint distinct generations so the earlier scan cannot 
 	})
 	const cached = await readPackageSubscriptionTopicMap({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(cached?.generation).toBe(genB)
 	expect(cached?.byTopic['repo.pushed']).toEqual(['pkg-a'])
@@ -470,11 +477,14 @@ test('invalidate drops the map so the next wake cannot use a stale projection', 
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	const key = buildPackageSubscriptionTopicMapKey('user-1')
 	expect(store.has(key)).toBe(true)
-	await invalidatePackageSubscriptionTopicMap({ env, userId: 'user-1' })
+	await invalidatePackageSubscriptionTopicMap({
+		env,
+		userId: ownerIdFromStored('user-1'),
+	})
 	expect(store.has(key)).toBe(false)
 })
 
@@ -488,7 +498,7 @@ test('written map and generation have no expiration TTL', async () => {
 	await getOrFillPackageSubscriptionTopicMap({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(kv.put).toHaveBeenCalledWith(
 		buildPackageSubscriptionTopicMapKey('user-1'),

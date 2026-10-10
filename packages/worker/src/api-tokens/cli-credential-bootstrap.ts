@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { bytesToBase64Url } from '@kody-internal/shared/base64.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { timingSafeEqualString } from '@kody-internal/shared/timing-safe.ts'
@@ -140,7 +141,7 @@ function readRequiredInteger(input: {
 
 async function countOutstandingBootstrapCodes(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	now: Date
 }) {
 	const row = await input.db
@@ -158,7 +159,7 @@ async function countOutstandingBootstrapCodes(input: {
 
 async function pruneExpiredBootstrapCodes(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	now: Date
 }) {
 	await input.db
@@ -217,7 +218,7 @@ function resolveBootstrapLifetime(input: {
  */
 export async function mintCliCredentialBootstrap(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	/** Org the eventual token is bound to. Defaults to the personal org. */
 	orgId?: string
 	name?: string
@@ -382,7 +383,7 @@ export async function redeemCliCredentialBootstrap(input: {
 	maxLifetimeSeconds?: number
 	env?: UserMeterEnv
 	now?: Date
-}): Promise<{ token: ApiTokenSecretView; userId: string }> {
+}): Promise<{ token: ApiTokenSecretView; userId: OwnerId }> {
 	const now = input.now ?? new Date()
 	const parsed = parseCliBootstrapCode(input.code)
 	if (!parsed) {
@@ -405,7 +406,7 @@ export async function redeemCliCredentialBootstrap(input: {
 		.bind(parsed.codeId)
 		.first<{
 			id: string
-			user_id: string
+			user_id: OwnerId
 			org_id: string | null
 			code_hash: string
 			name: string

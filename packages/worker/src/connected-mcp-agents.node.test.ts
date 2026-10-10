@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	loadInboundMcpConnectionState,
@@ -65,7 +66,10 @@ function createHelpers(input: {
 }
 
 function loadState(input: Parameters<typeof createHelpers>[0]) {
-	return loadInboundMcpConnectionState(createHelpers(input), 'user-1')
+	return loadInboundMcpConnectionState(
+		createHelpers(input),
+		ownerIdFromStored('user-1'),
+	)
 }
 
 test('inbound connection state pages grants and counts unique clientIds', async () => {
@@ -174,7 +178,7 @@ test('inbound labels fall back when lookupClient is missing or throws', async ()
 				}
 			},
 		},
-		'user-1',
+		ownerIdFromStored('user-1'),
 	)
 	expect(withoutLookup.agents[0]).toMatchObject({
 		kind: null,
@@ -190,7 +194,9 @@ test('inbound labels fall back when lookupClient is missing or throws', async ()
 		label: 'unknown.example',
 	})
 
-	expect(await loadInboundMcpConnectionState(undefined, 'user-1')).toEqual({
+	expect(
+		await loadInboundMcpConnectionState(undefined, ownerIdFromStored('user-1')),
+	).toEqual({
 		uniqueClientCount: 0,
 		agents: [],
 	})
@@ -201,7 +207,7 @@ test('inbound labels fall back when lookupClient is missing or throws', async ()
 				throw new Error('provider unavailable')
 			},
 		},
-		'user-1',
+		ownerIdFromStored('user-1'),
 	)
 	expect(listingFailed).toEqual({
 		uniqueClientCount: 0,
@@ -221,19 +227,23 @@ test('revokeConnectedMcpAgent revokes every grant for that clientId', async () =
 	await expect(
 		revokeConnectedMcpAgent({
 			helpers,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			clientId: 'client-a',
 		}),
 	).resolves.toEqual({ revoked: 2 })
 	expect(helpers.revoked).toEqual(['grant-1', 'grant-2'])
 	await expect(
-		revokeConnectedMcpAgent({ helpers, userId: 'user-1', clientId: 'missing' }),
+		revokeConnectedMcpAgent({
+			helpers,
+			userId: ownerIdFromStored('user-1'),
+			clientId: 'missing',
+		}),
 	).resolves.toEqual({ error: 'not_found' })
 })
 
 test('inbound connection state joins last-used and revoke forgets that stamp', async () => {
 	const meter = createInMemoryUserMeterEnv()
-	const userId = `user-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`user-${crypto.randomUUID()}`)
 	const helpers = createHelpers({
 		grants: [
 			grant('grant-stale', 'client-stale', 1_710_000_000),
@@ -288,6 +298,6 @@ test('inbound connection state joins last-used and revoke forgets that stamp', a
 		}),
 	).resolves.toEqual({ revoked: 1 })
 	expect(
-		await listInboundMcpConnectionLastUsed({ env: meter.env, userId }),
+		await listInboundMcpConnectionLastUsed({ env: meter.env, userId: userId }),
 	).toEqual(new Map([['client-stale', '2026-03-10T00:00:00.000Z']]))
 })

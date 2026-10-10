@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -55,14 +56,14 @@ export const repoCreateCapability = defineDomainCapability(
 			}
 			await assertWithinEntitlement({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				email: user.email,
 				resource: 'repos',
 			})
 			const existing = await ctx.env.APP_DB.prepare(
 				`SELECT id FROM user_repos WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}`,
 			)
-				.bind(user.userId, name)
+				.bind(personalOrgId(user.userId), name)
 				.first<{ id: string }>()
 			if (existing) {
 				throw new McpCallerError(
@@ -74,7 +75,7 @@ export const repoCreateCapability = defineDomainCapability(
 			try {
 				await insertUserRepo(ctx.env.APP_DB, {
 					id: repoId,
-					user_id: user.userId,
+					user_id: personalOrgId(user.userId),
 					name,
 					description: args.description?.trim() ?? null,
 					created_at: now,
@@ -92,7 +93,7 @@ export const repoCreateCapability = defineDomainCapability(
 			const ensuredSource = await ensureEntitySource({
 				db: ctx.env.APP_DB,
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				entityKind: 'repo',
 				entityId: repoId,
 				sourceRoot: '/',

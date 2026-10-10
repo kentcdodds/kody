@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { userMeterDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type UserMeterRpc } from './user-meter-do.ts'
 
@@ -18,7 +19,7 @@ export function userMeterNamespace(
  */
 export function userMeterRpc(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 }): UserMeterRpc {
 	const namespace = userMeterNamespace(input.env)
 	if (!namespace) {

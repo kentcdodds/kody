@@ -8,6 +8,7 @@ import {
 } from './mailbox-inbound-ledger.ts'
 import { rpcFor, stubFor, uniqueUserId } from './mailbox-test-helpers.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function claimAndReceive(
 	mailbox: ReturnType<typeof rpcFor>,
 	ownerId: string,
@@ -15,14 +16,14 @@ async function claimAndReceive(
 	now: string,
 ) {
 	const claim = await mailbox.claimInboundDeliveryStorage({
-		ownerId,
+		ownerId: ownerIdFromStored(ownerId),
 		deliveryId,
 		expectedAttachmentCount: 0,
 		now,
 	})
 	if (claim.status !== 'claimed') throw new Error('expected claim')
 	const received = await mailbox.markInboundDeliveryReceived({
-		ownerId,
+		ownerId: ownerIdFromStored(ownerId),
 		deliveryId,
 		storageLease: claim.delivery.storageLease!,
 		usageDurationMs: 25,
@@ -42,7 +43,7 @@ async function insertClaimAndReceive(
 	now: string,
 ) {
 	await mailbox.insertChargedPendingInboundDelivery({
-		ownerId,
+		ownerId: ownerIdFromStored(ownerId),
 		delivery,
 		now,
 	})

@@ -1,6 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { RunLog } from './run-log-do.ts'
@@ -19,8 +23,8 @@ import {
 	workflowProjectionRetentionDays,
 } from './types.ts'
 
-function uniqueUserId(label: string) {
-	return `runlog-continuity-${label}-${crypto.randomUUID()}`
+function uniqueUserId(label: string): OwnerId {
+	return ownerIdFromStored(`runlog-continuity-${label}-${crypto.randomUUID()}`)
 }
 
 function runLogStub(userId: string) {
@@ -55,7 +59,11 @@ function finishRun(
 ) {
 	return finishRunRecord({
 		env: runEnv,
-		handle: beginRunRecord({ env: runEnv, userId, context }),
+		handle: beginRunRecord({
+			env: runEnv,
+			userId: ownerIdFromStored(userId),
+			context,
+		}),
 		status,
 		error,
 	})
@@ -69,7 +77,7 @@ function upsertWorkflow(
 ) {
 	return upsertWorkflowProjection({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		projection: {
 			bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
 			sourceType: 'inline',

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { RequestContext } from 'remix/router'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -125,7 +128,7 @@ const mockModule = vi.hoisted(() => ({
 	>(async () => [
 		{
 			id: 'pkg-1',
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			name: 'State Store',
 			kodyId: 'state-store',
 			description: '',
@@ -276,7 +279,7 @@ test('jobs API lists jobs with ownership and selected detail', async () => {
 	expect(listResponse.headers.get('Cache-Control')).toBe('no-store')
 	expect(mockModule.inspectJobsForUser).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 	})
 	await expect(listResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -401,7 +404,9 @@ test('jobs API mutations are user-scoped for non-package jobs and kill switch', 
 			env,
 			callerContext: expect.objectContaining({
 				baseUrl: 'https://example.com',
-				user: expect.objectContaining({ userId: 'stable-user-1' }),
+				user: expect.objectContaining({
+					userId: ownerIdFromStored('stable-user-1'),
+				}),
 			}),
 			body: { id: adHocJob.id, enabled: false },
 		}),
@@ -440,7 +445,10 @@ test('jobs API mutations are user-scoped for non-package jobs and kill switch', 
 	const runNowResponse = await post({ action: 'run_now', id: adHocJob.id })
 	expect(runNowResponse.status).toBe(200)
 	expect(mockModule.runJobNowViaManager).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'stable-user-1', jobId: adHocJob.id }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('stable-user-1'),
+			jobId: adHocJob.id,
+		}),
 	)
 	await expect(runNowResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -452,7 +460,7 @@ test('jobs API mutations are user-scoped for non-package jobs and kill switch', 
 	expect(deleteResponse.status).toBe(200)
 	expect(mockModule.deleteJob).toHaveBeenCalledWith({
 		env,
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		jobId: adHocJob.id,
 	})
 })

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { buildCommunityIconR2Key } from '#worker/community/community-icon.ts'
 import {
@@ -93,7 +94,7 @@ async function cursorHmacKey(env: Env) {
 	)
 }
 
-async function encodeCursor(env: Env, userId: string, cursor: R2Cursor) {
+async function encodeCursor(env: Env, userId: OwnerId, cursor: R2Cursor) {
 	const payload = encodeBase64Url(JSON.stringify({ userId, cursor }))
 	const signature = await crypto.subtle.sign(
 		'HMAC',
@@ -124,7 +125,7 @@ function isScanState(value: unknown): value is R2ScanState {
 
 async function decodeCursor(
 	env: Env,
-	userId: string,
+	userId: OwnerId,
 	value: string | undefined,
 ): Promise<R2Cursor> {
 	if (!value) {
@@ -163,7 +164,7 @@ function bucketFor(env: Env, binding: AccountR2Binding) {
 
 async function findNextRef(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 	cursor: R2Cursor
 }): Promise<R2Cursor> {
@@ -382,7 +383,7 @@ async function findNextRef(input: {
 
 async function resolveCurrentRef(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 	ref: StableR2Ref
 }): Promise<AccountR2ObjectRef | null> {
@@ -493,7 +494,7 @@ function encodeBytesBase64(bytes: Uint8Array) {
 
 export async function readAccountR2ExportPage(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 	startAfter?: string
 	warnings: Array<string>
@@ -640,7 +641,7 @@ export async function readAccountR2ExportPage(input: {
 
 export async function countAccountR2ObjectRefs(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 }) {
 	const [emailBlobs, icons, identityIcons, avatar] = await Promise.all([

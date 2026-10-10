@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { authorize } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -75,7 +76,7 @@ export const repoGetGitRemoteCapability = defineDomainCapability(
 			const gitAuthor = gitAuthorIdentityFromUser(user)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				args,
 			})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)

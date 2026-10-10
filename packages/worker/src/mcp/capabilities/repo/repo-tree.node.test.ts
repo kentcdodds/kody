@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -58,7 +61,7 @@ test('repoTree maps missing-path ENOENT to McpCallerError and summarizes existin
 	})
 	expect(missing).toHaveBeenCalledWith({
 		sessionId: 'session-1',
-		userId: 'user-alice',
+		userId: ownerIdFromStored('user-alice'),
 		path: 'docs',
 		maxDepth: undefined,
 	})

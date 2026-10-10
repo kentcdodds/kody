@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AuthRedirect from '#app/auth-redirect.ts'
 import type * as AuthenticatedUser from '#app/authenticated-user.ts'
@@ -42,7 +43,7 @@ const mockModule = vi.hoisted(() => ({
 			email: 'user@example.com',
 			displayName: 'User',
 			mcpUser: {
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				email: 'user@example.com',
 				username: 'test-user',
 				displayName: 'User',
@@ -62,7 +63,7 @@ const mockModule = vi.hoisted(() => ({
 	>(async () => ({
 		savedPackage: {
 			id: 'package-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@kody/example',
 			kodyId: 'example',
 			description: 'Example package',

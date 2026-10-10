@@ -8,6 +8,7 @@ import {
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function stubFetch<T extends Mock>(fetchMock: T) {
 	vi.stubGlobal('fetch', fetchMock)
 	return Object.assign(fetchMock, {
@@ -61,7 +62,11 @@ test('plan-relevant activity arms a per-user alarm that refreshes Stripe once', 
 
 	const scheduledBetween = Date.now()
 	await expect(
-		scheduleStripePlanRefreshBackstop({ env, userId, now }),
+		scheduleStripePlanRefreshBackstop({
+			env,
+			userId: ownerIdFromStored(userId),
+			now,
+		}),
 	).resolves.toBe(true)
 	const alarmAt = await readAlarm()
 	expect(alarmAt).toBeTypeOf('number')
@@ -109,7 +114,10 @@ test('refresh failures re-arm, while account deletion prevents re-arming after p
 		'stripe-alarm-retry',
 		'cus_alarm_retry',
 	)
-	await scheduleStripePlanRefreshBackstop({ env, userId })
+	await scheduleStripePlanRefreshBackstop({
+		env,
+		userId: ownerIdFromStored(userId),
+	})
 	consoleError.mockImplementation(() => {})
 	using _fetch = stubFetch(
 		vi.fn(async () => Response.json({ error: 'stripe down' }, { status: 500 })),
@@ -132,7 +140,10 @@ test('refresh failures re-arm, while account deletion prevents re-arming after p
 		.bind(new Date().toISOString(), userId)
 		.run()
 	await expect(
-		scheduleStripePlanRefreshBackstop({ env, userId }),
+		scheduleStripePlanRefreshBackstop({
+			env,
+			userId: ownerIdFromStored(userId),
+		}),
 	).resolves.toBe(false)
 	expect(await readAlarm()).toBeNull()
 })

@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect } from 'vitest'
 import { mailboxDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
@@ -21,17 +25,17 @@ export function mailboxEnv(): { MAILBOX: DurableObjectNamespace<Mailbox> } {
 	return { MAILBOX: mailbox }
 }
 
-export function stubFor(userId: string): DurableObjectStub<Mailbox> {
+export function stubFor(userId: OwnerId): DurableObjectStub<Mailbox> {
 	const { MAILBOX } = mailboxEnv()
 	return MAILBOX.get(MAILBOX.idFromName(mailboxDurableObjectName(userId)))
 }
 
-export function rpcFor(userId: string) {
+export function rpcFor(userId: OwnerId) {
 	return mailboxRpc({ env: mailboxEnv(), userId })
 }
 
-export function uniqueUserId(label: string) {
-	return `mailbox-${label}-${crypto.randomUUID()}`
+export function uniqueUserId(label: string): OwnerId {
+	return ownerIdFromStored(`mailbox-${label}-${crypto.randomUUID()}`)
 }
 
 export async function assertMailboxThrows(
@@ -66,7 +70,7 @@ export function baseThread(
 
 /** Complete message snapshot; overrides may be Partial. */
 export function baseMessage(
-	ownerId: string,
+	ownerId: OwnerId,
 	overrides?: Partial<MailboxMessageInput>,
 ): MailboxMessageInput {
 	const id = overrides?.id ?? crypto.randomUUID()
@@ -123,7 +127,7 @@ export function baseMessage(
 
 /** Complete attachment snapshot; overrides may be Partial. */
 export function baseAttachment(
-	ownerId: string,
+	ownerId: OwnerId,
 	messageId: string,
 	overrides?: Partial<MailboxAttachmentInput>,
 ): MailboxAttachmentInput {

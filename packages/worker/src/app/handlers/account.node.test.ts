@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
@@ -177,7 +178,7 @@ test('account handler redirects to login with a session-destroy cookie for stale
 	const cases = [
 		{
 			label: 'stale session',
-			stableUserId: 'f'.repeat(64),
+			stableUserId: ownerIdFromStored('f').repeat(64),
 			email: 'missing@example.com',
 			users: [],
 		},

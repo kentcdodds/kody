@@ -14,6 +14,7 @@ import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const legacyStandardPrice = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
 const standardYearlyPrice = 'price_1U3sg6LAQpAnsYszqq9abwIY'
 
@@ -75,7 +76,7 @@ async function seedUser(label: string, input: SeedInput = {}) {
 	return {
 		id: row.id,
 		email,
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		linkReference: await createBillingLinkReference(env, stableUserId),
 	}
 }
@@ -534,7 +535,7 @@ test('team checkout links Stripe customer onto the team org, not the member pers
 
 	const result = await linkStripeCustomerFromCheckoutSessionForOrg({
 		env: createBillingEnv(),
-		orgId: teamOrgId,
+		orgId: ownerIdFromStored(teamOrgId),
 		sessionId: 'cs_team_org',
 		now,
 	})
@@ -582,7 +583,7 @@ test('refreshStripePlanForOrg rejects a different Stripe customer before forgive
 	await expect(
 		refreshStripePlanForOrg({
 			env: createBillingEnv(),
-			orgId: teamOrgId,
+			orgId: ownerIdFromStored(teamOrgId),
 			customerId: 'cus_other',
 			now,
 		}),
@@ -622,7 +623,7 @@ test('refreshStripePlanForOrg defers until the org has a linked Stripe customer'
 	await expect(
 		refreshStripePlanForOrg({
 			env: createBillingEnv(),
-			orgId: teamOrgId,
+			orgId: ownerIdFromStored(teamOrgId),
 			customerId: 'cus_unlinked',
 			now,
 		}),

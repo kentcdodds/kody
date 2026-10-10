@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as RepoSessionDueOwners from './repo-session-due-owners.ts'
 
@@ -29,8 +30,8 @@ const { cleanupRepoSessionBranches } = await import('./repo-session-cleanup.ts')
 
 test('repo session cleanup pages due owners and runs per-user index cleanup', async () => {
 	mockModule.listDueRepoSessionOwners.mockResolvedValue([
-		{ userId: 'user-1', dueAt: '2026-06-24T19:00:00.000Z' },
-		{ userId: 'user-2', dueAt: '2026-06-24T19:30:00.000Z' },
+		{ userId: ownerIdFromStored('user-1'), dueAt: '2026-06-24T19:00:00.000Z' },
+		{ userId: ownerIdFromStored('user-2'), dueAt: '2026-06-24T19:30:00.000Z' },
 	])
 	mockModule.runDueCleanup
 		.mockResolvedValueOnce({ checked: 2, deleted: 2, errors: 0 })
@@ -48,11 +49,11 @@ test('repo session cleanup pages due owners and runs per-user index cleanup', as
 		limit: 10,
 	})
 	expect(mockModule.runDueCleanup).toHaveBeenNthCalledWith(1, {
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		now: '2026-06-24T20:00:00.000Z',
 	})
 	expect(mockModule.runDueCleanup).toHaveBeenNthCalledWith(2, {
-		ownerId: 'user-2',
+		ownerId: ownerIdFromStored('user-2'),
 		now: '2026-06-24T20:00:00.000Z',
 	})
 	expect(result).toEqual({

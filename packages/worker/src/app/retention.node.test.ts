@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { quoteSqlIdentifier } from '@kody-internal/shared/sql-literals.ts'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -504,10 +505,10 @@ test('published bundle artifact retention deletes stale rows, KV blobs, and sour
 	await indexEnv.REPO_SESSION_INDEX.get(
 		indexEnv.REPO_SESSION_INDEX.idFromName('user-1'),
 	).insertSession({
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		row: {
 			id: 'session-1',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			source_id: 'source-session',
 			source_repo_id: 'repo-1',
 			session_branch: 'sessions/session-1',

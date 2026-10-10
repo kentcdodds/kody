@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -49,7 +50,7 @@ async function seedUser(
 
 test('loadOrgBillingRecipientEmails joins owners and billing members to email', async () => {
 	const db = await createDb()
-	const orgId = 'org-mail'
+	const orgId = ownerIdFromStored('org-mail')
 	const owner = testStableUserIdFromEmail('owner@example.com')
 	const billing = testStableUserIdFromEmail('billing@example.com')
 	const member = testStableUserIdFromEmail('member@example.com')
@@ -88,7 +89,7 @@ test('loadOrgBillingRecipientEmails joins owners and billing members to email', 
 
 test('sendToOrgBillingRecipients fans out and throws when no recipients', async () => {
 	const db = await createDb()
-	const orgId = 'org-empty'
+	const orgId = ownerIdFromStored('org-empty')
 	await db
 		.prepare(
 			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)

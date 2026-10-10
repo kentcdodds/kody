@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -135,7 +136,7 @@ export function createAccountProfileApiHandler(env: Env) {
 
 				if (
 					await isUsernameClaimedInIdentity(env.APP_DB, username, {
-						exceptStableUserId: user.mcpUser.userId,
+						exceptStableUserId: personalOrgId(user.mcpUser.userId),
 					})
 				) {
 					void logAuditEvent({
@@ -155,7 +156,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				}
 
 				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
-				const packageUserId = user.mcpUser.userId
+				const packageUserId = personalOrgId(user.mcpUser.userId)
 
 				// Claim the username first so concurrent renames lose on the unique
 				// constraint before any package publishes use the new scope.

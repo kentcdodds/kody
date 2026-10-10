@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { type AuthoredPackageJson } from '#worker/package-registry/types.ts'
@@ -31,7 +32,7 @@ function createHomeControlsDetail(
 		listingAhead: null,
 		record: {
 			id: 'package-home',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@user/home-controls',
 			kodyId: 'home-controls',
 			description: 'Home control helpers.',

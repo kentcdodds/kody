@@ -1,9 +1,9 @@
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { listJsonSchemaSubsetValueErrors } from '@kody-internal/shared/json-schema-subset.ts'
 import { toHex } from '@kody-internal/shared/hex.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import { type createMcpCallerContext } from '#mcp/context.ts'
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	requestLineage,
 	type RequestSource,
@@ -398,7 +398,7 @@ export function createPackageEventToolsWithToolFactories(input: {
 				)
 			}
 			const message: PackageEventsDispatchQueueMessage = {
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				topic: request.topic,
 				idempotencyKey: request.idempotencyKey,
 				payload: request.payload,
@@ -507,7 +507,7 @@ export async function invokePackageSubscriptionWithToolFactories(input: {
 		baseUrl: input.baseUrl,
 		actor: {
 			sourceId: input.actorTokenId ?? internalEmailSubscriptionTokenId,
-			orgId: ownerIdFromStored(input.savedPackage.userId),
+			orgId: input.savedPackage.userId,
 			request: input.request,
 		},
 		savedPackage: input.savedPackage,

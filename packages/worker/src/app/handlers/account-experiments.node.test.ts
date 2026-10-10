@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as accountExperimentsData from '#app/account-experiments-data.ts'
 import type * as ssrRender from '#app/ssr-render.tsx'
@@ -61,7 +62,7 @@ function createUser() {
 		permissions: [],
 		artifactOwnerIds: ['7'],
 		mcpUser: {
-			userId: 'a'.repeat(64),
+			userId: ownerIdFromStored('a').repeat(64),
 			email: 'jane@example.com',
 			username: 'jane',
 			displayName: 'jane',

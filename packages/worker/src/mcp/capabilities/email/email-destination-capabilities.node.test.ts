@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import type * as Destinations from '#worker/email/destinations.ts'
@@ -88,7 +91,7 @@ test('email destination capabilities list, add, set default, and remove through 
 		id: 1,
 		email: 'owner@example.com',
 		emailVerifiedAt: '2026-01-01T00:00:00.000Z',
-		stableUserId: 'user-1',
+		stableUserId: ownerIdFromStored('user-1'),
 	})
 	mocks.createEmailDestinationVerification.mockResolvedValueOnce({
 		destination: extra,

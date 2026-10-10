@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	decryptPlatformOauthClientSecret,
@@ -18,11 +19,15 @@ test('secret encryption round-trips and binds AAD, versioning, platform OAuth sl
 	const encrypted = await encryptSecretValue(
 		env,
 		'bound-value',
-		userSecretContext('user-a'),
+		userSecretContext(ownerIdFromStored('user-a')),
 	)
 	expect(encrypted.startsWith('v2.')).toBe(true)
 	expect(
-		await decryptSecretValue(env, encrypted, userSecretContext('user-a')),
+		await decryptSecretValue(
+			env,
+			encrypted,
+			userSecretContext(ownerIdFromStored('user-a')),
+		),
 	).toBe('bound-value')
 
 	const [version, iv, ciphertext] = encrypted.split('.')
@@ -37,7 +42,11 @@ test('secret encryption round-trips and binds AAD, versioning, platform OAuth sl
 		},
 		{ label: 'malformed payload', payload: 'no-dot-separator' },
 		// Same key, different owner: the row-swap defense must reject it.
-		{ label: 'other owner', payload: encrypted, userId: 'user-b' },
+		{
+			label: 'other owner',
+			payload: encrypted,
+			userId: ownerIdFromStored('user-b'),
+		},
 		{
 			label: 'tampered ciphertext',
 			payload: `${version}.${iv}.${tamperedByte}${ciphertext!.slice(1)}`,
@@ -49,7 +58,7 @@ test('secret encryption round-trips and binds AAD, versioning, platform OAuth sl
 		const error = await decryptSecretValue(
 			rejected.env ?? env,
 			rejected.payload,
-			userSecretContext(rejected.userId ?? 'user-a'),
+			userSecretContext(rejected.userId ?? ownerIdFromStored('user-a')),
 		).catch((caught: unknown) => caught)
 		expect({
 			label: rejected.label,
@@ -80,7 +89,10 @@ test('secret encryption round-trips and binds AAD, versioning, platform OAuth sl
 		),
 	).rejects.toThrow('Unable to decrypt platform client secret.')
 
-	const webhookContext = userWebhookUrlSecretContext('user-a', 'endpoint-1')
+	const webhookContext = userWebhookUrlSecretContext(
+		ownerIdFromStored('user-a'),
+		'endpoint-1',
+	)
 	const webhookEncrypted = await encryptWebhookUrlSecret(
 		env,
 		'webhook-url-secret',
@@ -93,7 +105,7 @@ test('secret encryption round-trips and binds AAD, versioning, platform OAuth sl
 		decryptWebhookUrlSecret(
 			env,
 			webhookEncrypted,
-			userWebhookUrlSecretContext('user-a', 'endpoint-2'),
+			userWebhookUrlSecretContext(ownerIdFromStored('user-a'), 'endpoint-2'),
 		),
 	).rejects.toThrow('Unable to decrypt webhook URL secret.')
 })
@@ -115,7 +127,7 @@ test('secret store CryptoKey derivation is cached across encrypt and decrypt', a
 	const digestSpy = vi.spyOn(crypto.subtle, 'digest')
 
 	try {
-		const context = userSecretContext('user-1')
+		const context = userSecretContext(ownerIdFromStored('user-1'))
 		const encrypted = await encryptSecretValue(env, 'cached-value', context)
 		const digestCallsAfterEncrypt = digestSpy.mock.calls.length
 		const importKeyCallsAfterEncrypt = importKeySpy.mock.calls.length
@@ -155,7 +167,7 @@ test('failed secret store CryptoKey derivation is not cached', async () => {
 		})
 
 	try {
-		const context = userSecretContext('user-1')
+		const context = userSecretContext(ownerIdFromStored('user-1'))
 		await expect(encryptSecretValue(env, 'fail', context)).rejects.toThrow(
 			'transient derivation failure',
 		)

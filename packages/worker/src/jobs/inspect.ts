@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	hydrateJobViewFromRunLog,
@@ -18,7 +19,7 @@ import { type JobSourceInspection, type JobView } from './types.ts'
  * job execution graph (`run-kody-registry`, bundler, entitlements, …) on the
  * first cold-isolate capability dispatch.
  */
-export async function listJobs(input: { env: Env; userId: string }) {
+export async function listJobs(input: { env: Env; userId: OwnerId }) {
 	const rows = await jobsData(input.env).listJobsForUser({
 		userId: input.userId,
 	})
@@ -31,7 +32,7 @@ export async function listJobs(input: { env: Env; userId: string }) {
 
 export async function getJob(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 }) {
 	const row = await jobsData(input.env).getJobById({
@@ -52,7 +53,7 @@ export async function getJob(input: {
 
 export async function inspectJobsForUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<{
 	jobs: Array<JobView>
 	alarm: JobManagerDebugState
@@ -72,7 +73,7 @@ export async function inspectJobsForUser(input: {
 
 export async function getJobInspection(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobId: string
 	includeCode?: boolean
 }): Promise<{

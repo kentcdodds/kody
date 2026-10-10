@@ -9,6 +9,7 @@ import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidenta
 import { createMswWorkerServer } from '#worker/test-support/msw-worker-server.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const cloudflareEmailApi =
 	'https://api.cloudflare.test/client/v4/accounts/account-123/email/sending/send'
 
@@ -53,7 +54,7 @@ test('sendOutboundEmail mirrors outbound message graph into Mailbox on success',
 
 	const result = await sendOutboundEmail({
 		env: sendEnv,
-		userId,
+		userId: ownerIdFromStored(userId),
 		accountEmail,
 		recipientPolicy: 'self',
 		subject: 'Mailbox mirror sent',
@@ -69,7 +70,7 @@ test('sendOutboundEmail mirrors outbound message graph into Mailbox on success',
 
 	expect(result.status).toBe('sent')
 	expect(result.message.threadId).toBeTruthy()
-	const mailbox = rpcFor(userId)
+	const mailbox = rpcFor(ownerIdFromStored(userId))
 	const mirroredMessage = await mailbox.getMessage({
 		messageId: result.message.id,
 	})
@@ -137,7 +138,7 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 			CLOUDFLARE_API_BASE_URL: 'https://api.cloudflare.test',
 			CLOUDFLARE_API_TOKEN: 'token-123',
 		},
-		userId,
+		userId: ownerIdFromStored(userId),
 		accountEmail,
 		recipientPolicy: 'self',
 		subject: 'Mailbox mirror failed',
@@ -146,7 +147,7 @@ test('sendOutboundEmail mirrors failed outbound graph into Mailbox', async () =>
 
 	expect(result.status).toBe('failed')
 	expect(result.error).toBe('provider down')
-	const mailbox = rpcFor(userId)
+	const mailbox = rpcFor(ownerIdFromStored(userId))
 	const mirroredMessage = await mailbox.getMessage({
 		messageId: result.message.id,
 	})

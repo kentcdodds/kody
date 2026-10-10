@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createCommunityApiHandler } from './community.tsx'
 import { type CommunityIndexLoaderData } from '#universal/loader-data.ts'
@@ -29,7 +30,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 const sampleListing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-mcp-id',
+	ownerUserId: ownerIdFromStored('owner-mcp-id'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'github-triage',

@@ -7,6 +7,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -45,7 +46,7 @@ export class AccountWriteLeaseLostError extends Error {
 
 export type AccountWriteLease = {
 	token: string
-	stableUserId: string
+	stableUserId: OwnerId
 	holder: string
 	acquiredAt: string
 }
@@ -65,7 +66,7 @@ function requireUserMeterEnv(env: UserMeterEnv) {
 
 async function runUserMeterRpc<T>(input: {
 	env: UserMeterEnv
-	stableUserId: string
+	stableUserId: OwnerId
 	operation: (meter: UserMeterRpc) => Promise<T>
 }) {
 	return await runWithTransientDurableObjectResetRetry({
@@ -82,7 +83,7 @@ async function runUserMeterRpc<T>(input: {
 async function insertOrVerifyDoRepairAudit(input: {
 	db: D1Database
 	repairId: string
-	stableUserId: string
+	stableUserId: OwnerId
 	token: string
 	holder: string
 	acquiredAt: string
@@ -141,7 +142,7 @@ async function insertOrVerifyDoRepairAudit(input: {
 
 async function findMatchingRepairAudit(input: {
 	db: D1Database
-	stableUserId: string
+	stableUserId: OwnerId
 	token: string
 	expectedAcquiredAt: string
 	repairedByUserId: string
@@ -204,7 +205,7 @@ export async function markAccountDeleting(input: {
 			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.dbUserId)
-		.first<{ stable_user_id: string; deleting_at: string | null }>()
+		.first<{ stable_user_id: OwnerId; deleting_at: string | null }>()
 	const stableUserId = userRow?.stable_user_id
 	const deletingAt = userRow?.deleting_at
 	if (!stableUserId || !deletingAt) {
@@ -265,7 +266,7 @@ export async function abortAccountDeleting(input: {
 			WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(input.dbUserId)
-		.first<{ stable_user_id: string }>()
+		.first<{ stable_user_id: OwnerId }>()
 	const now = utcSqliteTimestamp(input.now ?? new Date())
 	const result = input.expectedDeletingAt
 		? await input.db
@@ -314,7 +315,7 @@ export async function abortAccountDeleting(input: {
  */
 export async function clearUserMeterDeletionTombstone(input: {
 	env: UserMeterEnv
-	stableUserId: string
+	stableUserId: OwnerId
 }): Promise<{ cleared: boolean }> {
 	if (!userMeterNamespace(input.env)) {
 		return { cleared: false }
@@ -332,7 +333,7 @@ export async function clearUserMeterDeletionTombstone(input: {
  */
 export async function abortAccountDeletingByStableUserId(input: {
 	db: D1Database
-	stableUserId: string
+	stableUserId: OwnerId
 	now?: Date
 	env: UserMeterEnv
 }) {
@@ -371,7 +372,7 @@ export type MarkOrgDeletingResult = {
  */
 export async function markOrgDeleting(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	now?: Date
 	env: UserMeterEnv
 }): Promise<MarkOrgDeletingResult> {
@@ -432,7 +433,7 @@ export async function markOrgDeleting(input: {
  */
 export async function abortOrgDeleting(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	now?: Date
 	env: UserMeterEnv
 	expectedDeletingAt?: string
@@ -483,7 +484,7 @@ export async function abortOrgDeleting(input: {
  */
 export async function assertAccountWritableDb(
 	db: D1Database,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ) {
 	const row = await db
 		.prepare(
@@ -566,7 +567,7 @@ export async function assertAccountWritableDb(
 async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	db: D1Database
 	env: UserMeterEnv
-	stableUserId: string
+	stableUserId: OwnerId
 }) {
 	const row = await input.db
 		.prepare(
@@ -586,7 +587,7 @@ async function assertAccountWritableAfterLeftoverTombstoneClear(input: {
 	await assertAccountWritableDb(input.db, input.stableUserId)
 }
 
-export async function assertAccountWritable(env: Env, stableUserId: string) {
+export async function assertAccountWritable(env: Env, stableUserId: OwnerId) {
 	await assertAccountWritableDb(env.APP_DB, stableUserId)
 }
 
@@ -612,7 +613,7 @@ const heldAccountWriteLeaseStorage = new AsyncLocalStorage<
 
 export async function withAccountWriteLease<T>(input: {
 	db: D1Database
-	stableUserId: string
+	stableUserId: OwnerId
 	holder?: string
 	env: UserMeterEnv
 	write: () => Promise<T>
@@ -641,7 +642,7 @@ export async function withAccountWriteLease<T>(input: {
 
 async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 	db: D1Database
-	stableUserId: string
+	stableUserId: OwnerId
 	holder?: string
 	env: UserMeterEnv
 	frame: AccountWriteLeaseFrame
@@ -711,7 +712,7 @@ async function acquireDoAccountWriteLeaseAndWrite<T>(input: {
 
 export async function listActiveAccountWriteLeases(
 	env: UserMeterEnv,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ): Promise<Array<ListedAccountWriteLease>> {
 	const requiredEnv = requireUserMeterEnv(env)
 	const leases: Array<ListedAccountWriteLease> = []
@@ -741,7 +742,7 @@ export async function listActiveAccountWriteLeases(
 
 export async function repairAccountWriteLease(input: {
 	db: D1Database
-	stableUserId: string
+	stableUserId: OwnerId
 	token: string
 	expectedAcquiredAt: string
 	repairedByUserId: string

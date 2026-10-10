@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { stagingSummaryKey } from '@kody-internal/shared/backup-staging.ts'
 import { handleDrExportRequest } from '#worker/dr/dr-export-maintenance.ts'
@@ -92,8 +93,8 @@ function createDb() {
 					if (sql.includes('FROM jobs')) {
 						return {
 							results: [
-								{ userId: 'user-a', storageId: 'job:1' },
-								{ userId: 'user-a', storageId: 'job:2' },
+								{ userId: ownerIdFromStored('user-a'), storageId: 'job:1' },
+								{ userId: ownerIdFromStored('user-a'), storageId: 'job:2' },
 							],
 						}
 					}

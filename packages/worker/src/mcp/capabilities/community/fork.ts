@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { forkCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -79,7 +80,7 @@ export const communityForkCapability = defineDomainCapability(
 			const result = await forkCommunityListing({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				expectedPackageScope,
 				listingId: args.listing_id,
 				kodyId,

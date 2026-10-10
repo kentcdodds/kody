@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createCommunityPackageIconHandler } from './community-package-icon.ts'
 
@@ -38,7 +39,7 @@ vi.mock('./identity-icon-response.ts', () => ({
 
 const source = {
 	id: 'source-1',
-	user_id: 'owner-1',
+	user_id: ownerIdFromStored('owner-1'),
 	entity_kind: 'package' as const,
 	entity_id: 'package-1',
 	repo_id: 'repo-1',
@@ -68,7 +69,7 @@ test('package identity icon serves the published commit for guest-visible packag
 		kind: 'package',
 		username: 'kent',
 		kodyId: 'notes',
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		savedPackage: publicPackage,
 		listingId: null,
 	})
@@ -101,12 +102,12 @@ test('private package identity icons use a private cache for the owner and 404 f
 		kind: 'package',
 		username: 'kent',
 		kodyId: 'notes',
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		savedPackage: privatePackage,
 		listingId: null,
 	})
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'owner-1' },
+		mcpUser: { userId: ownerIdFromStored('owner-1') },
 	})
 	mocks.getEntitySourceById.mockResolvedValue(source)
 	mocks.serveIdentityIcon.mockResolvedValue(
@@ -122,7 +123,7 @@ test('private package identity icons use a private cache for the owner and 404 f
 
 	mocks.serveIdentityIcon.mockClear()
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'other-1' },
+		mcpUser: { userId: ownerIdFromStored('other-1') },
 	})
 	expect((await callHandler()).status).toBe(404)
 	expect(mocks.serveIdentityIcon).not.toHaveBeenCalled()
@@ -133,7 +134,7 @@ test('package identity icon rejects stale commits and hidden private packages', 
 		kind: 'package',
 		username: 'kent',
 		kodyId: 'notes',
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		savedPackage: { ...publicPackage, hidden: true, isPrivate: true },
 		listingId: null,
 	})
@@ -144,7 +145,7 @@ test('package identity icon rejects stale commits and hidden private packages', 
 		kind: 'package',
 		username: 'kent',
 		kodyId: 'notes',
-		userId: 'owner-1',
+		userId: ownerIdFromStored('owner-1'),
 		savedPackage: publicPackage,
 		listingId: null,
 	})

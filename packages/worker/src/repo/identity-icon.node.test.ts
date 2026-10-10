@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	buildIdentityIconCacheKey,
@@ -99,7 +100,7 @@ function createFakeR2() {
 function source(overrides: Partial<EntitySourceRow> = {}): EntitySourceRow {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -158,7 +159,7 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 		env,
 		repoId: 'repo-1',
 		iconCommit: 'commit-1',
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		leafName: 'notes',
 		includePackageAppIcon: true,
 		isServableCommit: async () => true,
@@ -181,7 +182,7 @@ test('getIdentityIconObject prefers .kody/icon and skips package-app icons unles
 		env,
 		repoId: 'repo-2',
 		iconCommit: 'commit-2',
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		leafName: 'plain-repo',
 		includePackageAppIcon: false,
 		isServableCommit: async () => true,

@@ -36,6 +36,7 @@
  * run is bounded; `credit_debit_cursor` keeps the keyset position so the
  * next run continues past the last wallet this one reached.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	computeMonthlyOverage,
 	computeMonthlyOverageForDebit,
@@ -65,7 +66,7 @@ export const creditDebitBatchSize = 50
 export const creditDebitMaxBatchesPerRun = 20
 
 type CreditDebitCandidateRow = UserEntitlementRow & {
-	user_id: string
+	user_id: OwnerId
 	email: string
 	stripe_customer_id: string | null
 	balance_micro_usd: number
@@ -261,7 +262,7 @@ export async function listCreditDebitCandidates(input: {
  */
 export async function backfillCreditWalletRow(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	now: Date
 }): Promise<void> {
 	const nowIso = input.now.toISOString()
@@ -356,7 +357,7 @@ type ProgressRow = { meter: string; accounted_units: number }
 export async function settleCreditDebitMonth(input: {
 	db: D1Database
 	env: Env
-	userId: string
+	userId: OwnerId
 	entitlement: UserEntitlement
 	month: string
 	now: Date

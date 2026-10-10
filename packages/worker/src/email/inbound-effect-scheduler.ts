@@ -1,8 +1,9 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 
 export async function scheduleInboundDeliveryEffects(input: {
 	env: Parameters<typeof processInboundDeliveryEffects>[0]['env']
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	expectedFinalizationToken?: string
 	durationMs?: number

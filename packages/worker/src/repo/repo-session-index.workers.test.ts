@@ -4,6 +4,7 @@ import { repoSessionIndexDurableObjectName } from '#worker/user-scoped-durable-o
 import { RepoSessionIndex } from './repo-session-index-do.ts'
 import { type RepoSessionRow } from './types.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function sessionRow(
 	overrides: Partial<RepoSessionRow> & Pick<RepoSessionRow, 'id' | 'user_id'>,
 ): RepoSessionRow {
@@ -39,7 +40,7 @@ test('RepoSessionIndex is the catalog authority for one user', async () => {
 			updated_at TEXT NOT NULL
 		)`,
 	).run()
-	const userId = `index-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`index-${crypto.randomUUID()}`)
 	const stub = env.REPO_SESSION_INDEX.get(
 		env.REPO_SESSION_INDEX.idFromName(
 			repoSessionIndexDurableObjectName(userId),

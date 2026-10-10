@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OAuthHelpers } from '@cloudflare/workers-oauth-provider'
 import { expect, test } from 'vitest'
 import { resolveOAuthHelpers } from './oauth-helpers.ts'
@@ -98,7 +99,7 @@ test('library-backed listUserGrants returns only the user’s grants in summary 
 		expect.objectContaining({
 			id: 'grant-1',
 			clientId: 'client-a',
-			userId: 'user-aaa',
+			userId: ownerIdFromStored('user-aaa'),
 			scope: ['mcp', 'profile'],
 			metadata: { label: 'grant-1' },
 			createdAt: 1_700_000_000,
@@ -106,7 +107,7 @@ test('library-backed listUserGrants returns only the user’s grants in summary 
 		expect.objectContaining({
 			id: 'grant-2',
 			clientId: 'client-b',
-			userId: 'user-aaa',
+			userId: ownerIdFromStored('user-aaa'),
 			scope: ['mcp'],
 		}),
 	])

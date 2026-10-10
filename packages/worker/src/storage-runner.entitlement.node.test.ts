@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
@@ -93,7 +94,7 @@ function assertWrite(
 ) {
 	return assertStorageRunnerWriteWithinEntitlement({
 		env: createEstimateEnv(getEstimatedBytes),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		email: null,
 		storageId,
 		requested: 1,
@@ -303,7 +304,7 @@ test('peer estimates stay out of the live probe path while D1 + target compose t
 	// Only the write target was measured live; no peer fan-out happened.
 	expect(probedStorageIds).toEqual(['package:target'])
 
-	const userId = 'user-1'
+	const userId = ownerIdFromStored('user-1')
 	const limit = planLimits.free.maxStorageBytes
 	mockModule.readStorageBytesFromUserMeter.mockImplementation(
 		async (input: { userId: string }) => {

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { maxD1BoundParameters } from '@kody-internal/shared/chunk.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
@@ -46,7 +47,7 @@ function insertPackageSecret(
 
 test('listPackageScopeSecretMetadata chunks package ids to stay within the D1 binding limit', async () => {
 	const { sqlite, db } = createSecretsDb({ maxBindings: maxD1BoundParameters })
-	const userId = 'user-with-many-packages'
+	const userId = ownerIdFromStored('user-with-many-packages')
 	const packageIds = Array.from(
 		{ length: maxD1BoundParameters + 1 },
 		(_, index) => `package-${String(index).padStart(3, '0')}`,
@@ -89,27 +90,27 @@ test('listSecretBucketsByScope returns caller-owned package buckets only', async
 	const { sqlite, db } = createSecretsDb()
 	insertPackageSecret(sqlite, {
 		bucketId: 'bucket-owned',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-owned',
 		name: 'owned-token',
 	})
 	insertPackageSecret(sqlite, {
 		bucketId: 'bucket-other',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		packageId: 'package-other',
 		name: 'other-token',
 	})
 
 	const buckets = await listSecretBucketsByScope({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		scope: 'package',
 		now: '2026-08-31T00:00:00.000Z',
 	})
 
 	expect(buckets).toEqual([
 		expect.objectContaining({
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			scope: 'package',
 			binding_key: 'package-owned',
 		}),

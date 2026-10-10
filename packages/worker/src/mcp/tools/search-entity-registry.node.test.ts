@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { type JoinedIntegration } from '#worker/integrations/types.ts'
 
@@ -12,7 +13,7 @@ function createPackageRow(): PackageSearchRow {
 	return {
 		record: {
 			id: 'pkg-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@user/weather',
 			kodyId: 'weather',
 			description: 'Weather package',

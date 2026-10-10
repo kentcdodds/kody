@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { generateKeyPairSync, sign as signBytes } from 'node:crypto'
 import { expect, test, vi } from 'vitest'
 import {
@@ -104,7 +105,7 @@ async function createBackup(
 	} = {},
 ) {
 	const day = '2026-08-01'
-	const ownerId = 'owner-a'
+	const ownerId = ownerIdFromStored('owner-a')
 	const dump = ['thread-a', 'thread-b']
 		.map((id) =>
 			JSON.stringify({

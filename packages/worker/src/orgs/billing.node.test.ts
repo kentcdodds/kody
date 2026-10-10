@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -106,7 +107,7 @@ test('isPaidOrg treats every non-free plan as paid', () => {
 
 test('countLiveSeats counts owners and members but not billing', async () => {
 	const db = await createDb()
-	const orgId = 'org-seats'
+	const orgId = ownerIdFromStored('org-seats')
 	const owner = testStableUserIdFromEmail('owner@example.com')
 	const member = testStableUserIdFromEmail('member@example.com')
 	const billing = testStableUserIdFromEmail('billing@example.com')
@@ -126,7 +127,7 @@ test('countLiveSeats counts owners and members but not billing', async () => {
 
 test('listOrgBillingRecipientUserIds returns owners and billing role', async () => {
 	const db = await createDb()
-	const orgId = 'org-recipients'
+	const orgId = ownerIdFromStored('org-recipients')
 	const owner = testStableUserIdFromEmail('owner2@example.com')
 	const billing = testStableUserIdFromEmail('billing2@example.com')
 	const member = testStableUserIdFromEmail('member2@example.com')
@@ -143,15 +144,23 @@ test('assertCanAcceptFreeOrgOwnership enforces cap before new owner on free org'
 	const db = await createDb()
 	const userId = testStableUserIdFromEmail('invite-owner@example.com')
 	await insertOrg(db, { id: 'free-1', slug: 'free-one' })
-	await insertMembership(db, { orgId: 'free-1', userId, role: 'owner' })
+	await insertMembership(db, {
+		orgId: ownerIdFromStored('free-1'),
+		userId,
+		role: 'owner',
+	})
 	await insertOrg(db, { id: 'free-2', slug: 'free-two' })
-	await insertMembership(db, { orgId: 'free-2', userId, role: 'owner' })
+	await insertMembership(db, {
+		orgId: ownerIdFromStored('free-2'),
+		userId,
+		role: 'owner',
+	})
 	await insertOrg(db, { id: 'free-3', slug: 'free-three' })
 
 	await expect(
 		assertCanAcceptFreeOrgOwnership({
 			db,
-			orgId: 'free-3',
+			orgId: ownerIdFromStored('free-3'),
 			userId,
 		}),
 	).rejects.toBeInstanceOf(FreeOrgLimitError)
@@ -159,13 +168,13 @@ test('assertCanAcceptFreeOrgOwnership enforces cap before new owner on free org'
 	await insertOrg(db, { id: 'paid-invite', slug: 'paid', plan: 'pro' })
 	await assertCanAcceptFreeOrgOwnership({
 		db,
-		orgId: 'paid-invite',
+		orgId: ownerIdFromStored('paid-invite'),
 		userId,
 	})
 
 	await assertCanAcceptFreeOrgOwnership({
 		db,
-		orgId: 'free-1',
+		orgId: ownerIdFromStored('free-1'),
 		userId,
 	})
 })
@@ -174,9 +183,17 @@ test('assertCanOwnAnotherFreeOrg enforces MAX_FREE_ORGS_PER_USER', async () => {
 	const db = await createDb()
 	const userId = testStableUserIdFromEmail('free-cap@example.com')
 	await insertOrg(db, { id: 'free-1', slug: 'free-one' })
-	await insertMembership(db, { orgId: 'free-1', userId, role: 'owner' })
+	await insertMembership(db, {
+		orgId: ownerIdFromStored('free-1'),
+		userId,
+		role: 'owner',
+	})
 	await insertOrg(db, { id: 'free-2', slug: 'free-two' })
-	await insertMembership(db, { orgId: 'free-2', userId, role: 'owner' })
+	await insertMembership(db, {
+		orgId: ownerIdFromStored('free-2'),
+		userId,
+		role: 'owner',
+	})
 
 	expect(await countLiveFreeOwnedOrgs(db, userId)).toBe(2)
 	expect(MAX_FREE_ORGS_PER_USER).toBe(2)
@@ -189,7 +206,11 @@ test('assertCanOwnAnotherFreeOrg enforces MAX_FREE_ORGS_PER_USER', async () => {
 	)
 
 	await insertOrg(db, { id: 'paid-1', slug: 'paid-one', plan: 'pro' })
-	await insertMembership(db, { orgId: 'paid-1', userId, role: 'owner' })
+	await insertMembership(db, {
+		orgId: ownerIdFromStored('paid-1'),
+		userId,
+		role: 'owner',
+	})
 	expect(await countLiveFreeOwnedOrgs(db, userId)).toBe(2)
 	await expect(assertCanOwnAnotherFreeOrg(db, userId)).rejects.toThrow()
 
@@ -223,7 +244,7 @@ test('resolveEffectiveUserBudgetMicroUsd prefers individual over org default', (
 
 test('readOrgBudgetSettings and readUserBudgetMicroUsd read D1 rows', async () => {
 	const db = await createDb()
-	const orgId = 'org-budgets'
+	const orgId = ownerIdFromStored('org-budgets')
 	const userId = testStableUserIdFromEmail('budget@example.com')
 	await insertOrg(db, {
 		id: orgId,

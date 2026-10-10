@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createAdminCommunityReportsApiHandler } from './admin-community-reports.ts'
 import { type CommunityReportRecord } from '#worker/community/types.ts'
@@ -33,8 +34,8 @@ const sampleReport = {
 	id: 'report-1',
 	listingId: 'listing-1',
 	listingName: '@owner/pkg',
-	listingOwnerUserId: 'owner-mcp-id',
-	reporterUserId: 'reporter-mcp-id',
+	listingOwnerUserId: ownerIdFromStored('owner-mcp-id'),
+	reporterUserId: ownerIdFromStored('reporter-mcp-id'),
 	reason: 'Malware',
 	status: 'open',
 	resolvedByUserId: null,
@@ -45,7 +46,7 @@ const sampleReport = {
 } satisfies CommunityReportRecord
 
 const adminActor = {
-	mcpUser: { userId: 'admin-mcp-id' },
+	mcpUser: { userId: ownerIdFromStored('admin-mcp-id') },
 }
 
 const env = { APP_DB: {} } as Env
@@ -101,7 +102,7 @@ test('admin community reports POST dispatches moderation intents', async () => {
 	expect(mockModule.banCommunityUser).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'admin-mcp-id',
-		userId: 'reporter-mcp-id',
+		userId: ownerIdFromStored('reporter-mcp-id'),
 		reason: 'Banned via community report moderation (report-1).',
 	})
 	expect(mockModule.resolveCommunityReport).not.toHaveBeenCalled()
@@ -125,7 +126,7 @@ test('admin community reports POST dispatches moderation intents', async () => {
 	expect(mockModule.banCommunityUser).toHaveBeenCalledWith({
 		env,
 		adminUserId: 'admin-mcp-id',
-		userId: 'owner-mcp-id',
+		userId: ownerIdFromStored('owner-mcp-id'),
 		reason: 'Repeated abuse',
 	})
 

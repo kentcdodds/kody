@@ -15,6 +15,7 @@
  * total, and objects sharing an isolate are still billed per object.
  */
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { repoSessionIdFromStorageBucketId } from '#worker/storage-buckets/service.ts'
 import {
@@ -89,7 +90,7 @@ function perUserNamespaces(env: DurableObjectDurationAttributionEnv) {
 			stripePlanRefreshDurableObjectName,
 		],
 	] as const satisfies ReadonlyArray<
-		readonly [string, NamespaceLike | undefined, (userId: string) => string]
+		readonly [string, NamespaceLike | undefined, (userId: OwnerId) => string]
 	>
 }
 
@@ -116,26 +117,26 @@ export async function buildDurableObjectOwnerMap(
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
 				`SELECT stable_user_id FROM users WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
-			).all<{ stable_user_id: string }>(),
+			).all<{ stable_user_id: OwnerId }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
 				`SELECT id FROM orgs WHERE deleting_at IS NULL${andLiveDeletedAtSql()}`,
-			).all<{ id: string }>(),
+			).all<{ id: OwnerId }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
 				`SELECT user_id, storage_id, kind FROM user_storage_buckets WHERE deleted_at IS NULL`,
-			).all<{ user_id: string; storage_id: string; kind: string }>(),
+			).all<{ user_id: OwnerId; storage_id: string; kind: string }>(),
 		),
 		runD1WithRetry(() =>
 			env.APP_DB.prepare(
 				`SELECT user_id, id FROM saved_packages WHERE has_app = 1${andLiveDeletedAtSql()}`,
-			).all<{ user_id: string; id: string }>(),
+			).all<{ user_id: OwnerId; id: string }>(),
 		),
 	])
 	const namespaces = perUserNamespaces(env)
-	const ownerIds = new Set<string>()
+	const ownerIds = new Set<OwnerId>()
 	for (const { stable_user_id: userId } of users.results ?? []) {
 		ownerIds.add(userId)
 	}

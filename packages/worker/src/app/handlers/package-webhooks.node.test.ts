@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createCommunityPackageWebhooksApiHandler } from '#app/handlers/package-webhooks.ts'
@@ -22,7 +23,7 @@ vi.mock('#app/authenticated-user.ts', () => ({
 
 const savedPackage = {
 	id: 'pkg-1',
-	userId: 'set-per-test',
+	userId: ownerIdFromStored('set-per-test'),
 	name: '@owner/sentry-bridge',
 	kodyId: 'sentry-bridge',
 	description: 'Sentry bridge',

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	mailboxBlobRefAttachmentCursorPrefix,
@@ -192,7 +193,7 @@ function exportPhasePage(
 export function listMailboxBlobReferences(
 	sql: SqlStorage,
 	input: {
-		ownerId: string | null
+		ownerId: OwnerId | null
 		pageSize?: number
 		startAfter?: string | null
 	},
@@ -270,7 +271,7 @@ export function listMailboxBlobReferences(
 function listAttachmentBlobReferences(
 	sql: SqlStorage,
 	input: {
-		ownerId: string
+		ownerId: OwnerId
 		startAfterId: string
 		limit: number
 	},

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createMemoryKvNamespace } from '#worker/test-support/memory-kv.ts'
 import {
@@ -33,14 +34,18 @@ test('writes and reads an index keyed by user, package, and commit', async () =>
 	const { kv, store } = createMemoryKvNamespace()
 	const env = createEnv(kv)
 	const index = emptyIndex()
-	await writePackageSkillsIndex({ env, userId: 'user-1', index })
+	await writePackageSkillsIndex({
+		env,
+		userId: ownerIdFromStored('user-1'),
+		index,
+	})
 	expect([...store.keys()]).toEqual([
 		'package-skills-index:v1:user-1:pkg-1:commit-1',
 	])
 	await expect(
 		readPackageSkillsIndex({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			publishedCommit: 'commit-1',
 		}),
@@ -56,25 +61,39 @@ test('writes and reads an index keyed by user, package, and commit', async () =>
 test('read returns null for missing, other-user, and malformed entries', async () => {
 	const { kv, store } = createMemoryKvNamespace()
 	const env = createEnv(kv)
-	await writePackageSkillsIndex({ env, userId: 'user-1', index: emptyIndex() })
+	await writePackageSkillsIndex({
+		env,
+		userId: ownerIdFromStored('user-1'),
+		index: emptyIndex(),
+	})
 	const base = { env, packageId: 'pkg-1', publishedCommit: 'commit-1' }
-	expect(await readPackageSkillsIndex({ ...base, userId: 'user-2' })).toBeNull()
 	expect(
 		await readPackageSkillsIndex({
 			...base,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-2'),
+		}),
+	).toBeNull()
+	expect(
+		await readPackageSkillsIndex({
+			...base,
+			userId: ownerIdFromStored('user-1'),
 			publishedCommit: 'commit-2',
 		}),
 	).toBeNull()
 	store.set(
 		buildPackageSkillsIndexKey({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			publishedCommit: 'commit-1',
 		}),
 		JSON.stringify({ version: 2, packageId: 'pkg-1' }),
 	)
-	expect(await readPackageSkillsIndex({ ...base, userId: 'user-1' })).toBeNull()
+	expect(
+		await readPackageSkillsIndex({
+			...base,
+			userId: ownerIdFromStored('user-1'),
+		}),
+	).toBeNull()
 })
 
 test('remove deletes every commit for one package only', async () => {
@@ -87,13 +106,13 @@ test('remove deletes every commit for one package only', async () => {
 	] as const) {
 		await writePackageSkillsIndex({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			index: emptyIndex({ packageId, publishedCommit }),
 		})
 	}
 	await removePackageSkillsIndexEntries({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 	})
 	expect([...store.keys()]).toEqual([
@@ -109,7 +128,7 @@ test('remove pages through large key sets', async () => {
 	}
 	await removePackageSkillsIndexEntries({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 	})
 	expect(store.size).toBe(0)
@@ -118,14 +137,21 @@ test('remove pages through large key sets', async () => {
 test('deleteAll removes only the target user entries', async () => {
 	const { kv, store } = createMemoryKvNamespace()
 	const env = createEnv(kv)
-	await writePackageSkillsIndex({ env, userId: 'user-1', index: emptyIndex() })
 	await writePackageSkillsIndex({
 		env,
-		userId: 'user-10',
+		userId: ownerIdFromStored('user-1'),
+		index: emptyIndex(),
+	})
+	await writePackageSkillsIndex({
+		env,
+		userId: ownerIdFromStored('user-10'),
 		index: emptyIndex(),
 	})
 	await expect(
-		deleteAllPackageSkillsIndexEntriesForUser({ env, userId: 'user-1' }),
+		deleteAllPackageSkillsIndexEntriesForUser({
+			env,
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).resolves.toBe(1)
 	expect([...store.keys()]).toEqual([
 		'package-skills-index:v1:user-10:pkg-1:commit-1',
@@ -136,12 +162,16 @@ test('missing KV binding: write throws, read and remove no-op', async () => {
 	const env = createEnv(undefined)
 	expect(hasPackageSkillsKv(env)).toBe(false)
 	await expect(
-		writePackageSkillsIndex({ env, userId: 'user-1', index: emptyIndex() }),
+		writePackageSkillsIndex({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			index: emptyIndex(),
+		}),
 	).rejects.toThrow(/BUNDLE_ARTIFACTS_KV/)
 	await expect(
 		readPackageSkillsIndex({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			publishedCommit: 'commit-1',
 		}),
@@ -149,11 +179,14 @@ test('missing KV binding: write throws, read and remove no-op', async () => {
 	await expect(
 		removePackageSkillsIndexEntries({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 		}),
 	).resolves.toBeUndefined()
 	await expect(
-		deleteAllPackageSkillsIndexEntriesForUser({ env, userId: 'user-1' }),
+		deleteAllPackageSkillsIndexEntriesForUser({
+			env,
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).resolves.toBe(0)
 })

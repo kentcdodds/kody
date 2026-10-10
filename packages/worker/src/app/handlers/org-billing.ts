@@ -592,7 +592,7 @@ export function createOrgBillingSuccessHandler(env: Env) {
 				})
 				const hasMcpClient = await userHasMcpOAuthGrants(
 					env,
-					user.mcpUser.userId,
+					personalOrgId(user.mcpUser.userId),
 				)
 				const needsOnboarding = !user.emailVerified || !hasMcpClient
 				return renderAppPage({

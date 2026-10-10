@@ -1,4 +1,8 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+	personalOrgId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import * as registryModule from '#mcp/capabilities/registry.ts'
@@ -251,7 +255,7 @@ test('package workflow tools create instances from package context and honor cal
 	silenceIncidentalRuntimeWarnings()
 	const { workflowEnv, created } = createWorkflowEnv({
 		id: 'pkg-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		name: 'Shade automation',
 		kody_id: 'shade-automation',
 		description: 'Shade automation package',
@@ -299,7 +303,7 @@ test('package workflow tools create instances from package context and honor cal
 	expect(created).toHaveLength(1)
 	expect(created[0]?.params).toEqual(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			kodyId: 'shade-automation',
 			sourceId: 'source-1',
@@ -385,7 +389,7 @@ export default async function main() {
 		expect(created[0]?.params).toEqual(
 			expect.objectContaining({
 				sourceType: 'inline',
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				workflowName: 'inline-code',
 				code: inlineCode,
 				idempotencyKey: expect.stringMatching(/^generated:/),
@@ -425,7 +429,7 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
-		userId,
+		userId: personalOrgId(userId),
 		name: 'hrv-discord-reaction-poller',
 		sourceId: 'job-source-1',
 		publishedCommit: 'published-commit-1',
@@ -539,7 +543,10 @@ test('buildKodyFns updates and deletes jobs through production-shaped bindings',
 	expect(jobManagerSyncPayloads).toMatchObject([{ userId }, { userId }])
 	await expect(readJobRow()).resolves.toBeNull()
 	await expect(
-		listRepoSessionsBySource(env, { userId, sourceId: job.sourceId }),
+		listRepoSessionsBySource(env, {
+			userId: personalOrgId(userId),
+			sourceId: job.sourceId,
+		}),
 	).resolves.toEqual([])
 })
 
@@ -798,7 +805,7 @@ export default async function main() { return await whatShipped({}) }`
 		runRecord: null,
 		runRecordHandle: {
 			id: 'run-keyed',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			startedAt: '2026-09-07T00:00:00.000Z',
 			persistence: 'eager',
 			context: { surface: 'webhook' },
@@ -881,7 +888,7 @@ export default async function main(params) { return { other: true, ...params } }
 
 	const mintFromRun = async (call: (typeof executor.calls)[number]) =>
 		await createStableDynamicWorkerId({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			storageContext: null,
 			workerOptions: {
 				...createDynamicWorkerCompatibilityOptions(),
@@ -907,7 +914,7 @@ test('runModuleWithRegistry begins a run before bundling and records a clear tim
 	vi.useFakeTimers()
 	const handle = {
 		id: 'run-bundle-timeout',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		startedAt: '2026-10-01T00:00:00.000Z',
 		persistence: 'eager' as const,
 		context: { surface: 'execute' as const, name: null },
