@@ -798,7 +798,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**12**):
+**14**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_unique_workers_per_day`,
@@ -833,6 +833,11 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
   classify observe-only `dynamic_worker_invoke` as hit or miss. Not an
   entitlement counter and not included in `exportCounters`.
+- `execute_call_days` — admitted hosted execute calls per UTC day (`day` PK,
+  `count`), repeats included. Feeds the daily `execute` usage trend; the plan
+  cap counts unique workers in `daily_counters` instead.
+- `budget_spend_state` / `budget_spend_users` — this month's org budget spend
+  (automation total and per-member micro-USD) for real-time budget checks.
 - `inbound_mcp_connection_last_used` — last successful MCP bearer validation per
   inbound OAuth `clientId` (`client_id` PK, `last_used_at`). Account →
   Connections joins this as last-used next to Revoke.
@@ -841,18 +846,20 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `inboundConnectionLastUsed` on the first `exportCounters` page only.
 
 Retention is self-enforced inside the DO: every read/write path
-opportunistically deletes counter, inbound-claim, and unique-worker-day rows
-older than fourteen UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
-only needs the current day; the window covers timezone edge cases, recent
-account exports, and inbound retries. Storage-byte state is not time-pruned.
-Write-lease rows clear on release/repair/purge.
+opportunistically deletes counter, inbound-claim, unique-worker-day, and
+execute-call-day rows older than fourteen UTC days
+(`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
+the window covers timezone edge cases, recent account exports, and inbound
+retries. Storage-byte state is not time-pruned. Write-lease rows clear on
+release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
 or day index. `adminUserMeterParity` reports meter-only daily counts.
-`readDailyTrend` returns one compact RPC of daily counters and unique-worker-day
-counts for that retention window; `readAccountUsageTrend` / `usageTrendGet`
-zero-fill missing days and attach a cheap `usage_rollups` monthly series. See
+`readDailyTrend` returns one compact RPC of daily counters, unique-worker-day
+counts, and execute-call counts for that retention window;
+`readAccountUsageTrend` / `usageTrendGet` zero-fill missing days and attach a
+cheap `usage_rollups` monthly series. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns

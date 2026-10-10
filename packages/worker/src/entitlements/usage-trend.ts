@@ -48,20 +48,20 @@ export type UsageTrend = {
 export function toUsageTrendDays(
 	trend: UserMeterDailyTrendResult,
 ): Array<UsageTrendDay> {
-	const executeByDay = new Map<string, number>()
+	const executeByDay = new Map(
+		trend.executeCalls.map((row) => [row.day, row.count]),
+	)
 	const jobRunsByDay = new Map<string, number>()
 	const automationByDay = new Map<string, number>()
 	for (const row of trend.counters) {
 		switch (row.resource) {
-			case 'execute_unique_workers_per_day':
-				executeByDay.set(row.day, row.count)
-				break
 			case 'job_runs_per_day':
 				jobRunsByDay.set(row.day, row.count)
 				break
 			case 'automation_invocations_per_day':
 				automationByDay.set(row.day, row.count)
 				break
+			case 'execute_unique_workers_per_day':
 			case 'email_sends_per_day':
 			case 'email_receives_per_day':
 			case 'outbound_fetches_per_day':

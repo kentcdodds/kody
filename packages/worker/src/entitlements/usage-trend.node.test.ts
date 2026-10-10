@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest'
 import { toUsageTrendDays } from '#worker/entitlements/usage-trend.ts'
 
-test('toUsageTrendDays pads the retention window and maps counters', () => {
+test('toUsageTrendDays pads the retention window and keeps execute as calls, not unique workers', () => {
 	const days = toUsageTrendDays({
 		retentionDays: 3,
 		startDay: '2026-10-05',
@@ -37,19 +37,23 @@ test('toUsageTrendDays pads the retention window and maps counters', () => {
 			{ day: '2026-10-06', count: 2 },
 			{ day: '2026-10-07', count: 1 },
 		],
+		executeCalls: [
+			{ day: '2026-10-05', count: 9 },
+			{ day: '2026-10-06', count: 30 },
+		],
 	})
 
 	expect(days).toEqual([
 		{
 			day: '2026-10-05',
-			execute: 4,
+			execute: 9,
 			uniqueWorkerDays: 0,
 			jobRuns: 0,
 			automationInvocations: 0,
 		},
 		{
 			day: '2026-10-06',
-			execute: 11,
+			execute: 30,
 			uniqueWorkerDays: 2,
 			jobRuns: 2,
 			automationInvocations: 0,

@@ -79,6 +79,10 @@ function meterStub(env: Env, userId: string) {
 			day: string
 			createdAt: string
 		}) => Promise<{ created: boolean }>
+		admitExecuteCall: (input: {
+			nowMs: number
+			limitPerMinute: number
+		}) => Promise<unknown>
 	}
 }
 
@@ -121,6 +125,18 @@ test('usageTrendGet returns a zero-filled retention window when empty', async ()
 	expect(result.days[0]!.day < result.days.at(-1)!.day).toBe(true)
 })
 
+async function admitExecuteCalls(
+	env: Env,
+	stableUserId: string,
+	at: Date,
+	calls: number,
+) {
+	const meter = meterStub(env, stableUserId)
+	for (let index = 0; index < calls; index += 1) {
+		await meter.admitExecuteCall({ nowMs: at.getTime(), limitPerMinute: 300 })
+	}
+}
+
 test('usageTrendGet maps partial days and monthly rollups for the signed-in user', async () => {
 	const now = new Date('2026-10-07T15:30:00.000Z')
 	const today = utcDayKey(now)
@@ -128,17 +144,14 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 	const twoDaysAgo = utcDayKey(shiftUtcDays(now, -2))
 	const { env, stableUserId, sqlite, userMeter } = createTrendEnv()
 
-	await userMeter.seed({
-		userId: stableUserId,
-		resource: 'execute_unique_workers_per_day',
-		day: twoDaysAgo,
-		count: 4,
-	})
+	await admitExecuteCalls(env, stableUserId, shiftUtcDays(now, -2), 4)
+	await admitExecuteCalls(env, stableUserId, shiftUtcDays(now, -1), 11)
+	// The unique-worker cap counter is not the execute call series.
 	await userMeter.seed({
 		userId: stableUserId,
 		resource: 'execute_unique_workers_per_day',
 		day: yesterday,
-		count: 11,
+		count: 3,
 	})
 	await userMeter.seed({
 		userId: stableUserId,
@@ -236,18 +249,13 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 	const liveToday = utcDayKey(liveNow)
 	const liveYesterday = utcDayKey(shiftUtcDays(liveNow, -1))
 	const liveEnv = createTrendEnv()
-	await liveEnv.userMeter.seed({
-		userId: liveEnv.stableUserId,
-		resource: 'execute_unique_workers_per_day',
-		day: liveYesterday,
-		count: 5,
-	})
-	await liveEnv.userMeter.seed({
-		userId: liveEnv.stableUserId,
-		resource: 'execute_unique_workers_per_day',
-		day: liveToday,
-		count: 8,
-	})
+	await admitExecuteCalls(
+		liveEnv.env,
+		liveEnv.stableUserId,
+		shiftUtcDays(liveNow, -1),
+		5,
+	)
+	await admitExecuteCalls(liveEnv.env, liveEnv.stableUserId, liveNow, 8)
 	await meterStub(liveEnv.env, liveEnv.stableUserId).claimDynamicWorkerDay({
 		workerId: 'live-worker',
 		day: liveToday,
