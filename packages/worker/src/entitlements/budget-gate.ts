@@ -34,21 +34,18 @@ export type OrgBudgetGateContext = {
 	automationSource?: string | null
 }
 
+/** Missing or deleted org rows skip the gate. Query errors propagate so a D1 fault never disables budget enforcement. */
 async function orgBudgetEnforcementAvailable(
 	db: D1Database,
 	orgId: OwnerId,
 ): Promise<boolean> {
-	try {
-		const row = await db
-			.prepare(
-				`SELECT 1 AS ok FROM orgs WHERE id = ?${andLiveDeletedAtSql()} LIMIT 1`,
-			)
-			.bind(orgId)
-			.first<{ ok: number }>()
-		return row != null
-	} catch {
-		return false
-	}
+	const row = await db
+		.prepare(
+			`SELECT 1 AS ok FROM orgs WHERE id = ?${andLiveDeletedAtSql()} LIMIT 1`,
+		)
+		.bind(orgId)
+		.first<{ ok: number }>()
+	return row != null
 }
 
 async function loadBudgetLimits(input: {
@@ -59,24 +56,17 @@ async function loadBudgetLimits(input: {
 	userBudgetMicroUsd: number | null
 	automationBudgetMicroUsd: number | null
 }> {
-	try {
-		const settings = await readOrgBudgetSettings(input.db, input.orgId)
-		const individual =
-			input.actorUserId == null
-				? null
-				: await readUserBudgetMicroUsd(input.db, input.orgId, input.actorUserId)
-		return {
-			userBudgetMicroUsd: resolveEffectiveUserBudgetMicroUsd({
-				individualBudget: individual,
-				orgDefaultBudget: settings.defaultUserBudgetMicroUsd,
-			}),
-			automationBudgetMicroUsd: settings.automationBudgetMicroUsd,
-		}
-	} catch {
-		return {
-			userBudgetMicroUsd: null,
-			automationBudgetMicroUsd: null,
-		}
+	const settings = await readOrgBudgetSettings(input.db, input.orgId)
+	const individual =
+		input.actorUserId == null
+			? null
+			: await readUserBudgetMicroUsd(input.db, input.orgId, input.actorUserId)
+	return {
+		userBudgetMicroUsd: resolveEffectiveUserBudgetMicroUsd({
+			individualBudget: individual,
+			orgDefaultBudget: settings.defaultUserBudgetMicroUsd,
+		}),
+		automationBudgetMicroUsd: settings.automationBudgetMicroUsd,
 	}
 }
 

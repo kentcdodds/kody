@@ -371,6 +371,10 @@
 		{
 			"filename": "0092-local-execute-parity-scopes.sql",
 			"sha256": "bfd5e655df0fa49080e9b2748fc7c9383a7df1f8ec215b1a8ff61ee5bda2dc93"
+		},
+		{
+			"filename": "0093-teams-org-access-indexes.sql",
+			"sha256": "9c56c231b4be4e08a6afc17c1e213c179b2e0b65cb8f190cc545678e9489ddda"
 		}
 	]
 }

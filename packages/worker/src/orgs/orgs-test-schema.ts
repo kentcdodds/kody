@@ -27,6 +27,8 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				job_retention_failed_once_days INTEGER,
 				job_retention_disabled_recurring_days INTEGER,
 				email_outbound_paused_at TEXT,
+				default_user_budget_micro_usd INTEGER,
+				automation_budget_micro_usd INTEGER,
 				suspended_at TEXT,
 				deleted_at TEXT,
 				deleting_at TEXT,
@@ -156,6 +158,19 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				epoch INTEGER NOT NULL,
 				compiled_json TEXT NOT NULL,
 				computed_at TEXT NOT NULL,
+				PRIMARY KEY (org_id, user_id)
+			)`,
+		)
+		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS org_user_budgets (
+				org_id TEXT NOT NULL,
+				user_id TEXT NOT NULL,
+				monthly_budget_micro_usd INTEGER NOT NULL,
+				set_by_user_id TEXT NOT NULL,
+				updated_at TEXT NOT NULL,
+				deleted_at TEXT,
 				PRIMARY KEY (org_id, user_id)
 			)`,
 		)

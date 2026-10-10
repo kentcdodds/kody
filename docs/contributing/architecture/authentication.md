@@ -256,8 +256,8 @@ assistant features:
   `403 email_verification_required` JSON response pointing at `/account`. The
   gate fails closed: when verification cannot be established, the request is
   rejected. The request org comes from the grant's `props.orgId` (falling back
-  to `props.userId` as the personal org id until P9), not always the person's
-  implicit personal org.
+  to `props.userId` as the personal org id when the grant has no `orgId`), not
+  always the person's implicit personal org.
 - **Inbound email**: `handleInboundEmail` in
   `packages/worker/src/email/inbound.ts` rejects routed mail for unverified
   accounts right after username routing (`setReject` plus a bounded `rejected`
@@ -773,9 +773,7 @@ routed from `packages/worker/src/index.ts`.
   rendering approve or login. Social buttons use the same SSR-embedded provider
   list as `/login`, so a full-document load does not wait on
   `/auth/providers.json`. The approve control stays inert until hydration so the
-  visible button cannot submit a GET that drops `client_id`. Inline authorize
-  login was always password-only until the GitHub-consent fix; that was the
-  original design, not a recent regression from Teams P4 (#3060).
+  visible button cannot submit a GET that drops `client_id`.
 - Approval is rejected before `completeAuthorization` when the account email is
   unverified, so no grant/token is created until verification succeeds.
 

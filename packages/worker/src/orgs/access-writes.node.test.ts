@@ -33,12 +33,13 @@ test('createOrg and upsertGrant are visible when access is compiled', async () =
 	const creatorId = testStableUserIdFromEmail('creator@example.com')
 	const org = await createOrg({
 		db,
-		slug: 'Acme',
-		displayName: 'Acme',
+		env: {} as Env,
+		slug: 'Rocket-Co',
+		displayName: 'Rocket Co',
 		createdByUserId: creatorId,
 		audit: createTestOrgAuditWriter(),
 	})
-	expect(org.slug).toBe('acme')
+	expect(org.slug).toBe('rocket-co')
 	expect(org.id).toMatch(/^[a-f0-9]{64}$/)
 	expect(org.id).not.toBe(creatorId)
 
@@ -84,6 +85,7 @@ test('protectLastOwner blocks demotion and removal when only one owner remains',
 	const ownerId = testStableUserIdFromEmail('solo-owner@example.com')
 	const org = await createOrg({
 		db,
+		env: {} as Env,
 		slug: 'solo',
 		createdByUserId: ownerId,
 		audit: createTestOrgAuditWriter(),
@@ -123,6 +125,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 	const memberId = testStableUserIdFromEmail('grant-member@example.com')
 	const org = await createOrg({
 		db,
+		env: {} as Env,
 		slug: 'grants',
 		createdByUserId: ownerId,
 		audit: createTestOrgAuditWriter(),
@@ -177,7 +180,8 @@ test('write helpers record org audit events for the acting person', async () => 
 	const audit = createTestOrgAuditWriter({ db: auditDb, actorUserId: ownerId })
 	const org = await createOrg({
 		db,
-		slug: 'acme',
+		env: {} as Env,
+		slug: 'auditco',
 		createdByUserId: ownerId,
 		audit,
 	})
@@ -276,7 +280,8 @@ test('an audit write failure is reported without undoing the access change', asy
 	const memberId = testStableUserIdFromEmail('member@example.com')
 	const org = await createOrg({
 		db,
-		slug: 'acme',
+		env: {} as Env,
+		slug: 'auditco',
 		createdByUserId: ownerId,
 		audit: createTestOrgAuditWriter(),
 	})
