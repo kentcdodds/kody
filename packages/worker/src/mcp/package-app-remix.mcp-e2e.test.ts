@@ -3,8 +3,8 @@ import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import {
 	createAppSessionCookie,
 	createMcpClient,
-	createTestDatabase,
-	startDevServer,
+	createUniqueTestUser,
+	getSharedMcpE2eServer,
 } from '../../../../tools/mcp-test-support.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { createRemixPackageAppFiles } from '#worker/test-support/remix-package-app-fixture.ts'
@@ -45,16 +45,13 @@ test('a Remix package app publishes and serves SSR routes, a form action, middle
 	silenceExpectedConsoleWarns([
 		/Ignoring duplicate module:.*generated\/esbuild\.wasm/,
 	])
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir, {
-		withCloudflareMock: true,
-	})
-	await using mcp = await createMcpClient(server.origin, database.user, {
-		persistDir: database.persistDir,
+	const server = await getSharedMcpE2eServer()
+	const user = createUniqueTestUser()
+	await using mcp = await createMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
 	})
-	const { username } = database.user
+	const { username } = user
 	let packageId: string | undefined
 
 	try {
@@ -78,7 +75,7 @@ export default async function main(input) {
 		expect(saved.has_app).toBe(true)
 		packageId = saved.package_id
 
-		const cookie = await createAppSessionCookie(server.origin, database.user)
+		const cookie = await createAppSessionCookie(server.origin, user)
 		const appBasePath = `/@${username}/packages/${kodyId}`
 		const appOrigin = `${server.origin}${appBasePath}`
 		const authedFetch = (url: string, init?: RequestInit) =>

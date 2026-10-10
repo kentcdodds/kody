@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest'
 import {
 	createModernMcpClient,
-	createTestDatabase,
-	startDevServer,
+	createUniqueTestUser,
+	getSharedMcpE2eServer,
 } from '../../../../tools/mcp-test-support.ts'
 import { executeProgressPhaseMessages } from './progress.ts'
 
@@ -15,13 +15,12 @@ import { executeProgressPhaseMessages } from './progress.ts'
  */
 
 test('pinned 2026-07-28 client negotiates the stateless lane and calls search', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using modern = await createModernMcpClient(
-		server.origin,
-		database.user,
-		{ persistDir: database.persistDir },
-	)
+	const server = await getSharedMcpE2eServer()
+	const user = createUniqueTestUser()
+	await using modern = await createModernMcpClient(server.origin, user, {
+		ensureUser: server.ensureUser,
+		markEmailVerified: server.markEmailVerified,
+	})
 
 	const tools = await modern.client.listTools()
 	const toolNames = tools.tools.map((tool) => tool.name).sort()
@@ -41,13 +40,12 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 })
 
 test('stateless lane lists onboarding prompts and emits execute progress', async () => {
-	await using database = await createTestDatabase()
-	await using server = await startDevServer(database.persistDir)
-	await using modern = await createModernMcpClient(
-		server.origin,
-		database.user,
-		{ persistDir: database.persistDir },
-	)
+	const server = await getSharedMcpE2eServer()
+	const user = createUniqueTestUser()
+	await using modern = await createModernMcpClient(server.origin, user, {
+		ensureUser: server.ensureUser,
+		markEmailVerified: server.markEmailVerified,
+	})
 
 	const prompts = await modern.client.listPrompts()
 	const promptNames = prompts.prompts.map((prompt) => prompt.name).sort()
