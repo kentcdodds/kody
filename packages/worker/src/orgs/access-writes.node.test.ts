@@ -179,7 +179,8 @@ test('write helpers record org audit events for the acting person', async () => 
 	const audit = createTestOrgAuditWriter({ db: auditDb, actorUserId: ownerId })
 	const org = await createOrg({
 		db,
-		slug: 'acme',
+		env: {} as Env,
+		slug: 'auditco',
 		createdByUserId: ownerId,
 		audit,
 	})
@@ -278,7 +279,8 @@ test('an audit write failure is reported without undoing the access change', asy
 	const memberId = testStableUserIdFromEmail('member@example.com')
 	const org = await createOrg({
 		db,
-		slug: 'acme',
+		env: {} as Env,
+		slug: 'auditco',
 		createdByUserId: ownerId,
 		audit: createTestOrgAuditWriter(),
 	})
