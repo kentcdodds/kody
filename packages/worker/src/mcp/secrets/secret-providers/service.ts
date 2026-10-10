@@ -1,5 +1,6 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
+import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -422,6 +423,16 @@ export async function resolveProviderSecret(input: {
 			providerId,
 			canonicalRef,
 			packageId: authorityPackageId,
+		})
+	} else {
+		// Ambient ad-hoc: acting person needs secret:use on the door key.
+		// Package authority keeps assertProviderGrant only.
+		await authorizeAmbientSecretUse({
+			env: input.env,
+			request: input.request,
+			orgUserId: ownerUserId,
+			secretName: binding.doorSecretName,
+			authorityPackageId: null,
 		})
 	}
 	const cached = readProviderSecretCache({

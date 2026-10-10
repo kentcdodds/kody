@@ -10,8 +10,10 @@ import {
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
+import { authorizeAmbientIntegrationUse } from '#worker/authorization/credential-use.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	mcpServerCapabilityId,
 	mcpServerDomainId,
@@ -102,6 +104,13 @@ function createCapabilityFromTool(input: {
 			// that so mcpServerLock grants still allow the approved package.
 			const { authorityPackageId } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,
+			})
+			await authorizeAmbientIntegrationUse({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				orgUserId: ownerIdFromCaller(ctx.callerContext) || userId,
+				integrationName: ref.name,
+				authorityPackageId,
 			})
 			await assertCanUseMcpServer({
 				env: ctx.env,

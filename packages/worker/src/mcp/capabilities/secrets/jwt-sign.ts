@@ -9,6 +9,7 @@ import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-acces
 import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
+import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
@@ -106,6 +107,13 @@ export const jwtSignCapability = defineDomainCapability(
 			const secretScope =
 				args.private_key_secret_scope ?? referenced.scope ?? undefined
 			const secretUserId = ownerIdFromCaller(ctx.callerContext)
+			await authorizeAmbientSecretUse({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				orgUserId: secretUserId,
+				secretName,
+				authorityPackageId,
+			})
 			const resolved = await resolveSecret({
 				env: ctx.env,
 				userId: secretUserId,

@@ -62,6 +62,15 @@ resource grant** in the org. A check with a resource requires that resource.
 Personal-org Owners still hold every permission, so steps 2 to 4 never deny for
 them. Profiles and the signed-in step are the other denials that can fire.
 
+**Ambient credential resolution** (ad hoc `execute`, CLI `--local` gateway, MCP
+execute without package secret authority): before expanding `{{secret:…}}` /
+`{{integration-token:…}}`, signing with `secretJwtSign`, using a provider door
+key, or calling a connected MCP server from execute, the handler calls
+`authorize` with `secret:use` or `integration:use` on that resource
+(`authorization/credential-use.ts`). Package-authority runs keep package
+attachment / usageMode / provider grants only. Automation is Owner. See
+[ADR 0021](../decisions/0021-publish-gated-package-composition.md).
+
 ### Checking many resources
 
 Lists, search, and background checks compile once and decide per resource:

@@ -2,6 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-08-18
+- **Amended:** 2026-10-10 (Teams: ambient credential use requires per-resource
+  `secret:use` / `integration:use`; delete the pre-Teams ambient skip)
 
 ## Context
 
@@ -27,9 +29,22 @@ Keep Kody publish-gated and snapshot-isolated:
 - Do not deactivate or auto-republish dependents when a provider changes or is
   deleted. Publish already reports stale static snapshots for the agent to
   decide.
-- Ad hoc `execute` stays ambient. Packages remain the declared-authority unit
-  (`kody.secretMounts`, host approval, integration allowlists,
-  `kody.dependencies`).
+- Packages remain the declared-authority unit for _which_ credentials a run may
+  touch (`kody.secretMounts`, host approval, integration allowlists, provider
+  grants, `kody.dependencies`). Ad hoc `execute` has no package attachment: it
+  may still resolve org credentials by name, but only when the acting person
+  holds `secret:use` / `integration:use` on that concrete resource
+  ([ADR 0062](./0062-one-access-check.md)). There is no ambient skip of org
+  RBAC.
+
+**Amended (2026-10-10):** Before Teams, "ad hoc execute stays ambient" was read
+as skipping per-resource use checks. With org members and outside collaborators,
+that skipped `authorize` on placeholder expansion and let any actor with
+`org:execute` use every unlocked org secret and integration. Resolution now
+calls `authorize` for ambient (no package secret authority) paths in the fetch
+gateway, JWT sign, provider door keys, and connected MCP servers.
+Package-authority runs keep package attachment only. Automation acts as Owner
+and keeps using the org's attachments.
 
 ## Consequences
 
@@ -41,5 +56,8 @@ Keep Kody publish-gated and snapshot-isolated:
   whose published manifest cannot load fails the dependency check instead of
   being treated as a leaf. There is no runtime that leaves cyclic packages
   "permanently inactive."
+- A member or outside collaborator who can run ad hoc execute cannot expand
+  `{{secret:…}}` / `{{integration-token:…}}` (or ambient provider / MCP use)
+  without a Use grant on that resource. Owners and Automation are unchanged.
 - Revisit only if a concrete user need requires live in-process composition or a
   package-wide kill switch that is not delete.
