@@ -243,10 +243,13 @@ test('team settings rail names the URL org when the session list is personal-onl
 			}),
 		}),
 	)
+	// Heading and Organization rail follow the URL org (member-shaped when
+	// the session list omitted the team — no Billing).
 	expect(html).toContain('>@acme<')
 	expect(html).toContain('href="/@acme/-/settings"')
 	expect(html).toContain('href="/@acme/-/members"')
 	expect(html).toContain('aria-label="Organization"')
+	expect(html).not.toContain('href="/@acme/-/billing"')
 	expect(html).not.toContain('aria-label="Build"')
 })
 

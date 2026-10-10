@@ -430,14 +430,17 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 	const personal =
 		orgSlug === null || (org?.personal ?? orgSlug === input.session?.username)
 	// Prefer the session role when the org is listed. Collaborators keep
-	// `null`. When the list is stale but the URL already bound an org-owned
-	// page, assume owner so the Organization rail still matches the page.
+	// `null`. When the list is stale on a team URL, use member-shaped links
+	// (Settings/Members/Teams/Grants/Collaborators, no Billing) so chrome
+	// stays on the URL org without inventing Owner-only Billing.
 	const role =
 		org !== undefined
 			? org.role
-			: personal || orgSlug !== null
+			: personal
 				? ('owner' as const)
-				: null
+				: orgSlug !== null
+					? ('member' as const)
+					: null
 	return {
 		label: 'Workspace sections',
 		heading: {

@@ -262,19 +262,20 @@ function OrgSwitcher(
 			organizations,
 			lastUsedSlug: handle.props.lastUsedOrganization,
 		})
+		const listedCurrent = organizations.find((org) => org.slug === currentSlug)
 		// Stale session lists can omit the URL org on `/@slug/-/…`. Synthesize
-		// enough for the trigger label and Manage group so chrome matches the
-		// page (server already authorized the URL org).
-		const current =
-			organizations.find((org) => org.slug === currentSlug) ??
-			(currentSlug
-				? {
+		// a member-shaped row for the trigger label and a dedicated switcher
+		// entry — do not invent Owner (Billing) links.
+		const synthesizedCurrent =
+			listedCurrent || !currentSlug
+				? null
+				: {
 						slug: currentSlug,
 						displayName: null,
-						role: 'owner' as const,
+						role: 'member' as const,
 						personal: currentSlug === handle.props.username,
 					}
-				: undefined)
+		const current = listedCurrent ?? synthesizedCurrent ?? undefined
 		const currentIdentity = current ? orgIdentity(current, viewer) : null
 		const label = currentIdentity?.handle ?? 'Organizations'
 		const avatarSize = handle.props.menu ? 32 : 28
@@ -348,7 +349,22 @@ function OrgSwitcher(
 				}
 			}
 		}
-		const orgRows = entries.filter((entry) => entry.kind === 'org').map(toRow)
+		const orgRowsFromSession = entries
+			.filter((entry) => entry.kind === 'org')
+			.map(toRow)
+		// Dedicated row when the URL org is missing from the session list so
+		// the person can still see and re-select it in the switcher.
+		const orgRows =
+			synthesizedCurrent !== null
+				? [
+						toRow({
+							kind: 'org',
+							org: synthesizedCurrent,
+							showRole: true,
+						}),
+						...orgRowsFromSession,
+					]
+				: orgRowsFromSession
 		// Prefer the team org in context so Settings/Members/… stay one click
 		// away from account pages. Fall back to last-used / first team org.
 		// Personal-only sessions still get Billing for the signup org.
