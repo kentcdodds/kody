@@ -35,6 +35,10 @@ WHERE u.account_type = 'platform'
 	AND NOT EXISTS (
 		SELECT 1
 		FROM org_memberships m
+		INNER JOIN users human
+			ON human.stable_user_id = m.user_id
+			AND human.account_type = 'person'
+			AND human.deleted_at IS NULL
 		WHERE m.org_id = u.stable_user_id
 			AND m.user_id != u.stable_user_id
 			AND m.role = 'owner'

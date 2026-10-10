@@ -398,7 +398,7 @@
 		},
 		{
 			"filename": "0099-delete-platform-users.sql",
-			"sha256": "76f971403794ba2319f40ddfa1552ef3802fd8dcb2ea0eb1fcf98995a9b840fb"
+			"sha256": "a7b53ac896b0ca36466bce32d22c9c67b7a9e715e7d3f2cb9bb315643f388f8e"
 		},
 		{
 			"filename": "0100-rebuild-users-drop-moved-columns.sql",

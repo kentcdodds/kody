@@ -210,12 +210,11 @@ credits. Only `@kody` received the $1,000 site-admin credit.
 
 The seed writes that converted shape (a `use` grant, a grant invite, and an
 ordinary org with an Owner). The sealed backup and verify workflow
-(`🔁 Teams P8 Conversion Checks`) and the sharing conversion script queried
-`package_share_grants`, `package_scope_grants`, and
-`users.account_type = 'platform'` after that migration. Both are removed.
-`package_share_grants`, `package_scope_grants`, and `username_redirects` stay in
-the schema until the P9 drop migration (`0097`–`0098`). This rehearsal does not
-query them; a P9 contract rehearsal snapshots before and after those drops.
+(`🔁 Teams P8 Conversion Checks`) and the sharing conversion script are gone. A
+P9 contract rehearsal snapshots before and after the drop migrations
+(`0097`–`0101`) that remove `package_share_grants`, `package_scope_grants`,
+`username_redirects`, platform `users` rows, moved billing columns, and leftover
+pin/follow columns.
 
 ## P3: org.migrated audit backfill
 

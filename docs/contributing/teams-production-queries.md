@@ -6,9 +6,8 @@ grants (with and without `orgId`) and live Stripe subscriptions.
 non-owner / non-granted secret or integration audit rows. Counts and ids only.
 Production runs are `kentcdodds` or the approved Cloud Agent actor (`cursor`).
 
-The pre-conversion questions that read `package_share_grants`,
-`package_scope_grants`, or `users.account_type = 'platform'` are gone. Those
-tables and the column were dropped in the Teams P9 contract migrations.
+The report no longer queries `package_share_grants`, `package_scope_grants`, or
+`users.account_type`. Those tables and column are absent from the schema.
 
 ## Run
 

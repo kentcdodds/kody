@@ -375,26 +375,20 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   community profile fields are `display_name`, `bio`, and `profile_visibility`
   (default `public`). `experiments_opt_in` is the account preference for the
   feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
-  Platform `users` rows and `users.account_type` were removed in the Teams P9
-  contract migrations ([#3084](https://github.com/kentcdodds/kody/issues/3084)).
-  First-touch marketing columns (`utm_*`, `first_touch_landing_path`,
-  `first_touch_referrer`) store signup attribution when present. Activation and
-  return columns (`first_mcp_connected_at`, `first_execute_at`,
-  `first_search_at`, `first_saved_package_at`, `first_secret_at`,
-  `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
-  support product metrics; email verification delivery columns track the latest
-  transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
-  the write-once ledger for the 14-day Pro overlay granted when known connected
-  agent ecosystems first reach 2; `second_agent_standard_gift_expires_at` is set
-  only when that overlay actually raises a free account (NULL means already paid
-  / no-op). See [Entitlements](./entitlements.md#second-agent-pro-gift).
-  `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
-  campaign mail only). `referral_standard_credit_expires_at` is the stackable
-  Pro overlay from the uncapped referral program. Pre-signup attribution lives
-  in the last-wins one-week `kody_ref` cookie. `referrals` stores the
-  signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
-  invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
-  fields while email is unverified). See
+  Every `users` row is a person account. First-touch marketing columns (`utm_*`,
+  `first_touch_landing_path`, `first_touch_referrer`) store signup attribution
+  when present. Activation and return columns (`first_mcp_connected_at`,
+  `first_execute_at`, `first_search_at`, `first_saved_package_at`,
+  `first_secret_at`, `first_integration_at`, `first_job_at`, `mcp_client_name`,
+  `last_active_at`) support product metrics; email verification delivery columns
+  track the latest transactional verify-mail outcome. `user_tips_email_opt_outs`
+  is the durable Kody tips opt-out (usage-state campaign mail only). Billing,
+  Stripe, gift, and referral-overlay columns live on the person's personal
+  `orgs` row (see `orgs` below and [Entitlements](./entitlements.md)).
+  Pre-signup attribution lives in the last-wins one-week `kody_ref` cookie.
+  `referrals` stores the signup-time row (`referrer_stable_user_id`,
+  `referee_stable_user_id`) and the invoice-gated reward ledger (`status`,
+  `reward_invoice_id`, held invoice fields while email is unverified). See
   [Entitlements](./entitlements.md#referral-pro-credit). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
@@ -433,9 +427,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
-- `package_scope_grants`, `package_share_grants`, and `username_redirects` were
-  dropped in the Teams P9 contract migrations (`0097`–`0098`). Access uses org
-  grants and Owner memberships. Reserved old handles live in `handles`.
+- Package access uses org grants and Owner memberships. There is no
+  `package_scope_grants`, `package_share_grants`, or `username_redirects` table.
+  Reserved old handles live in `handles`.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
