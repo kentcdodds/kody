@@ -1,4 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
 	type ContentBlock,
@@ -63,10 +62,12 @@ import {
 	createRawFetchHostSink,
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
+import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { getCachedUserEntitlement } from '#worker/entitlements/service.ts'
 import {
-	consumeDailyEntitlement,
-	getCachedUserEntitlement,
-} from '#worker/entitlements/service.ts'
+	admitHostedExecuteCall,
+	createExecuteWorkerDayClaim,
+} from '#mcp/execute-admission.ts'
 import {
 	abandonRunRecord,
 	claimRunRecord,
@@ -330,9 +331,9 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 			async function runExecuteTool() {
 				const normalizedIdempotencyKey =
 					normalizeExecuteIdempotencyKey(idempotencyKey)
-				// Look up an existing keyed execute run before consuming quota
-				// so transport-timeout retries can replay / report in-progress
-				// without burning another daily slot.
+				// Look up an existing keyed execute run before admission so
+				// transport-timeout retries can replay / report in-progress
+				// without spending the runaway brake or loading a worker.
 				const storageOwnerId = ownerIdFromCaller(callerContext)
 				if (normalizedIdempotencyKey && storageOwnerId) {
 					const existing = await getRunRecordByIdempotencyKey({
@@ -360,7 +361,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const liveFlagsPromise = resolveCallerFeatureFlags(env, callerContext)
 				const entitlementPrefetch = callerContext.user?.userId
 					? getCachedUserEntitlement(env.APP_DB, {
-							userId: personalOrgId(callerContext.user.userId),
+							userId: storageOwnerId,
 							email: callerContext.user.email,
 						}).then(
 							() => undefined,
@@ -394,24 +395,29 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					...executeAttribution,
 				}
 
-				// Daily execute quota, consumed before claim/bundling/sandbox
-				// so over-limit calls cost nothing and do not poison a key.
-				if (callerContext.user?.userId) {
-					await consumeDailyEntitlement({
-						db: env.APP_DB,
-						env,
-						userId: personalOrgId(callerContext.user.userId),
-						email: callerContext.user.email,
-						resource: 'execute_calls_per_day',
-						orgBudget: callerContext.request
-							? {
-									orgId: callerContext.request.org.id,
-									orgSlug: callerContext.request.org.slug,
-									actorUserId: callerContext.request.actor?.userId ?? null,
-									actorUsername: callerContext.request.actor?.username ?? null,
-								}
-							: undefined,
-					})
+				// Runaway brake before claim/bundling/sandbox so a refused call
+				// costs nothing and does not poison a key. The plan cap counts
+				// unique workers and is spent inside the executor, once the
+				// worker id is known and before that worker loads.
+				const claimWorkerDay =
+					callerContext.user?.userId && storageOwnerId
+						? createExecuteWorkerDayClaim({
+								env,
+								ownerId: storageOwnerId,
+								email: callerContext.user.email,
+								orgBudget: callerContext.request
+									? {
+											orgId: callerContext.request.org.id,
+											orgSlug: callerContext.request.org.slug,
+											actorUserId: callerContext.request.actor?.userId ?? null,
+											actorUsername:
+												callerContext.request.actor?.username ?? null,
+										}
+									: undefined,
+							})
+						: undefined
+				if (claimWorkerDay) {
+					await admitHostedExecuteCall({ env, ownerId: storageOwnerId })
 				}
 
 				if (normalizedIdempotencyKey && storageOwnerId) {
@@ -480,6 +486,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 											rawFetchHostSink: rawFetchHosts.sink,
 											conversationId: resolvedConversationId,
 											runRecordHandle: claimedRunHandle,
+											claimWorkerDay,
 											waitUntil,
 											reportProgress: reportProgress ?? undefined,
 											signal: inboundSignal,
@@ -504,6 +511,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							)
 							return await execution
 						} catch (cause) {
+							// A plan-limit denial happens before the worker loads:
+							// the outer boundary releases the key, as for any
+							// other pre-sandbox refusal.
+							if (isEntitlementLimitError(cause)) throw cause
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
 							// route it through the sandbox-error result path so it

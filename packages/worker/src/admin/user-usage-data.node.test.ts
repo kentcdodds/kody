@@ -542,7 +542,7 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (seeded then warm
 		meter: {
 			email_sends_per_day: 111,
 			email_receives_per_day: 222,
-			execute_calls_per_day: 333,
+			execute_unique_workers_per_day: 333,
 			outbound_fetches_per_day: 444,
 		},
 	})
@@ -550,7 +550,7 @@ test('loadAdminUserUsageData reads daily counts from UserMeter (seeded then warm
 	expect(await consumption(Promise.resolve(warm))).toMatchObject({
 		email_sends_per_day: 111,
 		email_receives_per_day: 222,
-		execute_calls_per_day: 333,
+		execute_unique_workers_per_day: 333,
 		outbound_fetches_per_day: 444,
 		saved_packages: 6,
 		stored_email_messages: 9,

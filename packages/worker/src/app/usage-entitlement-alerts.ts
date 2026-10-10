@@ -43,7 +43,7 @@ export const fleetEntitlementHitClaimTtlSeconds = 8 * 24 * 60 * 60
 export const fleetRepeatedEntitlementWindowDays = 7
 export const fleetRepeatedEntitlementThresholdDays = 3
 export const fleetRepeatedEntitlementResource =
-	'execute_calls_per_day' as const satisfies AdminUsageEntitlementResource
+	'execute_unique_workers_per_day' as const satisfies AdminUsageEntitlementResource
 const dailyClaimLookbackDays = 3
 
 type FleetCrossingClaim =

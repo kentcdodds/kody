@@ -130,13 +130,13 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 
 	await userMeter.seed({
 		userId: stableUserId,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: twoDaysAgo,
 		count: 4,
 	})
 	await userMeter.seed({
 		userId: stableUserId,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: yesterday,
 		count: 11,
 	})
@@ -238,13 +238,13 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 	const liveEnv = createTrendEnv()
 	await liveEnv.userMeter.seed({
 		userId: liveEnv.stableUserId,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: liveYesterday,
 		count: 5,
 	})
 	await liveEnv.userMeter.seed({
 		userId: liveEnv.stableUserId,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		day: liveToday,
 		count: 8,
 	})

@@ -228,12 +228,21 @@ type DynamicWorkerExecutorInput = {
 	 */
 	onWorkerId?: (workerId: string) => void
 	/**
+	 * Capped unique-worker-day claim. Awaited before the worker loads, so a
+	 * throw (plan limit) stops the run without a load. Must record the
+	 * `dynamic_worker_day` usage event itself. Omit to use the uncapped
+	 * attribution claim.
+	 */
+	claimWorkerDay?: ClaimWorkerDay
+	/**
 	 * When set, unique-worker-day metering and the first-execute activation
 	 * stamp run on `waitUntil` instead of the sandbox critical path. Without
 	 * an execution context the writes stay awaited so they are not dropped.
 	 */
 	waitUntil?: (promise: Promise<unknown>) => void
 }
+
+export type ClaimWorkerDay = (workerId: string) => Promise<{ created: boolean }>
 
 export type DynamicWorkerEvaluatePackageContext = {
 	packageId: string
@@ -598,6 +607,8 @@ export function createExecuteExecutor(input: {
 	 * meters). Use to stamp run metadata before evaluate finishes.
 	 */
 	onWorkerId?: (workerId: string) => void
+	/** Capped unique-worker-day claim awaited before load (hosted execute). */
+	claimWorkerDay?: ClaimWorkerDay
 	/**
 	 * When false, sandbox `fetch` is rejected. Retriever runs use this to stay
 	 * closed-world. Defaults to true.
@@ -650,6 +661,7 @@ export function createExecuteExecutor(input: {
 		packageId: input.packageId,
 		executeShape: input.executeShape,
 		onWorkerId: input.onWorkerId,
+		claimWorkerDay: input.claimWorkerDay,
 		waitUntil: input.waitUntil,
 	})
 }
@@ -705,18 +717,23 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				input.packageId?.trim() ||
 				invocation?.packageContext?.packageId?.trim() ||
 				null
-			const claimedDay = recordUniqueDynamicWorkerDay({
-				env: input.usageEnv,
-				userId: input.gatewayProps.userId,
-				workerId,
-				surface: input.surface ?? 'execute',
-				...(attributedPackageId ? { packageId: attributedPackageId } : {}),
-			})
-			await runExecuteBookkeeping(
-				claimedDay,
-				input.waitUntil,
-				'dynamic-worker-day-record-failed',
-			)
+			let claimedDay: Promise<{ created: boolean } | undefined>
+			if (input.claimWorkerDay) {
+				claimedDay = Promise.resolve(await input.claimWorkerDay(workerId))
+			} else {
+				claimedDay = recordUniqueDynamicWorkerDay({
+					env: input.usageEnv,
+					userId: input.gatewayProps.userId,
+					workerId,
+					surface: input.surface ?? 'execute',
+					...(attributedPackageId ? { packageId: attributedPackageId } : {}),
+				})
+				await runExecuteBookkeeping(
+					claimedDay,
+					input.waitUntil,
+					'dynamic-worker-day-record-failed',
+				)
+			}
 			const codeChars = countDynamicWorkerModuleGraphChars(
 				workerOptions.modules,
 			)

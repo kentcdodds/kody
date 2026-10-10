@@ -75,8 +75,8 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		kind: 'approaching',
 		warnings: [
 			{
-				label: 'execute calls per day',
-				resource: 'execute_calls_per_day',
+				label: 'unique execute workers per day',
+				resource: 'execute_unique_workers_per_day',
 				current: 200,
 				limit: 250,
 				percentOfLimit: 0.8,
@@ -97,8 +97,8 @@ test('transactional emails escape untrusted content and put action URLs in both 
 		kind: 'reached',
 		warnings: [
 			{
-				label: 'execute calls per day',
-				resource: 'execute_calls_per_day',
+				label: 'unique execute workers per day',
+				resource: 'execute_unique_workers_per_day',
 				current: 250,
 				limit: 250,
 				percentOfLimit: 1,

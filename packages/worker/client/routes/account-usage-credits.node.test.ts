@@ -91,8 +91,8 @@ function wallet(
 		notify: { autoRefilled: true, monthlyCap: true, lowBalance: true },
 		limits: [
 			{
-				resource: 'execute_calls_per_day',
-				label: 'Execute calls per day',
+				resource: 'execute_unique_workers_per_day',
+				label: 'Unique execute workers per day',
 				included: 500,
 				creditsCeiling: 25_000,
 			},
@@ -132,7 +132,7 @@ function usage(
 		weekStart: '2026-09-21',
 		entitlementConsumption: [
 			{
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				label: 'Execute calls',
 				group: 'daily',
 				kind: 'counter',

@@ -34,6 +34,10 @@ export function createInMemoryUserMeterEnv() {
 	const deletionByUser = new Map<string, DeletionState>()
 	const dynamicWorkerDaysByUser = new Map<string, Set<string>>()
 	const lastUsedByUser = new Map<string, Map<string, string>>()
+	const executeCallMinuteByUser = new Map<
+		string,
+		{ minute: number; count: number }
+	>()
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -175,6 +179,61 @@ export function createInMemoryUserMeterEnv() {
 			}
 		}
 
+		async function consumeCounter(input: {
+			resource: string
+			day: string
+			limit: number
+			updatedAt: string
+			weekStart?: string
+			weekLimit?: number | null
+		}) {
+			if (!isDailyEntitlementResource(input.resource)) {
+				throw new Error(`Invalid daily resource: ${input.resource}`)
+			}
+			const resource: DailyEntitlementResource = input.resource
+			const existing = readRow(resource, input.day)
+			if (!existing) return { outcome: 'needs_bootstrap' as const }
+			const weekLimit =
+				typeof input.weekLimit === 'number' && Number.isFinite(input.weekLimit)
+					? input.weekLimit
+					: null
+			const weekStart = input.weekStart ?? null
+			const weekCount =
+				weekStart && weekLimit !== null
+					? sumRange(resource, weekStart, input.day)
+					: undefined
+			if (input.limit < 1 || existing.count + 1 > input.limit) {
+				return {
+					...ready(existing),
+					consumed: false,
+					deniedWindow: 'day' as const,
+					weekCount,
+				}
+			}
+			if (
+				weekStart &&
+				weekLimit !== null &&
+				(weekLimit < 1 || (weekCount ?? 0) + 1 > weekLimit)
+			) {
+				return {
+					...ready(existing),
+					consumed: false,
+					deniedWindow: 'week' as const,
+					weekCount,
+				}
+			}
+			const next = {
+				count: existing.count + 1,
+				revision: existing.revision + 1,
+			}
+			rows.set(counterKey(resource, input.day), next)
+			return {
+				...ready(next),
+				consumed: true,
+				weekCount: weekCount === undefined ? undefined : weekCount + 1,
+			}
+		}
+
 		return {
 			async initialize(input: {
 				resource: string
@@ -203,52 +262,7 @@ export function createInMemoryUserMeterEnv() {
 				weekStart?: string
 				weekLimit?: number | null
 			}) {
-				if (!isDailyEntitlementResource(input.resource)) {
-					throw new Error(`Invalid daily resource: ${input.resource}`)
-				}
-				const resource: DailyEntitlementResource = input.resource
-				const existing = readRow(resource, input.day)
-				if (!existing) return { outcome: 'needs_bootstrap' as const }
-				const weekLimit =
-					typeof input.weekLimit === 'number' &&
-					Number.isFinite(input.weekLimit)
-						? input.weekLimit
-						: null
-				const weekStart = input.weekStart ?? null
-				const weekCount =
-					weekStart && weekLimit !== null
-						? sumRange(resource, weekStart, input.day)
-						: undefined
-				if (input.limit < 1 || existing.count + 1 > input.limit) {
-					return {
-						...ready(existing),
-						consumed: false,
-						deniedWindow: 'day' as const,
-						weekCount,
-					}
-				}
-				if (
-					weekStart &&
-					weekLimit !== null &&
-					(weekLimit < 1 || (weekCount ?? 0) + 1 > weekLimit)
-				) {
-					return {
-						...ready(existing),
-						consumed: false,
-						deniedWindow: 'week' as const,
-						weekCount,
-					}
-				}
-				const next = {
-					count: existing.count + 1,
-					revision: existing.revision + 1,
-				}
-				rows.set(counterKey(resource, input.day), next)
-				return {
-					...ready(next),
-					consumed: true,
-					weekCount: weekCount === undefined ? undefined : weekCount + 1,
-				}
+				return await consumeCounter(input)
 			},
 			async read(input: { resource: string; day: string }) {
 				const existing = readRow(input.resource, input.day)
@@ -364,6 +378,51 @@ export function createInMemoryUserMeterEnv() {
 				if (dynamicWorkerDays.has(key)) return { created: false }
 				dynamicWorkerDays.add(key)
 				return { created: true }
+			},
+			async claimDynamicWorkerDayWithinLimit(input: {
+				workerId: string
+				resource: string
+				day: string
+				limit: number
+				createdAt: string
+				weekStart?: string
+				weekLimit?: number | null
+			}) {
+				const key = `${input.day}\0${input.workerId}`
+				if (dynamicWorkerDays.has(key)) {
+					const existing = readRow(input.resource, input.day)
+					return {
+						...ready(existing ?? { count: 0, revision: 0 }),
+						created: false,
+						consumed: false,
+						weekCount: input.weekStart
+							? sumRange(input.resource, input.weekStart, input.day)
+							: undefined,
+					}
+				}
+				const result = await consumeCounter({
+					...input,
+					updatedAt: input.createdAt,
+				})
+				if (result.outcome === 'needs_bootstrap') return result
+				if (result.consumed) dynamicWorkerDays.add(key)
+				return { ...result, created: result.consumed }
+			},
+			async admitExecuteCall(input: { nowMs: number; limitPerMinute: number }) {
+				const minute = Math.floor(input.nowMs / 60_000)
+				const current = executeCallMinuteByUser.get(userId)
+				const window =
+					current?.minute === minute ? current : { minute, count: 0 }
+				executeCallMinuteByUser.set(userId, window)
+				if (window.count >= input.limitPerMinute) {
+					return {
+						admitted: false as const,
+						count: window.count,
+						retryAfterMs: (minute + 1) * 60_000 - input.nowMs,
+					}
+				}
+				window.count += 1
+				return { admitted: true as const, count: window.count }
 			},
 			async refund(input: {
 				resource: string

@@ -221,11 +221,12 @@ old 2–4 exposure writes per tools/call. **Lower exposure counts are expected a
 more accurate**: they count the assignment the user saw, not each call site or
 each stateless request inside the window. A kill switch or override can be stale
 until the TTL expires. Evaluation failures are not cached and fail closed (every
-flag off) without an exposure write, and execute does not spend daily quota on
-that failure. Flags with `exposureRecording: 'paid-ranked-search'` (Jev) write
-only from paid list-mode ranked search so free opt-ins and non-search traffic
-stay outside that experiment frame. The write path mirrors usage metering — the
-`FLAG_EXPOSURES` Analytics Engine dataset in production/preview, the D1
+flag off) without an exposure write, and execute refuses before loading a
+worker, so the failure never spends daily quota. Flags with
+`exposureRecording: 'paid-ranked-search'` (Jev) write only from paid list-mode
+ranked search so free opt-ins and non-search traffic stay outside that
+experiment frame. The write path mirrors usage metering — the `FLAG_EXPOSURES`
+Analytics Engine dataset in production/preview, the D1
 `feature_flag_exposure_rollups` table (migration `0001-squashed-init.sql`,
 90-day retention) in local dev and tests — and never throws.
 

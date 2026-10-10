@@ -107,8 +107,8 @@ export const userEntitlementWarningKinds = ['approaching', 'reached'] as const
 export type UserEntitlementWarningKind =
 	(typeof userEntitlementWarningKinds)[number]
 
-/** Daily execute quota resource id; drives the local-execute tip in this mail. */
-const executeCallsPerDayResource = 'execute_calls_per_day'
+/** Unique execute workers resource id; drives the local-execute tip in this mail. */
+const executeUniqueWorkersPerDayResource = 'execute_unique_workers_per_day'
 
 export function buildUserEntitlementWarningEmail(input: {
 	appBaseUrl: string
@@ -137,7 +137,7 @@ export function buildUserEntitlementWarningEmail(input: {
 	})
 	const copy = entitlementWarningCopy(input.kind)
 	const includesExecuteQuota = input.warnings.some(
-		(warning) => warning.resource === executeCallsPerDayResource,
+		(warning) => warning.resource === executeUniqueWorkersPerDayResource,
 	)
 	const body = [copy.intro, ...lines]
 	if (includesExecuteQuota) {

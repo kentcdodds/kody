@@ -78,8 +78,14 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 		note: weeklyComputeWindowNote,
 		rows: [
 			{ label: 'Concurrent workflows', key: 'maxConcurrentWorkflows' },
-			{ label: 'Execute calls per day', key: 'maxExecuteCallsPerDay' },
-			{ label: 'Execute calls per week', key: 'maxExecuteCallsPerWeek' },
+			{
+				label: 'Unique execute workers per day',
+				key: 'maxExecuteUniqueWorkersPerDay',
+			},
+			{
+				label: 'Unique execute workers per week',
+				key: 'maxExecuteUniqueWorkersPerWeek',
+			},
 			{ label: 'Outbound fetches per day', key: 'maxOutboundFetchesPerDay' },
 			{ label: 'Outbound fetches per week', key: 'maxOutboundFetchesPerWeek' },
 			{ label: 'Job runs per day', key: 'maxJobRunsPerDay' },
@@ -283,9 +289,9 @@ export function PricingRoute(handle: Handle) {
 						top up. No overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
-						Execute calls and outbound fetches count per day and per week;
-						whichever window fills first applies. Durable Object duration is
-						unmetered.
+						Unique execute workers and outbound fetches count per day and per
+						week; whichever window fills first applies. Durable Object duration
+						is unmetered.
 					</p>
 				</section>
 

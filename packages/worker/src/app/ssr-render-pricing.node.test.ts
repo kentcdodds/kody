@@ -97,7 +97,7 @@ test('renderAppPage renders the redesigned pricing page', async () => {
 	expect(html).toContain('Teams / Enterprise')
 	expect(html).toContain('mailto:kody@kody.codes')
 	expect(html).toContain('Durable Object rows read per month')
-	expect(html).toContain('Execute calls per week')
+	expect(html).toContain('Unique execute workers per week')
 	expect(html).toContain('Outbound fetches per week')
 	expect(html).toContain('1,200')
 	expect(html).toContain('Automation invocations per day')

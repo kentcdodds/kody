@@ -184,10 +184,10 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 			plan: 'pro',
 			packageCount: 1,
 		},
-		{ daily: { email_sends_per_day: 17, execute_calls_per_day: 91 } },
+		{ daily: { email_sends_per_day: 17, execute_unique_workers_per_day: 91 } },
 	)
 	expect(bootstrapped.row('email_sends_per_day')?.current).toBe(17)
-	expect(bootstrapped.row('execute_calls_per_day')?.current).toBe(91)
+	expect(bootstrapped.row('execute_unique_workers_per_day')?.current).toBe(91)
 	expect(bootstrapped.row('saved_packages')?.current).toBe(1)
 
 	const warm = await loadUsage(
@@ -203,15 +203,15 @@ test('loadAccountUsageData returns plan rows and authoritative UserMeter daily c
 			daily: {
 				email_sends_per_day: 101,
 				email_receives_per_day: 202,
-				execute_calls_per_day: 303,
+				execute_unique_workers_per_day: 303,
 				outbound_fetches_per_day: 404,
 			},
 		},
 	)
 	expect(warm.row('email_sends_per_day')?.current).toBe(101)
 	expect(warm.row('email_receives_per_day')?.current).toBe(202)
-	expect(warm.row('execute_calls_per_day')?.current).toBe(303)
-	expect(warm.row('execute_calls_per_day')?.week).toEqual({
+	expect(warm.row('execute_unique_workers_per_day')?.current).toBe(303)
+	expect(warm.row('execute_unique_workers_per_day')?.week).toEqual({
 		current: 303,
 		limit: 4_000,
 		percentOfLimit: 303 / 4_000,
@@ -362,7 +362,7 @@ test('purchasable Pro with credits runs past the include on credits; at $0 Free 
 			(row) => row.resource === 'unique_worker_days',
 		),
 	).toEqual([])
-	expect(funded.row('execute_calls_per_day')?.limit).toBe(25_000)
+	expect(funded.row('execute_unique_workers_per_day')?.limit).toBe(25_000)
 	expect(funded.row('email_sends_per_day')?.limit).toBe(200)
 
 	const empty = await loadUsage(
@@ -394,8 +394,8 @@ test('purchasable Pro with credits runs past the include on credits; at $0 Free 
 	expect(
 		empty.data?.warnings.filter((row) => row.resource === 'unique_worker_days'),
 	).toEqual([])
-	expect(empty.row('execute_calls_per_day')?.limit).toBe(150)
-	expect(empty.row('execute_calls_per_day')?.howToReduce).toMatch(
+	expect(empty.row('execute_unique_workers_per_day')?.limit).toBe(150)
+	expect(empty.row('execute_unique_workers_per_day')?.howToReduce).toMatch(
 		/add credits at \/account\/usage#credits to restore Pro rates past your include/,
 	)
 	expect(empty.meterFor('unique_worker_days')?.howToReduce).toMatch(
@@ -448,7 +448,7 @@ test('gift Pro keeps retired Pro ceilings without a wallet and cannot buy credit
 		label: 'Rows read',
 		include: 20_000_000_000,
 	})
-	expect(row('execute_calls_per_day')?.limit).toBe(1_500)
+	expect(row('execute_unique_workers_per_day')?.limit).toBe(1_500)
 	expect(
 		[
 			...(data?.entitlementConsumption ?? []),

@@ -615,11 +615,12 @@ blast radius:
   trends so reputation trouble is visible before providers act on it. The hourly
   `email_delivery_alert` cron fans `email.delivery.burst` on a platform-wide
   spike (see above) without replacing this per-user pause.
-- **Compute quotas.** `execute_calls_per_day` and `outbound_fetches_per_day`
-  entitlements bound sandbox compute and egress per user per UTC day, with
-  public-ladder weekly hard caps on the same meters (Monday–Sunday; whichever
-  window hits first blocks). See
-  [`architecture/entitlements.md`](./architecture/entitlements.md).
+- **Compute quotas.** `execute_unique_workers_per_day` (new sandbox workers, the
+  billed unit) and `outbound_fetches_per_day` entitlements bound sandbox compute
+  and egress per org per UTC day, with public-ladder weekly hard caps on the
+  same meters (Monday–Sunday; whichever window hits first blocks). Warm repeats
+  are bounded separately by a per-org execute runaway brake (300 calls per
+  minute). See [`architecture/entitlements.md`](./architecture/entitlements.md).
 
 ## Accepted residual risks and out-of-scope items
 

@@ -8,12 +8,12 @@ test('toUsageTrendDays pads the retention window and maps counters', () => {
 		endDay: '2026-10-07',
 		counters: [
 			{
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				day: '2026-10-05',
 				count: 4,
 			},
 			{
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				day: '2026-10-06',
 				count: 11,
 			},

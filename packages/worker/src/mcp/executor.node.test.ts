@@ -991,6 +991,39 @@ test('createExecuteExecutor records one unique Dynamic Worker day per worker id 
 	])
 })
 
+test('createExecuteExecutor awaits a capped worker-day claim before load and skips the attribution claim', async () => {
+	const usage = createUsageBindings({ meter: true })
+	const claimed: Array<string> = []
+	const allowedLoader = createFakeWorkerLoader()
+	const allowed = await runExecutor({
+		env: createExecutorTestEnv(allowedLoader.loader, usage.bindings),
+		recordExecuteUsage: false,
+		claimWorkerDay: async (workerId) => {
+			claimed.push(workerId)
+			expect(allowedLoader.ids).toEqual([])
+			return { created: true }
+		},
+	})
+	expect(allowed.error).toBeUndefined()
+	expect(allowedLoader.ids).toEqual(claimed)
+	expect(usage.dataPoints.map((point) => point.blobs?.[1])).toEqual([
+		'dynamic_worker_invoke',
+	])
+	expect(usage.dataPoints[0]?.blobs?.[7]).toBe('miss')
+
+	const deniedLoader = createFakeWorkerLoader()
+	const denial = new Error('Plan limit reached')
+	await expect(
+		runExecutor({
+			env: createExecutorTestEnv(deniedLoader.loader, usage.bindings),
+			claimWorkerDay: async () => {
+				throw denial
+			},
+		}),
+	).rejects.toBe(denial)
+	expect(deniedLoader.ids).toEqual([])
+})
+
 test('createExecuteExecutor notifies onWorkerId with the stable LOADER id', async () => {
 	const fakeLoader = createFakeWorkerLoader()
 	const workerIds: Array<string> = []

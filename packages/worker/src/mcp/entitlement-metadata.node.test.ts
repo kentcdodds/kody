@@ -36,7 +36,7 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 	})
 
 	const quotaDenial = new EntitlementLimitError({
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		plan: 'free',
 		limit: 100,
 		current: 100,
@@ -44,7 +44,7 @@ test('entitlement metadata is only for known plan-limit and quota denials', () =
 	})
 	expect(toMcpEntitlementMetadata(quotaDenial)).toEqual({
 		code: entitlementLimitErrorCode,
-		resource: 'execute_calls_per_day',
+		resource: 'execute_unique_workers_per_day',
 		plan: 'free',
 		limit: 100,
 		current: 100,

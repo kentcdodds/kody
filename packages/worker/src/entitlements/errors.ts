@@ -76,8 +76,10 @@ export function buildEntitlementUpgradeHint(
 	creditWallet: CreditWalletState = 'none',
 	billingPath = '/@<slug>/-/billing',
 ) {
-	const label = entitlementResourceLabels[resource]
-	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
+	const reduceGuidance =
+		resource === 'execute_unique_workers_per_day'
+			? 'Rerun code you already ran today and vary params; repeats are free.'
+			: `Remove or finish existing ${entitlementResourceLabels[resource]} you no longer need.`
 	const creditsOffer = entitlementCreditsOffer(resource, plan, creditWallet)
 	if (creditsOffer) {
 		return `${reduceGuidance.slice(0, -1)}, or ${creditsOffer}.`
@@ -112,7 +114,7 @@ export function parseEntitlementLimitMessage(
 	message: string,
 ): EntitlementLimitErrorDetails | null {
 	const weeklyLabels = (
-		['execute_calls_per_day', 'outbound_fetches_per_day'] as const
+		['execute_unique_workers_per_day', 'outbound_fetches_per_day'] as const
 	).map((resource) => ({
 		resource: resource satisfies WeeklyComputeWindowResource,
 		label: weeklyEntitlementResourceLabel(resource),

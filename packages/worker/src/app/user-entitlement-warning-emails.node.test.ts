@@ -241,7 +241,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	// Daily resources claim per UTC day; stock resources (saved packages) claim
 	// without a day and expire on the stock TTL.
 	setConsumption(
-		row('execute_calls_per_day', 200, 250),
+		row('execute_unique_workers_per_day', 200, 250),
 		row('saved_packages', 9, 10),
 		row('secrets', 4, 25),
 	)
@@ -260,13 +260,15 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	)
 	expect(approachingPayload.text).toContain('https://kody.codes/account/usage')
 	expect(
-		store.get(instanceKey('approaching', 'execute_calls_per_day', now)),
+		store.get(
+			instanceKey('approaching', 'execute_unique_workers_per_day', now),
+		),
 	).toBe(String(now.getTime()))
 	expect(store.get(instanceKey('approaching', 'saved_packages'))).toBe(
 		String(now.getTime()),
 	)
 	expect(
-		store.get(instanceKey('reached', 'execute_calls_per_day', now)),
+		store.get(instanceKey('reached', 'execute_unique_workers_per_day', now)),
 	).toBeUndefined()
 
 	expect(await sendAt(env, '2026-07-25T13:00:00.000Z')).toEqual({
@@ -275,7 +277,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
 	setConsumption(
-		row('execute_calls_per_day', 10, 250),
+		row('execute_unique_workers_per_day', 10, 250),
 		row('saved_packages', 9, 10),
 	)
 	expect(await sendAt(env, '2026-07-26T01:00:00.000Z')).toEqual({
@@ -285,15 +287,15 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 
 	const reachedAt = new Date('2026-07-26T03:00:00.000Z')
 	setConsumption(
-		row('execute_calls_per_day', 250, 250),
+		row('execute_unique_workers_per_day', 250, 250),
 		row('outbound_fetches_per_day', 500, 500),
 		row('saved_packages', 9, 10),
 	)
 	expect(await sendAt(env, reachedAt.toISOString())).toEqual(notified(1, 2))
 	expect(sendCloudflareEmail).toHaveBeenCalledTimes(1)
 	for (const [kind, resource] of [
-		['reached', 'execute_calls_per_day'],
-		['approaching', 'execute_calls_per_day'],
+		['reached', 'execute_unique_workers_per_day'],
+		['approaching', 'execute_unique_workers_per_day'],
 		['reached', 'outbound_fetches_per_day'],
 	] as const) {
 		expect(store.get(instanceKey(kind, resource, reachedAt))).toBe(
@@ -308,7 +310,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 
 	const nextUtcDay = new Date('2026-07-27T02:00:00.000Z')
 	setConsumption(
-		row('execute_calls_per_day', 200, 250),
+		row('execute_unique_workers_per_day', 200, 250),
 		row('outbound_fetches_per_day', 500, 500),
 		row('saved_packages', 9, 10),
 	)
@@ -318,23 +320,27 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 		store.get(instanceKey('reached', 'outbound_fetches_per_day', nextUtcDay)),
 	).toBe(String(nextUtcDay.getTime()))
 	expect(
-		store.get(instanceKey('approaching', 'execute_calls_per_day', nextUtcDay)),
+		store.get(
+			instanceKey('approaching', 'execute_unique_workers_per_day', nextUtcDay),
+		),
 	).toBe(String(nextUtcDay.getTime()))
 	expect(
-		store.get(instanceKey('reached', 'execute_calls_per_day', nextUtcDay)),
+		store.get(
+			instanceKey('reached', 'execute_unique_workers_per_day', nextUtcDay),
+		),
 	).toBeUndefined()
 
 	// Dropping below the threshold clears the claims.
 	const clearedAt = new Date('2026-07-27T04:00:00.000Z')
 	setConsumption(
-		row('execute_calls_per_day', 10, 250),
+		row('execute_unique_workers_per_day', 10, 250),
 		row('outbound_fetches_per_day', 0, 500),
 		row('saved_packages', 2, 10),
 	)
 	await sendAt(env, clearedAt.toISOString())
 	expect(
 		[
-			instanceKey('approaching', 'execute_calls_per_day', clearedAt),
+			instanceKey('approaching', 'execute_unique_workers_per_day', clearedAt),
 			instanceKey('approaching', 'saved_packages'),
 			instanceKey('reached', 'outbound_fetches_per_day', clearedAt),
 		].filter((key) => store.has(key)),
@@ -358,7 +364,8 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 	expect(
 		puts.find(
 			(put) =>
-				put.key === instanceKey('approaching', 'execute_calls_per_day', now),
+				put.key ===
+				instanceKey('approaching', 'execute_unique_workers_per_day', now),
 		)?.options?.expirationTtl,
 	).toBe(userEntitlementWarningDailyClaimTtlSeconds)
 
@@ -370,7 +377,7 @@ test('user entitlement warnings mail once per entitlement crossing through lifec
 })
 
 test('user entitlement warning infra edges: missing bindings, leftover claims, TTL refresh, KV fail-open', async () => {
-	setConsumption(row('execute_calls_per_day', 200, 250))
+	setConsumption(row('execute_unique_workers_per_day', 200, 250))
 	const noKv = await sendAt(
 		createEnv({ users: [freeUser('user@example.com')] }),
 		'2026-08-24T00:00:00.000Z',
@@ -404,7 +411,7 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 	})
 	setConsumption(
 		row('saved_packages', 10, 10),
-		row('execute_calls_per_day', 250, 250),
+		row('execute_unique_workers_per_day', 250, 250),
 	)
 	expect(await sendAt(absorbEnv, absorbNow.toISOString())).toEqual(
 		notified(1, 1),
@@ -413,13 +420,13 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 	for (const key of [
 		instanceKey('reached', 'saved_packages'),
 		instanceKey('approaching', 'saved_packages'),
-		instanceKey('reached', 'execute_calls_per_day', absorbNow),
+		instanceKey('reached', 'execute_unique_workers_per_day', absorbNow),
 	]) {
 		expect(absorb.store.get(key)).toBe(String(absorbNow.getTime()))
 	}
 	setConsumption(
 		row('saved_packages', 10, 10),
-		row('execute_calls_per_day', 0, 250),
+		row('execute_unique_workers_per_day', 0, 250),
 	)
 	expect(await sendAt(absorbEnv, '2026-08-25T01:00:00.000Z')).toEqual({
 		status: 'no_warnings',
@@ -434,7 +441,7 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 	})
 	setConsumption(
 		row('saved_packages', 10, 10),
-		row('execute_calls_per_day', 250, 250),
+		row('execute_unique_workers_per_day', 250, 250),
 	)
 	const ttlNow = '2026-08-24T02:00:00.000Z'
 	expect(await sendAt(ttlEnv, ttlNow)).toEqual(notified(1, 2))
@@ -463,7 +470,7 @@ test('user entitlement warning infra edges: missing bindings, leftover claims, T
 		},
 	])
 	expect(
-		ttl.puts.some((put) => put.key.includes('execute_calls_per_day')),
+		ttl.puts.some((put) => put.key.includes('execute_unique_workers_per_day')),
 	).toBe(false)
 
 	// A failed claim write still mails that user (fail open) and does not
@@ -605,7 +612,9 @@ test('Free, funded, and wallet-less plans never get Worker compute or Rows read 
 		expect([...store.keys()]).toEqual([])
 	}
 
-	setConsumption(row('execute_calls_per_day', 150, 150, 'Execute calls'))
+	setConsumption(
+		row('execute_unique_workers_per_day', 150, 150, 'Execute calls'),
+	)
 	const result = await sendAt(
 		createEnv({
 			users: [freeUser('free-execute@example.com')],

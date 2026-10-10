@@ -395,10 +395,10 @@ specific entitlement, when a non-admin account first exceeds 24h of combined
 execute / job / workflow runtime in the UTC month, when a non-admin account
 first reaches a plan-aware unique Dynamic Worker cost threshold this UTC month
 (Free $2, Standard $12, Pro $49; `max` and admin accounts do not page), or when
-a non-admin account first hits 100% of `execute_calls_per_day` on three of the
-last seven UTC days. Staying over the same threshold does not emit again. A
-later drop below that threshold, then a climb back over it, is a new instance. A
-same-hour jump to 100% emits `reached` only and claims the 80% crossing so a
+a non-admin account first hits 100% of `execute_unique_workers_per_day` on three
+of the last seven UTC days. Staying over the same threshold does not emit again.
+A later drop below that threshold, then a climb back over it, is a new instance.
+A same-hour jump to 100% emits `reached` only and claims the 80% crossing so a
 later drop into the 80–99% band stays silent. Execute-cap days are recorded on
 durable hit keys so a later drop below 100% the same day does not erase the
 train.
@@ -425,7 +425,7 @@ type FleetEntitlementCrossedEvent =
 				| 'secrets'
 				| 'concurrent_workflows'
 				| 'storage_bytes'
-				| 'execute_calls_per_day'
+				| 'execute_unique_workers_per_day'
 				| 'outbound_fetches_per_day'
 				| 'job_runs_per_day'
 			label: string
@@ -451,7 +451,7 @@ type FleetEntitlementCrossedEvent =
 			event: 'fleet.entitlement.crossed'
 			kind: 'repeated_entitlement'
 			user: { id: string; username: string }
-			resource: 'execute_calls_per_day'
+			resource: 'execute_unique_workers_per_day'
 			days_at_limit: number
 			window_days: 7
 			threshold_days: 3
