@@ -75,11 +75,11 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 		username: 'owneruser',
 	})
 	const created = await orgCreateCapability.handler(
-		{ slug: 'Acme', display_name: 'Acme Co' },
+		{ slug: 'Rocket-Co', display_name: 'Rocket Co' },
 		owner,
 	)
-	expect(created.org.slug).toBe('acme')
-	expect(created.org.display_name).toBe('Acme Co')
+	expect(created.org.slug).toBe('rocket-co')
+	expect(created.org.display_name).toBe('Rocket Co')
 	expect(created.org.id).toMatch(/^[a-f0-9]{64}$/)
 	expect(created.org.id).not.toBe(ownerId)
 
@@ -110,7 +110,7 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 		},
 		source: { kind: 'session' },
 		orgBinding: {
-			org: { id: ownerIdFromStored(created.org.id), slug: 'acme' },
+			org: { id: ownerIdFromStored(created.org.id), slug: 'rocket-co' },
 			role: 'member',
 		},
 	})
@@ -351,4 +351,25 @@ test('inviteAccept rejects invites for suspended orgs', async () => {
 		.bind(invited.invite.id)
 		.first<{ status: string }>()
 	expect(stored?.status).toBe('pending')
+})
+
+test('orgCreate rejects reserved and malformed slugs with the shared validation', async () => {
+	const db = await createDb()
+	const creatorId = testStableUserIdFromEmail('creator@example.com')
+	const ctx = capabilityContext({
+		db,
+		userId: creatorId,
+		email: 'creator@example.com',
+		username: 'creator',
+	})
+	await expect(
+		orgCreateCapability.handler({ slug: 'admin' }, ctx),
+	).rejects.toThrow('This username is reserved.')
+	await expect(
+		orgCreateCapability.handler({ slug: '-bad-' }, ctx),
+	).rejects.toThrow(/3 to 32 characters/)
+	const orgs = await db
+		.prepare(`SELECT COUNT(*) AS n FROM orgs`)
+		.first<{ n: number }>()
+	expect(orgs?.n).toBe(0)
 })

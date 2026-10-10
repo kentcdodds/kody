@@ -3,10 +3,6 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { computeEffectivePermissions } from '#worker/authorization/authorize.ts'
-import {
-	getUsernameFormatValidationError,
-	normalizeUsername,
-} from '#worker/identity/username.ts'
 import { createOrg, updateOrgMemberRole } from '#worker/orgs/access-writes.ts'
 import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
@@ -81,12 +77,10 @@ export const orgCreateCapability = defineDomainCapability(
 					ctx,
 					'org:write',
 				)
-				const slug = normalizeUsername(args.slug)
-				const formatError = getUsernameFormatValidationError(slug)
-				if (formatError) throw new McpCallerError(formatError)
 				const created = await createOrg({
 					db,
-					slug,
+					env: ctx.env,
+					slug: args.slug,
 					displayName: args.display_name,
 					createdByUserId: user.userId,
 					audit: orgAuditWriterFromRequest(ctx.env, request),

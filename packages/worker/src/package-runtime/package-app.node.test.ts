@@ -557,8 +557,11 @@ function createPackageAppTestEnv() {
 		load: vi.fn(() => ({ getEntrypoint })),
 		get: vi.fn(() => ({ getEntrypoint })),
 	}
+	const appDb = {
+		prepare: () => ({ bind: () => ({ first: async () => null }) }),
+	}
 	return {
-		env: { APP_DB: {}, APP_LOADER: loader } as unknown as Env,
+		env: { APP_DB: appDb, APP_LOADER: loader } as unknown as Env,
 		loader,
 	}
 }

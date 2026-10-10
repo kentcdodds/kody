@@ -15,7 +15,10 @@ import {
 import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.ts'
-import { normalizeUsername } from '#worker/identity/username.ts'
+import {
+	getEffectiveUsernameValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
 import { assertCanOwnAnotherFreeOrg } from '#worker/orgs/billing.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { recordOrgAuditEvent, type OrgAuditWriter } from './org-audit.ts'
@@ -434,15 +437,20 @@ export async function updateOrgMemberRole(input: {
 	})
 }
 
+/** The slug failed format or reserved-name validation; message is user-facing. */
+export class OrgSlugValidationError extends Error {}
+
 export async function createOrg(input: {
 	db: D1Database
+	env: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>
 	slug: string
 	displayName?: string | null
 	createdByUserId: string
 	audit: OrgAuditWriter
 }) {
-	const slug = normalizeUsername(input.slug)?.toLowerCase()
-	if (!slug) throw new Error('Organization slug is required.')
+	const slug = normalizeUsername(input.slug)
+	const slugError = await getEffectiveUsernameValidationError(slug, input.env)
+	if (slugError) throw new OrgSlugValidationError(slugError)
 	// New orgs start free; the 2-free-org rule applies before insert.
 	await assertCanOwnAnotherFreeOrg(input.db, input.createdByUserId)
 	const orgId = mintPersonId()

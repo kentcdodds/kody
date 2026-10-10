@@ -18,37 +18,9 @@ import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-03-15T12:00:00.000Z')
 const month = utcMonthKey(now)
 
-async function ensureBudgetSchema(db: D1Database) {
-	await ensureOrgsTestSchema(db)
-	for (const sql of [
-		`ALTER TABLE orgs ADD COLUMN default_user_budget_micro_usd INTEGER`,
-		`ALTER TABLE orgs ADD COLUMN automation_budget_micro_usd INTEGER`,
-	]) {
-		try {
-			await db.prepare(sql).run()
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error)
-			if (!/duplicate column name/i.test(message)) throw error
-		}
-	}
-	await db
-		.prepare(
-			`CREATE TABLE IF NOT EXISTS org_user_budgets (
-				org_id TEXT NOT NULL,
-				user_id TEXT NOT NULL,
-				monthly_budget_micro_usd INTEGER NOT NULL,
-				set_by_user_id TEXT NOT NULL,
-				updated_at TEXT NOT NULL,
-				deleted_at TEXT,
-				PRIMARY KEY (org_id, user_id)
-			)`,
-		)
-		.run()
-}
-
 test('over user budget denies new execute via consumeDailyEntitlement', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
-	await ensureBudgetSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	const email = `budget-gate-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
 	const orgId = userId
@@ -108,7 +80,7 @@ test('over user budget denies new execute via consumeDailyEntitlement', async ()
 
 test('recordOrgBudgetSpend skips past-month debits without resetting live MTD', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
-	await ensureBudgetSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	const email = `past-month-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
 	const orgId = userId
@@ -164,7 +136,7 @@ test('recordOrgBudgetSpend skips past-month debits without resetting live MTD', 
 
 test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights overage only', async () => {
 	await ensureEntitlementTestSchema(env.APP_DB)
-	await ensureBudgetSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	await env.APP_DB.prepare(
 		`CREATE TABLE IF NOT EXISTS usage_attribution_daily (

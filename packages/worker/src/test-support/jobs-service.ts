@@ -234,6 +234,9 @@ export function createDatabase(
 							if (writeLeaseDb.supportsDeletingAtQuery(query)) {
 								return writeLeaseDb.deletingAtFirstResult() as T
 							}
+							if (query.includes('SELECT 1 AS ok FROM orgs')) {
+								return null
+							}
 							if (
 								query.includes('SELECT plan, stripe_plan') ||
 								query.includes('entitlement_ladder')
