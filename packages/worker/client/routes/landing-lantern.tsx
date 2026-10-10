@@ -37,7 +37,6 @@ function primitiveById(id: LandingPrimitiveId): LandingHomePrimitive {
 
 export type LandingLanternProps = {
 	activeId: LandingPrimitiveId | null
-	panelId: (id: LandingPrimitiveId) => string
 	onOpen: (id: LandingPrimitiveId) => void
 	onToggle: (id: LandingPrimitiveId) => void
 	onClose: (id: LandingPrimitiveId) => void
@@ -56,8 +55,7 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 	}
 
 	return () => {
-		const { activeId, panelId, onOpen, onToggle, onDismiss, decorative } =
-			handle.props
+		const { activeId, onOpen, onToggle, onDismiss, decorative } = handle.props
 		return (
 			<figure
 				class="landing-lantern"
@@ -126,9 +124,6 @@ export function LandingLantern(handle: Handle<LandingLanternProps>) {
 								data-open={open ? '' : undefined}
 								style={pose}
 								aria-label={`${primitive.word} primitive`}
-								aria-expanded={open ? 'true' : 'false'}
-								aria-controls={panelId(orb.id)}
-								aria-describedby={panelId(orb.id)}
 								mix={[
 									on('pointerenter', (event: PointerEvent) => {
 										if (!hoverPointer(event)) return
