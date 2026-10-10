@@ -249,7 +249,9 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	)
 	expect(collaboratorRow).toContain('href="/@acme"')
 	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
-	expect(collaborator).not.toContain('data-testid="org-switcher-manage-group"')
+	// Manage stays on the personal org (Billing), not the collaborator org.
+	expect(collaborator).toContain('>Manage @ada<')
+	expect(collaborator).not.toContain('>Manage @acme<')
 
 	const billing = await renderToString(
 		jsx(SiteHeader, {
