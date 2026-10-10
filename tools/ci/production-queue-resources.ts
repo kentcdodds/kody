@@ -219,3 +219,65 @@ export function parseProductionQueueResources(input: {
 		webhookDispatchDeadLetterQueueName: webhookDispatch.deadLetterQueue,
 	}
 }
+
+export type ProductionBoundQueueProducer = {
+	binding: string
+	queue: string
+	deadLetterQueue: string
+}
+
+/**
+ * Origin producer bindings, in wrangler order, after the production queue
+ * config has been validated. Preview provisioning starts from this list.
+ */
+export function listProductionBoundQueueProducers(input: {
+	productionEnv: Record<string, unknown>
+	configPath: string
+}): Array<ProductionBoundQueueProducer> {
+	parseProductionQueueResources(input)
+	const queues = input.productionEnv.queues
+	if (!queues || typeof queues !== 'object' || Array.isArray(queues)) {
+		throw new Error(
+			`wrangler config "${input.configPath}" is missing "env.production.queues".`,
+		)
+	}
+	const producers = (queues as Record<string, unknown>).producers
+	const consumers = (queues as Record<string, unknown>).consumers
+	if (!Array.isArray(producers) || !Array.isArray(consumers)) {
+		throw new Error(
+			`wrangler config "${input.configPath}" has invalid "env.production.queues".`,
+		)
+	}
+	return producers.map((entry, index) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer ${String(index)} is not an object.`,
+			)
+		}
+		const producer = entry as Record<string, unknown>
+		const binding = producer.binding
+		const queue = producer.queue
+		if (typeof binding !== 'string' || typeof queue !== 'string') {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer ${String(index)} is missing binding or queue.`,
+			)
+		}
+		const consumer = consumers.find((candidate) => {
+			if (
+				!candidate ||
+				typeof candidate !== 'object' ||
+				Array.isArray(candidate)
+			) {
+				return false
+			}
+			return (candidate as Record<string, unknown>).queue === queue
+		}) as Record<string, unknown> | undefined
+		const deadLetterQueue = consumer?.dead_letter_queue
+		if (typeof deadLetterQueue !== 'string') {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer "${binding}" on "${queue}" has no consumer dead-letter queue.`,
+			)
+		}
+		return { binding, queue, deadLetterQueue }
+	})
+}

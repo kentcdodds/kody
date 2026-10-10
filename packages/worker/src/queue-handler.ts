@@ -21,35 +21,91 @@ import {
 
 const unknownQueueRetryDelaySeconds = 30
 
+/**
+ * Production queues are `kody-<suffix>`. Preview copies are
+ * `<worker><suffix>` (`kody-pr-42-platform-feedback-dispatch`). The suffix
+ * stays at the end even when the worker name is truncated.
+ */
+export function deployedQueueMatches(
+	batchQueue: string,
+	productionQueueName: string,
+) {
+	if (batchQueue === productionQueueName) return true
+	const suffix = productionQueueName.slice('kody'.length)
+	return suffix.startsWith('-') && batchQueue.endsWith(suffix)
+}
+
+type KnownWorkerQueue =
+	| 'email-delivery'
+	| 'artifacts-repo-events'
+	| 'platform-feedback'
+	| 'community-activity'
+	| 'community-listing-published'
+	| 'package-events'
+	| 'webhook'
+
+function resolveWorkerQueue(batchQueue: string): KnownWorkerQueue | null {
+	if (deployedQueueMatches(batchQueue, emailDeliveryQueueName)) {
+		return 'email-delivery'
+	}
+	if (deployedQueueMatches(batchQueue, artifactsRepoEventsQueueName)) {
+		return 'artifacts-repo-events'
+	}
+	if (deployedQueueMatches(batchQueue, platformFeedbackDispatchQueueName)) {
+		return 'platform-feedback'
+	}
+	if (deployedQueueMatches(batchQueue, communityActivityDispatchQueueName)) {
+		return 'community-activity'
+	}
+	if (
+		deployedQueueMatches(batchQueue, communityListingPublishedDispatchQueueName)
+	) {
+		return 'community-listing-published'
+	}
+	if (deployedQueueMatches(batchQueue, packageEventsDispatchQueueName)) {
+		return 'package-events'
+	}
+	if (deployedQueueMatches(batchQueue, webhookDispatchQueueName)) {
+		return 'webhook'
+	}
+	return null
+}
+
 export async function handleQueueBatch(
 	batch: MessageBatch<unknown>,
 	env: Env,
 	ctx: ExecutionContext,
 ) {
-	switch (batch.queue) {
-		case emailDeliveryQueueName:
+	const kind = resolveWorkerQueue(batch.queue)
+	switch (kind) {
+		case 'email-delivery':
 			await handleEmailDeliveryQueue(batch, env, ctx)
 			return
-		case artifactsRepoEventsQueueName:
+		case 'artifacts-repo-events':
 			await handleArtifactsRepoEventsQueue(batch, env, ctx)
 			return
-		case platformFeedbackDispatchQueueName:
+		case 'platform-feedback':
 			await handlePlatformFeedbackDispatchQueue(batch, env, ctx)
 			return
-		case communityActivityDispatchQueueName:
+		case 'community-activity':
 			await handleCommunityActivityDispatchQueue(batch, env, ctx)
 			return
-		case communityListingPublishedDispatchQueueName:
+		case 'community-listing-published':
 			await handleCommunityListingPublishedDispatchQueue(batch, env, ctx)
 			return
-		case packageEventsDispatchQueueName:
+		case 'package-events':
 			await handlePackageEventsDispatchQueue(batch, env, ctx)
 			return
-		case webhookDispatchQueueName:
+		case 'webhook':
 			await handleWebhookDispatchQueue(batch, env)
 			return
-		default:
+		case null:
 			console.error('unknown-worker-queue', { queue: batch.queue })
 			batch.retryAll({ delaySeconds: unknownQueueRetryDelaySeconds })
+			return
+		default: {
+			const unhandled: never = kind
+			throw new Error(`Unhandled worker queue ${String(unhandled)}`)
+		}
 	}
 }

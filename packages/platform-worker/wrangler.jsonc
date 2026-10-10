@@ -467,8 +467,22 @@
 					"bucket_name": "kody-preview-repo-session-blobs",
 				},
 			],
+			// Kept in lockstep with origin env.preview producers.
+			// See tools/ci/preview-queue-plan.ts.
 			"queues": {
 				"producers": [
+					{
+						"binding": "PLATFORM_FEEDBACK_DISPATCH_QUEUE",
+						"queue": "kody-preview-platform-feedback-dispatch",
+					},
+					{
+						"binding": "COMMUNITY_ACTIVITY_DISPATCH_QUEUE",
+						"queue": "kody-preview-community-activity-dispatch",
+					},
+					{
+						"binding": "COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE",
+						"queue": "kody-preview-community-listing-published-dispatch",
+					},
 					{
 						"binding": "WEBHOOK_DISPATCH_QUEUE",
 						"queue": "kody-preview-webhook-dispatch",

@@ -60,6 +60,9 @@ This project uses the following resources:
   - The production consumer batches at most 10 messages for 5 seconds, retries
     three times, and routes exhausted messages to the dedicated dead-letter
     queue. Production CI ensures both resources.
+  - Preview ensure creates a per-PR copy of this queue from the same producer
+    binding (`tools/ci/preview-queue-plan.ts`). The committed `kody-preview-*`
+    queue names are placeholders the generated config replaces.
   - Queue messages contain only `{ feedbackId }`. The consumer reloads current
     feedback metadata, acknowledges invalid or deleted ids, and retries
     transient load, subscription-discovery, or package-invocation wrapper

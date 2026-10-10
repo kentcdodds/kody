@@ -72,6 +72,21 @@ test('sendCloudflareEmail delivers through the mock API and handles configuratio
 		text: 'Reset link',
 	})
 
+	const previewAccountId = 'a99ee2e72728dd52902ef288b7b1447d'
+	const previewSend = await sendCloudflareEmail(
+		{
+			accountId: previewAccountId,
+			apiBaseUrl: mock.origin,
+			apiToken: mock.token,
+		},
+		message('Verify your email to finish setting up Kody', {
+			from: 'kody@kody-pr-1.kody-a99.workers.dev',
+			html: '<p>Verify</p>',
+			text: 'Verify',
+		}),
+	)
+	expect(previewSend.ok).toBe(true)
+
 	const defaultBaseUrlRequests: Array<{ url: string }> = []
 	using _defaultBaseUrlServer = createMswNodeServer(
 		[
