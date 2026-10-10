@@ -1,7 +1,12 @@
 import { type RemixNode, css } from 'remix/component'
-import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
-import { orgBillingPath, orgRoleManagesBilling } from '#universal/org-pages.ts'
+import { type IconName, renderIcon } from '#universal/icon.tsx'
+import {
+	orgBillingPath,
+	orgMembersPath,
+	orgRoleManagesBilling,
+	orgSettingsPath,
+} from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import {
 	colors,
@@ -28,23 +33,41 @@ export function renderOrgHomeMain(input: {
 		<div mix={css(mainCss)} data-testid="org-home">
 			<h2 mix={css(headingCss)}>Get started</h2>
 			<ul mix={css(stepListCss)}>
-				{renderStep({
-					icon: collaborator ? 'key' : 'users',
-					title: collaborator
-						? 'Use what was shared with you'
-						: 'Invite members and share access',
-					body: collaborator
-						? `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`
-						: `Members, teams, and access grants are managed by an agent connected to ${input.handle}. When you connect one, choose ${input.handle} on the approval screen.`,
-					action: (
-						<a
-							href={routes.accountConnections.href()}
-							mix={css(getGhostButtonCss({ size: 'sm' }))}
-						>
-							Connect an agent
-						</a>
-					),
-				})}
+				{collaborator
+					? renderStep({
+							icon: 'key',
+							title: 'Use what was shared with you',
+							body: `${input.handle} shared specific resources with you. To use them, connect an agent and choose ${input.handle} on the approval screen.`,
+							action: (
+								<a
+									href={routes.accountConnections.href()}
+									mix={css(getGhostButtonCss({ size: 'sm' }))}
+								>
+									Connect an agent
+								</a>
+							),
+						})
+					: renderStep({
+							icon: 'users',
+							title: 'Invite members and share access',
+							body: `Add people to ${input.handle} and choose their role. Owners can also update the organization's profile.`,
+							action: (
+								<div mix={css(stepActionsCss)}>
+									<a
+										href={orgMembersPath(input.slug)}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Members
+									</a>
+									<a
+										href={orgSettingsPath(input.slug)}
+										mix={css(getGhostButtonCss({ size: 'sm' }))}
+									>
+										Settings
+									</a>
+								</div>
+							),
+						})}
 				{orgRoleManagesBilling(input.role)
 					? renderStep({
 							icon: 'wallet',
@@ -141,6 +164,12 @@ const stepCopyCss = {
 	display: 'grid',
 	gap: spacing.sm,
 	minWidth: 0,
+}
+
+const stepActionsCss = {
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
 }
 
 const stepTitleCss = {

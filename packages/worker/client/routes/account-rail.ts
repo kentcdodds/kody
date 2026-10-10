@@ -2,8 +2,10 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import {
 	accountAliasPath,
 	orgBillingPath,
+	orgMembersPath,
 	orgResourcePath,
 	orgRoleManagesBilling,
+	orgSettingsPath,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -121,9 +123,23 @@ export function workspaceRailGroups(input: {
 }): Array<AccountRailGroup> {
 	const { orgSlug } = input
 	if (!input.personal) {
-		return orgSlug && orgRoleManagesBilling(input.role)
-			? [{ label: 'Organization', items: [billingRailItem(orgSlug)] }]
-			: []
+		if (!orgSlug || input.role === null) return []
+		const items: Array<AccountRailItem> = [
+			{
+				href: orgSettingsPath(orgSlug),
+				label: 'Settings',
+				icon: 'edit',
+			},
+			{
+				href: orgMembersPath(orgSlug),
+				label: 'Members',
+				icon: 'users',
+			},
+		]
+		if (orgRoleManagesBilling(input.role)) {
+			items.push(billingRailItem(orgSlug))
+		}
+		return [{ label: 'Organization', items }]
 	}
 	return [
 		{

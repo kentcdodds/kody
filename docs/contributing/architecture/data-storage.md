@@ -201,7 +201,10 @@ Account export is implemented in `packages/worker/src/account/export.ts`. It
 mirrors the deletion inventory so portability and account migration cover the
 same user-owned storage surfaces. The D1 table list and shared kind→SQL match
 builders live in `account/data-targets.ts` (`accountUserDataTargets`,
-`buildUserScopedTargetMatch`); export redaction columns also live there.
+`buildUserScopedTargetMatch`); export redaction columns also live there. Org and
+person hard purge share that inventory through `hardPurgeDataTargets` in
+`orgs/data-targets.ts` (`person` is `accountUserDataTargets`).
+`SOFT_DELETE_PURGE_ENABLED` stays `false`, so the purge lane dry-runs.
 Out-of-band surfaces (Durable Objects, KV schemes, R2, Vectorize, Artifacts) are
 declared in `user-owned-surfaces.ts` and consumed by both deletion and export.
 Growth-table retention dispositions are linked in

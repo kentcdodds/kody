@@ -156,7 +156,7 @@ export function profilePackageSortIsActive(filters: {
 
 export function buildProfileHref(input: {
 	username: string
-	/** The list's own page when it is not the public profile (`/@slug/packages`). */
+	/** The list's own page when it is not the public profile (`/@slug/-/packages`). */
 	basePath?: string
 	query?: string | null
 	visibility?: ProfilePackageVisibilityFilter

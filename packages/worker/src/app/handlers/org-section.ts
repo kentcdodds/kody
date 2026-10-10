@@ -203,7 +203,7 @@ export function createOrgSectionHandler(
 
 /**
  * JSON for the workspace Repositories page, behind the same gate as
- * `/@slug/packages`. The list is the signed-in person's own inventory, looked
+ * `/@slug/-/packages`. The list is the signed-in person's own inventory, looked
  * up by their current username because the personal-org slug does not follow
  * a username change.
  */

@@ -1141,6 +1141,7 @@ export type AccountOrganizationSummary = {
 	displayName: string | null
 	role: 'owner' | 'member' | 'billing' | null
 	personal: boolean
+	avatarUrl?: string | null
 }
 
 type AccountInviteSummary = {
@@ -1180,6 +1181,49 @@ export type AccountOrganizationsLoaderData = {
 	organizations: Array<AccountOrganizationSummary>
 	lastUsedOrganization: string | null
 	invites: Array<AccountInviteSummary>
+}
+
+type OrgManagementOrg = {
+	id: string
+	slug: string
+	displayName: string | null
+	avatarUrl: string | null
+	personal: boolean
+	role: 'owner' | 'member' | 'billing'
+}
+
+export type OrgSettingsLoaderData = {
+	ok: true
+	org: OrgManagementOrg
+	canManage: boolean
+	canDelete: boolean
+}
+
+export type OrgMemberView = {
+	userId: string
+	username: string | null
+	displayName: string | null
+	avatarUrl: string | null
+	role: 'owner' | 'member' | 'billing'
+	roleLabel: string
+}
+
+export type OrgInviteView = {
+	id: string
+	kind: string
+	role: 'owner' | 'member' | 'billing' | null
+	roleLabel: string | null
+	inviteeEmail: string | null
+	inviteeUsername: string | null
+	expiresAt: string
+}
+
+export type OrgMembersLoaderData = {
+	ok: true
+	org: OrgManagementOrg
+	members: Array<OrgMemberView>
+	invites: Array<OrgInviteView>
+	canManage: boolean
 }
 
 export type AccountConnectionListItem = {
@@ -2312,7 +2356,7 @@ export type AccountEmailLoaderData = {
 	classification: 'accepted' | 'quarantined' | null
 }
 
-type AuthProvidersLoaderData = {
+export type AuthProvidersLoaderData = {
 	ok: true
 	providers: Array<{ id: string; label: string }>
 	turnstileSiteKey: string | null
@@ -2382,6 +2426,8 @@ export type AppLoaderData = {
 	accountProfile?: AccountProfileLoaderData
 	accountOrganizations?: AccountOrganizationsLoaderData
 	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
+	orgSettings?: OrgSettingsLoaderData
+	orgMembers?: OrgMembersLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData

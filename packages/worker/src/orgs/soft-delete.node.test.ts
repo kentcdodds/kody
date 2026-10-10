@@ -624,3 +624,238 @@ test('softDeleteOrg refuses while an org OwnerId write lease is held', async () 
 		}),
 	).resolves.toMatchObject({ orgId })
 })
+
+test('retrying an org soft-delete finishes the same generation', async () => {
+	const { env, appDb } = await createHarness()
+	const orgId = 'org-resume'
+	await seedOrg(appDb, orgId, 'resume')
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-resume', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_entries (
+				bucket_id, name, encrypted_value, created_at, updated_at
+			) VALUES ('sec-resume', 'api-key', 'cipher', ?, ?)`,
+		)
+		.bind(ts, ts)
+		.run()
+	const deleted = await softDeleteOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now,
+	})
+	expect(deleted.resumed).toBe(false)
+	await appDb
+		.prepare(
+			`UPDATE secret_buckets SET deleted_at = NULL WHERE id = 'sec-resume'`,
+		)
+		.run()
+	await appDb
+		.prepare(
+			`UPDATE secret_entries SET deleted_at = NULL
+			 WHERE bucket_id = 'sec-resume' AND name = 'api-key'`,
+		)
+		.run()
+	const later = new Date(now.getTime() + 60_000)
+	const resumed = await softDeleteOrg({
+		env,
+		orgId,
+		actorUserId: 'actor-1',
+		now: later,
+	})
+	expect(resumed.resumed).toBe(true)
+	expect(resumed.deletedAt).toBe(deleted.deletedAt)
+	expect(resumed.deletedAt).not.toBe(later.toISOString())
+	const org = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(orgId)
+		.first<{ deleted_at: string }>()
+	expect(org?.deleted_at).toBe(deleted.deletedAt)
+	const bucket = await appDb
+		.prepare(`SELECT deleted_at FROM secret_buckets WHERE id = 'sec-resume'`)
+		.first<{ deleted_at: string | null }>()
+	expect(bucket?.deleted_at).toBe(deleted.deletedAt)
+	const entry = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_entries
+			 WHERE bucket_id = 'sec-resume' AND name = 'api-key'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(entry?.deleted_at).toBe(deleted.deletedAt)
+})
+
+test('retrying a user soft-delete finishes sole-org rows from the same generation', async () => {
+	const { env, appDb } = await createHarness()
+	const userId = testStableUserIdFromEmail('resume-user@example.com')
+	const orgId = 'org-user-resume'
+	const ts = '2026-01-01T00:00:00.000Z'
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at, stable_user_id
+			) VALUES (11, 'resume-user@example.com', 'resumeuser', 'x', ?, ?, ?)`,
+		)
+		.bind(ts, ts, userId)
+		.run()
+	await seedOrg(appDb, orgId, 'user-resume')
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?)`,
+		)
+		.bind(orgId, userId, ts)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-user-resume', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+	const deleted = await softDeleteUserAccount({
+		env,
+		userId,
+		now,
+	})
+	expect(deleted.resumed).toBe(false)
+	expect(deleted.deletedOrgIds).toEqual([orgId])
+	await appDb
+		.prepare(
+			`UPDATE secret_buckets SET deleted_at = NULL WHERE id = 'sec-user-resume'`,
+		)
+		.run()
+	const later = new Date(now.getTime() + 60_000)
+	const resumed = await softDeleteUserAccount({
+		env,
+		userId,
+		now: later,
+	})
+	expect(resumed.resumed).toBe(true)
+	expect(resumed.deletedAt).toBe(deleted.deletedAt)
+	const user = await appDb
+		.prepare(`SELECT deleted_at FROM users WHERE stable_user_id = ?`)
+		.bind(userId)
+		.first<{ deleted_at: string }>()
+	expect(user?.deleted_at).toBe(deleted.deletedAt)
+	const bucket = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_buckets WHERE id = 'sec-user-resume'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(bucket?.deleted_at).toBe(deleted.deletedAt)
+})
+
+test('retrying a user soft-delete revokes org credentials left by a partial offboard', async () => {
+	const { env, appDb } = await createHarness()
+	const userId = testStableUserIdFromEmail('partial-offboard@example.com')
+	const ownerId = testStableUserIdFromEmail('partial-owner@example.com')
+	const orgId = 'org-partial-offboard'
+	const ts = '2026-01-01T00:00:00.000Z'
+	const deletedAt = now.toISOString()
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at,
+				stable_user_id, deleted_at
+			) VALUES
+				(21, 'partial-owner@example.com', 'partialowner', 'x', ?, ?, ?, NULL),
+				(22, 'partial-offboard@example.com', 'partialmember', 'x', ?, ?, ?, ?)`,
+		)
+		.bind(ts, ts, ownerId, ts, ts, userId, deletedAt)
+		.run()
+	await seedOrg(appDb, orgId, 'partial-offboard')
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'owner', ?, NULL), (?, ?, 'member', ?, ?)`,
+		)
+		.bind(orgId, ownerId, ts, orgId, userId, ts, deletedAt)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO api_tokens (
+				id, user_id, org_id, name, token_hash, scopes_json,
+				idle_ttl_seconds, expires_at, max_expires_at, created_via,
+				created_at, updated_at
+			) VALUES (
+				'token-partial', ?, ?, 'team token', 'hash', '[]',
+				3600, ?, ?, 'test', ?, ?
+			)`,
+		)
+		.bind(userId, orgId, ts, ts, ts, ts)
+		.run()
+	const resumed = await softDeleteUserAccount({
+		env,
+		userId,
+		now: new Date(now.getTime() + 60_000),
+	})
+	expect(resumed.resumed).toBe(true)
+	expect(resumed.deletedAt).toBe(deletedAt)
+	const token = await appDb
+		.prepare(`SELECT revoked_at FROM api_tokens WHERE id = 'token-partial'`)
+		.first<{ revoked_at: string | null }>()
+	expect(token?.revoked_at).toBe(deletedAt)
+})
+
+test('a user-delete retry does not soft-delete a shared org after the other member leaves', async () => {
+	const { env, appDb } = await createHarness()
+	const userId = testStableUserIdFromEmail('alice-retry@example.com')
+	const otherId = testStableUserIdFromEmail('bob-left@example.com')
+	const orgId = 'org-shared-retry'
+	const ts = '2026-01-01T00:00:00.000Z'
+	const deletedAt = now.toISOString()
+	await appDb
+		.prepare(
+			`INSERT INTO users (
+				id, email, username, password_hash, created_at, updated_at,
+				stable_user_id, deleted_at
+			) VALUES
+				(31, 'alice-retry@example.com', 'aliceretry', 'x', ?, ?, ?, ?),
+				(32, 'bob-left@example.com', 'bobleft', 'x', ?, ?, ?, NULL)`,
+		)
+		.bind(ts, ts, userId, deletedAt, ts, ts, otherId)
+		.run()
+	await seedOrg(appDb, orgId, 'shared-retry')
+	await appDb
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at, deleted_at)
+			 VALUES (?, ?, 'member', ?, ?), (?, ?, 'owner', ?, ?)`,
+		)
+		.bind(orgId, userId, ts, deletedAt, orgId, otherId, ts, deletedAt)
+		.run()
+	await appDb
+		.prepare(
+			`INSERT INTO secret_buckets (
+				id, user_id, scope, binding_key, created_at, updated_at
+			) VALUES ('sec-shared-retry', ?, 'user', 'default', ?, ?)`,
+		)
+		.bind(orgId, ts, ts)
+		.run()
+
+	const resumed = await softDeleteUserAccount({
+		env,
+		userId,
+		now: new Date(now.getTime() + 60_000),
+	})
+	expect(resumed.deletedOrgIds).toEqual([])
+	const org = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind(orgId)
+		.first<{ deleted_at: string | null }>()
+	expect(org?.deleted_at).toBeNull()
+	const bucket = await appDb
+		.prepare(
+			`SELECT deleted_at FROM secret_buckets WHERE id = 'sec-shared-retry'`,
+		)
+		.first<{ deleted_at: string | null }>()
+	expect(bucket?.deleted_at).toBeNull()
+})

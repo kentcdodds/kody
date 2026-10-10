@@ -7,13 +7,15 @@ import {
 	getUsernameFormatValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
+import { createOrg, updateOrgMemberRole } from '#worker/orgs/access-writes.ts'
 import {
-	createOrg,
-	softDeleteOrgMember,
-	updateOrgMemberRole,
-} from '#worker/orgs/access-writes.ts'
+	onMemberSoftRemoved,
+	readTombstonedOrgMembership,
+} from '#worker/orgs/member-offboarding.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import { listOrgMembers } from '#worker/orgs/org-members-list.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
+import { buildUserAvatarUrl } from '#worker/community/public-urls.ts'
 import {
 	orgRoleSchema,
 	requireLiveOrg,
@@ -91,6 +93,54 @@ export const orgCreateCapability = defineDomainCapability(
 						slug: org.slug,
 						display_name: org.display_name ?? org.slug,
 					},
+				}
+			} catch (error) {
+				rethrowAccessError(error)
+			}
+		},
+	},
+)
+
+export const orgMemberListCapability = defineDomainCapability(
+	capabilityDomainNames.access,
+	{
+		name: 'orgMemberList',
+		orgPermission: 'member:read',
+		description:
+			'List live members of the organization this request is bound to, with username, display name, and role.',
+		keywords: ['member', 'members', 'list', 'role'],
+		readOnly: true,
+		idempotent: true,
+		destructive: false,
+		inputSchema: z.object({}),
+		outputSchema: z.object({
+			members: z.array(
+				z.object({
+					user_id: z.string(),
+					username: z.string().nullable(),
+					display_name: z.string().nullable(),
+					avatar_url: z.string().nullable(),
+					role: orgRoleSchema,
+				}),
+			),
+		}),
+		async handler(_args, ctx) {
+			try {
+				const { db, request } = await requireOrgPermission(ctx, 'member:read')
+				const members = await listOrgMembers(db, request.org.id)
+				return {
+					members: members.map((member) => ({
+						user_id: member.userId,
+						username: member.username,
+						display_name: member.displayName,
+						avatar_url: member.username
+							? buildUserAvatarUrl({
+									username: member.username,
+									avatarKey: member.avatarKey,
+								})
+							: null,
+						role: member.role,
+					})),
 				}
 			} catch (error) {
 				rethrowAccessError(error)
@@ -184,7 +234,7 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 		name: 'orgMemberRemove',
 		orgPermission: 'member:delete',
 		description:
-			'Remove a member from the organization this request is bound to. Their team memberships in this organization end too. The last Owner cannot be removed.',
+			'Remove a member from the organization this request is bound to. Revokes org-bound credentials, disconnects integrations they connected, and keeps their jobs running, the same as when they leave. A retry finishes that cleanup when the membership is already tombstoned. Their team memberships in this organization end too. The last Owner cannot be removed.',
 		keywords: ['member', 'remove', 'kick'],
 		readOnly: false,
 		idempotent: false,
@@ -206,9 +256,40 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 				})
 				const membership = await liveMembership(db, request.org.id, userId)
 				if (!membership) {
-					throw new McpCallerError(
-						'That person is not a member of this organization.',
-					)
+					const tombstone = await readTombstonedOrgMembership({
+						db,
+						orgId: request.org.id,
+						userId,
+					})
+					if (!tombstone) {
+						throw new McpCallerError(
+							'That person is not a member of this organization.',
+						)
+					}
+					if (tombstone.role === 'owner') {
+						const access = await computeEffectivePermissions({
+							env: ctx.env,
+							request,
+						})
+						if (!access.isOwner) {
+							throw new McpCallerError('Only an Owner can remove an Owner.')
+						}
+					}
+					await onMemberSoftRemoved({
+						env: ctx.env,
+						orgId: request.org.id,
+						userId,
+						deletedAt: tombstone.deletedAt,
+						resume: true,
+					})
+					if (seatRole(tombstone.role)) {
+						await syncSeatsAfterMembershipChange({
+							db,
+							env: ctx.env,
+							orgId: request.org.id,
+						})
+					}
+					return { user_id: userId, removed: true as const }
 				}
 				const removingOwner = membership.role === 'owner'
 				if (removingOwner) {
@@ -224,11 +305,11 @@ export const orgMemberRemoveCapability = defineDomainCapability(
 						throw new McpCallerError('The last Owner cannot be removed.')
 					}
 				}
-				await softDeleteOrgMember({
-					db,
+				await onMemberSoftRemoved({
+					env: ctx.env,
 					orgId: request.org.id,
 					userId,
-					protectLastOwner: removingOwner,
+					deletedAt: new Date().toISOString(),
 				})
 				if (seatRole(membership.role)) {
 					await syncSeatsAfterMembershipChange({

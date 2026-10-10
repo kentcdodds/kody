@@ -8,6 +8,7 @@ const mockModule = vi.hoisted(() => ({
 	countActiveRepoSessions: vi.fn<typeof RepoSessions.countActiveRepoSessions>(
 		async () => 0,
 	),
+	getRepoSessionById: vi.fn(),
 	getEntitySourceByIdForUser: vi.fn(),
 	getSavedPackageById: vi.fn(),
 	resolveSavedPackageRef: vi.fn(),
@@ -20,6 +21,8 @@ vi.mock('#worker/repo/repo-sessions.ts', () => ({
 	countActiveRepoSessions: (
 		...args: Parameters<typeof RepoSessions.countActiveRepoSessions>
 	) => mockModule.countActiveRepoSessions(...args),
+	getRepoSessionById: (...args: Array<unknown>) =>
+		mockModule.getRepoSessionById(...args),
 }))
 
 vi.mock('#worker/repo/entity-sources.ts', () => ({
@@ -74,6 +77,17 @@ const ctx = {
 function setupRepoRpc() {
 	for (const mock of Object.values(mockModule)) mock.mockReset()
 	mockModule.countActiveRepoSessions.mockResolvedValue(0)
+	mockModule.getRepoSessionById.mockResolvedValue({
+		id: 'session-1',
+		user_id: 'user-1',
+		source_id: 'source-package-1',
+	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		id: 'source-package-1',
+		user_id: 'user-1',
+		entity_kind: 'package',
+		entity_id: 'package-1',
+	})
 	const rpc = {
 		openSession: vi.fn(),
 		getSessionInfo: vi.fn(),

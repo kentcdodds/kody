@@ -25,8 +25,8 @@ test('route-owned prefixes skip the ASSETS probe', () => {
 		'/account',
 		'/account/billing',
 		'/@acme',
-		'/@acme/jobs',
-		'/@acme/packages',
+		'/@acme/-/jobs',
+		'/@acme/-/packages',
 		'/mcp',
 		'/api/me',
 		'/oauth/authorize',
@@ -83,5 +83,5 @@ test('literal route roots skip the probe unless they are public asset directorie
 		if (skips !== shouldSkip) mismatches.push(pattern)
 	}
 	expect(mismatches).toEqual([])
-	expect(requestSkipsAssetProbe('/@kent/activity')).toBe(true)
+	expect(requestSkipsAssetProbe('/@kent/-/activity')).toBe(true)
 })

@@ -12,6 +12,7 @@ export type OrgRecord = {
 	id: string
 	slug: string
 	display_name: string | null
+	avatar_key: string | null
 	plan: string
 	entitlement_ladder: string
 }
@@ -26,7 +27,7 @@ export type PersonOrg = OrgRecord & {
 	role: OrgRole | null
 }
 
-const orgSelect = `id, slug, display_name, plan, entitlement_ladder`
+const orgSelect = `id, slug, display_name, avatar_key, plan, entitlement_ladder`
 
 export async function getOrgById(db: D1Database, orgId: string) {
 	return await db
@@ -168,6 +169,7 @@ export type ListedOrganization = {
 	displayName: string | null
 	role: OrgRole | null
 	personal: boolean
+	avatarKey: string | null
 }
 
 export async function listOrganizationsForPerson(
@@ -178,6 +180,7 @@ export async function listOrganizationsForPerson(
 		.prepare(
 			`SELECT o.slug AS slug,
 			        o.display_name AS display_name,
+			        o.avatar_key AS avatar_key,
 			        m.role AS role,
 			        CASE WHEN o.id = ? THEN 1 ELSE 0 END AS personal
 			 FROM org_memberships m
@@ -191,12 +194,14 @@ export async function listOrganizationsForPerson(
 		.all<{
 			slug: string
 			display_name: string | null
+			avatar_key: string | null
 			role: OrgRole
 			personal: number
 		}>()
 	const grants = await db
 		.prepare(
-			`SELECT DISTINCT o.slug AS slug, o.display_name AS display_name
+			`SELECT DISTINCT o.slug AS slug, o.display_name AS display_name,
+			        o.avatar_key AS avatar_key
 			 FROM grants g
 			 INNER JOIN orgs o ON o.id = g.org_id
 			 WHERE g.deleted_at IS NULL
@@ -211,7 +216,8 @@ export async function listOrganizationsForPerson(
 			       AND m.deleted_at IS NULL
 			   )
 			 UNION
-			 SELECT DISTINCT o.slug AS slug, o.display_name AS display_name
+			 SELECT DISTINCT o.slug AS slug, o.display_name AS display_name,
+			        o.avatar_key AS avatar_key
 			 FROM team_members tm
 			 INNER JOIN teams t
 			   ON t.id = tm.team_id
@@ -234,19 +240,25 @@ export async function listOrganizationsForPerson(
 			   )`,
 		)
 		.bind(personId, personId, personId, personId)
-		.all<{ slug: string; display_name: string | null }>()
+		.all<{
+			slug: string
+			display_name: string | null
+			avatar_key: string | null
+		}>()
 	const listed = [
 		...(memberships.results ?? []).map((row) => ({
 			slug: row.slug,
 			displayName: row.display_name,
 			role: row.role,
 			personal: row.personal === 1,
+			avatarKey: row.avatar_key,
 		})),
 		...(grants.results ?? []).map((row) => ({
 			slug: row.slug,
 			displayName: row.display_name,
 			role: null as OrgRole | null,
 			personal: false,
+			avatarKey: row.avatar_key,
 		})),
 	]
 	listed.sort((left, right) => {
@@ -401,7 +413,7 @@ export async function listOrgsForPerson(
 ): Promise<Array<PersonOrg>> {
 	const rows = await db
 		.prepare(
-			`SELECT o.id, o.slug, o.display_name, o.plan, o.entitlement_ladder,
+			`SELECT o.id, o.slug, o.display_name, o.avatar_key, o.plan, o.entitlement_ladder,
 			        m.role AS role
 			 FROM orgs o
 			 LEFT JOIN org_memberships m

@@ -11,7 +11,12 @@ import { requireMcpRequest, requireMcpUser } from './require-user.ts'
 const outputSchema = z.object({
 	user_id: z.string(),
 	username: z.string(),
-	email: z.email(),
+	email: z.union([
+		z.email(),
+		z
+			.literal('')
+			.describe('Empty when the caller is a team org, not a person.'),
+	]),
 	display_name: z.string(),
 	org: z.object({
 		slug: z.string().describe('Package scope and package-app subdomain.'),
@@ -24,7 +29,7 @@ export const metaGetCurrentUserCapability = defineDomainCapability(
 		name: 'metaGetCurrentUser',
 		orgPermission: 'none',
 		description:
-			'Get harmless identity fields for the signed-in MCP user: id, username, email, display name, and the slug of the org this request acts in. Use email and display_name as git user.email / user.name on Kody remotes when a git-remote result is not already in hand.',
+			'Get harmless identity fields for the signed-in MCP user: id, username, email, display name, and the slug of the org this request acts in. Email is empty when the caller is a team org rather than a person. Use email and display_name as git user.email / user.name on Kody remotes when a git-remote result is not already in hand.',
 		keywords: [
 			'user',
 			'current user',

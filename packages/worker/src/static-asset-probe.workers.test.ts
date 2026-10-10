@@ -68,14 +68,14 @@ test('a public file is served from ASSETS and a dynamic prefix never fetches tha
 
 	const beforeOrg = tracked.pathnames.length
 	const orgResponse = await workerFetch(
-		new Request('https://test.kody.dev/@acme/jobs'),
+		new Request('https://test.kody.dev/@acme/-/jobs'),
 		tracked.env,
 	)
 	await orgResponse.body?.cancel()
 	const orgFetches = tracked.pathnames.slice(beforeOrg)
 	expect(
 		orgFetches.some(
-			(pathname) => pathname === '/@acme/jobs' || pathname.startsWith('/@'),
+			(pathname) => pathname === '/@acme/-/jobs' || pathname.startsWith('/@'),
 		),
 	).toBe(false)
 })

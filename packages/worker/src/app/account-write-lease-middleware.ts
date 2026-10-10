@@ -9,7 +9,7 @@ import { loadResolvedRequestAuth } from './request-auth-cache.ts'
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 const mutatingGetPaths = new Set(['/account/mcp-servers/oauth/callback'])
 /** Checkout return links the Stripe customer; the portal can change plans. */
-const mutatingBillingGetPath = /^\/@[^/]+\/billing\/(?:success|portal)$/
+const mutatingBillingGetPath = /^\/@[^/]+\/-\/billing\/(?:success|portal)$/
 
 function accountDeletingResponse(status: number) {
 	return Response.json(

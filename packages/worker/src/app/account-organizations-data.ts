@@ -1,14 +1,15 @@
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { type AccountOrganizationSummary } from '#universal/loader-data.ts'
+import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
+import { buildOrgAvatarUrl } from '#worker/orgs/org-avatar.ts'
 import {
 	listOrganizationsForPerson,
 	listPendingInvitesForPerson,
-	type ListedOrganization,
 	type PendingInviteSummary,
 } from '#worker/orgs/repo.ts'
-import { readLastUsedOrgSlug } from '#universal/org-last-used-cookie.ts'
 
 export type AccountOrganizationSnapshot = {
-	organizations: Array<ListedOrganization>
+	organizations: Array<AccountOrganizationSummary>
 	inviteCount: number
 	lastUsedOrganization: string | null
 	invites: Array<PendingInviteSummary>
@@ -36,7 +37,15 @@ export async function loadAccountOrganizationSnapshot(
 		? remembered
 		: null
 	return {
-		organizations,
+		organizations: organizations.map((org) => ({
+			slug: org.slug,
+			displayName: org.displayName,
+			role: org.role,
+			personal: org.personal,
+			avatarUrl: org.personal
+				? null
+				: buildOrgAvatarUrl({ slug: org.slug, avatarKey: org.avatarKey }),
+		})),
 		inviteCount: invites.length,
 		lastUsedOrganization,
 		invites,

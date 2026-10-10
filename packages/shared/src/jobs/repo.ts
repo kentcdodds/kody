@@ -654,7 +654,10 @@ export async function softDeleteJobRowsForUser(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs
-			 SET deleted_at = ?, enabled = 0, updated_at = ?
+			 SET deleted_at = ?,
+			     enabled_before_soft_delete = enabled,
+			     enabled = 0,
+			     updated_at = ?
 			 WHERE user_id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.deletedAt, input.deletedAt, input.userId)
@@ -671,7 +674,11 @@ export async function restoreJobRowsForUser(input: {
 	const result = await input.db
 		.prepare(
 			`UPDATE jobs
-			 SET deleted_at = NULL, deleting_at = NULL, updated_at = ?
+			 SET deleted_at = NULL,
+			     deleting_at = NULL,
+			     enabled = COALESCE(enabled_before_soft_delete, enabled),
+			     enabled_before_soft_delete = NULL,
+			     updated_at = ?
 			 WHERE user_id = ? AND deleted_at = ?`,
 		)
 		.bind(input.restoredAt, input.userId, input.deletedAt)
@@ -725,8 +732,8 @@ export const maxJobRetentionCandidatesPerRun = 100
 
 /**
  * Candidate scan for the platform job retention sweeper. Excludes preserved,
- * package-owned, and clearly held/active rows in SQL so hourly budget is not
- * spent re-walking live jobs:
+ * package-owned, soft-deleted, and clearly held/active rows in SQL so hourly
+ * budget is not spent re-walking live jobs:
  * - enabled recurring (including kill-switched pause)
  * - enabled never-ran once that is still runnable
  * Age/category eligibility still runs in application code so account
@@ -744,6 +751,7 @@ export async function listJobRetentionCandidateRows(
 		.prepare(
 			`SELECT * FROM jobs
 			WHERE preserved = 0
+				AND deleted_at IS NULL
 				AND id NOT LIKE 'package-job:%'
 				AND id > ?
 				AND NOT (

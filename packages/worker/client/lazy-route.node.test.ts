@@ -20,7 +20,7 @@ const eagerPatterns = new Set([
 	routePattern(routes.notFoundPage),
 	routePattern(routes.internalErrorPage),
 	routePattern(routes.profile),
-	// Server-redirected to `/@slug/billing`; the client loader only forces a
+	// Server-redirected to `/@slug/-/billing`; the client loader only forces a
 	// document navigation, so there is nothing to render.
 	routePattern(routes.accountBilling),
 	oauthPaths.callback,
@@ -54,6 +54,18 @@ test('every non-eager route pattern resolves to a registered lazy area', () => {
 			).not.toBeNull()
 		}
 	}
+})
+
+test('org management under /- is account-area, not package settings', () => {
+	// `/@slug/-/settings` also matches `/@:username/:kodyId/settings` with
+	// kodyId `-`. Static `/-/` must win so SPA nav loads org settings.
+	expect(clientRouteAreaNameForPath('/@zeta-co/-/settings')).toBe(
+		'account-area',
+	)
+	expect(clientRouteAreaNameForPath('/@zeta-co/-/members')).toBe('account-area')
+	expect(clientRouteAreaNameForPath('/@zeta-co/my-pkg/settings')).toBe(
+		'community-area',
+	)
 })
 
 test('a cold lazy route defers handle.update, renders a fallback, and retries once before navigation recovery', async () => {

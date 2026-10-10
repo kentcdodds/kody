@@ -1,3 +1,7 @@
+/**
+ * soft-delete-read-filter: opt-out — person lookup reads `users.deleted_at`
+ * so a tombstoned person cannot fall through to a leftover personal org row.
+ */
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { AccountSuspendedError } from '#worker/account/account-suspension.ts'
@@ -29,15 +33,78 @@ function isMissingRbacTableError(error: unknown) {
 	)
 }
 
+function backgroundMcpUserNotFound(userId: string) {
+	return new Error(`Background MCP user was not found: ${userId}`)
+}
+
+function isMissingOrgsTableError(error: unknown) {
+	return error instanceof Error && /no such table:\s*orgs/i.test(error.message)
+}
+
+/**
+ * Person accounts and team orgs share the owner-id space that package jobs,
+ * invokes, and saved-package projection pass into this lookup. A live team
+ * org has no `users` row. Resolve that id as the org here so callers do not
+ * each decide between a person and an org. A person id still wins: a deleting
+ * or soft-deleted user is missing even when a personal org remains.
+ */
+async function loadBackgroundTeamOrg(
+	db: D1Database,
+	ownerId: string,
+): Promise<McpUserContext> {
+	let org: {
+		slug: string
+		display_name: string | null
+		suspended_at: string | null
+		deleting_at: string | null
+	} | null
+	try {
+		org = await db
+			.prepare(
+				`SELECT slug, display_name, suspended_at, deleting_at
+				 FROM orgs
+				 WHERE id = ?${andLiveDeletedAtSql()}`,
+			)
+			.bind(ownerId)
+			.first<{
+				slug: string
+				display_name: string | null
+				suspended_at: string | null
+				deleting_at: string | null
+			}>()
+	} catch (error) {
+		if (isMissingOrgsTableError(error)) {
+			throw backgroundMcpUserNotFound(ownerId)
+		}
+		throw error
+	}
+	if (!org || org.deleting_at) {
+		throw backgroundMcpUserNotFound(ownerId)
+	}
+	if (org.suspended_at) {
+		throw new AccountSuspendedError()
+	}
+	const displayName = org.display_name?.trim() || org.slug
+	return {
+		userId: personIdFromStored(ownerId),
+		email: '',
+		username: org.slug,
+		displayName,
+		roles: ['user'],
+		permissions: [],
+	}
+}
+
 async function loadBackgroundMcpUser(
 	db: D1Database,
 	userId: string,
 ): Promise<McpUserContext> {
 	const user = await db
 		.prepare(
-			`SELECT id, email, username, display_name, suspended_at
+			`SELECT id, email, username, display_name, suspended_at,
+				deleting_at, deleted_at
 			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 WHERE stable_user_id = ?`,
 		)
 		.bind(userId)
 		.first<{
@@ -46,9 +113,14 @@ async function loadBackgroundMcpUser(
 			username: string
 			display_name: string | null
 			suspended_at: string | null
+			deleting_at: string | null
+			deleted_at: string | null
 		}>()
 	if (!user) {
-		throw new Error(`Background MCP user was not found: ${userId}`)
+		return await loadBackgroundTeamOrg(db, userId)
+	}
+	if (user.deleting_at || user.deleted_at) {
+		throw backgroundMcpUserNotFound(userId)
 	}
 	if (user.suspended_at) {
 		throw new AccountSuspendedError()
@@ -112,11 +184,16 @@ async function loadBackgroundMcpUser(
 }
 
 /**
- * Resolve account identity for background execution from its stable user id.
+ * Resolve account identity for background execution from an owner id.
+ *
+ * The id is a person (`users.stable_user_id`, also that person's personal
+ * org) or a team org (`orgs.id` with no users row). This is the only place
+ * that distinction is made. Callers keep passing the storage owner id.
  *
  * This is the suspension choke point for background lanes (jobs, package
  * invocations and subscriptions, workflows, retrievers, realtime hooks):
- * a suspended account throws `AccountSuspendedError` instead of resolving.
+ * a suspended person or team org throws `AccountSuspendedError` instead of
+ * resolving.
  *
  * The short per-binding cache deduplicates nested and bursty package calls
  * while allowing account profile changes to propagate without isolate-wide
@@ -151,50 +228,4 @@ export async function resolveBackgroundMcpUser(
 		expiresAtMs: nowMs + backgroundMcpUserCacheTtlMs,
 	})
 	return await value
-}
-
-export function isBackgroundMcpUserNotFoundError(error: unknown): boolean {
-	return (
-		error instanceof Error &&
-		error.message.startsWith('Background MCP user was not found:')
-	)
-}
-
-/**
- * Resolve the person identity for a background run keyed by an OwnerId.
- *
- * Package storage, jobs, and invoke metering use the org OwnerId. Team orgs
- * have no `users` row at that id, so prefer an explicit acting person when the
- * caller has one; otherwise fall back to a live org Owner membership after the
- * personal-org (ownerId === person id) lookup misses.
- */
-export async function resolveBackgroundMcpUserForOwner(
-	db: D1Database,
-	input: { ownerId: string; actorUserId?: string | null },
-): Promise<McpUserContext> {
-	const actorUserId = input.actorUserId?.trim()
-	if (actorUserId) {
-		return await resolveBackgroundMcpUser(db, actorUserId)
-	}
-	try {
-		return await resolveBackgroundMcpUser(db, input.ownerId)
-	} catch (error) {
-		if (!isBackgroundMcpUserNotFoundError(error)) throw error
-	}
-	const ownerMember = await db
-		.prepare(
-			`SELECT user_id
-			 FROM org_memberships
-			 WHERE org_id = ?
-			   AND role = 'owner'
-			   AND deleted_at IS NULL
-			 ORDER BY created_at ASC
-			 LIMIT 1`,
-		)
-		.bind(input.ownerId)
-		.first<{ user_id: string }>()
-	if (!ownerMember?.user_id) {
-		throw new Error(`Background MCP user was not found: ${input.ownerId}`)
-	}
-	return await resolveBackgroundMcpUser(db, ownerMember.user_id)
 }

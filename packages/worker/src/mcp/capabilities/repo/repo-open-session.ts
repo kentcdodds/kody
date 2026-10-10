@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
 import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
@@ -83,6 +84,16 @@ export const repoOpenSessionCapability = defineDomainCapability(
 						: undefined,
 				args,
 			})
+			if (requested.resolvedTarget.kind === 'package') {
+				await authorizePackageWrite(
+					{ env: ctx.env, request: ctx.callerContext.request },
+					{
+						id: requested.resolvedTarget.package_id,
+						userId: requested.source.user_id,
+						label: requested.resolvedTarget.name,
+					},
+				)
+			}
 			const existingSession =
 				args.conversation_id == null
 					? null

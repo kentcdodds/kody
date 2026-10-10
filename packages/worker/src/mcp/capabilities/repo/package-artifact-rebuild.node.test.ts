@@ -53,7 +53,9 @@ type Target = (typeof sampleTargets)[number]
 const stagingKey = 'repo-artifact-rebuild-staging:v1:user-1:stage-1'
 const isolatedEnv = {
 	REPO_SESSION: {},
-	BUNDLE_ARTIFACTS_KV: {},
+	BUNDLE_ARTIFACTS_KV: {
+		get: async () => null,
+	},
 } as unknown as Env
 
 function setup({

@@ -151,6 +151,7 @@ function createPublishedSnapshot() {
 function mockPackageSource(sourceUserId = 'user-1') {
 	const savedPackage = {
 		id: 'package-1',
+		userId: sourceUserId,
 		kodyId: 'unleashed-wifi',
 		name: '@kentcdodds/unleashed-wifi',
 		sourceId: 'source-1',

@@ -73,6 +73,15 @@ test('normalizePackageNameInput accepts a leaf, strips a matching scope, and rej
 		}),
 	)
 
+	// Org page separator `/@owner/-/<section>` must never be a valid kody.id.
+	expect(() =>
+		normalizePackageNameInput({
+			value: '-',
+			ownerScope: 'grant',
+			action: 'create',
+		}),
+	).toThrow(PackageNameInputError)
+
 	expect(getPackageNameLeaf('@kentcdodds/cursor-cloud-agents')).toBe(
 		'cursor-cloud-agents',
 	)

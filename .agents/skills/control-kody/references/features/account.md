@@ -12,9 +12,9 @@ Pages about the person, split from the org workspace:
 
 The account rail ("Account sections") lists only those pages. Workspace pages
 (Repositories, Jobs, Secrets, Connections, Billing, and the rest) sit on a
-separate "Workspace sections" rail under `/@<slug>/...`; Repositories is
-`/@<slug>/packages`, distinct from the public profile at `/@<slug>`. Both rails
-come from `account-rail.ts` and render through `AccountPageHeader` in
+separate "Workspace sections" rail under `/@<slug>/-/…`; Repositories is
+`/@<slug>/-/packages`, distinct from the public profile at `/@<slug>`. Both
+rails come from `account-rail.ts` and render through `AccountPageHeader` in
 `packages/worker/client/routes/account-management-components.tsx`. Below 860px a
 rail collapses to a `<details>` menu.
 
@@ -27,14 +27,18 @@ viewports show the same rows in the menu panel.
 
 `/account` after login. Create an organization at `/account/organizations/new`
 (`POST` the same path with `displayName` and `slug`); it redirects to the org
-home at `/@<slug>`. Account deletion is `/account/delete`.
+home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings and
+members are `/@<slug>/-/settings` and `/@<slug>/-/members`.
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Its resource pages stay 404 until storage follows
-`request.org.id` (#3073), so a team org's workspace rail is empty for now.
+`request.org.id` (#3073). Team orgs still get an Organization rail: Settings
+(`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and Billing
+(`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs keep
+Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/...`. The old `/account/...` resource URLs redirect there for a short
+`/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
 time.
 
 ## Drive it
@@ -43,6 +47,8 @@ time.
 node tools/control-kody.ts login
 node tools/control-kody.ts request GET /account/profile.json
 node tools/control-kody.ts request GET /account/organizations.json
+node tools/control-kody.ts request GET /@<slug>/-/settings.json
+node tools/control-kody.ts request GET /@<slug>/-/members.json
 node tools/control-kody.ts request GET /account/connections.json
 ```
 
@@ -50,6 +56,14 @@ node tools/control-kody.ts request GET /account/connections.json
 
 - `GET|POST /account/profile.json`
 - `GET /account/organizations.json` (orgs, last-used org, pending invites)
+- `GET|POST /@<slug>/-/settings.json` (team org profile; personal orgs point at
+  Account)
+- `POST /@<slug>/-/settings/avatar.json`
+- `POST /@<slug>/-/settings/delete.json`
+- `GET /@<slug>/-/members.json`
+- `POST /@<slug>/-/members/role.json`
+- `POST /@<slug>/-/members/remove.json`
+- `POST /@<slug>/-/members/invite.json`
 - `POST /account/profile/avatar.json`
 - `POST /account/email-change.json`
 - `POST /account/email-claim-release.json`

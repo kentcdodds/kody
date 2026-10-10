@@ -34,14 +34,13 @@ import {
 import {
 	buildAuthorizeRedirectUrl,
 	generateOauthRandomValue,
-	getEnabledOauthProviders,
 	getOauthClientConfig,
 	isOauthProviderId,
-	oauthProviderDefinitions,
 	resolveOauthProfile,
 	type OauthProfile,
 	type OauthProviderId,
 } from '#app/oauth-providers.ts'
+import { publicAuthProvidersLoaderData } from '#app/public-auth-providers.ts'
 import { assignUserRole } from '#worker/identity/permissions-db.ts'
 import { routes } from '#universal/routes.ts'
 import { isTwoFactorEnabled } from '#app/two-factor.ts'
@@ -60,10 +59,7 @@ import {
 } from '#worker/identity/email-claims.ts'
 import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
-import {
-	getTurnstileSiteKey,
-	verifyPublicFormProtection,
-} from '#app/public-form-protection.ts'
+import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import {
 	firstTouchAttributionCreateFields,
 	hasFirstTouchAttribution,
@@ -197,14 +193,7 @@ export function createAuthProvidersApiHandler(env: Env) {
 	return {
 		middleware: [],
 		async handler() {
-			return jsonResponse({
-				ok: true,
-				turnstileSiteKey: getTurnstileSiteKey(env),
-				providers: getEnabledOauthProviders(env).map((provider) => ({
-					id: provider,
-					label: oauthProviderDefinitions[provider].label,
-				})),
-			})
+			return jsonResponse(publicAuthProvidersLoaderData(env))
 		},
 	} satisfies Action<typeof routes.authProvidersApi>
 }

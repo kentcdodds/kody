@@ -67,6 +67,18 @@ export type UserScopedDataTarget =
 			reason?: string
 	  }
 	| { kind: 'mcp_memory_suppression' }
+	/** Delete rows whose `org_id` is the purged organization. */
+	| { kind: 'org_id'; table: string }
+	/**
+	 * Delete child rows whose parent belongs to the purged organization
+	 * (`parentKey` references `parentTable.id`, parent has `org_id`).
+	 */
+	| {
+			kind: 'org_via_parent'
+			table: string
+			parentTable: string
+			parentKey: string
+	  }
 
 export const accountUserDataExcludedOwnerIds = [
 	{
@@ -632,7 +644,12 @@ export function getAccountD1UserColumnCoverage() {
 			case 'community_listing_child':
 			// db_user_target tables key rows by `target`, not a *_user_id
 			// column, so there is no schema column for the guard to cover.
-			case 'db_user_target': {
+			case 'db_user_target':
+			case 'org_via_parent': {
+				break
+			}
+			case 'org_id': {
+				covered.add(`${target.table}.org_id`)
 				break
 			}
 			default: {
@@ -686,7 +703,9 @@ export function resolveUserScopedTargetTable(
 		case 'replace_user_column':
 		case 'replace_user_id_in_json_column':
 		case 'bucket_parent':
-		case 'community_listing_child': {
+		case 'community_listing_child':
+		case 'org_id':
+		case 'org_via_parent': {
 			return target.table
 		}
 		default: {
@@ -814,6 +833,27 @@ export function buildUserScopedTargetMatch(input: {
 				table,
 				whereSql: 'user_id = ?',
 				qualifiedWhereSql: `${table}.user_id = ?`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'org_id': {
+			return {
+				table,
+				whereSql: 'org_id = ?',
+				qualifiedWhereSql: `${table}.org_id = ?`,
+				params: [input.mcpUserId],
+				mutation: { kind: 'delete' },
+			}
+		}
+		case 'org_via_parent': {
+			const whereSql = `${target.parentKey} IN (
+						SELECT id FROM ${target.parentTable} WHERE org_id = ?
+					)`
+			return {
+				table,
+				whereSql,
+				qualifiedWhereSql: `${table}.${whereSql}`,
 				params: [input.mcpUserId],
 				mutation: { kind: 'delete' },
 			}

@@ -161,7 +161,6 @@ export async function createStubSavedPackage(input: {
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.owner.ownerUserId,
-		actorUserId: input.owner.actorUserId,
 		userEmail: input.owner.ownerEmail,
 		packageId,
 		sourceId: ensuredSource.id,

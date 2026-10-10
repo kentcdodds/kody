@@ -1,32 +1,23 @@
 import { type RouteLoaderResult } from '#client/route-loader.ts'
+import { authProvidersRouteLoader } from '#client/routes/login-shared.ts'
 import {
 	readOAuthAuthorizeConsentOrgs,
 	readOAuthAuthorizeSelectedOrgSlug,
 } from '#client/routes/oauth-authorize-form.ts'
-import { fetchPublicAuthConfig } from '#client/social-sign-in.ts'
 
 export async function oauthAuthorizeRouteLoader(
 	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
-	const [response, authConfig] = await Promise.all([
+	const [response, authProvidersPayload] = await Promise.all([
 		fetch(`/oauth/authorize-info${url.search}`, {
 			headers: { Accept: 'application/json' },
 			credentials: 'include',
 			signal,
 		}),
-		fetchPublicAuthConfig(signal),
+		authProvidersRouteLoader(url, signal),
 	])
 	const payload = await response.json().catch(() => null)
-	const authProvidersPayload = authConfig
-		? {
-				authProviders: {
-					ok: true as const,
-					providers: authConfig.providers,
-					turnstileSiteKey: authConfig.turnstileSiteKey,
-				},
-			}
-		: {}
 	if (!response.ok || !payload?.ok) {
 		const errorText =
 			typeof payload?.error === 'string'

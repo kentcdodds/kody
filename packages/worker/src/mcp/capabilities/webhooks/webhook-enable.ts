@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { setWebhookEnabledForUser } from '#worker/webhooks/service.ts'
 import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
 
@@ -42,6 +45,7 @@ export const webhookEnableCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const updated = await setWebhookEnabledForUser({
 				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
 				userId: user.userId,
 				packageId: args.packageId,
 				kodyId: args.kodyId,

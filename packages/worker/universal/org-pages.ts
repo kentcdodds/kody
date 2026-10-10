@@ -35,6 +35,8 @@ export type OrganizationSummary = {
 	role: OrgRole | null
 	/** Signup organization (org id equals the person id). Not a user-facing label. */
 	personal: boolean
+	/** Team-org avatar. Signup organizations use the viewer's photo instead. */
+	avatarUrl?: string | null
 }
 
 export type OrgSwitcherEntry =
@@ -43,6 +45,13 @@ export type OrgSwitcherEntry =
 	| { kind: 'invites'; count: number }
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
+
+/**
+ * GitLab-style separator between an organization slug and its section pages.
+ * Keeps `/@owner/<kody-id>` free for canonical package URLs. Bare `-` is not a
+ * valid kody.id (`kodyPackageIdPattern`), so this segment cannot collide.
+ */
+const orgPageSeparator = '-'
 
 export function isOrganizationSlug(value: string) {
 	return slugPattern.test(value)
@@ -61,13 +70,13 @@ export type ParsedOrgResourcePath = {
 }
 
 /**
- * `/@acme/secrets/new` → slug, section, rest. Package-app and webhook ingress
- * paths under `packages` and `webhooks` are not account pages.
+ * `/@acme/-/secrets/new` → slug, section, rest. Package-app and webhook
+ * ingress stay at `/@owner/packages/…` and `/@owner/webhooks/…` (no `/-/`).
  */
 export function parseOrgResourcePath(
 	pathname: string,
 ): ParsedOrgResourcePath | null {
-	const match = /^\/@([^/]+)\/([^/]+)(\/.*)?$/.exec(pathname)
+	const match = /^\/@([^/]+)\/-\/([^/]+)(\/.*)?$/.exec(pathname)
 	if (!match) return null
 	const slug = match[1] ?? ''
 	const section = match[2] ?? ''
@@ -80,18 +89,18 @@ export function parseOrgResourcePath(
 }
 
 /**
- * `/@acme/billing`, `/@acme/billing.json`, and `/@acme/billing/<step>`.
+ * `/@acme/-/billing`, `/@acme/-/billing.json`, and `/@acme/-/billing/<step>`.
  * Subscriptions are stored per organization (not per person like resource
  * sections), so billing binds team organizations as well as the signup one.
  */
 export function parseOrgBillingPath(pathname: string): { slug: string } | null {
-	const match = /^\/@([^/]+)\/billing(?:\.json|\/[^/]+)?\/?$/.exec(pathname)
+	const match = /^\/@([^/]+)\/-\/billing(?:\.json|\/[^/]+)?\/?$/.exec(pathname)
 	const slug = match?.[1] ?? ''
 	return isOrganizationSlug(slug) ? { slug } : null
 }
 
 export function orgBillingPath(slug: string) {
-	return `/@${slug}/billing`
+	return `/@${slug}/${orgPageSeparator}/billing`
 }
 
 /**
@@ -115,7 +124,8 @@ export function orgResourcePath(
 	rest = '',
 ) {
 	const suffix = rest.replace(/^\/+|\/+$/g, '')
-	return suffix ? `/@${slug}/${section}/${suffix}` : `/@${slug}/${section}`
+	const base = `/@${slug}/${orgPageSeparator}/${section}`
+	return suffix ? `${base}/${suffix}` : base
 }
 
 /**
@@ -157,10 +167,68 @@ export function accountAliasPath(pathname: string) {
 		: `/account/${parsed.section}`
 }
 
+const orgManagementSections = ['settings', 'members'] as const
+
+export type OrgManagementSection = (typeof orgManagementSections)[number]
+
+/**
+ * `/@acme/-/settings`, `/@acme/-/members.json`, and mutation paths under those
+ * sections. Uses the same `/-/` separator as other org pages so they cannot
+ * collide with `/@owner/<kody-id>`. Not an `orgOwnedAccountSection`.
+ */
+export function parseOrgManagementPath(
+	pathname: string,
+): { slug: string; section: OrgManagementSection } | null {
+	const match = new RegExp(
+		`^/@([^/]+)/${orgPageSeparator}/(settings|members)(?:\\.json|/[^/]+)?/?$`,
+	).exec(pathname)
+	if (!match) return null
+	const slug = match[1] ?? ''
+	const section = match[2]
+	if (
+		!isOrganizationSlug(slug) ||
+		(section !== 'settings' && section !== 'members')
+	) {
+		return null
+	}
+	return { slug, section }
+}
+
+export function orgSettingsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/settings`
+}
+
+export function orgMembersPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/members`
+}
+
+/** Owners manage org profile and members. */
+export function orgRoleManagesOrg(role: OrgRole | null) {
+	return role === 'owner'
+}
+
+/** Live members can read the members list. Collaborators cannot. */
+export function orgRoleReadsMembers(role: OrgRole | null) {
+	return role === 'owner' || role === 'member' || role === 'billing'
+}
+
 /** Same kind of page in `targetSlug` when the path is an org resource; otherwise that organization's home. */
 export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'
 	if (parseOrgBillingPath(pathname)) return orgBillingPath(targetSlug)
+	const management = parseOrgManagementPath(pathname)
+	if (management) {
+		switch (management.section) {
+			case 'settings':
+				return orgSettingsPath(targetSlug)
+			case 'members':
+				return orgMembersPath(targetSlug)
+			default: {
+				const exhaustive: never = management.section
+				return exhaustive
+			}
+		}
+	}
 	const parsed = parseOrgResourcePath(pathname)
 	if (!parsed) return `/@${targetSlug}`
 	return orgResourcePath(targetSlug, parsed.section, parsed.rest)
@@ -243,7 +311,9 @@ export function organizationsWithSignupFallback(input: {
  * name wins there.
  */
 export function orgIdentity(
-	org: Pick<OrganizationSummary, 'slug' | 'displayName' | 'personal'>,
+	org: Pick<OrganizationSummary, 'slug' | 'displayName' | 'personal'> & {
+		avatarUrl?: string | null
+	},
 	viewer: { displayName: string; avatarUrl: string | null },
 ) {
 	const name =
@@ -255,7 +325,7 @@ export function orgIdentity(
 		handle: `@${org.slug}`,
 		hasName: name !== null,
 		avatarName: name ?? org.slug,
-		avatarUrl: org.personal ? viewer.avatarUrl : null,
+		avatarUrl: org.personal ? viewer.avatarUrl : (org.avatarUrl ?? null),
 	}
 }
 

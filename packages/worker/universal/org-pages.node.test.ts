@@ -6,11 +6,16 @@ import {
 	orderOrganizations,
 	orgBillingPath,
 	orgIdentity,
+	orgMembersPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
+	orgRoleManagesOrg,
+	orgRoleReadsMembers,
+	orgSettingsPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
+	parseOrgManagementPath,
 	parseOrgResourcePath,
 	switchOrgPath,
 	type OrganizationSummary,
@@ -37,16 +42,16 @@ const billing: OrganizationSummary = {
 
 test('account resource redirects map pages onto the signup organization', () => {
 	expect(accountResourceRedirectPath('/account/packages', 'ada')).toBe(
-		'/@ada/packages',
+		'/@ada/-/packages',
 	)
 	expect(accountResourceRedirectPath('/account/secrets', 'ada')).toBe(
-		'/@ada/secrets',
+		'/@ada/-/secrets',
 	)
 	expect(accountResourceRedirectPath('/account/secrets/new', 'ada')).toBe(
-		'/@ada/secrets/new',
+		'/@ada/-/secrets/new',
 	)
 	expect(accountResourceRedirectPath('/account/jobs/job-1', 'ada')).toBe(
-		'/@ada/jobs/job-1',
+		'/@ada/-/jobs/job-1',
 	)
 	expect(accountResourceRedirectPath('/account/packages/pkg-1', 'ada')).toBe(
 		null,
@@ -59,17 +64,21 @@ test('account resource redirects map pages onto the signup organization', () => 
 })
 
 test('org resource paths alias back to account loaders and ignore package apps', () => {
-	expect(parseOrgResourcePath('/@acme/secrets/user/token')).toEqual({
+	expect(parseOrgResourcePath('/@acme/-/secrets/user/token')).toEqual({
 		slug: 'acme',
 		section: 'secrets',
 		rest: 'user/token',
 	})
-	expect(accountAliasPath('/@acme/secrets/user/token')).toBe(
+	expect(accountAliasPath('/@acme/-/secrets/user/token')).toBe(
 		'/account/secrets/user/token',
 	)
 	expect(parseOrgResourcePath('/@acme/packages/devin')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/webhooks/devin/hook/secret')).toBeNull()
-	expect(parseOrgResourcePath('/@acme/packages')).toEqual({
+	// Two-segment paths are package pages, not org sections.
+	expect(parseOrgResourcePath('/@acme/secrets')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/billing')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/billing')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/-/packages')).toEqual({
 		slug: 'acme',
 		section: 'packages',
 		rest: '',
@@ -77,17 +86,51 @@ test('org resource paths alias back to account loaders and ignore package apps',
 })
 
 test('switching keeps the same kind of page or falls back to organization home', () => {
-	expect(switchOrgPath('/@acme/secrets', 'other')).toBe('/@other/secrets')
-	expect(switchOrgPath('/@acme/secrets/new', 'other')).toBe(
-		'/@other/secrets/new',
+	expect(switchOrgPath('/@acme/-/secrets', 'other')).toBe('/@other/-/secrets')
+	expect(switchOrgPath('/@acme/-/secrets/new', 'other')).toBe(
+		'/@other/-/secrets/new',
 	)
-	expect(switchOrgPath('/@acme/billing', 'other')).toBe('/@other/billing')
-	expect(switchOrgPath('/@acme/billing/success', 'other')).toBe(
-		'/@other/billing',
+	expect(switchOrgPath('/@acme/-/billing', 'other')).toBe('/@other/-/billing')
+	expect(switchOrgPath('/@acme/-/billing/success', 'other')).toBe(
+		'/@other/-/billing',
+	)
+	expect(switchOrgPath('/@acme/-/settings', 'other')).toBe('/@other/-/settings')
+	expect(switchOrgPath('/@acme/-/members.json', 'other')).toBe(
+		'/@other/-/members',
 	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
+})
+
+test('management paths name settings and members under the /- separator', () => {
+	expect(parseOrgManagementPath('/@acme/-/settings')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/settings.json')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/settings/avatar.json')).toEqual({
+		slug: 'acme',
+		section: 'settings',
+	})
+	expect(parseOrgManagementPath('/@acme/-/members/invite.json')).toEqual({
+		slug: 'acme',
+		section: 'members',
+	})
+	expect(parseOrgManagementPath('/@acme/settings')).toBeNull()
+	expect(parseOrgManagementPath('/@acme/secrets')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/settings')).toBeNull()
+	expect(orgSettingsPath('acme')).toBe('/@acme/-/settings')
+	expect(orgMembersPath('acme')).toBe('/@acme/-/members')
+	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
+	expect(orgRoleManagesOrg('owner')).toBe(true)
+	expect(orgRoleManagesOrg('member')).toBe(false)
+	expect(orgRoleManagesOrg(null)).toBe(false)
+	expect(orgRoleReadsMembers('billing')).toBe(true)
+	expect(orgRoleReadsMembers(null)).toBe(false)
 })
 
 test('switcher lists the signup organization first, then roles, then create and any waiting invites', () => {
@@ -114,7 +157,7 @@ test('current organization comes from the URL, then the last-used slug', () => {
 	const organizations = [personal, acme]
 	expect(
 		currentSwitcherSlug({
-			pathname: '/@acme/secrets',
+			pathname: '/@acme/-/secrets',
 			organizations,
 			lastUsedSlug: 'ada',
 		}),
@@ -155,6 +198,10 @@ test('org rows show the signup organization as the person and others by name or 
 		avatarName: 'Acme',
 		avatarUrl: null,
 	})
+	expect(
+		orgIdentity({ ...acme, avatarUrl: '/orgs/acme/avatar/hash.png' }, viewer)
+			.avatarUrl,
+	).toBe('/orgs/acme/avatar/hash.png')
 	expect(orgIdentity({ ...billing, displayName: '  ' }, viewer)).toEqual({
 		name: '@billing-co',
 		handle: '@billing-co',
@@ -177,19 +224,19 @@ test('a session without memberships still lists the signup organization', () => 
 })
 
 test('billing paths bind to the organization in the URL', () => {
-	expect(orgBillingPath('acme')).toBe('/@acme/billing')
+	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
 	for (const pathname of [
-		'/@acme/billing',
-		'/@acme/billing/',
-		'/@acme/billing.json',
-		'/@acme/billing/checkout.json',
-		'/@acme/billing/success',
-		'/@acme/billing/portal',
+		'/@acme/-/billing',
+		'/@acme/-/billing/',
+		'/@acme/-/billing.json',
+		'/@acme/-/billing/checkout.json',
+		'/@acme/-/billing/success',
+		'/@acme/-/billing/portal',
 	]) {
 		expect(parseOrgBillingPath(pathname)).toEqual({ slug: 'acme' })
 	}
 	expect(parseOrgBillingPath('/account/billing')).toBeNull()
-	expect(parseOrgBillingPath('/@acme/billing/portal/extra')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/-/billing/portal/extra')).toBeNull()
 	expect(parseOrgBillingPath('/@acme/billings')).toBeNull()
 	expect(parseOrgBillingPath('/@Not A Slug/billing')).toBeNull()
 })

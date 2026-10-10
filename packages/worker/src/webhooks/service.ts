@@ -1,9 +1,11 @@
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	decryptWebhookUrlSecret,
 	encryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
@@ -128,6 +130,21 @@ async function resolveOwnerUsername(input: {
 		)
 	}
 	return resolved
+}
+
+async function authorizeWebhookPackageWrite(input: {
+	env: Env
+	request: RequestContext
+	savedPackage: SavedPackageRecord
+}) {
+	await authorizePackageWrite(
+		{ env: input.env, request: input.request },
+		{
+			id: input.savedPackage.id,
+			userId: input.savedPackage.userId,
+			label: input.savedPackage.name,
+		},
+	)
 }
 
 async function resolveOwnedPackage(input: {
@@ -264,6 +281,7 @@ export async function listWebhooksForUser(input: {
 
 export async function mintWebhookUrlForUser(input: {
 	env: Env
+	request: RequestContext
 	userId: string
 	email?: string | null
 	username?: string | null
@@ -286,6 +304,11 @@ export async function mintWebhookUrlForUser(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 		kodyId: input.kodyId,
+	})
+	await authorizeWebhookPackageWrite({
+		env: input.env,
+		request: input.request,
+		savedPackage,
 	})
 	const declared = await loadDeclaredWebhook({
 		env: input.env,
@@ -396,6 +419,7 @@ export async function isWebhookUrlMinted(input: {
 
 export async function rotateWebhookUrlForUser(input: {
 	env: Env
+	request: RequestContext
 	userId: string
 	email?: string | null
 	username?: string | null
@@ -411,6 +435,11 @@ export async function rotateWebhookUrlForUser(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 		kodyId: input.kodyId,
+	})
+	await authorizeWebhookPackageWrite({
+		env: input.env,
+		request: input.request,
+		savedPackage,
 	})
 	const existing = await getWebhookEndpointByKey({
 		db: input.env.APP_DB,
@@ -431,6 +460,7 @@ export async function rotateWebhookUrlForUser(input: {
 
 export async function setWebhookEnabledForUser(input: {
 	env: Env
+	request: RequestContext
 	userId: string
 	packageId?: string
 	kodyId?: string
@@ -444,6 +474,11 @@ export async function setWebhookEnabledForUser(input: {
 		userId: input.userId,
 		packageId: input.packageId,
 		kodyId: input.kodyId,
+	})
+	await authorizeWebhookPackageWrite({
+		env: input.env,
+		request: input.request,
+		savedPackage,
 	})
 	const updated = await setWebhookEndpointEnabled({
 		db: input.env.APP_DB,
@@ -532,6 +567,7 @@ async function resolveMintedWebhookUrl(input: {
 
 export async function applyWebhookUrlForUser(input: {
 	env: Env
+	request: RequestContext
 	userId: string
 	email?: string | null
 	username?: string | null
@@ -541,6 +577,11 @@ export async function applyWebhookUrlForUser(input: {
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<WebhookUrlApplyResult> {
 	const resolved = await resolveMintedWebhookUrl(input)
+	await authorizeWebhookPackageWrite({
+		env: input.env,
+		request: input.request,
+		savedPackage: resolved.savedPackage,
+	})
 	return dispatchWebhookUrlApply({
 		env: input.env,
 		userId: input.userId,

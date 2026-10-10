@@ -11,12 +11,34 @@ export type MemberSoftRemovedInput = {
 	orgId: string
 	userId: string
 	deletedAt: string
+	/**
+	 * When true, a membership already tombstoned at `deletedAt` still revokes
+	 * credentials and disconnects own-login integrations.
+	 */
+	resume?: boolean
 }
 
 /**
  * Soft-delete membership side effects when a user is removed or leaves:
  * credentials, own-login integrations, and job keep-running (voluntary leave).
  */
+/** Membership already tombstoned, if this person was removed from the org. */
+export async function readTombstonedOrgMembership(input: {
+	db: D1Database
+	orgId: string
+	userId: string
+}): Promise<{ role: string; deletedAt: string } | null> {
+	const row = await input.db
+		.prepare(
+			`SELECT role, deleted_at FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NOT NULL`,
+		)
+		.bind(input.orgId, input.userId)
+		.first<{ role: string; deleted_at: string }>()
+	if (!row?.deleted_at) return null
+	return { role: row.role, deletedAt: row.deleted_at }
+}
+
 export async function onMemberSoftRemoved(
 	input: MemberSoftRemovedInput,
 ): Promise<void> {
@@ -31,5 +53,6 @@ export async function onMemberSoftRemoved(
 		memberLeftVoluntarily: true,
 		now: new Date(input.deletedAt),
 		oauthHelpers: oauthHelpers ?? null,
+		resumeDeletedAt: input.resume ? input.deletedAt : undefined,
 	})
 }

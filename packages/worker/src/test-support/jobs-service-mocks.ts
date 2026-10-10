@@ -73,12 +73,6 @@ export const identityMockModule = {
 	resolveBackgroundMcpUser: vi.fn<
 		typeof backgroundMcpUserModule.resolveBackgroundMcpUser
 	>(mockBackgroundMcpUser),
-	resolveBackgroundMcpUserForOwner: vi.fn<
-		typeof backgroundMcpUserModule.resolveBackgroundMcpUserForOwner
-	>(async (db, input) => {
-		const userId = input.actorUserId?.trim() || input.ownerId
-		return await mockBackgroundMcpUser(db, userId)
-	}),
 }
 
 export function sourceServiceMock() {
@@ -147,11 +141,6 @@ export function backgroundMcpUserMock() {
 				typeof backgroundMcpUserModule.resolveBackgroundMcpUser
 			>
 		) => identityMockModule.resolveBackgroundMcpUser(...args),
-		resolveBackgroundMcpUserForOwner: (
-			...args: Parameters<
-				typeof backgroundMcpUserModule.resolveBackgroundMcpUserForOwner
-			>
-		) => identityMockModule.resolveBackgroundMcpUserForOwner(...args),
 	}
 }
 
@@ -226,13 +215,6 @@ export function resetJobServiceMocks() {
 	identityMockModule.resolveBackgroundMcpUser.mockReset()
 	identityMockModule.resolveBackgroundMcpUser.mockImplementation(
 		mockBackgroundMcpUser,
-	)
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockReset()
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockImplementation(
-		async (db, input) => {
-			const userId = input.actorUserId?.trim() || input.ownerId
-			return await mockBackgroundMcpUser(db, userId)
-		},
 	)
 }
 

@@ -641,7 +641,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Workspace sections"',
 		'>Workspace<',
 		'>@account-user<',
-		'href="/@account-user/packages"',
+		'href="/@account-user/-/packages"',
 		'aria-label="Connected agents"',
 		'aria-label="MCP URL"',
 		'data-testid="account-connections-verify-note"',
@@ -650,7 +650,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'data-testid="account-connections-add"',
 	])
 	expect(connections.html).toMatch(
-		/href="\/@account-user\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
 	)
 	expect(connections.loaderData?.accountConnectedAgents).toEqual({
 		ok: true,
@@ -682,7 +682,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 		'aria-label="Connect Cursor"',
 	])
 	expect(addCursor.html).toMatch(
-		/href="\/@account-user\/connections"[^>]*aria-current="page"/,
+		/href="\/@account-user\/-\/connections"[^>]*aria-current="page"/,
 	)
 	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),
