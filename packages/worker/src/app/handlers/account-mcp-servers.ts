@@ -535,6 +535,12 @@ async function handleOAuthClientAction(input: {
 	})
 	return jsonResponse({
 		...payload,
+		// The hub reply is authoritative even if the snapshot read failed.
+		servers: payload.servers.map((server) =>
+			server.id === setting.id
+				? { ...server, oauthClientId: client?.clientId ?? null }
+				: server,
+		),
 		selectedServerId: setting.id,
 	})
 }

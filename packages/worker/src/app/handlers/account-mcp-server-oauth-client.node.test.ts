@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
 	})
 	return {
 		clientIds,
+		snapshotFails: false,
 		setPreRegisteredOAuthClient: vi.fn<
 			(input: HubClientInput) => Promise<McpServerOAuthClientChange>
 		>(async (input) => {
@@ -68,19 +69,22 @@ vi.mock('#worker/mcp-client/hub-client.ts', async (importOriginal) => ({
 				...clientInput,
 			}),
 	}),
-	getCachedMcpClientHubSnapshot: async () => ({
-		servers: [...mocks.clientIds].map(([serverId, oauthClientId]) => ({
-			serverId,
-			name: 'github',
-			url: 'https://api.github.example/mcp',
-			state: 'authenticating',
-			authorizationPending: true,
-			error: null,
-			instructions: null,
-			tools: [],
-			oauthClientId,
-		})),
-	}),
+	getCachedMcpClientHubSnapshot: async () => {
+		if (mocks.snapshotFails) throw new Error('hub snapshot unavailable')
+		return {
+			servers: [...mocks.clientIds].map(([serverId, oauthClientId]) => ({
+				serverId,
+				name: 'github',
+				url: 'https://api.github.example/mcp',
+				state: 'authenticating',
+				authorizationPending: true,
+				error: null,
+				instructions: null,
+				tools: [],
+				oauthClientId,
+			})),
+		}
+	},
 }))
 
 const { createAccountMcpServersApiHandler } =
@@ -165,6 +169,7 @@ async function seed() {
 		.run('server-acme', 'org-acme', 'github', 'https://api.github.example/mcp')
 	mocks.setPreRegisteredOAuthClient.mockClear()
 	mocks.clientIds.clear()
+	mocks.snapshotFails = false
 	const env = {
 		APP_DB: createD1FromSqlite(sqlite),
 		AUDIT_DB: createAuditTestDb(),
@@ -442,4 +447,31 @@ test('a hub failure reports the error and records no audit event', async () => {
 	expect(failed.text).not.toContain(clientSecret)
 	expect(mocks.clientIds.size).toBe(0)
 	expect(await auditRows(env)).toEqual([])
+})
+
+test('the save response shows the hub reply even when the snapshot read fails', async () => {
+	const { env } = await seed()
+	mocks.snapshotFails = true
+	consoleCalls.length = 0
+
+	const saved = await callApi(env, {
+		person: 'ada',
+		body: {
+			action: 'set-oauth-client',
+			id: 'server-acme',
+			clientId,
+			clientSecret,
+		},
+	})
+	expect(saved.status).toBe(200)
+	const servers = (
+		JSON.parse(saved.text) as {
+			servers: Array<{ id: string; oauthClientId: string | null }>
+		}
+	).servers
+	expect(servers.find((server) => server.id === 'server-acme')).toMatchObject({
+		oauthClientId: clientId,
+	})
+	expect(saved.text).not.toContain(clientSecret)
+	expect(JSON.stringify(consoleCalls)).not.toContain(clientSecret)
 })

@@ -534,7 +534,9 @@ class McpClientHubBase extends DurableObject<Env> {
 					error instanceof Error ? error.message : String(error)
 				).replace(/\.$/, '')
 				this.lastDiscoverErrors.set(input.serverId, {
-					message: `The OAuth client was saved, but Kody could not start authorization with it (${reason}). Reconnect the server to try again.`,
+					message: input.client
+						? `The OAuth client was saved, but Kody could not start authorization with it (${reason}). Reconnect the server to try again.`
+						: `The OAuth client was removed, but Kody could not start authorization without it (${reason}). Reconnect the server to try again.`,
 					phase: null,
 					httpStatus: null,
 					httpBodySnippet: null,

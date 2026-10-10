@@ -116,6 +116,8 @@ export function createMcpClientHubClient(
 		async setPreRegisteredOAuthClient(clientInput) {
 			invalidateMcpClientHubSnapshotCache(input)
 			const change = await stub.setPreRegisteredOAuthClient(clientInput)
+			// A read during the change may have cached the old client.
+			invalidateMcpClientHubSnapshotCache(input)
 			await emitPendingConnectionEvents(input, stub)
 			return {
 				...change,

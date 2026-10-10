@@ -1346,6 +1346,13 @@ test('a failed restart after a client change keeps the new client and reports it
 	const [server] = (await hub.getSnapshot()).servers
 	expect(server?.oauthClientId).toBe('gh-client')
 	expect(server?.error).toContain('The OAuth client was saved')
+
+	manager.registerFailuresRemaining = 1
+	const removed = await setOAuthClient(hub, null)
+	expect(removed.connection.lastError?.message).toContain(
+		'The OAuth client was removed, but Kody could not start authorization without it',
+	)
+	expect(values.has(preRegisteredClientKey)).toBe(false)
 })
 
 test('overlapping client changes run one at a time and the hub keeps the last one', async () => {
