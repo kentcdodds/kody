@@ -169,12 +169,9 @@ export function McpServerOAuthClientSection(
 						mix={[
 							on('submit', async (event) => {
 								event.preventDefault()
-								const clientSecret = clientSecretDraft.trim()
-								clientSecretDraft = ''
-								handle.update()
 								const saved = await onSave({
 									clientId: clientIdDraft.trim(),
-									clientSecret,
+									clientSecret: clientSecretDraft.trim(),
 								})
 								if (saved) resetDrafts()
 								handle.update()
