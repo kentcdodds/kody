@@ -219,3 +219,48 @@ export function parseProductionQueueResources(input: {
 		webhookDispatchDeadLetterQueueName: webhookDispatch.deadLetterQueue,
 	}
 }
+
+export type ProductionBoundQueueProducer = {
+	binding: string
+	queue: string
+	deadLetterQueue: string
+}
+
+/**
+ * Origin producer bindings, in wrangler order, after the production queue
+ * config has been validated. Preview provisioning starts from this list.
+ */
+export function listProductionBoundQueueProducers(input: {
+	productionEnv: Record<string, unknown>
+	configPath: string
+}): Array<ProductionBoundQueueProducer> {
+	const parsed = parseProductionQueueResources(input)
+	return [
+		{
+			binding: platformFeedbackDispatchQueueBinding,
+			queue: parsed.platformFeedbackDispatchQueueName,
+			deadLetterQueue: parsed.platformFeedbackDispatchDeadLetterQueueName,
+		},
+		{
+			binding: communityActivityDispatchQueueBinding,
+			queue: parsed.communityActivityDispatchQueueName,
+			deadLetterQueue: parsed.communityActivityDispatchDeadLetterQueueName,
+		},
+		{
+			binding: communityListingPublishedDispatchQueueBinding,
+			queue: parsed.communityListingPublishedDispatchQueueName,
+			deadLetterQueue:
+				parsed.communityListingPublishedDispatchDeadLetterQueueName,
+		},
+		{
+			binding: packageEventsDispatchQueueBinding,
+			queue: parsed.packageEventsDispatchQueueName,
+			deadLetterQueue: parsed.packageEventsDispatchDeadLetterQueueName,
+		},
+		{
+			binding: webhookDispatchQueueBinding,
+			queue: parsed.webhookDispatchQueueName,
+			deadLetterQueue: parsed.webhookDispatchDeadLetterQueueName,
+		},
+	]
+}

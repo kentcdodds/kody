@@ -314,12 +314,23 @@ test('writeGeneratedWranglerConfig preserves migrations and copies environment a
 			bucket_name: 'kody-pr-123-repo-session-blobs',
 		},
 	])
-	expect(preview?.queues).toMatchObject({
-		producers: [{ binding: 'WEBHOOK_DISPATCH_QUEUE', queue: previewQueue }],
-		consumers: [
-			{ queue: previewQueue, dead_letter_queue: `${previewQueue}-dlq` },
-		],
-	})
+	expect(preview?.queues).toEqual(
+		expect.objectContaining({
+			producers: expect.arrayContaining([
+				{ binding: 'WEBHOOK_DISPATCH_QUEUE', queue: previewQueue },
+				{
+					binding: 'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
+					queue: 'kody-preview-platform-feedback-dispatch',
+				},
+			]),
+			consumers: expect.arrayContaining([
+				expect.objectContaining({
+					queue: previewQueue,
+					dead_letter_queue: `${previewQueue}-dlq`,
+				}),
+			]),
+		}),
+	)
 	// Preview serves package apps inline on its own origin, so it publishes no
 	// routes. It still sets workers_dev so secret-bulk reapply cannot drop the
 	// workers.dev trigger (Cloudflare 1042).
