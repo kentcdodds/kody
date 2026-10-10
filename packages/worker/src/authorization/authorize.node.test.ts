@@ -351,9 +351,15 @@ test('a bound profile cannot create a saved package and an unbound caller can', 
 		message: 'This connection profile cannot create packages.',
 	})
 
+	const emptyGrants = deriveRequestContext({
+		user: { userId: personIdFromStored('user-1') },
+		source: { kind: 'mcp-oauth' },
+		profileName: 'empty',
+	})
+	stubCompile(emptyGrants)
 	mocks.resolveConnectionProfileGrants.mockResolvedValueOnce([])
 	await expect(
-		denyProfileBoundPackageCreate({ env, request: bound }),
+		denyProfileBoundPackageCreate({ env, request: emptyGrants }),
 	).rejects.toMatchObject({ code: 'connection_profile' })
 
 	const unbound = sessionRequestContext('user-1')
