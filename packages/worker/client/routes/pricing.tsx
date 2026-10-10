@@ -18,6 +18,7 @@ import {
 	type PublicSignupCta,
 } from '#universal/public-signup-copy.ts'
 import { docHref } from '#universal/docs-nav.ts'
+import { orgBillingPath } from '#universal/org-pages.ts'
 import { colors, radius, typography } from '#universal/styles/tokens.ts'
 import {
 	getGhostButtonCss,
@@ -191,7 +192,11 @@ export function PricingRoute(handle: Handle) {
 							credits.
 							{improvedSearchNote}
 						</p>
-						{renderPaidPlanCta(isSignedIn, signedOutCta)}
+						{renderPaidPlanCta(
+							isSignedIn,
+							signedOutCta,
+							personalBillingHref(session),
+						)}
 					</section>
 
 					{/*
@@ -304,10 +309,23 @@ function factoryGuideLink() {
 	return <a href={factoryGuideHref}>factory</a>
 }
 
-function renderPaidPlanCta(isSignedIn: boolean, signedOutCta: PublicSignupCta) {
+function personalBillingHref(
+	session: {
+		organizations?: ReadonlyArray<{ slug: string; personal: boolean }>
+	} | null,
+) {
+	const slug = session?.organizations?.find((org) => org.personal)?.slug
+	return slug ? orgBillingPath(slug) : '/account'
+}
+
+function renderPaidPlanCta(
+	isSignedIn: boolean,
+	signedOutCta: PublicSignupCta,
+	signedInBillingHref: string,
+) {
 	if (isSignedIn) {
 		return (
-			<a href="/account/billing" mix={css(planGhostButtonCss)}>
+			<a href={signedInBillingHref} mix={css(planGhostButtonCss)}>
 				Upgrade in billing
 			</a>
 		)

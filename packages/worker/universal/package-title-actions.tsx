@@ -60,8 +60,7 @@ function renderStatusControl(input: PackageTitleActionsInput) {
 	}
 	if (install) {
 		const href =
-			getCommunityPackageHrefFromName(install.targetName) ??
-			routes.accountPackages.href()
+			getCommunityPackageHrefFromName(install.targetName) ?? '/account/packages'
 		return renderIconControl({
 			href,
 			status: 'open',

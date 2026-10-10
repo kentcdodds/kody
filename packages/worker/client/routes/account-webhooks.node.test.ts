@@ -102,7 +102,7 @@ const payload: AccountWebhooksLoaderData = {
 }
 
 test('webhooks index lists declared webhooks with status and deep-links each row into its package settings card', async () => {
-	const html = await renderWebhooksPage(routes.accountWebhooks.href(), payload)
+	const html = await renderWebhooksPage('/account/webhooks', payload)
 
 	expect(html).toContain('>Webhooks</h1>')
 	expect(html).toContain('aria-label="Webhooks"')
@@ -124,7 +124,7 @@ test('webhooks index lists declared webhooks with status and deep-links each row
 })
 
 test('webhooks index shows the empty state when no package declares a webhook', async () => {
-	const html = await renderWebhooksPage(routes.accountWebhooks.href(), {
+	const html = await renderWebhooksPage('/account/webhooks', {
 		...payload,
 		webhooks: [],
 	})

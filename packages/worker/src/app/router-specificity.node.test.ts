@@ -40,7 +40,6 @@ test('router prefers static nested paths and package files over dynamic siblings
 	const resolve = makeRouter([
 		'accountMcpServersOauthCallback',
 		'accountMcpServerLogo',
-		'accountMcpServerDetail',
 		'adminUserUsageApi',
 		'adminUserDetail',
 		'communityPackage',
@@ -56,10 +55,10 @@ test('router prefers static nested paths and package files over dynamic siblings
 		'communityDetail',
 		'communityDetailFiles',
 	])
-	const cases: Array<[string, keyof typeof routes]> = [
+	const cases: Array<[string, keyof typeof routes | 404]> = [
 		['/account/mcp-servers/oauth/callback', 'accountMcpServersOauthCallback'],
 		[`/account/mcp-servers/logos/${uuid}`, 'accountMcpServerLogo'],
-		['/account/mcp-servers/my-server', 'accountMcpServerDetail'],
+		['/account/mcp-servers/my-server', 404],
 		['/admin/users/usage.json', 'adminUserUsageApi'],
 		['/admin/users/42', 'adminUserDetail'],
 		['/@kentcdodds/devin', 'communityPackage'],
@@ -86,9 +85,6 @@ test('organization section pages use /-/ and leave two-segment package urls free
 		'orgBillingApi',
 		'orgBillingSuccess',
 		'orgBillingPortal',
-		'accountBilling',
-		'accountBillingSuccess',
-		'accountBillingPortal',
 		'communityPackage',
 		'communityPackageFiles',
 		'profile',
@@ -98,11 +94,10 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/@acme/-/billing.json')).toBe('orgBillingApi')
 	expect(await resolve('/@acme/-/billing/success')).toBe('orgBillingSuccess')
 	expect(await resolve('/@acme/-/billing/portal')).toBe('orgBillingPortal')
-	expect(await resolve('/account/billing')).toBe('accountBilling')
-	expect(await resolve('/account/billing/success')).toBe(
-		'accountBillingSuccess',
-	)
-	expect(await resolve('/account/billing/portal')).toBe('accountBillingPortal')
+	expect(await resolve('/account/billing')).toBe(404)
+	expect(await resolve('/account/billing/success')).toBe(404)
+	expect(await resolve('/account/billing/portal')).toBe(404)
+	expect(await resolve('/account/packages')).toBe(404)
 	expect(await resolve('/@ada/-/secrets/new')).toBe('orgSecrets')
 	expect(await resolve('/@ada/-/packages')).toBe('orgPackages')
 	expect(await resolve('/@ada/-/packages.json')).toBe('orgPackagesApi')
@@ -214,13 +209,13 @@ test('delimiter-bounded params keep companion suffixes and only match dotted ids
 		'profile',
 		'profileAvatar',
 		'profileOgImage',
-		'accountSecretUserDetail',
-		'accountIntegrationDetail',
+		'orgSecrets',
+		'orgIntegrations',
 		'integrationLogo',
 		'adminPlatformIntegrationDetail',
-		'accountJobDetail',
-		'accountWorkflowDetail',
-		'accountActivityDetail',
+		'orgJobs',
+		'orgWorkflows',
+		'orgActivity',
 	])
 	const avatarHash =
 		'00e495130208345dcc438bce0102f73a6e5cef01085a930c9c9ed2651a67b8d9'
@@ -231,9 +226,9 @@ test('delimiter-bounded params keep companion suffixes and only match dotted ids
 		['/@john.doe', 404],
 		[`/profiles/kentcdodds/avatar/${avatarHash}.jpg`, 'profileAvatar'],
 		['/profiles/alice/og.png', 'profileOgImage'],
-		['/account/secrets/user/google%2Eapi%2Ekey', 'accountSecretUserDetail'],
-		['/account/integrations/google.personal', 404],
-		['/account/integrations/google%2Epersonal', 'accountIntegrationDetail'],
+		['/@ada/-/secrets/user/google%2Eapi%2Ekey', 'orgSecrets'],
+		['/@ada/-/integrations/google.personal', 'orgIntegrations'],
+		['/@ada/-/integrations/google%2Epersonal', 'orgIntegrations'],
 		['/integrations/logos/openai.com', 404],
 		['/integrations/logos/openai%2Ecom', 'integrationLogo'],
 		['/admin/platform-integrations/openai.com', 404],
@@ -241,10 +236,10 @@ test('delimiter-bounded params keep companion suffixes and only match dotted ids
 			'/admin/platform-integrations/openai%2Ecom',
 			'adminPlatformIntegrationDetail',
 		],
-		['/account/jobs/package-job:pkg:daily.backup', 404],
-		['/account/jobs/package-job%3Apkg%3Adaily%2Ebackup', 'accountJobDetail'],
-		['/account/activity/run-1', 'accountActivityDetail'],
-		['/account/workflows/dynwf-example', 'accountWorkflowDetail'],
+		['/@ada/-/jobs/package-job:pkg:daily.backup', 'orgJobs'],
+		['/@ada/-/jobs/package-job%3Apkg%3Adaily%2Ebackup', 'orgJobs'],
+		['/@ada/-/activity/run-1', 'orgActivity'],
+		['/@ada/-/workflows/dynwf-example', 'orgWorkflows'],
 	]
 	expect(await resolveAll(resolve, cases)).toEqual(cases)
 })

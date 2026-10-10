@@ -24,7 +24,7 @@ saved package you bind; Kody core does not talk to the vault itself.
    [Secret setup URL reference](./account-secret-setup.md).
 2. Have a saved package that declares `kody.secretProvider.id` (for example
    `1password`) and exports `./secretProvider`.
-3. Bind that package on `/account/secret-providers` (`secretProviderBind`):
+3. Bind that package on `/@<slug>/-/secret-providers` (`secretProviderBind`):
    provider id, package, door-key secret name, and optional non-secret config.
 
 Declaring metadata on a package does not bind it. Only the account owner can
@@ -49,7 +49,7 @@ request URL must be `https:`.
 
 Ad hoc execute does not need a package grant. Saved packages do:
 `secretProviderLock` returns the Allow URL; grant and revoke on
-`/account/secret-providers`. A package runs in the org that owns it, so a
+`/@<slug>/-/secret-providers`. A package runs in the org that owns it, so a
 collaborator holding a grant uses that org's binding and grants, not their own.
 
 Search does not crawl vaults. `secretProviderList` returns binding metadata

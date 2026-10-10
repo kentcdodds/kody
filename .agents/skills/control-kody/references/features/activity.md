@@ -4,7 +4,7 @@ User-level execution history (jobs, execute, webhooks, apps).
 
 ## How to get there
 
-`/account/activity` → `/account/activity/:runId`.
+`/@<slug>/-/activity` → `/@<slug>/-/activity/:runId`.
 
 ## Drive it
 

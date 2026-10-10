@@ -155,7 +155,7 @@ Ranked `search({ query })` may also prepend a **`## Waiting`** block when
 something the signed-in human must clear is `block` or `degraded` (reconnectable
 OAuth, expired secrets, MCP reconnects). Setup/onboarding cards stay off this
 block. At most three items, then “N more” pointing at `waitingSummary` and
-`/account/waiting`. Entity lookups, `search({ domain })`, and empty/broad
+`/@<slug>/-/waiting`. Entity lookups, `search({ domain })`, and empty/broad
 discovery do not inject it. Matching integration hits also carry the reconnect
 `nextStep` when the last refresh was reconnectable. When those checks take
 longer than 1.5 seconds, results return without the block

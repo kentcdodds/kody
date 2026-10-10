@@ -143,7 +143,7 @@ Remove the flag and gate sites when the experiment ends.
 
 `connection-profiles` is an experiment (default **off**, registry
 `defaultAudience: experiments_opt_in`) for named connection profiles on
-`/account/connections`. When on, experimenters create profiles with package
+`/@<slug>/-/connections`. When on, experimenters create profiles with package
 grant allowlists (read/execute) for MCP `?profile=` URLs and profile-bound API
 tokens. Unlimited (no profile param) is the default connection. When off, the
 list page hides profiles and callers without the flag ignore `?profile=`. The

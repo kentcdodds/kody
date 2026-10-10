@@ -12,7 +12,7 @@ import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.
 export function createAccountWaitingHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -30,7 +30,7 @@ export function createAccountWaitingHandler(env: Env) {
 				loaderData: { accountWaiting },
 			})
 		},
-	} satisfies Action<typeof routes.accountWaiting>
+	}
 }
 
 export function createAccountWaitingApiHandler(env: Env) {

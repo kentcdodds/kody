@@ -437,7 +437,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 
 	const success = await callback('code=abc&state=xyz')
 	expect(success.response.status).toBe(303)
-	expect(success.location.pathname).toBe('/account/mcp-servers/server-1')
+	expect(success.location.pathname).toBe('/@test-user/-/mcp-servers/server-1')
 	expect(success.location.searchParams.get('auth')).toBe('success')
 	expect(success.location.searchParams.get('server')).toBe('linear')
 	expect(mockModule.setMcpServerLastError).toHaveBeenCalledWith(
@@ -470,7 +470,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 	})
 	const failure = await callback('error=access_denied')
 	expect(failure.response.status).toBe(303)
-	expect(failure.location.pathname).toBe('/account/mcp-servers')
+	expect(failure.location.pathname).toBe('/@test-user/-/mcp-servers')
 	expect(failure.location.searchParams.get('auth')).toBe('error')
 	expect(failure.location.searchParams.get('reason')).toBe('Invalid state.')
 
@@ -501,7 +501,7 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 	})
 	const recovery = await callback('code=abc&state=used.server-1')
 	expect(recovery.response.status).toBe(303)
-	expect(recovery.location.pathname).toBe('/account/mcp-servers/server-1')
+	expect(recovery.location.pathname).toBe('/@test-user/-/mcp-servers/server-1')
 	expect(recovery.location.searchParams.get('auth')).toBe('required')
 	expect(recovery.location.searchParams.has('reason')).toBe(false)
 
@@ -514,13 +514,13 @@ test('MCP servers OAuth callback ignores HEAD and redirects with the auth outcom
 		lastError: null,
 	})
 	const unknownRecovery = await callback('error=access_denied')
-	expect(unknownRecovery.location.pathname).toBe('/account/mcp-servers')
+	expect(unknownRecovery.location.pathname).toBe('/@test-user/-/mcp-servers')
 	expect(unknownRecovery.location.searchParams.get('auth')).toBe('retry')
 	expect(unknownRecovery.location.searchParams.has('reason')).toBe(false)
 
 	const settle = discoveryFailure(
 		'attempt-1',
-		' Reconnect it from /account/mcp-servers.',
+		' Reconnect it from /@test-user/-/mcp-servers.',
 	)
 	mockModule.handleOAuthCallback.mockResolvedValueOnce({
 		serverId: 'server-1',

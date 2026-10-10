@@ -4,6 +4,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { emptyCapabilityInputSchema } from '#mcp/capabilities/types.ts'
 import { deriveWaitingItemsForStableUser } from '#mcp/waiting/derive-waiting.ts'
+import { orgResourcePath } from '#universal/org-pages.ts'
 import { waitingItemKinds, waitingSeverities } from '#universal/waiting.ts'
 
 const waitingItemSchema = z.object({
@@ -59,9 +60,15 @@ export const waitingSummaryCapability = defineDomainCapability(
 				email: user.email,
 				waitUntil: ctx.waitUntil,
 			})
+			const orgSlug =
+				ctx.callerContext.request?.org.slug?.trim() ||
+				user.username?.trim() ||
+				''
 			return {
 				count: items.length,
-				waiting_url: `${origin}/account/waiting`,
+				waiting_url: orgSlug
+					? `${origin}${orgResourcePath(orgSlug, 'waiting')}`
+					: `${origin}/account`,
 				items: items.map((item) => ({
 					id: item.id,
 					kind: item.kind,

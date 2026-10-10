@@ -29,6 +29,7 @@ test('integrationLock grants a package and rejects missing packages', async () =
 				userId: personIdFromStored('user-1'),
 				email: 'alice@example.com',
 				displayName: 'Alice',
+				username: 'alice',
 			},
 		}),
 	}
@@ -42,7 +43,7 @@ test('integrationLock grants a package and rejects missing packages', async () =
 		name: 'google',
 		usage_mode: 'packages',
 		allowed_package_ids: ['pkg-drafts'],
-		usage_url: 'https://kody.codes/account/integrations/google',
+		usage_url: 'https://kody.codes/@alice/-/integrations/google',
 	})
 	expect(mockModule.lockIntegrationToPackage).toHaveBeenCalledWith({
 		env: ctx.env,

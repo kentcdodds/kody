@@ -49,7 +49,7 @@ export const mcpServerLockCapability = defineDomainCapability(
 			args: { server: string; package_id: string },
 			ctx: CapabilityContext,
 		) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			const setting = await resolveMcpServerSetting({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
@@ -69,6 +69,10 @@ export const mcpServerLockCapability = defineDomainCapability(
 					allowed_package_ids: updated.allowedPackageIds,
 					usage_url: buildMcpServerUsageUrl({
 						baseUrl: ctx.callerContext.baseUrl,
+						orgSlug:
+							ctx.callerContext.request?.org.slug?.trim() ||
+							user.username?.trim() ||
+							'',
 						serverId: updated.id,
 					}),
 				}

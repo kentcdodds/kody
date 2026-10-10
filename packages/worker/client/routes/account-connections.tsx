@@ -74,7 +74,7 @@ export async function accountConnectionsRouteLoader(
 
 /** The list, grid, and per-agent views all read one connected-agents payload. */
 function connectionsLatchKey() {
-	return routes.accountConnections.href()
+	return '/account/connections'
 }
 
 function readView(href: string): AccountConnectionsView | null {

@@ -35,7 +35,13 @@ function readPathWorkflowId(params: unknown) {
 export function createAccountWorkflowsHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request, params }) {
+		async handler({
+			request,
+			params,
+		}: {
+			request: Request
+			params?: { workflowId?: string }
+		}) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -56,9 +62,7 @@ export function createAccountWorkflowsHandler(env: Env) {
 				},
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountWorkflows | typeof routes.accountWorkflowDetail
-	>
+	}
 }
 
 /**

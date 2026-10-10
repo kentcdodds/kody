@@ -1,4 +1,4 @@
-import { routes } from '#universal/routes.ts'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
 
 export function isAccountEmailLabel(value: string | null | undefined) {
 	if (!value) return false
@@ -8,11 +8,14 @@ export function isAccountEmailLabel(value: string | null | undefined) {
 
 export function buildIntegrationAccountUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	integrationName: string
 }) {
-	return `${input.baseUrl}${routes.accountIntegrationDetail.href({
-		integrationName: input.integrationName,
-	})}`
+	return `${input.baseUrl}${orgSectionRestPath(
+		input.orgSlug,
+		'integrations',
+		input.integrationName,
+	)}`
 }
 
 export function buildIntegrationReconnectUrl(input: {

@@ -360,7 +360,7 @@ test('control-kody parses commands, maps every required route, and drives a seed
 	expect(report.issues).toEqual([])
 	expect(report.ok).toBe(true)
 	expect(formatFeatureMap(featureCatalog)).toContain(
-		'waiting\t/account/waiting',
+		'waiting\t/@:orgSlug/-/waiting(/*rest)',
 	)
 	expect(
 		readdirSync(defaultFeaturesDir(root)).filter((name) =>

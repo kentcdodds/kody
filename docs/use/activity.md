@@ -8,7 +8,7 @@ Activity is history; it does not replace Waiting.
 
 ## Where to look
 
-Open **`/account/activity`** while signed in. The page defaults to **open
+Open **`/@<slug>/-/activity`** while signed in. The page defaults to **open
 failures first**, and a **Recent runs** view lists the last 7 days of history
 (successes, running work, and errors) from the same records:
 
@@ -24,12 +24,12 @@ Ignored and resolved error runs stay in history but are hidden from Open errors
 so soft-failures and already-fixed noise do not clutter triage. Recent runs
 shows them unless you change the triage filter.
 
-From **`/account/jobs`**, each job’s recent runs link into the same Activity
+From **`/@<slug>/-/jobs`**, each job’s recent runs link into the same Activity
 detail view.
 
 ## Ask your agent
 
-`/account/activity` includes a short copyable prompt that tells your agent to
+`/@<slug>/-/activity` includes a short copyable prompt that tells your agent to
 review open errors and recommend whether to ignore, resolve, or fix them.
 
 The MCP **`runs`** domain reads and triages the same data:

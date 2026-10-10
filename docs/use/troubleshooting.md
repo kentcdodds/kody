@@ -112,7 +112,7 @@ signed in, user-scoped package results are empty.
 ## MCP servers
 
 If tools from a connected MCP server appear missing, open
-[`/account/mcp-servers`](./mcp-client-servers.md) (or ask `mcpServerList`) and
+[`/@<slug>/-/mcp-servers`](./mcp-client-servers.md) (or ask `mcpServerList`) and
 confirm the server is connected and authorized. If authorization finished at the
 identity provider but Status stays on tool discovery — or add, reconnect, or
 refresh times out before tools appear — the Status field shows the last
@@ -131,8 +131,8 @@ reset email.
 
 ## Job, webhook, or package app failed
 
-Open **[`/account/activity`](./activity.md)** (failures-first) or ask your agent
-to use **`runSummary`** / **`runList`** / **`runGet`**. Ad-hoc **`execute`**
-runs, including successes, are stored there with jobs, webhooks, and other
-surfaces. Switch Activity to **Recent runs** (or pass `status: success`) to see
-them; Open errors hides successes.
+Open **[`/@<slug>/-/activity`](./activity.md)** (failures-first) or ask your
+agent to use **`runSummary`** / **`runList`** / **`runGet`**. Ad-hoc
+**`execute`** runs, including successes, are stored there with jobs, webhooks,
+and other surfaces. Switch Activity to **Recent runs** (or pass
+`status: success`) to see them; Open errors hides successes.

@@ -2636,7 +2636,7 @@ export type AccountUsageCredits =
 			eligible: false
 			/** Checkout for the purchasable Pro is configured. */
 			canSwitchToPro: boolean
-			billingHref: '/account/billing'
+			billingHref: string
 	  }
 	| AccountUsageCreditsWallet
 

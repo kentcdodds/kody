@@ -280,7 +280,7 @@ test('Free over compute includes stays informational: activity first, no warning
 	expect(data?.credits).toEqual({
 		eligible: false,
 		canSwitchToPro: false,
-		billingHref: '/account/billing',
+		billingHref: '/@usage-user/-/billing',
 	})
 	expect(data?.activity.metrics.slice(0, 2)).toEqual([
 		{ metric: 'execute', label: 'Code executions', count: 140 },

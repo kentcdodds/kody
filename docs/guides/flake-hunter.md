@@ -123,13 +123,13 @@ Paste one of these into an agent already connected to your Kody account.
 
 ## What you see
 
-| Surface             | What it is for                                                              |
-| ------------------- | --------------------------------------------------------------------------- |
-| Chat (`execute`)    | Invoke `./scan`, `./sweep`, or `./daily` and read a structured result       |
-| `/account/jobs`     | The `daily` row, enable/disable, timezone, and "run now"                    |
-| `/account/activity` | Failures and recent runs for that job                                       |
-| Your inbox          | Mail only when the sweep found something worth saying                       |
-| Package page        | Public page at `/@username/e2e-flake-hunter` after you publish a named copy |
+| Surface               | What it is for                                                              |
+| --------------------- | --------------------------------------------------------------------------- |
+| Chat (`execute`)      | Invoke `./scan`, `./sweep`, or `./daily` and read a structured result       |
+| `/@<slug>/-/jobs`     | The `daily` row, enable/disable, timezone, and "run now"                    |
+| `/@<slug>/-/activity` | Failures and recent runs for that job                                       |
+| Your inbox            | Mail only when the sweep found something worth saying                       |
+| Package page          | Public page at `/@username/e2e-flake-hunter` after you publish a named copy |
 
 The homepage card is a tile with the kicker **Cron** and the title **Flake
 Hunter**. It links here.

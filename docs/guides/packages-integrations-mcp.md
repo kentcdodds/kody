@@ -55,7 +55,7 @@ integration or an MCP connection.
 
 You want Slack messages to become a daily digest.
 
-1. **Integration** — connect Slack on `/account/integrations`. That login is
+1. **Integration** — connect Slack on `/@<slug>/-/integrations`. That login is
    yours. Any approved package can use it; Slack itself is not a package.
 2. **Package** — a helpers package calls Slack through that integration
    (`createAuthenticatedFetch`), exposes an export, and maybe a `kody.jobs` cron
@@ -64,7 +64,7 @@ You want Slack messages to become a daily digest.
    package with `search` and calls the export with `execute`. It does not talk
    to Slack's MCP, and the Slack integration is not a package.
 
-Adding Slack as a remote MCP server on `/account/mcp-servers` is a different
+Adding Slack as a remote MCP server on `/@<slug>/-/mcp-servers` is a different
 job: that exposes Slack's tools as `kody.mcp["slack"]`. Prefer the integration
 plus a package when you want owned helpers, jobs, or a stable export.
 

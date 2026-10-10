@@ -70,8 +70,8 @@ External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 canonicalize to the same grant/cache key. The item's websites are the host
 allowlist; empty websites refuse the fetch. Ad hoc execute does not need a
 package grant; saved packages do (`secretProviderLock` returns the Allow URL).
-Bind and revoke on `/account/secret-providers`. Shared packages use the owner's
-provider binding. Search does not crawl vaults. See
+Bind and revoke on `/@<slug>/-/secret-providers`. Shared packages use the
+owner's provider binding. Search does not crawl vaults. See
 [Custom secret providers](../guides/secret-providers.md).
 
 When an API requires Basic Auth derived from two saved secrets, import
@@ -182,10 +182,10 @@ importing run. Dependents statically import the owning export; they do not need
 their own grant for secrets locked to that owner. Updating or deleting a user
 secret from package code (`secretSet`, `secretDelete`) always needs the grant on
 the stamp package, including for self-authored and adopted packages. Only the
-account owner can add a package to that grant on `/account/secrets/user/:name`
-or `/account/secrets/approve`. **`secretLock`** returns an approval URL for the
-owner to click (one-click Allow, same spirit as `/connect/secrets`); it does not
-change `allowed_packages`. Send the link and wait. Removing a grant is also
+account owner can add a package to that grant on `/@<slug>/-/secrets/user/:name`
+or `/@<slug>/-/secrets/approve`. **`secretLock`** returns an approval URL for
+the owner to click (one-click Allow, same spirit as `/connect/secrets`); it does
+not change `allowed_packages`. Send the link and wait. Removing a grant is also
 website-only. `secretSet` cannot change `allowed_packages`. Official OAuth token
 rotation (`createAuthenticatedFetch` 401 retry via `integrationTokenRefresh`)
 persists host-side and does not need that write grant.
@@ -198,11 +198,11 @@ host or grant package write access.
 
 When several secrets need the same package approved, Kody can provide a bulk
 approval URL shaped like
-`/account/secrets/approve?package_id=...&names=secretA,secretB`. That page lists
-every pending secret and approves them in one click. A single-secret link grants
-one package on one secret. For community forks, reviewing the source and sending
-the owner the `communityForkAdopt` adoption link is an alternative to sending
-those approval links. Agents and package runtimes cannot adopt.
+`/@<slug>/-/secrets/approve?package_id=...&names=secretA,secretB`. That page
+lists every pending secret and approves them in one click. A single-secret link
+grants one package on one secret. For community forks, reviewing the source and
+sending the owner the `communityForkAdopt` adoption link is an alternative to
+sending those approval links. Agents and package runtimes cannot adopt.
 
 ## Package config vs package storage
 

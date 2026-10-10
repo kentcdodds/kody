@@ -323,9 +323,9 @@ test('waiting error-rate card uses open Activity errors, not monthly rollups', a
 		since,
 	})
 	expect(triaged.errorRate).toEqual({ errorCount: 0, eventCount: 162103 })
-	expect(buildWaitingItems(triaged).map((item) => item.kind)).not.toContain(
-		'error-rate',
-	)
+	expect(
+		buildWaitingItems(triaged, 'ada').map((item) => item.kind),
+	).not.toContain('error-rate')
 
 	mockModule.summarizeRunRecords.mockResolvedValueOnce({
 		...summary,
@@ -337,11 +337,11 @@ test('waiting error-rate card uses open Activity errors, not monthly rollups', a
 	const open = await collectWaitingSignals({ env, user, now })
 	expect(open.errorRate).toEqual({ errorCount: 12, eventCount: 20 })
 	expect(
-		buildWaitingItems(open).find((item) => item.id === 'error-rate'),
+		buildWaitingItems(open, 'ada').find((item) => item.id === 'error-rate'),
 	).toEqual(
 		expect.objectContaining({
 			title: 'Error rate is elevated',
-			href: '/account/activity',
+			href: '/@ada/-/activity',
 		}),
 	)
 })
@@ -357,7 +357,7 @@ test('waiting first-use signals emit cards only when the probe knows they are mi
 		user,
 	})
 	expect(missing.firstUseMissing).toEqual([...waitingFirstUseIds])
-	expect(buildWaitingItems(missing).map((item) => item.id)).toEqual(
+	expect(buildWaitingItems(missing, 'ada').map((item) => item.id)).toEqual(
 		waitingFirstUseIds.map((id) => `first-use:${id}`),
 	)
 	expect(missing.onboardingDismissed).toBe(true)
@@ -369,7 +369,9 @@ test('waiting first-use signals emit cards only when the probe knows they are mi
 	})
 	expect(present.firstUseMissing).toEqual([])
 	expect(
-		buildWaitingItems(present).filter((item) => item.kind === 'first-use'),
+		buildWaitingItems(present, 'ada').filter(
+			(item) => item.kind === 'first-use',
+		),
 	).toEqual([])
 
 	mockModule.listMemoriesByUserId.mockRejectedValueOnce(new Error('d1 blip'))
@@ -391,7 +393,7 @@ test('waiting first-use signals emit cards only when the probe knows they are mi
 		user,
 	})
 	expect(discordOpen.firstUseMissing).toEqual(['discord'])
-	expect(buildWaitingItems(discordOpen).map((item) => item.id)).toEqual([
+	expect(buildWaitingItems(discordOpen, 'ada').map((item) => item.id)).toEqual([
 		'first-use:discord',
 	])
 })
@@ -500,7 +502,7 @@ test('waiting shows missing_refresh_token only for connections whose refresh is 
 		}),
 	])
 	expect(
-		buildWaitingItems(signals)
+		buildWaitingItems(signals, 'ada')
 			.filter((item) => item.kind === 'integration-auth')
 			.map((item) => item.id),
 	).toEqual(['integration-auth:google'])

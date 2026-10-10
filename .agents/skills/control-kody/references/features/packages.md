@@ -6,11 +6,11 @@ Repo-backed saved packages: list, detail, files, approve-publish.
 
 `/@username` lists your repositories (saved packages), including private and
 unpublished ones when you view your own profile. The page heading and account
-rail label are **Repositories**; routes stay `/@username` and
-`/account/packages`. Chip filters (`visibility`, `listing`, `hidden`, `package`,
-`app`) and sort (`sort=updated|created|name`, `dir=asc|desc`) run client-side
-from the already-loaded list (behind a `<details>` Filters disclosure; no
-loader, no view transition). Default sort is updated descending
+rail label are **Repositories**; the list routes are `/@username` and
+`/@<slug>/-/packages`. Chip filters (`visibility`, `listing`, `hidden`,
+`package`, `app`) and sort (`sort=updated|created|name`, `dir=asc|desc`) run
+client-side from the already-loaded list (behind a `<details>` Filters
+disclosure; no loader, no view transition). Default sort is updated descending
 (`updated_at DESC`); name defaults to ascending. `package=yes|no` is whether the
 row has the saved-package extension — distinct from `app=yes|no` (Has app / No
 app). Own-profile GET params: `visibility=public|private`,
@@ -34,8 +34,8 @@ published or pinned commit), `/@username/:kodyId/settings` (**Settings** tab:
 lock, visibility, webhooks, delete), and `/@username/:kodyId/approve-publish`
 (published-vs-HEAD review). Opening an allowlisted image or video in the tree
 renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
-authz as the tree). Legacy `/account/packages` HTML URLs only redirect to these
-canonical pages.
+authz as the tree). `/account/packages` 404s. `/account/packages/:packageId`
+still redirects to the canonical package page.
 
 ## Drive it
 

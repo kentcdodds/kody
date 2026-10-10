@@ -184,10 +184,16 @@ export function AccountActivityRoute(handle: Handle) {
 					: readTriageFilter(href)),
 		})
 		if (selection.selectedId) {
-			navigate(activityRoute.buildDetailHref(selection.selectedId, search))
+			navigate(
+				activityRoute.buildDetailHref(
+					selection.selectedId,
+					search,
+					getCurrentHref(),
+				),
+			)
 			return
 		}
-		replaceLocation(activityRoute.buildListHref(search))
+		replaceLocation(activityRoute.buildListHref(search, getCurrentHref()))
 	}
 
 	return () => {
@@ -472,7 +478,11 @@ export function AccountActivityRoute(handle: Handle) {
 								const attribution = runAttributionSubtitle(item)
 								return {
 									id: item.id,
-									href: activityRoute.buildDetailHref(item.id, filterSearch),
+									href: activityRoute.buildDetailHref(
+										item.id,
+										filterSearch,
+										currentHref,
+									),
 									cells: {
 										name: (
 											<span

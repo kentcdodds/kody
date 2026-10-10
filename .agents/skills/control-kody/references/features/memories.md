@@ -5,7 +5,7 @@ upsert/delete).
 
 ## How to get there
 
-`/account/memories` → `/account/memories/:memoryId`.
+`/@<slug>/-/memories` → `/@<slug>/-/memories/:memoryId`.
 
 ## Drive it
 
@@ -16,7 +16,7 @@ node tools/control-kody.ts request GET /account/memories.json
 ## APIs
 
 - `GET|POST /account/memories.json`
-- `GET /account/memories-export.json`
+- `GET /@<slug>/-/memories-export.json`
 
 ## Gotchas
 

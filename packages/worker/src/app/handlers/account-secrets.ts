@@ -92,7 +92,7 @@ type SecretApprovalAction = 'approve' | 'reject'
 export function createAccountSecretsHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const requestUrl = new URL(request.url)
 			// Prefill agent links use the focused /connect/secret-set page.
 			// Bare /account/secrets/new stays on the account list editor.
@@ -124,14 +124,7 @@ export function createAccountSecretsHandler(env: Env) {
 				loaderData: { accountSecrets },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountSecrets
-		| typeof routes.accountSecretNew
-		| typeof routes.accountSecretsApprove
-		| typeof routes.accountSecretUserDetail
-		| typeof routes.accountSecretSessionDetail
-		| typeof routes.accountSecretPackageDetail
-	>
+	}
 }
 
 export function createAccountSecretsApiHandler(env: Env) {

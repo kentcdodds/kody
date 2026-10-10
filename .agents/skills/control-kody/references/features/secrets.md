@@ -5,23 +5,22 @@ User, session, and package secret rows. Host approval and package grants.
 ## How to get there
 
 Canonical pages are `/@<slug>/-/secrets` (and `/@<slug>/-/secret-providers`).
-`/account/secrets` redirects there. Detail stays under
-`/@<slug>/-/secrets/{user|session|package}/…`, and `/account/secrets/new` still
-redirects. Prefill agent links: `/connect/secret-set?name=…` (same family as
-`/connect/secrets`). Package grant lane: `/account/secrets/approve`. Host
-approval: `/connect/secrets`. External providers: `/account/secret-providers`
-and `/account/secret-providers/approve`. Docs: `/docs/secret-providers`.
+Detail stays under `/@<slug>/-/secrets/{user|session|package}/…`, including
+`/@<slug>/-/secrets/new` and `/@<slug>/-/secrets/approve`. Prefill agent links:
+`/connect/secret-set?name=…` (same family as `/connect/secrets`). Host approval:
+`/connect/secrets`. External providers live at `/@<slug>/-/secret-providers`.
+Docs: `/docs/secret-providers`.
 
 ## Drive it
 
 ```bash
 node tools/control-kody.ts preview -- \
   --request 'GET /account/secrets.json' \
-  --check /account/secrets
+  --check /@<slug>/-/secrets
 ```
 
 GET the page body after a claimed fix. A “try
-https://kody.codes/account/secrets” note with no body is not proof.
+https://kody.codes/@<slug>/-/secrets” note with no body is not proof.
 
 ## APIs
 
@@ -46,8 +45,8 @@ node tools/control-kody.ts request POST /account/secrets.json '{"action":"save",
 - `/connect/secrets` rejects hosts that are not hostname-shaped (truncated
   tokens, paths, empty values). Those must not appear as a successful Allow
   target, and they must not land in `allowedHosts`.
-- Package grants on user secrets are website-only (`/account/secrets/approve` or
-  the secret editor). `secretLock` returns an approval URL; it does not add
+- Package grants on user secrets are website-only (`/@<slug>/-/secrets/approve`
+  or the secret editor). `secretLock` returns an approval URL; it does not add
   `allowed_packages`. Provider grants are website-only on
-  `/account/secret-providers`; `secretProviderLock` also returns an approval
+  `/@<slug>/-/secret-providers`; `secretProviderLock` also returns an approval
   URL.

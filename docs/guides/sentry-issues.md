@@ -103,7 +103,7 @@ dispatches `./process-sentry-webhook` through `workflows.create` with a bounded
 does not have to finish triage inside the webhook budget.
 
 Rotate, reveal, and the cross-package index live on the package settings
-**Webhooks** section and `/account/webhooks`. The rotate overlap window is in
+**Webhooks** section and `/@<slug>/-/webhooks`. The rotate overlap window is in
 [Inbound webhooks](../use/webhooks.md).
 
 ## Example prompts
@@ -132,8 +132,8 @@ Rotate, reveal, and the cross-package index live on the package settings
 | Surface                     | What it is for                                                         |
 | --------------------------- | ---------------------------------------------------------------------- |
 | Package settings → Webhooks | Mint, reveal, rotate, disable, enable. Reveal is audit-logged          |
-| `/account/webhooks`         | Every webhook across packages, with links to those settings sections   |
-| `/account/activity`         | Delivery metadata and handler runs. Bodies are never stored there      |
+| `/@<slug>/-/webhooks`       | Every webhook across packages, with links to those settings sections   |
+| `/@<slug>/-/activity`       | Delivery metadata and handler runs. Bodies are never stored there      |
 | Discord (Kent's copy)       | One status card per issue, edited in place from start to finish        |
 | Chat (`execute`)            | Dry-run the handler, `./reset-issue`, `./triage-report`, `./reconcile` |
 

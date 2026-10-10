@@ -107,7 +107,12 @@ test('account emails claim once per kind and skip when KV or sender is missing',
 	expect(await connectAgent(env, 'user-1')).toBe(false)
 	expect(sendCloudflareEmail).not.toHaveBeenCalled()
 
-	const user = { env, email: 'ada@example.com', userId: 'user-1' }
+	const user = {
+		env,
+		email: 'ada@example.com',
+		userId: 'user-1',
+		orgSlug: 'ada',
+	}
 	expect(await sendBillingSuccessEmail({ ...user, planLabel: 'Pro' })).toBe(
 		true,
 	)
@@ -179,6 +184,7 @@ test('account emails reserve the KV claim before sending and release it on send 
 			env,
 			email: 'ada@example.com',
 			userId: 'user-claim',
+			orgSlug: 'ada',
 			planLabel: 'Pro',
 		}),
 	).toBe(false)

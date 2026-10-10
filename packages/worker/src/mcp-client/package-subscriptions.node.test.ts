@@ -82,6 +82,7 @@ function emit(event: McpServerConnectionEvent = disconnectedEvent) {
 	return emitMcpServerConnectionEventsIfNeeded({
 		env: createEnv(),
 		userId: 'user-1',
+		orgSlug: 'ada',
 		events: [event],
 	})
 }
@@ -92,6 +93,7 @@ test('mcp.server.disconnected fans out a lean same-user payload', async () => {
 	const results = await dispatchMcpServerConnectionSubscriptionEvents({
 		env: createEnv(),
 		userId: 'user-1',
+		orgSlug: 'ada',
 		event: disconnectedEvent,
 	})
 
@@ -114,7 +116,7 @@ test('mcp.server.disconnected fans out a lean same-user payload', async () => {
 					episode_id: 'episode-1',
 				},
 				observed_at: '2026-08-18T17:54:07.000Z',
-				account_url: 'https://example.com/account/mcp-servers/server-home',
+				account_url: 'https://example.com/@ada/-/mcp-servers/server-home',
 			},
 		}),
 	)

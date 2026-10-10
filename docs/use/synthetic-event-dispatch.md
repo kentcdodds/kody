@@ -117,7 +117,7 @@ Example minimal `run.error.recorded` fixture:
 			"error_name": "Error",
 			"error_message": "Synthetic smoke failure"
 		},
-		"activity_url": "https://kody.codes/account/activity/00000000000000000000000000000001"
+		"activity_url": "https://kody.codes/@<slug>/-/activity/00000000000000000000000000000001"
 	}
 }
 ```
@@ -149,7 +149,7 @@ Example minimal `integration.auth.failed` fixture:
 			"http_status": 400
 		},
 		"reconnect_url": "https://kody.codes/connect/oauth?provider=google&loginHint=kent.c.dodds%40gmail.com",
-		"account_url": "https://kody.codes/account/integrations/google",
+		"account_url": "https://kody.codes/@<slug>/-/integrations/google",
 		"occurred_at": "2026-08-18T17:00:00.000Z"
 	}
 }
@@ -172,7 +172,7 @@ Example minimal `integration.auth.succeeded` fixture:
 			"platform_app_slug": "google"
 		},
 		"source": "oauth_connect",
-		"account_url": "https://kody.codes/account/integrations/google",
+		"account_url": "https://kody.codes/@<slug>/-/integrations/google",
 		"occurred_at": "2026-08-18T18:00:00.000Z"
 	}
 }
@@ -195,7 +195,7 @@ Example minimal `mcp.server.disconnected` fixture:
 			"episode_id": "00000000-0000-4000-8000-000000000003"
 		},
 		"observed_at": "2026-08-18T17:54:07.000Z",
-		"account_url": "https://kody.codes/account/mcp-servers/00000000-0000-4000-8000-000000000002"
+		"account_url": "https://kody.codes/@<slug>/-/mcp-servers/00000000-0000-4000-8000-000000000002"
 	}
 }
 ```

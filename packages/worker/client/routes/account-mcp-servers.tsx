@@ -274,6 +274,7 @@ export function AccountMcpServersRoute(handle: Handle) {
 					mcpServersRoute.buildDetailHref(
 						payload.selectedServerId,
 						getCurrentSearch(),
+						getCurrentHref(),
 					),
 				)
 			},
@@ -335,7 +336,12 @@ export function AccountMcpServersRoute(handle: Handle) {
 									if (isMutating) return
 									deleteServerCheck.reset()
 									setMessage(null)
-									navigate(mcpServersRoute.buildNewHref(getCurrentSearch()))
+									navigate(
+										mcpServersRoute.buildNewHref(
+											getCurrentSearch(),
+											getCurrentHref(),
+										),
+									)
 								}),
 								css(primaryButtonCss),
 							]}
@@ -411,7 +417,10 @@ export function AccountMcpServersRoute(handle: Handle) {
 								? {
 										href: isMutating
 											? undefined
-											: mcpServersRoute.buildNewHref(getCurrentSearch()),
+											: mcpServersRoute.buildNewHref(
+													getCurrentSearch(),
+													getCurrentHref(),
+												),
 										label: 'New server',
 									}
 								: undefined
@@ -422,7 +431,11 @@ export function AccountMcpServersRoute(handle: Handle) {
 							// editor owns the selection until it settles.
 							href: isMutating
 								? undefined
-								: mcpServersRoute.buildDetailHref(item.id, getCurrentSearch()),
+								: mcpServersRoute.buildDetailHref(
+										item.id,
+										getCurrentSearch(),
+										getCurrentHref(),
+									),
 							cells: {
 								name: renderNamedServer(item),
 								state: (
@@ -539,7 +552,10 @@ export function AccountMcpServersRoute(handle: Handle) {
 											failureMessage: 'Unable to remove MCP server.',
 											afterSuccess: () => {
 												navigate(
-													mcpServersRoute.buildListHref(getCurrentSearch()),
+													mcpServersRoute.buildListHref(
+														getCurrentSearch(),
+														getCurrentHref(),
+													),
 												)
 											},
 										})

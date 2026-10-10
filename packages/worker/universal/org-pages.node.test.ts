@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
-	accountResourceRedirectPath,
+	orgResourcePathForAccountPath,
+	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
 	orgBillingPath,
@@ -45,27 +46,42 @@ const billing: OrganizationSummary = {
 	personal: false,
 }
 
-test('account resource redirects map pages onto the signup organization', () => {
-	expect(accountResourceRedirectPath('/account/packages', 'ada')).toBe(
+test('account-shaped section paths become canonical org links', () => {
+	expect(orgResourcePathForAccountPath('/account/packages', 'ada')).toBe(
 		'/@ada/-/packages',
 	)
-	expect(accountResourceRedirectPath('/account/secrets', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/secrets', 'ada')).toBe(
 		'/@ada/-/secrets',
 	)
-	expect(accountResourceRedirectPath('/account/secrets/new', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/secrets/new', 'ada')).toBe(
 		'/@ada/-/secrets/new',
 	)
-	expect(accountResourceRedirectPath('/account/jobs/job-1', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/jobs/job-1', 'ada')).toBe(
 		'/@ada/-/jobs/job-1',
 	)
-	expect(accountResourceRedirectPath('/account/packages/pkg-1', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/billing', 'ada')).toBe(
+		'/@ada/-/billing',
+	)
+	expect(orgResourcePathForAccountPath('/account/billing/success', 'ada')).toBe(
+		'/@ada/-/billing/success',
+	)
+	expect(orgResourcePathForAccountPath('/account/packages/pkg-1', 'ada')).toBe(
 		null,
 	)
-	expect(accountResourceRedirectPath('/account/secrets.json', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/passkeys', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/billing', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/experiments', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account/secrets.json', 'ada')).toBe(
+		null,
+	)
+	expect(orgResourcePathForAccountPath('/account/passkeys', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account/experiments', 'ada')).toBe(
+		null,
+	)
+	expect(
+		relocateAccountHref('/account/secrets/new?q=1', '/@ada/-/secrets'),
+	).toBe('/@ada/-/secrets/new?q=1')
+	expect(relocateAccountHref('/account/passkeys', '/@ada/-/secrets')).toBe(
+		'/account/passkeys',
+	)
 })
 
 test('org resource paths alias back to account loaders and ignore package apps', () => {

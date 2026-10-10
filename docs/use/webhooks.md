@@ -104,7 +104,7 @@ Other capabilities: `webhookList` (declarations — including `verification`,
 (metadata only; bodies are never stored), and `webhookSyntheticDispatch`
 (interactive-MCP smoke test for a minted webhook — see
 [Synthetic smoke test](#synthetic-smoke-test)). The same delivery history also
-appears under [Activity](./activity.md) (`/account/activity` and the `runs`
+appears under [Activity](./activity.md) (`/@<slug>/-/activity` and the `runs`
 capabilities). List, mint, rotate, apply, and synthetic dispatch never return
 the credential URL.
 
@@ -132,7 +132,7 @@ either apply the handle (`type: "http"`) or ask the owner to copy the URL from
 package settings. Mints that predate encrypted secret storage cannot be shown;
 the card offers Rotate for those.
 
-`/account/webhooks` (account rail → Webhooks) is a read-only index of every
+`/@<slug>/-/webhooks` (account rail → Webhooks) is a read-only index of every
 webhook across your packages. Each row links to the owning package's Webhooks
 section; nothing is minted or revealed from the index.
 

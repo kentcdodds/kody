@@ -36,7 +36,7 @@ const session: SessionInfo = {
 
 function renderConnectionsPage(
 	accountConnectedAgents: AccountConnectedAgentsLoaderData,
-	url: string = routes.accountConnections.href(),
+	url: string = '/account/connections',
 ) {
 	return renderToString(
 		jsx(RouterLocationProvider, {
@@ -84,7 +84,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 	expect(html).toMatch(
 		/data-testid="account-connections-add"[^>]*>Add connection</,
 	)
-	expect(html).toContain(`href="${routes.accountConnectionNew.href()}"`)
+	expect(html).toContain(`href="${'/account/connections/new'}"`)
 	expect(html).toContain('aria-label="MCP URL"')
 	expect(html).toContain('>https://kody.example/mcp<')
 	expect(html).toContain('Copy MCP URL')
@@ -108,7 +108,7 @@ test('connections page renders the connected list with Add connection, the MCP U
 test('Add connection shows every named client on every viewport; already-connected hosts stay links with a Connected mark', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		routes.accountConnectionNew.href(),
+		'/account/connections/new',
 	)
 
 	expect(html).toContain('data-testid="account-connections-agent-grid"')
@@ -116,7 +116,7 @@ test('Add connection shows every named client on every viewport; already-connect
 	expect(html).toMatch(
 		/data-testid="account-connections-back"[^>]*>← back to connections</,
 	)
-	expect(html).toContain(`href="${routes.accountConnections.href()}"`)
+	expect(html).toContain(`href="${'/account/connections'}"`)
 	// The list is its own page; it does not wrap the grid.
 	expect(html).not.toContain('aria-label="Connected agents"')
 	expect(html).not.toContain('data-testid="account-connections-add"')
@@ -163,7 +163,7 @@ test('Add connection shows every named client on every viewport; already-connect
 test('picking a client shows that host’s install steps with a way back to the grid', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		routes.accountConnectionNewAgent.href({ agent: 'claude-code' }),
+		'/account/connections/new/claude-code',
 	)
 
 	expect(html).toContain('aria-label="Connect Claude Code"')
@@ -175,7 +175,7 @@ test('picking a client shows that host’s install steps with a way back to the 
 	expect(html).toContain('data-testid="onboarding-authenticate-callout"')
 	expect(html).toMatch(
 		new RegExp(
-			`href="${routes.accountConnectionNew.href()}"[^>]*data-testid="account-connections-change-agent"`,
+			`href="${'/account/connections/new'}"[^>]*data-testid="account-connections-change-agent"`,
 		),
 	)
 	expect(html).not.toContain('data-testid="account-connections-agent-grid"')
@@ -398,7 +398,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 		connections &&
 			isAccountNavItemActive(connections, '/@jane/-/connections/new'),
 	).toBe(true)
-	expect(accountPackagesNavHref(null)).toBe('/account/packages')
+	expect(accountPackagesNavHref(null)).toBe('/account')
 })
 
 test('workspace rail for a team organization is Settings, Members, and Billing', () => {
