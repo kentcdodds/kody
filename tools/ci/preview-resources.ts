@@ -11,6 +11,7 @@ import {
 	stripOriginDurableObjectMigrations,
 	type OriginProductionScriptState,
 } from './origin-production-deploy-state.ts'
+import { planPreviewOriginQueues } from './preview-queue-plan.ts'
 import {
 	CloudflareResourceError,
 	deleteArtifactsNamespace,
@@ -54,8 +55,9 @@ export type PreviewResourceKind =
  * for manual branch previews) plus a lowercase kebab suffix: `-runtime`,
  * `-platform`, `-jobs`, `-highlight`, `-api`, `-mock-<service>`, `-db`, `-audit-db`,
  * `-jobs-db`, `-vectors`, `-oauth-kv`, `-bundle-artifacts-kv`, `-community-assets`, `-email-blobs`,
- * `-repo-session-blobs`, `-webhook-dispatch`, `-webhook-dispatch-dlq`
- * (`truncateWithSuffix` may shorten the base but keeps this shape). The
+ * `-repo-session-blobs`, and one queue plus dead-letter queue for each origin
+ * producer preview provisions (`tools/ci/preview-queue-plan.ts`;
+ * `truncateWithSuffix` may shorten the base but keeps this shape). The
  * Artifacts namespace uses the bare worker name (`kody-pr-<n>` /
  * `kody-branch-<slug>`) with no suffix. Production names (`kody`,
  * `kody-platform`, `kody-runtime`, `kody-jobs`, `kody-audit`, `kody-oauth`,
@@ -171,9 +173,6 @@ export function buildPreviewResourceNames(workerName: string) {
 	const communityAssetsSuffix = '-community-assets'
 	const emailBlobsSuffix = '-email-blobs'
 	const repoSessionBlobsSuffix = '-repo-session-blobs'
-	const webhookDispatchQueueSuffix = '-webhook-dispatch'
-	const webhookDispatchDeadLetterQueueSuffix = '-webhook-dispatch-dlq'
-
 	const d1DatabaseName = truncateWithSuffix(workerName, d1Suffix, maxLen)
 	const auditD1DatabaseName = truncateWithSuffix(
 		workerName,
@@ -211,16 +210,16 @@ export function buildPreviewResourceNames(workerName: string) {
 		communityAssetsSuffix,
 		maxLen,
 	)
-	const webhookDispatchQueueName = truncateWithSuffix(
-		workerName,
-		webhookDispatchQueueSuffix,
-		maxLen,
+	const webhookQueue = planPreviewOriginQueues(workerName).bindings.find(
+		(binding) => binding.binding === 'WEBHOOK_DISPATCH_QUEUE',
 	)
-	const webhookDispatchDeadLetterQueueName = truncateWithSuffix(
-		workerName,
-		webhookDispatchDeadLetterQueueSuffix,
-		maxLen,
-	)
+	if (!webhookQueue) {
+		throw new Error(
+			'Preview queue plan is missing WEBHOOK_DISPATCH_QUEUE. Origin production queues must keep that producer.',
+		)
+	}
+	const webhookDispatchQueueName = webhookQueue.queue
+	const webhookDispatchDeadLetterQueueName = webhookQueue.deadLetterQueue
 
 	return {
 		d1DatabaseName,
@@ -583,7 +582,12 @@ async function ensurePreviewResources(options: CliOptions) {
 		webhookDispatchDeadLetterQueueName,
 		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
-	for (const name of [jobsD1DatabaseName, vectorizeIndexName]) {
+	const queuePlan = planPreviewOriginQueues(options.workerName)
+	for (const name of [
+		jobsD1DatabaseName,
+		vectorizeIndexName,
+		...queuePlan.queueNames,
+	]) {
 		if (!previewResourceNamePattern.test(name)) {
 			fail(
 				`Refusing to create "${name}": it does not match the preview resource naming scheme ${String(previewResourceNamePattern)}.`,
@@ -640,16 +644,13 @@ async function ensurePreviewResources(options: CliOptions) {
 	const existingQueues = options.dryRun
 		? []
 		: await listCloudflareQueues(queueClient)
-	await ensureCloudflareQueue({
-		...queueClient,
-		name: webhookDispatchQueueName,
-		existingQueues,
-	})
-	await ensureCloudflareQueue({
-		...queueClient,
-		name: webhookDispatchDeadLetterQueueName,
-		existingQueues,
-	})
+	for (const name of queuePlan.queueNames) {
+		await ensureCloudflareQueue({
+			...queueClient,
+			name,
+			existingQueues,
+		})
+	}
 	await ensureArtifactsNamespace({
 		...queueClient,
 		namespace: artifactsNamespace,
@@ -702,13 +703,7 @@ async function ensurePreviewResources(options: CliOptions) {
 		workerVars: {
 			CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
 		},
-		queueBindings: [
-			{
-				binding: 'WEBHOOK_DISPATCH_QUEUE',
-				queue: webhookDispatchQueueName,
-				deadLetterQueue: webhookDispatchDeadLetterQueueName,
-			},
-		],
+		queueBindings: queuePlan.bindings,
 		serviceBindings: [
 			{
 				binding: 'JOBS',
@@ -833,10 +828,9 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		communityAssetsBucketName,
 		emailBlobsBucketName,
 		repoSessionBlobsBucketName,
-		webhookDispatchQueueName,
-		webhookDispatchDeadLetterQueueName,
 		artifactsNamespace,
 	} = buildPreviewResourceNames(options.workerName)
+	const queuePlan = planPreviewOriginQueues(options.workerName)
 	const workerNames = listPreviewWorkerNames(options.workerName)
 	for (const [name, kind] of [
 		...workerNames.map((name) => [name, 'worker'] as const),
@@ -849,8 +843,7 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 		[communityAssetsBucketName, 'r2'] as const,
 		[emailBlobsBucketName, 'r2'] as const,
 		[repoSessionBlobsBucketName, 'r2'] as const,
-		[webhookDispatchQueueName, 'queue'] as const,
-		[webhookDispatchDeadLetterQueueName, 'queue'] as const,
+		...queuePlan.queueNames.map((name) => [name, 'queue'] as const),
 		[artifactsNamespace, 'artifacts'] as const,
 	]) {
 		assertPreviewResourceName(name, kind)
@@ -897,21 +890,14 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 	// Independent leftovers (R2 / KV / D1 / Artifacts) run after that chain so
 	// a Worker 504 cannot strand them. Permanent failures are recorded and the
 	// rest of the sweep continues.
-	await attempt(`queue consumers ${webhookDispatchQueueName}`, async () => {
-		await removePreviewQueueConsumers({
-			...queueClient,
-			name: webhookDispatchQueueName,
-		})
-	})
-	await attempt(
-		`queue consumers ${webhookDispatchDeadLetterQueueName}`,
-		async () => {
+	for (const name of queuePlan.queueNames) {
+		await attempt(`queue consumers ${name}`, async () => {
 			await removePreviewQueueConsumers({
 				...queueClient,
-				name: webhookDispatchDeadLetterQueueName,
+				name,
 			})
-		},
-	)
+		})
+	}
 	for (const workerName of workerNames) {
 		await attempt(`worker ${workerName}`, async () => {
 			await deletePreviewWorkerScript({
@@ -921,18 +907,14 @@ export async function cleanupPreviewResources(options: PreviewCleanupOptions) {
 			})
 		})
 	}
-	await attempt(`queue ${webhookDispatchQueueName}`, async () => {
-		await deletePreviewQueue({
-			...queueClient,
-			name: webhookDispatchQueueName,
+	for (const name of queuePlan.queueNames) {
+		await attempt(`queue ${name}`, async () => {
+			await deletePreviewQueue({
+				...queueClient,
+				name,
+			})
 		})
-	})
-	await attempt(`queue ${webhookDispatchDeadLetterQueueName}`, async () => {
-		await deletePreviewQueue({
-			...queueClient,
-			name: webhookDispatchDeadLetterQueueName,
-		})
-	})
+	}
 	for (const name of [
 		communityAssetsBucketName,
 		emailBlobsBucketName,

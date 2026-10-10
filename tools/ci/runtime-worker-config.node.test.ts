@@ -123,13 +123,16 @@ function buildMainGeneratedConfig(envName: string) {
 		),
 		queues: {
 			producers: [
-				...producers('kody-pr-7', 'WEBHOOK_DISPATCH_QUEUE'),
+				...producers(
+					envName === 'production' ? 'kody' : 'kody-pr-7',
+					'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
+					'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
+					'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
+					'WEBHOOK_DISPATCH_QUEUE',
+				),
 				...(envName === 'production'
 					? producers(
 							'kody',
-							'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
-							'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
-							'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
 							'SCHEDULED_DISPATCH_QUEUE',
 							'PACKAGE_EVENTS_DISPATCH_QUEUE',
 						)
@@ -219,10 +222,22 @@ test('generate rewrites worker names, copies resource ids, and patches the main 
 		database_name: 'kody-pr-7-db',
 		database_id: 'd1-app-id',
 	})
-	expect(previewEnv?.queues?.producers?.[0]).toMatchObject({
-		binding: 'WEBHOOK_DISPATCH_QUEUE',
-		queue: 'kody-pr-7-webhook-dispatch',
-	})
+	expect(previewEnv?.queues?.producers?.map((entry) => entry.binding)).toEqual([
+		'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
+		'COMMUNITY_ACTIVITY_DISPATCH_QUEUE',
+		'COMMUNITY_LISTING_PUBLISHED_DISPATCH_QUEUE',
+		'WEBHOOK_DISPATCH_QUEUE',
+	])
+	expect(
+		previewEnv?.queues?.producers?.find(
+			(entry) => entry.binding === 'PLATFORM_FEEDBACK_DISPATCH_QUEUE',
+		),
+	).toMatchObject({ queue: 'kody-pr-7-platform-feedback-dispatch' })
+	expect(
+		previewEnv?.queues?.producers?.find(
+			(entry) => entry.binding === 'WEBHOOK_DISPATCH_QUEUE',
+		),
+	).toMatchObject({ queue: 'kody-pr-7-webhook-dispatch' })
 	expect(previewEnv?.vars?.ARTIFACTS_NAMESPACE).toBe('kody-pr-7')
 	// The workflow gets a per-worker name.
 	expect(previewEnv?.workflows?.[0]?.name).toBe(

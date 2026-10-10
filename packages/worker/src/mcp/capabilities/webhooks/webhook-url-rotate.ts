@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { rotateWebhookUrlForUser } from '#worker/webhooks/service.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
@@ -46,6 +49,7 @@ export const webhookUrlRotateCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const rotated = await rotateWebhookUrlForUser({
 				env: ctx.env,
+				request: requireMcpRequest(ctx.callerContext),
 				userId: ownerIdFromCaller(ctx.callerContext),
 				email: user.email,
 				username: user.username,

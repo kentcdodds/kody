@@ -18,6 +18,7 @@ import {
 	resetPreviewD1Databases,
 	type PreviewResourceKind,
 } from './preview-resources.ts'
+import { planPreviewOriginQueues } from './preview-queue-plan.ts'
 import { parseJsonc } from './resource-utils.ts'
 
 // Never launch a real wrangler from this suite: a guard regression must show
@@ -553,8 +554,13 @@ test('permanent queue auth failure still attempts later independent resources an
 		return alreadyMissingWrangler(argv)
 	})
 
+	const queueCount = planPreviewOriginQueues('kody-pr-1999').queueNames.length
+	// Each queue fails twice (consumers, then the queue itself), plus the
+	// highlight worker, the Vectorize index, and the Artifacts namespace.
 	await expect(cleanup('kody-pr-1999')).rejects.toThrow(
-		/Preview cleanup failed for 7 resource\(s\)/,
+		new RegExp(
+			`Preview cleanup failed for ${String(queueCount * 2 + 3)} resource\\(s\\)`,
+		),
 	)
 	expect(
 		attemptedWorkers.filter((name) => name === 'kody-pr-1999-highlight'),
@@ -621,7 +627,9 @@ test('cleanup preserves queue-consumer then worker then queue order', async () =
 	expect(firstQueueList).toBeGreaterThanOrEqual(0)
 	expect(firstWorker).toBeGreaterThan(firstQueueList)
 	expect(firstR2).toBeGreaterThan(firstWorker)
-	expect(events.filter((event) => event === 'list-queues').length).toBe(4)
+	expect(events.filter((event) => event === 'list-queues').length).toBe(
+		planPreviewOriginQueues('kody-pr-9').queueNames.length * 2,
+	)
 })
 
 test('non-empty preview R2 buckets are emptied then deleted', async () => {

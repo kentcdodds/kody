@@ -113,4 +113,20 @@ test('worker queue routing isolates known queues and retries unknown queues', as
 	expect(consoleError).toHaveBeenCalledWith('unknown-worker-queue', {
 		queue: 'unexpected-queue',
 	})
+
+	const previewBatch = createBatch('kody-pr-3155-platform-feedback-dispatch')
+	await handleQueueBatch(previewBatch, env, ctx)
+	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledTimes(2)
+	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenLastCalledWith(
+		previewBatch,
+		env,
+		ctx,
+	)
+
+	const deadLetterBatch = createBatch(
+		'kody-pr-3155-platform-feedback-dispatch-dlq',
+	)
+	await handleQueueBatch(deadLetterBatch, env, ctx)
+	expect(deadLetterBatch.retryAll).toHaveBeenCalledWith({ delaySeconds: 30 })
+	expect(mocks.handlePlatformFeedbackDispatchQueue).toHaveBeenCalledTimes(2)
 })

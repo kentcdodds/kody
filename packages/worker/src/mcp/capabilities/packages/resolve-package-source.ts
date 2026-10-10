@@ -31,6 +31,7 @@ export async function resolveOwnedPackageSource(input: {
 	args: PackageSourceIdentity
 }): Promise<{
 	packageId: string
+	userId: string
 	kodyId: string
 	name: string
 	hasApp: boolean
@@ -78,6 +79,7 @@ export async function resolveOwnedPackageSource(input: {
 	}
 	return {
 		packageId: savedPackage.id,
+		userId: savedPackage.userId,
 		kodyId: savedPackage.kodyId,
 		name: savedPackage.name,
 		hasApp: savedPackage.hasApp,

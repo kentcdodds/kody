@@ -47,7 +47,7 @@ const webhookActionSchema = object({
 type AuthenticatedUser = WebhooksUser &
 	Pick<
 		NonNullable<Awaited<ReturnType<typeof readAuthenticatedAppUser>>>,
-		'email'
+		'email' | 'request'
 	>
 
 /**
@@ -194,6 +194,7 @@ async function runWebhookAction(input: {
 	const { env, request, user, intent, packageKodyId, webhookName } = input
 	const shared = {
 		env,
+		request: user.request,
 		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		email: user.email,
 		username: user.username,

@@ -154,6 +154,7 @@ function setupDefaultMocks({
 	for (const mock of Object.values(mockModule)) mock.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
+		userId: 'user-1',
 		kodyId: 'demo-package',
 		name: '@kentcdodds/demo-package',
 		sourceId: 'source-1',

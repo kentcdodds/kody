@@ -8,6 +8,7 @@ import {
 	type PackageWebhooksActionPayload,
 	type PackageWebhooksLoaderData,
 } from '#universal/loader-data.ts'
+import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -36,11 +37,12 @@ const savedPackage = {
 }
 
 vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
-	resolveSavedPackage: vi.fn(async (input: { packageIdOrKodyId: string }) =>
-		input.packageIdOrKodyId === 'pkg-1' ||
-		input.packageIdOrKodyId === 'sentry-bridge'
-			? savedPackage
-			: null,
+	resolveSavedPackage: vi.fn(
+		async (input: { userId: string; packageIdOrKodyId: string }) =>
+			input.packageIdOrKodyId === 'pkg-1' ||
+			input.packageIdOrKodyId === 'sentry-bridge'
+				? { ...savedPackage, userId: input.userId }
+				: null,
 	),
 }))
 
@@ -96,6 +98,7 @@ async function setup(sessionUsername = 'owner') {
 		email: 'owner@example.com',
 		username: sessionUsername,
 		mcpUser: { userId },
+		request: sessionRequestContext(userId),
 	})
 	const sqlite = new DatabaseSync(':memory:')
 	sqlite.exec(`
