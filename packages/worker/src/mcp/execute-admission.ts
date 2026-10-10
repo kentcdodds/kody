@@ -165,7 +165,7 @@ export function createExecuteWorkerDayClaim(input: {
 	ownerId: OwnerId
 	email: string | null | undefined
 	orgBudget?: OrgBudgetGateContext
-	onUsage?: (usage: ExecuteUniqueWorkerUsage) => void
+	onUsage?: (claimed: ClaimedExecuteUsage) => void
 	waitUntil?: (promise: Promise<unknown>) => void
 }): ClaimWorkerDay {
 	return async (workerId, attribution) => {
@@ -179,7 +179,7 @@ export function createExecuteWorkerDayClaim(input: {
 			now,
 			orgBudget: input.orgBudget,
 		})
-		input.onUsage?.(usage)
+		input.onUsage?.({ usage, claimedAt: now })
 		if (usage.created) {
 			await recordUsage(input.env, {
 				userId: input.ownerId,
@@ -233,6 +233,24 @@ export function executeDailyWarningCrossing(
 		return 'approaching'
 	}
 	return null
+}
+
+export type ClaimedExecuteUsage = {
+	usage: ExecuteUniqueWorkerUsage
+	claimedAt: Date
+}
+
+/**
+ * The claim's counts while they still describe the current window. A run
+ * that crosses UTC midnight (or a Monday) would pair yesterday's counts with
+ * tomorrow's reset, so the caller re-reads instead.
+ */
+export function claimedUsageForNow(
+	claimed: ClaimedExecuteUsage | null,
+	now: Date,
+): ExecuteUniqueWorkerUsage | null {
+	if (!claimed) return null
+	return utcDayKey(claimed.claimedAt) === utcDayKey(now) ? claimed.usage : null
 }
 
 export type ExecuteUsageWindow = {

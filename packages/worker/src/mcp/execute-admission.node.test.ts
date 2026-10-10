@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest'
 import {
 	buildExecuteUsageReport,
+	claimedUsageForNow,
 	executeDailyWarningCrossing,
 } from '#mcp/execute-admission.ts'
 
@@ -41,4 +42,20 @@ test('the usage report gives remaining allowance and the next UTC day and Monday
 			wednesday,
 		),
 	).not.toHaveProperty('week')
+})
+
+test('claimed usage is reused only within the UTC day it was claimed', () => {
+	const usage = { used: 150, limit: 150, weekUsed: 400, weekLimit: 400 }
+	const claimed = {
+		usage,
+		claimedAt: new Date('2026-10-11T23:59:59.000Z'),
+	}
+	expect(
+		claimedUsageForNow(claimed, new Date('2026-10-11T23:59:59.900Z')),
+	).toBe(usage)
+	// Sunday night to Monday morning crosses both the day and the week.
+	expect(
+		claimedUsageForNow(claimed, new Date('2026-10-12T00:00:20.000Z')),
+	).toBeNull()
+	expect(claimedUsageForNow(null, new Date())).toBeNull()
 })

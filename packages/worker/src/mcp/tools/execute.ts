@@ -66,11 +66,12 @@ import { isPreRunUsageDenial } from '#worker/entitlements/errors.ts'
 import {
 	getCachedUserEntitlement,
 	readExecuteUniqueWorkerUsage,
-	type ExecuteUniqueWorkerUsage,
 } from '#worker/entitlements/service.ts'
 import {
 	admitHostedExecuteCall,
 	buildExecuteUsageReport,
+	claimedUsageForNow,
+	type ClaimedExecuteUsage,
 	createExecuteWorkerDayClaim,
 	executeAdmissionStructuredContent,
 	executeLoopDetectedErrorCode,
@@ -308,7 +309,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				...(activeStorageId ? { storageId: activeStorageId } : {}),
 			}
 			let claimedRunHandle: RunRecordHandle | null = null
-			let executeUsage: ExecuteUniqueWorkerUsage | null = null
+			let claimedExecuteUsage: ClaimedExecuteUsage | null = null
 			return await attachExecuteUsage(await runExecuteToolWithErrorBoundary())
 
 			async function attachExecuteUsage<
@@ -318,7 +319,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				if (!callerContext.user?.userId || !ownerId) return response
 				const now = new Date()
 				const usage =
-					executeUsage ??
+					claimedUsageForNow(claimedExecuteUsage, now) ??
 					(await readExecuteUniqueWorkerUsage({
 						db: env.APP_DB,
 						env,
@@ -471,8 +472,8 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 								env,
 								ownerId: storageOwnerId,
 								email: entitlementEmail,
-								onUsage: (usage) => {
-									executeUsage = usage
+								onUsage: (claimed) => {
+									claimedExecuteUsage = claimed
 								},
 								waitUntil,
 								orgBudget: callerContext.request
