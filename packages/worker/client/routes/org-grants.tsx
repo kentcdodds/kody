@@ -121,7 +121,7 @@ export function OrgGrantsRoute(handle: Handle) {
 				.catch(() => null)) as GrantsPayload | null
 			if (response.status === 401) {
 				window.location.assign('/login')
-				return
+				throw new Error('Sign in again to continue.')
 			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to revoke that grant.')
