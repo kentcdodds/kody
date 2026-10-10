@@ -375,10 +375,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   community profile fields are `display_name`, `bio`, and `profile_visibility`
   (default `public`). `experiments_opt_in` is the account preference for the
   feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
-  `users.account_type` remains in the database until a later migration deletes
-  leftover platform `users` rows and drops the column
-  ([#3084](https://github.com/kentcdodds/kody/issues/3084)). Runtime does not
-  read it. First-touch marketing columns (`utm_*`, `first_touch_landing_path`,
+  Platform `users` rows and `users.account_type` were removed in the Teams P9
+  contract migrations ([#3084](https://github.com/kentcdodds/kody/issues/3084)).
+  First-touch marketing columns (`utm_*`, `first_touch_landing_path`,
   `first_touch_referrer`) store signup attribution when present. Activation and
   return columns (`first_mcp_connected_at`, `first_execute_at`,
   `first_search_at`, `first_saved_package_at`, `first_secret_at`,

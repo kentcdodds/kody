@@ -8,7 +8,7 @@ Production runs are `kentcdodds` or the approved Cloud Agent actor (`cursor`).
 
 The pre-conversion questions that read `package_share_grants`,
 `package_scope_grants`, or `users.account_type = 'platform'` are gone. Those
-tables stay in the schema until the P9 drop migration.
+tables and the column were dropped in the Teams P9 contract migrations.
 
 ## Run
 
