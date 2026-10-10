@@ -90,6 +90,7 @@ export async function loadAccountUsageData(input: {
 			plan: entitlement.plan,
 			ladder: entitlement.ladder,
 			creditWallet: entitlement.creditWallet,
+			limitOverrides: entitlement.limitOverrides,
 			now,
 		}),
 	])

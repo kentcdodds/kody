@@ -232,28 +232,47 @@ export function resolvePastIncludeStop(input: {
 	now?: Date
 }): PastIncludeStop | null {
 	if (input.creditWallet !== 'empty') return null
+	const stopAt = resolvePastIncludeStopLimits(input)
+	const uniqueWorkerDays = nonNegativeInteger(input.uniqueWorkerDays)
+	if (uniqueWorkerDays > stopAt.unique_worker_days) {
+		return {
+			resource: 'unique_worker_days',
+			limit: stopAt.unique_worker_days,
+			current: uniqueWorkerDays,
+		}
+	}
+	const durableObjectRowsRead = nonNegativeInteger(input.durableObjectRowsRead)
+	if (durableObjectRowsRead > stopAt.durable_object_rows_read) {
+		return {
+			resource: 'durable_object_rows_read',
+			limit: stopAt.durable_object_rows_read,
+			current: durableObjectRowsRead,
+		}
+	}
+	return null
+}
+
+/**
+ * Where an empty wallet stops: the plan include, or a higher admin override
+ * of that monthly cap. Stop warnings and alarms compare against this so they
+ * never report runs as stopped while the override still admits them.
+ */
+export function resolvePastIncludeStopLimits(input: {
+	plan: PlanName
+	ladder: EntitlementLadder
+	creditWallet: CreditWalletState
+	limitOverrides?: ReadonlyArray<LimitOverride>
+	now?: Date
+}): Record<ComputeOverageWarningResource, number> {
 	const stopAt = applyLimitOverrides(
 		resolvePlanLimits(input.plan, input.ladder, input.creditWallet),
 		input.limitOverrides,
 		input.now,
 	)
-	const uniqueWorkerDays = nonNegativeInteger(input.uniqueWorkerDays)
-	if (uniqueWorkerDays > stopAt.maxUniqueWorkerDaysPerMonth) {
-		return {
-			resource: 'unique_worker_days',
-			limit: stopAt.maxUniqueWorkerDaysPerMonth,
-			current: uniqueWorkerDays,
-		}
+	return {
+		unique_worker_days: stopAt.maxUniqueWorkerDaysPerMonth,
+		durable_object_rows_read: stopAt.maxDurableObjectRowsReadPerMonth,
 	}
-	const durableObjectRowsRead = nonNegativeInteger(input.durableObjectRowsRead)
-	if (durableObjectRowsRead > stopAt.maxDurableObjectRowsReadPerMonth) {
-		return {
-			resource: 'durable_object_rows_read',
-			limit: stopAt.maxDurableObjectRowsReadPerMonth,
-			current: durableObjectRowsRead,
-		}
-	}
-	return null
 }
 
 export function computeOverageIncludePercent(

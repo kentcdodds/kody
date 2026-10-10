@@ -11,13 +11,13 @@ import { readAdminEntitlementConsumption } from '#worker/admin/entitlement-consu
 import { readMonthlyComputeUsage } from '#worker/billing/compute-overage-usage.ts'
 import {
 	accountCreditsPath,
-	computeMonthlyOverage,
 	buildComputeOverageHowToReduce,
 	computeOverageIncludePercent,
 	computeOverageResourceVisibility,
 	computeOverageUnitLabels,
 	computeOverageWarningResourceLabels,
 	customerFacingComputeOverageMeters,
+	resolvePastIncludeStopLimits,
 	type ComputeOverageWarningResource,
 } from '#universal/compute-overage.ts'
 import {
@@ -692,21 +692,14 @@ async function readComputeOverageWarnings(input: {
 		stableUserId: input.stableUserId,
 		month: utcMonthKey(input.now),
 	})
-	const overage = computeMonthlyOverage({
-		plan: input.entitlement.plan,
-		ladder: input.entitlement.ladder,
-		creditWallet: input.entitlement.creditWallet,
-		uniqueWorkerDays: usage.uniqueWorkerDays,
-		durableObjectRowsRead: usage.durableObjectRowsRead,
-	})
 	const currentByResource = {
 		unique_worker_days: usage.uniqueWorkerDays,
 		durable_object_rows_read: usage.durableObjectRowsRead,
 	} as const satisfies Record<ComputeOverageWarningResource, number>
-	const includeByResource = {
-		unique_worker_days: overage.includedUniqueWorkerDays,
-		durable_object_rows_read: overage.includedDurableObjectRowsRead,
-	} as const satisfies Record<ComputeOverageWarningResource, number>
+	const includeByResource = resolvePastIncludeStopLimits({
+		...input.entitlement,
+		now: input.now,
+	})
 	return customerFacingComputeOverageMeters.map((resource) => {
 		const current = currentByResource[resource]
 		const limit = includeByResource[resource]
