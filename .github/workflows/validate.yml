@@ -70,7 +70,7 @@ jobs:
         uses: ./.github/actions/setup-validate
 
       # Keep running sibling static checks after a failure (same as local
-      # `npm run validate` / concurrently), unless the job was cancelled.
+      # `npm run validate`), unless the job was cancelled.
       - name: ✨ Format
         if: ${{ !cancelled() }}
         run: npm run format:check

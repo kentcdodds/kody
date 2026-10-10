@@ -159,6 +159,20 @@ Kody `@kentcdodds/github/request` (kody-bot) can still comment, close, label,
 and read when the Cloud Agent git token is stale. Use it for GitHub API writes
 that ship-pr already routes through kody-bot — not for pushing the branch.
 
+## Validate on a 4-core VM
+
+`npm run validate` runs the same checks CI runs. CI gives typecheck, node unit,
+workers unit, Playwright, and MCP each their own runner. This VM has 4 cores and
+about 16GB of RAM. Starting those suite legs plus every worker dry-run at once
+drops available memory to tens of megabytes and pushes load well above the core
+count, so typecheck, workers, MCP, and Playwright time out or crash even though
+each one passes on its own (#3147).
+
+`tools/run-validate.ts` runs one suite leg and one build leg at a time when the
+machine has at most 4 cores or under 24GB of RAM. It does not drop checks and it
+does not change the GitHub Actions jobs. Larger machines still start every leg
+together.
+
 ## Quick commands
 
 | Task               | Command                                                                                                                                                                     |

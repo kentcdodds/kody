@@ -49,7 +49,9 @@ factories explicitly inside each test (or a per-test factory). Do not introduce
     in a file does not fail the default budget. Full `npm run validate` sets
     `KODY_VALIDATE_LOAD=1` on `test:workers` so workers-unit alone gets a 40s
     timeout and `maxWorkers=2`; node-unit keeps the shared 20s budget. That flag
-    does not loosen production startup CPU budgets.
+    does not loosen production startup CPU budgets. On a machine with at most 4
+    cores, or under 24GB of RAM, the gate also runs one suite leg at a time
+    (#3147).
   - Pool cold load is inherent today; suite wall clock will not match production
     RPC latency until the upstream pool improves.
 - Vitest is configured with `clearMocks` and `mockReset` globally
