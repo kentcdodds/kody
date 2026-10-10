@@ -11,6 +11,10 @@ import { deriveRequestContext } from '#worker/request-context/request-context.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { routes } from '#universal/routes.ts'
+import {
+	createAuditTestDb,
+	createTestOrgAuditWriter,
+} from '#worker/test-support/create-audit-db.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -135,6 +139,7 @@ test('web create organization POST requires org:write like MCP orgCreate', async
 	)
 	const response = await createAccountOrganizationsNewPostHandler({
 		APP_DB: db,
+		AUDIT_DB: createAuditTestDb(),
 	} as Env).handler({ request } as never)
 	expect(response.status).toBe(302)
 	const location = new URL(response.headers.get('Location')!, request.url)
@@ -154,6 +159,7 @@ test('web create organization form enforces the free-org ownership cap', async (
 	expect(
 		await createOrganization(env.APP_DB, env, {
 			personId,
+			audit: createTestOrgAuditWriter(),
 			slug: 'team-one',
 			displayName: 'Team One',
 		}),
@@ -172,6 +178,7 @@ test('web create organization form enforces the free-org ownership cap', async (
 	)
 	const response = await createAccountOrganizationsNewPostHandler({
 		APP_DB: db,
+		AUDIT_DB: createAuditTestDb(),
 		BUNDLE_ARTIFACTS_KV: undefined,
 	} as unknown as Env).handler({ request } as never)
 	expect(response.status).toBe(302)

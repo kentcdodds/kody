@@ -5,6 +5,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { MAX_FREE_ORGS_PER_USER } from './billing.ts'
 import { createOrganization } from './create-organization.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -42,6 +43,7 @@ test('createOrganization inserts org, membership, and handle together', async ()
 	const personId = testStableUserIdFromEmail('ada@example.com')
 	const result = await createOrganization(db, env, {
 		personId,
+		audit: createTestOrgAuditWriter(),
 		slug: 'zeta-co',
 		displayName: 'Zeta Co',
 	})
@@ -82,6 +84,7 @@ test('createOrganization enforces the same free-org cap as MCP orgCreate', async
 
 	const result = await createOrganization(db, env, {
 		personId,
+		audit: createTestOrgAuditWriter(),
 		slug: 'free-three',
 		displayName: 'Free Three',
 	})
@@ -127,6 +130,7 @@ test('createOrganization rolls back when the handle insert conflicts', async () 
 
 	const result = await createOrganization(db, env, {
 		personId,
+		audit: createTestOrgAuditWriter(),
 		slug: 'zeta-co',
 		displayName: 'Zeta Co',
 	})

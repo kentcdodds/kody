@@ -13,6 +13,10 @@ import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { orgUpdateCapability } from './org-update.ts'
+import {
+	createAuditTestDb,
+	createTestOrgAuditWriter,
+} from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -27,7 +31,7 @@ function context(input: {
 	org: { id: string; slug: string; role: 'owner' | 'member' | 'billing' }
 }) {
 	return {
-		env: { APP_DB: input.db } as Env,
+		env: { APP_DB: input.db, AUDIT_DB: createAuditTestDb() } as Env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
@@ -58,7 +62,7 @@ test('orgUpdate changes a team org and refuses a personal org', async () => {
 	const created = await orgCreateCapability.handler(
 		{ slug: 'zeta-co', display_name: 'Zeta Co' },
 		{
-			env: { APP_DB: db } as Env,
+			env: { APP_DB: db, AUDIT_DB: createAuditTestDb() } as Env,
 			callerContext: createMcpCallerContext({
 				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://heykody.dev',
@@ -103,7 +107,12 @@ test('orgUpdate requires an input field', async () => {
 	const created = await createOrganization(
 		db,
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
-		{ personId: ada, slug: 'zeta', displayName: 'Zeta' },
+		{
+			personId: ada,
+			slug: 'zeta',
+			displayName: 'Zeta',
+			audit: createTestOrgAuditWriter(),
+		},
 	)
 	if (!created.ok) throw new Error(created.error)
 	const org = await db

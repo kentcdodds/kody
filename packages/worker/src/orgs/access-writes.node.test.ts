@@ -16,6 +16,10 @@ import {
 	updateOrgMemberRole,
 	upsertGrant,
 } from './access-writes.ts'
+import {
+	createAuditTestDb,
+	createTestOrgAuditWriter,
+} from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -31,6 +35,7 @@ test('createOrg and upsertGrant are visible when access is compiled', async () =
 		slug: 'Acme',
 		displayName: 'Acme',
 		createdByUserId: creatorId,
+		audit: createTestOrgAuditWriter(),
 	})
 	expect(org.slug).toBe('acme')
 	expect(org.id).toMatch(/^[a-f0-9]{64}$/)
@@ -47,6 +52,7 @@ test('createOrg and upsertGrant are visible when access is compiled', async () =
 		preset: 'use',
 		permissions: null,
 		createdByUserId: creatorId,
+		audit: createTestOrgAuditWriter(),
 	})
 	expect(grant.permissions).toEqual(['package:read', 'package:execute'])
 
@@ -79,6 +85,7 @@ test('protectLastOwner blocks demotion and removal when only one owner remains',
 		db,
 		slug: 'solo',
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await expect(
 		updateOrgMemberRole({
@@ -87,6 +94,7 @@ test('protectLastOwner blocks demotion and removal when only one owner remains',
 			userId: ownerId,
 			role: 'member',
 			protectLastOwner: true,
+			audit: createTestOrgAuditWriter(),
 		}),
 	).rejects.toThrow(/last Owner cannot be demoted/)
 	await expect(
@@ -116,6 +124,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		db,
 		slug: 'grants',
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await addOrgMember({
 		db,
@@ -123,6 +132,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		userId: memberId,
 		role: 'member',
 		invitedByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	const packageId = crypto.randomUUID()
 	const grant = await upsertGrant({
@@ -134,6 +144,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		preset: 'use',
 		permissions: null,
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await offboardOrgMember({
 		appDb: db,
@@ -155,4 +166,89 @@ test('removing a member soft-deletes their direct user grants', async () => {
 		.bind(grant.id, org.id)
 		.first<{ deleted_at: string | null }>()
 	expect(storedGrant?.deleted_at).toBeTruthy()
+})
+
+test('write helpers record org audit events for the acting person', async () => {
+	const db = await createDb()
+	const auditDb = createAuditTestDb()
+	const ownerId = testStableUserIdFromEmail('owner@example.com')
+	const memberId = testStableUserIdFromEmail('member@example.com')
+	const audit = createTestOrgAuditWriter({ db: auditDb, actorUserId: ownerId })
+	const org = await createOrg({
+		db,
+		slug: 'acme',
+		createdByUserId: ownerId,
+		audit,
+	})
+	await addOrgMember({
+		db,
+		orgId: org.id,
+		userId: memberId,
+		role: 'member',
+		invitedByUserId: ownerId,
+		audit,
+	})
+	await updateOrgMemberRole({
+		db,
+		orgId: org.id,
+		userId: memberId,
+		role: 'billing',
+		audit,
+	})
+	const grant = await upsertGrant({
+		db,
+		orgId: org.id,
+		resourceType: 'package',
+		resourceId: 'pkg-1',
+		subject: { type: 'user', id: memberId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: ownerId,
+		audit,
+	})
+
+	const rows = await auditDb
+		.prepare(
+			`SELECT action, actor_user_id, target_user_id, resource_type, resource_id
+			 FROM org_audit_events WHERE org_id = ? ORDER BY rowid ASC`,
+		)
+		.bind(org.id)
+		.all<{
+			action: string
+			actor_user_id: string | null
+			target_user_id: string | null
+			resource_type: string | null
+			resource_id: string | null
+		}>()
+	expect(rows.results).toEqual([
+		{
+			action: 'org.created',
+			actor_user_id: ownerId,
+			target_user_id: null,
+			resource_type: null,
+			resource_id: null,
+		},
+		{
+			action: 'member.added',
+			actor_user_id: ownerId,
+			target_user_id: memberId,
+			resource_type: null,
+			resource_id: null,
+		},
+		{
+			action: 'member.role_changed',
+			actor_user_id: ownerId,
+			target_user_id: memberId,
+			resource_type: null,
+			resource_id: null,
+		},
+		{
+			action: 'grant.created',
+			actor_user_id: ownerId,
+			target_user_id: memberId,
+			resource_type: 'package',
+			resource_id: 'pkg-1',
+		},
+	])
+	expect(grant.permissions).toEqual(['package:read', 'package:execute'])
 })

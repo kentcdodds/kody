@@ -1,3 +1,4 @@
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { auditDatabaseFromEnv } from '#worker/audit-log.ts'
 
@@ -91,4 +92,66 @@ export async function redactOrgAuditActorIdsForDeletedUser(input: {
 			.bind(input.userId)
 			.run(),
 	)
+}
+
+/** Who is acting and where org audit rows go; built once per request. */
+export type OrgAuditWriter = {
+	db: D1Database
+	actorUserId: string | null
+	actorUsername: string | null
+	credentialKind: string | null
+	credentialId: string | null
+}
+
+export function orgAuditWriterFromRequest(
+	env: Env,
+	request: RequestContext,
+): OrgAuditWriter {
+	return {
+		db: auditDatabaseFromEnvOrThrow(env),
+		actorUserId: request.actor?.userId ?? null,
+		actorUsername: request.actor?.username ?? null,
+		credentialKind: request.credential.kind,
+		credentialId: request.credential.id,
+	}
+}
+
+export function orgAuditWriterForPerson(
+	env: Env,
+	actor: { userId: string | null; username?: string | null },
+): OrgAuditWriter {
+	return {
+		db: auditDatabaseFromEnvOrThrow(env),
+		actorUserId: actor.userId,
+		actorUsername: actor.username ?? null,
+		credentialKind: null,
+		credentialId: null,
+	}
+}
+
+export async function recordOrgAuditEvent(
+	writer: OrgAuditWriter,
+	event: {
+		orgId: string
+		action: string
+		resourceType?: string | null
+		resourceId?: string | null
+		targetUserId?: string | null
+		details?: Record<string, unknown>
+	},
+) {
+	await logOrgAuditEvent({
+		db: writer.db,
+		orgId: event.orgId,
+		action: event.action,
+		result: 'success',
+		actorUserId: writer.actorUserId,
+		actorUsername: writer.actorUsername,
+		credentialKind: writer.credentialKind,
+		credentialId: writer.credentialId,
+		resourceType: event.resourceType ?? null,
+		resourceId: event.resourceId ?? null,
+		targetUserId: event.targetUserId ?? null,
+		details: event.details,
+	})
 }

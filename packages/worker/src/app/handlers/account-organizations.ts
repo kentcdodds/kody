@@ -13,6 +13,7 @@ import {
 	AuthorizationError,
 } from '#worker/authorization/authorize.ts'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { type AccountOrganizationsLoaderData } from '#universal/loader-data.ts'
 import { routes } from '#universal/routes.ts'
 
@@ -85,6 +86,7 @@ export function createAccountOrganizationsNewPostHandler(env: Env) {
 			}
 			const created = await createOrganization(env.APP_DB, env, {
 				personId: user.mcpUser.userId,
+				audit: orgAuditWriterFromRequest(env, user.request),
 				...draft,
 			})
 			if (!created.ok) return redirectWithError(request, created.error, draft)

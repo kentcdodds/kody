@@ -22,6 +22,7 @@ import {
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
 	countLiveOwners,
 	getLiveOrgMembership,
@@ -298,6 +299,7 @@ export function createOrgMembersRolePostHandler(env: Env) {
 					db: env.APP_DB,
 					orgId: access.org.id,
 					userId,
+					audit: orgAuditWriterFromRequest(env, user.request),
 					role,
 					protectLastOwner: demotingOwner,
 				})
@@ -385,6 +387,7 @@ export function createOrgMembersRemovePostHandler(env: Env) {
 					orgId: access.org.id,
 					userId,
 					deletedAt: new Date().toISOString(),
+					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
 				const message =
@@ -478,6 +481,7 @@ export function createOrgMembersInvitePostHandler(env: Env) {
 				inviteeUsername,
 				invitedByUserId: user.mcpUser.userId,
 				tokenHash,
+				audit: orgAuditWriterFromRequest(env, user.request),
 			})
 			const payload = await loadOrgMembersData({ env, user, org: access.org })
 			return jsonResponse({

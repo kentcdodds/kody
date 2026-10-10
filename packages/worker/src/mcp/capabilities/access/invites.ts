@@ -31,6 +31,10 @@ import {
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { isOrgActive } from '#worker/orgs/repo.ts'
+import {
+	orgAuditWriterFromRequest,
+	type OrgAuditWriter,
+} from '#worker/orgs/org-audit.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	authorizeGrantTarget,
@@ -190,6 +194,7 @@ async function acceptStoredInvite(input: {
 	env: Env
 	invite: StoredInvite
 	acceptedByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const { invite } = input
 	if (!(await isOrgActive(input.db, invite.orgId))) {
@@ -211,8 +216,10 @@ async function acceptStoredInvite(input: {
 	try {
 		await markInviteAccepted({
 			db: input.db,
+			orgId: invite.orgId,
 			inviteId: invite.id,
 			acceptedByUserId: input.acceptedByUserId,
+			audit: input.audit,
 		})
 	} catch (error) {
 		if (
@@ -233,6 +240,7 @@ async function acceptStoredInvite(input: {
 				userId: input.acceptedByUserId,
 				role,
 				invitedByUserId: invite.invitedByUserId,
+				audit: input.audit,
 			})
 			for (const teamId of invite.teamIds) {
 				await addTeamMember({
@@ -241,6 +249,7 @@ async function acceptStoredInvite(input: {
 					teamId,
 					userId: input.acceptedByUserId,
 					addedByUserId: invite.invitedByUserId,
+					audit: input.audit,
 				})
 			}
 			if (role === 'owner' || role === 'member') {
@@ -265,6 +274,7 @@ async function acceptStoredInvite(input: {
 				preset: invite.preset,
 				permissions: invite.permissions,
 				createdByUserId: invite.invitedByUserId,
+				audit: input.audit,
 			})
 			break
 		}
@@ -404,6 +414,7 @@ export const inviteCreateCapability = defineDomainCapability(
 					inviteeUsername: username,
 					invitedByUserId: user.userId,
 					tokenHash,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				const invite = await getInviteById({
 					db,
@@ -446,7 +457,10 @@ export const inviteAcceptCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			try {
-				const { user, db } = await requireOrgPermission(ctx, 'org:read')
+				const { user, request, db } = await requireOrgPermission(
+					ctx,
+					'org:read',
+				)
 				const tokenHash = await hashInviteToken(args.token)
 				const invite = await getInviteByTokenHash(db, tokenHash)
 				if (
@@ -484,6 +498,7 @@ export const inviteAcceptCapability = defineDomainCapability(
 					env: ctx.env,
 					invite,
 					acceptedByUserId: user.userId,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return {
 					invite_id: invite.id,
@@ -552,7 +567,12 @@ export const inviteRevokeCapability = defineDomainCapability(
 						throw new Error(`Unknown invite kind: ${String(exhaustive)}`)
 					}
 				}
-				await markInviteRevoked({ db, inviteId: invite.id })
+				await markInviteRevoked({
+					db,
+					orgId: request.org.id,
+					inviteId: invite.id,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
+				})
 				return { invite_id: invite.id, status: 'revoked' as const }
 			} catch (error) {
 				rethrowAccessError(error)

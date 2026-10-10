@@ -6,6 +6,7 @@ import { createOrganization } from './create-organization.ts'
 import { isPersonalOrg, updateOrgProfile } from './org-profile.ts'
 import { ensureOrgsTestSchema } from './orgs-test-schema.ts'
 import { provisionPersonalOrg } from './provision.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -21,6 +22,7 @@ test('updateOrgProfile renames a team org and its handle together', async () => 
 	const ada = testStableUserIdFromEmail('ada@example.com')
 	const created = await createOrganization(db, env, {
 		personId: ada,
+		audit: createTestOrgAuditWriter(),
 		slug: 'zeta-co',
 		displayName: 'Zeta Co',
 	})
@@ -69,6 +71,7 @@ test('updateOrgProfile refuses a personal org and a taken handle', async () => {
 	})
 	const created = await createOrganization(db, env, {
 		personId: ada,
+		audit: createTestOrgAuditWriter(),
 		slug: 'zeta',
 		displayName: 'Zeta',
 	})

@@ -14,6 +14,7 @@ import {
 	upsertGrant,
 	type GrantSubject,
 } from '#worker/orgs/access-writes.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
 	accessGrantSchema,
 	authorizeGrantTarget,
@@ -139,6 +140,7 @@ export const accessGrantCapability = defineDomainCapability(
 					preset: args.preset ?? null,
 					permissions: args.preset ? null : [...resolved],
 					createdByUserId: scoped.user.userId,
+					audit: orgAuditWriterFromRequest(ctx.env, scoped.request),
 				})
 				const grant = await getGrantById({
 					db: scoped.db,
@@ -190,6 +192,7 @@ export const accessRevokeCapability = defineDomainCapability(
 					db,
 					orgId: request.org.id,
 					grantId: grant.id,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return { grant_id: grant.id, revoked: true as const }
 			} catch (error) {

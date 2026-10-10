@@ -12,6 +12,7 @@ import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 
 const mocks = vi.hoisted(() => ({
 	readAuthenticatedAppUser: vi.fn(),
@@ -85,6 +86,7 @@ async function seed() {
 		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 		{
 			personId: people.ada.personId,
+			audit: createTestOrgAuditWriter(),
 			slug: 'zeta-co',
 			displayName: 'Zeta Co',
 		},

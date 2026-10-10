@@ -18,6 +18,7 @@ import { bumpAccessEpochStatement } from '#worker/authorization/access-compile.t
 import { normalizeUsername } from '#worker/identity/username.ts'
 import { assertCanOwnAnotherFreeOrg } from '#worker/orgs/billing.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { recordOrgAuditEvent, type OrgAuditWriter } from './org-audit.ts'
 
 export type GrantSubject =
 	| { type: 'user'; id: string }
@@ -95,6 +96,7 @@ export async function createTeam(input: {
 	name: string
 	description?: string | null
 	createdByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const slug = normalizeUsername(input.slug)?.toLowerCase()
 	if (!slug) throw new Error('Team slug is required.')
@@ -120,6 +122,13 @@ export async function createTeam(input: {
 			),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'team.created',
+		resourceType: 'team',
+		resourceId: id,
+		details: { slug },
+	})
 	return { id, slug }
 }
 
@@ -129,6 +138,7 @@ export async function addTeamMember(input: {
 	teamId: string
 	userId: string
 	addedByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const membership = await input.db
 		.prepare(
@@ -162,6 +172,13 @@ export async function addTeamMember(input: {
 			.bind(input.teamId, input.userId, input.addedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'team.member_added',
+		resourceType: 'team',
+		resourceId: input.teamId,
+		targetUserId: input.userId,
+	})
 }
 
 export async function removeTeamMember(input: {
@@ -169,6 +186,7 @@ export async function removeTeamMember(input: {
 	orgId: string
 	teamId: string
 	userId: string
+	audit: OrgAuditWriter
 }) {
 	const team = await input.db
 		.prepare(
@@ -189,6 +207,13 @@ export async function removeTeamMember(input: {
 			.bind(now, input.teamId, input.userId),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'team.member_removed',
+		resourceType: 'team',
+		resourceId: input.teamId,
+		targetUserId: input.userId,
+	})
 }
 
 export async function upsertGrant(input: {
@@ -200,6 +225,7 @@ export async function upsertGrant(input: {
 	preset: GrantPreset | null
 	permissions: ReadonlyArray<OrgPermission> | null
 	createdByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const permissions = resolveGrantPermissions({
 		resourceType: input.resourceType,
@@ -277,6 +303,20 @@ export async function upsertGrant(input: {
 	}
 	statements.push(bumpAccessEpochStatement(input.db, input.orgId))
 	await runBatch(input.db, statements)
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: existing ? 'grant.updated' : 'grant.created',
+		resourceType: input.resourceType,
+		resourceId: input.resourceId,
+		targetUserId: input.subject.type === 'user' ? input.subject.id : null,
+		details: {
+			grantId,
+			subjectType: input.subject.type,
+			subjectId: input.subject.id,
+			preset: input.preset,
+			permissions,
+		},
+	})
 	return { id: grantId, permissions }
 }
 
@@ -284,15 +324,23 @@ export async function softDeleteGrant(input: {
 	db: D1Database
 	orgId: string
 	grantId: string
+	audit: OrgAuditWriter
 }) {
 	const now = new Date().toISOString()
 	const existing = await input.db
 		.prepare(
-			`SELECT id FROM grants
+			`SELECT id, resource_type, resource_id, subject_type, subject_id
+			 FROM grants
 			 WHERE id = ? AND org_id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.grantId, input.orgId)
-		.first<{ id: string }>()
+		.first<{
+			id: string
+			resource_type: string
+			resource_id: string
+			subject_type: string
+			subject_id: string
+		}>()
 	if (!existing) throw new Error('Grant was not found in this org.')
 	await runBatch(input.db, [
 		input.db
@@ -304,6 +352,18 @@ export async function softDeleteGrant(input: {
 			.bind(now, now, input.grantId, input.orgId),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'grant.revoked',
+		resourceType: existing.resource_type,
+		resourceId: existing.resource_id,
+		targetUserId: existing.subject_type === 'user' ? existing.subject_id : null,
+		details: {
+			grantId: input.grantId,
+			subjectType: existing.subject_type,
+			subjectId: existing.subject_id,
+		},
+	})
 }
 
 export async function updateOrgMemberRole(input: {
@@ -316,6 +376,7 @@ export async function updateOrgMemberRole(input: {
 	 * concurrent demotions cannot both succeed and leave zero Owners.
 	 */
 	protectLastOwner?: boolean
+	audit: OrgAuditWriter
 }) {
 	const statement = input.protectLastOwner
 		? input.db
@@ -348,6 +409,12 @@ export async function updateOrgMemberRole(input: {
 				: 'That person is not a member of this organization.',
 		)
 	}
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'member.role_changed',
+		targetUserId: input.userId,
+		details: { role: input.role },
+	})
 }
 
 export async function createOrg(input: {
@@ -355,6 +422,7 @@ export async function createOrg(input: {
 	slug: string
 	displayName?: string | null
 	createdByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const slug = normalizeUsername(input.slug)?.toLowerCase()
 	if (!slug) throw new Error('Organization slug is required.')
@@ -393,6 +461,11 @@ export async function createOrg(input: {
 			)
 			.bind(slug, orgId, now),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId,
+		action: 'org.created',
+		details: { slug },
+	})
 	return { id: orgId, slug }
 }
 
@@ -413,6 +486,7 @@ export async function createInvite(input: {
 	invitedByUserId: string
 	expiresAt?: string
 	tokenHash: string
+	audit: OrgAuditWriter
 }) {
 	if (!input.inviteeEmail && !input.inviteeUsername) {
 		throw new Error('An invite needs an invitee email or username.')
@@ -451,6 +525,19 @@ export async function createInvite(input: {
 			now,
 		)
 		.run()
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'invite.created',
+		resourceType: 'invite',
+		resourceId: id,
+		details: {
+			kind: input.kind,
+			role: input.role ?? null,
+			resourceType: input.resourceType ?? null,
+			resourceId: input.resourceId ?? null,
+			expiresAt,
+		},
+	})
 	return { id, expiresAt }
 }
 
@@ -590,6 +677,7 @@ export async function addOrgMember(input: {
 	userId: string
 	role: OrgRole
 	invitedByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const now = new Date().toISOString()
 	await runBatch(input.db, [
@@ -609,6 +697,12 @@ export async function addOrgMember(input: {
 			.bind(input.orgId, input.userId, input.role, input.invitedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'member.added',
+		targetUserId: input.userId,
+		details: { role: input.role },
+	})
 }
 
 const inviteStatuses = ['pending', 'accepted', 'revoked', 'expired'] as const
@@ -776,8 +870,10 @@ async function setInviteStatus(input: {
 
 export async function markInviteAccepted(input: {
 	db: D1Database
+	orgId: string
 	inviteId: string
 	acceptedByUserId: string
+	audit: OrgAuditWriter
 }) {
 	const changes = await setInviteStatus({
 		db: input.db,
@@ -787,11 +883,20 @@ export async function markInviteAccepted(input: {
 		acceptedByUserId: input.acceptedByUserId,
 	})
 	if (!changes) throw new Error('Invite could not be accepted.')
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'invite.accepted',
+		resourceType: 'invite',
+		resourceId: input.inviteId,
+		targetUserId: input.acceptedByUserId,
+	})
 }
 
 export async function markInviteRevoked(input: {
 	db: D1Database
+	orgId: string
 	inviteId: string
+	audit: OrgAuditWriter
 }) {
 	const changes = await setInviteStatus({
 		db: input.db,
@@ -800,6 +905,12 @@ export async function markInviteRevoked(input: {
 		to: 'revoked',
 	})
 	if (!changes) throw new Error('Only a pending invite can be revoked.')
+	await recordOrgAuditEvent(input.audit, {
+		orgId: input.orgId,
+		action: 'invite.revoked',
+		resourceType: 'invite',
+		resourceId: input.inviteId,
+	})
 }
 
 export async function markInviteExpired(input: {

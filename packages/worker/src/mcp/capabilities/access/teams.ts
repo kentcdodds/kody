@@ -11,6 +11,7 @@ import {
 	createTeam,
 	removeTeamMember,
 } from '#worker/orgs/access-writes.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listTeams } from '#worker/orgs/org-teams-list.ts'
 import {
 	requireOrgPermission,
@@ -103,6 +104,7 @@ export const teamCreateCapability = defineDomainCapability(
 					name,
 					description: args.description,
 					createdByUserId: user.userId,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return {
 					team: {
@@ -159,6 +161,7 @@ export const teamMemberAddCapability = defineDomainCapability(
 					teamId,
 					userId,
 					addedByUserId: user.userId,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return { team_id: teamId, user_id: userId }
 			} catch (error) {
@@ -206,6 +209,7 @@ export const teamMemberRemoveCapability = defineDomainCapability(
 					orgId: request.org.id,
 					teamId,
 					userId,
+					audit: orgAuditWriterFromRequest(ctx.env, request),
 				})
 				return { team_id: teamId, user_id: userId, removed: true as const }
 			} catch (error) {

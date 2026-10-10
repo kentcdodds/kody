@@ -17,6 +17,7 @@ import { accessGrantCapability } from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
 import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
+import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
 async function createDb() {
 	const sqlite = new DatabaseSync(':memory:')
@@ -33,7 +34,7 @@ function capabilityContext(input: {
 	org?: { id: string; slug: string; role: OrgRole }
 }) {
 	return {
-		env: { APP_DB: input.db } as Env,
+		env: { APP_DB: input.db, AUDIT_DB: createAuditTestDb() } as Env,
 		callerContext: createMcpCallerContext({
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://heykody.dev',
