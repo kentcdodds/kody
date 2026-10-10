@@ -96,15 +96,18 @@ export function orgSectionKeysOnPerson(
 
 /**
  * `/account/secrets.json` and the other org-owned account JSON routes. The
- * Connections page reads `/account/connected-agents.json`;
- * `/account/connections.json` is the person's sign-in providers.
+ * Connections page reads `/account/connected-agents.json` and
+ * `/account/connection-usage.json`; `/account/connections.json` is the
+ * person's sign-in providers.
  */
 export function orgOwnedAccountApiSection(
 	pathname: string,
 ): OrgOwnedAccountSection | null {
 	const match = /^\/account\/([^/.]+)\.json$/.exec(pathname)
 	const name = match?.[1] ?? ''
-	if (name === 'connected-agents') return 'connections'
+	if (name === 'connected-agents' || name === 'connection-usage') {
+		return 'connections'
+	}
 	if (name === 'connections') return null
 	return isOrgOwnedAccountSection(name) ? name : null
 }

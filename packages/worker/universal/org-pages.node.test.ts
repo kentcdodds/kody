@@ -312,6 +312,9 @@ test('org account JSON names the section, and packages still key on the person',
 	expect(orgOwnedAccountApiSection('/account/connected-agents.json')).toBe(
 		'connections',
 	)
+	expect(orgOwnedAccountApiSection('/account/connection-usage.json')).toBe(
+		'connections',
+	)
 	// Sign-in providers belong to the person, not the Connections page.
 	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()

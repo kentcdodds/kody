@@ -6,6 +6,7 @@ import {
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { loadRequestOrgResolution } from '#app/org-request-binding.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
@@ -32,11 +33,15 @@ const { createAccountConnectionUsageApiHandler } =
 
 const now = '2026-10-07T00:00:00.000Z'
 
-/** Personal org per person, plus `acme`: Ada owns, Bob is a member, Cara is billing. */
+/**
+ * Personal org per person, plus `acme`: Ada owns, Bob is a member, Cara is
+ * billing, Dan is not in it.
+ */
 const people = {
 	ada: { id: 9, personId: 'person-ada' },
 	bob: { id: 10, personId: 'person-bob' },
 	cara: { id: 11, personId: 'person-cara' },
+	dan: { id: 12, personId: 'person-dan' },
 } as const
 type Person = keyof typeof people
 
@@ -182,4 +187,20 @@ test('team org: only owners and billing admins see teammates and Automation', as
 			}),
 		)
 	}
+})
+
+test('the org Connections page binds its org through Referer, and non-members get 404', async () => {
+	const fromAcme = { referer: 'https://example.com/@acme/-/connections/usage' }
+	const request = new Request(
+		'https://example.com/account/connection-usage.json',
+		{ headers: fromAcme },
+	)
+	expect(
+		await loadRequestOrgResolution(request, createEnv(), 'person-bob'),
+	).toMatchObject({ org: { slug: 'acme' }, role: 'member' })
+
+	signInAs('dan')
+	const response = await getUsage(fromAcme)
+	expect(response.status).toBe(404)
+	expect(mocks.loadConnectionUsage).not.toHaveBeenCalled()
 })
