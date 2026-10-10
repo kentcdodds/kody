@@ -6,6 +6,7 @@
  * short-circuit as duplicates. Failures do not insert, so Stripe can retry.
  */
 import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import { releasePromoReservationForCheckoutSession } from './checkout-promo.ts'
 import {
 	any,
 	nullable,
@@ -493,6 +494,15 @@ export async function processStripeWebhookEvent(input: {
 				now: input.now,
 			})
 			return
+		case 'checkout.session.expired': {
+			const sessionId = input.object.id
+			if (typeof sessionId !== 'string' || !sessionId) return
+			await releasePromoReservationForCheckoutSession({
+				db: input.env.APP_DB,
+				checkoutSessionId: sessionId,
+			})
+			return
+		}
 		case 'customer.subscription.updated':
 		case 'customer.subscription.deleted':
 			await handleCustomerSubscriptionChange({

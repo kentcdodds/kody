@@ -21,6 +21,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { forgiveCreditUsageBeforeUnlock } from '#worker/billing/credit-wallet.ts'
+import { recordPromoClaimFromCheckoutSession } from '#worker/billing/checkout-promo.ts'
 import {
 	createBillingLinkReference,
 	isBillingConfigured,
@@ -669,6 +670,15 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 
 	const now = input.now ?? new Date()
 	const updatedAt = now.toISOString()
+	// The claim is the person's, not the Stripe customer's: finalize it before
+	// the customer link so a link failure cannot drop a completed discount.
+	await recordPromoClaimFromCheckoutSession({
+		db: input.env.APP_DB,
+		orgId,
+		session,
+		now,
+	})
+
 	try {
 		if (personalUser) {
 			// Personal org: one dual-write to users + personal org row.

@@ -242,6 +242,7 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	},
 	{ kind: 'user_id', table: 'credit_ledger_entries' },
 	{ kind: 'user_id', table: 'credit_wallets' },
+	{ kind: 'user_id', table: 'billing_promo_claims' },
 	{
 		kind: 'user_columns',
 		table: 'referrals',

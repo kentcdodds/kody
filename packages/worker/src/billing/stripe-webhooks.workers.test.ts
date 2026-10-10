@@ -582,3 +582,37 @@ test('checkout.session.completed for a credit top-up credits the wallet once and
 		),
 	).toBe(false)
 })
+
+test('checkout.session.expired releases a reserved promo claim but never a finalized one', async () => {
+	const reserved = `promo-reserved-${crypto.randomUUID()}`
+	const claimed = `promo-claimed-${crypto.randomUUID()}`
+	await env.APP_DB.prepare(
+		`INSERT INTO billing_promo_claims
+		 (user_id, promotion_code_id, org_id, status, checkout_session_id, reserved_at, claimed_at)
+		 VALUES (?, 'promo_1', 'org-a', 'reserved', 'cs_expired_reserved', ?, NULL),
+		        (?, 'promo_1', 'org-b', 'claimed', 'cs_expired_claimed', ?, ?)`,
+	)
+		.bind(
+			reserved,
+			now.toISOString(),
+			claimed,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	for (const sessionId of ['cs_expired_reserved', 'cs_expired_claimed']) {
+		expect(
+			await deliver({
+				id: `evt_expired_${crypto.randomUUID()}`,
+				type: 'checkout.session.expired',
+				data: { object: { id: sessionId } },
+			}),
+		).toEqual({ status: 200, body: { ok: true } })
+	}
+	const rows = await env.APP_DB.prepare(
+		`SELECT user_id, status FROM billing_promo_claims WHERE user_id IN (?, ?) ORDER BY user_id`,
+	)
+		.bind(claimed, reserved)
+		.all<{ user_id: string; status: string }>()
+	expect(rows.results).toEqual([{ user_id: claimed, status: 'claimed' }])
+})

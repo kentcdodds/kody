@@ -10,6 +10,8 @@ import { createBillingLinkReference } from '#worker/billing/billing-config.ts'
 import {
 	annualPromoRejection,
 	existingSubscriptionPromoRejection,
+	promoAlreadyClaimedRejection,
+	promoClaimMetadataKeys,
 	promoRejectedByStripe,
 } from '#worker/billing/checkout-promo.ts'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
@@ -432,6 +434,10 @@ test('promo codes apply to monthly checkouts only, as a Kody-validated discount'
 			priceId: 'price_pro',
 			promotionCodeId: 'promo_agency_1',
 			quantity: 2,
+			metadata: expect.objectContaining({
+				[promoClaimMetadataKeys.userId]: people.ada.personId,
+				[promoClaimMetadataKeys.promotionCodeId]: 'promo_agency_1',
+			}),
 		}),
 	)
 
@@ -761,4 +767,123 @@ test('billing cancellation feedback records platform feedback', async () => {
 	expect(mocks.enqueuePlatformFeedbackDispatch).toHaveBeenCalledWith(
 		expect.objectContaining({ feedbackId: 'fb_1' }),
 	)
+})
+
+test('a person who already claimed a promo code cannot claim one for another org', async () => {
+	signInAs('ada')
+	const env = createEnv()
+	await db
+		.prepare(
+			`INSERT INTO billing_promo_claims
+			 (user_id, promotion_code_id, org_id, status, checkout_session_id, reserved_at, claimed_at)
+			 VALUES (?, 'promo_agency_1', 'some-other-org', 'claimed', 'cs_earlier', ?, ?)`,
+		)
+		.bind(
+			people.ada.personId,
+			new Date().toISOString(),
+			new Date().toISOString(),
+		)
+		.run()
+
+	const response = await postCheckout(env, 'acme', {
+		plan: 'pro',
+		interval: 'month',
+		promoCode: 'AGENCY-1',
+	})
+	expect(response.status).toBe(409)
+	expect(await response.json()).toEqual({
+		ok: false,
+		error: promoAlreadyClaimedRejection,
+	})
+	expect(mocks.findActivePromotionCode).not.toHaveBeenCalled()
+	expect(mocks.createCheckoutSession).not.toHaveBeenCalled()
+
+	// Without a code, checkout for the org still works.
+	const plain = await postCheckout(env, 'acme', {
+		plan: 'pro',
+		interval: 'month',
+	})
+	expect(plain.status).toBe(200)
+})
+
+function activePromo(id: string) {
+	return {
+		id,
+		code: 'AGENCY-1',
+		active: true,
+		expires_at: Math.floor(Date.now() / 1000) + 86_400,
+		max_redemptions: 1,
+		times_redeemed: 0,
+	}
+}
+
+async function readPromoClaim(userId: string) {
+	return db
+		.prepare(
+			`SELECT status, checkout_session_id, org_id FROM billing_promo_claims WHERE user_id = ?`,
+		)
+		.bind(userId)
+		.first<{
+			status: string
+			checkout_session_id: string | null
+			org_id: string
+		}>()
+}
+
+test('a promo checkout reserves the claim before Stripe is called, so a parallel checkout gets 409', async () => {
+	signInAs('ada')
+	const env = createEnv()
+	mocks.findActivePromotionCode.mockResolvedValue(activePromo('promo_agency_1'))
+	let release: () => void = () => {}
+	const gate = new Promise<void>((resolve) => {
+		release = resolve
+	})
+	mocks.createCheckoutSession.mockImplementation(async () => {
+		await gate
+		return {
+			id: 'cs_reserved',
+			url: 'https://checkout.stripe.test/cs_reserved',
+		}
+	})
+	const body = { plan: 'pro', interval: 'month', promoCode: 'AGENCY-1' }
+	const first = postCheckout(env, 'acme', body)
+	await vi.waitFor(async () => {
+		expect((await readPromoClaim(people.ada.personId))?.status).toBe('reserved')
+	})
+	const second = await postCheckout(env, 'acme', body)
+	expect(second.status).toBe(409)
+	expect(await second.json()).toEqual({
+		ok: false,
+		error: promoAlreadyClaimedRejection,
+	})
+	release()
+	expect((await first).status).toBe(200)
+	expect(mocks.createCheckoutSession).toHaveBeenCalledTimes(1)
+	expect(await readPromoClaim(people.ada.personId)).toEqual({
+		status: 'reserved',
+		checkout_session_id: 'cs_reserved',
+		org_id: expect.any(String),
+	})
+})
+
+test('a promo reservation is released when Stripe refuses the checkout', async () => {
+	signInAs('ada')
+	const env = createEnv()
+	mocks.findActivePromotionCode.mockResolvedValue(activePromo('promo_agency_1'))
+	mocks.createCheckoutSession.mockRejectedValueOnce(
+		new StripeApiError('coupon does not apply', {
+			status: 400,
+			code: 'resource_missing',
+		}),
+	)
+	consoleError.mockImplementation(() => {})
+	const body = { plan: 'pro', interval: 'month', promoCode: 'AGENCY-1' }
+	const refused = await postCheckout(env, 'acme', body)
+	expect(refused.status).toBe(400)
+	expect(await readPromoClaim(people.ada.personId)).toBeNull()
+
+	// With the reservation gone, the person can try again.
+	const retry = await postCheckout(env, 'acme', body)
+	expect(retry.status).toBe(200)
+	expect((await readPromoClaim(people.ada.personId))?.status).toBe('reserved')
 })
