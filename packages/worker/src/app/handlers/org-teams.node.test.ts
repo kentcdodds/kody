@@ -31,6 +31,7 @@ const {
 	createOrgTeamsApiHandler,
 	createOrgTeamsCreatePostHandler,
 	createOrgTeamsMemberAddPostHandler,
+	createOrgTeamsMemberRemovePostHandler,
 } = await import('./org-teams.ts')
 
 const people = {
@@ -229,4 +230,63 @@ test('owner can create a team and add a member', async () => {
 	}
 	expect(addedPayload.teams[0]?.memberCount).toBe(1)
 	expect(addedPayload.teams[0]?.members.map((m) => m.username)).toEqual(['bob'])
+})
+
+test('team member remove rejects a team id from another organization', async () => {
+	const env = createEnv()
+	// Bob creates the foreign org so Ada stays under the free-org ownership cap.
+	const other = await createOrganization(
+		db,
+		{} as Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
+		{
+			personId: people.bob.personId,
+			slug: 'other-co',
+			displayName: 'Other Co',
+		},
+	)
+	if (!other.ok) throw new Error(other.error)
+	const otherId = (await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'other-co'`)
+		.first<{ id: string }>())!.id
+	const { createTeam, addTeamMember } =
+		await import('#worker/orgs/access-writes.ts')
+	const foreign = await createTeam({
+		db,
+		orgId: otherId,
+		slug: 'foreign',
+		name: 'Foreign',
+		createdByUserId: people.bob.personId,
+	})
+	await addTeamMember({
+		db,
+		orgId: otherId,
+		teamId: foreign.id,
+		userId: people.bob.personId,
+		addedByUserId: people.bob.personId,
+	})
+
+	const removeReq = new Request(
+		'https://kody.test/@zeta-co/-/teams/member-remove.json',
+		{
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				teamId: foreign.id,
+				userId: people.bob.personId,
+			}),
+		},
+	)
+	await signIn('ada', removeReq)
+	const removed = await createOrgTeamsMemberRemovePostHandler(env).handler({
+		request: removeReq,
+	} as never)
+	expect(removed.status).toBe(400)
+	const stillThere = await db
+		.prepare(
+			`SELECT user_id FROM team_members
+			 WHERE team_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(foreign.id, people.bob.personId)
+		.first()
+	expect(stillThere).toEqual({ user_id: people.bob.personId })
 })
