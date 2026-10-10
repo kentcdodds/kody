@@ -19,7 +19,12 @@ import {
 	getEffectiveUsernameValidationError,
 	normalizeUsername,
 } from '#worker/identity/username.ts'
-import { assertCanOwnAnotherFreeOrg } from '#worker/orgs/billing.ts'
+import {
+	FREE_ORG_LIMIT_MESSAGE,
+	FreeOrgLimitError,
+	MAX_FREE_ORGS_PER_USER,
+	liveFreeOwnedOrgCountSql,
+} from '#worker/orgs/billing.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { recordOrgAuditEvent, type OrgAuditWriter } from './org-audit.ts'
 
@@ -451,11 +456,12 @@ export async function createOrg(input: {
 	const slug = normalizeUsername(input.slug)
 	const slugError = await getEffectiveUsernameValidationError(slug, input.env)
 	if (slugError) throw new OrgSlugValidationError(slugError)
-	// New orgs start free; the 2-free-org rule applies before insert.
-	await assertCanOwnAnotherFreeOrg(input.db, input.createdByUserId)
 	const orgId = mintPersonId()
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
+	// New orgs start free. The two-free-org cap is checked inside the insert
+	// itself so two concurrent creates cannot both pass a separate precheck;
+	// the dependent rows only insert when the org row did.
+	const results = await runBatch(input.db, [
 		input.db
 			.prepare(
 				`INSERT INTO orgs (
@@ -463,7 +469,9 @@ export async function createOrg(input: {
 					stripe_credits_eligible, admin_credits_eligible,
 					signup_welcome_credits_pending, access_epoch,
 					created_by_user_id, created_at, updated_at
-				) VALUES (?, ?, ?, 'public', 'free', 'public', 0, 0, 0, 0, ?, ?, ?)`,
+				)
+				SELECT ?, ?, ?, 'public', 'free', 'public', 0, 0, 0, 0, ?, ?, ?
+				WHERE (${liveFreeOwnedOrgCountSql}) < ?`,
 			)
 			.bind(
 				orgId,
@@ -472,20 +480,27 @@ export async function createOrg(input: {
 				input.createdByUserId,
 				now,
 				now,
+				input.createdByUserId,
+				MAX_FREE_ORGS_PER_USER,
 			),
 		input.db
 			.prepare(
 				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
-				 VALUES (?, ?, 'owner', ?)`,
+				 SELECT ?, ?, 'owner', ?
+				 WHERE EXISTS (SELECT 1 FROM orgs WHERE id = ?)`,
 			)
-			.bind(orgId, input.createdByUserId, now),
+			.bind(orgId, input.createdByUserId, now, orgId),
 		input.db
 			.prepare(
 				`INSERT INTO handles (handle, user_id, org_id, created_at)
-				 VALUES (?, NULL, ?, ?)`,
+				 SELECT ?, NULL, ?, ?
+				 WHERE EXISTS (SELECT 1 FROM orgs WHERE id = ?)`,
 			)
-			.bind(slug, orgId, now),
+			.bind(slug, orgId, now, orgId),
 	])
+	if (changesOf(results[0]) === 0) {
+		throw new FreeOrgLimitError(FREE_ORG_LIMIT_MESSAGE)
+	}
 	await recordOrgAuditEvent(input.audit, {
 		orgId,
 		action: 'org.created',

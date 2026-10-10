@@ -6,8 +6,6 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { isPersonalOrg } from './is-personal-org.ts'
 import { getOrgById } from './repo.ts'
 
-export { isPersonalOrg } from './is-personal-org.ts'
-
 export type UpdateOrgProfileInput = {
 	orgId: string
 	displayName?: string

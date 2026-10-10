@@ -46,6 +46,16 @@ async function seedPaidOrg(input: {
 	for (const [index, role] of input.seatRoles.entries()) {
 		const memberId = `${input.orgId}-member-${index}`
 		await env.APP_DB.prepare(
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES (?, ?, 'test-password-hash', ?)`,
+		)
+			.bind(
+				`seat-${crypto.randomUUID().slice(0, 8)}`,
+				`${memberId}-${crypto.randomUUID().slice(0, 8)}@example.com`,
+				memberId,
+			)
+			.run()
+		await env.APP_DB.prepare(
 			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
 			 VALUES (?, ?, ?, ?)`,
 		)

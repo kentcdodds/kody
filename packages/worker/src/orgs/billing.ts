@@ -1,9 +1,6 @@
 /** Teams P6 org billing helpers (seats, free-org cap, budgets). */
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
-// After P5 membership mutations land, call syncOrgSeatQuantity from
-// packages/worker/src/billing/seat-sync.ts (cleanup issue tracks wiring).
-
 export const MAX_FREE_ORGS_PER_USER = 2
 
 export const SEAT_ROLES = ['owner', 'member'] as const
@@ -44,7 +41,7 @@ export class FreeOrgLimitError extends Error {
 	}
 }
 
-const FREE_ORG_LIMIT_MESSAGE =
+export const FREE_ORG_LIMIT_MESSAGE =
 	'You already own 2 free organizations. Make one paid or delete one before creating or accepting ownership of another free org.'
 
 /**
@@ -58,10 +55,13 @@ export async function countLiveSeats(
 	const row = await db
 		.prepare(
 			`SELECT COUNT(*) AS count
-			 FROM org_memberships
-			 WHERE org_id = ?
-			   AND role IN ('owner', 'member')
-			   AND deleted_at IS NULL`,
+			 FROM org_memberships m
+			 INNER JOIN users u
+			   ON u.stable_user_id = m.user_id
+			  AND u.deleted_at IS NULL
+			 WHERE m.org_id = ?
+			   AND m.role IN ('owner', 'member')
+			   AND m.deleted_at IS NULL`,
 		)
 		.bind(orgId)
 		.first<{ count: number }>()
@@ -92,21 +92,26 @@ export async function countLiveFreeOwnedOrgs(
 	userId: string,
 ): Promise<number> {
 	const row = await db
-		.prepare(
-			`SELECT COUNT(*) AS count
-			 FROM orgs o
-			 INNER JOIN org_memberships m
-			   ON m.org_id = o.id
-			  AND m.user_id = ?
-			  AND m.role = 'owner'
-			  AND m.deleted_at IS NULL
-			 WHERE o.plan = 'free'
-			   AND o.deleted_at IS NULL`,
-		)
+		.prepare(`SELECT (${liveFreeOwnedOrgCountSql}) AS count`)
 		.bind(userId)
 		.first<{ count: number }>()
 	return row?.count ?? 0
 }
+
+/**
+ * Scalar subquery: free orgs the bound user (one `?`) owns live. Shared by
+ * the count above and the guarded insert in createOrg so the cap has one
+ * definition.
+ */
+export const liveFreeOwnedOrgCountSql = `SELECT COUNT(*)
+	 FROM orgs o
+	 INNER JOIN org_memberships m
+	   ON m.org_id = o.id
+	  AND m.user_id = ?
+	  AND m.role = 'owner'
+	  AND m.deleted_at IS NULL
+	 WHERE o.plan = 'free'
+	   AND o.deleted_at IS NULL`
 
 export async function assertCanOwnAnotherFreeOrg(
 	db: D1Database,

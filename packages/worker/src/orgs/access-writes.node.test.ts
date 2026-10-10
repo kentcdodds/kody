@@ -10,6 +10,7 @@ import { deriveRequestContext } from '#worker/request-context/request-context.ts
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { FreeOrgLimitError } from './billing.ts'
 import { offboardOrgMember } from './offboarding.ts'
 import {
 	addOrgMember,
@@ -318,4 +319,44 @@ test('an audit write failure is reported without undoing the access change', asy
 		.bind(org.id, memberId)
 		.first<{ role: string }>()
 	expect(membership?.role).toBe('member')
+})
+
+test('createOrg refuses a third free org inside the insert and leaves no partial rows', async () => {
+	const db = await createDb()
+	const creatorId = testStableUserIdFromEmail('capped@example.com')
+	for (const slug of ['capped-one', 'capped-two']) {
+		await createOrg({
+			db,
+			env: {} as Env,
+			slug,
+			createdByUserId: creatorId,
+			audit: createTestOrgAuditWriter(),
+		})
+	}
+
+	await expect(
+		createOrg({
+			db,
+			env: {} as Env,
+			slug: 'capped-three',
+			createdByUserId: creatorId,
+			audit: createTestOrgAuditWriter(),
+		}),
+	).rejects.toBeInstanceOf(FreeOrgLimitError)
+
+	const org = await db
+		.prepare(`SELECT id FROM orgs WHERE slug = 'capped-three'`)
+		.first<{ id: string }>()
+	expect(org).toBeNull()
+	const handle = await db
+		.prepare(`SELECT handle FROM handles WHERE handle = 'capped-three'`)
+		.first<{ handle: string }>()
+	expect(handle).toBeNull()
+	const owned = await db
+		.prepare(
+			`SELECT COUNT(*) AS count FROM org_memberships WHERE user_id = ? AND role = 'owner' AND deleted_at IS NULL`,
+		)
+		.bind(creatorId)
+		.first<{ count: number }>()
+	expect(owned?.count).toBe(2)
 })
