@@ -444,7 +444,7 @@ export function buildCreditsMonthlyCapEmail(input: {
 		preheader: 'Auto-refill is paused until next month or a higher cap.',
 		heading: 'Monthly auto-refill cap reached',
 		body: [
-			'Your credits are low, but another auto-refill would pass the monthly cap you set. When credits run out, rate and compute limits match Free until you top up. Add credits or raise the cap to keep going.',
+			'Your credits are low, but another auto-refill would pass the monthly cap you set. When credits run out, usage past your monthly include stops. Add credits or raise the cap to keep going.',
 		],
 		action: { label: 'Manage credits', url: input.creditsUrl },
 		illustration: creditsIllustration,
@@ -464,7 +464,7 @@ export function buildCreditsLowBalanceEmail(input: {
 		preheader: `Balance: ${input.balanceLabel}.`,
 		heading: 'Credits running low',
 		body: [
-			`Your Kody credit balance is ${input.balanceLabel}. When credits run out, rate and compute limits match Free until you top up.`,
+			`Your Kody credit balance is ${input.balanceLabel}. When credits run out, usage past your monthly include stops until you add more.`,
 		],
 		action: { label: 'Add credits', url: input.creditsUrl },
 		illustration: creditsIllustration,

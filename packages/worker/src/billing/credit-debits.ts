@@ -22,7 +22,8 @@
  *   (`creditDebitCostMicroUsd(next) - creditDebitCostMicroUsd(accounted)`).
  * - A funded purchasable-Pro wallet is debited for the delta. The balance
  *   can dip below $0 by up to one hour of usage past the include; after
- *   that, rate/compute falls back to Free caps until a top-up (ADR 0065).
+ *   that, past-include runs stop until a top-up covers it
+ *   (include → credits → stop, enforced in `consumeDailyEntitlement`).
  * - Every other wallet (empty, or not eligible) advances progress without
  *   a debit. An empty wallet only gets here through the hour-scale lag
  *   before the stop applies; that overshoot and wallet-less usage are never
@@ -370,8 +371,7 @@ export async function settleCreditDebitMonth(input: {
 	// Pro debit baseline. Gift/retired Pro ceilings are larger than that
 	// baseline; without this, usage between 350 and 2,000 UWD would leave
 	// progress behind and get back-charged on a later funded return. Empty
-	// purchasable Pro uses the baseline only (Free enforcement includes must
-	// not inflate progress).
+	// purchasable Pro already sits on that baseline.
 	const progressOverage = charge
 		? debitOverage
 		: input.entitlement.creditWallet === 'empty' && walletEligiblePro
