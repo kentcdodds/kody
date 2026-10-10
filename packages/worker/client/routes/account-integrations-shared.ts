@@ -3,6 +3,7 @@ import {
 	type AccountIntegrationsLoaderData,
 	type AccountOauthAppListItem,
 } from '#universal/loader-data.ts'
+import { accountAliasPath, relocateAccountHref } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
@@ -40,16 +41,19 @@ function decodePathSegment(value: string) {
 }
 
 function readSelectedOauthAppSlug(href: string): string | null {
-	const pathname = new URL(href, 'http://localhost').pathname
+	const pathname = accountAliasPath(new URL(href, 'http://localhost').pathname)
 	if (!pathname.startsWith(oauthAppsPathPrefix)) return null
 	const segment = pathname.slice(oauthAppsPathPrefix.length)
 	if (!segment || segment.includes('/')) return null
 	return decodePathSegment(segment)
 }
 
-function buildOauthAppHref(appSlug: string, search = '') {
+function buildOauthAppHref(appSlug: string, search = '', currentHref = '') {
 	const path = `/account/integrations/apps/${encodeURIComponent(appSlug)}`
-	return search ? `${path}?${new URLSearchParams(search).toString()}` : path
+	const href = search
+		? `${path}?${new URLSearchParams(search).toString()}`
+		: path
+	return currentHref ? relocateAccountHref(href, currentHref) : href
 }
 
 export function oauthAppTitle(app: AccountOauthAppListItem) {

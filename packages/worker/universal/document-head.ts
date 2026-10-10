@@ -1,5 +1,7 @@
 import { createMultiMatcher } from 'remix/route-pattern/match'
+import { isAccountConnectionAgent } from '#universal/account-connections.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
+import { onboardingAgentLabel } from '#universal/onboarding-mcp-clients.ts'
 import { oauthPaths } from '#universal/oauth-paths.ts'
 import { routePattern } from '#universal/route-pattern.ts'
 import { routes } from '#universal/routes.ts'
@@ -455,7 +457,25 @@ const routeDocumentHeads = {
 
 const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgActivity)]: titleOnly('Activity'),
-	[routePattern(routes.orgConnections)]: titleOnly('Connections'),
+	[routePattern(routes.orgConnections)]: ({ pathname }) => {
+		const rest = pathname.split('/-/connections/')[1]?.replace(/\/$/, '') ?? ''
+		if (rest === 'new') return titleOnly('Add connection')
+		if (rest.startsWith('new/')) {
+			const agent = rest.slice('new/'.length).split('/')[0] ?? ''
+			let decoded = agent
+			try {
+				decoded = decodeURIComponent(agent)
+			} catch {
+				decoded = agent
+			}
+			return titleOnly(
+				isAccountConnectionAgent(decoded)
+					? `Connect ${onboardingAgentLabel(decoded)}`
+					: 'Add connection',
+			)
+		}
+		return titleOnly('Connections')
+	},
 	[routePattern(routes.orgEmail)]: titleOnly('Email inbox'),
 	[routePattern(routes.orgIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
