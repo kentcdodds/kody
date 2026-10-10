@@ -234,33 +234,50 @@ export function listProductionBoundQueueProducers(input: {
 	productionEnv: Record<string, unknown>
 	configPath: string
 }): Array<ProductionBoundQueueProducer> {
-	const parsed = parseProductionQueueResources(input)
-	return [
-		{
-			binding: platformFeedbackDispatchQueueBinding,
-			queue: parsed.platformFeedbackDispatchQueueName,
-			deadLetterQueue: parsed.platformFeedbackDispatchDeadLetterQueueName,
-		},
-		{
-			binding: communityActivityDispatchQueueBinding,
-			queue: parsed.communityActivityDispatchQueueName,
-			deadLetterQueue: parsed.communityActivityDispatchDeadLetterQueueName,
-		},
-		{
-			binding: communityListingPublishedDispatchQueueBinding,
-			queue: parsed.communityListingPublishedDispatchQueueName,
-			deadLetterQueue:
-				parsed.communityListingPublishedDispatchDeadLetterQueueName,
-		},
-		{
-			binding: packageEventsDispatchQueueBinding,
-			queue: parsed.packageEventsDispatchQueueName,
-			deadLetterQueue: parsed.packageEventsDispatchDeadLetterQueueName,
-		},
-		{
-			binding: webhookDispatchQueueBinding,
-			queue: parsed.webhookDispatchQueueName,
-			deadLetterQueue: parsed.webhookDispatchDeadLetterQueueName,
-		},
-	]
+	parseProductionQueueResources(input)
+	const queues = input.productionEnv.queues
+	if (!queues || typeof queues !== 'object' || Array.isArray(queues)) {
+		throw new Error(
+			`wrangler config "${input.configPath}" is missing "env.production.queues".`,
+		)
+	}
+	const producers = (queues as Record<string, unknown>).producers
+	const consumers = (queues as Record<string, unknown>).consumers
+	if (!Array.isArray(producers) || !Array.isArray(consumers)) {
+		throw new Error(
+			`wrangler config "${input.configPath}" has invalid "env.production.queues".`,
+		)
+	}
+	return producers.map((entry, index) => {
+		if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer ${String(index)} is not an object.`,
+			)
+		}
+		const producer = entry as Record<string, unknown>
+		const binding = producer.binding
+		const queue = producer.queue
+		if (typeof binding !== 'string' || typeof queue !== 'string') {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer ${String(index)} is missing binding or queue.`,
+			)
+		}
+		const consumer = consumers.find((candidate) => {
+			if (
+				!candidate ||
+				typeof candidate !== 'object' ||
+				Array.isArray(candidate)
+			) {
+				return false
+			}
+			return (candidate as Record<string, unknown>).queue === queue
+		}) as Record<string, unknown> | undefined
+		const deadLetterQueue = consumer?.dead_letter_queue
+		if (typeof deadLetterQueue !== 'string') {
+			throw new Error(
+				`wrangler config "${input.configPath}" producer "${binding}" on "${queue}" has no consumer dead-letter queue.`,
+			)
+		}
+		return { binding, queue, deadLetterQueue }
+	})
 }

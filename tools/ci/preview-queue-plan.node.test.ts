@@ -134,10 +134,16 @@ test('preview queue names are per-worker copies of the production queue names', 
 	}
 
 	const longWorkerName = `kody-branch-${'a1'.repeat(15)}-z`
-	const longName = previewQueueName(
-		longWorkerName,
-		'kody-community-listing-published-dispatch-dlq',
+	const otherLongWorkerName = `kody-branch-${'a1'.repeat(15)}-y`
+	const productionDlq = 'kody-community-listing-published-dispatch-dlq'
+	const longName = previewQueueName(longWorkerName, productionDlq)
+	const otherLongName = previewQueueName(otherLongWorkerName, productionDlq)
+	expect(longName).not.toBe(otherLongName)
+	expect(longName.endsWith('-community-listing-published-dispatch-dlq')).toBe(
+		true,
 	)
 	expect(longName.length).toBeLessThanOrEqual(63)
+	expect(otherLongName.length).toBeLessThanOrEqual(63)
 	expect(() => assertPreviewResourceName(longName, 'queue')).not.toThrow()
+	expect(() => assertPreviewResourceName(otherLongName, 'queue')).not.toThrow()
 })
