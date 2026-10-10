@@ -10,10 +10,6 @@ inputs:
     description: Copy packages/worker/.env.example to .env when true
     required: false
     default: 'false'
-  migrate-local:
-    description: Apply local D1 migrations when true
-    required: false
-    default: 'false'
 
 runs:
   using: composite
@@ -34,16 +30,6 @@ runs:
         restore-keys: |
           ${{ runner.os }}-playwright-
 
-    - name: 🧊 Cache Nx
-      uses: actions/cache@v5.0.3
-      with:
-        path: .nx/cache
-        key:
-          ${{ runner.os }}-nx-${{ hashFiles('nx.json', 'package-lock.json')
-          }}-${{ github.sha }}-${{ github.job }}
-        restore-keys: |
-          ${{ runner.os }}-nx-${{ hashFiles('nx.json', 'package-lock.json') }}-
-
     - name: 🧊 Enable Nx remote cache
       if: env.NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN != ''
       shell: bash
@@ -52,7 +38,7 @@ runs:
         server='https://nx-cache.kody.codes'
         if ! curl -fsS --max-time 5 "$server/health" >/dev/null; then
           echo "Nx remote cache skipped: $server/health is unreachable."
-          echo "Validate will use local .nx + actions/cache until the worker is deployed."
+          echo "Validate will run without an Nx cache until the worker is deployed."
           exit 0
         fi
         # Nx treats a configured-but-unauthorized cache as fatal. Probe a
@@ -89,8 +75,3 @@ runs:
         # Cache hit: ensure is a no-op (executable already on disk).
         # Cache miss: download Chromium only — no apt --with-deps.
         npm run test:e2e:ensure
-
-    - name: 🗄️ Apply D1 Migrations
-      if: inputs.migrate-local == 'true'
-      shell: bash
-      run: npm run migrate:local

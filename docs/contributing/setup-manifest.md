@@ -670,8 +670,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   not the write token. Fork `pull_request` validate jobs set Nx's
   `NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN` from this secret so they can GET
   and cannot PUT. The worker syncs it as `CACHE_READ_TOKEN`. PUT with this token
-  returns 403. Leave unset to run fork CI with local `.nx` + `actions/cache`
-  only.)
+  returns 403. Leave unset to run fork CI without any Nx cache.)
 - **Repository variables** `SENTRY_ORG` and `SENTRY_PROJECT` (optional; Sentry
   organization and project **slugs** for source map upload — same values as in
   the Sentry wizard’s `--org` / `--project` flags)

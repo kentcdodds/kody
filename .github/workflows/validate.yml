@@ -276,7 +276,6 @@ jobs:
         uses: ./.github/actions/setup-validate
         with:
           worker-env: 'true'
-          migrate-local: 'true'
 
       - name: ☁️ Workers unit tests
         run: npm run test:workers
