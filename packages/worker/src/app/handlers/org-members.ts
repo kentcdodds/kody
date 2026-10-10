@@ -286,14 +286,14 @@ export function createOrgMembersRolePostHandler(env: Env) {
 					)
 				}
 			}
-			if (role === 'owner' && membership.role !== 'owner') {
-				await assertCanAcceptFreeOrgOwnership({
-					db: env.APP_DB,
-					orgId: access.org.id,
-					userId,
-				})
-			}
 			try {
+				if (role === 'owner' && membership.role !== 'owner') {
+					await assertCanAcceptFreeOrgOwnership({
+						db: env.APP_DB,
+						orgId: access.org.id,
+						userId,
+					})
+				}
 				await updateOrgMemberRole({
 					db: env.APP_DB,
 					orgId: access.org.id,

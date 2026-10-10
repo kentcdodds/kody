@@ -51,6 +51,12 @@ export async function resolveOrgManagementAccess(input: {
 	if (typeof resolution === 'string' || resolution.role === null) {
 		return { ok: false, status: 404, error: 'Organization unavailable.' }
 	}
+	// `user.request` is bound from the same URL in readAuthenticatedAppUser.
+	// Refuse if a caller ever passes a mismatched request/user pair so
+	// authorize cannot check one org and mutate another.
+	if (resolution.org.id !== input.user.request.org.id) {
+		return { ok: false, status: 404, error: 'Organization unavailable.' }
+	}
 	try {
 		await authorize(
 			{ env: input.env, request: input.user.request },

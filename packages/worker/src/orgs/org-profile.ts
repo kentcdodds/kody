@@ -32,9 +32,10 @@ function slugValidationMessage(message: string) {
 }
 
 /**
- * Signup organizations have `org_id = user_id` for the founding owner.
- * That is a property of the org row, not of the current viewer — another
- * owner of Ada's signup org must still treat it as personal.
+ * Signup organizations use the founding person's stable id as the org id
+ * (`org_id = user_id` on the founding membership). That identity survives
+ * soft-deleting the founding row — include deleted memberships so another
+ * owner cannot rename or soft-delete a signup org from org settings.
  */
 export async function isPersonalOrg(db: D1Database, orgId: string) {
 	const row = await db
@@ -42,8 +43,7 @@ export async function isPersonalOrg(db: D1Database, orgId: string) {
 			`SELECT 1 AS ok
 			 FROM org_memberships
 			 WHERE org_id = ?
-			   AND user_id = ?
-			   AND deleted_at IS NULL`,
+			   AND user_id = ?`,
 		)
 		.bind(orgId, orgId)
 		.first<{ ok: number }>()
