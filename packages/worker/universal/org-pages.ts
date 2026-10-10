@@ -49,7 +49,7 @@ const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
  * Keeps `/@owner/<kody-id>` free for canonical package URLs. Bare `-` is not a
  * valid kody.id (`kodyPackageIdPattern`), so this segment cannot collide.
  */
-export const orgPageSeparator = '-'
+const orgPageSeparator = '-'
 
 export function isOrganizationSlug(value: string) {
 	return slugPattern.test(value)

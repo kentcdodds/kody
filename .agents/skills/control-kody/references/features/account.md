@@ -34,7 +34,7 @@ A non-personal org handle (`/@<slug>`) renders the org home for its members and
 `request.org.id` (#3073), so a team org's workspace rail is empty for now.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/...`. The old `/account/...` resource URLs redirect there for a short
+`/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
 time.
 
 ## Drive it
