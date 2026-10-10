@@ -210,8 +210,7 @@ credits. Only `@kody` received the $1,000 site-admin credit.
 
 The seed writes that converted shape (a `use` grant, a grant invite, and an
 ordinary org with an Owner). The sealed backup and verify workflow
-(`🔁 Teams P8 Conversion Checks`) and
-`tools/teams-migration/convert-sharing-and-platform.ts` queried
+(`🔁 Teams P8 Conversion Checks`) and the sharing conversion script queried
 `package_share_grants`, `package_scope_grants`, and
 `users.account_type = 'platform'` after that migration. Both are removed.
 `package_share_grants`, `package_scope_grants`, and `username_redirects` stay in
