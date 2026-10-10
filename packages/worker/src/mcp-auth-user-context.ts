@@ -66,16 +66,24 @@ function buildBaseUserFromGrant(
  * `userId` (`users.stable_user_id`). D1 lookup failures fail closed; grant
  * profile fields only fill missing values after the authoritative row resolves.
  */
-export async function buildMcpUserContextFromGrantProps(
-	env: Env,
+export function personIdFromGrantProps(
 	grantProps: McpOAuthGrantProps,
-): Promise<McpAuthUserContext | null> {
+): PersonId | null {
 	if (!grantProps || typeof grantProps.userId !== 'string') {
 		return null
 	}
 	const trimmedUserId = grantProps.userId.trim()
 	if (!trimmedUserId) return null
-	const userId = personIdFromStored(trimmedUserId)
+	return personIdFromStored(trimmedUserId)
+}
+
+export async function buildMcpUserContextFromGrantProps(
+	env: Env,
+	grantProps: McpOAuthGrantProps,
+): Promise<McpAuthUserContext | null> {
+	if (!grantProps) return null
+	const userId = personIdFromGrantProps(grantProps)
+	if (!userId) return null
 
 	const baseUser = buildBaseUserFromGrant(grantProps, userId)
 

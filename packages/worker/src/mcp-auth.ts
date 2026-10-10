@@ -8,7 +8,10 @@ import {
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { auditDatabaseFromEnv, getRequestIp } from '#worker/audit-log.ts'
-import { buildMcpUserContextFromGrantProps } from './mcp-auth-user-context.ts'
+import {
+	buildMcpUserContextFromGrantProps,
+	personIdFromGrantProps,
+} from './mcp-auth-user-context.ts'
 import {
 	type McpAuthDenialReason,
 	recordMcpAuthDenial,
@@ -331,6 +334,22 @@ let statelessLaneMemo: Promise<typeof StatelessLane> | null = null
 
 // The stateless lane pulls in the MCP server SDK; load it on the first MCP
 // request instead of during Worker startup (see startup-budget.md).
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown }
+
+// Capture an eagerly started promise so an early return above never leaves an
+// unhandled rejection, and rethrow at the point the result is consumed.
+function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
+	return promise.then(
+		(value) => ({ ok: true as const, value }),
+		(error: unknown) => ({ ok: false as const, error }),
+	)
+}
+
+function unsettle<T>(settled: Settled<T>): T {
+	if (settled.ok) return settled.value
+	throw settled.error
+}
+
 function loadStatelessLane() {
 	statelessLaneMemo ??= import('./mcp/stateless-lane.ts').catch(
 		(error: unknown) => {
@@ -431,6 +450,26 @@ export async function handleMcpRequest({
 	}
 
 	const grantProps = tokenSummary.grant.props ?? null
+	// The org binding and the provider-lane token re-unwrap only need the
+	// grant's stable user id, so start them now and let them overlap the user
+	// context reads instead of adding their own sequential round trips. Every
+	// gate below still runs in the same order on the same data.
+	const grantPersonId = personIdFromGrantProps(grantProps)
+	const orgBindingPromise =
+		grantPersonId === null
+			? null
+			: settle(
+					loadOrgBindingFromGrantProps({
+						db: env.APP_DB,
+						personId: grantPersonId,
+						grantProps,
+					}),
+				)
+	const providerHelpers = providerAuth ? (env as OAuthEnv).OAUTH_PROVIDER : null
+	const providerTokenPromise =
+		providerHelpers && accessToken
+			? settle(providerHelpers.unwrapToken(accessToken))
+			: null
 	const authContext = await buildMcpUserContextFromGrantProps(env, grantProps)
 
 	// Fail-closed email verification gate: every MCP request must map to an
@@ -461,9 +500,8 @@ export async function handleMcpRequest({
 	// the same way browser cookies die — hosts then refresh, the revoked grant
 	// fails, and they start a new OAuth flow.
 	let tokenCreatedAtMs = tokenSummary.createdAt * 1000
-	if (providerAuth && accessToken) {
-		const helpers = (env as OAuthEnv).OAUTH_PROVIDER
-		const unwrapped = helpers ? await helpers.unwrapToken(accessToken) : null
+	if (providerTokenPromise) {
+		const unwrapped = unsettle(await providerTokenPromise)
 		if (unwrapped) tokenCreatedAtMs = unwrapped.createdAt * 1000
 	}
 	if (
@@ -478,11 +516,14 @@ export async function handleMcpRequest({
 
 	const connectionProfileName =
 		readConnectionProfileNameFromGrantProps(grantProps)
-	const orgBinding = await loadOrgBindingFromGrantProps({
-		db: env.APP_DB,
-		personId: mcpUser.userId,
-		grantProps,
-	})
+	const orgBinding =
+		orgBindingPromise && grantPersonId === mcpUser.userId
+			? unsettle(await orgBindingPromise)
+			: await loadOrgBindingFromGrantProps({
+					db: env.APP_DB,
+					personId: mcpUser.userId,
+					grantProps,
+				})
 	if (!orgBinding) {
 		await recordRejection('denied', mcpUser.email)
 		return createUnauthorizedResponse(origin, 'invalid_token')
