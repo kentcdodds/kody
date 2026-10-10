@@ -76,27 +76,49 @@ export function renderOrgHomeMain(input: {
 								</a>
 							),
 						})
-					: renderStep({
-							icon: 'users',
-							title: 'Invite members and share access',
-							body: `Add people to ${input.handle} and choose their role. Owners can also update the organization's profile.`,
-							action: (
-								<div mix={css(stepActionsCss)}>
-									<a
-										href={orgMembersPath(input.slug)}
-										mix={css(getGhostButtonCss({ size: 'sm' }))}
-									>
-										Members
-									</a>
-									<a
-										href={orgSettingsPath(input.slug)}
-										mix={css(getGhostButtonCss({ size: 'sm' }))}
-									>
-										Settings
-									</a>
-								</div>
-							),
-						})}
+					: input.role === 'owner'
+						? renderStep({
+								icon: 'users',
+								title: 'Invite members and share access',
+								body: `Add people to ${input.handle} and choose their role. You can also update the organization's profile.`,
+								action: (
+									<div mix={css(stepActionsCss)}>
+										<a
+											href={orgMembersPath(input.slug)}
+											mix={css(getGhostButtonCss({ size: 'sm' }))}
+										>
+											Members
+										</a>
+										<a
+											href={orgSettingsPath(input.slug)}
+											mix={css(getGhostButtonCss({ size: 'sm' }))}
+										>
+											Settings
+										</a>
+									</div>
+								),
+							})
+						: renderStep({
+								icon: 'users',
+								title: 'View members and the organization profile',
+								body: `See who is in ${input.handle} and open the organization's profile. Only an Owner can invite people or edit settings.`,
+								action: (
+									<div mix={css(stepActionsCss)}>
+										<a
+											href={orgMembersPath(input.slug)}
+											mix={css(getGhostButtonCss({ size: 'sm' }))}
+										>
+											Members
+										</a>
+										<a
+											href={orgSettingsPath(input.slug)}
+											mix={css(getGhostButtonCss({ size: 'sm' }))}
+										>
+											Settings
+										</a>
+									</div>
+								),
+							})}
 				{orgRoleManagesBilling(input.role)
 					? renderStep({
 							icon: 'wallet',

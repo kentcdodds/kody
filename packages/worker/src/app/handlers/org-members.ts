@@ -435,6 +435,9 @@ export function createOrgMembersInvitePostHandler(env: Env) {
 				typeof body?.email === 'string' ? body.email.trim() : ''
 			const usernameInput =
 				typeof body?.username === 'string' ? body.username.trim() : ''
+			if (body?.role !== undefined && !isOrgRole(body.role)) {
+				return jsonResponse({ ok: false, error: 'Choose a valid role.' }, 400)
+			}
 			const role = isOrgRole(body?.role) ? body.role : 'member'
 			let inviteeEmail: string | null = null
 			let inviteeUsername: string | null = null

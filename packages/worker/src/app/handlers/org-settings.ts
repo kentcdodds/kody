@@ -251,12 +251,25 @@ export function createOrgSettingsAvatarPostHandler(env: Env) {
 					400,
 				)
 			}
+			let sourceBytes: Uint8Array
 			try {
-				const sourceBytes = await readFileBytes(avatar)
-				const processed = processUserAvatar({
+				sourceBytes = await readFileBytes(avatar)
+			} catch (error) {
+				console.error('org-avatar-read-failed', error)
+				return jsonResponse({ ok: false, error: 'Unable to read avatar.' }, 500)
+			}
+			let processed: ReturnType<typeof processUserAvatar>
+			try {
+				processed = processUserAvatar({
 					contentType: avatar.type || 'application/octet-stream',
 					sourceBytes,
 				})
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : 'Unable to process avatar.'
+				return jsonResponse({ ok: false, error: message }, 400)
+			}
+			try {
 				const avatarKey = await saveOrgAvatar({
 					env,
 					orgId: access.org.id,
@@ -277,9 +290,8 @@ export function createOrgSettingsAvatarPostHandler(env: Env) {
 					}),
 				)
 			} catch (error) {
-				const message =
-					error instanceof Error ? error.message : 'Unable to save avatar.'
-				return jsonResponse({ ok: false, error: message }, 400)
+				console.error('org-avatar-save-failed', error)
+				return jsonResponse({ ok: false, error: 'Unable to save avatar.' }, 500)
 			}
 		},
 	} satisfies Action<typeof routes.orgSettingsAvatarPost>

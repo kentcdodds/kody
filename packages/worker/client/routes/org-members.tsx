@@ -104,6 +104,10 @@ export function OrgMembersRoute(handle: Handle) {
 	})
 
 	const removeChecks = new Map<string, ReturnType<typeof createDoubleCheck>>()
+	/** Latest role saved for a member; only preferred until membersData reloads. */
+	const confirmedRoles = new Map<string, string>()
+	const roleChangeInFlight = new Set<string>()
+	const pendingRoleReload = new Set<string>()
 	let invitee = ''
 	let inviteRole: (typeof memberRoles)[number] = 'member'
 	let inviting = false
@@ -119,9 +123,31 @@ export function OrgMembersRoute(handle: Handle) {
 		return created
 	}
 
+	function displayedRole(userId: string, fetchedRole: string) {
+		if (
+			confirmedRoles.has(userId) &&
+			(roleChangeInFlight.has(userId) || pendingRoleReload.has(userId))
+		) {
+			return confirmedRoles.get(userId) ?? fetchedRole
+		}
+		return fetchedRole
+	}
+
+	function reconcileConfirmedRoles(input: {
+		members: ReadonlyArray<{ userId: string; role: string }> | undefined
+		dataPending: boolean
+	}) {
+		if (input.dataPending || !input.members) return
+		for (const userId of [...pendingRoleReload]) {
+			pendingRoleReload.delete(userId)
+			confirmedRoles.delete(userId)
+		}
+	}
+
 	async function postMember(
 		path: 'role' | 'remove' | 'invite',
 		body: Record<string, unknown>,
+		options: { reload?: boolean } = {},
 	) {
 		const snapshot = membersData.read(handle, readCurrentRouterHref(handle))
 		const data = snapshot.data
@@ -151,23 +177,43 @@ export function OrgMembersRoute(handle: Handle) {
 		if (!response.ok || !payload?.ok) {
 			throw new Error(payload?.error || 'Unable to update members.')
 		}
-		membersData.reload(handle, readCurrentRouterHref(handle))
+		if (options.reload !== false) {
+			membersData.reload(handle, readCurrentRouterHref(handle))
+		}
 		return payload
 	}
 
-	async function changeRole(userId: string, role: string) {
+	async function changeRole(
+		userId: string,
+		role: string,
+		select: HTMLSelectElement,
+		fetchedRole: string,
+	) {
+		if (roleChangeInFlight.has(userId)) {
+			select.value = displayedRole(userId, fetchedRole)
+			return
+		}
+		const previousRole = displayedRole(userId, fetchedRole)
+		if (role === previousRole) return
+		roleChangeInFlight.add(userId)
 		message = null
 		handle.update()
 		try {
-			await postMember('role', { userId, role })
+			await postMember('role', { userId, role }, { reload: false })
+			confirmedRoles.set(userId, role)
+			pendingRoleReload.add(userId)
+			membersData.reload(handle, readCurrentRouterHref(handle))
 			message = 'Role updated.'
 			messageTone = 'info'
 		} catch (error) {
+			select.value = previousRole
 			message =
 				error instanceof Error ? error.message : 'Unable to update role.'
 			messageTone = 'error'
+		} finally {
+			roleChangeInFlight.delete(userId)
+			handle.update()
 		}
-		handle.update()
 	}
 
 	async function removeMember(userId: string) {
@@ -218,6 +264,10 @@ export function OrgMembersRoute(handle: Handle) {
 		const snapshot = membersData.read(handle, href)
 		const data = snapshot.data
 		const pending = snapshot.kind === 'pending'
+		reconcileConfirmedRoles({
+			members: data?.ok ? data.members : undefined,
+			dataPending: pending,
+		})
 		const ownerCount =
 			data?.members.filter((member) => member.role === 'owner').length ?? 0
 
@@ -294,15 +344,22 @@ export function OrgMembersRoute(handle: Handle) {
 													<span mix={css(rowActionsCss)}>
 														<select
 															aria-label={`Role for ${memberName(member)}`}
-															value={member.role}
-															disabled={lastOwner}
+															value={displayedRole(member.userId, member.role)}
+															disabled={
+																lastOwner ||
+																roleChangeInFlight.has(member.userId)
+															}
 															mix={[
 																css(selectCss),
 																on('change', (event) => {
-																	const next = (
+																	const select =
 																		event.currentTarget as HTMLSelectElement
-																	).value
-																	void changeRole(member.userId, next)
+																	void changeRole(
+																		member.userId,
+																		select.value,
+																		select,
+																		member.role,
+																	)
 																}),
 															]}
 														>
