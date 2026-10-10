@@ -32,13 +32,16 @@ The report leaves CI only sealed to the recipient key, and the public run
 summary has no counts: Actions artifacts and logs on this repo are
 world-readable. Keep opened JSON off the repo.
 
-Production runs use the repository (or `production` environment) Actions secret
-`STRIPE_SECRET_KEY` for the P8 Stripe subscription count. When it is empty, that
-count is skipped with a warning and the sealed report records
-`stripeSubscriptions.skipped`; D1/KV queries and credential-exposure still run.
-The OAuth KV namespace is found by title: `kody-oauth` in production, resolved
-from the Wrangler worker name the same way
-`node tools/ci/production-resources.ts ensure` creates it.
+Production Stripe counts use the Actions secret `STRIPE_SECRET_KEY` on
+production-only steps (repository or the `production` environment). A job-level
+`condition && secrets.X || ''` expression can evaluate empty for environment
+secrets, and a job-level assignment would also expose the key on preview
+targets. A Worker-only key is not enough — production deploy syncs Stripe as
+optional. When the secret is empty or whitespace, question 5 is skipped with a
+warning and the sealed report records `stripeSubscriptions.skipped`; D1/KV
+queries and credential-exposure still run. The OAuth KV namespace is found by
+title: `kody-oauth` in production, resolved from the Wrangler worker name the
+same way `node tools/ci/production-resources.ts ensure` creates it.
 
 Rehearse the same D1 and KV queries on a branch preview first with
 `-f target=kody-branch-<slug>` (from `main`, any dispatcher, no `confirm`).
@@ -46,14 +49,14 @@ Previews have no Stripe account, so that run reports Stripe as skipped.
 
 ## What it answers
 
-| Spec §12.4 question                                | Source                                                                                                                     | Report field                      |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| 1. Every `account_type = 'platform'` row           | APP_DB `users`, with package counts and `package_scope_grants` grantees                                                    | `platformAccounts`                |
-| 2. Platform packages depending on another platform | APP_DB `published_bundle_artifacts.dependencies_json` at each package's current published commit, owners from `users`      | `crossPlatformScopeDependencies`  |
-| 3. Guest packages importing a shared package       | The same dependency lists (`shareOwned`, or a person-owned dependency from another owner) joined to `package_share_grants` | `sharedPackageImports`            |
-| 4. OAuth grants with and without `orgId`           | `OAUTH_KV` `grant:*` values: plaintext `metadata.orgId` only (props stay encrypted)                                        | `oauthGrants`                     |
-| 5. Live Stripe subscriptions by price id           | Stripe `GET /v1/subscriptions?status=all`, excluding `canceled` and `incomplete_expired`                                   | `stripeSubscriptions`             |
-| Credential exposure surface                        | APP_DB multi-member orgs + outside grants; AUDIT_DB secret/integration rows filtered in JS                                 | `credential-exposure.sealed.json` |
+| Spec §12.4 question                                | Source                                                                                                                               | Report field                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| 1. Every `account_type = 'platform'` row           | APP_DB `users`, with package counts and `package_scope_grants` grantees                                                              | `platformAccounts`                |
+| 2. Platform packages depending on another platform | APP_DB `published_bundle_artifacts.dependencies_json` at each package's current published commit, owners from `users`                | `crossPlatformScopeDependencies`  |
+| 3. Guest packages importing a shared package       | The same dependency lists (`shareOwned`, or a person-owned dependency from another owner) joined to `package_share_grants`           | `sharedPackageImports`            |
+| 4. OAuth grants with and without `orgId`           | `OAUTH_KV` `grant:*` values: plaintext `metadata.orgId` only (props stay encrypted)                                                  | `oauthGrants`                     |
+| 5. Live Stripe subscriptions by price id           | Stripe `GET /v1/subscriptions?status=all`, excluding `canceled` and `incomplete_expired`. Skipped when `STRIPE_SECRET_KEY` is unset. | `stripeSubscriptions`             |
+| Credential exposure surface                        | APP_DB multi-member orgs + outside grants; AUDIT_DB secret/integration rows filtered in JS                                           | `credential-exposure.sealed.json` |
 
 Stripe prices are classified with the worker's own billing config
 (`packages/worker/src/billing/billing-config.ts` and the production

@@ -650,6 +650,24 @@ export async function runProductionQueries(input: {
 	}
 }
 
+export const previewStripeSkipReason = 'Branch previews have no Stripe account.'
+export const missingStripeSecretSkipReason =
+	'STRIPE_SECRET_KEY is unset; Stripe subscription counts were skipped.'
+
+/**
+ * Production can count live Stripe subscriptions only when the Actions (or
+ * local) secret is present. Billing is optional on the Worker, so a missing
+ * key skips question 5 instead of aborting the D1 and KV queries.
+ */
+export function resolveProductionStripe(
+	secretKey: string | undefined,
+	billingEnv: BillingEnv,
+): { secretKey: string; billingEnv: BillingEnv } | { skipReason: string } {
+	const key = secretKey?.trim()
+	if (!key) return { skipReason: missingStripeSecretSkipReason }
+	return { secretKey: key, billingEnv }
+}
+
 const usage = [
 	'Usage: node tools/teams-migration/production-queries.ts --target <production|kody-branch-*> --recipient-public-key <base64 SPKI> --out <report.sealed.json>',
 	'',
@@ -670,11 +688,6 @@ function requireEnv(name: string) {
 	return value
 }
 
-function optionalEnv(name: string) {
-	const value = process.env[name]?.trim()
-	return value && value.length > 0 ? value : undefined
-}
-
 if (isExecutedDirectly(import.meta.url)) {
 	const argv = process.argv.slice(2)
 	const target = parseQueryTarget(readFlag(argv, '--target'))
@@ -686,22 +699,29 @@ if (isExecutedDirectly(import.meta.url)) {
 		accountId: requireEnv('CLOUDFLARE_ACCOUNT_ID'),
 		apiToken: requireEnv('CLOUDFLARE_API_TOKEN'),
 	}
-	const stripeSecret = optionalEnv('STRIPE_SECRET_KEY')
+	let stripe:
+		| { secretKey: string; billingEnv: BillingEnv }
+		| { skipReason: string }
+	switch (target.kind) {
+		case 'production':
+			stripe = resolveProductionStripe(
+				process.env.STRIPE_SECRET_KEY,
+				await readProductionBillingEnv(),
+			)
+			if ('skipReason' in stripe) console.warn(stripe.skipReason)
+			break
+		case 'preview':
+			stripe = { skipReason: previewStripeSkipReason }
+			break
+		default: {
+			const exhaustive: never = target
+			throw new Error(`Unknown query target: ${JSON.stringify(exhaustive)}`)
+		}
+	}
 	const report = await runProductionQueries({
 		client,
 		target,
-		stripe:
-			target.kind === 'production'
-				? stripeSecret
-					? {
-							secretKey: stripeSecret,
-							billingEnv: await readProductionBillingEnv(),
-						}
-					: {
-							skipReason:
-								'STRIPE_SECRET_KEY is unset; Stripe subscription counts skipped.',
-						}
-				: { skipReason: 'Branch previews have no Stripe account.' },
+		stripe,
 	})
 	await writeFile(
 		outPath,

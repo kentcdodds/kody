@@ -10,11 +10,12 @@ import {
 	crossPlatformScopeDependenciesSql,
 	parseQueryTarget,
 	platformAccountsSql,
-	resolveProductionOauthKvTitle,
-	targetResourceNames,
 	readProductionBillingEnv,
+	resolveProductionOauthKvTitle,
+	resolveProductionStripe,
 	runProductionQueries,
 	sharedPackageImportsSql,
+	targetResourceNames,
 } from './production-queries.ts'
 
 const proPriceId = 'price_pro_month'
@@ -426,6 +427,49 @@ test('runProductionQueries answers all five questions with reads only', async ()
 		'GET /v1/subscriptions?status=all&limit=100&starting_after=sub_3',
 		'GET /v1/subscription_items?subscription=sub_6&limit=100&starting_after=sub_6_item_0',
 	])
+})
+
+const unsetStripeSkipReason =
+	'STRIPE_SECRET_KEY is unset; Stripe subscription counts were skipped.'
+
+test('production Stripe counts skip when the Actions secret is unset', () => {
+	expect(resolveProductionStripe(undefined, billingEnv)).toEqual({
+		skipReason: unsetStripeSkipReason,
+	})
+	expect(resolveProductionStripe('   ', billingEnv)).toEqual({
+		skipReason: unsetStripeSkipReason,
+	})
+	expect(resolveProductionStripe('sk_test', billingEnv)).toEqual({
+		secretKey: 'sk_test',
+		billingEnv,
+	})
+})
+
+test('runProductionQueries still answers D1 and KV questions when Stripe is skipped', async () => {
+	const sqlite = createAppDb()
+	const cloudflare = createFakeApis(sqlite)
+	const report = await runProductionQueries({
+		client: {
+			accountId: 'acct',
+			apiToken: 'token',
+			fetcher: cloudflare.fetcher,
+		},
+		target: parseQueryTarget('production'),
+		stripe: { skipReason: unsetStripeSkipReason },
+		now: () => new Date('2026-10-08T00:00:00.000Z'),
+	})
+
+	expect(report.platformAccounts.count).toBe(2)
+	expect(report.oauthGrants).toEqual({
+		grants: 3,
+		withOrgId: 1,
+		withoutOrgId: 2,
+		users: 2,
+	})
+	expect(report.stripeSubscriptions).toEqual({
+		skipped: true,
+		reason: unsetStripeSkipReason,
+	})
 })
 
 test('query targets refuse PR previews and the production worker name', () => {
