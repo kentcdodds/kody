@@ -379,6 +379,10 @@
 		{
 			"filename": "0094-billing-promo-claims.sql",
 			"sha256": "934dfe2a85987e4d5be761b27943acacaa7cc37f2c3ea622f76b822a6872c1fd"
+		},
+		{
+			"filename": "0095-teams-migrated-invite-expiry.sql",
+			"sha256": "9c42b80e735d1f5a036ea27c0ee7019cec76d6e4dd0832067865d51de9fe1f36"
 		}
 	]
 }
