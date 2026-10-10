@@ -842,17 +842,22 @@ const orgSwitcherChevronCss = {
 }
 
 /**
- * Hangs under the trigger, left edges aligned, and flips to align right edges
- * when the trigger sits too close to the viewport's end. Native popover, like
- * the site menu: top layer, light dismiss, Escape, and focus return come from
- * the platform. Browsers without anchor positioning keep it under the
- * header's right edge, where the trigger usually is.
+ * Hangs under the trigger with its inline end against the trigger's, so the
+ * menu grows into the header instead of past the header's right edge. The
+ * nav is a centered 72rem column, and a viewport gutter alone sits outside
+ * that column on a 1440px desktop. Anchor positioning pins the end to the
+ * trigger and flips when the trigger is against the start edge. Without it,
+ * the same inset is the header content's inline end. Native popover, like
+ * the site menu: top layer, light dismiss, Escape, and focus return come
+ * from the platform.
  */
+const headerContentEndInset = `max(${pageGutter}, calc((100% - ${layoutMaxWidths.extended}) / 2 + ${pageGutter}))`
+
 const orgSwitcherPanelCss = {
 	position: 'fixed' as const,
 	inset: 'auto' as const,
 	top: '4.15rem',
-	right: pageGutter,
+	right: headerContentEndInset,
 	width: 'min(20rem, calc(100vw - 2rem))',
 	maxHeight: 'calc(100dvh - 6rem)',
 	overflowY: 'auto' as const,
@@ -867,14 +872,14 @@ const orgSwitcherPanelCss = {
 	'@supports (anchor-name: --a)': {
 		positionAnchor: orgSwitcherAnchor,
 		top: 'anchor(bottom)',
-		left: 'anchor(left)',
-		right: 'auto',
+		right: 'anchor(right)',
+		left: 'auto',
 		marginTop: '0.5rem',
 		positionTryFallbacks: 'flip-inline',
 	},
 	opacity: 0,
 	translate: '0 -6px',
-	transformOrigin: 'top left',
+	transformOrigin: 'top right',
 	transition: `opacity 160ms ${transitions.easeOut}, translate 160ms ${transitions.easeOut}, display 160ms allow-discrete, overlay 160ms allow-discrete`,
 	'&:popover-open': {
 		display: 'grid',

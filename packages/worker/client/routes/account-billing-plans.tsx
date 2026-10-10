@@ -149,7 +149,7 @@ export function renderAccountBillingPlans(input: {
 		selectedIntervalByPlan,
 	} = input
 	const retired = isRetiredPaidSubscription(billing)
-	const { canManage, personal, seats } = billing.org
+	const { personal, seats } = billing.org
 	return (
 		<AccountManagementPanel title="Plans">
 			<div
@@ -174,7 +174,6 @@ export function renderAccountBillingPlans(input: {
 						!(paidTier && retired) &&
 						planCoversTier(billing.effectivePlan, tier.id)
 					const purchasable =
-						canManage &&
 						paidTier != null &&
 						billing.purchasablePlans.includes(paidTier) &&
 						!paymentActionNeeded

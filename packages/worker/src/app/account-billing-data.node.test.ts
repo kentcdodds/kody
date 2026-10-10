@@ -125,7 +125,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		userId: 9,
 		org: personalOrg,
 		seats: 1,
-		canManage: true,
 		noticeCode: 'updated',
 		now,
 	})
@@ -168,7 +167,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 		userId: 3,
 		org: personalOrg,
 		seats: 1,
-		canManage: true,
 	})
 	expect(failed).toMatchObject({
 		stripePlan: 'pro',
@@ -189,7 +187,6 @@ test('loadAccountBillingData refreshes Stripe status and degrades when refresh i
 			userId: 4,
 			org: personalOrg,
 			seats: 1,
-			canManage: true,
 		}),
 	).toMatchObject({
 		hasStripeCustomer: false,
@@ -214,7 +211,6 @@ test("a team organization reads and refreshes its own Stripe customer, not the v
 		userId: 9,
 		org: teamOrg,
 		seats: 4,
-		canManage: false,
 	})
 	expect(data).toMatchObject({
 		hasStripeCustomer: true,
@@ -229,7 +225,6 @@ test("a team organization reads and refreshes its own Stripe customer, not the v
 			displayName: 'Acme',
 			personal: false,
 			seats: 4,
-			canManage: false,
 		},
 	})
 	expect(refreshStripePlanForOrg).toHaveBeenCalledWith(

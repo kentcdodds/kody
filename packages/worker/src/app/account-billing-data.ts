@@ -166,7 +166,6 @@ export async function loadAccountBillingData(input: {
 	userId: number
 	org: BillingPageOrg
 	seats: number
-	canManage: boolean
 	errorCode?: string | null
 	noticeCode?: string | null
 	now?: Date
@@ -278,7 +277,6 @@ export async function loadAccountBillingData(input: {
 			displayName: org.displayName,
 			personal: org.personal,
 			seats: input.seats,
-			canManage: input.canManage,
 		},
 		...(error ? { error } : {}),
 		...(notice ? { notice } : {}),

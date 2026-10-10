@@ -2472,8 +2472,6 @@ type AccountBillingOrg = {
 	personal: boolean
 	/** Owners and members: the Pro quantity checkout charges for. */
 	seats: number
-	/** Holds `billing:write`: subscribe, switch plans, open the Stripe portal. */
-	canManage: boolean
 }
 
 export type AccountBillingLoaderData = {

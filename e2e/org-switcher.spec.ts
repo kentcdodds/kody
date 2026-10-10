@@ -19,8 +19,9 @@ async function openSwitcher(page: Page) {
 }
 
 /**
- * The panel hangs from its trigger: just below it, sharing its left edge, or
- * its right edge when a left-aligned panel would run off the viewport.
+ * The panel hangs under the trigger, sharing its right edge, and stays
+ * inside the viewport. The trigger sits at the end of the header, so a
+ * left-aligned menu would hang past that edge on a wide desktop.
  */
 async function expectPanelAnchoredToTrigger(page: Page) {
 	const { trigger, panel } = await openSwitcher(page)
@@ -34,16 +35,10 @@ async function expectPanelAnchoredToTrigger(page: Page) {
 	expect(gap).toBeLessThanOrEqual(12)
 	expect(panelBox.x).toBeGreaterThanOrEqual(0)
 	expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(viewportWidth)
-
-	const fitsFromTriggerLeft = triggerBox.x + panelBox.width <= viewportWidth
-	if (fitsFromTriggerLeft) {
-		expect(Math.abs(panelBox.x - triggerBox.x)).toBeLessThanOrEqual(1)
-	} else {
-		expect(
-			Math.abs(panelBox.x + panelBox.width - (triggerBox.x + triggerBox.width)),
-		).toBeLessThanOrEqual(1)
-	}
-	return { trigger, panel, fitsFromTriggerLeft }
+	expect(
+		Math.abs(panelBox.x + panelBox.width - (triggerBox.x + triggerBox.width)),
+	).toBeLessThanOrEqual(1)
+	return { trigger, panel }
 }
 
 test('org switcher opens under its trigger, lists orgs, and closes like a menu', async ({
@@ -61,7 +56,7 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await login({ email: user.email, password: user.password, mode: 'login' })
 
 	// Create a second organization through the form; the handle follows the name.
-	await page.setViewportSize({ width: 1280, height: 800 })
+	await page.setViewportSize({ width: 1440, height: 900 })
 	await page.goto('/account/organizations/new')
 	await waitForClientHydration(page)
 	await page.getByLabel('Name').fill(`Pinned ${runId}`)
@@ -75,7 +70,6 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await waitForClientHydration(page)
 
 	const wide = await expectPanelAnchoredToTrigger(page)
-	expect(wide.fitsFromTriggerLeft).toBe(true)
 	await expect(
 		wide.panel.getByTestId(`org-switcher-pinned-${runId}`),
 	).toHaveAttribute('aria-current', 'true')
@@ -109,12 +103,10 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await expect(wide.trigger).toBeFocused()
 	await expect(wide.trigger).toHaveAttribute('aria-expanded', 'false')
 
-	// At narrow desktop the switcher (last in the header) sits near the
-	// viewport edge, so the panel flips to share the trigger's right edge.
-	// A click outside closes it.
+	// A narrower desktop still keeps the menu's end on the trigger, inside
+	// the viewport. A click outside closes it.
 	await page.setViewportSize({ width: 860, height: 800 })
 	const narrow = await expectPanelAnchoredToTrigger(page)
-	expect(narrow.fitsFromTriggerLeft).toBe(false)
 	await page.mouse.click(20, 700)
 	await expect(narrow.panel).toBeHidden()
 })
