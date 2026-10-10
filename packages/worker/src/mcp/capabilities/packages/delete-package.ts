@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -68,6 +69,15 @@ export const deletePackageCapability = defineDomainCapability(
 			if (!existing) {
 				throw new McpCallerError('Saved package not found for this user.')
 			}
+			await authorizePackageWrite(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				{
+					id: existing.id,
+					userId: existing.userId,
+					label: existing.name,
+				},
+				'package:delete',
+			)
 			if (args.confirm_name?.trim() !== existing.name) {
 				throw new McpCallerError(
 					createPackageDeleteConfirmNameError(existing.name),

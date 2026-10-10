@@ -12,6 +12,7 @@ import {
 	authorize,
 	authorizeSurface,
 	AuthorizationError,
+	denyProfileBoundPackageCreate,
 	canSeeResource,
 	checkPermission,
 	computeEffectivePermissions,
@@ -295,6 +296,24 @@ test('a connection profile narrows the package resources it lists', () => {
 	expect(
 		checkPermission(writeGranted, 'package:write', packageResource()).allowed,
 	).toBe(true)
+	for (const permission of ['package:delete', 'package:publish'] as const) {
+		const denied = denial(
+			checkPermission(profiled, permission, packageResource()),
+		)
+		expect(denied.code).toBe('connection_profile')
+		expect(denied.message).toBe(
+			'This connection profile cannot write package @kent/invoices.',
+		)
+		expect(
+			checkPermission(writeGranted, permission, packageResource()).allowed,
+		).toBe(true)
+	}
+	// Org-level package:create stays open so plain repo create is unchanged.
+	expect(checkPermission(writeGranted, 'package:create').allowed).toBe(true)
+	expect(
+		checkPermission(access({ profileGrants: [] }), 'package:create').allowed,
+	).toBe(true)
+	expect(checkPermission(access(), 'package:create').allowed).toBe(true)
 	// Profiles list packages only, so other resources and org-level checks
 	// are left to the role and credential.
 	expect(checkPermission(profiled, 'package:read').allowed).toBe(true)
@@ -305,6 +324,52 @@ test('a connection profile narrows the package resources it lists', () => {
 			orgId: ownerIdFromStored('org-1'),
 		}).allowed,
 	).toBe(true)
+})
+
+test('a bound profile cannot create a saved package and an unbound caller can', async () => {
+	const bound = deriveRequestContext({
+		user: { userId: personIdFromStored('user-1') },
+		source: { kind: 'mcp-oauth' },
+		profileName: 'work',
+	})
+	stubCompile(bound)
+	mocks.resolveConnectionProfileGrants.mockResolvedValueOnce([
+		{
+			resourceType: 'package',
+			resourceId: 'pkg-1',
+			actions: ['read', 'write'],
+		},
+	])
+	const error = await denyProfileBoundPackageCreate({
+		env,
+		request: bound,
+	}).catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(AuthorizationError)
+	expect(error).toMatchObject({
+		code: 'connection_profile',
+		permission: 'package:create',
+		message: 'This connection profile cannot create packages.',
+	})
+
+	const emptyGrants = deriveRequestContext({
+		user: { userId: personIdFromStored('user-1') },
+		source: { kind: 'mcp-oauth' },
+		profileName: 'empty',
+	})
+	stubCompile(emptyGrants)
+	mocks.resolveConnectionProfileGrants.mockResolvedValueOnce([])
+	await expect(
+		denyProfileBoundPackageCreate({ env, request: emptyGrants }),
+	).rejects.toMatchObject({ code: 'connection_profile' })
+
+	const unbound = sessionRequestContext('user-1')
+	stubCompile(unbound)
+	await expect(
+		denyProfileBoundPackageCreate({ env, request: unbound }),
+	).resolves.toBeUndefined()
+	await expect(
+		denyProfileBoundPackageCreate({ env, request: null }),
+	).resolves.toBeUndefined()
 })
 
 test('a request with no signed-in person is denied unless the surface touches no org data', async () => {

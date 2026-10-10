@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { z } from 'zod'
+import { denyProfileBoundPackageCreate } from '#worker/authorization/authorize.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -65,6 +66,10 @@ export const repoPromoteToPackageCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx) {
 			const user = requireMcpUser(ctx.callerContext)
+			await denyProfileBoundPackageCreate({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+			})
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
 				userId: user.userId,

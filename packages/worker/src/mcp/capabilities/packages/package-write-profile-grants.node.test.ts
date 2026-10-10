@@ -18,6 +18,12 @@ const mocks = vi.hoisted(() => ({
 	setWebhookEndpointEnabled: vi.fn(),
 	getRepoSessionById: vi.fn(),
 	sqlQuery: vi.fn(),
+	deleteSavedPackageProjection: vi.fn(),
+	publishCommunityListing: vi.fn(),
+	unpublishCommunityListing: vi.fn(),
+	getCommunityListingById: vi.fn(),
+	createStubSavedPackage: vi.fn(),
+	assertWithinEntitlement: vi.fn(),
 }))
 
 vi.mock('#worker/connection-profiles/repo.ts', () => ({
@@ -101,6 +107,42 @@ vi.mock('#worker/storage-runner.ts', () => ({
 
 vi.mock('#worker/entitlements/service.ts', () => ({
 	estimateEntitlementStorageSqlWriteBytes: () => 0,
+	assertWithinEntitlement: (...args: Array<unknown>) =>
+		mocks.assertWithinEntitlement(...args),
+}))
+
+vi.mock('#worker/package-registry/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		deleteSavedPackageProjection: (...args: Array<unknown>) =>
+			mocks.deleteSavedPackageProjection(...args),
+	}
+})
+
+vi.mock('#worker/community/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		publishCommunityListing: (...args: Array<unknown>) =>
+			mocks.publishCommunityListing(...args),
+		unpublishCommunityListing: (...args: Array<unknown>) =>
+			mocks.unpublishCommunityListing(...args),
+	}
+})
+
+vi.mock('#worker/community/repo.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		getCommunityListingById: (...args: Array<unknown>) =>
+			mocks.getCommunityListingById(...args),
+	}
+})
+
+vi.mock('./create-stub-package.ts', () => ({
+	createStubSavedPackage: (...args: Array<unknown>) =>
+		mocks.createStubSavedPackage(...args),
 }))
 
 const { packageUpdateCapability } = await import('./package-update.ts')
@@ -111,6 +153,11 @@ const { getGitRemoteCapability } = await import('./get-git-remote.ts')
 const { setWebhookEnabledForUser } = await import('#worker/webhooks/service.ts')
 const { storageQueryCapability } =
 	await import('#mcp/capabilities/storage/storage-query.ts')
+const { deletePackageCapability } = await import('./delete-package.ts')
+const { communityPublishCapability } =
+	await import('#mcp/capabilities/community/publish.ts')
+const { communityUnpublishCapability } =
+	await import('#mcp/capabilities/community/unpublish.ts')
 
 const savedPackage = {
 	id: 'pkg-1',
@@ -145,11 +192,11 @@ const sourceRow = {
 	updated_at: '2026-04-18T00:00:00.000Z',
 }
 
-function callerContext() {
+function callerContext(options?: { profile?: boolean }) {
 	return createMcpCallerContext({
 		source: { kind: 'mcp-oauth' },
 		baseUrl: 'https://heykody.dev',
-		connectionProfileName: 'work',
+		connectionProfileName: options?.profile === false ? null : 'work',
 		user: {
 			userId: personIdFromStored('user-1'),
 			email: 'user@example.com',
@@ -159,10 +206,10 @@ function callerContext() {
 	})
 }
 
-function ctx() {
+function ctx(options?: { profile?: boolean }) {
 	return {
 		env: { APP_DB: {} } as Env,
-		callerContext: callerContext(),
+		callerContext: callerContext(options),
 	}
 }
 
@@ -375,6 +422,136 @@ test('repo session package writes deny a read-only profile and allow write', asy
 			allowMissingSession: true,
 		}),
 	).resolves.toBeUndefined()
+})
+
+test('packageDelete denies a read-only profile and allows write', async () => {
+	reset()
+	grants(['read'])
+	await denial(() =>
+		deletePackageCapability.handler(
+			{ package_id: 'pkg-1', confirm_name: '@user/pkg' },
+			ctx(),
+		),
+	)
+	expect(mocks.deleteSavedPackageProjection).not.toHaveBeenCalled()
+
+	reset()
+	grants(['write'])
+	mocks.deleteSavedPackageProjection.mockRejectedValue(
+		new Error('past-profile-check'),
+	)
+	await expect(
+		deletePackageCapability.handler(
+			{ package_id: 'pkg-1', confirm_name: '@user/pkg' },
+			ctx(),
+		),
+	).rejects.toThrow('past-profile-check')
+	expect(mocks.deleteSavedPackageProjection).toHaveBeenCalled()
+})
+
+test('communityPublish denies a read-only profile and allows write', async () => {
+	reset()
+	grants(['read'])
+	await denial(() =>
+		communityPublishCapability.handler({ package_id: 'pkg-1' }, ctx()),
+	)
+	expect(mocks.publishCommunityListing).not.toHaveBeenCalled()
+
+	reset()
+	grants(['write'])
+	mocks.publishCommunityListing.mockRejectedValue(
+		new Error('past-profile-check'),
+	)
+	await expect(
+		communityPublishCapability.handler({ package_id: 'pkg-1' }, ctx()),
+	).rejects.toThrow('past-profile-check')
+	expect(mocks.publishCommunityListing).toHaveBeenCalled()
+})
+
+test('communityUnpublish denies a read-only profile and allows write', async () => {
+	reset()
+	grants(['read'])
+	mocks.getCommunityListingById.mockResolvedValue({
+		id: 'listing-1',
+		ownerUserId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'pkg',
+		name: '@user/pkg',
+	})
+	await denial(() =>
+		communityUnpublishCapability.handler(
+			{ listing_id: 'listing-1', confirm_name: 'pkg' },
+			ctx(),
+		),
+	)
+	expect(mocks.unpublishCommunityListing).not.toHaveBeenCalled()
+
+	reset()
+	grants(['write'])
+	mocks.getCommunityListingById.mockResolvedValue({
+		id: 'listing-1',
+		ownerUserId: 'user-1',
+		packageId: 'pkg-1',
+		kodyId: 'pkg',
+		name: '@user/pkg',
+	})
+	mocks.unpublishCommunityListing.mockRejectedValue(
+		new Error('past-profile-check'),
+	)
+	await expect(
+		communityUnpublishCapability.handler(
+			{ listing_id: 'listing-1', confirm_name: 'pkg' },
+			ctx(),
+		),
+	).rejects.toThrow('past-profile-check')
+	expect(mocks.unpublishCommunityListing).toHaveBeenCalled()
+})
+
+test('packageSave and packageGetGitRemote deny profile-bound create and allow it without a profile', async () => {
+	reset()
+	grants(['read', 'write'])
+	mocks.getSavedPackageById.mockResolvedValue(null)
+	mocks.resolveSavedPackageRef.mockResolvedValue(null)
+	await denial(() => savePackageCapability.handler({ files: saveFiles }, ctx()))
+	expect(mocks.assertWithinEntitlement).not.toHaveBeenCalled()
+	expect(mocks.syncArtifactSourceSnapshot).not.toHaveBeenCalled()
+
+	reset()
+	mocks.resolveSavedPackageRef.mockResolvedValue(null)
+	mocks.assertWithinEntitlement.mockRejectedValue(
+		new Error('past-profile-check'),
+	)
+	await expect(
+		savePackageCapability.handler(
+			{ files: saveFiles },
+			ctx({ profile: false }),
+		),
+	).rejects.toThrow('past-profile-check')
+	expect(mocks.assertWithinEntitlement).toHaveBeenCalled()
+
+	reset()
+	grants(['write'])
+	mocks.resolveSavedPackageRef.mockResolvedValue(null)
+	await denial(() =>
+		getGitRemoteCapability.handler(
+			{ kody_id: 'new-pkg', create: true, scope: 'write' },
+			ctx(),
+		),
+	)
+	expect(mocks.createStubSavedPackage).not.toHaveBeenCalled()
+
+	reset()
+	mocks.resolveSavedPackageRef.mockResolvedValue(null)
+	mocks.createStubSavedPackage.mockRejectedValue(
+		new Error('past-profile-check'),
+	)
+	await expect(
+		getGitRemoteCapability.handler(
+			{ kody_id: 'new-pkg', create: true, scope: 'write' },
+			ctx({ profile: false }),
+		),
+	).rejects.toThrow('past-profile-check')
+	expect(mocks.createStubSavedPackage).toHaveBeenCalled()
 })
 
 test('storageQuery on a package bucket denies a read-only profile and allows write', async () => {

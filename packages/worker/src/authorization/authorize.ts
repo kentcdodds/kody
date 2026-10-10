@@ -147,19 +147,33 @@ export function computeEffectivePermissions(input: {
 	return promise
 }
 
+/**
+ * Permissions that narrow to the profile `write` action. Delete and publish
+ * have no profile action of their own; a bound profile must list `write`.
+ */
+const profileWritePermissions = [
+	'package:write',
+	'package:delete',
+	'package:publish',
+] as const
+
+type ProfileWritePermission = (typeof profileWritePermissions)[number]
+
+function isProfileWritePermission(
+	permission: OrgPermission,
+): permission is ProfileWritePermission {
+	return (profileWritePermissions as ReadonlyArray<OrgPermission>).includes(
+		permission,
+	)
+}
+
 function profileActionFor(
 	permission: OrgPermission,
 ): ConnectionProfileAction | null {
-	switch (permission) {
-		case 'package:read':
-			return 'read'
-		case 'package:execute':
-			return 'execute'
-		case 'package:write':
-			return 'write'
-		default:
-			return null
-	}
+	if (permission === 'package:read') return 'read'
+	if (permission === 'package:execute') return 'execute'
+	if (isProfileWritePermission(permission)) return 'write'
+	return null
 }
 
 /**
@@ -260,6 +274,9 @@ function denialMessage(
 		case 'credential_scope':
 			return `This credential is not scoped for ${permission}${target}. Agents already on MCP: call cliCredentialBootstrap with lifetime short|long (then auth bootstrap), not tokenCreate.`
 		case 'connection_profile': {
+			if (permission === 'package:create') {
+				return 'This connection profile cannot create packages.'
+			}
 			const action = profileActionFor(permission) ?? permission
 			return `This connection profile cannot ${action}${resource ? ` ${describeResource(resource)}` : ''}.`
 		}
@@ -329,16 +346,41 @@ export function packageResource(input: {
 }
 
 /**
- * The package:write check for a resolved saved package. Profiles narrow this
- * to grants that list `write`. Call it once the package row is known, before
- * the mutation. `package:delete` and `package:publish` are not profile
- * actions; do not route them through here.
+ * The one profile-write check for a resolved saved package. `package:write`,
+ * `package:delete`, and `package:publish` all map to the profile `write`
+ * action. Call it once the package row is known, before the mutation.
  */
 export async function authorizePackageWrite(
 	ctx: { env: Env; request: RequestContext | null },
 	pkg: { id: string; userId: string; label?: string },
+	permission: ProfileWritePermission = 'package:write',
 ): Promise<void> {
-	await authorize(ctx, 'package:write', packageResource(pkg))
+	await authorize(ctx, permission, packageResource(pkg))
+}
+
+/**
+ * A bound profile names existing packages, so it cannot create one. Call this
+ * from saved-package creation (`packageSave` and `packageGetGitRemote` when
+ * the package does not exist yet, `communityFork`, `repoPromoteToPackage`).
+ * Org-level `package:create` stays open so plain `repoCreate` is unchanged.
+ */
+export async function denyProfileBoundPackageCreate(ctx: {
+	env: Env
+	request: RequestContext | null
+}): Promise<void> {
+	if (!ctx.request?.credential.profileName) return
+	const access = await computeEffectivePermissions({
+		env: ctx.env,
+		request: ctx.request,
+	})
+	if (access.profileGrants === null) return
+	throw new AuthorizationError({
+		code: 'connection_profile',
+		permission: 'package:create',
+		orgId: access.orgId,
+		resource: null,
+		message: 'This connection profile cannot create packages.',
+	})
 }
 
 const requestPermissionsStorage = new AsyncLocalStorage<EffectivePermissions>()

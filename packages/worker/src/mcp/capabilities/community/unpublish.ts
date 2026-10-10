@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
 import { getCommunityListingById } from '#worker/community/repo.ts'
 import { unpublishCommunityListing } from '#worker/community/service.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -49,6 +50,15 @@ export const communityUnpublishCapability = defineDomainCapability(
 					`Catalog entry "${args.listing_id}" was not found.`,
 				)
 			}
+			await authorizePackageWrite(
+				{ env: ctx.env, request: ctx.callerContext.request },
+				{
+					id: listing.packageId,
+					userId: listing.ownerUserId,
+					label: listing.name,
+				},
+				'package:publish',
+			)
 			if (args.confirm_name.trim() !== listing.kodyId) {
 				throw new McpCallerError(
 					`Making this package private unlists it from /community and 404s public URLs. Existing forks keep their copies. Confirm with the user, then pass confirm_name: "${listing.kodyId}" (the package slug).`,
