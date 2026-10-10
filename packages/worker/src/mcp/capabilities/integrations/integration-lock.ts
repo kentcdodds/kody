@@ -50,7 +50,7 @@ export const integrationLockCapability = defineDomainCapability(
 			args: { name: string; package_id: string },
 			ctx: CapabilityContext,
 		) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			try {
 				const updated = await lockIntegrationToPackage({
 					env: ctx.env,

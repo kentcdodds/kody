@@ -35,7 +35,7 @@ A non-personal org handle (`/@<slug>`) renders the org home for its members and
 `request.org.id`. Packages and connected agents stay 404 on a team org because
 those two sections still read the person. Team orgs still get an Organization
 rail: Settings (`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and
-Billing (`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs
+Billing (`/@<slug>/-/billing`, owners; the page lands with #3135). Personal orgs
 keep Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
