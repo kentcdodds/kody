@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -49,12 +50,12 @@ export const secretProviderBindCapability = defineDomainCapability(
 			config: z.record(z.string(), z.string()),
 		}),
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			try {
 				const bound = await bindSecretProvider({
 					env: ctx.env,
 					baseUrl: ctx.callerContext.baseUrl,
-					userId: user.userId,
+					userId: ownerIdFromCaller(ctx.callerContext),
 					providerId: args.provider,
 					packageId: args.package_id,
 					doorSecretName: args.door_secret_name,

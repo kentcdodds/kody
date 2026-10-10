@@ -95,7 +95,7 @@ import {
 } from '#worker/run-records/types.ts'
 import { shouldRecordExecuteUsageForRun } from '#worker/usage/execute-usage-surface.ts'
 import { createDynamicCallableWorkflow } from '#worker/package-runtime/package-workflows.ts'
-import { packageStorageOwnerIdFromCaller } from '#worker/package-registry/package-owner.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { requestLineage } from '#worker/request-context/request-context.ts'
 import {
 	isDirectBundleDependency,
@@ -663,7 +663,7 @@ export async function runModuleWithRegistry(
 	}
 > {
 	const actorUserId = callerContext.user?.userId ?? ''
-	const packageOwnerUserId = packageStorageOwnerIdFromCaller(callerContext)
+	const packageOwnerUserId = ownerIdFromCaller(callerContext)
 	const serverTiming: Array<{ name: string; durationMs: number }> = []
 	const reportProgress = options?.reportProgress
 	const isAdHocExecute = shouldRecordExecuteUsageForRun({
@@ -682,7 +682,7 @@ export async function runModuleWithRegistry(
 		options?.runRecordHandle ??
 		beginRunRecord({
 			env,
-			userId: callerContext.user?.userId ?? null,
+			userId: ownerIdFromCaller(callerContext) || null,
 			context: options?.runRecord ?? null,
 			waitUntil: options?.waitUntil,
 		})
@@ -867,9 +867,7 @@ export function createComputedPackageImportTools(input: {
 				)
 			}
 			const actorUserId = input.callerContext.user?.userId
-			const packageOwnerUserId = packageStorageOwnerIdFromCaller(
-				input.callerContext,
-			)
+			const packageOwnerUserId = ownerIdFromCaller(input.callerContext)
 			if (!packageOwnerUserId) {
 				throw new Error(
 					'Dynamic kody:@ package import requires an authenticated runtime. Use a static import (import fn from "kody:@scope/package/export") when the package name is known at write time.',
@@ -1053,7 +1051,7 @@ export async function runBundledModuleWithRegistry(
 		options?.runRecordHandle ??
 		beginRunRecord({
 			env,
-			userId: callerContext.user?.userId ?? null,
+			userId: ownerIdFromCaller(callerContext) || null,
 			context: runRecordContext,
 			waitUntil,
 		})
@@ -1073,7 +1071,7 @@ export async function runBundledModuleWithRegistry(
 		if (usageRecorded) return
 		usageRecorded = true
 		if (options?.skipPackageExportUsage) return
-		const userId = callerContext.user?.userId
+		const userId = ownerIdFromCaller(callerContext)
 		if (!options?.packageContext || !userId) return
 		await recordUsage(env, {
 			userId,
@@ -1141,7 +1139,7 @@ export async function runBundledModuleWithRegistry(
 			await hydrateKodyRuntimeModules({
 				env,
 				baseUrl: callerContext.baseUrl,
-				userId: packageStorageOwnerIdFromCaller(callerContext),
+				userId: ownerIdFromCaller(callerContext),
 				modules: bundle.modules,
 			})
 		runServerTiming.push({
@@ -1181,7 +1179,7 @@ export async function runBundledModuleWithRegistry(
 		// dependencies.
 		const staticCallMeterTools = createPackageStaticCallMeterTools({
 			env,
-			userId: callerContext.user?.userId ?? null,
+			userId: ownerIdFromCaller(callerContext) || null,
 			request: callerContext.request,
 			grantedPackageIds: new Set(
 				(bundle.dependencies ?? [])
@@ -1199,7 +1197,7 @@ export async function runBundledModuleWithRegistry(
 			signal: options?.signal,
 			gatewayProps: {
 				baseUrl: callerContext.baseUrl,
-				userId: callerContext.user?.userId ?? null,
+				userId: ownerIdFromCaller(callerContext) || null,
 				email: callerContext.user?.email ?? null,
 				request: callerContext.request,
 				storageContext: normalizedStorageContext,

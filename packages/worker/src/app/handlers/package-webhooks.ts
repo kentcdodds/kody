@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type Action } from 'remix/router'
 import { enum_, object, parseSafe, string } from 'remix/data-schema'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -77,7 +78,10 @@ export function createCommunityPackageWebhooksApiHandler(env: Env) {
 			}
 			const savedPackage = await resolveSavedPackage({
 				db: env.APP_DB,
-				userId: user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: user.request,
+					user: user.mcpUser,
+				}),
 				packageIdOrKodyId: params.kodyId.trim(),
 			})
 			if (!savedPackage) {
@@ -190,7 +194,7 @@ async function runWebhookAction(input: {
 	const { env, request, user, intent, packageKodyId, webhookName } = input
 	const shared = {
 		env,
-		userId: user.mcpUser.userId,
+		userId: ownerIdFromCaller({ request: user.request, user: user.mcpUser }),
 		email: user.email,
 		username: user.username,
 		kodyId: packageKodyId,

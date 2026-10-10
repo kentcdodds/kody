@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -419,7 +420,10 @@ export async function loadAccountEmailData(input: {
 	})
 	const query = url.searchParams.get('q')?.trim() ?? ''
 	const classification = readAccountEmailClassificationFilter(input.request.url)
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const emailVerified =
 		input.user.emailVerified ||
 		(await isAccountEmailVerified({

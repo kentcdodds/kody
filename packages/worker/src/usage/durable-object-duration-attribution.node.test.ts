@@ -30,6 +30,7 @@ function fakeNamespace(label: string) {
 
 function createEnv(input: {
 	users?: Array<string>
+	orgs?: Array<string>
 	buckets?: Array<{ user_id: string; storage_id: string; kind: string }>
 	apps?: Array<{ user_id: string; id: string }>
 	credentials?: boolean
@@ -50,6 +51,11 @@ function createEnv(input: {
 							results: (input.users ?? []).map((id) => ({
 								stable_user_id: id,
 							})),
+						}
+					}
+					if (sql.includes('FROM orgs')) {
+						return {
+							results: (input.orgs ?? []).map((id) => ({ id })),
 						}
 					}
 					if (sql.includes('FROM user_storage_buckets')) {
@@ -118,6 +124,19 @@ test('owner map covers user-named, bucket, repo-session, and realtime objects', 
 	)
 	expect(owners.has('session:malformed')).toBe(false)
 	expect(owners.has('session:repo-session:rs-1')).toBe(false)
+})
+
+test('owner map names Durable Objects for a team org with no users row', async () => {
+	const { env } = createEnv({
+		users: [],
+		orgs: ['org-team'],
+	})
+	const owners = await buildDurableObjectOwnerMap(env)
+	expect(owners.get('hub:org-team')).toEqual({
+		userId: 'org-team',
+		doClass: 'McpClientHub',
+	})
+	expect(owners.get('runlog:org-team')?.doClass).toBe('RunLog')
 })
 
 test('active time converts microseconds and keeps unmapped objects unattributed', () => {
@@ -202,6 +221,7 @@ test('the lane rewrites days with analytics atomically and skips lagging empty d
 		sql: 'DELETE FROM durable_object_duration_daily WHERE day = ?',
 		params: ['2026-09-26'],
 	})
+	expect(batches[0]?.[1]?.sql).toContain('FROM orgs')
 	expect(batches[0]?.[1]?.params.slice(0, 5)).toEqual([
 		'user-a',
 		'McpClientHub',

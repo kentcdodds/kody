@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
 	buildJobInspectionOutput,
@@ -249,7 +250,10 @@ export async function loadAccountJobsData(input: {
 	pathJobId?: string
 	serverTiming?: Array<ServerTimingEntry>
 }): Promise<AccountJobsLoaderData> {
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const selectedJobId = readAccountJobsSelectedJobId(
 		input.request.url,
 		input.pathJobId,

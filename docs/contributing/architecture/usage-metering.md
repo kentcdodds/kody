@@ -176,8 +176,10 @@ of it. Neither is an invoice line.
   Cloudflare's account-wide aggregate (a second, dimension-less group in the
   same query), so truncation never shrinks the denominator. A response with no
   matching account fails the lane rather than zeroing the day, a day with no
-  objects yet (analytics lag) keeps its last write, and users whose deletion
-  started after the owner snapshot get no rows.
+  objects yet (analytics lag) keeps its last write, and owners whose deletion or
+  soft-delete started after the owner snapshot get no rows. A live team org id
+  (no `users` row) is kept. The live-owner predicate is `liveBillingOwnerSql`,
+  shared with `usage_rollups`.
 - **Why it is an estimate:** the include and Cloudflare's rounding apply to the
   account total, isolate sharing does not change per-object billing, and
   analytics for the current day are partial until the next day's run.

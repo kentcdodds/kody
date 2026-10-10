@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -119,11 +120,11 @@ export const webhookSyntheticDispatchCapability = defineDomainCapability(
 				.optional(),
 		}),
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			assertDirectMcpCaller(ctx.callerContext)
 			const dispatched = await dispatchSyntheticWebhookForUser({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				baseUrl: ctx.callerContext.baseUrl,
 				packageId: args.packageId,
 				kodyId: args.kodyId,

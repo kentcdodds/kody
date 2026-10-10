@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { runWithRequestPermissions } from '#worker/authorization/authorize.ts'
-import { packageStorageOwnerIdFromCaller } from '#worker/package-registry/package-owner.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	buildLocalExecutePackageGraph,
 	LocalExecutePackageGraphError,
@@ -61,7 +61,7 @@ export const localExecutePackageGraphOperationDefinitions: Record<
 						buildLocalExecutePackageGraph({
 							env: ctx.env,
 							baseUrl: ctx.callerContext.baseUrl,
-							userId: packageStorageOwnerIdFromCaller(ctx.callerContext),
+							userId: ownerIdFromCaller(ctx.callerContext),
 							code: input.code,
 						}),
 				)

@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { createMatcher } from 'remix/route-pattern/match'
@@ -101,7 +102,10 @@ export function createAccountPackageApprovePublishHandler(env: Env) {
 			const packageId = readPackageId(params)
 			if (packageId) {
 				const savedPackage = await getSavedPackageById(env.APP_DB, {
-					userId: user.mcpUser.userId,
+					userId: ownerIdFromCaller({
+						request: user.request,
+						user: user.mcpUser,
+					}),
 					packageId,
 				})
 				if (!savedPackage) {

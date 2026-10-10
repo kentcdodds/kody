@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import {
@@ -39,7 +40,10 @@ export async function handleAccountPackageVisibilityAction(input: {
 		)
 	}
 
-	const userId = input.user.mcpUser.userId
+	const userId = ownerIdFromCaller({
+		request: input.user.request,
+		user: input.user.mcpUser,
+	})
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId,
 		packageId,

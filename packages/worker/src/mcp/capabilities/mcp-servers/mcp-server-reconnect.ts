@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -39,10 +40,10 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 		}),
 		outputSchema,
 		async handler(args: { server: string }, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const setting = await resolveMcpServerSetting({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				server: args.server,
 			})
 			const oauth = resolveMcpServerOAuthClientUrls({
@@ -51,7 +52,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 			})
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				waitUntil: ctx.waitUntil,
 			})
 			const result = await hub.reconnectServer({
@@ -60,7 +61,7 @@ export const mcpServerReconnectCapability = defineDomainCapability(
 			})
 			await persistMcpServerLastErrorIfChanged({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				id: setting.id,
 				state: result.state,
 				lastError: result.lastError ?? null,

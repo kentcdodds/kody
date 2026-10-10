@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	buildAccountSecretId,
 	parseAccountSecretId,
@@ -121,7 +122,10 @@ async function buildAccountSecretsPayload(input: {
 	const savedPackages =
 		input.savedPackages ??
 		(await listSavedPackagesByUserId(input.env.APP_DB, {
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 		}))
 	const packageOptions = input.packageOptions ?? toPackageOptions(savedPackages)
 	const packageLookup = toAllowedPackageLookup(savedPackages)
@@ -133,7 +137,10 @@ async function buildAccountSecretsPayload(input: {
 	const selectedSecret = input.selectedSecretId
 		? await resolveAccountSecretDetail({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				secretId: input.selectedSecretId,
 				secrets,
 			})
@@ -153,7 +160,10 @@ async function buildAccountSecretsPayload(input: {
 		try {
 			approval = await resolveSecretApprovalView({
 				env: input.env,
-				userId: input.user.mcpUser.userId,
+				userId: ownerIdFromCaller({
+					request: input.user.request,
+					user: input.user.mcpUser,
+				}),
 				secretId: input.selectedSecretId ?? null,
 				requestedHosts: requestedApprovalHosts.valid,
 				rejectedHosts: rejectedApprovalHosts,
@@ -201,12 +211,18 @@ async function listAccountSecrets(input: {
 	const [userSecrets, packageSecrets] = await Promise.all([
 		listSecrets({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			scope: 'user',
 		}),
 		listPackageSecretsByPackageIds({
 			env: input.env,
-			userId: input.user.mcpUser.userId,
+			userId: ownerIdFromCaller({
+				request: input.user.request,
+				user: input.user.mcpUser,
+			}),
 			packageIds: input.packageOptions.map((packageOption) => packageOption.id),
 		}),
 	])

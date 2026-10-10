@@ -23,6 +23,11 @@ import { coalescedCountUsageEventTypes } from '#universal/usage-event-types.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { listSystemInboundUsageRows } from '#worker/email/system-inbound-delivery-store.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import {
+	liveBillingOwnerSql,
+	liveOrgMatchSql,
+	liveUserMatchSql,
+} from '#worker/usage/live-billing-owner.ts'
 
 export const usageAggregationCronGateMinutes = 5
 export const usageAggregationCronIntervalMinutes = 60
@@ -184,17 +189,7 @@ INSERT INTO usage_rollups (
 	updated_at
 )
 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9
-WHERE ?1 = 'system:email'
-	OR EXISTS (
-		SELECT 1 FROM users
-		WHERE stable_user_id = ?1
-			AND deleting_at IS NULL${andLiveDeletedAtSql('users')}
-	)
-	OR EXISTS (
-		SELECT 1 FROM orgs
-		WHERE id = ?1
-			AND deleting_at IS NULL${andLiveDeletedAtSql('orgs')}
-	)
+WHERE ${liveBillingOwnerSql('?1')}
 ON CONFLICT (user_id, metric, month) DO UPDATE SET
 	event_count = excluded.event_count,
 	error_count = excluded.error_count,
@@ -463,18 +458,8 @@ async function deleteNonLiveUserRollups(input: {
 				`DELETE FROM usage_rollups
 				WHERE month IN (?, ?)
 					AND user_id != 'system:email'
-					AND NOT EXISTS (
-						SELECT 1 FROM users
-						WHERE stable_user_id = usage_rollups.user_id
-							AND deleting_at IS NULL
-							${andLiveDeletedAtSql('users')}
-					)
-					AND NOT EXISTS (
-						SELECT 1 FROM orgs
-						WHERE id = usage_rollups.user_id
-							AND deleting_at IS NULL
-							${andLiveDeletedAtSql('orgs')}
-					)`,
+					AND NOT ${liveUserMatchSql('usage_rollups.user_id')}
+					AND NOT ${liveOrgMatchSql('usage_rollups.user_id')}`,
 			)
 			.bind(...input.months)
 			.run(),

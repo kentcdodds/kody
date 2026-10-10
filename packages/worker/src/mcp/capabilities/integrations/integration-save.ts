@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -46,10 +47,10 @@ export const integrationSaveCapability = defineDomainCapability(
 		inputSchema,
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const existing = await getIntegration({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				name: args.name,
 			})
 			// A partial merge onto a platform (built-in) connection would
@@ -72,7 +73,7 @@ export const integrationSaveCapability = defineDomainCapability(
 			}
 			const integration = await upsertIntegration({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				config,
 				...(args.accountLabel !== undefined
 					? { accountLabel: args.accountLabel }

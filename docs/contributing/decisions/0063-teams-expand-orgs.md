@@ -29,9 +29,10 @@ Soft-delete columns land additively; enforced read filters are phase 7.
 - **Org audit** (`org_audit_events` in AUDIT_DB) is separate from platform
   `audit_events`. Backfill records `org.migrated` per org.
 
-We do **not** yet switch storage reads to `request.org.id` when it could differ
-from a person id, filter soft-deleted org rows on reads, or drop legacy `users`
-billing columns.
+Storage reads and usage billing that have an org on the request use
+`ownerIdFromCaller` (`request.org.id`). Packages and connected agents on org
+section pages still read the person. We do **not** yet filter every soft-deleted
+org row on reads, or drop legacy `users` billing columns.
 
 ## Consequences
 

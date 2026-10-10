@@ -1,3 +1,4 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -31,12 +32,12 @@ export const secretListCapability = defineDomainCapability(
 			secrets: z.array(secretMetadataSchema),
 		}),
 		async handler(args, ctx: CapabilityContext) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
 			const packageId =
 				ctx.callerContext.storageContext?.packageId?.trim() || null
 			const secrets = await listSecrets({
 				env: ctx.env,
-				userId: user.userId,
+				userId: ownerIdFromCaller(ctx.callerContext),
 				scope: args.scope ?? null,
 				storageContext: {
 					sessionId: ctx.callerContext.storageContext?.sessionId ?? null,
@@ -50,7 +51,7 @@ export const secretListCapability = defineDomainCapability(
 					? true
 					: await packageHasImplicitUserSecretReadAccess({
 							env: ctx.env,
-							userId: user.userId,
+							userId: ownerIdFromCaller(ctx.callerContext),
 							packageId,
 						})
 			const accessibleSecrets =
