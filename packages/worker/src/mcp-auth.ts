@@ -480,7 +480,7 @@ export async function handleMcpRequest({
 		readConnectionProfileNameFromGrantProps(grantProps)
 	const orgBinding = await loadOrgBindingFromGrantProps({
 		db: env.APP_DB,
-		personId: personalOrgId(mcpUser.userId),
+		personId: mcpUser.userId,
 		grantProps,
 	})
 	if (!orgBinding) {
