@@ -249,12 +249,12 @@ export async function handleInboundEmail(
 			const accountRow = await env.APP_DB.prepare(
 				`SELECT o.plan, o.stripe_plan, o.entitlement_ladder, o.stripe_credits_eligible, o.admin_credits_eligible, u.email_verified_at, u.suspended_at
 			FROM users u
-			INNER JOIN orgs o ON o.id = u.stable_user_id
-			WHERE u.email = ? AND u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
+			LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			WHERE u.email = ? AND u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 			)
 				.bind(identity.email, userId)
 				.first<{
-					plan: string
+					plan: string | null
 					stripe_plan: string | null
 					entitlement_ladder: string | null
 					stripe_credits_eligible: number | null
@@ -262,18 +262,27 @@ export async function handleInboundEmail(
 					email_verified_at: string | null
 					suspended_at: string | null
 				}>()
-			// A scoped miss keeps the existing synthetic-account fallback. A
-			// present row must satisfy the plan storage contract.
+			// A missing org (or missing user) keeps the synthetic max plan.
+			// Verification and suspension still come from the users row.
+			const orgPlan = accountRow?.plan
 			const accountEntitlement = await resolveBaseUserEntitlement({
 				db: env.APP_DB,
 				stableUserId: userId,
-				row: accountRow ?? {
-					plan: 'max',
-					stripe_plan: null,
-					entitlement_ladder: null,
-					stripe_credits_eligible: 0,
-					admin_credits_eligible: 0,
-				},
+				row: orgPlan
+					? {
+							plan: orgPlan,
+							stripe_plan: accountRow?.stripe_plan ?? null,
+							entitlement_ladder: accountRow?.entitlement_ladder ?? null,
+							stripe_credits_eligible: accountRow?.stripe_credits_eligible ?? 0,
+							admin_credits_eligible: accountRow?.admin_credits_eligible ?? 0,
+						}
+					: {
+							plan: 'max',
+							stripe_plan: null,
+							entitlement_ladder: null,
+							stripe_credits_eligible: 0,
+							admin_credits_eligible: 0,
+						},
 			})
 			const account = {
 				email: identity.email,
