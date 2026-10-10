@@ -1,4 +1,5 @@
 import { IntegrationsSetup } from './integrations-setup.tsx'
+import { FeatureRelated } from './feature-related.tsx'
 import { type Handle, on } from 'remix/component'
 
 const examples = {
@@ -190,6 +191,14 @@ export function IntegrationsFeature(handle: Handle) {
 				</div>
 			</section>
 			<IntegrationsSetup />
+			<FeatureRelated
+				links={[
+					{ href: '/integrations/gmail', label: 'Gmail integration' },
+					{ href: '/integrations/slack', label: 'Slack integration' },
+					{ href: '/integrations/claude', label: 'Claude integration' },
+					{ href: '/features/packages', label: 'Reusable packages' },
+				]}
+			/>
 			<div class="feature-start">
 				<a href="/docs/oauth">Read the OAuth setup guide</a>
 				<a class="action" href="/onboarding">

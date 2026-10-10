@@ -1,5 +1,6 @@
 import { on, type Handle } from 'remix/component'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
+import { FeatureRelated } from './feature-related.tsx'
 import { TriggerSignalsArt, TriggerScanArt } from './triggers-art.tsx'
 import { triggerExamples, signals } from './triggers-data.ts'
 
@@ -276,6 +277,13 @@ export function TriggersFeature(handle: Handle) {
 						</p>
 					</div>
 				</section>
+				<FeatureRelated
+					links={[
+						{ href: '/features/packages', label: 'Reusable packages' },
+						{ href: '/features/apps', label: 'Package apps' },
+						{ href: '/features/secrets', label: 'API secrets' },
+					]}
+				/>
 				<div class="feature-start">
 					<div>
 						<h2>Test it before you leave it running.</h2>

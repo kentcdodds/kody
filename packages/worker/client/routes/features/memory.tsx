@@ -1,4 +1,5 @@
 import { type Handle, on } from 'remix/component'
+import { FeatureRelated } from './feature-related.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
 const notes = {
@@ -277,6 +278,15 @@ export function MemoryFeature(handle: Handle) {
 					</div>
 				</div>
 			</section>
+			<FeatureRelated
+				links={[
+					{
+						href: '/use-cases/shared-agent-memory',
+						label: 'Shared agent memory use case',
+					},
+					{ href: '/features/integrations', label: 'Service connections' },
+				]}
+			/>
 			<div class="feature-start">
 				<a href="/docs/memory">Read the memory guide</a>
 				<BuildWithAgentButton />
