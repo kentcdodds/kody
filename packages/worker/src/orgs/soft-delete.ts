@@ -26,6 +26,12 @@ import {
 	orgOwnedUserIdSoftDeleteTables,
 } from '#worker/orgs/data-targets.ts'
 import { cancelKodySubscriptionsForSoftDelete } from '#worker/billing/soft-delete-billing.ts'
+import {
+	FreeOrgLimitError,
+	MAX_FREE_ORGS_PER_USER,
+	countLiveFreeOwnedOrgs,
+	isPaidOrg,
+} from '#worker/orgs/billing.ts'
 import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
@@ -432,6 +438,36 @@ export async function assertActorCanRestoreSoftDeletedOrg(input: {
 	return { deletedAt: row.deleted_at }
 }
 
+/**
+ * A restored free org counts toward its Owners' two-free-org cap again, the
+ * same as creating one. Refuse when an Owner whose membership this restore
+ * would revive (same deletion generation) is already at the cap.
+ */
+async function assertRestoreKeepsOwnersUnderFreeOrgCap(input: {
+	db: D1Database
+	orgId: string
+	deletedAt: string
+}) {
+	const owners = await input.db
+		.prepare(
+			`SELECT m.user_id AS user_id, h.handle AS handle
+			 FROM org_memberships m
+			 LEFT JOIN handles h ON h.user_id = m.user_id
+			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at = ?`,
+		)
+		.bind(input.orgId, input.deletedAt)
+		.all<{ user_id: string; handle: string | null }>()
+	for (const owner of owners.results ?? []) {
+		const count = await countLiveFreeOwnedOrgs(input.db, owner.user_id)
+		if (count >= MAX_FREE_ORGS_PER_USER) {
+			const who = owner.handle ? `@${owner.handle}` : 'an Owner'
+			throw new FreeOrgLimitError(
+				`Restoring this organization would give ${who} more than ${String(MAX_FREE_ORGS_PER_USER)} free organizations. Make one paid or delete one before restoring.`,
+			)
+		}
+	}
+}
+
 export async function restoreOrg(input: {
 	env: Env
 	orgId: OwnerId
@@ -442,14 +478,21 @@ export async function restoreOrg(input: {
 	const now = input.now ?? new Date()
 	const appDb = input.env.APP_DB
 	const row = await appDb
-		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.prepare(`SELECT deleted_at, plan FROM orgs WHERE id = ?`)
 		.bind(input.orgId)
-		.first<{ deleted_at: string | null }>()
+		.first<{ deleted_at: string | null; plan: string }>()
 	if (!row?.deleted_at) {
 		throw new Error('org_not_deleted')
 	}
 	if (!isWithinSoftDeleteRestoreWindow(row.deleted_at, now)) {
 		throw new OrgRestoreWindowExpiredError()
+	}
+	if (!isPaidOrg(row.plan)) {
+		await assertRestoreKeepsOwnersUnderFreeOrgCap({
+			db: appDb,
+			orgId: input.orgId,
+			deletedAt: row.deleted_at,
+		})
 	}
 	const deletedAt = row.deleted_at
 	const restoredAt = now.toISOString()

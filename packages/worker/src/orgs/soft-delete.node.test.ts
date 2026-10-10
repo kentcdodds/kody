@@ -863,3 +863,76 @@ test('a user-delete retry does not soft-delete a shared org after the other memb
 		.first<{ deleted_at: string | null }>()
 	expect(bucket?.deleted_at).toBeNull()
 })
+
+test('restoring a free org refuses when an Owner is already at the free-org cap', async () => {
+	const { env, appDb } = await createHarness()
+	const ownerId = 'owner-at-cap'
+	const ts = '2026-01-01T00:00:00.000Z'
+	for (const [orgId, slug] of [
+		['org-cap-a', 'cap-a'],
+		['org-cap-b', 'cap-b'],
+		['org-cap-c', 'cap-c'],
+	] as const) {
+		await seedOrg(appDb, orgId, slug)
+		await appDb
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'owner', ?)`,
+			)
+			.bind(orgId, ownerId, ts)
+			.run()
+	}
+	await appDb
+		.prepare(
+			`INSERT INTO handles (handle, user_id, created_at) VALUES ('capowner', ?, ?)`,
+		)
+		.bind(ownerId, ts)
+		.run()
+	await softDeleteOrg({ env, orgId: 'org-cap-a', actorUserId: ownerId, now })
+	const restoreNow = new Date(now.getTime() + 60_000)
+	await expect(
+		restoreOrg({
+			env,
+			orgId: 'org-cap-a',
+			actorUserId: ownerId,
+			now: restoreNow,
+		}),
+	).rejects.toThrow(
+		'Restoring this organization would give @capowner more than 2 free organizations.',
+	)
+	const stillDeleted = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind('org-cap-a')
+		.first<{ deleted_at: string | null }>()
+	expect(stillDeleted?.deleted_at).toBeTruthy()
+
+	// A paid org restores regardless of the cap.
+	await appDb
+		.prepare(`UPDATE orgs SET plan = 'pro' WHERE id = ?`)
+		.bind('org-cap-a')
+		.run()
+	await restoreOrg({
+		env,
+		orgId: 'org-cap-a',
+		actorUserId: ownerId,
+		now: restoreNow,
+	})
+
+	// Under the cap, a free org restores.
+	await softDeleteOrg({ env, orgId: 'org-cap-b', actorUserId: ownerId, now })
+	await appDb
+		.prepare(`UPDATE orgs SET plan = 'pro' WHERE id = ?`)
+		.bind('org-cap-c')
+		.run()
+	await restoreOrg({
+		env,
+		orgId: 'org-cap-b',
+		actorUserId: ownerId,
+		now: restoreNow,
+	})
+	const live = await appDb
+		.prepare(`SELECT deleted_at FROM orgs WHERE id = ?`)
+		.bind('org-cap-b')
+		.first<{ deleted_at: string | null }>()
+	expect(live?.deleted_at).toBeNull()
+})
