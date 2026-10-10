@@ -922,6 +922,10 @@ an override exists.
     progress, and a later top-up does not charge that stretch (the existing
     "stopped then resumed" forgiveness). Set a monthly override only for orgs
     that should run past the include at $0.
+  - For an empty wallet, the usage page include, the credits alarm, and the
+    entitlement-warning emails all compare against the same stop threshold
+    (`resolvePastIncludeStopLimits`), so none of them reports runs as stopped
+    while the override still admits them.
 
 ## Plan lookup
 
