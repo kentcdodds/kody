@@ -67,6 +67,7 @@ style, tests, MCP capabilities, and runtime architecture.
 - [Testing principles](./testing-principles.md)
 - [End-to-end testing](./end-to-end-testing.md)
 - [Weekly site performance](./weekly-site-perf.md)
+- [MCP latency bench](./latency-bench.md)
 - [Mock API servers](./mock-api-servers.md)
 - [Package discovery routing evaluation](./package-discovery-evaluation.md)
 

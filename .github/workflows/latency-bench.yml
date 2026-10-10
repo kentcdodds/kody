@@ -1,0 +1,76 @@
+name: ⏱ MCP latency bench
+
+on:
+  schedule:
+    - cron: '47 14 * * 1'
+  workflow_dispatch:
+    inputs:
+      origin:
+        description: Origin to measure (defaults to LATENCY_BENCH_ORIGIN)
+        required: false
+        type: string
+      n:
+        description: Warm samples per path
+        required: false
+        default: '30'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    name: ⏱ Measure MCP latency
+    timeout-minutes: 15
+    env:
+      LATENCY_BENCH_ORIGIN: ${{ inputs.origin || vars.LATENCY_BENCH_ORIGIN }}
+      LATENCY_BENCH_TOKEN: ${{ secrets.LATENCY_BENCH_TOKEN }}
+    steps:
+      - name: 📦 Checkout
+        if: env.LATENCY_BENCH_ORIGIN != '' && env.LATENCY_BENCH_TOKEN != ''
+        uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: 🟢 Setup Node
+        if: env.LATENCY_BENCH_ORIGIN != '' && env.LATENCY_BENCH_TOKEN != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: 26
+          cache: npm
+
+      - name: 📥 Install
+        if: env.LATENCY_BENCH_ORIGIN != '' && env.LATENCY_BENCH_TOKEN != ''
+        run: npm ci --ignore-scripts
+
+      - name: 📏 Measure
+        if: env.LATENCY_BENCH_ORIGIN != '' && env.LATENCY_BENCH_TOKEN != ''
+        env:
+          BENCH_N: ${{ inputs.n || '30' }}
+          BENCH_FETCH_URL: ${{ vars.LATENCY_BENCH_FETCH_URL }}
+          BENCH_SECRET_NAME: ${{ vars.LATENCY_BENCH_SECRET_NAME }}
+          BENCH_MCP_SERVER: ${{ vars.LATENCY_BENCH_MCP_SERVER }}
+          BENCH_MCP_DIRECT_URL: ${{ vars.LATENCY_BENCH_MCP_DIRECT_URL }}
+          BENCH_PACKAGE_IMPORT: ${{ vars.LATENCY_BENCH_PACKAGE_IMPORT }}
+        run: |
+          args=(--origin "$LATENCY_BENCH_ORIGIN" --token "$LATENCY_BENCH_TOKEN" --n "$BENCH_N" --out latency-bench.json)
+          [ -n "$BENCH_FETCH_URL" ] && args+=(--fetch-url "$BENCH_FETCH_URL")
+          [ -n "$BENCH_SECRET_NAME" ] && args+=(--secret-name "$BENCH_SECRET_NAME")
+          [ -n "$BENCH_MCP_SERVER" ] && args+=(--mcp-server "$BENCH_MCP_SERVER")
+          [ -n "$BENCH_MCP_DIRECT_URL" ] && args+=(--mcp-direct-url "$BENCH_MCP_DIRECT_URL")
+          [ -n "$BENCH_PACKAGE_IMPORT" ] && args+=(--package-import "$BENCH_PACKAGE_IMPORT")
+          node tools/latency-bench/run.ts "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 📎 Upload report
+        if: env.LATENCY_BENCH_ORIGIN != '' && env.LATENCY_BENCH_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: latency-bench-report
+          path: latency-bench.json
+
+      - name: ⏭ Skipped
+        if: env.LATENCY_BENCH_ORIGIN == '' || env.LATENCY_BENCH_TOKEN == ''
+        run:
+          echo "LATENCY_BENCH_ORIGIN / LATENCY_BENCH_TOKEN not configured;
+          skipping." >> "$GITHUB_STEP_SUMMARY"

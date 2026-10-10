@@ -84,6 +84,7 @@
     "preview:e2e": "node tools/prepare-e2e-env.ts && npm run migrate:e2e && WRANGLER_PERSIST_TO=.wrangler/state/e2e npm run dev:vite",
     "preview:manual-test": "node tools/preview-manual-test.ts",
     "control-kody": "node tools/control-kody.ts",
+    "latency-bench": "node tools/latency-bench/run.ts",
     "maintenance-mode": "node tools/maintenance-mode.ts",
     "site-perf": "node tools/site-perf/collect.ts",
     "generate-types": "node tools/generate-worker-configuration-types.ts",
