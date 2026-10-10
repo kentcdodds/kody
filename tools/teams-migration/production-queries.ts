@@ -653,7 +653,7 @@ export async function runProductionQueries(input: {
 const usage = [
 	'Usage: node tools/teams-migration/production-queries.ts --target <production|kody-branch-*> --recipient-public-key <base64 SPKI> --out <report.sealed.json>',
 	'',
-	'Env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; STRIPE_SECRET_KEY for --target production.',
+	'Env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; STRIPE_SECRET_KEY for --target production Stripe counts (skipped when unset).',
 ].join('\n')
 
 function readFlag(argv: ReadonlyArray<string>, flag: string) {
@@ -670,6 +670,11 @@ function requireEnv(name: string) {
 	return value
 }
 
+function optionalEnv(name: string) {
+	const value = process.env[name]?.trim()
+	return value && value.length > 0 ? value : undefined
+}
+
 if (isExecutedDirectly(import.meta.url)) {
 	const argv = process.argv.slice(2)
 	const target = parseQueryTarget(readFlag(argv, '--target'))
@@ -681,15 +686,21 @@ if (isExecutedDirectly(import.meta.url)) {
 		accountId: requireEnv('CLOUDFLARE_ACCOUNT_ID'),
 		apiToken: requireEnv('CLOUDFLARE_API_TOKEN'),
 	}
+	const stripeSecret = optionalEnv('STRIPE_SECRET_KEY')
 	const report = await runProductionQueries({
 		client,
 		target,
 		stripe:
 			target.kind === 'production'
-				? {
-						secretKey: requireEnv('STRIPE_SECRET_KEY'),
-						billingEnv: await readProductionBillingEnv(),
-					}
+				? stripeSecret
+					? {
+							secretKey: stripeSecret,
+							billingEnv: await readProductionBillingEnv(),
+						}
+					: {
+							skipReason:
+								'STRIPE_SECRET_KEY is unset; Stripe subscription counts skipped.',
+						}
 				: { skipReason: 'Branch previews have no Stripe account.' },
 	})
 	await writeFile(

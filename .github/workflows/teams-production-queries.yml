@@ -81,14 +81,13 @@ jobs:
             exit 1
           fi
 
-      - name: 🔑 Require the Stripe secret for production
+      - name: 🔑 Note missing Stripe secret (P8 Stripe count only)
         if: inputs.target == 'production'
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
-            echo "::error title=Missing Actions secret::The repository Actions secret STRIPE_SECRET_KEY is not set (or is empty), so the Stripe subscription count cannot run against production. Add it under Settings > Secrets and variables > Actions, then re-run." >&2
-            exit 1
+            echo "::warning title=Missing Actions secret::STRIPE_SECRET_KEY is empty on this environment, so the P8 Stripe subscription count is skipped. Credential-exposure and other D1/KV queries still run. Add the secret under Settings > Secrets and variables > Actions (and the production environment), then re-run for a full P8 report."
           fi
 
       - name: 📦 Checkout
@@ -109,7 +108,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$OUT_DIR"
+          # P8 conversion report (Stripe skipped when the Actions secret is empty).
           node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json"
+          # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
           node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json"
 
       - name: 🧾 Summary

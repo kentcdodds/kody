@@ -32,10 +32,13 @@ The report leaves CI only sealed to the recipient key, and the public run
 summary has no counts: Actions artifacts and logs on this repo are
 world-readable. Keep opened JSON off the repo.
 
-Production runs need the repository Actions secret `STRIPE_SECRET_KEY`; the
-workflow stops with that name when it is empty. The OAuth KV namespace is found
-by title: `kody-oauth` in production, resolved from the Wrangler worker name the
-same way `node tools/ci/production-resources.ts ensure` creates it.
+Production runs use the repository (or `production` environment) Actions secret
+`STRIPE_SECRET_KEY` for the P8 Stripe subscription count. When it is empty, that
+count is skipped with a warning and the sealed report records
+`stripeSubscriptions.skipped`; D1/KV queries and credential-exposure still run.
+The OAuth KV namespace is found by title: `kody-oauth` in production, resolved
+from the Wrangler worker name the same way
+`node tools/ci/production-resources.ts ensure` creates it.
 
 Rehearse the same D1 and KV queries on a branch preview first with
 `-f target=kody-branch-<slug>` (from `main`, any dispatcher, no `confirm`).
