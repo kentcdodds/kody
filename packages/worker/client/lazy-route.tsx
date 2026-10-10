@@ -314,6 +314,9 @@ registerPreloadPatterns(
 		routePattern(routes.orgWaiting),
 		routePattern(routes.orgWebhooks),
 		routePattern(routes.orgWorkflows),
+		// Static `/-/` outranks `/@:username/:kodyId/settings` (kodyId would be `-`).
+		routePattern(routes.orgSettings),
+		routePattern(routes.orgMembers),
 	],
 	{
 		name: 'account-area',
