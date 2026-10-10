@@ -69,14 +69,24 @@ export async function resolveOwnedPackageSource(input: {
 				})
 	if (!savedPackage) {
 		const missingId = input.args.package_id ?? input.args.kody_id
-		throw new McpCallerError(`Saved package "${missingId}" was not found.`)
+		const boundOrg = input.ownerScope?.trim()
+		throw new McpCallerError(
+			boundOrg
+				? `Saved package "${missingId}" was not found in @${boundOrg}. This connection is bound to @${boundOrg}; bind to the org that owns the package (or use a package that @${boundOrg} owns).`
+				: `Saved package "${missingId}" was not found in this org. Confirm package_id with search({ domain: "packages" }) and that this connection is bound to the org that owns it.`,
+		)
 	}
 	const source = await getEntitySourceByIdForUser(input.db, {
 		id: savedPackage.sourceId,
 		userId: input.userId,
 	})
 	if (!source) {
-		throw new McpCallerError('Repo source was not found for this user.')
+		const boundOrg = input.ownerScope?.trim()
+		throw new McpCallerError(
+			boundOrg
+				? `Repo source was not found for @${boundOrg}. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.`
+				: 'Repo source was not found for this org. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.',
+		)
 	}
 	return {
 		packageId: savedPackage.id,

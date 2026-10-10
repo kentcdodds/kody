@@ -252,13 +252,13 @@ test('get_git_remote rejects invalid input before creating stubs', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
 	await expect(getRemote({ package_id: 'missing' })).rejects.toThrow(
-		'Saved package "missing" was not found.',
+		'Saved package "missing" was not found in @kentcdodds. This connection is bound to @kentcdodds; bind to the org that owns the package (or use a package that @kentcdodds owns).',
 	)
 
 	resetMocks()
 	mockPackageSource('other-user')
 	await expect(getRemote({ package_id: 'package-1' })).rejects.toThrow(
-		'Repo source was not found for this user.',
+		'Repo source was not found for @kentcdodds. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.',
 	)
 })
 

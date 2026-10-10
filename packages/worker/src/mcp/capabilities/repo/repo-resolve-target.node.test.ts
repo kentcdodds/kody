@@ -95,7 +95,7 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 	)
 	await expectCallerError(
 		resolve({ target: { kind: 'package', package_id: 'pkg-missing' } }),
-		'Saved package "pkg-missing" was not found.',
+		'Saved package "pkg-missing" was not found in this org. Confirm package_id with search({ domain: "packages" }) and that this connection is bound to the org that owns it.',
 	)
 	await expectCallerError(resolve({}), 'Repo source identity is required.')
 })
@@ -144,7 +144,7 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 			{ target: { kind: 'package', kody_id: '@kentcdodds/does-not-exist' } },
 			'kentcdodds',
 		),
-		'Saved package "@kentcdodds/does-not-exist" was not found.',
+		'Saved package "@kentcdodds/does-not-exist" was not found in @kentcdodds. This connection is bound to @kentcdodds; bind to the org that owns the package (or use a package that @kentcdodds owns).',
 	)
 	expect(mockModule.resolveSavedPackageRef).toHaveBeenLastCalledWith(
 		expect.anything(),
