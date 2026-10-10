@@ -554,6 +554,31 @@ export function buildUserErrorRateEmail(input: {
 	})
 }
 
+export function buildPlatformFeedbackAcknowledgementEmail(input: {
+	appBaseUrl: string
+	feedbackId: string
+}) {
+	const feedbackId = input.feedbackId.trim()
+	return renderTransactionalEmail({
+		appBaseUrl: input.appBaseUrl,
+		subject: 'We got your Kody feedback',
+		preheader: 'Thanks — we have your note and will take a look.',
+		heading: 'We got your feedback',
+		body: [
+			'Thanks for telling us. We received your note and will take a look.',
+			`Your feedback id is ${feedbackId}.`,
+			'Your agent can check status anytime with metaPlatformFeedbackGet.',
+		],
+		illustration: {
+			src: '/images/kody-lantern.png',
+			alt: '',
+			width: 96,
+			height: 96,
+		},
+		footnote: "You're receiving this because you sent Kody platform feedback.",
+	})
+}
+
 export function buildPlatformFeedbackOutcomeEmail(input: {
 	appBaseUrl: string
 	status: PlatformFeedbackOutcomeStatus

@@ -2,13 +2,17 @@ import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import { buildPlatformFeedbackOutcomeEmail } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import {
+	isPlatformFeedbackSubmitterMailable,
+	readPlatformFeedbackSubmitterMailTarget,
+	releasePlatformFeedbackEmailClaim,
+} from './submitter-mail.ts'
+import {
 	platformFeedbackOutcomeStatuses,
 	type PlatformFeedbackOutcomeStatus,
 	type PlatformFeedbackRecord,
 	type PlatformFeedbackStatus,
 } from './types.ts'
 
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const platformFeedbackOutcomeEmailKvKeyPrefix =
 	'platform-feedback-outcome-email:v1'
 export const platformFeedbackOutcomeEmailClaimTtlSeconds = 30 * 24 * 60 * 60
@@ -35,48 +39,6 @@ export function shouldSendPlatformFeedbackOutcomeEmail(input: {
 	return input.didChangeStatus && isPlatformFeedbackOutcomeStatus(input.status)
 }
 
-type SubmitterMailTarget = {
-	email: string
-	suspendedAt: string | null
-	emailOutboundPausedAt: string | null
-}
-
-async function readSubmitterMailTarget(input: {
-	db: D1Database
-	stableUserId: string
-}): Promise<SubmitterMailTarget | null> {
-	const stableUserId = input.stableUserId.trim()
-	if (!stableUserId) return null
-	const row = await input.db
-		.prepare(
-			`SELECT email, suspended_at, email_outbound_paused_at FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(stableUserId)
-		.first<{
-			email: string | null
-			suspended_at: string | null
-			email_outbound_paused_at: string | null
-		}>()
-	if (!row) return null
-	return {
-		email: row.email?.trim() ?? '',
-		suspendedAt: row.suspended_at,
-		emailOutboundPausedAt: row.email_outbound_paused_at,
-	}
-}
-
-async function releaseEmailClaim(kv: KVNamespace, key: string) {
-	try {
-		await kv.delete(key)
-	} catch (error) {
-		console.warn('platform-feedback-outcome-email-claim-release-failed', {
-			key,
-			error,
-		})
-	}
-}
-
 export async function sendPlatformFeedbackOutcomeEmail(input: {
 	env: Env
 	feedback: PlatformFeedbackRecord
@@ -89,15 +51,11 @@ export async function sendPlatformFeedbackOutcomeEmail(input: {
 	const emailConfig = resolveTransactionalEmailConfig({ env: input.env })
 	if (!kv || !emailConfig) return false
 
-	const submitter = await readSubmitterMailTarget({
+	const submitter = await readPlatformFeedbackSubmitterMailTarget({
 		db: input.env.APP_DB,
 		stableUserId: input.feedback.submitterUserId,
 	})
-	if (
-		!submitter?.email ||
-		submitter.suspendedAt ||
-		submitter.emailOutboundPausedAt
-	) {
+	if (!isPlatformFeedbackSubmitterMailable(submitter)) {
 		return false
 	}
 
@@ -148,7 +106,11 @@ export async function sendPlatformFeedbackOutcomeEmail(input: {
 			status: input.status,
 			error,
 		})
-		await releaseEmailClaim(kv, key)
+		await releasePlatformFeedbackEmailClaim(
+			kv,
+			key,
+			'platform-feedback-outcome-email-claim-release-failed',
+		)
 		return false
 	}
 	if (!sendResult.ok) {
@@ -157,7 +119,11 @@ export async function sendPlatformFeedbackOutcomeEmail(input: {
 			status: input.status,
 			reason: sendResult.error ?? 'unconfigured',
 		})
-		await releaseEmailClaim(kv, key)
+		await releasePlatformFeedbackEmailClaim(
+			kv,
+			key,
+			'platform-feedback-outcome-email-claim-release-failed',
+		)
 		return false
 	}
 	return true

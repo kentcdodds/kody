@@ -5,6 +5,7 @@ import {
 	buildConnectAgentEmail,
 	buildCoolingHomeEmail,
 	buildKeepPackageEmail,
+	buildPlatformFeedbackAcknowledgementEmail,
 	buildPlatformFeedbackOutcomeEmail,
 	buildSecondAgentEmail,
 	buildUserEntitlementWarningEmail,
@@ -203,6 +204,18 @@ test('transactional emails escape untrusted content and put action URLs in both 
 	expect(errorRate.html).toContain('https://kody.codes/account/activity')
 	expect(errorRate.text).toContain('/support')
 	expect(errorRate.html).toContain('25%')
+
+	const acknowledgement = buildPlatformFeedbackAcknowledgementEmail({
+		appBaseUrl: 'https://kody.codes',
+		feedbackId: 'feedback-<script>1</script>',
+	})
+	expect(acknowledgement.subject).toContain('got your')
+	expect(acknowledgement.html).toContain('metaPlatformFeedbackGet')
+	expect(acknowledgement.html).toContain(
+		'feedback-&lt;script&gt;1&lt;/script&gt;',
+	)
+	expect(acknowledgement.html).not.toContain('<script>1</script>')
+	expect(acknowledgement.text).toContain('metaPlatformFeedbackGet')
 
 	const hostileSummary = '</p><script>alert(1)</script>Setup is confusing'
 	const genericResolved = buildPlatformFeedbackOutcomeEmail({

@@ -96,7 +96,13 @@ type PlatformFeedbackSubmittedEvent = {
 	admin_url: string
 	feedback: {
 		id: string
-		category: 'friction' | 'bug' | 'experience' | 'suggestion' | 'other'
+		category:
+			| 'friction'
+			| 'bug'
+			| 'experience'
+			| 'suggestion'
+			| 'cancellation'
+			| 'other'
 		status: 'open'
 		created_at: string
 		summary_untrusted: string

@@ -1,3 +1,4 @@
+import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { type Handle, css, on } from 'remix/component'
 import { businessOnboardingHref } from '#universal/business-onboarding.ts'
 import { businessCss } from './business-styles.ts'
@@ -43,12 +44,15 @@ export function BusinessRoute(handle: Handle) {
 									organizations, with clear ownership and control over who can
 									use or change it.
 								</p>
-								<a class="button" href={businessOnboardingHref}>
-									Get started
-									<span class="arrow" aria-hidden="true">
-										↗
-									</span>
-								</a>
+								<div class="hero-actions">
+									<a class="button" href={businessOnboardingHref}>
+										Get started
+										<span class="arrow" aria-hidden="true">
+											↗
+										</span>
+									</a>
+									<BuildWithAgentButton business />
+								</div>
 								<a href="#in-action" class="text-link">
 									Explore a client workflow ↓
 								</a>

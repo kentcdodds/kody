@@ -1,8 +1,10 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { signOidcJwt } from '#worker/oidc/keys.ts'
+import { oidcSubject } from '#worker/oidc/subject.ts'
 
 export type OidcGrantProps = {
 	userId: string
+	orgId?: string
 	email: string
 	username: string
 	displayName: string
@@ -27,7 +29,7 @@ export async function mintIdToken(input: {
 	const now = Math.floor(Date.now() / 1000)
 	const claims: Record<string, unknown> = {
 		iss: issuer,
-		sub: input.props.userId,
+		sub: oidcSubject(input.props),
 		aud: input.clientId,
 		iat: now,
 		exp: now + idTokenLifetimeSeconds,
