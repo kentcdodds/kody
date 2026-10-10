@@ -202,45 +202,20 @@ An operator can also take the JSON snapshot without Cloudflare credentials:
 ## P8: sharing and platform conversion
 
 The Teams P8 data conversion is migration
-`packages/worker/migrations/0091-teams-sharing-platform-conversion.sql`, so it
-runs in step 5 with the rest of the migrations. It turns accepted package shares
-into `use` grants, pending shares into grant invites (fresh tokens, so old share
-invite links stop working), scope grantees into Owners, and platform accounts
-into `pro` orgs with admin credits. Only `@kody` gets the $1,000 site-admin
-credit. Revoked and left shares stay for the P9 table drop. The migration fails
-closed on those invariants.
+`packages/worker/migrations/0091-teams-sharing-platform-conversion.sql`. It
+already ran. It turned accepted package shares into `use` grants, pending shares
+into grant invites (fresh tokens, so old share invite links stopped working),
+scope grantees into Owners, and platform accounts into `pro` orgs with admin
+credits. Only `@kody` received the $1,000 site-admin credit.
 
-The same change deletes the share and platform-account code, so the seed can no
-longer create shares or platform accounts. It seeds the converted shape instead
-(a `use` grant, a grant invite, and an ordinary org with an Owner), and the
-conversion of real share and platform rows is checked by the workflow below.
-
-`.github/workflows/teams-p8-conversion.yml` (`🔁 Teams P8 Conversion Checks`)
-adds a sealed backup and a read-only verify around that migration. Both seal to
-your recipient key, and the public logs name failing checks without counts:
-
-```bash
-# Before the migration deploys: seal share grants, scope grants, and platform users rows.
-gh workflow run teams-p8-conversion.yml --ref main -f target=$P -f mode=backup \
-  -f recipient_public_key="$(cat ~/.kody-rehearsal/key.pub)"
-
-# After it deploys: re-check every invariant. Fails when any check has gaps.
-gh workflow run teams-p8-conversion.yml --ref main -f target=$P -f mode=verify \
-  -f recipient_public_key="$(cat ~/.kody-rehearsal/key.pub)"
-```
-
-A branch preview already has the migration applied after step 5, so
-`mode=backup-then-verify` runs both there. Production needs
-`-f target=production -f confirm="teams p8 conversion checks"`, `main`, and
-`kentcdodds`. `verify` is meant for right after the deploy: it expects the
-converted state, so a later change (an Owner removed on purpose) shows as a gap.
-
-When `verify` names a gap in memberships, platform plans, or the `@kody` credit,
-`node tools/teams-migration/convert-sharing-and-platform.ts --mode repair --confirm-repair ...`
-re-applies those writes (idempotent) and verifies again. Lost share grants are
-not repaired there: restore from the D1 bookmark and re-apply the migration.
-Code and tests: `tools/teams-migration/convert-sharing-and-platform.ts` and
-`convert-sharing-and-platform.node.test.ts`.
+The seed writes that converted shape (a `use` grant, a grant invite, and an
+ordinary org with an Owner). The sealed backup and verify workflow
+(`🔁 Teams P8 Conversion Checks`) and
+`tools/teams-migration/convert-sharing-and-platform.ts` queried
+`package_share_grants`, `package_scope_grants`, and
+`users.account_type = 'platform'` after that migration. Both are removed.
+`package_share_grants`, `package_scope_grants`, and `username_redirects` stay in
+the schema until the P9 drop migration. This rehearsal does not query them.
 
 ## P3: org.migrated audit backfill
 
@@ -259,7 +234,7 @@ does not run it.
 | Package-app subdomains and cookie binding (`PACKAGE_APP_BASE_URL` unset) | Workers tests, plus a production smoke after cutover; previews rehearse the inline app path                        |
 | Seat subscriptions and Stripe-backed auto-refill                         | Workers tests with a stubbed Stripe client; the seed writes auto-refill settings directly                          |
 | Plaintext secret reveal                                                  | Does not exist; decryption is proven by hashes from the mock echo route                                            |
-| Production data shapes                                                   | [Teams production queries](./teams-production-queries.md) (spec §12.4)                                             |
+| Production OAuth, Stripe, and credential-exposure counts                 | [Teams production queries](./teams-production-queries.md)                                                          |
 | Rolling back KV, Durable Objects, Artifacts repos, or Vectorize          | Not covered: `restore` rewinds D1 only; run `reindex` after a restore, and re-create the preview for a clean slate |
 
 ## Reference

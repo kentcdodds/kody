@@ -1,20 +1,15 @@
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import {
 	assertReadOnlySql,
 	classifyStripePrice,
-	crossPlatformScopeDependenciesSql,
 	parseQueryTarget,
-	platformAccountsSql,
 	readProductionBillingEnv,
 	resolveProductionOauthKvTitle,
 	resolveProductionStripe,
 	runProductionQueries,
-	sharedPackageImportsSql,
 	targetResourceNames,
 } from './production-queries.ts'
 
@@ -26,145 +21,6 @@ const billingEnv = {
 const retiredProPriceId = 'price_1UChg1LAQpAnsYszAYn6eGgt'
 const retiredStandardPriceId = 'price_1U3sg6LAQpAnsYszGeL2nc8O'
 
-function createAppDb() {
-	const sqlite = new DatabaseSync(':memory:')
-	applyAllMigrations(
-		sqlite,
-		new URL('../../packages/worker/migrations/', import.meta.url),
-	)
-	const run = (sql: string, ...values: Array<SQLInputValue>) =>
-		sqlite.prepare(sql).run(...values)
-	const users = [
-		[1, 'kody', 'kody-id', 'platform'],
-		[2, 'tools', 'tools-id', 'platform'],
-		[3, 'alice', 'alice-id', 'person'],
-		[4, 'carol', 'carol-id', 'person'],
-	] as const
-	for (const [id, username, stableUserId, accountType] of users) {
-		run(
-			`INSERT INTO users (id, username, email, password_hash, created_at, updated_at, stable_user_id, account_type)
-			VALUES (?, ?, ?, 'hash', '2026-10-01', '2026-10-01', ?, ?)`,
-			id,
-			username,
-			`${username}@example.com`,
-			stableUserId,
-			accountType,
-		)
-	}
-	run(
-		`INSERT INTO package_scope_grants (scope_owner_user_id, grantee_user_id, created_by_user_id) VALUES ('kody-id', 'alice-id', 'kody-id')`,
-	)
-	const packages = [
-		['kody-a', 'kody-id', 0, 0],
-		['kody-b', 'kody-id', 1, 1],
-		['tools-x', 'tools-id', 0, 0],
-		['alice-shared', 'alice-id', 1, 0],
-		['carol-guest', 'carol-id', 1, 0],
-		['carol-own', 'carol-id', 1, 0],
-	] as const
-	for (const [id, userId, isPrivate, hidden] of packages) {
-		run(
-			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id, is_private, hidden)
-			VALUES (?, ?, ?, ?, 'pkg', ?, ?, ?)`,
-			id,
-			userId,
-			id,
-			id,
-			`src-${id}`,
-			isPrivate,
-			hidden,
-		)
-		run(
-			`INSERT INTO entity_sources (id, user_id, entity_kind, entity_id, repo_id, published_commit, created_at, updated_at)
-			VALUES (?, ?, 'package', ?, ?, 'c2', '2026-10-01', '2026-10-01')`,
-			`src-${id}`,
-			userId,
-			id,
-			`repo-${id}`,
-		)
-	}
-	const dependency = (
-		packageId: string,
-		extra: Record<string, unknown> = {},
-	) => ({
-		sourceId: `src-${packageId}`,
-		publishedCommit: 'c2',
-		kodyId: packageId,
-		packageId,
-		...extra,
-	})
-	const artifacts = [
-		[
-			'kody-a',
-			'kody-id',
-			'c2',
-			[dependency('tools-x', { platformOwned: true }), dependency('kody-b')],
-		],
-		// An older commit's artifact is no longer an import.
-		[
-			'kody-b',
-			'kody-id',
-			'c1',
-			[dependency('tools-x', { platformOwned: true })],
-		],
-		[
-			'carol-guest',
-			'carol-id',
-			'c2',
-			[
-				dependency('alice-shared', {
-					shareOwned: true,
-					storageOwnerUserId: 'alice-id',
-				}),
-				dependency('carol-own'),
-				dependency('kody-a', { platformOwned: true, transitive: true }),
-			],
-		],
-	] as const
-	const insertArtifact = (
-		packageId: string,
-		userId: string,
-		commit: string,
-		entryPoint: string,
-		dependencies: ReadonlyArray<object>,
-	) =>
-		run(
-			`INSERT INTO published_bundle_artifacts (id, user_id, source_id, published_commit, artifact_kind, entry_point, kv_key, dependencies_json, created_at, updated_at)
-			VALUES (?, ?, ?, ?, 'module', ?, 'kv', ?, '2026-10-01', '2026-10-01')`,
-			`artifact-${packageId}-${commit}-${entryPoint}`,
-			userId,
-			`src-${packageId}`,
-			commit,
-			entryPoint,
-			JSON.stringify(dependencies),
-		)
-	for (const [packageId, userId, commit, dependencies] of artifacts) {
-		insertArtifact(packageId, userId, commit, 'index.ts', dependencies)
-	}
-	// Another export of the same packages reaches the same dependency
-	// transitively; each import still reports once, as direct.
-	insertArtifact('kody-a', 'kody-id', 'c2', 'app.ts', [
-		dependency('tools-x', { platformOwned: true, transitive: true }),
-	])
-	insertArtifact('carol-guest', 'carol-id', 'c2', 'app.ts', [
-		dependency('alice-shared', {
-			shareOwned: true,
-			storageOwnerUserId: 'alice-id',
-			transitive: true,
-		}),
-	])
-	// A revoked earlier share and the current accepted one.
-	run(
-		`INSERT INTO package_share_grants (id, package_id, owner_user_id, grantee_user_id, status, invited_at, updated_at)
-		VALUES ('share-0', 'alice-shared', 'alice-id', 'carol-id', 'revoked', '2026-09-01', '2026-09-02')`,
-	)
-	run(
-		`INSERT INTO package_share_grants (id, package_id, owner_user_id, grantee_user_id, status, invited_at, updated_at)
-		VALUES ('share-1', 'alice-shared', 'alice-id', 'carol-id', 'accepted', '2026-10-01', '2026-10-01')`,
-	)
-	return sqlite
-}
-
 const kvGrants: Record<string, unknown> = {
 	'grant:alice-id:g1': { id: 'g1', metadata: { clientId: 'host' } },
 	'grant:carol-id:g2': { id: 'g2', metadata: { orgId: 'carol-id' } },
@@ -172,9 +28,8 @@ const kvGrants: Record<string, unknown> = {
 	'token:carol-id:g2:t1': { id: 't1' },
 }
 
-function createFakeApis(sqlite: DatabaseSync) {
+function createFakeApis() {
 	const requests: Array<string> = []
-	const querySql: Array<string> = []
 	const ok = (result: unknown, resultInfo?: unknown) =>
 		Response.json({ success: true, result, result_info: resultInfo })
 	const fetcher: typeof fetch = async (input, init) => {
@@ -183,13 +38,6 @@ function createFakeApis(sqlite: DatabaseSync) {
 		const path = url.pathname.replace(/^.*\/accounts\/acct/, '')
 		requests.push(`${method} ${path}`)
 		const body = init?.body ? JSON.parse(String(init.body)) : undefined
-		if (path === '/d1/database' && method === 'GET') {
-			return ok([{ name: url.searchParams.get('name'), uuid: 'app-uuid' }])
-		}
-		if (path === '/d1/database/app-uuid/query' && method === 'POST') {
-			querySql.push(body.sql)
-			return ok([{ results: sqlite.prepare(body.sql).all(), success: true }])
-		}
 		if (path === '/storage/kv/namespaces' && method === 'GET') {
 			return ok([{ id: 'oauth-kv', title: 'kody-oauth' }])
 		}
@@ -223,7 +71,7 @@ function createFakeApis(sqlite: DatabaseSync) {
 		}
 		throw new Error(`Unexpected Cloudflare request ${method} ${path}`)
 	}
-	return { fetcher, requests, querySql }
+	return { fetcher, requests }
 }
 
 function createFakeStripe() {
@@ -283,9 +131,7 @@ function createFakeStripe() {
 
 test('assertReadOnlySql allows one SELECT and refuses anything that could write', () => {
 	for (const sql of [
-		platformAccountsSql,
-		crossPlatformScopeDependenciesSql,
-		sharedPackageImportsSql,
+		'SELECT COUNT(*) FROM grants',
 		'WITH x AS (SELECT 1) SELECT * FROM x;',
 	]) {
 		expect(assertReadOnlySql(sql)).toBeTruthy()
@@ -305,9 +151,8 @@ test('assertReadOnlySql allows one SELECT and refuses anything that could write'
 	}
 })
 
-test('runProductionQueries answers all five questions with reads only', async () => {
-	const sqlite = createAppDb()
-	const cloudflare = createFakeApis(sqlite)
+test('runProductionQueries answers OAuth and Stripe with reads only', async () => {
+	const cloudflare = createFakeApis()
 	const stripe = createFakeStripe()
 
 	const report = await runProductionQueries({
@@ -322,54 +167,9 @@ test('runProductionQueries answers all five questions with reads only', async ()
 	})
 
 	expect(report).toEqual({
-		version: 1,
+		version: 2,
 		target: 'production',
 		ranAt: '2026-10-08T00:00:00.000Z',
-		platformAccounts: {
-			count: 2,
-			rows: [
-				{
-					userId: 1,
-					username: 'kody',
-					packages: 2,
-					publicPackages: 1,
-					hiddenPackages: 1,
-					scopeGrantees: 1,
-				},
-				{
-					userId: 2,
-					username: 'tools',
-					packages: 1,
-					publicPackages: 1,
-					hiddenPackages: 0,
-					scopeGrantees: 0,
-				},
-			],
-		},
-		crossPlatformScopeDependencies: {
-			count: 1,
-			rows: [
-				{
-					packageId: 'kody-a',
-					scope: 'kody',
-					dependencyPackageId: 'tools-x',
-					dependencyScope: 'tools',
-					transitive: false,
-				},
-			],
-		},
-		sharedPackageImports: {
-			count: 1,
-			rows: [
-				{
-					guestPackageId: 'carol-guest',
-					sharedPackageId: 'alice-shared',
-					shareGrantId: 'share-1',
-					shareStatus: 'accepted',
-					transitive: false,
-				},
-			],
-		},
 		oauthGrants: { grants: 3, withOrgId: 1, withoutOrgId: 2, users: 2 },
 		stripeSubscriptions: {
 			skipped: false,
@@ -417,11 +217,9 @@ test('runProductionQueries answers all five questions with reads only', async ()
 			!request.endsWith('/bulk/get'),
 	)
 	expect(writes).toEqual([])
-	expect(cloudflare.querySql).toEqual([
-		platformAccountsSql,
-		crossPlatformScopeDependenciesSql,
-		sharedPackageImportsSql,
-	])
+	expect(
+		cloudflare.requests.filter((request) => request.includes('/d1/')),
+	).toEqual([])
 	expect(stripe.requests).toEqual([
 		'GET /v1/subscriptions?status=all&limit=100',
 		'GET /v1/subscriptions?status=all&limit=100&starting_after=sub_3',
@@ -445,9 +243,8 @@ test('production Stripe counts skip when the Actions secret is unset', () => {
 	})
 })
 
-test('runProductionQueries still answers D1 and KV questions when Stripe is skipped', async () => {
-	const sqlite = createAppDb()
-	const cloudflare = createFakeApis(sqlite)
+test('runProductionQueries still answers the OAuth KV question when Stripe is skipped', async () => {
+	const cloudflare = createFakeApis()
 	const report = await runProductionQueries({
 		client: {
 			accountId: 'acct',
@@ -459,7 +256,7 @@ test('runProductionQueries still answers D1 and KV questions when Stripe is skip
 		now: () => new Date('2026-10-08T00:00:00.000Z'),
 	})
 
-	expect(report.platformAccounts.count).toBe(2)
+	expect(report.version).toBe(2)
 	expect(report.oauthGrants).toEqual({
 		grants: 3,
 		withOrgId: 1,

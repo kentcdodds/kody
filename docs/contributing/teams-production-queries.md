@@ -1,11 +1,14 @@
 # Teams production queries
 
-Before the Teams data conversion (P8), five questions about production data must
-be answered, because the preview rehearsal only has synthetic data. The same
-workflow also seals a credential-exposure report (multi-member orgs, outside
-grants, and non-owner / non-granted secret or integration audit rows). The
-queries are read-only and return counts and ids only. Production runs are
-`kentcdodds` or the approved Cloud Agent actor (`cursor`).
+The workflow seals two read-only reports. `report.sealed.json` counts OAuth
+grants (with and without `orgId`) and live Stripe subscriptions.
+`credential-exposure.sealed.json` counts multi-member orgs, outside grants, and
+non-owner / non-granted secret or integration audit rows. Counts and ids only.
+Production runs are `kentcdodds` or the approved Cloud Agent actor (`cursor`).
+
+The pre-conversion questions that read `package_share_grants`,
+`package_scope_grants`, or `users.account_type = 'platform'` are gone. Those
+tables stay in the schema until the P9 drop migration.
 
 ## Run
 
@@ -37,26 +40,23 @@ production-only steps (repository or the `production` environment). A job-level
 `condition && secrets.X || ''` expression can evaluate empty for environment
 secrets, and a job-level assignment would also expose the key on preview
 targets. A Worker-only key is not enough — production deploy syncs Stripe as
-optional. When the secret is empty or whitespace, question 5 is skipped with a
-warning and the sealed report records `stripeSubscriptions.skipped`; D1/KV
-queries and credential-exposure still run. The OAuth KV namespace is found by
+optional. When the secret is empty or whitespace, Stripe counts are skipped with
+a warning and the sealed report records `stripeSubscriptions.skipped`; the OAuth
+KV query and credential-exposure still run. The OAuth KV namespace is found by
 title: `kody-oauth` in production, resolved from the Wrangler worker name the
 same way `node tools/ci/production-resources.ts ensure` creates it.
 
-Rehearse the same D1 and KV queries on a branch preview first with
+Rehearse the same queries on a branch preview first with
 `-f target=kody-branch-<slug>` (from `main`, any dispatcher, no `confirm`).
 Previews have no Stripe account, so that run reports Stripe as skipped.
 
 ## What it answers
 
-| Spec §12.4 question                                | Source                                                                                                                               | Report field                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
-| 1. Every `account_type = 'platform'` row           | APP_DB `users`, with package counts and `package_scope_grants` grantees                                                              | `platformAccounts`                |
-| 2. Platform packages depending on another platform | APP_DB `published_bundle_artifacts.dependencies_json` at each package's current published commit, owners from `users`                | `crossPlatformScopeDependencies`  |
-| 3. Guest packages importing a shared package       | The same dependency lists (`shareOwned`, or a person-owned dependency from another owner) joined to `package_share_grants`           | `sharedPackageImports`            |
-| 4. OAuth grants with and without `orgId`           | `OAUTH_KV` `grant:*` values: plaintext `metadata.orgId` only (props stay encrypted)                                                  | `oauthGrants`                     |
-| 5. Live Stripe subscriptions by price id           | Stripe `GET /v1/subscriptions?status=all`, excluding `canceled` and `incomplete_expired`. Skipped when `STRIPE_SECRET_KEY` is unset. | `stripeSubscriptions`             |
-| Credential exposure surface                        | APP_DB multi-member orgs + outside grants; AUDIT_DB secret/integration rows filtered in JS                                           | `credential-exposure.sealed.json` |
+| Question                              | Source                                                                                                                               | Report field                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| OAuth grants with and without `orgId` | `OAUTH_KV` `grant:*` values: plaintext `metadata.orgId` only (props stay encrypted)                                                  | `oauthGrants`                     |
+| Live Stripe subscriptions by price id | Stripe `GET /v1/subscriptions?status=all`, excluding `canceled` and `incomplete_expired`. Skipped when `STRIPE_SECRET_KEY` is unset. | `stripeSubscriptions`             |
+| Credential exposure surface           | APP_DB multi-member orgs + outside grants; AUDIT_DB secret/integration rows filtered in JS                                           | `credential-exposure.sealed.json` |
 
 Stripe prices are classified with the worker's own billing config
 (`packages/worker/src/billing/billing-config.ts` and the production
@@ -64,9 +64,7 @@ Stripe prices are classified with the worker's own billing config
 `retired-standard`, `retired-pro`, or `unmapped`. Any `unmapped` subscription
 means the §7.2 seat mapping does not cover it yet.
 
-Dependencies recorded before the field existed have no `packageId`; questions 2
-and 3 follow `sourceId` to `entity_sources`, so they still resolve. Artifacts
-from older published commits are not current imports and are ignored.
+`report.sealed.json` is version 2: `oauthGrants` and `stripeSubscriptions` only.
 
 ### Credential exposure report
 
@@ -88,13 +86,14 @@ that series (not a separate GitHub issue).
 
 ## Read-only guarantees
 
-- D1 goes through `assertReadOnlySql`: a single `SELECT` or `WITH` statement, no
-  comments, and no write keyword anywhere (a false positive fails the run). The
-  CI token can write, so this check is what keeps the run read-only.
+- Credential-exposure D1 goes through `assertReadOnlySql`: a single `SELECT` or
+  `WITH` statement, no comments, and no write keyword anywhere (a false positive
+  fails the run). The CI token can write, so this check is what keeps the run
+  read-only. The OAuth/Stripe script does not query D1.
 - KV is read with list and bulk get. Stripe is read with `GET` only.
 - Code and tests: `tools/teams-migration/production-queries.ts`,
-  `credential-exposure-queries.ts`, and their `*.node.test.ts` files. The tests
-  run each query against a fully migrated APP_DB schema.
+  `credential-exposure-queries.ts`, and their `*.node.test.ts` files.
+  Credential-exposure tests run each query against a fully migrated APP_DB
+  schema.
 
-Related: [preview migration rehearsal](./preview-migration-rehearsal.md),
-including the P8 backup and verify workflow.
+Related: [preview migration rehearsal](./preview-migration-rehearsal.md).
