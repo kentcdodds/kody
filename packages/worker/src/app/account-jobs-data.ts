@@ -266,7 +266,8 @@ export async function loadAccountJobsData(input: {
 		listSavedPackagesByUserId(input.env.APP_DB, { userId }),
 		readJobRetentionPreferencesForUser({
 			db: input.env.APP_DB,
-			userId,
+			// Retention columns still live on the person row.
+			userId: input.user.mcpUser.userId,
 		}),
 	])
 	const packagesById = new Map(

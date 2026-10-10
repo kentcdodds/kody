@@ -147,6 +147,7 @@ export async function buildDurableObjectOwnerMap(
 		}
 	}
 	for (const bucket of buckets.results ?? []) {
+		if (!ownerIds.has(bucket.user_id)) continue
 		if (bucket.kind === 'repo_session') {
 			const sessionId = readRepoSessionId(bucket.storage_id)
 			if (sessionId) {
@@ -167,6 +168,7 @@ export async function buildDurableObjectOwnerMap(
 		)
 	}
 	for (const app of apps.results ?? []) {
+		if (!ownerIds.has(app.user_id)) continue
 		addOwner(
 			owners,
 			env.PACKAGE_REALTIME_SESSION,

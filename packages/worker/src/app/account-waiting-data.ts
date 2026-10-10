@@ -21,6 +21,7 @@ export async function loadAccountWaitingData(input: {
 				request: input.user.request,
 				user: input.user.mcpUser,
 			}),
+			actorStableUserId: input.user.mcpUser.userId,
 			email: input.user.email,
 			username: input.user.username,
 			emailVerified: input.user.emailVerified,

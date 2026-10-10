@@ -137,6 +137,10 @@ function orgSectionDenial(
 	if (resolution === 'denied' || resolution === 'personal') {
 		return 'Organization unavailable'
 	}
+	// A grant without a membership is not access to the whole workspace.
+	if (resolution.role == null) {
+		return 'Organization resources unavailable'
+	}
 	if (
 		orgSectionKeysOnPerson(section) &&
 		resolution.org.id !== personalOrgId(personId)

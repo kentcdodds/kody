@@ -197,6 +197,10 @@ function buildCallerContext(input: {
 		source: { kind: 'session' },
 		executionOrigin: 'interactive',
 		user: input.user.mcpUser,
+		orgBinding: {
+			org: input.user.request.org,
+			role: input.user.request.membership?.role ?? null,
+		},
 	})
 }
 

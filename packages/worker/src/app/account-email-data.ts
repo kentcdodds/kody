@@ -429,7 +429,7 @@ export async function loadAccountEmailData(input: {
 		(await isAccountEmailVerified({
 			db: input.env.APP_DB,
 			email: input.user.email,
-			stableUserId: userId,
+			stableUserId: input.user.mcpUser.userId,
 		}))
 
 	if (!emailVerified) {

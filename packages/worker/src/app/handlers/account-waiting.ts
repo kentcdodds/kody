@@ -1,4 +1,3 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { waitUntil } from 'cloudflare:workers'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
@@ -80,10 +79,7 @@ export function createAccountWaitingClickHandler(env: Env) {
 			}
 			recordOnboardingFunnelEvent(env, {
 				stage: 'waiting_card_clicked',
-				userId: ownerIdFromCaller({
-					request: user.request,
-					user: user.mcpUser,
-				}),
+				userId: user.mcpUser.userId,
 				dimension: cardId,
 			})
 			return jsonResponse({ ok: true })
