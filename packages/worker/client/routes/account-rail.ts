@@ -9,6 +9,7 @@ import {
 	orgRoleManagesBilling,
 	orgSettingsPath,
 	orgTeamsPath,
+	orgSlugFromOrgOwnedPath,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -31,15 +32,19 @@ function orgSectionHref(
 }
 
 /**
- * Org slug for workspace-rail links: the org already in the URL when the
- * person belongs to it, otherwise their signup organization. Username is
- * only a last resort — personal org slugs stay put across renames.
+ * Org slug for workspace-rail links: the org already on an org-owned
+ * `/@slug/-/…` URL (even when the session list is stale), otherwise the org
+ * in the path when the person belongs to it, otherwise their signup
+ * organization. Username is only a last resort — personal org slugs stay put
+ * across renames.
  */
 export function accountRailOrgSlug(input: {
 	pathname: string
 	organizations: ReadonlyArray<{ slug: string; personal: boolean }>
 	username: string | null | undefined
 }) {
+	const ownedPathSlug = orgSlugFromOrgOwnedPath(input.pathname)
+	if (ownedPathSlug) return ownedPathSlug
 	const fromPath = orgSlugFromPathname(input.pathname)
 	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
 		return fromPath

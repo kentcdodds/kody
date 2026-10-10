@@ -262,7 +262,19 @@ function OrgSwitcher(
 			organizations,
 			lastUsedSlug: handle.props.lastUsedOrganization,
 		})
-		const current = organizations.find((org) => org.slug === currentSlug)
+		// Stale session lists can omit the URL org on `/@slug/-/…`. Synthesize
+		// enough for the trigger label and Manage group so chrome matches the
+		// page (server already authorized the URL org).
+		const current =
+			organizations.find((org) => org.slug === currentSlug) ??
+			(currentSlug
+				? {
+						slug: currentSlug,
+						displayName: null,
+						role: 'owner' as const,
+						personal: currentSlug === handle.props.username,
+					}
+				: undefined)
 		const currentIdentity = current ? orgIdentity(current, viewer) : null
 		const label = currentIdentity?.handle ?? 'Organizations'
 		const avatarSize = handle.props.menu ? 32 : 28
