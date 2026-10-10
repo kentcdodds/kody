@@ -97,6 +97,7 @@ export async function queryD1<Row>(
 	client: CloudflareClient,
 	uuid: string,
 	sql: string,
+	params?: ReadonlyArray<string | number | null>,
 ): Promise<Array<Row>> {
 	const response = await cloudflareApiRequest<
 		Array<{ results?: Array<Row>; success?: boolean }>
@@ -104,7 +105,10 @@ export async function queryD1<Row>(
 		...client,
 		pathname: `/d1/database/${uuid}/query`,
 		method: 'POST',
-		body: { sql },
+		body: {
+			sql,
+			...(params && params.length > 0 ? { params: [...params] } : {}),
+		},
 	})
 	return (response.result ?? []).flatMap((statement) => statement.results ?? [])
 }
