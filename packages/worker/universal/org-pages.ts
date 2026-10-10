@@ -64,41 +64,12 @@ function isOrgOwnedAccountSection(
 }
 
 /**
- * Packages still read the signed-in person. Other org sections read
- * `request.org.id`.
- */
-export function orgSectionKeysOnPerson(
-	section: OrgOwnedAccountSection,
-): boolean {
-	switch (section) {
-		case 'packages':
-			return true
-		case 'activity':
-		case 'connections':
-		case 'email':
-		case 'integrations':
-		case 'jobs':
-		case 'mcp-servers':
-		case 'memories':
-		case 'secret-providers':
-		case 'secrets':
-		case 'values':
-		case 'waiting':
-		case 'webhooks':
-		case 'workflows':
-			return false
-		default: {
-			const exhaustive: never = section
-			return exhaustive
-		}
-	}
-}
-
-/**
  * `/account/secrets.json` and the other org-owned account JSON routes. The
  * Connections page reads `/account/connected-agents.json` and
  * `/account/connection-usage.json`; `/account/connections.json` is the
  * person's sign-in providers.
+ * `/account/packages.json` lists and mutates without per-package authz, so it
+ * stays on the person; team Repositories read `/@slug/-/packages.json`.
  */
 export function orgOwnedAccountApiSection(
 	pathname: string,
@@ -108,7 +79,7 @@ export function orgOwnedAccountApiSection(
 	if (name === 'connected-agents' || name === 'connection-usage') {
 		return 'connections'
 	}
-	if (name === 'connections') return null
+	if (name === 'connections' || name === 'packages') return null
 	return isOrgOwnedAccountSection(name) ? name : null
 }
 

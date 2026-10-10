@@ -219,7 +219,7 @@ test('aggregateConnectionUsageDaily skips without Analytics Engine credentials',
 	).toEqual({ skipped: true, reason: 'missing-analytics-config' })
 })
 
-test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished rows, and prunes old days', async () => {
+test('aggregateConnectionUsageDaily rewrites yesterday and today, drops rows gone from yesterday, and prunes old days', async () => {
 	await ensureSchema()
 	const { personId } = await seedPerson('holder')
 	const { orgId } = await seedTeamOrg()
@@ -233,8 +233,16 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 	})
 	await insertUsageRow({
 		orgId,
-		day: '2026-10-07',
+		day: '2026-10-06',
 		connectionKey: ['cli', personId, 'gone'],
+		eventType: 'execute',
+		units: 2,
+	})
+	// Today's groups can lag in Analytics Engine, so a missing one stays.
+	await insertUsageRow({
+		orgId,
+		day: '2026-10-07',
+		connectionKey: ['cli', personId, 'lagging'],
 		eventType: 'execute',
 		units: 2,
 	})
@@ -309,6 +317,15 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 		},
 		{
 			day: '2026-10-07',
+			credential_kind: 'cli',
+			holder_user_id: personId,
+			credential_id: 'lagging',
+			package_id: '',
+			event_type: 'execute',
+			units: 2,
+		},
+		{
+			day: '2026-10-07',
 			credential_kind: 'mcp-oauth',
 			holder_user_id: personId,
 			credential_id: client,
@@ -355,7 +372,7 @@ test('aggregateConnectionUsageDaily rewrites yesterday and today, drops vanished
 	// An empty result looks like ingestion lag; stored rows stay.
 	stubAnalytics([])
 	await aggregateConnectionUsageDaily(credentialedEnv, now)
-	expect(await listStoredRows(orgId)).toHaveLength(3)
+	expect(await listStoredRows(orgId)).toHaveLength(4)
 })
 
 test('recordUsage without Analytics Engine adds units to the connection row', async () => {
@@ -511,6 +528,8 @@ test('members see only their own connections, never teammates or Automation', as
 		orgSlug: slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: false,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.windows).toEqual({
@@ -585,6 +604,36 @@ test('members see only their own connections, never teammates or Automation', as
 	expect(JSON.stringify(usage)).not.toContain('tok_teammate')
 })
 
+test('team packages the viewer cannot see keep their units but not their name', async () => {
+	const { viewer, orgId, slug, pollerId } = await seedTeamUsage()
+	async function pollerCaller(canSee: boolean) {
+		const usage = await loadConnectionUsage({
+			env: envWithoutJobsService,
+			orgId,
+			orgSlug: slug,
+			viewerPersonId: viewer.personId,
+			includeOrgWide: false,
+			canSeePackage: (packageId) => canSee || packageId !== pollerId,
+			packageLinks: false,
+			now,
+		})
+		return usage.connections[0]?.callers.find(
+			(caller) => caller.packageId === pollerId,
+		)
+	}
+	expect(await pollerCaller(true)).toMatchObject({
+		label: 'slack-poller',
+		href: null,
+	})
+	const hidden = await pollerCaller(false)
+	expect(hidden).toMatchObject({
+		label: 'Package you cannot see',
+		href: null,
+		totals: { last7Days: counts(40, 1) },
+	})
+	expect(JSON.stringify(hidden)).not.toContain('slack-poller')
+})
+
 test('billing readers also see Automation, teammates by username only, and untracked units', async () => {
 	const { viewer, teammate, orgId, slug, jobId, viewerTokenId } =
 		await seedTeamUsage()
@@ -594,6 +643,8 @@ test('billing readers also see Automation, teammates by username only, and untra
 		orgSlug: slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.connections.map((entry) => entry.id)).toEqual([
@@ -642,6 +693,8 @@ test('connection usage never reads another org', async () => {
 		orgSlug: other.slug,
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
+		canSeePackage: () => true,
+		packageLinks: true,
 		now,
 	})
 	expect(usage.connections).toEqual([])

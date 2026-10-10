@@ -31,10 +31,12 @@ Soft-delete columns land additively; enforced read filters are phase 7.
   `audit_events`. Backfill records `org.migrated` per org.
 
 Storage reads and usage billing that have an org on the request use
-`ownerIdFromCaller` (`request.org.id`). Packages on org section pages still read
-the person. Connected agents are grants held by the person; an org page lists
-the ones bound to that org (`metadata.orgId`). We do **not** yet filter every
-soft-deleted org row on reads, or drop legacy `users` billing columns.
+`ownerIdFromCaller` (`request.org.id`). A team org's Repositories page lists the
+packages that org owns, filtered by `canSeeResource`; the signup org keeps the
+person's profile list. Connected agents are grants held by the person; an org
+page lists the ones bound to that org (`metadata.orgId`). We do **not** yet
+filter every soft-deleted org row on reads, or drop legacy `users` billing
+columns.
 
 ## Consequences
 

@@ -207,12 +207,16 @@ export async function aggregateConnectionUsageDaily(
 			),
 		)
 	}
-	// An empty Analytics Engine result is more likely ingestion lag than a
-	// usage-free fleet; keep stored rows rather than wiping them.
+	// Analytics Engine ingestion lags, so a missing group is only treated as
+	// gone for yesterday, and only when the query returned rows for that day.
+	// Today keeps its stored rows until it becomes yesterday.
+	const yesterdayReported = [...present.values()].some(
+		(row) => row.day === yesterday,
+	)
 	const deletes: Array<D1PreparedStatement> = []
-	if (analyticsRows.length > 0) {
+	if (yesterdayReported) {
 		for (const row of stored.results ?? []) {
-			if (present.has(rowKey(row))) continue
+			if (row.day !== yesterday || present.has(rowKey(row))) continue
 			deletes.push(env.APP_DB.prepare(deleteRowStatement).bind(...bindKey(row)))
 		}
 	}

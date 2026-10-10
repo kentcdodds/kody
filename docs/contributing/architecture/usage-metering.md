@@ -528,14 +528,18 @@ export does not list them.
    The hourly `usage_aggregation` lane runs `aggregateConnectionUsageDaily`
    (`packages/worker/src/usage/connection-usage-rollup.ts`): it rewrites
    yesterday and today with absolute `_sample_interval` sums, writes only rows
-   that changed, deletes rows Analytics Engine no longer reports for those days
-   (skipped when the query returns nothing), and prunes days older than 14.
-   Local dev upserts on each `recordUsage` write. Rows with an empty
-   `credential_kind` predate connection tracking.
-   `/account/connection-usage.json` (`loadConnectionUsage` in
-   `connection-usage.ts`) reads it for the page org: everyone sees their own
+   that changed, deletes yesterday's rows Analytics Engine no longer reports
+   (only when it returned rows for yesterday; today's rows are never deleted
+   because ingestion lags), and prunes days older than 14. Local dev upserts on
+   each `recordUsage` write. Rows with an empty `credential_kind` predate
+   connection tracking. `/account/connection-usage.json` (`loadConnectionUsage`
+   in `connection-usage.ts`) reads it for the page org: everyone sees their own
    connections; `billing:read` adds Automation, other people by username only,
-   and untracked units.
+   and untracked units. The org comes from the Referer on
+   `/@slug/-/connections`, like `/account/connected-agents.json`. Package names
+   follow the team Repositories rule (`canSeeResource`): a package the viewer
+   cannot see keeps its units under a generic label, and team packages do not
+   link until they have detail pages.
 
 ## Agent package conversation uses
 
