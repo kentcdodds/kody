@@ -77,7 +77,7 @@ test('router prefers static nested paths and package files over dynamic siblings
 	expect(await resolveAll(resolve, cases)).toEqual(cases)
 })
 
-test('organization resource pages outrank a package url with the same shape', async () => {
+test('organization section pages use /-/ and leave two-segment package urls free', async () => {
 	const resolve = makeRouter([
 		'orgSecrets',
 		'orgPackages',
@@ -93,19 +93,23 @@ test('organization resource pages outrank a package url with the same shape', as
 		'communityPackageFiles',
 		'profile',
 	])
-	expect(await resolve('/@ada/secrets')).toBe('orgSecrets')
-	expect(await resolve('/@acme/billing')).toBe('orgBilling')
-	expect(await resolve('/@acme/billing.json')).toBe('orgBillingApi')
-	expect(await resolve('/@acme/billing/success')).toBe('orgBillingSuccess')
-	expect(await resolve('/@acme/billing/portal')).toBe('orgBillingPortal')
+	expect(await resolve('/@ada/-/secrets')).toBe('orgSecrets')
+	expect(await resolve('/@acme/-/billing')).toBe('orgBilling')
+	expect(await resolve('/@acme/-/billing.json')).toBe('orgBillingApi')
+	expect(await resolve('/@acme/-/billing/success')).toBe('orgBillingSuccess')
+	expect(await resolve('/@acme/-/billing/portal')).toBe('orgBillingPortal')
 	expect(await resolve('/account/billing')).toBe('accountBilling')
 	expect(await resolve('/account/billing/success')).toBe(
 		'accountBillingSuccess',
 	)
 	expect(await resolve('/account/billing/portal')).toBe('accountBillingPortal')
-	expect(await resolve('/@ada/secrets/new')).toBe('orgSecrets')
-	expect(await resolve('/@ada/packages')).toBe('orgPackages')
-	expect(await resolve('/@ada/packages.json')).toBe('orgPackagesApi')
+	expect(await resolve('/@ada/-/secrets/new')).toBe('orgSecrets')
+	expect(await resolve('/@ada/-/packages')).toBe('orgPackages')
+	expect(await resolve('/@ada/-/packages.json')).toBe('orgPackagesApi')
+	// A package whose id equals a former org section name is still a package.
+	expect(await resolve('/@ada/billing')).toBe('communityPackage')
+	expect(await resolve('/@ada/secrets')).toBe('communityPackage')
+	expect(await resolve('/@ada/jobs')).toBe('communityPackage')
 	expect(await resolve('/@ada/devin')).toBe('communityPackage')
 	expect(await resolve('/@ada')).toBe('profile')
 })

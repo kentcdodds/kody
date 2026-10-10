@@ -22,7 +22,7 @@ import { orgBillingPath, parseOrgBillingPath } from '#universal/org-pages.ts'
 
 const onboardingPath = '/onboarding'
 
-/** `/@acme/billing/success` → `/@acme/billing`. */
+/** `/@acme/-/billing/success` → `/@acme/-/billing`. */
 function billingPathFor(pathname: string) {
 	const slug = parseOrgBillingPath(pathname)?.slug
 	return slug ? orgBillingPath(slug) : '/account/billing'

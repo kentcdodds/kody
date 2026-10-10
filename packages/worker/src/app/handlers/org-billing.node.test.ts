@@ -265,7 +265,7 @@ function postCheckout(env: Env, orgSlug: string, body: unknown) {
 	return call(
 		createOrgBillingCheckoutApiHandler,
 		env,
-		`/@${orgSlug}/billing/checkout.json`,
+		`/@${orgSlug}/-/billing/checkout.json`,
 		{
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -328,8 +328,8 @@ test('checkout sells only Pro and picks the monthly or annual price', async () =
 			customerEmail: 'ada@example.com',
 			quantity: 1,
 			successUrl:
-				'https://example.com/@ada/billing/success?session_id={CHECKOUT_SESSION_ID}',
-			cancelUrl: 'https://example.com/@ada/billing',
+				'https://example.com/@ada/-/billing/success?session_id={CHECKOUT_SESSION_ID}',
+			cancelUrl: 'https://example.com/@ada/-/billing',
 		}),
 	)
 
@@ -362,8 +362,8 @@ test('an owner subscribes the team org in the URL with one seat per owner and me
 			quantity: 2,
 			customerEmail: 'ada@example.com',
 			successUrl:
-				'https://example.com/@acme/billing/success?session_id={CHECKOUT_SESSION_ID}',
-			cancelUrl: 'https://example.com/@acme/billing',
+				'https://example.com/@acme/-/billing/success?session_id={CHECKOUT_SESSION_ID}',
+			cancelUrl: 'https://example.com/@acme/-/billing',
 		}),
 	)
 })
@@ -574,7 +574,7 @@ test('existing subscribers switch plans through the portal update flow', async (
 	})
 	expect(mocks.createBillingPortalSession).toHaveBeenLastCalledWith(env, {
 		customerId: 'cus_existing',
-		returnUrl: 'https://example.com/@ada/billing',
+		returnUrl: 'https://example.com/@ada/-/billing',
 		configuration: 'bpc_kody',
 		flowData: {
 			type: 'subscription_update_confirm',
@@ -582,7 +582,7 @@ test('existing subscribers switch plans through the portal update flow', async (
 			subscriptionItemId: 'si_sub_standard',
 			priceId: 'price_pro_yearly',
 			afterCompletionRedirectUrl:
-				'https://example.com/@ada/billing?billing=updated',
+				'https://example.com/@ada/-/billing?billing=updated',
 			quantity: 1,
 		},
 	})
@@ -634,7 +634,7 @@ test('existing subscribers switch plans through the portal update flow', async (
 test('billing data is readable by owners and billing admins of the org in the URL', async () => {
 	const env = createEnv()
 	const getBilling = (slug: string) =>
-		call(createOrgBillingApiHandler, env, `/@${slug}/billing.json`)
+		call(createOrgBillingApiHandler, env, `/@${slug}/-/billing.json`)
 
 	signInAs('cara')
 	const billingAdmin = await getBilling('acme')
@@ -672,13 +672,13 @@ test('checkout return links the Stripe customer onto the org in the URL', async 
 		call(createOrgBillingSuccessHandler, env, path)
 
 	signInAs('ada')
-	const missing = await getSuccess('/@acme/billing/success')
+	const missing = await getSuccess('/@acme/-/billing/success')
 	expect(missing.status).toBe(302)
 	expect(missing.headers.get('location')).toBe(
-		'https://example.com/@acme/billing?error=missing_session',
+		'https://example.com/@acme/-/billing?error=missing_session',
 	)
 
-	const linked = await getSuccess('/@acme/billing/success?session_id=cs_test')
+	const linked = await getSuccess('/@acme/-/billing/success?session_id=cs_test')
 	expect(linked.status).toBe(200)
 	expect(await linked.json()).toMatchObject({
 		loaderData: { accountBillingSuccess: { ok: true, needsOnboarding: true } },
@@ -690,7 +690,7 @@ test('checkout return links the Stripe customer onto the org in the URL', async 
 	)
 
 	signInAs('bob')
-	const member = await getSuccess('/@acme/billing/success?session_id=cs_test')
+	const member = await getSuccess('/@acme/-/billing/success?session_id=cs_test')
 	expect(member.status).toBe(403)
 	expect(
 		mocks.linkStripeCustomerFromCheckoutSessionAttribution,
@@ -701,7 +701,7 @@ test('the Stripe portal opens for the org in the URL and only for managers', asy
 	linkCustomer('org-acme', 'cus_acme')
 	const env = createEnv()
 	const getPortal = () =>
-		call(createOrgBillingPortalHandler, env, '/@acme/billing/portal')
+		call(createOrgBillingPortalHandler, env, '/@acme/-/billing/portal')
 
 	signInAs('cara')
 	const opened = await getPortal()
@@ -713,7 +713,7 @@ test('the Stripe portal opens for the org in the URL and only for managers', asy
 		env,
 		expect.objectContaining({
 			customerId: 'cus_acme',
-			returnUrl: 'https://example.com/@acme/billing',
+			returnUrl: 'https://example.com/@acme/-/billing',
 		}),
 	)
 
@@ -734,7 +734,7 @@ test('/account/billing URLs open the signup organization billing page', async ()
 	)
 	expect(page.status).toBe(302)
 	expect(page.headers.get('location')).toBe(
-		'https://example.com/@ada/billing?error=portal_failed',
+		'https://example.com/@ada/-/billing?error=portal_failed',
 	)
 
 	const success = await call(
@@ -743,7 +743,7 @@ test('/account/billing URLs open the signup organization billing page', async ()
 		'/account/billing/success?session_id=cs_old',
 	)
 	expect(success.headers.get('location')).toBe(
-		'https://example.com/@ada/billing/success?session_id=cs_old',
+		'https://example.com/@ada/-/billing/success?session_id=cs_old',
 	)
 
 	const portal = await call(
@@ -752,7 +752,7 @@ test('/account/billing URLs open the signup organization billing page', async ()
 		'/account/billing/portal',
 	)
 	expect(portal.headers.get('location')).toBe(
-		'https://example.com/@ada/billing/portal',
+		'https://example.com/@ada/-/billing/portal',
 	)
 })
 

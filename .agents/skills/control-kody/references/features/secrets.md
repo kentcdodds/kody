@@ -4,9 +4,9 @@ User, session, and package secret rows. Host approval and package grants.
 
 ## How to get there
 
-Canonical pages are `/@<slug>/secrets` (and `/@<slug>/secret-providers`).
+Canonical pages are `/@<slug>/-/secrets` (and `/@<slug>/-/secret-providers`).
 `/account/secrets` redirects there. Detail stays under
-`/@<slug>/secrets/{user|session|package}/…`, and `/account/secrets/new` still
+`/@<slug>/-/secrets/{user|session|package}/…`, and `/account/secrets/new` still
 redirects. Prefill agent links: `/connect/secret-set?name=…` (same family as
 `/connect/secrets`). Package grant lane: `/account/secrets/approve`. Host
 approval: `/connect/secrets`. External providers: `/account/secret-providers`

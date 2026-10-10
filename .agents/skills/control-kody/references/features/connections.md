@@ -17,11 +17,14 @@ profile param).
 
 ## How to get there
 
-- `/account/connections` — connected list, Add connection button, MCP URL. Does
-  not nest the add grid. Profiles (when flagged) sit under Unlimited.
-- `/account/connections/new` — the agent grid, with a “← back to connections”
+Canonical pages are `/@<slug>/-/connections` (and `/@<slug>/-/connections/new`,
+`/@<slug>/-/connections/new/:agent`). `/account/connections` redirects there.
+
+- `/@<slug>/-/connections` — connected list, Add connection button, MCP URL.
+  Does not nest the add grid. Profiles (when flagged) sit under Unlimited.
+- `/@<slug>/-/connections/new` — the agent grid, with a “← back to connections”
   link. Does not wrap the connected list.
-- `/account/connections/new/:agent` — install steps for one `McpClientKind`
+- `/@<slug>/-/connections/new/:agent` — install steps for one `McpClientKind`
   (`cursor`, `claude-code`, `chatgpt`, …; `other` is not a page here). Unknown
   agents 404.
 

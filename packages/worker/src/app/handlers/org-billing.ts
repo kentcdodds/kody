@@ -68,7 +68,7 @@ type OrgBillingAccess =
 	| { ok: false; status: 403 | 404; error: string }
 
 /**
- * The organization a `/@slug/billing...` request acts on, when the person may
+ * The organization a `/@slug/-/billing...` request acts on, when the person may
  * use `permission` there. The request context binds that organization
  * (org-request-binding.ts), so `authorize` is the same check MCP billing
  * capabilities run. A slug the person cannot reach is a 404, never a silent

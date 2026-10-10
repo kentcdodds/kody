@@ -2,7 +2,7 @@ import { readJson } from '#client/routes/account-approval-shared.ts'
 import { routes } from '#universal/routes.ts'
 
 export type BillingInterval = 'month' | 'year'
-/** Where `POST /@slug/billing/checkout.json` sends the browser next. */
+/** Where `POST /@slug/-/billing/checkout.json` sends the browser next. */
 type CheckoutMode = 'checkout' | 'portal_update' | 'portal'
 
 type BillingCheckoutResult =

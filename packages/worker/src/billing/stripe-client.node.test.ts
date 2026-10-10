@@ -34,8 +34,8 @@ const checkoutInput = {
 	priceId: 'price_pro',
 	clientReferenceId: 'signed-ref',
 	successUrl:
-		'https://app.example.com/@ada/billing/success?session_id={CHECKOUT_SESSION_ID}',
-	cancelUrl: 'https://app.example.com/@ada/billing',
+		'https://app.example.com/@ada/-/billing/success?session_id={CHECKOUT_SESSION_ID}',
+	cancelUrl: 'https://app.example.com/@ada/-/billing',
 	customerEmail: 'user@example.com',
 }
 
@@ -139,7 +139,7 @@ test('stripe client request contracts for checkout, subscriptions, and portal', 
 			'line_items[0][quantity]': '1',
 			client_reference_id: 'signed-ref',
 			success_url: checkoutInput.successUrl,
-			cancel_url: 'https://app.example.com/@ada/billing',
+			cancel_url: 'https://app.example.com/@ada/-/billing',
 			customer_email: 'user@example.com',
 			customer: null,
 			'automatic_tax[enabled]': 'true',

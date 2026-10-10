@@ -68,7 +68,7 @@ function getCurrentLoadKey(handle: Handle) {
 	return isWorkspaceRepositoriesPath(pathname) ? `${name}/packages` : name
 }
 
-/** `/@slug/packages`: the workspace Repositories page, not a public profile. */
+/** `/@slug/-/packages`: the workspace Repositories page, not a public profile. */
 function isWorkspaceRepositoriesPath(pathname: string) {
 	return parseOrgResourcePath(pathname)?.section === 'packages'
 }
@@ -193,7 +193,7 @@ export function ProfileRoute(handle: Handle) {
 		const loadKey = getCurrentLoadKey(handle)
 		const currentHref = readCurrentRouterHref(handle)
 		const currentPathname = new URL(currentHref, 'http://localhost').pathname
-		// `/@slug/packages` is the workspace Repositories page, which supplies
+		// `/@slug/-/packages` is the workspace Repositories page, which supplies
 		// its own shell and heading; filter links stay on that page.
 		const embedded = isWorkspaceRepositoriesPath(currentPathname)
 

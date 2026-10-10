@@ -1138,8 +1138,8 @@ and earlier) price ids to `standard` / `pro` so existing subscribers keep their
 plan; none of them is wallet-eligible.
 
 Checkout sessions are created server-side for authenticated users via
-`POST /@:orgSlug/billing/checkout.json` for the organization in the URL (Stripe
-Checkout Session, JSON body
+`POST /@:orgSlug/-/billing/checkout.json` for the organization in the URL
+(Stripe Checkout Session, JSON body
 `{ plan: "pro", interval: "month" | "year", promoCode?: string }`,
 `mode=subscription`, quantity = live seats (owners plus members, at least 1),
 with a signed `client_reference_id` and `metadata.kody_org_id`). Only

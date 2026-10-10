@@ -28,7 +28,7 @@ test('Manage subscription primary click hard-navigates and modified clicks do no
 	navigateBillingPortalOnPrimaryClick(primary as unknown as Event, 'acme')
 	expect(primary.preventDefault).toHaveBeenCalledOnce()
 	expect(assign).toHaveBeenCalledOnce()
-	expect(assign).toHaveBeenCalledWith('/@acme/billing/portal')
+	expect(assign).toHaveBeenCalledWith('/@acme/-/billing/portal')
 
 	for (const modified of [
 		click({ metaKey: true }),

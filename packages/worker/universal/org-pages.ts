@@ -44,6 +44,13 @@ export type OrgSwitcherEntry =
 
 const slugPattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
 
+/**
+ * GitLab-style separator between an organization slug and its section pages.
+ * Keeps `/@owner/<kody-id>` free for canonical package URLs. Bare `-` is not a
+ * valid kody.id (`kodyPackageIdPattern`), so this segment cannot collide.
+ */
+export const orgPageSeparator = '-'
+
 export function isOrganizationSlug(value: string) {
 	return slugPattern.test(value)
 }
@@ -61,13 +68,13 @@ export type ParsedOrgResourcePath = {
 }
 
 /**
- * `/@acme/secrets/new` → slug, section, rest. Package-app and webhook ingress
- * paths under `packages` and `webhooks` are not account pages.
+ * `/@acme/-/secrets/new` → slug, section, rest. Package-app and webhook
+ * ingress stay at `/@owner/packages/…` and `/@owner/webhooks/…` (no `/-/`).
  */
 export function parseOrgResourcePath(
 	pathname: string,
 ): ParsedOrgResourcePath | null {
-	const match = /^\/@([^/]+)\/([^/]+)(\/.*)?$/.exec(pathname)
+	const match = /^\/@([^/]+)\/-\/([^/]+)(\/.*)?$/.exec(pathname)
 	if (!match) return null
 	const slug = match[1] ?? ''
 	const section = match[2] ?? ''
@@ -80,18 +87,18 @@ export function parseOrgResourcePath(
 }
 
 /**
- * `/@acme/billing`, `/@acme/billing.json`, and `/@acme/billing/<step>`.
+ * `/@acme/-/billing`, `/@acme/-/billing.json`, and `/@acme/-/billing/<step>`.
  * Subscriptions are stored per organization (not per person like resource
  * sections), so billing binds team organizations as well as the signup one.
  */
 export function parseOrgBillingPath(pathname: string): { slug: string } | null {
-	const match = /^\/@([^/]+)\/billing(?:\.json|\/[^/]+)?\/?$/.exec(pathname)
+	const match = /^\/@([^/]+)\/-\/billing(?:\.json|\/[^/]+)?\/?$/.exec(pathname)
 	const slug = match?.[1] ?? ''
 	return isOrganizationSlug(slug) ? { slug } : null
 }
 
 export function orgBillingPath(slug: string) {
-	return `/@${slug}/billing`
+	return `/@${slug}/${orgPageSeparator}/billing`
 }
 
 /**
@@ -115,7 +122,8 @@ export function orgResourcePath(
 	rest = '',
 ) {
 	const suffix = rest.replace(/^\/+|\/+$/g, '')
-	return suffix ? `/@${slug}/${section}/${suffix}` : `/@${slug}/${section}`
+	const base = `/@${slug}/${orgPageSeparator}/${section}`
+	return suffix ? `${base}/${suffix}` : base
 }
 
 /**

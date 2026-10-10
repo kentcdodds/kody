@@ -98,9 +98,9 @@ test('connections page renders the connected list with Add connection, the MCP U
 	// The workspace rail marks this page current and links Repositories to
 	// the workspace list, not the public profile.
 	expect(html).toContain('aria-label="Workspace sections"')
-	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
 	expect(html).toMatch(
-		/href="\/@jane\/packages"[^>]*>[\s\S]*?Repositories<\/a>/,
+		/href="\/@jane\/-\/packages"[^>]*>[\s\S]*?Repositories<\/a>/,
 	)
 	expect(html).toContain('data-icon="box"')
 })
@@ -184,7 +184,7 @@ test('picking a client shows that host’s install steps with a way back to the 
 	)
 	expect(html).not.toContain('aria-label="Connected agents"')
 	// Connections stays the current rail item on the add views.
-	expect(html).toMatch(/href="\/@jane\/connections"[^>]*aria-current="page"/)
+	expect(html).toMatch(/href="\/@jane\/-\/connections"[^>]*aria-current="page"/)
 })
 
 test('an unknown agent segment renders the fallback instead of instructions', async () => {
@@ -209,10 +209,10 @@ test('connections views parse from the pathname', () => {
 		['/account/connections/new/nope', null],
 		['/account/connections/new/cursor/x', null],
 		['/account/connections/nope', null],
-		['/@jane/connections', { kind: 'list' }],
-		['/@jane/connections/new', { kind: 'new', agent: null }],
-		['/@jane/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
-		['/@jane/connections/new/nope', null],
+		['/@jane/-/connections', { kind: 'list' }],
+		['/@jane/-/connections/new', { kind: 'new', agent: null }],
+		['/@jane/-/connections/new/cursor', { kind: 'new', agent: 'cursor' }],
+		['/@jane/-/connections/new/nope', null],
 	] as const
 	expect(
 		cases.map(([pathname]) => [
@@ -224,24 +224,24 @@ test('connections views parse from the pathname', () => {
 	expect(accountConnectionsNewHref('grok-cli')).toBe(
 		'/account/connections/new/grok-cli',
 	)
-	expect(accountConnectionsListHref('/@jane/connections')).toBe(
-		'/@jane/connections',
+	expect(accountConnectionsListHref('/@jane/-/connections')).toBe(
+		'/@jane/-/connections',
 	)
-	expect(accountConnectionsNewHref(null, '/@jane/connections')).toBe(
-		'/@jane/connections/new',
+	expect(accountConnectionsNewHref(null, '/@jane/-/connections')).toBe(
+		'/@jane/-/connections/new',
 	)
-	expect(accountConnectionsNewHref('cursor', '/@jane/connections')).toBe(
-		'/@jane/connections/new/cursor',
+	expect(accountConnectionsNewHref('cursor', '/@jane/-/connections')).toBe(
+		'/@jane/-/connections/new/cursor',
 	)
 })
 
 test('connections list under /@slug keeps Add and View steps on org paths', async () => {
 	const html = await renderConnectionsPage(
 		connectedCursor,
-		'/@jane/connections',
+		'/@jane/-/connections',
 	)
-	expect(html).toContain('href="/@jane/connections/new"')
-	expect(html).toContain('href="/@jane/connections/new/cursor"')
+	expect(html).toContain('href="/@jane/-/connections/new"')
+	expect(html).toContain('href="/@jane/-/connections/new/cursor"')
 	expect(html).not.toContain('href="/account/connections/new"')
 	expect(html).not.toContain('href="/account/connections/new/cursor"')
 })
@@ -352,8 +352,8 @@ test('account rail holds only the person: profile, security, organizations, expe
 		'/account/usage',
 		'/account/credits',
 		'/account/mcp-oauth-clients',
-		'/@jane/secrets',
-		'/@jane/packages',
+		'/@jane/-/secrets',
+		'/@jane/-/packages',
 	]) {
 		expect(isAccountRailPath(path), path).toBe(false)
 	}
@@ -377,14 +377,14 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	const items = groups.flatMap((group) => group.items)
 	// Repositories is the workspace list, not the public profile.
 	expect(items.find((item) => item.label === 'Repositories')?.href).toBe(
-		'/@jane/packages',
+		'/@jane/-/packages',
 	)
 	expect(items.find((item) => item.label === 'Secret providers')?.href).toBe(
-		'/@jane/secret-providers',
+		'/@jane/-/secret-providers',
 	)
 	const billing = items.find((item) => item.label === 'Billing')
-	expect(billing?.href).toBe('/@jane/billing')
-	expect(billing && isAccountNavItemActive(billing, '/@jane/billing')).toBe(
+	expect(billing?.href).toBe('/@jane/-/billing')
+	expect(billing && isAccountNavItemActive(billing, '/@jane/-/billing')).toBe(
 		true,
 	)
 	const usage = items.find((item) => item.label === 'Usage')
@@ -396,7 +396,7 @@ test('workspace rail groups what the organization owns and keeps its slug in eve
 	).toBe(true)
 	expect(
 		connections &&
-			isAccountNavItemActive(connections, '/@jane/connections/new'),
+			isAccountNavItemActive(connections, '/@jane/-/connections/new'),
 	).toBe(true)
 	expect(accountPackagesNavHref(null)).toBe('/account/packages')
 })
@@ -407,7 +407,7 @@ test('a team organization rail has only Billing, for roles that manage it (#3073
 	).toEqual([
 		{
 			label: 'Organization',
-			items: [{ href: '/@acme/billing', label: 'Billing', icon: 'wallet' }],
+			items: [{ href: '/@acme/-/billing', label: 'Billing', icon: 'wallet' }],
 		},
 	])
 	expect(
@@ -427,7 +427,7 @@ test('account rail org slug prefers the path org over username', () => {
 	]
 	expect(
 		accountRailOrgSlug({
-			pathname: '/@acme/jobs',
+			pathname: '/@acme/-/jobs',
 			organizations,
 			username: 'ada-new',
 		}),

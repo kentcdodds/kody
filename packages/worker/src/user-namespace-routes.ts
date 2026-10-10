@@ -1,7 +1,8 @@
 /**
  * The `/@owner/…` namespace is shared by machine surfaces (package apps,
- * webhook ingress) and by the canonical public package URL
- * `/@owner/kody-id`, which the worker hands to Remix.
+ * webhook ingress), organization section pages at `/@owner/-/<section>`, and
+ * the canonical public package URL `/@owner/kody-id`, which the worker hands
+ * to Remix.
  *
  * `connectors` remains listed only so retired `/@owner/connectors/…` paths
  * still 404 as machine surfaces instead of falling through to public package
@@ -10,6 +11,9 @@
  * Every machine surface names a target after its namespace segment, so they all
  * live at three segments or deeper. Requiring that depth keeps the two-segment
  * public form addressable even when a `kody.id` happens to spell a namespace.
+ * Org pages use the literal `/-/` separator (bare `-` is not a valid kody.id)
+ * so `/@owner/billing` is always a package page and `/@owner/-/billing` is
+ * always the organization billing page.
  */
 
 const userNamespaceSegments = new Set(['packages', 'connectors', 'webhooks'])

@@ -37,16 +37,16 @@ const billing: OrganizationSummary = {
 
 test('account resource redirects map pages onto the signup organization', () => {
 	expect(accountResourceRedirectPath('/account/packages', 'ada')).toBe(
-		'/@ada/packages',
+		'/@ada/-/packages',
 	)
 	expect(accountResourceRedirectPath('/account/secrets', 'ada')).toBe(
-		'/@ada/secrets',
+		'/@ada/-/secrets',
 	)
 	expect(accountResourceRedirectPath('/account/secrets/new', 'ada')).toBe(
-		'/@ada/secrets/new',
+		'/@ada/-/secrets/new',
 	)
 	expect(accountResourceRedirectPath('/account/jobs/job-1', 'ada')).toBe(
-		'/@ada/jobs/job-1',
+		'/@ada/-/jobs/job-1',
 	)
 	expect(accountResourceRedirectPath('/account/packages/pkg-1', 'ada')).toBe(
 		null,
@@ -59,17 +59,21 @@ test('account resource redirects map pages onto the signup organization', () => 
 })
 
 test('org resource paths alias back to account loaders and ignore package apps', () => {
-	expect(parseOrgResourcePath('/@acme/secrets/user/token')).toEqual({
+	expect(parseOrgResourcePath('/@acme/-/secrets/user/token')).toEqual({
 		slug: 'acme',
 		section: 'secrets',
 		rest: 'user/token',
 	})
-	expect(accountAliasPath('/@acme/secrets/user/token')).toBe(
+	expect(accountAliasPath('/@acme/-/secrets/user/token')).toBe(
 		'/account/secrets/user/token',
 	)
 	expect(parseOrgResourcePath('/@acme/packages/devin')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/webhooks/devin/hook/secret')).toBeNull()
-	expect(parseOrgResourcePath('/@acme/packages')).toEqual({
+	// Two-segment paths are package pages, not org sections.
+	expect(parseOrgResourcePath('/@acme/secrets')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/billing')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/billing')).toBeNull()
+	expect(parseOrgResourcePath('/@acme/-/packages')).toEqual({
 		slug: 'acme',
 		section: 'packages',
 		rest: '',
@@ -77,13 +81,13 @@ test('org resource paths alias back to account loaders and ignore package apps',
 })
 
 test('switching keeps the same kind of page or falls back to organization home', () => {
-	expect(switchOrgPath('/@acme/secrets', 'other')).toBe('/@other/secrets')
-	expect(switchOrgPath('/@acme/secrets/new', 'other')).toBe(
-		'/@other/secrets/new',
+	expect(switchOrgPath('/@acme/-/secrets', 'other')).toBe('/@other/-/secrets')
+	expect(switchOrgPath('/@acme/-/secrets/new', 'other')).toBe(
+		'/@other/-/secrets/new',
 	)
-	expect(switchOrgPath('/@acme/billing', 'other')).toBe('/@other/billing')
-	expect(switchOrgPath('/@acme/billing/success', 'other')).toBe(
-		'/@other/billing',
+	expect(switchOrgPath('/@acme/-/billing', 'other')).toBe('/@other/-/billing')
+	expect(switchOrgPath('/@acme/-/billing/success', 'other')).toBe(
+		'/@other/-/billing',
 	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
@@ -114,7 +118,7 @@ test('current organization comes from the URL, then the last-used slug', () => {
 	const organizations = [personal, acme]
 	expect(
 		currentSwitcherSlug({
-			pathname: '/@acme/secrets',
+			pathname: '/@acme/-/secrets',
 			organizations,
 			lastUsedSlug: 'ada',
 		}),
@@ -177,19 +181,19 @@ test('a session without memberships still lists the signup organization', () => 
 })
 
 test('billing paths bind to the organization in the URL', () => {
-	expect(orgBillingPath('acme')).toBe('/@acme/billing')
+	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
 	for (const pathname of [
-		'/@acme/billing',
-		'/@acme/billing/',
-		'/@acme/billing.json',
-		'/@acme/billing/checkout.json',
-		'/@acme/billing/success',
-		'/@acme/billing/portal',
+		'/@acme/-/billing',
+		'/@acme/-/billing/',
+		'/@acme/-/billing.json',
+		'/@acme/-/billing/checkout.json',
+		'/@acme/-/billing/success',
+		'/@acme/-/billing/portal',
 	]) {
 		expect(parseOrgBillingPath(pathname)).toEqual({ slug: 'acme' })
 	}
 	expect(parseOrgBillingPath('/account/billing')).toBeNull()
-	expect(parseOrgBillingPath('/@acme/billing/portal/extra')).toBeNull()
+	expect(parseOrgBillingPath('/@acme/-/billing/portal/extra')).toBeNull()
 	expect(parseOrgBillingPath('/@acme/billings')).toBeNull()
 	expect(parseOrgBillingPath('/@Not A Slug/billing')).toBeNull()
 })

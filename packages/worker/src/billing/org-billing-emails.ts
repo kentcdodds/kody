@@ -97,7 +97,7 @@ export async function sendSeatChangeEmail(input: {
 	const subject = `Organization @${input.slug} seat count changed`
 	const line = `Organization @${input.slug} seat count changed from ${input.previousQuantity} to ${input.nextQuantity}.`
 	const billingUrl = new URL(
-		'/account/billing',
+		`/@${input.slug}/-/billing`,
 		emailConfig.appBaseUrl,
 	).toString()
 	const text = `${line}\n\nManage billing: ${billingUrl}`
