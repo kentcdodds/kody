@@ -19,7 +19,7 @@ export const adminEntitlementResources = [
 	'stored_email_messages',
 	'secrets',
 	'concurrent_workflows',
-	'execute_calls_per_day',
+	'execute_unique_workers_per_day',
 	'outbound_fetches_per_day',
 	'job_runs_per_day',
 	'automation_invocations_per_day',

@@ -1,15 +1,78 @@
-import { getUsernameFormatValidationError } from '#worker/identity/username.ts'
 import {
+	getUsernameFormatValidationError,
+	normalizeUsername,
+} from '#worker/identity/username.ts'
+import {
+	ownerIdFromStored,
 	personIdFromStored,
+	type OwnerId,
 	type PersonId,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import {
+	andActiveOrgSql,
+	andLiveDeletedAtSql,
+} from '#worker/soft-delete/live-sql.ts'
 
 export type PublicUserIdentity = {
 	userId: number
 	username: string
 	email: string
 	mcpUserId: PersonId
+}
+
+/**
+ * Public `/@handle` owner for packages, webhooks, and package-app origins.
+ * Team orgs keep a `handles`/`orgs` row after P9 deletes leftover platform
+ * `users` rows; person accounts also hold a personal-org handle.
+ */
+export type PublicOwnerIdentity = {
+	handle: string
+	ownerId: OwnerId
+}
+
+/**
+ * Resolve a public handle to the owning org id. Prefer `handles.org_id` (the
+ * namespace claim), then live `orgs.slug`. Does not read `users` — post-P9
+ * platform orgs have no users row.
+ */
+export async function findPublicOwnerIdentityByHandle(input: {
+	db: D1Database
+	handle: string
+}): Promise<PublicOwnerIdentity | null> {
+	const handle = normalizeUsername(input.handle.trim())
+	if (!handle || getUsernameFormatValidationError(handle)) return null
+
+	const fromHandle = await input.db
+		.prepare(
+			`SELECT h.handle AS handle, h.org_id AS org_id
+			 FROM handles h
+			 INNER JOIN orgs o ON o.id = h.org_id
+			 WHERE h.handle = ?
+			   AND h.org_id IS NOT NULL
+			   ${andActiveOrgSql('o')}`,
+		)
+		.bind(handle)
+		.first<{ handle: string; org_id: string }>()
+	if (fromHandle?.org_id) {
+		return {
+			handle: fromHandle.handle,
+			ownerId: ownerIdFromStored(fromHandle.org_id),
+		}
+	}
+
+	const fromOrg = await input.db
+		.prepare(
+			`SELECT slug, id
+			 FROM orgs
+			 WHERE slug = ?${andLiveDeletedAtSql()} AND suspended_at IS NULL`,
+		)
+		.bind(handle)
+		.first<{ slug: string; id: string }>()
+	if (!fromOrg) return null
+	return {
+		handle: fromOrg.slug,
+		ownerId: ownerIdFromStored(fromOrg.id),
+	}
 }
 
 export async function findPublicUserIdentityByStableUserId(input: {

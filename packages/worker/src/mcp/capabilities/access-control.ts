@@ -198,7 +198,7 @@ export async function resolveCallerFeatureFlagEvaluations(
 /**
  * True when this request's flag read threw (D1 or evaluation). Anonymous
  * callers and unknown stable ids are fail-closed, not failures. A failure
- * must not spend execute daily quota.
+ * must refuse execute before any worker loads.
  */
 export async function callerFeatureFlagEvaluationFailed(
 	env: Env,

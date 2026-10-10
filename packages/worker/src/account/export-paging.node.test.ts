@@ -433,7 +433,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 	const { db } = createMigratedDbWithUser()
 	const counters = [
 		{ resource: 'email_sends_per_day', day: '2026-07-30', count: 2 },
-		{ resource: 'execute_calls_per_day', day: '2026-07-30', count: 5 },
+		{ resource: 'execute_unique_workers_per_day', day: '2026-07-30', count: 5 },
 		{ resource: 'outbound_fetches_per_day', day: '2026-07-31', count: 1 },
 	]
 	const storageBytesState = {
@@ -502,7 +502,7 @@ test('account export includes user_meter counters, pages them, and warns on trun
 		deletionState,
 		inboundConnectionLastUsed: [],
 		truncated: true,
-		nextStartAfter: '2026-07-30:execute_calls_per_day',
+		nextStartAfter: '2026-07-30:execute_unique_workers_per_day',
 	})
 	const second = await read('user_meter', {
 		pageSize: 2,

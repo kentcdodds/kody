@@ -9,6 +9,11 @@ export function isOrgBindingMembershipQuery(normalizedQuery: string) {
 	)
 }
 
+/** Recognize the `isOrgActive` SELECT. */
+export function isActiveOrgQuery(normalizedQuery: string) {
+	return normalizedQuery.startsWith('select 1 as ok from orgs o where o.id = ?')
+}
+
 export function mockPersonalOrgBindingRow(
 	personId: string,
 	slug: string | null = null,
@@ -18,4 +23,35 @@ export function mockPersonalOrgBindingRow(
 		org_slug: slug,
 		role: 'owner' as const,
 	}
+}
+
+/**
+ * D1 stub where every org is active and every person is a live Owner of
+ * their personal org, so `resolveCredential`'s org access check passes.
+ * Other queries find nothing.
+ */
+export function personalOrgAccessD1(): D1Database {
+	return {
+		prepare(query: string) {
+			const normalizedQuery = query.replace(/\s+/g, ' ').trim().toLowerCase()
+			return {
+				bind(...params: Array<unknown>) {
+					return {
+						async first() {
+							if (isActiveOrgQuery(normalizedQuery)) return { ok: 1 }
+							return isOrgBindingMembershipQuery(normalizedQuery)
+								? mockPersonalOrgBindingRow(String(params[1]))
+								: null
+						},
+						async all() {
+							return { results: [], meta: { changes: 0 } }
+						},
+						async run() {
+							return { meta: { changes: 0 } }
+						},
+					}
+				},
+			}
+		},
+	} as unknown as D1Database
 }

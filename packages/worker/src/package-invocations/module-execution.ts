@@ -172,7 +172,7 @@ export async function runSavedPackageModuleOnce(
 			// Sibling daily automation quota before sandbox work so over-limit
 			// webhooks / package-export / subscription / workflow invokes cost
 			// nothing. Failed attempts still count. Distinct from MCP
-			// execute_calls_per_day and scheduled job_runs_per_day.
+			// execute_unique_workers_per_day and scheduled job_runs_per_day.
 			try {
 				const orgRecord = await getOrgById(input.env.APP_DB, input.actor.orgId)
 				const orgSlug = orgRecord?.slug?.trim() || user.username?.trim() || null

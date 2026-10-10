@@ -157,11 +157,12 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					{count.format(freeLimits.maxSavedPackages)} saved packages,{' '}
 					{count.format(freeLimits.maxScheduledJobs)} scheduled jobs (no faster
 					than every {formatMinJobInterval(freeLimits.minJobIntervalMs)}),{' '}
-					{count.format(freeLimits.maxExecuteCallsPerDay)} execute calls per day
-					({count.format(freeLimits.maxExecuteCallsPerWeek ?? 0)} this week),
-					and the rest of the entitlements on Pricing. Free stops at those caps.
-					Pro adds a larger monthly include, plus prepaid credits when you need
-					more.
+					{count.format(freeLimits.maxExecuteUniqueWorkersPerDay)} unique
+					execute workers per day (
+					{count.format(freeLimits.maxExecuteUniqueWorkersPerWeek ?? 0)} this
+					week), and the rest of the entitlements on Pricing. Free stops at
+					those caps. Pro adds a larger monthly include, plus prepaid credits
+					when you need more.
 				</p>
 				<p>
 					<a href={routes.pricing.href()}>Plans and pricing</a>

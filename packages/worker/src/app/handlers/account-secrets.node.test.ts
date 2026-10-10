@@ -2,6 +2,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
+import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as secretsService from '#mcp/secrets/service.ts'
@@ -13,6 +14,8 @@ import type * as AllowedHosts from '#mcp/secrets/allowed-hosts.ts'
 import type * as HostApproval from '#mcp/secrets/host-approval.ts'
 import type * as IntegrationsService from '#worker/integrations/service.ts'
 import type * as IntegrationsCredentials from '#worker/integrations/credentials.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
 const mockModule = vi.hoisted(() => ({
@@ -1578,4 +1581,46 @@ test('published platform apps exchange with the app row credentials and connect 
 	mockModule.getAvailablePlatformApp.mockResolvedValue(null)
 	mockModule.getPlatformOauthAppClientSecret.mockResolvedValue(null)
 	vi.unstubAllGlobals()
+})
+
+test('a stale page for an org the person cannot open gets a 404, not the personal org', async () => {
+	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
+	await ensureOrgsTestSchema(db)
+	const { handler } = createAccountSecretsApiHandler({
+		APP_DB: db,
+		COOKIE_SECRET: 'secret',
+	} as Env)
+	mockModule.listSecrets.mockClear()
+	mockModule.saveSecret.mockClear()
+	mockModule.deleteSecret.mockClear()
+	const referer = 'https://example.com/@ghost/-/secrets'
+	const requests = [
+		new Request(secretsUrl, { headers: { Referer: referer } }),
+		new Request(secretsUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Referer: referer },
+			body: JSON.stringify({
+				action: 'save',
+				name: 'apiKey',
+				scope: 'user',
+				value: 'value',
+			}),
+		}),
+		new Request(secretsUrl, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Referer: referer },
+			body: JSON.stringify({ action: 'delete', currentId: 'user::::apiKey' }),
+		}),
+	]
+	for (const request of requests) {
+		const response = await handler({ request, params: {} } as never)
+		expect(response.status, request.method).toBe(404)
+		await expect(response.json()).resolves.toEqual({
+			ok: false,
+			error: 'Organization not found.',
+		})
+	}
+	expect(mockModule.listSecrets).not.toHaveBeenCalled()
+	expect(mockModule.saveSecret).not.toHaveBeenCalled()
+	expect(mockModule.deleteSecret).not.toHaveBeenCalled()
 })

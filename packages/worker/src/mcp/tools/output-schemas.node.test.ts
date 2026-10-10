@@ -53,7 +53,7 @@ test('search structured content passes advertised schema for all return paths', 
 			error: 'Plan limit reached.',
 			entitlement: {
 				code: 'entitlement_limit_exceeded',
-				resource: 'execute_calls_per_day',
+				resource: 'execute_unique_workers_per_day',
 				plan: 'free',
 				limit: 100,
 				current: 100,

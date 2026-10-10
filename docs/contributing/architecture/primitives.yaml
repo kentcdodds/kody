@@ -363,10 +363,15 @@ primitives:
   - id: secrets
     group: assistant
     name: Secret references
-    summary: Server-side secret references; raw values never enter prompts.
+    summary:
+      Server-side secret references; raw values never enter prompts. Every
+      runtime credential use goes through resolveCredential.
     code:
+      - packages/worker/src/credentials/
       - packages/worker/src/mcp/capabilities/secrets/
       - packages/worker/src/security/
+    docs:
+      - docs/contributing/architecture/authorization.md
 
   - id: integrations
     group: assistant

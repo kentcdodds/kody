@@ -1,4 +1,5 @@
 import { createListDetailRoute } from '#client/list-detail-route.ts'
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { type AccountJobsViewFilter } from '#client/routes/account-jobs-filter.ts'
 import {
@@ -65,7 +66,7 @@ export function emptyJobsMessage(input: {
 	return 'No active or upcoming jobs. Switch to History or All to see other jobs.'
 }
 
-export function buildJobsApiRequestUrl(href: string) {
+function buildJobsApiRequestUrl(href: string) {
 	const requestUrl = new URL(accountJobsApiPath, 'http://localhost')
 	const selectedJobId = jobsRoute.getSelection(href).selectedId
 	if (selectedJobId) {
@@ -74,23 +75,34 @@ export function buildJobsApiRequestUrl(href: string) {
 	return `${requestUrl.pathname}${requestUrl.search}`
 }
 
-export async function accountJobsRouteLoader(
-	url: URL,
+/** `/account/jobs.json` for the page at `href`, or null when signed out. */
+export async function fetchAccountJobsPayload(
+	href: string,
 	signal: AbortSignal,
-): Promise<RouteLoaderResult> {
-	const href = `${url.pathname}${url.search}`
+) {
 	const response = await fetch(buildJobsApiRequestUrl(href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
-	if (response.status === 401) {
-		return routeLoaderRedirect('/login')
-	}
+	if (response.status === 401) return null
 	const payload = await readJson<AccountJobsLoaderData>(response)
 	if (!response.ok || !payload?.ok) {
 		throw new Error('Unable to load scheduled jobs.')
 	}
+	return payload
+}
+
+export async function accountJobsRouteLoader(
+	url: URL,
+	signal: AbortSignal,
+): Promise<RouteLoaderResult> {
+	const payload = await fetchAccountJobsPayload(
+		`${url.pathname}${url.search}`,
+		signal,
+	)
+	if (!payload) return routeLoaderRedirect('/login')
 	return { accountJobs: payload }
 }
 
