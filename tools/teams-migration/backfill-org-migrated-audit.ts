@@ -7,6 +7,7 @@ import {
 import { fail, parseJsonc } from '../ci/resource-utils.ts'
 import {
 	queryD1,
+	queryD1Changes,
 	type CloudflareClient,
 } from '../preview-rehearsal/d1-rehearsal.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
@@ -238,13 +239,33 @@ export function createD1HttpDatabase(
 					return results[0] ?? null
 				},
 				async run() {
-					await queryD1(client, uuid, sql, params)
-					return { success: true }
+					const changes = await queryD1Changes(client, uuid, sql, params)
+					return { meta: { changes } }
 				},
 			}
 			return statement
 		},
 	}
+}
+
+function changesFromRun(result: unknown) {
+	const meta =
+		result &&
+		typeof result === 'object' &&
+		'meta' in result &&
+		result.meta &&
+		typeof result.meta === 'object'
+			? result.meta
+			: null
+	const changes = meta && 'changes' in meta ? meta.changes : undefined
+	if (
+		typeof changes !== 'number' ||
+		!Number.isInteger(changes) ||
+		changes < 0
+	) {
+		throw new Error('D1 insert did not report changes.')
+	}
+	return changes
 }
 
 function orgIdsFromRows(rows: Array<{ id?: unknown }> | undefined) {
@@ -288,18 +309,38 @@ export async function backfillOrgMigratedAuditEvents(input: {
 			present += 1
 			continue
 		}
-		pending += 1
-		if (dryRun) continue
-		await input.auditDb
+		if (dryRun) {
+			pending += 1
+			continue
+		}
+		// One statement so a concurrent apply cannot insert a second success
+		// row. 0003 also rejects that duplicate at the database.
+		const written = await input.auditDb
 			.prepare(
 				`INSERT INTO org_audit_events (
 					id, org_id, actor_user_id, actor_username, credential_kind,
 					credential_id, action, resource_type, resource_id, target_user_id,
 					result, details_json, ip_hash, created_at
-				) VALUES (?, ?, NULL, NULL, NULL, NULL, 'org.migrated', 'org', ?, NULL, 'success', NULL, NULL, ?)`,
+				)
+				SELECT ?, ?, NULL, NULL, NULL, NULL, 'org.migrated', 'org', ?, NULL, 'success', NULL, NULL, ?
+				WHERE NOT EXISTS (
+					SELECT 1 FROM org_audit_events
+					WHERE org_id = ? AND action = 'org.migrated' AND result = 'success'
+				)`,
 			)
-			.bind(randomUUID(), orgId, orgId, now())
+			.bind(randomUUID(), orgId, orgId, now(), orgId)
 			.run()
+		const changes = changesFromRun(written)
+		if (changes === 0) {
+			present += 1
+			continue
+		}
+		if (changes !== 1) {
+			throw new Error(
+				`org.migrated insert wrote ${String(changes)} rows for one org.`,
+			)
+		}
+		pending += 1
 		inserted += 1
 	}
 	return { dryRun, orgs: orgIds.length, pending, present, inserted }

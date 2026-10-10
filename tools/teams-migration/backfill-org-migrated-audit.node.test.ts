@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { type CloudflareClient } from '../preview-rehearsal/d1-rehearsal.ts'
@@ -27,8 +28,8 @@ function sqliteDatabase(sqlite: DatabaseSync): OrgMigratedAuditDatabase {
 					return Promise.resolve(row ?? null)
 				},
 				async run() {
-					sqlite.prepare(sql).run(...params)
-					return { success: true }
+					const outcome = sqlite.prepare(sql).run(...params)
+					return { meta: { changes: Number(outcome.changes) } }
 				},
 			})
 			return {
@@ -328,8 +329,20 @@ function memoryClient(memory: Memory): CloudflareClient {
 					{ status: 400 },
 				)
 			}
+			const already = memory.events.some(
+				(event) => event.orgId === orgId && event.result === 'success',
+			)
+			if (already) {
+				return Response.json({
+					success: true,
+					result: [{ success: true, results: [], meta: { changes: 0 } }],
+				})
+			}
 			memory.events.push({ orgId, result: 'success' })
-			return Response.json({ success: true, result: [{ results: [] }] })
+			return Response.json({
+				success: true,
+				result: [{ success: true, results: [], meta: { changes: 1 } }],
+			})
 		}
 		return Response.json(
 			{ success: false, errors: [{ message: `unexpected sql ${sql}` }] },
@@ -433,6 +446,134 @@ test('confirmed production dry-run reads kody and kody-audit and writes nothing'
 		false,
 	)
 	expect(memory.events).toEqual([])
+})
+
+test('a failed D1 statement is not counted as inserted', async () => {
+	const fetcher: typeof fetch = async (input, init) => {
+		const url = new URL(
+			typeof input === 'string'
+				? input
+				: input instanceof URL
+					? input.href
+					: input.url,
+		)
+		if (url.pathname.endsWith('/d1/database')) {
+			const name = url.searchParams.get('name') ?? ''
+			return Response.json({
+				success: true,
+				result: [{ uuid: `uuid-${name}`, name }],
+			})
+		}
+		const body = JSON.parse(String(init?.body)) as { sql: string }
+		if (body.sql.includes('FROM orgs')) {
+			return Response.json({
+				success: true,
+				result: [
+					{ success: true, results: [{ id: 'org-a' }], meta: { changes: 0 } },
+				],
+			})
+		}
+		if (body.sql.includes('INSERT')) {
+			return Response.json({
+				success: true,
+				result: [{ success: false, results: [], meta: { changes: 0 } }],
+			})
+		}
+		return Response.json({
+			success: true,
+			result: [{ success: true, results: [], meta: { changes: 0 } }],
+		})
+	}
+	await expect(
+		runOrgMigratedAuditBackfill({
+			client: {
+				accountId: 'account',
+				apiToken: 'token',
+				apiBaseUrl: 'https://example.test/client/v4',
+				fetcher,
+			},
+			target: parseBackfillTarget('kody-pr-7'),
+			mode: 'apply',
+			now: fixedNow,
+		}),
+	).rejects.toThrow(/D1 statement failed/)
+})
+
+test('an insert that writes zero rows counts as already present', async () => {
+	const { app, appDb } = createDatabases()
+	app.prepare(`INSERT INTO orgs (id) VALUES (?)`).run('org-a')
+	const auditDb: OrgMigratedAuditDatabase = {
+		prepare(sql: string) {
+			return {
+				all<Row>() {
+					return Promise.resolve({ results: [] as Row[] })
+				},
+				first<Row>() {
+					return Promise.resolve(null as Row | null)
+				},
+				async run() {
+					if (!sql.includes('WHERE NOT EXISTS')) {
+						throw new Error('insert must be conditional')
+					}
+					return { meta: { changes: 0 } }
+				},
+				bind() {
+					return this
+				},
+			}
+		},
+	}
+	await expect(
+		backfillOrgMigratedAuditEvents({ appDb, auditDb, now: fixedNow }),
+	).resolves.toEqual({
+		dryRun: false,
+		orgs: 1,
+		pending: 0,
+		present: 1,
+		inserted: 0,
+	})
+})
+
+test('0003 allows one org.migrated success row per org', () => {
+	const audit = new DatabaseSync(':memory:')
+	audit.exec(`CREATE TABLE org_audit_events (
+		id TEXT PRIMARY KEY NOT NULL,
+		org_id TEXT NOT NULL,
+		actor_user_id TEXT,
+		actor_username TEXT,
+		credential_kind TEXT,
+		credential_id TEXT,
+		action TEXT NOT NULL,
+		resource_type TEXT,
+		resource_id TEXT,
+		target_user_id TEXT,
+		result TEXT NOT NULL,
+		details_json TEXT,
+		ip_hash TEXT,
+		created_at TEXT NOT NULL
+	)`)
+	audit.exec(
+		readFileSync(
+			new URL(
+				'../../packages/worker/audit-migrations/0003-org-migrated-success-unique.sql',
+				import.meta.url,
+			),
+			'utf8',
+		),
+	)
+	const insert = audit.prepare(
+		`INSERT INTO org_audit_events (
+			id, org_id, actor_user_id, actor_username, credential_kind,
+			credential_id, action, resource_type, resource_id, target_user_id,
+			result, details_json, ip_hash, created_at
+		) VALUES (?, ?, NULL, NULL, NULL, NULL, 'org.migrated', 'org', ?, NULL, ?, NULL, NULL, ?)`,
+	)
+	insert.run('one', 'org-a', 'org-a', 'success', '2026-10-10T00:00:00.000Z')
+	expect(() =>
+		insert.run('two', 'org-a', 'org-a', 'success', '2026-10-10T00:00:00.000Z'),
+	).toThrow(/UNIQUE constraint failed/)
+	insert.run('three', 'org-a', 'org-a', 'failure', '2026-10-10T00:00:00.000Z')
+	insert.run('four', 'org-b', 'org-b', 'success', '2026-10-10T00:00:00.000Z')
 })
 
 test('production dry-run refuses to call Cloudflare without the confirm phrase', async () => {
