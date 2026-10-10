@@ -22,6 +22,7 @@ import { consumeSearchRateLimit } from '#worker/search-rate-limit.ts'
 import { getUserPlan } from '#worker/entitlements/service.ts'
 import { isPaidPlan, type PlanName } from '#universal/plans.ts'
 import { recordPaidRankedSearchFlagExposure } from '#worker/feature-flags/paid-ranked-search-exposure.ts'
+import { entitlementEmailForOwner } from '#worker/request-context/owner-id.ts'
 
 import { resolvePackageIdentitySearch } from './package-search-identity.ts'
 import { buildExactPackageSearchResult, searchUnified } from './search-core.ts'
@@ -89,6 +90,12 @@ async function executeSearchListWithinBudget(
 	input: ExecuteSearchListInput,
 ): Promise<SearchListExecutionResult> {
 	const phaseTimings: Partial<SearchPhaseTimings> = input.phaseTimings ?? {}
+	// Team-bound search keys discovery to request.org.id; pair that OwnerId with
+	// a blank email so plan / rate-limit reverse-resolve the org (member email
+	// against a team id always misses and falls through to public free).
+	const entitlementEmail = input.userId
+		? entitlementEmailForOwner(input.callerContext, input.userId)
+		: null
 	// Jev eligibility reads the plan fresh, alongside the rate-limit writes;
 	// only the abuse ceilings use the cached plan. A failed read keeps hybrid
 	// order, like any other Jev failure, instead of failing the search.
@@ -96,7 +103,7 @@ async function executeSearchListWithinBudget(
 		input.userId && input.env.APP_DB
 			? getUserPlan(input.env.APP_DB, {
 					userId: input.userId,
-					email: input.callerContext.user?.email ?? null,
+					email: entitlementEmail,
 				}).catch(() => 'free')
 			: Promise.resolve('free')
 	const rateLimitStart = performance.now()
@@ -104,7 +111,7 @@ async function executeSearchListWithinBudget(
 	await consumeSearchRateLimit({
 		db: input.env.APP_DB,
 		userId: input.userId,
-		email: input.callerContext.user?.email ?? null,
+		email: entitlementEmail,
 	})
 	phaseTimings.rateLimitMs = elapsedMs(rateLimitStart)
 	const domainFilter = input.domain?.trim() || undefined

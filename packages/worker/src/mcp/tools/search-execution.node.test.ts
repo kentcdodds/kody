@@ -532,3 +532,40 @@ test('executeSearchList fails closed before ranking when the abuse rate limit re
 	})
 	expect(mockModule.searchUnified).not.toHaveBeenCalled()
 })
+
+test('executeSearchList pairs team org OwnerId with blank entitlement email', async () => {
+	const teamOrgId = 'b'.repeat(64) as ReturnType<typeof ownerIdFromStored>
+	const actorId = ownerIdFromStored('user-1')
+	mockModule.getUserPlan.mockResolvedValueOnce('max')
+	mockModule.consumeSearchRateLimit.mockResolvedValueOnce('max')
+	await search(
+		{ APP_DB: {}, WRANGLER_IS_LOCAL_DEV: 'true' } as unknown as Env,
+		{
+			userId: teamOrgId,
+			callerContext: {
+				baseUrl: 'https://example.com',
+				user: {
+					userId: actorId,
+					email: 'teammate@example.com',
+					displayName: 'Teammate',
+					username: 'teammate',
+				},
+				request: {
+					org: {
+						id: teamOrgId,
+						slug: 'acme',
+						kind: 'team',
+						role: 'member',
+					},
+				},
+			} as never,
+		},
+	)
+	expect(mockModule.getUserPlan).toHaveBeenCalledWith(
+		expect.anything(),
+		expect.objectContaining({ userId: teamOrgId, email: null }),
+	)
+	expect(mockModule.consumeSearchRateLimit).toHaveBeenCalledWith(
+		expect.objectContaining({ userId: teamOrgId, email: null }),
+	)
+})
