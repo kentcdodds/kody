@@ -355,6 +355,26 @@ test('repo session package writes deny a read-only profile and allow write', asy
 			sessionId: 'session-1',
 		}),
 	).resolves.toBeUndefined()
+
+	reset()
+	mocks.getRepoSessionById.mockResolvedValue(null)
+	await expect(
+		authorizeRepoSessionPackageWrite({
+			env: { APP_DB: {} } as Env,
+			request: callerContext().request,
+			userId: 'user-1',
+			sessionId: 'session-1',
+		}),
+	).rejects.toThrow('Repo session was not found.')
+	await expect(
+		authorizeRepoSessionPackageWrite({
+			env: { APP_DB: {} } as Env,
+			request: callerContext().request,
+			userId: 'user-1',
+			sessionId: 'session-1',
+			allowMissingSession: true,
+		}),
+	).resolves.toBeUndefined()
 })
 
 test('storageQuery on a package bucket denies a read-only profile and allows write', async () => {

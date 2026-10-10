@@ -13,12 +13,19 @@ export async function authorizeRepoSessionPackageWrite(input: {
 	request: RequestContext | null
 	userId: string
 	sessionId: string
+	/**
+	 * `repoDiscardSession` is idempotent. A missing catalog row is a
+	 * successful no-op (`deleted: false`), so the write check only runs
+	 * when the session still exists.
+	 */
+	allowMissingSession?: boolean
 }): Promise<void> {
 	const session = await getRepoSessionById(input.env, {
 		userId: input.userId,
 		sessionId: input.sessionId,
 	})
 	if (!session) {
+		if (input.allowMissingSession) return
 		throw new McpCallerError('Repo session was not found.')
 	}
 	const source = await getEntitySourceByIdForUser(input.env.APP_DB, {

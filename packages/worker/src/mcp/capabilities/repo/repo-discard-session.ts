@@ -28,6 +28,7 @@ export const repoDiscardSessionCapability = defineDomainCapability(
 				request: ctx.callerContext.request,
 				userId: user.userId,
 				sessionId: args.session_id,
+				allowMissingSession: true,
 			})
 			const result = await repoSessionRpc(
 				ctx.env,
