@@ -30,6 +30,8 @@ import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	fetchSecretAuthRequiredMessage,
+	SecretHostNotApprovedError,
+	type HostApprovalEntry,
 } from '#mcp/secrets/errors.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
@@ -448,7 +450,11 @@ export async function expandSecretPlaceholders(input: {
 	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
-	const resolvedSecretResults = await Promise.all(
+	const preflightHost = hasReferencedSecrets
+		? readPreflightRequestHost(input.request.url, baseUrl)
+		: null
+	const requestHost = preflightHost ? normalizeHost(preflightHost) : null
+	const settledSecretResults = await Promise.allSettled(
 		referencedSecrets.map(async (referenced) => {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
@@ -465,6 +471,7 @@ export async function expandSecretPlaceholders(input: {
 					scope: referenced.scope,
 					storageContext,
 					orgSlug: secretPageOrgSlugFromCaller(input.props),
+					requestHost,
 				},
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
@@ -484,6 +491,12 @@ export async function expandSecretPlaceholders(input: {
 			return { referenced, resolved, value: resolved.value }
 		}),
 	)
+	const resolvedSecretResults = readSettledSecretResults({
+		settled: settledSecretResults,
+		props: input.props,
+		storageContext,
+		requestedHost: preflightHost ?? '',
+	})
 	const resolvedIntegrationTokens = await Promise.all(
 		referencedIntegrationTokens.map(async (name) => {
 			if (!callerUserId) {
@@ -495,7 +508,7 @@ export async function expandSecretPlaceholders(input: {
 				actor: input.props.request,
 				packageStamp,
 				baseUrl: input.props.baseUrl,
-				credential: { use: 'integration-token', name },
+				credential: { use: 'integration-token', name, requestHost },
 			})
 			if (!value) {
 				throw new Error(createMissingIntegrationAccessTokenMessage(name))
@@ -520,6 +533,7 @@ export async function expandSecretPlaceholders(input: {
 					provider: referenced.provider,
 					ref: referenced.ref,
 					storageContext,
+					requestHost,
 				},
 			})
 			return { referenced, resolved }
@@ -582,7 +596,7 @@ export async function expandSecretPlaceholders(input: {
 			}
 		}
 		const normalizedHost = normalizeHost(requestedHost)
-		const missingApprovals = await collectHostApprovalEntries({
+		const missingApprovals = collectHostApprovalEntries({
 			props: input.props,
 			storageContext,
 			requestedHost,
@@ -590,25 +604,11 @@ export async function expandSecretPlaceholders(input: {
 			resolvedSecrets,
 		})
 		if (missingApprovals.length > 0) {
-			const bulkScope = readBulkHostApprovalScope({
-				missingApprovals,
-				resolvedSecrets,
+			throw createHostApprovalBatchError({
+				props: input.props,
 				storageContext,
+				missingApprovals,
 			})
-			const bulkApprovalUrl = bulkScope
-				? buildSecretHostBulkApprovalUrlIfNeeded({
-						baseUrl: input.props.baseUrl,
-						names: missingApprovals.map((entry) => entry.secretName),
-						hosts: missingApprovals.map((entry) => entry.host),
-						scope: bulkScope.scope,
-						storageContext: bulkScope.storageContext,
-					})
-				: null
-			throw new Error(
-				createHostSecretAccessDeniedBatchMessage(missingApprovals, {
-					bulkApprovalUrl,
-				}),
-			)
 		}
 		assertProviderSecretHostsAllowed({
 			resolvedProviderSecrets: resolvedProviderSecrets.map(
@@ -616,7 +616,12 @@ export async function expandSecretPlaceholders(input: {
 			),
 			normalizedHost,
 		})
-		if (callerUserId && referencedIntegrationTokens.length > 0) {
+		// With a preflight host the door already checked each integration's hosts.
+		if (
+			!requestHost &&
+			callerUserId &&
+			referencedIntegrationTokens.length > 0
+		) {
 			for (const name of referencedIntegrationTokens) {
 				const joined = await getJoinedIntegration({
 					env: input.env,
@@ -725,7 +730,106 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 	}
 }
 
-async function collectHostApprovalEntries(input: {
+/**
+ * The host as written, when placeholder expansion cannot change it (no
+ * placeholder in the URL's userinfo or hostname). The door then enforces host
+ * allowlists itself; otherwise only the post-expansion checks run.
+ */
+function readPreflightRequestHost(rawUrl: string, baseUrl: string) {
+	let url: URL
+	try {
+		url = new URL(resolveRequestUrlForFetchGateway(rawUrl, baseUrl))
+	} catch {
+		return null
+	}
+	const authority = `${url.username}:${url.password}@${url.hostname}`
+	if (/\{\{|%7b%7b/i.test(authority)) return null
+	return url.hostname || null
+}
+
+type MissingHostApproval = HostApprovalEntry & { scope: SecretScope }
+
+type ResolvedSecretResult = {
+	referenced: ReferencedSecret
+	resolved: ResolvedSecret
+	value: string
+}
+
+/**
+ * Door host denials are collected into one batch message, like the
+ * post-expansion check, so every missing approval is listed at once. Any other
+ * failure is rethrown first.
+ */
+function readSettledSecretResults(input: {
+	settled: Array<PromiseSettledResult<ResolvedSecretResult>>
+	props: FetchGatewayProps
+	storageContext: StorageContext
+	requestedHost: string
+}) {
+	const results: Array<ResolvedSecretResult> = []
+	const hostDenials: Array<SecretHostNotApprovedError> = []
+	for (const entry of input.settled) {
+		if (entry.status === 'fulfilled') {
+			results.push(entry.value)
+		} else if (entry.reason instanceof SecretHostNotApprovedError) {
+			hostDenials.push(entry.reason)
+		} else {
+			throw entry.reason
+		}
+	}
+	if (hostDenials.length > 0) {
+		throw createHostApprovalBatchError({
+			props: input.props,
+			storageContext: input.storageContext,
+			missingApprovals: hostDenials.map((denial) => ({
+				secretName: denial.secretName,
+				host: input.requestedHost,
+				scope: denial.scope,
+				approvalUrl: buildSecretHostApprovalUrl({
+					baseUrl: input.props.baseUrl,
+					name: denial.secretName,
+					scope: denial.scope,
+					requestedHost: input.requestedHost,
+					storageContext: input.storageContext,
+				}),
+			})),
+		})
+	}
+	return results
+}
+
+function createHostApprovalBatchError(input: {
+	props: FetchGatewayProps
+	storageContext: StorageContext
+	missingApprovals: Array<MissingHostApproval>
+}) {
+	const { missingApprovals } = input
+	const bulkScope = readBulkHostApprovalScope({
+		scopes: missingApprovals.map((entry) => entry.scope),
+		storageContext: input.storageContext,
+	})
+	const bulkApprovalUrl = bulkScope
+		? buildSecretHostBulkApprovalUrlIfNeeded({
+				baseUrl: input.props.baseUrl,
+				names: missingApprovals.map((entry) => entry.secretName),
+				hosts: missingApprovals.map((entry) => entry.host),
+				scope: bulkScope.scope,
+				storageContext: bulkScope.storageContext,
+			})
+		: null
+	return new Error(
+		createHostSecretAccessDeniedBatchMessage(
+			missingApprovals.map(({ secretName, host, approvalUrl }) => ({
+				secretName,
+				host,
+				approvalUrl,
+			})),
+			{ bulkApprovalUrl },
+		),
+	)
+}
+
+function collectHostApprovalEntries(input: {
 	props: FetchGatewayProps
 	storageContext: StorageContext
 	requestedHost: string
@@ -734,46 +838,35 @@ async function collectHostApprovalEntries(input: {
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}>
-}) {
-	const entries = await Promise.all(
-		input.resolvedSecrets.map(async ({ referenced, resolved }) => {
-			const allowedForHost =
-				resolved.allowedHosts.length > 0 &&
-				resolved.allowedHosts.includes(input.normalizedHost)
-			if (allowedForHost) return null
-			const approvalUrl = buildSecretHostApprovalUrl({
-				baseUrl: input.props.baseUrl,
-				name: referenced.name,
-				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost: input.requestedHost,
-				storageContext: input.storageContext,
-			})
-			return {
+}): Array<MissingHostApproval> {
+	return input.resolvedSecrets.flatMap(({ referenced, resolved }) => {
+		const allowedForHost =
+			resolved.allowedHosts.length > 0 &&
+			resolved.allowedHosts.includes(input.normalizedHost)
+		if (allowedForHost) return []
+		const scope = resolved.scope ?? referenced.scope ?? 'user'
+		return [
+			{
 				secretName: referenced.name,
 				host: input.requestedHost,
-				approvalUrl,
-			}
-		}),
-	)
-	return entries.filter(
-		(entry): entry is NonNullable<typeof entry> => entry != null,
-	)
+				scope,
+				approvalUrl: buildSecretHostApprovalUrl({
+					baseUrl: input.props.baseUrl,
+					name: referenced.name,
+					scope,
+					requestedHost: input.requestedHost,
+					storageContext: input.storageContext,
+				}),
+			},
+		]
+	})
 }
 
 function readBulkHostApprovalScope(input: {
-	missingApprovals: Array<{ secretName: string }>
-	resolvedSecrets: Array<{
-		referenced: ReferencedSecret
-		resolved: ResolvedSecret
-	}>
+	scopes: Array<SecretScope>
 	storageContext: StorageContext | null
 }): { scope: SecretScope; storageContext: StorageContext | null } | null {
-	const scopes = input.missingApprovals.map((entry) => {
-		const match = input.resolvedSecrets.find(
-			(item) => item.referenced.name === entry.secretName,
-		)
-		return match?.resolved.scope ?? match?.referenced.scope ?? 'user'
-	})
+	const { scopes } = input
 	const unique = new Set(scopes)
 	if (unique.size !== 1) return null
 	const scope = scopes[0]

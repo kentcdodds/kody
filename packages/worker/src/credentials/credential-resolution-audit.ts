@@ -7,8 +7,13 @@ import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { IntegrationPackageAccessDeniedError } from '#worker/integrations/package-access.ts'
 import { McpServerPackageAccessDeniedError } from '#worker/mcp-client/package-access.ts'
 import { logOrgAuditEvent } from '#worker/orgs/org-audit.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import { PackageSecretAccessDeniedError } from '#mcp/secrets/package-access.ts'
-import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
+import {
+	SecretProviderGrantDeniedError,
+	SecretProviderHostDeniedError,
+} from '#mcp/secrets/secret-providers/errors.ts'
 import { type PackageStamp } from './package-stamp.ts'
 
 export const credentialResolveAuditAction = 'credential.resolve'
@@ -39,7 +44,10 @@ export function credentialResolutionOutcomeForError(
 		error instanceof PackageSecretAccessDeniedError ||
 		error instanceof IntegrationPackageAccessDeniedError ||
 		error instanceof McpServerPackageAccessDeniedError ||
-		error instanceof SecretProviderGrantDeniedError
+		error instanceof SecretProviderGrantDeniedError ||
+		error instanceof SecretHostNotApprovedError ||
+		error instanceof SecretProviderHostDeniedError ||
+		error instanceof IntegrationHostNotAllowedError
 	) {
 		return { result: 'denied', reason: error.name }
 	}

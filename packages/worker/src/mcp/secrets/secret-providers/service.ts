@@ -358,8 +358,8 @@ function requireLocalCanonicalRef(providerId: string, ref: string) {
 
 /**
  * Vault storage read. Only `resolveCredential` calls this; it checks Use on
- * the door key first. `authorityPackageId` is an attested package, whose
- * provider grant is checked here.
+ * the door key first. `authorityPackageId` is the stamped package (attested or
+ * claimed), whose provider grant is checked here.
  */
 export async function resolveProviderSecret(input: {
 	env: Env

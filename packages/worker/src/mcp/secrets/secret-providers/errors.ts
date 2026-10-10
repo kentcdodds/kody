@@ -19,6 +19,14 @@ export class SecretProviderGrantDeniedError extends SecretProviderError {
 	}
 }
 
+/** The vault item's websites do not cover the request host. */
+export class SecretProviderHostDeniedError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'SecretProviderHostDeniedError'
+	}
+}
+
 export function createMissingProviderBindingMessage(providerId: string) {
 	return `No secret provider is bound for "${providerId}". Bind a saved package that declares kody.secretProvider.id "${providerId}" on /account/secret-providers, then retry.`
 }

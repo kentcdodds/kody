@@ -31,8 +31,12 @@ import {
 	authorize,
 	type OrgResource,
 } from '#worker/authorization/authorize.ts'
-import { resolveIntegrationAccessToken } from '#worker/integrations/credentials.ts'
+import {
+	createMissingIntegrationAccessTokenMessage,
+	resolveIntegrationAccessToken,
+} from '#worker/integrations/credentials.ts'
 import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
+import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import {
 	refreshIntegrationTokens,
 	type IntegrationTokenRefreshResult,
@@ -40,6 +44,8 @@ import {
 import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
 import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { assertIntegrationHostAllowed } from '#mcp/execute-modules/integration-host-allowlist.ts'
+import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import {
 	assertPackageCanAccessResolvedSecret,
 	loadPackageSecretMounts,
@@ -48,6 +54,12 @@ import {
 } from '#mcp/secrets/package-access.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { buildSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
+import {
+	createProviderHostDeniedMessage,
+	createProviderNoWebsitesMessage,
+	SecretProviderHostDeniedError,
+} from '#mcp/secrets/secret-providers/errors.ts'
+import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
 import { invokeSealedSecretProvider } from '#mcp/secrets/secret-providers/sealed-invoke.ts'
 import {
 	getSecretProviderBinding,
@@ -67,6 +79,14 @@ import {
 } from './credential-resolution-audit.ts'
 import { type PackageStamp } from './package-stamp.ts'
 
+/**
+ * Normalized host the value is about to be sent to. When set, the door
+ * enforces the credential's host allowlist, so an unapproved host is an
+ * audited denial instead of a successful resolution the caller then rejects.
+ * Only pass a host that placeholder expansion cannot change.
+ */
+type RequestHost = string | null
+
 /** What is being resolved. `use` picks the package rules that apply. */
 export type CredentialTarget =
 	/** `{{secret:…}}` / `secret-basic` placeholders and `secretJwtSign`. */
@@ -77,6 +97,7 @@ export type CredentialTarget =
 			storageContext: StorageContext
 			/** Org slug for approval links in denial messages. */
 			orgSlug?: string | null
+			requestHost?: RequestHost
 	  }
 	/** `packageSecrets.get` / `.has`: a declared `kody.secretMounts` alias. */
 	| {
@@ -95,9 +116,15 @@ export type CredentialTarget =
 			provider: string
 			ref: string
 			storageContext: StorageContext
+			requestHost?: RequestHost
 	  }
 	/** `{{integration-token:…}}` and webhook apply integration auth. */
-	| { use: 'integration-token'; name: string; packageKodyId?: string | null }
+	| {
+			use: 'integration-token'
+			name: string
+			packageKodyId?: string | null
+			requestHost?: RequestHost
+	  }
 	/** `integrationTokenRefresh` and webhook apply 401 retry. */
 	| {
 			use: 'integration-refresh'
@@ -212,7 +239,8 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 			return {
 				use: credential.use,
 				resourceType: 'secret-provider',
-				resourceKey: normalizeProviderId(credential.provider),
+				// Validated inside the audited resolve; building the subject must not throw.
+				resourceKey: credential.provider.trim().toLowerCase(),
 			}
 		case 'integration-token':
 		case 'integration-refresh':
@@ -353,6 +381,12 @@ async function assertActorHasOrgAccess(
 			})
 		})()
 		orgAccessByRequest.set(request, check)
+		// Only a definite "no access" is cached; a failed lookup is retried.
+		check.catch((error: unknown) => {
+			if (!(error instanceof AuthorizationError)) {
+				orgAccessByRequest.delete(request)
+			}
+		})
 	}
 	await check
 }
@@ -393,12 +427,6 @@ async function authorizeActorUse(
 	)
 }
 
-function attestedPackageId(input: ResolveCredentialInput<CredentialTarget>) {
-	return input.packageStamp?.kind === 'attested'
-		? input.packageStamp.packageId
-		: null
-}
-
 async function resolvePlaceholderSecret(
 	input: ResolveCredentialInput<CredentialTarget>,
 	credential: Extract<CredentialTarget, { use: 'secret' }>,
@@ -426,6 +454,16 @@ async function resolvePlaceholderSecret(
 		secretName: credential.name,
 		resolved,
 	})
+	if (
+		credential.requestHost &&
+		!resolved.allowedHosts.includes(credential.requestHost)
+	) {
+		throw new SecretHostNotApprovedError({
+			secretName: credential.name,
+			host: credential.requestHost,
+			scope: resolved.scope ?? credential.scope ?? 'user',
+		})
+	}
 	return resolved
 }
 
@@ -554,7 +592,7 @@ async function resolveVaultSecret(
 			secretResource(input.orgId, binding.doorSecretName),
 		)
 	}
-	return await resolveProviderSecret({
+	const resolved = await resolveProviderSecret({
 		env: input.env,
 		baseUrl: input.baseUrl,
 		userId: input.orgId,
@@ -562,9 +600,27 @@ async function resolveVaultSecret(
 		provider: credential.provider,
 		ref: credential.ref,
 		storageContext: credential.storageContext,
-		authorityPackageId: attestedPackageId(input),
+		// Claimed packages are held to their grants too; only Use differs.
+		authorityPackageId: input.packageStamp?.packageId ?? null,
 		invokeProvider: invokeSealedSecretProvider,
 	})
+	const host = credential.requestHost
+	if (host) {
+		if (resolved.hosts.length === 0) {
+			throw new SecretProviderHostDeniedError(
+				createProviderNoWebsitesMessage(resolved.provider),
+			)
+		}
+		if (!providerHostsAllowRequestHost(resolved.hosts, host)) {
+			throw new SecretProviderHostDeniedError(
+				createProviderHostDeniedMessage({
+					providerId: resolved.provider,
+					host,
+				}),
+			)
+		}
+	}
+	return resolved
 }
 
 async function resolveIntegrationToken(
@@ -584,11 +640,32 @@ async function resolveIntegrationToken(
 		packageId: input.packageStamp?.packageId ?? null,
 		packageKodyId: credential.packageKodyId,
 	})
-	return await resolveIntegrationAccessToken({
+	const token = await resolveIntegrationAccessToken({
 		env: input.env,
 		userId: input.orgId,
 		name: credential.name,
 	})
+	if (token && credential.requestHost) {
+		const joined = await getJoinedIntegration({
+			env: input.env,
+			userId: input.orgId,
+			name: credential.name,
+		})
+		if (!joined) {
+			throw new Error(
+				createMissingIntegrationAccessTokenMessage(credential.name),
+			)
+		}
+		assertIntegrationHostAllowed(
+			credential.name,
+			{
+				requiredHosts: joined.connection.requiredHosts,
+				apiBaseUrl: joined.app.apiBaseUrl,
+			},
+			`https://${credential.requestHost}/`,
+		)
+	}
+	return token
 }
 
 async function refreshIntegration(

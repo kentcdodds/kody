@@ -24,7 +24,9 @@ import {
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
-import { saveSecret } from '#mcp/secrets/service.ts'
+import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
+import { SecretProviderGrantDeniedError } from '#mcp/secrets/secret-providers/errors.ts'
+import { saveSecret, setSecretAllowedHosts } from '#mcp/secrets/service.ts'
 import {
 	attestedPackageStamp,
 	claimedPackageStamp,
@@ -39,6 +41,10 @@ vi.mock('cloudflare:workers', async (importOriginal) => ({
 	waitUntil: (promise: Promise<unknown>) => {
 		scheduledAudits.push(promise)
 	},
+}))
+
+vi.mock('#mcp/secrets/secret-providers/declared-provider.ts', () => ({
+	readDeclaredSecretProviderId: async () => '1password',
 }))
 
 const now = '2026-10-10T00:00:00.000Z'
@@ -405,6 +411,150 @@ test('an actor from another org is denied before any credential read', async () 
 	const rows = await t.auditRows()
 	expect(rows).toHaveLength(1)
 	expect(rows[0]).toMatchObject({ org_id: t.orgId, result: 'denied' })
+})
+
+test('a host the secret is not approved for is an audited denial, not a success', async () => {
+	const t = await setup()
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const resolveForHost = (requestHost: string) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: owner,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'orgToken',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+				requestHost,
+			},
+		})
+
+	const error = await denial(resolveForHost('evil.example'))
+	expect(error).toBeInstanceOf(SecretHostNotApprovedError)
+	expect(error).toMatchObject({
+		secretName: 'orgToken',
+		host: 'evil.example',
+		scope: 'user',
+	})
+	expect(String(error)).not.toContain(secretValue)
+
+	await setSecretAllowedHosts({
+		env: t.env,
+		userId: t.orgId,
+		name: 'orgToken',
+		scope: 'user',
+		allowedHosts: ['api.example.com'],
+	})
+	await expect(resolveForHost('api.example.com')).resolves.toMatchObject({
+		value: secretValue,
+	})
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(details(rows[0])).toMatchObject({
+		reason: 'SecretHostNotApprovedError',
+	})
+	expect(JSON.stringify(rows)).not.toContain(secretValue)
+})
+
+test('a claimed package stamp is held to vault grants, and an invalid provider id is still audited', async () => {
+	const t = await setup()
+	const doorSecretName = 'onePasswordServiceAccountToken'
+	await t.db
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES ('pkg-provider', ?, 'op', 'op', '', 'source-pkg-provider')`,
+		)
+		.bind(t.orgId)
+		.run()
+	await saveSecret({
+		env: t.env,
+		userId: t.orgId,
+		scope: 'user',
+		name: doorSecretName,
+		value: 'op-sa-token',
+	})
+	await t.db
+		.prepare(
+			`INSERT INTO secret_provider_bindings (
+				user_id, provider_id, package_id, door_secret_name, config_json
+			) VALUES (?, '1password', 'pkg-provider', ?, '{}')`,
+		)
+		.bind(t.orgId, doorSecretName)
+		.run()
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const resolveVault = (provider: string) =>
+		resolveCredential({
+			env: t.env,
+			orgId: t.orgId,
+			actor: owner,
+			packageStamp: claimedPackageStamp(t.packageId),
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'provider-secret',
+				provider,
+				ref: 'i/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/password',
+				storageContext: {
+					sessionId: null,
+					appId: null,
+					packageId: t.packageId,
+				},
+			},
+		})
+
+	// The owner has Use on the door key; the claimed package has no grant.
+	await expect(resolveVault('1password')).rejects.toBeInstanceOf(
+		SecretProviderGrantDeniedError,
+	)
+	await expect(resolveVault('x'.repeat(65))).rejects.toThrow(/is invalid/)
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => [row.resource_id, row.result])).toEqual([
+		['1password', 'denied'],
+		['x'.repeat(65), 'failure'],
+	])
+	expect(details(rows[0])).toMatchObject({
+		reason: 'SecretProviderGrantDeniedError',
+		packageStampKind: 'claimed',
+	})
+})
+
+test('a failed org access lookup is retried on the next resolution, not cached', async () => {
+	const t = await setup()
+	let failNextPrepare = true
+	const flakyDb = new Proxy(t.db, {
+		get(target, property) {
+			if (property === 'prepare' && failNextPrepare) {
+				return () => {
+					failNextPrepare = false
+					throw new Error('D1 unavailable')
+				}
+			}
+			const value = Reflect.get(target, property, target) as unknown
+			return typeof value === 'function' ? value.bind(target) : value
+		},
+	})
+	const env = { ...t.env, APP_DB: flakyDb } as Env
+	const owner = t.personRequest(t.ownerStableId, 'owner', 'owner')
+	const resolve = () =>
+		resolveCredential({
+			env,
+			orgId: t.orgId,
+			actor: owner,
+			baseUrl: 'https://example.com',
+			credential: {
+				use: 'secret',
+				name: 'orgToken',
+				storageContext: { sessionId: null, appId: null, packageId: null },
+			},
+		})
+
+	await expect(resolve()).rejects.toThrow('D1 unavailable')
+	await expect(resolve()).resolves.toMatchObject({ value: secretValue })
+
+	const rows = await t.auditRows()
+	expect(rows.map((row) => row.result)).toEqual(['failure', 'success'])
 })
 
 test('an audit write failure is logged without the value and never fails the resolution', async () => {
