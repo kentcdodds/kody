@@ -1138,18 +1138,31 @@ and earlier) price ids to `standard` / `pro` so existing subscribers keep their
 plan; none of them is wallet-eligible.
 
 Checkout sessions are created server-side for authenticated users via
-`POST /account/billing/checkout.json` (Stripe Checkout Session, JSON body
-`{ plan: "pro", interval?: "month" | "year" }` defaulting to `month`,
-`mode=subscription`, with a signed `client_reference_id` and
-`metadata.kody_stable_user_id`). Sessions enable Stripe automatic tax
-(`automatic_tax[enabled]`; Stripe Tax is active on the account and computes 0
-until a registration exists), tax-ID collection for business customers, and
-promotion codes; when an existing `customer` is passed, `customer_update`
-address/name are `auto` so Checkout can store what tax needs. There is no public
-Payment Link path — checkout requires a signed-in session so unauthenticated
-card-testing is not possible. `GET /account/billing/success` verifies
-`client_reference_id` before linking `users.stripe_customer_id`, then refreshes
-`users.stripe_plan` and renders a thank-you page (Discord invite;
+`POST /@:orgSlug/billing/checkout.json` for the organization in the URL (Stripe
+Checkout Session, JSON body
+`{ plan: "pro", interval: "month" | "year", promoCode?: string }`,
+`mode=subscription`, quantity = live seats (owners plus members, at least 1),
+with a signed `client_reference_id` and `metadata.kody_org_id`). Only
+`billing:write` (owners and billing admins) may call it; `/account/billing`
+redirects to the signup organization's billing page. Sessions enable Stripe
+automatic tax (`automatic_tax[enabled]`; Stripe Tax is active on the account and
+computes 0 until a registration exists) and tax-ID collection for business
+customers; when an existing `customer` is passed, `customer_update` address/name
+are `auto` so Checkout can store what tax needs.
+
+Sessions never set `allow_promotion_codes`. Stripe can restrict a coupon to a
+product but not a price, and monthly and annual Pro are one product, so a
+one-month code typed on Stripe's page would zero out a year. Customers type the
+code on the Kody billing page instead
+(`packages/worker/src/billing/checkout-promo.ts`): annual requests with a code
+get 400 before any Stripe call, monthly codes are looked up
+(`GET /v1/promotion_codes?code=…&active=true`), checked for expiry and
+redemptions, and attached as `discounts[0][promotion_code]`. Codes are for new
+subscriptions only; a customer with a plan-retaining subscription gets 409.
+There is no public Payment Link path — checkout requires a signed-in session so
+unauthenticated card-testing is not possible. `GET /account/billing/success`
+verifies `client_reference_id` before linking `users.stripe_customer_id`, then
+refreshes `users.stripe_plan` and renders a thank-you page (Discord invite;
 connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
 also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
 has a Discord social-login connection (see

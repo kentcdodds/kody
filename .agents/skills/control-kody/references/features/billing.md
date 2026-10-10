@@ -4,24 +4,31 @@ Plan, checkout, portal, prepaid credits, and entitlement usage.
 
 ## How to get there
 
-`/account/billing` (success `/account/billing/success`, portal
-`/account/billing/portal`) and `/account/usage` (credits are its `#credits`
-section). `/account/credits` is only a redirect to `/account/usage#credits` that
-keeps its query. Billing also shows the signed-in user's referral share link and
-reward status.
+`/@:orgSlug/billing` (success `/@:orgSlug/billing/success`, portal
+`/@:orgSlug/billing/portal`) and `/account/usage` (credits are its `#credits`
+section). Billing belongs to the organization in the URL. Owners and billing
+admins subscribe and manage; members get 403 from checkout and the portal. Team
+organizations buy one Pro seat per owner and member. `/account/billing` (and its
+`/success` and `/portal`) redirects to the signup organization's billing page,
+keeping the query. `/account/credits` is only a redirect to
+`/account/usage#credits` that keeps its query. Billing also shows the signed-in
+user's referral share link and reward status.
 
 ## Drive it
 
 ```bash
-node tools/control-kody.ts request GET /account/billing.json
+node tools/control-kody.ts request GET /@user-me/billing.json
 node tools/control-kody.ts request GET /account/usage.json
 ```
 
 Do not complete a real Stripe checkout or credit top-up from a Cloud Agent.
-Checkout sells only Pro ($12/month or $120/year). Retired Standard and $49 Pro
-subscribers keep their plan and see a prorated **Switch to Pro** through the
-Stripe portal. Deleting an account refunds unused paid subscription time
-automatically.
+Preview deploys have no Stripe keys, so checkout answers 409 there. Checkout
+sells only Pro ($12/month or $120/year). Promo codes are typed on the Kody
+billing page (Stripe Checkout has no code box), apply to new monthly
+subscriptions only, and are rejected on annual before any Stripe call. Retired
+Standard and $49 Pro subscribers keep their plan and see a prorated **Switch to
+Pro** through the Stripe portal. Deleting an account refunds unused paid
+subscription time automatically.
 
 The usage page's Credits section is the prepaid wallet for the purchasable Pro:
 balance, packs ($10 / $25 /
@@ -61,8 +68,8 @@ dashboard filter is `usageByPackageGet` (`GET /v1/account/usage/by-package`).
 
 ## APIs
 
-- `GET /account/billing.json`
-- `POST /account/billing/checkout.json`
+- `GET /@:orgSlug/billing.json`
+- `POST /@:orgSlug/billing/checkout.json` (`{ plan, interval, promoCode? }`)
 - `POST /account/billing/cancellation-feedback.json`
 - `POST /account/credits/top-up.json`
 - `POST /account/credits/settings.json`
