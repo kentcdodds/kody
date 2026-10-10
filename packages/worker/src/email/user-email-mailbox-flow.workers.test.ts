@@ -126,7 +126,6 @@ export const email = runtime.email ?? null;
 				'dist/subscription.js': `
 import { email } from '../.__kody_virtual__/runtime.js'
 
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 export default async function main(input = {}) {
 	const message = await email.getMessage(input.message.id)
 	const firstAttachment = Array.isArray(input.attachments)
