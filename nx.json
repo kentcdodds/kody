@@ -4,65 +4,80 @@
 	"workspaceLayout": {
 		"libsDir": "packages"
 	},
+	"namedInputs": {
+		"sharedGlobals": [
+			"{workspaceRoot}/package.json",
+			"{workspaceRoot}/package-lock.json",
+			"{workspaceRoot}/tsconfig*.json",
+			{
+				"env": "CI"
+			}
+		],
+		"default": ["{projectRoot}/**/*", "sharedGlobals"],
+		"workspace": [
+			"{workspaceRoot}/**/*",
+			"{workspaceRoot}/.agents/**/*",
+			"{workspaceRoot}/.github/**/*",
+			{
+				"env": "CI"
+			}
+		],
+		"suiteSupport": [
+			"{workspaceRoot}/vitest*.ts",
+			"{workspaceRoot}/vite.config.ts",
+			"{workspaceRoot}/wrangler-env.ts",
+			"{workspaceRoot}/tools/**/*",
+			"{workspaceRoot}/docs/**/*",
+			"{workspaceRoot}/packages/mock-servers/**/*",
+			"{workspaceRoot}/packages/jobs-worker/**/*",
+			"{workspaceRoot}/packages/highlight-worker/**/*",
+			"{workspaceRoot}/packages/shared/**/*",
+			"{workspaceRoot}/skills-lock.json",
+			"{workspaceRoot}/.agents/**/*"
+		]
+	},
 	"targetDefaults": {
 		"build": {
-			"cache": true
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/docs/guides/**/*",
+				"{workspaceRoot}/tools/**/*",
+				"{workspaceRoot}/vite.config.ts",
+				"{workspaceRoot}/wrangler-env.ts"
+			]
 		},
 		"typecheck": {
-			"cache": true
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/packages/mock-servers/**/*"
+			]
 		},
 		"test": {
 			"cache": true,
-			"inputs": [
-				"default",
-				"^default",
-				{ "env": "CI" },
-				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
-				"{workspaceRoot}/skills-lock.json",
-				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
-				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
-				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
-			]
+			"inputs": ["workspace"]
 		},
 		"test-node": {
 			"cache": true,
-			"inputs": [
-				"default",
-				"^default",
-				{ "env": "CI" },
-				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
-				"{workspaceRoot}/skills-lock.json",
-				"{workspaceRoot}/.agents/skills/ship-pr/**/*",
-				"{workspaceRoot}/.agents/skills/prefer-local-cli-execute/**/*",
-				"{workspaceRoot}/.agents/skills/visual-recap/**/*"
-			]
+			"inputs": ["workspace"]
 		},
 		"test-workers": {
 			"cache": true,
 			"inputs": [
 				"default",
 				"^default",
-				{ "env": "CI" },
-				{ "env": "KODY_VALIDATE_LOAD" },
-				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*"
+				{
+					"env": "KODY_VALIDATE_LOAD"
+				},
+				"suiteSupport"
 			]
 		},
 		"test-mcp": {
 			"cache": true,
-			"inputs": [
-				"default",
-				"^default",
-				{ "env": "CI" },
-				"{workspaceRoot}/vitest*.ts",
-				"{workspaceRoot}/tools/**/*",
-				"{workspaceRoot}/wrangler-env.ts"
-			]
+			"inputs": ["default", "^default", "suiteSupport"]
 		},
 		"prepare-e2e-env": {
 			"cache": true
@@ -73,10 +88,11 @@
 		"test-e2e": {
 			"cache": true,
 			"inputs": [
-				{ "env": "CI" },
+				"default",
+				"^default",
+				"suiteSupport",
 				"{workspaceRoot}/e2e/**/*",
-				"{workspaceRoot}/playwright.config.ts",
-				"default"
+				"{workspaceRoot}/playwright.config.ts"
 			]
 		},
 		"dev": {
