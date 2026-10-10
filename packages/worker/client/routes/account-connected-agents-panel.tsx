@@ -136,7 +136,7 @@ export function createAccountConnectedAgents(handle: Handle) {
 			return (
 				<AccountManagementPanel
 					title="Connected agents"
-					description="AI hosts that have authorized against this Kody account. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
+					description="AI hosts you approved for this organization. Same-named hosts are grouped. Labels are best-effort from the host name or redirect. Already connected does not block reconnect — use View connect steps for a second login, new machine, or reinstall."
 					ariaLabel="Connected agents"
 				>
 					{groups.length > 0 ? (

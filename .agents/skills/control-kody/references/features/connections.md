@@ -30,6 +30,14 @@ Canonical pages are `/@<slug>/-/connections` (and `/@<slug>/-/connections/new`,
 
 Account rail → Connections; Overview keeps a "Manage connections" link.
 
+Each org page lists only the signed-in person's agents approved for that org
+(the org picked on the MCP consent screen; grants from before org stamping
+belong to the signup org). Team orgs open it to every member role and to
+grant-only collaborators. Revoke there removes only that org's grants; the same
+host stays connected elsewhere. Connection profiles are signup-org only.
+`/account/connected-agents.json` binds the org from a same-origin Referer on
+`/@<slug>/-/connections`.
+
 ## Drive it
 
 ```bash

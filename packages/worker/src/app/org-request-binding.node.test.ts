@@ -50,6 +50,28 @@ test('account JSON from an org page binds that org', async () => {
 	expect(resolution).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
 })
 
+test('connected agents JSON from a team Connections page binds that org', async () => {
+	const env = await createEnv()
+	const request = new Request(
+		'https://kody.test/account/connected-agents.json',
+		{
+			headers: { referer: 'https://kody.test/@acme/-/connections' },
+		},
+	)
+	const resolution = await loadRequestOrgResolution(request, env, adaId)
+	expect(resolution).toMatchObject({ org: { id: acmeId, slug: 'acme' } })
+})
+
+test('sign-in providers JSON stays on the signup org from a team page', async () => {
+	const env = await createEnv()
+	const request = new Request('https://kody.test/account/connections.json', {
+		headers: { referer: 'https://kody.test/@acme/-/connections' },
+	})
+	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
+		'personal',
+	)
+})
+
 test('account JSON without an org page stays on the signup org', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/secrets.json')
