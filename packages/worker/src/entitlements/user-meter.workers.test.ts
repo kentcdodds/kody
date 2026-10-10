@@ -475,6 +475,11 @@ test('UserMeter admitExecuteCall admits up to the per-minute limit, resets on th
 		repeats: 1,
 		retryAfterMs: 59_000,
 	})
+	// Four admitted calls; the rate and repeat refusals are not counted.
+	const trend = await user.meter.readDailyTrend({
+		now: new Date(minuteStart + 62_000).toISOString(),
+	})
+	expect(trend.executeCalls).toEqual([{ day: '2026-10-10', count: 4 }])
 }, 30_000)
 
 test('UserMeter readUsageSnapshot returns daily, weekly, and storage in one call', async () => {
