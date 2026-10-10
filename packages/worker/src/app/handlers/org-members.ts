@@ -18,10 +18,10 @@ import {
 import { jsonResponse } from '#worker/json-response.ts'
 import {
 	createInvite,
-	softDeleteOrgMember,
 	updateOrgMemberRole,
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import { onMemberSoftRemoved } from '#worker/orgs/member-offboarding.ts'
 import {
 	countLiveOwners,
 	getLiveOrgMembership,
@@ -380,11 +380,11 @@ export function createOrgMembersRemovePostHandler(env: Env) {
 				}
 			}
 			try {
-				await softDeleteOrgMember({
-					db: env.APP_DB,
+				await onMemberSoftRemoved({
+					env,
 					orgId: access.org.id,
 					userId,
-					protectLastOwner: removingOwner,
+					deletedAt: new Date().toISOString(),
 				})
 			} catch (error) {
 				const message =

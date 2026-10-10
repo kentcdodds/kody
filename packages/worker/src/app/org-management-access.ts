@@ -24,7 +24,7 @@ export type OrgManagementAccess =
 	| { ok: false; status: 403 | 404; error: string }
 
 /**
- * The organization a `/@slug/settings` or `/@slug/members` request acts on,
+ * The organization a `/@slug/-/settings` or `/@slug/-/members` request acts on,
  * when the person may use `permission` there. `authorize` is the same check
  * MCP capabilities run. A slug the person cannot reach is a 404. Grant-only
  * collaborators are also a 404 — these pages are for members.
