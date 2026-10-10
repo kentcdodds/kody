@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
-import { authorize } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+} from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
@@ -149,15 +152,26 @@ export const getGitRemoteCapability = defineDomainCapability(
 					created = true
 				}
 			}
-			const { source, packageId, kodyId } = await resolveOwnedPackageSource({
-				db: ctx.env.APP_DB,
-				userId: owner.ownerUserId,
-				ownerScope: owner.ownerScope,
-				args: {
-					package_id: args.package_id,
-					kody_id: requestedKodyId,
-				},
-			})
+			const { source, packageId, userId, kodyId, name } =
+				await resolveOwnedPackageSource({
+					db: ctx.env.APP_DB,
+					userId: owner.ownerUserId,
+					ownerScope: owner.ownerScope,
+					args: {
+						package_id: args.package_id,
+						kody_id: requestedKodyId,
+					},
+				})
+			// A package created in this call has no profile grant yet (profiles
+			// name existing packages). The org-level package:write check above
+			// still applies. An existing package must list write.
+			if (args.scope === 'write' && !created) {
+				await authorizePackageWrite(authorizeCtx, {
+					id: packageId,
+					userId,
+					label: name,
+				})
+			}
 			const headPromise = assertPublishedPackageSourceRepoHead({
 				env: ctx.env,
 				source,

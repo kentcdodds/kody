@@ -2,6 +2,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeRepoSessionPackageWrite } from './authorize-repo-session-package-write.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { repoCommitInputSchema, repoCommitOutputSchema } from './repo-shared.ts'
 
@@ -26,6 +27,12 @@ export const repoCommitCapability = defineDomainCapability(
 		outputSchema: repoCommitOutputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
+			await authorizeRepoSessionPackageWrite({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				userId: user.userId,
+				sessionId: args.session_id,
+			})
 			return repoSessionRpc(ctx.env, args.session_id).sessionCommit({
 				sessionId: args.session_id,
 				userId: user.userId,

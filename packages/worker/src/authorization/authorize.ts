@@ -328,6 +328,19 @@ export function packageResource(input: {
 	}
 }
 
+/**
+ * The package:write check for a resolved saved package. Profiles narrow this
+ * to grants that list `write`. Call it once the package row is known, before
+ * the mutation. `package:delete` and `package:publish` are not profile
+ * actions; do not route them through here.
+ */
+export async function authorizePackageWrite(
+	ctx: { env: Env; request: RequestContext | null },
+	pkg: { id: string; userId: string; label?: string },
+): Promise<void> {
+	await authorize(ctx, 'package:write', packageResource(pkg))
+}
+
 const requestPermissionsStorage = new AsyncLocalStorage<EffectivePermissions>()
 
 /**
