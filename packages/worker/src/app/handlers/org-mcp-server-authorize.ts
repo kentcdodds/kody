@@ -5,7 +5,10 @@ import {
 	type AuthenticatedAppUser,
 	readAuthenticatedAppUser,
 } from '#app/authenticated-user.ts'
-import { orgSectionDenial,loadRequestOrgResolution } from '#app/org-request-binding.ts'
+import {
+	orgSectionDenial,
+	loadRequestOrgResolution,
+} from '#app/org-request-binding.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
 	authorize,
