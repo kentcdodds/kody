@@ -563,6 +563,12 @@ test('filterBrowserSentryEvent drops third-party and platform noise and keeps re
 		],
 		// URL-less frames could be first-party — keep (conservative).
 		['EvalError', cspUnsafeEvalMessage, [{ function: 'eval' }]],
+		// Whitespace-only URLs are unknown provenance — keep (CodeRabbit).
+		[
+			'EvalError',
+			cspUnsafeEvalMessage,
+			[{ function: 'eval', filename: '   ' }],
+		],
 		// Missing stack could be first-party — keep.
 		['EvalError', cspUnsafeEvalMessage],
 		// originalException CSP message must not borrow frames from a

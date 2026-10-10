@@ -1644,7 +1644,9 @@ function isAnonymousOrSentryOnlyReportedFrames(
 	let allFrameUrlsAnonymousOrNative = true
 
 	for (const frame of frames) {
-		const urls = stackFrameUrls(frame)
+		// Whitespace-only URLs are unknown provenance (same as URL-less) —
+		// keep the event rather than treating trim-empty as anonymous.
+		const urls = stackFrameUrls(frame).filter((url) => url.trim().length > 0)
 		if (urls.length === 0) return false
 		// Bundled Sentry helpers land under /assets/… in production beforeSend
 		// (KODY-8A pitfall). Recognize them by function name before treating
