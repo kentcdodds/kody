@@ -55,6 +55,20 @@ export function formatConnectionUsageQuantity(
 	return `${formatConnectionUsageCount(rounded)} ${connectionUsageCountNoun(key, rounded)}`
 }
 
+/**
+ * Non-zero last-7-day counts other than the cap unit, for rows whose cap
+ * column alone would read as zero: `14 runs`, `4,020 execute calls, 3 worker loads`.
+ */
+export function connectionUsageOtherCounts(
+	totals: ConnectionUsageTotals,
+	capCountKey: ConnectionUsageCountKey,
+) {
+	return connectionUsageCountKeys
+		.filter((key) => key !== capCountKey && totals.last7Days[key] > 0)
+		.map((key) => formatConnectionUsageQuantity(key, totals.last7Days[key]))
+		.join(', ')
+}
+
 export function connectionUsageHasActivity(totals: ConnectionUsageTotals) {
 	return connectionUsageCountKeys.some((key) => totals.last7Days[key] > 0)
 }

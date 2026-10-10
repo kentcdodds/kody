@@ -18,6 +18,7 @@ import {
 	connectionUsageEntryLabel,
 	connectionUsageHasActivity,
 	connectionUsageKindLabel,
+	connectionUsageOtherCounts,
 	connectionUsageWindowLabels,
 	formatConnectionUsageCount,
 	formatConnectionUsageQuantity,
@@ -29,7 +30,7 @@ import {
 } from '#universal/styles/style-primitives.ts'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
-export const connectionUsageApiPath = '/account/connection-usage.json'
+const connectionUsageApiPath = '/account/connection-usage.json'
 
 /** Rows on the Connections list before "View usage details". */
 const summaryRowLimit = 6
@@ -159,7 +160,9 @@ function UsageTable(
 										) : (
 											<span>{row.name}</span>
 										)}
-										<span mix={css(rowDetailCss)}>{row.detail}</span>
+										<span mix={css(rowDetailCss)}>
+											{rowDetail(row, capCountKey)}
+										</span>
 									</span>
 								</th>
 								{connectionUsageWindowKeys.map((key) => (
@@ -178,6 +181,11 @@ function UsageTable(
 			</div>
 		)
 	}
+}
+
+function rowDetail(row: UsageRow, capCountKey: ConnectionUsageCountKey) {
+	const other = connectionUsageOtherCounts(row.totals, capCountKey)
+	return other ? `${row.detail} · 7 days: ${other}` : row.detail
 }
 
 function RawCountsTable(
@@ -228,7 +236,7 @@ function capUnitSentence(usage: AccountConnectionUsageLoaderData) {
 
 function renderUpdated(usage: AccountConnectionUsageLoaderData) {
 	return (
-		<p mix={css(descriptionCss)} data-testid="connection-usage-updated">
+		<p mix={css(updatedCss)} data-testid="connection-usage-updated">
 			{usage.updatedAt ? (
 				<>
 					Updated <TimestampValue value={usage.updatedAt} />. Usage refreshes
@@ -515,6 +523,11 @@ function connectionUsageAutomationDetail(
 		.filter((caller) => caller.packageId)
 		.map((caller) => caller.label)
 	return packages.length > 0 ? `Runs ${packages.join(', ')}` : 'Automation'
+}
+
+const updatedCss = {
+	...descriptionCss,
+	fontSize: typography.fontSize.sm,
 }
 
 const stackCss = {
