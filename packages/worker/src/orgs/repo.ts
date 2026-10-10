@@ -6,7 +6,10 @@ import {
 	type OrgRole,
 	type RequestOrg,
 } from '@kody-internal/shared/request-context.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import {
+	andActiveOrgSql,
+	andLiveDeletedAtSql,
+} from '#worker/soft-delete/live-sql.ts'
 
 export type OrgRecord = {
 	id: string
@@ -92,6 +95,32 @@ type OrgAccessRow = {
 	deleted_at: string | null
 }
 
+/**
+ * `personId` (bound as two `?` placeholders, in order) holds a live grant in
+ * the org named by `orgIdSql`: directly, or through a live team membership.
+ */
+function liveGrantForPersonSql(orgIdSql: string): string {
+	return `SELECT 1 FROM grants g
+	        WHERE g.org_id = ${orgIdSql}
+	          AND g.deleted_at IS NULL
+	          AND (
+	            (g.subject_type = 'user' AND g.subject_id = ?)
+	            OR (
+	              g.subject_type = 'team'
+	              AND EXISTS (
+	                SELECT 1 FROM team_members tm
+	                INNER JOIN teams t
+	                  ON t.id = tm.team_id
+	                 AND t.org_id = g.org_id
+	                 AND t.deleted_at IS NULL
+	                WHERE tm.team_id = g.subject_id
+	                  AND tm.user_id = ?
+	                  AND tm.deleted_at IS NULL
+	              )
+	            )
+	          )`
+}
+
 function bindingFromAccessRow(row: OrgAccessRow | null): OrgBinding | null {
 	if (!row?.org_slug?.trim()) return null
 	if (row.deleted_at || row.suspended_at) return null
@@ -135,30 +164,8 @@ export async function loadOrgBindingForSlug(
 	if (!row || row.deleted_at || row.suspended_at) return null
 	if (row.role) return bindingFromAccessRow(row)
 	const grant = await db
-		.prepare(
-			`SELECT 1 AS ok
-			 FROM grants g
-			 WHERE g.org_id = ?
-			   AND g.deleted_at IS NULL
-			   AND g.subject_type = 'user'
-			   AND g.subject_id = ?
-			 UNION
-			 SELECT 1 AS ok
-			 FROM team_members tm
-			 INNER JOIN teams t
-			   ON t.id = tm.team_id
-			  AND t.deleted_at IS NULL
-			  AND t.org_id = ?
-			 INNER JOIN grants g
-			   ON g.subject_type = 'team'
-			  AND g.subject_id = t.id
-			  AND g.org_id = t.org_id
-			  AND g.deleted_at IS NULL
-			 WHERE tm.user_id = ?
-			   AND tm.deleted_at IS NULL
-			 LIMIT 1`,
-		)
-		.bind(row.org_id, personId, row.org_id, personId)
+		.prepare(`SELECT 1 AS ok WHERE EXISTS (${liveGrantForPersonSql('?')})`)
+		.bind(row.org_id, personId, personId)
 		.first<{ ok: number }>()
 	if (!grant) return null
 	return bindingFromAccessRow({ ...row, role: null })
@@ -365,7 +372,9 @@ export async function loadOrgBindingForPerson(
 
 /**
  * Bind a person to a specific org: live membership, or any live grant in that
- * org (outside collaborator, role null). Returns null when neither applies.
+ * org held directly or through a team (outside collaborator, role null).
+ * Returns null when neither applies, or when the org is soft-deleted or
+ * suspended. Same access rule as {@link loadOrgBindingForSlug}.
  */
 export async function loadOrgBindingForOrg(
 	db: D1Database,
@@ -379,7 +388,7 @@ export async function loadOrgBindingForOrg(
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
 			   AND m.org_id = ?
-			   AND m.deleted_at IS NULL
+			   AND m.deleted_at IS NULL${andActiveOrgSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(personId, orgId)
@@ -389,23 +398,33 @@ export async function loadOrgBindingForOrg(
 	const grant = await db
 		.prepare(
 			`SELECT o.id AS org_id, o.slug AS org_slug
-			 FROM grants g
-			 INNER JOIN orgs o ON o.id = g.org_id
-			 WHERE g.org_id = ?
-			   AND g.subject_type = 'user'
-			   AND g.subject_id = ?
-			   AND g.deleted_at IS NULL
+			 FROM orgs o
+			 WHERE o.id = ?${andActiveOrgSql('o')}
+			   AND EXISTS (${liveGrantForPersonSql('o.id')})
 			 LIMIT 1`,
 		)
-		.bind(orgId, personId)
+		.bind(orgId, personId, personId)
 		.first<{ org_id: string; org_slug: string }>()
 	if (!grant) return null
 	return toBinding({ ...grant, role: null })
 }
 
+/** True when the org exists and is neither soft-deleted nor suspended. */
+export async function isOrgActive(
+	db: D1Database,
+	orgId: string,
+): Promise<boolean> {
+	const row = await db
+		.prepare(`SELECT 1 AS ok FROM orgs o WHERE o.id = ?${andActiveOrgSql('o')}`)
+		.bind(orgId)
+		.first<{ ok: number }>()
+	return row != null
+}
+
 /**
  * Orgs the person can pick: live memberships union orgs where they hold a
- * live grant. Grant-only rows have `role: null`.
+ * live grant directly or through a team. Soft-deleted and suspended orgs are
+ * excluded. Grant-only rows have `role: null`.
  */
 export async function listOrgsForPerson(
 	db: D1Database,
@@ -420,17 +439,15 @@ export async function listOrgsForPerson(
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
 			  AND m.deleted_at IS NULL
-			 WHERE m.user_id IS NOT NULL
-			    OR EXISTS (
-			      SELECT 1 FROM grants g
-			      WHERE g.org_id = o.id
-			        AND g.subject_type = 'user'
-			        AND g.subject_id = ?
-			        AND g.deleted_at IS NULL
-			    )
+			 WHERE o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
+			   AND (
+			     m.user_id IS NOT NULL
+			     OR EXISTS (${liveGrantForPersonSql('o.id')})
+			   )
 			 ORDER BY o.slug ASC, o.id ASC`,
 		)
-		.bind(personId, personId)
+		.bind(personId, personId, personId)
 		.all<OrgRecord & { role: OrgRole | null }>()
 	return (rows.results ?? []).map((row) => ({
 		...row,

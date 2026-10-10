@@ -13,6 +13,11 @@ export function andLiveDeletedAtSql(alias?: string): string {
 	return ` AND ${liveDeletedAtSql(alias)}`
 }
 
+/** Org liveness: not soft-deleted and not suspended. */
+export function andActiveOrgSql(alias: string): string {
+	return `${andLiveDeletedAtSql(alias)} AND ${alias}.suspended_at IS NULL`
+}
+
 export function withLiveDeletedAt(
 	sqlWhereFragment: string,
 	alias?: string,

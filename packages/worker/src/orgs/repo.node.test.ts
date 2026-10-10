@@ -332,3 +332,157 @@ test('pending invites exclude deleted and suspended orgs', async () => {
 		(await listPendingInvitesForPerson(db, query)).map((i) => i.orgSlug),
 	).toEqual(['live'])
 })
+
+test('loadOrgBindingForOrg and listOrgsForPerson skip deleted and suspended orgs', async () => {
+	const db = await createDb()
+	const ada = testStableUserIdFromEmail('ada@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	const orgs = [
+		{ id: 'b'.repeat(64), slug: 'live', deletedAt: null, suspendedAt: null },
+		{
+			id: 'c'.repeat(64),
+			slug: 'gone',
+			deletedAt: '2026-01-05T00:00:00.000Z',
+			suspendedAt: null,
+		},
+		{
+			id: 'd'.repeat(64),
+			slug: 'paused',
+			deletedAt: null,
+			suspendedAt: '2026-01-05T00:00:00.000Z',
+		},
+	]
+	for (const org of orgs) {
+		await db
+			.prepare(
+				`INSERT INTO orgs (id, slug, display_name, deleted_at, suspended_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')`,
+			)
+			.bind(org.id, org.slug, org.slug, org.deletedAt, org.suspendedAt)
+			.run()
+		await db
+			.prepare(
+				`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+				 VALUES (?, ?, 'member', '2026-01-02T00:00:00.000Z')`,
+			)
+			.bind(org.id, ada)
+			.run()
+	}
+	const grantOrgs = [
+		{ id: 'e'.repeat(64), slug: 'live-grant', suspendedAt: null },
+		{
+			id: 'f'.repeat(64),
+			slug: 'paused-grant',
+			suspendedAt: '2026-01-05T00:00:00.000Z',
+		},
+	]
+	for (const org of grantOrgs) {
+		await db
+			.prepare(
+				`INSERT INTO orgs (id, slug, display_name, suspended_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')`,
+			)
+			.bind(org.id, org.slug, org.slug, org.suspendedAt)
+			.run()
+		await db
+			.prepare(
+				`INSERT INTO grants (
+					id, org_id, resource_type, resource_id, subject_type, subject_id,
+					preset, created_by_user_id, created_at, updated_at, deleted_at
+				) VALUES (?, ?, 'package', 'pkg-1', 'user', ?, 'use', ?, ?, ?, NULL)`,
+			)
+			.bind(
+				`grant-${org.slug}`,
+				org.id,
+				ada,
+				org.id,
+				'2026-01-04T00:00:00.000Z',
+				'2026-01-04T00:00:00.000Z',
+			)
+			.run()
+	}
+
+	expect(await loadOrgBindingForOrg(db, ada, 'b'.repeat(64))).toEqual({
+		org: { id: 'b'.repeat(64), slug: 'live' },
+		role: 'member',
+	})
+	expect(await loadOrgBindingForOrg(db, ada, 'c'.repeat(64))).toBeNull()
+	expect(await loadOrgBindingForOrg(db, ada, 'd'.repeat(64))).toBeNull()
+	expect(await loadOrgBindingForOrg(db, ada, 'e'.repeat(64))).toEqual({
+		org: { id: 'e'.repeat(64), slug: 'live-grant' },
+		role: null,
+	})
+	expect(await loadOrgBindingForOrg(db, ada, 'f'.repeat(64))).toBeNull()
+
+	const listed = await listOrgsForPerson(db, ada)
+	expect(listed.map((org) => org.slug)).toEqual(['ada', 'live', 'live-grant'])
+})
+
+test('loadOrgBindingForOrg and listOrgsForPerson include orgs reached through a team grant', async () => {
+	const db = await createDb()
+	const ada = testStableUserIdFromEmail('ada@example.com')
+	const gus = testStableUserIdFromEmail('gus@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ada,
+		username: 'ada',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: gus,
+		username: 'gus',
+		createdAt: '2026-01-02T00:00:00.000Z',
+	})
+	const ts = '2026-01-04T00:00:00.000Z'
+	await db
+		.prepare(
+			`INSERT INTO teams (
+				id, org_id, slug, name, created_by_user_id, created_at, updated_at
+			) VALUES ('team-1', ?, 'eng', 'Eng', ?, ?, ?)`,
+		)
+		.bind(gus, gus, ts, ts)
+		.run()
+	await db
+		.prepare(
+			`INSERT INTO team_members (team_id, user_id, created_at)
+			 VALUES ('team-1', ?, ?)`,
+		)
+		.bind(ada, ts)
+		.run()
+
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toBeNull()
+
+	await db
+		.prepare(
+			`INSERT INTO grants (
+				id, org_id, resource_type, resource_id, subject_type, subject_id,
+				preset, created_by_user_id, created_at, updated_at, deleted_at
+			) VALUES ('grant-team', ?, 'package', 'pkg-1', 'team', 'team-1', 'use', ?, ?, ?, NULL)`,
+		)
+		.bind(gus, gus, ts, ts)
+		.run()
+
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toEqual({
+		org: { id: gus, slug: 'gus' },
+		role: null,
+	})
+	expect(
+		(await listOrgsForPerson(db, ada)).map((org) => ({
+			id: org.id,
+			role: org.role,
+		})),
+	).toEqual([
+		{ id: ada, role: 'owner' },
+		{ id: gus, role: null },
+	])
+
+	await db
+		.prepare(`UPDATE team_members SET deleted_at = ? WHERE team_id = 'team-1'`)
+		.bind(ts)
+		.run()
+	expect(await loadOrgBindingForOrg(db, ada, gus)).toBeNull()
+	expect((await listOrgsForPerson(db, ada)).map((org) => org.id)).toEqual([ada])
+})
