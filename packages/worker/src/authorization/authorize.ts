@@ -252,10 +252,6 @@ function denialCode(
 	if (access.credentialScopes && !access.credentialScopes.has(permission)) {
 		return 'credential_scope'
 	}
-	// Profiles name existing packages, so a bound credential cannot create one.
-	if (access.profileGrants !== null && permission === 'package:create') {
-		return 'connection_profile'
-	}
 	if (resource && !profileAllows(access.profileGrants, permission, resource)) {
 		return 'connection_profile'
 	}
@@ -352,9 +348,7 @@ export function packageResource(input: {
 /**
  * The one profile-write check for a resolved saved package. `package:write`,
  * `package:delete`, and `package:publish` all map to the profile `write`
- * action. Call it once the package row is known, before the mutation. Creating
- * a package has no row yet: `authorize` denies `package:create` when a profile
- * is bound.
+ * action. Call it once the package row is known, before the mutation.
  */
 export async function authorizePackageWrite(
 	ctx: { env: Env; request: RequestContext | null },
@@ -362,6 +356,31 @@ export async function authorizePackageWrite(
 	permission: ProfileWritePermission = 'package:write',
 ): Promise<void> {
 	await authorize(ctx, permission, packageResource(pkg))
+}
+
+/**
+ * A bound profile names existing packages, so it cannot create one. Call this
+ * from saved-package creation (`packageSave` and `packageGetGitRemote` when
+ * the package does not exist yet, `communityFork`, `repoPromoteToPackage`).
+ * Org-level `package:create` stays open so plain `repoCreate` is unchanged.
+ */
+export async function denyProfileBoundPackageCreate(ctx: {
+	env: Env
+	request: RequestContext | null
+}): Promise<void> {
+	if (!ctx.request?.credential.profileName) return
+	const access = await computeEffectivePermissions({
+		env: ctx.env,
+		request: ctx.request,
+	})
+	if (access.profileGrants === null) return
+	throw new AuthorizationError({
+		code: 'connection_profile',
+		permission: 'package:create',
+		orgId: access.orgId,
+		resource: null,
+		message: 'This connection profile cannot create packages.',
+	})
 }
 
 const requestPermissionsStorage = new AsyncLocalStorage<EffectivePermissions>()

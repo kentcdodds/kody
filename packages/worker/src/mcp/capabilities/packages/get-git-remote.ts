@@ -3,6 +3,7 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	authorize,
 	authorizePackageWrite,
+	denyProfileBoundPackageCreate,
 } from '#worker/authorization/authorize.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -142,6 +143,7 @@ export const getGitRemoteCapability = defineDomainCapability(
 				})
 				if (!existing) {
 					await authorize(authorizeCtx, 'package:create')
+					await denyProfileBoundPackageCreate(authorizeCtx)
 					await createStubSavedPackage({
 						env: ctx.env,
 						baseUrl: ctx.callerContext.baseUrl,
@@ -162,9 +164,9 @@ export const getGitRemoteCapability = defineDomainCapability(
 						kody_id: requestedKodyId,
 					},
 				})
-			// package:create above denies a profile-bound credential before the
-			// stub exists. An unbound create has no profile grant to check.
-			// An existing package with write scope must list profile write.
+			// denyProfileBoundPackageCreate above stops a profile-bound credential
+			// before the stub exists. An existing package with write scope must
+			// list profile write.
 			if (args.scope === 'write' && !created) {
 				await authorizePackageWrite(authorizeCtx, {
 					id: packageId,

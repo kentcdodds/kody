@@ -48,15 +48,16 @@ synchronous, for callers that already hold the compiled permissions.
 4. **Credential scopes.** Non-null `credential.scopes` narrow the result.
 5. **Connection profile.** A bound profile narrows package resources to the
    packages and actions it lists (`read`, `execute`, `write`). Profiles list
-   packages only, so they do not narrow other resources. Org-level checks are
-   not narrowed either, except `package:create`, which a bound profile always
-   denies. `package:write`, `package:delete`, and `package:publish` handlers
-   call `authorizePackageWrite` once the saved package row is known. Those
+   packages only, so they do not narrow other resources or org-level checks.
+   `package:write`, `package:delete`, and `package:publish` handlers call
+   `authorizePackageWrite` once the saved package row is known. Those
    permissions map to the profile `write` action, so a profile that lists only
    `read` cannot mutate, delete, or publish that package. A profile-bound
-   credential cannot create a package: `package:create` is denied, and
-   `packageSave` / `packageGetGitRemote` are denied when the package does not
-   exist yet. A profile names existing packages only.
+   credential cannot create a saved package: `denyProfileBoundPackageCreate`
+   runs from `packageSave` and `packageGetGitRemote` when the package does not
+   exist yet, and from `communityFork` and `repoPromoteToPackage`. Plain repo
+   create stays an org-level `package:create` check. A profile names existing
+   packages only.
 
 A surface check without a resource (capability `orgPermission`, Open API
 `x-kody-permission`) passes when the permission is held at org level **or on any
