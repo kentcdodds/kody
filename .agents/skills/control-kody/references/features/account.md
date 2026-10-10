@@ -38,8 +38,8 @@ A non-personal org handle (`/@<slug>`) renders the org home for its members and
 Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
-time.
+`/@<slug>/-/…`. Old `/account/...` resource pages 404.
+`/account/packages/:packageId` still redirects to `/@username/:kodyId`.
 
 ## Drive it
 
