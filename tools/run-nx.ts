@@ -102,11 +102,18 @@ export function nxCacheSummaryLine(output: string) {
 export async function reportNxRemoteCache(input: {
 	output: string
 	env: NodeJS.ProcessEnv
+	remote: NxRemoteOutcome
 	probe?: typeof probeNxRemoteCache
 	log: (line: string) => void
 }) {
 	const server = input.env[nxRemoteCacheServerEnv]
 	if (!server) return
+	if (input.remote === 'retried-locally') {
+		input.log(
+			`Nx remote cache skipped (${server}): the run that passed retried without the remote cache after a transport failure, so nothing was uploaded. ${nxCacheSummaryLine(input.output)}`,
+		)
+		return
+	}
 	const probe: NxRemoteCacheProbe = await (input.probe ?? probeNxRemoteCache)({
 		server,
 		token: input.env[nxRemoteCacheTokenEnv] ?? '',
@@ -131,44 +138,55 @@ export async function runNxWithRemoteCacheFallback(input: {
 			console.error(line)
 		})
 
-	const result = await runNxOnce({ ...input, env, run, log })
+	const { result, remote } = await runNxOnce({ ...input, env, run, log })
 	await reportNxRemoteCache({
 		output: result.output,
 		env,
+		remote,
 		probe: input.probe,
 		log,
 	})
 	return result
 }
 
+/**
+ * `used`: the run that produced the result talked to the remote cache (even if
+ * a late transport failure was tolerated). `retried-locally`: the result comes
+ * from the `--skipRemoteCache` retry, so no probe can speak for its uploads.
+ */
+export type NxRemoteOutcome = 'used' | 'retried-locally'
+
 async function runNxOnce(input: {
 	args: ReadonlyArray<string>
 	env: NodeJS.ProcessEnv
 	run: NxRun
 	log: (line: string) => void
-}): Promise<NxRunResult> {
+}): Promise<{ result: NxRunResult; remote: NxRemoteOutcome }> {
 	const { env, run, log } = input
 	const first = await run(input.args, env)
-	if (first.status === 0) return first
+	if (first.status === 0) return { result: first, remote: 'used' }
 
 	const combined = `${first.output} ${first.errorMessage}`
-	if (!isNxRemoteCacheTransportFailure(combined)) return first
+	if (!isNxRemoteCacheTransportFailure(combined)) {
+		return { result: first, remote: 'used' }
+	}
 
 	if (nxTasksSucceededDespiteRemoteCacheFailure(combined)) {
 		log(
 			'Nx remote cache request failed after tasks succeeded; treating the run as successful.',
 		)
-		return { ...first, status: 0 }
+		return { result: { ...first, status: 0 }, remote: 'used' }
 	}
 
-	if (!env[nxRemoteCacheServerEnv]) return first
+	if (!env[nxRemoteCacheServerEnv]) return { result: first, remote: 'used' }
 
 	log(
 		'Nx remote cache request failed before tasks finished; retrying without the remote cache.',
 	)
 	const retryEnv = { ...env }
 	delete retryEnv[nxRemoteCacheServerEnv]
-	return run([...input.args, '--skipRemoteCache'], retryEnv)
+	const retried = await run([...input.args, '--skipRemoteCache'], retryEnv)
+	return { result: retried, remote: 'retried-locally' }
 }
 
 if (isExecutedDirectly(import.meta.url)) {

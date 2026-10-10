@@ -193,3 +193,46 @@ test('runNxWithRemoteCacheFallback stays quiet when no remote cache is configure
 	})
 	expect(logs).toEqual([])
 })
+
+test('runNxWithRemoteCacheFallback reports a local retry as skipped instead of probing', async () => {
+	const logs: Array<string> = []
+	let attempts = 0
+	const result = await runNxWithRemoteCacheFallback({
+		args: ['run', 'worker:test-node'],
+		env: {
+			NX_SELF_HOSTED_REMOTE_CACHE_SERVER: 'https://nx-cache.kody.codes',
+			NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'write-token',
+		},
+		log: (line) => {
+			logs.push(line)
+		},
+		run: () => {
+			attempts += 1
+			if (attempts === 1) {
+				return {
+					status: 1,
+					output: cacheTransportFailureBeforeTasks,
+					errorMessage: '',
+				}
+			}
+			return {
+				status: 0,
+				output:
+					' NX  Successfully ran target test-node for project worker\n\nCache:             0/1 hit (0%)\n',
+				errorMessage: '',
+			}
+		},
+		probe: async () => {
+			throw new Error(
+				'probe must not speak for a run that skipped the remote cache',
+			)
+		},
+	})
+	expect(result.status).toBe(0)
+	expect(logs).toEqual([
+		'Nx remote cache request failed before tasks finished; retrying without the remote cache.',
+		expect.stringMatching(
+			/^Nx remote cache skipped \(https:\/\/nx-cache\.kody\.codes\): .*nothing was uploaded\. Cache: {13}0\/1 hit \(0%\)$/,
+		),
+	])
+})
