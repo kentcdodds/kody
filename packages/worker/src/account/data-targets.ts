@@ -199,15 +199,8 @@ export function getAccountExportExcludedD1Surfaces(): Array<{
  * Tables still present in D1 after their product surface is gone. Rows may be
  * purged while DROP TABLE waits for a later deploy. Deletion/export do not
  * inventory these leftovers. Empty when nothing is mid-drop.
- *
- * `package_share_grants`, `package_scope_grants`, and `username_redirects`
- * wait for the Teams P9 drop migration. Do not add a reader back.
  */
-export const accountUserDataPendingDropTables = [
-	'package_scope_grants',
-	'package_share_grants',
-	'username_redirects',
-] as const
+export const accountUserDataPendingDropTables = [] as const
 
 export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'user_id', table: 'api_tokens' },

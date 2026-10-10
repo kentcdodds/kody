@@ -434,15 +434,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
-- `package_scope_grants`, `package_share_grants`, and `username_redirects`:
-  leftover tables. Live access, account export, account deletion, and Teams
-  tooling do not read them. They stay in the schema until the P9 drop migration
-  (`accountUserDataPendingDropTables`). Share and scope drops are tracked in
-  [#3083](https://github.com/kentcdodds/kody/issues/3083) and
-  [#3082](https://github.com/kentcdodds/kody/issues/3082). Username redirects
-  lost their last reader when handles became permanent
-  ([#3192](https://github.com/kentcdodds/kody/pull/3192)); the drop rides with
-  that same P9 migration. Reserved old handles live in `handles`.
+- `package_scope_grants`, `package_share_grants`, and `username_redirects` were
+  dropped in the Teams P9 contract migrations (`0097`–`0098`). Access uses org
+  grants and Owner memberships. Reserved old handles live in `handles`.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see

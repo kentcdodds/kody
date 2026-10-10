@@ -214,7 +214,8 @@ ordinary org with an Owner). The sealed backup and verify workflow
 `package_share_grants`, `package_scope_grants`, and
 `users.account_type = 'platform'` after that migration. Both are removed.
 `package_share_grants`, `package_scope_grants`, and `username_redirects` stay in
-the schema until the P9 drop migration. This rehearsal does not query them.
+the schema until the P9 drop migration (`0097`–`0098`). This rehearsal does not
+query them; a P9 contract rehearsal snapshots before and after those drops.
 
 ## P3: org.migrated audit backfill
 

@@ -387,6 +387,26 @@
 		{
 			"filename": "0096-teams-migrated-actor-ids.sql",
 			"sha256": "c7da3f2d37b72a75595711e2728e49a799f696c6c5edb2f4fb37efc06eb8ab0f"
+		},
+		{
+			"filename": "0097-drop-package-share-and-scope-grants.sql",
+			"sha256": "1ca07d381319455d4b0f21b4b9c7bf2df0564ec2d00bd895afdd18da2f2e6189"
+		},
+		{
+			"filename": "0098-drop-username-redirects.sql",
+			"sha256": "305752151f67d8aef954228ced747a9e045c9eb62aee3b73f66ff2b90c2228a8"
+		},
+		{
+			"filename": "0099-delete-platform-users.sql",
+			"sha256": "1b14891ba4016343f2836870c3d725805cc60238e1444af6520a66befaffd020"
+		},
+		{
+			"filename": "0100-rebuild-users-drop-moved-columns.sql",
+			"sha256": "e4ff007101cf961cf8dac19f2ca602d15706a1ca618072bd34db5681a66ef7c7"
+		},
+		{
+			"filename": "0101-api-tokens-org-id-not-null.sql",
+			"sha256": "0839af1009a8647b97c54df8d51a34f0e4eab5311ad959e5a4b57b7782669ad9"
 		}
 	]
 }
