@@ -175,4 +175,15 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 			)`,
 		)
 		.run()
+	await db
+		.prepare(
+			`CREATE TABLE IF NOT EXISTS billing_promo_claims (
+				user_id TEXT PRIMARY KEY NOT NULL,
+				promotion_code_id TEXT NOT NULL,
+				org_id TEXT NOT NULL,
+				checkout_session_id TEXT NOT NULL,
+				claimed_at TEXT NOT NULL
+			)`,
+		)
+		.run()
 }

@@ -638,3 +638,66 @@ test('refreshStripePlanForOrg defers until the org has a linked Stripe customer'
 		stripe_plan: null,
 	})
 })
+
+test('a completed checkout with promo metadata records the claim for that person once', async () => {
+	await ensureOrgsTestSchema(env.APP_DB)
+	const member = await seedUser('promo-member', { plan: 'free' })
+	const teamOrgId = testStableUserIdFromEmail(
+		`promo-org-${crypto.randomUUID()}@example.com`,
+	)
+	const now = new Date('2026-07-19T12:00:00.000Z')
+	await env.APP_DB.prepare(
+		`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+		 VALUES (?, ?, 'free', ?, ?)`,
+	)
+		.bind(
+			teamOrgId,
+			`promo-${teamOrgId.slice(0, 8)}`,
+			now.toISOString(),
+			now.toISOString(),
+		)
+		.run()
+	const orgLinkReference = await createBillingLinkReference(env, teamOrgId)
+	using _fetch = stubStripeFetch({
+		checkout: {
+			id: 'cs_promo_org',
+			customer: 'cus_promo_org',
+			client_reference_id: orgLinkReference,
+			metadata: {
+				kody_promo_user_id: member.stableUserId,
+				kody_promo_code_id: 'promo_agency_1',
+			},
+		},
+		subscriptions: subscriptionList('sub_promo_org', 'active'),
+	})
+
+	await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_promo_org',
+		now,
+	})
+	// A replay of the same link (success URL + webhook) keeps the first claim.
+	await linkStripeCustomerFromCheckoutSessionForOrg({
+		env: createBillingEnv(),
+		orgId: ownerIdFromStored(teamOrgId),
+		sessionId: 'cs_promo_org',
+		now: new Date(now.getTime() + 1000),
+	})
+
+	const claims = await env.APP_DB.prepare(
+		`SELECT user_id, promotion_code_id, org_id, checkout_session_id, claimed_at
+		 FROM billing_promo_claims WHERE user_id = ?`,
+	)
+		.bind(member.stableUserId)
+		.all<Record<string, string>>()
+	expect(claims.results).toEqual([
+		{
+			user_id: member.stableUserId,
+			promotion_code_id: 'promo_agency_1',
+			org_id: teamOrgId,
+			checkout_session_id: 'cs_promo_org',
+			claimed_at: now.toISOString(),
+		},
+	])
+})

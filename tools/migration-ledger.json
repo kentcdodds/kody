@@ -375,6 +375,10 @@
 		{
 			"filename": "0093-teams-org-access-indexes.sql",
 			"sha256": "9c56c231b4be4e08a6afc17c1e213c179b2e0b65cb8f190cc545678e9489ddda"
+		},
+		{
+			"filename": "0094-billing-promo-claims.sql",
+			"sha256": "ed741c12d05fa072a398b4b454228910d094960af833413a6c8d8aacd4c96a79"
 		}
 	]
 }

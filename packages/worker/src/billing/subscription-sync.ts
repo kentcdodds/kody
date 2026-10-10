@@ -21,6 +21,7 @@ import {
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { forgiveCreditUsageBeforeUnlock } from '#worker/billing/credit-wallet.ts'
+import { recordPromoClaimFromCheckoutSession } from '#worker/billing/checkout-promo.ts'
 import {
 	createBillingLinkReference,
 	isBillingConfigured,
@@ -703,6 +704,13 @@ export async function linkStripeCustomerFromCheckoutSessionForOrg(input: {
 		}
 		throw error
 	}
+
+	await recordPromoClaimFromCheckoutSession({
+		db: input.env.APP_DB,
+		orgId,
+		session,
+		now,
+	})
 
 	return await refreshAfterCheckoutLink({
 		env: input.env,

@@ -18,6 +18,15 @@ export const annualPromoRejection =
 export const existingSubscriptionPromoRejection =
 	'Promo codes apply to new subscriptions only. This organization already has one.'
 
+export const promoAlreadyClaimedRejection =
+	'You have already used a promo code. Promo codes can be claimed once per person, across all of your organizations.'
+
+/** Checkout Session metadata that names the person claiming a promo code. */
+export const promoClaimMetadataKeys = {
+	userId: 'kody_promo_user_id',
+	promotionCodeId: 'kody_promo_code_id',
+} as const
+
 const unknownPromoRejection = "That promo code isn't valid."
 const expiredPromoRejection = 'That promo code has expired.'
 const redeemedPromoRejection = 'That promo code has already been used.'
@@ -83,3 +92,57 @@ export async function resolveCheckoutPromotionCode(
 /** Shown when Stripe still rejects a validated code at session creation. */
 export const promoRejectedByStripe =
 	"That promo code can't be applied to this plan."
+
+/** True once `userId` has completed a discounted checkout for any org. */
+export async function hasPersonClaimedPromo(
+	db: D1Database,
+	userId: string,
+): Promise<boolean> {
+	const row = await db
+		.prepare(`SELECT 1 AS ok FROM billing_promo_claims WHERE user_id = ?`)
+		.bind(userId)
+		.first<{ ok: number }>()
+	return row != null
+}
+
+/** Metadata to attach to a Checkout Session that carries a promo code. */
+export function promoClaimMetadata(input: {
+	userId: string
+	promotionCodeId: string
+}): Record<string, string> {
+	return {
+		[promoClaimMetadataKeys.userId]: input.userId,
+		[promoClaimMetadataKeys.promotionCodeId]: input.promotionCodeId,
+	}
+}
+
+/**
+ * Record the claim named in a completed Checkout Session's metadata. Sessions
+ * without promo metadata are ignored; a person's first claim wins, so a
+ * second discounted checkout that slipped through is not re-counted.
+ */
+export async function recordPromoClaimFromCheckoutSession(input: {
+	db: D1Database
+	orgId: string
+	session: { id: string; metadata?: Record<string, string> | null }
+	now: Date
+}): Promise<void> {
+	const userId = input.session.metadata?.[promoClaimMetadataKeys.userId]?.trim()
+	const promotionCodeId =
+		input.session.metadata?.[promoClaimMetadataKeys.promotionCodeId]?.trim()
+	if (!userId || !promotionCodeId) return
+	await input.db
+		.prepare(
+			`INSERT OR IGNORE INTO billing_promo_claims
+			 (user_id, promotion_code_id, org_id, checkout_session_id, claimed_at)
+			 VALUES (?, ?, ?, ?, ?)`,
+		)
+		.bind(
+			userId,
+			promotionCodeId,
+			input.orgId,
+			input.session.id,
+			input.now.toISOString(),
+		)
+		.run()
+}

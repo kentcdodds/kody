@@ -10,6 +10,8 @@ import { createBillingLinkReference } from '#worker/billing/billing-config.ts'
 import {
 	annualPromoRejection,
 	existingSubscriptionPromoRejection,
+	promoAlreadyClaimedRejection,
+	promoClaimMetadataKeys,
 	promoRejectedByStripe,
 } from '#worker/billing/checkout-promo.ts'
 import type * as StripeClient from '#worker/billing/stripe-client.ts'
@@ -432,6 +434,10 @@ test('promo codes apply to monthly checkouts only, as a Kody-validated discount'
 			priceId: 'price_pro',
 			promotionCodeId: 'promo_agency_1',
 			quantity: 2,
+			metadata: expect.objectContaining({
+				[promoClaimMetadataKeys.userId]: people.ada.personId,
+				[promoClaimMetadataKeys.promotionCodeId]: 'promo_agency_1',
+			}),
 		}),
 	)
 
@@ -761,4 +767,37 @@ test('billing cancellation feedback records platform feedback', async () => {
 	expect(mocks.enqueuePlatformFeedbackDispatch).toHaveBeenCalledWith(
 		expect.objectContaining({ feedbackId: 'fb_1' }),
 	)
+})
+
+test('a person who already claimed a promo code cannot claim one for another org', async () => {
+	signInAs('ada')
+	const env = createEnv()
+	await db
+		.prepare(
+			`INSERT INTO billing_promo_claims
+			 (user_id, promotion_code_id, org_id, checkout_session_id, claimed_at)
+			 VALUES (?, 'promo_agency_1', 'some-other-org', 'cs_earlier', ?)`,
+		)
+		.bind(people.ada.personId, new Date().toISOString())
+		.run()
+
+	const response = await postCheckout(env, 'acme', {
+		plan: 'pro',
+		interval: 'month',
+		promoCode: 'AGENCY-1',
+	})
+	expect(response.status).toBe(409)
+	expect(await response.json()).toEqual({
+		ok: false,
+		error: promoAlreadyClaimedRejection,
+	})
+	expect(mocks.findActivePromotionCode).not.toHaveBeenCalled()
+	expect(mocks.createCheckoutSession).not.toHaveBeenCalled()
+
+	// Without a code, checkout for the org still works.
+	const plain = await postCheckout(env, 'acme', {
+		plan: 'pro',
+		interval: 'month',
+	})
+	expect(plain.status).toBe(200)
 })

@@ -43,7 +43,10 @@ import {
 } from '#worker/billing/billing-config.ts'
 import {
 	existingSubscriptionPromoRejection,
+	hasPersonClaimedPromo,
 	parsePromoCodeInput,
+	promoAlreadyClaimedRejection,
+	promoClaimMetadata,
 	promoIntervalRejection,
 	promoRejectedByStripe,
 	resolveCheckoutPromotionCode,
@@ -273,6 +276,12 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 				if (intervalRejection) {
 					return jsonResponse({ ok: false, error: intervalRejection }, 400)
 				}
+				if (await hasPersonClaimedPromo(env.APP_DB, user.mcpUser.userId)) {
+					return jsonResponse(
+						{ ok: false, error: promoAlreadyClaimedRejection },
+						409,
+					)
+				}
 			}
 			const priceId = getPriceIdForPlan(env, plan, interval)
 			if (!isBillingConfigured(env) || !priceId) {
@@ -412,6 +421,12 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 						metadata: {
 							...buildOrgBillingMetadata(org.id),
 							kody_plan: plan,
+							...(promotionCodeId
+								? promoClaimMetadata({
+										userId: user.mcpUser.userId,
+										promotionCodeId,
+									})
+								: {}),
 						},
 					})
 				} catch (error) {
