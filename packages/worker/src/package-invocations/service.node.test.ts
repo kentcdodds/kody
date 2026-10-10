@@ -83,24 +83,11 @@ const backgroundUserMocks = vi.hoisted(() => ({
 		username: 'owner',
 		displayName: 'Owner',
 	})),
-	resolveBackgroundMcpUserForOwner: vi.fn(
-		async (
-			db: D1Database,
-			input: { ownerId: string; actorUserId?: string | null },
-		) => {
-			const userId = input.actorUserId?.trim() || input.ownerId
-			return await backgroundUserMocks.resolveBackgroundMcpUser(db, userId)
-		},
-	),
 }))
 
 vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 	resolveBackgroundMcpUser: (db: D1Database, userId: string) =>
 		backgroundUserMocks.resolveBackgroundMcpUser(db, userId),
-	resolveBackgroundMcpUserForOwner: (
-		db: D1Database,
-		input: { ownerId: string; actorUserId?: string | null },
-	) => backgroundUserMocks.resolveBackgroundMcpUserForOwner(db, input),
 }))
 
 type ExportRequest = Parameters<typeof invokePackageExport>[0]['request']

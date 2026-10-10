@@ -75,7 +75,7 @@ import {
 	type EntitlementLadder,
 	type PlanName,
 } from '#universal/plans.ts'
-import { resolveBackgroundMcpUserForOwner } from '#worker/identity/background-mcp-user.ts'
+import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
 import { isAccountSuspendedError } from '#worker/account/account-suspension.ts'
 import { assertPublishedSourceCanRebuildWithoutInstallingDeps } from '#worker/package-runtime/published-source-dependencies.ts'
 import {
@@ -223,7 +223,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	}
 	logJobSchedulerEvent({
 		event: 'job_bundle_build_started',
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		jobId: input.job.id,
 		sourceId: input.sourceId,
 		artifactEntryPoint: input.entryPoint,
@@ -232,7 +232,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	const bundle = await buildPublishedJobBundle({
 		env: input.env,
 		baseUrl: input.callerContext.baseUrl,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		sourceFiles: input.sourceFiles,
 		entryPoint: input.entryPoint,
 		rootPackageId: input.packageContext?.packageId ?? null,
@@ -253,7 +253,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	}
 	await persistPublishedBundleArtifact({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		source,
 		kind: 'job',
 		artifactName: input.artifactName,
@@ -266,7 +266,7 @@ async function persistPublishedJobBundleArtifact(input: {
 	})
 	logJobSchedulerEvent({
 		event: 'job_bundle_build_completed',
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		jobId: input.job.id,
 		sourceId: input.sourceId,
 		artifactEntryPoint: input.entryPoint,
@@ -296,12 +296,12 @@ async function ensurePublishedBundleArtifactForJob(input: {
 }) {
 	const resolved = await resolvePublishedJobSource({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		job: input.job,
 	})
 	const artifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		sourceId: input.job.sourceId,
 		kind: 'job',
 		artifactName: resolved.artifactName,
@@ -317,7 +317,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	) {
 		logJobSchedulerEvent({
 			event: 'job_bundle_cache_hit',
-			userId: input.callerContext.user.userId,
+			userId: input.job.userId,
 			jobId: input.job.id,
 			sourceId: input.job.sourceId,
 			artifactEntryPoint: artifact.row?.entryPoint ?? 'unknown',
@@ -328,7 +328,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	}
 	logJobSchedulerEvent({
 		event: 'job_bundle_cache_miss',
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		jobId: input.job.id,
 		sourceId: input.job.sourceId,
 		artifactCacheHit: false,
@@ -360,7 +360,7 @@ async function ensurePublishedBundleArtifactForJob(input: {
 	})
 	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		sourceId: input.job.sourceId,
 		kind: 'job',
 		artifactName: resolved.artifactName,
@@ -647,14 +647,9 @@ async function createPackageJobCallerContext(input: {
 	baseUrl: string
 	/** Package storage OwnerId (person or team org). */
 	userId: string
-	/** Acting person when `userId` is a team org OwnerId. */
-	actorUserId?: string | null
 	packageId: string
 }): Promise<PersistedJobCallerContext> {
-	const user = await resolveBackgroundMcpUserForOwner(input.db, {
-		ownerId: input.userId,
-		actorUserId: input.actorUserId,
-	})
+	const user = await resolveBackgroundMcpUser(input.db, input.userId)
 	const wire = createMcpCallerContextWire({
 		baseUrl: input.baseUrl,
 		executionOrigin: 'background',
@@ -693,8 +688,6 @@ async function resolveJobRuntimeCallerContext(input: {
 export async function syncPackageJobsForPackage(input: {
 	env: Env
 	userId: string
-	/** Acting person when `userId` is a team org OwnerId. */
-	actorUserId?: string | null
 	baseUrl: string
 	packageId: string
 	sourceId: string
@@ -712,9 +705,7 @@ export async function syncPackageJobsForPackage(input: {
 			const packageRows = existingRows.filter(
 				(row) => row.source_id === input.sourceId,
 			)
-			// No jobs to create, update, or remove: skip person resolution so a
-			// team-org packageSave without jobs does not need a users row at the
-			// org OwnerId.
+			// Nothing to create, update, or remove: skip the owner lookup.
 			if (Object.keys(desiredJobs).length === 0 && packageRows.length === 0) {
 				return false
 			}
@@ -724,7 +715,6 @@ export async function syncPackageJobsForPackage(input: {
 					db: input.env.APP_DB,
 					baseUrl: input.baseUrl,
 					userId: input.userId,
-					actorUserId: input.actorUserId,
 					packageId: input.packageId,
 				}),
 				getEntitySourceByIdForUser(input.env.APP_DB, {
@@ -1315,12 +1305,9 @@ export async function executeJobOnce(input: {
 					}
 					completedOccurrence = true
 				} else {
-					const backgroundUser = await resolveBackgroundMcpUserForOwner(
+					const backgroundUser = await resolveBackgroundMcpUser(
 						input.env.APP_DB,
-						{
-							ownerId: input.job.userId,
-							actorUserId: input.callerContext.user?.userId,
-						},
+						input.job.userId,
 					).catch((error: unknown) => {
 						throw markPreExecutionTransientError(error)
 					})
@@ -1460,7 +1447,7 @@ async function runRepoBackedJob(input: {
 }): Promise<ExecuteResult> {
 	const resolved = await resolvePublishedJobSource({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		job: input.job,
 	}).catch((error: unknown) => {
 		if (isTransientJobExecutionError(error)) {
@@ -1479,7 +1466,7 @@ async function runRepoBackedJob(input: {
 	}
 	const loadedArtifact = await loadPublishedBundleArtifactByIdentity({
 		env: input.env,
-		userId: input.callerContext.user.userId,
+		userId: input.job.userId,
 		sourceId: input.job.sourceId,
 		kind: 'job',
 		artifactName: resolved.artifactName,

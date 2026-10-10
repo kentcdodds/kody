@@ -38,15 +38,6 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 		username: userId,
 		displayName: userId,
 	}),
-	resolveBackgroundMcpUserForOwner: async (
-		_db: D1Database,
-		input: { ownerId: string; actorUserId?: string | null },
-	) => ({
-		userId: input.actorUserId?.trim() || input.ownerId,
-		email: `${input.actorUserId?.trim() || input.ownerId}@example.com`,
-		username: input.actorUserId?.trim() || input.ownerId,
-		displayName: input.actorUserId?.trim() || input.ownerId,
-	}),
 }))
 
 function createRetrieverEntry(input: {

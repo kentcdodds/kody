@@ -130,15 +130,6 @@ function mockBackgroundEmails(emailsByUserId: Record<string, string>) {
 			displayName: id,
 		}),
 	)
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockImplementation(
-		async (
-			db: D1Database,
-			input: { ownerId: string; actorUserId?: string | null },
-		) => {
-			const id = input.actorUserId?.trim() || input.ownerId
-			return await identityMockModule.resolveBackgroundMcpUser(db, id)
-		},
-	)
 }
 
 function createPlanUserCallerContext(input: { userId: string; email: string }) {
@@ -603,7 +594,7 @@ test('blank-email package context uses the max plan for storage writes and neste
 			storageContext: stalePackageStorageContext,
 		}),
 	).resolves.toMatchObject({ name: 'checkpoint' })
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockResolvedValueOnce({
+	identityMockModule.resolveBackgroundMcpUser.mockResolvedValueOnce({
 		userId: personIdFromStored(userId),
 		email,
 		username: userId,

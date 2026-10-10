@@ -286,7 +286,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 
 	// Transient background identity lookup failures are retried by the caller.
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockRejectedValueOnce(
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
 		new Error('D1_ERROR: Network connection lost.'),
 	)
 	await expect(
@@ -299,7 +299,7 @@ test('executeJobOnce gates entitlement, identity blips, and suspension before sa
 	).rejects.toBeInstanceOf(TransientJobExecutionError)
 
 	// A suspended owner halts the job.
-	identityMockModule.resolveBackgroundMcpUserForOwner.mockRejectedValueOnce(
+	identityMockModule.resolveBackgroundMcpUser.mockRejectedValueOnce(
 		new AccountSuspendedError(),
 	)
 	const suspended = await executeJobOnce({
@@ -812,6 +812,41 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 	expect(formatJobErrorSpy).toHaveBeenCalled()
 })
 
+test('executeJobOnce loads the published source by job owner id, not the caller person', async () => {
+	silenceIncidentalRuntimeWarnings()
+	const { db, env } = createExecuteEnv()
+	const orgId = 'org-owner'
+	await insertPublishedEntitySource({
+		db,
+		userId: orgId,
+		sourceId: 'source-org',
+		entityKind: 'package',
+		entityId: 'pkg-org',
+		publishedCommit: 'commit-1',
+		manifestPath: 'package.json',
+	})
+
+	const outcome = await executeJobOnce({
+		source: { kind: 'schedule', jobId: 'job-org' },
+		env,
+		job: createJob({
+			id: 'job-org',
+			name: 'Org job',
+			sourceId: 'source-org',
+			publishedCommit: 'commit-1',
+			userId: orgId,
+		}),
+		callerContext: createBaseCallerContext(),
+	})
+
+	expect(outcome.execution).toEqual({
+		ok: false,
+		error:
+			'Published snapshot for source "source-org" at commit "commit-1" was not found.',
+		logs: [],
+	})
+})
+
 test('executeJobOnce retries claimed platform blips and surfaces them on run-now', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const { env } = createExecuteEnv()
@@ -909,7 +944,11 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 		callerContext,
 	})
 
-	expect(result.execution).toEqual({ ok: true, result: { ok: true }, logs: [] })
+	expect(result.execution).toEqual({
+		ok: true,
+		result: { ok: true },
+		logs: [],
+	})
 	expect(result.deletedAfterRun).toBe(false)
 	const runRequest = executeSpy.mock.lastCall?.[1].request
 	expect(runRequest?.attribution).toEqual(callerContext.request?.attribution)
