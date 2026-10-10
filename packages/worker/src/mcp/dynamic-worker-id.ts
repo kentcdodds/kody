@@ -29,7 +29,10 @@ export type DynamicWorkerIdOptions = {
  * `packageContext`, live MCP connect/tool metadata, and other request-only
  * fields do not — those arrive on `evaluate` RPC.
  *
- * UUID fallback when modules are not deterministically hashable.
+ * Unique worker days are the billed and capped unit, so the same inputs must
+ * always mint the same id. A module value that cannot be hashed (a function
+ * or symbol smuggled past the module type) throws instead of minting a
+ * one-off id that would bill and count as a new worker on every call.
  */
 export async function createStableDynamicWorkerId(input: {
 	userId: string | null
@@ -37,9 +40,6 @@ export async function createStableDynamicWorkerId(input: {
 	workerOptions: DynamicWorkerIdOptions
 	cacheKeyVersion?: number
 }) {
-	if (!areWorkerModulesDeterministicallyHashable(input.workerOptions.modules)) {
-		return `${dynamicWorkerIdPrefix}${crypto.randomUUID()}`
-	}
 	const hash = await sha256Base64Url(
 		canonicalJsonStringify({
 			version: input.cacheKeyVersion ?? dynamicWorkerCacheKeyVersion,
@@ -55,86 +55,20 @@ export async function createStableDynamicWorkerId(input: {
 	return `${dynamicWorkerIdPrefix}${hash.slice(0, 43)}`
 }
 
-function areWorkerModulesDeterministicallyHashable(
-	modules: WorkerLoaderModules,
-) {
-	for (const moduleValue of Object.values(modules)) {
-		if (!isDeterministicallyHashableWorkerModule(moduleValue)) {
-			return false
-		}
-	}
-	return true
-}
-
-function isDeterministicallyHashableWorkerModule(
-	moduleValue: WorkerLoaderModules[string],
-) {
-	if (typeof moduleValue === 'string') return true
-	if (moduleValue === null || typeof moduleValue !== 'object') return false
-	const record = moduleValue as Record<string, unknown>
-	for (const key of ['js', 'cjs', 'text'] as const) {
-		const value = record[key]
-		if (value !== undefined && typeof value !== 'string') return false
-	}
-	if (record.data !== undefined && !(record.data instanceof ArrayBuffer)) {
-		return false
-	}
-	if (
-		record.json !== undefined &&
-		!isDeterministicallyHashableValue(record.json)
-	) {
-		return false
-	}
-	for (const [key, value] of Object.entries(record)) {
-		if (
-			key !== 'js' &&
-			key !== 'cjs' &&
-			key !== 'text' &&
-			key !== 'data' &&
-			key !== 'json'
-		) {
-			return false
-		}
-		if (key === 'data' || key === 'json') continue
-		if (value !== undefined && typeof value !== 'string') return false
-	}
-	return true
-}
-
-function isDeterministicallyHashableValue(value: unknown): boolean {
-	if (value === null) return true
-	const valueType = typeof value
-	if (
-		valueType === 'string' ||
-		valueType === 'number' ||
-		valueType === 'boolean'
-	) {
-		return true
-	}
-	if (valueType === 'bigint' || valueType === 'undefined') return true
-	if (valueType === 'function' || valueType === 'symbol') return false
-	if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return true
-	if (Array.isArray(value)) {
-		return value.every((entry) => isDeterministicallyHashableValue(entry))
-	}
-	if (valueType === 'object') {
-		const record = value as Record<string, unknown>
-		return Object.values(record).every((entry) =>
-			isDeterministicallyHashableValue(entry),
-		)
-	}
-	return false
-}
-
 function canonicalJsonStringify(value: unknown) {
-	return JSON.stringify(canonicalizeForHash(value))
+	return JSON.stringify(canonicalizeForHash(value, '$'))
 }
 
-function canonicalizeForHash(value: unknown): unknown {
+function canonicalizeForHash(value: unknown, path: string): unknown {
 	if (value === undefined) return { __kodyType: 'undefined' }
 	if (value === null) return null
 	if (typeof value === 'bigint')
 		return { __kodyType: 'bigint', value: String(value) }
+	if (typeof value === 'function' || typeof value === 'symbol') {
+		throw new TypeError(
+			`Dynamic Worker id input ${path} is a ${typeof value}; worker modules must be strings, ArrayBuffers, or JSON values.`,
+		)
+	}
 	if (typeof value !== 'object') return value
 	if (value instanceof ArrayBuffer) {
 		return {
@@ -151,11 +85,13 @@ function canonicalizeForHash(value: unknown): unknown {
 		}
 	}
 	if (Array.isArray(value))
-		return value.map((entry) => canonicalizeForHash(entry))
+		return value.map((entry, index) =>
+			canonicalizeForHash(entry, `${path}[${index}]`),
+		)
 	const record = value as Record<string, unknown>
 	return Object.fromEntries(
 		Object.keys(record)
 			.sort((left, right) => left.localeCompare(right))
-			.map((key) => [key, canonicalizeForHash(record[key])]),
+			.map((key) => [key, canonicalizeForHash(record[key], `${path}.${key}`)]),
 	)
 }

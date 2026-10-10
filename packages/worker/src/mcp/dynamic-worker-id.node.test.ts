@@ -66,25 +66,38 @@ test('createStableDynamicWorkerId is stable for the same modules, user, and stor
 	expect(await mintId({ userId: null, storageContext: null })).toBe(
 		variants.missingUser,
 	)
+})
 
-	const nonHashableModules = {
-		'executor.js': {
-			js: 'export default class Executor {}',
-			onLoad: async () => 'not-hashable',
-		},
-	}
-	const nonHashableFirst = await mintId({
-		storageContext: null,
-		modules: { 'executor.js': 'export default class Executor {}' },
+test('createStableDynamicWorkerId hashes binary and untyped module fields deterministically', async () => {
+	const binaryModules = () => ({
+		'executor.js': 'export default class Executor {}',
+		'lib.wasm': { wasm: new Uint8Array([0, 97, 115, 109]) },
+		'data.bin': { data: new Uint8Array([1, 2, 3]).buffer },
+		'config.json': { json: { b: [1, 2n], a: 'x' } },
 	})
-	const nonHashable = await mintId({
-		storageContext: null,
-		modules: nonHashableModules,
-	})
-	const nonHashableAgain = await mintId({
-		storageContext: null,
-		modules: nonHashableModules,
-	})
-	expect(nonHashable).not.toBe(nonHashableAgain)
-	expect(nonHashable).not.toBe(nonHashableFirst)
+	const first = await mintId({ modules: binaryModules() })
+	expect(await mintId({ modules: binaryModules() })).toBe(first)
+	expect(
+		await mintId({
+			modules: {
+				...binaryModules(),
+				'data.bin': { data: new Uint8Array([1, 2, 4]).buffer },
+			},
+		}),
+	).not.toBe(first)
+})
+
+test('createStableDynamicWorkerId rejects function-valued module fields instead of minting a one-off id', async () => {
+	await expect(
+		mintId({
+			modules: {
+				'executor.js': {
+					js: 'export default class Executor {}',
+					onLoad: async () => 'not-hashable',
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Dynamic Worker id input $.modules.executor.js.onLoad is a function',
+	)
 })
