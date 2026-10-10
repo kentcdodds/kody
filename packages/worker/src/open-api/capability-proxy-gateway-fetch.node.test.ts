@@ -85,7 +85,7 @@ test('parseCapabilityProxyGatewayFetchArgs accepts valid requests and rejects mi
 	).toThrow(ApiError)
 })
 
-test('runCapabilityProxyGatewayFetch hops to executeGatewayFetch with stamped package authority', async () => {
+test('runCapabilityProxyGatewayFetch verifies package stamp but does not grant secret authority', async () => {
 	authorizeLocalExecuteOwnedPackageId.mockResolvedValue('pkg-owned')
 	executeGatewayFetch.mockImplementation(
 		async (input: { request: Request }) => {
@@ -133,11 +133,14 @@ test('runCapabilityProxyGatewayFetch hops to executeGatewayFetch with stamped pa
 	expect(executeGatewayFetch).toHaveBeenCalledTimes(1)
 	const gatewayArg = executeGatewayFetch.mock.calls[0]?.[0] as {
 		request: Request
-		props: { grantedSecretAuthorityPackageIds?: Array<string> }
+		props: {
+			grantedSecretAuthorityPackageIds?: Array<string>
+			storageContext: { packageId: string | null }
+		}
 	}
-	expect(gatewayArg.props.grantedSecretAuthorityPackageIds).toEqual([
-		'pkg-owned',
-	])
+	expect(gatewayArg.props.grantedSecretAuthorityPackageIds).toBeUndefined()
+	expect(gatewayArg.props.storageContext.packageId).toBeNull()
+	expect(gatewayArg.request.headers.get('x-kody-secret-authority')).toBeNull()
 	expect(result.status).toBe(200)
 	expect(JSON.parse(atob(result.bodyBase64))).toEqual({ ok: true })
 })

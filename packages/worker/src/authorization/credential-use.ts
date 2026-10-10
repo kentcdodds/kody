@@ -2,9 +2,11 @@
  * Per-resource credential use checks for actor-attributed ad-hoc resolution.
  *
  * Ad-hoc execute (no package secret authority) must hold `secret:use` /
- * `integration:use` on the concrete org resource. A package's slot binding /
- * allowlist / usageMode / provider grant is itself the grant for package
- * runs: the runner needs `package:execute`, not per-credential Use.
+ * `integration:use` on the concrete org resource. Hosted package runs (bundler-
+ * proven identity) use slot binding / allowlist / usageMode / provider grant
+ * as the grant: the runner needs `package:execute`, not per-credential Use.
+ * CLI `--local` CapabilityProxy may stamp a client package id; that stamp is
+ * never secret authority — local hops always require Use like ad-hoc.
  * Automation is Owner and passes `authorize`. See ADR 0021 (amended).
  */
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'

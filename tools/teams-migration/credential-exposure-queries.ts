@@ -329,6 +329,7 @@ export async function runCredentialExposureQueries(input: {
 		notes: [
 			'Saved packages keep implicit self-authored credential access; the credentials redesign series removes it.',
 			'The full resolveCredential(orgId, actor, packageStamp?) choke point is the first PR of the credentials redesign series, not a separate GitHub issue.',
+			'CLI execute --local client package stamps are not credential authority (must hold secret:use / integration:use). Multi-member orgs are the practical blast radius for that former gap; no durable audit of local stamps exists.',
 		],
 	}
 }
