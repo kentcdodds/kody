@@ -391,11 +391,13 @@ the change up within the 60s entitlement cache.
 `execute_unique_workers_per_day`, `outbound_fetches_per_day`,
 `job_runs_per_day`, and `automation_invocations_per_day` are daily-counter
 resources (same mechanism as `email_sends_per_day`, consumed atomically with
-`consumeDailyEntitlement`). Public Free/Standard/Pro also apply a UTC-week hard
-cap on execute and outbound fetches (Monday–Sunday, summed from the same
-UserMeter daily rows). Whichever window hits first blocks. `max` and legacy
-Standard/Pro stay daily-only. They close the metering → enforcement loop for the
-compute surfaces `usage-metering.md` already observes:
+`consumeDailyEntitlement`; execute uses `consumeExecuteUniqueWorkerDay`, which
+spends a unit only for a worker not yet claimed that UTC day). Public
+Free/Standard/Pro also apply a UTC-week hard cap on execute and outbound fetches
+(Monday–Sunday, summed from the same UserMeter daily rows). Whichever window
+hits first blocks. `max` and legacy Standard/Pro stay daily-only. They close the
+metering → enforcement loop for the compute surfaces `usage-metering.md` already
+observes:
 
 - **Unique execute workers** (`execute_unique_workers_per_day`) count what
   Cloudflare bills: one unit per new Dynamic Worker (module graph) per org per
@@ -909,9 +911,9 @@ hint is always reduce-only (Free and Pro share 15 minutes).
 Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 unique execute workers
-> per day and you currently have 500. Remove or finish existing unique execute
-> workers per day you no longer need, or add credits at /account/usage#credits
-> to keep going past your include.
+> per day and you currently have 500. Rerun code you already ran today and vary
+> params; repeats are free, or add credits at /account/usage#credits to keep
+> going past your include.
 
 Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
@@ -971,11 +973,15 @@ Rules:
   the per-user UserMeter Durable Object** (UTC day keys). Call
   `consumeDailyEntitlement` on every attempt: it resolves the plan limit,
   atomically checks and increments inside the DO, and throws
-  `EntitlementLimitError` when over limit. Public Free/Standard/Pro execute and
-  outbound also check a UTC-week sum of those same daily rows; whichever window
-  hits first blocks. Every resolved plan has a finite numeric limit. Counting
-  attempts rather than successes keeps the limit abuse-resistant for permanent
-  rejects (parse failures, entitlement/quota rejects).
+  `EntitlementLimitError` when over limit. Unique execute workers are the
+  exception: `consumeExecuteUniqueWorkerDay` runs at the load gate once the
+  worker id is known, and spends only for a new worker that UTC day, so repeats
+  and calls refused earlier (rate brake, parse errors) never count. Public
+  Free/Standard/Pro execute and outbound also check a UTC-week sum of those same
+  daily rows; whichever window hits first blocks. Every resolved plan has a
+  finite numeric limit. Counting attempts rather than successes keeps the limit
+  abuse-resistant for permanent rejects (parse failures, entitlement/quota
+  rejects).
 
   **Cold bootstrap:** missing `(resource, day)` rows trigger
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
