@@ -1,6 +1,7 @@
 import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
 	orgOwnedAccountApiSection,
+	orgSectionKeysOnPerson,
 	parseOrgBillingPath,
 	parseOrgManagementPath,
 	parseOrgResourcePath,
@@ -66,9 +67,10 @@ async function resolveRequestOrg(
 ): Promise<RequestOrgResolution> {
 	const url = new URL(request.url)
 	const slugOnPage = orgSlugFromPageUrl(url.pathname)
+	const apiSection = orgOwnedAccountApiSection(url.pathname)
 	const slug =
 		slugOnPage ??
-		(orgOwnedAccountApiSection(url.pathname)
+		(apiSection && !orgSectionKeysOnPerson(apiSection)
 			? orgSlugFromAccountApiReferer(request, url.origin)
 			: null)
 	if (!slug) return 'personal'
