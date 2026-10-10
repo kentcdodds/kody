@@ -32,10 +32,15 @@ vi.mock('#worker/orgs/seat-sync-after-membership.ts', () => ({
 	syncSeatsAfterMembershipChange: (...args: Array<unknown>) =>
 		mocks.syncSeatsAfterMembershipChange(...args),
 }))
-vi.mock('#worker/orgs/billing.ts', () => ({
-	assertCanAcceptFreeOrgOwnership: (...args: Array<unknown>) =>
-		mocks.assertCanAcceptFreeOrgOwnership(...args),
-}))
+vi.mock('#worker/orgs/billing.ts', async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import('#worker/orgs/billing.ts')>()
+	return {
+		...actual,
+		assertCanAcceptFreeOrgOwnership: (...args: Array<unknown>) =>
+			mocks.assertCanAcceptFreeOrgOwnership(...args),
+	}
+})
 
 const {
 	createOrgMembersApiHandler,

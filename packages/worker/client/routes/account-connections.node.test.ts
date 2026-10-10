@@ -409,14 +409,10 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 			role: 'owner',
 		}).map((group) => [group.label, group.items.map((item) => item.href)]),
 	).toEqual([
-<<<<<<< HEAD
-		{
-			label: 'Organization',
-			items: [{ href: '/@acme/-/billing', label: 'Billing', icon: 'wallet' }],
-		},
-=======
-		['Organization', ['/@acme/settings', '/@acme/members', '/@acme/billing']],
->>>>>>> 786a2f445 (Add org settings and members pages)
+		[
+			'Organization',
+			['/@acme/-/settings', '/@acme/-/members', '/@acme/-/billing'],
+		],
 	])
 	expect(
 		workspaceRailGroups({
