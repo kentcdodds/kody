@@ -1,5 +1,6 @@
+import { resolve } from 'node:path'
 import { defineProject, mergeConfig } from 'vitest/config'
-import { sharedProjectConfig } from './vitest-shared.ts'
+import { rootDir, sharedProjectConfig } from './vitest-shared.ts'
 
 // This suite is intentionally just a couple of smoke journeys. They share one
 // Wrangler test harness (see getSharedMcpE2eServer) and each test seeds its
@@ -16,8 +17,15 @@ export default mergeConfig(
 			include: ['**/*.mcp-e2e.test.ts'],
 			testTimeout: mcpE2eTimeout,
 			hookTimeout: mcpE2eTimeout,
-			// Shared harness + D1: files must not run in parallel.
+			// Shared harness lives on globalThis; keep one worker and one module
+			// graph so files do not cold-boot Wrangler again.
 			fileParallelism: false,
+			isolate: false,
+			maxWorkers: 1,
+			setupFiles: [
+				resolve(rootDir, 'packages/worker/src/test-support/console-spies.ts'),
+				resolve(rootDir, 'tools/vitest-mcp-e2e-setup.ts'),
+			],
 		},
 	}),
 )

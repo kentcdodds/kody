@@ -38,6 +38,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 		{
 			ensureUser: server.ensureUser,
 			markEmailVerified: server.markEmailVerified,
+			clearAuthRateLimits: server.clearAuthRateLimits,
 		},
 	)
 
@@ -57,6 +58,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 		{
 			ensureUser: server.ensureUser,
 			markEmailVerified: server.markEmailVerified,
+			clearAuthRateLimits: server.clearAuthRateLimits,
 		},
 	)
 	void bootstrapClient
@@ -64,6 +66,7 @@ test('authenticated MCP search shows admin capabilities only to admin users', as
 	await using adminClient = await createMcpClient(server.origin, adminUser, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 
 	// Role was written through the live harness D1. Auth and the capability

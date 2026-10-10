@@ -61,28 +61,70 @@ export type SharedMcpE2eServer = {
 	ensureUser(user: TestUser): Promise<void>
 	markEmailVerified(email: string): Promise<void>
 	assignRole(email: string, role: string): Promise<void>
+	clearAuthRateLimits(): Promise<void>
 }
 
 type SharedMcpE2eServerHandle = SharedMcpE2eServer & {
 	close(): Promise<void>
 }
 
-let sharedMcpE2eServerPromise: Promise<SharedMcpE2eServerHandle> | null = null
+type SharedMcpE2eGlobalState = {
+	promise: Promise<SharedMcpE2eServerHandle> | null
+	bootCount: number
+	closing: Promise<void> | null
+}
+
+const sharedMcpE2eGlobalKey = Symbol.for('kody.mcpE2e.sharedServer')
+
+function sharedMcpE2eGlobalState(): SharedMcpE2eGlobalState {
+	const globalRef = globalThis as typeof globalThis & {
+		[sharedMcpE2eGlobalKey]?: SharedMcpE2eGlobalState
+	}
+	globalRef[sharedMcpE2eGlobalKey] ??= {
+		promise: null,
+		bootCount: 0,
+		closing: null,
+	}
+	return globalRef[sharedMcpE2eGlobalKey]
+}
 
 /**
- * One Wrangler test harness for the whole mcp-e2e project. Each test still
- * seeds its own user/org so order does not matter; only the cold boot is
- * shared. The vitest worker process exit tears the harness down.
+ * One Wrangler test harness for the whole mcp-e2e project. State lives on
+ * `globalThis` (and mcp-e2e sets `isolate: false`) so Vitest file isolation
+ * cannot cold-boot again. Each test still seeds its own user/org.
  */
 export async function getSharedMcpE2eServer(): Promise<SharedMcpE2eServer> {
-	sharedMcpE2eServerPromise ??= startSharedMcpE2eServer()
-	const server = await sharedMcpE2eServerPromise
+	const state = sharedMcpE2eGlobalState()
+	state.promise ??= startSharedMcpE2eServer().then((handle) => {
+		state.bootCount += 1
+		return handle
+	})
+	const server = await state.promise
 	return {
 		origin: server.origin,
 		ensureUser: (user) => server.ensureUser(user),
 		markEmailVerified: (email) => server.markEmailVerified(email),
 		assignRole: (email, role) => server.assignRole(email, role),
+		clearAuthRateLimits: () => server.clearAuthRateLimits(),
 	}
+}
+
+/** How many times the shared harness has been started in this worker. */
+export function sharedMcpE2eBootCount() {
+	return sharedMcpE2eGlobalState().bootCount
+}
+
+/** Dispose the shared harness (no-op when none is running). */
+export async function stopSharedMcpE2eServer() {
+	const state = sharedMcpE2eGlobalState()
+	if (!state.promise) return
+	state.closing ??= (async () => {
+		const handle = await state.promise
+		state.promise = null
+		await handle?.close()
+	})()
+	await state.closing
+	state.closing = null
 }
 
 /** Unique DNS-safe username + email so shared-DB tests stay isolated. */
@@ -220,6 +262,7 @@ async function startSharedMcpE2eServer(): Promise<SharedMcpE2eServerHandle> {
 		ensureUser: started.ensureUser,
 		markEmailVerified: started.markEmailVerified,
 		assignRole: started.assignRole,
+		clearAuthRateLimits: started.clearAuthRateLimits,
 		close: started.close,
 	}
 }
@@ -312,6 +355,18 @@ WHERE u.email = ? AND r.name = ?`,
 				)
 					.bind(email, role)
 					.run()
+			},
+			async clearAuthRateLimits() {
+				await env.APP_DB.prepare(
+					`CREATE TABLE IF NOT EXISTS _rate_limits (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	key TEXT NOT NULL,
+	ts INTEGER NOT NULL
+)`,
+				).run()
+				await env.APP_DB.prepare(
+					`DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%'`,
+				).run()
 			},
 			async close() {
 				try {
@@ -488,9 +543,13 @@ export async function createMcpClient(
 		extraHeaders?: Record<string, string>
 		ensureUser?: (user: TestUser) => Promise<void>
 		markEmailVerified?: (email: string) => Promise<void>
+		clearAuthRateLimits?: () => Promise<void>
 	},
 ) {
 	const extraHeaders = options.extraHeaders
+	if (options.clearAuthRateLimits) {
+		await options.clearAuthRateLimits()
+	}
 	if (options.ensureUser) {
 		await options.ensureUser(user)
 	}
@@ -571,8 +630,12 @@ export async function createModernMcpClient(
 		persistDir?: string
 		ensureUser?: (user: TestUser) => Promise<void>
 		markEmailVerified?: (email: string) => Promise<void>
+		clearAuthRateLimits?: () => Promise<void>
 	},
 ) {
+	if (options.clearAuthRateLimits) {
+		await options.clearAuthRateLimits()
+	}
 	if (options.ensureUser) {
 		await options.ensureUser(user)
 	}

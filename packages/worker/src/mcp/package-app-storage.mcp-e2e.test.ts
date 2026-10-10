@@ -115,6 +115,7 @@ test('package app fetch handler can use packageStorage against a real local work
 	await using mcp = await createMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 	const { username } = user
 	const files = buildPackageFiles(username)

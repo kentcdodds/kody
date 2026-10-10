@@ -20,6 +20,7 @@ test('pinned 2026-07-28 client negotiates the stateless lane and calls search', 
 	await using modern = await createModernMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 
 	const tools = await modern.client.listTools()
@@ -45,6 +46,7 @@ test('stateless lane lists onboarding prompts and emits execute progress', async
 	await using modern = await createModernMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 
 	const prompts = await modern.client.listPrompts()

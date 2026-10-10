@@ -128,6 +128,7 @@ test('browser websocket to a package app /ws upgrades and runs the realtime hook
 	await using mcp = await createMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 	const { username } = user
 	let packageId: string | undefined

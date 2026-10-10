@@ -50,6 +50,7 @@ test('a Remix package app publishes and serves SSR routes, a form action, middle
 	await using mcp = await createMcpClient(server.origin, user, {
 		ensureUser: server.ensureUser,
 		markEmailVerified: server.markEmailVerified,
+		clearAuthRateLimits: server.clearAuthRateLimits,
 	})
 	const { username } = user
 	let packageId: string | undefined
