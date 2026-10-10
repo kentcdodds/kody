@@ -67,6 +67,7 @@ import { getCachedUserEntitlement } from '#worker/entitlements/service.ts'
 import {
 	admitHostedExecuteCall,
 	createExecuteWorkerDayClaim,
+	executeRepeatKey,
 } from '#mcp/execute-admission.ts'
 import {
 	abandonRunRecord,
@@ -395,7 +396,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					...executeAttribution,
 				}
 
-				// Runaway brake before claim/bundling/sandbox so a refused call
+				// Runaway and loop brakes before claim/bundling/sandbox so a refused call
 				// costs nothing and does not poison a key. The plan cap counts
 				// unique workers and is spent inside the executor, once the
 				// worker id is known and before that worker loads.
@@ -417,7 +418,21 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							})
 						: undefined
 				if (claimWorkerDay) {
-					await admitHostedExecuteCall({ env, ownerId: storageOwnerId })
+					await admitHostedExecuteCall({
+						env,
+						ownerId: storageOwnerId,
+						repeatKey: await executeRepeatKey({
+							credential: callerContext.request?.credential ?? null,
+							actorUserId:
+								callerContext.request?.actor?.userId ??
+								callerContext.user?.userId ??
+								null,
+							conversationId,
+							code,
+							invoke,
+							params,
+						}),
+					})
 				}
 
 				if (normalizedIdempotencyKey && storageOwnerId) {

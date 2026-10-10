@@ -407,6 +407,17 @@ compute surfaces `usage-metering.md` already observes:
   every call, including warm repeats the plan cap does not, and is a safety net
   rather than a plan limit (busiest production org-minute over the 30 days to
   2026-10-10: 64 calls).
+- **Execute loop brake**: the same `admitExecuteCall` also refuses a connection
+  that starts the identical call (same code or invoke target and same canonical
+  params) more than `identicalExecuteCallsPerWindow` (20) times in a rolling
+  `identicalExecuteCallWindowMs` (60s) window, with an "Execute loop detected"
+  message that tells the agent it is looping. The repeat key
+  (`executeRepeatKey`) hashes the request credential, acting user, the caller's
+  `conversationId` when it sent one, the code or invoke target, and params. A
+  status poll every 3 seconds stays under it; a back-to-back retry loop trips it
+  within a minute. Refused calls are not recorded, so a looping agent gets at
+  most 20 identical calls through per minute. In memory and bounded to 1,000
+  keys per org, like the runaway brake.
 - **Outbound fetches** are consumed at the top of `executeGatewayFetch`
   (`packages/worker/src/mcp/fetch-gateway.ts`), which every sandbox fetch passes
   through, before secret expansion. `FetchGatewayProps.email` carries the acting

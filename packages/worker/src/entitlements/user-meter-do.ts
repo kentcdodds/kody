@@ -8,6 +8,13 @@ import {
 	restoreToBookmark,
 } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
+import {
+	admitExecuteCallInWindows,
+	ExecuteRepeatWindow,
+	type ExecuteAdmissionResult,
+	type ExecuteCallMinuteWindow,
+	type ExecuteRepeatInput,
+} from './execute-admission-windows.ts'
 import { type EntitlementResource } from '#universal/plans.ts'
 
 /** Daily rate-style resources stored in the per-user UserMeter (UTC day keys). */
@@ -116,9 +123,7 @@ export type UserMeterWorkerDayConsumeResult =
 			weekCount?: number
 	  })
 
-export type UserMeterExecuteAdmissionResult =
-	| { admitted: true; count: number }
-	| { admitted: false; count: number; retryAfterMs: number }
+export type UserMeterExecuteAdmissionResult = ExecuteAdmissionResult
 
 export type UserMeterReadResult = UserMeterBootstrapState | UserMeterReadyState
 
@@ -1054,31 +1059,29 @@ class UserMeterBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Per-minute runaway brake for hosted execute calls. Held in memory: an
-	 * evicted meter starts the minute over, which only ever admits more, so
-	 * this stays a safety net rather than a billed counter.
+	 * Per-minute runaway brake and identical-call loop brake for hosted
+	 * execute calls. Held in memory: an evicted meter starts both windows
+	 * over, which only ever admits more, so these stay safety nets rather
+	 * than billed counters. A refused call is not counted in either window.
 	 */
 	async admitExecuteCall(input: {
 		nowMs: number
 		limitPerMinute: number
+		repeat?: ExecuteRepeatInput
 	}): Promise<UserMeterExecuteAdmissionResult> {
-		const minute = Math.floor(input.nowMs / 60_000)
-		if (this.executeCallMinute?.minute !== minute) {
-			this.executeCallMinute = { minute, count: 0 }
-		}
-		const window = this.executeCallMinute
-		if (window.count >= input.limitPerMinute) {
-			return {
-				admitted: false,
-				count: window.count,
-				retryAfterMs: (minute + 1) * 60_000 - input.nowMs,
-			}
-		}
-		window.count += 1
-		return { admitted: true, count: window.count }
+		return admitExecuteCallInWindows({
+			...input,
+			minuteWindow: this.executeCallMinute,
+			repeatWindow: this.executeRepeatWindow,
+		})
 	}
 
-	private executeCallMinute: { minute: number; count: number } | null = null
+	private readonly executeCallMinute: ExecuteCallMinuteWindow = {
+		minute: 0,
+		count: 0,
+	}
+
+	private readonly executeRepeatWindow = new ExecuteRepeatWindow()
 
 	private checkDailyWindows(input: {
 		resource: DailyEntitlementResource
@@ -2501,10 +2504,11 @@ export type UserMeterRpc = DurableObjectPitrRpc & {
 		weekStart?: string
 		weekLimit?: number | null
 	}) => Promise<UserMeterWorkerDayConsumeResult>
-	/** In-memory per-minute hosted execute admission. */
+	/** In-memory per-minute and identical-call hosted execute admission. */
 	admitExecuteCall: (input: {
 		nowMs: number
 		limitPerMinute: number
+		repeat?: ExecuteRepeatInput
 	}) => Promise<UserMeterExecuteAdmissionResult>
 	/** Cold initialize authoritative state from a caller-provided physical byte count. */
 	initializeStorageBytes: (input: {
