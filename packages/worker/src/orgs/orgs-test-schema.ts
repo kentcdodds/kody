@@ -181,8 +181,10 @@ export async function ensureOrgsTestSchema(db: D1Database) {
 				user_id TEXT PRIMARY KEY NOT NULL,
 				promotion_code_id TEXT NOT NULL,
 				org_id TEXT NOT NULL,
-				checkout_session_id TEXT NOT NULL,
-				claimed_at TEXT NOT NULL
+				status TEXT NOT NULL CHECK (status IN ('reserved', 'claimed')),
+				checkout_session_id TEXT,
+				reserved_at TEXT NOT NULL,
+				claimed_at TEXT
 			)`,
 		)
 		.run()

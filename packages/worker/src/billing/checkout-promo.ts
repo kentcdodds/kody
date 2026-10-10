@@ -94,6 +94,13 @@ export const promoRejectedByStripe =
 	"That promo code can't be applied to this plan."
 
 /** True once `userId` has completed a discounted checkout for any org. */
+/**
+ * A reservation older than this is abandoned: Stripe expires a Checkout
+ * Session after 24 hours at most, and `checkout.session.expired` releases the
+ * row when it arrives. The age bound covers a webhook that never did.
+ */
+const promoReservationMaxAgeMs = 25 * 60 * 60 * 1000
+
 export async function hasPersonClaimedPromo(
 	db: D1Database,
 	userId: string,
@@ -105,7 +112,84 @@ export async function hasPersonClaimedPromo(
 	return row != null
 }
 
-/** Metadata to attach to a Checkout Session that carries a promo code. */
+/**
+ * Reserve the person's one promo claim before the Checkout Session exists.
+ * The primary key on user_id makes this atomic: of two concurrent checkouts
+ * exactly one inserts, the other sees the row and is refused. Returns false
+ * when the person already holds a claim or a live reservation.
+ */
+export async function reservePromoClaim(input: {
+	db: D1Database
+	userId: string
+	promotionCodeId: string
+	orgId: string
+	now: Date
+}): Promise<boolean> {
+	const nowIso = input.now.toISOString()
+	const staleBefore = new Date(
+		input.now.getTime() - promoReservationMaxAgeMs,
+	).toISOString()
+	await input.db
+		.prepare(
+			`DELETE FROM billing_promo_claims
+			 WHERE user_id = ? AND status = 'reserved' AND reserved_at < ?`,
+		)
+		.bind(input.userId, staleBefore)
+		.run()
+	const inserted = await input.db
+		.prepare(
+			`INSERT OR IGNORE INTO billing_promo_claims
+			 (user_id, promotion_code_id, org_id, status, checkout_session_id, reserved_at, claimed_at)
+			 VALUES (?, ?, ?, 'reserved', NULL, ?, NULL)`,
+		)
+		.bind(input.userId, input.promotionCodeId, input.orgId, nowIso)
+		.run()
+	return (inserted.meta.changes ?? 0) > 0
+}
+
+/** Tie the reservation to the Checkout Session Stripe created for it. */
+export async function attachPromoReservationSession(input: {
+	db: D1Database
+	userId: string
+	checkoutSessionId: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`UPDATE billing_promo_claims
+			 SET checkout_session_id = ?
+			 WHERE user_id = ? AND status = 'reserved'`,
+		)
+		.bind(input.checkoutSessionId, input.userId)
+		.run()
+}
+
+/** Release a reservation whose checkout never started (Stripe refused it). */
+export async function releasePromoReservation(input: {
+	db: D1Database
+	userId: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`DELETE FROM billing_promo_claims WHERE user_id = ? AND status = 'reserved'`,
+		)
+		.bind(input.userId)
+		.run()
+}
+
+/** Release the reservation behind an expired or abandoned Checkout Session. */
+export async function releasePromoReservationForCheckoutSession(input: {
+	db: D1Database
+	checkoutSessionId: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`DELETE FROM billing_promo_claims
+			 WHERE checkout_session_id = ? AND status = 'reserved'`,
+		)
+		.bind(input.checkoutSessionId)
+		.run()
+}
+
 export function promoClaimMetadata(input: {
 	userId: string
 	promotionCodeId: string
@@ -117,9 +201,9 @@ export function promoClaimMetadata(input: {
 }
 
 /**
- * Record the claim named in a completed Checkout Session's metadata. Sessions
- * without promo metadata are ignored; a person's first claim wins, so a
- * second discounted checkout that slipped through is not re-counted.
+ * Finalize the claim for a completed discounted checkout. Upserts so a
+ * completed session whose reservation was already released (webhook order,
+ * stale-age cleanup) still counts; a claim that already exists is kept as is.
  */
 export async function recordPromoClaimFromCheckoutSession(input: {
 	db: D1Database
@@ -131,18 +215,27 @@ export async function recordPromoClaimFromCheckoutSession(input: {
 	const promotionCodeId =
 		input.session.metadata?.[promoClaimMetadataKeys.promotionCodeId]?.trim()
 	if (!userId || !promotionCodeId) return
+	const nowIso = input.now.toISOString()
 	await input.db
 		.prepare(
-			`INSERT OR IGNORE INTO billing_promo_claims
-			 (user_id, promotion_code_id, org_id, checkout_session_id, claimed_at)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO billing_promo_claims
+			 (user_id, promotion_code_id, org_id, status, checkout_session_id, reserved_at, claimed_at)
+			 VALUES (?, ?, ?, 'claimed', ?, ?, ?)
+			 ON CONFLICT(user_id) DO UPDATE SET
+			   promotion_code_id = excluded.promotion_code_id,
+			   org_id = excluded.org_id,
+			   status = 'claimed',
+			   checkout_session_id = excluded.checkout_session_id,
+			   claimed_at = excluded.claimed_at
+			 WHERE billing_promo_claims.status = 'reserved'`,
 		)
 		.bind(
 			userId,
 			promotionCodeId,
 			input.orgId,
 			input.session.id,
-			input.now.toISOString(),
+			nowIso,
+			nowIso,
 		)
 		.run()
 }

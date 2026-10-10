@@ -69,7 +69,7 @@ test('assertWithinOrgBudget skips the gate only when the org row is missing', as
 		assertWithinOrgBudget({
 			db,
 			env: {} as never,
-			orgId: 'missing-org',
+			orgId: ownerIdFromStored('missing-org'),
 			actorUserId: 'person-1',
 			automationSource: null,
 			estimatedDeltaMicroUsd: 1,
@@ -87,7 +87,7 @@ test('assertWithinOrgBudget fails closed when the org lookup errors', async () =
 		assertWithinOrgBudget({
 			db,
 			env: {} as never,
-			orgId: 'org-1',
+			orgId: ownerIdFromStored('org-1'),
 			actorUserId: 'person-1',
 			automationSource: null,
 			estimatedDeltaMicroUsd: 1,

@@ -686,7 +686,7 @@ test('a completed checkout with promo metadata records the claim for that person
 	})
 
 	const claims = await env.APP_DB.prepare(
-		`SELECT user_id, promotion_code_id, org_id, checkout_session_id, claimed_at
+		`SELECT user_id, promotion_code_id, org_id, status, checkout_session_id, claimed_at
 		 FROM billing_promo_claims WHERE user_id = ?`,
 	)
 		.bind(member.stableUserId)
@@ -696,6 +696,7 @@ test('a completed checkout with promo metadata records the claim for that person
 			user_id: member.stableUserId,
 			promotion_code_id: 'promo_agency_1',
 			org_id: teamOrgId,
+			status: 'claimed',
 			checkout_session_id: 'cs_promo_org',
 			claimed_at: now.toISOString(),
 		},

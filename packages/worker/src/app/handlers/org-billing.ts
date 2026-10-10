@@ -42,6 +42,7 @@ import {
 	subscriptionHasPrice,
 } from '#worker/billing/billing-config.ts'
 import {
+	attachPromoReservationSession,
 	existingSubscriptionPromoRejection,
 	hasPersonClaimedPromo,
 	parsePromoCodeInput,
@@ -49,6 +50,8 @@ import {
 	promoClaimMetadata,
 	promoIntervalRejection,
 	promoRejectedByStripe,
+	releasePromoReservation,
+	reservePromoClaim,
 	resolveCheckoutPromotionCode,
 } from '#worker/billing/checkout-promo.ts'
 import {
@@ -401,6 +404,19 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 						return jsonResponse({ ok: false, error: resolved.error }, 400)
 					}
 					promotionCodeId = resolved.id
+					const reserved = await reservePromoClaim({
+						db: env.APP_DB,
+						userId: user.mcpUser.userId,
+						promotionCodeId,
+						orgId: org.id,
+						now: new Date(),
+					})
+					if (!reserved) {
+						return jsonResponse(
+							{ ok: false, error: promoAlreadyClaimedRejection },
+							409,
+						)
+					}
 				}
 
 				// Org is the billing subject; the signed-in member only authorizes.
@@ -430,6 +446,12 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 						},
 					})
 				} catch (error) {
+					if (promotionCodeId) {
+						await releasePromoReservation({
+							db: env.APP_DB,
+							userId: user.mcpUser.userId,
+						})
+					}
 					// The code passed Kody's checks, so a 400 here is Stripe's own
 					// coupon rule (product restriction, first-time-only).
 					if (
@@ -447,6 +469,13 @@ export function createOrgBillingCheckoutApiHandler(env: Env) {
 						)
 					}
 					throw error
+				}
+				if (promotionCodeId) {
+					await attachPromoReservationSession({
+						db: env.APP_DB,
+						userId: user.mcpUser.userId,
+						checkoutSessionId: session.id,
+					})
 				}
 				recordCheckoutFunnelEvent(env, {
 					stage: 'checkout_started',
