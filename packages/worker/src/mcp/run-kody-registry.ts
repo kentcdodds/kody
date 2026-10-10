@@ -87,7 +87,7 @@ import {
 	findUnboundRuntimeHelperAccess,
 } from '#worker/package-runtime/unbound-runtime-helpers.ts'
 import { runWithTransientDurableObjectResetRetry } from '#worker/durable-object-reset-retry.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isPreRunUsageDenial } from '#worker/entitlements/errors.ts'
 import { evaluationHasHostMediatedSideEffects } from '#mcp/evaluation-side-effects.ts'
 import { isTransientJobExecutionError } from '#worker/jobs/execution-safety.ts'
 import { beginRunRecord, finishRunRecord } from '#worker/run-records/service.ts'
@@ -1120,7 +1120,7 @@ export async function runBundledModuleWithRegistry(
 		if (callerOwnsScheduledJobRun && isTransientJobExecutionError(error)) {
 			return true
 		}
-		return options.claimWorkerDay != null && isEntitlementLimitError(error)
+		return options.claimWorkerDay != null && isPreRunUsageDenial(error)
 	}
 	function resolveThrownRunError(error: unknown): {
 		error: unknown

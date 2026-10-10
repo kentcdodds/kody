@@ -62,7 +62,7 @@ import {
 	createRawFetchHostSink,
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isPreRunUsageDenial } from '#worker/entitlements/errors.ts'
 import { getCachedUserEntitlement } from '#worker/entitlements/service.ts'
 import {
 	admitHostedExecuteCall,
@@ -518,10 +518,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							)
 							return await execution
 						} catch (cause) {
-							// A plan-limit denial happens before the worker loads:
-							// the outer boundary releases the key, as for any
-							// other pre-sandbox refusal.
-							if (isEntitlementLimitError(cause)) throw cause
+							// A usage denial happens before the worker loads: the
+							// outer boundary releases the key, as for any other
+							// pre-sandbox refusal.
+							if (isPreRunUsageDenial(cause)) throw cause
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
 							// route it through the sandbox-error result path so it

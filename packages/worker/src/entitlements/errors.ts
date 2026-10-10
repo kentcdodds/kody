@@ -568,3 +568,16 @@ export function coerceBudgetLimitError(
 	if (!parsed) return null
 	return new BudgetLimitError(parsed)
 }
+
+/**
+ * Usage refusals a counted entry point raises before any work runs: plan
+ * limits, the past-include stop, and org budgets. Callers that pre-claimed
+ * an idempotency key release it so a retry can succeed once usage allows.
+ */
+export function isPreRunUsageDenial(error: unknown): boolean {
+	return (
+		isEntitlementLimitError(error) ||
+		isComputeOverageLimitError(error) ||
+		isBudgetLimitError(error)
+	)
+}
