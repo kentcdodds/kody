@@ -270,3 +270,54 @@ test('purchasable Pro has Max stock always; empty wallet keeps the full Pro incl
 	expect(resolvePlanLimits('free', 'public', 'funded')).toEqual(planLimits.free)
 	expect(resolvePlanLimits('max', 'public', 'funded')).toEqual(planLimits.max)
 })
+
+test('purchasable Pro rates pool across paid seats; funded ceilings scale with seats; stock and Free do not', () => {
+	expect(
+		limitMismatches([
+			[1_500, 'pro', 'execute_unique_workers_per_day', 'public', 'empty', 3],
+			[45_000, 'pro', 'outbound_fetches_per_day', 'public', 'empty', 3],
+			[4_500, 'pro', 'job_runs_per_day', 'public', 'empty', 3],
+			[10_000, 'pro', 'saved_packages', 'public', 'empty', 3],
+			[200, 'pro', 'email_sends_per_day', 'public', 'empty', 3],
+			[75_000, 'pro', 'execute_unique_workers_per_day', 'public', 'funded', 3],
+			// 45,000 × 50 is past the ceiling, so seats × 80,000 binds.
+			[240_000, 'pro', 'outbound_fetches_per_day', 'public', 'funded', 3],
+			[200, 'pro', 'concurrent_workflows', 'public', 'funded', 3],
+			[150, 'free', 'execute_unique_workers_per_day', 'public', 'none', 3],
+			[1_500, 'pro', 'execute_unique_workers_per_day', 'public', 'none', 3],
+		]),
+	).toEqual([])
+	expect([
+		resolveWeeklyPlanLimit(
+			'pro',
+			'execute_unique_workers_per_day',
+			'public',
+			'empty',
+			3,
+		),
+		resolveWeeklyPlanLimit(
+			'pro',
+			'execute_unique_workers_per_day',
+			'public',
+			'funded',
+			3,
+		),
+		resolveWeeklyPlanLimit(
+			'pro',
+			'outbound_fetches_per_day',
+			'public',
+			'funded',
+			3,
+		),
+	]).toEqual([3_600, 180_000, 3 * 560_000])
+	expect(resolvePlanLimits('free', 'public', 'none', 3)).toEqual(
+		planLimits.free,
+	)
+	// Unknown or fractional seat counts never shrink the pool below one seat.
+	expect(resolvePlanLimits('pro', 'public', 'empty', 0)).toEqual(
+		proCreditsPlanLimits,
+	)
+	expect(resolvePlanLimits('pro', 'public', 'empty', Number.NaN)).toEqual(
+		proCreditsPlanLimits,
+	)
+})
