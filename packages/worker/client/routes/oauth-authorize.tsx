@@ -12,6 +12,7 @@ import {
 	resetTurnstileWidgets,
 	turnstileResponseFieldName,
 } from '#client/public-form-protection.ts'
+import { resolveSignInStatusAfterPageshow } from '#client/routes/oauth-authorize-bfcache.ts'
 import {
 	startOauthAuthorizePasskeySignIn,
 	startOauthAuthorizeProviderSignIn,
@@ -104,6 +105,7 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 	let consentInteractive = false
 	// Tracks the picker choice so the grant heading matches the submitted org.
 	let pickedOrgSlug: string | null | undefined
+	let bfcacheSignInResetBound = false
 
 	function setMessage(next: OAuthAuthorizeMessage | null) {
 		message = next
@@ -454,6 +456,25 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 		// Consume before scheduling /auth/providers.json. An SSR embed or SPA
 		// preload is the provider list. The fetch runs only on a miss.
 		const appliedRouteData = applyRouteLoaderData(currentHref)
+		if (typeof window !== 'undefined' && !bfcacheSignInResetBound) {
+			bfcacheSignInResetBound = true
+			window.addEventListener(
+				'pageshow',
+				(event) => {
+					const next = resolveSignInStatusAfterPageshow(
+						event.persisted,
+						signInStatus,
+					)
+					if (next === signInStatus) return
+					// Provider/passkey start spends the Turnstile token before
+					// navigate; bfcache keeps the spent widget (same as setSignInError).
+					resetTurnstileWidgets()
+					signInStatus = next
+					handle.update()
+				},
+				{ signal: handle.signal },
+			)
+		}
 		if (typeof document !== 'undefined' && turnstileSiteKey === undefined) {
 			handle.queueTask(loadProtectionConfig)
 		}
