@@ -112,7 +112,11 @@ async function resolveSecretPageOrgSlug(input: {
 		const fromCaller = secretPageOrgSlugFromCaller(input.caller)
 		if (fromCaller) return fromCaller
 	}
-	return await getPackageScopeByUserId(input.db, input.userId)
+	try {
+		return await getPackageScopeByUserId(input.db, input.userId)
+	} catch {
+		return null
+	}
 }
 
 export async function assertPackageCanAccessResolvedSecret(input: {
@@ -167,24 +171,27 @@ export async function assertPackageCanAccessResolvedSecret(input: {
 		return
 	}
 
-	const approvalUrl = buildSecretPackageApprovalUrl({
-		baseUrl: input.baseUrl,
-		orgSlug: await resolveSecretPageOrgSlug({
-			db: input.env.APP_DB,
-			userId: input.userId,
-			orgSlug: input.orgSlug,
-		}),
-		name: input.secretName,
-		scope: 'user',
-		packageId: savedPackage.id,
-		kodyId: savedPackage.kodyId,
-		storageContext: {
-			sessionId: input.storageContext?.sessionId ?? null,
-			appId: input.storageContext?.appId ?? null,
-			packageId,
-			storageId: input.storageContext?.storageId ?? null,
-		},
+	const orgSlug = await resolveSecretPageOrgSlug({
+		db: input.env.APP_DB,
+		userId: input.userId,
+		orgSlug: input.orgSlug,
 	})
+	const approvalUrl = orgSlug
+		? buildSecretPackageApprovalUrl({
+				baseUrl: input.baseUrl,
+				orgSlug,
+				name: input.secretName,
+				scope: 'user',
+				packageId: savedPackage.id,
+				kodyId: savedPackage.kodyId,
+				storageContext: {
+					sessionId: input.storageContext?.sessionId ?? null,
+					appId: input.storageContext?.appId ?? null,
+					packageId,
+					storageId: input.storageContext?.storageId ?? null,
+				},
+			})
+		: null
 	throw new PackageSecretAccessDeniedError(
 		createPackageSecretAccessDeniedMessage({
 			secretName: input.secretName,
@@ -432,15 +439,17 @@ export async function findMissingPackageApprovals(input: {
 				secretName: mount.name,
 				packageId: savedPackage.id,
 				kodyId: savedPackage.kodyId,
-				approvalUrl: buildSecretPackageApprovalUrl({
-					baseUrl: input.baseUrl,
-					orgSlug,
-					name: mount.name,
-					scope: resolved.scope ?? mount.scope ?? 'user',
-					packageId: savedPackage.id,
-					kodyId: savedPackage.kodyId,
-					storageContext,
-				}),
+				approvalUrl: orgSlug
+					? buildSecretPackageApprovalUrl({
+							baseUrl: input.baseUrl,
+							orgSlug,
+							name: mount.name,
+							scope: resolved.scope ?? mount.scope ?? 'user',
+							packageId: savedPackage.id,
+							kodyId: savedPackage.kodyId,
+							storageContext,
+						})
+					: '',
 			}
 		}),
 	)
