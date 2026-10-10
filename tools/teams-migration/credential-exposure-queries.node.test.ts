@@ -4,7 +4,10 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { assertReadOnlySql } from './production-queries.ts'
 import {
 	credentialAuditCandidateSql,
+	filterNonOwnerOrGrantedCredentialAudit,
+	liveCredentialGrantsSql,
 	liveOwnerMembershipsSql,
+	liveTeamMembersSql,
 	multiMemberOrgsSql,
 	orgsWithOutsideGrantsSql,
 	outsideGrantsSql,
@@ -17,6 +20,8 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 		orgsWithOutsideGrantsSql,
 		credentialAuditCandidateSql,
 		liveOwnerMembershipsSql,
+		liveCredentialGrantsSql,
+		liveTeamMembersSql,
 	]) {
 		expect(() => assertReadOnlySql(sql)).not.toThrow()
 	}
@@ -55,9 +60,12 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 			) VALUES (
 				'g1', 'owner-id', 'package', 'pkg-1', 'user', 'collab-id',
 				'use', 'owner-id', ?, ?
+			), (
+				'g2', 'owner-id', 'secret', 'api-key', 'user', 'member-id',
+				'use', 'owner-id', ?, ?
 			)`,
 		)
-		.run(now, now)
+		.run(now, now, now, now)
 
 	const multi = sqlite.prepare(multiMemberOrgsSql).all() as Array<{
 		org_id: string
@@ -74,4 +82,64 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 	])
 	const orgs = sqlite.prepare(orgsWithOutsideGrantsSql).all()
 	expect(orgs).toHaveLength(1)
+
+	const grants = sqlite.prepare(liveCredentialGrantsSql).all() as Array<{
+		subject_id: string
+		resource_type: string
+	}>
+	expect(grants).toEqual([
+		expect.objectContaining({
+			subject_id: 'member-id',
+			resource_type: 'secret',
+		}),
+	])
+})
+
+test('audit filter keeps only actors who are neither owners nor granted subjects', () => {
+	const ownerKeys = new Set(['org-a:owner-a'])
+	const userGrantKeys = new Set(['org-a:secret:s1:user:granted-u'])
+	const teamGrantByResource = new Map([['org-a:integration:i1', ['team-1']]])
+	const teamMemberKeys = new Set(['team-1:team-user'])
+	const kept = filterNonOwnerOrGrantedCredentialAudit({
+		candidates: [
+			{
+				org_id: 'org-a',
+				actor_user_id: 'owner-a',
+				resource_type: 'secret',
+				resource_id: 's1',
+			},
+			{
+				org_id: 'org-a',
+				actor_user_id: 'granted-u',
+				resource_type: 'secret',
+				resource_id: 's1',
+			},
+			{
+				org_id: 'org-a',
+				actor_user_id: 'team-user',
+				resource_type: 'integration',
+				resource_id: 'i1',
+			},
+			{
+				org_id: 'org-a',
+				actor_user_id: 'stranger',
+				resource_type: 'secret',
+				resource_id: 's1',
+			},
+			{
+				org_id: 'org-a',
+				actor_user_id: 'stranger',
+				resource_type: 'integration',
+				resource_id: 'i1',
+			},
+		],
+		ownerKeys,
+		userGrantKeys,
+		teamGrantByResource,
+		teamMemberKeys,
+	})
+	expect(kept.map((row) => row['actor_user_id'])).toEqual([
+		'stranger',
+		'stranger',
+	])
 })

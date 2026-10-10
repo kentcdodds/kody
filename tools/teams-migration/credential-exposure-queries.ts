@@ -2,6 +2,16 @@
  * Read-only D1 counts for ambient credential-use blast radius after Teams.
  * Counts and ids only. Reuses assertReadOnlySql from production-queries.
  *
+ * Report shape (sealed):
+ * - orgs with more than one live member, or any outside grants
+ * - secret / integration (MCP servers are integration resources) audit rows
+ *   where the actor was not an org owner and not a granted subject for that
+ *   resource (user grant or team grant membership)
+ *
+ * Saved packages' implicit self-authored access is intentionally left as-is;
+ * the credentials redesign series removes it. The full `resolveCredential`
+ * choke point is the first PR of that series (not a separate GitHub issue).
+ *
  * Usage (same Cloudflare env as teams-production-queries):
  *   node tools/teams-migration/credential-exposure-queries.ts \
  *     --target production|kody-branch-* \
@@ -67,8 +77,9 @@ WHERE g.deleted_at IS NULL
 
 /**
  * Org audit rows for secret/integration resources where the actor is not the
- * org id. AUDIT_DB has no org_memberships (APP_DB only), so owner filtering
- * happens in JS after a second APP_DB membership query.
+ * org id. MCP servers authorize as integration resources. AUDIT_DB has no
+ * org_memberships / grants (APP_DB only), so owner and grant filtering happens
+ * in JS after APP_DB membership and grant queries.
  */
 export const credentialAuditCandidateSql = `SELECT e.org_id AS org_id,
 	e.action AS action, e.resource_type AS resource_type,
@@ -86,18 +97,45 @@ export const liveOwnerMembershipsSql = `SELECT org_id, user_id
 FROM org_memberships
 WHERE role = 'owner' AND deleted_at IS NULL`
 
+/**
+ * Live secret/integration grants (user or team subjects). MCP servers use the
+ * integration resource type.
+ */
+export const liveCredentialGrantsSql = `SELECT g.org_id AS org_id,
+	g.resource_type AS resource_type, g.resource_id AS resource_id,
+	g.subject_type AS subject_type, g.subject_id AS subject_id
+FROM grants g
+WHERE g.deleted_at IS NULL
+	AND g.resource_type IN ('secret', 'integration')`
+
+/** Live team memberships for resolving team-subject grants to users. */
+export const liveTeamMembersSql = `SELECT team_id, user_id
+FROM team_members
+WHERE deleted_at IS NULL`
+
 export type CredentialExposureReport = {
-	version: 1
+	version: 2
 	target: string
 	ranAt: string
+	/**
+	 * Orgs where ambient credential use by a non-owner was possible before the
+	 * per-resource Use fix: more than one live member, or any outside grant.
+	 */
+	orgsWithExposureSurface: { count: number; orgIds: Array<string> }
 	multiMemberOrgs: { count: number; rows: Array<Record<string, unknown>> }
 	outsideGrants: { count: number; rows: Array<Record<string, unknown>> }
 	orgsWithOutsideGrants: { count: number }
-	nonOwnerCredentialAudit: {
+	/**
+	 * Capability / audit-surface events for secret or integration (incl. MCP)
+	 * where the actor was not an org owner and not a granted subject. Ambient
+	 * placeholder expansion did not write org_audit_events historically.
+	 */
+	nonOwnerOrGrantedCredentialAudit: {
 		count: number
 		rows: Array<Record<string, unknown>>
 		note: string
 	}
+	notes: Array<string>
 }
 
 async function resolveAuditD1Uuid(
@@ -115,6 +153,31 @@ async function resolveAuditD1Uuid(
 	}
 }
 
+export function filterNonOwnerOrGrantedCredentialAudit(input: {
+	candidates: Array<Record<string, unknown>>
+	ownerKeys: Set<string>
+	userGrantKeys: Set<string>
+	teamGrantByResource: Map<string, Array<string>>
+	teamMemberKeys: Set<string>
+}) {
+	return input.candidates.filter((row) => {
+		const orgId = String(row['org_id'] ?? '')
+		const actorId = String(row['actor_user_id'] ?? '')
+		const resourceType = String(row['resource_type'] ?? '')
+		const resourceId = String(row['resource_id'] ?? '')
+		if (input.ownerKeys.has(`${orgId}:${actorId}`)) return false
+		const resourceKey = `${orgId}:${resourceType}:${resourceId}`
+		if (input.userGrantKeys.has(`${resourceKey}:user:${actorId}`)) {
+			return false
+		}
+		const teamIds = input.teamGrantByResource.get(resourceKey) ?? []
+		for (const teamId of teamIds) {
+			if (input.teamMemberKeys.has(`${teamId}:${actorId}`)) return false
+		}
+		return true
+	})
+}
+
 export async function runCredentialExposureQueries(input: {
 	client: CloudflareClient
 	target: QueryTarget
@@ -127,6 +190,8 @@ export async function runCredentialExposureQueries(input: {
 	assertReadOnlySql(orgsWithOutsideGrantsSql)
 	assertReadOnlySql(credentialAuditCandidateSql)
 	assertReadOnlySql(liveOwnerMembershipsSql)
+	assertReadOnlySql(liveCredentialGrantsSql)
+	assertReadOnlySql(liveTeamMembersSql)
 
 	const multiMemberRows = await readOnlyD1Query<Record<string, unknown>>(
 		input.client,
@@ -151,6 +216,45 @@ export async function runCredentialExposureQueries(input: {
 		ownerMemberships.map((row) => `${row.org_id}:${row.user_id}`),
 	)
 
+	const credentialGrants = await readOnlyD1Query<{
+		org_id: string
+		resource_type: string
+		resource_id: string
+		subject_type: string
+		subject_id: string
+	}>(input.client, appUuid, liveCredentialGrantsSql)
+	const userGrantKeys = new Set<string>()
+	const teamGrantByResource = new Map<string, Array<string>>()
+	for (const grant of credentialGrants) {
+		const resourceKey = `${grant.org_id}:${grant.resource_type}:${grant.resource_id}`
+		if (grant.subject_type === 'user') {
+			userGrantKeys.add(`${resourceKey}:user:${grant.subject_id}`)
+			continue
+		}
+		if (grant.subject_type === 'team') {
+			const list = teamGrantByResource.get(resourceKey) ?? []
+			list.push(grant.subject_id)
+			teamGrantByResource.set(resourceKey, list)
+		}
+	}
+
+	const teamMembers = await readOnlyD1Query<{
+		team_id: string
+		user_id: string
+	}>(input.client, appUuid, liveTeamMembersSql)
+	const teamMemberKeys = new Set(
+		teamMembers.map((row) => `${row.team_id}:${row.user_id}`),
+	)
+
+	const exposureOrgIds = new Set<string>()
+	for (const row of multiMemberRows) {
+		exposureOrgIds.add(String(row['org_id'] ?? ''))
+	}
+	for (const row of orgsWithOutside) {
+		exposureOrgIds.add(String(row['org_id'] ?? ''))
+	}
+	exposureOrgIds.delete('')
+
 	const auditUuid = await resolveAuditD1Uuid(input.client, input.target)
 	let auditRows: Array<Record<string, unknown>> = []
 	if (auditUuid) {
@@ -160,10 +264,12 @@ export async function runCredentialExposureQueries(input: {
 				auditUuid,
 				credentialAuditCandidateSql,
 			)
-			auditRows = candidates.filter((row) => {
-				const orgId = String(row['org_id'] ?? '')
-				const actorId = String(row['actor_user_id'] ?? '')
-				return !ownerKeys.has(`${orgId}:${actorId}`)
+			auditRows = filterNonOwnerOrGrantedCredentialAudit({
+				candidates,
+				ownerKeys,
+				userGrantKeys,
+				teamGrantByResource,
+				teamMemberKeys,
 			})
 		} catch {
 			auditRows = []
@@ -171,12 +277,16 @@ export async function runCredentialExposureQueries(input: {
 	}
 
 	return {
-		version: 1,
+		version: 2,
 		target:
 			input.target.kind === 'production'
 				? 'production'
 				: input.target.workerName,
 		ranAt: (input.now ?? (() => new Date()))().toISOString(),
+		orgsWithExposureSurface: {
+			count: exposureOrgIds.size,
+			orgIds: [...exposureOrgIds].sort(),
+		},
 		multiMemberOrgs: {
 			count: multiMemberRows.length,
 			rows: multiMemberRows,
@@ -186,11 +296,15 @@ export async function runCredentialExposureQueries(input: {
 			rows: outsideGrantRows,
 		},
 		orgsWithOutsideGrants: { count: orgsWithOutside.length },
-		nonOwnerCredentialAudit: {
+		nonOwnerOrGrantedCredentialAudit: {
 			count: auditRows.length,
 			rows: auditRows,
-			note: 'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present.',
+			note: 'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present. MCP servers authorize as integration resources.',
 		},
+		notes: [
+			'Saved packages keep implicit self-authored credential access; the credentials redesign series removes it.',
+			'The full resolveCredential(orgId, actor, packageStamp?) choke point is the first PR of the credentials redesign series, not a separate GitHub issue.',
+		],
 	}
 }
 
