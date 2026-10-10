@@ -1,5 +1,4 @@
 import { emailVerificationStallAfterMinutes } from '#universal/email-verification-delivery.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 export { emailVerificationStallAfterMinutes }
 
@@ -21,7 +20,6 @@ export function emailVerificationStallSqlConditions(tableAlias?: string) {
 	return [
 		`${column('email_verified_at')} IS NULL`,
 		`${column('deleting_at')} IS NULL`,
-		personUserRowSql(tableAlias),
 		`${column('email_verification_delivery_status')} = 'accepted'`,
 		`${column('email_verification_delivery_at')} IS NOT NULL`,
 		`${column('email_verification_delivery_at')} <= ?`,

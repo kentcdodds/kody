@@ -38,7 +38,6 @@ type ReferralParty = {
 	email: string
 	email_verified_at: string | null
 	stripe_customer_id: string | null
-	account_type: string | null
 	referral_standard_credit_expires_at: string | null
 }
 
@@ -153,22 +152,17 @@ export async function attributeReferralAtSignup(input: {
 	}
 	const referrer = await input.db
 		.prepare(
-			`SELECT stable_user_id, account_type
+			`SELECT stable_user_id
 			 FROM users
 			 WHERE username = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(code)
-		.first<{ stable_user_id: string; account_type: string | null }>()
+		.first<{ stable_user_id: string }>()
 	if (!referrer?.stable_user_id) {
 		return { outcome: 'ignored', reason: 'unknown_referrer' }
 	}
 	if (referrer.stable_user_id === input.refereeStableUserId) {
 		return { outcome: 'ignored', reason: 'self' }
-	}
-	// Former platform accounts keep a `users` row with no person behind it
-	// until Teams P9 deletes it (#3084).
-	if (referrer.account_type === 'platform') {
-		return { outcome: 'ignored', reason: 'unknown_referrer' }
 	}
 	const now = input.now ?? new Date()
 	try {
@@ -201,7 +195,7 @@ async function loadParty(
 	return db
 		.prepare(
 			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
-			        o.stripe_customer_id, u.account_type,
+			        o.stripe_customer_id,
 			        o.referral_standard_credit_expires_at
 			 FROM users u
 			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
@@ -217,11 +211,6 @@ function rejectReasonForParties(
 ): ReferralRejectReason | null {
 	if (referrer.stable_user_id === referee.stable_user_id) {
 		return 'self_referral'
-	}
-	// Former platform accounts keep a `users` row with no person behind it
-	// until Teams P9 deletes it (#3084).
-	if (referrer.account_type === 'platform') {
-		return 'platform_referrer'
 	}
 	if (
 		normalizeEmailForReferralFraud(referrer.email) ===

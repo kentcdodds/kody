@@ -33,7 +33,6 @@ import {
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { sendToOrgBillingRecipients } from '#worker/billing/org-billing-emails.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
@@ -753,7 +752,6 @@ export async function listUsersForEntitlementWarningSweep(
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)
@@ -778,7 +776,6 @@ export async function listUsersForEntitlementWarningSweep(
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
 				)
 				.bind(stockPackageThreshold, userEntitlementWarningStockSweepLimit)
@@ -801,7 +798,6 @@ export async function listUsersForEntitlementWarningSweep(
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
 				)
 				.bind(
@@ -824,7 +820,6 @@ export async function listUsersForEntitlementWarningSweep(
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)
@@ -844,7 +839,6 @@ export async function listUsersForEntitlementWarningSweep(
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
 				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)

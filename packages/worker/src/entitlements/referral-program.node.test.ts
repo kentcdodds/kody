@@ -27,7 +27,7 @@ const secondCreditExpiresAt = '2026-11-06T12:00:00.000Z'
 async function ensureReferralSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: ['email_verified_at', 'account_type'],
+		columns: ['email_verified_at'],
 	})
 	await ensureReferralProgramTestSchema(db)
 }
@@ -51,8 +51,8 @@ async function insertUser(
 		.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id,
-				email_verified_at, account_type
-			) VALUES (?, ?, 'hash', ?, ?, 'person')`,
+				email_verified_at
+			) VALUES (?, ?, 'hash', ?, ?)`,
 		)
 		.bind(
 			username,

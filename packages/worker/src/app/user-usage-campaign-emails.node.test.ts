@@ -65,9 +65,9 @@ async function setup(...users: Array<TestUserInput>) {
 			.prepare(
 				`INSERT INTO users (
 					username, email, password_hash, email_verified_at, stable_user_id,
-					account_type, first_mcp_connected_at, first_saved_package_at,
+					first_mcp_connected_at, first_saved_package_at,
 					mcp_client_name
-				) VALUES (?, ?, 'x', ?, ?, 'person', ?, ?, ?)`,
+				) VALUES (?, ?, 'x', ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				input.id,

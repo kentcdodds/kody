@@ -42,7 +42,6 @@ import {
 	tipsUnsubscribeHeaders,
 	tipsUnsubscribeLabel,
 } from '#worker/usage/tips-unsubscribe.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -283,8 +282,7 @@ export async function listUsersForUsageCampaignSweep(
 			 WHERE u.email_verified_at IS NOT NULL
 			   AND u.deleting_at IS NULL
 			   AND u.suspended_at IS NULL
-			   AND o.email_outbound_paused_at IS NULL
-			   AND ${personUserRowSql('u')}${andLiveDeletedAtSql('u')}
+			   AND o.email_outbound_paused_at IS NULL${andLiveDeletedAtSql('u')}
 			 ORDER BY COALESCE(c.last_evaluated_at, '') ASC, u.stable_user_id ASC
 			 LIMIT ?`,
 		)

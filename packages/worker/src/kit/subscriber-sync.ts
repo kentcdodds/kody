@@ -7,7 +7,6 @@
 import { waitUntil } from 'cloudflare:workers'
 import { parseStripePlanName } from '#universal/plans.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 const DEFAULT_KIT_SIGNED_UP_TAG_ID = 21252175
@@ -472,7 +471,6 @@ export async function reconcileKitSubscribers(input: {
 		 FROM users u
 		 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
 		 WHERE u.deleting_at IS NULL
-		   AND ${personUserRowSql('u')}
 		   AND u.email IS NOT NULL${andLiveDeletedAtSql('u')}
 		 ORDER BY u.updated_at DESC
 		 LIMIT ?`,

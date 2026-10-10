@@ -102,8 +102,8 @@ test('deleteUserAccount enumerates job vectors through JOBS against the real pos
 		.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id,
-				email_verified_at, account_type, created_at
-			) VALUES ('post0010', 'post0010@example.com', 'hash', ?, ?, 'person', ?)`,
+				email_verified_at, created_at
+			) VALUES ('post0010', 'post0010@example.com', 'hash', ?, ?, ?)`,
 		)
 		.bind(userId, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')
 		.run()

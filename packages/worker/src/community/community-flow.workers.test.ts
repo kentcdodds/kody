@@ -71,13 +71,12 @@ async function insertTestUser(input: {
 	const userId = testStableUserIdFromEmail(input.email)
 	await runSql(
 		`INSERT INTO users
-			(username, email, stable_user_id, password_hash, account_type)
-			VALUES (?, ?, ?, ?, ?)`,
+			(username, email, stable_user_id, password_hash)
+			VALUES (?, ?, ?, ?)`,
 		input.username,
 		input.email,
 		userId,
 		'test-password-hash',
-		'person',
 	)
 	await provisionPersonalOrg(env.APP_DB, {
 		stableUserId: userId,

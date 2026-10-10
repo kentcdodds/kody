@@ -375,21 +375,20 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   community profile fields are `display_name`, `bio`, and `profile_visibility`
   (default `public`). `experiments_opt_in` is the account preference for the
   feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
-  `account_type` (`'person'` default or `'platform'`) is on `users`.
-  Platform-type users are ordinary orgs. Person-only sweeps filter with
-  `personUserRowSql`. Column drop is tracked in
-  [#3084](https://github.com/kentcdodds/kody/issues/3084). First-touch marketing
-  columns (`utm_*`, `first_touch_landing_path`, `first_touch_referrer`) store
-  signup attribution when present. Activation and return columns
-  (`first_mcp_connected_at`, `first_execute_at`, `first_search_at`,
-  `first_saved_package_at`, `first_secret_at`, `first_integration_at`,
-  `first_job_at`, `mcp_client_name`, `last_active_at`) support product metrics;
-  email verification delivery columns track the latest transactional verify-mail
-  outcome. `second_agent_standard_gift_granted_at` is the write-once ledger for
-  the 14-day Pro overlay granted when known connected agent ecosystems first
-  reach 2; `second_agent_standard_gift_expires_at` is set only when that overlay
-  actually raises a free account (NULL means already paid / no-op). See
-  [Entitlements](./entitlements.md#second-agent-pro-gift).
+  `users.account_type` remains in the database until a later migration deletes
+  leftover platform `users` rows and drops the column
+  ([#3084](https://github.com/kentcdodds/kody/issues/3084)). Runtime does not
+  read it. First-touch marketing columns (`utm_*`, `first_touch_landing_path`,
+  `first_touch_referrer`) store signup attribution when present. Activation and
+  return columns (`first_mcp_connected_at`, `first_execute_at`,
+  `first_search_at`, `first_saved_package_at`, `first_secret_at`,
+  `first_integration_at`, `first_job_at`, `mcp_client_name`, `last_active_at`)
+  support product metrics; email verification delivery columns track the latest
+  transactional verify-mail outcome. `second_agent_standard_gift_granted_at` is
+  the write-once ledger for the 14-day Pro overlay granted when known connected
+  agent ecosystems first reach 2; `second_agent_standard_gift_expires_at` is set
+  only when that overlay actually raises a free account (NULL means already paid
+  / no-op). See [Entitlements](./entitlements.md#second-agent-pro-gift).
   `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
   campaign mail only). `referral_standard_credit_expires_at` is the stackable
   Pro overlay from the uncapped referral program. Pre-signup attribution lives

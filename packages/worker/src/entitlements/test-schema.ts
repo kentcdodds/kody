@@ -14,7 +14,7 @@ import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 export async function ensureEntitlementTestSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: ['email_verified_at', 'account_type'],
+		columns: ['email_verified_at'],
 	})
 	await db
 		.prepare(

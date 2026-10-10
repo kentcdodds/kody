@@ -20,7 +20,6 @@ import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
  */
 export type UsersTestSchemaColumn =
 	| 'email_verified_at'
-	| 'account_type'
 	| 'bio'
 	| 'avatar_key'
 	| 'profile_visibility'
@@ -94,18 +93,14 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 }
 
 /**
- * Opt-in columns. `account_type` mirrors migration 0072, `email_verified_at`
- * mirrors 0046, the profile columns mirror the community social migration,
+ * Opt-in columns. `email_verified_at` mirrors 0046, the profile columns
+ * mirror the community social migration,
  * and `onboarding_checklist_dismissed_at` mirrors 0015. `CHECK` constraints
  * are dropped from the alter forms to match what the migrations do for
  * preexisting tables. Billing columns are not optional on `users`.
  */
 const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 	email_verified_at: { create: 'TEXT' },
-	account_type: {
-		create: `TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform'))`,
-		alter: `TEXT NOT NULL DEFAULT 'person'`,
-	},
 	bio: { create: 'TEXT' },
 	avatar_key: { create: 'TEXT' },
 	profile_visibility: {

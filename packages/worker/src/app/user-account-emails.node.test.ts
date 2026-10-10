@@ -69,8 +69,8 @@ function createAppDb(stableUserId: string) {
 	applyAllMigrations(sqlite, new URL('../../migrations/', import.meta.url))
 	sqlite
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, account_type)
-			 VALUES ('ada', 'ada@example.com', 'x', ?, 'person')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES ('ada', 'ada@example.com', 'x', ?)`,
 		)
 		.run(stableUserId)
 	return { sqlite, db: createD1FromSqlite(sqlite) }

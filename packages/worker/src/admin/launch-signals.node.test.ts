@@ -44,7 +44,6 @@ function insertUser(
 		password_hash: 'x',
 		plan: 'free',
 		entitlement_ladder: 'public',
-		account_type: 'person',
 		...row,
 		created_at: createdAt,
 		updated_at: createdAt,

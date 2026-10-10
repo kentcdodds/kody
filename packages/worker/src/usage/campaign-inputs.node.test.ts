@@ -86,9 +86,8 @@ test('near-cap reads use Standard overlays, not the stored free plan', async () 
 	sqlite
 		.prepare(
 			`INSERT INTO users (
-				username, email, password_hash, email_verified_at, stable_user_id,
-				account_type
-			) VALUES ('stock', 'stock@example.com', 'x', ?, 'user-stock', 'person')`,
+				username, email, password_hash, email_verified_at, stable_user_id
+			) VALUES ('stock', 'stock@example.com', 'x', ?, 'user-stock')`,
 		)
 		.run('2026-09-01T00:00:00.000Z')
 	// Free 80% of 10 packages is 8; Standard 80% of 50 is 40.
