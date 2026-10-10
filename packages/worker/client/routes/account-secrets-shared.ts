@@ -299,7 +299,7 @@ export function getDataRefreshKey(href: string) {
 	return `${url.pathname}?allowed-host=${requestedHost}&package_id=${requestedPackageId}&names=${requestedNames}&new-secret=${newSecretQuery}`
 }
 
-export function buildSecretsApiRequestUrl(href: string) {
+function buildSecretsApiRequestUrl(href: string) {
 	const pageUrl = new URL(href, 'http://localhost')
 	const selection = secretsRoute.getSelection(href)
 	const requestUrl = new URL(accountSecretsApiPath, 'http://localhost')

@@ -66,7 +66,7 @@ export function emptyJobsMessage(input: {
 	return 'No active or upcoming jobs. Switch to History or All to see other jobs.'
 }
 
-export function buildJobsApiRequestUrl(href: string) {
+function buildJobsApiRequestUrl(href: string) {
 	const requestUrl = new URL(accountJobsApiPath, 'http://localhost')
 	const selectedJobId = jobsRoute.getSelection(href).selectedId
 	if (selectedJobId) {
