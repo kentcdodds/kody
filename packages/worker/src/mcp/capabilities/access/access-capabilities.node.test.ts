@@ -16,6 +16,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { accessGrantCapability } from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
 import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
+import { teamCreateCapability } from './teams.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
@@ -121,6 +122,27 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 			?.has('package:execute'),
 	).toBe(true)
 	expect(compiled.orgPermissions.has('package:write')).toBe(false)
+})
+
+test('teamCreate refuses the personal organization', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner-personal-team@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'personalteamowner',
+	})
+	const ownerOnPersonal = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner-personal-team@example.com',
+		username: 'personalteamowner',
+	})
+	await expect(
+		teamCreateCapability.handler(
+			{ slug: 'core', name: 'Core' },
+			ownerOnPersonal,
+		),
+	).rejects.toThrow(/team organizations/i)
 })
 
 test('inviteCreate membership refuses the personal organization', async () => {

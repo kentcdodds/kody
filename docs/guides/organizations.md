@@ -16,12 +16,12 @@ one org. Handles are permanent: `@slug` does not rename.
 
 ## Personal vs team
 
-|                    | Personal                                | Team                                                                                                                                              |
-| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Created            | At signup (slug = username)             | `orgCreate` or Create organization                                                                                                                |
-| Members / teams    | No — membership stays with the account  | Yes                                                                                                                                               |
-| Package grants     | `accessGrant` / grant invites           | Same, plus the Grants web page                                                                                                                    |
-| Resource web pages | Secrets, jobs, packages, connections, … | Secrets and jobs (and more org-keyed pages); packages and connections still key on the person and 404 on a team URL until listing follows the org |
+|                    | Personal                                              | Team                                                                                                                                              |
+| ------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Created            | At signup (slug = username)                           | `orgCreate` or Create organization                                                                                                                |
+| Members / teams    | No — create a team org to invite people or group them | Yes                                                                                                                                               |
+| Package grants     | `accessGrant` / grant invites                         | Same, plus the Grants web page                                                                                                                    |
+| Resource web pages | Secrets, jobs, packages, connections, …               | Secrets and jobs (and more org-keyed pages); packages and connections still key on the person and 404 on a team URL until listing follows the org |
 
 Switch orgs in the header, or pick the org at MCP consent. One connection binds
 one org.
@@ -48,8 +48,9 @@ A new team org starts on the **same Free plan** as a personal org
 | Active repo sessions                    | 5                                                                                         |
 
 Credits: Free has no prepaid debit wallet. New accounts get a $5 welcome grant
-held until the account is credit-eligible Pro. Org-prepaid credits and budgets
-apply once the org is paid.
+held until the account is **credit-eligible Pro** (purchasable Pro subscription,
+or admin credit eligibility on an effective Pro plan — not every paid price is
+eligible). Until then the balance is held and not spent.
 
 Example: Ada owns `@ada` (personal, Free) and creates `@ada-work` (team, Free).
 That uses both free-org slots. A third free org she tries to own is refused
