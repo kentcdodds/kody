@@ -62,6 +62,7 @@ type UsageEvent = {
 	packageId?: string | null // saved package id when known; AE blob9 (empty = Ad hoc)
 	actorUserId?: string | null // person who triggered the unit; AE blob10 ('' = Automation)
 	automationSource?: string | null // closed automation source; AE blob11
+	connectionKey?: string | null // credential the unit came through; AE blob12
 }
 ```
 
@@ -73,7 +74,22 @@ interactive runs and leaves `blob11` empty. Explicit Automation runs use
 `schedule`, and `email` (platform `event` automations map to `''`). Blob
 positions are centralized in `usageEventBlobIndexes` in
 `packages/worker/src/usage/record-usage.ts` (0-based array indexes; Analytics
-Engine SQL names them `blob1` through `blob11`).
+Engine SQL names them `blob1` through `blob12`).
+
+**Connection attribution** (`connectionKey`, AE `blob12`) names the credential a
+unit came through, from `usageConnectionKey(request)`:
+`<credential kind>:<holder person id>:<credential id>`. Examples:
+`mcp-oauth:<person>:<oauth client id>`, `cli:<person>:<cli client id>`,
+`api-token:<person>:<token id>`, `schedule::<job id>`. The holder is the acting
+person (empty for Automation), so a shared OAuth client id such as the CLI
+splits by person. The credential id is last because OAuth client ids are URLs.
+OAuth and CLI bearer grants carry their client id on the caller-context wire
+(`oauthClientId`), which becomes `request.credential.id` and is inherited by
+nested invokes through lineage. `execute`, `dynamic_worker_invoke`, and
+`dynamic_worker_day` carry it; `dynamic_worker_day` takes only the connection
+key (`usageConnectionFieldsFromRequest`) so its actor blobs, which feed budget
+actor weights, keep their meaning. Events recorded before this field existed
+have an empty `blob12`.
 
 `eventType` is a closed union defined in the dependency-free
 `packages/worker/universal/usage-event-types.ts` (re-exported by
@@ -424,7 +440,7 @@ export does not list them.
    fetch, email, jobs, ...) on D1's single writer. Data point layout (see
    `usageEventBlobIndexes` in `packages/worker/src/usage/record-usage.ts`):
    - `indexes`: `[userId]` where `userId` is the org billing id
-   - `blobs` (Analytics Engine `blob1` through `blob11`):
+   - `blobs` (Analytics Engine `blob1` through `blob12`):
      - blob1: org billing id (same as `UsageEvent.userId`)
      - blob2: `eventType`
      - blob3: `entityId ?? ''`
@@ -438,6 +454,7 @@ export does not list them.
      - blob10: `actorUserId` (`''` for Automation; otherwise defaults to org
        billing id when unset on the event)
      - blob11: `automationSource` (`''` | `webhook` | `schedule` | `email`)
+     - blob12: `connectionKey ?? ''` (see Connection attribution)
    - `doubles`:
      `[durationMs ?? 0, cpuMs ?? 0, bytes ?? 0, codeChars ?? 0, paramsChars ?? 0]`.
      Coalesced points (`coalescedCountUsageEventTypes`:
