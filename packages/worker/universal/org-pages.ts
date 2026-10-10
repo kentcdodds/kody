@@ -290,16 +290,6 @@ export function orgCollaboratorsPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/collaborators`
 }
 
-/** Owners manage org profile and members. */
-export function orgRoleManagesOrg(role: OrgRole | null) {
-	return role === 'owner'
-}
-
-/** Live members can read the members list. Collaborators cannot. */
-export function orgRoleReadsMembers(role: OrgRole | null) {
-	return role === 'owner' || role === 'member' || role === 'billing'
-}
-
 /** Same kind of page in `targetSlug` when the path is an org resource; otherwise that organization's home. */
 export function switchOrgPath(pathname: string, targetSlug: string) {
 	if (!isOrganizationSlug(targetSlug)) return '/'

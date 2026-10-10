@@ -11,7 +11,6 @@ export const landingHeroSubheadLead =
 	'You shouldn\u2019t have to start over in '
 export const landingHeroSubheadEmphasis = 'every agent.'
 export const landingHeroSubheadTail = ''
-export const landingHeroSubhead = `${landingHeroSubheadLead}${landingHeroSubheadEmphasis}${landingHeroSubheadTail}`
 export const landingHeroLead =
 	'One home for packages, secrets, memory, and jobs, so what you build in Cursor still runs in Claude.'
 export const landingHeroPrimaryCta = 'Connect your agent'
@@ -92,7 +91,6 @@ export const landingCompareWithItems = [
 
 export const landingInviteHeadingLead = 'Give your services a '
 export const landingInviteHeadingEmphasis = 'home'
-export const landingInviteHeading = `${landingInviteHeadingLead}${landingInviteHeadingEmphasis}`
 export const landingInviteGuestLead =
 	'Create a free account and connect a service you already use.'
 export const landingInviteSignedInLead =
