@@ -81,6 +81,9 @@ WHERE g.deleted_at IS NULL
  * org_memberships / grants (APP_DB only), so owner and grant filtering happens
  * in JS after APP_DB membership and grant queries.
  */
+/** Cap on AUDIT_DB candidates before APP_DB owner/grant filtering. */
+export const credentialAuditCandidateLimit = 500
+
 export const credentialAuditCandidateSql = `SELECT e.org_id AS org_id,
 	e.action AS action, e.resource_type AS resource_type,
 	e.resource_id AS resource_id, e.actor_user_id AS actor_user_id,
@@ -90,7 +93,7 @@ WHERE e.resource_type IN ('secret', 'integration')
 	AND e.actor_user_id IS NOT NULL
 	AND e.actor_user_id != e.org_id
 ORDER BY e.created_at DESC
-LIMIT 500`
+LIMIT ${credentialAuditCandidateLimit}`
 
 /** Live owner memberships used to filter audit candidates in-process. */
 export const liveOwnerMembershipsSql = `SELECT org_id, user_id
@@ -131,8 +134,12 @@ export type CredentialExposureReport = {
 	 * placeholder expansion did not write org_audit_events historically.
 	 */
 	nonOwnerOrGrantedCredentialAudit: {
+		status: 'ok' | 'unavailable'
 		count: number
 		rows: Array<Record<string, unknown>>
+		candidatesFetched: number
+		candidatesTruncated: boolean
+		error: string | null
 		note: string
 	}
 	notes: Array<string>
@@ -255,7 +262,15 @@ export async function runCredentialExposureQueries(input: {
 	}
 	exposureOrgIds.delete('')
 
+	const auditNote =
+		'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present. MCP servers authorize as integration resources.'
 	const auditUuid = await resolveAuditD1Uuid(input.client, input.target)
+	let auditStatus: 'ok' | 'unavailable' = 'unavailable'
+	let auditError: string | null = auditUuid
+		? null
+		: 'AUDIT_DB uuid could not be resolved (missing database or list error).'
+	let candidatesFetched = 0
+	let candidatesTruncated = false
 	let auditRows: Array<Record<string, unknown>> = []
 	if (auditUuid) {
 		try {
@@ -264,6 +279,8 @@ export async function runCredentialExposureQueries(input: {
 				auditUuid,
 				credentialAuditCandidateSql,
 			)
+			candidatesFetched = candidates.length
+			candidatesTruncated = candidates.length >= credentialAuditCandidateLimit
 			auditRows = filterNonOwnerOrGrantedCredentialAudit({
 				candidates,
 				ownerKeys,
@@ -271,7 +288,11 @@ export async function runCredentialExposureQueries(input: {
 				teamGrantByResource,
 				teamMemberKeys,
 			})
-		} catch {
+			auditStatus = 'ok'
+			auditError = null
+		} catch (error) {
+			auditStatus = 'unavailable'
+			auditError = error instanceof Error ? error.message : String(error)
 			auditRows = []
 		}
 	}
@@ -297,9 +318,13 @@ export async function runCredentialExposureQueries(input: {
 		},
 		orgsWithOutsideGrants: { count: orgsWithOutside.length },
 		nonOwnerOrGrantedCredentialAudit: {
+			status: auditStatus,
 			count: auditRows.length,
 			rows: auditRows,
-			note: 'Ambient placeholder expansion did not write org_audit_events historically; rows here are capability-surface events only when present. MCP servers authorize as integration resources.',
+			candidatesFetched,
+			candidatesTruncated,
+			error: auditError,
+			note: auditNote,
 		},
 		notes: [
 			'Saved packages keep implicit self-authored credential access; the credentials redesign series removes it.',

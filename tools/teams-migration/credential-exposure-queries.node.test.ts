@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { assertReadOnlySql } from './production-queries.ts'
 import {
+	credentialAuditCandidateLimit,
 	credentialAuditCandidateSql,
 	filterNonOwnerOrGrantedCredentialAudit,
 	liveCredentialGrantsSql,
@@ -93,6 +94,12 @@ test('credential exposure SQL is read-only and matches multi-member / outside-gr
 			resource_type: 'secret',
 		}),
 	])
+})
+
+test('audit candidate SQL embeds the truncation limit', () => {
+	expect(credentialAuditCandidateSql).toContain(
+		`LIMIT ${credentialAuditCandidateLimit}`,
+	)
 })
 
 test('audit filter keeps only actors who are neither owners nor granted subjects', () => {
