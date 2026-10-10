@@ -114,6 +114,7 @@ const renderCard = (webhook: PackageWebhookListItem) =>
 			disableCheck: createDoubleCheck(stubHandle),
 			onIntent: () => {},
 			onHideUrl: () => {},
+			deliveriesHref: '/@ada/-/activity?view=recent&status=all&surface=webhook',
 		}),
 	)
 

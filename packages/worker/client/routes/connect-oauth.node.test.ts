@@ -764,6 +764,7 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 				nextSteps,
 				approvingAllHosts: false,
 				onApproveAllHosts() {},
+				connectionHref: '/@ada/-/integrations/google-work',
 			}),
 		)
 	const html = await render({
@@ -773,7 +774,7 @@ test('success card shows a copyable whats-next prompt for the connected connecti
 	})
 	expect(html).toContain('data-testid="connect-oauth-whats-next"')
 	expect(html).toContain(prompt)
-	expect(html).toContain('/account/integrations/google-work')
+	expect(html).toContain('/@ada/-/integrations/google-work')
 	expect(html).not.toContain('google-work with google-work')
 
 	const fallbackHtml = await render(null)

@@ -6,6 +6,7 @@ import {
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { buildAccountSecretPath } from '@kody-internal/shared/account-secret-route.ts'
+import { relocateAccountHref } from '#universal/org-pages.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
 import { type ListDetailSelection } from '#client/list-detail-route.ts'
 import { replaceLocation } from '#client/replace-location.ts'
@@ -558,6 +559,7 @@ export function AccountSecretsRoute(handle: Handle) {
 				onSubmit: (action) => {
 					void submitApproval(action)
 				},
+				backHref: relocateAccountHref('/account/secrets', getCurrentHref()),
 			})
 		}
 

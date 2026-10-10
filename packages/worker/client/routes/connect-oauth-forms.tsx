@@ -308,6 +308,7 @@ export function renderSuccessCard(input: {
 	nextSteps: ConnectOauthNextSteps | null
 	approvingAllHosts: boolean
 	onApproveAllHosts: () => void
+	connectionHref: string
 }) {
 	return (
 		<section mix={css(cardCss)}>
@@ -351,10 +352,7 @@ export function renderSuccessCard(input: {
 					copyLabel="Copy prompt"
 				/>
 			</div>
-			<a
-				href={`/account/integrations/${encodeURIComponent(input.config.providerKey)}`}
-				mix={css(primaryLinkCss)}
-			>
+			<a href={input.connectionHref} mix={css(primaryLinkCss)}>
 				View this connection
 			</a>
 		</section>

@@ -9,7 +9,9 @@ import {
 	uniqueOauthScopes,
 } from '#universal/oauth-scopes.ts'
 import { isConnectOauthCallbackUrl } from '#universal/oauth-connect.ts'
+import { readAppSession } from '#client/app-session-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { submitApprovalRequest } from '#client/routes/account-approval-shared.ts'
 import { writeUncontrolledSearchInput } from '#client/routes/record-table-search-sync.ts'
@@ -779,6 +781,18 @@ export function ConnectOauthRoute(handle: Handle) {
 							onApproveAllHosts: () => {
 								void approveAllHostApprovals()
 							},
+							connectionHref: (() => {
+								const slug = readAppSession(
+									handle,
+								).session?.organizations?.find((org) => org.personal)?.slug
+								return slug
+									? orgSectionRestPath(
+											slug,
+											'integrations',
+											currentConfig.providerKey,
+										)
+									: '/account'
+							})(),
 						})
 					: null}
 				{currentStep === 'success'

@@ -45,8 +45,9 @@ export function renderApprovalCard(props: {
 	approval: NonNullable<AccountIntegrationsLoaderData['approval']>
 	submitting: boolean
 	onApprove: () => void
+	listHref: string
 }) {
-	const { approval, submitting, onApprove } = props
+	const { approval, submitting, onApprove, listHref } = props
 	return (
 		<section
 			data-testid="integration-approval-card"
@@ -101,7 +102,7 @@ export function renderApprovalCard(props: {
 			>
 				{approval.alreadyGranted ? (
 					<a
-						href={'/account/integrations'}
+						href={listHref}
 						mix={css({
 							...getPillButtonCss({ size: 'sm' }),
 							display: 'inline-flex',
@@ -124,7 +125,7 @@ export function renderApprovalCard(props: {
 							{submitting ? 'Approving…' : 'Approve'}
 						</button>
 						<a
-							href={'/account/integrations'}
+							href={listHref}
 							mix={css({
 								...getPillButtonCss({ size: 'sm' }),
 								display: 'inline-flex',

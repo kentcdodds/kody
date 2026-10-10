@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/component'
+import { relocateAccountHref } from '#universal/org-pages.ts'
 import { on } from '#client/event-mixin.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData, routeDataRedirect } from '#client/route-data.tsx'
@@ -91,13 +92,13 @@ export function AccountWaitingRoute(handle: Handle) {
 						{snapshot.error.message}
 					</AccountManagementMessage>
 				) : null}
-				{data ? renderWaitingBody(data.items) : null}
+				{data ? renderWaitingBody(data.items, currentHref) : null}
 			</AccountManagementShell>
 		)
 	}
 }
 
-function renderWaitingBody(items: Array<WaitingItem>) {
+function renderWaitingBody(items: Array<WaitingItem>, currentHref: string) {
 	if (items.length === 0) {
 		return (
 			<AccountManagementPanel
@@ -105,8 +106,12 @@ function renderWaitingBody(items: Array<WaitingItem>) {
 				description="Connections are healthy, and no publishes or grants need a click."
 			>
 				<p mix={css({ margin: 0, color: colors.textMuted })}>
-					<a href={'/account/activity'}>Activity</a> is run history.{' '}
-					<a href={'/account/email'}>Email</a> is your mailbox.
+					<a href={relocateAccountHref('/account/activity', currentHref)}>
+						Activity
+					</a>{' '}
+					is run history.{' '}
+					<a href={relocateAccountHref('/account/email', currentHref)}>Email</a>{' '}
+					is your mailbox.
 				</p>
 			</AccountManagementPanel>
 		)

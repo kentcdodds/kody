@@ -84,14 +84,15 @@ function findAppForConnection(
 export function buildIntegrationHref(
 	app: AccountOauthAppListItem,
 	search = '',
+	currentHref = '',
 ) {
 	if (isBuiltInApp(app)) {
 		const first = app.connections[0]
 		return first
-			? integrationsRoute.buildDetailHref(first.name, search)
-			: '/account/integrations'
+			? integrationsRoute.buildDetailHref(first.name, search, currentHref)
+			: relocateAccountHref('/account/integrations', currentHref)
 	}
-	return buildOauthAppHref(app.slug, search)
+	return buildOauthAppHref(app.slug, search, currentHref)
 }
 
 export function accountsConnectedCopy(count: number) {
@@ -195,7 +196,7 @@ export const dangerButtonCss = getDangerPillCss({ size: 'sm' })
  */
 export function getDataLatchKey(href: string) {
 	const url = new URL(href, 'http://localhost')
-	if (url.pathname === '/account/integrations/approve') {
+	if (accountAliasPath(url.pathname) === '/account/integrations/approve') {
 		return `${url.pathname}?${url.searchParams.get('name') ?? ''}&${url.searchParams.get('package_id') ?? ''}`
 	}
 	return '/account/integrations'
@@ -204,7 +205,7 @@ export function getDataLatchKey(href: string) {
 export function buildIntegrationsApiHref(href: string) {
 	const url = new URL(href, 'http://localhost')
 	const requestUrl = new URL(accountIntegrationsApiPath, url.origin)
-	if (url.pathname === '/account/integrations/approve') {
+	if (accountAliasPath(url.pathname) === '/account/integrations/approve') {
 		const name = url.searchParams.get('name')
 		const packageId = url.searchParams.get('package_id')
 		if (name) requestUrl.searchParams.set('name', name)
