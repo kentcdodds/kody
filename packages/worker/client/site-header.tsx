@@ -412,7 +412,7 @@ function OrgSwitcher(
 		const body = (
 			<>
 				<p mix={css(switcherEyebrowCss)}>Organizations</p>
-				<ul role="list" aria-label="Organizations" mix={css(switcherListCss)}>
+				<ul aria-label="Organizations" mix={css(switcherListCss)}>
 					{orgRows.map((row) => (
 						<li key={row.key}>{renderSwitcherRow(row)}</li>
 					))}
