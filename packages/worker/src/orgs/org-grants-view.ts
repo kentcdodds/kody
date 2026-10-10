@@ -113,7 +113,8 @@ export async function listOrgGrantsForView(
 			: db
 					.prepare(
 						`SELECT id, name, kody_id FROM saved_packages
-						 WHERE id IN (${packageIds.map(() => '?').join(', ')})`,
+						 WHERE deleted_at IS NULL
+						   AND id IN (${packageIds.map(() => '?').join(', ')})`,
 					)
 					.bind(...packageIds)
 					.all<{

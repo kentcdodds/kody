@@ -411,7 +411,14 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 	).toEqual([
 		[
 			'Organization',
-			['/@acme/-/settings', '/@acme/-/members', '/@acme/-/billing'],
+			[
+				'/@acme/-/settings',
+				'/@acme/-/members',
+				'/@acme/-/teams',
+				'/@acme/-/grants',
+				'/@acme/-/collaborators',
+				'/@acme/-/billing',
+			],
 		],
 	])
 	expect(
@@ -422,7 +429,7 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 		})
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
-	).toEqual(['Settings', 'Members', 'Billing'])
+	).toEqual(['Settings', 'Members', 'Grants', 'Collaborators', 'Billing'])
 	expect(
 		workspaceRailGroups({
 			orgSlug: 'acme',
@@ -431,7 +438,7 @@ test('workspace rail for a team organization is Settings, Members, and Billing',
 		})
 			.flatMap((group) => group.items)
 			.map((item) => item.label),
-	).toEqual(['Settings', 'Members'])
+	).toEqual(['Settings', 'Members', 'Teams', 'Grants', 'Collaborators'])
 	expect(
 		workspaceRailGroups({ orgSlug: 'acme', personal: false, role: null }),
 	).toEqual([])

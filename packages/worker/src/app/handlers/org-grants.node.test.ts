@@ -92,7 +92,8 @@ async function seed() {
 			id TEXT PRIMARY KEY NOT NULL,
 			name TEXT,
 			kody_id TEXT,
-			user_id TEXT
+			user_id TEXT,
+			deleted_at TEXT
 		)`,
 	)
 	sqlite
