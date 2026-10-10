@@ -77,7 +77,7 @@ export const accessGrantCapability = defineDomainCapability(
 		name: 'accessGrant',
 		orgPermission: 'none',
 		description:
-			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Organization grants use resource_type org and this organization id. You need manage access on that resource (or member:write for an organization grant).',
+			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Organization grants use resource_type org and this organization id. You need manage access on that resource (or member:write for an organization grant). Only an Owner can put org:write, org:delete, member:write, or member:delete on an organization grant.',
 		keywords: ['grant', 'access', 'permission', 'share', 'preset'],
 		readOnly: false,
 		idempotent: true,
