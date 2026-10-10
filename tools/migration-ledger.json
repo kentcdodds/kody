@@ -383,6 +383,10 @@
 		{
 			"filename": "0095-teams-migrated-invite-expiry.sql",
 			"sha256": "9c42b80e735d1f5a036ea27c0ee7019cec76d6e4dd0832067865d51de9fe1f36"
+		},
+		{
+			"filename": "0096-teams-migrated-actor-ids.sql",
+			"sha256": "0019d6264bcc6464b1845c7726c61c1b8e61f9783c5464ad1fab02b2e18b4f79"
 		}
 	]
 }
