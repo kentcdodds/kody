@@ -1,6 +1,7 @@
 import { type Handle, css } from 'remix/component'
 import { type McpOAuthClientMode } from '@kody-internal/shared/mcp-servers.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
+import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import {
 	routeLoaderRedirect,
@@ -14,7 +15,10 @@ import {
 	accountActionsCss,
 	MetadataGrid,
 } from '#client/routes/account-management-components.tsx'
-import { type McpServerAuthorizeLoaderData } from '#universal/loader-data.ts'
+import {
+	type McpServerAuthorizeContinueResponse,
+	type McpServerAuthorizeLoaderData,
+} from '#universal/loader-data.ts'
 import {
 	getGhostButtonCss,
 	getPillButtonCss,
@@ -57,6 +61,20 @@ const codeCss = {
 	overflowWrap: 'anywhere',
 } as const
 
+/**
+ * Leave Kody for the provider without a Referer. Providers that allowlist
+ * origins on Referer reject Kody's.
+ */
+function navigateWithoutReferrer(url: string) {
+	const link = document.createElement('a')
+	link.href = url
+	link.rel = 'noreferrer'
+	link.hidden = true
+	document.body.append(link)
+	link.click()
+	link.remove()
+}
+
 const noteCss = {
 	margin: 0,
 	color: colors.textMuted,
@@ -65,6 +83,38 @@ const noteCss = {
 
 export function AccountMcpServerAuthorizeRoute(handle: Handle) {
 	let data: McpServerAuthorizeLoaderData | null = null
+	let submitting = false
+
+	async function submitContinue(event: SubmitEvent) {
+		event.preventDefault()
+		if (submitting || !(event.currentTarget instanceof HTMLFormElement)) return
+		const form = event.currentTarget
+		submitting = true
+		handle.update()
+		const response = await fetch(form.action, {
+			method: 'POST',
+			headers: { Accept: 'application/json' },
+			credentials: 'include',
+			body: new FormData(form),
+		}).catch(() => null)
+		const payload = (await response
+			?.json()
+			.catch(() => null)) as McpServerAuthorizeContinueResponse | null
+		if (payload?.ok) {
+			navigateWithoutReferrer(payload.authorizationUrl)
+			return
+		}
+		submitting = false
+		if (data) {
+			data = payload?.consent ?? {
+				...data,
+				error:
+					payload?.error ??
+					'Unable to continue. Reload the page and try again.',
+			}
+		}
+		handle.update()
+	}
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
@@ -140,17 +190,19 @@ export function AccountMcpServerAuthorizeRoute(handle: Handle) {
 						<form
 							method="post"
 							action={new URL(href, 'http://localhost').pathname}
-							rel="noreferrer"
 							data-router-skip
-							mix={css(accountActionsCss)}
+							mix={[css(accountActionsCss), on('submit', submitContinue)]}
 						>
 							<input type="hidden" name="_csrf" value={pending.csrfToken} />
 							<button
 								type="submit"
+								disabled={submitting}
 								data-testid="mcp-authorize-continue"
 								mix={css(getPillButtonCss({ size: 'sm' }))}
 							>
-								Continue to {pending.authorizationServerHost}
+								{submitting
+									? `Opening ${pending.authorizationServerHost}…`
+									: `Continue to ${pending.authorizationServerHost}`}
 							</button>
 							<a
 								href={data.serverHref}

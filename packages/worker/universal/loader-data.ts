@@ -1871,6 +1871,20 @@ export type McpServerAuthorizeLoaderData = {
 	error: string | null
 }
 
+/**
+ * Continue on the MCP server consent page. The CSP keeps `form-action` on
+ * 'self', so the browser cannot follow a form redirect to the provider: the
+ * page posts with fetch and navigates to `authorizationUrl` itself.
+ */
+export type McpServerAuthorizeContinueResponse =
+	| { ok: true; authorizationUrl: string }
+	| {
+			ok: false
+			error: string
+			/** Fresh page data (a new form token) when the page can still be shown. */
+			consent: McpServerAuthorizeLoaderData | null
+	  }
+
 export type AccountPackageListingAhead = {
 	listingId: string
 	listingName: string

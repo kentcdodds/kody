@@ -96,9 +96,11 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
    and pending provider URL
    (`packages/worker/src/mcp-client/authorize-consent.ts`), so a reconnect
    retires older forms. App-wide cross-origin protection rejects cross-site
-   posts, and the global CSP forbids framing. A valid post answers `303` to the
-   provider with `Referrer-Policy: no-referrer`, so providers that check
-   authorized origins on Referer do not see Kody's.
+   posts, and the global CSP forbids framing. The CSP also keeps `form-action`
+   on `'self'`, so the browser cannot follow a form redirect to the provider.
+   The page posts with fetch, a valid token returns the provider URL as JSON,
+   and the page navigates through a `rel="noreferrer"` link so providers that
+   check authorized origins on Referer do not see Kody's.
 4. The provider redirects back to the callback route. The worker authenticates
    the browser session cookie, forwards the full callback URL to that user's hub
    DO, and the SDK exchanges the code (matching the `state` parameter to the

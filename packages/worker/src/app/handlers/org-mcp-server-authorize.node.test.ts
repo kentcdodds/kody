@@ -10,7 +10,10 @@ import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { provisionPersonalOrgForSqliteUser } from '#worker/test-support/personal-org-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
-import { type McpServerAuthorizeLoaderData } from '#universal/loader-data.ts'
+import {
+	type McpServerAuthorizeContinueResponse,
+	type McpServerAuthorizeLoaderData,
+} from '#universal/loader-data.ts'
 
 const mocks = vi.hoisted(() => ({
 	readPendingAuthorization: vi.fn<
@@ -189,6 +192,7 @@ async function clickContinue(
 		method: 'POST',
 		headers: {
 			Cookie: await cookieFor(input.person),
+			Accept: 'application/json',
 			'Content-Type': 'application/x-www-form-urlencoded',
 			Origin: origin,
 			'Sec-Fetch-Site': 'same-origin',
@@ -210,6 +214,15 @@ async function readPage(response: Response) {
 	}
 }
 
+async function readContinue(response: Response) {
+	return (await response.json()) as McpServerAuthorizeContinueResponse
+}
+
+function refusedConsent(body: McpServerAuthorizeContinueResponse) {
+	if (body.ok) throw new Error('Expected Continue to be refused.')
+	return body
+}
+
 async function consentToken(env: Env, person: Person) {
 	const page = await readPage(await openConsent(env, { person }))
 	const token = page.mcpServerAuthorize?.pending?.csrfToken
@@ -217,7 +230,7 @@ async function consentToken(env: Env, person: Person) {
 	return token
 }
 
-test('consent page shows the connection and only redirects after Continue with its form token', async () => {
+test('consent page shows the connection and only hands out the provider URL after Continue with its form token', async () => {
 	const env = await seed()
 
 	const anonymous = await openConsent(env, { person: null })
@@ -254,25 +267,28 @@ test('consent page shows the connection and only redirects after Continue with i
 	const missingToken = await clickContinue(env, { person: 'ada' })
 	expect(missingToken.status).toBe(403)
 	expect(missingToken.headers.get('Location')).toBeNull()
-	expect((await readPage(missingToken)).mcpServerAuthorize?.error).toMatch(
-		/expired/,
-	)
+	const missingBody = refusedConsent(await readContinue(missingToken))
+	expect(missingBody.error).toMatch(/expired/)
+	expect(missingBody.consent?.pending?.csrfToken).toEqual(expect.any(String))
+	expect(JSON.stringify(missingBody)).not.toContain('nonce-1')
 
 	const forged = await clickContinue(env, {
 		person: 'ada',
 		csrf: 'not-a-real-token',
 	})
 	expect(forged.status).toBe(403)
-	expect(forged.headers.get('Location')).toBeNull()
+	expect(JSON.stringify(await readContinue(forged))).not.toContain('nonce-1')
 
 	const approved = await clickContinue(env, {
 		person: 'ada',
 		csrf: loaded.mcpServerAuthorize?.pending?.csrfToken,
 	})
-	expect(approved.status).toBe(303)
-	expect(approved.headers.get('Location')).toBe(providerUrl)
-	expect(approved.headers.get('Referrer-Policy')).toBe('no-referrer')
+	expect(approved.status).toBe(200)
 	expect(approved.headers.get('Cache-Control')).toBe('private, no-store')
+	expect(await readContinue(approved)).toEqual({
+		ok: true,
+		authorizationUrl: providerUrl,
+	})
 })
 
 test('consent form tokens are bound to the person and the pending authorization', async () => {
@@ -298,9 +314,9 @@ test('consent form tokens are bound to the person and the pending authorization'
 		csrf: adaToken,
 	})
 	expect(afterReconnect.status).toBe(403)
-	const refreshed = await readPage(afterReconnect)
-	expect(refreshed.mcpServerAuthorize?.pending?.clientMode).toBe('dcr')
-	expect(refreshed.mcpServerAuthorize?.pending?.csrfToken).not.toBe(adaToken)
+	const refreshed = refusedConsent(await readContinue(afterReconnect)).consent
+	expect(refreshed?.pending?.clientMode).toBe('dcr')
+	expect(refreshed?.pending?.csrfToken).not.toBe(adaToken)
 
 	mocks.readPendingAuthorization.mockResolvedValue(null)
 	const idle = await openConsent(env, { person: 'ada' })
@@ -308,7 +324,9 @@ test('consent form tokens are bound to the person and the pending authorization'
 	expect((await readPage(idle)).mcpServerAuthorize?.pending).toBeNull()
 	const settled = await clickContinue(env, { person: 'ada', csrf: adaToken })
 	expect(settled.status).toBe(409)
-	expect(settled.headers.get('Location')).toBeNull()
+	expect(
+		refusedConsent(await readContinue(settled)).consent?.pending,
+	).toBeNull()
 })
 
 test('consent page refuses people outside the org, members without integration write, and other orgs’ servers', async () => {
@@ -323,13 +341,19 @@ test('consent page refuses people outside the org, members without integration w
 		csrf: adaToken,
 	})
 	expect(outsiderPost.status).toBe(404)
-	expect(outsiderPost.headers.get('Location')).toBeNull()
+	expect(await readContinue(outsiderPost)).toMatchObject({
+		ok: false,
+		consent: null,
+	})
 
 	const member = await openConsent(env, { person: 'dan' })
 	expect(member.status).toBe(403)
 	const memberPost = await clickContinue(env, { person: 'dan', csrf: adaToken })
 	expect(memberPost.status).toBe(403)
-	expect(memberPost.headers.get('Location')).toBeNull()
+	expect(await readContinue(memberPost)).toMatchObject({
+		ok: false,
+		consent: null,
+	})
 
 	const otherPersonalOrg = await openConsent(env, {
 		person: 'bob',
@@ -351,6 +375,9 @@ test('consent page refuses people outside the org, members without integration w
 		csrf: adaToken,
 	})
 	expect(crossOrgPost.status).toBe(404)
-	expect(crossOrgPost.headers.get('Location')).toBeNull()
+	expect(await readContinue(crossOrgPost)).toMatchObject({
+		ok: false,
+		consent: null,
+	})
 	expect(mocks.readPendingAuthorization).not.toHaveBeenCalled()
 })
