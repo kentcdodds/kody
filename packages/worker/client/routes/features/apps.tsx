@@ -1,6 +1,7 @@
 import { type Handle, on } from 'remix/component'
 import { AppsSharing } from './apps-sharing.tsx'
 import { AppsIntake, type Brief } from './apps-intake.tsx'
+import { FeatureRelated } from './feature-related.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
 const initialBrief: Brief = {
@@ -30,6 +31,9 @@ export function AppsFeature(handle: Handle) {
 		saved = true
 		view = 'detail'
 		handle.update()
+		queueMicrotask(() => {
+			document.getElementById('saved-brief-heading')?.focus()
+		})
 	}
 	function newBrief() {
 		draft = {
@@ -142,7 +146,9 @@ export function AppsFeature(handle: Handle) {
 								</div>
 							) : (
 								<div>
-									<h3>{draft.name}</h3>
+									<h3 id="saved-brief-heading" tabIndex={-1}>
+										{draft.name}
+									</h3>
 									<p>
 										{draft.kind} · {draft.deadline}
 									</p>
@@ -262,6 +268,12 @@ export function AppsFeature(handle: Handle) {
 				</div>
 			</section>
 			<AppsSharing />
+			<FeatureRelated
+				links={[
+					{ href: '/features/packages', label: 'Reusable packages' },
+					{ href: '/features/triggers', label: 'Triggers and automation' },
+				]}
+			/>
 			<div class="feature-start">
 				<div>
 					<h2>Build the tool you would open every week.</h2>

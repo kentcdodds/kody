@@ -1,6 +1,7 @@
 import { on, type Handle } from 'remix/component'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 import { PackagePublishArt, PackageShareArt } from './packages-art.tsx'
+import { FeatureRelated } from './feature-related.tsx'
 
 export function PackagesFeature(handle: Handle) {
 	let tab = 'intent'
@@ -11,6 +12,7 @@ export function PackagesFeature(handle: Handle) {
 	let sharing = 'share'
 	let access = 'use'
 	let copyEdited = false
+	let forkArtStatus = ''
 	let status = 'Example package. The published brief has no open questions.'
 	return () => (
 		<div class="study packages">
@@ -159,7 +161,7 @@ export function PackagesFeature(handle: Handle) {
 				<div class="pt-proof">
 					<PackagePublishArt />
 					<div class="pt-sheets">
-						<article>
+						<article hidden={!previewed}>
 							<small>Proposed output</small>
 							<h3>Weekly brief</h3>
 							<p>
@@ -241,11 +243,15 @@ export function PackagesFeature(handle: Handle) {
 						hidden={sharing !== 'fork'}
 						mix={on('click', () => {
 							copyEdited = !copyEdited
+							forkArtStatus = 'Change the copy’s focus'
 							handle.update()
 						})}
 					>
 						Change the copy’s focus
 					</button>
+					<p class="visually-hidden" aria-live="polite">
+						{forkArtStatus}
+					</p>
 					<p id="pt-share-status" class="pt-status" aria-live="polite">
 						{sharing === 'fork'
 							? 'Two owners, two separate packages. Changes to the copy are its owner’s to make.'
@@ -261,6 +267,13 @@ export function PackagesFeature(handle: Handle) {
 					<PackageShareArt sharing={sharing} copyEdited={copyEdited} />
 				</div>
 			</section>
+			<FeatureRelated
+				links={[
+					{ href: '/features/triggers', label: 'Triggers and automation' },
+					{ href: '/features/apps', label: 'Package apps' },
+					{ href: '/features/secrets', label: 'API secrets' },
+				]}
+			/>
 			<div class="feature-start">
 				<div>
 					<h2>Start with work you already repeat.</h2>

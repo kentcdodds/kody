@@ -1,5 +1,6 @@
 import { type Handle, on } from 'remix/component'
 import { SecretsVault } from './secrets-vault.tsx'
+import { FeatureRelated } from './feature-related.tsx'
 import { BuildWithAgentButton } from '#client/build-with-agent-button.tsx'
 
 const approvals = {
@@ -35,14 +36,11 @@ export function SecretsFeature(handle: Handle) {
 				<div class="envelope ui-window">
 					<div class="ui-title">
 						<span class="ui-symbol">⌑</span>
-						<strong>API credential</strong>
-						<span class="ui-state">Stored</span>
-					</div>
-					<div class="ui-secret-value" aria-label="Secret value hidden">
-						••••••••••••••••
+						<strong>Agent sees</strong>
+						<span class="ui-state">Reference only</span>
 					</div>
 					<div class="ui-row">
-						<small>Agent uses</small>
+						<small>In prompts</small>
 						<code>{'{{secret:<name>}}'}</code>
 					</div>
 					<div class="ui-row">
@@ -209,6 +207,12 @@ export function SecretsFeature(handle: Handle) {
 				</div>
 			</section>
 			<SecretsVault />
+			<FeatureRelated
+				links={[
+					{ href: '/features/integrations', label: 'Service connections' },
+					{ href: '/features/packages', label: 'Reusable packages' },
+				]}
+			/>
 			<div class="feature-start">
 				<div>
 					<h2>Give your agent access to the work.</h2>

@@ -35,11 +35,18 @@ export function PackageShareArt(
 ) {
 	return () => {
 		const { sharing, copyEdited } = handle.props
+		const forkLabel = copyEdited
+			? 'Two independently owned package copies: weekly brief and customer brief'
+			: 'Two independently owned package copies, both named weekly brief'
 		return (
 			<svg
 				viewBox="0 0 520 370"
 				role="img"
-				aria-label="One shared package or two independently owned copies"
+				aria-label={
+					sharing === 'fork'
+						? forkLabel
+						: 'One shared live package connected to two people'
+				}
 			>
 				<g class="pt-shared-drawing" hidden={sharing === 'fork'}>
 					<path
