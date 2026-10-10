@@ -33,7 +33,6 @@ const mockModule = await vi.hoisted(async () => {
 		usageMode: 'any',
 		allowedPackageIds: [],
 		lastError: null,
-		oauthClientId: null,
 		...overrides,
 	})
 	const mcpUser = {

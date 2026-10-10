@@ -17,8 +17,6 @@ export type McpServerSettingRow = {
 	usage_mode: McpServerUsageMode
 	allowedPackageIds: Array<string>
 	last_error: string | null
-	/** Public id of the pre-registered OAuth client; its secret lives in the hub. */
-	oauth_client_id: string | null
 }
 
 export type McpServerSettingMetadata = {
@@ -35,5 +33,4 @@ export type McpServerSettingMetadata = {
 	usageMode: McpServerUsageMode
 	allowedPackageIds: Array<string>
 	lastError: string | null
-	oauthClientId: string | null
 }

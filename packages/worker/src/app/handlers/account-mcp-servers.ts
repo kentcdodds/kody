@@ -480,12 +480,6 @@ async function handleOAuthClientAction(input: {
 		'integration:write',
 	)
 	const setting = await requireSetting(input)
-	if (input.kind === 'remove' && !setting.oauthClientId) {
-		return jsonResponse(
-			{ ok: false, error: 'This server has no OAuth client configured.' },
-			400,
-		)
-	}
 	let client: { clientId: string; clientSecret: string } | null = null
 	if (input.kind === 'set') {
 		const parsed = normalizeMcpPreRegisteredOAuthClientInput({
@@ -497,7 +491,7 @@ async function handleOAuthClientAction(input: {
 		}
 		client = { clientId: parsed.clientId, clientSecret: parsed.clientSecret }
 	}
-	const { setting: updated } = await setMcpServerPreRegisteredOAuthClient({
+	const change = await setMcpServerPreRegisteredOAuthClient({
 		env: input.env,
 		userId: ownerIdFromCaller({
 			request: input.user.request,
@@ -510,21 +504,26 @@ async function handleOAuthClientAction(input: {
 		}).callbackUrl,
 		client,
 	})
+	if (!change.changed) {
+		return jsonResponse(
+			{ ok: false, error: 'This server has no OAuth client configured.' },
+			400,
+		)
+	}
 	await recordOrgAuditEvent(
 		orgAuditWriterFromRequest(input.env, input.user.request),
 		{
 			orgId: input.user.request.org.id,
-			action:
-				input.kind === 'set'
-					? setting.oauthClientId
-						? 'mcp_server.oauth_client_replaced'
-						: 'mcp_server.oauth_client_set'
-					: 'mcp_server.oauth_client_removed',
+			action: client
+				? change.previousClientId
+					? 'mcp_server.oauth_client_replaced'
+					: 'mcp_server.oauth_client_set'
+				: 'mcp_server.oauth_client_removed',
 			resourceType: 'mcp_server',
 			resourceId: setting.id,
 			details: {
 				serverName: setting.name,
-				clientId: updated.oauthClientId ?? setting.oauthClientId,
+				clientId: client?.clientId ?? change.previousClientId,
 			},
 		},
 	)

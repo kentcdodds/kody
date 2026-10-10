@@ -21,8 +21,7 @@ the `/mcp` endpoint (where Kody is the server) and complements MCP servers
 - **D1 `mcp_server_settings` table**
   (`packages/worker/migrations/0001-squashed-init.sql`, usage columns in
   `0031-mcp-server-package-usage.sql`, `last_error` in
-  `0054-mcp-server-last-error.sql`, `oauth_client_id` in
-  `0097-mcp-server-oauth-client-id.sql`) — user-scoped metadata (id, name, url,
+  `0054-mcp-server-last-error.sql`) — user-scoped metadata (id, name, url,
   enabled, `usage_mode` / `allowed_packages_json`, optional favicon columns, and
   a sanitized `last_error` JSON blob for incomplete post-IdP settle). D1 answers
   "which servers does this user have enabled" without waking the DO; the DO owns
@@ -202,9 +201,9 @@ API response, MCP tool, or page returns the secret after save.
   `mcp-server-oauth-client-secret`, AAD bound to the server id) before it calls
   the hub. The hub stores only `{ clientId, sealedClientSecret }`, next to the
   tokens the client is used to obtain
-  (`packages/worker/src/mcp-client/preregistered-oauth-client.ts`). D1 keeps the
-  public `oauth_client_id` so the settings page can show the client as
-  configured, with Replace and Remove.
+  (`packages/worker/src/mcp-client/preregistered-oauth-client.ts`). The hub is
+  the only store for the client. Its snapshot carries the public client id so
+  the settings page can show the client as configured, with Replace and Remove.
 - **Use.** The hub's OAuth provider answers `clientInformation()` with the
   configured client, which the MCP SDK reads before it considers CIMD or DCR. So
   a configured client always wins. The SDK then authenticates the token request
@@ -213,9 +212,11 @@ API response, MCP tool, or page returns the secret after save.
   skipped, so the opened secret never lands in plain DO storage.
 - **Changes.** Saving, replacing, or removing a client drops the server's tokens
   and any CIMD or DCR registration, because the authorization server issued them
-  to the previous client. It then starts a fresh authorization. If that restart
-  fails, the hub puts the previous client back and the worker restores the D1
-  client id.
+  to the previous client, and it starts a fresh connection episode so the parked
+  approval is not reported as a failed token refresh. It then starts a fresh
+  authorization. Once the new client is stored the change is committed; if the
+  restart fails, the server reports that as its last error instead of rolling
+  back. Changes to one server run one at a time in the hub.
 - **Audit.** Each write records an org audit event
   (`mcp_server.oauth_client_set`, `mcp_server.oauth_client_replaced`,
   `mcp_server.oauth_client_removed`) with the server name and client id, never

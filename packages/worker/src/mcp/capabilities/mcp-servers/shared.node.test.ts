@@ -38,7 +38,6 @@ function setting(
 		usageMode: 'any',
 		allowedPackageIds: [],
 		lastError: null,
-		oauthClientId: null,
 		...overrides,
 	}
 }
@@ -119,8 +118,8 @@ test('buildMcpServerStatusView defaults missing usage to any context', () => {
 
 test('capability status views leave out the pre-registered OAuth client', () => {
 	const view = buildMcpServerStatusView({
-		setting: setting({ oauthClientId: 'Iv1.github-app-client' }),
-		snapshot: snapshot({}),
+		setting: setting(),
+		snapshot: snapshot({ oauthClientId: 'Iv1.github-app-client' }),
 		authorizeLink,
 	})
 	expect(mcpServerStatusSchema.strict().parse(view)).toEqual(view)

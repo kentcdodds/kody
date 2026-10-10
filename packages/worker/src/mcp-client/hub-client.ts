@@ -10,6 +10,7 @@ import {
 	type McpHubServerSnapshot,
 	type McpServerConnectResult,
 	type McpServerOAuthCallbackOutcome,
+	type McpServerOAuthClientChange,
 	type McpServerPendingAuthorization,
 	type McpServerSnapshot,
 } from './types.ts'
@@ -69,7 +70,7 @@ export type McpClientHubClient = {
 		serverId: string
 		callbackUrl: string
 		client: SealedMcpPreRegisteredOAuthClient | null
-	}): Promise<McpServerConnectResult>
+	}): Promise<McpServerOAuthClientChange>
 	handleOAuthCallback(input: {
 		url: string
 		callbackUrl: string
@@ -114,9 +115,12 @@ export function createMcpClientHubClient(
 		},
 		async setPreRegisteredOAuthClient(clientInput) {
 			invalidateMcpClientHubSnapshotCache(input)
-			const result = await stub.setPreRegisteredOAuthClient(clientInput)
+			const change = await stub.setPreRegisteredOAuthClient(clientInput)
 			await emitPendingConnectionEvents(input, stub)
-			return toMcpServerConnectResult(result)
+			return {
+				...change,
+				connection: toMcpServerConnectResult(change.connection),
+			}
 		},
 		async handleOAuthCallback(callbackInput) {
 			invalidateMcpClientHubSnapshotCache(input)

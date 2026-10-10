@@ -15,12 +15,13 @@ export type McpPreRegisteredOAuthClientInformation = {
 	client_secret: string
 }
 
-const storagePrefix = 'mcp-oauth-preregistered-client:'
+export const mcpPreRegisteredOAuthClientStoragePrefix =
+	'mcp-oauth-preregistered-client:'
 const maxClientIdLength = 512
 const maxClientSecretLength = 4096
 
 export function mcpPreRegisteredOAuthClientStorageKey(serverId: string) {
-	return `${storagePrefix}${serverId}`
+	return `${mcpPreRegisteredOAuthClientStoragePrefix}${serverId}`
 }
 
 export function parseSealedMcpPreRegisteredOAuthClient(

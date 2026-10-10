@@ -9,7 +9,7 @@ import {
 } from '#mcp/secrets/crypto.ts'
 import type * as HubClient from '#worker/mcp-client/hub-client.ts'
 import { type SealedMcpPreRegisteredOAuthClient } from '#worker/mcp-client/preregistered-oauth-client.ts'
-import { type McpServerConnectResult } from '#worker/mcp-client/types.ts'
+import { type McpServerOAuthClientChange } from '#worker/mcp-client/types.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -23,18 +23,39 @@ type HubClientInput = {
 	client: SealedMcpPreRegisteredOAuthClient | null
 }
 
-const mocks = vi.hoisted(() => ({
-	setPreRegisteredOAuthClient: vi.fn<
-		(input: HubClientInput) => Promise<McpServerConnectResult>
-	>(async (input) => ({
-		serverId: input.serverId,
-		state: 'authenticating',
-		authorizationPending: true,
+const mocks = vi.hoisted(() => {
+	const clientIds = new Map<string, string>()
+	const connection = (serverId: string, pending: boolean) => ({
+		serverId,
+		state: pending ? ('authenticating' as const) : ('failed' as const),
+		authorizationPending: pending,
 		error: null,
 		toolCount: 0,
 		lastError: null,
-	})),
-}))
+	})
+	return {
+		clientIds,
+		setPreRegisteredOAuthClient: vi.fn<
+			(input: HubClientInput) => Promise<McpServerOAuthClientChange>
+		>(async (input) => {
+			const previousClientId = clientIds.get(input.serverId) ?? null
+			if (!input.client && !previousClientId) {
+				return {
+					changed: false,
+					previousClientId,
+					connection: connection(input.serverId, false),
+				}
+			}
+			if (input.client) clientIds.set(input.serverId, input.client.clientId)
+			else clientIds.delete(input.serverId)
+			return {
+				changed: true,
+				previousClientId,
+				connection: connection(input.serverId, true),
+			}
+		}),
+	}
+})
 
 vi.mock('#worker/mcp-client/hub-client.ts', async (importOriginal) => ({
 	...(await importOriginal<typeof HubClient>()),
@@ -47,7 +68,19 @@ vi.mock('#worker/mcp-client/hub-client.ts', async (importOriginal) => ({
 				...clientInput,
 			}),
 	}),
-	getCachedMcpClientHubSnapshot: async () => ({ servers: [] }),
+	getCachedMcpClientHubSnapshot: async () => ({
+		servers: [...mocks.clientIds].map(([serverId, oauthClientId]) => ({
+			serverId,
+			name: 'github',
+			url: 'https://api.github.example/mcp',
+			state: 'authenticating',
+			authorizationPending: true,
+			error: null,
+			instructions: null,
+			tools: [],
+			oauthClientId,
+		})),
+	}),
 }))
 
 const { createAccountMcpServersApiHandler } =
@@ -131,6 +164,7 @@ async function seed() {
 		)
 		.run('server-acme', 'org-acme', 'github', 'https://api.github.example/mcp')
 	mocks.setPreRegisteredOAuthClient.mockClear()
+	mocks.clientIds.clear()
 	const env = {
 		APP_DB: createD1FromSqlite(sqlite),
 		AUDIT_DB: createAuditTestDb(),
@@ -243,7 +277,7 @@ test('an org admin saves, replaces, and removes a client; only the sealed secret
 		),
 	).rejects.toThrow('Unable to decrypt MCP server OAuth client secret.')
 
-	expect(storedSetting(sqlite)['oauth_client_id']).toBe(clientId)
+	expect(mocks.clientIds.get('server-acme')).toBe(clientId)
 	expect(JSON.stringify(storedSetting(sqlite))).not.toContain(clientSecret)
 
 	const listed = await callApi(env, { person: 'ada', method: 'GET' })
@@ -269,7 +303,7 @@ test('an org admin saves, replaces, and removes a client; only the sealed secret
 	})
 	expect(removed.status).toBe(200)
 	expect(hubCall(2).client).toBeNull()
-	expect(storedSetting(sqlite)['oauth_client_id']).toBeNull()
+	expect(mocks.clientIds.has('server-acme')).toBe(false)
 
 	const audit = await auditRows(env)
 	expect(
@@ -319,7 +353,7 @@ test('an org admin saves, replaces, and removes a client; only the sealed secret
 })
 
 test('members without integration write, people outside the org, and other orgs cannot touch the client', async () => {
-	const { env, sqlite } = await seed()
+	const { env } = await seed()
 	const body = {
 		action: 'set-oauth-client',
 		id: 'server-acme',
@@ -351,7 +385,7 @@ test('members without integration write, people outside the org, and other orgs 
 	expect(memberRemove.status).toBe(403)
 
 	expect(mocks.setPreRegisteredOAuthClient).not.toHaveBeenCalled()
-	expect(storedSetting(sqlite)['oauth_client_id']).toBeNull()
+	expect(mocks.clientIds.size).toBe(0)
 	expect(await auditRows(env)).toEqual([])
 	for (const response of [member, outsider, wrongOrg, memberRemove]) {
 		expect(response.text).not.toContain(clientSecret)
@@ -359,8 +393,8 @@ test('members without integration write, people outside the org, and other orgs 
 	expect(JSON.stringify(consoleCalls)).not.toContain(clientSecret)
 })
 
-test('incomplete input and removing a missing client are rejected before anything is written', async () => {
-	const { env, sqlite } = await seed()
+test('incomplete input and removing a missing client are rejected and write nothing', async () => {
+	const { env } = await seed()
 
 	const missingSecret = await callApi(env, {
 		person: 'ada',
@@ -377,14 +411,19 @@ test('incomplete input and removing a missing client are rejected before anythin
 		body: { action: 'remove-oauth-client', id: 'server-acme' },
 	})
 	expect(nothingToRemove.status).toBe(400)
+	expect(JSON.parse(nothingToRemove.text)).toMatchObject({
+		ok: false,
+		error: 'This server has no OAuth client configured.',
+	})
 
-	expect(mocks.setPreRegisteredOAuthClient).not.toHaveBeenCalled()
-	expect(storedSetting(sqlite)['oauth_client_id']).toBeNull()
+	expect(mocks.setPreRegisteredOAuthClient).toHaveBeenCalledTimes(1)
+	expect(hubCall(0).client).toBeNull()
+	expect(mocks.clientIds.size).toBe(0)
 	expect(await auditRows(env)).toEqual([])
 })
 
-test('a hub failure leaves the saved client id as it was and records no audit event', async () => {
-	const { env, sqlite } = await seed()
+test('a hub failure reports the error and records no audit event', async () => {
+	const { env } = await seed()
 	mocks.setPreRegisteredOAuthClient.mockRejectedValueOnce(
 		new Error('MCP server "server-acme" is not registered.'),
 	)
@@ -401,6 +440,6 @@ test('a hub failure leaves the saved client id as it was and records no audit ev
 	expect(failed.status).toBe(400)
 	expect(failed.text).toContain('Unable to update the OAuth client')
 	expect(failed.text).not.toContain(clientSecret)
-	expect(storedSetting(sqlite)['oauth_client_id']).toBeNull()
+	expect(mocks.clientIds.size).toBe(0)
 	expect(await auditRows(env)).toEqual([])
 })
