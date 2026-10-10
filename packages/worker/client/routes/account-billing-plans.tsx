@@ -237,7 +237,12 @@ export function renderAccountBillingPlans(input: {
 									mix={css({ margin: 0, color: colors.text })}
 									data-testid="billing-seat-pricing"
 								>
-									{describeSeatPricing(seats, selectedIntervalByPlan[paidTier])}
+									{describeSeatPricing(
+										seats,
+										activeStripePlan && billing.stripeInterval
+											? billing.stripeInterval
+											: selectedIntervalByPlan[paidTier],
+									)}
 								</p>
 							) : null}
 							{billing.usageHref ? (

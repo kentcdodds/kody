@@ -144,3 +144,28 @@ test('a rejected checkout explains itself under the Subscribe button', async () 
 	expect(html.slice(alert)).toContain(error)
 	expect(await renderPlans(billing())).not.toContain('role="alert"')
 })
+
+test('an annual team subscription shows its annual seat total', async () => {
+	const team = {
+		slug: 'acme',
+		displayName: 'Acme',
+		personal: false,
+		seats: 3,
+		canManage: true,
+	}
+	const annual = await renderPlans(
+		billing({
+			stripePlan: 'pro',
+			stripeInterval: 'year',
+			effectivePlan: 'pro',
+			hasStripeCustomer: true,
+			creditsEligible: true,
+			org: team,
+		}),
+	)
+	expect(annual).toContain('3 seats · $360/year')
+	expect(annual).not.toContain('3 seats · $36/month')
+	expect(await renderPlans(billing({ org: team }))).toContain(
+		'3 seats · $36/month',
+	)
+})
