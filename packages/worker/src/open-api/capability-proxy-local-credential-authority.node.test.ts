@@ -179,7 +179,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 	expect(String(secretDenied)).toMatch(/Missing secret:use/)
 
 	const integrationDenied = await runCapabilityProxyGatewayFetch({
-		ctx,
+		ctx: buildCtx(memberRequest),
 		args: [
 			{
 				packageId,
@@ -223,7 +223,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 	)
 	await expect(
 		runCapabilityProxyGatewayFetch({
-			ctx,
+			ctx: buildCtx(memberRequest),
 			args: [
 				{
 					packageId: otherPackageId,
@@ -264,13 +264,7 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 		},
 	})
 	const granted = await runCapabilityProxyGatewayFetch({
-		ctx: {
-			...ctx,
-			callerContext: {
-				...(ctx as { callerContext: object }).callerContext,
-				request: memberAfterGrant,
-			},
-		} as never,
+		ctx: buildCtx(memberAfterGrant),
 		args: [
 			{
 				packageId,
