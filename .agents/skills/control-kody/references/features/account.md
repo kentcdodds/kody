@@ -36,16 +36,16 @@ members, teams, grants, and collaborators are `/@<slug>/-/settings`,
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Secrets, jobs, and the other org resource pages read
-`request.org.id`. Packages and connected agents stay 404 on a team org because
-those two sections still read the person. Team orgs still get an Organization
-rail: Settings, Members, Teams (owners/members), Grants, Collaborators, and
-Billing (`/@<slug>/-/billing`, owners). The org switcher, org home, and
+`request.org.id`. Packages and connected agents 404 on a team org because those
+two sections read the person. Team orgs have an Organization rail: Settings,
+Members, Teams (owners/members), Grants, Collaborators, and Billing
+(`/@<slug>/-/billing`, owners). The org switcher, org home, and
 `/account/organizations` also link into those sections. Personal orgs keep
 Billing/Usage on the account rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
-`/@<slug>/-/…`. Old `/account/...` resource pages 404.
-`/account/packages/:packageId` still redirects to `/@username/:kodyId`.
+`/@<slug>/-/…`. `/account/...` resource pages 404, except
+`/account/packages/:packageId`, which redirects to `/@username/:kodyId`.
 
 ## Drive it
 

@@ -35,7 +35,7 @@ lock, visibility, webhooks, delete), and `/@username/:kodyId/approve-publish`
 (published-vs-HEAD review). Opening an allowlisted image or video in the tree
 renders a preview; the bytes come from `/@username/:kodyId/raw/:ref/…` (same
 authz as the tree). `/account/packages` 404s. `/account/packages/:packageId`
-still redirects to the canonical package page.
+redirects to the canonical package page.
 
 ## Drive it
 
@@ -86,8 +86,6 @@ fixtures use `control-kody execute` / `search` against the same origin.
   first. Agents review that hygiene before `packageUpdate`
   `changes.visibility: "public"`; they pass `confirm_name` only when going
   private.
-- Invocation-token JSON actions on `POST /account/packages.json` are an
-  unadvertised operator drain. Settings does not show token forms.
 - When default-branch HEAD is newer than the last publish, the Repo tab shows
   **HEAD ahead of published**. Owners click that badge to review the diff and
   publish HEAD on `/@username/:kodyId/approve-publish`. Publish checks require
