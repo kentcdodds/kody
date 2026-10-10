@@ -106,6 +106,29 @@ function automation(input: {
 	}
 }
 
+function credentialIdFor(
+	source: Extract<
+		RequestSource,
+		{ kind: 'session' | 'mcp-oauth' | 'cli' | 'api-token' | 'package-app' }
+	>,
+	oauthClientId: string | null | undefined,
+): string | null {
+	switch (source.kind) {
+		case 'api-token':
+			return source.tokenId
+		case 'mcp-oauth':
+		case 'cli':
+			return oauthClientId?.trim() || null
+		case 'session':
+		case 'package-app':
+			return null
+		default: {
+			const exhaustive: never = source
+			throw new Error(`Unhandled credential source: ${String(exhaustive)}`)
+		}
+	}
+}
+
 /**
  * Build the request context for `user` reached through `source`.
  * `user` is the identity the caller context carries: the signed-in person
@@ -115,6 +138,8 @@ export function deriveRequestContext(input: {
 	user: RequestPerson
 	source: RequestSource
 	profileName?: string | null
+	/** OAuth client of an `mcp-oauth` / `cli` bearer grant; the credential id. */
+	oauthClientId?: string | null
 	/** When set (DB-backed session paths), overrides {@link resolveOrgBinding}. */
 	orgBinding?: RequestOrgBinding
 	/** Credential scopes. Populated for API tokens; null does not narrow. */
@@ -136,7 +161,7 @@ export function deriveRequestContext(input: {
 				attribution: { kind: 'user', userId: actor.userId },
 				credential: credentialFor({
 					kind: source.kind,
-					id: source.kind === 'api-token' ? source.tokenId : null,
+					id: credentialIdFor(source, input.oauthClientId),
 					org: binding.org,
 					profileName,
 					scopes: input.scopes ?? null,

@@ -56,6 +56,87 @@ type ConnectedTestClient = {
 	listTools(): ReturnType<Client['listTools']>
 }
 
+export type SharedMcpE2eServer = {
+	origin: string
+	ensureUser(user: TestUser): Promise<void>
+	markEmailVerified(email: string): Promise<void>
+	assignRole(email: string, role: string): Promise<void>
+	clearAuthRateLimits(): Promise<void>
+}
+
+type SharedMcpE2eServerHandle = SharedMcpE2eServer & {
+	close(): Promise<void>
+}
+
+type SharedMcpE2eGlobalState = {
+	promise: Promise<SharedMcpE2eServerHandle> | null
+	bootCount: number
+	closing: Promise<void> | null
+}
+
+const sharedMcpE2eGlobalKey = Symbol.for('kody.mcpE2e.sharedServer')
+
+function sharedMcpE2eGlobalState(): SharedMcpE2eGlobalState {
+	const globalRef = globalThis as typeof globalThis & {
+		[sharedMcpE2eGlobalKey]?: SharedMcpE2eGlobalState
+	}
+	globalRef[sharedMcpE2eGlobalKey] ??= {
+		promise: null,
+		bootCount: 0,
+		closing: null,
+	}
+	return globalRef[sharedMcpE2eGlobalKey]
+}
+
+/**
+ * One Wrangler test harness for the whole mcp-e2e project. State lives on
+ * `globalThis` (and mcp-e2e sets `isolate: false`) so Vitest file isolation
+ * cannot cold-boot again. Each test still seeds its own user/org.
+ */
+export async function getSharedMcpE2eServer(): Promise<SharedMcpE2eServer> {
+	const state = sharedMcpE2eGlobalState()
+	state.promise ??= startSharedMcpE2eServer().then((handle) => {
+		state.bootCount += 1
+		return handle
+	})
+	const server = await state.promise
+	return {
+		origin: server.origin,
+		ensureUser: (user) => server.ensureUser(user),
+		markEmailVerified: (email) => server.markEmailVerified(email),
+		assignRole: (email, role) => server.assignRole(email, role),
+		clearAuthRateLimits: () => server.clearAuthRateLimits(),
+	}
+}
+
+/** How many times the shared harness has been started in this worker. */
+export function sharedMcpE2eBootCount() {
+	return sharedMcpE2eGlobalState().bootCount
+}
+
+/** Dispose the shared harness (no-op when none is running). */
+export async function stopSharedMcpE2eServer() {
+	const state = sharedMcpE2eGlobalState()
+	if (!state.promise) return
+	state.closing ??= (async () => {
+		const handle = await state.promise
+		state.promise = null
+		await handle?.close()
+	})()
+	await state.closing
+	state.closing = null
+}
+
+/** Unique DNS-safe username + email so shared-DB tests stay isolated. */
+export function createUniqueTestUser(): TestUser {
+	const id = randomUUID().replace(/-/g, '').slice(0, 10)
+	return {
+		email: `mcp-${id}@example.com`,
+		username: `u${id}`,
+		password: testUserPassword,
+	}
+}
+
 export async function createTestDatabase() {
 	const persistDir = await mkdtemp(path.join(tmpdir(), 'kody-mcp-e2e-'))
 	const user = {
@@ -174,7 +255,31 @@ export async function startDevServer(
 	)
 }
 
+async function startSharedMcpE2eServer(): Promise<SharedMcpE2eServerHandle> {
+	const started = await startHarnessWithCloudflareMock()
+	return {
+		origin: started.origin,
+		ensureUser: started.ensureUser,
+		markEmailVerified: started.markEmailVerified,
+		assignRole: started.assignRole,
+		clearAuthRateLimits: started.clearAuthRateLimits,
+		close: started.close,
+	}
+}
+
 async function startDevServerWithCloudflareMock() {
+	const started = await startHarnessWithCloudflareMock()
+	return {
+		origin: started.origin,
+		ensureUser: started.ensureUser,
+		markEmailVerified: started.markEmailVerified,
+		async [Symbol.asyncDispose]() {
+			await started.close()
+		},
+	}
+}
+
+async function startHarnessWithCloudflareMock() {
 	await Promise.all([ensureWorkerBundlerModules(), ensureGuideCatalogModules()])
 	const cloudflareMock = await startCloudflareMock(
 		`mcp-e2e-cloudflare-${randomUUID()}`,
@@ -241,7 +346,29 @@ WHERE email = ?`,
 					.bind(email)
 					.run()
 			},
-			async [Symbol.asyncDispose]() {
+			async assignRole(email: string, role: string) {
+				await env.APP_DB.prepare(
+					`INSERT OR IGNORE INTO user_roles (user_id, role_id)
+SELECT u.id, r.id
+FROM users u, roles r
+WHERE u.email = ? AND r.name = ?`,
+				)
+					.bind(email, role)
+					.run()
+			},
+			async clearAuthRateLimits() {
+				await env.APP_DB.prepare(
+					`CREATE TABLE IF NOT EXISTS _rate_limits (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	key TEXT NOT NULL,
+	ts INTEGER NOT NULL
+)`,
+				).run()
+				await env.APP_DB.prepare(
+					`DELETE FROM _rate_limits WHERE key LIKE 'auth:ip:%'`,
+				).run()
+			},
+			async close() {
 				try {
 					await harness.close()
 				} finally {
@@ -412,24 +539,32 @@ export async function createMcpClient(
 	options: {
 		// `/mcp` rejects unverified accounts, so the test user's email is
 		// marked verified in the local D1 database before connecting.
-		persistDir: string
+		persistDir?: string
 		extraHeaders?: Record<string, string>
 		ensureUser?: (user: TestUser) => Promise<void>
 		markEmailVerified?: (email: string) => Promise<void>
+		clearAuthRateLimits?: () => Promise<void>
 	},
 ) {
 	const extraHeaders = options.extraHeaders
+	if (options.clearAuthRateLimits) {
+		await options.clearAuthRateLimits()
+	}
 	if (options.ensureUser) {
 		await options.ensureUser(user)
 	}
 	const cookieHeader = await loginToApp(origin, user)
 	if (options.markEmailVerified) {
 		await options.markEmailVerified(user.email)
-	} else {
+	} else if (options.persistDir) {
 		await markEmailVerifiedInMcpTestDatabase({
 			persistDir: options.persistDir,
 			email: user.email,
 		})
+	} else {
+		throw new Error(
+			'createMcpClient requires persistDir or markEmailVerified to verify the test user.',
+		)
 	}
 	const clientRegistration = await registerOAuthClient(origin)
 	const code = await authorizeOAuthClient(
@@ -492,14 +627,31 @@ export async function createModernMcpClient(
 	origin: string,
 	user: TestUser,
 	options: {
-		persistDir: string
+		persistDir?: string
+		ensureUser?: (user: TestUser) => Promise<void>
+		markEmailVerified?: (email: string) => Promise<void>
+		clearAuthRateLimits?: () => Promise<void>
 	},
 ) {
+	if (options.clearAuthRateLimits) {
+		await options.clearAuthRateLimits()
+	}
+	if (options.ensureUser) {
+		await options.ensureUser(user)
+	}
 	const cookieHeader = await loginToApp(origin, user)
-	await markEmailVerifiedInMcpTestDatabase({
-		persistDir: options.persistDir,
-		email: user.email,
-	})
+	if (options.markEmailVerified) {
+		await options.markEmailVerified(user.email)
+	} else if (options.persistDir) {
+		await markEmailVerifiedInMcpTestDatabase({
+			persistDir: options.persistDir,
+			email: user.email,
+		})
+	} else {
+		throw new Error(
+			'createModernMcpClient requires persistDir or markEmailVerified to verify the test user.',
+		)
+	}
 	const clientRegistration = await registerOAuthClient(origin)
 	const code = await authorizeOAuthClient(
 		origin,
