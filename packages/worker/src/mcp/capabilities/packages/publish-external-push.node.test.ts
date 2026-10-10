@@ -582,6 +582,72 @@ test('budget exhaustion returns a dispatched handle', async () => {
 	)
 })
 
+test('durable escalation keys team-org publishes to the owning org, not the actor personal org', async () => {
+	const teamOrgId = ownerIdFromStored('org-kody')
+	setupDefaultMocks()
+	mockModule.getSavedPackageById.mockResolvedValue({
+		id: 'package-1',
+		userId: teamOrgId,
+		kodyId: 'agent-mail',
+		name: '@kody/agent-mail',
+		sourceId: 'source-1',
+		hasApp: false,
+	})
+	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
+		...sourceRow(),
+		user_id: teamOrgId,
+	})
+	mockModule.runWithDurableEscalation.mockResolvedValue({
+		kind: 'dispatched',
+		handle: {
+			status: 'dispatched',
+			workflow_id: 'dynwf-team-1',
+			workflow_name: 'packagePublishExternalPush',
+			idempotency_key: 'org-kody:publish',
+			run_status: 'queued',
+			message: 'dispatched',
+		},
+	})
+
+	const ctx = {
+		env: {
+			APP_DB: {
+				prepare: () => ({
+					bind: () => ({ first: async () => ({ username: 'patch' }) }),
+				}),
+			},
+			DYNAMIC_CALLABLE_WORKFLOWS: {},
+			PACKAGE_APP_BASE_URL: 'https://packages.kody.test',
+		} as unknown as Env,
+		callerContext: createMcpCallerContext({
+			source: { kind: 'mcp-oauth' },
+			baseUrl: 'https://kody.test',
+			executionOrigin: 'interactive',
+			user: {
+				userId: personIdFromStored('actor-1'),
+				email: 'patch@example.com',
+				username: 'patch',
+				displayName: 'Patch',
+			},
+			orgBinding: {
+				org: { id: teamOrgId, slug: 'kody' },
+				role: 'owner',
+			},
+		}),
+	}
+
+	const result = await publishExternalPushCapability.handler(
+		{ package_id: 'package-1' },
+		ctx,
+	)
+	expect(result.status).toBe('dispatched')
+	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
+		expect.objectContaining({
+			userId: teamOrgId,
+		}),
+	)
+})
+
 test('publishExternalPush recovers from transient Durable Object resets', async () => {
 	consoleWarn.mockImplementation(() => {})
 	setupDefaultMocks()

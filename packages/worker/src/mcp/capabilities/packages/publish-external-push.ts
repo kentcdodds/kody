@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
@@ -968,9 +965,12 @@ export const publishExternalPushCapability = defineDomainCapability(
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
 			}
 			const escalateStartedAt = Date.now()
+			// Key the durable re-entry to the package-owning org, not the actor's
+			// personal org. Team publishes (`@kody`, …) otherwise re-bind to the
+			// actor personal org and fail mid-rebuild after git accepted the push.
 			const outcome = await runWithDurableEscalation({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
+				userId: owner.ownerUserId,
 				userEmail: user.email,
 				lineage: requestLineage(requireMcpRequest(ctx.callerContext)),
 				budgetMs: defaultDurableEscalationBudgetMs,

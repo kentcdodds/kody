@@ -1297,6 +1297,29 @@ test('searchUnified drops package rows owned by another org', async () => {
 	)
 })
 
+test('searchUnified keeps team-org package rows when userId is the bound org', async () => {
+	const teamOrgId = 'org-kody-platform'
+	const withTeamPackages = await search({
+		query: 'agent mail add-rule',
+		userId: ownerIdFromStored(teamOrgId),
+		optionalRows: rows({
+			packageRows: [
+				leanPackageRow('agent-mail-pkg', teamOrgId, {
+					name: '@kody/agent-mail',
+					kodyId: 'agent-mail',
+					description: 'AgentMail inboxes for agents',
+				}),
+			],
+		}),
+	})
+	expect(
+		withTeamPackages.matches.some(
+			(match) =>
+				match.type === 'package' && match.packageId === 'agent-mail-pkg',
+		),
+	).toBe(true)
+})
+
 test('searchUnified embeds each distinct query text once online through a shared embedding cache', async () => {
 	const embedTexts: Array<string> = []
 	const onlineEnv = {
