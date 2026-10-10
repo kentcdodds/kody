@@ -1,9 +1,9 @@
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
+import { normalizeUsername } from '#worker/identity/username.ts'
 import {
-	getEffectiveUsernameValidationError,
-	normalizeUsername,
-} from '#worker/identity/username.ts'
-import { createOrg } from '#worker/orgs/access-writes.ts'
+	createOrg,
+	OrgSlugValidationError,
+} from '#worker/orgs/access-writes.ts'
 import { FreeOrgLimitError } from '#worker/orgs/billing.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
 
@@ -26,9 +26,9 @@ function slugValidationMessage(message: string) {
 }
 
 /**
- * Web-facing create organization. Validates display name and reserved handles,
- * then calls the same {@link createOrg} path MCP `orgCreate` uses (including
- * the free-org ownership cap).
+ * Web-facing create organization. Validates the display name, then calls the
+ * same {@link createOrg} path MCP `orgCreate` uses (slug format and reserved
+ * names, the free-org ownership cap).
  */
 export async function createOrganization(
 	db: D1Database,
@@ -36,10 +36,6 @@ export async function createOrganization(
 	input: CreateOrganizationInput,
 ): Promise<CreateOrganizationResult> {
 	const slug = normalizeUsername(input.slug)
-	const validationError = await getEffectiveUsernameValidationError(slug, env)
-	if (validationError) {
-		return { ok: false, error: slugValidationMessage(validationError) }
-	}
 	const displayName = input.displayName.trim()
 	if (!displayName || displayName.length > 80) {
 		return { ok: false, error: 'Enter a name up to 80 characters.' }
@@ -53,6 +49,7 @@ export async function createOrganization(
 	try {
 		const created = await createOrg({
 			db,
+			env,
 			slug,
 			displayName,
 			createdByUserId: input.personId,
@@ -60,6 +57,9 @@ export async function createOrganization(
 		})
 		return { ok: true, slug: created.slug }
 	} catch (error) {
+		if (error instanceof OrgSlugValidationError) {
+			return { ok: false, error: slugValidationMessage(error.message) }
+		}
 		if (error instanceof FreeOrgLimitError) {
 			return { ok: false, error: error.message }
 		}

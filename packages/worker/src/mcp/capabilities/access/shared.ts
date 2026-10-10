@@ -31,6 +31,7 @@ import {
 	type GrantResourceType,
 	type GrantView,
 	grantResourceTypes,
+	OrgSlugValidationError,
 } from '#worker/orgs/access-writes.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
@@ -98,6 +99,9 @@ export function toAccessGrantPayload(grant: GrantView) {
 
 export function rethrowAccessError(error: unknown): never {
 	if (error instanceof McpCallerError) throw error
+	if (error instanceof OrgSlugValidationError) {
+		throw new McpCallerError(error.message)
+	}
 	if (error instanceof Error) {
 		if (
 			/UNIQUE constraint failed: (handles\.handle|orgs\.slug)/.test(
