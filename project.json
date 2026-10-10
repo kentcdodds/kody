@@ -1,0 +1,22 @@
+{
+	"$schema": "./node_modules/nx/schemas/project-schema.json",
+	"name": "tools",
+	"targets": {
+		"typecheck": {
+			"executor": "nx:run-commands",
+			"inputs": [
+				"{workspaceRoot}/package.json",
+				"{workspaceRoot}/package-lock.json",
+				"{workspaceRoot}/tsconfig*.json",
+				"{workspaceRoot}/*.ts",
+				"{workspaceRoot}/tools/**/*",
+				"{workspaceRoot}/e2e/**/*",
+				"{workspaceRoot}/.agents/**/*",
+				"{workspaceRoot}/packages/**/*"
+			],
+			"options": {
+				"command": "tsc -p tsconfig-tools-typecheck.json"
+			}
+		}
+	}
+}

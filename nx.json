@@ -55,6 +55,8 @@
 			"inputs": [
 				"default",
 				"^default",
+				"{workspaceRoot}/packages/worker/**/*",
+				"{workspaceRoot}/packages/shared/**/*",
 				"{workspaceRoot}/packages/mock-servers/**/*"
 			]
 		},
@@ -116,6 +118,36 @@
 		},
 		"preview-e2e": {
 			"cache": false
+		},
+		"typecheck-src": {
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/packages/worker/**/*",
+				"{workspaceRoot}/packages/shared/**/*",
+				"{workspaceRoot}/packages/mock-servers/**/*"
+			]
+		},
+		"typecheck-worker-test": {
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/packages/worker/**/*",
+				"{workspaceRoot}/packages/shared/**/*",
+				"{workspaceRoot}/packages/mock-servers/**/*"
+			]
+		},
+		"typecheck-client-test": {
+			"cache": true,
+			"inputs": [
+				"default",
+				"^default",
+				"{workspaceRoot}/packages/worker/**/*",
+				"{workspaceRoot}/packages/shared/**/*",
+				"{workspaceRoot}/packages/mock-servers/**/*"
+			]
 		}
 	},
 	"tui": {
