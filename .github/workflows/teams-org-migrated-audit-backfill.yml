@@ -5,8 +5,7 @@ name: 🧾 Teams org.migrated audit backfill
 # rows; a repeat inserts nothing. Production runs are Kent's, from main, with
 # the confirm phrase. Preview targets (kody-pr-<number> or kody-branch-<slug>)
 # can run from a non-main ref so a rehearsal can use this file before it is
-# on main. The pull_request label job below is the pre-merge preview proof
-# and is removed once that proof is recorded.
+# on main.
 
 on:
   workflow_dispatch:
@@ -32,17 +31,12 @@ on:
         description: production, either mode, type "backfill org.migrated audit"
         required: false
         type: string
-  pull_request:
-    types:
-      - labeled
 
 permissions:
   contents: read
 
 concurrency:
-  group:
-    teams-org-migrated-audit-${{ github.event_name == 'workflow_dispatch' &&
-    inputs.target || format('kody-pr-{0}', github.event.pull_request.number) }}
+  group: teams-org-migrated-audit-${{ inputs.target }}
   cancel-in-progress: false
 
 jobs:
@@ -123,89 +117,4 @@ jobs:
             else
               echo "No report was written; see the failed step."
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  preview-rehearsal:
-    name: 🧾 Preview rehearsal
-    if:
-      github.event_name == 'pull_request' && github.event.action == 'labeled' &&
-      github.event.label.name == 'org-migrated-audit-backfill' &&
-      github.event.pull_request.head.repo.fork == false
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-    steps:
-      - name: 📦 Checkout
-        uses: actions/checkout@v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: 🟢 Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 26
-          cache: npm
-
-      - name: 📥 Install Dependencies
-        run: npm ci
-
-      - name: 🧾 Dry-run, apply, apply again
-        shell: bash
-        run: |
-          set -euo pipefail
-          TARGET="kody-pr-${PR_NUMBER}"
-          if ! [[ "$TARGET" =~ ^kody-pr-[0-9]+$ ]]; then
-            echo "refusing preview target '$TARGET'" >&2
-            exit 1
-          fi
-          run_mode() {
-            node tools/teams-migration/backfill-org-migrated-audit.ts --target "$TARGET" --mode "$1"
-          }
-          field() {
-            printf '%s\n' "$1" | awk -F= -v key="$2" '$1 == key { print $2 }'
-          }
-          dry="$(run_mode dry-run)"
-          printf '%s\n' "$dry"
-          apply1="$(run_mode apply)"
-          printf '%s\n' "$apply1"
-          apply2="$(run_mode apply)"
-          printf '%s\n' "$apply2"
-          orgs="$(field "$dry" orgs)"
-          pending="$(field "$dry" pending)"
-          present="$(field "$dry" present)"
-          if [ "$orgs" -lt 1 ]; then
-            echo "preview has no orgs; idempotency was not proven" >&2
-            exit 1
-          fi
-          if [ "$(field "$dry" inserted)" != 0 ]; then
-            echo "dry-run inserted rows" >&2
-            exit 1
-          fi
-          if [ "$(field "$apply1" inserted)" != "$pending" ]; then
-            echo "apply inserted $(field "$apply1" inserted), dry-run pending was $pending" >&2
-            exit 1
-          fi
-          if [ "$(field "$apply2" inserted)" != 0 ] || [ "$(field "$apply2" pending)" != 0 ]; then
-            echo "repeat apply wrote new rows" >&2
-            exit 1
-          fi
-          if [ "$(field "$apply2" present)" != "$((present + pending))" ]; then
-            echo "repeat apply present count did not match the dry-run" >&2
-            exit 1
-          fi
-          {
-            echo "## Preview rehearsal on \`$TARGET\`"
-            echo ""
-            echo "Dry-run, apply, and a second apply. The second apply inserted 0."
-            echo ""
-            echo '```'
-            printf '%s\n' "$dry"
-            echo ""
-            printf '%s\n' "$apply1"
-            echo ""
-            printf '%s\n' "$apply2"
-            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

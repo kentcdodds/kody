@@ -971,6 +971,75 @@ jobs:
               });
             }
 
+      # Temporary proof for the org.migrated backfill runner on this branch's
+      # preview databases. Removed before merge. Deploy workflows do not call
+      # the runner.
+      - name: 🧾 Rehearse org.migrated audit backfill
+        if:
+          github.event_name == 'pull_request' && github.head_ref ==
+          'cursor/wire-p3-org-migrated-audit-backfill-runner-3059-e349'
+        shell: bash
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          WORKER_NAME: ${{ steps.names.outputs.worker_name }}
+        run: |
+          set -euo pipefail
+          TARGET="kody-pr-${PR_NUMBER}"
+          if [ "$WORKER_NAME" != "$TARGET" ]; then
+            echo "refusing to rehearse: worker '$WORKER_NAME' is not '$TARGET'" >&2
+            exit 1
+          fi
+          run_mode() {
+            node tools/teams-migration/backfill-org-migrated-audit.ts --target "$TARGET" --mode "$1"
+          }
+          field() {
+            printf '%s\n' "$1" | awk -F= -v key="$2" '$1 == key { print $2 }'
+          }
+          dry="$(run_mode dry-run)"
+          printf '%s\n' "$dry"
+          apply1="$(run_mode apply)"
+          printf '%s\n' "$apply1"
+          apply2="$(run_mode apply)"
+          printf '%s\n' "$apply2"
+          orgs="$(field "$dry" orgs)"
+          pending="$(field "$dry" pending)"
+          present="$(field "$dry" present)"
+          if [ "$orgs" -lt 1 ]; then
+            echo "preview has no orgs; idempotency was not proven" >&2
+            exit 1
+          fi
+          if [ "$(field "$dry" inserted)" != 0 ]; then
+            echo "dry-run inserted rows" >&2
+            exit 1
+          fi
+          if [ "$(field "$apply1" inserted)" != "$pending" ]; then
+            echo "apply inserted $(field "$apply1" inserted), dry-run pending was $pending" >&2
+            exit 1
+          fi
+          if [ "$(field "$apply2" inserted)" != 0 ] || [ "$(field "$apply2" pending)" != 0 ]; then
+            echo "repeat apply wrote new rows" >&2
+            exit 1
+          fi
+          if [ "$(field "$apply2" present)" != "$((present + pending))" ]; then
+            echo "repeat apply present count did not match the dry-run" >&2
+            exit 1
+          fi
+          {
+            echo "## org.migrated audit backfill rehearsal on \`$TARGET\`"
+            echo ""
+            echo "Dry-run wrote nothing. Apply inserted the pending rows. The second apply inserted 0."
+            echo ""
+            echo '```'
+            printf '%s\n' "$dry"
+            echo ""
+            printf '%s\n' "$apply1"
+            echo ""
+            printf '%s\n' "$apply2"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   cleanup:
     runs-on: ubuntu-latest
     name: 🧹 Cleanup Preview Resources
