@@ -1,6 +1,7 @@
 import { createListDetailRoute } from '#client/list-detail-route.ts'
 import { readJson } from '#client/routes/account-approval-shared.ts'
 import { formatIntegerNumber } from '#client/charts/chart-theme.ts'
+import { isUnlimitedLimit } from '#universal/plans.ts'
 import {
 	type AdminUserListItem,
 	type AdminUsersLoaderData,
@@ -26,7 +27,7 @@ const { getSelection, buildDetailHref } = createListDetailRoute('/admin/users')
 export { getSelection }
 
 export function formatUsageLimit(limit: number) {
-	return formatIntegerNumber(limit)
+	return isUnlimitedLimit(limit) ? 'Unlimited' : formatIntegerNumber(limit)
 }
 
 export function formatUsagePercent(value: number | null) {

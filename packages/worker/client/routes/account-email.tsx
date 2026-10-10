@@ -26,6 +26,7 @@ import {
 	recordStampCss,
 } from '#client/routes/record-table.tsx'
 import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import { isUnlimitedLimit } from '#universal/plans.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
 import {
 	type AccountEmailDestinationsLoaderData,
@@ -57,6 +58,10 @@ import {
 } from './account-email-shared.ts'
 
 export { accountEmailRouteLoader }
+
+function formatEmailLimit(limit: number) {
+	return isUnlimitedLimit(limit) ? 'Unlimited' : String(limit)
+}
 
 export function AccountEmailRoute(handle: Handle) {
 	let data: AccountEmailLoaderData | null = null
@@ -381,9 +386,9 @@ export function AccountEmailRoute(handle: Handle) {
 										Plan {data.usage.plan}: {data.usage.stored_messages.count}/
 										{data.usage.stored_messages.limit} stored ·{' '}
 										{data.usage.receives_today.count}/
-										{data.usage.receives_today.limit} received today ·{' '}
-										{data.usage.sends_today.count}/
-										{data.usage.sends_today.limit} sent today
+										{formatEmailLimit(data.usage.receives_today.limit)} received
+										today · {data.usage.sends_today.count}/
+										{formatEmailLimit(data.usage.sends_today.limit)} sent today
 									</p>
 								) : null}
 							</div>
