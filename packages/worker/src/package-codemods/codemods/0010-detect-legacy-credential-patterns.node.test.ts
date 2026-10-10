@@ -198,6 +198,26 @@ test('0010 falls back to text for unparseable modules', () => {
 		'computed integration',
 		'kody.mcp',
 	])
+
+	expect(
+		modulePatterns(
+			[
+				'export default function broken( {',
+				'\tpackageSecrets.get(alias)',
+				"\tsecretHeaders.basic({ usernameSecret: 'u', passwordSecret: p, scope: 'package' })",
+			].join('\n'),
+		),
+	).toEqual(['literal secret', 'computed secret', '|scope='])
+	expect(
+		modulePatterns(
+			'export default function broken( {\n\tkody.secretJwtSign(input)\n',
+		),
+	).toEqual(['computed secret'])
+	expect(
+		modulePatterns(
+			"export default function broken( {\n\tkody.integrationTokenRefresh({ name: 'github' })\n",
+		),
+	).toEqual(['literal secret'])
 })
 
 test('0010 transform writes nothing and returns the findings as needsManual', () => {

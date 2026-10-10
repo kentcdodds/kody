@@ -68,10 +68,20 @@ const completePlaceholderPatterns: Record<string, RegExp> = {
 const scopeSuffixPattern = /\|scope=(?:session|package|user)\b/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
-const textAuthenticatedFetchPattern =
-	/\bcreateAuthenticatedFetch\s*\(\s*(['"`])?/g
 
 type NameKind = 'secret' | 'integration'
+
+/** Group 1 captures the opening quote when the first argument is a literal. */
+const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
+	{
+		pattern: /\bcreateAuthenticatedFetch\s*\(\s*(['"`])?/g,
+		kind: 'integration',
+	},
+	{
+		pattern: /\bpackageSecrets\s*(?:\?\.|\.)\s*(?:get|has)\s*\(\s*(['"`])?/g,
+		kind: 'secret',
+	},
+]
 
 /** Helper calls whose first argument (or named fields) name a credential. */
 const nameArgumentCallees: Record<string, NameKind> = {
@@ -197,7 +207,11 @@ function classifyNameExpression(
 		add('literal secret')
 		return
 	}
-	add(kind === 'integration' ? 'computed integration' : 'computed secret')
+	add(computedPattern(kind))
+}
+
+function computedPattern(kind: NameKind): LegacyCredentialPattern {
+	return kind === 'integration' ? 'computed integration' : 'computed secret'
 }
 
 function getCalleeName(callee: AstNode | undefined) {
@@ -230,21 +244,12 @@ function classifyNamedFields(
 	add: (pattern: LegacyCredentialPattern) => void,
 ) {
 	if (argument?.type !== 'ObjectExpression') {
-		if (argument)
-			add(
-				spec.kind === 'integration'
-					? 'computed integration'
-					: 'computed secret',
-			)
+		if (argument) add(computedPattern(spec.kind))
 		return
 	}
 	for (const property of argument.properties ?? []) {
 		if (property.type !== 'ObjectProperty' || property.computed === true) {
-			add(
-				spec.kind === 'integration'
-					? 'computed integration'
-					: 'computed secret',
-			)
+			add(computedPattern(spec.kind))
 			continue
 		}
 		const key = getNodeName(property.key)
@@ -362,8 +367,30 @@ function detectInUnparsedModule(
 ) {
 	classifyStringPiece(source, add)
 	if (textKodyMcpPattern.test(source)) add('kody.mcp')
-	for (const match of source.matchAll(textAuthenticatedFetchPattern)) {
-		add(match[1] ? 'literal secret' : 'computed integration')
+	for (const { pattern, kind } of textNameArgumentCalls) {
+		for (const match of source.matchAll(pattern)) {
+			add(match[1] ? 'literal secret' : computedPattern(kind))
+		}
+	}
+	for (const [callee, spec] of Object.entries(nameFieldCallees)) {
+		const call =
+			callee === 'basic'
+				? /\bsecretHeaders\s*(?:\?\.|\.)\s*basic\s*\(/
+				: new RegExp(`\\b${callee}\\s*\\(`)
+		if (!call.test(source)) continue
+		let namedField = false
+		for (const field of spec.fields) {
+			for (const match of source.matchAll(
+				new RegExp(`\\b${field}\\s*:\\s*(['"\`])?`, 'g'),
+			)) {
+				namedField = true
+				add(match[1] ? 'literal secret' : computedPattern(spec.kind))
+			}
+		}
+		if (!namedField) add(computedPattern(spec.kind))
+		for (const field of spec.scopeFields) {
+			if (new RegExp(`\\b${field}\\s*:`).test(source)) add('|scope=')
+		}
 	}
 }
 
