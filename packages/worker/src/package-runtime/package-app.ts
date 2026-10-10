@@ -832,7 +832,15 @@ function withoutAuthorRuntimeErrorHeader(response) {
 			headers,
 		});
 	} catch (error) {
-		return response;
+		// Body may be locked/disturbed; still drop the internal marker so serve
+		// does not treat an authored 5xx as a runtime throw.
+		const fallbackHeaders = new Headers(response.headers);
+		fallbackHeaders.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		return new Response(null, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: fallbackHeaders,
+		});
 	}
 }
 
@@ -848,7 +856,14 @@ function tagPackageAppRuntimeRun(response, runtimeRunId) {
 			headers,
 		});
 	} catch (error) {
-		return response;
+		const fallbackHeaders = new Headers(response.headers);
+		fallbackHeaders.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		fallbackHeaders.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
+		return new Response(null, {
+			status: response.status,
+			statusText: response.statusText,
+			headers: fallbackHeaders,
+		});
 	}
 }
 
