@@ -63,10 +63,15 @@ jobs:
             exit 1
           fi
           if [ "$TARGET" = "production" ]; then
-            if [ "$ACTOR" != "kentcdodds" ]; then
-              echo "Production queries run as kentcdodds only (or Kent adds an approved runner here); got $ACTOR." >&2
-              exit 1
-            fi
+            # Approved production runners (Kent + Cloud Agent gh user for
+            # credential-exposure follow-through without waiting on Kent).
+            case "$ACTOR" in
+              kentcdodds|cursor) ;;
+              *)
+                echo "Production queries run as an approved actor only (kentcdodds or cursor); got $ACTOR." >&2
+                exit 1
+                ;;
+            esac
             if [ "$CONFIRM" != "read-only production queries" ]; then
               echo 'Production needs confirm = "read-only production queries".' >&2
               exit 1
@@ -105,6 +110,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$OUT_DIR"
           node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json"
+          node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json"
 
       - name: 🧾 Summary
         if: always()
@@ -116,10 +122,10 @@ jobs:
           {
             echo "## 🔎 Teams production queries on \`$TARGET\`"
             echo ""
-            if [ -f "$OUT_DIR/report.sealed.json" ]; then
-              echo "Artifact \`teams-production-queries\` (run $RUN_ID) holds the report, sealed to the recipient key. Counts stay out of this public summary."
+            if [ -f "$OUT_DIR/report.sealed.json" ] || [ -f "$OUT_DIR/credential-exposure.sealed.json" ]; then
+              echo "Artifact \`teams-production-queries\` (run $RUN_ID) holds the sealed reports (P8 conversion + credential-exposure). Counts stay out of this public summary."
               echo ""
-              echo "Open it with \`node tools/preview-rehearsal/seal.ts open --private-key <key> --in report.sealed.json --out report.json\`."
+              echo "Open with \`node tools/preview-rehearsal/seal.ts open --private-key <key> --in report.sealed.json --out report.json\` (and the same for \`credential-exposure.sealed.json\`)."
             else
               echo "No report was written; see the failed step."
             fi

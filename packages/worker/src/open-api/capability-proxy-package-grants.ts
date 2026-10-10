@@ -1,10 +1,13 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
 	type AdditionalKodyTools,
 	type PackageSecretToolOptions,
 } from '#mcp/runtime-helper-manifest.ts'
 import { takeSecretAuthorityFromCapabilityArgs } from '#mcp/secrets/secret-authority.ts'
+import { authorize, packageResource } from '#worker/authorization/authorize.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	createPackageStorageAccessDeniedMessage,
 	createPackageStorageKodyTools,
@@ -16,10 +19,11 @@ import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
  *
  * Cloud execute builds a bundler provenance grant set once per run. Local
  * execute has no sandbox graph on origin per hop, so each call validates the
- * stamped package id against caller ownership before running the ordinary
- * storage / mounted-secret tools for that single id. Nested static imports
- * stamp gatewayFetch via the local meter ALS (see local-execute-runtime-support)
- * so package-scoped secrets align with cloud without a run-wide grant set.
+ * stamped package id is in the org and the actor holds `package:execute` on
+ * it before running the ordinary storage / mounted-secret tools for that
+ * single id. Nested static imports stamp gatewayFetch via the local meter
+ * ALS (see local-execute-runtime-support) so package-scoped secrets align
+ * with cloud without a run-wide grant set.
  */
 
 function isPackageSecretAvailabilityError(error: unknown) {
@@ -35,8 +39,8 @@ async function authorizeLocalExecutePackageId(input: {
 	callerContext: McpCallerContext
 	packageId: string
 }) {
-	const userId = input.callerContext.user?.userId
-	if (!userId) {
+	const orgUserId = ownerIdFromCaller(input.callerContext)
+	if (!orgUserId) {
 		throw new Error(
 			'packageStorage / packageSecrets require an authenticated user.',
 		)
@@ -47,11 +51,13 @@ async function authorizeLocalExecutePackageId(input: {
 	}
 	const authorizedPackageId = await authorizeLocalExecuteOwnedPackageId({
 		db: input.env.APP_DB,
-		callerUserId: userId,
+		env: input.env,
+		request: input.callerContext.request,
+		orgUserId,
 		packageId,
 	})
 	return {
-		userId,
+		userId: orgUserId,
 		packageId: authorizedPackageId,
 		grantedPackageIds: new Set([authorizedPackageId]),
 	}
@@ -77,25 +83,44 @@ function readPackageSecretCall(args: unknown) {
 	return { alias, requestedPackageId }
 }
 
+/**
+ * Confirm the stamped package lives in the bound org and the acting person
+ * holds `package:execute` on it. Org ownership alone is not enough: a member
+ * with execute on package A must not stamp package B to skip ad-hoc
+ * credential Use checks.
+ */
 export async function authorizeLocalExecuteOwnedPackageId(input: {
 	db: D1Database
-	callerUserId: string
+	env: Env
+	request: RequestContext | null
+	orgUserId: string
 	packageId: string
 }) {
 	const owned = await getSavedPackageById(input.db, {
-		userId: input.callerUserId,
+		userId: input.orgUserId,
 		packageId: input.packageId,
 	})
-	if (owned) return input.packageId
-	throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
+	if (!owned) {
+		throw new Error(createPackageStorageAccessDeniedMessage(input.packageId))
+	}
+	await authorize(
+		{ env: input.env, request: input.request },
+		'package:execute',
+		packageResource({
+			id: input.packageId,
+			userId: input.orgUserId,
+			label: owned.name || owned.kodyId,
+		}),
+	)
+	return input.packageId
 }
 
 export async function createCapabilityProxyPackageHostTools(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<AdditionalKodyTools> {
-	const userId = input.callerContext.user?.userId
-	if (!userId) return {}
+	const orgUserId = ownerIdFromCaller(input.callerContext)
+	if (!orgUserId) return {}
 
 	const storageToolsByPackageId = new Map<
 		string,

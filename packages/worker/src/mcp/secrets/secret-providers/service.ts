@@ -1,5 +1,6 @@
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
+import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -378,6 +379,17 @@ export async function resolveProviderSecret(input: {
 		throw new SecretProviderError(
 			createMissingProviderBindingMessage(providerId),
 		)
+	}
+	if (!authorityPackageId) {
+		// Ad-hoc: require secret:use on the door key before any decrypt or
+		// provider invoke (canonicalize uses the door key).
+		await authorizeAmbientSecretUse({
+			env: input.env,
+			request: input.request,
+			orgUserId: ownerUserId,
+			secretName: binding.doorSecretName,
+			authorityPackageId: null,
+		})
 	}
 	const providerPackage = await getSavedPackageById(input.env.APP_DB, {
 		userId: ownerUserId,

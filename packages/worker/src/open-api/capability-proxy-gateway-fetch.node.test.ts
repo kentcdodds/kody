@@ -122,7 +122,7 @@ test('runCapabilityProxyGatewayFetch hops to executeGatewayFetch with stamped pa
 
 	expect(authorizeLocalExecuteOwnedPackageId).toHaveBeenCalledWith(
 		expect.objectContaining({
-			callerUserId: 'user-1',
+			orgUserId: 'user-1',
 			packageId: 'pkg-owned',
 		}),
 	)
