@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import {
@@ -69,7 +70,7 @@ function createStaleSessionTestEnv() {
 test('auth page renders login for a stale session instead of redirecting away', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		stableUserId: 'f'.repeat(64),
+		stableUserId: ownerIdFromStored('f').repeat(64),
 		email: 'missing@example.com',
 		rememberMe: false,
 	}
@@ -90,7 +91,7 @@ test('auth page renders login for a stale session instead of redirecting away', 
 test('auth page renders login for a deleting account instead of redirecting to /account', async () => {
 	setAuthSessionSecret(testCookieSecret)
 	const session: AuthSession = {
-		stableUserId: 'a'.repeat(64),
+		stableUserId: ownerIdFromStored('a').repeat(64),
 		email: 'deleting@example.com',
 		rememberMe: false,
 	}

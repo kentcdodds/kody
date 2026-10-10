@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -133,7 +136,7 @@ function search(
 	return searchUnified({
 		env: {} as Env,
 		limit: 5,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		registry: buildCapabilityRegistry([]),
 		optionalRows: emptyOptionalSearchRows,
 		...input,
@@ -163,7 +166,7 @@ function packageRecord(
 ): PackageSearchRow['record'] {
 	return {
 		id,
-		userId,
+		userId: ownerIdFromStored(userId),
 		name: id,
 		kodyId: id,
 		description: '',
@@ -390,9 +393,9 @@ test('searchUnified matches integrations by name, scope, and host, keeps shared-
 		]),
 	)
 	expect(
-		(await search({ query: 'github', userId: 'user-2' })).matches.filter(
-			(match) => match.type === 'integration',
-		),
+		(
+			await search({ query: 'github', userId: ownerIdFromStored('user-2') })
+		).matches.filter((match) => match.type === 'integration'),
 	).toEqual([])
 })
 
@@ -474,7 +477,7 @@ test('searchUnified ranks the same when retrievers settle during candidate gener
 	const fixtures = {
 		query: 'target lookup note',
 		limit: 5,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		registry: registryOf('meta', [
 			cap('target_lookup', 'meta', 'Find target details'),
 		]),
@@ -604,7 +607,7 @@ test('optional search rows load packages and values without partial fallbacks', 
 		overrides: Partial<Parameters<typeof loadOptionalSearchRows>[0]> = {},
 	) =>
 		loadOptionalSearchRows({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			loadPackages: async () => [],
 			loadUserSecrets: async () => [],
 			loadUserValues: async () => [],
@@ -675,14 +678,14 @@ test('buildSavedPackageSearchRows defers source loading and hydrates only top ma
 		buildSavedPackageSearchRows({
 			env: {} as Env,
 			baseUrl: 'http://localhost',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			records: [record],
 		})
 	const searchRows = (packageRows: Array<PackageSearchRow>, query: string) =>
 		search({
 			query,
 			limit: 3,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			optionalRows: rows({ packageRows }),
 		})
 

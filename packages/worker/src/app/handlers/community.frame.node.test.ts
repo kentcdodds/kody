@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createCommunityHandler } from './community.tsx'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
@@ -49,7 +50,7 @@ vi.mock('#worker/package-registry/user-scope.ts', () => ({
 
 const sampleListing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-mcp-id',
+	ownerUserId: ownerIdFromStored('owner-mcp-id'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'github-triage',
@@ -123,7 +124,7 @@ test('community page handler returns bare listings frame HTML for target header'
 	)
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'viewer-1', username: 'burhan' },
+		mcpUser: { userId: ownerIdFromStored('viewer-1'), username: 'burhan' },
 		roles: [],
 	})
 	mockModule.getMcpUserPackageScope.mockResolvedValue('burhan')

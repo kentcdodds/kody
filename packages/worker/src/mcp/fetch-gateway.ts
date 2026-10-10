@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
 import { WorkerEntrypoint } from 'cloudflare:workers'
 import {
@@ -74,7 +75,7 @@ import {
 
 type FetchGatewayProps = {
 	baseUrl: string
-	userId: string | null
+	userId: OwnerId | null
 	/**
 	 * Acting user's account email when the caller context carries one.
 	 * Backs the entitlement plan lookup for the outbound-fetch quota;
@@ -788,7 +789,7 @@ function readRequestedHost(url: string) {
 	return new URL(url).hostname
 }
 
-function requireFetchUserId(props: FetchGatewayProps): string {
+function requireFetchUserId(props: FetchGatewayProps): OwnerId {
 	if (!props.userId) {
 		throw new Error(fetchSecretAuthRequiredMessage)
 	}

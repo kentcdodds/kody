@@ -1,4 +1,5 @@
 import { type McpCallerContext, type McpUserContext } from '../chat.ts'
+import { type OwnerId } from '../owner-person-ids.ts'
 
 export type JobSchedule =
 	| {
@@ -23,7 +24,7 @@ export type JobRepoCheckPolicy = {
 export type JobRecord = {
 	version: 1
 	id: string
-	userId: string
+	userId: OwnerId
 	name: string
 	sourceId: string
 	publishedCommit: string | null

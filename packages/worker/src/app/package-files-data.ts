@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { getOwnerUsernameFromListingName } from '#worker/community/public-urls.ts'
@@ -208,7 +209,9 @@ export async function loadCommunityPackageFilesData(input: {
 		serverTiming: input.serverTiming,
 		username: ownerUsername ?? undefined,
 		kodyId: listing.kodyId,
-		viewerIsOwner: viewerUserId === listing.ownerUserId,
+		viewerIsOwner:
+			viewerUserId != null &&
+			personalOrgId(viewerUserId) === listing.ownerUserId,
 		isPrivate: false,
 		listingId: listing.id,
 		iconUrl: buildCommunityIconUrl({

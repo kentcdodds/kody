@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '@kody-internal/shared/base64.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import PostalMime from 'postal-mime'
 import {
@@ -61,7 +62,7 @@ export async function loadRawMime(input: {
 export async function getEmailMessageWithAttachmentsById(input: {
 	env: MailboxEnv
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	messageId: string
 }) {
 	const message =
@@ -346,7 +347,7 @@ export async function getEmailAttachmentById(input: {
 	db: D1Database
 	/** EMAIL_BLOBS bucket for messages whose raw MIME lives in R2. */
 	blobs: R2Bucket
-	userId: string
+	userId: OwnerId
 	attachmentId: string
 }) {
 	const attachment =
@@ -406,7 +407,7 @@ export const maxDetailedEmailRejectionEventsPerDay = 5
 export async function recordBoundedEmailRejectionEvent(input: {
 	env: MailboxEnv
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	inboxId: string
 	recipient: string
 	reason: string
@@ -456,7 +457,7 @@ export async function recordBoundedEmailRejectionEvent(input: {
 export async function setEmailMessageClassification(input: {
 	env: MailboxEnv
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	messageId: string
 	classification: EmailClassification
 	classificationReason?: string | null
@@ -496,7 +497,7 @@ export async function setEmailMessageClassification(input: {
 export async function deleteEmailMessage(input: {
 	env: MailboxEnv
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	messageId: string
 }) {
 	if (input.userId === systemEmailOwnerId) {

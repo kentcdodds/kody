@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
@@ -71,12 +74,12 @@ function resetMocks() {
 	)
 	mockModule.getRepoSessionById.mockResolvedValue({
 		id: 'session-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		source_id: 'source-1',
 	})
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 	})
@@ -130,7 +133,7 @@ test('repoPublishSession keeps a successful publish when fork absorb fails and s
 		expect(result).toEqual(expected)
 		expect(mockModule.absorbCommunityForkUpstream).toHaveBeenCalledWith(
 			expect.objectContaining({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				packageId: 'package-1',
 				originCommit: 'origin-head',
 			}),

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as accessControl from '#mcp/capabilities/access-control.ts'
 import type * as capabilityRegistry from '#mcp/capabilities/registry.ts'
@@ -232,7 +235,7 @@ function createContext(
 function createSavedPackage(hidden = false) {
 	return {
 		id: packageId,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@user/daily-notes',
 		kodyId: 'daily-notes',
 		description: 'Daily notes package',
@@ -252,7 +255,10 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 		.mockResolvedValueOnce(createSavedPackage(true))
 		.mockResolvedValueOnce(createSavedPackage(true))
 	mockModule.resolveSavedPackageRef.mockResolvedValueOnce(createSavedPackage())
-	const context = createContext({ userId: 'user-1', username: 'user' })
+	const context = createContext({
+		userId: ownerIdFromStored('user-1'),
+		username: 'user',
+	})
 
 	const byAccountUrl = await searchCapability.handler(
 		{
@@ -343,14 +349,14 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId,
 		},
 	)
 	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
 		{},
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			ref: 'daily-notes',
 			match: 'slug',
 		},
@@ -409,7 +415,10 @@ test('meta search wires exact package identity, hidden gating, and natural-langu
 })
 
 test('meta search supports domain browsing and empty discovery', async () => {
-	const context = createContext({ userId: 'user-1', username: 'user' })
+	const context = createContext({
+		userId: ownerIdFromStored('user-1'),
+		username: 'user',
+	})
 
 	const browse = await searchCapability.handler(
 		{ domain: 'meta', conversationId: 'meta-domain-browse' },

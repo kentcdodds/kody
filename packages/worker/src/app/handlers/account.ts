@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { loadAccountConnectionsData } from '#app/account-connections-data.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
@@ -27,7 +28,7 @@ export function createAccountHandler(
 					loadOnboardingData({
 						env,
 						requestUrl: request.url,
-						stableUserId: user.mcpUser.userId,
+						stableUserId: personalOrgId(user.mcpUser.userId),
 						username: user.username,
 						emailVerified: user.emailVerified,
 					}),
@@ -37,7 +38,7 @@ export function createAccountHandler(
 			if (user.emailVerified) {
 				onboarding.checklist = await loadChecklist(
 					env,
-					user.mcpUser.userId,
+					personalOrgId(user.mcpUser.userId),
 					user.username,
 					onboarding.hasMcpClient,
 					{

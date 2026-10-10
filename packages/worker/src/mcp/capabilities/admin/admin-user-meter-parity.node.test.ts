@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -52,7 +55,10 @@ function createCapabilityTestDb() {
 test('adminUserMeterParity returns null for missing users and omits lease secrets', async () => {
 	const db = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	const meterStub = userMeterRpc({
+		env: meter.env,
+		userId: ownerIdFromStored(stableUserId),
+	})
 	// Seed one active authoritative write lease.
 	await meterStub.acquireWriteLease({
 		token: 'active-lease-xyz789',

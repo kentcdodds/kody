@@ -1,10 +1,11 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { parseSafe } from 'remix/data-schema'
 import { mcpCallerContextSchema, mcpUserContextSchema } from './chat.ts'
 
 test('mcp context schemas accept valid user and caller payloads', () => {
 	const userContext = parseSafe(mcpUserContextSchema, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		email: 'user@example.com',
 		displayName: 'user',
 		roles: ['user', 'admin'],
@@ -19,7 +20,7 @@ test('mcp context schemas accept valid user and caller payloads', () => {
 		baseUrl: 'https://example.com',
 		executionOrigin: 'interactive',
 		user: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			email: 'user@example.com',
 			displayName: 'user',
 		},

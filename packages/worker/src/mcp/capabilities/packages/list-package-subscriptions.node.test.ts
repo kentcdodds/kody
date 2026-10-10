@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -37,7 +40,7 @@ function stubPackages(
 	mockModule.listSavedPackagesByUserId.mockResolvedValue(
 		packages.map(({ id, kodyId, sourceId }) => ({
 			id,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: `@kentcdodds/${kodyId}`,
 			kodyId,
 			description: `${kodyId} package`,

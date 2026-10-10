@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -122,7 +123,7 @@ async function runChecks(
 		sourceRoot: '/',
 		env: {} as Env,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 }
 

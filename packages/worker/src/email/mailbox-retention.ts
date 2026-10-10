@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailAttachmentBlobKey, emailRawMimeKey } from './blob-keys.ts'
 import {
 	mailboxBlobDeleteMaxKeys,
@@ -185,7 +186,7 @@ export async function deleteMailboxBlobKeys(
  * external attachment keys.
  */
 export function canonicalMailboxMessageBlobReferences(input: {
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 	direction: 'inbound' | 'outbound'
 	attachments: Array<{ id: string; storage_key: string | null }>
@@ -234,7 +235,7 @@ export function canonicalRetentionBlobKeys(
 export async function deleteMailboxRetentionCandidate(input: {
 	store: MailboxStore
 	blobs: Pick<R2Bucket, 'delete'>
-	ownerId: string
+	ownerId: OwnerId
 	candidate: MailboxRetentionMessageCandidate
 	cutoff: string
 }): Promise<MailboxRetentionMessageDeleteResult> {

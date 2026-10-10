@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -70,7 +71,7 @@ test('package codemod ledger pages runs and items with filters', async () => {
 	await insertPackageCodemodRunItem(db, {
 		id: 'item-1',
 		runId: 'run-b',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		kodyId: 'one',
 		status: 'applied',
@@ -87,7 +88,7 @@ test('package codemod ledger pages runs and items with filters', async () => {
 		await insertPackageCodemodRunItem(db, {
 			id: `item-${index}`,
 			runId: 'run-b',
-			userId: `user-${index}`,
+			userId: ownerIdFromStored(`user-${index}`),
 			packageId: `pkg-${index}`,
 			kodyId: `kody-${index}`,
 			status,
@@ -116,26 +117,38 @@ test('package codemod ledger pages runs and items with filters', async () => {
 		).map((item) => item.id)
 	expect(await itemIds({ afterId: 'item-2', limit: 2 })).toEqual(['item-3'])
 	expect(await itemIds({ status: 'applied' })).toEqual(['item-1', 'item-3'])
-	expect(await itemIds({ userId: 'user-1' })).toEqual(['item-1'])
-	expect(await itemIds({ userId: 'user-1', status: 'applied' })).toEqual([
+	expect(await itemIds({ userId: ownerIdFromStored('user-1') })).toEqual([
 		'item-1',
 	])
+	expect(
+		await itemIds({ userId: ownerIdFromStored('user-1'), status: 'applied' }),
+	).toEqual(['item-1'])
 
 	// User-scoped reads only see runs scoped to that user and their own items.
 	expect(
-		await getPackageCodemodRunById(db, 'run-a', { userId: 'user-1' }),
+		await getPackageCodemodRunById(db, 'run-a', {
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).toMatchObject({ id: 'run-a' })
 	expect(
-		await getPackageCodemodRunById(db, 'run-a', { userId: 'user-2' }),
+		await getPackageCodemodRunById(db, 'run-a', {
+			userId: ownerIdFromStored('user-2'),
+		}),
 	).toBeNull()
 	expect(
-		await getPackageCodemodRunById(db, 'run-b', { userId: 'user-1' }),
+		await getPackageCodemodRunById(db, 'run-b', {
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).toBeNull()
 	expect(
-		await getPackageCodemodRunItemById(db, 'item-1', { userId: 'user-1' }),
+		await getPackageCodemodRunItemById(db, 'item-1', {
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).toMatchObject({ id: 'item-1' })
 	expect(
-		await getPackageCodemodRunItemById(db, 'item-1', { userId: 'user-2' }),
+		await getPackageCodemodRunItemById(db, 'item-1', {
+			userId: ownerIdFromStored('user-2'),
+		}),
 	).toBeNull()
 })
 
@@ -207,7 +220,7 @@ test('package codemod ledger bounds stored JSON/text columns', async () => {
 	const item = await insertPackageCodemodRunItem(db, {
 		id: 'item-bound',
 		runId: 'run-bound',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		kodyId: 'one',
 		status: 'detected',

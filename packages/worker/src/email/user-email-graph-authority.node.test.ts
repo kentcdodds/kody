@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	assertUserEmailGraphAuthority,
@@ -27,13 +28,13 @@ test('USER writes require the authority marker while system writes are unaffecte
 	await expect(
 		assertUserEmailGraphAuthority({
 			db: dbWithMarker(null),
-			ownerId: 'user-1',
+			ownerId: ownerIdFromStored('user-1'),
 		}),
 	).rejects.toThrow(/cutover marker is missing/)
 	await expect(
 		assertUserEmailGraphAuthority({
 			db: dbWithMarker(null),
-			ownerId: 'system:email',
+			ownerId: ownerIdFromStored('system:email'),
 		}),
 	).resolves.toBeUndefined()
 	const db = dbWithMarker({
@@ -42,7 +43,7 @@ test('USER writes require the authority marker while system writes are unaffecte
 		dropped_at: '2026-08-03T15:00:00.000Z',
 	})
 	await expect(
-		assertUserEmailGraphAuthority({ db, ownerId: 'user-1' }),
+		assertUserEmailGraphAuthority({ db, ownerId: ownerIdFromStored('user-1') }),
 	).resolves.toBeUndefined()
 	await expect(loadUserEmailGraphAuthorityMarker(db)).resolves.toEqual({
 		ownerCount: 12,

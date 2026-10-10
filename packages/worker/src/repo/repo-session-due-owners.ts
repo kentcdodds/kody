@@ -1,10 +1,11 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 
 export const repoSessionDueOwnerBatchSize = 25
 export const repoSessionDueOwnerFailureDelayMs = 5 * 60 * 1000
 
 export type RepoSessionDueOwner = {
-	userId: string
+	userId: OwnerId
 	dueAt: string
 }
 
@@ -72,7 +73,7 @@ export async function listDueRepoSessionOwners(input: {
 			(input.now ?? new Date()).toISOString(),
 			input.limit ?? repoSessionDueOwnerBatchSize,
 		)
-		.all<{ user_id: string; due_at: string }>()
+		.all<{ user_id: OwnerId; due_at: string }>()
 	return (rows.results ?? []).map((row) => ({
 		userId: row.user_id,
 		dueAt: row.due_at,
@@ -94,7 +95,7 @@ export async function listRepoSessionDueOwnersPage(input: {
 			LIMIT ?`,
 		)
 		.bind(input.afterUserId ?? '', input.limit ?? repoSessionDueOwnerBatchSize)
-		.all<{ user_id: string; due_at: string }>()
+		.all<{ user_id: OwnerId; due_at: string }>()
 	return (rows.results ?? []).map((row) => ({
 		userId: row.user_id,
 		dueAt: row.due_at,

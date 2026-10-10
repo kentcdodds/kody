@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -108,7 +109,7 @@ test('static dependent bundle artifact queries count and list bounded rows by so
 		onBind,
 	})
 	const queryInput = {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-a',
 		currentDependencyCommit: 'commit-a-new',
 	}
@@ -163,7 +164,7 @@ test('static dependent bundle artifact queries count and list bounded rows by so
 })
 
 const identity = {
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	sourceId: 'source-1',
 	artifactName: './record-version',
 	entryPoint: 'src/record-version.ts',
@@ -185,7 +186,10 @@ function artifactRow(
 }
 
 function lookup(db: D1Database, artifactKind: string) {
-	return getPublishedBundleArtifactByIdentity(db, { ...identity, artifactKind })
+	return getPublishedBundleArtifactByIdentity(db, {
+		...identity,
+		artifactKind,
+	})
 }
 
 test('upsertPublishedBundleArtifactRow keeps module and importable-module distinct and recovers a raced identity insert', async () => {
@@ -236,7 +240,7 @@ test('upsertPublishedBundleArtifactRow keeps module and importable-module distin
 test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hits the identity unique index', async () => {
 	const existingRow = {
 		id: 'row-importable',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		source_id: 'source-1',
 		published_commit: 'commit-1',
 		artifact_kind: 'importable-module',
@@ -298,7 +302,7 @@ test('upsertPublishedBundleArtifactRow recovers when lookup misses and insert hi
 test('upsertPublishedBundleArtifactRow leaves a newer live identity alone when a stale persist recovers', async () => {
 	const db = createPublishedBundleArtifactsDb()
 	await setLivePublishedCommit(db, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 		publishedCommit: 'commit-2',
 	})

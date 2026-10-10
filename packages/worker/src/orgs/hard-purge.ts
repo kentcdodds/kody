@@ -1,4 +1,5 @@
 // soft-delete-read-filter: opt-out
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildUserScopedDeleteOrUpdateSql,
 	buildUserScopedTargetMatch,
@@ -15,7 +16,7 @@ import {
 
 export async function hardPurgeOrg(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 }): Promise<void> {
 	const db = input.env.APP_DB
 	for (const target of hardPurgeDataTargets('org')) {
@@ -53,7 +54,7 @@ export async function hardPurgeOrg(input: {
 export async function hardPurgeSoftDeletedUser(input: {
 	env: Env
 	dbUserId: number
-	stableUserId: string
+	stableUserId: OwnerId
 }): Promise<void> {
 	await redactOrgAuditActorIdsForDeletedUser({
 		env: input.env,

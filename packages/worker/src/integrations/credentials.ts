@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	decryptUserOauthAccessToken,
 	decryptUserOauthClientSecret,
@@ -25,7 +26,7 @@ export function createMissingIntegrationAccessTokenMessage(name: string) {
 
 export async function persistIntegrationTokens(input: {
 	env: CredentialEnv
-	userId: string
+	userId: OwnerId
 	name: string
 	accessToken: string
 	refreshToken?: string | null
@@ -67,7 +68,7 @@ export async function persistIntegrationTokens(input: {
 
 export async function persistUserOauthAppClientSecret(input: {
 	env: CredentialEnv
-	userId: string
+	userId: OwnerId
 	slug: string
 	value: string
 }): Promise<void> {
@@ -86,7 +87,7 @@ export async function persistUserOauthAppClientSecret(input: {
 
 export async function resolveIntegrationAccessToken(input: {
 	env: CredentialEnv
-	userId: string
+	userId: OwnerId
 	name: string
 }): Promise<string | null> {
 	const ciphertexts = await getIntegrationCredentialCiphertexts({
@@ -104,7 +105,7 @@ export async function resolveIntegrationAccessToken(input: {
 
 export async function resolveIntegrationRefreshToken(input: {
 	env: CredentialEnv
-	userId: string
+	userId: OwnerId
 	name: string
 }): Promise<string | null> {
 	const ciphertexts = await getIntegrationCredentialCiphertexts({
@@ -122,7 +123,7 @@ export async function resolveIntegrationRefreshToken(input: {
 
 export async function resolveUserOauthAppClientSecret(input: {
 	env: CredentialEnv
-	userId: string
+	userId: OwnerId
 	slug: string
 }): Promise<string | null> {
 	const encrypted = await getOauthAppClientSecretCiphertext({

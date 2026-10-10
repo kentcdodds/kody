@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
@@ -411,7 +415,7 @@ function readPackageTestHintsFromManifest(input: {
 
 async function getPublishedPackageTestHints(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	packageId: string
 }) {
@@ -477,7 +481,7 @@ function readSecretMountsFromPackageJson(content: string | undefined) {
 async function getPendingSecretApprovalsForPublishedPackage(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -512,7 +516,7 @@ async function getPendingSecretApprovalsForPublishedPackage(input: {
 
 async function getPublishStaticDependents(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	publishedCommit: string | null
 }): Promise<StaticPackageDependentsSummary> {
@@ -540,7 +544,7 @@ async function getPublishStaticDependents(input: {
  * and the canonical JSON blob below includes every property automatically.
  */
 export type ExternalPublishSemanticInput = {
-	ownerUserId: string
+	ownerUserId: OwnerId
 	packageId: string
 	newCommit: string
 	allowForce: boolean
@@ -572,7 +576,7 @@ function shouldEscalateExternalPublish(executionOrigin: string | undefined) {
 async function runExternalPublishAttempt(input: {
 	env: Env
 	baseUrl: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	ownerScope: string
 	ownerEmail: string
 	expectedPackageScope: string
@@ -959,7 +963,7 @@ export const publishExternalPushCapability = defineDomainCapability(
 			const escalateStartedAt = Date.now()
 			const outcome = await runWithDurableEscalation({
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				userEmail: user.email,
 				lineage: requestLineage(requireMcpRequest(ctx.callerContext)),
 				budgetMs: defaultDurableEscalationBudgetMs,

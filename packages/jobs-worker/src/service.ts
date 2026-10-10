@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobManagerDebugState } from '@kody-internal/shared/jobs/manager-debug.ts'
 import {
 	type JobsServiceContract,
@@ -216,7 +217,7 @@ export class JobsService
 	}
 
 	async syncAlarm(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<{ ok: true; userId: string; nextRunAt: string | null }> {
 		return jobManagerStub(this.env, input.userId).syncAlarm({
 			userId: input.userId,
@@ -225,12 +226,12 @@ export class JobsService
 	}
 
 	async getDebugState(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<JobManagerDebugState> {
 		return jobManagerStub(this.env, input.userId).getDebugState(input)
 	}
 
-	async exportUser(input: { userId: string }): Promise<JobManagerDebugState> {
+	async exportUser(input: { userId: OwnerId }): Promise<JobManagerDebugState> {
 		return jobManagerStub(this.env, input.userId).exportUser(input)
 	}
 
@@ -239,19 +240,24 @@ export class JobsService
 	 * purges the JobManager Durable Object storage (including its alarm).
 	 */
 	async purgeUser(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<{ ok: true; userId: string; purged: boolean }> {
-		const userId = input.userId.trim()
-		if (!userId) {
+		const trimmed = input.userId.trim()
+		if (!trimmed) {
 			throw new Error('Jobs purge requires a non-empty userId.')
 		}
+		// Purge has always named the JobManager with the trimmed id. An
+		// OwnerId from the caller is already trimmed; keep the trimmed bytes
+		// when a stored id has surrounding spaces.
+		const userId =
+			trimmed === input.userId ? input.userId : (trimmed as OwnerId)
 		await jobsStore(this.env).purgeUserJobsData({ userId })
 		await jobManagerStub(this.env, userId).purgeUser({ userId })
 		return { ok: true as const, userId, purged: true }
 	}
 
 	async runJobNow(input: {
-		userId: string
+		userId: OwnerId
 		jobId: string
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null

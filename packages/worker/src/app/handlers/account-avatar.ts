@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
 import {
@@ -50,7 +51,7 @@ export function createAccountAvatarApiPostHandler(env: Env) {
 				await deleteUserAvatar({
 					env,
 					numericUserId: user.userId,
-					stableUserId: user.mcpUser.userId,
+					stableUserId: personalOrgId(user.mcpUser.userId),
 				})
 
 				void logAuditEvent({
@@ -96,7 +97,7 @@ export function createAccountAvatarApiPostHandler(env: Env) {
 				await saveUserAvatar({
 					env,
 					numericUserId: user.userId,
-					stableUserId: user.mcpUser.userId,
+					stableUserId: personalOrgId(user.mcpUser.userId),
 					bytes: processed.bytes,
 					contentType: processed.contentType,
 				})

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { ApiError } from './errors.ts'
 import { type ApiInvocationContext } from './context.ts'
@@ -35,7 +36,7 @@ const ctx = {
 	env: { APP_DB: {} },
 	callerContext: {
 		baseUrl: 'https://heykody.dev',
-		user: { userId: 'user-1', email: 'user@example.com' },
+		user: { userId: ownerIdFromStored('user-1'), email: 'user@example.com' },
 		storageContext: null,
 	},
 	principal: { kind: 'mcp' },

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
@@ -103,7 +104,7 @@ async function dueIds(userId: string, nowIso: string) {
 
 test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-due-limit'
+	const userId = ownerIdFromStored('user-due-limit')
 	const nowIso = '2026-04-20T12:00:00.000Z'
 	const dueAt = '2026-04-20T00:00:00.000Z'
 	const backlogSize = maxDueJobsPerAlarm + 5
@@ -118,7 +119,11 @@ test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first'
 	// Rows that must never be picked up: other user, disabled, kill-switched,
 	// expired, and not-yet-due jobs.
 	for (const job of [
-		{ id: 'other-user', userId: 'user-other', nextRunAt: dueAt },
+		{
+			id: 'other-user',
+			userId: ownerIdFromStored('user-other'),
+			nextRunAt: dueAt,
+		},
 		{ id: 'disabled', userId, nextRunAt: dueAt, enabled: false },
 		{ id: 'kill-switched', userId, nextRunAt: dueAt, killSwitchEnabled: true },
 		{
@@ -153,7 +158,7 @@ test('listDueJobRows caps a due-job backlog at maxDueJobsPerAlarm, oldest first'
 
 test('conditional job claims exclude overlap and reclaim only after lease expiry', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-claim'
+	const userId = ownerIdFromStored('user-claim')
 	const jobId = 'claimed-job'
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
 	const now = new Date(scheduledFor)
@@ -223,7 +228,7 @@ test('conditional job claims exclude overlap and reclaim only after lease expiry
 
 test('job writes retain D1 run anchors and default RunLog-owned fields', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-run-anchors'
+	const userId = ownerIdFromStored('user-run-anchors')
 	const jobId = 'run-anchors'
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
 	await insertJob({ id: jobId, userId, nextRunAt: scheduledFor })
@@ -321,7 +326,7 @@ test('job writes retain D1 run anchors and default RunLog-owned fields', async (
 
 test('ordinary updates cancel claims and completed occurrence guards fence malformed due rows', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-fencing'
+	const userId = ownerIdFromStored('user-fencing')
 	const scheduledFor = '2026-04-20T12:00:00.000Z'
 	await insertJob({ id: 'cancelled-claim', userId, nextRunAt: scheduledFor })
 	const claimed = await claim(
@@ -378,7 +383,7 @@ test('ordinary updates cancel claims and completed occurrence guards fence malfo
 
 test('expired jobs are skipped by due/claim/next-runnable, wake the scheduler at expires_at, and disableExpired flips enabled', async () => {
 	await ensureJobsSchema()
-	const userId = 'user-expires'
+	const userId = ownerIdFromStored('user-expires')
 	const nowIso = '2026-04-20T12:00:00.000Z'
 	const dueAt = '2026-04-20T11:00:00.000Z'
 	await insertJob({

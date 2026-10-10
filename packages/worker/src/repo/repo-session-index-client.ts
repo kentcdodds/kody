@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { repoSessionIndexDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type RepoSessionIndexRpc } from './repo-session-index-do.ts'
 
@@ -15,7 +16,7 @@ export function repoSessionIndexNamespace(
 /** Typed per-user RepoSessionIndex RPC stub; throws when the binding is missing. */
 export function repoSessionIndexRpc(input: {
 	env: RepoSessionIndexEnv
-	userId: string
+	userId: OwnerId
 }): RepoSessionIndexRpc {
 	const namespace = repoSessionIndexNamespace(input.env)
 	if (!namespace) {

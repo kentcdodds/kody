@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -89,7 +90,7 @@ test('onboarding allowlist only surfaces published + enabled built-ins, in allow
 
 	await upsertPlatformIntegration({
 		env,
-		userId: 'user-connected',
+		userId: ownerIdFromStored('user-connected'),
 		platformAppSlug: 'github-platform',
 		name: 'github',
 		scopes: [],

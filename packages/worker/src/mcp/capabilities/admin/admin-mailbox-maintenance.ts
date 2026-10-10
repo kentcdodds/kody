@@ -11,6 +11,7 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminMutationCapabilityAccess,
+	adminStableOwnerId,
 	auditAdminCapabilityInvocation,
 	stableUserIdSchema,
 } from './admin-shared.ts'
@@ -241,7 +242,7 @@ export const adminMailboxMaintenanceCapability = defineDomainCapability(
 							try {
 								const result = await runAdminMailboxMaintenanceDeleteMessage({
 									env: ctx.env,
-									stableUserId: args.stable_user_id,
+									stableUserId: adminStableOwnerId(args.stable_user_id),
 									messageId: args.message_id,
 								})
 								return { action: 'delete_message' as const, result }

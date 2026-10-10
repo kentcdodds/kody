@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
@@ -11,7 +12,7 @@ import { getRepoSessionById } from '#worker/repo/repo-sessions.ts'
 export async function authorizeRepoSessionPackageWrite(input: {
 	env: Env
 	request: RequestContext | null
-	userId: string
+	userId: OwnerId
 	sessionId: string
 	/**
 	 * `repoDiscardSession` is idempotent. A missing catalog row is a

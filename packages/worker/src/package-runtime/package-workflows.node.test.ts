@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type WorkflowStep } from 'cloudflare:workers'
 import { NonRetryableError } from 'cloudflare:workflows'
 import { expect, test, vi } from 'vitest'
@@ -159,7 +160,7 @@ async function queueWorkflow(
 	const env = createWorkflowEnv(binding)
 	const created = await createDynamicCallableWorkflow({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		lineage: sessionRequestLineage('user-1'),
 		packageContext,
 		body: body as never,
@@ -209,7 +210,7 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 		params: expect.objectContaining({
 			version: 3,
 			sourceType: 'inline',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageContext: null,
 			code,
 			params: { greeting: 'hello' },
@@ -234,7 +235,7 @@ test('createDynamicCallableWorkflow queues inline code without package context a
 					statusThrows: new Error('status unavailable'),
 				}),
 			),
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			lineage: sessionRequestLineage('user-1'),
 			packageContext: null,
 			body: {
@@ -279,7 +280,7 @@ test('DynamicCallableWorkflowBase executes queued inline code and records comple
 		})
 		const backgroundCaller = expect.objectContaining({
 			executionOrigin: 'background',
-			user: expect.objectContaining({ userId: 'user-1' }),
+			user: expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 		})
 		expect(invocationMocks.runModuleWithRegistry).toHaveBeenCalledWith(
 			expect.objectContaining({ APP_BASE_URL: 'https://app.example.com' }),
@@ -334,7 +335,7 @@ test('inline workflow sandbox failures throw UserCodeError except Durable Object
 		})
 		expect(runRecordMocks.beginRunRecord).toHaveBeenLastCalledWith(
 			expect.objectContaining({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				context: expect.objectContaining({
 					surface: 'workflow',
 					workflowId: created.id,
@@ -546,7 +547,7 @@ test('package and inline workflows each record exactly one workflow run with wor
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledTimes(1)
 	expect(runRecordMocks.beginRunRecord).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			context: expect.objectContaining({
 				surface: 'workflow',
 				name: 'shade-event',

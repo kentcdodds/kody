@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as cloudflareEmail from '#app/email/cloudflare-email.ts'
 
@@ -113,7 +114,10 @@ test('error-rate emails skip below-threshold users and claim once per month', as
 	expect(payload.text).toContain('/support')
 	expect(
 		store.get(
-			userErrorRateEmailKvKey({ userId: 'user-hot', month: '2026-08' }),
+			userErrorRateEmailKvKey({
+				userId: ownerIdFromStored('user-hot'),
+				month: '2026-08',
+			}),
 		),
 	).toBeTruthy()
 

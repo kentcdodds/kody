@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { handleOidcUserinfoRequest } from '#worker/oidc/userinfo.ts'
 
@@ -25,7 +26,7 @@ function createOidcEnv(
 							clientId: 'client-123',
 							scope,
 							props: {
-								userId: 'user-stable-id',
+								userId: ownerIdFromStored('user-stable-id'),
 								email: 'user@example.com',
 								username: 'test-user',
 								displayName: 'test-user',

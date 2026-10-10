@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import {
 	CAPABILITY_EMBEDDING_DIMENSIONS,
@@ -17,7 +18,7 @@ export function hasVectorEmbedFingerprintDb(
 	return typeof env.APP_DB?.prepare === 'function'
 }
 
-export function vectorEmbedFingerprintKey(userId: string, vectorId: string) {
+export function vectorEmbedFingerprintKey(userId: OwnerId, vectorId: string) {
 	return `${userId}\0${vectorId}`
 }
 
@@ -50,7 +51,7 @@ export async function vectorEmbedContentHash(input: {
 
 export async function readVectorEmbedFingerprints(input: {
 	db: D1Database
-	keys: ReadonlyArray<{ userId: string; vectorId: string }>
+	keys: ReadonlyArray<{ userId: OwnerId; vectorId: string }>
 }): Promise<Map<string, string>> {
 	const found = new Map<string, string>()
 	if (input.keys.length === 0) return found
@@ -66,7 +67,7 @@ export async function readVectorEmbedFingerprints(input: {
 			)
 			.bind(...chunk.flatMap((key) => [key.userId, key.vectorId]))
 			.all<{
-				user_id: string
+				user_id: OwnerId
 				vector_id: string
 				content_hash: string
 			}>()
@@ -83,7 +84,7 @@ export async function readVectorEmbedFingerprints(input: {
 export async function writeVectorEmbedFingerprints(input: {
 	db: D1Database
 	rows: ReadonlyArray<{
-		userId: string
+		userId: OwnerId
 		vectorId: string
 		contentHash: string
 	}>
@@ -116,7 +117,7 @@ export async function deleteVectorEmbedFingerprint(input: {
 
 export async function tryReadVectorEmbedFingerprints(input: {
 	env: Env
-	keys: ReadonlyArray<{ userId: string; vectorId: string }>
+	keys: ReadonlyArray<{ userId: OwnerId; vectorId: string }>
 }): Promise<Map<string, string> | null> {
 	if (!hasVectorEmbedFingerprintDb(input.env)) return null
 	try {
@@ -132,7 +133,7 @@ export async function tryReadVectorEmbedFingerprints(input: {
 export async function tryWriteVectorEmbedFingerprints(input: {
 	env: Env
 	rows: ReadonlyArray<{
-		userId: string
+		userId: OwnerId
 		vectorId: string
 		contentHash: string
 	}>
@@ -165,7 +166,7 @@ export async function tryDeleteVectorEmbedFingerprint(input: {
 
 export async function shouldSkipVectorEmbed(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	vectorId: string
 	text: string
 	metadata?: Record<string, VectorizeVectorMetadata>
@@ -187,7 +188,7 @@ export async function shouldSkipVectorEmbed(input: {
 
 export async function recordVectorEmbedFingerprint(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	vectorId: string
 	text: string
 	metadata?: Record<string, VectorizeVectorMetadata>

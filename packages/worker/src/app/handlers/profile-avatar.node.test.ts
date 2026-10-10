@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { createProfileAvatarHandler } from './profile-avatar.ts'
@@ -81,7 +82,7 @@ test('profile avatar cache visibility, anon 404, and cacheKey mismatch', async (
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
 		userId: 1,
 		email: 'alice@example.com',
-		mcpUser: { userId: 'stable-alice' },
+		mcpUser: { userId: ownerIdFromStored('stable-alice') },
 		request: sessionRequestContext('stable-alice'),
 	})
 	mocks.getUserSocialRowByUsername.mockResolvedValue({

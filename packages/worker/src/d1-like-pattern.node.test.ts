@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	d1ContainsLikePattern,
@@ -17,7 +18,7 @@ test('short queries are escaped and wrapped in wildcards', () => {
 })
 
 test('long queries are trimmed to fit the D1 pattern limit', () => {
-	const stableUserId = 'f'.repeat(64)
+	const stableUserId = ownerIdFromStored('f').repeat(64)
 	const pattern = d1ContainsLikePattern(`"${stableUserId}"`)
 	expect(byteLength(pattern)).toBeLessThanOrEqual(d1MaxLikePatternBytes)
 	expect(pattern.startsWith('%"f')).toBe(true)

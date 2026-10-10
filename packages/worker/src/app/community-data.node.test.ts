@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import {
@@ -88,7 +89,7 @@ vi.mock('#worker/package-registry/user-scope.ts', () => ({
 
 const sampleListing = {
 	id: 'listing-github',
-	ownerUserId: 'owner-mcp-id',
+	ownerUserId: ownerIdFromStored('owner-mcp-id'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'github',
@@ -150,7 +151,7 @@ function sampleOverview(listing = sampleListing) {
 
 function signedInUser() {
 	return {
-		mcpUser: { userId: 'viewer-1', username: 'burhan' },
+		mcpUser: { userId: ownerIdFromStored('viewer-1'), username: 'burhan' },
 		request: sessionRequestContext('viewer-1', 'burhan'),
 		roles: [],
 	}
@@ -195,11 +196,11 @@ test('community index overlays fork installs and ignores same-leaf packages with
 	)
 	expect(mockModule.listSavedPackagesBySlugs).toHaveBeenCalledWith(
 		undefined,
-		expect.objectContaining({ userId: 'viewer-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('viewer-1') }),
 	)
 	expect(mockModule.listCommunityForksByListingIdsAndUser).toHaveBeenCalledWith(
 		undefined,
-		expect.objectContaining({ userId: 'viewer-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('viewer-1') }),
 	)
 })
 

@@ -1,6 +1,8 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
@@ -69,7 +71,7 @@ export function isPackageSecretAccessUnavailableError(error: unknown) {
  */
 export async function packageHasImplicitUserSecretReadAccess(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	packageId: string
 }): Promise<boolean> {
 	const savedPackage = await getSavedPackageById(input.env.APP_DB, {
@@ -86,7 +88,7 @@ export async function packageHasImplicitUserSecretReadAccess(input: {
 
 async function savedPackageHasImplicitUserSecretReadAccess(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	savedPackage: SavedPackageRecord
 }): Promise<boolean> {
 	const communityFork = await getCommunityForkByForkedPackageId(input.db, {
@@ -99,7 +101,7 @@ async function savedPackageHasImplicitUserSecretReadAccess(input: {
 export async function assertPackageCanAccessResolvedSecret(input: {
 	env: Pick<Env, 'APP_DB'>
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	storageContext:
 		| {
 				sessionId?: string | null
@@ -177,7 +179,7 @@ export async function assertPackageCanAccessResolvedSecret(input: {
  */
 export async function assertCanSetSecrets(input: {
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
-	userId: string
+	userId: OwnerId
 	baseUrl: string
 	secrets: Array<{
 		name: string
@@ -231,7 +233,7 @@ export async function assertCanSetSecrets(input: {
 export async function loadPackageSecretMounts(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 }): Promise<{
 	savedPackage: {
@@ -352,7 +354,7 @@ export async function resolvePackageMountedSecret(input: {
 export async function findMissingPackageApprovals(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageId: string
 	mounts: Record<string, SecretMountDefinition>
 	storageContext: McpCallerContext['storageContext']

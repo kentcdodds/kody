@@ -9,6 +9,7 @@ import {
 import { reconcileD1StorageBytes } from './d1-storage-reconciliation.ts'
 import { userMeterRpc } from './user-meter-client.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 /**
  * `cursorBefore` points the keyset cursor immediately below the user so the
  * next lane page starts there (test ids are unique 64-char strings; a 63-char
@@ -35,9 +36,12 @@ async function seedUser(
 	if (input.cursorBefore) await setReconcileCursorBefore(userId)
 	return {
 		userId,
-		meter: userMeterRpc({ env, userId }),
+		meter: userMeterRpc({ env, userId: ownerIdFromStored(userId) }),
 		physicalBytes: () =>
-			calculateUserD1StorageBytes({ db: env.APP_DB, userId }),
+			calculateUserD1StorageBytes({
+				db: env.APP_DB,
+				userId: ownerIdFromStored(userId),
+			}),
 	}
 }
 
@@ -103,7 +107,7 @@ function reconcileUser(userId: string, userEnv = env) {
 	return reconcileUserD1StorageBytes({
 		db: env.APP_DB,
 		env: userEnv,
-		userId,
+		userId: ownerIdFromStored(userId),
 		now: new Date('2026-08-01T01:00:00.000Z'),
 	})
 }

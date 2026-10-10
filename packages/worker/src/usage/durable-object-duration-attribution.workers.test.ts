@@ -16,6 +16,7 @@ import {
 } from './durable-object-duration-attribution.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const credentialedEnv = {
 	...env,
 	CLOUDFLARE_ACCOUNT_ID: 'acct',
@@ -133,7 +134,7 @@ test('owner map object ids match the ids the Durable Objects themselves see', as
 
 	const owners = await buildDurableObjectOwnerMap(env)
 	const runLog = env.RUN_LOG.get(
-		env.RUN_LOG.idFromName(runLogDurableObjectName(userId)),
+		env.RUN_LOG.idFromName(runLogDurableObjectName(ownerIdFromStored(userId))),
 	)
 	await runInDurableObject(runLog, (_instance, state) => {
 		expect(owners.get(state.id.toString())).toEqual({
@@ -143,7 +144,7 @@ test('owner map object ids match the ids the Durable Objects themselves see', as
 	})
 	const storage = env.STORAGE_RUNNER.get(
 		env.STORAGE_RUNNER.idFromName(
-			storageRunnerDurableObjectName(userId, storageId),
+			storageRunnerDurableObjectName(ownerIdFromStored(userId), storageId),
 		),
 	)
 	await runInDurableObject(storage, (_instance, state) => {
@@ -272,7 +273,7 @@ test('a soft-deleted team org gets no duration rows', async () => {
 		.bind(orgId, storageId, now, now)
 		.run()
 	const storageObjectId = env.STORAGE_RUNNER.idFromName(
-		storageRunnerDurableObjectName(orgId, storageId),
+		storageRunnerDurableObjectName(ownerIdFromStored(orgId), storageId),
 	).toString()
 	using _fetch = stubFetch(
 		vi.fn(async () => analyticsResponse([[storageObjectId, 3_000_000]])),

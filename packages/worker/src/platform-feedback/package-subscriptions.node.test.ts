@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { dispatchAdminPackageSubscriptionEvent } from '#worker/package-invocations/admin-package-subscriptions.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -173,7 +174,7 @@ test('platform feedback submitted payload contains exactly the approved event fi
 				'The setup flow does not explain which action comes next.',
 		},
 		submitter: {
-			user_id: 'submitter-1',
+			user_id: ownerIdFromStored('submitter-1'),
 			username: 'feedback-author',
 			email: 'feedback-author@example.com',
 		},

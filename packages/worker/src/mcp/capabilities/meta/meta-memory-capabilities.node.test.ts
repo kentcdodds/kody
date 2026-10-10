@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import type * as MemoryService from '#mcp/memory/service.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -74,7 +77,7 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 
 	expect(mockModule.searchMemoryRecords).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			query: 'theme preference',
 		}),
 	)
@@ -130,7 +133,7 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 
 	expect(mockModule.verifyMemoryCandidate).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			candidate: expect.objectContaining({
 				details: 'Candidate details still need to reach the verify service.',
 			}),
@@ -196,13 +199,13 @@ test('memory capabilities support a verify-first mutation workflow', async () =>
 
 	expect(mockModule.getMemory).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			memoryId: 'memory-1',
 		}),
 	)
 	expect(mockModule.deleteMemory).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			memoryId: 'memory-1',
 			force: false,
 		}),

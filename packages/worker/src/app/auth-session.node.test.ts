@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createCookie } from 'remix/cookie'
 import {
@@ -17,7 +18,7 @@ test('createAuthCookie stamps issuedAt for password-change invalidation', async 
 	const now = 1_700_000_000_000
 	const cookie = await createAuthCookie(
 		{
-			stableUserId: '1'.repeat(64),
+			stableUserId: ownerIdFromStored('1').repeat(64),
 			email: 'user@example.com',
 			rememberMe: false,
 		},

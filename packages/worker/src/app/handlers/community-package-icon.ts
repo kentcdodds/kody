@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Action } from 'remix/router'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import {
@@ -31,7 +32,8 @@ export function createCommunityPackageIconHandler(env: Env) {
 			}
 
 			const viewerUserId = user?.mcpUser.userId ?? null
-			const viewerIsOwner = viewerUserId === target.userId
+			const viewerIsOwner =
+				viewerUserId != null && personalOrgId(viewerUserId) === target.userId
 			const listing = target.listingId
 				? await getCommunityListingById(env.APP_DB, {
 						listingId: target.listingId,

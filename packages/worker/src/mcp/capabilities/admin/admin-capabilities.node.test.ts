@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -235,7 +238,7 @@ test('admin capabilities list and get account metadata and query sanitized audit
 	// An invalid stable id must not fall through to the email lookup.
 	await expect(
 		loadAdminUserByTarget(t.db, {
-			stableUserId: 'not-a-stable-id',
+			stableUserId: ownerIdFromStored('not-a-stable-id'),
 			email: 'admin@example.com',
 		}),
 	).resolves.toBeNull()

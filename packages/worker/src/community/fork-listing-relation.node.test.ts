@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { applySavedPackageForkListingAncestry } from './fork-listing-relation.ts'
 import { type SavedPackageWithCommunityProvenanceRecord } from '#worker/package-registry/types.ts'
@@ -28,7 +29,7 @@ function forkRecord(
 ): SavedPackageWithCommunityProvenanceRecord {
 	return {
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@me/github',
 		kodyId: 'github',
 		description: 'Fork',

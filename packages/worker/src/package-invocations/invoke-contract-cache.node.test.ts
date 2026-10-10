@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type PackageInvokeInput } from '#worker/mcp/runtime-helper-manifest.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
@@ -113,7 +114,7 @@ function createFixture(input: {
 	const sourceId = `source-${suffix}`
 	const savedPackage: SavedPackageRecord = {
 		id: `pkg-${suffix}`,
-		userId: input.userId,
+		userId: ownerIdFromStored(input.userId),
 		name: input.packageName ?? '@kentcdodds/sentry-triage',
 		kodyId: input.kodyId ?? 'sentry-triage',
 		description: 'Sentry triage helpers',
@@ -287,9 +288,12 @@ function mockModuleArtifactRebuild(
 
 test('contract checks only resolve packages in the caller org', async () => {
 	seedFixtures({
-		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
+		'user-1': createFixture({
+			userId: ownerIdFromStored('user-1'),
+			publishedCommit: 'commit-1',
+		}),
 		'org-owner': createFixture({
-			userId: 'org-owner',
+			userId: ownerIdFromStored('org-owner'),
 			publishedCommit: 'commit-1',
 			packageName: '@acme/github',
 			kodyId: 'github',
@@ -297,14 +301,17 @@ test('contract checks only resolve packages in the caller org', async () => {
 	})
 	const specifier = 'kody:@acme/github/get-issue-state'
 
-	const denied = await runContractCheck({ userId: 'user-1', specifier })
+	const denied = await runContractCheck({
+		userId: ownerIdFromStored('user-1'),
+		specifier,
+	})
 	expect(denied.result.ok).toBe(false)
 	if (denied.result.ok) throw new Error('Expected the contract check to deny.')
 	expect(denied.result.message).toContain('could not be resolved in this org')
 	expect(denied.preloads).toBeNull()
 
 	const fromOwningOrg = await runContractCheck({
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		specifier,
 	})
 	expect(fromOwningOrg.result.ok).toBe(true)
@@ -313,7 +320,7 @@ test('contract checks only resolve packages in the caller org', async () => {
 test('a republish is picked up by same-isolate invalidation, or in other isolates once the freshness TTL elapses', async () => {
 	vi.useFakeTimers()
 	try {
-		const userId = 'user-republish'
+		const userId = ownerIdFromStored('user-republish')
 		const publish = (publishedCommit: string) => {
 			const fixture = createFixture({ userId, publishedCommit })
 			seedFixtures({ [userId]: fixture })
@@ -358,15 +365,23 @@ test('a republish is picked up by same-isolate invalidation, or in other isolate
 
 test('contract-check caches never serve entries across users', async () => {
 	seedFixtures({
-		'user-1': createFixture({ userId: 'user-1', publishedCommit: 'commit-1' }),
-		'user-2': createFixture({ userId: 'user-2', publishedCommit: 'commit-2' }),
+		'user-1': createFixture({
+			userId: ownerIdFromStored('user-1'),
+			publishedCommit: 'commit-1',
+		}),
+		'user-2': createFixture({
+			userId: ownerIdFromStored('user-2'),
+			publishedCommit: 'commit-2',
+		}),
 	})
 
-	expect(publishedCommitOf(await runContractCheck({ userId: 'user-1' }))).toBe(
-		'commit-1',
-	)
+	expect(
+		publishedCommitOf(
+			await runContractCheck({ userId: ownerIdFromStored('user-1') }),
+		),
+	).toBe('commit-1')
 	clearContractCheckLoadCounters()
-	const other = await runContractCheck({ userId: 'user-2' })
+	const other = await runContractCheck({ userId: ownerIdFromStored('user-2') })
 
 	expect(publishedCommitOf(other)).toBe('commit-2')
 	expect(other.preloads?.savedPackage.id).toBe('pkg-user-2')
@@ -377,13 +392,13 @@ test('contract-check caches never serve entries across users', async () => {
 
 test('warm contract checks perform zero D1/KV loads until invalidation clears the specifier cache', async () => {
 	const orgFixture = createFixture({
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		publishedCommit: 'commit-org',
 		packageName: '@acme/sentry-triage',
 	})
 	seedFixtures({ 'org-owner': orgFixture })
 	invalidateInvokeContractFreshness({
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		packageIdOrKodyIds: [
 			orgFixture.savedPackage.id,
 			orgFixture.savedPackage.kodyId,
@@ -393,7 +408,7 @@ test('warm contract checks perform zero D1/KV loads until invalidation clears th
 	})
 	const check = () =>
 		runContractCheck({
-			userId: 'org-owner',
+			userId: ownerIdFromStored('org-owner'),
 			specifier: 'kody:@acme/sentry-triage/get-issue-state',
 		})
 
@@ -419,7 +434,7 @@ test('warm contract checks perform zero D1/KV loads until invalidation clears th
 
 	seedFixtures({})
 	invalidateInvokeContractFreshness({
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		packageIdOrKodyIds: [
 			orgFixture.savedPackage.id,
 			orgFixture.savedPackage.kodyId,
@@ -437,7 +452,7 @@ test('warm contract checks perform zero D1/KV loads until invalidation clears th
 })
 
 test('an artifact rebuild resolves its entry point from the fresh source, not the cached manifest', async () => {
-	const userId = 'user-rebuild'
+	const userId = ownerIdFromStored('user-rebuild')
 	const sourceId = 'source-rebuild'
 	const buildManifestContent = (entryPoint: string) =>
 		JSON.stringify({
@@ -558,7 +573,7 @@ test('ensureModuleArtifact rebuilds when the identity artifact is stale or its r
 test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a republish rebuild is still in flight', async () => {
 	const fixture = {
 		...createFixture({
-			userId: 'user-npm-window',
+			userId: ownerIdFromStored('user-npm-window'),
 			publishedCommit: 'commit-new',
 			suffix: 'npm-window',
 		}),
@@ -619,7 +634,7 @@ test('ensureModuleArtifact keeps serving the previous npm-backed bundle while a 
 
 test('ensureModuleArtifact stops serving a previous npm-backed bundle after the rebuild window', async () => {
 	const fixture = createFixture({
-		userId: 'user-npm-expired',
+		userId: ownerIdFromStored('user-npm-expired'),
 		publishedCommit: 'commit-new',
 		suffix: 'npm-expired',
 	})
@@ -680,7 +695,7 @@ test('an artifact from a different commit is served but never retained', async (
 	}))
 	const loadOnce = () =>
 		loadModuleArtifactWithCommitCache({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-mismatch',
 			publishedCommit: 'commit-new',
 			artifactName: './index',
@@ -702,20 +717,20 @@ test('resolveSavedPackage resolves id or slug through one package ref lookup', a
 	await expect(
 		resolveSavedPackage({
 			db: {} as D1Database,
-			userId: 'user-resolve-ref',
+			userId: ownerIdFromStored('user-resolve-ref'),
 			packageIdOrKodyId: 'shared-key',
 		}),
 	).resolves.toEqual(record)
 	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledTimes(1)
 	expect(mockModule.resolveSavedPackageRef).toHaveBeenCalledWith(
 		expect.anything(),
-		{ userId: 'user-resolve-ref', ref: 'shared-key' },
+		{ userId: ownerIdFromStored('user-resolve-ref'), ref: 'shared-key' },
 	)
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 })
 
 test('package-app slug cache evicts by name leaf from kody:@ refs and packageAppSlugs', async () => {
-	const userId = 'user-slug-evict'
+	const userId = ownerIdFromStored('user-slug-evict')
 	const savedPackage = {
 		id: 'pkg-slug-evict',
 		userId,

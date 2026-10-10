@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -36,7 +37,7 @@ const { loadPublishedEntityManifest, loadPublishedEntitySource } =
 function createSourceRow() {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package' as const,
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -50,7 +51,11 @@ function createSourceRow() {
 }
 
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
-const loadInput = { env, userId: 'user-1', sourceId: 'source-1' }
+const loadInput = {
+	env,
+	userId: ownerIdFromStored('user-1'),
+	sourceId: 'source-1',
+}
 
 function manifestJson(kody: Record<string, unknown> = {}) {
 	return JSON.stringify({
@@ -124,7 +129,7 @@ test('loadPublishedEntitySource persists fetched snapshots for later reuse', asy
 	expect(mockModule.readArtifactSourceSnapshot).toHaveBeenCalledTimes(1)
 	expect(mockModule.persistPublishedSourceSnapshot).toHaveBeenCalledWith({
 		env: { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} },
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: expect.objectContaining({ id: 'source-1' }),
 		snapshot: expect.objectContaining({
 			files: expect.objectContaining({ 'package.json': expect.any(String) }),

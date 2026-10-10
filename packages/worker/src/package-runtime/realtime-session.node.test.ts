@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as FacetNames from '#mcp/app-runner-facet-names.ts'
 
@@ -46,7 +47,7 @@ const { resolvePackageAppWorkerCacheKey } =
 	await import('./realtime-session.ts')
 
 const binding = {
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	packageId: 'package-1',
 	kodyId: 'example',
 	sourceId: 'source-1',
@@ -61,7 +62,7 @@ test('resolvePackageAppWorkerCacheKey encodes binding identity and published com
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -92,7 +93,7 @@ test('resolvePackageAppWorkerCacheKey encodes binding identity and published com
 	mockModule.getEntitySourceById.mockReset()
 	mockModule.getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',

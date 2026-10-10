@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test } from 'vitest'
@@ -190,7 +193,7 @@ test('usageTrendGet maps partial days and monthly rollups for the signed-in user
 	const trend = await readAccountUsageTrend({
 		db: env.APP_DB,
 		env,
-		userId: stableUserId,
+		userId: ownerIdFromStored(stableUserId),
 		now,
 	})
 

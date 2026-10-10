@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type MailboxAttachmentRecord,
 	type MailboxDeliveryEventRecord,
@@ -12,7 +13,7 @@ import {
 /** Map an owner-bound Mailbox message to the shared product record shape. */
 export function mailboxMessageToEmailMessageRecord(
 	message: MailboxMessageRecord,
-	userId: string,
+	userId: OwnerId,
 ): EmailMessageRecord {
 	return {
 		...message,

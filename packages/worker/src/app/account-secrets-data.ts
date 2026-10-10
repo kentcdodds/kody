@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	buildAccountSecretId,
@@ -369,7 +370,7 @@ function resolveApprovalRequest(input: {
 
 async function resolveSecretApprovalView(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	secretId: string | null
 	requestedHosts: Array<string>
 	rejectedHosts: Array<RejectedApprovalHost>
@@ -507,7 +508,7 @@ async function resolveSecretApprovalView(input: {
 
 async function resolveAccountSecretDetail(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	secretId: string
 	secrets: Array<AccountSecretListItem>
 }) {

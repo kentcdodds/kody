@@ -1,4 +1,5 @@
 import { type CallToolResult } from '@modelcontextprotocol/sdk/types.js'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { PromiseLruCache } from '#worker/package-registry/published-package-cache.ts'
 import { mcpClientHubDurableObjectName } from '#worker/user-scoped-durable-object-name.ts'
 import { type McpServerConnectionEvent } from './connection-episodes.ts'
@@ -13,16 +14,16 @@ export const mcpClientHubSnapshotCacheLimit = 100
 
 type McpClientHubClientInput = {
 	env: Env
-	userId: string
+	userId: OwnerId
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 
 /** Cache/DO key alias for {@link mcpClientHubDurableObjectName}. */
-export function mcpClientHubKey(userId: string) {
+export function mcpClientHubKey(userId: OwnerId) {
 	return mcpClientHubDurableObjectName(userId)
 }
 
-function getMcpClientHubStub(input: { env: Env; userId: string }) {
+function getMcpClientHubStub(input: { env: Env; userId: OwnerId }) {
 	const key = mcpClientHubDurableObjectName(input.userId)
 	return input.env.MCP_CLIENT_HUB.get(input.env.MCP_CLIENT_HUB.idFromName(key))
 }
@@ -175,7 +176,7 @@ export function getCachedMcpClientHubSnapshot(
 	})
 }
 
-function mcpClientHubServersCacheKey(userId: string) {
+function mcpClientHubServersCacheKey(userId: OwnerId) {
 	return `${mcpClientHubKey(userId)}:servers`
 }
 
@@ -200,7 +201,9 @@ export function getCachedMcpClientHubServers(
 	})
 }
 
-export function invalidateMcpClientHubSnapshotCache(input: { userId: string }) {
+export function invalidateMcpClientHubSnapshotCache(input: {
+	userId: OwnerId
+}) {
 	const key = mcpClientHubKey(input.userId)
 	mcpClientHubSnapshotCache.delete(key)
 	mcpClientHubSnapshotCache.delete(mcpClientHubServersCacheKey(input.userId))

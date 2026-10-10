@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -36,7 +37,7 @@ export const emailMessageDeleteCapability = defineDomainCapability(
 			const deleted = await deleteEmailMessage({
 				env: ctx.env,
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				messageId: args.message_id,
 			})
 			if (!deleted) {

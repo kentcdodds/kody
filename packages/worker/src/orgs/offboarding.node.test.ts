@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -10,19 +11,19 @@ const listJobsForUser = vi.fn(async () => [
 	{
 		id: 'job-1',
 		name: 'Nightly',
-		user_id: 'org-1',
+		user_id: ownerIdFromStored('org-1'),
 		created_by_user_id: 'member-1',
 		deleted_at: null,
 	},
 ])
 const getJobById = vi.fn(async () => ({
 	id: 'job-1',
-	user_id: 'org-1',
+	user_id: ownerIdFromStored('org-1'),
 	created_by_user_id: 'member-1',
 	callerContextJson: '{}',
 	record: {
 		id: 'job-1',
-		userId: 'org-1',
+		userId: ownerIdFromStored('org-1'),
 		name: 'Nightly',
 		enabled: true,
 		updatedAt: '2026-10-01T00:00:00.000Z',
@@ -40,7 +41,7 @@ vi.mock('#worker/jobs/jobs-data.ts', () => ({
 vi.mock('#worker/jobs/manager-client.ts', () => ({
 	syncJobManagerAlarm: vi.fn(async () => ({
 		ok: true,
-		userId: 'mock',
+		userId: ownerIdFromStored('mock'),
 		nextRunAt: null,
 	})),
 }))
@@ -102,7 +103,7 @@ test('preview lists member jobs and own-login integrations', async () => {
 	const preview = await previewMemberOffboarding({
 		appDb: db,
 		env: { APP_DB: db } as Env,
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		memberUserId: 'member-1',
 	})
 	expect(preview.jobs).toEqual([{ id: 'job-1', name: 'Nightly' }])
@@ -114,7 +115,7 @@ test('offboarding soft-deletes membership, disconnects integrations, applies job
 	const result = await offboardOrgMember({
 		appDb: db,
 		env: { APP_DB: db } as Env,
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		memberUserId: 'member-1',
 		memberLeftVoluntarily: false,
 		jobChoices: [{ jobId: 'job-1', disposition: 'cancel' }],
@@ -153,7 +154,7 @@ test('cannot remove the last live owner', async () => {
 		offboardOrgMember({
 			appDb: db,
 			env: { APP_DB: db } as Env,
-			orgId: 'org-1',
+			orgId: ownerIdFromStored('org-1'),
 			memberUserId: 'owner-1',
 			memberLeftVoluntarily: false,
 		}),
@@ -205,7 +206,7 @@ test('offboarding revokes team-bound API tokens and bootstrap codes', async () =
 	const result = await offboardOrgMember({
 		appDb: db,
 		env: { APP_DB: db } as Env,
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		memberUserId: 'member-1',
 		memberLeftVoluntarily: false,
 		jobChoices: [{ jobId: 'job-1', disposition: 'keep_running' }],
@@ -234,8 +235,18 @@ test('revokeOAuthGrantsForOrg matches metadata.orgId with userId fallback', asyn
 	const helpers = {
 		listUserGrants: async () => ({
 			items: [
-				{ id: 'g1', clientId: 'c1', scope: [], metadata: { orgId: 'org-1' } },
-				{ id: 'g2', clientId: 'c2', scope: [], metadata: { orgId: 'other' } },
+				{
+					id: 'g1',
+					clientId: 'c1',
+					scope: [],
+					metadata: { orgId: ownerIdFromStored('org-1') },
+				},
+				{
+					id: 'g2',
+					clientId: 'c2',
+					scope: [],
+					metadata: { orgId: ownerIdFromStored('other') },
+				},
 				{ id: 'g3', clientId: 'c3', scope: [] },
 			],
 		}),
@@ -244,7 +255,7 @@ test('revokeOAuthGrantsForOrg matches metadata.orgId with userId fallback', asyn
 	const revoked = await revokeOAuthGrantsForOrg({
 		helpers,
 		memberUserId: 'member-1',
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 	})
 	expect(revoked).toBe(1)
 	expect(revokeGrant).toHaveBeenCalledWith('g1', 'member-1')
@@ -253,7 +264,7 @@ test('revokeOAuthGrantsForOrg matches metadata.orgId with userId fallback', asyn
 	const revokedPersonal = await revokeOAuthGrantsForOrg({
 		helpers,
 		memberUserId: 'member-1',
-		orgId: 'member-1',
+		orgId: ownerIdFromStored('member-1'),
 	})
 	expect(revokedPersonal).toBe(1)
 	expect(revokeGrant).toHaveBeenCalledWith('g3', 'member-1')

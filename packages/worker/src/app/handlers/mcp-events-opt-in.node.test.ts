@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { logAuditEventSpy } from '#worker/test-support/audit-log-spy.ts'
 import { routes } from '#universal/routes.ts'
@@ -45,7 +46,7 @@ function createUser() {
 		permissions: [],
 		artifactOwnerIds: ['7'],
 		mcpUser: {
-			userId: 'a'.repeat(64),
+			userId: ownerIdFromStored('a').repeat(64),
 			email: 'jane@example.com',
 			username: 'jane',
 			displayName: 'jane',

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
@@ -10,7 +11,7 @@ import {
 } from './onboarding-funnel.ts'
 import { stampFirstSearch } from './activation-stamps.ts'
 
-const userId = 'a'.repeat(64)
+const userId = ownerIdFromStored('a').repeat(64)
 
 test('funnel points omit prompts, secrets, and non-stable ids', () => {
 	const writeDataPoint = vi.fn()
@@ -23,7 +24,7 @@ test('funnel points omit prompts, secrets, and non-stable ids', () => {
 	})
 	recordOnboardingFunnelEvent(env, {
 		stage: 'signup_completed',
-		userId: 'ada@example.com',
+		userId: ownerIdFromStored('ada@example.com'),
 	})
 	recordMcpConnectFunnelEvent(env, {
 		stage: 'mcp_connect_failed',

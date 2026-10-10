@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as CapabilityRegistry from '#mcp/capabilities/registry.ts'
 import type * as SecretsService from '#mcp/secrets/service.ts'
@@ -275,7 +276,7 @@ type SearchResult = {
 }
 
 const signedInUser = {
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	email: 'user@example.com',
 	displayName: 'User',
 	username: 'user',
@@ -316,7 +317,7 @@ function savedPackage(
 ): SavedPackageRecord {
 	return {
 		id,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: id,
 		kodyId: id,
 		description: `${id} package`,
@@ -677,7 +678,7 @@ test('search tool treats exact package identity as authoritative and still resol
 	})
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledWith(
 		{},
-		{ userId: 'user-1', packageId: exactPackageId },
+		{ userId: ownerIdFromStored('user-1'), packageId: exactPackageId },
 	)
 	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 })
@@ -844,7 +845,7 @@ test('integration entity detail enriches related packages without bloating ranke
 	const githubJoinedIntegration = {
 		lane: 'user' as const,
 		app: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			slug: 'github',
 			provider: 'github',
 			label: null,
@@ -862,7 +863,7 @@ test('integration entity detail enriches related packages without bloating ranke
 			updatedAt: now,
 		},
 		connection: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: 'github',
 			appSlug: 'github',
 			platformAppSlug: null,
@@ -887,7 +888,7 @@ test('integration entity detail enriches related packages without bloating ranke
 	mockModule.searchCommunityListings.mockResolvedValue([
 		{
 			id: 'listing-github',
-			ownerUserId: 'owner-1',
+			ownerUserId: ownerIdFromStored('owner-1'),
 			packageId: 'pkg-github',
 			sourceId: 'source-github',
 			kodyId: 'github',

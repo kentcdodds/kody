@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	isActiveWorkflowStatus,
@@ -47,7 +50,7 @@ function makeWorkflow(
 ): WorkflowRunInspection {
 	return {
 		id: 'dynwf-1',
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		bindingName: 'DYNAMIC_CALLABLE_WORKFLOWS',
 		sourceType: 'inline',
 		packageId: null,
@@ -109,7 +112,7 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 
 	expect(mockModule.listWorkflowRunsForUser).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		limit: 100,
 	})
 	expect(mockModule.getWorkflowProjection).not.toHaveBeenCalled()
@@ -158,7 +161,7 @@ test('loadAccountWorkflowsData lists runs, resolves selection, and falls back to
 
 	expect(mockModule.getWorkflowProjection).toHaveBeenCalledWith({
 		env: expect.anything(),
-		userId: 'stable-user-1',
+		userId: ownerIdFromStored('stable-user-1'),
 		id: 'dynwf-old',
 	})
 	expect(projectionPayload.selectedWorkflow).toMatchObject({

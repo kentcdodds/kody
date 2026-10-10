@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { accountCreditsPath } from '#universal/compute-overage.ts'
 import { type AccountBillingLoaderData } from '#universal/loader-data.ts'
 import { getCanonicalAppBaseUrl } from '#worker/app-base-url.ts'
@@ -70,7 +71,7 @@ type BillingUserRow = {
 	stripe_credits_eligible: number | null
 	stripe_customer_id: string | null
 	stripe_plan_refreshed_at: string | null
-	stable_user_id: string
+	stable_user_id: OwnerId
 	second_agent_standard_gift_expires_at: string | null
 	referral_standard_credit_expires_at: string | null
 }
@@ -84,7 +85,7 @@ type BillingOrgRow = {
 
 /** The organization whose subscription the billing page shows. */
 export type BillingPageOrg = {
-	id: string
+	id: OwnerId
 	slug: string
 	displayName: string | null
 	/** Signup organization: its plan columns live on the person's users row. */
@@ -97,7 +98,7 @@ type PlanState = {
 	creditsEligible: boolean
 	customerId: string | null
 	overlayExpiresAt: string | null
-	referral: { stableUserId: string; username: string } | null
+	referral: { stableUserId: OwnerId; username: string } | null
 }
 
 type RefreshedPlan = {
@@ -111,7 +112,7 @@ type RefreshedPlan = {
 async function readPersonalPlanState(
 	env: Env,
 	userId: number,
-): Promise<PlanState & { stableUserId: string | null }> {
+): Promise<PlanState & { stableUserId: OwnerId | null }> {
 	const row = await env.APP_DB.prepare(
 		`SELECT plan, username, stripe_plan, stripe_credits_eligible,
 		        stripe_customer_id, stripe_plan_refreshed_at,
@@ -139,7 +140,7 @@ async function readPersonalPlanState(
 	}
 }
 
-async function readTeamPlanState(env: Env, orgId: string): Promise<PlanState> {
+async function readTeamPlanState(env: Env, orgId: OwnerId): Promise<PlanState> {
 	const row = await env.APP_DB.prepare(
 		`SELECT plan, stripe_plan, stripe_credits_eligible, stripe_customer_id
 		 FROM orgs

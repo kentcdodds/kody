@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type CommunityListingCategory } from '#universal/community-categories.ts'
 
 export type CommunityListingStatus = 'active' | 'delisted'
@@ -29,7 +30,7 @@ export type CommunityListingRow = {
 
 export type CommunityListingRecord = {
 	id: string
-	ownerUserId: string
+	ownerUserId: OwnerId
 	packageId: string
 	sourceId: string
 	kodyId: string
@@ -278,8 +279,8 @@ export type CommunityReportRecord = {
 	id: string
 	listingId: string
 	listingName: string
-	listingOwnerUserId: string
-	reporterUserId: string
+	listingOwnerUserId: OwnerId
+	reporterUserId: OwnerId
 	reason: string
 	status: CommunityReportStatus
 	resolvedByUserId: string | null

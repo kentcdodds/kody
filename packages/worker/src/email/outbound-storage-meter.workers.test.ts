@@ -6,6 +6,7 @@ import { sendOutboundEmail } from './outbound.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
 
@@ -51,14 +52,17 @@ test('sendOutboundEmail reserves storage bytes in UserMeter', async () => {
 	const accountEmail = `storage-meter-${crypto.randomUUID()}@example.com`
 	const { userId } = await seedVerifiedAccount(accountEmail)
 	const initialMeterBytes = 42
-	await userMeterRpc({ env, userId }).setStorageBytes({
+	await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).setStorageBytes({
 		bytes: initialMeterBytes,
 		updatedAt: '2026-07-31T11:00:00.000Z',
 	})
 
 	const result = await sendOutboundEmail({
 		env: createBindingSendEnv(),
-		userId,
+		userId: ownerIdFromStored(userId),
 		accountEmail,
 		recipientPolicy: 'self',
 		subject: 'Storage meter reserve',
@@ -68,7 +72,10 @@ test('sendOutboundEmail reserves storage bytes in UserMeter', async () => {
 	expect(result.status).toBe('sent')
 	expect(result.providerMessageId).toBe('provider-storage-meter')
 
-	const meterAfter = await userMeterRpc({ env, userId }).readStorageBytes()
+	const meterAfter = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).readStorageBytes()
 	if (meterAfter.outcome !== 'ready') {
 		throw new Error('Expected a ready UserMeter storage read after reserve.')
 	}

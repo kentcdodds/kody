@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -47,7 +48,7 @@ function preparedFork(overrides: { crossScopeReferences?: unknown } = {}) {
 	return {
 		env,
 		baseUrl: 'https://kody.test',
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		listingId: 'listing-1',
 		listingName: '@owner/demo',
 		listingKodyId: 'demo',
@@ -83,7 +84,7 @@ function install(overrides: { waitUntil?: () => void } = {}) {
 	return installCommunityListing({
 		env,
 		baseUrl: 'https://kody.test',
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		userEmail: 'userb@example.com',
 		expectedPackageScope: 'userb',
 		listingId: 'listing-1',
@@ -126,7 +127,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 			sourceRoot: '/',
 			env,
 			baseUrl: 'https://kody.test',
-			userId: 'user-b',
+			userId: ownerIdFromStored('user-b'),
 			expectedPackageScope: 'userb',
 			requirePackageDocs: false,
 		}),
@@ -147,7 +148,7 @@ test('install publishes clean forks, keeps failed checks inert, and propagates e
 	expect(mockModule.refreshSavedPackageProjection).toHaveBeenCalledWith({
 		env,
 		baseUrl: 'https://kody.test',
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		userEmail: 'userb@example.com',
 		packageId: 'package-1',
 		sourceId: 'source-1',

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { resolveInboundEmailClassification } from './inbound-classification.ts'
@@ -10,7 +11,7 @@ test('classification requires the sender-rules schema', async () => {
 	await expect(
 		resolveInboundEmailClassification({
 			db: env.APP_DB,
-			userId: 'classification-user',
+			userId: ownerIdFromStored('classification-user'),
 			envelopeFrom: 'sender@example.test',
 			authResults: 'dmarc=fail',
 		}),

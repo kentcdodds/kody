@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -149,7 +152,7 @@ async function publishPackage(
 	)
 	const source = {
 		id: sourceId,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		entity_kind: 'package' as const,
 		entity_id: packageId,
 		repo_id: `repo-${sourceId}`,
@@ -216,7 +219,7 @@ async function publishPackage(
 function packageBucketRunner(userId: string, packageId: string) {
 	return storageRunnerRpc({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		storageId: buildPackageStorageId(packageId),
 	})
 }

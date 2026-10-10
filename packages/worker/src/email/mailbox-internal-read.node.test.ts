@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	countInternalEmailMessages,
@@ -124,37 +125,40 @@ test('internal reads route USER owners to Mailbox and system:email to the dedica
 	await expect(
 		getInternalEmailMessageById({
 			env,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			messageId: 'message-1',
 		}),
 	).resolves.toMatchObject({
 		id: 'message-1',
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		subject: 'Mailbox',
 	})
 	await expect(
 		listInternalEmailAttachmentsForMessage({
 			env,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			messageId: 'message-1',
 		}),
 	).resolves.toEqual([
 		expect.objectContaining({ id: 'attachment-1', messageId: 'message-1' }),
 	])
 	await expect(
-		countInternalEmailMessages({ env, ownerId: 'user-a' }),
+		countInternalEmailMessages({ env, ownerId: ownerIdFromStored('user-a') }),
 	).resolves.toBe(3)
 	await expect(
 		countInternalUserEmailMessages({
 			env: { MAILBOX: env.MAILBOX },
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 		}),
 	).resolves.toBe(3)
 	await expect(
-		exportInternalUserMailbox({ env, ownerId: 'user-a' }),
+		exportInternalUserMailbox({ env, ownerId: ownerIdFromStored('user-a') }),
 	).resolves.toMatchObject({ rows: [], truncated: false })
 	await expect(
-		listInternalUserEmailBlobReferences({ env, ownerId: 'user-a' }),
+		listInternalUserEmailBlobReferences({
+			env,
+			ownerId: ownerIdFromStored('user-a'),
+		}),
 	).resolves.toMatchObject({
 		references: [
 			expect.objectContaining({ key: 'email-raw:v1:user-a/message-1' }),
@@ -171,14 +175,14 @@ test('internal reads route USER owners to Mailbox and system:email to the dedica
 	await expect(
 		getInternalEmailMessageById({
 			env: missingMailboxEnv,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 			messageId: 'message-1',
 		}),
 	).rejects.toThrow('MAILBOX Durable Object binding is not configured')
 	await expect(
 		countInternalEmailMessages({
 			env: missingMailboxEnv,
-			ownerId: 'user-a',
+			ownerId: ownerIdFromStored('user-a'),
 		}),
 	).rejects.toThrow('MAILBOX Durable Object binding is not configured')
 	expect(getSystemEmailMessageByIdMock).not.toHaveBeenCalled()
@@ -186,7 +190,7 @@ test('internal reads route USER owners to Mailbox and system:email to the dedica
 
 	const d1Message = {
 		...mailboxMessage(),
-		userId: 'system:email',
+		userId: ownerIdFromStored('system:email'),
 	}
 	const attachment = {
 		id: 'system-attachment',
@@ -199,27 +203,33 @@ test('internal reads route USER owners to Mailbox and system:email to the dedica
 	await expect(
 		getInternalEmailMessageById({
 			env,
-			ownerId: 'system:email',
+			ownerId: ownerIdFromStored('system:email'),
 			messageId: 'system-message',
 		}),
 	).resolves.toBe(d1Message)
 	await expect(
 		listInternalEmailAttachmentsForMessage({
 			env,
-			ownerId: 'system:email',
+			ownerId: ownerIdFromStored('system:email'),
 			messageId: 'system-message',
 		}),
 	).resolves.toEqual([attachment])
 	await expect(
-		countInternalEmailMessages({ env, ownerId: 'system:email' }),
+		countInternalEmailMessages({
+			env,
+			ownerId: ownerIdFromStored('system:email'),
+		}),
 	).resolves.toBe(7)
 	await expect(
-		exportInternalUserMailbox({ env, ownerId: 'system:email' }),
+		exportInternalUserMailbox({
+			env,
+			ownerId: ownerIdFromStored('system:email'),
+		}),
 	).rejects.toThrow('system:email has no Mailbox')
 	await expect(
 		listInternalUserEmailBlobReferences({
 			env,
-			ownerId: 'system:email',
+			ownerId: ownerIdFromStored('system:email'),
 		}),
 	).rejects.toThrow('system:email has no Mailbox')
 

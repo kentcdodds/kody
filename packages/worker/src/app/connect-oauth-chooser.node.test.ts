@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -54,14 +55,14 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 	})
 	await upsertPlatformIntegration({
 		env,
-		userId: 'user-chooser',
+		userId: ownerIdFromStored('user-chooser'),
 		platformAppSlug: 'github',
 		name: 'github',
 		scopes: ['read:user'],
 	})
 	await upsertIntegration({
 		env,
-		userId: 'user-chooser',
+		userId: ownerIdFromStored('user-chooser'),
 		config: {
 			name: 'spotify-home',
 			tokenUrl: 'https://accounts.spotify.com/api/token',
@@ -79,7 +80,7 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 
 	const chooser = await loadConnectOauthChooser({
 		env,
-		userId: 'user-chooser',
+		userId: ownerIdFromStored('user-chooser'),
 	})
 	expect(chooser.options.map((option) => option.id)).toEqual([
 		'connection:github',
@@ -130,7 +131,7 @@ test('connect chooser includes saved connections and hides unused built-ins', as
 
 	const published = await loadConnectOauthChooser({
 		env,
-		userId: 'user-chooser',
+		userId: ownerIdFromStored('user-chooser'),
 	})
 	// Published + enabled only: disabled notion stays hidden, and the
 	// already-connected github is a reconnect rather than a new option.

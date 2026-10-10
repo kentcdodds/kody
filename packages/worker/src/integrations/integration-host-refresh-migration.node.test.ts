@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
@@ -69,11 +70,11 @@ test('Google platform host backfill is additive, lane-specific, and idempotent',
 		})),
 	).toEqual([
 		{
-			userId: 'user-custom',
+			userId: ownerIdFromStored('user-custom'),
 			requiredHosts: ['custom-only.example.com'],
 		},
 		{
-			userId: 'user-platform',
+			userId: ownerIdFromStored('user-platform'),
 			requiredHosts: [
 				'openidconnect.googleapis.com',
 				'user-added.example.com',

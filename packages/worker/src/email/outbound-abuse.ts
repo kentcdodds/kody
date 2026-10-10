@@ -11,6 +11,7 @@
  * admin users page.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { joinAppUrl } from '#worker/app-base-url.ts'
 import { mailboxRpc } from './mailbox-client.ts'
@@ -47,7 +48,7 @@ type OutboundAbuseEnv = Pick<
 export async function applyOutboundEmailAbusePause(input: {
 	env: OutboundAbuseEnv
 	/** Stable MCP userId of the account that sent the message. */
-	userId: string
+	userId: OwnerId
 	deliveryStatus: EmailDeliveryStatus
 	/**
 	 * Whether this delivery event was persisted by the current processing
@@ -125,7 +126,7 @@ export async function applyOutboundEmailAbusePause(input: {
 
 async function countProviderDeliveryEventsToday(input: {
 	env: OutboundAbuseEnv
-	userId: string
+	userId: OwnerId
 	eventType: EmailDeliveryStatus
 	now: Date
 }) {
@@ -150,7 +151,7 @@ async function countProviderDeliveryEventsToday(input: {
  */
 async function notifyAdminsOfOutboundEmailPause(input: {
 	env: OutboundAbuseEnv
-	userId: string
+	userId: OwnerId
 	deliveryStatus: EmailDeliveryStatus
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

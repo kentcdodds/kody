@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { consoleInfo, consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -104,7 +107,7 @@ const noStaticDependents = expect.objectContaining({
 function sourceRow(publishedCommit = 'commit-old') {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
@@ -133,7 +136,7 @@ function publishedResult(overrides: Record<string, unknown> = {}) {
 function rebuildCall(publishedCommit: string, target: unknown) {
 	return {
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		publishedCommit,
 		target,
 		baseUrl: 'https://kody.test',
@@ -154,7 +157,7 @@ function setupDefaultMocks({
 	for (const mock of Object.values(mockModule)) mock.mockReset()
 	mockModule.getSavedPackageById.mockResolvedValue({
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		kodyId: 'demo-package',
 		name: '@kentcdodds/demo-package',
 		sourceId: 'source-1',
@@ -259,7 +262,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect(mockModule.publishFromExternalRef).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			newCommit: 'commit-new',
 			expectedHead: 'commit-new',
 			allowForce: false,
@@ -284,7 +287,7 @@ test('publishExternalPush publishes HEAD and rebuilds bundle artifacts per targe
 	expect((await publish()).status).toBe('published')
 	expect(mockModule.listPublishedPackageArtifactTargets).toHaveBeenCalledWith({
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(mockModule.rebuildPublishedPackageArtifact.mock.calls).toEqual([
 		[rebuildCall('commit-new', targets[0])],
@@ -535,7 +538,7 @@ test('ineligible publishes return structured results without durable escalation 
 	expect(mockModule.runWithDurableEscalation.mock.calls).toEqual([
 		[
 			expect.objectContaining({
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				idempotencyParts: defaultPublishIdempotencyParts,
 			}),
 		],
@@ -573,7 +576,7 @@ test('budget exhaustion returns a dispatched handle', async () => {
 	expect(mockModule.publishFromExternalRef).not.toHaveBeenCalled()
 	expect(mockModule.runWithDurableEscalation).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			idempotencyParts: defaultPublishIdempotencyParts,
 		}),
 	)

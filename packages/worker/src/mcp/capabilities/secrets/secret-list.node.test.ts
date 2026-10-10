@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -166,7 +169,7 @@ test('secretList from execute returns caller-owned package metadata with package
 		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
 		...createInMemoryUserMeterEnv().env,
 	} as Env
-	const userId = 'user-execute-list'
+	const userId = ownerIdFromStored('user-execute-list')
 	await secretService.saveSecret({
 		env,
 		userId,
@@ -189,7 +192,7 @@ test('secretList from execute returns caller-owned package metadata with package
 				source: { kind: 'mcp-oauth' },
 				baseUrl: 'https://example.com',
 				user: {
-					userId: personIdFromStored(userId),
+					userId: personIdFromStored('user-execute-list'),
 					email: `${userId}@example.com`,
 					displayName: userId,
 				},

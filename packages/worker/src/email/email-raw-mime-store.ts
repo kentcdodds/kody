@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 
 export class RetryableInboundStorageError extends Error {
@@ -19,7 +20,7 @@ export class EmailRawMimeStorageError extends RetryableInboundStorageError {
 
 export async function putEmailRawMime(input: {
 	blobs: R2Bucket
-	userId: string
+	userId: OwnerId
 	messageId: string
 	rawMime: string
 }) {

@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -156,8 +157,8 @@ export const cliCredentialBootstrapCapability = defineDomainCapability(
 			}
 			return mintCliCredentialBootstrap({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
-				orgId: ctx.callerContext.request?.org.id ?? user.userId,
+				userId: personalOrgId(user.userId),
+				orgId: ctx.callerContext.request?.org.id ?? personalOrgId(user.userId),
 				...(input.name === undefined ? {} : { name: input.name }),
 				...(input.scopes === undefined ? {} : { scopes: input.scopes }),
 				...(input.lifetime === undefined ? {} : { lifetime: input.lifetime }),

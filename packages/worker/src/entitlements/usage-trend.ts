@@ -1,4 +1,5 @@
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	userMeterDailyCounterRetentionDays,
 	type UserMeterDailyTrendResult,
@@ -99,7 +100,7 @@ export function toUsageTrendDays(
 export async function readAccountUsageTrend(input: {
 	db: D1Database
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	now?: Date
 }): Promise<UsageTrend> {
 	const now = input.now ?? new Date()

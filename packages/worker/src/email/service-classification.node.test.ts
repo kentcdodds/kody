@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { systemEmailOwnerId } from './email-owner.ts'
 
@@ -54,7 +55,7 @@ test('setEmailMessageClassification mutates the owner Mailbox without preparing 
 		setEmailMessageClassification({
 			env,
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			messageId: 'message-1',
 			classification: 'quarantined',
 			classificationReason: 'Reclassified by user.',
@@ -62,7 +63,7 @@ test('setEmailMessageClassification mutates the owner Mailbox without preparing 
 	).resolves.toBe(true)
 
 	expect(mocks.setMessageClassification).toHaveBeenCalledWith({
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 		classification: 'quarantined',
 		classificationReason: 'Reclassified by user.',
@@ -79,7 +80,7 @@ test('setEmailMessageClassification reports missing Mailbox messages', async () 
 		setEmailMessageClassification({
 			env,
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			messageId: 'missing',
 			classification: 'accepted',
 			classificationReason: null,

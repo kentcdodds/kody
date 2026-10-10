@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactRepo from '#worker/repo/published-bundle-artifacts-repo.ts'
 import type * as PublishedRuntimeArtifacts from './published-runtime-artifacts.ts'
@@ -17,7 +18,7 @@ const mockModule = vi.hoisted(() => ({
 			for (const id of ids) {
 				const forUser = await mockModule.getEntitySourceByIdForUser(_db, {
 					id,
-					userId: 'user-1',
+					userId: ownerIdFromStored('user-1'),
 				})
 				if (forUser) {
 					sources.push(forUser)
@@ -103,7 +104,7 @@ const envWithoutKv = { APP_DB: {} } as unknown as Env
 function makeRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'artifact-row-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 		publishedCommit: 'commit-1',
 		artifactKind: 'module',
@@ -168,10 +169,10 @@ function makeRebuildInput(input: {
 					delete: async () => undefined,
 				},
 			} as unknown as Env),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: {
 			id: 'source-1',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			entity_kind: 'package',
 			entity_id: 'pkg-1',
 			repo_id: 'repo-1',
@@ -186,7 +187,7 @@ function makeRebuildInput(input: {
 		},
 		savedPackage: {
 			id: 'pkg-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: input.name,
 			kodyId,
 			description: input.description,
@@ -263,7 +264,7 @@ test('loadPublishedBundleArtifactByIdentity treats mismatched and malformed KV a
 		expect(
 			await loadPublishedBundleArtifactByIdentity({
 				env: kvEnv,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				sourceId: identity.sourceId,
 				kind: 'importable-module',
 				artifactName: identity.artifactName,
@@ -285,7 +286,7 @@ test('isPublishedPackageArtifactBuiltForCommit requires matching row and KV arti
 	const isBuilt = (env = kvEnv) =>
 		isPublishedPackageArtifactBuiltForCommit({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-1',
 			publishedCommit: 'commit-1',
 			target: {
@@ -626,7 +627,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	}) =>
 		reusePublishedPackageArtifactIfUnchanged({
 			env: input.env ?? kvEnv,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-1',
 			publishedCommit: input.publishedCommit ?? 'commit-2',
 			target: {
@@ -716,7 +717,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 	stubSnapshots({ 'commit-old': {}, 'commit-2': {} })
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-dep',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		published_commit: 'dep-new',
 	})
 	mockModule.writePublishedBundleArtifact.mockClear()
@@ -725,7 +726,7 @@ test('reusePublishedPackageArtifactIfUnchanged copies clean targets and rebuilds
 
 	mockModule.getEntitySourceByIdForUser.mockResolvedValue({
 		id: 'source-dep',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		published_commit: 'dep-old',
 	})
 	mockModule.updatePublishedBundleArtifactRow.mockResolvedValueOnce(false)
@@ -848,12 +849,12 @@ test('rebuildPublishedPackageArtifacts shares snapshot reads across already-buil
 	mockModule.listEntitySourcesByIds.mockResolvedValue([
 		{
 			id: 'source-dep-a',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			published_commit: 'dep-1',
 		},
 		{
 			id: 'source-dep-b',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			published_commit: 'dep-1',
 		},
 	])
@@ -864,7 +865,7 @@ test('rebuildPublishedPackageArtifacts shares snapshot reads across already-buil
 	expect(
 		await reusePublishedPackageArtifactIfUnchanged({
 			env: kvEnv,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceId: 'source-1',
 			publishedCommit: 'commit-reuse',
 			target: {

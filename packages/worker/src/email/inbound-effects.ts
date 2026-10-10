@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { createUserInboundDeliveryAuthority } from './inbound-delivery-authority.ts'
@@ -38,7 +39,7 @@ type InboundEffectsEnv = Pick<
 
 async function recordUserInboundUsageRollup(input: {
 	env: InboundEffectsEnv
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	usageBytes: number
 	usageDurationMs: number
@@ -62,7 +63,7 @@ async function recordUserInboundUsageRollup(input: {
 
 async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 	env: InboundEffectsEnv
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	expectedFinalizationToken?: string
 	durationMs?: number
@@ -188,7 +189,7 @@ async function processUserInboundDeliveryEffectsWithLeaseHeld(input: {
 
 export type ProcessInboundDeliveryEffectsInput = {
 	env: InboundEffectsEnv
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	expectedFinalizationToken?: string
 	durationMs?: number
@@ -315,7 +316,7 @@ export async function processInboundDeliveryEffects(
 
 export async function reconcileInboundDeliveryEffectsForUser(input: {
 	env: InboundEffectsEnv
-	userId: string
+	userId: OwnerId
 	now?: Date
 	limit?: number
 }) {

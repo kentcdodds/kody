@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -122,7 +123,7 @@ function createFixture(options: FixtureOptions = {}) {
 	const sourceId = `source-${kodyId}`
 	const savedPackage = {
 		id: `pkg-${kodyId}`,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: `@kentcdodds/${kodyId}`,
 		kodyId,
 		description: 'Minimal hello-world app',
@@ -137,7 +138,7 @@ function createFixture(options: FixtureOptions = {}) {
 	}
 	const source = {
 		id: sourceId,
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package' as const,
 		entity_id: savedPackage.id,
 		repo_id: `repo-${kodyId}`,
@@ -216,7 +217,7 @@ async function serveHelloWorld(input?: {
 			BUNDLE_ARTIFACTS_KV: {},
 		} as Env,
 		owner: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			username: 'kentcdodds',
 			email: 'kent@example.com',
 			displayName: 'Kent',
@@ -349,7 +350,7 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 			BUNDLE_ARTIFACTS_KV: {},
 		} as Env,
 		owner: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			username: 'kentcdodds',
 			email: 'kent@example.com',
 			displayName: 'Kent',

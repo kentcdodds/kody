@@ -5,6 +5,7 @@ import {
 	buildOnboardingSetupPrompt,
 	buildPersistFirstPackagePrompt,
 } from '#worker/onboarding-prompts.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OnboardingFeaturedListing } from '#universal/community-public-types.ts'
 import { listDisconnectedOnboardingFeaturedMcpServers } from '#universal/onboarding-mcp-chooser.ts'
 import { type ConnectedMcpAgent } from '#universal/connected-mcp-agents.ts'
@@ -44,7 +45,7 @@ type OnboardingEnv = {
  */
 export async function countUniqueMcpOAuthClients(
 	env: OnboardingEnv,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ) {
 	const state = await loadInboundMcpConnectionState(
 		env.OAUTH_PROVIDER,
@@ -56,7 +57,7 @@ export async function countUniqueMcpOAuthClients(
 /** Unique inbound MCP OAuth clients. Same as `countUniqueMcpOAuthClients`. */
 export async function countMcpOAuthGrants(
 	env: OnboardingEnv,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ) {
 	return countUniqueMcpOAuthClients(env, stableUserId)
 }
@@ -67,7 +68,7 @@ export async function countMcpOAuthGrants(
  */
 export async function userHasMcpOAuthGrants(
 	env: OnboardingEnv,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ) {
 	return (await countMcpOAuthGrants(env, stableUserId)) > 0
 }
@@ -146,7 +147,7 @@ export function loadHomePageOnboardingData(input: {
 export async function loadOnboardingData(input: {
 	env: OnboardingEnv
 	requestUrl: string | URL
-	stableUserId: string
+	stableUserId: OwnerId
 	username: string
 	emailVerified: boolean
 	/**

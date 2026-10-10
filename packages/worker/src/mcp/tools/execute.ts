@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import {
 	type ContentBlock,
@@ -359,7 +360,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const liveFlagsPromise = resolveCallerFeatureFlags(env, callerContext)
 				const entitlementPrefetch = callerContext.user?.userId
 					? getCachedUserEntitlement(env.APP_DB, {
-							userId: callerContext.user.userId,
+							userId: personalOrgId(callerContext.user.userId),
 							email: callerContext.user.email,
 						}).then(
 							() => undefined,
@@ -399,7 +400,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					await consumeDailyEntitlement({
 						db: env.APP_DB,
 						env,
-						userId: callerContext.user.userId,
+						userId: personalOrgId(callerContext.user.userId),
 						email: callerContext.user.email,
 						resource: 'execute_calls_per_day',
 						orgBudget: callerContext.request

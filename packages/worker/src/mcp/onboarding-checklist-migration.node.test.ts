@@ -1,10 +1,11 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
 const migrationFileName = '0015-users-onboarding-checklist-dismissed-at.sql'
-const userId = 'a'.repeat(64)
+const userId = ownerIdFromStored('a').repeat(64)
 
 function applyMigrationsBeforeOnboardingColumn(db: DatabaseSync) {
 	for (const fileName of readdirSync(migrationsDirectory)

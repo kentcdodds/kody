@@ -1,5 +1,8 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { mcpEventsExtensionFlagKey } from '#universal/feature-flags/registry.ts'
 import {
 	checkPermission,
@@ -42,7 +45,7 @@ export type McpEventFanOutResult = {
 
 async function isMcpEventsExtensionEnabledForUser(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 }): Promise<boolean> {
 	const row = await input.db
 		.prepare(
@@ -173,7 +176,7 @@ export async function fanOutPackageEventToMcpSubscriptions(input: {
 			pending = computeEffectivePermissions({
 				env: input.env,
 				request: deriveRequestContext({
-					user: { userId: personIdFromStored(message.userId) },
+					user: { userId: personIdFromStored(message.userId as string) },
 					source: { kind: 'mcp-oauth' },
 					profileName,
 				}),

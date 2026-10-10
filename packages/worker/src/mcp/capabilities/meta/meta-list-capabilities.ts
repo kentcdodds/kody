@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -121,7 +122,9 @@ export const metaListCapabilitiesCapability = defineDomainCapability(
 				env: ctx.env,
 				callerContext: ctx.callerContext,
 			})
-			const userId = ctx.callerContext.user?.userId ?? null
+			const userId = ctx.callerContext.user
+				? personalOrgId(ctx.callerContext.user.userId)
+				: null
 			const registry = userId
 				? filterCapabilityRegistryMcpServersForCaller(
 						runtimeRegistry,

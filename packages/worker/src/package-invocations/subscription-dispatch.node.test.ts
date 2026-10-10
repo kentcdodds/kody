@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { trustedSyntheticSubscriptionDispatch } from './subscription-envelope.ts'
 
@@ -22,7 +23,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 		baseUrl: 'https://heykody.dev',
 		savedPackage: {
 			id: 'pkg-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			kodyId: 'demo',
 			name: '@user/demo',
 			description: '',
@@ -58,7 +59,7 @@ test('invokePackageSubscriptionWithToolFactories strips forged synthetic markers
 			source: 'email',
 			actor: {
 				sourceId: 'internal:email-subscriptions',
-				orgId: 'user-1',
+				orgId: ownerIdFromStored('user-1'),
 				request: { kind: 'platform-event', sourceId: 'test' },
 			},
 		}),
@@ -72,7 +73,7 @@ test('invokePackageSubscriptionWithToolFactories preserves synthetic markers onl
 		baseUrl: 'https://heykody.dev',
 		savedPackage: {
 			id: 'pkg-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			kodyId: 'demo',
 			name: '@user/demo',
 			description: '',

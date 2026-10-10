@@ -1,3 +1,7 @@
+import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -30,7 +34,7 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 
 async function resolveListSessionTarget(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	source: EntitySourceRow
 }): Promise<RepoResolvedTarget> {
 	if (input.source.entity_kind === 'package') {
@@ -77,21 +81,21 @@ export const repoListSessionsCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const rows = args.source_id
 				? await listRepoSessionsBySource(ctx.env, {
-						userId: user.userId,
+						userId: personalOrgId(user.userId),
 						sourceId: args.source_id,
 					})
-				: await listRepoSessionsByUser(ctx.env, user.userId)
+				: await listRepoSessionsByUser(ctx.env, personalOrgId(user.userId))
 			const sessions: RepoListSessionsOutput['sessions'] = []
 			for (const row of rows) {
 				if (
-					row.user_id !== user.userId ||
+					row.user_id !== personalOrgId(user.userId) ||
 					(args.status !== 'all' && row.status !== args.status)
 				) {
 					continue
 				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
 					id: row.source_id,
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 				})
 				if (!source) continue
 				sessions.push({
@@ -99,7 +103,7 @@ export const repoListSessionsCapability = defineDomainCapability(
 					status: row.status,
 					resolved_target: await resolveListSessionTarget({
 						db: ctx.env.APP_DB,
-						userId: user.userId,
+						userId: personalOrgId(user.userId),
 						source,
 					}),
 				})

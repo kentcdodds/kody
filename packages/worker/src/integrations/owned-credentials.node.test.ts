@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
@@ -71,7 +72,7 @@ function createHarness(userId: string) {
 		await upsertIntegration({ env, userId, config: { ...googleConfig, name } })
 		await persistIntegrationTokens({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			name,
 			refreshPolicy: 'required',
 			...tokens,
@@ -80,14 +81,22 @@ function createHarness(userId: string) {
 	const persistClientSecret = () =>
 		persistUserOauthAppClientSecret({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			slug: 'google',
 			value: 'client-secret-live',
 		})
 	const clientSecret = () =>
-		resolveUserOauthAppClientSecret({ env, userId, slug: 'google' })
+		resolveUserOauthAppClientSecret({
+			env,
+			userId: ownerIdFromStored(userId),
+			slug: 'google',
+		})
 	const accessToken = () =>
-		resolveIntegrationAccessToken({ env, userId, name: 'google' })
+		resolveIntegrationAccessToken({
+			env,
+			userId: ownerIdFromStored(userId),
+			name: 'google',
+		})
 	const canUse = (pkg?: { packageId: string; packageKodyId?: string }) =>
 		assertCanUseIntegration({
 			env,
@@ -113,7 +122,7 @@ function createHarness(userId: string) {
 }
 
 test('integration-owned credentials persist as ciphertext, stay off secret lists, and survive sibling disconnect', async () => {
-	const userId = 'user-owned-creds'
+	const userId = ownerIdFromStored('user-owned-creds')
 	const harness = createHarness(userId)
 	const { sqlite, env, canUse, grant, clientSecret, accessToken } = harness
 	harness.seedPackage('pkg-mail', 'mail')
@@ -220,7 +229,7 @@ test('integration-owned credentials persist as ciphertext, stay off secret lists
 })
 
 test('disconnecting the last user-lane connection deletes the leftover client secret', async () => {
-	const userId = 'user-last-disconnect'
+	const userId = ownerIdFromStored('user-last-disconnect')
 	const { env, connect, persistClientSecret, clientSecret, accessToken } =
 		createHarness(userId)
 	await connect()
@@ -232,7 +241,7 @@ test('disconnecting the last user-lane connection deletes the leftover client se
 })
 
 test('lockIntegrationToPackage switches any-context usage to packages and rejects unknown packages', async () => {
-	const userId = 'user-lock-usage'
+	const userId = ownerIdFromStored('user-lock-usage')
 	const { env, seedPackage, canUse, grant } = createHarness(userId)
 	seedPackage('pkg-drafts', 'gmail-drafts')
 	await upsertIntegration({ env, userId, config: googleConfig })

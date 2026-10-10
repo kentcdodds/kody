@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as CommunityRepo from './repo.ts'
 import { type CommunityListingRecord } from './types.ts'
@@ -34,7 +35,7 @@ function githubListing(
 ): CommunityListingRecord {
 	return {
 		id: 'listing-github',
-		ownerUserId: 'owner-kody',
+		ownerUserId: ownerIdFromStored('owner-kody'),
 		packageId: 'package-github',
 		sourceId: 'source-github',
 		kodyId: 'github-triage',
@@ -62,7 +63,7 @@ function githubListing(
 
 const mealListing = githubListing({
 	id: 'listing-meal',
-	ownerUserId: 'owner-jane',
+	ownerUserId: ownerIdFromStored('owner-jane'),
 	packageId: 'package-meal',
 	sourceId: 'source-meal',
 	kodyId: 'meal-planner',

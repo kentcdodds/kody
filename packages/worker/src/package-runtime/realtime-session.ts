@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { buildFacetName } from '#mcp/app-runner-facet-names.ts'
 import { resolveBackgroundMcpUser } from '#worker/identity/background-mcp-user.ts'
@@ -35,7 +36,7 @@ type PersistedPackageRealtimeSession = {
 }
 
 type PackageRealtimeBindingState = {
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -147,7 +148,7 @@ type PackageRealtimeHookInput = {
 }
 
 type PackageRealtimeHookContext = {
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	baseUrl: string
@@ -981,7 +982,7 @@ function getPackageRealtimeNamespace(env: Env) {
 
 function getPackageRealtimeStub(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 }): PackageRealtimeSessionRpc {
 	const namespace = getPackageRealtimeNamespace(input.env)
@@ -999,7 +1000,7 @@ function getPackageRealtimeStub(input: {
 
 export function packageRealtimeSessionRpc(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string

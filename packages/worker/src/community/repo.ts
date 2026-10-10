@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { d1ContainsLikePattern } from '#worker/d1-like-pattern.ts'
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
 import { parseTagsJson } from '@kody-internal/shared/tags-json.ts'
@@ -37,7 +38,7 @@ export function mapCommunityListingRow(
 		row['featured_at'] == null ? null : String(row['featured_at'])
 	return {
 		id: String(row['id']),
-		ownerUserId: String(row['owner_user_id']),
+		ownerUserId: String(row['owner_user_id']) as OwnerId,
 		packageId: String(row['package_id']),
 		sourceId: String(row['source_id']),
 		kodyId: String(row['kody_id']),
@@ -141,8 +142,8 @@ function mapCommunityReportRow(
 		id: String(row['id']),
 		listingId: String(row['listing_id']),
 		listingName: String(row['listing_name']),
-		listingOwnerUserId: String(row['listing_owner_user_id']),
-		reporterUserId: String(row['reporter_user_id']),
+		listingOwnerUserId: String(row['listing_owner_user_id']) as OwnerId,
+		reporterUserId: String(row['reporter_user_id']) as OwnerId,
 		reason: String(row['reason']),
 		status: String(row['status']) as CommunityReportStatus,
 		resolvedByUserId:

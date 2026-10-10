@@ -1,10 +1,11 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { listPlatformStorageBuckets } from '#worker/storage-buckets/service.ts'
 import { encodeStorageIdentity } from '#worker/dr/storage-identity.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type StorageInventoryEntry = {
-	userId: string
+	userId: OwnerId
 	storageId: string
 	identity: string
 }
@@ -19,7 +20,7 @@ export type ArtifactInventoryEntry = {
 
 export async function listPlatformOwnerInventory(
 	db: D1Database,
-): Promise<Array<string>> {
+): Promise<Array<OwnerId>> {
 	const result = await db
 		.prepare(
 			`SELECT stable_user_id AS ownerId
@@ -27,7 +28,7 @@ export async function listPlatformOwnerInventory(
 			WHERE deleting_at IS NULL${andLiveDeletedAtSql()}
 			ORDER BY stable_user_id ASC`,
 		)
-		.all<{ ownerId: string }>()
+		.all<{ ownerId: OwnerId }>()
 	return (result.results ?? []).map((row) => row.ownerId)
 }
 
@@ -58,7 +59,7 @@ export async function listPlatformStorageInventory(input: {
 		const identity = encodeStorageIdentity(userId, storageId)
 		if (seen.has(identity)) return
 		seen.add(identity)
-		inventory.push({ userId, storageId, identity })
+		inventory.push({ userId: userId as OwnerId, storageId, identity })
 	}
 	for (const row of jobStorageOwners) push(row.userId, row.storageId)
 	for (const row of registeredBuckets) push(row.userId, row.storageId)

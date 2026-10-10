@@ -1,10 +1,12 @@
 import { parseJsonWithFallback } from '../json-parsing.ts'
+import { type OwnerId } from '../owner-person-ids.ts'
 import { createJobStorageId } from './storage-id.ts'
 import { type JobRecord, type PersistedJobCallerContext } from './types.ts'
 
 type JobRowRecord = {
 	id: string
-	user_id: string
+	/** Owner id bytes as stored. JobManager names use this value untrimmed. */
+	user_id: OwnerId
 	/** Provenance only (Teams P3+). Falls back to user_id when absent. */
 	created_by_user_id: string | null
 	deleted_at: string | null
@@ -76,7 +78,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 	const record: JobRecord = {
 		version: 1,
 		id: jobId,
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		name: String(row['name']),
 		sourceId: String(row['source_id']),
 		publishedCommit:
@@ -123,7 +125,7 @@ function mapRow(row: Record<string, unknown>): JobRow {
 	}
 	return {
 		id: record.id,
-		user_id: String(row['user_id']),
+		user_id: String(row['user_id']) as OwnerId,
 		created_by_user_id:
 			row['created_by_user_id'] == null
 				? null

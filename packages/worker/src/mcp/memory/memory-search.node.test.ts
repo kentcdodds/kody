@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import * as embedding from '#worker/vectorize/embedding.ts'
@@ -12,7 +13,7 @@ function row(
 ): McpMemoryRow {
 	return {
 		id,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		category: 'preference',
 		status: 'active',
 		subject,
@@ -43,7 +44,7 @@ test('searchMemories fail-closes on foreign rows and keeps Vectorize misses lexi
 		env: {} as Env,
 		query: 'summarize inbox threads for triage',
 		limit: 5,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		statuses: ['active', 'archived'],
 		rows: owned,
 		vectorRankedIds: ['mem-weak'],
@@ -61,7 +62,7 @@ test('searchMemories fail-closes on foreign rows and keeps Vectorize misses lexi
 		env: {} as Env,
 		query: 'summarize inbox threads for triage',
 		limit: 5,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		statuses: ['active'],
 		rows: [...owned, row('mem-foreign', 'user-2', 'x', 'summarize inbox')],
 		vectorRankedIds: ['mem-weak'],
@@ -93,7 +94,7 @@ test('queryMemoryVectorIds uses a shared embedText instead of embedding the quer
 		await queryMemoryVectorIds({
 			env,
 			query: 'summarize inbox threads',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			statuses: ['active'],
 			topK: 5,
 			embedText,

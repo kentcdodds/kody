@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { createD1JobsStore } from '@kody-internal/shared/jobs/store.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
@@ -93,13 +94,16 @@ test('listJobIdsForUser returns the user’s live and archived job ids from the 
 
 test('soft-delete records each job enabled flag and restore puts it back', async () => {
 	const { sqlite, db } = createJobsDb()
-	insertJob(sqlite, { id: 'job-on', userId: 'org-jobs' })
-	insertJob(sqlite, { id: 'job-off', userId: 'org-jobs' })
+	insertJob(sqlite, { id: 'job-on', userId: ownerIdFromStored('org-jobs') })
+	insertJob(sqlite, { id: 'job-off', userId: ownerIdFromStored('org-jobs') })
 	sqlite.prepare(`UPDATE jobs SET enabled = 0 WHERE id = 'job-off'`).run()
 	const store = createD1JobsStore(db)
 	const deletedAt = '2026-10-01T12:00:00.000Z'
 	expect(
-		await store.softDeleteJobsForUser({ userId: 'org-jobs', deletedAt }),
+		await store.softDeleteJobsForUser({
+			userId: ownerIdFromStored('org-jobs'),
+			deletedAt,
+		}),
 	).toBe(2)
 	const tombstoned = sqlite
 		.prepare(
@@ -113,7 +117,7 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 	])
 	expect(
 		await store.softDeleteJobsForUser({
-			userId: 'org-jobs',
+			userId: ownerIdFromStored('org-jobs'),
 			deletedAt: '2026-10-02T00:00:00.000Z',
 		}),
 	).toBe(0)
@@ -131,7 +135,7 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 	expect(candidates.map((row) => row.id)).not.toContain('job-on')
 	expect(
 		await store.restoreJobsForUser({
-			userId: 'org-jobs',
+			userId: ownerIdFromStored('org-jobs'),
 			deletedAt,
 			restoredAt: '2026-10-03T00:00:00.000Z',
 		}),
@@ -155,7 +159,10 @@ test('soft-delete records each job enabled flag and restore puts it back', async
 
 test('restore leaves a pre-column tombstone disabled', async () => {
 	const { sqlite, db } = createJobsDb()
-	insertJob(sqlite, { id: 'job-legacy', userId: 'org-legacy' })
+	insertJob(sqlite, {
+		id: 'job-legacy',
+		userId: ownerIdFromStored('org-legacy'),
+	})
 	const deletedAt = '2026-09-01T00:00:00.000Z'
 	sqlite
 		.prepare(
@@ -167,7 +174,7 @@ test('restore leaves a pre-column tombstone disabled', async () => {
 	const store = createD1JobsStore(db)
 	expect(
 		await store.restoreJobsForUser({
-			userId: 'org-legacy',
+			userId: ownerIdFromStored('org-legacy'),
 			deletedAt,
 			restoredAt: '2026-09-02T00:00:00.000Z',
 		}),

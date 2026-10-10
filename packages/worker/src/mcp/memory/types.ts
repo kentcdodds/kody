@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 export const memoryStatusValues = ['active', 'deleted', 'archived'] as const
 
 export type MemoryStatus = (typeof memoryStatusValues)[number]
@@ -6,7 +8,7 @@ export type MemoryCategory = string | null
 
 export type MemoryRow = {
 	id: string
-	user_id: string
+	user_id: OwnerId
 	category: MemoryCategory
 	status: MemoryStatus
 	subject: string

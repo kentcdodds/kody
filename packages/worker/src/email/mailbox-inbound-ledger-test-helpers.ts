@@ -1,8 +1,9 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import { type MailboxInboundDeliveryInsertInput } from './mailbox-inbound-ledger.ts'
 
 export function insertInput(
-	ownerId: string,
+	ownerId: OwnerId,
 	overrides?: Partial<MailboxInboundDeliveryInsertInput>,
 ): MailboxInboundDeliveryInsertInput {
 	const deliveryId =

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	clearFeatureFlagUserOverride,
@@ -580,7 +581,11 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 					updatedByStableUserId: null,
 				},
 				overrides: [
-					{ stableUserId: 'stable-4', username: 'bob', enabled: true },
+					{
+						stableUserId: ownerIdFromStored('stable-4'),
+						username: 'bob',
+						enabled: true,
+					},
 				],
 			},
 		],
@@ -620,7 +625,7 @@ test('listFeatureFlagsForAdmin includes registry flags and stale DB-only keys', 
 		global: null,
 		overrides: [
 			{
-				stableUserId: 'stable-3',
+				stableUserId: ownerIdFromStored('stable-3'),
 				username: 'alice',
 				enabled: false,
 				updatedAt: '2026-07-03T00:00:00.000Z',

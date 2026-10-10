@@ -14,6 +14,7 @@ import { userMeterRpc } from './user-meter-client.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { ensureCreditWalletTestSchema } from '#worker/billing/test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-03-15T12:00:00.000Z')
 const month = utcMonthKey(now)
 
@@ -70,7 +71,7 @@ test('over user budget denies new execute via consumeDailyEntitlement', async ()
 	)
 		.bind(orgId, 'acme', now.toISOString(), now.toISOString(), 50_000_000, null)
 		.run()
-	const meter = userMeterRpc({ env, userId: orgId })
+	const meter = userMeterRpc({ env, userId: ownerIdFromStored(orgId) })
 	await meter.assertWithinBudgetAndRecord({
 		month,
 		actorUserId: userId,
@@ -85,12 +86,12 @@ test('over user budget denies new execute via consumeDailyEntitlement', async ()
 	const error = await consumeDailyEntitlement({
 		db: env.APP_DB,
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		email,
 		resource: 'execute_calls_per_day',
 		now,
 		orgBudget: {
-			orgId,
+			orgId: ownerIdFromStored(orgId),
 			orgSlug: 'acme',
 			actorUserId: userId,
 			actorUsername: 'sam',
@@ -136,7 +137,7 @@ test('recordOrgBudgetSpend skips past-month debits without resetting live MTD', 
 			null,
 		)
 		.run()
-	const meter = userMeterRpc({ env, userId: orgId })
+	const meter = userMeterRpc({ env, userId: ownerIdFromStored(orgId) })
 	await meter.assertWithinBudgetAndRecord({
 		month: utcMonthKey(april),
 		actorUserId: userId,
@@ -150,7 +151,7 @@ test('recordOrgBudgetSpend skips past-month debits without resetting live MTD', 
 	await recordOrgBudgetSpend({
 		db: env.APP_DB,
 		env,
-		orgId,
+		orgId: ownerIdFromStored(orgId),
 		actorUserId: userId,
 		automationSource: null,
 		deltaMicroUsd: 5_000_000,
@@ -224,7 +225,7 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 	await syncOrgBudgetSpendFromCreditLedger({
 		db: env.APP_DB,
 		env,
-		orgId,
+		orgId: ownerIdFromStored(orgId),
 		month,
 		includes: [
 			{ meter: 'unique_worker_days', include: 10 },
@@ -232,7 +233,7 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 		],
 		now,
 	})
-	const meter = userMeterRpc({ env, userId: orgId })
+	const meter = userMeterRpc({ env, userId: ownerIdFromStored(orgId) })
 	const first = await meter.getBudgetSpend({ month })
 	expect(first.users[memberA] ?? 0).toBe(0)
 	expect(first.users[memberB]).toBe(20_000)
@@ -241,7 +242,7 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 	await syncOrgBudgetSpendFromCreditLedger({
 		db: env.APP_DB,
 		env,
-		orgId,
+		orgId: ownerIdFromStored(orgId),
 		month,
 		includes: [
 			{ meter: 'unique_worker_days', include: 10 },
@@ -262,7 +263,7 @@ test('syncOrgBudgetSpendFromCreditLedger recovers MTD from ledger and weights ov
 	await syncOrgBudgetSpendFromCreditLedger({
 		db: env.APP_DB,
 		env,
-		orgId,
+		orgId: ownerIdFromStored(orgId),
 		month,
 		includes: [
 			{ meter: 'unique_worker_days', include: 10 },

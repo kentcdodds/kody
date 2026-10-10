@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
@@ -57,7 +58,7 @@ const {
 const graphInput = {
 	env: { APP_DB: {}, REPO_SESSION: {} } as Env,
 	baseUrl: 'https://heykody.dev',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 }
 
 const staleRuntimeSource = `const runtime = {}
@@ -100,7 +101,7 @@ function makeArtifact(
 
 function appCacheKey(sourceId: string, entryPoint = 'app.js') {
 	return createPublishedPackageAppBundleCacheKey({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: {
 			id: sourceId,
 			published_commit: `commit-${sourceId}`,
@@ -503,8 +504,8 @@ test('buildKodyModuleBundle cache lifecycle reuses hits, skips when disabled, ke
 		['code', { code: code('a') }, { code: code('b') }],
 		[
 			'user',
-			{ userId: 'user-cache-a', code: code('shared') },
-			{ userId: 'user-cache-b', code: code('shared') },
+			{ userId: ownerIdFromStored('user-cache-a'), code: code('shared') },
+			{ userId: ownerIdFromStored('user-cache-b'), code: code('shared') },
 		],
 	] as const) {
 		mockModule.createWorker.mockReset()

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
@@ -117,7 +118,7 @@ function buildSubscriptionIdempotencyKey(input: {
 async function loadMatchingEmailSubscriptions(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV'>
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	topic: string
 }) {
 	return await loadMatchingPackageSubscriptions(input)
@@ -125,7 +126,7 @@ async function loadMatchingEmailSubscriptions(input: {
 
 export async function dispatchInboundEmailSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL' | 'MAILBOX'>
-	userId: string
+	userId: OwnerId
 	message: EmailMessageRecord
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

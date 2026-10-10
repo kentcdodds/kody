@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -130,7 +133,7 @@ test('subscribe verifies the callback with a signed challenge and stores the sub
 	await expect(
 		getMcpEventSubscription({
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			id: result.id,
 		}),
 	).resolves.toMatchObject({
@@ -335,7 +338,7 @@ test('unsubscribe deletes by key and is idempotent', async () => {
 	await expect(
 		getMcpEventSubscription({
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			id: created.id,
 		}),
 	).resolves.not.toBeNull()
@@ -346,7 +349,7 @@ test('unsubscribe deletes by key and is idempotent', async () => {
 	await expect(
 		getMcpEventSubscription({
 			db: env.APP_DB,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			id: created.id,
 		}),
 	).resolves.toBeNull()

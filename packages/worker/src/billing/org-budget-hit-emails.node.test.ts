@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -119,7 +120,7 @@ test('buildBudgetHitEmailContent HTML-escapes slug and usernames', () => {
 
 test('sendBudgetHitEmail claims once per org actor per UTC month', async () => {
 	const db = await createDb()
-	const orgId = 'org-budget-hit'
+	const orgId = ownerIdFromStored('org-budget-hit')
 	const owner = testStableUserIdFromEmail('owner-budget@example.com')
 	const seededAt = '2026-01-02T00:00:00.000Z'
 	await db
@@ -191,7 +192,7 @@ test('sendBudgetHitEmail claims once per org actor per UTC month', async () => {
 
 test('sendBudgetHitEmail fail-open still sends when claim put fails', async () => {
 	const db = await createDb()
-	const orgId = 'org-fail-open'
+	const orgId = ownerIdFromStored('org-fail-open')
 	const owner = testStableUserIdFromEmail('fail-open@example.com')
 	const seededAt = '2026-01-02T00:00:00.000Z'
 	await db

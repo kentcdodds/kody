@@ -16,6 +16,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const testCookieSecret = 'test-cookie-secret-0123456789abcdef0123456789'
 
 const userOneSession: AuthSession = {
@@ -165,14 +166,14 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 
 	await recordInboundMcpConnectionLastUsed({
 		env: meter.env,
-		userId: userOneSession.stableUserId,
+		userId: ownerIdFromStored(userOneSession.stableUserId),
 		clientId: 'client-a',
 		lastUsedAt: '2026-03-20T12:00:00.000Z',
 		nowMs: Date.parse('2026-03-20T12:00:00.000Z'),
 	})
 	await recordInboundMcpConnectionLastUsed({
 		env: meter.env,
-		userId: userOneSession.stableUserId,
+		userId: ownerIdFromStored(userOneSession.stableUserId),
 		clientId: 'https://chatgpt.com/oauth/vG3/client.json',
 		lastUsedAt: '2026-03-10T12:00:00.000Z',
 		nowMs: Date.parse('2026-03-10T12:00:00.000Z'),
@@ -227,7 +228,7 @@ test('connected agents API lists unique inbound clients and revokes every grant 
 	expect(
 		await listInboundMcpConnectionLastUsed({
 			env: meter.env,
-			userId: userOneSession.stableUserId,
+			userId: ownerIdFromStored(userOneSession.stableUserId),
 		}),
 	).toEqual(
 		new Map([

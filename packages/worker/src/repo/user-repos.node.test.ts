@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -13,7 +14,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 
 	await insertUserRepo(db, {
 		id: 'repo-indexed',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		name: 'indexed-notes',
 		description: 'has both commits',
 		created_at: now,
@@ -21,7 +22,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 	})
 	await insertEntitySource(db, {
 		id: 'source-indexed',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'repo',
 		entity_id: 'repo-indexed',
 		repo_id: 'repo-indexed',
@@ -37,7 +38,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 
 	await insertUserRepo(db, {
 		id: 'repo-published',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		name: 'published-notes',
 		description: null,
 		created_at: now,
@@ -45,7 +46,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 	})
 	await insertEntitySource(db, {
 		id: 'source-published',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'repo',
 		entity_id: 'repo-published',
 		repo_id: 'repo-published',
@@ -61,7 +62,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 
 	await insertUserRepo(db, {
 		id: 'repo-empty',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		name: 'empty-notes',
 		description: null,
 		created_at: now,
@@ -70,7 +71,7 @@ test('listUserRepos joins entity_sources without ambiguous columns and prefers i
 
 	await insertUserRepo(db, {
 		id: 'repo-other',
-		user_id: 'user-2',
+		user_id: ownerIdFromStored('user-2'),
 		name: 'other-notes',
 		description: null,
 		created_at: now,

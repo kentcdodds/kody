@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { sha256Hex } from '@kody-internal/shared/sha256.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -64,7 +65,7 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 	) =>
 		shouldSkipVectorEmbed({
 			env: skipEnv,
-			userId: 'user-me',
+			userId: ownerIdFromStored('user-me'),
 			vectorId: 'memory-1',
 			text,
 			metadata,
@@ -142,7 +143,7 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 
 		await recordVectorEmbedFingerprint({
 			env,
-			userId: 'user-me',
+			userId: ownerIdFromStored('user-me'),
 			vectorId: 'memory-1',
 			text: changedText.text,
 		})
@@ -156,12 +157,18 @@ test('vector embed fingerprints skip unchanged text and force rebuilds Vectorize
 		await expect(
 			tryReadVectorEmbedFingerprints({
 				env: unmigratedEnv,
-				keys: [{ userId: 'user-me', vectorId: 'memory-1' }],
+				keys: [{ userId: ownerIdFromStored('user-me'), vectorId: 'memory-1' }],
 			}),
 		).resolves.toBeNull()
 		await tryWriteVectorEmbedFingerprints({
 			env: unmigratedEnv,
-			rows: [{ userId: 'user-me', vectorId: 'memory-1', contentHash: 'abc' }],
+			rows: [
+				{
+					userId: ownerIdFromStored('user-me'),
+					vectorId: 'memory-1',
+					contentHash: 'abc',
+				},
+			],
 		})
 		await tryDeleteVectorEmbedFingerprint({
 			env: unmigratedEnv,

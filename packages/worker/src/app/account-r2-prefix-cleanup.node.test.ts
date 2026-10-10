@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	deleteAccountCommunityAssetPrefixes,
@@ -60,7 +61,7 @@ test('community asset prefix cleanup paginates and preserves other users', async
 				}
 			},
 		}),
-		stableUserId: 'user-aaa',
+		stableUserId: ownerIdFromStored('user-aaa'),
 		listingIds: ['listing-a'],
 		repoIds: ['repo-a'],
 	})
@@ -94,7 +95,7 @@ test('community asset prefix cleanup fails closed on listing or deletion errors'
 				},
 				delete: vi.fn(),
 			}),
-			stableUserId: 'user-aaa',
+			stableUserId: ownerIdFromStored('user-aaa'),
 			listingIds: [],
 		}),
 	).rejects.toThrow('User avatar prefix listing failed')
@@ -113,7 +114,7 @@ test('community asset prefix cleanup fails closed on listing or deletion errors'
 					throw new Error('delete unavailable')
 				},
 			}),
-			stableUserId: 'user-aaa',
+			stableUserId: ownerIdFromStored('user-aaa'),
 			listingIds: [],
 		}),
 	).rejects.toThrow('User avatar prefix delete failed')
@@ -142,7 +143,7 @@ test('email prefix cleanup removes orphan raw MIME and attachment objects', asyn
 				}
 			},
 		}),
-		stableUserId: 'user-aaa',
+		stableUserId: ownerIdFromStored('user-aaa'),
 	})
 	expect(count).toBe(2)
 	expect(keys).toEqual(new Set(['email-raw:v1:user-bbb/other']))

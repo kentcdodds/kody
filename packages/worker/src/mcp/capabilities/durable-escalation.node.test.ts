@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	alreadyDispatchedWorkflowStatusExclusion,
@@ -190,7 +191,7 @@ type EscalationInput = Parameters<typeof runWithDurableEscalation>[0]
 function escalate(overrides: Partial<EscalationInput> = {}) {
 	return runWithDurableEscalation({
 		env: envStub(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		idempotencyParts: publishParts,
 		workflowName,
 		durableCode: 'export default async function main() { return null }',
@@ -230,7 +231,7 @@ function seedProjection(
 }
 
 const keyFor = (userId: string, parts: ReadonlyArray<string> = publishParts) =>
-	buildCallerScopedIdempotencyKey({ userId, parts })
+	buildCallerScopedIdempotencyKey({ userId: ownerIdFromStored(userId), parts })
 
 test('runWithDurableEscalation returns the inline result when work finishes within budget', async () => {
 	const run = vi.fn(async (_signal: AbortSignal) => ({
@@ -281,7 +282,7 @@ test('runWithDurableEscalation dispatches once on budget exhaustion and reuses a
 	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenCalledTimes(1)
 	expect(mockModule.createDynamicCallableWorkflow).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			userEmail: 'user@example.com',
 			body: expect.objectContaining({
 				idempotencyKey: expectedKey,
@@ -336,7 +337,7 @@ test('mid-creation workflow projection rows are treated as already dispatched', 
 		runRecordMocks.findWorkflowProjectionByBindingIdempotencyKey,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			bindingName: projectionBindingName,
 			idempotencyKey: expectedKey,
 		}),
@@ -357,7 +358,9 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 		.mockResolvedValueOnce(created('dynwf-delegate-a'))
 		.mockResolvedValueOnce(created('dynwf-delegate-b'))
 
-	await expect(escalate({ userId: 'delegate-a' })).resolves.toEqual({
+	await expect(
+		escalate({ userId: ownerIdFromStored('delegate-a') }),
+	).resolves.toEqual({
 		kind: 'dispatched',
 		handle: expect.objectContaining({
 			workflow_id: 'dynwf-delegate-a',
@@ -368,7 +371,9 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 
 	// A second acting caller must not reuse the first caller's active row even
 	// when owner/package/commit parts match (projections are user-scoped).
-	await expect(escalate({ userId: 'delegate-b' })).resolves.toEqual({
+	await expect(
+		escalate({ userId: ownerIdFromStored('delegate-b') }),
+	).resolves.toEqual({
 		kind: 'dispatched',
 		handle: expect.objectContaining({
 			workflow_id: 'dynwf-delegate-b',
@@ -391,7 +396,9 @@ test('different acting callers get non-colliding dedupe; same caller still reuse
 
 	mockModule.createDynamicCallableWorkflow.mockClear()
 	seedProjection('delegate-b', 'dynwf-delegate-b', delegateBKey, 'running')
-	await expect(escalate({ userId: 'delegate-a' })).resolves.toEqual({
+	await expect(
+		escalate({ userId: ownerIdFromStored('delegate-a') }),
+	).resolves.toEqual({
 		kind: 'dispatched',
 		handle: expect.objectContaining({
 			workflow_id: 'dynwf-delegate-a',
@@ -459,7 +466,7 @@ test('budget exhaustion releases a dead terminal key and re-dispatches once', as
 		runRecordMocks.releaseWorkflowProjectionIdempotencyKey,
 	).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			id: 'dynwf-cancelled-1',
 		}),
 	)

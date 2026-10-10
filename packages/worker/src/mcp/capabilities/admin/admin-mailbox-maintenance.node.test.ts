@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -256,7 +259,7 @@ test('adminMailboxMaintenance routes final status, retention, and delete with au
 	}
 
 	const notFound = new AdminMailboxMessageNotFoundError({
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		messageId: 'already-gone',
 	})
 	mockModule.runAdminMailboxMaintenanceDeleteMessage.mockRejectedValueOnce(

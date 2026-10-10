@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import {
 	userMeterNamespace,
@@ -25,7 +26,7 @@ export type DynamicWorkerDayEnv = UsageEnv & UserMeterEnv
  */
 export async function recordUniqueDynamicWorkerDay(input: {
 	env: DynamicWorkerDayEnv
-	userId: string | null | undefined
+	userId: OwnerId | null | undefined
 	workerId: string
 	surface: DynamicWorkerDaySurface
 	/**

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type RequestLineage } from '@kody-internal/shared/request-context.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
@@ -60,7 +61,7 @@ const terminalDurableEscalationStatuses = new Set<string>(
  * identity.
  */
 export function buildCallerScopedIdempotencyKey(input: {
-	userId: string
+	userId: OwnerId
 	parts: ReadonlyArray<string>
 }) {
 	const userId = input.userId.trim()
@@ -93,7 +94,7 @@ function createDispatchedHandle(input: {
 
 async function findAlreadyDispatchedWorkflowRunByIdempotencyKey(input: {
 	env: Pick<Env, 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	idempotencyKey: string
 }): Promise<{
 	id: string
@@ -175,7 +176,7 @@ type SettledInlineRun<T> =
  */
 export async function runWithDurableEscalation<T>(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	/** The run that escalates; the durable workflow inherits it. */
 	lineage: RequestLineage

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -57,7 +58,7 @@ export function getMemoryMutationNotFoundMessage(memoryId: string) {
 function logMemoryVectorSyncError(input: {
 	operation: 'upsert' | 'delete'
 	memoryId: string
-	userId: string
+	userId: OwnerId
 	category: string | null
 	error: unknown
 }) {
@@ -71,7 +72,7 @@ function logMemoryVectorSyncError(input: {
 }
 
 type MemoryOwnerContext = {
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	storageContext?: StorageContext | null
 }
@@ -148,7 +149,7 @@ type SurfaceRelevantMemoriesInput = MemoryOwnerContext & {
  */
 export async function acknowledgeSurfacedMemories(input: {
 	env: MemoryEnv
-	userId: string
+	userId: OwnerId
 	conversationId: string
 	memoryIds: Array<string>
 }) {
@@ -717,7 +718,7 @@ function normalizeLimit(value: number | undefined | null) {
 
 async function filterSuppressedMatches(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	conversationId: string | null
 	includeSuppressedInConversation: boolean
 	matches: Array<MemorySearchMatch>

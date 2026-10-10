@@ -29,6 +29,7 @@ import {
 } from './storage-runner.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function ensureStorageRunnerTestSchema() {
 	await ensureUserStorageBucketsTestSchema(env.APP_DB)
 	clearStorageBucketRegistrationDedupeForTests()
@@ -64,15 +65,21 @@ async function seedPlannedStorageUser(
 		)
 		.run()
 	// UserMeter is the storage-bytes authority; seed it directly.
-	await userMeterRpc({ env, userId }).initializeStorageBytes({
+	await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).initializeStorageBytes({
 		bytes: meterBytes,
 		updatedAt: new Date().toISOString(),
 	})
-	return { email, userId }
+	return { email, userId: ownerIdFromStored(userId) }
 }
 
 function setMeterBytes(userId: string, bytes: number) {
-	return userMeterRpc({ env, userId }).setStorageBytes({
+	return userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).setStorageBytes({
 		bytes,
 		updatedAt: new Date().toISOString(),
 	})
@@ -82,7 +89,11 @@ const storageRunnerNamespace =
 	env.STORAGE_RUNNER as DurableObjectNamespace<StorageRunner>
 
 function runnerFor(userId: string, storageId = createExecuteStorageId()) {
-	return storageRunnerRpc({ env, userId, storageId })
+	return storageRunnerRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+		storageId,
+	})
 }
 
 function storageRunnerStub(userId: string, storageId: string) {
@@ -115,7 +126,7 @@ async function entitlementRejection(promise: Promise<unknown>) {
 
 async function bucketIds(userId: string) {
 	await flushStorageBucketRegistrationsForTests()
-	return listUserStorageBucketIds({ env, userId })
+	return listUserStorageBucketIds({ env, userId: ownerIdFromStored(userId) })
 }
 
 test('storage runner preserves isolated state per storage id', async () => {
@@ -449,17 +460,25 @@ test('storage runner registers buckets on writes but not on reads', async () => 
 	await reader.sqlQuery({ query: 'select 1 as ok', writable: false })
 	await expect(bucketIds(userId)).resolves.toEqual([])
 
-	await runnerFor(userId, writeStorageId).setValue({ key: 'counter', value: 1 })
+	await runnerFor(userId, writeStorageId).setValue({
+		key: 'counter',
+		value: 1,
+	})
 	await expect(bucketIds(userId)).resolves.toEqual([writeStorageId])
 
 	// The mutating write also persists this bucket's byte estimate on its
 	// inventory row so entitlement baselines can read it without a DO probe.
-	const estimates = await listUserStorageBucketEstimates({ env, userId })
+	const estimates = await listUserStorageBucketEstimates({
+		env,
+		userId: ownerIdFromStored(userId),
+	})
 	expect(estimates).toHaveLength(1)
 	expect(estimates[0]?.storageId).toBe(writeStorageId)
 	expect(estimates[0]?.estimatedBytes).toBeGreaterThan(0)
 
-	const probeUserId = `storage-empty-probe-${crypto.randomUUID()}`
+	const probeUserId = ownerIdFromStored(
+		`storage-empty-probe-${crypto.randomUUID()}`,
+	)
 	const probe = storageRunnerRpc({
 		env,
 		userId: probeUserId,
@@ -498,7 +517,7 @@ test('storage runner dedupes bucket registration to one D1 write per isolate', a
 
 test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject Proxies on write', async () => {
 	await ensureStorageRunnerTestSchema()
-	const userId = `storage-metered-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`storage-metered-${crypto.randomUUID()}`)
 	const runner = createMeteredDurableObjectStub({
 		env: { USAGE_EVENTS: { writeDataPoint() {} } },
 		userId,
@@ -582,7 +601,9 @@ test('metered StorageRunner RpcStub get/set/list/delete stay callable and reject
 			return Reflect.get(target, prop, receiver)
 		},
 	})
-	const factoryUserId = `storage-metered-factory-${crypto.randomUUID()}`
+	const factoryUserId = ownerIdFromStored(
+		`storage-metered-factory-${crypto.randomUUID()}`,
+	)
 	const factoryRunner = storageRunnerRpc({
 		env: meteredEnv,
 		userId: factoryUserId,

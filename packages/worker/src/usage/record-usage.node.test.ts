@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vitest'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
 const spanCalls = vi.hoisted(() => ({
@@ -47,7 +51,7 @@ test('recordUsage emits kody.usage spans with attributes and skips empty userId'
 	await recordUsage(
 		{},
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			eventType: 'execute',
 			entityId: 'pkg-1',
 			durationMs: 120,
@@ -73,7 +77,11 @@ test('recordUsage emits kody.usage spans with attributes and skips empty userId'
 	spanCalls.spans.length = 0
 	await recordUsage(
 		{},
-		{ userId: 'user-2', eventType: 'job_run', outcome: 'success' },
+		{
+			userId: ownerIdFromStored('user-2'),
+			eventType: 'job_run',
+			outcome: 'success',
+		},
 	)
 	expect(spanCalls.spans).toEqual([
 		{
@@ -90,7 +98,7 @@ test('recordUsage emits kody.usage spans with attributes and skips empty userId'
 	spanCalls.spans.length = 0
 	await recordUsage(
 		{},
-		{ userId: '', eventType: 'execute', outcome: 'success' },
+		{ userId: '' as OwnerId, eventType: 'execute', outcome: 'success' },
 	)
 	expect(spanCalls.spans).toEqual([])
 })
@@ -100,7 +108,7 @@ test('usageEventBlobs default actor to org billing id and map automation sources
 	expect(
 		usageEventBlobs(
 			{
-				userId: 'org-1',
+				userId: ownerIdFromStored('org-1'),
 				eventType: 'execute',
 				outcome: 'success',
 			},
@@ -110,7 +118,7 @@ test('usageEventBlobs default actor to org billing id and map automation sources
 	expect(
 		usageEventBlobs(
 			{
-				userId: 'org-1',
+				userId: ownerIdFromStored('org-1'),
 				eventType: 'job_run',
 				outcome: 'success',
 				actorUserId: '',

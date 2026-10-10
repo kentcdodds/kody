@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { parseApiToken } from '@kody-internal/shared/api-token-format.ts'
@@ -18,7 +19,7 @@ import {
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const userId = 'stable-user-bootstrap-1'
+const userId = ownerIdFromStored('stable-user-bootstrap-1')
 const start = new Date('2026-10-01T12:00:00.000Z')
 const shortLife = apiTokenLifetimeAliases.short
 const longLife = apiTokenLifetimeAliases.long

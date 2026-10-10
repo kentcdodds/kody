@@ -4,6 +4,7 @@ import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { ensureUserStorageBucketsTestSchema } from '#worker/storage-buckets/test-schema.ts'
 import { ensureUsageRollupsTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function testUserId() {
 	return crypto.randomUUID().replaceAll('-', '').padEnd(64, '0')
 }
@@ -23,7 +24,7 @@ test('StorageRunner key-value and SQL reads both land on the customer rows-read 
 	const userId = testUserId()
 	const runner = storageRunnerRpc({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		storageId: `rows-read-${crypto.randomUUID()}`,
 	})
 	await runner.setValue({ key: 'a', value: 1 })

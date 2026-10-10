@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { cloudflareOpaqueInternalErrorMessage } from '#worker/cloudflare-opaque-internal-error.ts'
 import { type EntitySourceRow } from './types.ts'
@@ -40,7 +41,7 @@ function packageSource(
 ): EntitySourceRow {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -272,7 +273,7 @@ test('opaque Cloudflare Artifacts internals become retry messages, not source-re
 test('package source overwrite and private-visibility changes require explicit confirmation', async () => {
 	const overwriteMessage = await assertPackageSourceOverwriteAllowed({
 		env: createEnvWithSnapshot({ 'package.json': '{}' }),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: packageSource(),
 		operation: 'packageSave',
 	}).then(
@@ -322,7 +323,7 @@ test('restorable package source snapshot verification rejects corrupt snapshots 
 	const assertRestorable = (env: Env, operation: string) =>
 		assertRestorablePackageSourceSnapshot({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			source: packageSource(),
 			operation,
 		})

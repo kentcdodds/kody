@@ -8,6 +8,7 @@ import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import { dailyEntitlementResources } from '#worker/entitlements/user-meter-do.ts'
 import type * as EntitlementsService from '#worker/entitlements/service.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const mockModule = vi.hoisted(() => ({
 	/** Physical D1 payload recompute; the minimal test DB has no payload tables. */
 	calculateUserD1StorageBytes: vi.fn<
@@ -74,7 +75,10 @@ async function initializeDailyCounters(input: {
 	meter: ReturnType<typeof createInMemoryUserMeterEnv>
 	counts: Record<(typeof dailyEntitlementResources)[number], number>
 }) {
-	const meter = userMeterRpc({ env: input.meter.env, userId: stableUserId })
+	const meter = userMeterRpc({
+		env: input.meter.env,
+		userId: ownerIdFromStored(stableUserId),
+	})
 	for (const resource of dailyEntitlementResources) {
 		await meter.initialize({
 			resource,
@@ -94,7 +98,10 @@ function assertNoLeaseSecrets(value: unknown) {
 test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state without liveness D1 tables', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	const meterStub = userMeterRpc({
+		env: meter.env,
+		userId: ownerIdFromStored(stableUserId),
+	})
 	insertUser(sqlite, { stableUserId })
 	mockModule.calculateUserD1StorageBytes.mockResolvedValue(4096)
 	await initializeDailyCounters({
@@ -158,7 +165,10 @@ test('loadAdminUserMeterParityReport verifies daily, storage, and deletion state
 test('loadAdminUserMeterParityReport surfaces bootstrap and tombstone mismatch without writing meter state', async () => {
 	const { sqlite, db } = createParityTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	const meterStub = userMeterRpc({
+		env: meter.env,
+		userId: ownerIdFromStored(stableUserId),
+	})
 	insertUser(sqlite, {
 		stableUserId,
 		deletingAt: '2026-08-01T08:00:00.000Z',

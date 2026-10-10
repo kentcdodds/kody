@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { buildOpenIdConfiguration } from '#worker/oidc/discovery.ts'
 import {
@@ -85,7 +86,7 @@ test('minted id_token includes expected claims and verifies with JWKS key', asyn
 		clientId: 'client-123',
 		scope: ['openid', 'email', 'profile'],
 		props: {
-			userId: 'user-stable-id',
+			userId: ownerIdFromStored('user-stable-id'),
 			email: 'user@example.com',
 			username: 'test-user',
 			displayName: 'test-user',

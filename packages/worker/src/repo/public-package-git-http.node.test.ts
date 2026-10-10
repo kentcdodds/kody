@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { createMswNodeServer } from '#worker/test-support/msw-node-server.ts'
@@ -85,7 +86,7 @@ function seedPublicListing(input?: {
 	})
 	getCommunityListingById.mockResolvedValue({
 		id: 'listing-1',
-		ownerUserId: 'owner-1',
+		ownerUserId: ownerIdFromStored('owner-1'),
 		packageId: 'pkg-1',
 		sourceId: 'source-1',
 		kodyId,
@@ -110,7 +111,7 @@ function seedPublicListing(input?: {
 	})
 	getEntitySourceById.mockResolvedValue({
 		id: 'source-1',
-		user_id: 'owner-1',
+		user_id: ownerIdFromStored('owner-1'),
 		entity_kind: 'package',
 		entity_id: 'pkg-1',
 		repo_id: 'package-pkg-1',

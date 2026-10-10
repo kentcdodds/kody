@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type Middleware } from 'remix/router'
 import {
 	AccountDeletionInProgressError,
@@ -43,7 +44,7 @@ export function createAccountWriteLeaseMiddleware(env: Env): Middleware {
 		try {
 			return await withAccountWriteLease({
 				db: env.APP_DB,
-				stableUserId: auth.user.mcpUser.userId,
+				stableUserId: personalOrgId(auth.user.mcpUser.userId),
 				holder: `web:${request.method} ${url.pathname}`,
 				env,
 				write: next,

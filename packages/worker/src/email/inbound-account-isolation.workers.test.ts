@@ -9,6 +9,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
 
@@ -116,8 +117,14 @@ test(
 		// Dual-scoped miss → unverified gate (not the other account's verified/max).
 		expect(message.rejectedReason).toBe('Account email is not verified.')
 
-		const recipientMailbox = mailboxRpc({ env, userId: recipientUserId })
-		const otherMailbox = mailboxRpc({ env, userId: otherUserId })
+		const recipientMailbox = mailboxRpc({
+			env,
+			userId: ownerIdFromStored(recipientUserId),
+		})
+		const otherMailbox = mailboxRpc({
+			env,
+			userId: ownerIdFromStored(otherUserId),
+		})
 		expect(await recipientMailbox.listMessages({ limit: 10 })).toMatchObject({
 			messages: [],
 		})

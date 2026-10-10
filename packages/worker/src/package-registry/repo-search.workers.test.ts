@@ -1,10 +1,14 @@
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { insertSavedPackage, searchSavedPackagesByUserId } from './repo.ts'
 
-const userId = 'search-user-1'
-const otherUserId = 'search-user-2'
+const userId = ownerIdFromStored('search-user-1')
+const otherUserId = ownerIdFromStored('search-user-2')
 
 async function ensureSchema(db: D1Database) {
 	await db
@@ -47,7 +51,7 @@ async function ensureSchema(db: D1Database) {
 
 function buildRow(input: {
 	id: string
-	userId?: string
+	userId?: OwnerId
 	name: string
 	kodyId: string
 	description?: string

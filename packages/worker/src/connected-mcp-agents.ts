@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type ConnectedMcpAgent,
 	labelInboundMcpClient,
@@ -33,7 +34,7 @@ export type InboundMcpConnectionState = {
 
 export async function loadInboundMcpConnectionState(
 	helpers: OAuthGrantListHelpers | undefined,
-	userId: string,
+	userId: OwnerId,
 	options?: { env?: UserMeterEnv },
 ): Promise<InboundMcpConnectionState> {
 	if (!helpers) {
@@ -57,7 +58,7 @@ export async function loadInboundMcpConnectionState(
 
 export async function revokeConnectedMcpAgent(input: {
 	helpers: OAuthGrantHelpers
-	userId: string
+	userId: OwnerId
 	clientId: string
 	env?: UserMeterEnv
 }): Promise<{ revoked: number } | { error: 'not_found' }> {

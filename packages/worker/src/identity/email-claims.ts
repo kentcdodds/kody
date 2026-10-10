@@ -1,6 +1,9 @@
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { mintPersonId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	mintPersonId,
+	type PersonId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type EmailClaimStatus = 'claimed' | 'released'
@@ -19,7 +22,7 @@ export type FormerEmailClaim = {
 }
 
 export type AllocateSignupIdentityResult =
-	| { ok: true; stableUserId: string }
+	| { ok: true; stableUserId: PersonId }
 	| { ok: false; reason: 'current_email' | 'former_email_claimed' }
 
 export type ReleasableEmailClaimResult =

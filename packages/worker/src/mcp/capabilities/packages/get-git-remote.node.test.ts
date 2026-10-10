@@ -1,5 +1,8 @@
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -62,7 +65,7 @@ vi.mock('./create-stub-package.ts', () => ({
 const { getGitRemoteCapability } = await import('./get-git-remote.ts')
 
 const personalOwner = {
-	ownerUserId: 'user-1',
+	ownerUserId: ownerIdFromStored('user-1'),
 	ownerScope: 'kentcdodds',
 	ownerEmail: 'user-1@example.com',
 	actorUserId: 'user-1',
@@ -273,7 +276,7 @@ test('get_git_remote returns scoped write and read artifact remotes', async () =
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).toHaveBeenCalledWith(expect.anything(), {
 		id: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		tokenExpiresAt: writeResult.expires_at,
 	})
 	expect(writeResult).toMatchObject({
@@ -428,7 +431,7 @@ test('get_git_remote create mode registers stubs for personal and org-bound owne
 
 	resetMocks()
 	const orgOwner = {
-		ownerUserId: 'org-owner',
+		ownerUserId: ownerIdFromStored('org-owner'),
 		ownerScope: 'acme',
 		ownerEmail: 'acme@example.com',
 		actorUserId: 'user-1',
@@ -442,13 +445,13 @@ test('get_git_remote create mode registers stubs for personal and org-bound owne
 	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			user: expect.objectContaining({ userId: 'user-1' }),
+			user: expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 		}),
 	)
 	const ownerLookup = [
 		expect.anything(),
 		expect.objectContaining({
-			userId: 'org-owner',
+			userId: ownerIdFromStored('org-owner'),
 			ref: 'unleashed-wifi',
 		}),
 	]

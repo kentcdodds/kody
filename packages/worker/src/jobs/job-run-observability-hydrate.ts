@@ -3,6 +3,7 @@
  * for user-facing readers (jobGet, jobList, account jobs).
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	getJobRunObservability,
 	getJobRunObservabilityBatch,
@@ -28,7 +29,7 @@ export function applyJobRunObservabilityToJobView(
 
 export async function hydrateJobViewFromRunLog(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	job: JobView
 }): Promise<JobView> {
 	const observability = await getJobRunObservability({
@@ -41,7 +42,7 @@ export async function hydrateJobViewFromRunLog(input: {
 
 export async function hydrateJobViewsFromRunLog(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	jobs: Array<JobView>
 }): Promise<Array<JobView>> {
 	if (input.jobs.length === 0) return input.jobs

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
 	decryptWebhookHmacSecret,
@@ -23,7 +24,7 @@ import { type WebhookEndpointRecord } from './types.ts'
  */
 export async function resolveWebhookHmacSigningSecret(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	endpoint: WebhookEndpointRecord
 	verification: NonNullable<PackageWebhookManifestEntry['verification']>
 	/**
@@ -68,7 +69,7 @@ export async function resolveWebhookHmacSigningSecret(input: {
 /** Mint ciphertext for a new package-owned HMAC (verification without secretName). */
 export async function mintPackageOwnedWebhookHmacCiphertext(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	endpointId: string
 }): Promise<{ plaintext: string; encrypted: string }> {
 	const plaintext = await generateWebhookUrlSecret()
@@ -88,7 +89,7 @@ export async function mintPackageOwnedWebhookHmacCiphertext(input: {
  */
 export async function resolveHmacCiphertextForMint(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	endpointId: string
 	packageId: string
 	verification: PackageWebhookManifestEntry['verification'] | null | undefined

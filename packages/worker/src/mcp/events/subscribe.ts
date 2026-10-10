@@ -2,6 +2,10 @@ import { ProtocolError } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	mcpEventCallbackVerificationTtlMs,
 	mcpEventSubscriptionDefaultTtlMs,
 	mcpEventSubscriptionMaxTtlMs,
@@ -84,7 +88,7 @@ function grantMcpEventSubscriptionTtlMs(
 	)
 }
 
-export function requireMcpEventsUserId(principal: McpEventsPrincipal): string {
+export function requireMcpEventsUserId(principal: McpEventsPrincipal): OwnerId {
 	const userId = principal.callerContext.user?.userId
 	if (!userId || !principal.oauthClientId) {
 		throw new ProtocolError(
@@ -92,7 +96,7 @@ export function requireMcpEventsUserId(principal: McpEventsPrincipal): string {
 			'Webhook event subscriptions require an authenticated OAuth principal.',
 		)
 	}
-	return userId
+	return personalOrgId(userId)
 }
 
 function invalidParams(message: string): ProtocolError {

@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	personalOrgId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById } from '@kody-internal/shared/jobs/repo.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -108,7 +112,7 @@ function createJob(
 ): JobRecord {
 	return {
 		version: 1,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		publishedCommit: null,
 		storageId: `job:${input.id}`,
 		schedule: onceSchedule,
@@ -200,7 +204,7 @@ async function publishPackageJob(input: {
 	const { db, bundleKv, env } = createExecuteEnv()
 	await insertPublishedEntitySource({
 		db,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		sourceId: input.sourceId,
 		entityKind: 'package',
 		entityId: input.id,
@@ -701,7 +705,7 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 	const publish = (commit: string, jobSource: string) =>
 		insertPublishedEntitySource({
 			db,
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			sourceId: 'source-stale-bundle',
 			entityKind: 'job',
 			entityId: 'job-stale-bundle',
@@ -726,7 +730,7 @@ test('stale published job bundles rebuild after the source commit changes', asyn
 	if (!source) throw new Error('Expected source row.')
 	await persistPublishedBundleArtifact({
 		env: { APP_DB: db, BUNDLE_ARTIFACTS_KV: bundleKv } as Env,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		source,
 		kind: 'job',
 		artifactName: 'job-stale-bundle',
@@ -780,7 +784,7 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 	const { db, env } = createExecuteEnv()
 	await insertPublishedEntitySource({
 		db,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		sourceId: 'source-1',
 		entityKind: 'package',
 		entityId: 'job-repo-discard-failure',
@@ -815,7 +819,7 @@ test('executeJobOnce reports a missing published snapshot without running the sa
 test('executeJobOnce loads the published source by job owner id, not the caller person', async () => {
 	silenceIncidentalRuntimeWarnings()
 	const { db, env } = createExecuteEnv()
-	const orgId = 'org-owner'
+	const orgId = ownerIdFromStored('org-owner')
 	await insertPublishedEntitySource({
 		db,
 		userId: orgId,
@@ -868,7 +872,7 @@ test('executeJobOnce retries claimed platform blips and surfaces them on run-now
 	const executeSpy = vi.spyOn(registry, 'runBundledModuleWithRegistry')
 	const claimedHandle = {
 		id: 'run-platform-blip-claimed',
-		userId: callerContext.user.userId,
+		userId: personalOrgId(callerContext.user.userId),
 		startedAt: '2026-08-21T14:40:00.000Z',
 		persistence: 'eager' as const,
 		context: {
@@ -939,7 +943,7 @@ test('runJobNow retains once jobs for retention cleanup instead of deleting them
 
 	const result = await runJobNow({
 		env,
-		userId: callerContext.user.userId,
+		userId: personalOrgId(callerContext.user.userId),
 		jobId: jobView.id,
 		callerContext,
 	})
@@ -976,7 +980,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 	const { db, env } = createExecuteEnv()
 	await insertPublishedEntitySource({
 		db,
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		sourceId: 'source-run-now-override',
 		entityKind: 'package',
 		entityId: 'job-repo-run-now-override',
@@ -1020,7 +1024,7 @@ test('runJobNow can use a one-off repo check policy override without changing th
 
 	const result = await runJobNow({
 		env,
-		userId: callerContext.user.userId,
+		userId: personalOrgId(callerContext.user.userId),
 		jobId: jobView.id,
 		callerContext,
 		repoCheckPolicyOverride: { allowTypecheckFailures: true },

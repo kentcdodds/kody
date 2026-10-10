@@ -1,6 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -49,7 +52,7 @@ async function seedOwnedPackage(db: D1Database, userId: string) {
 	const name = `@${username}/demo`
 	await insertSavedPackage(db, {
 		id,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		name,
 		kody_id: 'demo',
 		description: 'Bootstrap local-execute demo package',
@@ -70,7 +73,7 @@ test('default CLI bootstrap scopes resolve an owned package for local execute', 
 
 	const minted = await mintCliCredentialBootstrap({
 		db,
-		userId,
+		userId: ownerIdFromStored(userId),
 		lifetime: 'short',
 	})
 	expect(minted.scopes).toEqual([...cliCredentialBootstrapPolicy.defaultScopes])
@@ -113,7 +116,7 @@ test('default CLI bootstrap scopes authorize integration:read for local package 
 	const { db, env, userId } = await createHarness()
 	const minted = await mintCliCredentialBootstrap({
 		db,
-		userId,
+		userId: ownerIdFromStored(userId),
 		lifetime: 'short',
 	})
 	const redeemed = await redeemCliCredentialBootstrap({

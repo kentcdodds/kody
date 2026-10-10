@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -29,7 +30,7 @@ function endpoint(
 ): WebhookEndpointRecord {
 	return {
 		id: 'ep-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		webhookName: 'github',
 		urlSecretHash: 'hash',
@@ -72,12 +73,12 @@ test('resolveWebhookHmacSigningSecret prefers package-owned ciphertext', async (
 	const encrypted = await encryptWebhookHmacSecret(
 		env,
 		plaintext,
-		userWebhookHmacSecretContext('user-1', 'ep-1'),
+		userWebhookHmacSecretContext(ownerIdFromStored('user-1'), 'ep-1'),
 	)
 
 	const value = await resolveWebhookHmacSigningSecret({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		endpoint: endpoint({ hmacSecretEncrypted: encrypted }),
 		verification: {
 			type: 'hmac-sha256',
@@ -98,7 +99,7 @@ test('apply resolve refuses live secretName lookup without package-owned HMAC', 
 	await expect(
 		resolveWebhookHmacSigningSecret({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			endpoint: endpoint(),
 			verification: {
 				type: 'hmac-sha256',
@@ -118,7 +119,7 @@ test('inbound resolve may fall back to verification.secretName', async () => {
 	} as Env
 	const value = await resolveWebhookHmacSigningSecret({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		endpoint: endpoint(),
 		verification: {
 			type: 'hmac-sha256',
@@ -142,7 +143,7 @@ test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', 
 	vi.mocked(resolveSecret).mockClear()
 	const encrypted = await resolveHmacCiphertextForMint({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		endpointId: 'ep-1',
 		packageId: 'pkg-1',
 		verification: {
@@ -158,7 +159,7 @@ test('resolveHmacCiphertextForMint copies legacy secretName onto the endpoint', 
 		await decryptWebhookHmacSecret(
 			env,
 			encrypted!,
-			userWebhookHmacSecretContext('user-1', 'ep-1'),
+			userWebhookHmacSecretContext(ownerIdFromStored('user-1'), 'ep-1'),
 		),
 	).toBe('legacy-secret-store-value')
 	expect(resolveSecret).toHaveBeenCalled()

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -35,7 +36,7 @@ test('reconcileArtifactsPushes skips plain repo entity_sources', async () => {
 										results: [
 											{
 												id: 'source-repo',
-												user_id: 'user-1',
+												user_id: ownerIdFromStored('user-1'),
 												entity_kind: 'repo',
 												entity_id: 'repo-1',
 												repo_id: 'repo-repo-1',
@@ -99,7 +100,7 @@ test('reconcileArtifactsPushes skips locked packages without calling publish', a
 										results: [
 											{
 												id: 'source-package',
-												user_id: 'user-1',
+												user_id: ownerIdFromStored('user-1'),
 												entity_kind: 'package',
 												entity_id: 'pkg-1',
 												repo_id: 'repo-pkg-1',

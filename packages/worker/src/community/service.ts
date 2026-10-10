@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { invalidateCommunityPublicCache } from '#app/data-cache.ts'
 import { parseListingOwnerUsername } from '#universal/community-links.ts'
@@ -359,7 +360,7 @@ function buildRepeatForkErrorMessage(input: {
 
 async function cleanupFailedCommunityFork(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	packageId: string
 }) {
@@ -600,7 +601,7 @@ async function restoreCommunityListingAfterPublishFailure(input: {
 export async function publishCommunityListing(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	/**
 	 * Acting person when the owner is an org. Community bans bind to the
 	 * person acting, not just the owning org.
@@ -842,7 +843,7 @@ export async function publishCommunityListing(input: {
 
 export async function unpublishCommunityListing(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	/**
 	 * Acting member when an org unpublishes. Community bans must bind to the
 	 * person acting, not just the owning org.
@@ -1304,7 +1305,7 @@ export async function getCommunityListingPublishedForAdmin(input: {
 export type PrepareCommunityForkInput = {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	expectedPackageScope: string
 	listingId: string
 	kodyId?: string
@@ -1326,7 +1327,7 @@ export type PrepareCommunityForkInput = {
 export type PreparedCommunityFork = {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	listingId: string
 	listingName: string
 	listingKodyId: string
@@ -1899,7 +1900,7 @@ export type AdoptCommunityForkResult = {
 
 async function resolveOwnedCommunityPackageNameLeaf(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	value: string
 }) {
 	const ownerScope = await getPackageScopeByUserId(input.db, input.userId)
@@ -1916,7 +1917,7 @@ async function resolveOwnedCommunityPackageNameLeaf(input: {
 
 async function resolveCommunityForkForAdoption(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }) {
@@ -1976,7 +1977,7 @@ export type CommunityForkAdoptionState = {
 
 export async function inspectCommunityForkAdoption(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<CommunityForkAdoptionState> {
@@ -1999,7 +2000,7 @@ export async function inspectCommunityForkAdoption(input: {
  */
 export async function adoptCommunityFork(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId: string
 	reviewSummary: string
 }): Promise<AdoptCommunityForkResult> {
@@ -2071,7 +2072,7 @@ export type AbsorbCommunityForkUpstreamResult = {
 
 export async function absorbCommunityForkUpstream(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 	originCommit?: string
@@ -2160,7 +2161,7 @@ export async function absorbCommunityForkUpstream(input: {
 
 export async function rateCommunityListing(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	listingId: string
 	stars: number
 	adaptationEffort: number
@@ -2209,7 +2210,7 @@ export async function rateCommunityListing(input: {
 
 export async function reportCommunityListing(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	listingId: string
 	reason: string
 }): Promise<CommunityReportRecord> {
@@ -2370,7 +2371,7 @@ export async function resolveCommunityReport(input: {
 export async function banCommunityUser(input: {
 	env: Env
 	adminUserId: string
-	userId: string
+	userId: OwnerId
 	reason: string
 }): Promise<void> {
 	const trimmedReason = input.reason.trim()
@@ -2386,7 +2387,7 @@ export async function banCommunityUser(input: {
 
 export async function unbanCommunityUser(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<void> {
 	const removed = await deleteCommunityBan(input.env.APP_DB, input.userId)
 	if (!removed) {

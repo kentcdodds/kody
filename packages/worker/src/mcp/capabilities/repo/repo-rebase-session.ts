@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -32,7 +33,7 @@ export const repoRebaseSessionCapability = defineDomainCapability(
 			await authorizeRepoSessionPackageWrite({
 				env: ctx.env,
 				request: ctx.callerContext.request,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				sessionId: args.session_id,
 			})
 			const result = await repoSessionRpc(
@@ -40,7 +41,7 @@ export const repoRebaseSessionCapability = defineDomainCapability(
 				args.session_id,
 			).rebaseSession({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 			})
 			return {
 				ok: result.ok,

@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -79,12 +80,12 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 				args.source_id !== undefined
 					? await getEntitySourceByIdForUser(ctx.env.APP_DB, {
 							id: args.source_id,
-							userId: user.userId,
+							userId: personalOrgId(user.userId),
 						})
 					: (
 							await resolveOwnedPackageSource({
 								db: ctx.env.APP_DB,
-								userId: user.userId,
+								userId: personalOrgId(user.userId),
 								ownerScope:
 									args.kody_id === undefined
 										? undefined
@@ -95,7 +96,7 @@ export const repoShowPublishNoteCapability = defineDomainCapability(
 								},
 							})
 						).source
-			if (!source || source.user_id !== user.userId) {
+			if (!source || source.user_id !== personalOrgId(user.userId)) {
 				throw new McpCallerError('Repo source was not found for this user.')
 			}
 			const commit = args.commit ?? source.published_commit

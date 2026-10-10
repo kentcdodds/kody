@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	rewriteForkedPackageSelfReferences,
 	rewritePackageManifestForFork,
@@ -70,7 +71,7 @@ export type PersistForkedArtifactRepoResult = {
 export async function persistForkedArtifactRepoContents(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	source: EntitySourceRow
 	originCommit: string
 	expectedPackageScope: string

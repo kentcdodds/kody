@@ -1,4 +1,5 @@
 import { type McpCallerContext } from '../chat.ts'
+import { type OwnerId } from '../owner-person-ids.ts'
 import { type JobManagerDebugState } from './manager-debug.ts'
 import {
 	type ScheduledLaneMessage,
@@ -20,15 +21,15 @@ import {
  */
 export type JobsServiceContract = JobsStore & {
 	syncAlarm(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<{ ok: true; userId: string; nextRunAt: string | null }>
-	getDebugState(input: { userId: string }): Promise<JobManagerDebugState>
-	exportUser(input: { userId: string }): Promise<JobManagerDebugState>
+	getDebugState(input: { userId: OwnerId }): Promise<JobManagerDebugState>
+	exportUser(input: { userId: OwnerId }): Promise<JobManagerDebugState>
 	purgeUser(input: {
-		userId: string
+		userId: OwnerId
 	}): Promise<{ ok: true; userId: string; purged: boolean }>
 	runJobNow(input: {
-		userId: string
+		userId: OwnerId
 		jobId: string
 		callerContext?: McpCallerContext | null
 		repoCheckPolicyOverride?: JobRepoCheckPolicy | null

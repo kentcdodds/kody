@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -84,33 +85,33 @@ test('hourly stall scan fans accepted sends older than the threshold and skips f
 		{
 			username: 'raul',
 			email: 'a.kodycodes@raulg.dev',
-			stableUserId: 'r'.repeat(64),
+			stableUserId: ownerIdFromStored('r').repeat(64),
 			deliveryAt: '2026-09-01T08:45:16.921Z',
 		},
 		{
 			username: 'fresh',
-			stableUserId: 'f'.repeat(64),
+			stableUserId: ownerIdFromStored('f').repeat(64),
 			deliveryAt: '2026-09-01T09:30:00.000Z',
 		},
 		{
 			username: 'verified',
-			stableUserId: 'v'.repeat(64),
+			stableUserId: ownerIdFromStored('v').repeat(64),
 			verifiedAt: '2026-09-01T09:00:00.000Z',
 		},
 		{
 			username: 'bounced',
-			stableUserId: 'b'.repeat(64),
+			stableUserId: ownerIdFromStored('b').repeat(64),
 			deliveryStatus: 'bounced',
 		},
 		{
 			username: 'platform',
 			email: 'ops@kody.codes',
-			stableUserId: 'p'.repeat(64),
+			stableUserId: ownerIdFromStored('p').repeat(64),
 			accountType: 'platform',
 		},
 		{
 			username: 'leaving',
-			stableUserId: 'l'.repeat(64),
+			stableUserId: ownerIdFromStored('l').repeat(64),
 			deletingAt: '2026-09-01T09:00:00.000Z',
 		},
 	])
@@ -157,10 +158,10 @@ test('hourly stall scan advances a watermark so later accepted sends are not sta
 		APP_DB: await createUsersDb([
 			{
 				username: 'older',
-				stableUserId: 'a'.repeat(64),
+				stableUserId: ownerIdFromStored('a').repeat(64),
 				deliveryAt: '2026-09-01T07:00:00.000Z',
 			},
-			{ username: 'newer', stableUserId: 'n'.repeat(64) },
+			{ username: 'newer', stableUserId: ownerIdFromStored('n').repeat(64) },
 		]),
 		APP_BASE_URL: 'https://kody.codes',
 		BUNDLE_ARTIFACTS_KV: createMemoryKv(),

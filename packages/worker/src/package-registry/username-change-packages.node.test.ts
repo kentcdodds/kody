@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -40,7 +41,11 @@ import {
 } from './username-change-packages.ts'
 
 const env = { APP_DB: {} } as Env
-const baseInput = { env, baseUrl: 'https://example.com', userId: 'user-1' }
+const baseInput = {
+	env,
+	baseUrl: 'https://example.com',
+	userId: ownerIdFromStored('user-1'),
+}
 
 function setupMocks(kodyIds: Array<string>) {
 	mocks.syncArtifactSourceSnapshot.mockResolvedValue('commit-new')

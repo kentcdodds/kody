@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { mismatchedPackageScopeMessage } from '#worker/package-registry/package-name.ts'
@@ -25,7 +26,7 @@ const { resolveRepoSourceReference } = await import('./repo-resolve-target.ts')
 function createSavedPackageRow() {
 	return {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@kentcdodds/travel-map',
 		kodyId: 'travel-map',
 		description: 'Travel map',
@@ -43,7 +44,7 @@ function createSavedPackageRow() {
 function createPackageSourceRow() {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-1',
@@ -66,7 +67,7 @@ function resolve(
 ) {
 	return resolveRepoSourceReference({
 		db: {} as D1Database,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		ownerScope,
 		args,
 	})
@@ -90,7 +91,7 @@ test('resolveRepoSourceReference throws McpCallerError for missing source and pa
 	// The user predicate belongs in the query, not in a post-read comparison.
 	expect(mockModule.getEntitySourceByIdForUser).toHaveBeenCalledWith(
 		expect.anything(),
-		{ id: 'source-missing', userId: 'user-1' },
+		{ id: 'source-missing', userId: ownerIdFromStored('user-1') },
 	)
 	await expectCallerError(
 		resolve({ target: { kind: 'package', package_id: 'pkg-missing' } }),
@@ -128,8 +129,14 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 	expect(leaf.resolvedTarget).toEqual(scoped.resolvedTarget)
 	expect(scoped.source).toEqual(source)
 	expect(mockModule.resolveSavedPackageRef.mock.calls).toEqual([
-		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
-		[expect.anything(), { userId: 'user-1', ref: 'travel-map', match: 'slug' }],
+		[
+			expect.anything(),
+			{ userId: ownerIdFromStored('user-1'), ref: 'travel-map', match: 'slug' },
+		],
+		[
+			expect.anything(),
+			{ userId: ownerIdFromStored('user-1'), ref: 'travel-map', match: 'slug' },
+		],
 	])
 
 	await expectCallerError(
@@ -141,7 +148,11 @@ test('resolveRepoSourceReference accepts scoped @owner/leaf, leaf-only, and reje
 	)
 	expect(mockModule.resolveSavedPackageRef).toHaveBeenLastCalledWith(
 		expect.anything(),
-		{ userId: 'user-1', ref: 'does-not-exist', match: 'slug' },
+		{
+			userId: ownerIdFromStored('user-1'),
+			ref: 'does-not-exist',
+			match: 'slug',
+		},
 	)
 
 	await expectCallerError(

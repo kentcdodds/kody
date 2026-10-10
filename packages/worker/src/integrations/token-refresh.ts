@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import {
 	integrationAuthFailureCopy,
@@ -157,7 +158,7 @@ function snapshotJoinedIntegration(
 
 async function maybePersistGoogleAccountLabel(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	name: string
 	accountLabel: string | null
 	requiredHosts: Array<string>
@@ -218,7 +219,7 @@ function formatProviderTokenError(payload: Record<string, unknown> | null) {
 
 async function emitIntegrationAuthFailedEvent(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	error: IntegrationTokenRefreshCallerError
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
@@ -265,7 +266,7 @@ async function emitIntegrationAuthFailedEvent(input: {
 
 async function emitIntegrationAuthSucceededEvent(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	integration: IntegrationAuthFailedSnapshot
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
@@ -342,13 +343,13 @@ const inFlightIntegrationTokenRefreshes = new Map<
 	Promise<IntegrationTokenRefreshResult>
 >()
 
-function integrationTokenRefreshDedupeKey(userId: string, name: string) {
+function integrationTokenRefreshDedupeKey(userId: OwnerId, name: string) {
 	return `${userId}\0${name}`
 }
 
 export async function refreshIntegrationTokens(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
 	baseUrl?: string
@@ -380,7 +381,7 @@ export async function refreshIntegrationTokens(input: {
 
 async function refreshIntegrationTokensAttempt(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
 	baseUrl?: string
@@ -411,7 +412,7 @@ async function refreshIntegrationTokensAttempt(input: {
 
 async function refreshIntegrationTokensOrThrow(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	userEmail?: string | undefined
 	name: string
 	baseUrl?: string
@@ -670,7 +671,7 @@ async function refreshIntegrationTokensOrThrow(input: {
 
 async function persistAuthFailureSnapshot(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	error: IntegrationTokenRefreshCallerError
 }) {
 	const reason = input.error.reason
@@ -693,7 +694,7 @@ async function persistAuthFailureSnapshot(input: {
 
 async function persistProviderUnavailableSnapshot(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	joined: JoinedIntegration
 	providerError?: string | null
 	providerErrorDescription?: string | null
@@ -715,7 +716,7 @@ async function persistProviderUnavailableSnapshot(input: {
 
 async function persistAuthFailureRow(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	name: string
 	lane: 'user' | 'platform'
 	accountLabel: string | null

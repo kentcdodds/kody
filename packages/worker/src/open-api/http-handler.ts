@@ -1,4 +1,8 @@
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	assertAccountWritableDb,
 	withAccountWriteLease,
 } from '#worker/account/deletion-state.ts'
@@ -177,7 +181,7 @@ async function handleOperation(input: {
 	}
 
 	function recordCapabilityProxyObservation(observation: {
-		userId: string
+		userId: OwnerId
 		failureCode: string
 		request?: Parameters<typeof usageAttributionFieldsFromRequest>[0]
 	}) {
@@ -238,7 +242,7 @@ async function handleOperation(input: {
 		const apiError = toApiError(error)
 		if (apiError instanceof ApiError) {
 			recordCapabilityProxyObservation({
-				userId: ctx.callerContext.user.userId,
+				userId: personalOrgId(ctx.callerContext.user.userId),
 				failureCode: apiError.code,
 				request: ctx.callerContext.request,
 			})
@@ -251,7 +255,7 @@ async function handleOperation(input: {
 		match,
 		inputSchema: resolved.inputSchema,
 	})
-	const userId = ctx.callerContext.user.userId
+	const userId = personalOrgId(ctx.callerContext.user.userId)
 	const run = () =>
 		invokeApiOperation({
 			operationId: matchedOperation.operationId,

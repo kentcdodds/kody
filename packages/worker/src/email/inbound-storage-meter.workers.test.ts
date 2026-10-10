@@ -14,6 +14,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
 const inboundStorageMeterTimeoutMs = 30_000
@@ -67,7 +68,11 @@ async function seedAccountWithPlan(label: string, plan: 'free' | 'max') {
 		.bind(username, email, new Date().toISOString(), plan, userId)
 		.run()
 	const address = `${username}@${platformDomain}`
-	return { address, userId, meter: userMeterRpc({ env, userId }) }
+	return {
+		address,
+		userId,
+		meter: userMeterRpc({ env, userId: ownerIdFromStored(userId) }),
+	}
 }
 
 function rawMail(address: string, subject: string, messageId: string) {
@@ -135,7 +140,10 @@ test(
 		await handleInboundEmail(message, createInboundEnv())
 		expect(message.rejectedReason).toBeNull()
 		expect(
-			await mailboxRpc({ env, userId: account.userId }).listMessages({
+			await mailboxRpc({
+				env,
+				userId: ownerIdFromStored(account.userId),
+			}).listMessages({
 				limit: 10,
 			}),
 		).toMatchObject({
@@ -224,7 +232,7 @@ test(
 			bytes: bytesAfterFailedAttempt,
 		})
 		const candidate = await buildInboundDelivery({
-			userId: retry.userId,
+			userId: ownerIdFromStored(retry.userId),
 			inboxId: 'unused',
 			recipient: retry.address,
 			envelopeFrom: 'sender@example.net',
@@ -232,7 +240,10 @@ test(
 			quotaDay: new Date().toISOString().slice(0, 10),
 		})
 		expect(
-			await mailboxRpc({ env, userId: retry.userId }).listMessages({
+			await mailboxRpc({
+				env,
+				userId: ownerIdFromStored(retry.userId),
+			}).listMessages({
 				limit: 1,
 			}),
 		).toMatchObject({ messages: [{ id: candidate.messageId }] })

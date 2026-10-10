@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -64,7 +65,7 @@ export const repoUpdateCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const { userRepo } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				args,
 			})
 			if (args.changes.visibility === 'private' && !userRepo.isPrivate) {
@@ -77,7 +78,7 @@ export const repoUpdateCapability = defineDomainCapability(
 			const nextPrivate = args.changes.visibility === 'private'
 			if (nextPrivate !== userRepo.isPrivate) {
 				const changed = await updateUserRepo(ctx.env.APP_DB, {
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 					repoId: userRepo.id,
 					isPrivate: nextPrivate,
 				})

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -45,7 +46,7 @@ test('job vectors use the same length-safe id for upsert and delete', async () =
 
 	await upsertJobVector(env, {
 		jobId: rawJobId,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		embedText: 'event runner job',
 	})
 	await deleteJobVector(env, rawJobId)
@@ -55,7 +56,7 @@ test('job vectors use the same length-safe id for upsert and delete', async () =
 			id: vectorId,
 			values: [0.1, 0.2, 0.3],
 			namespace: 'user-1',
-			metadata: { kind: 'job', userId: 'user-1' },
+			metadata: { kind: 'job', userId: ownerIdFromStored('user-1') },
 		},
 	])
 	expect(deleteByIds).toHaveBeenCalledWith([vectorId])

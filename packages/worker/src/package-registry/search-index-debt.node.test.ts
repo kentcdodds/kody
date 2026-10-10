@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 
@@ -123,7 +124,7 @@ function createScheduler() {
 			return scheduleSavedPackageSearchIndexUpsert({
 				env: { APP_DB: db } as Env,
 				packageId,
-				userId,
+				userId: ownerIdFromStored(userId),
 				embedText,
 				...(options.deferred
 					? {
@@ -149,7 +150,11 @@ test('scheduleSavedPackageSearchIndexUpsert defers via waitUntil and clears debt
 	await vi.waitFor(() => {
 		expect(mockModule.upsertSavedPackageVector).toHaveBeenCalledWith(
 			expect.anything(),
-			{ packageId: 'pkg-1', userId: 'user-1', embedText: 'hello' },
+			{
+				packageId: 'pkg-1',
+				userId: ownerIdFromStored('user-1'),
+				embedText: 'hello',
+			},
 		)
 	})
 	upsertGate.resolve()
@@ -166,7 +171,7 @@ test('scheduleSavedPackageSearchIndexUpsert keeps debt and reports to Sentry on 
 	await scheduler.schedule('pkg-2', 'user-2', 'hello', { deferred: false })
 	expect(scheduler.rows.get('pkg-2')).toMatchObject({
 		packageId: 'pkg-2',
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		generation: 1,
 		lastError: 'vectorize down',
 	})
@@ -185,7 +190,7 @@ test('out-of-order publishes keep the newest owner and embed text under one coal
 	await scheduler.schedule('pkg-race', 'user-b', 'newer')
 	expect(scheduler.rows.get('pkg-race')).toMatchObject({
 		generation: 2,
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		embedText: 'newer',
 	})
 	// Coalesced to one in-flight reconcile.
@@ -195,7 +200,10 @@ test('out-of-order publishes keep the newest owner and embed text under one coal
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
 		1,
 		expect.anything(),
-		expect.objectContaining({ userId: 'user-a', embedText: 'older' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-a'),
+			embedText: 'older',
+		}),
 	)
 
 	firstUpsertGate.resolve()
@@ -205,7 +213,10 @@ test('out-of-order publishes keep the newest owner and embed text under one coal
 	expect(mockModule.upsertSavedPackageVector).toHaveBeenNthCalledWith(
 		2,
 		expect.anything(),
-		expect.objectContaining({ userId: 'user-b', embedText: 'newer' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-b'),
+			embedText: 'newer',
+		}),
 	)
 	expect(scheduler.rows.has('pkg-race')).toBe(false)
 })

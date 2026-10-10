@@ -2,6 +2,7 @@ import {
 	base64UrlToBytes,
 	bytesToBase64Url,
 } from '@kody-internal/shared/base64.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 
 const ivBytes = 12
 
@@ -112,7 +113,7 @@ const webhookHmacSecretPurpose = 'webhook-hmac-secret'
 const mcpEventSubscriptionSecretPurpose = 'mcp-event-subscription-secret'
 
 /** AAD context for a user-owned secret ciphertext. */
-export function userSecretContext(userId: string) {
+export function userSecretContext(userId: OwnerId) {
 	return `user:${userId}`
 }
 
@@ -123,14 +124,14 @@ export function platformOauthAppContext(slug: string) {
 
 /** AAD context for a user-lane OAuth connection token ciphertext. */
 export function userIntegrationCredentialContext(
-	userId: string,
+	userId: OwnerId,
 	integrationName: string,
 ) {
 	return `user:${userId}:integration:${integrationName}`
 }
 
 /** AAD context for a user-lane OAuth app client secret ciphertext. */
-export function userOauthAppCredentialContext(userId: string, slug: string) {
+export function userOauthAppCredentialContext(userId: OwnerId, slug: string) {
 	return `user:${userId}:oauth-app:${slug}`
 }
 
@@ -256,7 +257,7 @@ export async function decryptUserOauthClientSecret(
 
 /** AAD context for a minted webhook URL secret ciphertext. */
 export function userWebhookUrlSecretContext(
-	userId: string,
+	userId: OwnerId,
 	endpointId: string,
 ) {
 	return `user:${userId}:webhook-endpoint:${endpointId}`
@@ -297,7 +298,7 @@ export async function decryptWebhookUrlSecret(
  * identity as the URL secret so rotate/remint keep one binding per row.
  */
 export function userWebhookHmacSecretContext(
-	userId: string,
+	userId: OwnerId,
 	endpointId: string,
 ) {
 	return `user:${userId}:webhook-endpoint:${endpointId}:hmac`
@@ -335,7 +336,7 @@ export async function decryptWebhookHmacSecret(
 
 /** AAD context for an MCP event subscription signing secret ciphertext. */
 export function userMcpEventSubscriptionSecretContext(
-	userId: string,
+	userId: OwnerId,
 	subscriptionId: string,
 ) {
 	return `user:${userId}:mcp-event-subscription:${subscriptionId}`

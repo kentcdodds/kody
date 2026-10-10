@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { resolveUserEntitlementFromRow } from '#worker/entitlements/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { resolveOAuthHelpers } from '#worker/oauth-helpers.ts'
@@ -14,7 +15,7 @@ import { type UsageCampaignSnapshot } from './campaign-evaluator.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type UsageCampaignCandidate = {
-	stable_user_id: string
+	stable_user_id: OwnerId
 	username: string
 	email: string
 	email_verified_at: string
@@ -100,7 +101,7 @@ export function isStrongRecentUse(input: {
 	return input.now.getTime() - lastActive < usageCampaignStrongUseActiveMs
 }
 
-async function countDistinctInboundClients(env: Env, userId: string) {
+async function countDistinctInboundClients(env: Env, userId: OwnerId) {
 	const helpers = await resolveOAuthHelpers<OAuthGrantListHelpers>(env)
 	return countDistinctInboundClientIds(helpers, userId)
 }

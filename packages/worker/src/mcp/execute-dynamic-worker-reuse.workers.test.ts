@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -49,7 +52,7 @@ async function bundleEntry(lines: Array<string>) {
 	return await buildKodyModuleBundle({
 		env: reuseEnv,
 		baseUrl: 'https://kody.dev',
-		userId: 'user-reuse-test',
+		userId: ownerIdFromStored('user-reuse-test'),
 		sourceFiles: { 'entry.ts': lines.join('\n') },
 		entryPoint: 'entry.ts',
 	})

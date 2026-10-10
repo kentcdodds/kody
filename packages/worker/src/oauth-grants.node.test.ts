@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	listUserOAuthGrants,
@@ -97,7 +98,10 @@ test('revokeAllOAuthGrantsForUser pages grants and revokes every id, including b
 	])
 
 	await expect(
-		revokeAllOAuthGrantsForUser({ helpers, userId: 'user-1' }),
+		revokeAllOAuthGrantsForUser({
+			helpers,
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).resolves.toBe(4)
 	expect(revoked).toEqual(['grant-1', 'grant-blank', 'grant-2', 'grant-3'])
 	expect(
@@ -121,7 +125,10 @@ test('revokeAllOAuthGrantsForUser revokes a grant created during the first pass'
 	}
 
 	await expect(
-		revokeAllOAuthGrantsForUser({ helpers, userId: 'user-1' }),
+		revokeAllOAuthGrantsForUser({
+			helpers,
+			userId: ownerIdFromStored('user-1'),
+		}),
 	).resolves.toBe(2)
 	expect(revoked).toEqual(['grant-a', 'grant-interleaved'])
 })
@@ -130,7 +137,7 @@ test('revokeAllOAuthGrantsForUser fails closed when grants remain after max pass
 	await expect(
 		revokeAllOAuthGrantsForUser({
 			helpers: staticGrants([grant('grant-stuck')]),
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).rejects.toThrow('oauth_grants_still_present')
 })
@@ -146,7 +153,7 @@ test('revokeAllOAuthGrantsBestEffort records listing and revoke failures', async
 				throw new Error('should not run')
 			},
 		},
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		warnings,
 	})
 	expect(listingFailure).toBe(0)
@@ -157,7 +164,7 @@ test('revokeAllOAuthGrantsBestEffort records listing and revoke failures', async
 		helpers: staticGrants([grant('ok'), grant('bad')], async (grantId) => {
 			if (grantId === 'bad') throw new Error('revoke boom')
 		}),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		warnings: revokeWarnings,
 	})
 	expect(revoked).toBe(1)

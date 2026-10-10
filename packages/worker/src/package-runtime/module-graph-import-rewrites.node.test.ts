@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishedBundleArtifactsModule from './published-bundle-artifacts.ts'
 import {
@@ -45,7 +46,7 @@ const { buildKodyAppBundle, buildKodyModuleBundle, hydrateKodyRuntimeModules } =
 const graphInput = {
 	env: { APP_DB: {}, REPO_SESSION: {} } as Env,
 	baseUrl: 'https://heykody.dev',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 }
 
 function makePackageFiles(
@@ -196,7 +197,7 @@ export default async function run() {
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: '@kentcdodds/example-package',
 		}),
 	)
@@ -413,7 +414,10 @@ test('buildKodyModuleBundle rejects kody id shorthand imports', async () => {
 	)
 	expect(mockModule.getSavedPackageByName).toHaveBeenCalledWith(
 		{},
-		{ userId: 'user-1', name: '@example-package/follow-up-on-pr-agent' },
+		{
+			userId: ownerIdFromStored('user-1'),
+			name: '@example-package/follow-up-on-pr-agent',
+		},
 	)
 	expect(mockModule.resolveSavedPackageRef).not.toHaveBeenCalled()
 })

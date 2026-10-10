@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { expect, test } from 'vitest'
 import {
@@ -15,7 +16,7 @@ import {
 function sqlFor(target: UserScopedDataTarget) {
 	const match = buildUserScopedTargetMatch({
 		target,
-		mcpUserId: 'org-1',
+		mcpUserId: ownerIdFromStored('org-1'),
 		dbUserId: -1,
 	})
 	return buildUserScopedDeleteOrUpdateSql(match).sql

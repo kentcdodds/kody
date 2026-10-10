@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -43,7 +46,7 @@ test('storage capabilities keep a package out of another package bucket', async 
 	const victimBucket = buildPackageStorageId(victimPackageId)
 	const victimRunner = storageRunnerRpc({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		storageId: victimBucket,
 	})
 
@@ -90,7 +93,11 @@ test('storage capabilities keep a package out of another package bucket', async 
 
 	// The caller still reaches its own bucket by id.
 	const ownBucket = buildPackageStorageId(attackerPackageId)
-	await storageRunnerRpc({ env, userId, storageId: ownBucket }).setValue({
+	await storageRunnerRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+		storageId: ownBucket,
+	}).setValue({
 		key: 'mine',
 		value: 'ok',
 	})

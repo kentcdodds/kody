@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -28,13 +29,13 @@ export const accountExportManifestCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const dbUserId = await resolveAccountExportDbUserId({
 				env: ctx.env,
-				mcpUserId: user.userId,
+				mcpUserId: personalOrgId(user.userId),
 				email: user.email,
 			})
 			const manifest = await createAccountExportManifest({
 				env: ctx.env,
 				dbUserId,
-				mcpUserId: user.userId,
+				mcpUserId: personalOrgId(user.userId),
 			})
 			return { manifest }
 		},

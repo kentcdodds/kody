@@ -57,7 +57,11 @@ import {
 	allocateSignupIdentity,
 	claimAccountEmail,
 } from '#worker/identity/email-claims.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { recordOnboardingFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { verifyPublicFormProtection } from '#app/public-form-protection.ts'
 import {
@@ -442,7 +446,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					clearReferralCookie?: boolean
 				} = {},
 			) {
-				const stableUserId = personIdFromStored(user.stable_user_id)
+				const stableUserId = personalOrgId(
+					personIdFromStored(user.stable_user_id),
+				)
 				const rawPostLoginPath =
 					options.destination ?? redirectTo ?? defaultRedirectTo
 				// Authorize resumes drop prompt=login after this completed auth
@@ -618,7 +624,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 				try {
 					await assertAccountWritableDb(
 						env.APP_DB,
-						personIdFromStored(existingUser.stable_user_id),
+						personalOrgId(personIdFromStored(existingUser.stable_user_id)),
 					)
 				} catch (error) {
 					if (error instanceof AccountDeletionInProgressError) {
@@ -636,7 +642,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 							d1: env.APP_DB,
 							helpers,
 							userId: existingUser.id,
-							stableUserId: personIdFromStored(existingUser.stable_user_id),
+							stableUserId: personalOrgId(
+								personIdFromStored(existingUser.stable_user_id),
+							),
 							unusablePasswordHash: unusablePasswordHash.reclaimedUnverified,
 							clearSecondFactorsAndConnections: true,
 							requireWritableAccount: true,
@@ -695,7 +703,9 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					if ((stamped.meta.changes ?? 0) === 1) {
 						recordOnboardingFunnelEvent(env, {
 							stage: 'email_verified',
-							userId: personIdFromStored(existingUser.stable_user_id),
+							userId: personalOrgId(
+								personIdFromStored(existingUser.stable_user_id),
+							),
 						})
 					}
 					if ((stamped.meta.changes ?? 0) !== 1) {
@@ -721,7 +731,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 
 			// 4. New account.
 			let username: string
-			let stableUserId: string
+			let stableUserId: OwnerId
 			let newUser: {
 				id: number
 				stable_user_id: string
@@ -758,7 +768,7 @@ export function createAuthProviderCallbackHandler(env: Env) {
 					}
 					return fail('account-error', 'user_create_conflict')
 				}
-				stableUserId = allocated.stableUserId
+				stableUserId = personalOrgId(allocated.stableUserId)
 				recordOnboardingFunnelEvent(env, {
 					stage: 'signup_started',
 					userId: stableUserId,

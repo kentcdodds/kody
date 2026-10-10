@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	userMeterNamespace,
 	userMeterRpc,
@@ -43,7 +44,7 @@ export function shouldSkipInboundMcpConnectionLastUsedTouch(input: {
 
 export async function recordInboundMcpConnectionLastUsed(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	clientId: string
 	lastUsedAt?: string
 	nowMs?: number
@@ -63,7 +64,7 @@ export async function recordInboundMcpConnectionLastUsed(input: {
 
 export async function listInboundMcpConnectionLastUsed(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 }): Promise<Map<string, string>> {
 	const lastUsed = new Map<string, string>()
 	if (!userMeterNamespace(input.env)) return lastUsed
@@ -79,7 +80,7 @@ export async function listInboundMcpConnectionLastUsed(input: {
 
 export async function forgetInboundMcpConnectionLastUsed(input: {
 	env: UserMeterEnv
-	userId: string
+	userId: OwnerId
 	clientId: string
 }): Promise<void> {
 	const clientId = input.clientId.trim()

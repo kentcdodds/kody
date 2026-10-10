@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { listRunRecordStorageIds } from '#worker/run-records/service.ts'
 import { listUserStorageBucketIds } from '#worker/storage-buckets/service.ts'
@@ -22,7 +23,7 @@ function uniqueStrings(values: Iterable<string | null | undefined>) {
  */
 export async function listAccountUserStorageIds(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 }): Promise<Array<string>> {
 	const [jobStorageIds, bucketIds, runRecordStorageIds] = await Promise.all([
 		jobsData(input.env).listJobStorageIdsForUser({ userId: input.userId }),

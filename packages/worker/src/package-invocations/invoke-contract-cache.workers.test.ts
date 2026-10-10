@@ -9,6 +9,7 @@ import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 import { checkPackageInvokeForRuntimeWithPreloads } from './invoke-check.ts'
 import { invalidateInvokeContractFreshness } from './invoke-contract-cache.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function runSql(sql: string, ...values: Array<unknown>) {
 	await env.APP_DB.prepare(sql)
 		.bind(...values)
@@ -75,7 +76,7 @@ function createSourceRow(input: {
 }): EntitySourceRow {
 	return {
 		id: input.sourceId,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		entity_kind: 'package' as const,
 		entity_id: input.packageId,
 		repo_id: `repo-${input.sourceId}`,

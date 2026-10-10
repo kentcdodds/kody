@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -28,7 +29,7 @@ test('consumeSearchRateLimit returns the resolved plan so search does not look i
 	expect(
 		await consumeSearchRateLimit({
 			db,
-			userId: 'user-search-plan',
+			userId: ownerIdFromStored('user-search-plan'),
 			email: 'plan@example.com',
 		}),
 	).toBe('pro')
@@ -57,7 +58,7 @@ test('consumeSearchRateLimit allows searches under the free burst ceiling', asyn
 	for (let index = 0; index < limit; index++) {
 		await consumeSearchRateLimit({
 			db,
-			userId: 'user-search-1',
+			userId: ownerIdFromStored('user-search-1'),
 			email: 'user@example.com',
 		})
 	}
@@ -69,13 +70,13 @@ test('consumeSearchRateLimit rejects over the free burst ceiling', async () => {
 	for (let index = 0; index < limit; index++) {
 		await consumeSearchRateLimit({
 			db,
-			userId: 'user-search-2',
+			userId: ownerIdFromStored('user-search-2'),
 			email: 'user@example.com',
 		})
 	}
 	const error = await consumeSearchRateLimit({
 		db,
-		userId: 'user-search-2',
+		userId: ownerIdFromStored('user-search-2'),
 		email: 'user@example.com',
 	}).then(
 		() => null,
@@ -105,7 +106,7 @@ test('consumeSearchRateLimit rejects over the daily ceiling and refunds the burs
 
 	await consumeSearchRateLimit({
 		db,
-		userId: 'user-search-3',
+		userId: ownerIdFromStored('user-search-3'),
 		email: 'user@example.com',
 	})
 	sqlite.prepare(`DELETE FROM _rate_limits WHERE key = ?`).run(burstKey)
@@ -119,7 +120,7 @@ test('consumeSearchRateLimit rejects over the daily ceiling and refunds the burs
 
 	const error = await consumeSearchRateLimit({
 		db,
-		userId: 'user-search-3',
+		userId: ownerIdFromStored('user-search-3'),
 		email: 'user@example.com',
 	}).then(
 		() => null,

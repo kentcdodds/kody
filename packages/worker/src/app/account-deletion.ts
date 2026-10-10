@@ -6,6 +6,7 @@
  */
 import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type OAuthGrantHelpers,
 	revokeAllOAuthGrantsBestEffort,
@@ -272,7 +273,7 @@ const vectorIdBuildersBySurfaceId = {
 
 async function listUserVectorSourceRowIds(
 	env: Env,
-	userId: string,
+	userId: OwnerId,
 	source: UserOwnedVectorizeSource,
 ): Promise<Array<string>> {
 	switch (source.kind) {
@@ -302,7 +303,7 @@ async function listUserVectorSourceRowIds(
 	}
 }
 
-async function listUserVectorIds(env: Env, userId: string) {
+async function listUserVectorIds(env: Env, userId: OwnerId) {
 	const ids: Array<string> = []
 	for (const surface of accountUserOwnedVectorizeSurfaces) {
 		const buildId = vectorIdBuildersBySurfaceId[surface.id]
@@ -327,14 +328,14 @@ async function getUserBillingIdentity(env: Env, dbUserId: number) {
 	}
 }
 
-async function listUserStorageIds(env: Env, userId: string) {
+async function listUserStorageIds(env: Env, userId: OwnerId) {
 	return await listAccountUserStorageIds({
 		env,
 		userId,
 	})
 }
 
-async function listUserSourceSnapshots(env: Env, userId: string) {
+async function listUserSourceSnapshots(env: Env, userId: OwnerId) {
 	const sourceRows = await env.APP_DB.prepare(
 		`SELECT id, published_commit, repo_id
 		FROM entity_sources
@@ -349,7 +350,7 @@ async function listUserSourceSnapshots(env: Env, userId: string) {
 	}))
 }
 
-async function listUserSavedPackages(env: Env, userId: string) {
+async function listUserSavedPackages(env: Env, userId: OwnerId) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id, kody_id, source_id, has_app
 		FROM saved_packages
@@ -370,7 +371,7 @@ async function listUserSavedPackages(env: Env, userId: string) {
 	}))
 }
 
-async function listUserRepoSessions(env: Env, userId: string) {
+async function listUserRepoSessions(env: Env, userId: OwnerId) {
 	if (!env.REPO_SESSION_INDEX) {
 		throw new Error(
 			'REPO_SESSION_INDEX binding is required for account deletion.',
@@ -381,7 +382,7 @@ async function listUserRepoSessions(env: Env, userId: string) {
 	}))
 }
 
-async function listUserMcpServers(env: Env, userId: string) {
+async function listUserMcpServers(env: Env, userId: OwnerId) {
 	const rows = await env.APP_DB.prepare(
 		`SELECT id
 		FROM mcp_server_settings
@@ -394,7 +395,7 @@ async function listUserMcpServers(env: Env, userId: string) {
 
 async function listUserBundleKvKeys(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sourceSnapshots: ReadonlyArray<UserSourceSnapshot>
 	communityListings: ReadonlyArray<AccountCommunityListingSnapshot>
 }) {
@@ -437,7 +438,7 @@ async function listUserBundleKvKeys(input: {
 
 async function collectUserDeletionInventory(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	dbUserId: number
 	warnings: Array<string>
 }): Promise<UserDeletionInventory> {
@@ -960,7 +961,7 @@ async function cancelActiveStripeSubscriptions(input: {
 async function deleteStripeCustomer(input: {
 	env: Env
 	customerId: string
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }) {
 	try {
@@ -977,7 +978,7 @@ async function deleteStripeCustomer(input: {
 
 async function clearStorageRunners(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	storageIds: ReadonlyArray<string>
 	warnings: Array<string>
 }): Promise<number> {
@@ -1003,7 +1004,7 @@ async function clearStorageRunners(input: {
 
 async function cancelActiveWorkflowRuns(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<boolean> {
 	try {
@@ -1022,7 +1023,7 @@ async function cancelActiveWorkflowRuns(input: {
 
 async function clearRunLog(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1043,7 +1044,7 @@ async function clearRunLog(input: {
 
 async function purgeUserMeter(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1064,7 +1065,7 @@ async function purgeUserMeter(input: {
 
 async function purgeStripePlanRefresh(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1087,7 +1088,7 @@ async function purgeStripePlanRefresh(input: {
 
 async function purgeMailbox(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1104,7 +1105,7 @@ async function purgeMailbox(input: {
 
 async function purgeJobManager(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1127,7 +1128,7 @@ async function purgeJobManager(input: {
 
 async function purgeRepoSessions(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sessions: ReadonlyArray<UserRepoSessionSnapshot>
 	warnings: Array<string>
 }): Promise<number> {
@@ -1151,7 +1152,7 @@ async function purgeRepoSessions(input: {
 
 async function purgeRepoSessionIndex(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	try {
@@ -1169,7 +1170,7 @@ async function purgeRepoSessionIndex(input: {
 
 async function purgeMcpClientHub(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }): Promise<number> {
 	// Always purge, even when no mcp_server_settings rows remain: the hub DO
@@ -1199,7 +1200,7 @@ async function purgeMcpClientHub(input: {
 
 async function purgeMcpAgentSessions(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	sessions: ReadonlyArray<McpAgentSession>
 	warnings: Array<string>
 }) {
@@ -1218,7 +1219,7 @@ async function purgeMcpAgentSessions(input: {
 			const stub = namespace.get(
 				namespace.idFromString(session.doId),
 			) as unknown as {
-				purgeForAccountDeletion: (payload: { userId: string }) => Promise<void>
+				purgeForAccountDeletion: (payload: { userId: OwnerId }) => Promise<void>
 			}
 			await stub.purgeForAccountDeletion({ userId: input.userId })
 			purged += 1
@@ -1233,7 +1234,7 @@ async function purgeMcpAgentSessions(input: {
 
 async function purgePackageRealtimeSessions(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	packages: ReadonlyArray<UserSavedPackageSnapshot>
 	warnings: Array<string>
 }): Promise<number> {
@@ -1333,7 +1334,7 @@ type AccountEmailCleanupOutcome = {
 
 async function cleanupAccountEmailBlobs(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	r2Objects: ReadonlyArray<AccountR2ObjectRef>
 	warnings: Array<string>
 }): Promise<AccountEmailCleanupOutcome> {
@@ -1409,7 +1410,7 @@ async function listKvKeysByPrefix(input: {
 
 async function deleteRetrieverCache(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	warnings: Array<string>
 }) {
 	let deleted = 0
@@ -1447,7 +1448,7 @@ async function deleteRetrieverCache(input: {
 
 async function deleteUserScopedRowsAndUser(input: {
 	env: Env
-	mcpUserId: string
+	mcpUserId: OwnerId
 	dbUserId: number
 	/** When true, delete a soft-deleted users row (purge lane). */
 	allowSoftDeletedUser?: boolean
@@ -1518,7 +1519,7 @@ async function deleteUserScopedRowsAndUser(input: {
 export async function deleteUserAccount(input: {
 	env: AccountDeletionEnv
 	dbUserId: number
-	mcpUserId: string
+	mcpUserId: OwnerId
 	/**
 	 * Purge lane: the account is already soft-deleted and claimed via
 	 * `deleting_at`. Skip the live deletion fence and remove the tombstoned

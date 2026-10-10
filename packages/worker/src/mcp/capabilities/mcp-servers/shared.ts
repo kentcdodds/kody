@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { normalizeMcpServerName } from '@kody-internal/shared/mcp-servers.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -77,7 +78,7 @@ export function buildMcpServerStatusView(input: {
 
 export async function loadMcpClientHubSnapshotOrNull(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	try {
@@ -90,7 +91,7 @@ export async function loadMcpClientHubSnapshotOrNull(input: {
 /** Resolve a saved MCP server setting by exact id or (normalized) name. */
 export async function resolveMcpServerSetting(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	server: string
 }): Promise<McpServerSettingMetadata> {
 	const identifier = input.server.trim()

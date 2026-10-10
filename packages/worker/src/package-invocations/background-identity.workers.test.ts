@@ -24,7 +24,7 @@ vi.mock('#mcp/run-kody-registry.ts', async (importOriginal) => ({
 }))
 
 test('subscription execution exposes the owner account identity to metaGetCurrentUser', async () => {
-	const userId = 'a'.repeat(64)
+	const userId = ownerIdFromStored('a').repeat(64)
 	const email = 'subscription-owner@example.com'
 	const displayName = 'Subscription Owner'
 	await ensureUsersTestSchema({
@@ -104,7 +104,7 @@ test('subscription execution exposes the owner account identity to metaGetCurren
 		},
 		savedPackage: {
 			id: 'package-1',
-			userId,
+			userId: ownerIdFromStored(userId),
 			name: '@example/article-to-audio',
 			kodyId: 'article-to-audio',
 			description: 'Article to audio',

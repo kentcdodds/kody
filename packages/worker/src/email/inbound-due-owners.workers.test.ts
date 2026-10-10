@@ -17,6 +17,7 @@ import { sweepStaleInboundDeliveries } from './reconcile-inbound-deliveries.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-08-03T12:00:00.000Z')
 const sweepEnv = { ...env, APP_BASE_URL: 'https://kody.example.com' }
 
@@ -189,8 +190,12 @@ test('sweep time budget defers later owners to the next pass', async () => {
 	await hint(earlierUserId, '2026-08-03T10:00:00.000Z', 'scheduled-refresh')
 	await hint(laterUserId, '2026-08-03T11:00:00.000Z', 'mailbox-due-work')
 	await Promise.all([
-		rpcFor(earlierUserId).getInboundDueWorkHint({ ownerId: earlierUserId }),
-		rpcFor(laterUserId).getInboundDueWorkHint({ ownerId: laterUserId }),
+		rpcFor(ownerIdFromStored(earlierUserId)).getInboundDueWorkHint({
+			ownerId: ownerIdFromStored(earlierUserId),
+		}),
+		rpcFor(ownerIdFromStored(laterUserId)).getInboundDueWorkHint({
+			ownerId: ownerIdFromStored(laterUserId),
+		}),
 	])
 	const clockValues = [0, 0, 10_001, 10_001]
 
@@ -219,13 +224,17 @@ test('sweep clears a healthy Mailbox hint and retains pending due work', async (
 	])) as [string, string]
 	for (const userId of [healthyUserId, pendingUserId]) {
 		await hint(userId, dueAt, 'scheduled-refresh')
-		await rpcFor(userId).getInboundDueWorkHint({ ownerId: userId })
+		await rpcFor(ownerIdFromStored(userId)).getInboundDueWorkHint({
+			ownerId: ownerIdFromStored(userId),
+		})
 	}
 
 	await runInDurableObject(
-		stubFor(pendingUserId),
+		stubFor(ownerIdFromStored(pendingUserId)),
 		async (instance: Mailbox, state) => {
-			await instance.getInboundDueWorkHint({ ownerId: pendingUserId })
+			await instance.getInboundDueWorkHint({
+				ownerId: ownerIdFromStored(pendingUserId),
+			})
 			state.storage.sql.exec(
 				`INSERT INTO email_delivery_events (
 					id, event_type, provider, needs_effect_reconcile, state,

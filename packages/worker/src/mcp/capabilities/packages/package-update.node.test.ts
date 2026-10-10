@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -66,7 +69,7 @@ function createSavedPackage(input?: {
 }) {
 	return {
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		kodyId: 'notes',
 		name: '@user/notes',
 		description: 'Personal notes',
@@ -114,8 +117,18 @@ test('packageUpdate hides and unhides a user-scoped package and returns persiste
 	})
 
 	expect(mockModule.updateSavedPackage.mock.calls).toEqual([
-		[{}, { userId: 'user-1', packageId: 'pkg-1', hidden: true }],
-		[{}, { userId: 'user-1', packageId: 'pkg-1', hidden: false }],
+		[
+			{},
+			{ userId: ownerIdFromStored('user-1'), packageId: 'pkg-1', hidden: true },
+		],
+		[
+			{},
+			{
+				userId: ownerIdFromStored('user-1'),
+				packageId: 'pkg-1',
+				hidden: false,
+			},
+		],
 	])
 	expect(mockModule.setSavedPackageLockedAt).not.toHaveBeenCalled()
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(4)
@@ -139,7 +152,7 @@ test('packageUpdate locks a package and rejects unlock with the owner website UR
 	expect(mockModule.setSavedPackageLockedAt).toHaveBeenCalledWith(
 		{},
 		{
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-1',
 			lockedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
 		},
@@ -176,7 +189,7 @@ test('packageUpdate rejects invalid changes and cross-user or unauthenticated ac
 	await expect(
 		update(
 			{ hidden: true },
-			{ userId: 'user-2', packageId: 'other-user-package' },
+			{ userId: ownerIdFromStored('user-2'), packageId: 'other-user-package' },
 		),
 	).rejects.toThrow(/not found/i)
 

@@ -51,7 +51,7 @@ function getPackage(
 	owner?: { ownerUserId: string; ownerScope: string; ownerEmail: string },
 ) {
 	mockModule.resolvePackageOwnerContext.mockResolvedValue({
-		ownerUserId: 'user-1',
+		ownerUserId: ownerIdFromStored('user-1'),
 		ownerScope: 'kody',
 		ownerEmail: 'kody@example.com',
 		actorUserId: 'user-1',
@@ -194,18 +194,21 @@ test('getPackageCapability returns export metadata for personal and org-bound ow
 		mockModule.getSavedPackageWithCommunityProvenanceById,
 	).toHaveBeenCalledWith(
 		expect.anything(),
-		expect.objectContaining({ userId: 'user-1', packageId: 'package-1' }),
+		expect.objectContaining({
+			userId: ownerIdFromStored('user-1'),
+			packageId: 'package-1',
+		}),
 	)
 	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenCalledWith({
 		env: expect.objectContaining({ APP_DB: expect.anything() }),
 		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 	})
 
 	// An org-bound request loads the org's package metadata.
 	stubSavedPackage({
-		userId: 'org-owner',
+		userId: ownerIdFromStored('org-owner'),
 		name: '@acme/discord-gateway',
 		hasApp: false,
 		sourceListingId: null,
@@ -220,7 +223,7 @@ test('getPackageCapability returns export metadata for personal and org-bound ow
 	const orgOwned = await getPackage(
 		{},
 		{
-			ownerUserId: 'org-owner',
+			ownerUserId: ownerIdFromStored('org-owner'),
 			ownerScope: 'acme',
 			ownerEmail: 'acme@example.com',
 		},
@@ -229,7 +232,7 @@ test('getPackageCapability returns export metadata for personal and org-bound ow
 	expect(mockModule.resolvePackageOwnerContext).toHaveBeenCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			user: expect.objectContaining({ userId: 'user-1' }),
+			user: expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 		}),
 	)
 	expect(
@@ -237,12 +240,12 @@ test('getPackageCapability returns export metadata for personal and org-bound ow
 	).toHaveBeenLastCalledWith(
 		expect.anything(),
 		expect.objectContaining({
-			userId: 'org-owner',
+			userId: ownerIdFromStored('org-owner'),
 			packageId: 'package-1',
 		}),
 	)
 	expect(mockModule.loadPackageSourceBySourceId).toHaveBeenLastCalledWith(
-		expect.objectContaining({ userId: 'org-owner' }),
+		expect.objectContaining({ userId: ownerIdFromStored('org-owner') }),
 	)
 	expect(orgOwned.exports[0]).toMatchObject({
 		subpath: './post-message',
@@ -296,7 +299,7 @@ test('getPackageCapability includes package-scoped secret metadata as FYI', asyn
 	expect(result.package_secrets[0]).not.toHaveProperty('value')
 	expect(mockModule.listPackageSecretsByPackageIds).toHaveBeenCalledWith({
 		env: expect.objectContaining({ APP_DB: expect.anything() }),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageIds: ['package-1'],
 	})
 })

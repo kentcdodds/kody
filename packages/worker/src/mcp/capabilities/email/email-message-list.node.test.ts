@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 
@@ -71,7 +74,7 @@ test('emailMessageList forwards classification filter and returns classification
 
 	expect(mocks.listOwnerEmailMessages).toHaveBeenCalledWith({
 		env: context.env,
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		inboxId: null,
 		direction: null,
 		processingStatus: null,

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -109,7 +110,7 @@ test('loadReachableStaticKodyDependencyEdges walks published sibling manifests a
 	const graph = await loadReachableStaticKodyDependencyEdges({
 		env: { APP_DB: {} } as Env,
 		baseUrl: 'https://example.test',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		rootPackageName: '@scope/a',
 		rootDependencies: ['@scope/b', ' @scope/b '],
 	})
@@ -151,7 +152,7 @@ test('loadReachableStaticKodyDependencyEdges fails closed when a saved package m
 		loadReachableStaticKodyDependencyEdges({
 			env: { APP_DB: {} } as Env,
 			baseUrl: 'https://example.test',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			rootPackageName: '@scope/a',
 			rootDependencies: ['@scope/b'],
 		}),

@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -76,7 +77,7 @@ export const usageGetCapability = defineDomainCapability(
 				readEntitlementUsageSnapshot({
 					db,
 					env: ctx.env,
-					usageUserId: user.userId,
+					usageUserId: personalOrgId(user.userId),
 					plan: entitlement.plan,
 					ladder: entitlement.ladder,
 					creditWallet: entitlement.creditWallet,

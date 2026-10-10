@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -85,7 +86,7 @@ const githubTokenUrl = 'https://github.com/login/oauth/access_token'
 const githubAuthorizeUrl = 'https://github.com/login/oauth/authorize'
 
 test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-slug apps', async () => {
-	const userId = 'user-integrations-loader'
+	const userId = ownerIdFromStored('user-integrations-loader')
 	const { env, lookup } = createEnv(userId)
 
 	expect(await lookup('linear')).toBeNull()
@@ -117,7 +118,7 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 
 	await upsertOauthAppWithoutConnection({
 		env,
-		userId: 'user-abandoned',
+		userId: ownerIdFromStored('user-abandoned'),
 		config: notionAppConfig,
 	})
 	expect(
@@ -134,7 +135,7 @@ test('loadAccountIntegrationByName covers setup prefill, reconnect, and exact-sl
 })
 
 test('connect lookup never prefills a built-in and converts platform reconnects to BYO', async () => {
-	const userId = 'user-platform-priority'
+	const userId = ownerIdFromStored('user-platform-priority')
 	const { env, user, platformEnv, lookup } = createEnv(userId)
 
 	await upsertPlatformOauthApp({
@@ -276,7 +277,7 @@ test('connect lookup never prefills a built-in and converts platform reconnects 
 })
 
 test('published built-ins prefill connects, reconnect in-lane, and feed the account catalog', async () => {
-	const userId = 'user-platform-published'
+	const userId = ownerIdFromStored('user-platform-published')
 	const { env, user, platformEnv, lookup } = createEnv(userId)
 	const githubApp = {
 		slug: 'github-platform',
@@ -369,7 +370,7 @@ test('published built-ins prefill connects, reconnect in-lane, and feed the acco
 })
 
 test('platform= never converts an existing connection and wins over a same-slug personal app only while published', async () => {
-	const userId = 'user-platform-precedence'
+	const userId = ownerIdFromStored('user-platform-precedence')
 	const { env, platformEnv, lookup } = createEnv(userId)
 	const githubApp = {
 		slug: 'github-platform',
@@ -446,7 +447,7 @@ test('platform= never converts an existing connection and wins over a same-slug 
 })
 
 test('loadAccountIntegrationsData includes OAuth apps with their connections', async () => {
-	const userId = 'user-integrations-apps-loader'
+	const userId = ownerIdFromStored('user-integrations-apps-loader')
 	const { env, user } = createEnv(userId)
 
 	await upsertIntegration({ env, userId, config: googleConfig })
@@ -498,7 +499,7 @@ test('loadAccountIntegrationsData includes OAuth apps with their connections', a
 })
 
 test('loadAccountIntegrationsData lists built-in apps next to user-registered apps', async () => {
-	const userId = 'user-integrations-platform-list'
+	const userId = ownerIdFromStored('user-integrations-platform-list')
 	const { env, user, platformEnv } = createEnv(userId)
 
 	await upsertPlatformOauthApp({

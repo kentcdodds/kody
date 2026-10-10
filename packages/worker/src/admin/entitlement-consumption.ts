@@ -6,6 +6,7 @@ import {
 	type EntitlementResource,
 	type PlanName,
 } from '#universal/plans.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { readCurrentEntitlementResourceUsage } from '#worker/entitlements/service.ts'
 import { type AdminUsageEntitlementConsumption } from '#universal/loader-data.ts'
 
@@ -41,7 +42,7 @@ export const entitlementWarningThreshold = 0.8
  */
 export async function readAdminEntitlementConsumption(input: {
 	env: Env
-	usageUserId: string
+	usageUserId: OwnerId
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState

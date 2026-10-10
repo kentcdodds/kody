@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	buildOrgAvatarR2Key,
@@ -8,7 +9,7 @@ import {
 
 test('org avatar keys use the org-avatars prefix and build a public URL', () => {
 	const key = buildOrgAvatarR2Key({
-		orgId: 'org-1',
+		orgId: ownerIdFromStored('org-1'),
 		contentHash: 'abcdef',
 		contentType: 'image/png',
 	})

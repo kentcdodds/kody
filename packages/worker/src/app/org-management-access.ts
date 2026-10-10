@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -11,7 +12,7 @@ import { isPersonalOrg } from '#worker/orgs/org-profile.ts'
 import { getOrgById } from '#worker/orgs/repo.ts'
 
 export type ManagedOrg = {
-	id: string
+	id: OwnerId
 	slug: string
 	displayName: string | null
 	avatarUrl: string | null

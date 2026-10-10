@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	type DurableObjectPitrRpc,
@@ -26,7 +27,7 @@ type DoPitrKind = (typeof doPitrKinds)[number]
 
 type DoPitrTarget = {
 	kind: DoPitrKind
-	userId: string
+	userId: OwnerId
 	storageId?: string
 }
 
@@ -53,7 +54,7 @@ function parseKind(value: unknown): DoPitrKind {
 
 function parseTarget(body: Record<string, unknown>): DoPitrTarget {
 	const kind = parseKind(body['kind'])
-	const userId = requireExactNonEmptyString(body['userId'], 'userId')
+	const userId = requireExactNonEmptyString(body['userId'], 'userId') as OwnerId
 	if (kind === 'storage-runner') {
 		return {
 			kind,

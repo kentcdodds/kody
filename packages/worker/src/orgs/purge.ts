@@ -4,6 +4,7 @@
  * Purge claims and hard-deletes soft-deleted rows past the retention window.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { softDeletePurgeCutoffIso } from '#worker/soft-delete/window.ts'
 import { runD1WithRetry } from '#worker/d1-retry.ts'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
@@ -29,7 +30,7 @@ export function softDeletePurgeWritesEnabled(env: Env): boolean {
 
 export type SoftDeletePurgeCandidate = {
 	kind: 'org' | 'user'
-	id: string
+	id: OwnerId
 	deletedAt: string
 	ageDays: number
 	dbUserId?: number
@@ -43,7 +44,7 @@ export type SoftDeletePurgeOutcomeKind =
 
 export type SoftDeletePurgeOutcome = {
 	kind: 'org' | 'user'
-	id: string
+	id: OwnerId
 	ageDays: number
 	outcome: SoftDeletePurgeOutcomeKind
 	error?: string
@@ -86,7 +87,7 @@ async function listOrgCandidates(input: {
 				 LIMIT ?`,
 			)
 			.bind(input.ageCutoff, input.retryBackoffCutoff, input.batchSize)
-			.all<{ id: string; deleted_at: string }>(),
+			.all<{ id: OwnerId; deleted_at: string }>(),
 	)
 	return results ?? []
 }
@@ -109,7 +110,7 @@ async function listUserCandidates(input: {
 				 LIMIT ?`,
 			)
 			.bind(input.ageCutoff, input.retryBackoffCutoff, input.batchSize)
-			.all<{ db_user_id: number; id: string; deleted_at: string }>(),
+			.all<{ db_user_id: number; id: OwnerId; deleted_at: string }>(),
 	)
 	return results ?? []
 }

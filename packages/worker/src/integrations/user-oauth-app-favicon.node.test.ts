@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	assertHttpsPublicUrl,
@@ -56,7 +57,7 @@ test('parseHtmlIconCandidates ranks apple-touch-icon then larger icons', () => {
 
 test('shouldFetchUserOauthAppFavicon skips explicit uploads and stale-host refetches', () => {
 	const base: UserOauthApp = {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		slug: 'dropbox',
 		provider: 'dropbox',
 		label: null,

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import {
@@ -153,7 +154,7 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 
 	expect(send).toHaveBeenCalledTimes(1)
 	expect(send).toHaveBeenCalledWith({
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		topic: messageCreated,
 		idempotencyKey: 'discord:message-create:123',
 		payload: { messageId: '123', channelId: '456' },
@@ -161,12 +162,12 @@ test('package runtime dispatch enqueues declared events and validates payloadSch
 		invokeDepth: 1,
 		emittedAt: expect.any(String),
 		lineage: {
-			actor: { userId: 'user-123', username: null },
-			attribution: { kind: 'user', userId: 'user-123' },
+			actor: { userId: ownerIdFromStored('user-123'), username: null },
+			attribution: { kind: 'user', userId: ownerIdFromStored('user-123') },
 			credential: {
 				kind: 'mcp-oauth',
 				id: null,
-				orgId: 'user-123',
+				orgId: ownerIdFromStored('user-123'),
 				scopes: null,
 				profileName: null,
 			},
@@ -291,7 +292,7 @@ test('package event delivery fans out to MCP subscriptions on the same consumer 
 		logs: [],
 	})
 	const message = {
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		topic: messageCreated,
 		idempotencyKey: 'discord:message-create:mcp-fan-out',
 		payload: { messageId: '123', channelId: '456' },
@@ -348,7 +349,7 @@ test('package events deliver with filters, idempotent replay, and retryable fail
 		}),
 	)
 	const baseMessage = {
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		topic: messageCreated,
 		source: { packageId: 'pkg-gateway', kodyId: 'discord-gateway' },
 		invokeDepth: 1,

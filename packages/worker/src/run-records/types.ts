@@ -15,6 +15,8 @@
  *   a per-user Durable Object, never `APP_DB`.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 export const runSurfaceValues = [
 	'execute',
 	'export',
@@ -193,7 +195,7 @@ export function runPersistenceForContext(
  */
 export type RunRecordHandle = {
 	id: string
-	userId: string
+	userId: OwnerId
 	startedAt: string
 	persistence: RunPersistence
 	context: RunRecordContext

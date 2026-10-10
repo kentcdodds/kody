@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { findPlainRepoPromotionHint } from '#worker/repo/user-repos.ts'
 
@@ -15,7 +16,7 @@ test('findPlainRepoPromotionHint matches bare names from scoped package lookups'
 								expect(params[1]).toBe('notes')
 								return {
 									id: 'repo-1',
-									user_id: 'user-1',
+									user_id: ownerIdFromStored('user-1'),
 									name: 'notes',
 									description: null,
 									created_at: '2026-01-01T00:00:00.000Z',
@@ -31,7 +32,7 @@ test('findPlainRepoPromotionHint matches bare names from scoped package lookups'
 	} as unknown as D1Database
 
 	const row = await findPlainRepoPromotionHint(db, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageIdOrKodyId: '@alice/notes',
 	})
 	expect(row?.name).toBe('notes')

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { handleDoPitrRequest } from './do-pitr-maintenance.ts'
 
@@ -36,7 +37,7 @@ function createRequest(
 const bookmarkRequest = {
 	operation: 'get-recovery-bookmark',
 	kind: 'mailbox',
-	userId: 'stable-user-id',
+	userId: ownerIdFromStored('stable-user-id'),
 }
 type MaintenanceEnvVars = Partial<
 	Record<'SENTRY_ENVIRONMENT' | 'DR_RESTORE_SECRET', string>
@@ -110,7 +111,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 	for (const target of targets) {
 		const common = {
 			kind: target.kind,
-			userId: 'stable-user-id',
+			userId: ownerIdFromStored('stable-user-id'),
 			...('storageId' in target ? { storageId: target.storageId } : {}),
 		}
 		const bookmarkResponse = await handleDoPitrRequest(
@@ -169,7 +170,7 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 				event: 'do-pitr-operator-restore',
 				operationId: expect.any(String),
 				kind: target.kind,
-				userId: 'stable-user-id',
+				userId: ownerIdFromStored('stable-user-id'),
 				...('storageId' in target ? { storageId: target.storageId } : {}),
 				targetBookmark: 'resolved-bookmark',
 				undoBookmark: 'undo-bookmark',
@@ -180,7 +181,10 @@ test('DO PITR maintenance route targets exact user-scoped object names and round
 
 test('DO PITR maintenance route rejects timestamps outside the provider window', async () => {
 	const mailbox = createNamespace()
-	const env = { ...productionEnv, MAILBOX: mailbox.namespace } as unknown as Env
+	const env = {
+		...productionEnv,
+		MAILBOX: mailbox.namespace,
+	} as unknown as Env
 	const invalidTimestamps = [
 		Date.now() + 60_000,
 		Date.now() - 31 * 24 * 60 * 60 * 1000,

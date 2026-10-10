@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, type Mock } from 'vitest'
 import {
 	aggregateUsageRollups,
@@ -272,7 +273,7 @@ test('aggregateUsageRollups merges current and previous Analytics months with du
 			}),
 			// The SQL API may serialize aggregates as strings.
 			{
-				user_id: 'user-b',
+				user_id: ownerIdFromStored('user-b'),
 				metric: 'email_send',
 				event_count: '3',
 				error_count: '0',
@@ -426,12 +427,12 @@ test('hourly aggregation keeps live team org rollups and drops deleted orgs', as
 		liveOrgIds: ['org-team', 'org-overlap'],
 		existingRollups: [
 			{
-				user_id: 'org-team',
+				user_id: ownerIdFromStored('org-team'),
 				metric: 'dynamic_worker_day',
 				month: '2026-07',
 			},
 			{
-				user_id: 'org-deleted',
+				user_id: ownerIdFromStored('org-deleted'),
 				metric: 'dynamic_worker_day',
 				month: '2026-07',
 			},
@@ -468,8 +469,16 @@ test('hourly aggregation cannot recreate rollups for deleting or deleted users',
 	const { db, batches, rollups } = createFakeDb({
 		liveUserIds: ['user-live'],
 		existingRollups: [
-			{ user_id: 'user-deleting', metric: 'execute', month: '2026-07' },
-			{ user_id: 'user-deleted', metric: 'execute', month: '2026-07' },
+			{
+				user_id: ownerIdFromStored('user-deleting'),
+				metric: 'execute',
+				month: '2026-07',
+			},
+			{
+				user_id: ownerIdFromStored('user-deleted'),
+				metric: 'execute',
+				month: '2026-07',
+			},
 		],
 		emailUsageRows: [
 			emailRow('user-deleting', { total_duration_ms: 1, total_bytes: 10 }),
@@ -495,13 +504,29 @@ test('aggregateUsageRollups deletes current-month rows absent from the Analytics
 	const { db, batches, deletes, rollups } = createFakeDb({
 		existingRollups: [
 			// Present in the AE result: updated, never deleted.
-			{ user_id: 'user-a', metric: 'execute', month: '2026-07' },
+			{
+				user_id: ownerIdFromStored('user-a'),
+				metric: 'execute',
+				month: '2026-07',
+			},
 			// Absent from the AE result (for example a straggler from a
 			// direct D1 upsert whose AE data point was lost): deleted.
-			{ user_id: 'user-a', metric: 'job_run', month: '2026-07' },
-			{ user_id: 'user-b', metric: 'execute', month: '2026-07' },
+			{
+				user_id: ownerIdFromStored('user-a'),
+				metric: 'job_run',
+				month: '2026-07',
+			},
+			{
+				user_id: ownerIdFromStored('user-b'),
+				metric: 'execute',
+				month: '2026-07',
+			},
 			// Other months are never touched, even for stale pairs.
-			{ user_id: 'user-a', metric: 'job_run', month: '2026-06' },
+			{
+				user_id: ownerIdFromStored('user-a'),
+				metric: 'job_run',
+				month: '2026-06',
+			},
 		],
 	})
 
@@ -529,8 +554,16 @@ test('aggregateUsageRollups deletes current-month rows absent from the Analytics
 		'execute',
 	])
 	expect(rollups).toEqual([
-		{ user_id: 'user-a', metric: 'execute', month: '2026-07' },
-		{ user_id: 'user-a', metric: 'job_run', month: '2026-06' },
+		{
+			user_id: ownerIdFromStored('user-a'),
+			metric: 'execute',
+			month: '2026-07',
+		},
+		{
+			user_id: ownerIdFromStored('user-a'),
+			metric: 'job_run',
+			month: '2026-06',
+		},
 	])
 })
 
@@ -561,8 +594,16 @@ test('aggregateUsageRollups keeps existing rollups when the Analytics Engine res
 	// cleanup must not wipe the month's counters.
 	using _fetch = fetchReplying(empty)
 	const existingRollups = [
-		{ user_id: 'user-a', metric: 'execute', month: '2026-07' },
-		{ user_id: 'user-b', metric: 'job_run', month: '2026-07' },
+		{
+			user_id: ownerIdFromStored('user-a'),
+			metric: 'execute',
+			month: '2026-07',
+		},
+		{
+			user_id: ownerIdFromStored('user-b'),
+			metric: 'job_run',
+			month: '2026-07',
+		},
 	]
 	const { db, batches, deletes, rollups } = createFakeDb({
 		existingRollups,

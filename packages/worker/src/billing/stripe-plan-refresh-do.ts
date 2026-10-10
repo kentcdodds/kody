@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import {
@@ -15,7 +16,7 @@ import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 const userIdStorageKey = 'user-id'
 
 class StripePlanRefreshBase extends DurableObject<Env> {
-	async schedule(input: { userId: string; refreshAt?: number }) {
+	async schedule(input: { userId: OwnerId; refreshAt?: number }) {
 		const userId = input.userId.trim()
 		if (!userId) {
 			throw new Error('Stripe plan refresh requires a non-empty userId.')
@@ -30,7 +31,7 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 		return { scheduledAt: new Date(refreshAt).toISOString() }
 	}
 
-	async purgeUser(input: { userId: string }) {
+	async purgeUser(input: { userId: OwnerId }) {
 		const storedUserId = await this.ctx.storage.get<string>(userIdStorageKey)
 		if (storedUserId && storedUserId !== input.userId.trim()) {
 			throw new Error('Stripe plan refresh userId does not match stored owner.')
@@ -42,7 +43,7 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 
 	async alarm() {
 		const billingSubjectId =
-			await this.ctx.storage.get<string>(userIdStorageKey)
+			await this.ctx.storage.get<OwnerId>(userIdStorageKey)
 		if (!billingSubjectId) {
 			await this.ctx.storage.deleteAll()
 			return

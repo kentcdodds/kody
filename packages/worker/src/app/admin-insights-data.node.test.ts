@@ -29,6 +29,7 @@ import {
 	utcWeekStart,
 } from './admin-insights-data.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const now = new Date('2026-07-08T12:00:00.000Z')
 
 const launchSignalMocks = vi.hoisted(() => ({
@@ -299,7 +300,7 @@ test('admin insights pure helpers bucket, zero-fill, fold, and take medians', ()
 
 test('foldRunLogSnapshots sums workflow statuses and milestone users and reports fanout completeness', () => {
 	const user = (id: string, verifiedAt: string | null) => ({
-		stable_user_id: id,
+		stable_user_id: ownerIdFromStored(id),
 		email_verified_at: verifiedAt,
 	})
 	const milestone = (

@@ -1,4 +1,5 @@
 import { utcDayKey, utcWeekStart } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	entitlementResourceLabels,
 	isWeeklyComputeWindowResource,
@@ -68,7 +69,7 @@ const accountUsageDailyMeterResources = dailyEntitlementResources.filter(
 export async function readEntitlementUsageSnapshot(input: {
 	db: D1Database
 	env: Env
-	usageUserId: string
+	usageUserId: OwnerId
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	getCommunityPublicCacheVersion,
@@ -170,7 +171,7 @@ function createCommunityIconDeletionRaceDbMock() {
 
 const listing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-1',
+	ownerUserId: ownerIdFromStored('owner-1'),
 	packageId: 'package-1',
 	sourceId: 'source-1',
 	kodyId: 'github-tools',

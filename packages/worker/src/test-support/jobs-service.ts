@@ -1,4 +1,8 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+	personalOrgId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 export * from './jobs-service-mocks.ts'
 import { repoMockModule } from './jobs-service-mocks.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -86,7 +90,7 @@ export function mockRepoPersistence() {
 						env,
 						source: {
 							id: sourceId,
-							user_id: String(existing['user_id']),
+							user_id: ownerIdFromStored(String(existing['user_id'])),
 							entity_kind:
 								(existing['entity_kind'] as 'job' | 'package') ?? 'job',
 							entity_id: String(existing['entity_id'] ?? sourceId),
@@ -1094,7 +1098,7 @@ export async function insertPublishedEntitySource(input: {
 			env: snapshotEnv,
 			source: {
 				id: input.sourceId,
-				user_id: input.userId,
+				user_id: ownerIdFromStored(input.userId),
 				entity_kind: input.entityKind ?? 'job',
 				entity_id: input.entityId,
 				repo_id: `${input.entityKind ?? 'job'}-${input.entityId}`,
@@ -1161,7 +1165,7 @@ export async function insertLeftoverJob(input: {
 	const job: JobRecord = {
 		version: 1,
 		id: jobId,
-		userId: input.callerContext.user.userId,
+		userId: personalOrgId(input.callerContext.user.userId),
 		name: input.body.name,
 		sourceId,
 		publishedCommit,
@@ -1231,7 +1235,7 @@ export async function syncSinglePackageJob(input: {
 	})
 	await syncPackageJobsForPackage({
 		env: input.env,
-		userId: input.userId,
+		userId: ownerIdFromStored(input.userId),
 		baseUrl: input.baseUrl,
 		packageId: input.packageId,
 		sourceId: input.sourceId,

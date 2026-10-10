@@ -85,7 +85,7 @@ function savedPackage(
 ): SavedPackageRecord {
 	return {
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@owner/ship',
 		kodyId: 'ship',
 		description: '',
@@ -146,8 +146,13 @@ test('an org-bound connection lists the org skills, not the acting person skills
 	mocks.listOwn.mockImplementation(
 		async (_db: unknown, input: { userId: string }) =>
 			input.userId === 'org-1'
-				? [savedPackage({ userId: 'org-1' })]
-				: [savedPackage({ id: 'pkg-person', userId: 'user-1' })],
+				? [savedPackage({ userId: ownerIdFromStored('org-1') })]
+				: [
+						savedPackage({
+							id: 'pkg-person',
+							userId: ownerIdFromStored('user-1'),
+						}),
+					],
 	)
 	mocks.readIndex.mockImplementation(async () => buildIndex(savedPackage()))
 	const catalog = await loadCallerSkillsCatalog({
@@ -166,7 +171,9 @@ test('an org-bound connection lists the org skills, not the acting person skills
 			},
 		}),
 	})
-	expect(mocks.listOwn).toHaveBeenCalledWith(env.APP_DB, { userId: 'org-1' })
+	expect(mocks.listOwn).toHaveBeenCalledWith(env.APP_DB, {
+		userId: ownerIdFromStored('org-1'),
+	})
 	expect(catalog).toHaveLength(1)
 })
 
@@ -204,7 +211,7 @@ test('lists the caller org skills from KV indexes, skipping hidden and skill-les
 	])
 	expect(mocks.readIndex).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-2',
 		publishedCommit: 'commit-1',
 	})
@@ -246,12 +253,12 @@ test('rebuilds and persists a missing index for packages published before the fl
 	expect(mocks.loadSource).toHaveBeenCalledWith({
 		env,
 		baseUrl: 'https://kody.example',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 	})
 	expect(mocks.writeIndex).toHaveBeenCalledTimes(1)
 	expect(mocks.writeIndex.mock.calls[0]![0]).toMatchObject({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		index: { packageId: 'pkg-1', publishedCommit: 'commit-1' },
 	})
 	expect(buildSkillsListResult(catalog).skills).toHaveLength(1)

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	assertBackupDay,
 	backupBlobKey,
@@ -545,7 +546,7 @@ async function collectHandledOwnerIds(input: {
 async function exportOwnerPhase(input: {
 	s3: DrBackupS3Client
 	session: ProgressSession
-	owners: Array<string>
+	owners: Array<OwnerId>
 	startedAtMs: number
 	timeBudgetMs: number
 	lane: OwnerLaneProgress
@@ -553,9 +554,9 @@ async function exportOwnerPhase(input: {
 	indexKind: 'mailbox-index' | 'run-log-index'
 	initialCursor: string | null
 	oversizedWarningPrefix: string
-	dumpKey: (day: string, ownerId: string) => string
+	dumpKey: (day: string, ownerId: OwnerId) => string
 	fetchPage: (
-		ownerId: string,
+		ownerId: OwnerId,
 		startAfter: string | null,
 	) => Promise<{
 		entries: Array<unknown>
@@ -575,7 +576,7 @@ async function exportOwnerPhase(input: {
 	let ownerIndex = 0
 	for (;;) {
 		if (Date.now() - input.startedAtMs >= input.timeBudgetMs) return true
-		let ownerId: string | undefined
+		let ownerId: OwnerId | undefined
 		while (ownerIndex < input.owners.length) {
 			const candidate = input.owners[ownerIndex]!
 			ownerIndex += 1
@@ -737,7 +738,7 @@ async function exportMailboxPhase(input: {
 	env: Env
 	s3: DrBackupS3Client
 	session: ProgressSession
-	owners: Array<string>
+	owners: Array<OwnerId>
 	startedAtMs: number
 	timeBudgetMs: number
 	counts: { mailboxDumpsCompleted: number }
@@ -775,7 +776,7 @@ async function exportRunLogPhase(input: {
 	env: Env
 	s3: DrBackupS3Client
 	session: ProgressSession
-	owners: Array<string>
+	owners: Array<OwnerId>
 	startedAtMs: number
 	timeBudgetMs: number
 	counts: { runLogDumpsCompleted: number }

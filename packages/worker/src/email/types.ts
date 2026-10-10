@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 export const emailDirectionValues = ['inbound', 'outbound'] as const
 export type EmailDirection = (typeof emailDirectionValues)[number]
 
@@ -125,7 +127,7 @@ export type EmailThreadRecord = {
 export type EmailMessageRecord = {
 	id: string
 	direction: EmailDirection
-	userId: string
+	userId: OwnerId
 	inboxId: string | null
 	threadId: string | null
 	senderIdentityId: string | null

@@ -15,6 +15,7 @@ import { parseWebhookUrlHandle } from './handle.ts'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const integrationMocks = vi.hoisted(() => ({
 	getJoinedIntegration: vi.fn(),
 	resolveIntegrationAccessToken: vi.fn(),
@@ -281,7 +282,7 @@ async function setupOwner(
 	const { handle } = await mintWebhookUrlForUser({
 		env,
 		request: sessionRequestContext(userId),
-		userId,
+		userId: ownerIdFromStored(userId),
 		username: 'owner',
 		kodyId: 'sentry-bridge',
 		webhookName: 'sentry',
@@ -298,7 +299,7 @@ async function setupOwner(
 			(
 				await revealWebhookUrlForWebsite({
 					env,
-					userId,
+					userId: ownerIdFromStored(userId),
 					username: 'owner',
 					target: { handle },
 				})
@@ -307,7 +308,7 @@ async function setupOwner(
 			applyWebhookUrlForUser({
 				env,
 				request: sessionRequestContext(userId),
-				userId,
+				userId: ownerIdFromStored(userId),
 				username: 'owner',
 				handle,
 				destination,
@@ -655,7 +656,7 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	const plaintext = await decryptWebhookHmacSecret(
 		env,
 		row!.hmac_secret_encrypted,
-		userWebhookHmacSecretContext(userId, endpointId!),
+		userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId!),
 	)
 	using fetchMock = fetchResponding(JSON.stringify({ id: 99 }), {
 		status: 201,

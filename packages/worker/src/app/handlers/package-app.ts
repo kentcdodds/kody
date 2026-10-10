@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requestHasSessionCookie } from '#app/anonymous-html-cache.ts'
 import { redirectToLoginWhenUnauthenticated } from '#app/auth-redirect.ts'
@@ -74,7 +75,7 @@ export async function handlePackageAppRequest(request: Request, env: Env) {
 		return redirectToLoginWhenUnauthenticated(request, env)
 	}
 	const owner: PackageAppOwner = {
-		userId: user.mcpUser.userId,
+		userId: personalOrgId(user.mcpUser.userId),
 		username: user.username,
 		email: user.email,
 		displayName: user.displayName,

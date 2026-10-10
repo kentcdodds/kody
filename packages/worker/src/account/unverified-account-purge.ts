@@ -4,6 +4,7 @@
  * Purge scans and claims unverified person accounts, including rows already
  * soft-deleted or mid-deletion.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { invalidatePackageAppOwnerCacheForDbUserId } from '#app/package-app-owner.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { shouldRunRetentionCron } from '@kody-internal/shared/jobs/scheduled-lanes.ts'
@@ -63,7 +64,7 @@ const unverifiedPersonEligibilitySql = [
 
 type UnverifiedAccountRow = {
 	id: number
-	stable_user_id: string
+	stable_user_id: OwnerId
 	email: string
 	created_at: string
 }
@@ -82,7 +83,7 @@ export type UnverifiedAccountPurgeOutcomeKind =
  * only; emails and usernames never leave the lane.
  */
 export type UnverifiedAccountPurgeOutcome = {
-	stableUserId: string
+	stableUserId: OwnerId
 	ageDays: number
 	outcome: UnverifiedAccountPurgeOutcomeKind
 	error?: string
@@ -98,7 +99,7 @@ export type UnverifiedAccountPurgeResult = {
 }
 
 export type UnverifiedAccountPurgeCandidate = {
-	stableUserId: string
+	stableUserId: OwnerId
 	ageDays: number
 }
 
@@ -188,7 +189,7 @@ function redactedErrorForReporting(error: unknown) {
 
 function reportPurgeFailureToSentry(input: {
 	error: unknown
-	userId: string
+	userId: OwnerId
 	warnings: ReadonlyArray<string>
 }) {
 	try {

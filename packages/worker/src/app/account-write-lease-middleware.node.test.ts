@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
@@ -18,11 +19,14 @@ test('authenticated delayed mutation holds web lease through handler completion'
 		sessionUserId: '1',
 		user: {
 			accountDeleting: false,
-			mcpUser: { userId: 'user-a' },
+			mcpUser: { userId: ownerIdFromStored('user-a') },
 		},
 	})
 	const meter = createInMemoryUserMeterEnv()
-	const meterA = userMeterRpc({ env: meter.env, userId: 'user-a' })
+	const meterA = userMeterRpc({
+		env: meter.env,
+		userId: ownerIdFromStored('user-a'),
+	})
 	const db = {
 		prepare(query: string) {
 			return {
@@ -88,7 +92,7 @@ test('logout is not blocked while an account is deleting', async () => {
 		sessionUserId: '1',
 		user: {
 			accountDeleting: true,
-			mcpUser: { userId: 'user-a' },
+			mcpUser: { userId: ownerIdFromStored('user-a') },
 		},
 	})
 	const next = vi.fn(async () => new Response(null, { status: 302 }))

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -94,7 +97,7 @@ function createEntitlementsDatabase(user: {
 function createPackageSourceRow(userId: string): EntitySourceRow {
 	return {
 		id: 'source-package-1',
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'repo-package-1',

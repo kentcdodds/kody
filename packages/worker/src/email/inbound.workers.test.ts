@@ -25,6 +25,7 @@ import {
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformDomain = 'inbox.kody.example.com'
 
 async function seedAccount(label: string, input: { verified?: boolean } = {}) {
@@ -95,19 +96,22 @@ async function readDailyReceives(
 	userId: string,
 	day = new Date().toISOString().slice(0, 10),
 ) {
-	return await userMeterRpc({ env, userId }).read({
+	return await userMeterRpc({ env, userId: ownerIdFromStored(userId) }).read({
 		resource: 'email_receives_per_day',
 		day,
 	})
 }
 
 async function listUserMessages(userId: string) {
-	return (await mailboxRpc({ env, userId }).listMessages({ limit: 10 }))
-		.messages
+	return (
+		await mailboxRpc({ env, userId: ownerIdFromStored(userId) }).listMessages({
+			limit: 10,
+		})
+	).messages
 }
 
 async function getStoredInbound(userId: string) {
-	const mailbox = mailboxRpc({ env, userId })
+	const mailbox = mailboxRpc({ env, userId: ownerIdFromStored(userId) })
 	const page = await mailbox.listMessages({ direction: 'inbound', limit: 10 })
 	expect(page.messages).toHaveLength(1)
 	const stored = await mailbox.getMessage({ messageId: page.messages[0]!.id })
@@ -120,12 +124,12 @@ async function getStoredInbound(userId: string) {
 async function loadStoredAttachments(userId: string, messageId: string) {
 	const attachments = await mailboxRpc({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 	}).listAttachmentsForMessage({ messageId })
 	const loaded = await getEmailMessageWithAttachmentsById({
 		env,
 		db: env.APP_DB,
-		userId,
+		userId: ownerIdFromStored(userId),
 		messageId,
 	})
 	if (!attachments[0] || !loaded) throw new Error('Expected an attachment.')
@@ -161,7 +165,7 @@ test('USER inbound commits graph, attachments, terminal event, and retry only in
 		expect(message.rejectedReason).toBeNull()
 	}
 
-	const mailbox = mailboxRpc({ env, userId })
+	const mailbox = mailboxRpc({ env, userId: ownerIdFromStored(userId) })
 	const messages = await listUserMessages(userId)
 	expect(messages).toEqual([
 		expect.objectContaining({
@@ -220,7 +224,10 @@ test('preclaim USER rejection audit is bounded in Mailbox without D1 graph rows'
 	await handleInboundEmail(message, inboundEnv())
 	expect(message.rejectedReason).toBe('Account email is not verified.')
 
-	const events = await mailboxRpc({ env, userId }).listDeliveryEvents({
+	const events = await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).listDeliveryEvents({
 		limit: 10,
 	})
 	expect(events).toEqual(
@@ -294,7 +301,7 @@ test('pointer-only USER retry after midnight enforces the current quota day', as
 	if (!provisioned) throw new Error('Expected provisioned default inbox.')
 	const buildDelivery = (quotaDay: string, now: Date) =>
 		buildInboundDelivery({
-			userId,
+			userId: ownerIdFromStored(userId),
 			inboxId: provisioned.inbox.id,
 			recipient: address,
 			envelopeFrom: 'sender@example.net',
@@ -304,11 +311,14 @@ test('pointer-only USER retry after midnight enforces the current quota day', as
 		})
 	const oldPointer = await buildDelivery('2026-07-22', oldNow)
 	const retryDelivery = await buildDelivery('2026-07-23', retryNow)
-	const authority = createUserInboundDeliveryAuthority({ env, userId })
+	const authority = createUserInboundDeliveryAuthority({
+		env,
+		userId: ownerIdFromStored(userId),
+	})
 	await authority.claimWindow(oldPointer, oldNow)
 	const receiveLimit = planLimits.free.maxEmailReceivesPerDay
 	if (receiveLimit == null) throw new Error('Expected finite receive limit.')
-	await userMeterRpc({ env, userId }).initialize({
+	await userMeterRpc({ env, userId: ownerIdFromStored(userId) }).initialize({
 		resource: 'email_receives_per_day',
 		day: '2026-07-23',
 		count: receiveLimit,
@@ -342,7 +352,9 @@ test('account deletion fence blocks the complete USER inbound write boundary', a
 	await expect(
 		handleInboundEmail(message, inboundEnv()),
 	).rejects.toBeInstanceOf(AccountDeletionInProgressError)
-	expect(await mailboxRpc({ env, userId }).countMailbox()).toEqual({
+	expect(
+		await mailboxRpc({ env, userId: ownerIdFromStored(userId) }).countMailbox(),
+	).toEqual({
 		threads: 0,
 		messages: 0,
 		attachments: 0,
@@ -409,7 +421,10 @@ test('max-plan plus-tag inbox stores a large multipart/related inline PNG', asyn
 	expect(stored.id.startsWith(inboundMessagePrefix)).toBe(true)
 	const deliveryId = `email-inbound-delivery:${stored.id.slice(inboundMessagePrefix.length)}`
 	expect(
-		await createUserInboundDeliveryAuthority({ env, userId }).get(deliveryId),
+		await createUserInboundDeliveryAuthority({
+			env,
+			userId: ownerIdFromStored(userId),
+		}).get(deliveryId),
 	).toMatchObject({
 		state: 'received',
 		messageId: stored.id,

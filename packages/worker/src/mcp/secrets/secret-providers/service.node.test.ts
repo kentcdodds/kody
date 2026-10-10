@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
@@ -32,7 +33,7 @@ const migrationsDirectory = new URL('../../../../migrations/', import.meta.url)
 const itemId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
 const canonicalRef = `i/${itemId}/password`
 const providerId = '1password'
-const ownerId = 'user-owner'
+const ownerId = ownerIdFromStored('user-owner')
 const doorSecretName = 'onePasswordServiceAccountToken'
 const notGrantedMessage = createProviderPackageNotGrantedMessage({
 	providerId,
@@ -87,12 +88,12 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 	} as Env
 	seedUser(sqlite, 1, ownerId)
 	seedUser(sqlite, 2, 'user-guest')
-	seedPackage(sqlite, 'pkg-consumer', 'deploy', userId)
+	seedPackage(sqlite, 'pkg-consumer', 'deploy', ownerIdFromStored(userId))
 	if (input.bound !== false) {
-		seedPackage(sqlite, 'pkg-provider', 'op', userId)
+		seedPackage(sqlite, 'pkg-provider', 'op', ownerIdFromStored(userId))
 		await saveSecret({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			scope: 'user',
 			name: doorSecretName,
 			value: 'op-sa-token',
@@ -122,19 +123,24 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 			resolveProviderSecret({
 				env,
 				baseUrl: 'https://kody.example',
-				userId,
+				userId: ownerIdFromStored(userId),
 				request: sessionRequestContext(userId),
 				provider: providerId,
 				ref: canonicalRef,
 				invokeProvider,
 				...overrides,
 			}),
-		grant: () => grantSecretProviderToPackage({ env, userId, ...grantInput }),
+		grant: () =>
+			grantSecretProviderToPackage({
+				env,
+				userId: ownerIdFromStored(userId),
+				...grantInput,
+			}),
 		isGranted: async (ref = canonicalRef) =>
 			(
 				await inspectSecretProviderPackageGrant({
 					env,
-					userId,
+					userId: ownerIdFromStored(userId),
 					...grantInput,
 					ref,
 				})
@@ -143,7 +149,7 @@ async function createHarness(input: { bound?: boolean; userId?: string } = {}) {
 			bindSecretProvider({
 				env,
 				baseUrl: 'https://kody.example',
-				userId,
+				userId: ownerIdFromStored(userId),
 				providerId,
 				packageId,
 				doorSecretName,

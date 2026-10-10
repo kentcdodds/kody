@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	callerHasRole,
@@ -55,7 +56,7 @@ type ExecuteSearchListInput = {
 	query: string
 	memoryQuery?: string
 	limit: number
-	userId: string | null
+	userId: OwnerId | null
 	includeHiddenPackages: boolean
 	memoryContext?: SearchToolArgs['memoryContext']
 	/** Optional capability domain id; scopes ranked results to that domain's capabilities. */

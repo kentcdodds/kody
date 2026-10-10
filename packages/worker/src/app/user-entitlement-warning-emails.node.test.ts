@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type EntitlementResource } from '#universal/plans.ts'
@@ -32,7 +33,7 @@ const {
 	userEntitlementWarningSweepLimit,
 } = await import('#app/user-entitlement-warning-emails.ts')
 
-const stableUserId = 'a'.repeat(64)
+const stableUserId = ownerIdFromStored('a').repeat(64)
 
 function row(
 	resource: EntitlementResource,

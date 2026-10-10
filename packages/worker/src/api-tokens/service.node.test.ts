@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import {
@@ -23,7 +24,7 @@ import {
 } from './service.ts'
 
 const migrationsDirectory = new URL('../../migrations/', import.meta.url)
-const userId = 'stable-user-1'
+const userId = ownerIdFromStored('stable-user-1')
 const start = new Date('2026-09-30T12:00:00.000Z')
 const shortLife = apiTokenLifetimeAliases.short
 
@@ -224,7 +225,11 @@ test('rotate invalidates the old secret and keeps scopes and absolute expiry', a
 	})
 	expect(auth.ok).toBe(true)
 	expect(
-		await rotateApiToken({ db, userId: 'someone-else', tokenId: minted.id }),
+		await rotateApiToken({
+			db,
+			userId: ownerIdFromStored('someone-else'),
+			tokenId: minted.id,
+		}),
 	).toBeNull()
 })
 

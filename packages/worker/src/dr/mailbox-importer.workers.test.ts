@@ -40,6 +40,7 @@ import {
 import { sha256Hex } from '#worker/dr/sha256.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function createMemoryS3(seed: Record<string, string | Uint8Array>) {
 	const objects = new Map<string, Uint8Array>()
 	for (const [key, value] of Object.entries(seed)) {
@@ -97,7 +98,7 @@ function message(ownerId: string): MailboxMessageRecord & MailboxMessageInput {
 		authResults: null,
 		textBody: 'restored',
 		htmlBody: null,
-		rawMimeKey: emailRawMimeKey(ownerId, 'restore-message'),
+		rawMimeKey: emailRawMimeKey(ownerIdFromStored(ownerId), 'restore-message'),
 		rawSize: 8,
 		processingStatus: 'stored',
 		classification: 'accepted',
@@ -185,7 +186,7 @@ async function createBackup(
 				size: 8,
 				storageKind: 'external',
 				storageKey: emailAttachmentBlobKey(
-					ownerId,
+					ownerIdFromStored(ownerId),
 					'restore-message',
 					'restore-attachment',
 				),
@@ -298,7 +299,7 @@ async function createBackup(
 			})
 		},
 		mailbox(userId = ownerId) {
-			return mailboxRpc({ env: backupEnv, userId })
+			return mailboxRpc({ env: backupEnv, userId: ownerIdFromStored(userId) })
 		},
 		readAlarm(userId: string) {
 			const stub = backupEnv.MAILBOX.get(backupEnv.MAILBOX.idFromName(userId))
@@ -307,17 +308,18 @@ async function createBackup(
 			)
 		},
 		seedExistingMessage(messageId: string) {
-			return mailboxRpc({ env: backupEnv, userId: ownerId }).upsertMessageGraph(
-				{
-					ownerId,
-					message: {
-						...message(ownerId),
-						id: messageId,
-						threadId: null,
-						rawMimeKey: emailRawMimeKey(ownerId, messageId),
-					},
+			return mailboxRpc({
+				env: backupEnv,
+				userId: ownerIdFromStored(ownerId),
+			}).upsertMessageGraph({
+				ownerId: ownerIdFromStored(ownerId),
+				message: {
+					...message(ownerId),
+					id: messageId,
+					threadId: null,
+					rawMimeKey: emailRawMimeKey(ownerIdFromStored(ownerId), messageId),
 				},
-			)
+			})
 		},
 	}
 }
@@ -359,7 +361,9 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 		}),
 	])
 
-	const drillOwnerId = `${mailboxImportDrillOwnerPrefix}${day}:${encodeURIComponent(ownerId)}`
+	const drillOwnerId = ownerIdFromStored(
+		`${mailboxImportDrillOwnerPrefix}${day}:${encodeURIComponent(ownerId)}`,
+	)
 	const scratch = backup.mailbox(drillOwnerId)
 	expect(await scratch.countMailbox()).toEqual(emptyCounts)
 	expect(await scratch.getMessage({ messageId: 'restore-message' })).toBeNull()
@@ -437,7 +441,9 @@ test('Mailbox importer drills into scratch objects, resumes, and fails closed', 
 			.countMailbox(),
 	).toEqual(emptyCounts)
 
-	const tombstoneOwner = `workers-import-tombstone-${crypto.randomUUID()}`
+	const tombstoneOwner = ownerIdFromStored(
+		`workers-import-tombstone-${crypto.randomUUID()}`,
+	)
 	const tombstone = await createBackup(tombstoneOwner, day)
 	await tombstone.mailbox().tombstoneMissingMessage({
 		ownerId: tombstoneOwner,

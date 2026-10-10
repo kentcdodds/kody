@@ -9,6 +9,7 @@ import {
 } from './realtime-session.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function createBinding(
 	overrides?: Partial<{
 		userId: string
@@ -20,7 +21,7 @@ function createBinding(
 ) {
 	return {
 		env,
-		userId: overrides?.userId ?? 'user-1',
+		userId: ownerIdFromStored(overrides?.userId ?? 'user-1'),
 		packageId: overrides?.packageId ?? 'package-1',
 		kodyId: overrides?.kodyId ?? 'example',
 		sourceId: overrides?.sourceId ?? 'source-1',
@@ -80,7 +81,9 @@ test('package realtime session DO lists empty sessions and is addressable as a d
 })
 
 test('package realtime connect upgrades through the real durable object stub and hands the request to the connect hook', async () => {
-	const binding = createBinding({ packageId: `package-${crypto.randomUUID()}` })
+	const binding = createBinding({
+		packageId: `package-${crypto.randomUUID()}`,
+	})
 	const hookPayloads: Array<{
 		event: string
 		facet: string

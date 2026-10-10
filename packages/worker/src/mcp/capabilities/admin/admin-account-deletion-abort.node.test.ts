@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import type * as AuditLog from '#worker/audit-log.ts'
@@ -78,7 +81,10 @@ function createAdminContext(
 test('adminAccountDeletionAbort clears D1 and UserMeter fences', async () => {
 	const { sqlite, db } = createCapabilityTestDb()
 	const meter = createInMemoryUserMeterEnv()
-	const meterStub = userMeterRpc({ env: meter.env, userId: stableUserId })
+	const meterStub = userMeterRpc({
+		env: meter.env,
+		userId: ownerIdFromStored(stableUserId),
+	})
 	const ctx = createAdminContext(db, meter.env)
 
 	await markAccountDeleting({

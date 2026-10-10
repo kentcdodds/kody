@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { buildUserAvatarUrl } from './public-urls.ts'
 import {
@@ -133,7 +134,7 @@ test('buildUserAvatarR2Key and parseUserAvatarCacheKey round-trip content hash s
 	] as const) {
 		expect(
 			buildUserAvatarR2Key({
-				stableUserId: 'stable-1',
+				stableUserId: ownerIdFromStored('stable-1'),
 				contentHash: 'abcdef',
 				contentType,
 			}),
@@ -201,7 +202,7 @@ test('saveUserAvatar removes an in-flight upload when deletion starts', async ()
 			USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
 		},
 		numericUserId: 1,
-		stableUserId: 'stable-1',
+		stableUserId: ownerIdFromStored('stable-1'),
 		bytes: createPngHeader(128, 128),
 		contentType: 'image/png',
 	})

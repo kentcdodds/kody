@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -52,7 +53,7 @@ const moduleCheckPath = '.__kody_repo_module_check__.ts'
 const bundleContext = {
 	env: {} as Env,
 	baseUrl: 'https://kody.dev',
-	userId: 'user-123',
+	userId: ownerIdFromStored('user-123'),
 }
 
 function onceJob(entry: string) {
@@ -778,7 +779,7 @@ test('runRepoChecks bundles npm-dependency packages and surfaces bundler failure
 	expect(mockModule.buildKodyImportableModuleBundle).toHaveBeenCalledWith(
 		expect.objectContaining({
 			entryPoint: 'src/index.ts',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			sourceFiles: {
 				'package.json': passing.get('package.json'),
 				'README.md': passing.get('README.md'),
@@ -788,7 +789,10 @@ test('runRepoChecks bundles npm-dependency packages and surfaces bundler failure
 		}),
 	)
 	expect(mockModule.buildKodyModuleBundle).toHaveBeenCalledWith(
-		expect.objectContaining({ entryPoint: 'src/index.ts', userId: 'user-123' }),
+		expect.objectContaining({
+			entryPoint: 'src/index.ts',
+			userId: ownerIdFromStored('user-123'),
+		}),
 	)
 
 	const failures = [
@@ -981,7 +985,7 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 	const resultPromise = runChecks(files, {
 		env,
 		baseUrl: '/',
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 	})
 
 	// Wait until typecheck and the first bundle chunks have started while the
@@ -1044,7 +1048,9 @@ test('heavy check phases run in throwaway isolates when the env has the bindings
 		(request) => request.phase === 'typecheck',
 	)
 	expect(typecheckRequests).toHaveLength(1)
-	expect(typecheckRequests[0]).toMatchObject({ userId: 'user-123' })
+	expect(typecheckRequests[0]).toMatchObject({
+		userId: ownerIdFromStored('user-123'),
+	})
 	for (const [name] of namespace.idFromName.mock.calls) {
 		expect(name).toContain('-user-123-')
 	}
@@ -1084,7 +1090,7 @@ test('an isolate reset during a check phase becomes a failed check, not a crash'
 		packageFiles(manifest('oversized-package'), {
 			'src/index.ts': `export default async function main() {\n\treturn 'ok'\n}\n`,
 		}),
-		{ env, baseUrl: '/', userId: 'user-123' },
+		{ env, baseUrl: '/', userId: ownerIdFromStored('user-123') },
 	)
 
 	expect(result.ok).toBe(false)

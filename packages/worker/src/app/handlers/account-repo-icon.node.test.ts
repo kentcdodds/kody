@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createAccountRepoIconHandler } from './account-repo-icon.ts'
 import type * as IdentityIconResponse from './identity-icon-response.ts'
@@ -35,7 +36,7 @@ vi.mock('./identity-icon-response.ts', async (importOriginal) => {
 
 const source = {
 	id: 'source-1',
-	user_id: 'user-1',
+	user_id: ownerIdFromStored('user-1'),
 	entity_kind: 'repo' as const,
 	entity_id: 'repo-1',
 	repo_id: 'repo-1',
@@ -56,11 +57,11 @@ function callHandler(iconCommit = 'idx-1') {
 
 test('repo identity icon serves the indexed commit for the owner', async () => {
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	mocks.getUserRepoById.mockResolvedValue({
 		id: 'repo-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'notes',
 	})
 	mocks.getEntitySourceByEntity.mockResolvedValue(source)
@@ -86,11 +87,11 @@ test('repo identity icon rejects guests and stale commits', async () => {
 	expect((await callHandler()).status).toBe(404)
 
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 	mocks.getUserRepoById.mockResolvedValue({
 		id: 'repo-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'notes',
 	})
 	mocks.getEntitySourceByEntity.mockResolvedValue(source)

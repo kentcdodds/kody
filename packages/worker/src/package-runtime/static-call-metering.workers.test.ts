@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -107,7 +110,7 @@ async function publishSource(
 	)
 	const source = {
 		id: sourceId,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		entity_kind: 'package' as const,
 		entity_id: packageId,
 		repo_id: `repo-${sourceId}`,

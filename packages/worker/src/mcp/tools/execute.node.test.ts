@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { type ContentBlock } from '@modelcontextprotocol/sdk/types.js'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, test, vi } from 'vitest'
@@ -389,7 +390,11 @@ test('execute tool serializes successes and errors, binds no packages helper too
 
 	const callerContext = {
 		baseUrl: 'https://example.com',
-		user: { userId: 'user-123', email: 'me@example.com', displayName: 'Me' },
+		user: {
+			userId: ownerIdFromStored('user-123'),
+			email: 'me@example.com',
+			displayName: 'Me',
+		},
 	}
 	const authenticatedHandler = await getExecuteHandler(callerContext)
 	moduleReturns({ ok: true })
@@ -609,7 +614,7 @@ test('execute tool nudges repeated raw-fetch hosts once per conversation', async
 	const handler = await getExecuteHandler(
 		{
 			baseUrl: 'https://example.com',
-			user: { userId: 'user-1', email: 'user@example.com' },
+			user: { userId: ownerIdFromStored('user-1'), email: 'user@example.com' },
 		},
 		{ state: agentState, setState },
 	)
@@ -688,7 +693,7 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 	const handler = await getExecuteHandler({
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-keyed-execute',
+			userId: ownerIdFromStored('user-keyed-execute'),
 			email: 'keyed@example.com',
 			displayName: 'Keyed',
 		},
@@ -787,7 +792,7 @@ test('execute tool replays finished keyed runs and reports in-progress without r
 test('execute tool claims a keyed run, passes the handle, and returns runId', async () => {
 	const claimedHandle = {
 		id: 'run-claimed-1',
-		userId: 'user-claim-execute',
+		userId: ownerIdFromStored('user-claim-execute'),
 		startedAt: '2026-07-28T00:00:00.000Z',
 		persistence: 'eager' as const,
 		context: { surface: 'execute' as const, idempotencyKey: 'claim-key-1' },
@@ -795,7 +800,7 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 	const handler = await getExecuteHandler({
 		baseUrl: 'https://example.com',
 		user: {
-			userId: 'user-claim-execute',
+			userId: ownerIdFromStored('user-claim-execute'),
 			email: 'claim@example.com',
 			displayName: 'Claim',
 		},
@@ -814,7 +819,7 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 	})
 	expect(mockModule.claimRunRecord).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-claim-execute',
+			userId: ownerIdFromStored('user-claim-execute'),
 			context: expect.objectContaining({
 				surface: 'execute',
 				idempotencyKey: 'claim-key-1',
@@ -977,7 +982,10 @@ test('execute invoke is omitted when the flag is off and mints the handwritten p
 	expect(mockModule.runModuleWithRegistry).not.toHaveBeenCalled()
 
 	const [, onConfig, onHandler] = await getExecuteRegistration(
-		{ baseUrl: 'https://example.com', user: { userId: 'user-1' } },
+		{
+			baseUrl: 'https://example.com',
+			user: { userId: ownerIdFromStored('user-1') },
+		},
 		{ invokeEnabled: true },
 	)
 	expect(onConfig.inputSchema).toHaveProperty('invoke')

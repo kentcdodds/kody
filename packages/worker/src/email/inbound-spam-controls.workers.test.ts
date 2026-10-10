@@ -14,6 +14,7 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 const platformDomain = 'inbox.kody.example.com'
 const systemDomain = 'kody.example.com'
@@ -71,7 +72,10 @@ async function seedVerifiedAccount(prefix: string) {
 }
 
 async function readUserDailyReceiveCount(userId: string) {
-	const result = await userMeterRpc({ env, userId }).read({
+	const result = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).read({
 		resource: 'email_receives_per_day',
 		day: new Date().toISOString().slice(0, 10),
 	})
@@ -129,7 +133,13 @@ async function addSenderRules(
 	>,
 ) {
 	for (const [kind, value, effect] of rules) {
-		await upsertEmailSenderRule({ db: env.APP_DB, userId, kind, value, effect })
+		await upsertEmailSenderRule({
+			db: env.APP_DB,
+			userId,
+			kind,
+			value,
+			effect,
+		})
 	}
 }
 
@@ -149,10 +159,15 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 	await handleInboundEmail(blocked, createInboundEnv())
 	expect(blocked.rejectedReason).toBe('Message rejected by recipient policy.')
 	expect(
-		await mailboxRpc({ env, userId }).listMessages({ limit: 10 }),
+		await mailboxRpc({ env, userId: ownerIdFromStored(userId) }).listMessages({
+			limit: 10,
+		}),
 	).toMatchObject({ messages: [] })
 	expect(await readUserDailyReceiveCount(userId)).toBe(0)
-	const rejectEvents = await mailboxRpc({ env, userId }).listDeliveryEvents({
+	const rejectEvents = await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).listDeliveryEvents({
 		limit: 10,
 	})
 	const rejectDetails = rejectEvents.map((event) => ({
@@ -188,7 +203,10 @@ test('user sender rules block before quota, quarantine/allow, and fall back to a
 	const clean = mail('stranger@example.net', address, 'No auth header')
 	await handleInboundEmail(clean, createInboundEnv())
 
-	const { messages } = await mailboxRpc({ env, userId }).listMessages({
+	const { messages } = await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).listMessages({
 		limit: 20,
 	})
 	const bySubject = Object.fromEntries(

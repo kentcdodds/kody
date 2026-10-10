@@ -1,7 +1,9 @@
+import { type OwnerId } from '../owner-person-ids.ts'
+
 export type ArchivedJobArtifactRecord = {
 	id: string
 	jobId: string
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	publishedCommit: string
 	storageId: string
@@ -84,7 +86,7 @@ export async function listArchivedJobArtifactsDueBefore(
 	return (results ?? []).map((row) => ({
 		id: String(row['id']),
 		jobId: String(row['job_id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		sourceId: String(row['source_id']),
 		publishedCommit: String(row['published_commit']),
 		storageId: String(row['storage_id']),
@@ -117,7 +119,7 @@ export async function listArchivedJobArtifactsForUser(
 	return (results ?? []).map((row) => ({
 		id: String(row['id']),
 		jobId: String(row['job_id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		sourceId: String(row['source_id']),
 		publishedCommit: String(row['published_commit']),
 		storageId: String(row['storage_id']),

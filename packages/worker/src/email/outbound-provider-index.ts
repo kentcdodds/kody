@@ -1,3 +1,5 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+
 /**
  * Derived D1 reverse index: outbound provider message id → owning message.
  * Mailbox is authoritative; this table exists only so contextless provider
@@ -9,7 +11,7 @@ export const emailOutboundProviderCloudflare = 'cloudflare-email'
 export type EmailOutboundProviderIndexRow = {
 	provider: string
 	providerMessageId: string
-	userId: string
+	userId: OwnerId
 	messageId: string
 	inboxId: string | null
 	createdAt: string
@@ -41,7 +43,7 @@ function mapIndexRow(
 	return {
 		provider: String(row['provider']),
 		providerMessageId: String(row['provider_message_id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		messageId: String(row['message_id']),
 		inboxId: row['inbox_id'] == null ? null : String(row['inbox_id']),
 		createdAt: String(row['created_at']),
@@ -72,7 +74,7 @@ export async function upsertOutboundProviderIndexRow(input: {
 	db: D1Database
 	provider?: string
 	providerMessageId: string
-	userId: string
+	userId: OwnerId
 	messageId: string
 	inboxId: string | null
 	now: string

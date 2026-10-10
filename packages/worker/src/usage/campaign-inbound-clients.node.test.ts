@@ -1,8 +1,11 @@
 import { expect, test } from 'vitest'
 import { countDistinctInboundClientIds } from './campaign-inbound-clients.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 test('distinct inbound clientIds page every grant and do not treat grant count as clients', async () => {
-	expect(await countDistinctInboundClientIds(undefined, 'user-1')).toEqual({
+	expect(
+		await countDistinctInboundClientIds(undefined, ownerIdFromStored('user-1')),
+	).toEqual({
 		uniqueClientCount: 0,
 		listingFailed: false,
 	})
@@ -32,7 +35,9 @@ test('distinct inbound clientIds page every grant and do not treat grant count a
 		},
 	}
 
-	expect(await countDistinctInboundClientIds(helpers, 'user-1')).toEqual({
+	expect(
+		await countDistinctInboundClientIds(helpers, ownerIdFromStored('user-1')),
+	).toEqual({
 		uniqueClientCount: 2,
 		listingFailed: false,
 	})
@@ -43,7 +48,9 @@ test('distinct inbound clientIds page every grant and do not treat grant count a
 			throw new Error('kv down')
 		},
 	}
-	expect(await countDistinctInboundClientIds(failing, 'user-1')).toEqual({
+	expect(
+		await countDistinctInboundClientIds(failing, ownerIdFromStored('user-1')),
+	).toEqual({
 		uniqueClientCount: 0,
 		listingFailed: true,
 	})

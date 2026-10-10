@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import {
@@ -270,7 +271,7 @@ test('recordMcpProtocolEvent writes a data point, no-ops without binding, and sw
 		clientName: 'claude-ai',
 		clientVersion: '0.1.0',
 		packageIdentityParam: 'kody_id',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		requestHost: 'kody.codes',
 	})
 	expect(writeDataPoint).toHaveBeenCalledExactlyOnceWith({

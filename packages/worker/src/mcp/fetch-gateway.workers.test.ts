@@ -14,11 +14,14 @@ import { createWaitUntilDrain } from '#worker/test-support/user-meter.ts'
 import { seedAccount } from '#worker/test-support/workers-seed.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 async function seedOutboundFetchCounter(userId: string, count: number) {
 	const day = utcDayKey()
 	const updatedAt = new Date().toISOString()
 	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
+		env.USER_METER.idFromName(
+			userMeterDurableObjectName(ownerIdFromStored(userId)),
+		),
 	)
 	await runInDurableObject(stub, async (instance: UserMeter, state) => {
 		expect(instance).toBeInstanceOf(UserMeter)
@@ -52,7 +55,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	})
 	const props = {
 		baseUrl: 'https://kody.example.com',
-		userId,
+		userId: ownerIdFromStored(userId),
 		email,
 		request: null,
 		storageContext: null,
@@ -71,7 +74,7 @@ test('gateway fetches consume the daily outbound-fetch entitlement and deny over
 	expect(await allowed.text()).toBe('ok')
 	await drain.drain()
 	expect(
-		await userMeterRpc({ env, userId }).read({
+		await userMeterRpc({ env, userId: ownerIdFromStored(userId) }).read({
 			resource: 'outbound_fetches_per_day',
 			day: utcDayKey(),
 		}),

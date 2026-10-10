@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { filterCapabilityRegistryMcpServersForCaller } from '#mcp/capabilities/access-control.ts'
 import { getCapabilityRegistryForContext } from '#mcp/capabilities/registry.ts'
@@ -23,7 +24,7 @@ import {
 } from './search-types.ts'
 
 export async function loadOptionalSearchRows(input: {
-	userId: string | null
+	userId: OwnerId | null
 	loadPackages: () => Promise<LoadedPackageRows>
 	loadUserSecrets: () => Promise<Array<SecretSearchRow>>
 	loadUserValues: () => Promise<Array<ValueMetadata>>
@@ -66,14 +67,14 @@ export async function loadOptionalSearchRows(input: {
 export async function loadSearchRowsAndRegistry(input: {
 	env: Env
 	callerContext: McpCallerContext
-	userId: string | null
+	userId: OwnerId | null
 	includeHiddenPackages?: boolean
 }) {
 	const { request } = input.callerContext
 	const access = request
 		? await computeEffectivePermissions({ env: input.env, request })
 		: null
-	const reveal = (pkg: { id: string; userId: string }) =>
+	const reveal = (pkg: { id: string; userId: OwnerId }) =>
 		!access || canSeeResource(access, packageResource(pkg))
 	return await runWithRequestPermissions(
 		{ env: input.env, request },

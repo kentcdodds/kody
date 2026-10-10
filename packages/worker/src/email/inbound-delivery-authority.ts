@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildEntitlementUpgradeHint,
 	EntitlementLimitError,
@@ -46,7 +47,7 @@ export type UserInboundDeliveryAuthorityEnv = {
 
 export type CreateUserInboundDeliveryAuthorityInput = {
 	env: UserInboundDeliveryAuthorityEnv
-	userId: string
+	userId: OwnerId
 }
 
 export type UserInboundDeliveryChargeInput = {

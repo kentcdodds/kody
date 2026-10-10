@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isSystemEmailOwner } from './email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
@@ -28,7 +29,7 @@ export type MailboxInternalReadEnv = MailboxEnv & {
 	APP_DB: D1Database
 }
 
-function assertUserOwner(ownerId: string) {
+function assertUserOwner(ownerId: OwnerId) {
 	if (isSystemEmailOwner(ownerId)) {
 		throw new Error('system:email has no Mailbox Durable Object.')
 	}
@@ -36,7 +37,7 @@ function assertUserOwner(ownerId: string) {
 
 export async function getInternalEmailMessageById(input: {
 	env: MailboxInternalReadEnv
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 }): Promise<EmailMessageRecord | null> {
 	if (isSystemEmailOwner(input.ownerId)) {
@@ -56,7 +57,7 @@ export async function getInternalEmailMessageById(input: {
 
 export async function listInternalEmailAttachmentsForMessage(input: {
 	env: MailboxInternalReadEnv
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 }): Promise<Array<EmailAttachmentRecord>> {
 	if (isSystemEmailOwner(input.ownerId)) {
@@ -74,7 +75,7 @@ export async function listInternalEmailAttachmentsForMessage(input: {
 
 export async function countInternalEmailMessages(input: {
 	env: MailboxInternalReadEnv
-	ownerId: string
+	ownerId: OwnerId
 }): Promise<number> {
 	if (isSystemEmailOwner(input.ownerId)) {
 		return await countInternalSystemEmailMessages({ env: input.env })
@@ -84,7 +85,7 @@ export async function countInternalEmailMessages(input: {
 
 export async function countInternalUserEmailMessages(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	/** Optional count filters (direction, classification, ...). */
 	filters?: MailboxCountMessagesInput
 }): Promise<number> {
@@ -106,7 +107,7 @@ export async function countInternalSystemEmailMessages(input: {
 
 export async function exportInternalUserMailbox(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	pageSize?: number
 	startAfter?: string | null
 }): Promise<MailboxExportResult> {
@@ -122,7 +123,7 @@ export async function exportInternalUserMailbox(input: {
 
 export async function countInternalUserMailboxRows(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 }): Promise<MailboxCountResult> {
 	assertUserOwner(input.ownerId)
 	return await mailboxRpc({
@@ -133,7 +134,7 @@ export async function countInternalUserMailboxRows(input: {
 
 export async function listInternalUserEmailBlobReferences(input: {
 	env: MailboxEnv
-	ownerId: string
+	ownerId: OwnerId
 	pageSize?: number
 	startAfter?: string | null
 }): Promise<MailboxBlobReferencePage> {

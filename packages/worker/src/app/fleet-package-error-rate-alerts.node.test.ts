@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
 import { fleetPackageErrorRateKvKey } from '#worker/usage/fleet-package-error-rate.ts'
@@ -169,13 +170,13 @@ test('refreshFleetPackageErrorRateAndMaybeAlert names a one-account concentratio
 		async (input: { query: string }) => {
 			if (input.query.includes('GROUP BY user_id, entity_id')) {
 				return Object.keys(kodyIdsByPackageId).map((entityId, index) => ({
-					user_id: 'jett-user',
+					user_id: ownerIdFromStored('jett-user'),
 					entity_id: entityId,
 					error_count: [40, 30, 20][index],
 				}))
 			}
 			if (input.query.includes('blob1 AS user_id')) {
-				return [{ user_id: 'jett-user', error_count: 16 }]
+				return [{ user_id: ownerIdFromStored('jett-user'), error_count: 16 }]
 			}
 			return elevatedDayRows(input.query)
 		},

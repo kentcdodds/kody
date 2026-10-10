@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	createStableDynamicWorkerId,
@@ -44,10 +45,10 @@ test('createStableDynamicWorkerId is stable for the same modules, user, and stor
 	// Same modules + user + storage mint one id. Evaluate-time params and
 	// packageContext are not hash inputs; they must not appear in `modules`.
 	expect(await mintId()).toBe(first)
-	expect(await mintId({ userId: 'user-1' })).toBe(first)
+	expect(await mintId({ userId: ownerIdFromStored('user-1') })).toBe(first)
 
 	const variants = {
-		otherUser: await mintId({ userId: 'user-2' }),
+		otherUser: await mintId({ userId: ownerIdFromStored('user-2') }),
 		otherStorage: await mintId({
 			storageContext: { ...storageContext, sessionId: 'session-2' },
 		}),

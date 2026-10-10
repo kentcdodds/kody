@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const sentryMock = vi.hoisted(() => ({
@@ -22,7 +23,7 @@ test('applyDynamicWorkflowSentryScope tags package and inline workflows', () => 
 		instanceId: 'wf-instance-1',
 		payload: {
 			sourceType: 'package',
-			userId: 'user-stable-1',
+			userId: ownerIdFromStored('user-stable-1'),
 			packageId: 'pkg-1',
 			kodyId: 'demo-package',
 			sourceId: 'source-1',
@@ -63,7 +64,7 @@ test('applyDynamicWorkflowSentryScope tags package and inline workflows', () => 
 		instanceId: 'wf-inline-1',
 		payload: {
 			sourceType: 'inline',
-			userId: 'user-stable-2',
+			userId: ownerIdFromStored('user-stable-2'),
 			packageContext: null,
 			workflowName: 'ad-hoc',
 			code: 'export default async () => 1',

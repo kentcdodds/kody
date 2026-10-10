@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -6,7 +7,7 @@ import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.t
 import { consumeSearchRateLimit } from './search-rate-limit.ts'
 
 const migrationsDirectory = new URL('../migrations/', import.meta.url)
-const stableUserId = 'ab'.repeat(32)
+const stableUserId = ownerIdFromStored('ab').repeat(32)
 
 test('back-to-back searches resolve the rate-limit plan from the hot-path cache', async () => {
 	const sqlite = new DatabaseSync(':memory:')

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { emailRawMimeKey } from './blob-keys.ts'
 import {
 	createUserInboundDeliveryAuthority,
@@ -11,7 +12,7 @@ const staleBatchSize = 20
 
 async function recoverCommittedDelivery(input: {
 	env: UserInboundDeliveryAuthorityEnv & { EMAIL_BLOBS: R2Bucket }
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	now: Date
 }) {
@@ -67,7 +68,7 @@ async function recoverCommittedDelivery(input: {
 
 export async function reconcileUserStaleInboundDeliveries(input: {
 	env: UserInboundDeliveryAuthorityEnv & { EMAIL_BLOBS: R2Bucket }
-	userId: string
+	userId: OwnerId
 	now?: Date
 	deadlineMs?: number
 }) {
@@ -166,7 +167,7 @@ export async function reconcileUserStaleInboundDeliveries(input: {
 
 export async function pruneUserExpiredInboundDedupePointers(input: {
 	env: UserInboundDeliveryAuthorityEnv
-	userId: string
+	userId: OwnerId
 	now?: Date
 	limit?: number
 }) {

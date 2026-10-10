@@ -1,6 +1,10 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { silenceExpectedConsoleWarns } from '#worker/test-support/console-spies.ts'
 import { RunLog } from './run-log-do.ts'
 import { seedRunLogMeta } from './run-log-meta-test-seed.ts'
@@ -21,8 +25,8 @@ import {
 	type RunRecordContext,
 } from './types.ts'
 
-function uniqueUserId(label: string) {
-	return `invocation-ledger-${label}-${crypto.randomUUID()}`
+function uniqueUserId(label: string): OwnerId {
+	return ownerIdFromStored(`invocation-ledger-${label}-${crypto.randomUUID()}`)
 }
 
 function runLogStub(userId: string) {
@@ -79,7 +83,7 @@ function claimRaw(
 ) {
 	return claimPackageInvocationRecord({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		context,
 		invocation: claimInput({ idempotencyKey, ...invocation }),
 		staleBefore: freshStaleBefore(),
@@ -101,7 +105,7 @@ function finish(
 ) {
 	return finishPackageInvocationRecord({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		handle: claimed.handle,
 		invocationId: claimed.invocationId,
 		claimUpdatedAt: claimed.claimUpdatedAt,
@@ -123,13 +127,13 @@ const failedOutcome = (message: string) =>
 function getLedger(userId: string, idempotencyKey: string) {
 	return getPackageInvocationRecord({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		key: ledgerKey({ idempotencyKey }),
 	})
 }
 
 function getRun(userId: string, runId: string) {
-	return getRunRecord({ env, userId, runId })
+	return getRunRecord({ env, userId: ownerIdFromStored(userId), runId })
 }
 
 async function sqlExec(

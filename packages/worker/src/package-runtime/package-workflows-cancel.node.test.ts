@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestLineage } from '#worker/test-support/request-context.ts'
 import { type WorkflowProjectionUpsertInput } from '#worker/run-records/service.ts'
@@ -146,7 +147,7 @@ function createCancelTestEnv() {
 		) =>
 			createDynamicCallableWorkflow({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				lineage: sessionRequestLineage('user-1'),
 				packageContext: null,
 				body: {
@@ -156,11 +157,15 @@ function createCancelTestEnv() {
 				},
 			}),
 		cancel: (workflowRunId: string, userId = 'user-1') =>
-			cancelWorkflowRunForUser({ env, userId, workflowRunId }),
+			cancelWorkflowRunForUser({
+				env,
+				userId: ownerIdFromStored(userId),
+				workflowRunId,
+			}),
 		seedProjection: (id: string, idempotencyKey: string, status: string) =>
 			runRecordMocks.upsertWorkflowProjection({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				projection: {
 					id,
 					bindingName: dynamicCallableWorkflowsBindingName,
@@ -203,7 +208,11 @@ test('cancelWorkflowRunForUser cancels a queued run and is idempotent', async ()
 		bindingName: dynamicCallableWorkflowsBindingName,
 	})
 	expect(
-		await listWorkflowRunsForUser({ env, userId: 'user-1', limit: 10 }),
+		await listWorkflowRunsForUser({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			limit: 10,
+		}),
 	).toEqual([expect.objectContaining({ id: created.id, status: 'cancelled' })])
 
 	expect(await cancel(created.id)).toMatchObject({
@@ -297,7 +306,7 @@ test('cancel projection loses to a concurrent complete write', async () => {
 			).toISOString()
 			await runRecordMocks.upsertWorkflowProjection({
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				projection: {
 					...existing,
 					status: 'complete',
@@ -364,7 +373,7 @@ test('cancelActiveWorkflowRunsForUser terminates every active run for one user o
 	await seedProjection('already-complete', 'delete-complete', 'complete')
 	await runRecordMocks.upsertWorkflowProjection({
 		env,
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		projection: {
 			id: 'other-user-queued',
 			bindingName: dynamicCallableWorkflowsBindingName,
@@ -376,9 +385,12 @@ test('cancelActiveWorkflowRunsForUser terminates every active run for one user o
 		},
 	})
 
-	expect(await cancelActiveWorkflowRunsForUser({ env, userId: 'user-1' })).toBe(
-		2,
-	)
+	expect(
+		await cancelActiveWorkflowRunsForUser({
+			env,
+			userId: ownerIdFromStored('user-1'),
+		}),
+	).toBe(2)
 	expect(binding.terminateCalls).toEqual([queued.id])
 	expect(findRun(queued.id)?.status).toBe('cancelled')
 	expect(findRun('retained-running')?.status).toBe('cancelled')

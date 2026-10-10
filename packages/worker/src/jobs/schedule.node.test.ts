@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	computeNextRunAt,
@@ -102,7 +103,7 @@ test('expires_at helpers treat UTC expiry as a schedule gate separate from enabl
 	const base: JobRecord = {
 		version: 1,
 		id: 'job-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'Expiring job',
 		sourceId: 'source-1',
 		publishedCommit: null,

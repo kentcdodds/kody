@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type CommunityListingWithAggregates } from '#worker/community/types.ts'
 import type * as IconFitModule from '#worker/community/icon-fit.ts'
@@ -40,7 +41,7 @@ vi.mock('#worker/community/og-image.ts', () => ({
 
 const listing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-1',
+	ownerUserId: ownerIdFromStored('owner-1'),
 	packageId: 'package-1',
 	sourceId: 'source-1',
 	kodyId: 'github-triage',

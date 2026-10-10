@@ -9,6 +9,7 @@ import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 type UserRow = {
 	id: number
 	username: string
@@ -55,7 +56,7 @@ function createUsageRepoSessionRow(
 	const id = `usage-session-${index}`
 	return {
 		id,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		source_id: `source-${index}`,
 		source_repo_id: `repo-${index}`,
 		session_branch: `sessions/${id}`,

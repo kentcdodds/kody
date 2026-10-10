@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -58,7 +61,7 @@ function createTenant(label: string) {
 		}) {
 			const handle: RunRecordHandle = {
 				id: input.id,
-				userId,
+				userId: ownerIdFromStored(userId),
 				startedAt: new Date(baseMs + input.offsetMs).toISOString(),
 				persistence: 'eager',
 				context: { surface: 'job', name: 'example-job', ...input.context },
@@ -135,7 +138,7 @@ test(
 		const pending: Array<Promise<unknown>> = []
 		beginRunRecord({
 			env,
-			userId: owner.userId,
+			userId: ownerIdFromStored(owner.userId),
 			context: {
 				surface: 'workflow',
 				workflowId: 'wf-running',
@@ -433,7 +436,10 @@ test(
 			},
 		})
 
-		const listed = await owner.list({ surface: 'execute', error_triage: 'all' })
+		const listed = await owner.list({
+			surface: 'execute',
+			error_triage: 'all',
+		})
 		expect(listed.runs).toEqual([
 			expect.objectContaining({
 				id: 'run-execute-attr',

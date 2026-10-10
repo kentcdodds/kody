@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { systemEmailOwnerId } from '#worker/email/email-owner.ts'
 import { mailboxRpc, type MailboxEnv } from '#worker/email/mailbox-client.ts'
 import {
@@ -123,7 +124,7 @@ export async function listUsersForAdminMailboxRetention(input: {
 	db: D1Database
 	limit: number
 	startAfterUserId?: string | null
-}): Promise<Array<{ userId: string }>> {
+}): Promise<Array<{ userId: OwnerId }>> {
 	const startAfter = input.startAfterUserId ?? null
 	const result = startAfter
 		? await input.db
@@ -137,7 +138,7 @@ export async function listUsersForAdminMailboxRetention(input: {
 					ORDER BY u.stable_user_id ASC LIMIT ?`,
 				)
 				.bind(systemEmailOwnerId, startAfter, input.limit)
-				.all<{ userId: string }>()
+				.all<{ userId: OwnerId }>()
 		: await input.db
 				.prepare(
 					`SELECT u.stable_user_id AS userId
@@ -148,7 +149,7 @@ export async function listUsersForAdminMailboxRetention(input: {
 					ORDER BY u.stable_user_id ASC LIMIT ?`,
 				)
 				.bind(systemEmailOwnerId, input.limit)
-				.all<{ userId: string }>()
+				.all<{ userId: OwnerId }>()
 	return result.results ?? []
 }
 
@@ -163,11 +164,11 @@ type OwnerRetentionOutcome =
 	| { status: 'failed' }
 
 async function runOwnersWithBudget(input: {
-	owners: ReadonlyArray<{ userId: string }>
+	owners: ReadonlyArray<{ userId: OwnerId }>
 	concurrency: number
 	deadlineMs: number
 	nowMs: () => number
-	runOwner: (userId: string) => Promise<OwnerRetentionOutcome>
+	runOwner: (userId: OwnerId) => Promise<OwnerRetentionOutcome>
 }): Promise<{
 	outcomes: Array<OwnerRetentionOutcome>
 	lastAttemptedUserId: string | null
@@ -393,7 +394,7 @@ export async function runAdminMailboxMaintenanceRetention(input: {
  * `mcp-event` and out of Sentry.
  */
 export class AdminMailboxMessageNotFoundError extends Error {
-	constructor(input: { stableUserId: string; messageId: string }) {
+	constructor(input: { stableUserId: OwnerId; messageId: string }) {
 		super(
 			`Email message not found for stable_user_id=${input.stableUserId} message_id=${input.messageId}`,
 		)
@@ -410,7 +411,7 @@ export class AdminMailboxMessageNotFoundError extends Error {
  */
 export async function runAdminMailboxMaintenanceDeleteMessage(input: {
 	env: AdminMailboxMaintenanceEnv
-	stableUserId: string
+	stableUserId: OwnerId
 	messageId: string
 }): Promise<AdminMailboxMaintenanceDeleteMessageResult> {
 	const db = input.env.APP_DB

@@ -6,6 +6,7 @@ import { baseMessage } from './mailbox-test-helpers.ts'
 import { upsertOutboundProviderIndexRow } from './outbound-provider-index.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 function captureD1Sql(db: D1Database) {
 	const sql: Array<string> = []
 	return {
@@ -57,10 +58,10 @@ function providerEvent(input: {
 
 test('provider lifecycle resolves the thin D1 index and mutates only Mailbox', async () => {
 	await ensureEmailTestSchema(env.APP_DB)
-	const userId = `provider-user-${crypto.randomUUID()}`
+	const userId = ownerIdFromStored(`provider-user-${crypto.randomUUID()}`)
 	const providerMessageId = `provider-${crypto.randomUUID()}`
 	const createdAt = '2026-08-03T01:00:00.000Z'
-	const mailbox = mailboxRpc({ env, userId })
+	const mailbox = mailboxRpc({ env, userId: userId })
 	const message = baseMessage(userId, {
 		direction: 'outbound',
 		inboxId: null,

@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -77,7 +78,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 
 			const requested = await resolveRepoSourceReference({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				ownerScope:
 					args.target?.kind === 'package' && 'kody_id' in args.target
 						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
@@ -98,7 +99,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 				args.conversation_id == null
 					? null
 					: await getActiveRepoSessionByConversation(ctx.env, {
-							userId: user.userId,
+							userId: personalOrgId(user.userId),
 							conversationId: args.conversation_id,
 						})
 			if (existingSession) {
@@ -112,7 +113,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					existingSession.id,
 				).getSessionInfo({
 					sessionId: existingSession.id,
-					userId: user.userId,
+					userId: personalOrgId(user.userId),
 				})
 				return {
 					...session,
@@ -122,10 +123,11 @@ export const repoOpenSessionCapability = defineDomainCapability(
 
 			await assertWithinEntitlement({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				email: user.email,
 				resource: 'repo_sessions',
-				getCurrent: () => countActiveRepoSessions(ctx.env, user.userId),
+				getCurrent: () =>
+					countActiveRepoSessions(ctx.env, personalOrgId(user.userId)),
 			})
 
 			// Opaque Cloudflare platform internals (KODY-CLOUDFLARE-4H) are brief
@@ -140,7 +142,7 @@ export const repoOpenSessionCapability = defineDomainCapability(
 					session = await repoSessionRpc(ctx.env, sessionId).openSession({
 						sessionId,
 						sourceId: requested.source.id,
-						userId: user.userId,
+						userId: personalOrgId(user.userId),
 						baseUrl: ctx.callerContext.baseUrl,
 						conversationId: args.conversation_id ?? null,
 						sourceRoot: args.source_root ?? requested.source.source_root,

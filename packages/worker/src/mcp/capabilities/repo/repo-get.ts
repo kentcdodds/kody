@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -57,7 +58,7 @@ export const repoGetCapability = defineDomainCapability(
 			const user = requireMcpUser(ctx.callerContext)
 			const { userRepo, source } = await resolveOwnedUserRepo({
 				db: ctx.env.APP_DB,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				args,
 			})
 			const head = await resolveArtifactSourceHead(ctx.env, source.repo_id)

@@ -5,6 +5,7 @@
  * applying job dispositions. Live listing paths stay filtered elsewhere.
  */
 
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import {
 	listUserOAuthGrants,
@@ -55,7 +56,7 @@ function jobCreatedByUserId(row: {
 
 async function listMemberCreatedJobs(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 }): Promise<Array<{ id: string; name: string }>> {
 	const jobsStore = jobsData(input.env)
@@ -96,7 +97,7 @@ function oauthGrantOrgId(
 export async function revokeOAuthGrantsForOrg(input: {
 	helpers: OAuthGrantHelpers
 	memberUserId: string
-	orgId: string
+	orgId: OwnerId
 }): Promise<number> {
 	const grants = await listUserOAuthGrants(input.helpers, input.memberUserId)
 	const matches = grants.filter(
@@ -113,7 +114,7 @@ export async function revokeOAuthGrantsForOrg(input: {
 export async function previewMemberOffboarding(input: {
 	appDb: D1Database
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 }): Promise<OffboardingPreview> {
 	const jobs = await listMemberCreatedJobs({
@@ -149,7 +150,7 @@ export async function previewMemberOffboarding(input: {
 
 async function softDeleteMembershipGraph(input: {
 	appDb: D1Database
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 	nowIso: string
 	/**
@@ -252,7 +253,7 @@ async function softDeleteMembershipGraph(input: {
 
 async function disconnectOwnLoginIntegrations(input: {
 	appDb: D1Database
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 	nowIso: string
 }): Promise<{
@@ -312,7 +313,7 @@ async function disconnectOwnLoginIntegrations(input: {
 
 async function revokeOrgBoundCredentials(input: {
 	appDb: D1Database
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 	nowIso: string
 	oauthHelpers: OAuthGrantHelpers | null
@@ -366,7 +367,7 @@ async function revokeOrgBoundCredentials(input: {
 
 async function applyJobDispositions(input: {
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 	choices: Array<OffboardingJobChoice>
 	nowIso: string
@@ -433,7 +434,7 @@ async function applyJobDispositions(input: {
 export async function offboardOrgMember(input: {
 	appDb: D1Database
 	env: Env
-	orgId: string
+	orgId: OwnerId
 	memberUserId: string
 	/** When true, jobs keep running and Owners are expected to decide later. */
 	memberLeftVoluntarily: boolean

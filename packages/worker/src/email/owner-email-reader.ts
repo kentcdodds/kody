@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { mailboxRpc, type MailboxEnv } from './mailbox-client.ts'
 import {
 	mailboxAttachmentToEmailAttachmentRecord,
@@ -22,7 +23,7 @@ export type OwnerEmailReaderEnv = MailboxEnv & {
 
 type OwnerReadBase = {
 	env: OwnerEmailReaderEnv
-	ownerId: string
+	ownerId: OwnerId
 }
 
 function ownerMailbox(input: OwnerReadBase) {

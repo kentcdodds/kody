@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import type * as InfrastructureCodes from '#worker/package-invocations/infrastructure-codes.ts'
@@ -134,7 +135,7 @@ function mockPackage(
 ) {
 	mocks.resolveSavedPackage.mockResolvedValue({
 		id: 'pkg-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 		kodyId: 'demo',
 		name: '@user/demo',
@@ -150,7 +151,7 @@ function mockPackage(
 			? null
 			: {
 					id: 'endpoint-1',
-					userId: 'user-1',
+					userId: ownerIdFromStored('user-1'),
 					packageId: 'pkg-1',
 					webhookName: 'hook',
 					enabled: true,
@@ -166,7 +167,7 @@ function mockPackage(
 function dispatch(input: Partial<DispatchInput>) {
 	return dispatchSyntheticWebhookForUser({
 		env: { APP_DB: {} } as Env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		kodyId: 'demo',
 		webhookName: 'hook',
@@ -252,7 +253,10 @@ test('dispatchSyntheticWebhookForUser rejects unminted, mismatched, foreign, and
 
 	mocks.resolveSavedPackage.mockResolvedValue(null)
 	await expect(
-		dispatch({ userId: 'other-user', request: { json: {} } }),
+		dispatch({
+			userId: ownerIdFromStored('other-user'),
+			request: { json: {} },
+		}),
 	).rejects.toThrow(/not found for this user/)
 
 	mockPackage({ inputMode: 'request' })

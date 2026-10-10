@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -85,7 +88,7 @@ test('email capabilities require a signed-in user and return attachment content 
 
 	expect(mockModule.getOwnerEmailAttachmentById).toHaveBeenCalledWith({
 		env,
-		ownerId: 'user-1',
+		ownerId: ownerIdFromStored('user-1'),
 		blobs: env.EMAIL_BLOBS,
 		attachmentId: 'attachment-1',
 	})

@@ -6,6 +6,7 @@ import {
 import { reindexMemoryVectors } from './memory-reindex.ts'
 import { type McpMemoryRow } from './types.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const mockModule = vi.hoisted(() => ({
 	embedTextForVectorize: vi.fn(),
 	embedTextsForVectorize: vi.fn(),
@@ -41,7 +42,7 @@ const exportInProgress = () =>
 function buildMemoryRow(id: string): McpMemoryRow {
 	return {
 		id,
-		user_id: `user-${id}`,
+		user_id: ownerIdFromStored(`user-${id}`),
 		category: null,
 		status: 'active',
 		subject: `Subject ${id}`,

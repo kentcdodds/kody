@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	BudgetLimitError,
@@ -196,7 +197,10 @@ async function readMeterDailyCount(
 	resource: DailyEntitlementResource,
 	now: Date,
 ) {
-	const result = await userMeterRpc({ env, userId }).read({
+	const result = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).read({
 		resource,
 		day: utcDayKey(now),
 		now: now.toISOString(),
@@ -391,7 +395,9 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 		],
 	})
 	for (const email of [null, undefined, plannedEmail]) {
-		expect(await getUserPlan(db, { userId: 'user-1', email })).toBe('free')
+		expect(
+			await getUserPlan(db, { userId: ownerIdFromStored('user-1'), email }),
+		).toBe('free')
 	}
 	expect(queries).toEqual([])
 
@@ -464,7 +470,10 @@ test('getCachedUserPlan caches per db binding and never caches failures', async 
 	// stable id. Invalid ids still short-circuit without touching D1.
 	expect(await getCachedUserPlan(db, { userId, email: null })).toBe('free')
 	expect(
-		await getCachedUserPlan(db, { userId: 'user-1', email: plannedEmail }),
+		await getCachedUserPlan(db, {
+			userId: ownerIdFromStored('user-1'),
+			email: plannedEmail,
+		}),
 	).toBe('free')
 
 	// Failures are not pinned for the TTL: the next call retries D1.
@@ -504,7 +513,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 	await expect(
 		assertWithinEntitlement({
 			db: missingReader.db,
-			userId: missingReader.userId,
+			userId: ownerIdFromStored(missingReader.userId),
 			email: plannedEmail,
 			resource: 'scheduled_jobs',
 		}),
@@ -521,7 +530,7 @@ test('assertWithinEntitlement passes under the limit, throws at it, and enforces
 		const check = (current: number) =>
 			assertWithinEntitlement({
 				db,
-				userId,
+				userId: ownerIdFromStored(userId),
 				email: plannedEmail,
 				resource: 'scheduled_jobs',
 				getCurrent: async () => current,
@@ -548,7 +557,7 @@ test('assertWithinEntitlement reuses cached plan within TTL while still enforcin
 	const check = () =>
 		assertWithinEntitlement({
 			db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			resource: 'scheduled_jobs',
 			getCurrent: async () => {
@@ -586,7 +595,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits for unresolved
 	const freeDenial = await expectLimitError(
 		assertWithinEntitlement({
 			db: createEntitlementsTestDb().db,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			email: null,
 			resource: 'concurrent_workflows',
 			getCurrent: async () => freeLimit,
@@ -601,7 +610,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits for unresolved
 	const { db, userId } = await createPlannedUserDb('max')
 	await assertWithinEntitlement({
 		db,
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: '',
 		resource: 'concurrent_workflows',
 		getCurrent: async () => freeLimit,
@@ -609,7 +618,7 @@ test('assertWithinEntitlement enforces concurrent workflow limits for unresolved
 	const maxDenial = await expectLimitError(
 		assertWithinEntitlement({
 			db: (await createPlannedUserDb('max')).db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: null,
 			resource: 'concurrent_workflows',
 			getCurrent: async () => maxLimit,
@@ -633,7 +642,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 		consumeDailyEntitlement({
 			db,
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			resource,
 			now: at,
@@ -646,7 +655,7 @@ test('plan user daily entitlements increment, enforce at limit, and reset on a n
 	await expect(
 		assertWithinEntitlement({
 			db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			resource,
 			now,
@@ -707,7 +716,7 @@ test('public execute and outbound enforce daily and weekly windows; legacy and m
 		consumeDailyEntitlement({
 			db,
 			env: meter.env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email,
 			resource,
 			now: wednesday,
@@ -766,7 +775,7 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 			await consumeDailyEntitlement({
 				db,
 				env,
-				userId,
+				userId: ownerIdFromStored(userId),
 				email: null,
 				resource,
 				now,
@@ -774,7 +783,12 @@ test('refundDailyEntitlement decrements the user/day counter and floors at zero'
 		}
 	}
 	const refund = () =>
-		refundDailyEntitlement({ env, userId: 'user-1', resource, now })
+		refundDailyEntitlement({
+			env,
+			userId: ownerIdFromStored('user-1'),
+			resource,
+			now,
+		})
 
 	await refund()
 	expect(await readMeterDailyCount(env, 'user-1', resource, now)).toBe(1)
@@ -796,7 +810,7 @@ test('missing-email lookups fail closed and honor free email caps', async () => 
 			consumeDailyEntitlement({
 				db,
 				env,
-				userId: 'user-1',
+				userId: ownerIdFromStored('user-1'),
 				email: null,
 				resource,
 				now,
@@ -824,7 +838,7 @@ test('requested units and getCurrent overrides are honored', async () => {
 	) =>
 		assertWithinEntitlement({
 			db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			resource,
 			requested,
@@ -839,7 +853,7 @@ test('requested units and getCurrent overrides are honored', async () => {
 	await expect(
 		assertWithinEntitlement({
 			db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			resource: 'email_message_bytes',
 		}),
@@ -866,7 +880,7 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 		const denied = await expectLimitError(
 			assertWithinStorageBytesEntitlement({
 				db,
-				userId,
+				userId: ownerIdFromStored(userId),
 				email: plannedEmail,
 				requested: 1,
 				env,
@@ -887,7 +901,7 @@ test('storage bytes enforce for planned users and enforce finite max storage cap
 	await initializeStorageBytes(env, userId, planLimits.pro.maxStorageBytes - 1)
 	await assertWithinStorageBytesEntitlement({
 		db,
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: plannedEmail,
 		requested: 1,
 		env,
@@ -901,7 +915,7 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 	const reserve = (env: MeterEnv | undefined, requested: number) =>
 		assertWithinStorageBytesEntitlement({
 			db,
-			userId,
+			userId: ownerIdFromStored(userId),
 			email: plannedEmail,
 			requested,
 			env,
@@ -911,7 +925,10 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 	const cold = createInMemoryUserMeterEnv().env
 	await reserve(cold, 5)
 	expect(
-		await userMeterRpc({ env: cold, userId }).readStorageBytes(),
+		await userMeterRpc({
+			env: cold,
+			userId: ownerIdFromStored(userId),
+		}).readStorageBytes(),
 	).toMatchObject({ outcome: 'ready', bytes: 5 })
 
 	// Both callers see needs_bootstrap; initializeStorageBytes is INSERT OR
@@ -919,7 +936,10 @@ test('storage byte reserve zero-initializes a cold UserMeter, converges concurre
 	const concurrent = createInMemoryUserMeterEnv().env
 	await Promise.all([reserve(concurrent, 5), reserve(concurrent, 5)])
 	expect(
-		await userMeterRpc({ env: concurrent, userId }).readStorageBytes(),
+		await userMeterRpc({
+			env: concurrent,
+			userId: ownerIdFromStored(userId),
+		}).readStorageBytes(),
 	).toMatchObject({ outcome: 'ready', bytes: 10 })
 
 	const denied = await expectLimitError(
@@ -944,7 +964,7 @@ test('storage byte reserve handles missing user (synthetic context) with free-pl
 	const reserve = (env: MeterEnv, requested: number) =>
 		assertWithinStorageBytesEntitlement({
 			db: createEntitlementsTestDb({ users: [] }).db,
-			userId: syntheticUserId,
+			userId: ownerIdFromStored(syntheticUserId),
 			email: null,
 			requested,
 			env,
@@ -953,7 +973,10 @@ test('storage byte reserve handles missing user (synthetic context) with free-pl
 	const { env } = createInMemoryUserMeterEnv()
 	await reserve(env, 1)
 	expect(
-		await userMeterRpc({ env, userId: syntheticUserId }).readStorageBytes(),
+		await userMeterRpc({
+			env,
+			userId: ownerIdFromStored(syntheticUserId),
+		}).readStorageBytes(),
 	).toEqual({ outcome: 'needs_bootstrap' })
 
 	const denied = await expectLimitError(
@@ -978,7 +1001,7 @@ test('readCurrentEntitlementResourceUsage for storage_bytes reads UserMeter with
 		readCurrentEntitlementResourceUsage({
 			db: readDb,
 			env: usageEnv,
-			userId: readUserId,
+			userId: ownerIdFromStored(readUserId),
 			resource: 'storage_bytes',
 			now,
 		})
@@ -995,7 +1018,10 @@ test('readCurrentEntitlementResourceUsage for storage_bytes reads UserMeter with
 		await read(createEntitlementsTestDb({ users: [] }).db, missingUserId),
 	).toBe(0)
 	await expect(
-		userMeterRpc({ env, userId: missingUserId }).readStorageBytes(),
+		userMeterRpc({
+			env,
+			userId: ownerIdFromStored(missingUserId),
+		}).readStorageBytes(),
 	).resolves.toEqual({ outcome: 'needs_bootstrap' })
 })
 
@@ -1014,7 +1040,7 @@ test('entitlement enforcement stops when a stored plan violates the schema contr
 		await expect(
 			assertWithinEntitlement({
 				db,
-				userId,
+				userId: ownerIdFromStored(userId),
 				email,
 				resource: 'scheduled_jobs',
 			}),
@@ -1075,7 +1101,7 @@ test('continuous legacy Standard keeps old execute ceiling; new and resubscribed
 		users: [legacy!, publicUser!, resub!],
 	})
 	const context = (user: TestUser) => ({
-		userId: user.stable_user_id,
+		userId: ownerIdFromStored(user.stable_user_id),
 		email: user.email,
 	})
 	const check = (user: TestUser, requested: number, current: number) =>
@@ -1140,7 +1166,7 @@ test('legacy Pro and manual Pro grants keep pre-cut scheduled-job ceilings', asy
 		const check = (current: number) =>
 			assertWithinEntitlement({
 				db,
-				userId: user.stable_user_id,
+				userId: ownerIdFromStored(user.stable_user_id),
 				email: user.email,
 				resource: 'scheduled_jobs',
 				requested: 1,

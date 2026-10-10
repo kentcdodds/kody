@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { enrichOAuthTokenResponse } from '#worker/oidc/token-enrichment.ts'
 import { verifyOidcJwtSignature } from '#worker/oidc/keys.ts'
@@ -41,7 +42,7 @@ test('token enrichment mints id_token from helpers and skips when they are missi
 				clientId: 'client-123',
 				scope: ['openid', 'email', 'profile'],
 				props: {
-					userId: 'user-stable-id',
+					userId: ownerIdFromStored('user-stable-id'),
 					email: 'user@example.com',
 					username: 'test-user',
 					displayName: 'test-user',

@@ -1,4 +1,5 @@
 import { utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	buildBudgetSpendActorWeights,
 	type BudgetSpendAttributionInclude,
@@ -26,7 +27,7 @@ type OrgBudgetHitEmailEnv = Pick<
 	TransactionalEmailEnv
 
 export type OrgBudgetGateContext = {
-	orgId: string
+	orgId: OwnerId
 	orgSlug?: string | null
 	actorUserId?: string | null
 	actorUsername?: string | null
@@ -35,7 +36,7 @@ export type OrgBudgetGateContext = {
 
 async function orgBudgetEnforcementAvailable(
 	db: D1Database,
-	orgId: string,
+	orgId: OwnerId,
 ): Promise<boolean> {
 	try {
 		const row = await db
@@ -52,7 +53,7 @@ async function orgBudgetEnforcementAvailable(
 
 async function loadBudgetLimits(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	actorUserId: string | null
 }): Promise<{
 	userBudgetMicroUsd: number | null
@@ -91,7 +92,7 @@ function orgSlugLabel(orgSlug: string | null | undefined) {
 function notifyBudgetHitFireAndForget(input: {
 	env: UserMeterEnv & OrgBudgetHitEmailEnv
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	actorUserId: string | null
 	budgetError: BudgetLimitError
 	now?: Date
@@ -111,7 +112,7 @@ function notifyBudgetHitFireAndForget(input: {
 export async function assertWithinOrgBudget(input: {
 	db: D1Database
 	env: UserMeterEnv
-	orgId: string
+	orgId: OwnerId
 	orgSlug?: string | null
 	actorUserId: string | null
 	automationSource: string | null
@@ -175,7 +176,7 @@ export function shouldMutateBudgetMtdForMonth(
 
 /** Map scheduled/automation job runs to org budget gate context. */
 export function orgBudgetForJobExecution(input: {
-	orgId: string
+	orgId: OwnerId
 	orgSlug: string | null
 	source: RequestSource
 }): OrgBudgetGateContext {
@@ -212,7 +213,7 @@ export function orgBudgetForJobExecution(input: {
 export async function recordOrgBudgetSpend(input: {
 	db: D1Database
 	env: UserMeterEnv
-	orgId: string
+	orgId: OwnerId
 	orgSlug?: string | null
 	actorUserId: string | null
 	automationSource: string | null
@@ -257,7 +258,7 @@ export async function recordOrgBudgetSpend(input: {
 }
 
 export function orgBudgetFromGateContext(
-	userId: string,
+	userId: OwnerId,
 	context?: OrgBudgetGateContext | null,
 ): Required<
 	Pick<
@@ -298,7 +299,7 @@ type AttributionSpendShare = {
 export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 	db: D1Database
 	env: UserMeterEnv
-	orgId: string
+	orgId: OwnerId
 	month: string
 	debitedMicroUsd: number
 	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
@@ -362,7 +363,7 @@ export async function recordOrgBudgetSpendAfterCreditDebit(input: {
 export async function syncOrgBudgetSpendFromCreditLedger(input: {
 	db: D1Database
 	env: UserMeterEnv
-	orgId: string
+	orgId: OwnerId
 	month: string
 	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
 	now?: Date
@@ -420,7 +421,7 @@ export async function syncOrgBudgetSpendFromCreditLedger(input: {
 
 async function sumOrgCreditDebitMicroUsd(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	month: string
 }): Promise<number> {
 	const row = await input.db
@@ -439,7 +440,7 @@ async function sumOrgCreditDebitMicroUsd(input: {
 
 async function loadBudgetSpendShares(input: {
 	db: D1Database
-	orgId: string
+	orgId: OwnerId
 	month: string
 	includes?: ReadonlyArray<BudgetSpendAttributionInclude>
 }): Promise<Array<AttributionSpendShare>> {

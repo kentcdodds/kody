@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	consoleError,
@@ -185,7 +186,7 @@ function createProjection() {
 function savedPackageRecord(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: '@kentcdodds/shade-automation',
 		kodyId: 'shade-automation',
 		description: 'Old description',
@@ -265,7 +266,7 @@ function refresh(env: Env, overrides: Record<string, unknown> = {}) {
 	return refreshSavedPackageProjection({
 		env,
 		baseUrl: 'https://heykody.dev',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
 		sourceId: 'source-1',
 		...overrides,
@@ -288,7 +289,7 @@ function deletePackage(
 ) {
 	return deleteSavedPackageProjection({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId,
 		...(actorUserId ? { actorUserId } : {}),
 	})
@@ -301,7 +302,7 @@ function clearedStorageIds() {
 }
 
 function appScopedCleanup(env: Env, packageId: string) {
-	return { env, userId: 'user-1', appId: packageId }
+	return { env, userId: ownerIdFromStored('user-1'), appId: packageId }
 }
 
 test('refreshSavedPackageProjection defers search-index upsert and retriever cache via waitUntil', async () => {
@@ -319,7 +320,7 @@ test('refreshSavedPackageProjection defers search-index upsert and retriever cac
 	expect(mockModule.scheduleSavedPackageSearchIndexUpsert).toHaveBeenCalledWith(
 		expect.objectContaining({
 			packageId: 'package-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			waitUntil: expect.any(Function),
 		}),
 	)
@@ -346,7 +347,7 @@ test('refreshSavedPackageProjection uses caller-supplied source files instead of
 
 	expect(mockModule.loadPackageSourceFromFiles).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 		files: sourceFiles,
 	})
@@ -377,7 +378,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 
 	expect(mockModule.syncPackageJobsForPackage).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		packageId: 'package-1',
 		sourceId: 'source-1',
@@ -385,7 +386,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	})
 	expect(mockModule.buildPublishedPackageArtifacts).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: expect.objectContaining({
 			id: 'source-1',
 			published_commit: 'commit-1',
@@ -406,7 +407,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	})
 	expect(mockModule.refreshPackageRetrieverManifestCache).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source: expect.objectContaining({
 			id: 'source-1',
 			published_commit: 'commit-1',
@@ -426,7 +427,7 @@ test('refreshSavedPackageProjection syncs the job manager only when package jobs
 	expect(savedPackageArg?.updatedAt).not.toBe('2026-04-20T00:00:00.000Z')
 	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(mockModule.getSavedPackageById).toHaveBeenCalledTimes(1)
 	expect(
@@ -528,7 +529,7 @@ test('refreshSavedPackageProjection continues best-effort cleanup when dependent
 
 	expect(mockModule.syncPackageJobsForPackage).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://heykody.dev',
 		packageId: 'package-1',
 		sourceId: 'source-1',
@@ -564,7 +565,7 @@ test('refreshSavedPackageProjection preserves hidden and isPrivate across projec
 	expect(updateArg).not.toHaveProperty('hidden')
 	expect(updateArg).not.toHaveProperty('isPrivate')
 	expect(updateArg).toMatchObject({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
 		description: 'Updated description',
 	})
@@ -631,15 +632,19 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 
 	await deletePackage(env)
 
-	const scoped = { env, userId: 'user-1', packageId: 'package-1' }
+	const scoped = {
+		env,
+		userId: ownerIdFromStored('user-1'),
+		packageId: 'package-1',
+	}
 	expect(mockModule.cleanupArtifactReposForPackage).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-1',
 	})
 	expect(mockModule.deleteEntitySource).toHaveBeenCalledWith(env, {
 		id: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(
 		mockModule.deleteEntitySource.mock.invocationCallOrder[0],
@@ -648,7 +653,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledTimes(1)
 	expect(mockModule.deleteJobRow).toHaveBeenCalledWith({
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		jobId: 'job-1',
 	})
 	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith(scoped)
@@ -656,12 +661,16 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 		scoped,
 	)
 	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
 	})
 	expect(mockModule.deleteCommunityForksForPackage).toHaveBeenCalledWith(
 		env.APP_DB,
-		{ userId: 'user-1', packageId: 'package-1', sourceId: 'source-1' },
+		{
+			userId: ownerIdFromStored('user-1'),
+			packageId: 'package-1',
+			sourceId: 'source-1',
+		},
 	)
 	expect(mockModule.invalidateCommunityPublicCache).toHaveBeenCalledTimes(1)
 	expect(
@@ -673,7 +682,7 @@ test('deleteSavedPackageProjection resyncs the job manager after removing packag
 	)
 	expect(mockModule.syncJobManagerAlarm).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(
 		mockModule.syncJobManagerAlarm.mock.invocationCallOrder[0],
@@ -694,11 +703,11 @@ test('deleteSavedPackageProjection unpublishes an active listing before removing
 
 	expect(mockModule.getCommunityListingByOwnerAndPackage).toHaveBeenCalledWith(
 		env.APP_DB,
-		{ ownerUserId: 'user-1', packageId: 'package-1' },
+		{ ownerUserId: ownerIdFromStored('user-1'), packageId: 'package-1' },
 	)
 	expect(mockModule.unpublishCommunityListing).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		actorUserId: 'actor-1',
 		listingId: 'listing-1',
 	})
@@ -731,7 +740,7 @@ test('deleteSavedPackageProjection continues best-effort cleanup when dependent 
 	await deletePackage(env)
 
 	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'package-1',
 	})
 	expect(mockModule.deleteSavedPackageVector).toHaveBeenCalledWith(
@@ -799,7 +808,7 @@ test('deleteSavedPackageProjection clears package-owned storage buckets and inve
 	expect(clearedStorageIds()).not.toContain(otherPackageBucket.storageId)
 	expect(clearedStorageIds()).not.toContain(otherJobStorageId)
 	for (const call of mockModule.storageRunnerRpc.mock.calls) {
-		expect(call[0]).toMatchObject({ userId: 'user-1' })
+		expect(call[0]).toMatchObject({ userId: ownerIdFromStored('user-1') })
 	}
 	// Other users' and other packages' inventory rows survive.
 	expect(storageBuckets).toEqual([
@@ -835,7 +844,7 @@ test('deleteSavedPackageProjection keeps inventory when clearStorage fails and c
 	await deletePackage(env, uuidPackageId)
 
 	expect(mockModule.deleteSavedPackage).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: uuidPackageId,
 	})
 	expect(mockModule.deleteAllAppScopedValues).toHaveBeenCalledWith(
@@ -859,7 +868,11 @@ test('deleteSavedPackageProjection cleans secrets and deterministic storage when
 
 	await deletePackage(env, uuidPackageId)
 
-	const scoped = { env, userId: 'user-1', packageId: uuidPackageId }
+	const scoped = {
+		env,
+		userId: ownerIdFromStored('user-1'),
+		packageId: uuidPackageId,
+	}
 	expect(mockModule.deleteAllPackageScopedSecrets).toHaveBeenCalledWith(scoped)
 	expect(mockModule.removeAllSecretApprovalsForPackage).toHaveBeenCalledWith(
 		scoped,

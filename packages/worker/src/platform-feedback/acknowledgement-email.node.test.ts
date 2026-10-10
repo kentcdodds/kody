@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { http, HttpResponse } from 'msw'
 import { expect, test, vi } from 'vitest'
@@ -198,7 +201,7 @@ test('platform feedback acknowledgement emails send once, skip unsafe recipients
 	const sent: Array<CapturedSend> = []
 	using _server = createEmailCaptureServer(sent)
 	const { sqlite, db } = createUsersAndFeedbackDb()
-	seedUser(sqlite, { stableUserId: 'user-1' })
+	seedUser(sqlite, { stableUserId: ownerIdFromStored('user-1') })
 	const { kv, store, puts } = createKv()
 	const env = createEnv({ db, kv })
 
@@ -245,21 +248,21 @@ test('platform feedback acknowledgement emails send once, skip unsafe recipients
 		{
 			id: 'feedback-deleted',
 			user: {
-				stableUserId: 'deleted-user',
+				stableUserId: ownerIdFromStored('deleted-user'),
 				deletedAt: '2026-07-20T00:00:00.000Z',
 			},
 		},
 		{
 			id: 'feedback-paused',
 			user: {
-				stableUserId: 'paused-user',
+				stableUserId: ownerIdFromStored('paused-user'),
 				emailOutboundPausedAt: '2026-07-20T00:00:00.000Z',
 			},
 		},
 		{
 			id: 'feedback-suspended',
 			user: {
-				stableUserId: 'suspended-user',
+				stableUserId: ownerIdFromStored('suspended-user'),
 				suspendedAt: '2026-07-20T00:00:00.000Z',
 			},
 		},
@@ -288,7 +291,7 @@ test('platform feedback acknowledgement send failures release the claim, log, an
 	consoleWarn.mockImplementation(() => {})
 	const order: Array<string> = []
 	const { sqlite, db } = createUsersAndFeedbackDb()
-	seedUser(sqlite, { stableUserId: 'user-fail' })
+	seedUser(sqlite, { stableUserId: ownerIdFromStored('user-fail') })
 	const { kv, store } = createKv(order)
 	const env = createEnv({ db, kv })
 
@@ -346,11 +349,11 @@ test('meta submit and billing cancellation both send one acknowledgement through
 	using _server = createEmailCaptureServer(sent)
 	const { sqlite, db } = createUsersAndFeedbackDb()
 	seedUser(sqlite, {
-		stableUserId: 'user-meta',
+		stableUserId: ownerIdFromStored('user-meta'),
 		email: 'meta@example.com',
 	})
 	seedUser(sqlite, {
-		stableUserId: 'stable-ada',
+		stableUserId: ownerIdFromStored('stable-ada'),
 		email: 'ada@example.com',
 	})
 	const { kv } = createKv()

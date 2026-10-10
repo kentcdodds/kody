@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	redactKodyCredentials,
 	redactKodyCredentialsDeep,
@@ -67,7 +68,7 @@ export class ApiError extends Error {
 	 * Owning user for observe-only metering when auth fails before
 	 * `invokeApiOperation`. Never serialized to clients.
 	 */
-	readonly meteringUserId?: string
+	readonly meteringUserId?: OwnerId
 
 	constructor(input: {
 		status: number
@@ -75,7 +76,7 @@ export class ApiError extends Error {
 		message: string
 		details?: unknown
 		headers?: Record<string, string>
-		meteringUserId?: string
+		meteringUserId?: OwnerId
 		cause?: unknown
 	}) {
 		super(

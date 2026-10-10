@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { jsonResponse as buildJsonResponse } from '#worker/json-response.ts'
 import { z } from 'zod'
 import { type Action } from 'remix/router'
@@ -776,7 +777,7 @@ export function createCommunityReportApiPostHandler(env: Env) {
 			try {
 				await reportCommunityListing({
 					env,
-					userId: user.mcpUser.userId,
+					userId: personalOrgId(user.mcpUser.userId),
 					listingId: params.listingId,
 					reason: parsedReason.data,
 				})

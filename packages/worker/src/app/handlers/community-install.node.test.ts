@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { durableObjectIsolateMemoryResetMessage } from '#worker/sentry-options.ts'
@@ -88,7 +89,10 @@ test('community install POST enforces gates and maps install outcomes', async ()
 
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		email: 'userb@example.com',
-		mcpUser: { userId: 'stable-user-b', email: 'userb@example.com' },
+		mcpUser: {
+			userId: ownerIdFromStored('stable-user-b'),
+			email: 'userb@example.com',
+		},
 	})
 	mockModule.getCommunityListingById.mockResolvedValue(null)
 	expect((await post({})).status).toBe(404)
@@ -137,7 +141,7 @@ test('community install POST enforces gates and maps install outcomes', async ()
 	expect(mockModule.installCommunityListing).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env,
-			userId: 'stable-user-b',
+			userId: ownerIdFromStored('stable-user-b'),
 			userEmail: 'userb@example.com',
 			expectedPackageScope: 'userb',
 			listingId: 'listing-1',

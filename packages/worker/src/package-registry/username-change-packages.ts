@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import { publishCommunityListing } from '#worker/community/service.ts'
@@ -32,7 +33,7 @@ function buildUsernameRenameCommitMessage(input: {
 async function rewriteAndPublishPackageScope(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	sourceId: string
 	files: Record<string, string>
 	previousScope: string
@@ -102,7 +103,7 @@ async function rewriteAndPublishPackageScope(input: {
 async function compensatePackageUpdates(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	previousScope: string
 	nextScope: string
 	applied: Array<{
@@ -150,7 +151,7 @@ async function compensatePackageUpdates(input: {
 export async function updatePackagesForUsernameChange(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	previousUsername: string
 	nextUsername: string
 }): Promise<UsernameChangePackagesResult> {
@@ -273,7 +274,7 @@ export async function updatePackagesForUsernameChange(input: {
 export async function republishCommunityListingsAfterUsernameChange(input: {
 	env: Env
 	baseUrl: string
-	userId: string
+	userId: OwnerId
 	packageIds: Array<string>
 }): Promise<{
 	republishedPackageIds: Array<string>

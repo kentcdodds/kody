@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isSystemEmailOwner } from './email-owner.ts'
 import { processInboundDeliveryEffects } from './inbound-effects.ts'
 import { type EmailReportingEnv } from './reporting-events.ts'
@@ -20,7 +21,7 @@ export type InboundMailboxEnv = Pick<
 
 export type InboundReceivedTerminalWorkInput = {
 	env: InboundMailboxEnv
-	userId: string
+	userId: OwnerId
 	messageId: string
 	deliveryId: string
 	expectedFinalizationToken?: string
@@ -31,7 +32,7 @@ export type InboundReceivedTerminalWorkInput = {
 
 export type InboundRejectedTerminalWorkInput = {
 	env: InboundMailboxEnv
-	userId: string
+	userId: OwnerId
 	deliveryId: string
 	ctx?: ExecutionContext
 }

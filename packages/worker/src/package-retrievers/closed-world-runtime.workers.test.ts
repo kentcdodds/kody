@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -23,7 +26,7 @@ test(
 		const packageId = crypto.randomUUID()
 		await storageRunnerRpc({
 			env,
-			userId,
+			userId: ownerIdFromStored(userId),
 			storageId: buildPackageStorageId(packageId),
 		}).setValue({
 			key: 'seed',
@@ -107,7 +110,7 @@ test(
 		expect(
 			await storageRunnerRpc({
 				env,
-				userId,
+				userId: ownerIdFromStored(userId),
 				storageId: buildPackageStorageId(packageId),
 			}).getValue({ key: 'next' }),
 		).toMatchObject({ value: null })

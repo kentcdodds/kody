@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	embedTextForVectorize,
 	getCapabilityVectorIndex,
@@ -20,7 +21,7 @@ export async function upsertMemoryVector(
 	env: Env,
 	input: {
 		memoryId: string
-		userId: string
+		userId: OwnerId
 		category: string | null
 		status: MemoryStatus
 		embedText: string

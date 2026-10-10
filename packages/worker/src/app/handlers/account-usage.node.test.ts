@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type * as CreditTopUps from '#worker/billing/credit-top-ups.ts'
 import { CreditTopUpError } from '#worker/billing/credit-top-ups.ts'
@@ -43,7 +44,7 @@ beforeEach(() => {
 	vi.clearAllMocks()
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue({
 		userId: 7,
-		mcpUser: { userId: 'stable-7' },
+		mcpUser: { userId: ownerIdFromStored('stable-7') },
 	})
 	mockModule.loadAccountUsageData.mockResolvedValue({ ok: true })
 })

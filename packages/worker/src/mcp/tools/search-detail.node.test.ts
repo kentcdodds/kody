@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -107,7 +110,7 @@ function resolve(
 	return resolveEntityDetail({
 		agent,
 		callerContext: agent.getCallerContext(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		username: 'user',
 		entity,
 		searchRows: emptySearchRows() as never,
@@ -122,7 +125,7 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 	return {
 		lane: 'user',
 		app: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			slug: name,
 			provider: name,
 			label: null,
@@ -140,7 +143,7 @@ function createJoinedIntegration(name: string): JoinedIntegration {
 			updatedAt: now,
 		},
 		connection: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name,
 			appSlug: name,
 			platformAppSlug: null,
@@ -309,8 +312,11 @@ test('resolveEntityDetail loads official guides without a signed-in user and gat
 
 	expect(
 		await resolve('guide:admin_events', {
-			agent: createAgent({ userId: 'admin-1', roles: ['admin'] }),
-			userId: 'admin-1',
+			agent: createAgent({
+				userId: ownerIdFromStored('admin-1'),
+				roles: ['admin'],
+			}),
+			userId: ownerIdFromStored('admin-1'),
 			username: 'admin',
 		}),
 	).toMatchObject({
@@ -332,7 +338,7 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 	const detail = await resolve('integration:github')
 	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
 		env: { APP_DB: {} },
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'github',
 	})
 	expect(detail).toMatchObject({
@@ -349,11 +355,14 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 	expect(detail).not.toHaveProperty('row')
 
 	await expect(
-		resolve('integration:github', { userId: 'user-2', username: 'other' }),
+		resolve('integration:github', {
+			userId: ownerIdFromStored('user-2'),
+			username: 'other',
+		}),
 	).rejects.toThrow('Saved integration not found for this user.')
 	expect(mockModule.getJoinedIntegration).toHaveBeenLastCalledWith({
 		env: { APP_DB: {} },
-		userId: 'user-2',
+		userId: ownerIdFromStored('user-2'),
 		name: 'github',
 	})
 })
@@ -398,7 +407,7 @@ test('resolveEntityDetail passes package export fragments and hidden known-id pa
 		hasApp: false,
 		hidden: true,
 		sourceId: 'source-hidden',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		tags: [],
 		searchText: null,
 		isPrivate: false,

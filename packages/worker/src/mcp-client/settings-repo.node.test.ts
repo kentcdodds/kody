@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -19,7 +20,7 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 		db,
 		row: {
 			id: 'server-1',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			name: 'posthog',
 			url: 'https://mcp.posthog.com/mcp',
 			enabled: true,
@@ -49,7 +50,7 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 	expect(
 		await updateMcpServerSettingLastErrorRow({
 			db,
-			userId: 'user-2',
+			userId: ownerIdFromStored('user-2'),
 			id: 'server-1',
 			lastError,
 		}),
@@ -57,7 +58,7 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 	expect(
 		await updateMcpServerSettingLastErrorRow({
 			db,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			id: 'server-1',
 			lastError,
 		}),
@@ -65,20 +66,20 @@ test('mcp_server_settings last_error persists sanitized JSON for the owning user
 
 	const stored = await getMcpServerSettingRowById({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		id: 'server-1',
 	})
 	expect(stored?.last_error).toBe(lastError)
 
 	await updateMcpServerSettingLastErrorRow({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		id: 'server-1',
 		lastError: null,
 	})
 	const cleared = await getMcpServerSettingRowById({
 		db,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		id: 'server-1',
 	})
 	expect(cleared?.last_error).toBeNull()

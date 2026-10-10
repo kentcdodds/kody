@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -85,7 +88,7 @@ test('emailMessageDelete requires a signed-in, verified owner and deletes that m
 	expect(mocks.deleteEmailMessage).toHaveBeenCalledWith({
 		env,
 		db: env.APP_DB,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'message-1',
 	})
 })
@@ -107,7 +110,7 @@ test('emailMessageDelete fails fast on missing or foreign message ids', async ()
 	expect(mocks.deleteEmailMessage).toHaveBeenCalledWith({
 		env,
 		db: env.APP_DB,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		messageId: 'foreign-or-missing',
 	})
 })

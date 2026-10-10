@@ -17,6 +17,7 @@ import {
 } from './subscription-event.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const platformBaseUrl = 'https://kody.example.com'
 
 const openFeedback = {
@@ -315,10 +316,18 @@ test(
 
 			// The keyed idempotency ledger lives in each owner's RunLog DO now.
 			const adminInvocations = (
-				await exportRunRecords({ env, userId: adminStableId, pageSize: 100 })
+				await exportRunRecords({
+					env,
+					userId: ownerIdFromStored(adminStableId),
+					pageSize: 100,
+				})
 			).packageInvocations
 			const regularInvocations = (
-				await exportRunRecords({ env, userId: regularStableId, pageSize: 100 })
+				await exportRunRecords({
+					env,
+					userId: ownerIdFromStored(regularStableId),
+					pageSize: 100,
+				})
 			).packageInvocations
 			expect(adminInvocations).toHaveLength(2)
 			for (const adminPackage of [firstAdminPackage, secondAdminPackage]) {
@@ -372,7 +381,11 @@ test(
 			const countInvocations = async () => {
 				const pages = await Promise.all(
 					[adminStableId, regularStableId].map((userId) =>
-						exportRunRecords({ env, userId, pageSize: 100 }),
+						exportRunRecords({
+							env,
+							userId: ownerIdFromStored(userId),
+							pageSize: 100,
+						}),
 					),
 				)
 				return pages.reduce(

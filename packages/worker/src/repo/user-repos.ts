@@ -1,9 +1,10 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isValidKodyInstanceName } from '@kody-internal/shared/stable-name.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type UserRepoRow = {
 	id: string
-	user_id: string
+	user_id: OwnerId
 	name: string
 	description: string | null
 	is_private: 0 | 1
@@ -13,7 +14,7 @@ export type UserRepoRow = {
 
 export type UserRepoRecord = {
 	id: string
-	userId: string
+	userId: OwnerId
 	name: string
 	description: string | null
 	isPrivate: boolean
@@ -34,7 +35,7 @@ const userRepoSelectColumns = `user_repos.id, user_repos.user_id, user_repos.nam
 function mapUserRepoRow(row: Record<string, unknown>): UserRepoRecord {
 	return {
 		id: String(row['id']),
-		userId: String(row['user_id']),
+		userId: String(row['user_id']) as OwnerId,
 		name: String(row['name']),
 		description: row['description'] == null ? null : String(row['description']),
 		isPrivate:

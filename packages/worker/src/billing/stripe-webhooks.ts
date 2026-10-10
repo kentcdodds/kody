@@ -5,6 +5,7 @@
  * (handlers are idempotent), then records the event id so later deliveries can
  * short-circuit as duplicates. Failures do not insert, so Stripe can retry.
  */
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	any,
 	nullable,
@@ -272,7 +273,7 @@ async function handleCustomerSubscriptionChange(input: {
 				`SELECT id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 			)
 				.bind(orgOrUserHint)
-				.first<{ id: string }>()
+				.first<{ id: OwnerId }>()
 			if (org?.id) {
 				const resolved = await refreshStripePlanForOrg({
 					env: input.env,

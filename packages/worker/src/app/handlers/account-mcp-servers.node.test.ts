@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
 import type * as authSession from '#app/auth-session.ts'
@@ -62,7 +63,7 @@ const mockModule = await vi.hoisted(async () => {
 		readAuthSessionResult: vi.fn<typeof authSession.readAuthSessionResult>(
 			async () => ({
 				session: {
-					stableUserId: 'stable-user-1',
+					stableUserId: ownerIdFromStored('stable-user-1'),
 					email: 'user@example.com',
 					rememberMe: false,
 				},
@@ -261,7 +262,10 @@ const {
 const env = { APP_DB: {} as D1Database } as Env
 const apiUrl = 'https://example.com/account/mcp-servers.json'
 const callbackUrl = 'https://example.com/account/mcp-servers/oauth/callback'
-const userScope = { userId: 'stable-user-1', id: 'server-1' }
+const userScope = {
+	userId: ownerIdFromStored('stable-user-1'),
+	id: 'server-1',
+}
 
 function discoveryFailure(attemptId: string, suffix = '') {
 	const message = `Authorization completed at the identity provider, but tool discovery didn't finish (phase server/discover, mcp https://mcp.example.com/mcp, id ${attemptId}).${suffix}`
@@ -355,7 +359,7 @@ test('MCP servers API lists, adds, reconnects, disables, and deletes with user s
 	expect(addResponse.status).toBe(200)
 	expect(mockModule.addMcpServer).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'stable-user-1',
+			userId: ownerIdFromStored('stable-user-1'),
 			name: 'notion',
 			url: 'https://mcp.notion.example/mcp',
 			baseUrl: 'https://example.com',

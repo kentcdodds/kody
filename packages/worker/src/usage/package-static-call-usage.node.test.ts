@@ -1,3 +1,7 @@
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, type MockInstance } from 'vitest'
 import { createPackageStaticCallMeterTools } from './package-static-call-usage.ts'
 
@@ -20,7 +24,7 @@ test('records only granted, valid, sanitized package_static_call events', async 
 		const env = {} as Env
 		const tools = createPackageStaticCallMeterTools({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			grantedPackageIds: new Set(['pkg-callee']),
 		})
 		expect(tools).toBeDefined()
@@ -43,7 +47,7 @@ test('records only granted, valid, sanitized package_static_call events', async 
 		})
 		expect(recordUsageSpy).toHaveBeenCalledTimes(2)
 		expect(recordUsageSpy).toHaveBeenNthCalledWith(1, env, {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			eventType: 'package_static_call',
 			entityId: 'pkg-callee',
 			durationMs: 42,
@@ -81,7 +85,7 @@ test('caps recorded events per run, cumulatively across batches', async () => {
 	await withRecordUsageSpy(async (recordUsageSpy) => {
 		const tools = createPackageStaticCallMeterTools({
 			env: {} as Env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			grantedPackageIds: new Set(['pkg-callee']),
 		})
 		const grantedEvent = {
@@ -102,7 +106,7 @@ test('caps recorded events per run, cumulatively across batches', async () => {
 
 		const freshTools = createPackageStaticCallMeterTools({
 			env: {} as Env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			grantedPackageIds: new Set(['pkg-callee']),
 		})
 		await freshTools?.record({
@@ -126,7 +130,7 @@ test('requires a calling user and never throws into the call path', async () => 
 	expect(
 		createPackageStaticCallMeterTools({
 			env: {} as Env,
-			userId: '   ',
+			userId: '   ' as OwnerId,
 			grantedPackageIds: new Set(['pkg-callee']),
 		}),
 	).toBeUndefined()
@@ -140,7 +144,7 @@ test('requires a calling user and never throws into the call path', async () => 
 	try {
 		const tools = createPackageStaticCallMeterTools({
 			env: {} as Env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			grantedPackageIds: new Set(['pkg-callee']),
 		})
 		await expect(

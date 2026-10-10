@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PackagePage from '#app/package-page.ts'
 import type * as CommunityPackageUrl from '#worker/community/package-url.ts'
@@ -110,7 +111,7 @@ const {
 
 const listing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-1',
+	ownerUserId: ownerIdFromStored('owner-1'),
 	packageId: 'package-1',
 	sourceId: 'source-1',
 	kodyId: 'doom',

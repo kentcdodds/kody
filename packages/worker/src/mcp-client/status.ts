@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { type McpServerRef } from '@kody-internal/shared/mcp-servers.ts'
 import { getCachedMcpClientHubSnapshot } from './hub-client.ts'
@@ -19,7 +20,7 @@ function serverLabel(name: string) {
 
 export async function getMcpServerStatus(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	ref: McpServerRef
 }): Promise<McpServerStatus> {
 	const label = serverLabel(input.ref.name)

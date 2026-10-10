@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	applyJobRunObservabilityToJobView,
@@ -120,12 +121,12 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 
 	const point = await hydrateJobViewFromRunLog({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		job: createJobView({ id: 'job-1' }),
 	})
 	expect(getJobRunObservability).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		jobId: 'job-1',
 	})
 	expect(point).toMatchObject({
@@ -136,7 +137,7 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 
 	const batch = await hydrateJobViewsFromRunLog({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		jobs: [
 			createJobView({ id: 'job-a' }),
 			createJobView({
@@ -151,7 +152,7 @@ test('job view hydrate overlays RunLog outcomes for point and batch reads', asyn
 	})
 	expect(getJobRunObservabilityBatch).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		jobIds: ['job-a', 'job-b'],
 	})
 	expect(batch[0]).toMatchObject({

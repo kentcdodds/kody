@@ -82,6 +82,14 @@ export function normalizeMailboxOffset(offset: number | null | undefined) {
 	return Math.max(0, Math.trunc(offset))
 }
 
+export function assertMailboxNonEmptyString<T extends string>(
+	value: T,
+	label: string,
+): T
+export function assertMailboxNonEmptyString(
+	value: unknown,
+	label: string,
+): string
 export function assertMailboxNonEmptyString(
 	value: unknown,
 	label: string,

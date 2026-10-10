@@ -26,7 +26,10 @@ import {
 } from '#app/email/messages.ts'
 import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { type OAuthGrantHelpers } from '#worker/oauth-grants.ts'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 
 const resetRequestSchema = object({
 	email: string(),
@@ -296,7 +299,9 @@ export function createPasswordResetConfirmHandler(env: Env) {
 				d1: env.APP_DB,
 				helpers,
 				userId: resetRecord.user_id,
-				stableUserId: personIdFromStored(userRecord.stable_user_id),
+				stableUserId: personalOrgId(
+					personIdFromStored(userRecord.stable_user_id),
+				),
 				password,
 				clearSecondFactorsAndConnections: true,
 			})

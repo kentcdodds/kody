@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/cloudflare'
 import { DurableObject } from 'cloudflare:workers'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getRecoveryBookmark, restoreToBookmark } from '#worker/dr/do-pitr.ts'
 import { buildSentryOptions } from '#worker/sentry-options.ts'
 import { replaceRepoSessionDueOwner } from './repo-session-due-owners.ts'
@@ -36,7 +37,7 @@ export type RepoSessionIndexCleanupResult = {
 }
 
 export type RepoSessionIndexUpdateInput = {
-	ownerId: string
+	ownerId: OwnerId
 	sessionId: string
 	sessionBranch?: string | null
 	sourceBranch?: string
@@ -59,13 +60,14 @@ function assertNonEmptyString(value: string, label: string): string {
 }
 
 function attachOwner(
-	ownerId: string,
+	ownerId: OwnerId,
 	row: StoredRepoSessionRow,
 ): RepoSessionRow {
-	return repoSessionRowSchema.parse({
+	const parsed = repoSessionRowSchema.parse({
 		...row,
 		user_id: ownerId,
 	})
+	return { ...parsed, user_id: ownerId }
 }
 
 function mapStoredRow(
@@ -184,9 +186,9 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		)
 	}
 
-	private getOwnerId(): string | null {
+	private getOwnerId(): OwnerId | null {
 		const row = this.sql
-			.exec<{ owner_id: string }>(
+			.exec<{ owner_id: OwnerId }>(
 				`SELECT owner_id FROM repo_session_index_owner_identity
 				WHERE singleton = 1
 				LIMIT 1`,
@@ -195,7 +197,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		return row?.owner_id ?? null
 	}
 
-	private assertOwner(ownerId: string): string {
+	private assertOwner(ownerId: OwnerId): OwnerId {
 		const id = assertNonEmptyString(ownerId, 'ownerId')
 		const existing = this.getOwnerId()
 		if (existing == null) {
@@ -204,14 +206,14 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 				VALUES (1, ?)`,
 				id,
 			)
-			return id
+			return ownerId
 		}
 		if (existing !== id) {
 			throw new Error(
 				`RepoSessionIndex ownerId mismatch; this object is bound to a different owner.`,
 			)
 		}
-		return id
+		return ownerId
 	}
 
 	private isHydrated(): boolean {
@@ -296,7 +298,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			.map(mapStoredRow)
 	}
 
-	private async scheduleNextDue(ownerId: string): Promise<void> {
+	private async scheduleNextDue(ownerId: OwnerId): Promise<void> {
 		const dueAt = nextOwnerDueAt(this.listStoredRows())
 		try {
 			await replaceRepoSessionDueOwner({
@@ -321,7 +323,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		await this.ctx.storage.setAlarm(alarmAt)
 	}
 
-	private async ensureReady(ownerId: string): Promise<string> {
+	private async ensureReady(ownerId: OwnerId): Promise<OwnerId> {
 		const id = this.assertOwner(ownerId)
 		if (!this.isHydrated()) this.markHydrated()
 		return id
@@ -355,7 +357,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async insertSession(input: {
-		ownerId: string
+		ownerId: OwnerId
 		row: RepoSessionRow
 	}): Promise<void> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -369,7 +371,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async getSessionById(input: {
-		ownerId: string
+		ownerId: OwnerId
 		sessionId: string
 	}): Promise<RepoSessionRow | null> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -378,7 +380,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async getActiveByConversation(input: {
-		ownerId: string
+		ownerId: OwnerId
 		conversationId: string
 	}): Promise<RepoSessionRow | null> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -395,7 +397,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async listBySource(input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}): Promise<Array<RepoSessionRow>> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -410,7 +412,9 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 			.map((row) => attachOwner(ownerId, mapStoredRow(row)))
 	}
 
-	async listByUser(input: { ownerId: string }): Promise<Array<RepoSessionRow>> {
+	async listByUser(input: {
+		ownerId: OwnerId
+	}): Promise<Array<RepoSessionRow>> {
 		const ownerId = await this.ensureReady(input.ownerId)
 		return this.listStoredRows().map((row) => attachOwner(ownerId, row))
 	}
@@ -459,7 +463,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async deleteSession(input: {
-		ownerId: string
+		ownerId: OwnerId
 		sessionId: string
 	}): Promise<boolean> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -470,7 +474,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async deleteBySource(input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}): Promise<number> {
 		const ownerId = await this.ensureReady(input.ownerId)
@@ -488,7 +492,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		return Number(before?.count ?? 0)
 	}
 
-	async countActive(input: { ownerId: string }): Promise<number> {
+	async countActive(input: { ownerId: OwnerId }): Promise<number> {
 		await this.ensureReady(input.ownerId)
 		const row = this.sql
 			.exec<{ count: number }>(
@@ -499,7 +503,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async hasActiveForSource(input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}): Promise<boolean> {
 		await this.ensureReady(input.ownerId)
@@ -515,7 +519,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async runDueCleanup(input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}): Promise<RepoSessionIndexCleanupResult> {
@@ -555,7 +559,7 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 	}
 
 	async exportSessions(input: {
-		ownerId: string
+		ownerId: OwnerId
 		pageSize?: number
 		startAfter?: string | null
 	}): Promise<RepoSessionIndexExportResult> {
@@ -587,12 +591,12 @@ class RepoSessionIndexBase extends DurableObject<Env> {
 		}
 	}
 
-	async countAll(input: { ownerId: string }): Promise<number> {
+	async countAll(input: { ownerId: OwnerId }): Promise<number> {
 		await this.ensureReady(input.ownerId)
 		return this.countStoredRows()
 	}
 
-	async purge(input: { ownerId: string }): Promise<{ ok: true }> {
+	async purge(input: { ownerId: OwnerId }): Promise<{ ok: true }> {
 		const ownerId = this.assertOwner(input.ownerId)
 		await this.ctx.blockConcurrencyWhile(async () => {
 			await this.ctx.storage.deleteAlarm().catch(() => undefined)
@@ -624,46 +628,46 @@ export type RepoSessionIndexRpc = {
 		bookmark: string
 	}) => Promise<{ undoBookmark: string }>
 	insertSession: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		row: RepoSessionRow
 	}) => Promise<void>
 	getSessionById: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		sessionId: string
 	}) => Promise<RepoSessionRow | null>
 	getActiveByConversation: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		conversationId: string
 	}) => Promise<RepoSessionRow | null>
 	listBySource: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}) => Promise<Array<RepoSessionRow>>
-	listByUser: (input: { ownerId: string }) => Promise<Array<RepoSessionRow>>
+	listByUser: (input: { ownerId: OwnerId }) => Promise<Array<RepoSessionRow>>
 	updateSession: (input: RepoSessionIndexUpdateInput) => Promise<boolean>
 	deleteSession: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		sessionId: string
 	}) => Promise<boolean>
 	deleteBySource: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}) => Promise<number>
-	countActive: (input: { ownerId: string }) => Promise<number>
-	countAll: (input: { ownerId: string }) => Promise<number>
+	countActive: (input: { ownerId: OwnerId }) => Promise<number>
+	countAll: (input: { ownerId: OwnerId }) => Promise<number>
 	hasActiveForSource: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		sourceId: string
 	}) => Promise<boolean>
 	runDueCleanup: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		now?: string
 		limit?: number
 	}) => Promise<RepoSessionIndexCleanupResult>
 	exportSessions: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		pageSize?: number
 		startAfter?: string | null
 	}) => Promise<RepoSessionIndexExportResult>
-	purge: (input: { ownerId: string }) => Promise<{ ok: true }>
+	purge: (input: { ownerId: OwnerId }) => Promise<{ ok: true }>
 }

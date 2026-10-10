@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as RecordUsage from './record-usage.ts'
 
@@ -25,7 +26,7 @@ const analyticsEnv = { USAGE_EVENTS: { writeDataPoint() {} } }
 function meter<T extends object>(stub: T, env: object = analyticsEnv) {
 	return createMeteredDurableObjectStub({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		doClass: 'StorageRunner',
 		stub,
 	})
@@ -59,7 +60,7 @@ test('createMeteredDurableObjectStub coalesces same-outcome RPC wall-clock', asy
 	expect(recordUsage).toHaveBeenCalledWith(
 		env,
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			eventType: 'durable_object_gb_seconds',
 			entityId: 'StorageRunner',
 			eventCount: 2,

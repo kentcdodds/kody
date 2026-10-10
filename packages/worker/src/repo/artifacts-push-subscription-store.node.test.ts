@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -28,7 +29,7 @@ test('artifacts push subscription store upserts, reads, and deletes by source', 
 	const db = createDb()
 	await upsertArtifactsPushSubscription(db, {
 		source_id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		repo_id: 'repo-1',
 		subscription_id: 'sub-1',
 		created_at: '2026-05-01T00:00:00.000Z',
@@ -43,7 +44,7 @@ test('artifacts push subscription store upserts, reads, and deletes by source', 
 
 	await upsertArtifactsPushSubscription(db, {
 		source_id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		repo_id: 'repo-1',
 		subscription_id: 'sub-2',
 		created_at: '2026-05-01T00:00:00.000Z',
@@ -58,7 +59,7 @@ test('artifacts push subscription store upserts, reads, and deletes by source', 
 	await expect(
 		deleteArtifactsPushSubscriptionBySourceId(db, {
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).resolves.toBe(true)
 	await expect(
@@ -75,7 +76,7 @@ test('artifacts push subscription store returns null when the side table is abse
 	await expect(
 		deleteArtifactsPushSubscriptionBySourceId(db, {
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	).resolves.toBe(false)
 })

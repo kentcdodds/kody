@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import {
@@ -81,7 +82,7 @@ function walletBalance(sqlite: DatabaseSync, stableUserId: string) {
 
 test('failed creation-time grant keeps insert pending; login reconcile grants once without double-crediting', async () => {
 	const { sqlite, db } = createDb()
-	const stableUserId = 'stable-welcome-retry'
+	const stableUserId = ownerIdFromStored('stable-welcome-retry')
 	// Person-account inserts set pending=1 in the same write so a later D1
 	// failure during the grant cannot erase the retry signal.
 	seedUser(sqlite, {
@@ -170,7 +171,7 @@ test('failed creation-time grant keeps insert pending; login reconcile grants on
 
 test('reconcile does not grant when pending is unset (no pre-ship backfill)', async () => {
 	const { sqlite, db } = createDb()
-	const stableUserId = 'stable-welcome-grandfather'
+	const stableUserId = ownerIdFromStored('stable-welcome-grandfather')
 	seedUser(sqlite, {
 		stableUserId,
 		email: 'welcome-grandfather@example.com',
@@ -192,7 +193,7 @@ test('reconcile does not grant when pending is unset (no pre-ship backfill)', as
 
 test('reconcile of a pending account that already has signup_welcome clears pending without a second $5', async () => {
 	const { sqlite, db } = createDb()
-	const stableUserId = 'stable-welcome-already'
+	const stableUserId = ownerIdFromStored('stable-welcome-already')
 	seedUser(sqlite, {
 		stableUserId,
 		email: 'welcome-already@example.com',

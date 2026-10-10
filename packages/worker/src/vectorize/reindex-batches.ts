@@ -1,4 +1,5 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { embedTextsForVectorize } from './embedding.ts'
 import {
 	hasVectorEmbedFingerprintDb,
@@ -144,7 +145,7 @@ export async function reindexVectorCandidates(input: {
 			const existing = await tryReadVectorEmbedFingerprints({
 				env: input.env,
 				keys: hashed.map((item) => ({
-					userId: item.candidate.namespace,
+					userId: item.candidate.namespace as OwnerId,
 					vectorId: item.candidate.id,
 				})),
 			})
@@ -152,7 +153,7 @@ export async function reindexVectorCandidates(input: {
 				const changed: typeof hashed = []
 				for (const item of hashed) {
 					const key = vectorEmbedFingerprintKey(
-						item.candidate.namespace,
+						item.candidate.namespace as OwnerId,
 						item.candidate.id,
 					)
 					if (existing.get(key) === item.contentHash) {
@@ -204,7 +205,7 @@ export async function reindexVectorCandidates(input: {
 				await tryWriteVectorEmbedFingerprints({
 					env: input.env,
 					rows: pending.map((candidate, index_) => ({
-						userId: candidate.namespace,
+						userId: candidate.namespace as OwnerId,
 						vectorId: candidate.id,
 						contentHash: hashes[index_]!,
 					})),

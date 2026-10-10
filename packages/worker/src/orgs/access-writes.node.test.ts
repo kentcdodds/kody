@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import {
 	ownerIdFromStored,
 	personIdFromStored,
+	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
@@ -101,7 +102,7 @@ test('protectLastOwner blocks demotion and removal when only one owner remains',
 		offboardOrgMember({
 			appDb: db,
 			env: { APP_DB: db } as Env,
-			orgId: org.id,
+			orgId: personalOrgId(org.id),
 			memberUserId: ownerId,
 			memberLeftVoluntarily: true,
 		}),
@@ -149,7 +150,7 @@ test('removing a member soft-deletes their direct user grants', async () => {
 	await offboardOrgMember({
 		appDb: db,
 		env: { APP_DB: db } as Env,
-		orgId: org.id,
+		orgId: personalOrgId(org.id),
 		memberUserId: memberId,
 		memberLeftVoluntarily: true,
 	})

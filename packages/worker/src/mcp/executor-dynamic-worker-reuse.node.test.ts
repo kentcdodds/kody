@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { createExecuteExecutor } from './executor.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -49,7 +50,7 @@ const providers = [{ name: 'kody', fns: {} }]
 function createGatewayProps(userId: string) {
 	return {
 		baseUrl: 'https://heykody.dev',
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: `${userId}@example.com`,
 		request: null,
 		storageContext: null,
@@ -174,6 +175,13 @@ test('createExecuteExecutor attaches the CPU usage tail under its own loader cac
 	)
 	expect(withTail).toEqual({
 		id: `${withoutTail.id}-cpu1`,
-		tails: [{ tailProps: { userId: 'user-1', workerId: withoutTail.id } }],
+		tails: [
+			{
+				tailProps: {
+					userId: ownerIdFromStored('user-1'),
+					workerId: withoutTail.id,
+				},
+			},
+		],
 	})
 })

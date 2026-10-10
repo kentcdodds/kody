@@ -31,6 +31,7 @@ import {
 	uniqueUserId,
 } from './mailbox-test-helpers.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const daysAgo = (days: number) =>
 	new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 const expiredMessageAt = () => daysAgo(mailboxMessageRetentionDays + 3)
@@ -59,7 +60,7 @@ function failDeletesOf(key: string, deletedKeys: Array<string> = []) {
 
 async function runAlarm(userId: string) {
 	return await runInDurableObject(
-		stubFor(userId),
+		stubFor(ownerIdFromStored(userId)),
 		async (instance: Mailbox, state) => {
 			await instance.alarm()
 			return await state.storage.getAlarm()
@@ -73,7 +74,7 @@ async function querySql<Row extends Record<string, SqlStorageValue>>(
 	...bindings: Array<SqlStorageValue>
 ) {
 	return await runInDurableObject(
-		stubFor(userId),
+		stubFor(ownerIdFromStored(userId)),
 		async (_instance: Mailbox, state) =>
 			state.storage.sql.exec<Row>(sql, ...bindings).toArray(),
 	)
@@ -652,7 +653,10 @@ test('Mailbox single-message delete is owner-bound and R2-durable before metadat
 	const attachment = baseAttachment(userId, message.id, {
 		id: 'delete-attachment',
 	})
-	const event = baseDeliveryEvent({ id: 'delete-event', messageId: message.id })
+	const event = baseDeliveryEvent({
+		id: 'delete-event',
+		messageId: message.id,
+	})
 	await mailbox.upsertMessageGraph({
 		ownerId: userId,
 		thread,

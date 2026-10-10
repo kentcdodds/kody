@@ -1,4 +1,5 @@
 import { chunkArray } from '@kody-internal/shared/chunk.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	errorCauseChainIncludes,
 	formatErrorCauseChain,
@@ -331,7 +332,7 @@ async function rebuildPublishedPackageArtifactsViaRepoSessionOnce(input: {
 	rpcSessionId: string
 	repoSessionId?: string
 	sourceId: string
-	userId: string
+	userId: OwnerId
 	publishedCommit: string
 	baseUrl: string
 	force?: boolean
@@ -485,7 +486,7 @@ export async function rebuildPublishedPackageArtifactsViaRepoSession(input: {
 	rpcSessionId: string
 	repoSessionId?: string
 	sourceId: string
-	userId: string
+	userId: OwnerId
 	publishedCommit: string
 	baseUrl: string
 	force?: boolean

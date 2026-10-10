@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { createCommunityFeatureApiPostHandler } from './community-feature.ts'
@@ -59,7 +60,7 @@ test('community feature POST enforces admin role, validation, and error mapping'
 
 	mockModule.requireUserWithRole.mockResolvedValue({
 		email: 'admin@example.com',
-		mcpUser: { userId: 'stable-admin-id' },
+		mcpUser: { userId: ownerIdFromStored('stable-admin-id') },
 	})
 
 	const invalidBody = await handler.handler(

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
@@ -225,7 +226,7 @@ export async function loadAccountMemoriesData(input: {
 
 async function resolveSelectedMemory(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	memoryId: string
 }): Promise<AccountMemoryDetail | null> {
 	const memory = await getMemory({

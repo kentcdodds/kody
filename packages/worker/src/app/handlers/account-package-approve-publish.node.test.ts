@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as ssrRender from '#app/ssr-render.tsx'
 
@@ -45,7 +46,7 @@ const {
 const user = {
 	username: 'kentcdodds',
 	email: 'kent@example.com',
-	mcpUser: { userId: 'user-1' },
+	mcpUser: { userId: ownerIdFromStored('user-1') },
 }
 
 test('legacy package approval links redirect and the canonical owner URL renders', async () => {

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { type Workspace } from '@cloudflare/shell'
 import type git from 'isomorphic-git'
@@ -319,7 +320,7 @@ function repoSession(
 function sourceRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
@@ -376,7 +377,7 @@ test('bootstrapSource first-publishes from dest HEAD without replacing the forke
 		repoSession().bootstrapSource({
 			sessionId,
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			...(existingHeadCommit ? { existingHeadCommit } : {}),
 			bootstrapAccess: {
 				defaultBranch: 'main',
@@ -460,7 +461,7 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 		repoSession().bootstrapSource({
 			sessionId: 'session-bootstrap-checks',
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			bootstrapAccess: {
 				defaultBranch: 'main',
 				remote: artifactsRemote('package-package-1'),
@@ -486,7 +487,7 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	const ok = await repoSession().bootstrapSource({
 		sessionId: 'session-bootstrap-checks-ok',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		bootstrapAccess: {
 			defaultBranch: 'main',
 			remote: artifactsRemote('package-package-1'),
@@ -519,7 +520,7 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	await repoSession().bootstrapSource({
 		sessionId: 'session-bootstrap-docs-exempt',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		requirePackageDocs: false,
 		bootstrapAccess: {
 			defaultBranch: 'main',
@@ -544,7 +545,7 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	await repoSession().bootstrapSource({
 		sessionId: 'session-bootstrap-scope',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		expectedPackageScope: 'renamed-user',
 		bootstrapAccess: {
 			defaultBranch: 'main',
@@ -570,7 +571,7 @@ test('bootstrapSource runs publish repo checks before advancing a package publis
 	await repoSession().bootstrapSource({
 		sessionId: 'session-bootstrap-skip-checks',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		runPublishChecks: false,
 		bootstrapAccess: {
 			defaultBranch: 'main',

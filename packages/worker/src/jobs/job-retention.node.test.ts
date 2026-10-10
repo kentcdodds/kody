@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	defaultJobRetentionDays,
@@ -12,7 +13,7 @@ function createJob(overrides: Partial<JobRecord> = {}): JobRecord {
 	return {
 		version: 1,
 		id: 'job-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: 'Once job',
 		sourceId: 'source-1',
 		publishedCommit: null,

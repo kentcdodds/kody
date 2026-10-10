@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { WebhookEndpointIdRaceError } from './errors.ts'
 import {
 	type WebhookEndpointRecord,
@@ -7,7 +8,7 @@ import {
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 type WebhookEndpointRow = {
 	id: string
-	user_id: string
+	user_id: OwnerId
 	package_id: string
 	webhook_name: string
 	url_secret_hash: string

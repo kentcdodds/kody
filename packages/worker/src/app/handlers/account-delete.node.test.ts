@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeAll, expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
@@ -56,7 +57,7 @@ const signedInUser = {
 	userId: 7,
 	username: 'ada',
 	email: 'ada@example.com',
-	mcpUser: { userId: 'stable-ada' },
+	mcpUser: { userId: ownerIdFromStored('stable-ada') },
 }
 
 function createHandler() {
@@ -102,7 +103,7 @@ test('account deletion requires GOODBYE KODY, password when one exists, and soft
 	})
 	mocks.verifyPassword.mockResolvedValue(false)
 	mocks.softDeleteUserAccount.mockResolvedValue({
-		userId: 'stable-ada',
+		userId: ownerIdFromStored('stable-ada'),
 		deletedAt: '2026-10-01T12:00:00.000Z',
 		deletedOrgIds: ['stable-ada'],
 	})
@@ -131,13 +132,13 @@ test('account deletion requires GOODBYE KODY, password when one exists, and soft
 		ok: true,
 		softDeleted: true,
 		restoreWindowDays: 30,
-		userId: 'stable-ada',
+		userId: ownerIdFromStored('stable-ada'),
 		deletedOrgIds: ['stable-ada'],
 	})
 	expect(deleted.headers.get('Set-Cookie') ?? '').toContain('kody_session=')
 	expect(mocks.softDeleteUserAccount).toHaveBeenCalledWith({
 		env: expect.objectContaining({ COOKIE_SECRET: testCookieSecret }),
-		userId: 'stable-ada',
+		userId: ownerIdFromStored('stable-ada'),
 		actorUserId: 'stable-ada',
 		actorUsername: 'ada',
 	})
@@ -177,7 +178,7 @@ test('sole Owner of an org with other members is blocked with a 409', async () =
 	signInOauthOnlyUser()
 	mocks.softDeleteUserAccount.mockRejectedValueOnce(
 		new UserDeleteBlockedSoleOwnerError([
-			{ orgId: 'org-acme', orgSlug: 'acme' },
+			{ orgId: ownerIdFromStored('org-acme'), orgSlug: 'acme' },
 		]),
 	)
 
@@ -189,7 +190,7 @@ test('sole Owner of an org with other members is blocked with a 409', async () =
 	expect(await response.json()).toEqual({
 		error:
 			'Account deletion is blocked while you are the only Owner of @acme. Promote another Owner or remove the other members first.',
-		blockers: [{ orgId: 'org-acme', orgSlug: 'acme' }],
+		blockers: [{ orgId: ownerIdFromStored('org-acme'), orgSlug: 'acme' }],
 	})
 	expect(response.headers.get('Set-Cookie')).toBeNull()
 	expect(mocks.scheduleUserDeletedEvent).not.toHaveBeenCalled()
@@ -204,7 +205,7 @@ test('sole Owner of an org with other members is blocked with a 409', async () =
 test('a successful soft deletion reports restore window metadata', async () => {
 	signInOauthOnlyUser()
 	mocks.softDeleteUserAccount.mockResolvedValueOnce({
-		userId: 'stable-ada',
+		userId: ownerIdFromStored('stable-ada'),
 		deletedAt: '2026-10-01T12:00:00.000Z',
 		deletedOrgIds: ['stable-ada', 'org-side'],
 	})

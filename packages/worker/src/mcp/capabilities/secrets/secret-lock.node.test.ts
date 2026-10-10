@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -51,13 +54,17 @@ async function allowedPackagesFor(
 	userId: string,
 	name: string,
 ): Promise<Array<string>> {
-	const secrets = await listSecrets({ env, userId, scope: 'user' })
+	const secrets = await listSecrets({
+		env,
+		userId: ownerIdFromStored(userId),
+		scope: 'user',
+	})
 	return secrets.find((secret) => secret.name === name)?.allowedPackages ?? []
 }
 
 test('secretLock returns an approval URL without widening allowed_packages', async () => {
 	const { sqlite, env } = createHarness()
-	const userId = 'user-secret-lock'
+	const userId = ownerIdFromStored('user-secret-lock')
 	seedPackage(sqlite, { id: 'pkg-notes', userId, kodyId: 'notes' })
 	seedPackage(sqlite, { id: 'pkg-mail', userId, kodyId: 'mail' })
 	await saveSecret({
@@ -74,7 +81,7 @@ test('secretLock returns an approval URL without widening allowed_packages', asy
 			source: { kind: 'mcp-oauth' },
 			baseUrl: 'https://kody.codes',
 			user: {
-				userId: personIdFromStored(userId),
+				userId: personIdFromStored('user-secret-lock'),
 				email: 'alice@example.com',
 				displayName: 'Alice',
 			},

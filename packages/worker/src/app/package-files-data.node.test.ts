@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUser from '#app/authenticated-user.ts'
 import { type AuthenticatedAppUser } from '#app/authenticated-user.ts'
@@ -119,7 +122,7 @@ const {
 const env = { APP_DB: {}, BUNDLE_ARTIFACTS_KV: {} } as Env
 const listing: CommunityListingRecord = {
 	id: 'listing-1',
-	ownerUserId: 'owner-1',
+	ownerUserId: ownerIdFromStored('owner-1'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'sentry',
@@ -159,7 +162,7 @@ function ownerSocialRow(profileVisibility: ProfileVisibility): UserSocialRow {
 
 const entitySource: EntitySourceRow = {
 	id: 'src-1',
-	user_id: 'owner-1',
+	user_id: ownerIdFromStored('owner-1'),
 	entity_kind: 'package',
 	entity_id: 'pkg-1',
 	repo_id: 'repo-1',
@@ -331,7 +334,10 @@ test('package page reports AGENTS.md only when a non-empty root file exists', as
 			listingId: 'listing-1',
 			viewerIsOwner: false,
 		})
-		expect({ files, hasAgentsDocs }).toEqual({ files, hasAgentsDocs: expected })
+		expect({ files, hasAgentsDocs }).toEqual({
+			files,
+			hasAgentsDocs: expected,
+		})
 	}
 })
 

@@ -5,6 +5,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import {
 	adminMutationCapabilityAccess,
 	auditAdminCapabilityInvocation,
+	adminStableOwnerId,
 	stableUserIdSchema,
 } from './admin-shared.ts'
 
@@ -36,7 +37,7 @@ export const adminAccountDeletionAbortCapability = defineDomainCapability(
 				async () => {
 					await abortAccountDeletingByStableUserId({
 						db: ctx.env.APP_DB,
-						stableUserId: args.stable_user_id,
+						stableUserId: adminStableOwnerId(args.stable_user_id),
 						env: ctx.env,
 					})
 					return { aborted: true as const }

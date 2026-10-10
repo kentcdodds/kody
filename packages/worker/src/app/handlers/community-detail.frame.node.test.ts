@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { createCommunityDetailHandler } from './community-detail.tsx'
@@ -69,7 +70,7 @@ vi.mock('#worker/package-registry/user-scope.ts', () => ({
 
 const sampleListing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-mcp-id',
+	ownerUserId: ownerIdFromStored('owner-mcp-id'),
 	packageId: 'pkg-1',
 	sourceId: 'src-1',
 	kodyId: 'github-triage',
@@ -99,7 +100,10 @@ const sampleListing = {
 
 const env = {} as Env
 const owner = {
-	mcpUser: { userId: 'owner-mcp-id', username: 'kentcdodds' },
+	mcpUser: {
+		userId: ownerIdFromStored('owner-mcp-id'),
+		username: 'kentcdodds',
+	},
 	roles: [],
 }
 const aheadCommit = 'ffffffffffffffffffffffffffffffffffffffff'
@@ -182,7 +186,12 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(privateOwner.html).not.toContain('href="/@kentcdodds"')
 
 	const sameLeafOnly = await renderDetail({
-		viewer: { mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' } },
+		viewer: {
+			mcpUser: {
+				userId: ownerIdFromStored('viewer-mcp-id'),
+				username: 'burhan',
+			},
+		},
 		savedPackagesByKodyId: [
 			{
 				id: 'pkg-github',
@@ -196,7 +205,12 @@ test('community detail handler returns bare detail frame HTML for target header'
 	expect(sameLeafOnly.html).not.toContain('href="/@burhan/github-triage"')
 
 	const signedIn = await renderDetail({
-		viewer: { mcpUser: { userId: 'viewer-mcp-id', username: 'burhan' } },
+		viewer: {
+			mcpUser: {
+				userId: ownerIdFromStored('viewer-mcp-id'),
+				username: 'burhan',
+			},
+		},
 		savedPackagesByKodyId: [
 			{
 				id: 'pkg-github',

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import * as Sentry from '@sentry/cloudflare'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { upsertSavedPackageVector } from './vectorize.ts'
@@ -18,7 +19,7 @@ import { upsertSavedPackageVector } from './vectorize.ts'
 
 type SearchIndexDebtRow = {
 	packageId: string
-	userId: string
+	userId: OwnerId
 	generation: number
 	embedText: string
 }
@@ -29,7 +30,7 @@ const inFlightReconciles = new Map<string, Promise<void>>()
 export async function markSavedPackageSearchIndexDebt(input: {
 	db: D1Database
 	packageId: string
-	userId: string
+	userId: OwnerId
 	embedText: string
 	lastError?: string | null
 }): Promise<number> {
@@ -105,7 +106,7 @@ async function readSavedPackageSearchIndexDebt(input: {
 		.bind(input.packageId)
 		.first<{
 			package_id: string
-			user_id: string
+			user_id: OwnerId
 			generation: number
 			embed_text: string
 		}>()
@@ -138,7 +139,7 @@ async function recordSavedPackageSearchIndexDebtFailure(input: {
 export async function listSavedPackageSearchIndexDebt(input: {
 	db: D1Database
 	limit: number
-}): Promise<Array<{ packageId: string; userId: string }>> {
+}): Promise<Array<{ packageId: string; userId: OwnerId }>> {
 	const rows = await input.db
 		.prepare(
 			`SELECT package_id, user_id
@@ -147,7 +148,7 @@ export async function listSavedPackageSearchIndexDebt(input: {
 			LIMIT ?`,
 		)
 		.bind(input.limit)
-		.all<{ package_id: string; user_id: string }>()
+		.all<{ package_id: string; user_id: OwnerId }>()
 	return (rows.results ?? []).map((row) => ({
 		packageId: row.package_id,
 		userId: row.user_id,
@@ -257,7 +258,7 @@ async function reconcileSavedPackageSearchIndex(input: {
 export async function scheduleSavedPackageSearchIndexUpsert(input: {
 	env: Env
 	packageId: string
-	userId: string
+	userId: OwnerId
 	embedText: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {

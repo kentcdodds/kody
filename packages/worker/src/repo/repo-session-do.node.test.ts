@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createWorkspaceStateBackend, type Workspace } from '@cloudflare/shell'
 import type git from 'isomorphic-git'
@@ -321,7 +322,7 @@ const { maxRepoSourceFileBytes, maxRepoSourceFileDiffLines } =
 
 type RepoSessionInstance = InstanceType<typeof RepoSession>
 
-const session = { sessionId: 'session-1', userId: 'user-1' }
+const session = { sessionId: 'session-1', userId: ownerIdFromStored('user-1') }
 const jobManifest = '{"version":1,"kind":"job","entrypoint":"src/job.ts"}'
 const demoPackageJson =
 	'{"name":"@kody/demo","exports":{".":"./index.ts"},"kody":{"id":"demo","description":"Demo"}}'
@@ -344,7 +345,7 @@ function kvEnv(kv: unknown = {}) {
 function sourceRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'package',
 		entity_id: 'package-1',
 		repo_id: 'package-package-1',
@@ -438,7 +439,7 @@ function publishExternal(
 	return repoSession(env).publishFromExternalRef({
 		sessionId: 'external-publish-source-1',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		newCommit: 'commit-new',
 		...options,
 	})
@@ -459,7 +460,7 @@ function openSession(
 	return repoSession(env).openSession({
 		sessionId,
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 		...options,
@@ -472,7 +473,7 @@ test('repo sessions inventory workspace bytes through open, mutation, and cleanu
 	const repo = repoSession(env)
 	const inventory = {
 		db: env.APP_DB,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		storageId: 'repo-session:session-1',
 	}
 
@@ -486,14 +487,14 @@ test('repo sessions inventory workspace bytes through open, mutation, and cleanu
 	})
 	expect(mockModule.registerStorageBucketAndWait).toHaveBeenCalledWith({
 		env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		storageId: 'repo-session:session-1',
 		kind: 'repo_session',
 	})
 	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledWith(
 		expect.objectContaining({
 			env,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			storageId: 'repo-session:session-1',
 			readEstimatedBytes: expect.any(Function),
 			waitUntil: expect.any(Function),
@@ -508,7 +509,7 @@ test('repo sessions inventory workspace bytes through open, mutation, and cleanu
 	})
 	expect(mockModule.maybeRefreshStorageBucketEstimate).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			storageId: 'repo-session:session-1',
 		}),
 	)
@@ -623,12 +624,12 @@ test('cleanupSessionBranch removes the D1 session row when remote branch delete 
 		branchDeleted: false,
 	})
 	expect(deleteRepoSession).toHaveBeenCalledWith(expect.anything(), {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sessionId: 'session-1',
 	})
 	expect(mockModule.deleteStorageBucketInventory).toHaveBeenCalledWith({
 		db: expect.anything(),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		storageId: 'repo-session:session-1',
 	})
 	expect(consoleWarn).toHaveBeenCalledWith(
@@ -680,7 +681,7 @@ test('session teardown does not wipe blobs without a catalog row and keeps the r
 		expect.anything(),
 		expect.objectContaining({
 			id: 'session-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			status: 'discarded',
 		}),
 	)
@@ -1074,7 +1075,7 @@ test('openSession sanitizes repo names, persists namespace metadata, and rejects
 		mockModule.markEntitySourcePendingExternalReconcile,
 	).toHaveBeenCalledWith(expect.anything(), {
 		id: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		tokenExpiresAt: expect.any(String),
 	})
 
@@ -1196,7 +1197,7 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 	await expect(
 		repoSession().readFile({
 			sessionId: 'job-runtime-session-replica-lag',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			path: 'kody.json',
 		}),
 	).resolves.toEqual({
@@ -1211,7 +1212,7 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 	setCommonSessionFixtures()
 	const initialSource = {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		repo_id: 'source-repo',
 		published_commit: 'commit-initial',
 		manifest_path: 'kody.json',
@@ -1253,14 +1254,14 @@ test('readFile retries D1 reads and falls back to cached sessions when replicas 
 	await cachedFallbackSession.openSession({
 		sessionId: 'job-runtime-session-1',
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		baseUrl: 'https://example.com',
 		sourceRoot: '/',
 	})
 	await expect(
 		cachedFallbackSession.readFile({
 			sessionId: 'job-runtime-session-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			path: 'kody.json',
 		}),
 	).resolves.toEqual({ path: 'kody.json', content: 'export default {}' })
@@ -1425,7 +1426,7 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 		checkRepo.runIsolatedCheckPhase({
 			phase: 'typecheck',
 			stagingKey,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			typecheckTargets: [
 				{ path: 'src/index.ts', kind: 'callable', emittedEventTopics: [] },
 			],
@@ -1435,13 +1436,13 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 		phase: 'bundle-chunk',
 		stagingKey: 'repo-checks-staging:v1:user-1:abc',
 		baseUrl: '/',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		bundleTargets: [{ path: 'src/index.ts', bundleKind: 'callable' }],
 	})
 	expect(bundleOutcome.ok).toBe(true)
 	expect(mockModule.validatePackageBundles).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceFiles: staged.sourceFiles,
 			entryPoints: [{ path: 'src/index.ts', bundleKind: 'callable' }],
 		}),
@@ -1479,7 +1480,7 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 		rebuildRepo.runIsolatedArtifactRebuild({
 			stagingKey: 'repo-artifact-rebuild-staging:v1:user-1:abc',
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			publishedCommit: 'commit-1',
 			targets: [target],
 			...options,
@@ -1513,7 +1514,7 @@ test('isolated check phases and artifact rebuilds load staged files from KV, ski
 	).resolves.toMatchObject(rebuiltTarget)
 	expect(mockModule.persistPublishedPackageArtifactTarget).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			target,
 			source: expect.objectContaining({ published_commit: 'commit-1' }),
 		}),
@@ -1547,7 +1548,7 @@ test('published artifact rebuild stages the published snapshot first and falls b
 	const listTargets = () =>
 		repoSession({ APP_DB: {} } as Env).listPublishedPackageArtifactTargets({
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		})
 	async function stagedSourceFiles() {
 		const put = vi.fn(
@@ -1557,7 +1558,7 @@ test('published artifact rebuild stages the published snapshot first and falls b
 			kvEnv({ put }),
 		).stagePublishedPackageArtifactRebuild({
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		})
 		expect(
 			staged.stagingKey.startsWith('repo-artifact-rebuild-staging:v1:user-1:'),

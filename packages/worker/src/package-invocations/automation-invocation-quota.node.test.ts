@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as packageSourceModule from '#worker/package-registry/source.ts'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
@@ -113,7 +114,7 @@ vi.mock('#worker/identity/background-mcp-user.ts', () => ({
 
 function invalidateSeededInvokeContract() {
 	invalidateInvokeContractFreshness({
-		userId: 'user-123',
+		userId: ownerIdFromStored('user-123'),
 		packageIdOrKodyIds: ['pkg-1', 'discord-gateway', '@owner/pkg'],
 		sourceId: 'source-1',
 	})
@@ -150,7 +151,10 @@ function invokeWebhook(
 }
 
 function readMeter(env: Env, userId: string, resource: string) {
-	return userMeterRpc({ env, userId }).read({ resource, day: utcDayKey() })
+	return userMeterRpc({ env, userId: ownerIdFromStored(userId) }).read({
+		resource,
+		day: utcDayKey(),
+	})
 }
 
 async function readCount(env: Env, userId: string, resource: string) {
@@ -162,7 +166,7 @@ function consumeExecuteCall(env: Env, userId: string) {
 	return consumeDailyEntitlement({
 		db: env.APP_DB,
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		email: 'owner@example.com',
 		resource: 'execute_calls_per_day',
 	})
@@ -239,7 +243,7 @@ test('automation_invocations_per_day at quota fails before sandbox, leaves execu
 test('execute_calls_per_day flood does not burn automation_invocations_per_day', async () => {
 	invalidateSeededInvokeContract()
 	const { env } = createEnvWithUserMeter(createDatabase())
-	const userId = 'user-123'
+	const userId = ownerIdFromStored('user-123')
 
 	for (let i = 0; i < 3; i++) await consumeExecuteCall(env, userId)
 

@@ -1,4 +1,5 @@
 import { base64ToBytes } from '@kody-internal/shared/base64.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import {
 	accountSuspendedMessage,
@@ -89,7 +90,7 @@ export type OutboundEmailAttachmentInput = {
 
 export type EmailSendInput = {
 	env: SendEmailEnv
-	userId: string
+	userId: OwnerId
 	/** MCP / Open API caller context when the send is user-initiated. */
 	request?: RequestContext | null
 	/**
@@ -311,7 +312,7 @@ function prepareOutboundAttachments(
  */
 async function storeOutboundAttachments(input: {
 	blobs: R2Bucket
-	userId: string
+	userId: OwnerId
 	messageId: string
 	attachments: Array<PreparedOutboundAttachment>
 	now: string
@@ -355,7 +356,7 @@ async function storeOutboundAttachments(input: {
 
 async function requireStoredEmailMessage(input: {
 	env: SendEmailEnv
-	userId: string
+	userId: OwnerId
 	messageId: string
 }) {
 	const stored = await mailboxRpc({

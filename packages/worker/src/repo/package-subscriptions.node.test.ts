@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import type * as Artifacts from './artifacts.ts'
@@ -73,7 +74,7 @@ const { dispatchRepoSubscriptionEvents, processCloudflareArtifactsRepoEvent } =
 
 const source = {
 	id: 'source-1',
-	user_id: 'user-1',
+	user_id: ownerIdFromStored('user-1'),
 	entity_kind: 'repo' as const,
 	entity_id: 'user-repo-1',
 	repo_id: 'repo-user-repo-1',
@@ -122,7 +123,7 @@ const pushedEvent = {
 
 const userRepo = {
 	id: 'user-repo-1',
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	name: 'skills',
 	description: null,
 	createdAt: '2026-05-18T00:00:00.000Z',
@@ -149,7 +150,7 @@ function seedMatchedSource() {
 test('repo.pushed fans out only to the owning user packages', async () => {
 	const savedPackage = {
 		id: 'package-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-pkg-1',
 		kodyId: 'skills-resync',
 		name: '@user/skills-resync',
@@ -176,7 +177,7 @@ test('repo.pushed fans out only to the owning user packages', async () => {
 	})
 
 	expect(mocks.listSavedPackagesByUserId).toHaveBeenCalledWith(env.APP_DB, {
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(mocks.invokePackageSubscription).toHaveBeenCalledWith(
 		expect.objectContaining({

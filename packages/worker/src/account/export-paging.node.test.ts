@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import * as packageRegistrySource from '#worker/package-registry/source.ts'
 import {
@@ -27,7 +28,7 @@ function sectionReader(env: Env, mcpUserId = 'user-aaa') {
 		readAccountExportSection({
 			env,
 			dbUserId: 1,
-			mcpUserId,
+			mcpUserId: ownerIdFromStored(mcpUserId),
 			section,
 			...input,
 			startAfter: input.startAfter ?? undefined,
@@ -35,7 +36,11 @@ function sectionReader(env: Env, mcpUserId = 'user-aaa') {
 }
 
 const exportUserA = (env: Env) =>
-	createAccountExport({ env, dbUserId: 1, mcpUserId: 'user-aaa' })
+	createAccountExport({
+		env,
+		dbUserId: 1,
+		mcpUserId: ownerIdFromStored('user-aaa'),
+	})
 
 async function readAllStorageRunnerIds(
 	read: ReturnType<typeof sectionReader>,
@@ -112,7 +117,7 @@ test('R2 export pages owned payloads in bounded chunks and reports missing objec
 	).rejects.toThrow('Invalid or unsupported r2_object cursor')
 	const legacyCursor = await createSignedR2Cursor({
 		secret: 'test-cookie-secret',
-		userId: 'user-aaa',
+		userId: ownerIdFromStored('user-aaa'),
 		cursor: {
 			v: 1,
 			state: { stage: 'email_raw_mime', afterRowid: 1 },
@@ -183,7 +188,7 @@ test('R2 export cursor detects object overwrite before continuing bytes', async 
 	insertTestUser(sqlite, {
 		id: 1,
 		username: 'user-a',
-		stableUserId: 'user-aaa',
+		stableUserId: ownerIdFromStored('user-aaa'),
 		avatarKey: 'user-avatars/user-aaa/avatar.png',
 	})
 	const bytes = new Uint8Array(300 * 1024).fill(1)
@@ -366,7 +371,9 @@ test('run_records section exports runs, ledger, and dedicated state and pages ac
 				bySurface: [],
 			}),
 		}),
-		JOBS: { exportUser: async () => ({ userId: 'user-aaa' }) },
+		JOBS: {
+			exportUser: async () => ({ userId: ownerIdFromStored('user-aaa') }),
+		},
 	} as unknown as Env
 	const read = sectionReader(env)
 
@@ -650,7 +657,7 @@ test('storage_runners count matches ids enumerable by discovery paging, includin
 	const manifest = await createAccountExportManifest({
 		env,
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 	})
 	const expectedCount = manifest.sections.storage_runners?.count
 	expect(expectedCount).toBeGreaterThan(0)
@@ -678,7 +685,7 @@ test('storage_runner section exports a RunLog-only storage id', async () => {
 	const manifest = await createAccountExportManifest({
 		env,
 		dbUserId: 1,
-		mcpUserId: 'user-aaa',
+		mcpUserId: ownerIdFromStored('user-aaa'),
 	})
 	expect(manifest.sections.storage_runners?.count).toBe(1)
 

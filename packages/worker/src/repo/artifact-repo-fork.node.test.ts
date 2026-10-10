@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 
 const mockModule = vi.hoisted(() => ({
@@ -60,7 +61,7 @@ const { forkArtifactRepo, persistForkedArtifactRepoContents } =
 const env = { APP_DB: {} as D1Database } as Env
 const source = {
 	id: 'source-1',
-	user_id: 'user-1',
+	user_id: ownerIdFromStored('user-1'),
 	entity_kind: 'package' as const,
 	entity_id: 'package-1',
 	repo_id: 'package-dest',
@@ -101,7 +102,7 @@ function persist(
 	return persistForkedArtifactRepoContents({
 		env,
 		baseUrl: 'https://kody.test',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		source,
 		originCommit: 'commit-origin',
 		expectedPackageScope: 'jane',

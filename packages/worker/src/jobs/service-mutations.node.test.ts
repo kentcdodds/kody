@@ -1,4 +1,8 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+	personalOrgId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, afterEach } from 'vitest'
 import { getJobRowById, updateJobRow } from '@kody-internal/shared/jobs/repo.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -86,7 +90,10 @@ const every15m = { type: 'interval', every: '15m' } as const
 const codeErrorMessage = 'Job code cannot be changed via jobUpdate.'
 
 function setup(bindings: Partial<Env> = {}) {
-	const env = createJobServiceTestEnv({ APP_DB: createDatabase(), ...bindings })
+	const env = createJobServiceTestEnv({
+		APP_DB: createDatabase(),
+		...bindings,
+	})
 	mockRepoPersistence()
 	const callerContext = createBaseCallerContext()
 	return { env, callerContext, userId: callerContext.user.userId }
@@ -122,7 +129,7 @@ function createRepoSessionRow(input: {
 }): RepoSessionRow {
 	return {
 		id: input.id,
-		user_id: input.userId,
+		user_id: ownerIdFromStored(input.userId),
 		source_id: input.sourceId,
 		source_repo_id: 'source-repo-1',
 		session_branch: `sessions/${input.id}`,
@@ -180,7 +187,7 @@ test('updateJob and deleteJob sync the job manager alarm', async () => {
 		deleted: 1,
 		artifactAccessUnavailable: false,
 	})
-	await deleteJob({ env, userId, jobId: leftover.id })
+	await deleteJob({ env, userId: personalOrgId(userId), jobId: leftover.id })
 
 	expect(repoMockModule.cleanupArtifactReposForSource).toHaveBeenCalledWith({
 		env,
@@ -229,10 +236,18 @@ test('updateJob and deleteJob reject another user trying to mutate or remove a j
 		notFound,
 	)
 	await expectCallerError(
-		deleteJob({ env, userId: 'user-999', jobId: created.id }),
+		deleteJob({
+			env,
+			userId: ownerIdFromStored('user-999'),
+			jobId: created.id,
+		}),
 		notFound,
 	)
-	const inspection = await getJobInspection({ env, userId, jobId: created.id })
+	const inspection = await getJobInspection({
+		env,
+		userId: personalOrgId(userId),
+		jobId: created.id,
+	})
 	expect(inspection.job).toMatchObject({ id: created.id, enabled: true })
 })
 
@@ -241,7 +256,7 @@ test('missing job ids throw McpCallerError from get/inspect/run-now', async () =
 	const env = createJobServiceTestEnv({ APP_DB: createDatabase() })
 	const input = {
 		env,
-		userId: createBaseCallerContext().user.userId,
+		userId: personalOrgId(createBaseCallerContext().user.userId),
 		jobId: 'missing-job-id',
 	}
 	for (const lookup of [getJob, getJobInspection, runJobNow]) {
@@ -301,7 +316,7 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	})
 	await syncPackageJobsForPackage({
 		env,
-		userId,
+		userId: personalOrgId(userId),
 		baseUrl: callerContext.baseUrl,
 		packageId,
 		sourceId,
@@ -380,10 +395,12 @@ test('updateJob updates package-owned job metadata without force-publishing the 
 	)
 
 	await expectCallerError(
-		deleteJob({ env, userId, jobId }),
+		deleteJob({ env, userId: personalOrgId(userId), jobId }),
 		packageOwnedJobDeleteErrorMessage,
 	)
-	expect(await getJobInspection({ env, userId, jobId })).toMatchObject({
+	expect(
+		await getJobInspection({ env, userId: personalOrgId(userId), jobId }),
+	).toMatchObject({
 		job: { id: jobId },
 	})
 })
@@ -436,7 +453,7 @@ test('inspectJobsForUser returns persisted job fields with alarm debug state', a
 
 	const inspected = await inspectJobsForUser({
 		env,
-		userId,
+		userId: personalOrgId(userId),
 	})
 
 	expect(jobManagerMockModule.getJobManagerDebugState).toHaveBeenCalledWith({
@@ -481,7 +498,7 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 
 	const inspected = await getJobInspection({
 		env,
-		userId,
+		userId: personalOrgId(userId),
 		jobId: created.id,
 	})
 
@@ -524,7 +541,12 @@ test('getJobInspection reports alarm state, source code, and artifact gaps', asy
 			},
 		})
 	const inspectCode = (jobId: string, inspectEnv = env) =>
-		getJobInspection({ env: inspectEnv, userId, jobId, includeCode: true })
+		getJobInspection({
+			env: inspectEnv,
+			userId: personalOrgId(userId),
+			jobId,
+			includeCode: true,
+		})
 
 	const code =
 		'export default async function main() { return { custom: true } }'

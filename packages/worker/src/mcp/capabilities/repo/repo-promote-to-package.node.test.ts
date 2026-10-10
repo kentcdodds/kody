@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -100,7 +103,7 @@ function setup({
 	mockModule.resolveOwnedUserRepo.mockResolvedValue({
 		userRepo: {
 			id: 'repo-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: 'brave-search',
 			description: null,
 			isPrivate: repoIsPrivate,
@@ -109,7 +112,7 @@ function setup({
 		},
 		source: {
 			id: 'source-1',
-			user_id: 'user-1',
+			user_id: ownerIdFromStored('user-1'),
 			entity_kind: 'repo' as const,
 			entity_id: 'repo-1',
 			repo_id: 'repo-artifacts-1',
@@ -205,7 +208,10 @@ const insertedAs = (isPrivate: 0 | 1) => [
 	null,
 	{ stamp: false },
 ]
-const deletedRepo = [expect.anything(), { userId: 'user-1', repoId: 'repo-1' }]
+const deletedRepo = [
+	expect.anything(),
+	{ userId: ownerIdFromStored('user-1'), repoId: 'repo-1' },
+]
 
 test('repoPromoteToPackage rejects repos without package.json at HEAD', async () => {
 	const { promote } = setup()
@@ -235,7 +241,7 @@ test('repoPromoteToPackage seeds published_commit from the opened session base s
 	expect(mockModule.insertSavedPackage).toHaveBeenCalledWith(...insertedAs(0))
 	expect(rpc.runChecks).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			expectedPackageScope: 'user',
 		}),
 	)
@@ -252,7 +258,7 @@ test('repoPromoteToPackage seeds published_commit from the opened session base s
 	expect(mockModule.publishCommunityListing).toHaveBeenCalledWith(
 		expect.objectContaining({
 			packageId: result.package_id,
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 		}),
 	)
 	expect(mockModule.deleteUserRepo).toHaveBeenCalledWith(...deletedRepo)

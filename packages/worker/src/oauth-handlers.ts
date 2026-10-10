@@ -27,7 +27,11 @@ import {
 } from '#universal/loader-data.ts'
 import { publicAuthProvidersLoaderData } from '#app/public-auth-providers.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personalOrgId,
+	personIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { recordMcpConnectFunnelEvent } from '#worker/identity/onboarding-funnel.ts'
 import { createDb, usersTable } from './db.ts'
 import { upgradePasswordHashIfNeeded } from './password-upgrade.ts'
@@ -164,7 +168,7 @@ async function resolveAuthorizeOrgAndProfile(input: {
 
 async function evaluateSecondAgentGiftAfterAuthorize(
 	env: Env,
-	stableUserId: string,
+	stableUserId: OwnerId,
 ) {
 	const inbound = await loadInboundMcpConnectionState(
 		getOAuthHelpers(env),
@@ -1344,7 +1348,10 @@ async function tryHandleSilentOidcAuthorize(
 		userId: approvedUserId,
 		clientId: authRequest.clientId,
 	})
-	await evaluateSecondAgentGiftAfterAuthorize(env, approvedUserId)
+	await evaluateSecondAgentGiftAfterAuthorize(
+		env,
+		personalOrgId(approvedUserId),
+	)
 	return Response.redirect(redirectTo, 302)
 }
 
@@ -1811,7 +1818,10 @@ export async function handleAuthorizeRequest(
 			userId,
 			clientId: authRequest.clientId,
 		})
-		await evaluateSecondAgentGiftAfterAuthorize(env, userId)
+		await evaluateSecondAgentGiftAfterAuthorize(
+			env,
+			personalOrgId(personIdFromStored(userId)),
+		)
 		if (wantsJson(request)) {
 			return jsonResponse(
 				{ ok: true, redirectTo },

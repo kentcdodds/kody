@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -148,7 +149,7 @@ test('orphan fork cleanup and package delete drop leftover community_forks witho
 
 	expect(
 		await deleteCommunityForksForPackage(db, {
-			userId: 'user-kent',
+			userId: ownerIdFromStored('user-kent'),
 			packageId: 'package-live',
 			sourceId: 'source-live',
 		}),

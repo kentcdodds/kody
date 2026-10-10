@@ -21,6 +21,7 @@ import { createForwardableEmailMessage } from './test-fixtures.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 const appBaseUrl = 'https://kody.example.com'
 
 async function seedAccount(label: string, plan: PlanName) {
@@ -54,7 +55,9 @@ function messageFor(address: string) {
 
 async function seedReceiveCount(userId: string, count: number) {
 	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(userId)),
+		env.USER_METER.idFromName(
+			userMeterDurableObjectName(ownerIdFromStored(userId)),
+		),
 	)
 	await runInDurableObject(stub, async (instance: UserMeter, state) => {
 		expect(instance).toBeInstanceOf(UserMeter)
@@ -78,7 +81,10 @@ async function seedReceiveCount(userId: string, count: number) {
 }
 
 async function readReceiveCount(userId: string) {
-	const result = await userMeterRpc({ env, userId }).read({
+	const result = await userMeterRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).read({
 		resource: 'email_receives_per_day',
 		day: utcDayKey(),
 	})
@@ -86,7 +92,10 @@ async function readReceiveCount(userId: string) {
 }
 
 async function readRejections(userId: string) {
-	const events = await mailboxRpc({ env, userId }).listDeliveryEvents({
+	const events = await mailboxRpc({
+		env,
+		userId: ownerIdFromStored(userId),
+	}).listDeliveryEvents({
 		limit: 100,
 	})
 	const rejected = events
@@ -99,9 +108,9 @@ async function readRejections(userId: string) {
 }
 
 async function seedStoredMailboxMessages(userId: string, count: number) {
-	await mailboxRpc({ env, userId }).countMessages({})
+	await mailboxRpc({ env, userId: ownerIdFromStored(userId) }).countMessages({})
 	await runInDurableObject(
-		stubFor(userId),
+		stubFor(ownerIdFromStored(userId)),
 		async (_instance: Mailbox, state) => {
 			state.storage.sql.exec(
 				`WITH RECURSIVE seq(n) AS (
@@ -171,7 +180,10 @@ test('daily receive caps reject through the Mailbox audit path, bounding detail 
 			expect(message.rejectedReason).toBe('Recipient mailbox is over quota.')
 		}
 		expect(
-			await mailboxRpc({ env, userId: account.userId }).listMessages({
+			await mailboxRpc({
+				env,
+				userId: ownerIdFromStored(account.userId),
+			}).listMessages({
 				limit: 10,
 			}),
 		).toMatchObject({ messages: [] })
@@ -223,7 +235,10 @@ test('free-plan Mailbox count, storage, and size limits reject before charge whi
 			label: 'storage-cap',
 			phase: 'entitlement',
 			prepare: async (userId) => {
-				await userMeterRpc({ env, userId }).setStorageBytes({
+				await userMeterRpc({
+					env,
+					userId: ownerIdFromStored(userId),
+				}).setStorageBytes({
 					bytes: planLimits.free.maxStorageBytes,
 					updatedAt: new Date().toISOString(),
 				})
@@ -256,7 +271,10 @@ test('free-plan Mailbox count, storage, and size limits reject before charge whi
 	await handleInboundEmail(accepted, inboundEnv)
 	expect(accepted.rejectedReason).toBeNull()
 	expect(
-		await mailboxRpc({ env, userId: acceptedAccount.userId }).listMessages({
+		await mailboxRpc({
+			env,
+			userId: ownerIdFromStored(acceptedAccount.userId),
+		}).listMessages({
 			limit: 10,
 		}),
 	).toMatchObject({
@@ -278,7 +296,9 @@ test('UserMeter inbound claim and consume roll back together on claim insert fai
 	const updatedAt = now.toISOString()
 	const deliveryId = `email-inbound-delivery:atomic-${crypto.randomUUID()}`
 	const stub = env.USER_METER.get(
-		env.USER_METER.idFromName(userMeterDurableObjectName(account.userId)),
+		env.USER_METER.idFromName(
+			userMeterDurableObjectName(ownerIdFromStored(account.userId)),
+		),
 	)
 	await runInDurableObject(stub, async (instance: UserMeter, state) => {
 		await instance.initialize({

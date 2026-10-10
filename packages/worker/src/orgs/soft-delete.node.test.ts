@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
@@ -30,7 +31,7 @@ vi.mock('#worker/jobs/jobs-data.ts', () => ({
 
 vi.spyOn(JobManager, 'syncJobManagerAlarm').mockResolvedValue({
 	ok: true,
-	userId: 'mock',
+	userId: ownerIdFromStored('mock'),
 	nextRunAt: null,
 })
 
@@ -77,7 +78,7 @@ async function seedOrg(db: D1Database, orgId: string, slug: string) {
 
 test('soft delete and restore org within the restore window', async () => {
 	const { env, appDb, auditDb } = await createHarness()
-	const orgId = 'org-team-alpha'
+	const orgId = ownerIdFromStored('org-team-alpha')
 	await seedOrg(appDb, orgId, 'team-alpha')
 	const deleted = await softDeleteOrg({
 		env,
@@ -117,8 +118,8 @@ test('soft delete and restore org within the restore window', async () => {
 
 test('only a deletion-generation owner can restore a soft-deleted org', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-restore-auth'
-	const ownerId = 'owner-restore-1'
+	const orgId = ownerIdFromStored('org-restore-auth')
+	const ownerId = ownerIdFromStored('owner-restore-1')
 	const memberId = 'member-restore-1'
 	await seedOrg(appDb, orgId, 'restore-auth')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -152,7 +153,7 @@ test('only a deletion-generation owner can restore a soft-deleted org', async ()
 
 test('org soft delete revokes team-bound API tokens and bootstrap codes', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-token-revoke'
+	const orgId = ownerIdFromStored('org-token-revoke')
 	const memberId = 'member-token-1'
 	await seedOrg(appDb, orgId, 'token-revoke')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -225,7 +226,7 @@ test('org soft delete revokes team-bound API tokens and bootstrap codes', async 
 
 test('org soft delete tombstones bucket child rows and inbox addresses', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-child-rows'
+	const orgId = ownerIdFromStored('org-child-rows')
 	await seedOrg(appDb, orgId, 'child-rows')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
@@ -330,7 +331,7 @@ test('org soft delete tombstones bucket child rows and inbox addresses', async (
 
 test('resourceRestore clears one org-owned row while the org is still soft-deleted', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-resource-restore'
+	const orgId = ownerIdFromStored('org-resource-restore')
 	await seedOrg(appDb, orgId, 'resource-restore')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
@@ -372,7 +373,7 @@ test('resourceRestore clears one org-owned row while the org is still soft-delet
 
 test('org restore does not revive memberships for soft-deleted users', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-restore-members'
+	const orgId = ownerIdFromStored('org-restore-members')
 	const liveMember = 'live-member-1'
 	const deletedMember = 'deleted-member-1'
 	await seedOrg(appDb, orgId, 'restore-members')
@@ -428,7 +429,7 @@ test('org restore does not revive memberships for soft-deleted users', async () 
 
 test('restore outside the 30-day window fails', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-old-delete'
+	const orgId = ownerIdFromStored('org-old-delete')
 	await seedOrg(appDb, orgId, 'old-delete')
 	const oldDeletedAt = '2025-08-01T00:00:00.000Z'
 	await appDb
@@ -444,7 +445,7 @@ test('user delete blocked when sole owner of multi-member org', async () => {
 	const { appDb } = await createHarness()
 	const ownerId = testStableUserIdFromEmail('owner@example.com')
 	const memberId = testStableUserIdFromEmail('member@example.com')
-	const orgId = 'org-shared'
+	const orgId = ownerIdFromStored('org-shared')
 	await seedOrg(appDb, orgId, 'shared')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
@@ -455,7 +456,10 @@ test('user delete blocked when sole owner of multi-member org', async () => {
 		.bind(orgId, ownerId, ts, orgId, memberId, ts)
 		.run()
 	await expect(
-		assertUserDeleteNotBlockedAsSoleOwner({ db: appDb, userId: ownerId }),
+		assertUserDeleteNotBlockedAsSoleOwner({
+			db: appDb,
+			userId: ownerIdFromStored(ownerId),
+		}),
 	).rejects.toBeInstanceOf(UserDeleteBlockedSoleOwnerError)
 })
 
@@ -470,7 +474,7 @@ test('personal org provision path supports soft delete audit', async () => {
 	})
 	await softDeleteOrg({
 		env,
-		orgId: stableUserId,
+		orgId: ownerIdFromStored(stableUserId),
 		actorUserId: stableUserId,
 		now,
 	})
@@ -510,7 +514,7 @@ test('softDeleteUserAccount resumes after a sole-member org lease refusal', asyn
 	})
 	const writePromise = withAccountWriteLease({
 		db: appDb,
-		stableUserId,
+		stableUserId: ownerIdFromStored(stableUserId),
 		env,
 		holder: 'packageSave',
 		write: async () => {
@@ -524,7 +528,7 @@ test('softDeleteUserAccount resumes after a sole-member org lease refusal', asyn
 	await expect(
 		softDeleteUserAccount({
 			env,
-			userId: stableUserId,
+			userId: ownerIdFromStored(stableUserId),
 			now,
 		}),
 	).rejects.toBeInstanceOf(AccountDeletionWritersActiveError)
@@ -547,7 +551,7 @@ test('softDeleteUserAccount resumes after a sole-member org lease refusal', asyn
 	await expect(
 		softDeleteUserAccount({
 			env,
-			userId: stableUserId,
+			userId: ownerIdFromStored(stableUserId),
 			now,
 		}),
 	).resolves.toMatchObject({
@@ -572,7 +576,7 @@ test('softDeleteUserAccount resumes after a sole-member org lease refusal', asyn
 
 test('softDeleteOrg refuses while an org OwnerId write lease is held', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-lease-busy'
+	const orgId = ownerIdFromStored('org-lease-busy')
 	await seedOrg(appDb, orgId, 'lease-busy')
 
 	let releaseLease!: () => void
@@ -627,7 +631,7 @@ test('softDeleteOrg refuses while an org OwnerId write lease is held', async () 
 
 test('retrying an org soft-delete finishes the same generation', async () => {
 	const { env, appDb } = await createHarness()
-	const orgId = 'org-resume'
+	const orgId = ownerIdFromStored('org-resume')
 	await seedOrg(appDb, orgId, 'resume')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
@@ -695,7 +699,7 @@ test('retrying an org soft-delete finishes the same generation', async () => {
 test('retrying a user soft-delete finishes sole-org rows from the same generation', async () => {
 	const { env, appDb } = await createHarness()
 	const userId = testStableUserIdFromEmail('resume-user@example.com')
-	const orgId = 'org-user-resume'
+	const orgId = ownerIdFromStored('org-user-resume')
 	const ts = '2026-01-01T00:00:00.000Z'
 	await appDb
 		.prepare(
@@ -723,7 +727,7 @@ test('retrying a user soft-delete finishes sole-org rows from the same generatio
 		.run()
 	const deleted = await softDeleteUserAccount({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		now,
 	})
 	expect(deleted.resumed).toBe(false)
@@ -736,7 +740,7 @@ test('retrying a user soft-delete finishes sole-org rows from the same generatio
 	const later = new Date(now.getTime() + 60_000)
 	const resumed = await softDeleteUserAccount({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		now: later,
 	})
 	expect(resumed.resumed).toBe(true)
@@ -758,7 +762,7 @@ test('retrying a user soft-delete revokes org credentials left by a partial offb
 	const { env, appDb } = await createHarness()
 	const userId = testStableUserIdFromEmail('partial-offboard@example.com')
 	const ownerId = testStableUserIdFromEmail('partial-owner@example.com')
-	const orgId = 'org-partial-offboard'
+	const orgId = ownerIdFromStored('org-partial-offboard')
 	const ts = '2026-01-01T00:00:00.000Z'
 	const deletedAt = now.toISOString()
 	await appDb
@@ -795,7 +799,7 @@ test('retrying a user soft-delete revokes org credentials left by a partial offb
 		.run()
 	const resumed = await softDeleteUserAccount({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		now: new Date(now.getTime() + 60_000),
 	})
 	expect(resumed.resumed).toBe(true)
@@ -810,7 +814,7 @@ test('a user-delete retry does not soft-delete a shared org after the other memb
 	const { env, appDb } = await createHarness()
 	const userId = testStableUserIdFromEmail('alice-retry@example.com')
 	const otherId = testStableUserIdFromEmail('bob-left@example.com')
-	const orgId = 'org-shared-retry'
+	const orgId = ownerIdFromStored('org-shared-retry')
 	const ts = '2026-01-01T00:00:00.000Z'
 	const deletedAt = now.toISOString()
 	await appDb
@@ -843,7 +847,7 @@ test('a user-delete retry does not soft-delete a shared org after the other memb
 
 	const resumed = await softDeleteUserAccount({
 		env,
-		userId,
+		userId: ownerIdFromStored(userId),
 		now: new Date(now.getTime() + 60_000),
 	})
 	expect(resumed.deletedOrgIds).toEqual([])

@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -88,7 +91,7 @@ function mockSavedWebhook(webhookName = 'sentry') {
 		id: 'pkg-1',
 		kodyId: 'sentry-bridge',
 		name: '@user/sentry-bridge',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'src-1',
 	})
 	mockModule.getWebhookEndpointByKey.mockResolvedValue(
@@ -99,7 +102,7 @@ function mockSavedWebhook(webhookName = 'sentry') {
 function endpoint(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'ep-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		webhookName: 'sentry',
 		urlSecretHash: 'hash',
@@ -395,7 +398,7 @@ test('webhook capabilities expose mint once and never leak secrets on list', asy
 	])
 	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
 		env: ctx.env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		filter: { surface: 'webhook', packageId: 'pkg-1', name: 'sentry' },
 		limit: 25,
 	})
@@ -427,7 +430,7 @@ test('webhookDeliveryList pushes the name filter, round-trips outcomes, and trea
 	expect(mockModule.listRunRecords).toHaveBeenCalledTimes(1)
 	expect(mockModule.listRunRecords).toHaveBeenCalledWith({
 		env: ctx.env,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		filter: { surface: 'webhook', packageId: 'pkg-1', name: 'alpha' },
 		limit,
 	})

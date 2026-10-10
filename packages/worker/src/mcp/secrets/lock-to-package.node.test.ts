@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -40,7 +41,7 @@ function seedPackage(
 
 test('lockSecretToPackage adds a package grant and rejects unknown packages', async () => {
 	const { sqlite, env } = createHarness()
-	const userId = 'user-secret-lock'
+	const userId = ownerIdFromStored('user-secret-lock')
 	seedPackage(sqlite, { id: 'pkg-notes', userId, kodyId: 'notes' })
 	seedPackage(sqlite, { id: 'pkg-mail', userId, kodyId: 'mail' })
 

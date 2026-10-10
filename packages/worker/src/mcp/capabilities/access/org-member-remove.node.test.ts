@@ -18,7 +18,7 @@ test('orgMemberRemove revokes org credentials and disconnects own-login integrat
 		new URL('../../../../migrations/', import.meta.url),
 	)
 	const db = createD1FromSqlite(sqlite)
-	const orgId = 'org-remove-member'
+	const orgId = ownerIdFromStored('org-remove-member')
 	const ownerId = testStableUserIdFromEmail('remove-owner@example.com')
 	const memberId = testStableUserIdFromEmail('remove-member@example.com')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -90,7 +90,7 @@ test('orgMemberRemove revokes org credentials and disconnects own-login integrat
 					displayName: 'Owner',
 				},
 				orgBinding: {
-					org: { id: ownerIdFromStored(orgId), slug: 'remove-org' },
+					org: { id: orgId, slug: 'remove-org' },
 					role: 'owner',
 				},
 			}),
@@ -133,7 +133,7 @@ test('orgMemberRemove retries credential revoke after the membership is already 
 		new URL('../../../../migrations/', import.meta.url),
 	)
 	const db = createD1FromSqlite(sqlite)
-	const orgId = 'org-remove-retry'
+	const orgId = ownerIdFromStored('org-remove-retry')
 	const ownerId = testStableUserIdFromEmail('retry-owner@example.com')
 	const memberId = testStableUserIdFromEmail('retry-member@example.com')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -180,7 +180,7 @@ test('orgMemberRemove retries credential revoke after the membership is already 
 					displayName: 'Owner',
 				},
 				orgBinding: {
-					org: { id: ownerIdFromStored(orgId), slug: 'retry-org' },
+					org: { id: orgId, slug: 'retry-org' },
 					role: 'owner',
 				},
 			}),
@@ -207,7 +207,7 @@ test('a non-owner cannot resume offboarding of a tombstoned owner', async () => 
 		new URL('../../../../migrations/', import.meta.url),
 	)
 	const db = createD1FromSqlite(sqlite)
-	const orgId = 'org-owner-retry'
+	const orgId = ownerIdFromStored('org-owner-retry')
 	const ownerId = testStableUserIdFromEmail('tomb-owner@example.com')
 	const memberId = testStableUserIdFromEmail('tomb-member@example.com')
 	const ts = '2026-01-01T00:00:00.000Z'
@@ -272,7 +272,7 @@ test('a non-owner cannot resume offboarding of a tombstoned owner', async () => 
 						displayName: 'Member',
 					},
 					orgBinding: {
-						org: { id: ownerIdFromStored(orgId), slug: 'owner-retry' },
+						org: { id: orgId, slug: 'owner-retry' },
 						role: 'member',
 					},
 				}),

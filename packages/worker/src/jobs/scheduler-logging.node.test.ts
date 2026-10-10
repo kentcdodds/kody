@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	logJobSchedulerError,
@@ -21,14 +22,14 @@ test('logJobSchedulerError truncates oversized fields, caps outcome count, and a
 
 		logJobSchedulerError({
 			event: 'sync_alarm_failed',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			errorName: 'Error',
 			errorMessage: 'y'.repeat(1205),
 		})
 
 		logJobSchedulerError({
 			event: 'alarm_processed_due_jobs',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			jobOutcomes: [
 				{
 					jobId: 'job-123',
@@ -44,7 +45,7 @@ test('logJobSchedulerError truncates oversized fields, caps outcome count, and a
 
 		logJobSchedulerError({
 			event: 'sync_alarm_failed',
-			userId: 'user-123',
+			userId: ownerIdFromStored('user-123'),
 			errorName: 'Error',
 			errorMessage: 'boom',
 			timestamp: undefined,

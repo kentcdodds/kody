@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	hasArtifactsAccess,
 	type ArtifactBootstrapAccess,
@@ -33,7 +34,7 @@ import {
 
 type SyncArtifactSourceInput = {
 	env: Env
-	userId: string
+	userId: OwnerId
 	baseUrl: string
 	sourceId: string | null
 	files: Record<string, string>
@@ -103,7 +104,7 @@ function validateEntitySourceManifest(input: {
 
 async function assertPackageBootstrapUnlocked(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	source: EntitySourceRow
 	allowLockedPublish?: boolean
 }): Promise<void> {

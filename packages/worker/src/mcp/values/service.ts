@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	maxRestorableTextColumnBytes,
 	utf8ByteLength,
@@ -24,7 +25,7 @@ import {
 import { type UserMeterEnv } from '#worker/entitlements/user-meter-client.ts'
 
 type ValueOwnerContext = {
-	userId: string
+	userId: OwnerId
 	storageContext?: StorageContext | null
 }
 
@@ -215,7 +216,7 @@ export async function deleteValue(input: DeleteValueInput) {
 
 async function getAccessibleBuckets(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: ValueScope | null
 	storageContext: StorageContext | null
 }) {
@@ -239,7 +240,7 @@ async function getAccessibleBuckets(input: {
 
 async function getExistingBucketForScope(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: ValueScope
 	storageContext: StorageContext | null
 }) {
@@ -255,7 +256,7 @@ async function getExistingBucketForScope(input: {
 
 async function getOrCreateValueBucket(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	scope: ValueScope
 	storageContext: StorageContext | null
 	sessionExpiresAt: string | null

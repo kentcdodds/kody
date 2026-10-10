@@ -1,4 +1,7 @@
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
@@ -183,7 +186,7 @@ async function publishImportablePackage(input: {
 	)
 	const source = {
 		id: sourceId,
-		user_id: userId,
+		user_id: ownerIdFromStored(userId),
 		entity_kind: 'package' as const,
 		entity_id: packageId,
 		repo_id: `repo-${sourceId}`,
@@ -261,7 +264,7 @@ test(
 		const bundle = await buildKodyModuleBundle({
 			env,
 			baseUrl,
-			userId: 'user-workers-test',
+			userId: ownerIdFromStored('user-workers-test'),
 			sourceFiles: makePackageFiles(
 				'dependency-package',
 				{
@@ -311,7 +314,7 @@ export default function main() {
 		const bundle = await buildKodyModuleBundle({
 			env,
 			baseUrl,
-			userId: 'user-ad-hoc-npm-test',
+			userId: ownerIdFromStored('user-ad-hoc-npm-test'),
 			sourceFiles,
 			entryPoint: 'entry.ts',
 			bundleContext: 'ad-hoc-execute',

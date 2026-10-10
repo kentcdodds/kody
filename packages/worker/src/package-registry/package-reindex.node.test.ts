@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	d1LockRetryBaseDelayMs,
@@ -66,7 +67,7 @@ function setupMocks() {
 function buildSavedPackage(id: string) {
 	return {
 		id,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		name: `@user/${id}`,
 		kodyId: id,
 		description: `Package ${id}`,
@@ -133,7 +134,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata and 
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenLastCalledWith({
 		env,
 		baseUrl,
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		sourceId: 'source-pkg-good',
 	})
 	expect(mockModule.buildSavedPackageEmbedText).toHaveBeenCalledWith(manifest)
@@ -145,7 +146,7 @@ test('saved package reindex embeds full manifests with user-scoped metadata and 
 			id: 'package_pkg-good',
 			values: [0.1, 0.2, 0.3],
 			namespace: 'user-1',
-			metadata: { kind: 'package', userId: 'user-1' },
+			metadata: { kind: 'package', userId: ownerIdFromStored('user-1') },
 		},
 	])
 })

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { isoTimestampDayKey } from '@kody-internal/shared/date-keys.ts'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import {
@@ -116,7 +117,7 @@ export type DynamicCallableWorkflowPayload =
 	| {
 			version: 2
 			sourceType: 'package'
-			userId: string
+			userId: OwnerId
 			packageId: string
 			kodyId: string
 			sourceId: string
@@ -131,7 +132,7 @@ export type DynamicCallableWorkflowPayload =
 	| {
 			version: 3
 			sourceType: 'inline'
-			userId: string
+			userId: OwnerId
 			packageContext: {
 				packageId: string
 				kodyId: string
@@ -148,7 +149,7 @@ export type DynamicCallableWorkflowPayload =
 
 export type WorkflowRunInspection = {
 	id: string
-	userId: string
+	userId: OwnerId
 	bindingName: WorkflowBindingName
 	sourceType: 'package' | 'inline'
 	packageId: string | null
@@ -305,6 +306,11 @@ function normalizeNonEmptyString(value: string, fieldName: string) {
 	return trimmed
 }
 
+function normalizeOwnerId(value: OwnerId, fieldName: string): OwnerId {
+	const trimmed = normalizeNonEmptyString(value, fieldName)
+	return trimmed === value ? value : (trimmed as OwnerId)
+}
+
 export function normalizeWorkflowExportName(exportName: string) {
 	const trimmed = normalizeNonEmptyString(exportName, 'exportName')
 	if (trimmed === '.' || trimmed === './') return '.'
@@ -360,7 +366,7 @@ export function normalizePackageWorkflowParams(
 }
 
 export async function createPackageWorkflowInstanceId(input: {
-	userId: string
+	userId: OwnerId
 	packageId: string
 	workflowName: string
 	idempotencyKey: string
@@ -370,7 +376,7 @@ export async function createPackageWorkflowInstanceId(input: {
 	}
 }) {
 	const canonical = canonicalJsonStringify({
-		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		userId: normalizeOwnerId(input.userId, 'userId'),
 		packageId: normalizeNonEmptyString(input.packageId, 'packageId'),
 		workflowName: normalizeNonEmptyString(input.workflowName, 'workflowName'),
 		idempotencyKey: normalizeNonEmptyString(
@@ -396,7 +402,7 @@ function normalizeWorkflowIdempotencyKey(idempotencyKey: string | undefined) {
 }
 
 function createInlineWorkflowPayload(input: {
-	userId: string
+	userId: OwnerId
 	packageContext?: {
 		packageId: string
 		kodyId: string
@@ -416,7 +422,7 @@ function createInlineWorkflowPayload(input: {
 	return {
 		version: 3,
 		sourceType: 'inline',
-		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		userId: normalizeOwnerId(input.userId, 'userId'),
 		packageContext: input.packageContext ?? null,
 		workflowName: normalizeOptionalWorkflowName(
 			input.workflowName,
@@ -432,7 +438,7 @@ function createInlineWorkflowPayload(input: {
 }
 
 function createDynamicPackageWorkflowPayload(input: {
-	userId: string
+	userId: OwnerId
 	packageId: string
 	kodyId: string
 	sourceId: string
@@ -454,7 +460,7 @@ function createDynamicPackageWorkflowPayload(input: {
 	return {
 		version: 2,
 		sourceType: 'package',
-		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		userId: normalizeOwnerId(input.userId, 'userId'),
 		packageId: normalizeNonEmptyString(input.packageId, 'packageId'),
 		kodyId: normalizeNonEmptyString(input.kodyId, 'kodyId'),
 		sourceId: normalizeNonEmptyString(input.sourceId, 'sourceId'),
@@ -520,7 +526,7 @@ function validateDynamicCallableWorkflowPayload(
 				}
 			: null
 		return createInlineWorkflowPayload({
-			userId: String(record['userId'] ?? ''),
+			userId: String(record['userId'] ?? '') as OwnerId,
 			packageContext,
 			workflowName:
 				typeof record['workflowName'] === 'string'
@@ -537,7 +543,7 @@ function validateDynamicCallableWorkflowPayload(
 	}
 	if (sourceType === 'package') {
 		return createDynamicPackageWorkflowPayload({
-			userId: String(record['userId'] ?? ''),
+			userId: String(record['userId'] ?? '') as OwnerId,
 			packageId: String(record['packageId'] ?? ''),
 			kodyId: String(record['kodyId'] ?? ''),
 			sourceId: String(record['sourceId'] ?? ''),
@@ -639,7 +645,7 @@ function createWorkflowCreateResultFromRow(
 
 function mapWorkflowProjectionToInspection(
 	projection: WorkflowProjectionRecord,
-	userId: string,
+	userId: OwnerId,
 ): WorkflowRunInspection {
 	const rawStatus = projection.status
 	const status =
@@ -672,7 +678,7 @@ function mapWorkflowProjectionToInspection(
  */
 export async function findWorkflowRunByIdempotencyKey(input: {
 	env: Pick<Env, 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	idempotencyKey: string
 	bindingName?: WorkflowBindingName
 }): Promise<WorkflowRunInspection | null> {
@@ -692,7 +698,7 @@ export async function findWorkflowRunByIdempotencyKey(input: {
 
 async function getWorkflowRunForUser(input: {
 	env: Pick<Env, 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	id: string
 }): Promise<WorkflowRunInspection | null> {
 	const projection = await getWorkflowProjection({
@@ -771,7 +777,7 @@ function payloadFromWorkflowInspection(
 }
 
 async function createInlineWorkflowInstanceId(input: {
-	userId: string
+	userId: OwnerId
 	workflowName: string
 	idempotencyKey: string
 	runAt: string | Date
@@ -780,7 +786,7 @@ async function createInlineWorkflowInstanceId(input: {
 	}
 }) {
 	const canonical = canonicalJsonStringify({
-		userId: normalizeNonEmptyString(input.userId, 'userId'),
+		userId: normalizeOwnerId(input.userId, 'userId'),
 		sourceType: 'inline',
 		workflowName: normalizeNonEmptyString(input.workflowName, 'workflowName'),
 		idempotencyKey: normalizeNonEmptyString(
@@ -812,7 +818,7 @@ function isTerminalWorkflowStatus(status: string | null | undefined): boolean {
 
 async function projectWorkflowRun(input: {
 	env: Pick<Env, 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	id: string
 	payload: DynamicCallableWorkflowPayload
 	status: string | null
@@ -892,7 +898,7 @@ function assertWorkflowCreateBodyShape(body: PackageWorkflowCreateInput): {
 
 async function resolveWorkflowPayload(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 	packageContext?: {
 		packageId: string
 		kodyId: string
@@ -949,7 +955,7 @@ async function resolveWorkflowPayload(input: {
 
 export async function createDynamicCallableWorkflow(input: {
 	env: Pick<Env, 'APP_DB' | 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	userEmail?: string | null
 	packageContext?: {
 		packageId: string
@@ -1162,7 +1168,7 @@ export type CancelWorkflowRunResult =
 
 export async function cancelWorkflowRunForUser(input: {
 	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	workflowRunId: string
 }): Promise<CancelWorkflowRunResult> {
 	const env = input.env as Env
@@ -1352,7 +1358,7 @@ export async function cancelWorkflowRunForUser(input: {
  */
 export async function cancelActiveWorkflowRunsForUser(input: {
 	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 }): Promise<number> {
 	const env = input.env as Env
 	let cancelled = 0
@@ -1382,7 +1388,7 @@ export async function cancelActiveWorkflowRunsForUser(input: {
 
 export async function listWorkflowRunsForUser(input: {
 	env: Pick<Env, 'DYNAMIC_CALLABLE_WORKFLOWS' | 'RUN_LOG'>
-	userId: string
+	userId: OwnerId
 	limit?: number
 }): Promise<Array<WorkflowRunInspection>> {
 	const env = input.env as Env

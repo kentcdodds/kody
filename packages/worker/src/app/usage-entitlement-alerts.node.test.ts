@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { type FleetEntitlementCrossingSnapshot } from '#worker/admin/fleet-usage-insights.ts'
@@ -133,7 +134,10 @@ function dispatchedEvent(index: number) {
 type Crossing = Parameters<typeof fleetEntitlementCrossingKvKey>[0]['crossing']
 
 function crossingKey(crossing: Crossing) {
-	return fleetEntitlementCrossingKvKey({ userId: 'user-a', crossing })
+	return fleetEntitlementCrossingKvKey({
+		userId: ownerIdFromStored('user-a'),
+		crossing,
+	})
 }
 
 function entitlementKey(
@@ -284,7 +288,11 @@ test('runtime duration crossings emit once per UTC month and daily resources key
 		new Error('fan-out failed'),
 	)
 	setSnapshots(
-		snapshot({ stableUserId: 'user-b', username: 'bob', current: 10 }),
+		snapshot({
+			stableUserId: ownerIdFromStored('user-b'),
+			username: 'bob',
+			current: 10,
+		}),
 	)
 	expect(
 		await emit(createEnv(createKv().kv), '2026-08-24T19:00:00.000Z'),
@@ -310,7 +318,7 @@ test('repeated execute-cap days and unique-worker cost emit once, then rematch a
 	expect(
 		store.get(
 			fleetEntitlementHitKvKey({
-				userId: 'user-a',
+				userId: ownerIdFromStored('user-a'),
 				resource: 'execute_calls_per_day',
 				day: utcDayKey(new Date(day1)),
 			}),

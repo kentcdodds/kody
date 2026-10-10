@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { createVerifyEmailHandler } from '#app/handlers/verify-email.ts'
 import { verifyEmailToken } from '#app/email-verification.ts'
@@ -51,7 +52,7 @@ test('verify-email handler wires success CTA from redirectTo and rejects open re
 		ok: true,
 		userId: 1,
 		email: 'verified@example.com',
-		stableUserId: 'user_verified',
+		stableUserId: ownerIdFromStored('user_verified'),
 		newlyVerified: false,
 	})
 	const handler = createVerifyEmailHandler({
@@ -122,7 +123,7 @@ test('verify-email sends the connect-agent mail only on newly verified accounts'
 		ok: true,
 		userId: 1,
 		email: 'verified@example.com',
-		stableUserId: 'user_verified',
+		stableUserId: ownerIdFromStored('user_verified'),
 		newlyVerified: true,
 	})
 	const handler = createVerifyEmailHandler({
@@ -146,7 +147,7 @@ test('verify-email sends the connect-agent mail only on newly verified accounts'
 	expect(sendConnectAgentEmail).toHaveBeenCalledWith({
 		env: expect.anything(),
 		email: 'verified@example.com',
-		userId: 'user_verified',
+		userId: ownerIdFromStored('user_verified'),
 		requestUrl: 'https://example.com/verify-email?token=ok',
 	})
 	const waited = waitUntilImpl.mock.calls.map(
@@ -169,12 +170,12 @@ test('verify-email sends the connect-agent mail only on newly verified accounts'
 	expect(scheduleKitSubscriberSync).toHaveBeenCalledWith({
 		env: expect.anything(),
 		email: 'verified@example.com',
-		stableUserId: 'user_verified',
+		stableUserId: ownerIdFromStored('user_verified'),
 	})
 	expect(maybeRewardHeldReferralAfterEmailVerified).toHaveBeenCalledWith(
 		expect.objectContaining({
 			db: expect.anything(),
-			stableUserId: 'user_verified',
+			stableUserId: ownerIdFromStored('user_verified'),
 		}),
 	)
 })

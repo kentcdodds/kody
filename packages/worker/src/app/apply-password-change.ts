@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type AppDatabase,
 	passwordResetsTable,
@@ -57,7 +58,7 @@ export async function applyPasswordChange(
 		d1: D1Database
 		helpers: OAuthGrantHelpers | undefined
 		userId: number
-		stableUserId: string
+		stableUserId: OwnerId
 		clearSecondFactorsAndConnections?: boolean
 		/** Stamp with `AND deleting_at IS NULL` and throw if the fence landed. */
 		requireWritableAccount?: boolean

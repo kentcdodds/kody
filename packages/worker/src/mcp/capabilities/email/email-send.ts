@@ -1,3 +1,4 @@
+import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -48,7 +49,7 @@ export const emailSendCapability = defineDomainCapability(
 			const user = await requireVerifiedEmailAccountUser(ctx)
 			const result = await sendOutboundEmail({
 				env: ctx.env,
-				userId: user.userId,
+				userId: personalOrgId(user.userId),
 				request: ctx.callerContext.request,
 				accountEmail: user.email,
 				recipientPolicy: 'self',

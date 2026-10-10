@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as AuthenticatedUser from '#app/authenticated-user.ts'
 import type * as CommunityPackageRoute from '#app/community-package-route.ts'
@@ -230,7 +231,10 @@ test('account files HTML and JSON redirect to the package tree', async () => {
 	expect(unauthorized.status).toBe(401)
 	expect(mockModule.getSavedPackageById).not.toHaveBeenCalled()
 
-	const owner = { mcpUser: { userId: 'stable-user-1' }, username: 'owner' }
+	const owner = {
+		mcpUser: { userId: ownerIdFromStored('stable-user-1') },
+		username: 'owner',
+	}
 	mockModule.readAuthenticatedAppUser.mockResolvedValue(owner)
 	mockModule.requireAuthenticatedPageUser.mockResolvedValue(owner)
 	mockModule.getSavedPackageById.mockResolvedValue({ kodyId: 'demo' })

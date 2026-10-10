@@ -1,4 +1,8 @@
 import {
+	personalOrgId,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import {
 	buildCapabilityRegistry,
 	type BuiltCapabilityRegistry,
 } from './build-capability-registry.ts'
@@ -48,7 +52,7 @@ function createCapabilityRegistryCache() {
 const capabilityRegistryCache = createCapabilityRegistryCache()
 
 function createCapabilityRegistryCacheKey(input: {
-	userId: string
+	userId: OwnerId
 	mcpServerRefs: ReadonlyArray<McpServerRef>
 	mcpServerSnapshots: ReadonlyArray<McpServerSnapshot | null>
 }) {
@@ -117,7 +121,7 @@ async function resolveFeatureFlagsForRegistry(input: {
 
 async function loadEnabledMcpServerRefs(input: {
 	env: Pick<Env, 'APP_DB'>
-	userId: string
+	userId: OwnerId
 }): Promise<ReadonlyArray<McpServerRef>> {
 	try {
 		// Per-user 30s cache: registry assembly runs on every execute /
@@ -143,7 +147,7 @@ async function loadEnabledMcpServerRefs(input: {
 
 async function loadMcpServerSnapshots(input: {
 	env: Env
-	userId: string
+	userId: OwnerId
 	refs: ReadonlyArray<McpServerRef>
 }): Promise<Array<McpServerSnapshot | null>> {
 	if (input.refs.length === 0) return []
@@ -168,7 +172,9 @@ export async function getCapabilityRegistryForContext(input: {
 	env: Env
 	callerContext: McpCallerContext
 }): Promise<BuiltCapabilityRegistry> {
-	const userId = input.callerContext.user?.userId ?? null
+	const userId = input.callerContext.user
+		? personalOrgId(input.callerContext.user.userId)
+		: null
 	// Flag evaluation does not depend on MCP server refs or hub snapshots.
 	// Start it with the static registry so those reads overlap the flag D1
 	// round trips. Dynamic registries reuse this result when the static

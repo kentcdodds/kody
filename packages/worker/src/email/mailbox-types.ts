@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type EmailClassification,
 	type EmailDeliveryEventType,
@@ -309,7 +310,7 @@ export type MailboxCommitInboundMessageGraphResult =
 	| { status: 'lease-lost' }
 
 export type MailboxCommitOutboundTerminalInput = {
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 	processingStatus: 'sent' | 'failed'
 	providerMessageId: string | null
@@ -391,7 +392,7 @@ export type MailboxCountMessagesInput = {
 
 /** Partial thread touch — equal/newer `updatedAt` only; never regresses `lastMessageAt`. */
 export type MailboxTouchThreadInput = {
-	ownerId: string
+	ownerId: OwnerId
 	threadId: string
 	lastMessageAt: string
 	updatedAt: string
@@ -399,7 +400,7 @@ export type MailboxTouchThreadInput = {
 
 /** Partial delivery/processing update — equal/newer `updatedAt` only. */
 export type MailboxUpdateMessageDeliveryInput = {
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 	processingStatus: EmailProcessingStatus
 	providerMessageId: string | null
@@ -410,7 +411,7 @@ export type MailboxUpdateMessageDeliveryInput = {
 
 /** Partial classification update — equal/newer `updatedAt` only. */
 export type MailboxSetMessageClassificationInput = {
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 	classification: EmailClassification
 	classificationReason: string | null
@@ -423,7 +424,7 @@ export type MailboxSetMessageClassificationInput = {
  * `deleteThreadIfEmpty`). Stale when `updated_at` is newer than `deletedAt`.
  */
 export type MailboxDeleteMessageMetadataInput = {
-	ownerId: string
+	ownerId: OwnerId
 	messageId: string
 	deletedAt: string
 }
@@ -433,7 +434,7 @@ export type MailboxDeleteMessageMetadataInput = {
  * newer than `deletedAt`. Idempotent when already absent.
  */
 export type MailboxDeleteDeliveryEventInput = {
-	ownerId: string
+	ownerId: OwnerId
 	eventId: string
 	deletedAt: string
 }
@@ -443,7 +444,7 @@ export type MailboxDeleteDeliveryEventInput = {
  * Stale-safe by `thread.updated_at`; no-op when messages remain.
  */
 export type MailboxDeleteThreadIfEmptyInput = {
-	ownerId: string
+	ownerId: OwnerId
 	threadId: string
 	deletedAt: string
 }
@@ -483,7 +484,7 @@ export type MailboxUpsertDeliveryEventsResult = {
 
 export type MailboxUpsertMessageGraphInput =
 	| {
-			ownerId: string
+			ownerId: OwnerId
 			thread?: MailboxThreadInput | null
 			message: MailboxMessageInput
 			attachments?: Array<MailboxAttachmentInput>
@@ -491,7 +492,7 @@ export type MailboxUpsertMessageGraphInput =
 			restore?: true
 	  }
 	| {
-			ownerId: string
+			ownerId: OwnerId
 			/** DR import affordance for a parent thread with no surviving message. */
 			thread: MailboxThreadInput
 			message: null
@@ -517,7 +518,7 @@ type MailboxCoreRpc = {
 	 * writes, so an expired/replaced lease cannot commit metadata.
 	 */
 	commitInboundMessageGraph: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		deliveryId: string
 		storageLease: string
 		thread: MailboxThreadInput
@@ -528,15 +529,15 @@ type MailboxCoreRpc = {
 		input: MailboxCommitOutboundTerminalInput,
 	) => Promise<{ message: MailboxMessageRecord; eventInserted: boolean }>
 	completeOutboundProviderIndexRepair: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		provider: string
 		providerMessageId: string
 	}) => Promise<{ cleared: boolean }>
 	getOutboundProviderIndexRepairStatus: (input: {
-		ownerId: string
+		ownerId: OwnerId
 	}) => Promise<MailboxProviderIndexRepairStatus>
 	recordBoundedRejection: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		inboxId: string
 		recipient: string
 		reason: string
@@ -551,7 +552,7 @@ type MailboxCoreRpc = {
 	 * replace authoritative Mailbox rows.
 	 */
 	upsertDeliveryEvent: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		event: MailboxDeliveryEventInput
 		latestDeliveryStatus?: {
 			messageId: string
@@ -569,7 +570,7 @@ type MailboxCoreRpc = {
 	 * remains from the prior full message snapshot.
 	 */
 	upsertDeliveryEvents: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		events: Array<MailboxDeliveryEventInput>
 		/** DR restore only: admit authoritative inbound ledger snapshots. */
 		restore?: true
@@ -591,7 +592,7 @@ type MailboxCoreRpc = {
 	 * before message metadata in one owner-bound DO orchestration.
 	 */
 	deleteMessageWithBlobs: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		messageId: string
 	}) => Promise<MailboxDeleteMessageWithBlobsResult>
 	/**
@@ -599,7 +600,7 @@ type MailboxCoreRpc = {
 	 * Refuses to tombstone when Mailbox metadata became present concurrently.
 	 */
 	tombstoneMissingMessage: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		messageId: string
 		deletedAt: string
 	}) => Promise<MailboxTombstoneMissingMessageResult>
@@ -648,7 +649,7 @@ type MailboxCoreRpc = {
 		limit?: number
 	}) => Promise<Array<MailboxDeliveryEventRecord>>
 	countDeliveryEvents: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		eventType: EmailDeliveryEventType
 		provider: string
 		createdAtGte: string
@@ -658,15 +659,15 @@ type MailboxCoreRpc = {
 	}) => Promise<MailboxDeliveryEventRecord | null>
 	countMailbox: (input?: { restore?: true }) => Promise<MailboxCountResult>
 	inspectRestoreState: (input: {
-		ownerId: string
+		ownerId: OwnerId
 	}) => Promise<MailboxRestoreStatus>
-	beginRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
-	finalizeRestore: (input: { ownerId: string }) => Promise<{ ok: true }>
+	beginRestore: (input: { ownerId: OwnerId }) => Promise<{ ok: true }>
+	finalizeRestore: (input: { ownerId: OwnerId }) => Promise<{ ok: true }>
 	readDrillResult: (input: {
-		ownerId: string
+		ownerId: OwnerId
 	}) => Promise<MailboxCountResult | null>
 	completeDrill: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		result: MailboxCountResult
 	}) => Promise<{ ok: true }>
 	exportMailbox: (input: {
@@ -682,14 +683,14 @@ type MailboxCoreRpc = {
 	 * cutoff override). Reuses the same pass + alarm reschedule as `alarm`.
 	 */
 	runRetentionNow: (input: {
-		ownerId: string
+		ownerId: OwnerId
 	}) => Promise<MailboxRunRetentionNowResult>
 	getInboundDueWorkHint: (input: {
-		ownerId: string
+		ownerId: OwnerId
 		/** Optional clock for due-at clamping; defaults to wall clock. */
 		now?: string
 	}) => Promise<{ dueAt: string | null }>
-	purge: (input: { ownerId: string }) => Promise<{ ok: true }>
+	purge: (input: { ownerId: OwnerId }) => Promise<{ ok: true }>
 }
 
 export type MailboxInboundLedgerRpc = MailboxInboundDeliveryLedgerRpc &

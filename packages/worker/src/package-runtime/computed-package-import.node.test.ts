@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	buildComputedPackageImportCallBundle,
@@ -52,7 +53,7 @@ test('resolveComputedPackageImportArtifact denies sealed ./secretProvider export
 		resolveComputedPackageImportArtifact({
 			env: {} as Env,
 			baseUrl: 'https://kody.dev',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			specifier: 'kody:@kentcdodds/example/secretProvider',
 		}),
 	).rejects.toThrow(

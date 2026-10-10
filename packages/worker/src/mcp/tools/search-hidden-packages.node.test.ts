@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 
@@ -22,7 +23,7 @@ vi.mock('#worker/package-retrievers/manifest-cache.ts', () => ({
 function createHiddenRetrieverFixture(scopes: Array<'search' | 'context'>) {
 	return {
 		entry: {
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			packageId: 'pkg-hidden',
 			kodyId: 'hidden-pkg',
 			sourceId: 'source-hidden',
@@ -38,7 +39,7 @@ function createHiddenRetrieverFixture(scopes: Array<'search' | 'context'>) {
 		},
 		hiddenPackage: {
 			id: 'pkg-hidden',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			name: 'hidden-pkg',
 			kodyId: 'hidden-pkg',
 			description: 'hidden package',
@@ -68,7 +69,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 	const excluded = await runPackageRetrievers({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		request: sessionRequestContext('user-1'),
 		scope: 'search',
 		query: 'notes',
@@ -79,7 +80,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 	const included = await runPackageRetrievers({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		request: sessionRequestContext('user-1'),
 		scope: 'search',
 		query: 'notes',
@@ -98,7 +99,7 @@ test('hidden package retrievers skip search by default, honor includeHiddenPacka
 	const contextRun = await runPackageRetrievers({
 		env,
 		baseUrl: 'https://example.com',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		request: sessionRequestContext('user-1'),
 		scope: 'context',
 		query: 'notes',

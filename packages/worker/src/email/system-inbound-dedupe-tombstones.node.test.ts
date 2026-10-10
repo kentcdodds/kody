@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -48,7 +49,7 @@ function delivery(
 		messageId: 'message-tombstone',
 		threadId: 'thread-tombstone',
 		rawMimeKey: 'email-raw:v1:system:email/message-tombstone',
-		userId: 'system:email',
+		userId: ownerIdFromStored('system:email'),
 		inboxId: 'system-tombstone-inbox',
 		recipient: 'abuse@example.com',
 		envelopeFrom: 'phish@example.net',

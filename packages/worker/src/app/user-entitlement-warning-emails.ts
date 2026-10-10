@@ -1,4 +1,5 @@
 import { utcDayKey, utcMonthKey } from '@kody-internal/shared/date-keys.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 import { sendCloudflareEmail } from '#app/email/cloudflare-email.ts'
 import {
@@ -78,7 +79,7 @@ const stockPackageThreshold = Math.ceil(planLimits.free.maxSavedPackages * 0.8)
 const stockSecretThreshold = Math.ceil(planLimits.free.maxSecrets * 0.8)
 
 type WarningCandidate = UserEntitlementRow & {
-	stable_user_id: string
+	stable_user_id: OwnerId
 	email: string
 }
 

@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { RequestContext } from 'remix/router'
 import { setAuthSessionSecret } from '#app/auth-session.ts'
@@ -77,7 +78,7 @@ function signIn(emailVerified = true) {
 	mockModule.readAuthenticatedAppUser.mockResolvedValue({
 		username: 'u-b',
 		emailVerified,
-		mcpUser: { userId: 'user-1' },
+		mcpUser: { userId: ownerIdFromStored('user-1') },
 	})
 }
 
@@ -254,7 +255,10 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	expectDisconnectedFeaturedCatalog(await loadOnboardingFeaturedMcpServers(env))
 	expect(mockModule.listMcpServerSettings).not.toHaveBeenCalled()
 
-	const signedIn = await loadOnboardingFeaturedMcpServers(env, 'viewer-1')
+	const signedIn = await loadOnboardingFeaturedMcpServers(
+		env,
+		ownerIdFromStored('viewer-1'),
+	)
 	expect(signedIn[0]).toMatchObject({
 		id: 'notion',
 		connected: false,
@@ -268,12 +272,12 @@ test('onboarding featured MCP servers overlay Notion and Linear connection state
 	})
 	expect(mockModule.listMcpServerSettings).toHaveBeenCalledWith({
 		env,
-		userId: 'viewer-1',
+		userId: ownerIdFromStored('viewer-1'),
 	})
 
 	mockModule.listMcpServerSettings.mockRejectedValue(new Error('d1 blip'))
 	expectDisconnectedFeaturedCatalog(
-		await loadOnboardingFeaturedMcpServers(env, 'viewer-1'),
+		await loadOnboardingFeaturedMcpServers(env, ownerIdFromStored('viewer-1')),
 	)
 })
 
@@ -289,7 +293,7 @@ test('onboarding custom MCP servers exclude featured remotes', async () => {
 
 	await expect(loadOnboardingCustomMcpServers(env)).resolves.toEqual([])
 	await expect(
-		loadOnboardingCustomMcpServers(env, 'viewer-1'),
+		loadOnboardingCustomMcpServers(env, ownerIdFromStored('viewer-1')),
 	).resolves.toEqual([
 		{
 			id: 'srv-acme',
@@ -311,19 +315,23 @@ test('onboarding persist chrome uses the newest saved-package name in the privat
 		newest,
 		{ name: '@u-b/older-package', kodyId: 'older-package' },
 	])
-	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBe(
-		newest.name,
-	)
+	await expect(
+		loadPersistedPackageName(env, ownerIdFromStored('user-1')),
+	).resolves.toBe(newest.name)
 	expect(mockModule.listSavedPackagesByUserId).toHaveBeenCalledWith(
 		env.APP_DB,
-		{ userId: 'user-1' },
+		{ userId: ownerIdFromStored('user-1') },
 	)
 
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([])
-	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBeNull()
+	await expect(
+		loadPersistedPackageName(env, ownerIdFromStored('user-1')),
+	).resolves.toBeNull()
 
 	mockModule.listSavedPackagesByUserId.mockRejectedValue(new Error('d1 blip'))
-	await expect(loadPersistedPackageName(env, 'user-1')).resolves.toBeNull()
+	await expect(
+		loadPersistedPackageName(env, ownerIdFromStored('user-1')),
+	).resolves.toBeNull()
 
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([newest])
 	mockModule.listMcpServerSettings.mockResolvedValue([])

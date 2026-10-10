@@ -1,5 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import { personIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	personIdFromStored,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { listPackagesCapability } from '#mcp/capabilities/packages/list-packages.ts'
 import { packageUpdateCapability } from '#mcp/capabilities/packages/package-update.ts'
@@ -67,7 +70,7 @@ test('an OAuth outside collaborator can do only what their grant allows', async 
 			db,
 			{
 				id: pkg.id,
-				user_id: ownerId,
+				user_id: ownerIdFromStored(ownerId),
 				name: pkg.name,
 				kody_id: pkg.kodyId,
 				description: 'notes',

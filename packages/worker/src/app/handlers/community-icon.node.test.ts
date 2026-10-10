@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { createCommunityIconHandler } from './community-icon.ts'
@@ -28,7 +29,7 @@ vi.mock('#worker/community/repo.ts', () => ({
 
 const listing = {
 	id: 'listing-1',
-	ownerUserId: 'owner-1',
+	ownerUserId: ownerIdFromStored('owner-1'),
 	packageId: 'package-1',
 	sourceId: 'source-1',
 	kodyId: 'github-tools',

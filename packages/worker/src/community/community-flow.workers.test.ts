@@ -1,6 +1,7 @@
 import {
 	personIdFromStored,
 	type PersonId,
+	personalOrgId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
@@ -192,7 +193,7 @@ async function seedOwnerPackage(input: {
 
 	await insertSavedPackage(env.APP_DB, {
 		id: input.packageId,
-		user_id: input.owner.userId,
+		user_id: personalOrgId(input.owner.userId),
 		name: packageName,
 		kody_id: input.kodyId,
 		description: 'Community flow integration test package',
@@ -209,7 +210,7 @@ async function seedOwnerPackage(input: {
 
 	const entitySource: EntitySourceRow = {
 		id: input.sourceId,
-		user_id: input.owner.userId,
+		user_id: personalOrgId(input.owner.userId),
 		entity_kind: 'package',
 		entity_id: input.packageId,
 		repo_id: `package-${input.packageId}`,
@@ -524,7 +525,7 @@ test('public package flow works end-to-end through capability handlers', async (
 	await banCommunityUser({
 		env: testEnv,
 		adminUserId: admin.userId,
-		userId: reporter.userId,
+		userId: personalOrgId(reporter.userId),
 		reason: 'Repeated abusive reports',
 	})
 	await expect(
@@ -569,7 +570,7 @@ test('one-click install publishes clean listings and keeps unresolvable forks in
 		installCommunityListing({
 			env: testEnv,
 			baseUrl,
-			userId: installer.userId,
+			userId: personalOrgId(installer.userId),
 			userEmail: installer.email,
 			expectedPackageScope: installer.username,
 			listingId,

@@ -1,3 +1,4 @@
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { type z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { resolveOwnedPackageSource } from '#mcp/capabilities/packages/resolve-package-source.ts'
@@ -20,7 +21,7 @@ type RepoResolvedTarget = z.infer<typeof repoResolvedTargetSchema>
 
 async function requireOwnedEntitySource(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	sourceId: string
 }): Promise<EntitySourceRow> {
 	const source = await getEntitySourceByIdForUser(input.db, {
@@ -44,7 +45,7 @@ function toResolvedSourceTarget(source: EntitySourceRow): RepoResolvedTarget {
 
 async function requirePackageTarget(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	ownerScope?: string
 	target: Extract<RepoTarget, { kind: 'package' }>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
@@ -71,7 +72,7 @@ async function requirePackageTarget(input: {
 
 async function requirePlainRepoTarget(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	target: Extract<RepoTarget, { kind: 'repo' }>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
 	const userRepo =
@@ -110,7 +111,7 @@ async function requirePlainRepoTarget(input: {
 
 export async function resolveRepoSourceReference(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	ownerScope?: string
 	args: Pick<RepoOpenSessionInput, 'source_id' | 'target'>
 }): Promise<{ source: EntitySourceRow; resolvedTarget: RepoResolvedTarget }> {
@@ -157,7 +158,7 @@ export async function resolveRepoSourceReference(input: {
 
 export async function resolveRepoTargetFromSource(input: {
 	db: D1Database
-	userId: string
+	userId: OwnerId
 	sourceId: string
 }): Promise<RepoResolvedTarget> {
 	const source = await requireOwnedEntitySource({

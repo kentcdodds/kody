@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test, vi } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
@@ -152,7 +153,7 @@ test('maybeEvaluate skips writes without prepare and keeps an existing gift belo
 	await expect(
 		maybeEvaluateSecondAgentStandardGift({
 			db: {} as D1Database,
-			stableUserId: 'user-1',
+			stableUserId: ownerIdFromStored('user-1'),
 			ecosystemCount: 2,
 		}),
 	).resolves.toEqual({

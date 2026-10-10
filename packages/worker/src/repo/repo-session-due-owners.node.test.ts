@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -16,19 +17,19 @@ test('due-owners upsert, page, and delete stay one row per user', async () => {
 
 	await replaceRepoSessionDueOwner({
 		db,
-		userId: 'user-b',
+		userId: ownerIdFromStored('user-b'),
 		dueAt: '2026-06-24T21:00:00.000Z',
 		now,
 	})
 	await replaceRepoSessionDueOwner({
 		db,
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		dueAt: '2026-06-24T19:00:00.000Z',
 		now,
 	})
 	await replaceRepoSessionDueOwner({
 		db,
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		dueAt: '2026-06-24T18:00:00.000Z',
 		now,
 	})
@@ -39,19 +40,21 @@ test('due-owners upsert, page, and delete stay one row per user', async () => {
 			now,
 			limit: 10,
 		}),
-	).toEqual([{ userId: 'user-a', dueAt: '2026-06-24T18:00:00.000Z' }])
+	).toEqual([
+		{ userId: ownerIdFromStored('user-a'), dueAt: '2026-06-24T18:00:00.000Z' },
+	])
 	expect(await listRepoSessionDueOwnersPage({ db, limit: 10 })).toEqual([
-		{ userId: 'user-a', dueAt: '2026-06-24T18:00:00.000Z' },
-		{ userId: 'user-b', dueAt: '2026-06-24T21:00:00.000Z' },
+		{ userId: ownerIdFromStored('user-a'), dueAt: '2026-06-24T18:00:00.000Z' },
+		{ userId: ownerIdFromStored('user-b'), dueAt: '2026-06-24T21:00:00.000Z' },
 	])
 
 	await replaceRepoSessionDueOwner({
 		db,
-		userId: 'user-a',
+		userId: ownerIdFromStored('user-a'),
 		dueAt: null,
 		now,
 	})
 	expect(await listRepoSessionDueOwnersPage({ db, limit: 10 })).toEqual([
-		{ userId: 'user-b', dueAt: '2026-06-24T21:00:00.000Z' },
+		{ userId: ownerIdFromStored('user-b'), dueAt: '2026-06-24T21:00:00.000Z' },
 	])
 })

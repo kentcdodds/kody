@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import {
 	consoleError,
@@ -42,7 +43,7 @@ test('delivery queue handles terminal outcomes without a D1-to-Mailbox graph mir
 			delivery: { status: 'delivered' },
 		},
 	}
-	const message = { id: 'message-1', userId: 'user-1' }
+	const message = { id: 'message-1', userId: ownerIdFromStored('user-1') }
 	const transactionalEvent = {
 		userId: 9,
 		status: 'bounced',

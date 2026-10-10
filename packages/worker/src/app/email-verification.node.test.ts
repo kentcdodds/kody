@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -127,7 +128,7 @@ test('isAccountEmailVerified binds email+stable id together and keeps single-key
 	expect(
 		await isAccountEmailVerified({
 			db: singleKey,
-			stableUserId: 'missing-stable-id',
+			stableUserId: ownerIdFromStored('missing-stable-id'),
 		}),
 	).toBe(false)
 })

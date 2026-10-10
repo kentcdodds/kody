@@ -1,3 +1,4 @@
+import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PublishLock from '#worker/package-registry/package-publish-lock.ts'
 import type * as PublishedRuntimeArtifacts from '#worker/package-runtime/published-runtime-artifacts.ts'
@@ -133,7 +134,7 @@ const syncInput = {
 		CLOUDFLARE_ACCOUNT_ID: 'account-1',
 		CLOUDFLARE_API_TOKEN: 'token-1',
 	} as unknown as Env,
-	userId: 'user-1',
+	userId: ownerIdFromStored('user-1'),
 	baseUrl: 'https://heykody.dev',
 	sourceId: 'source-1',
 }
@@ -141,7 +142,7 @@ const syncInput = {
 function sourceRow(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 'source-1',
-		user_id: 'user-1',
+		user_id: ownerIdFromStored('user-1'),
 		entity_kind: 'job',
 		entity_id: 'job-1',
 		repo_id: 'job-1',
@@ -263,7 +264,7 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	expect(bootstrap.bootstrapSource).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
 		sourceId: 'source-1',
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		edits: [
 			{ kind: 'write', path: 'kody.json', content: jobFiles['kody.json'] },
 			{ kind: 'write', path: 'src/job.ts', content: jobFiles['src/job.ts'] },
@@ -311,13 +312,13 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	expect(session.openSession).toHaveBeenCalledWith(
 		expect.objectContaining({
 			sourceId: 'source-1',
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			sourceRoot: '/',
 		}),
 	)
 	expect(session.applyEdits).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: 'user-1',
+			userId: ownerIdFromStored('user-1'),
 			dryRun: false,
 			rollbackOnError: true,
 		}),
@@ -326,13 +327,13 @@ test('syncArtifactSourceSnapshot bootstraps new sources and uses repo sessions f
 	expect(session.runChecks).not.toHaveBeenCalled()
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 		force: true,
 	})
 	expect(mockModule.writePublishedSourceSnapshot).not.toHaveBeenCalled()
 	expect(mockModule.updateEntitySource).not.toHaveBeenCalled()
 	expect(session.discardSession).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'user-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 	)
 })
 
@@ -352,14 +353,14 @@ test('syncArtifactSourceSnapshot runs package checks before updating a published
 		}),
 	).resolves.toBe('commit-session-pkg')
 	expect(session.runChecks).toHaveBeenCalledWith(
-		expect.objectContaining({ userId: 'user-1' }),
+		expect.objectContaining({ userId: ownerIdFromStored('user-1') }),
 	)
 	expect(session.runChecks.mock.calls[0]?.[0]).not.toHaveProperty(
 		'requirePackageDocs',
 	)
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(session.publishSession.mock.calls[0]?.[0]).not.toHaveProperty('force')
 
@@ -476,13 +477,13 @@ test('syncArtifactSourceSnapshot skips publish checks when runPublishChecks is f
 	expect(session.runChecks).not.toHaveBeenCalled()
 	expect(session.acceptCurrentTreeForPublish).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	// No force: force would trip overwrite confirmation; stamped check-status
 	// lets publishSession proceed without checks_outdated.
 	expect(session.publishSession).toHaveBeenCalledWith({
 		sessionId: expect.stringMatching(/^source-sync-source-1-/),
-		userId: 'user-1',
+		userId: ownerIdFromStored('user-1'),
 	})
 	expect(session.publishSession.mock.calls[0]?.[0]).not.toHaveProperty('force')
 })
