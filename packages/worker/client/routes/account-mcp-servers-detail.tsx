@@ -311,7 +311,6 @@ export function renderMcpServerDetail(props: McpServerDetailProps) {
 					<div>
 						<a
 							href={server.authUrl}
-							rel="noopener noreferrer"
 							mix={css({
 								...primaryButtonCss,
 								display: 'inline-block',

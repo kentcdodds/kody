@@ -10,13 +10,13 @@ import {
 	invalidateMcpClientHubSnapshotCache,
 } from './hub-client.ts'
 import type * as packageSubscriptionsModule from './package-subscriptions.ts'
-import { type McpClientHubSnapshot, type McpServerSnapshot } from './types.ts'
+import { type McpHubServerSnapshot, type McpHubSnapshot } from './types.ts'
 
 const mocks = vi.hoisted(() => ({
 	emitMcpServerConnectionEventsIfNeeded: vi.fn<
 		typeof packageSubscriptionsModule.emitMcpServerConnectionEventsIfNeeded
 	>(async () => true),
-	peekServers: vi.fn<() => Promise<Pick<McpClientHubSnapshot, 'servers'>>>(
+	peekServers: vi.fn<() => Promise<Pick<McpHubSnapshot, 'servers'>>>(
 		async () => ({ servers: [] }),
 	),
 	peekConnectionEvents: vi.fn<() => Promise<Array<McpServerConnectionEvent>>>(
@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
 	ackConnectionEvents: vi.fn<(eventIds: Array<string>) => Promise<void>>(
 		async () => undefined,
 	),
-	getSnapshot: vi.fn<() => Promise<McpClientHubSnapshot>>(async () => ({
+	getSnapshot: vi.fn<() => Promise<McpHubSnapshot>>(async () => ({
 		servers: [],
 		connectionEvents: [],
 	})),
@@ -51,8 +51,8 @@ const event: McpServerConnectionEvent = {
 }
 
 function createServerSnapshot(
-	overrides: Partial<McpServerSnapshot> = {},
-): McpServerSnapshot {
+	overrides: Partial<McpHubServerSnapshot> = {},
+): McpHubServerSnapshot {
 	return {
 		serverId: 'server-home',
 		name: 'home',
@@ -86,7 +86,12 @@ function resetHub(userId = 'user-1') {
 
 function queueAuthenticatingPeek() {
 	mocks.peekServers.mockResolvedValueOnce({
-		servers: [createServerSnapshot({ state: 'authenticating' })],
+		servers: [
+			createServerSnapshot({
+				state: 'authenticating',
+				authUrl: 'https://auth.example/authorize?client_id=kody',
+			}),
+		],
 	})
 	mocks.peekConnectionEvents.mockResolvedValueOnce([event])
 }
@@ -105,7 +110,9 @@ test('waiting peek dispatches a queued mcp.server.disconnected before ack', asyn
 	expect(peeked.servers[0]).toMatchObject({
 		serverId: 'server-home',
 		state: 'authenticating',
+		authorizationPending: true,
 	})
+	expect(JSON.stringify(peeked)).not.toContain('auth.example')
 	expect(waitUntil).toHaveBeenCalledTimes(1)
 	expect(mocks.emitMcpServerConnectionEventsIfNeeded).not.toHaveBeenCalled()
 	expect(mocks.ackConnectionEvents).not.toHaveBeenCalled()

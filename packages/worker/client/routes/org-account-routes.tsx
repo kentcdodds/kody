@@ -41,6 +41,10 @@ export const orgAccountClientLoaders: Record<string, RouteLoader> = {
 		accountArea,
 		(module) => module.accountMcpServersRouteLoader,
 	),
+	[routePattern(routes.orgMcpServerAuthorize)]: lazyRouteLoader(
+		accountArea,
+		(module) => module.accountMcpServerAuthorizeRouteLoader,
+	),
 	[routePattern(routes.orgMemories)]: lazyRouteLoader(
 		accountArea,
 		(module) => module.accountMemoriesRouteLoader,
@@ -128,6 +132,11 @@ export const orgAccountClientRoutes = {
 	),
 	[routePattern(routes.orgMcpServers)]: (
 		<LazyAccountRoute render={(module) => <module.AccountMcpServersRoute />} />
+	),
+	[routePattern(routes.orgMcpServerAuthorize)]: (
+		<LazyAccountRoute
+			render={(module) => <module.AccountMcpServerAuthorizeRoute />}
+		/>
 	),
 	[routePattern(routes.orgMemories)]: (
 		<LazyAccountRoute render={(module) => <module.AccountMemoriesRoute />} />

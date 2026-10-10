@@ -207,6 +207,12 @@ export const routes = route({
 	orgIntegrations: get('/@:orgSlug/-/integrations(/*rest)'),
 	orgJobs: get('/@:orgSlug/-/jobs(/*rest)'),
 	orgMcpServers: get('/@:orgSlug/-/mcp-servers(/*rest)'),
+	// Every MCP server `authUrl` opens this consent page. Continue posts back
+	// here and is redirected to the provider.
+	orgMcpServerAuthorize: get('/@:orgSlug/-/mcp-servers/:serverId/authorize'),
+	orgMcpServerAuthorizePost: post(
+		'/@:orgSlug/-/mcp-servers/:serverId/authorize',
+	),
 	orgMemories: get('/@:orgSlug/-/memories(/*rest)'),
 	orgPackages: get('/@:orgSlug/-/packages'),
 	orgPackagesApi: get('/@:orgSlug/-/packages.json'),

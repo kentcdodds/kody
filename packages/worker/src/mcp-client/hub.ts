@@ -7,6 +7,7 @@ import { buildSentryOptions } from '#worker/sentry-options.ts'
 import {
 	createMcpClientOAuthProvider,
 	mcpClientName,
+	resolveMcpOAuthClientMode,
 } from './client-id-metadata.ts'
 import {
 	isStuckMcpAuthenticatingWithoutAuthUrl,
@@ -63,12 +64,13 @@ import {
 	type McpServerConnectionEvent,
 } from './connection-episodes.ts'
 import {
-	type McpClientHubSnapshot,
-	type McpServerConnectResult,
+	type McpHubConnectResult,
+	type McpHubServerSnapshot,
+	type McpHubSnapshot,
 	type McpServerConnectionState,
 	type McpServerLastError,
 	type McpServerOAuthCallbackOutcome,
-	type McpServerSnapshot,
+	type McpServerPendingAuthorization,
 	type McpServerToolDescriptor,
 } from './types.ts'
 
@@ -205,10 +207,10 @@ class McpClientHubBase extends DurableObject<Env> {
 		name: string
 		server_url: string
 		auth_url: string | null
-	}): McpServerSnapshot {
+	}): McpHubServerSnapshot {
 		const connection = this.manager.mcpConnections[row.id]
 		const state = this.connectionStateFor(row.id)
-		const tools: McpServerSnapshot['tools'] =
+		const tools: McpHubServerSnapshot['tools'] =
 			connection && state === 'ready'
 				? connection.tools.map((tool) => ({
 						name: tool.name,
@@ -243,7 +245,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		}
 	}
 
-	private buildConnectResult(serverId: string): McpServerConnectResult {
+	private buildConnectResult(serverId: string): McpHubConnectResult {
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === serverId)
@@ -285,7 +287,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		 * row; never returned in snapshots.
 		 */
 		headers?: Record<string, string>
-	}): Promise<McpServerConnectResult> {
+	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
 		await this.forgetLegacyHandshakeFallback(input.serverId)
 		this.clearIncompleteDiscoverStamp(input.serverId)
@@ -339,7 +341,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	async reconnectServer(input: {
 		serverId: string
 		callbackUrl: string
-	}): Promise<McpServerConnectResult> {
+	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
@@ -361,7 +363,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	/** Re-discover tools for a connected server. */
 	async refreshServer(input: {
 		serverId: string
-	}): Promise<McpServerConnectResult> {
+	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
 		await this.manager.waitForConnections({
 			timeout: connectionSettleTimeoutMs,
@@ -391,6 +393,32 @@ class McpClientHubBase extends DurableObject<Env> {
 			mcpOAuthTokenRecoveryStorageKey(input.serverId),
 			mcpOAuthRefreshTokenStorageKey(input.serverId),
 		])
+	}
+
+	/**
+	 * The provider authorization URL for a server parked on `authenticating`,
+	 * with what the consent page shows about it. Null when nothing is waiting
+	 * for approval. The consent page's Continue is the only caller.
+	 */
+	async readPendingAuthorization(input: {
+		serverId: string
+	}): Promise<McpServerPendingAuthorization | null> {
+		await this.ensureRestored()
+		const row = this.manager
+			.listServers()
+			.find((server) => server.id === input.serverId)
+		if (!row?.auth_url) return null
+		if (this.connectionStateFor(row.id) !== 'authenticating') return null
+		return {
+			serverId: row.id,
+			name: row.name,
+			serverUrl: row.server_url,
+			authorizationUrl: row.auth_url,
+			clientMode: resolveMcpOAuthClientMode({
+				authorizationUrl: row.auth_url,
+				callbackUrl: row.callback_url,
+			}),
+		}
 	}
 
 	/**
@@ -581,7 +609,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async settleAfterOAuthGrant(
 		serverId: string,
-	): Promise<McpServerConnectResult> {
+	): Promise<McpHubConnectResult> {
 		await this.clearTokenRecoveryLastError(serverId)
 		this.clearSessionBeforeConnect(serverId)
 		await this.manager.establishConnection(serverId)
@@ -601,7 +629,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async restartServerAuthorization(input: {
 		serverId: string
 		callbackUrl: string
-	}): Promise<McpServerConnectResult> {
+	}): Promise<McpHubConnectResult> {
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === input.serverId)
@@ -751,7 +779,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		serverId: string,
 		options?: { allowLegacyFallback?: boolean; attemptId?: string | null },
 	): Promise<{
-		result: McpServerConnectResult
+		result: McpHubConnectResult
 		lastError: McpServerLastError | null
 	}> {
 		this.clearIncompleteDiscoverStamp(serverId, {
@@ -790,11 +818,11 @@ class McpClientHubBase extends DurableObject<Env> {
 	private async retryDiscoverWithLegacyHandshake(
 		serverId: string,
 		autoFailure: {
-			result: McpServerConnectResult
+			result: McpHubConnectResult
 			lastError: McpServerLastError | null
 		},
 	): Promise<{
-		result: McpServerConnectResult
+		result: McpHubConnectResult
 		lastError: McpServerLastError | null
 	}> {
 		const row = this.manager
@@ -887,12 +915,12 @@ class McpClientHubBase extends DurableObject<Env> {
 	private keepCatalogLastError(
 		serverId: string,
 		autoFailure: {
-			result: McpServerConnectResult
+			result: McpHubConnectResult
 			lastError: McpServerLastError | null
 		},
 		discoverError: string | null,
 	): {
-		result: McpServerConnectResult
+		result: McpHubConnectResult
 		lastError: McpServerLastError | null
 	} {
 		const stamped = this.applyIncompleteDiscoverFailure(
@@ -919,7 +947,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		}
 	}
 
-	private finalizeConnectResult(serverId: string): McpServerConnectResult {
+	private finalizeConnectResult(serverId: string): McpHubConnectResult {
 		return this.applyIncompleteDiscoverFailure(serverId, null).result
 	}
 
@@ -928,7 +956,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		discoverError: string | null,
 		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): {
-		result: McpServerConnectResult
+		result: McpHubConnectResult
 		lastError: McpServerLastError | null
 	} {
 		const result = this.buildConnectResult(serverId)
@@ -1059,7 +1087,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private rebuildStampedDiscoverLastError(
 		serverId: string,
-		result: McpServerConnectResult,
+		result: McpHubConnectResult,
 		options?: { catalogAttempted?: boolean; attemptId?: string | null },
 	): McpServerLastError | null {
 		const row = this.manager
@@ -1080,7 +1108,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async discoverAfterOAuthEstablish(
 		serverId: string,
-	): Promise<McpServerConnectResult> {
+	): Promise<McpHubConnectResult> {
 		const result = (await this.runDiscoverIfConnected(serverId)).result
 		if (result.state === 'ready') {
 			await this.rememberLegacyHandshakeIfActive(serverId)
@@ -1174,7 +1202,7 @@ class McpClientHubBase extends DurableObject<Env> {
 
 	private async recoverStuckAuthenticating(
 		serverId: string,
-	): Promise<McpServerConnectResult> {
+	): Promise<McpHubConnectResult> {
 		const storedTokens = await this.readTokenPresence(serverId)
 		if (shouldAttemptMcpOAuthRefresh(storedTokens)) {
 			const refreshed = await this.connectUsingStoredOAuthTokens(serverId)
@@ -1213,13 +1241,13 @@ class McpClientHubBase extends DurableObject<Env> {
 		})
 	}
 
-	private listServerCards(): Array<McpServerSnapshot> {
+	private listServerCards(): Array<McpHubServerSnapshot> {
 		return this.manager
 			.listServers()
 			.map((row) => this.buildServerSnapshot(row))
 	}
 
-	private async collectServerSnapshots(): Promise<Array<McpServerSnapshot>> {
+	private async collectServerSnapshots(): Promise<Array<McpHubServerSnapshot>> {
 		await this.restoreAndWaitForServers()
 		for (const row of this.manager.listServers()) {
 			const beforeTokens = await this.readTokenPresence(row.id)
@@ -1232,7 +1260,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		return this.listServerCards()
 	}
 
-	async getSnapshot(): Promise<McpClientHubSnapshot> {
+	async getSnapshot(): Promise<McpHubSnapshot> {
 		return {
 			servers: await this.collectServerSnapshots(),
 			connectionEvents: await this.peekConnectionEvents(),
@@ -1245,7 +1273,7 @@ class McpClientHubBase extends DurableObject<Env> {
 	 * park may queue a pending disconnected episode; the hub client
 	 * dispatches it after this peek.
 	 */
-	async peekServers(): Promise<Pick<McpClientHubSnapshot, 'servers'>> {
+	async peekServers(): Promise<Pick<McpHubSnapshot, 'servers'>> {
 		await this.restoreAndWaitForServers()
 		for (const row of this.manager.listServers()) {
 			const beforeTokens = await this.readTokenPresence(row.id)

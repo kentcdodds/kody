@@ -109,6 +109,15 @@ test('organization section pages use /-/ and leave two-segment package urls free
 	expect(await resolve('/@ada')).toBe('profile')
 })
 
+test('the MCP server consent page wins over the MCP servers section', async () => {
+	const resolve = makeRouter(['orgMcpServers', 'orgMcpServerAuthorize'])
+	expect(await resolve('/@acme/-/mcp-servers/server-1/authorize')).toBe(
+		'orgMcpServerAuthorize',
+	)
+	expect(await resolve('/@acme/-/mcp-servers/server-1')).toBe('orgMcpServers')
+	expect(await resolve('/@acme/-/mcp-servers')).toBe('orgMcpServers')
+})
+
 test('organization settings and members live under /- and leave package urls free', async () => {
 	const resolve = makeRouter([
 		'orgSettings',

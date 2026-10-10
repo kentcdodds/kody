@@ -192,7 +192,7 @@ test('addMcpServer forwards bearer tokens as Authorization headers and persists 
 	mockModule.hubClient.addServer.mockResolvedValue({
 		serverId: 'ignored',
 		state: 'ready',
-		authUrl: null,
+		authorizationPending: false,
 		error: null,
 		toolCount: 1,
 	})
@@ -240,7 +240,7 @@ test('addMcpServer forwards bearer tokens as Authorization headers and persists 
 	mockModule.hubClient.addServer.mockResolvedValue({
 		serverId: 'ignored',
 		state: 'connected',
-		authUrl: null,
+		authorizationPending: false,
 		error: lastError.message,
 		toolCount: 0,
 		lastError,

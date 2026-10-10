@@ -33,7 +33,7 @@ type RemoteStatus =
 
 const readyStatus: RemoteStatus = {
 	connected: true,
-	authUrl: null,
+	authorizationPending: false,
 	state: 'ready',
 	error: null,
 }
@@ -96,7 +96,7 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 		remotes([['srv-linear', 'linear', 'https://mcp.linear.app/mcp']], {
 			'srv-linear': {
 				connected: false,
-				authUrl: 'https://auth.linear.test/authorize',
+				authorizationPending: true,
 				state: 'authenticating',
 				error: null,
 			},
@@ -108,7 +108,7 @@ test('featured MCP chooser overlays OAuth state and package listings', () => {
 		id: 'linear',
 		connected: false,
 		serverId: 'srv-linear',
-		authUrl: 'https://auth.linear.test/authorize',
+		authorizationPending: true,
 		state: 'authenticating',
 	})
 	expect(hasPendingOnboardingFeaturedMcpAuth(overlaid)).toBe(true)
@@ -179,7 +179,7 @@ test('custom MCP servers exclude featured remotes and count as a workspace conne
 			name: 'acme',
 			url: 'https://mcp.acme.example/mcp',
 			connected: true,
-			authUrl: null,
+			authorizationPending: false,
 			state: 'ready',
 			error: null,
 		},
@@ -188,7 +188,7 @@ test('custom MCP servers exclude featured remotes and count as a workspace conne
 			name: 'linear',
 			url: 'https://mcp.other.example/mcp',
 			connected: false,
-			authUrl: null,
+			authorizationPending: false,
 			state: null,
 			error: null,
 		},
@@ -202,7 +202,7 @@ test('custom MCP servers exclude featured remotes and count as a workspace conne
 				name: 'acme',
 				url: 'https://mcp.acme.example/mcp',
 				connected: false,
-				authUrl: 'https://auth.acme.example/authorize',
+				authorizationPending: true,
 				state: 'authenticating',
 				error: null,
 			},

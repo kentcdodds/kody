@@ -68,7 +68,7 @@ export type OnboardingServiceChooserPick = {
 
 export type OnboardingFeaturedMcpServer = OnboardingFeaturedMcpServerOption & {
 	connected: boolean
-	authUrl: string | null
+	authorizationPending: boolean
 	state: string | null
 	serverId: string | null
 	error: string | null
@@ -373,7 +373,7 @@ export function matchOnboardingFeaturedMcpServer(
 function disconnectedPackageFields() {
 	return {
 		connected: false,
-		authUrl: null,
+		authorizationPending: false,
 		state: null,
 		serverId: null,
 		error: null,
@@ -398,7 +398,7 @@ export function overlayOnboardingFeaturedMcpServers(input: {
 		string,
 		{
 			connected: boolean
-			authUrl: string | null
+			authorizationPending: boolean
 			state: string
 			error: string | null
 		}
@@ -418,7 +418,7 @@ export function overlayOnboardingFeaturedMcpServers(input: {
 		return {
 			...option,
 			connected: status?.connected ?? false,
-			authUrl: status?.authUrl ?? null,
+			authorizationPending: status?.authorizationPending ?? false,
 			state: status?.state ?? null,
 			serverId: setting.id,
 			error: status?.error ?? null,
@@ -490,7 +490,7 @@ export type OnboardingCustomMcpServer = {
 	name: string
 	url: string
 	connected: boolean
-	authUrl: string | null
+	authorizationPending: boolean
 	state: string | null
 	error: string | null
 }
@@ -505,7 +505,7 @@ export type OnboardingMcpChooserOverlay = {
 		string,
 		{
 			connected: boolean
-			authUrl: string | null
+			authorizationPending: boolean
 			state: string
 			error: string | null
 		}
@@ -529,7 +529,7 @@ export function listOnboardingCustomMcpServers(
 				name: setting.name,
 				url: setting.url,
 				connected: status?.connected ?? false,
-				authUrl: status?.authUrl ?? null,
+				authorizationPending: status?.authorizationPending ?? false,
 				state: status?.state ?? null,
 				error: status?.error ?? null,
 			}
@@ -557,7 +557,7 @@ export function hasPendingOnboardingCustomMcpAuth(
 ): boolean {
 	return servers.some((server) => {
 		if (server.connected) return false
-		if (server.authUrl != null) return true
+		if (server.authorizationPending) return true
 		switch (server.state) {
 			case 'authenticating':
 			case 'connecting':

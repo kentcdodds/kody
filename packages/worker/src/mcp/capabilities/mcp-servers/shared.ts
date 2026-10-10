@@ -2,6 +2,7 @@ import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { normalizeMcpServerName } from '@kody-internal/shared/mcp-servers.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { buildMcpServerAuthorizeUrl } from '#worker/mcp-client/authorize-consent.ts'
 import { getCachedMcpClientHubSnapshot } from '#worker/mcp-client/hub-client.ts'
 import { enrichMcpOAuthProviderError } from '#worker/mcp-client/oauth-provider-error.ts'
 import {
@@ -32,31 +33,65 @@ export const mcpServerStatusSchema = z.object({
 
 export type McpServerStatusView = z.infer<typeof mcpServerStatusSchema>
 
+/** Where `authUrl` consent links point: canonical app origin plus org handle. */
+export type McpServerAuthorizeLinkBase = {
+	appOrigin: string
+	orgSlug: string
+}
+
+/** Org handle for consent links built from a capability caller. */
+export function mcpServerCallerOrgSlug(callerContext: {
+	request?: { org: { slug: string | null } } | null
+	user?: { username?: string | null } | null
+}) {
+	return (
+		callerContext.request?.org.slug?.trim() ||
+		callerContext.user?.username?.trim() ||
+		''
+	)
+}
+
+/**
+ * The error a status card shows: a ready server's missing-refresh warning, or
+ * the live / durable connection error, with OAuth origin hints when known.
+ */
+export function mcpServerStatusError(input: {
+	setting: McpServerSettingMetadata
+	snapshot: McpServerSnapshot | null
+	oauthCallbackUrl?: string
+	oauthClientOrigin?: string
+	oauthClientMetadataUrl?: string | null
+}) {
+	const { setting, snapshot } = input
+	const readyWarning = isMcpOAuthMissingRefreshGrantLastError(
+		snapshot?.lastError ?? null,
+	)
+		? snapshot?.lastError?.message
+		: null
+	const rawError =
+		snapshot?.state === 'ready'
+			? (readyWarning ?? null)
+			: (snapshot?.error ?? setting.lastError ?? null)
+	return rawError && input.oauthCallbackUrl && input.oauthClientOrigin
+		? enrichMcpOAuthProviderError(rawError, {
+				callbackUrl: input.oauthCallbackUrl,
+				clientOrigin: input.oauthClientOrigin,
+				clientMetadataUrl: input.oauthClientMetadataUrl,
+			})
+		: rawError
+}
+
 export function buildMcpServerStatusView(input: {
 	setting: McpServerSettingMetadata
 	snapshot: McpServerSnapshot | null
+	authorizeLink: McpServerAuthorizeLinkBase
 	oauthCallbackUrl?: string
 	oauthClientOrigin?: string
 	oauthClientMetadataUrl?: string | null
 }): McpServerStatusView {
 	const { setting, snapshot } = input
 	const connected = snapshot?.state === 'ready'
-	const readyWarning = isMcpOAuthMissingRefreshGrantLastError(
-		snapshot?.lastError ?? null,
-	)
-		? snapshot?.lastError?.message
-		: null
-	const rawError = connected
-		? (readyWarning ?? null)
-		: (snapshot?.error ?? setting.lastError ?? null)
-	const error =
-		rawError && input.oauthCallbackUrl && input.oauthClientOrigin
-			? enrichMcpOAuthProviderError(rawError, {
-					callbackUrl: input.oauthCallbackUrl,
-					clientOrigin: input.oauthClientOrigin,
-					clientMetadataUrl: input.oauthClientMetadataUrl,
-				})
-			: rawError
+	const error = mcpServerStatusError(input)
 	return {
 		id: setting.id,
 		name: setting.name,
@@ -65,7 +100,12 @@ export function buildMcpServerStatusView(input: {
 		state: snapshot?.state ?? 'disconnected',
 		connected,
 		toolCount: connected ? (snapshot?.tools.length ?? 0) : 0,
-		authUrl: snapshot?.authUrl ?? null,
+		authUrl: snapshot?.authorizationPending
+			? buildMcpServerAuthorizeUrl({
+					...input.authorizeLink,
+					serverId: setting.id,
+				})
+			: null,
 		error,
 		hasRefreshToken: snapshot?.hasRefreshToken ?? false,
 		tools: connected ? (snapshot?.tools.map((tool) => tool.name) ?? []) : [],
