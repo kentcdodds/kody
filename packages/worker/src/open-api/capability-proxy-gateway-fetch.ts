@@ -19,9 +19,9 @@ import { invalidRequest } from './errors.ts'
  * secrets fail closed before any third-party request.
  *
  * Optional `packageId` is a client stamp from local workerd. Origin verifies
- * `package:execute` when present, but never treats it as secret authority:
- * only cloud bundler provenance may skip per-resource Use. Local credential
- * expansion always requires `secret:use` / `integration:use` like ad-hoc.
+ * `package:execute` and may bind package-scoped secrets / package-limited
+ * integrations to that id, but `requireActorCredentialUse` always enforces
+ * `secret:use` / `integration:use`. Only cloud bundler provenance may skip Use.
  */
 
 export type CapabilityProxyGatewayFetchRequest = {
