@@ -1,3 +1,4 @@
+import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { createMultiMatcher } from 'remix/route-pattern/match'
 import { isAccountConnectionAgent } from '#universal/account-connections.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
@@ -403,6 +404,17 @@ const routeDocumentHeads = {
 	),
 	[routePattern(routes.pricing)]: publicPageHead('pricing', 'Pricing'),
 	[routePattern(routes.faq)]: publicPageHead('faq', 'FAQ'),
+	[routePattern(routes.n8nAlternatives)]: acquisitionHead,
+	[routePattern(routes.mcpGateway)]: acquisitionHead,
+	[routePattern(routes.sharedMemory)]: acquisitionHead,
+	[routePattern(routes.gmail)]: acquisitionHead,
+	[routePattern(routes.customTools)]: acquisitionHead,
+	[routePattern(routes.composioAlternatives)]: acquisitionHead,
+	[routePattern(routes.slack)]: acquisitionHead,
+	[routePattern(routes.scheduledWorkflows)]: acquisitionHead,
+	[routePattern(routes.claudeIntegrations)]: acquisitionHead,
+	[routePattern(routes.useCases)]: acquisitionHead,
+	[routePattern(routes.automation)]: acquisitionHead,
 	[routePattern(routes.caseStudies)]: publicPageHead(
 		'case-studies',
 		'Case studies',
@@ -572,5 +584,21 @@ export function absolutizeDocumentHead(
 			type: link.type,
 			title: link.title,
 		})),
+	}
+}
+
+function acquisitionHead({
+	pathname,
+}: {
+	pathname: string
+}): DocumentHeadDescriptor {
+	const page = acquisitionPageSummaries.find((entry) => entry.path === pathname)
+	if (!page) return { title: NOT_FOUND_DOCUMENT_TITLE }
+	const title = `${page.title} | Kody`
+	return {
+		title,
+		description: page.description,
+		canonicalPath: page.path,
+		og: { title, description: page.description, imagePath: '/og/home.png' },
 	}
 }

@@ -409,6 +409,61 @@ export const clientRoutes = {
 	[routePattern(routes.faq)]: (
 		<LazyMarketingRoute render={(m) => <m.FaqRoute />} />
 	),
+	[routePattern(routes.n8nAlternatives)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="n8nAlternatives" />}
+		/>
+	),
+	[routePattern(routes.mcpGateway)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="mcpGateway" />}
+		/>
+	),
+	[routePattern(routes.sharedMemory)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="sharedMemory" />}
+		/>
+	),
+	[routePattern(routes.gmail)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="gmail" />}
+		/>
+	),
+	[routePattern(routes.customTools)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="customTools" />}
+		/>
+	),
+	[routePattern(routes.composioAlternatives)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="composioAlternatives" />}
+		/>
+	),
+	[routePattern(routes.slack)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="slack" />}
+		/>
+	),
+	[routePattern(routes.scheduledWorkflows)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="scheduledWorkflows" />}
+		/>
+	),
+	[routePattern(routes.claudeIntegrations)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="claudeIntegrations" />}
+		/>
+	),
+	[routePattern(routes.useCases)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="useCases" />}
+		/>
+	),
+	[routePattern(routes.automation)]: (
+		<LazyMarketingRoute
+			render={(m) => <m.AcquisitionRoute pageKey="automation" />}
+		/>
+	),
 	[routePattern(routes.caseStudies)]: (
 		<LazyMarketingRoute render={(m) => <m.CaseStudiesRoute />} />
 	),

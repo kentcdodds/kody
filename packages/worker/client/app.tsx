@@ -41,6 +41,7 @@ import {
 import { SiteFooter } from './site-footer.tsx'
 import { SiteHeader } from './site-header.tsx'
 import { Toaster } from './toaster.tsx'
+import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { isDocsPagePath } from '#universal/docs-nav.ts'
 import { type AppLoaderData } from '#universal/loader-data.ts'
 import { isPackageFilesPathname } from '#universal/package-files.ts'
@@ -72,6 +73,10 @@ type AppProps = {
 	internalError?: boolean
 }
 
+function isAcquisitionPath(pathname: string) {
+	return acquisitionPageSummaries.some((page) => page.path === pathname)
+}
+
 function isRedesignedMarketingPath(pathname: string) {
 	return (
 		pathname === '/' ||
@@ -86,7 +91,8 @@ function isRedesignedMarketingPath(pathname: string) {
 		isDocsPagePath(pathname) ||
 		isProfilePathname(pathname) ||
 		isCommunityListingPathname(pathname) ||
-		getSlugFromPathname(pathname) !== null
+		getSlugFromPathname(pathname) !== null ||
+		isAcquisitionPath(pathname)
 	)
 }
 

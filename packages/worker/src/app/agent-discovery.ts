@@ -1,3 +1,4 @@
+import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { listBlogPosts } from '#worker/blog/catalog.ts'
 import { listGuides } from '#worker/guides/catalog.ts'
 import { mcpOauthScopes } from '#worker/mcp-oauth-scopes.ts'
@@ -199,7 +200,12 @@ export function listPublicSitemapEntries(): ReadonlyArray<SitemapEntry> {
 		path: `/blog/${post.slug}`,
 		lastmod: post.date,
 	}))
-	return [...staticPublicPages(), ...guides, ...posts]
+	return [
+		...staticPublicPages(),
+		...acquisitionPageSummaries.map((page) => ({ path: page.path })),
+		...guides,
+		...posts,
+	]
 }
 
 function escapeXml(value: string): string {

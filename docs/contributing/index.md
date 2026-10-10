@@ -97,6 +97,8 @@ style, tests, MCP capabilities, and runtime architecture.
   [secret host approval](./secret-host-approval.md),
   [secret providers](./secret-providers.md),
   [secret rotation](./secret-rotation.md), [social login](./social-login.md)
+- [Use-case measurement](./acquisition-measurement.md) (page analytics, signup
+  attribution, and launch checks).
 - [Operator accounts](./operator-accounts.md) (third-party services, secret
   names, recovery)
 - [Production backup and disaster recovery](./disaster-recovery.md)

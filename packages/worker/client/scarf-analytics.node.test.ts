@@ -1,3 +1,4 @@
+import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { createScarfPageTracker, scarfPageUrl } from './scarf-analytics.ts'
 
@@ -5,6 +6,7 @@ afterEach(() => vi.unstubAllGlobals())
 
 test('only public marketing paths on the production host are eligible', () => {
 	for (const path of [
+		...acquisitionPageSummaries.map((page) => page.path),
 		'/',
 		'/pricing',
 		'/faq',
@@ -32,6 +34,9 @@ test('only public marketing paths on the production host are eligible', () => {
 		'/community/some-listing-id',
 		'/blog/private/data',
 		'/blog/does-not-exist',
+		'/use-cases/private',
+		'/integrations/private',
+		'/compare/does-not-exist',
 	]) {
 		expect(scarfPageUrl(`https://kody.codes${path}`)).toBeNull()
 	}

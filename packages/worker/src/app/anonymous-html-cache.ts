@@ -11,6 +11,7 @@
  * negotiated routes) so intermediary caches still split on the session cookie.
  */
 
+import { acquisitionPageSummaries } from '#universal/acquisition/metadata.ts'
 import { createMatcher } from 'remix/route-pattern/match'
 import { requestBypassesAnonymousDocumentCache } from '#universal/frame-constants.ts'
 import { routes } from '#universal/routes.ts'
@@ -36,6 +37,7 @@ export const anonymousHtmlCacheControl =
 export const anonymousVisibilityGatedCacheControl = 'public, max-age=60'
 
 const cacheableAnonymousExactPaths = new Set([
+	...acquisitionPageSummaries.map((page) => page.path),
 	'/',
 	'/pricing',
 	'/for/business',

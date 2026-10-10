@@ -182,6 +182,39 @@ test('error pages own main gutters on the SSR URL and at explicit /404 and /500;
 			},
 			true,
 		],
+		// Acquisition landing pages own their gutters (SSR and SPA).
+		[
+			{
+				pathname: '/use-cases',
+				notFound: false,
+				onSsrUrl: true,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/use-cases/shared-agent-memory',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/integrations/gmail',
+				notFound: false,
+				onSsrUrl: true,
+			},
+			true,
+		],
+		[
+			{
+				pathname: '/compare/n8n-alternatives',
+				notFound: false,
+				onSsrUrl: false,
+			},
+			true,
+		],
 	]
 	expect(
 		cases.filter(([input, want]) => appMainOwnsItsGutters(input) !== want),
