@@ -46,7 +46,10 @@ import {
 } from '#worker/package-registry/repo.ts'
 import { parseAuthoredPackageJson } from '#worker/package-registry/manifest.ts'
 import { assertKodyDescriptionLength } from '#worker/package-registry/types.ts'
-import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import {
+	packageOwnerEntitlementEmail,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import { refreshSavedPackageProjection } from '#worker/package-registry/service.ts'
 import { reportCapabilityProgress } from '#mcp/progress.ts'
 import { assertWithinEntitlement } from '#worker/entitlements/service.ts'
@@ -276,7 +279,7 @@ export const savePackageCapability = defineDomainCapability(
 				await assertWithinEntitlement({
 					db: ctx.env.APP_DB,
 					userId: owner.ownerUserId,
-					email: owner.ownerEmail,
+					email: packageOwnerEntitlementEmail(owner),
 					resource: 'saved_packages',
 				})
 				packageJsonContent = injectDefaultPrivateField(packageJsonContent)
@@ -463,7 +466,7 @@ export const savePackageCapability = defineDomainCapability(
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
 				userId: owner.ownerUserId,
-				userEmail: owner.ownerEmail,
+				userEmail: packageOwnerEntitlementEmail(owner),
 				packageId,
 				sourceId: ensuredSource.id,
 				waitUntil: ctx.waitUntil,

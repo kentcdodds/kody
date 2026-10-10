@@ -442,6 +442,30 @@ test('getUserPlan ignores org billing when email does not match the stable user 
 	expect(await getUserPlan(db, { userId, email: plannedEmail })).toBe('max')
 })
 
+test('getUserPlan resolves team org plans with blank email; member email alone stays free', async () => {
+	const memberEmail = 'teammate@example.com'
+	const memberId = testStableUserIdFromEmail(memberEmail)
+	const teamOrgId = 'b'.repeat(64)
+	const { db } = createEntitlementsTestDb({
+		users: [{ email: memberEmail, plan: 'free', stable_user_id: memberId }],
+		orgs: [
+			{
+				email: 'billing@acme.example',
+				plan: 'max',
+				stable_user_id: teamOrgId,
+			},
+		],
+	})
+	// Actor email + team OwnerId is the package-owner pairing before the fix:
+	// the email path requires users.stable_user_id = owner id and misses.
+	expect(await getUserPlan(db, { userId: teamOrgId, email: memberEmail })).toBe(
+		'free',
+	)
+	for (const email of [null, undefined, '', '   ']) {
+		expect(await getUserPlan(db, { userId: teamOrgId, email })).toBe('max')
+	}
+})
+
 test('getCachedUserPlan caches per db binding and never caches failures', async () => {
 	const { userId, users, db, queries } = await createPlannedUserDb('pro')
 	const context = { userId, email: plannedEmail }

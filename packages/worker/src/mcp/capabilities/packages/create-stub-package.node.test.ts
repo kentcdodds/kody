@@ -177,7 +177,7 @@ test('createStubSavedPackage rejects invalid kody ids and registers stubs for pe
 	expect(mockModule.assertWithinEntitlement).toHaveBeenCalledWith(
 		expect.objectContaining({
 			userId: ownerIdFromStored('org-owner'),
-			email: 'acme@example.com',
+			email: null,
 		}),
 	)
 	expect(mockModule.ensureEntitySource).toHaveBeenCalledWith(
