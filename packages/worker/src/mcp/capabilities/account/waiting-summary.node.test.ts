@@ -71,6 +71,7 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 			userId: personIdFromStored(stableUserId),
 			email,
 			displayName: 'Waiting',
+			username: 'waiting',
 		},
 	})
 
@@ -91,7 +92,7 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 		{},
 		{ env, callerContext },
 	)
-	expect(dismissed.waiting_url).toBe('https://example.com/account/waiting')
+	expect(dismissed.waiting_url).toBe('https://example.com/@waiting/-/waiting')
 	expect(dismissed.items.every((item) => item.kind === 'first-use')).toBe(true)
 	expect(dismissed.items.map((item) => item.id)).toEqual([
 		'first-use:memory',
@@ -144,7 +145,7 @@ test('waitingSummary requires auth and stays self-scoped', async () => {
 	)
 	expect(missing).toEqual({
 		count: 0,
-		waiting_url: 'https://example.com/account/waiting',
+		waiting_url: 'https://example.com/@waiting/-/waiting',
 		items: [],
 	})
 })

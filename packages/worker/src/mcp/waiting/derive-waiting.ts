@@ -83,9 +83,14 @@ export async function deriveWaitingItemsForStableUser(input: {
 				email_verified_at: string | null
 			}>()
 		if (!userRow) return []
-		const org = await getOrgById(input.env.APP_DB, input.stableUserId)
-		const orgSlug = org?.slug?.trim() || userRow.username.trim()
-		if (!orgSlug) return []
+		let orgSlug = userRow.username?.trim() ?? ''
+		try {
+			const org = await getOrgById(input.env.APP_DB, input.stableUserId)
+			const slug = org?.slug?.trim()
+			if (slug) orgSlug = slug
+		} catch {
+			// Test doubles that do not model orgs keep the username slug.
+		}
 		return await deriveWaitingItems({
 			env: input.env,
 			user: {

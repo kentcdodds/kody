@@ -98,6 +98,8 @@ export async function assertCanUseMcpServer(input: {
 	if (!row) return
 	const usageMode = normalizeMcpServerUsageMode(row.usage_mode)
 	if (usageMode === 'any') return
+	const packageId = input.packageId?.trim() ?? ''
+	if (packageId && row.allowedPackageIds.includes(packageId)) return
 	const usageUrl = buildMcpServerUsageUrl({
 		baseUrl: input.baseUrl,
 		orgSlug:
@@ -105,7 +107,6 @@ export async function assertCanUseMcpServer(input: {
 			(await readSignupOrgSlug(input.env.APP_DB, input.userId)),
 		serverId: row.id,
 	})
-	const packageId = input.packageId?.trim() ?? ''
 	if (!packageId) {
 		throw new McpServerPackageAccessDeniedError(
 			createMcpServerExecuteAccessDeniedMessage({
@@ -114,7 +115,6 @@ export async function assertCanUseMcpServer(input: {
 			}),
 		)
 	}
-	if (row.allowedPackageIds.includes(packageId)) return
 	throw new McpServerPackageAccessDeniedError(
 		createMcpServerPackageAccessDeniedMessage({
 			serverName: input.serverName,

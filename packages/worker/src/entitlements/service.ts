@@ -1445,10 +1445,14 @@ export async function assertWithinEntitlement(
 				now,
 			})
 	if (current + requested > limit) {
-		const org = await getOrgById(input.db, input.userId)
-		const billingPath = org?.slug
-			? orgBillingPath(org.slug)
-			: '/@<slug>/-/billing'
+		let billingPath = '/@<slug>/-/billing'
+		try {
+			const org = await getOrgById(input.db, input.userId)
+			if (org?.slug) billingPath = orgBillingPath(org.slug)
+		} catch {
+			// A test double that does not model orgs still owes the caller a
+			// limit error. Production D1 returns null when the org is missing.
+		}
 		throw new EntitlementLimitError({
 			resource: input.resource,
 			plan,

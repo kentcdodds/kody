@@ -40,6 +40,7 @@ test('mcpServerLock grants a package and rejects missing packages', async () => 
 				userId: personIdFromStored('user-1'),
 				email: 'alice@example.com',
 				displayName: 'Alice',
+				username: 'alice',
 			},
 		}),
 	}
@@ -54,7 +55,7 @@ test('mcpServerLock grants a package and rejects missing packages', async () => 
 		name: 'linear',
 		usage_mode: 'packages',
 		allowed_package_ids: ['pkg-drafts'],
-		usage_url: 'https://kody.codes/account/mcp-servers/server-1',
+		usage_url: 'https://kody.codes/@alice/-/mcp-servers/server-1',
 	})
 	expect(mockModule.lockMcpServerToPackage).toHaveBeenCalledWith({
 		env: ctx.env,
