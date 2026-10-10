@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import { type Handle, css } from 'remix/component'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { navigate, readCurrentRouterHref } from '#client/client-router.tsx'
@@ -133,6 +134,7 @@ export async function accountValuesRouteLoader(
 	const response = await fetch(buildValuesApiRequestUrl(href), {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: orgAccountApiReferrer(href),
 		signal,
 	})
 	if (response.status === 401) {
@@ -164,6 +166,7 @@ export function AccountValuesRoute(handle: Handle) {
 			const response = await fetch(buildValuesApiRequestUrl(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				referrer: orgAccountApiReferrer(href),
 				signal,
 			})
 			if (response.status === 401) return routeDataRedirect('/login')

@@ -1,3 +1,4 @@
+import { orgAccountApiReferrer } from '#client/org-account-api.ts'
 import {
 	type AccountIntegrationListItem,
 	type AccountIntegrationsLoaderData,
@@ -82,6 +83,7 @@ export function AccountIntegrationsRoute(handle: Handle) {
 			const response = await fetch(buildIntegrationsApiHref(href), {
 				headers: { Accept: 'application/json' },
 				credentials: 'include',
+				referrer: orgAccountApiReferrer(href),
 				signal,
 			})
 			if (response.status === 401) return routeDataRedirect('/login')
