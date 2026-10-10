@@ -30,8 +30,8 @@ export type DynamicWorkerIdOptions = {
  * fields do not — those arrive on `evaluate` RPC.
  *
  * Unique worker days are the billed and capped unit, so the same inputs must
- * always mint the same id. A module value that cannot be hashed (a function
- * or symbol smuggled past the module type) throws instead of minting a
+ * always mint the same id. A module value that cannot be hashed (a function,
+ * symbol, or compiled `WebAssembly.Module`) throws instead of minting a
  * one-off id that would bill and count as a new worker on every call.
  */
 export async function createStableDynamicWorkerId(input: {
@@ -59,39 +59,58 @@ function canonicalJsonStringify(value: unknown) {
 	return JSON.stringify(canonicalizeForHash(value, '$'))
 }
 
+/**
+ * Every non-primitive becomes a tagged array (`['object', ...]`,
+ * `['bytes', ...]`), so user JSON can never spell another value's encoding.
+ * Only plain objects are walked: anything else (a compiled
+ * `WebAssembly.Module`, Map, class instance) exposes no hashable contents
+ * and would collide with every other value of its kind.
+ */
 function canonicalizeForHash(value: unknown, path: string): unknown {
-	if (value === undefined) return { __kodyType: 'undefined' }
+	if (value === undefined) return ['undefined']
 	if (value === null) return null
-	if (typeof value === 'bigint')
-		return { __kodyType: 'bigint', value: String(value) }
+	if (typeof value === 'bigint') return ['bigint', String(value)]
 	if (typeof value === 'function' || typeof value === 'symbol') {
-		throw new TypeError(
-			`Dynamic Worker id input ${path} is a ${typeof value}; worker modules must be strings, ArrayBuffers, or JSON values.`,
-		)
+		throw unhashableModuleValue(path, `a ${typeof value}`)
 	}
 	if (typeof value !== 'object') return value
 	if (value instanceof ArrayBuffer) {
-		return {
-			__kodyType: 'arrayBuffer',
-			value: bytesToBase64Url(new Uint8Array(value)),
-		}
+		return ['bytes', bytesToBase64Url(new Uint8Array(value))]
 	}
 	if (ArrayBuffer.isView(value)) {
-		return {
-			__kodyType: 'arrayBuffer',
-			value: bytesToBase64Url(
+		return [
+			'bytes',
+			bytesToBase64Url(
 				new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
 			),
-		}
+		]
 	}
-	if (Array.isArray(value))
-		return value.map((entry, index) =>
-			canonicalizeForHash(entry, `${path}[${index}]`),
+	if (Array.isArray(value)) {
+		return [
+			'array',
+			...value.map((entry, index) =>
+				canonicalizeForHash(entry, `${path}[${index}]`),
+			),
+		]
+	}
+	const prototype: unknown = Object.getPrototypeOf(value)
+	if (prototype !== Object.prototype && prototype !== null) {
+		throw unhashableModuleValue(
+			path,
+			`a ${value.constructor?.name ?? 'non-plain'} object`,
 		)
+	}
 	const record = value as Record<string, unknown>
-	return Object.fromEntries(
-		Object.keys(record)
+	return [
+		'object',
+		...Object.keys(record)
 			.sort((left, right) => left.localeCompare(right))
 			.map((key) => [key, canonicalizeForHash(record[key], `${path}.${key}`)]),
+	]
+}
+
+function unhashableModuleValue(path: string, kind: string) {
+	return new TypeError(
+		`Dynamic Worker id input ${path} is ${kind}; worker modules must be strings, byte buffers, or JSON values.`,
 	)
 }

@@ -101,3 +101,24 @@ test('createStableDynamicWorkerId rejects function-valued module fields instead 
 		'Dynamic Worker id input $.modules.executor.js.onLoad is a function',
 	)
 })
+
+test('createStableDynamicWorkerId keeps JSON that spells an encoding tag distinct from the bytes it imitates', async () => {
+	const bytes = await mintId({
+		modules: { ...modules, 'data.json': { json: new Uint8Array([1]) } },
+	})
+	const imitation = await mintId({
+		modules: { ...modules, 'data.json': { json: ['bytes', 'AQ'] } },
+	})
+	expect(imitation).not.toBe(bytes)
+})
+
+test('createStableDynamicWorkerId rejects compiled WebAssembly modules, which expose no bytes to hash', async () => {
+	const compiled = new WebAssembly.Module(
+		new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]),
+	)
+	await expect(
+		mintId({ modules: { ...modules, 'lib.wasm': { wasm: compiled } } }),
+	).rejects.toThrow(
+		'Dynamic Worker id input $.modules.lib.wasm.wasm is a Module object',
+	)
+})
