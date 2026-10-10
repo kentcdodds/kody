@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test } from 'vitest'
 import {
 	grantMatchesConsentOrg,
@@ -18,15 +21,13 @@ test('orgGrantFields stamps the same orgId on props and metadata', () => {
 })
 
 test('readOrgId helpers ignore missing or blank values', () => {
-	expect(readOrgIdFromGrantProps({ orgId: ownerIdFromStored(' org-1 ') })).toBe(
-		'org-1',
-	)
+	expect(readOrgIdFromGrantProps({ orgId: ' org-1 ' as OwnerId })).toBe('org-1')
 	expect(
 		readOrgIdFromGrantMetadata({ orgId: ownerIdFromStored('org-1') }),
 	).toBe('org-1')
 	expect(readOrgIdFromGrantProps({})).toBeNull()
 	expect(readOrgIdFromGrantProps(null)).toBeNull()
-	expect(readOrgIdFromGrantProps({ orgId: ownerIdFromStored('  ') })).toBeNull()
+	expect(readOrgIdFromGrantProps({ orgId: '  ' as OwnerId })).toBeNull()
 	expect(
 		readOrgIdFromGrantPropsOrUserId({ userId: ownerIdFromStored('user-1') }),
 	).toBe('user-1')

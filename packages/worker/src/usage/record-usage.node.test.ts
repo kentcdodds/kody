@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 import {
 	ownerIdFromStored,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 
@@ -97,7 +98,7 @@ test('recordUsage emits kody.usage spans with attributes and skips empty userId'
 	spanCalls.spans.length = 0
 	await recordUsage(
 		{},
-		{ userId: ownerIdFromStored(''), eventType: 'execute', outcome: 'success' },
+		{ userId: '' as OwnerId, eventType: 'execute', outcome: 'success' },
 	)
 	expect(spanCalls.spans).toEqual([])
 })

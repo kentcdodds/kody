@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
@@ -50,7 +53,7 @@ test('missing users, non-numeric CPU, and no Analytics Engine are skipped', asyn
 	})
 	await recordDynamicWorkerCpu({
 		env: usageEnv as never,
-		props: { userId: ownerIdFromStored(''), workerId: 'dw_abc' },
+		props: { userId: '' as OwnerId, workerId: 'dw_abc' },
 		event: { cpuTime: 4, wallTime: 5, outcome: 'ok' },
 	})
 	await recordDynamicWorkerCpu({

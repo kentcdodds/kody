@@ -1,6 +1,7 @@
 import {
 	ownerIdFromStored,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -13,7 +14,7 @@ import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 const mockModule = vi.hoisted(() => {
 	const savedPackage = {
 		id: 'pkg-1',
-		userId: ownerIdFromStored('stable-user-1'),
+		userId: 'stable-user-1' as OwnerId,
 		name: '@test/discord-gateway',
 		kodyId: 'discord-gateway',
 		description: 'Dispatch Discord gateway events.',
@@ -232,7 +233,7 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	const searchCall = (input: Record<string, unknown>) =>
 		expect(mockModule.searchSavedPackagesByUserId).toHaveBeenLastCalledWith(
 			env.APP_DB,
-			{ userId: ownerIdFromStored('stable-user-1'), ...input },
+			{ userId: 'stable-user-1' as OwnerId, ...input },
 		)
 
 	const defaults = await get()
@@ -281,7 +282,7 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	expect(
 		mockModule.getSavedPackageWithCommunityProvenanceById,
 	).toHaveBeenCalledWith(env.APP_DB, {
-		userId: ownerIdFromStored('stable-user-1'),
+		userId: 'stable-user-1' as OwnerId,
 		packageId: 'pkg-1',
 	})
 	const filteredPayload = await filtered.json()
@@ -301,7 +302,7 @@ test('packages API lists with filters, ignores invalid values, and rejects unkno
 	expect(mockModule.loadPackageManifestBySourceId).toHaveBeenCalledWith({
 		env,
 		baseUrl: 'https://example.com',
-		userId: ownerIdFromStored('stable-user-1'),
+		userId: 'stable-user-1' as OwnerId,
 		sourceId: 'source-1',
 	})
 

@@ -1,6 +1,7 @@
 import {
 	ownerIdFromStored,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -27,7 +28,7 @@ const mockModule = vi.hoisted(() => {
 	}
 	const memoryDbRow = {
 		id: memoryRow.id,
-		user_id: ownerIdFromStored('stable-user-1'),
+		user_id: 'stable-user-1' as OwnerId,
 		category: memoryRow.category,
 		status: memoryRow.status,
 		subject: memoryRow.subject,

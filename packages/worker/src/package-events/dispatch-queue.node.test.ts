@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { parsePackageEventsDispatchQueueMessage } from './dispatch-queue-producer.ts'
@@ -121,7 +124,7 @@ test('package events queue message parsing rejects malformed bodies', () => {
 	expect(
 		parsePackageEventsDispatchQueueMessage(
 			createMessageBody({
-				userId: ownerIdFromStored(' user-123 '),
+				userId: ' user-123 ' as OwnerId,
 				topic: ' topic.a ',
 			}),
 		),
@@ -132,7 +135,7 @@ test('package events queue message parsing rejects malformed bodies', () => {
 		createMessageBody({ topic: ' ' }),
 		// userId selects whose packages receive the event, so it enforces
 		// per-user isolation across the queue boundary.
-		createMessageBody({ userId: ownerIdFromStored(' ') }),
+		createMessageBody({ userId: ' ' as OwnerId }),
 		createMessageBody({ userId: 42 }),
 		createMessageBody({ idempotencyKey: '' }),
 		createMessageBody({ payload: ['nope'] }),

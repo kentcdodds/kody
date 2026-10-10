@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, type Mock } from 'vitest'
 import { recordFeatureFlagExposures } from './exposure.ts'
 import { recordPaidRankedSearchFlagExposure } from './paid-ranked-search-exposure.ts'
@@ -34,7 +37,7 @@ test('skips exposure recording without measured flags or a stable user id', asyn
 	expect(batch).not.toHaveBeenCalled()
 
 	await recordFeatureFlagExposures(exposureEnv(writeDataPoint), {
-		stableUserId: ownerIdFromStored(''),
+		stableUserId: '' as OwnerId,
 		evaluations: {
 			'demo-indicator': { enabled: true, source: 'default' },
 		},

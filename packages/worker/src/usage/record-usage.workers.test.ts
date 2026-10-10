@@ -1,4 +1,4 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { env } from 'cloudflare:workers'
 import { expect, test } from 'vitest'
 import {
@@ -246,7 +246,7 @@ test('recordUsage never throws when bindings are missing, sinks fail, or userId 
 		recordUsage(
 			{ APP_DB: env.APP_DB },
 			{
-				userId: ownerIdFromStored(''),
+				userId: '' as OwnerId,
 				eventType: 'execute',
 				outcome: 'success',
 			},

@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi, type MockInstance } from 'vitest'
 import { createPackageStaticCallMeterTools } from './package-static-call-usage.ts'
 
@@ -127,7 +130,7 @@ test('requires a calling user and never throws into the call path', async () => 
 	expect(
 		createPackageStaticCallMeterTools({
 			env: {} as Env,
-			userId: ownerIdFromStored('   '),
+			userId: '   ' as OwnerId,
 			grantedPackageIds: new Set(['pkg-callee']),
 		}),
 	).toBeUndefined()

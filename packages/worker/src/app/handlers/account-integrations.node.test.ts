@@ -1,6 +1,7 @@
 import {
 	ownerIdFromStored,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as authenticatedUserModule from '#app/authenticated-user.ts'
@@ -17,7 +18,7 @@ const mockModule = vi.hoisted(() => {
 		updatedAt: '1970-01-01T00:00:00.001Z',
 	}
 	const googleApp = {
-		userId: ownerIdFromStored('stable-user-1'),
+		userId: 'stable-user-1' as OwnerId,
 		slug: 'google',
 		provider: 'google',
 		label: null,
@@ -53,7 +54,7 @@ const mockModule = vi.hoisted(() => {
 		lane: 'user' as const,
 		app,
 		connection: {
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			name,
 			appSlug: app.slug,
 			platformAppSlug: null,
@@ -443,7 +444,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 	const githubResponse = await get('?name=GitHub')
 	expect(githubResponse.status).toBe(200)
 	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith(
-		withEnv({ userId: ownerIdFromStored('stable-user-1'), name: 'GitHub' }),
+		withEnv({ userId: 'stable-user-1' as OwnerId, name: 'GitHub' }),
 	)
 	await expect(githubResponse.json()).resolves.toMatchObject({
 		ok: true,
@@ -499,7 +500,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 		},
 	})
 	expect(mockModule.findOauthAppForProviderSetup).toHaveBeenCalledWith(
-		withEnv({ userId: ownerIdFromStored('stable-user-1'), name: 'spotify' }),
+		withEnv({ userId: 'stable-user-1' as OwnerId, name: 'spotify' }),
 	)
 
 	mockModule.getJoinedIntegration.mockResolvedValueOnce(null as never)
@@ -524,7 +525,7 @@ test('integrations API resolves named connections for connect OAuth, including m
 	)
 	expect(mockModule.findOauthAppForProviderSetup).toHaveBeenCalledWith(
 		withEnv({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			name: 'google-calendar',
 		}),
 	)
@@ -546,18 +547,18 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 	})
 	expect(rotateResponse.status).toBe(200)
 	expect(mockModule.getOauthApp).toHaveBeenCalledWith(
-		withEnv({ userId: ownerIdFromStored('stable-user-1'), slug: 'google' }),
+		withEnv({ userId: 'stable-user-1' as OwnerId, slug: 'google' }),
 	)
 	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			slug: 'google',
 			value: 'new-google-client-secret',
 		}),
 	)
 	expect(mockModule.rotateOauthAppClientCredentials).toHaveBeenCalledWith(
 		withEnv({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			slug: 'google',
 			clientId: 'shared-google-client-rotated',
 		}),
@@ -598,7 +599,7 @@ test('integrations API rotates OAuth app credentials with auth scoping and valid
 	expect(mergeResponse.status).toBe(200)
 	expect(mockModule.persistUserOauthAppClientSecret).toHaveBeenCalledWith(
 		expect.objectContaining({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			slug: 'google',
 			value: 'rotated-secret-value',
 		}),
@@ -693,7 +694,7 @@ test('integrations API disconnects a connection and deletes a user-lane OAuth ap
 	})
 	expect(mockModule.deleteIntegration).toHaveBeenCalledWith(
 		withEnv({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			name: 'google-calendar',
 		}),
 	)
@@ -716,10 +717,10 @@ test('integrations API disconnects a connection and deletes a user-lane OAuth ap
 		connectionNames: ['google', 'google-calendar'],
 	})
 	expect(mockModule.getOauthApp).toHaveBeenCalledWith(
-		withEnv({ userId: ownerIdFromStored('stable-user-1'), slug: 'google' }),
+		withEnv({ userId: 'stable-user-1' as OwnerId, slug: 'google' }),
 	)
 	expect(mockModule.deleteOauthAppWithConnections).toHaveBeenCalledWith(
-		withEnv({ userId: ownerIdFromStored('stable-user-1'), slug: 'google' }),
+		withEnv({ userId: 'stable-user-1' as OwnerId, slug: 'google' }),
 	)
 
 	mockModule.getOauthApp.mockResolvedValueOnce(null as never)
@@ -735,7 +736,7 @@ test('integrations API sets usage, returns approval payload, and grants a packag
 	mockModule.listSavedPackagesByUserId.mockResolvedValue([
 		{
 			id: 'pkg-mail',
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			name: 'mail',
 			kodyId: 'mail',
 			description: '',
@@ -759,7 +760,7 @@ test('integrations API sets usage, returns approval payload, and grants a packag
 	expect(usageResponse.status).toBe(200)
 	expect(mockModule.setIntegrationUsage).toHaveBeenCalledWith(
 		withEnv({
-			userId: ownerIdFromStored('stable-user-1'),
+			userId: 'stable-user-1' as OwnerId,
 			name: 'google',
 			usageMode: 'packages',
 			allowedPackageIds: ['pkg-mail'],

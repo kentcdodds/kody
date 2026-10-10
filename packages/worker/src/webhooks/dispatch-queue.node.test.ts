@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
@@ -309,7 +312,7 @@ test('webhook queue parser rejects malformed isolation and delivery fields', () 
 	const rejected: Array<unknown> = [
 		{
 			...message,
-			endpoint: { ...message.endpoint, userId: ownerIdFromStored('') },
+			endpoint: { ...message.endpoint, userId: '' as OwnerId },
 		},
 		{ ...message, payloadBytes: -1 },
 		{ ...message, params: [] },

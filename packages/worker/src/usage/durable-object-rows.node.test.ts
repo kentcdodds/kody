@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	type OwnerId,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { beforeEach, expect, test, vi } from 'vitest'
 
 const recordUsage = vi.hoisted(() => vi.fn(async () => undefined))
@@ -53,7 +56,7 @@ test('platform rows-read needs Analytics Engine (no per-statement D1 fallback)',
 test('empty user ids and zero-row reads are skipped', () => {
 	recordDurableObjectRowsRead({
 		env: {},
-		userId: ownerIdFromStored(''),
+		userId: '' as OwnerId,
 		doClass: 'StorageRunner',
 		rowsRead: 9,
 	})
