@@ -2,7 +2,9 @@ name: 🛟 Teams P9 Pre-Migration D1 Bookmarks
 
 # Seals read-only D1 Time Travel bookmarks (APP_DB, AUDIT_DB, JOBS_DB) before
 # the Teams P9 contract deploy. Does not write to D1. Production runs are
-# kentcdodds or cursor. Artifacts are sealed to recipient_public_key.
+# kentcdodds, cursor (Cloud Agent gh user), or kody-bot (operator GitHub
+# connector via @kentcdodds/github). Artifacts are sealed to
+# recipient_public_key.
 
 on:
   workflow_dispatch:
@@ -59,10 +61,14 @@ jobs:
             exit 1
           fi
           if [ "$TARGET" = "production" ]; then
+            # Approved production runners (Kent + Cloud Agent gh user +
+            # kody-bot operator connector). Agents dispatch this workflow
+            # through @kentcdodds/github as kody-bot; omitting that login
+            # fails the first post-merge capture.
             case "$ACTOR" in
-              kentcdodds|cursor) ;;
+              kentcdodds|cursor|kody-bot) ;;
               *)
-                echo "Production bookmark capture runs as kentcdodds or cursor only; got $ACTOR." >&2
+                echo "Production bookmark capture runs as an approved actor only (kentcdodds, cursor, or kody-bot); got $ACTOR." >&2
                 exit 1
                 ;;
             esac
