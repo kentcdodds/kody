@@ -42,7 +42,7 @@ function createUsageTestDb(
 				async first<T>() {
 					if (
 						normalized.includes('from users') &&
-						normalized.includes('where id')
+						(normalized.includes('where id') || normalized.includes('u.id ='))
 					) {
 						return {
 							id: input.userId,

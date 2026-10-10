@@ -47,13 +47,6 @@ function createDatabase(
 								return user ? ({ present: 1 } as T) : null
 							}
 							if (
-								/\b(?:FROM|JOIN) orgs\b/.test(query) &&
-								(query.includes('SELECT plan, stripe_plan') ||
-									query.includes('entitlement_ladder'))
-							) {
-								return null
-							}
-							if (
 								query.includes('SELECT plan, stripe_plan') ||
 								query.includes('entitlement_ladder')
 							) {
