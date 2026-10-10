@@ -216,27 +216,7 @@ test('aggregateConnectionUsageDaily skips without Analytics Engine credentials',
 	await ensureSchema()
 	expect(
 		await aggregateConnectionUsageDaily({ ...env, USAGE_EVENTS: undefined }),
-	).toEqual({ skipped: true, reason: 'missing-analytics-config', pruned: 0 })
-})
-
-test('aggregateConnectionUsageDaily prunes old local rows without Analytics Engine', async () => {
-	await ensureSchema()
-	const { personId } = await seedPerson('local-prune')
-	const { orgId } = await seedTeamOrg()
-	await insertUsageRow({
-		orgId,
-		day: '2026-09-20',
-		connectionKey: ['cli', personId, ''],
-		eventType: 'execute',
-		units: 4,
-	})
-	expect(
-		await aggregateConnectionUsageDaily(
-			{ ...env, USAGE_EVENTS: undefined },
-			now,
-		),
-	).toEqual({ skipped: true, reason: 'missing-analytics-config', pruned: 1 })
-	expect(await listStoredRows(orgId)).toEqual([])
+	).toEqual({ skipped: true, reason: 'missing-analytics-config' })
 })
 
 test('aggregateConnectionUsageDaily rewrites yesterday and today, drops rows gone from yesterday, and prunes old days', async () => {

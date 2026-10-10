@@ -125,7 +125,7 @@ type ConnectionUsageAnalyticsRow = {
 }
 
 export type ConnectionUsageAggregationResult =
-	| { skipped: true; reason: string; pruned: number }
+	| { skipped: true; reason: string }
 	| {
 			skipped: false
 			upserted: number
@@ -137,22 +137,10 @@ export async function aggregateConnectionUsageDaily(
 	env: UsageAggregationEnv,
 	now: Date = new Date(),
 ): Promise<ConnectionUsageAggregationResult> {
-	// Local `recordUsage` writes rows without Analytics Engine, so retention
-	// runs either way.
-	const pruned = await runD1WithRetry(() =>
-		env.APP_DB.prepare(`DELETE FROM usage_connection_daily WHERE day < ?`)
-			.bind(connectionUsageRetentionCutoffDay(now))
-			.run(),
-	)
-	const prunedCount = Number(pruned.meta.changes ?? 0)
 	const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim()
 	const apiToken = env.CLOUDFLARE_API_TOKEN?.trim()
 	if (!env.USAGE_EVENTS || !accountId || !apiToken) {
-		return {
-			skipped: true,
-			reason: 'missing-analytics-config',
-			pruned: prunedCount,
-		}
+		return { skipped: true, reason: 'missing-analytics-config' }
 	}
 	const today = utcDayKey(now)
 	const yesterday = utcDayKey(new Date(now.getTime() - utcDayMs))
@@ -238,11 +226,16 @@ export async function aggregateConnectionUsageDaily(
 			env.APP_DB.batch(writes.slice(index, index + writeBatchSize)),
 		)
 	}
+	const pruned = await runD1WithRetry(() =>
+		env.APP_DB.prepare(`DELETE FROM usage_connection_daily WHERE day < ?`)
+			.bind(connectionUsageRetentionCutoffDay(now))
+			.run(),
+	)
 	const result = {
 		skipped: false as const,
 		upserted: upserts.length,
 		deleted: deletes.length,
-		pruned: prunedCount,
+		pruned: Number(pruned.meta.changes ?? 0),
 	}
 	console.info('connection-usage-aggregation', JSON.stringify(result))
 	return result
