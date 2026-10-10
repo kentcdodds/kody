@@ -24,10 +24,11 @@ export type OrgManagementAccess =
 	| { ok: false; status: 403 | 404; error: string }
 
 /**
- * The organization a `/@slug/-/settings` or `/@slug/-/members` request acts on,
- * when the person may use `permission` there. `authorize` is the same check
- * MCP capabilities run. A slug the person cannot reach is a 404. Grant-only
- * collaborators are also a 404 — these pages are for members.
+ * The organization a `/@slug/-/settings`, `/@slug/-/members`, teams, grants, or
+ * collaborators request acts on, when the person may use `permission` there.
+ * `authorize` is the same check MCP capabilities run. A slug the person cannot
+ * reach is a 404. Grant-only collaborators are also a 404 — these pages are for
+ * members.
  */
 export async function resolveOrgManagementAccess(input: {
 	request: Request
@@ -41,6 +42,9 @@ export async function resolveOrgManagementAccess(input: {
 		| 'member:read'
 		| 'member:write'
 		| 'member:delete'
+		| 'team:read'
+		| 'team:write'
+		| 'team:delete'
 	>
 }): Promise<OrgManagementAccess> {
 	const resolution = await loadRequestOrgResolution(
@@ -102,6 +106,9 @@ export async function orgHasPermission(
 		| 'member:read'
 		| 'member:write'
 		| 'member:delete'
+		| 'team:read'
+		| 'team:write'
+		| 'team:delete'
 	>,
 ) {
 	try {

@@ -27,15 +27,17 @@ viewports show the same rows in the menu panel.
 
 `/account` after login. Create an organization at `/account/organizations/new`
 (`POST` the same path with `displayName` and `slug`); it redirects to the org
-home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings and
-members are `/@<slug>/-/settings` and `/@<slug>/-/members`.
+home at `/@<slug>`. Account deletion is `/account/delete`. Team-org settings,
+members, teams, grants, and collaborators are `/@<slug>/-/settings`,
+`/@<slug>/-/members`, `/@<slug>/-/teams`, `/@<slug>/-/grants`, and
+`/@<slug>/-/collaborators`.
 
 A non-personal org handle (`/@<slug>`) renders the org home for its members and
 404s for everyone else. Its resource pages stay 404 until storage follows
-`request.org.id` (#3073). Team orgs still get an Organization rail: Settings
-(`/@<slug>/-/settings`), Members (`/@<slug>/-/members`), and Billing
-(`/@<slug>/billing`, owners; the page lands with #3135). Personal orgs keep
-Billing/Usage on the account rail.
+`request.org.id` (#3073). Team orgs still get an Organization rail: Settings,
+Members, Teams (owners/members), Grants, Collaborators, and Billing
+(`/@<slug>/-/billing`, owners). Personal orgs keep Billing/Usage on the account
+rail.
 
 Resource pages (packages, secrets, jobs, and the rest) live under
 `/@<slug>/-/…`. The old `/account/...` resource URLs redirect there for a short
@@ -49,6 +51,9 @@ node tools/control-kody.ts request GET /account/profile.json
 node tools/control-kody.ts request GET /account/organizations.json
 node tools/control-kody.ts request GET /@<slug>/-/settings.json
 node tools/control-kody.ts request GET /@<slug>/-/members.json
+node tools/control-kody.ts request GET /@<slug>/-/teams.json
+node tools/control-kody.ts request GET /@<slug>/-/grants.json
+node tools/control-kody.ts request GET /@<slug>/-/collaborators.json
 node tools/control-kody.ts request GET /account/connections.json
 ```
 
@@ -64,6 +69,13 @@ node tools/control-kody.ts request GET /account/connections.json
 - `POST /@<slug>/-/members/role.json`
 - `POST /@<slug>/-/members/remove.json`
 - `POST /@<slug>/-/members/invite.json`
+- `GET /@<slug>/-/teams.json`
+- `POST /@<slug>/-/teams/create.json`
+- `POST /@<slug>/-/teams/member-add.json`
+- `POST /@<slug>/-/teams/member-remove.json`
+- `GET /@<slug>/-/grants.json`
+- `POST /@<slug>/-/grants/revoke.json`
+- `GET /@<slug>/-/collaborators.json`
 - `POST /account/profile/avatar.json`
 - `POST /account/email-change.json`
 - `POST /account/email-claim-release.json`

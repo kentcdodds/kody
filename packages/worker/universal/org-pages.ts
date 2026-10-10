@@ -167,31 +167,43 @@ export function accountAliasPath(pathname: string) {
 		: `/account/${parsed.section}`
 }
 
-const orgManagementSections = ['settings', 'members'] as const
+const orgManagementSections = [
+	'settings',
+	'members',
+	'teams',
+	'grants',
+	'collaborators',
+] as const
 
 export type OrgManagementSection = (typeof orgManagementSections)[number]
 
+const orgManagementSectionSet: ReadonlySet<string> = new Set(
+	orgManagementSections,
+)
+
 /**
- * `/@acme/-/settings`, `/@acme/-/members.json`, and mutation paths under those
- * sections. Uses the same `/-/` separator as other org pages so they cannot
- * collide with `/@owner/<kody-id>`. Not an `orgOwnedAccountSection`.
+ * `/@acme/-/settings`, `/@acme/-/members.json`, teams/grants/collaborators, and
+ * mutation paths under those sections. Uses the same `/-/` separator as other
+ * org pages so they cannot collide with `/@owner/<kody-id>`. Not an
+ * `orgOwnedAccountSection`.
  */
 export function parseOrgManagementPath(
 	pathname: string,
 ): { slug: string; section: OrgManagementSection } | null {
 	const match = new RegExp(
-		`^/@([^/]+)/${orgPageSeparator}/(settings|members)(?:\\.json|/[^/]+)?/?$`,
+		`^/@([^/]+)/${orgPageSeparator}/(settings|members|teams|grants|collaborators)(?:\\.json|/[^/]+)?/?$`,
 	).exec(pathname)
 	if (!match) return null
 	const slug = match[1] ?? ''
 	const section = match[2]
 	if (
 		!isOrganizationSlug(slug) ||
-		(section !== 'settings' && section !== 'members')
+		!section ||
+		!orgManagementSectionSet.has(section)
 	) {
 		return null
 	}
-	return { slug, section }
+	return { slug, section: section as OrgManagementSection }
 }
 
 export function orgSettingsPath(slug: string) {
@@ -200,6 +212,18 @@ export function orgSettingsPath(slug: string) {
 
 export function orgMembersPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/members`
+}
+
+export function orgTeamsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/teams`
+}
+
+export function orgGrantsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/grants`
+}
+
+export function orgCollaboratorsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/collaborators`
 }
 
 /** Owners manage org profile and members. */
@@ -223,6 +247,12 @@ export function switchOrgPath(pathname: string, targetSlug: string) {
 				return orgSettingsPath(targetSlug)
 			case 'members':
 				return orgMembersPath(targetSlug)
+			case 'teams':
+				return orgTeamsPath(targetSlug)
+			case 'grants':
+				return orgGrantsPath(targetSlug)
+			case 'collaborators':
+				return orgCollaboratorsPath(targetSlug)
 			default: {
 				const exhaustive: never = management.section
 				return exhaustive

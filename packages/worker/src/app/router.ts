@@ -332,6 +332,22 @@ import {
 	createOrgMembersRolePostHandler,
 } from '#app/handlers/org-members.ts'
 import {
+	createOrgTeamsApiHandler,
+	createOrgTeamsCreatePostHandler,
+	createOrgTeamsHandler,
+	createOrgTeamsMemberAddPostHandler,
+	createOrgTeamsMemberRemovePostHandler,
+} from '#app/handlers/org-teams.ts'
+import {
+	createOrgGrantsApiHandler,
+	createOrgGrantsHandler,
+	createOrgGrantsRevokePostHandler,
+} from '#app/handlers/org-grants.ts'
+import {
+	createOrgCollaboratorsApiHandler,
+	createOrgCollaboratorsHandler,
+} from '#app/handlers/org-collaborators.ts'
+import {
 	createOrgSettingsApiHandler,
 	createOrgSettingsAvatarPostHandler,
 	createOrgSettingsDeletePostHandler,
@@ -654,6 +670,16 @@ export function createAppRouter(env: Env) {
 			orgMembersRolePost: createOrgMembersRolePostHandler(env),
 			orgMembersRemovePost: createOrgMembersRemovePostHandler(env),
 			orgMembersInvitePost: createOrgMembersInvitePostHandler(env),
+			orgTeams: createOrgTeamsHandler(env),
+			orgTeamsApi: createOrgTeamsApiHandler(env),
+			orgTeamsCreatePost: createOrgTeamsCreatePostHandler(env),
+			orgTeamsMemberAddPost: createOrgTeamsMemberAddPostHandler(env),
+			orgTeamsMemberRemovePost: createOrgTeamsMemberRemovePostHandler(env),
+			orgGrants: createOrgGrantsHandler(env),
+			orgGrantsApi: createOrgGrantsApiHandler(env),
+			orgGrantsRevokePost: createOrgGrantsRevokePostHandler(env),
+			orgCollaborators: createOrgCollaboratorsHandler(env),
+			orgCollaboratorsApi: createOrgCollaboratorsApiHandler(env),
 			orgAvatar: createOrgAvatarHandler(env),
 			profile: createProfileHandler(env),
 			profileApi: createProfileApiHandler(env),

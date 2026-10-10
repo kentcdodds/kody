@@ -2,10 +2,13 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import {
 	accountAliasPath,
 	orgBillingPath,
+	orgCollaboratorsPath,
+	orgGrantsPath,
 	orgMembersPath,
 	orgResourcePath,
 	orgRoleManagesBilling,
 	orgSettingsPath,
+	orgTeamsPath,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -136,6 +139,26 @@ export function workspaceRailGroups(input: {
 				icon: 'users',
 			},
 		]
+		// Billing has member:read but not team:read.
+		if (input.role === 'owner' || input.role === 'member') {
+			items.push({
+				href: orgTeamsPath(orgSlug),
+				label: 'Teams',
+				icon: 'users',
+			})
+		}
+		items.push(
+			{
+				href: orgGrantsPath(orgSlug),
+				label: 'Grants',
+				icon: 'key',
+			},
+			{
+				href: orgCollaboratorsPath(orgSlug),
+				label: 'Collaborators',
+				icon: 'share',
+			},
+		)
 		if (orgRoleManagesBilling(input.role)) {
 			items.push(billingRailItem(orgSlug))
 		}
