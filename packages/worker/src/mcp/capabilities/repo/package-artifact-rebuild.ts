@@ -8,8 +8,14 @@ import { isRetryableD1LockError } from '#worker/d1-retry.ts'
 import {
 	isPublishedPackageArtifactBuiltForCommit,
 	reusePublishedPackageArtifactIfUnchanged,
+	type PublishedPackageArtifactDependencySourceCache,
 	type PublishedPackageArtifactReuseSnapshotCache,
 } from '#worker/package-runtime/published-bundle-artifacts.ts'
+import {
+	hasPublishedRuntimeArtifacts,
+	readPublishedSourceSnapshot,
+	type PublishedSourceSnapshot,
+} from '#worker/package-runtime/published-runtime-artifacts.ts'
 import { type PublishedPackageArtifactBuildTarget } from '#worker/package-runtime/package-artifact-targets.ts'
 import {
 	createIsolatedArtifactRebuildRunner,
@@ -179,7 +185,22 @@ async function filterTargetsNeedingRebuild(input: {
 	}
 	const remaining: Array<PublishedPackageArtifactBuildTarget> = []
 	const alreadyBuilt: Array<PublishedPackageArtifactBuildTarget> = []
+	// Load this rebuild's published snapshot once and pass that value to every
+	// target. A later rebuild loads again. Prior-commit snapshots and
+	// dependency rows are shared only for this call.
+	const publishedSnapshot: PublishedSourceSnapshot | null | undefined =
+		hasPublishedRuntimeArtifacts(input.env)
+			? await readPublishedSourceSnapshot({
+					env: input.env,
+					sourceId: input.sourceId,
+					publishedCommit: input.publishedCommit,
+				})
+			: undefined
+	const sharedSnapshot =
+		publishedSnapshot !== undefined ? { publishedSnapshot } : {}
 	const snapshotCache: PublishedPackageArtifactReuseSnapshotCache = new Map()
+	const dependencySourceCache: PublishedPackageArtifactDependencySourceCache =
+		new Map()
 	for (const target of input.targets) {
 		const built = await isPublishedPackageArtifactBuiltForCommit({
 			env: input.env,
@@ -187,6 +208,7 @@ async function filterTargetsNeedingRebuild(input: {
 			sourceId: input.sourceId,
 			publishedCommit: input.publishedCommit,
 			target,
+			...sharedSnapshot,
 		})
 		if (built) {
 			alreadyBuilt.push(target)
@@ -199,6 +221,8 @@ async function filterTargetsNeedingRebuild(input: {
 			publishedCommit: input.publishedCommit,
 			target,
 			snapshotCache,
+			dependencySourceCache,
+			...sharedSnapshot,
 		})
 		if (reused) {
 			alreadyBuilt.push(target)
