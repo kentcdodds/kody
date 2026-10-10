@@ -92,6 +92,7 @@ function accessInput(
 	return {
 		env: { APP_DB: {} as D1Database },
 		baseUrl: 'https://example.com',
+		orgSlug: 'ada',
 		userId: ownerIdFromStored('user-1'),
 		storageContext: { sessionId: null, packageId: 'pkg-1' },
 		secretName: 'userToken',
@@ -145,6 +146,7 @@ function mountCaller(
 		user: userId
 			? {
 					userId: personIdFromStored(userId),
+					username: 'ada',
 					email: `${userId}@example.com`,
 					displayName: userId,
 				}
@@ -282,6 +284,7 @@ test('assertCanSetSecrets fails closed for mutate grants before any provider wor
 			},
 			userId: ownerIdFromStored('user-1'),
 			baseUrl: 'https://example.com',
+			orgSlug: 'ada',
 			secrets: [
 				{ name: 'xRefreshToken', scope: 'user' },
 				{ name: 'xAccessToken', scope: 'user' },
@@ -365,7 +368,7 @@ test('package approval helpers parse structured messages and skip trusted packag
 				secretName: 'discordBotTokenKentPersonalAutomation',
 				packageId: 'pkg-1',
 				kodyId: 'discord-gateway',
-				approvalUrl: 'https://example.com/account/secrets/user/discordBotToken',
+				approvalUrl: 'https://example.com/@ada/-/secrets/user/discordBotToken',
 			},
 		],
 	})
@@ -381,7 +384,7 @@ test('package approval helpers parse structured messages and skip trusted packag
 			secretName,
 			packageId: 'pkg-1',
 			kodyId: 'release',
-			approvalUrl: `https://example.com/account/secrets/user/${secretName}?package_id=pkg-1`,
+			approvalUrl: `https://example.com/@ada/-/secrets/user/${secretName}?package_id=pkg-1`,
 		})),
 	})
 	const batchParsed = parsePackageAccessRequiredBatchMessage(batchMessage ?? '')
@@ -394,11 +397,12 @@ test('package approval helpers parse structured messages and skip trusted packag
 			}),
 		),
 	)
-	expect(batchParsed?.bulkApprovalUrl).toContain('/account/secrets/approve?')
+	expect(batchParsed?.bulkApprovalUrl).toContain('/@ada/-/secrets/approve?')
 
 	const approvalsInput = {
 		env,
 		baseUrl: 'https://example.com',
+		orgSlug: 'ada',
 		userId: ownerIdFromStored('user-1'),
 		packageId: 'pkg-1',
 		mounts: discordMount,

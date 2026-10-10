@@ -6,6 +6,7 @@ import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
+import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { resolveSecret } from '#mcp/secrets/service.ts'
@@ -138,6 +139,7 @@ export const jwtSignCapability = defineDomainCapability(
 			await assertPackageCanAccessResolvedSecret({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
+				orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
 				userId: secretUserId,
 				storageContext,
 				authorityPackageId,

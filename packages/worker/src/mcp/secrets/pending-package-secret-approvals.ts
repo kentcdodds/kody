@@ -63,17 +63,26 @@ export async function buildPendingPackageSecretApprovalsSummary(input: {
 		secret_name: entry.secretName,
 		approval_url: entry.approvalUrl,
 	}))
+	const orgSlug = missing[0]
+		? /^\/@([^/]+)\/-\/secrets(?:\/|$)/.exec(
+				new URL(missing[0].approvalUrl).pathname,
+			)?.[1]
+		: null
 	return {
 		package_id: input.packageId,
 		kody_id: input.kodyId,
 		slug: input.kodyId,
 		secrets,
-		bulk_approval_url: buildSecretPackageBulkApprovalUrlIfNeeded({
-			baseUrl: input.baseUrl,
-			packageId: input.packageId,
-			kodyId: input.kodyId,
-			names: secrets.map((secret) => secret.secret_name),
-		}),
+		bulk_approval_url:
+			orgSlug == null
+				? null
+				: buildSecretPackageBulkApprovalUrlIfNeeded({
+						baseUrl: input.baseUrl,
+						orgSlug,
+						packageId: input.packageId,
+						kodyId: input.kodyId,
+						names: secrets.map((secret) => secret.secret_name),
+					}),
 	}
 }
 

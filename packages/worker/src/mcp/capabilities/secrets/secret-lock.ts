@@ -9,9 +9,11 @@ import {
 	createSecretPackageGrantAlreadyPresentMessage,
 	createSecretPackageGrantRequiresWebsiteMessage,
 } from '#mcp/secrets/errors.ts'
+import { getPackageScopeByUserId } from '#worker/package-registry/user-scope.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretUsageUrl,
+	secretPageOrgSlugFromCaller,
 } from '#mcp/secrets/package-approval-url.ts'
 import { inspectUserSecretPackageGrant } from '#mcp/secrets/service.ts'
 
@@ -57,7 +59,7 @@ export const secretLockCapability = defineDomainCapability(
 			args: { name: string; package_id: string },
 			ctx: CapabilityContext,
 		) {
-			requireMcpUser(ctx.callerContext)
+			const user = requireMcpUser(ctx.callerContext)
 			try {
 				const state = await inspectUserSecretPackageGrant({
 					env: ctx.env,
@@ -65,8 +67,16 @@ export const secretLockCapability = defineDomainCapability(
 					name: args.name,
 					packageId: args.package_id,
 				})
+				const orgSlug =
+					secretPageOrgSlugFromCaller(ctx.callerContext) ??
+					user.username?.trim() ??
+					(await getPackageScopeByUserId(
+						ctx.env.APP_DB,
+						ownerIdFromCaller(ctx.callerContext),
+					))
 				const approvalUrl = buildSecretPackageApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
+					orgSlug,
 					name: state.secret.name,
 					scope: 'user',
 					packageId: state.savedPackage.id,
@@ -75,6 +85,7 @@ export const secretLockCapability = defineDomainCapability(
 				})
 				const usageUrl = buildSecretUsageUrl({
 					baseUrl: ctx.callerContext.baseUrl,
+					orgSlug,
 					name: state.secret.name,
 				})
 				if (state.alreadyGranted) {
