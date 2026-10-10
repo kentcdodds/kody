@@ -39,3 +39,9 @@ billing columns.
 membership is now the DB-backed source for “which org” on interactive paths,
 while `personalOrgId` remains the sync fallback. Follow-up phases wire team
 grants, org switching, storage key migration, and soft-delete enforcement.
+
+`org.migrated` rows are an operator command, not a deploy step.
+`backfillOrgMigratedAuditEvents` writes one success row per org, and a repeat
+inserts nothing new. The command and the `workflow_dispatch` workflow are
+documented in
+[Teams org.migrated audit backfill](../teams-org-migrated-audit-backfill.md).

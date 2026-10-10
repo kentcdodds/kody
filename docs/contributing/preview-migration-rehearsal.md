@@ -242,6 +242,15 @@ not repaired there: restore from the D1 bookmark and re-apply the migration.
 Code and tests: `tools/teams-migration/convert-sharing-and-platform.ts` and
 `convert-sharing-and-platform.node.test.ts`.
 
+## P3: org.migrated audit backfill
+
+`org.migrated` audit rows are not part of the expand migration, because APP_DB
+and AUDIT_DB are separate databases. After a preview or production deploy has
+applied both, an operator runs
+[Teams org.migrated audit backfill](./teams-org-migrated-audit-backfill.md).
+That command is idempotent. `dry-run` prints counts and writes nothing. Deploy
+does not run it.
+
 ## What the preview cannot rehearse
 
 | Gap                                                                      | Covered by                                                                                                         |

@@ -93,20 +93,69 @@ export async function resolveRehearsalDatabases(
 	return databases
 }
 
+type D1StatementPayload<Row> = {
+	results?: Array<Row>
+	success?: boolean
+	meta?: { changes?: number }
+}
+
+async function postD1Query<Row>(
+	client: CloudflareClient,
+	uuid: string,
+	sql: string,
+	params?: ReadonlyArray<string | number | null>,
+) {
+	const response = await cloudflareApiRequest<Array<D1StatementPayload<Row>>>({
+		...client,
+		pathname: `/d1/database/${uuid}/query`,
+		method: 'POST',
+		body: {
+			sql,
+			...(params && params.length > 0 ? { params: [...params] } : {}),
+		},
+	})
+	const statements = response.result ?? []
+	for (const statement of statements) {
+		if (statement.success === false) {
+			throw new Error(
+				`D1 statement failed: ${sql.trim().replace(/\s+/g, ' ').slice(0, 180)}`,
+			)
+		}
+	}
+	return statements
+}
+
 export async function queryD1<Row>(
 	client: CloudflareClient,
 	uuid: string,
 	sql: string,
+	params?: ReadonlyArray<string | number | null>,
 ): Promise<Array<Row>> {
-	const response = await cloudflareApiRequest<
-		Array<{ results?: Array<Row>; success?: boolean }>
-	>({
-		...client,
-		pathname: `/d1/database/${uuid}/query`,
-		method: 'POST',
-		body: { sql },
-	})
-	return (response.result ?? []).flatMap((statement) => statement.results ?? [])
+	const statements = await postD1Query<Row>(client, uuid, sql, params)
+	return statements.flatMap((statement) => statement.results ?? [])
+}
+
+/** Rows written by a D1 statement. Throws when the API omits `meta.changes`. */
+export async function queryD1Changes(
+	client: CloudflareClient,
+	uuid: string,
+	sql: string,
+	params?: ReadonlyArray<string | number | null>,
+) {
+	const statements = await postD1Query(client, uuid, sql, params)
+	let changes = 0
+	for (const statement of statements) {
+		const reported = statement.meta?.changes
+		if (
+			typeof reported !== 'number' ||
+			!Number.isInteger(reported) ||
+			reported < 0
+		) {
+			throw new Error('D1 statement did not report changes.')
+		}
+		changes += reported
+	}
+	return changes
 }
 
 function quoteIdentifier(name: string) {
