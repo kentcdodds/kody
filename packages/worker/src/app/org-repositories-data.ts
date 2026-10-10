@@ -56,20 +56,22 @@ export async function loadOrgRepositoriesData(input: {
 				orgBinding: input.binding,
 			}),
 		}),
+		// Uncapped: the cap applies after the visibility filter, or packages the
+		// viewer cannot see could fill it and hide ones they can.
 		listPublicProfilePackages({
 			env: input.env,
 			ownerStableUserId: orgId,
 			...(limit != null && query ? { query } : {}),
-			...(limit == null ? {} : { limit }),
 			includePrivate: true,
 		}),
 	])
-	const visible = packages.filter((pkg) =>
+	const allVisible = packages.filter((pkg) =>
 		canSeeResource(
 			access,
 			packageResource({ id: pkg.packageId, userId: orgId, label: pkg.name }),
 		),
 	)
+	const visible = limit == null ? allVisible : allVisible.slice(0, limit)
 	return {
 		ok: true,
 		profile: {

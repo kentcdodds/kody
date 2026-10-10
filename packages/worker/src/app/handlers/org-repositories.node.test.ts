@@ -48,6 +48,9 @@ function createEnv() {
 	insertPackage.run('pkg-shared', teamId, '@acme/shared', 'shared', 'src-1')
 	insertPackage.run('pkg-secret', teamId, '@acme/secret', 'secret', 'src-2')
 	insertPackage.run('pkg-mine', memberId, '@member/mine', 'mine', 'src-3')
+	sqlite
+		.prepare(`UPDATE saved_packages SET updated_at = ? WHERE id = ?`)
+		.run('2030-01-01T00:00:00.000Z', 'pkg-secret')
 	const insertGrant = sqlite.prepare(
 		`INSERT INTO grants (
 			id, org_id, resource_type, resource_id, subject_type, subject_id,
@@ -71,12 +74,14 @@ function createEnv() {
 	} as unknown as Env
 }
 
-async function listAs(env: Env, personId: string) {
+async function listAs(env: Env, personId: string, search = '') {
 	mocks.readAuthenticatedAppUser.mockResolvedValue({
 		username: personId,
 		mcpUser: { userId: personId, username: personId },
 	})
-	const request = new Request('https://kody.test/@acme/-/packages.json')
+	const request = new Request(
+		`https://kody.test/@acme/-/packages.json${search}`,
+	)
 	const response = await createOrgPackagesApiHandler(env).handler({
 		request,
 		params: { orgSlug: 'acme' },
@@ -112,6 +117,15 @@ test('team repositories list what each member role can see', async () => {
 	const member = await listAs(env, memberId)
 	expect(member.status).toBe(200)
 	expect(member.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['shared'])
+
+	// The newest org package is one the member cannot see. The cap applies
+	// after the visibility filter, so it does not crowd out theirs.
+	const capped = await listAs(env, memberId, '?limit=1')
+	expect(capped.body.packages?.map((pkg) => pkg.kodyId)).toEqual(['shared'])
+	const ownerCapped = await listAs(env, ownerId, '?limit=1')
+	expect(ownerCapped.body.packages?.map((pkg) => pkg.kodyId)).toEqual([
+		'secret',
+	])
 
 	// A grant-only collaborator is not a member of the workspace.
 	const guest = await listAs(env, guestId)
