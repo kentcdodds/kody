@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import {
-	deniedOrgAccountApiResponse,
+	isOrgRequestDenied,
 	loadRequestOrgResolution,
 } from './org-request-binding.ts'
 
@@ -11,6 +11,10 @@ const adaId = 'a'.repeat(64)
 const acmeId = 'b'.repeat(64)
 
 async function createEnv() {
+	return (await createEnvWithSqlite()).env
+}
+
+async function createEnvWithSqlite() {
 	const sqlite = new DatabaseSync(':memory:')
 	const db = createD1FromSqlite(sqlite)
 	await ensureOrgsTestSchema(db)
@@ -31,7 +35,7 @@ async function createEnv() {
 			 VALUES (?, ?, 'owner', ?)`,
 		)
 		.run(acmeId, adaId, now)
-	return { APP_DB: db } as unknown as Env
+	return { env: { APP_DB: db } as unknown as Env, sqlite }
 }
 
 test('account package JSON stays on the signup org from a team page', async () => {
@@ -103,34 +107,94 @@ test('account JSON referer for an org the person cannot access is denied', async
 	)
 })
 
-test('org-owned account JSON from a denied org page is a 404, never the signup org', async () => {
+test('a request naming an org the person cannot use is denied, never the signup org', async () => {
 	const env = await createEnv()
-	const denied = await deniedOrgAccountApiResponse(
-		new Request('https://kody.test/account/secrets.json', {
-			method: 'POST',
-			headers: { referer: 'https://kody.test/@ada/-/secrets' },
-		}),
-		env,
-		adaId,
+	const denied = (url: string, referer?: string) =>
+		isOrgRequestDenied(
+			new Request(url, referer ? { headers: { referer } } : {}),
+			env,
+			adaId,
+		)
+	// Ada belongs to acme, not to the `ada` org row seeded here.
+	await expect(denied('https://kody.test/@ada/-/memories')).resolves.toBe(true)
+	await expect(denied('https://kody.test/@ada/-/settings.json')).resolves.toBe(
+		true,
 	)
-	expect(denied?.status).toBe(404)
-	await expect(denied?.json()).resolves.toEqual({
-		ok: false,
-		error: 'Organization not found.',
-	})
-	for (const referer of [
-		'https://kody.test/@acme/-/jobs',
-		'https://kody.test/account',
-	]) {
-		await expect(
-			deniedOrgAccountApiResponse(
-				new Request('https://kody.test/account/jobs.json', {
-					headers: { referer },
-				}),
-				env,
-				adaId,
-			),
-			referer,
-		).resolves.toBeNull()
-	}
+	await expect(
+		denied(
+			'https://kody.test/account/workflows.json',
+			'https://kody.test/@ada/-/workflows',
+		),
+	).resolves.toBe(true)
+	await expect(
+		denied(
+			'https://kody.test/account/memories-export.json',
+			'https://kody.test/@ada/-/memories',
+		),
+	).resolves.toBe(true)
+	await expect(denied('https://kody.test/@acme/-/memories')).resolves.toBe(
+		false,
+	)
+	await expect(
+		denied(
+			'https://kody.test/account/webhooks.json',
+			'https://kody.test/@acme/-/webhooks',
+		),
+	).resolves.toBe(false)
+	// No org on the URL or Referer: the signup org, never denied.
+	await expect(denied('https://kody.test/account/memories.json')).resolves.toBe(
+		false,
+	)
+	await expect(
+		denied(
+			'https://kody.test/account/profile.json',
+			'https://kody.test/@ada/-/memories',
+		),
+	).resolves.toBe(false)
+	// Public pages under the handle are not org-bound.
+	await expect(denied('https://kody.test/@ada')).resolves.toBe(false)
+})
+
+test('org sections follow the page gate for grant-only collaborators', async () => {
+	const { env, sqlite } = await createEnvWithSqlite()
+	const now = '2026-01-01T00:00:00.000Z'
+	sqlite
+		.prepare(`DELETE FROM org_memberships WHERE org_id = ? AND user_id = ?`)
+		.run(acmeId, adaId)
+	sqlite
+		.prepare(
+			`INSERT INTO grants (id, org_id, resource_type, resource_id, subject_type,
+			   subject_id, preset, created_by_user_id, created_at, updated_at)
+			 VALUES ('grant-1', ?, 'secret', 'secret-1', 'user', ?, 'use', ?, ?, ?)`,
+		)
+		.run(acmeId, adaId, acmeId, now, now)
+	const denied = (url: string, referer: string) =>
+		isOrgRequestDenied(new Request(url, { headers: { referer } }), env, adaId)
+	await expect(
+		denied(
+			'https://kody.test/account/connected-agents.json',
+			'https://kody.test/@acme/-/connections',
+		),
+	).resolves.toBe(false)
+	await expect(
+		denied(
+			'https://kody.test/account/memories.json',
+			'https://kody.test/@acme/-/connections',
+		),
+	).resolves.toBe(true)
+	const deniedPage = (url: string) =>
+		isOrgRequestDenied(new Request(url), env, adaId)
+	await expect(
+		deniedPage('https://kody.test/@acme/-/connections'),
+	).resolves.toBe(false)
+	await expect(deniedPage('https://kody.test/@acme/-/memories')).resolves.toBe(
+		true,
+	)
+	await expect(
+		deniedPage('https://kody.test/@acme/-/packages.json'),
+	).resolves.toBe(true)
+	// Management pages check their own permission once the org is bound.
+	await expect(deniedPage('https://kody.test/@acme/-/settings')).resolves.toBe(
+		false,
+	)
 })

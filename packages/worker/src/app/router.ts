@@ -283,6 +283,7 @@ import { createSessionHandler } from '#app/handlers/session.ts'
 import { createSignupHandler } from '#app/handlers/signup.ts'
 import { routes } from '#universal/routes.ts'
 import { createAccountWriteLeaseMiddleware } from '#app/account-write-lease-middleware.ts'
+import { createOrgBindingGuardMiddleware } from '#app/org-binding-guard-middleware.ts'
 import { remixCrossOriginProtection } from '#app/cross-origin-protection.ts'
 import { createReferralCookieMiddleware } from '#app/referral-cookie-middleware.ts'
 import {
@@ -331,6 +332,7 @@ export function createAppRouter(env: Env) {
 		middleware: [
 			remixCrossOriginProtection,
 			createReferralCookieMiddleware(),
+			createOrgBindingGuardMiddleware(env),
 			createAccountWriteLeaseMiddleware(env),
 		],
 		async defaultHandler({ request }) {

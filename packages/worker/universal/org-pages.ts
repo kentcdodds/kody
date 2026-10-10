@@ -67,7 +67,8 @@ function isOrgOwnedAccountSection(
  * `/account/secrets.json` and the other org-owned account JSON routes. The
  * Connections page reads `/account/connected-agents.json` and
  * `/account/connection-usage.json`; `/account/connections.json` is the
- * person's sign-in providers.
+ * person's sign-in providers. The Memories download is
+ * `/account/memories-export.json`.
  * `/account/packages.json` lists and mutates without per-package authz, so it
  * stays on the person; team Repositories read `/@slug/-/packages.json`.
  */
@@ -79,6 +80,7 @@ export function orgOwnedAccountApiSection(
 	if (name === 'connected-agents' || name === 'connection-usage') {
 		return 'connections'
 	}
+	if (name === 'memories-export') return 'memories'
 	if (name === 'connections' || name === 'packages') return null
 	return isOrgOwnedAccountSection(name) ? name : null
 }
@@ -106,6 +108,34 @@ export function parseOrgResourcePath(
 	}
 	if (exactOrgSections.has(section) && rest) return null
 	return { slug, section, rest }
+}
+
+/** `/@acme/-/packages.json`: the JSON twin of an org section page. */
+function parseOrgResourceApiPath(
+	pathname: string,
+): { slug: string; section: OrgOwnedAccountSection } | null {
+	const match = /^\/@([^/]+)\/-\/([^/.]+)\.json$/.exec(pathname)
+	const slug = match?.[1] ?? ''
+	const section = match?.[2] ?? ''
+	if (!isOrganizationSlug(slug) || !isOrgOwnedAccountSection(section)) {
+		return null
+	}
+	return { slug, section }
+}
+
+/**
+ * The org section an org-bound URL belongs to: `/@slug/-/<section>…`, its
+ * `.json` twin, or org-owned `/account/<section>.json`. Billing and management
+ * URLs are org-bound but are not sections.
+ */
+export function orgOwnedSectionForPath(
+	pathname: string,
+): OrgOwnedAccountSection | null {
+	return (
+		parseOrgResourcePath(pathname)?.section ??
+		parseOrgResourceApiPath(pathname)?.section ??
+		orgOwnedAccountApiSection(pathname)
+	)
 }
 
 /**
@@ -251,14 +281,15 @@ export function parseOrgManagementPath(
 }
 
 /**
- * Slug on an org-owned `/@slug/-/…` page (resource, billing, or management).
- * Same parse order as the server request binder. Public `/@slug` and
- * `/@owner/pkg` paths are not org-owned pages — they return null so chrome
+ * Slug on an org-owned `/@slug/-/…` URL (resource page or JSON, billing, or
+ * management). Same parse order as the server request binder. Public `/@slug`
+ * and `/@owner/pkg` paths are not org-owned pages — they return null so chrome
  * does not adopt a stranger's handle.
  */
 export function orgSlugFromOrgOwnedPath(pathname: string) {
 	return (
 		parseOrgResourcePath(pathname)?.slug ??
+		parseOrgResourceApiPath(pathname)?.slug ??
 		parseOrgBillingPath(pathname)?.slug ??
 		parseOrgManagementPath(pathname)?.slug ??
 		null

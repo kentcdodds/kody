@@ -13,7 +13,6 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { deniedOrgAccountApiResponse } from '#app/org-request-binding.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import {
@@ -156,12 +155,6 @@ export function createAccountConnectedAgentsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
-			const denied = await deniedOrgAccountApiResponse(
-				request,
-				env,
-				user.mcpUser.userId,
-			)
-			if (denied) return denied
 
 			if (request.method === 'GET') {
 				return jsonResponse(

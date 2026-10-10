@@ -375,24 +375,5 @@ test('connected agents API on a team org lists and revokes only agents approved 
 		['grant-personal'],
 	])
 
-	// A team page the person can no longer open must not fall back to listing
-	// or revoking the signup org's agents.
-	for (const method of ['GET', 'POST'] as const) {
-		const denied = await handler({
-			request: new Request(url, {
-				method,
-				headers: {
-					'Content-Type': 'application/json',
-					Referer: 'https://example.com/@ghost/-/connections',
-				},
-				...(method === 'POST'
-					? { body: JSON.stringify({ intent: 'revoke', clientId: 'client-b' }) }
-					: {}),
-			}),
-			url: new URL(url),
-			params: {},
-		} as never)
-		expect(denied.status).toBe(404)
-	}
 	expect(helpers.revokeGrant).toHaveBeenCalledTimes(1)
 })

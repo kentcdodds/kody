@@ -7,6 +7,8 @@ import {
 	orderOrganizations,
 	orgIdentity,
 	orgOwnedAccountApiSection,
+	orgOwnedSectionForPath,
+	orgSlugFromOrgOwnedPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
@@ -319,4 +321,19 @@ test('org account JSON names the section', () => {
 	expect(orgOwnedAccountApiSection('/account/packages.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/@acme/-/secrets')).toBeNull()
+	// The Memories download exports the page's org, like the list.
+	expect(orgOwnedAccountApiSection('/account/memories-export.json')).toBe(
+		'memories',
+	)
+})
+
+test('every org-bound URL names its section, or none for billing and management', () => {
+	expect(orgOwnedSectionForPath('/@acme/-/memories/m-1')).toBe('memories')
+	expect(orgOwnedSectionForPath('/@acme/-/packages.json')).toBe('packages')
+	expect(orgOwnedSectionForPath('/account/workflows.json')).toBe('workflows')
+	expect(orgOwnedSectionForPath('/@acme/-/settings.json')).toBeNull()
+	expect(orgOwnedSectionForPath('/@acme/-/billing')).toBeNull()
+	expect(orgOwnedSectionForPath('/@acme/-/nope.json')).toBeNull()
+	expect(orgSlugFromOrgOwnedPath('/@acme/-/packages.json')).toBe('acme')
+	expect(orgSlugFromOrgOwnedPath('/@acme/packages.json')).toBeNull()
 })
