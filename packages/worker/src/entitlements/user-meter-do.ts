@@ -1040,12 +1040,16 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 
 		this.ctx.storage.transactionSync(() => {
-			this.incrementCounterRow({
+			const counted = this.incrementCounterRow({
 				resource,
 				day,
 				existing,
 				updatedAt: input.createdAt,
 			})
+			// Throwing rolls back the claim so a worker is never free-loaded.
+			if (counted < 1) {
+				throw new Error('UserMeter worker-day consume lost the revision race.')
+			}
 			this.ctx.storage.sql.exec(
 				`INSERT INTO dynamic_worker_days (worker_id, day, created_at)
 				VALUES (?, ?, ?)`,
@@ -1134,8 +1138,8 @@ class UserMeterBase extends DurableObject<Env> {
 		day: string
 		existing: { count: number; revision: number }
 		updatedAt: string
-	}) {
-		this.ctx.storage.sql.exec(
+	}): number {
+		return this.ctx.storage.sql.exec(
 			`UPDATE daily_counters
 			SET count = ?,
 				revision = ?,
@@ -1147,7 +1151,7 @@ class UserMeterBase extends DurableObject<Env> {
 			input.resource,
 			input.day,
 			input.existing.revision,
-		)
+		).rowsWritten
 	}
 
 	/**
