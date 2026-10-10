@@ -312,4 +312,5 @@ test('repositories without package pages render names without links or a fork co
 	expect(html).not.toContain('aria-label="fork"')
 	expect(html).not.toContain('href="/@kody/fathom-analytics"')
 	expect(html).not.toContain('href="/@kody/notes"')
+	expect(html).not.toContain('data-testid="profile-activity"')
 })
