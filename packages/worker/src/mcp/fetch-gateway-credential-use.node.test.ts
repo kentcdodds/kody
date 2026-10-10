@@ -22,6 +22,7 @@ import * as integrationService from '#worker/integrations/service.ts'
 import { insertSavedPackage } from '#worker/package-registry/repo.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations as applyRepositoryMigrations } from '#worker/test-support/apply-all-migrations.ts'
+import { createTestOrgAuditWriter } from '#worker/test-support/create-audit-db.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
@@ -108,6 +109,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		preset: 'use',
 		permissions: null,
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 
 	const userMeter = createInMemoryUserMeterEnv()
@@ -281,6 +283,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		preset: 'use',
 		permissions: null,
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	await upsertGrant({
 		db,
@@ -291,6 +294,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		preset: 'use',
 		permissions: null,
 		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
 	})
 	const memberAfterGrant = deriveRequestContext({
 		user: {

@@ -158,6 +158,13 @@ export async function addTeamMember(input: {
 		.bind(input.teamId, input.orgId)
 		.first<{ id: string }>()
 	if (!team) throw new Error('Team was not found in this org.')
+	const alreadyLive = await input.db
+		.prepare(
+			`SELECT 1 AS ok FROM team_members
+			 WHERE team_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.teamId, input.userId)
+		.first<{ ok: number }>()
 	const now = new Date().toISOString()
 	await runBatch(input.db, [
 		input.db
@@ -172,6 +179,7 @@ export async function addTeamMember(input: {
 			.bind(input.teamId, input.userId, input.addedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (alreadyLive) return
 	await recordOrgAuditEvent(input.audit, {
 		orgId: input.orgId,
 		action: 'team.member_added',
@@ -197,7 +205,7 @@ export async function removeTeamMember(input: {
 		.first<{ id: string }>()
 	if (!team) throw new Error('Team was not found in this org.')
 	const now = new Date().toISOString()
-	await runBatch(input.db, [
+	const results = await runBatch(input.db, [
 		input.db
 			.prepare(
 				`UPDATE team_members
@@ -207,6 +215,7 @@ export async function removeTeamMember(input: {
 			.bind(now, input.teamId, input.userId),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (!changesOf(results[0])) return
 	await recordOrgAuditEvent(input.audit, {
 		orgId: input.orgId,
 		action: 'team.member_removed',
@@ -378,6 +387,13 @@ export async function updateOrgMemberRole(input: {
 	protectLastOwner?: boolean
 	audit: OrgAuditWriter
 }) {
+	const before = await input.db
+		.prepare(
+			`SELECT role FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.orgId, input.userId)
+		.first<{ role: OrgRole }>()
 	const statement = input.protectLastOwner
 		? input.db
 				.prepare(
@@ -409,11 +425,12 @@ export async function updateOrgMemberRole(input: {
 				: 'That person is not a member of this organization.',
 		)
 	}
+	if (before?.role === input.role) return
 	await recordOrgAuditEvent(input.audit, {
 		orgId: input.orgId,
 		action: 'member.role_changed',
 		targetUserId: input.userId,
-		details: { role: input.role },
+		details: { role: input.role, previousRole: before?.role ?? null },
 	})
 }
 
@@ -679,6 +696,13 @@ export async function addOrgMember(input: {
 	invitedByUserId: string
 	audit: OrgAuditWriter
 }) {
+	const alreadyLive = await input.db
+		.prepare(
+			`SELECT 1 AS ok FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(input.orgId, input.userId)
+		.first<{ ok: number }>()
 	const now = new Date().toISOString()
 	await runBatch(input.db, [
 		input.db
@@ -697,6 +721,7 @@ export async function addOrgMember(input: {
 			.bind(input.orgId, input.userId, input.role, input.invitedByUserId, now),
 		bumpAccessEpochStatement(input.db, input.orgId),
 	])
+	if (alreadyLive) return
 	await recordOrgAuditEvent(input.audit, {
 		orgId: input.orgId,
 		action: 'member.added',
@@ -868,12 +893,14 @@ async function setInviteStatus(input: {
 	return changesOf(result)
 }
 
+/**
+ * Claims the pending invite. The `invite.accepted` audit event is recorded by
+ * the caller once the membership, teams, or grant have been applied.
+ */
 export async function markInviteAccepted(input: {
 	db: D1Database
-	orgId: string
 	inviteId: string
 	acceptedByUserId: string
-	audit: OrgAuditWriter
 }) {
 	const changes = await setInviteStatus({
 		db: input.db,
@@ -883,13 +910,6 @@ export async function markInviteAccepted(input: {
 		acceptedByUserId: input.acceptedByUserId,
 	})
 	if (!changes) throw new Error('Invite could not be accepted.')
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.orgId,
-		action: 'invite.accepted',
-		resourceType: 'invite',
-		resourceId: input.inviteId,
-		targetUserId: input.acceptedByUserId,
-	})
 }
 
 export async function markInviteRevoked(input: {

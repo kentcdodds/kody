@@ -33,6 +33,7 @@ import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
 import { isOrgActive } from '#worker/orgs/repo.ts'
 import {
 	orgAuditWriterFromRequest,
+	recordOrgAuditEvent,
 	type OrgAuditWriter,
 } from '#worker/orgs/org-audit.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
@@ -216,10 +217,8 @@ async function acceptStoredInvite(input: {
 	try {
 		await markInviteAccepted({
 			db: input.db,
-			orgId: invite.orgId,
 			inviteId: invite.id,
 			acceptedByUserId: input.acceptedByUserId,
-			audit: input.audit,
 		})
 	} catch (error) {
 		if (
@@ -283,6 +282,14 @@ async function acceptStoredInvite(input: {
 			throw new Error(`Unknown invite kind: ${String(exhaustive)}`)
 		}
 	}
+	await recordOrgAuditEvent(input.audit, {
+		orgId: invite.orgId,
+		action: 'invite.accepted',
+		resourceType: 'invite',
+		resourceId: invite.id,
+		targetUserId: input.acceptedByUserId,
+		details: { kind: invite.kind },
+	})
 }
 
 export const inviteCreateCapability = defineDomainCapability(

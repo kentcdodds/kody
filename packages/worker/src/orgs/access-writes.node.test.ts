@@ -3,7 +3,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { compileAccessForRequest } from '#worker/authorization/access-compile.ts'
 import { deriveRequestContext } from '#worker/request-context/request-context.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -195,6 +195,22 @@ test('write helpers record org audit events for the acting person', async () => 
 		role: 'billing',
 		audit,
 	})
+	// Re-adding a live member and re-applying the same role are no-ops.
+	await addOrgMember({
+		db,
+		orgId: org.id,
+		userId: memberId,
+		role: 'owner',
+		invitedByUserId: ownerId,
+		audit,
+	})
+	await updateOrgMemberRole({
+		db,
+		orgId: org.id,
+		userId: memberId,
+		role: 'billing',
+		audit,
+	})
 	const grant = await upsertGrant({
 		db,
 		orgId: org.id,
@@ -251,4 +267,49 @@ test('write helpers record org audit events for the acting person', async () => 
 		},
 	])
 	expect(grant.permissions).toEqual(['package:read', 'package:execute'])
+})
+
+test('an audit write failure is reported without undoing the access change', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner@example.com')
+	const memberId = testStableUserIdFromEmail('member@example.com')
+	const org = await createOrg({
+		db,
+		slug: 'acme',
+		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
+	})
+	const failingAuditDb = {
+		prepare() {
+			throw new Error('AUDIT_DB is unavailable')
+		},
+	} as unknown as D1Database
+	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+	try {
+		await addOrgMember({
+			db,
+			orgId: org.id,
+			userId: memberId,
+			role: 'member',
+			invitedByUserId: ownerId,
+			audit: createTestOrgAuditWriter({
+				db: failingAuditDb,
+				actorUserId: ownerId,
+			}),
+		})
+		expect(errorSpy).toHaveBeenCalledTimes(1)
+		expect(errorSpy.mock.calls[0]?.[0]).toBe(
+			'Failed to record org audit event:',
+		)
+	} finally {
+		errorSpy.mockRestore()
+	}
+	const membership = await db
+		.prepare(
+			`SELECT role FROM org_memberships
+			 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+		)
+		.bind(org.id, memberId)
+		.first<{ role: string }>()
+	expect(membership?.role).toBe('member')
 })

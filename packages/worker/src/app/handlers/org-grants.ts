@@ -10,6 +10,7 @@ import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
 import { softDeleteGrant } from '#worker/orgs/access-writes.ts'
+import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import { listOrgGrantsForView } from '#worker/orgs/org-grants-view.ts'
 import { type OrgGrantsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
@@ -166,6 +167,7 @@ export function createOrgGrantsRevokePostHandler(env: Env) {
 					db: env.APP_DB,
 					orgId: access.org.id,
 					grantId,
+					audit: orgAuditWriterFromRequest(env, user.request),
 				})
 			} catch (error) {
 				const message =
