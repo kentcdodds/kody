@@ -9,13 +9,15 @@ const consentTokenPurpose = 'kody-mcp-server-authorize-v1'
 /**
  * The `authUrl` every MCP server surface returns: a signed-in Kody page that
  * names the server, the authorization server, and the client mode before
- * Continue sends the person to the provider.
+ * Continue sends the person to the provider. Null without an org slug, since
+ * `/@/-/…` routes nowhere.
  */
 export function buildMcpServerAuthorizeUrl(input: {
 	appOrigin: string
 	orgSlug: string
 	serverId: string
-}) {
+}): string | null {
+	if (!input.orgSlug.trim()) return null
 	return new URL(
 		orgSectionRestPath(
 			input.orgSlug,

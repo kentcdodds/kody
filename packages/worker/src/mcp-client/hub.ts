@@ -407,7 +407,7 @@ class McpClientHubBase extends DurableObject<Env> {
 		const row = this.manager
 			.listServers()
 			.find((server) => server.id === input.serverId)
-		if (!row?.auth_url) return null
+		if (!row?.auth_url || !URL.canParse(row.auth_url)) return null
 		if (this.connectionStateFor(row.id) !== 'authenticating') return null
 		return {
 			serverId: row.id,

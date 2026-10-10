@@ -179,4 +179,15 @@ test('buildMcpServerStatusView links pending authorization to the Kody consent p
 		authorizeLink,
 	})
 	expect(ready.authUrl).toBeNull()
+
+	const noSlug = buildMcpServerStatusView({
+		setting: setting(),
+		snapshot: snapshot({
+			state: 'authenticating',
+			authorizationPending: true,
+			tools: [],
+		}),
+		authorizeLink: { ...authorizeLink, orgSlug: ' ' },
+	})
+	expect(noSlug.authUrl).toBeNull()
 })
