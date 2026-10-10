@@ -152,4 +152,12 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		page.getByRole('region', { name: 'Connected agents' }),
 	).toBeVisible()
 	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
+
+	// Repositories list what the team org owns (nothing yet) instead of a 404.
+	const packages = await page.goto(`/@pinned-${runId}/-/packages`)
+	expect(packages?.status()).toBe(200)
+	await waitForClientHydration(page)
+	await expect(page.getByTestId('workspace-repositories')).toBeVisible()
+	await expect(page.getByTestId('profile-packages-empty')).toBeVisible()
+	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
 })

@@ -7,7 +7,6 @@ import {
 	orderOrganizations,
 	orgIdentity,
 	orgOwnedAccountApiSection,
-	orgSectionKeysOnPerson,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
@@ -306,7 +305,7 @@ test('billing paths bind to the organization in the URL', () => {
 	expect(parseOrgBillingPath('/@Not A Slug/billing')).toBeNull()
 })
 
-test('org account JSON names the section, and packages still key on the person', () => {
+test('org account JSON names the section', () => {
 	expect(orgOwnedAccountApiSection('/account/secrets.json')).toBe('secrets')
 	expect(orgOwnedAccountApiSection('/account/jobs.json')).toBe('jobs')
 	expect(orgOwnedAccountApiSection('/account/connected-agents.json')).toBe(
@@ -317,10 +316,7 @@ test('org account JSON names the section, and packages still key on the person',
 	)
 	// Sign-in providers belong to the person, not the Connections page.
 	expect(orgOwnedAccountApiSection('/account/connections.json')).toBeNull()
+	expect(orgOwnedAccountApiSection('/account/packages.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/account/passkeys.json')).toBeNull()
 	expect(orgOwnedAccountApiSection('/@acme/-/secrets')).toBeNull()
-	expect(orgSectionKeysOnPerson('packages')).toBe(true)
-	expect(orgSectionKeysOnPerson('connections')).toBe(false)
-	expect(orgSectionKeysOnPerson('secrets')).toBe(false)
-	expect(orgSectionKeysOnPerson('jobs')).toBe(false)
 })

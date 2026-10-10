@@ -17,10 +17,6 @@ async function getProjectNode(project: string) {
 	return projectGraph.nodes[project] as ProjectGraphProjectNode
 }
 
-async function getWorkerProjectNode() {
-	return getProjectNode('worker')
-}
-
 async function getTargetPatterns(
 	project: string,
 	target: string,
@@ -51,15 +47,19 @@ function expandNamedInputs(
 	})
 }
 
-async function getWorkerDeclaredInputs(target: string) {
+async function getDeclaredInputs(project: string, target: string) {
 	const [nxJson, projectNode] = await Promise.all([
 		readJsonFile<NxJsonConfiguration>('nx.json'),
-		getWorkerProjectNode(),
+		getProjectNode(project),
 	])
 	return expandNamedInputs(
 		projectNode.data.targets?.[target]?.inputs ?? [],
 		nxJson.namedInputs,
 	)
+}
+
+async function getWorkerDeclaredInputs(target: string) {
+	return getDeclaredInputs('worker', target)
 }
 
 function includesEnvInput(inputs: ReadonlyArray<unknown>, envName: string) {
@@ -227,6 +227,25 @@ test.each(['test', 'test-node', 'test-workers', 'test-mcp', 'test-e2e'])(
 		expect(includesCiEnv(inputs)).toBe(true)
 	},
 )
+
+test.each([
+	'typecheck',
+	'typecheck-src',
+	'typecheck-worker-test',
+	'typecheck-client-test',
+	'build',
+])(
+	'%s cache hash ignores CI so agent runs without CI=1 share CI artifacts',
+	async (target) => {
+		const inputs = await getWorkerDeclaredInputs(target)
+		expect(includesCiEnv(inputs)).toBe(false)
+	},
+)
+
+test('tools:typecheck cache hash ignores CI', async () => {
+	const inputs = await getDeclaredInputs('tools', 'typecheck')
+	expect(includesCiEnv(inputs)).toBe(false)
+})
 
 test('cache hash includes KODY_VALIDATE_LOAD because the full suite runs workers-unit', async () => {
 	const inputs = await getWorkerDeclaredInputs('test')

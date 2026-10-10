@@ -14,7 +14,6 @@ export const blogPostSlugs = [
 	'every-install-is-a-fork-you-own',
 	'the-automations-you-never-built',
 	'self-service-means-ownership',
-	'kody-vs-executor',
 	'openclaw-2-needs-a-home',
 	'how-to-turn-agent-work-into-software-you-own',
 ] as const

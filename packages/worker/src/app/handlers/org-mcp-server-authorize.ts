@@ -64,11 +64,7 @@ async function loadConsentContext(input: {
 		env,
 		user.mcpUser.userId,
 	)
-	const denial = orgSectionDenial(
-		resolution,
-		user.mcpUser.userId,
-		'mcp-servers',
-	)
+	const denial = orgSectionDenial(resolution, 'mcp-servers')
 	if (denial || typeof resolution === 'string') {
 		return { kind: 'not-found', title: denial ?? 'Organization unavailable' }
 	}

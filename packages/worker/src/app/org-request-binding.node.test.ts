@@ -31,10 +31,10 @@ async function createEnv() {
 	return { APP_DB: db } as unknown as Env
 }
 
-test('package JSON stays on the signup org even from a team page', async () => {
+test('account package JSON stays on the signup org from a team page', async () => {
 	const env = await createEnv()
 	const request = new Request('https://kody.test/account/packages.json', {
-		headers: { referer: 'https://kody.test/@acme/-/secrets' },
+		headers: { referer: 'https://kody.test/@acme/-/packages' },
 	})
 	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
 		'personal',

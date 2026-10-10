@@ -25,19 +25,21 @@ export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="<write-or-read-token>"
 ```
 
 Leave them unset to run with the local `.nx` cache only. Validate and
-`test:push` use `CI=1` so cache hashes match GitHub Actions (`CI=true` would
-miss). On Cloud Agent VMs, `npm run hooks:ensure` composes Husky through
-Cursor's hook dispatcher so `git push` runs `test:push` when the push includes a
-non-docs path, and can upload those artifacts before CI starts. Docs-only pushes
-skip `test:push`. `tools/nx-remote-cache-probe.ts` is the one place that checks
-the server: GitHub Actions only sets the server URL after `GET /health` succeeds
-and an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fails the job
-if the host is configured but unreachable or unauthorized, so validate can still
-pass before the worker exists or after a token rotation that has not been synced
-yet. The same probe then `PUT`s a fixed non-hash key
-(`00000000000000000000000000000001`): 200 or 409 means the token writes, 403
-means it is read-only. Nx prints nothing when a `PUT` is rejected, so every
-cached script ends with one line next to Nx's own hit count, for example
+`test:push` use `CI=1` so test cache hashes match GitHub Actions (`CI=true`
+would miss); typecheck and build hashes ignore `CI`, so `npm run typecheck`
+matches CI with or without it. On Cloud Agent VMs, `npm run hooks:ensure`
+composes Husky through Cursor's hook dispatcher so `git push` runs `test:push`
+when the push includes a non-docs path, and can upload those artifacts before CI
+starts. Docs-only pushes skip `test:push`. `tools/nx-remote-cache-probe.ts` is
+the one place that checks the server: GitHub Actions only sets the server URL
+after `GET /health` succeeds and an authorized `GET /v1/cache/{hash}` returns
+200 or 404 — Nx fails the job if the host is configured but unreachable or
+unauthorized, so validate can still pass before the worker exists or after a
+token rotation that has not been synced yet. The same probe then `PUT`s a fixed
+non-hash key (`00000000000000000000000000000001`): 200 or 409 means the token
+writes, 403 means it is read-only. Nx prints nothing when a `PUT` is rejected,
+so every cached script ends with one line next to Nx's own hit count, for
+example
 `Nx remote cache enabled (https://nx-cache.kody.codes) READ-ONLY: PUT returned 403 ... Cache: 0/12 hit (0%)`.
 A read-only or failed write never fails the run; it is the signal that the token
 or the worker secret needs fixing before any hit can happen. Cached npm scripts
