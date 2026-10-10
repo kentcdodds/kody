@@ -1,5 +1,6 @@
 import { type RemixNode, css } from 'remix/component'
 import { type OrgRole } from '@kody-internal/shared/request-context.ts'
+import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import {
 	orgBillingPath,
@@ -29,8 +30,37 @@ export function renderOrgHomeMain(input: {
 	role: OrgRole | null
 }) {
 	const collaborator = input.role === null
+	const manageItems = teamOrgManagementItems({
+		orgSlug: input.slug,
+		role: input.role,
+	})
 	return (
 		<div mix={css(mainCss)} data-testid="org-home">
+			{manageItems.length > 0 ? (
+				<nav
+					aria-label={`${input.handle} sections`}
+					data-testid="org-home-nav"
+					mix={css(navCss)}
+				>
+					<p mix={css(navEyebrowCss)}>Organization</p>
+					<ul mix={css(navListCss)}>
+						{manageItems.map((item) => (
+							<li key={item.href}>
+								<a
+									href={item.href}
+									data-testid={`org-home-nav-${item.label.toLowerCase()}`}
+									mix={css(navLinkCss)}
+								>
+									<span aria-hidden="true" mix={css(navIconCss)}>
+										{renderIcon(item.icon, { size: '1.1rem' })}
+									</span>
+									{item.label}
+								</a>
+							</li>
+						))}
+					</ul>
+				</nav>
+			) : null}
 			<h2 mix={css(headingCss)}>Get started</h2>
 			<ul mix={css(stepListCss)}>
 				{collaborator
@@ -134,6 +164,56 @@ const mainCss = {
 	display: 'grid',
 	gap: spacing.lg,
 	minWidth: 0,
+}
+
+const navCss = {
+	display: 'grid',
+	gap: spacing.sm,
+	padding: spacing.lg,
+	borderRadius: radius.card,
+	border: `1.5px solid ${colors.border}`,
+	backgroundColor: colors.surface,
+}
+
+const navEyebrowCss = {
+	margin: 0,
+	fontSize: '0.72rem',
+	fontWeight: 650,
+	letterSpacing: '0.08em',
+	textTransform: 'uppercase' as const,
+	color: colors.textMuted,
+}
+
+const navListCss = {
+	listStyle: 'none',
+	margin: 0,
+	padding: 0,
+	display: 'flex',
+	flexWrap: 'wrap' as const,
+	gap: spacing.sm,
+}
+
+const navLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: spacing.xs,
+	padding: `${spacing.sm} ${spacing.md}`,
+	borderRadius: radius.md,
+	border: `1px solid ${colors.border}`,
+	backgroundColor: colors.background,
+	color: colors.text,
+	textDecoration: 'none',
+	fontSize: '0.95rem',
+	fontWeight: 600,
+	'&:hover': {
+		borderColor: colors.primary,
+		color: colors.primaryText,
+	},
+}
+
+const navIconCss = {
+	display: 'inline-flex',
+	color: colors.primaryText,
 }
 
 const headingCss = {

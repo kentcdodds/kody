@@ -1,6 +1,7 @@
 import { type Handle, type RemixNode, css } from 'remix/component'
 import { listenToRouterNavigation } from '#client/client-router.tsx'
 import { on } from '#client/event-mixin.ts'
+import { teamOrgManagementItems } from '#client/routes/account-rail.ts'
 import { type IconName, renderIcon } from '#universal/icon.tsx'
 import { UserAvatar } from '#universal/user-avatar.tsx'
 import {
@@ -303,30 +304,43 @@ function OrgSwitcher(
 			}
 		}
 		const orgRows = entries.filter((entry) => entry.kind === 'org').map(toRow)
-		const billingHref =
-			current && orgRoleManagesBilling(current.role)
-				? orgBillingPath(current.slug)
-				: null
-		const actionRows = [
-			...(billingHref && currentIdentity
-				? [
-						{
-							key: 'org-billing',
-							href: billingHref,
-							label: 'Billing',
-							detail: currentIdentity.handle,
-							ariaCurrent:
-								handle.props.currentPathname === billingHref
-									? ('page' as const)
-									: undefined,
-							selected: false,
-							leading: renderIconWell('wallet'),
-							badge: null,
-						} satisfies SwitcherRow,
-					]
-				: []),
-			...entries.filter((entry) => entry.kind !== 'org').map(toRow),
-		]
+		// Team orgs: Settings / Members / Teams / Grants / Collaborators /
+		// Billing for the current org. Personal: Billing only (workspace rail
+		// owns the rest). Collaborators get no manage rows.
+		const manageItems =
+			current && !current.personal
+				? teamOrgManagementItems({
+						orgSlug: current.slug,
+						role: current.role,
+					})
+				: current && orgRoleManagesBilling(current.role)
+					? [
+							{
+								href: orgBillingPath(current.slug),
+								label: 'Billing',
+								icon: 'wallet' as const,
+							},
+						]
+					: []
+		const manageRows: Array<SwitcherRow> =
+			currentIdentity && manageItems.length > 0
+				? manageItems.map((item) => ({
+						key: `org-manage-${item.label.toLowerCase()}`,
+						href: item.href,
+						label: item.label,
+						detail: currentIdentity.handle,
+						ariaCurrent:
+							handle.props.currentPathname === item.href
+								? ('page' as const)
+								: undefined,
+						selected: false,
+						leading: renderIconWell(item.icon),
+						badge: null,
+					}))
+				: []
+		const actionRows = entries
+			.filter((entry) => entry.kind !== 'org')
+			.map(toRow)
 		const pageCurrent = (href: string) =>
 			handle.props.currentPathname === href ? ('page' as const) : undefined
 		const accountRows: Array<SwitcherRow> = [
@@ -366,9 +380,22 @@ function OrgSwitcher(
 				>
 					{orgRows.map(renderSwitcherRow)}
 				</div>
-				<div mix={css(switcherActionsCss)}>
-					{actionRows.map(renderSwitcherRow)}
-				</div>
+				{manageRows.length > 0 && currentIdentity ? (
+					<div
+						role="group"
+						aria-label={`Manage ${currentIdentity.handle}`}
+						data-testid="org-switcher-manage-group"
+						mix={css(switcherActionsCss)}
+					>
+						<p mix={css(switcherEyebrowCss)}>Manage {currentIdentity.handle}</p>
+						{manageRows.map(renderSwitcherRow)}
+					</div>
+				) : null}
+				{actionRows.length > 0 ? (
+					<div mix={css(switcherActionsCss)}>
+						{actionRows.map(renderSwitcherRow)}
+					</div>
+				) : null}
 				<div
 					role="group"
 					aria-label="Your account"
@@ -409,7 +436,11 @@ function OrgSwitcher(
 				<button
 					type="button"
 					popovertarget={orgSwitcherPanelId}
-					aria-label={`${label}: organizations and account`}
+					aria-label={
+						manageRows.length > 0
+							? `${label}: organizations, manage, and account`
+							: `${label}: organizations and account`
+					}
 					aria-expanded={open ? 'true' : 'false'}
 					data-open={open ? '' : undefined}
 					data-testid="org-switcher"

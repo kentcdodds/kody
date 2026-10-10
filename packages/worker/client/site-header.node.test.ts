@@ -51,7 +51,12 @@ test('logged-in header has one menu: the organization, then your own links and L
 	expect(html).not.toContain('data-testid="site-header-account"')
 	expect(html).not.toContain('data-testid="site-header-profile"')
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
-	expect(html).toContain('aria-label="@ada: organizations and account"')
+	expect(html).toContain(
+		'aria-label="@ada: organizations, manage, and account"',
+	)
+	expect(html).toContain('data-testid="org-switcher-manage-group"')
+	expect(html).toContain('>Manage @ada<')
+	expect(html).toContain('href="/@ada/-/billing"')
 	// The photo is drawn once on the trigger and once on the signup org row
 	// in each panel (desktop popover and phone menu), never as its own link.
 	const trigger = html.slice(
@@ -132,7 +137,17 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain('aria-label="@acme: organizations and account"')
+	expect(html).toContain(
+		'aria-label="@acme: organizations, manage, and account"',
+	)
+	expect(menu).toContain('data-testid="org-switcher-manage-group"')
+	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/settings"')
+	expect(menu).toContain('href="/@acme/-/members"')
+	expect(menu).toContain('href="/@acme/-/teams"')
+	expect(menu).toContain('href="/@acme/-/grants"')
+	expect(menu).toContain('href="/@acme/-/collaborators"')
+	expect(menu).not.toContain('href="/@acme/-/billing"')
 	expect(menu).toContain('href="/account/organizations#invites"')
 	// The org in the URL is current: checked and announced, the other is not.
 	const acmeRow = menu.slice(
