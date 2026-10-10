@@ -75,13 +75,20 @@ export function createAccountConnectedAgents(handle: Handle) {
 		return next.filter(agentSurvivesRevokeFilter)
 	}
 
+	/** Last unfiltered payload list, so a failed revoke can re-derive rows. */
+	let latestPayloadAgents: Array<AccountConnectedAgentListItem> = []
+	let payloadVersion = 0
+
 	function applyPayload(payload: AccountConnectedAgentsLoaderData) {
+		latestPayloadAgents = payload.agents
+		payloadVersion += 1
 		agents = visibleAgents(payload.agents)
 	}
 
 	async function revokeAgent(clientId: string) {
 		const removed = agents.find((agent) => agent.clientId === clientId)
 		if (!removed) return
+		const versionAtStart = payloadVersion
 
 		agents = agents.filter((agent) => agent.clientId !== clientId)
 		revokeChecks.get(clientId)?.reset()
@@ -121,7 +128,11 @@ export function createAccountConnectedAgents(handle: Handle) {
 			}
 			// Do not clear revokedGrantIds: this attempt never added tombstones
 			// (only success does), and deleted IDs could wipe an earlier revoke.
-			if (!agents.some((agent) => agent.clientId === clientId)) {
+			// A payload that landed mid-revoke may be another org's list, so
+			// re-derive from it instead of putting this org's row back.
+			if (payloadVersion !== versionAtStart) {
+				agents = visibleAgents(latestPayloadAgents)
+			} else if (!agents.some((agent) => agent.clientId === clientId)) {
 				agents = [...agents, removed]
 			}
 			toast.error(

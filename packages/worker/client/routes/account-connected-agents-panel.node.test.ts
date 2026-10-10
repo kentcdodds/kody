@@ -370,3 +370,18 @@ test('switching orgs while a revoke is in flight keeps the same host connected i
 	panel.applyPayload({ ...listedAgents, agents: [otherOrgCursor] })
 	expect(ids()).toEqual([cursorOld.clientId])
 })
+
+test('a revoke that fails after an org switch shows the destination org list, not the source row', async () => {
+	using harness = createPanelWithDeferredRevokes()
+	const { panel, respond } = harness
+
+	const revokePromise = panel.revokeAgent(cursorOld.clientId)
+	panel.applyPayload({ ...listedAgents, agents: [chatgptOld] })
+
+	respond(
+		cursorOld,
+		jsonResponse({ ok: false, error: 'Unable to revoke this agent.' }, 500),
+	)
+	await revokePromise
+	expect(panel.listAgents()).toEqual([chatgptOld])
+})
