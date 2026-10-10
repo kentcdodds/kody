@@ -1,14 +1,29 @@
 import { expect, test, vi } from 'vitest'
-import { consoleError } from '#worker/test-support/console-spies.ts'
+import {
+	consoleError,
+	consoleWarn,
+} from '#worker/test-support/console-spies.ts'
 import { PlatformFeedbackDispatchCancelledError } from './errors.ts'
 
 const mocks = vi.hoisted(() => ({
 	dispatchPlatformFeedbackSubmittedSubscriptionEvent: vi.fn(),
+	getPlatformFeedbackForAdmin: vi.fn(),
+	sendPlatformFeedbackAcknowledgementEmail: vi.fn(),
 }))
 
 vi.mock('./package-subscriptions.ts', () => ({
 	dispatchPlatformFeedbackSubmittedSubscriptionEvent:
 		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+}))
+
+vi.mock('./service.ts', () => ({
+	getPlatformFeedbackForAdmin: (...args: Array<unknown>) =>
+		mocks.getPlatformFeedbackForAdmin(...args),
+}))
+
+vi.mock('./acknowledgement-email.ts', () => ({
+	sendPlatformFeedbackAcknowledgementEmail: (...args: Array<unknown>) =>
+		mocks.sendPlatformFeedbackAcknowledgementEmail(...args),
 }))
 
 const { handlePlatformFeedbackDispatchQueue } =
@@ -55,6 +70,12 @@ test('platform feedback queue acks valid, invalid, and cancelled messages and re
 	const dispatchFailure = createQueueMessage('queue-dispatch-failure', {
 		feedbackId,
 	})
+	mocks.getPlatformFeedbackForAdmin.mockResolvedValue({
+		id: feedbackId,
+		submitterUserId: 'user-1',
+		status: 'open',
+	})
+	mocks.sendPlatformFeedbackAcknowledgementEmail.mockResolvedValue(true)
 	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent
 		.mockResolvedValueOnce([])
 		.mockResolvedValueOnce([])
@@ -90,6 +111,7 @@ test('platform feedback queue acks valid, invalid, and cancelled messages and re
 			feedbackId,
 		].map((id) => [{ env: expect.anything(), feedbackId: id }]),
 	)
+	expect(mocks.sendPlatformFeedbackAcknowledgementEmail).toHaveBeenCalled()
 	for (const message of [
 		first,
 		duplicate,
@@ -113,5 +135,38 @@ test('platform feedback queue acks valid, invalid, and cancelled messages and re
 			feedbackId: 'feedback-load-failure',
 			error: expect.any(Error),
 		}),
+	)
+})
+
+test('platform feedback queue keeps admin dispatch moving when acknowledgement fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	const message = createQueueMessage('queue-ack-fail', { feedbackId })
+	mocks.getPlatformFeedbackForAdmin.mockResolvedValue({
+		id: feedbackId,
+		submitterUserId: 'user-1',
+		status: 'open',
+	})
+	mocks.sendPlatformFeedbackAcknowledgementEmail.mockRejectedValue(
+		new Error('smtp hung then threw'),
+	)
+	mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent.mockResolvedValue([])
+
+	await handlePlatformFeedbackDispatchQueue(
+		createBatch([message]),
+		{ APP_DB: {} } as Env,
+		{} as ExecutionContext,
+	)
+
+	expect(
+		mocks.dispatchPlatformFeedbackSubmittedSubscriptionEvent,
+	).toHaveBeenCalledWith({ env: expect.anything(), feedbackId })
+	expect(message.ack).toHaveBeenCalledTimes(1)
+	expect(message.retry).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		'platform-feedback-acknowledgement-email-failed',
+		{
+			feedbackId,
+			error: expect.any(Error),
+		},
 	)
 })
