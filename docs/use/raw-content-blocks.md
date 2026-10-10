@@ -33,8 +33,10 @@ normal structured data, return plain values and let `execute` serialize them.
 - **Protocol content** from `__mcpContent` (and from downstream MCP / remote
   connector tools that pass through images, audio, or resources) uses a separate
   ~512 KB serialized-content cap. Base64 expands binary by about 4/3, so a ~133
-  KB WebP is roughly ~177 KB of JSON and fits; oversized protocol content fails
-  explicitly instead of being truncated into unusable JSON text.
+  KB WebP is roughly ~177 KB of JSON and fits; oversized
+  **image/audio/resource** content fails explicitly instead of being truncated
+  into unusable JSON text. Oversized **text-only** protocol content is truncated
+  with a clear note (narrow the query or paginate) rather than failing the call.
 
 ## Downstream MCP servers
 

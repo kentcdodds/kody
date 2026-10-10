@@ -221,7 +221,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 					.min(1)
 					.optional()
 					.describe(
-						`Soft cap on the default export's JSON/text result. Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes); oversized results are truncated. Project large API payloads before returning. Protocol __mcpContent blocks use a separate limit and fail explicitly when oversized.`,
+						`Soft cap on the default export's JSON/text result. Defaults to ~100 KB (${defaultExecutionResponseLimitBytes.toLocaleString()} bytes); oversized results are truncated. Project large API payloads before returning. Protocol __mcpContent media uses a separate limit and fails explicitly when oversized; oversized text-only protocol content is truncated.`,
 					),
 				conversationId: conversationIdInputField,
 				memoryContext: memoryContextInputField,
@@ -683,6 +683,14 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 									responseLimitBytes,
 								)
 					const isError = passthrough?.isError ?? false
+					const truncationNote =
+						contentLimited.truncated && companionLimited?.truncated
+							? `${contentLimited.note} ${companionLimited.note}`
+							: contentLimited.truncated
+								? contentLimited.note
+								: companionLimited?.truncated
+									? companionLimited.note
+									: undefined
 					if (!isError) {
 						await scheduleFleetExecuteLastSuccess({
 							waitUntil,
@@ -703,10 +711,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							returnedBytes:
 								contentLimited.returnedBytes +
 								(companionLimited?.returnedBytes ?? 0),
-							...(companionLimited?.truncated
+							...(truncationNote
 								? {
 										truncated: true,
-										note: companionLimited.note,
+										note: truncationNote,
 									}
 								: {}),
 							result: companionLimited
