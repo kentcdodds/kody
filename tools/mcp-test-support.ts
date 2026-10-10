@@ -260,14 +260,13 @@ export async function seedMcpTestUser(db: D1Database, user: TestUser) {
 	const passwordHash = await createPasswordHash(user.password)
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id, plan)
-VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, 'free')
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)
 ON CONFLICT(email) DO UPDATE SET
 	username = excluded.username,
 	password_hash = excluded.password_hash,
 	email_verified_at = COALESCE(users.email_verified_at, excluded.email_verified_at),
 	stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-	plan = COALESCE(users.plan, excluded.plan),
 	updated_at = CURRENT_TIMESTAMP`,
 		)
 		.bind(

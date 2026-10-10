@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { ensureReferralProgramTestSchema } from './test-schema.ts'
 import { consoleWarn } from '#worker/test-support/console-spies.ts'
@@ -26,12 +27,7 @@ const secondCreditExpiresAt = '2026-11-06T12:00:00.000Z'
 async function ensureReferralSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: [
-			'email_verified_at',
-			'account_type',
-			'stripe_customer_id',
-			'stripe_plan',
-		],
+		columns: ['email_verified_at', 'account_type'],
 	})
 	await ensureReferralProgramTestSchema(db)
 }
@@ -54,9 +50,9 @@ async function insertUser(
 	await db
 		.prepare(
 			`INSERT INTO users (
-				username, email, password_hash, stable_user_id, plan, stripe_plan,
-				stripe_customer_id, email_verified_at, account_type
-			) VALUES (?, ?, 'hash', ?, 'free', NULL, NULL, ?, 'person')`,
+				username, email, password_hash, stable_user_id,
+				email_verified_at, account_type
+			) VALUES (?, ?, 'hash', ?, ?, 'person')`,
 		)
 		.bind(
 			username,
@@ -65,6 +61,12 @@ async function insertUser(
 			input.verified === false ? null : now.toISOString(),
 		)
 		.run()
+	await provisionPersonalOrg(db, {
+		stableUserId,
+		username,
+		plan: 'free',
+		createdAt: now.toISOString(),
+	})
 	return { email, username, stableUserId }
 }
 
@@ -72,7 +74,7 @@ async function creditExpiry(db: D1Database, user: TestUser) {
 	const row = await db
 		.prepare(
 			`SELECT referral_standard_credit_expires_at
-			 FROM users WHERE stable_user_id = ?`,
+			 FROM orgs WHERE id = ?`,
 		)
 		.bind(user.stableUserId)
 		.first<{ referral_standard_credit_expires_at: string | null }>()
@@ -84,7 +86,7 @@ async function entitlementAt(db: D1Database, user: TestUser) {
 	const row = await db
 		.prepare(
 			`SELECT ${userEntitlementColumnsSql()}
-			 FROM users WHERE stable_user_id = ?`,
+			 FROM orgs WHERE id = ?`,
 		)
 		.bind(user.stableUserId)
 		.first<UserEntitlementRow>()

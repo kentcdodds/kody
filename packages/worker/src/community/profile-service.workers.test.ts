@@ -6,6 +6,7 @@ import {
 } from '#app/data-cache.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
 import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
 import { insertCommunityActivityEvent } from './profile-repo.ts'
 import {
@@ -37,16 +38,20 @@ async function insertUser(
 	const userId = testStableUserIdFromEmail(email)
 	await runSql(
 		`INSERT INTO users (
-			username, email, stable_user_id, display_name, profile_visibility, password_hash, plan
-		) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			username, email, stable_user_id, display_name, profile_visibility, password_hash
+		) VALUES (?, ?, ?, ?, ?, ?)`,
 		username,
 		email,
 		userId,
 		input.displayName ?? null,
 		input.visibility ?? 'public',
 		'test-password-hash',
-		'max',
 	)
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	const row = await env.APP_DB.prepare(
 		`SELECT id FROM users WHERE stable_user_id = ?`,
 	)

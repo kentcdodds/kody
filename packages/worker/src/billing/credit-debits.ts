@@ -2,11 +2,11 @@
  * Hourly credit debit lane. Runs right after `usage_aggregation` recomputes
  * `usage_rollups`, so debits only ever read a freshly recomputed month.
  *
- * Candidates are every live org or user that holds a `credit_wallets` row,
- * plus every active gift/referral overlay period that still lacks a wallet
- * row. Team org wallets are keyed by org id and have no `users` row. Personal
- * orgs share that id with `stable_user_id` during the Teams dual-write
- * window, and the keyset visits each id once. A missing wallet reads as zero
+ * Candidates are every live org that holds a `credit_wallets` row, plus
+ * every active gift/referral overlay period that still lacks a wallet row.
+ * Team org wallets are keyed by org id. Personal org id equals
+ * `stable_user_id`, and the keyset visits each id once. A missing wallet
+ * reads as zero
  * balance and is backfilled (INSERT OR IGNORE) before settle, so the debit
  * walk never skips an overlay period and later funded debits still see the
  * row. Non-charging settle advances progress against at least the
@@ -51,7 +51,7 @@ import { type UserEntitlement } from '#universal/plans.ts'
 import {
 	isPayingForCreditsPro,
 	resolveUserEntitlementFromRow,
-	userEntitlementColumns,
+	userEntitlementColumnsSql,
 	type UserEntitlementRow,
 } from '#worker/entitlements/service.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
@@ -170,27 +170,11 @@ async function writeCreditDebitCursor(input: {
 }
 
 /**
- * Entitlement columns come from the whole live org row when one exists, and
- * from `users` only when it does not. Per-column COALESCE would mix a partial
- * org row with the user row. Same read as `getUserEntitlement`.
- */
-function creditDebitEntitlementSelectSql() {
-	return userEntitlementColumns
-		.map(
-			(column) =>
-				`CASE WHEN o.id IS NOT NULL THEN o.${column} ELSE u.${column} END AS ${column}`,
-		)
-		.join(', ')
-}
-
-/**
  * Wallet holders plus active gift/referral overlay periods. Every live org
- * with a `credit_wallets` row is a candidate (personal or team). A live user
- * wallet with no org row is still a candidate. Overlay users without a
- * wallet still appear (balance coalesced to 0) so non-charging settle can
- * leave a high-water mark before a later funded return. `UNION` keeps one
- * row per owner id when a personal org shares `stable_user_id`. Exported
- * for tests.
+ * with a `credit_wallets` row is a candidate (personal or team). Overlay orgs
+ * without a wallet still appear (balance coalesced to 0) so non-charging
+ * settle can leave a high-water mark before a later funded return. `UNION`
+ * keeps one row per org id. Exported for tests.
  */
 export async function listCreditDebitCandidates(input: {
 	db: D1Database
@@ -205,36 +189,26 @@ export async function listCreditDebitCandidates(input: {
 				COALESCE(w.auto_refill_enabled, 0) AS auto_refill_enabled,
 				COALESCE(w.notify_low_balance, 1) AS notify_low_balance,
 				COALESCE(u.email, '') AS email,
-				CASE WHEN o.id IS NOT NULL THEN o.stripe_customer_id
-					ELSE u.stripe_customer_id END AS stripe_customer_id,
-				${creditDebitEntitlementSelectSql()}
+				o.stripe_customer_id AS stripe_customer_id,
+				${userEntitlementColumnsSql('o')}
 			 FROM (
 				SELECT w.user_id AS id
 				FROM credit_wallets w
+				INNER JOIN orgs live_org
+					ON live_org.id = w.user_id
+				   AND live_org.deleting_at IS NULL${andLiveDeletedAtSql('live_org')}
 				WHERE w.user_id > ?
-				  AND (
-					EXISTS (
-						SELECT 1 FROM orgs live_org
-						WHERE live_org.id = w.user_id
-						  AND live_org.deleting_at IS NULL${andLiveDeletedAtSql('live_org')}
-					)
-					OR EXISTS (
-						SELECT 1 FROM users live_user
-						WHERE live_user.stable_user_id = w.user_id
-						  AND live_user.deleting_at IS NULL${andLiveDeletedAtSql('live_user')}
-					)
-				  )
 				UNION
-				SELECT u.stable_user_id AS id
-				FROM users u
-				WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-				  AND u.stable_user_id > ?
+				SELECT live_org.id AS id
+				FROM orgs live_org
+				WHERE live_org.deleting_at IS NULL${andLiveDeletedAtSql('live_org')}
+				  AND live_org.id > ?
 				  AND (
-					u.second_agent_standard_gift_expires_at > ?
-					OR u.referral_standard_credit_expires_at > ?
+					live_org.second_agent_standard_gift_expires_at > ?
+					OR live_org.referral_standard_credit_expires_at > ?
 				  )
 			 ) ids
-			 LEFT JOIN orgs o
+			 INNER JOIN orgs o
 				ON o.id = ids.id
 			   AND o.deleting_at IS NULL${andLiveDeletedAtSql('o')}
 			 LEFT JOIN users u

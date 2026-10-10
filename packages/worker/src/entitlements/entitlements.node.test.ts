@@ -73,7 +73,8 @@ function createEntitlementsTestDb(
 	} = {},
 ) {
 	const users = input.users ?? []
-	const orgs = input.orgs ?? []
+	// Omitted orgs mirror the fixture people: personal-org billing columns.
+	const orgs = input.orgs ?? users
 	const counts = input.counts ?? {}
 	const queries: Array<{ sql: string; params: Array<unknown> }> = []
 	const byId = (id: unknown) => users.find((row) => row.stable_user_id === id)
@@ -106,7 +107,21 @@ function createEntitlementsTestDb(
 
 	function first(query: string, params: Array<unknown>) {
 		if (query.includes('FROM credit_wallets')) return null
-		// Org-first entitlement read joined to a verified users row.
+		if (query.includes('FROM org_user_budgets')) return null
+		if (
+			query.includes('INNER JOIN orgs') &&
+			query.includes('email_verified_at')
+		) {
+			const user = byId(params[0])
+			const org = user ? orgById(user.stable_user_id) : undefined
+			if (!user || !org) return null
+			return {
+				email: user.email,
+				plan: org.plan,
+				email_verified_at: null,
+			}
+		}
+		// Entitlement read joined to a users identity row.
 		if (query.includes('INNER JOIN orgs')) {
 			const user = users.find(
 				(row) => row.email === params[0] && row.stable_user_id === params[1],
@@ -414,7 +429,7 @@ test('getUserPlan resolves plans, defaults unresolved contexts to free, and reje
 	// email is blank or missing.
 	for (const email of [null, undefined, '   ']) {
 		expect(await getUserPlan(db, { userId, email })).toBe('pro')
-		expect(queries.at(-1)?.sql).toMatch(/WHERE (?:u\.)?stable_user_id = \?/)
+		expect(queries.at(-1)?.sql).toMatch(/FROM orgs o WHERE o\.id = \?/)
 		expect(queries.at(-1)?.params).toEqual([userId])
 	}
 
@@ -526,7 +541,7 @@ test('findCachedUserAccountByStableUserId caches the account reverse-resolution 
 	expect(await findCachedUserAccountByStableUserId(db, userId)).toEqual(account)
 	expect(
 		queries.filter((query) =>
-			query.sql.includes('SELECT email, plan, email_verified_at'),
+			query.sql.includes('u.email, o.plan, u.email_verified_at'),
 		),
 	).toHaveLength(1)
 	expect(await findCachedUserAccountByStableUserId(db, '  ')).toBeNull()

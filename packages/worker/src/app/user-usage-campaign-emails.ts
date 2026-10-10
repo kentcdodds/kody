@@ -272,18 +272,19 @@ export async function listUsersForUsageCampaignSweep(
 			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
 			        u.first_mcp_connected_at, u.first_saved_package_at,
 			        u.first_execute_at, u.mcp_client_name, u.last_active_at,
-			        u.second_agent_standard_gift_granted_at,
-			        u.second_agent_standard_gift_expires_at,
-			        u.referral_standard_credit_expires_at,
-			        u.plan, u.stripe_plan, u.entitlement_ladder, u.stripe_credits_eligible,
-			        u.admin_credits_eligible
+			        o.second_agent_standard_gift_granted_at,
+			        o.second_agent_standard_gift_expires_at,
+			        o.referral_standard_credit_expires_at,
+			        o.plan, o.stripe_plan, o.entitlement_ladder, o.stripe_credits_eligible,
+			        o.admin_credits_eligible
 			 FROM users u
+			 INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
 			 LEFT JOIN user_usage_campaigns c ON c.user_id = u.stable_user_id
 			 WHERE u.email_verified_at IS NOT NULL
 			   AND u.deleting_at IS NULL
 			   AND u.suspended_at IS NULL
-			   AND u.email_outbound_paused_at IS NULL
-			   AND ${personUserRowSql('u')}${andLiveDeletedAtSql()}
+			   AND o.email_outbound_paused_at IS NULL
+			   AND ${personUserRowSql('u')}${andLiveDeletedAtSql('u')}
 			 ORDER BY COALESCE(c.last_evaluated_at, '') ASC, u.stable_user_id ASC
 			 LIMIT ?`,
 		)

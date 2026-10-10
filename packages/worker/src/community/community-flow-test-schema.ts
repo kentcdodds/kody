@@ -11,15 +11,7 @@ import { communityForksDeleteCascadeStatements } from './community-forks-delete-
 export async function ensureCommunityFlowSchema(db: D1Database) {
 	await ensureUsersTestSchema({
 		db,
-		columns: [
-			'account_type',
-			'bio',
-			'avatar_key',
-			'profile_visibility',
-			'stripe_customer_id',
-			'stripe_plan',
-			'stripe_plan_refreshed_at',
-		],
+		columns: ['account_type', 'bio', 'avatar_key', 'profile_visibility'],
 	})
 	await ensureUserStorageBucketsTestSchema(db)
 	await ensureSecretBucketsTestSchema(db)

@@ -80,7 +80,7 @@ function createBillingEnv(input: {
 			const statement = {
 				bind: () => statement,
 				first: async () =>
-					normalized.includes('from users') && normalized.includes('where id')
+					normalized.includes('from users') && normalized.includes('join orgs')
 						? userRow
 						: normalized.includes('from orgs') &&
 							  normalized.includes('where id')

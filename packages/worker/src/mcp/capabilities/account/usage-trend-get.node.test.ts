@@ -34,10 +34,16 @@ function createTrendEnv() {
 	)
 	sqlite
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan)
-			 VALUES ('usage-trend', ?, 'hash', ?, 'pro')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id)
+			 VALUES ('usage-trend', ?, 'hash', ?)`,
 		)
 		.run(email, stableUserId)
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+			 VALUES (?, 'usage-trend', 'pro', '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z')`,
+		)
+		.run(stableUserId)
 	const db = createD1FromSqlite(sqlite)
 	const userMeter = createInMemoryUserMeterEnv()
 	return {

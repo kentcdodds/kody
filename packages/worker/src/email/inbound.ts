@@ -247,8 +247,10 @@ export async function handleInboundEmail(
 			// getUserPlan / isAccountEmailVerified) so a mismatched identity pair
 			// cannot apply another account's plan or verification state.
 			const accountRow = await env.APP_DB.prepare(
-				`SELECT plan, stripe_plan, entitlement_ladder, stripe_credits_eligible, admin_credits_eligible, email_verified_at, suspended_at FROM users
-			WHERE email = ? AND stable_user_id = ?${andLiveDeletedAtSql()}`,
+				`SELECT o.plan, o.stripe_plan, o.entitlement_ladder, o.stripe_credits_eligible, o.admin_credits_eligible, u.email_verified_at, u.suspended_at
+			FROM users u
+			INNER JOIN orgs o ON o.id = u.stable_user_id
+			WHERE u.email = ? AND u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 			)
 				.bind(identity.email, userId)
 				.first<{

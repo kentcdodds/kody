@@ -95,7 +95,7 @@ function createFleetDb(input: {
 							input.runtimeLeaders,
 						],
 						[
-							has('u.plan', 'entitlement_ladder', 'event_count'),
+							has('o.plan', 'entitlement_ladder', 'event_count'),
 							input.activeUsers,
 						],
 						[

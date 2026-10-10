@@ -6,7 +6,7 @@
  * complaints or sustained bounces burns sender reputation for every user.
  * This monitor reacts to provider delivery events: any spam complaint, or
  * repeated hard bounces within a UTC day, sets
- * `users.email_outbound_paused_at`, which blocks further outbound sends
+ * `orgs.email_outbound_paused_at`, which blocks further outbound sends
  * (see `sendOutboundEmail`) until an admin reviews and clears it from the
  * admin users page.
  */
@@ -103,9 +103,9 @@ export async function applyOutboundEmailAbusePause(input: {
 	}
 
 	const result = await input.env.APP_DB.prepare(
-		`UPDATE users
+		`UPDATE orgs
 		 SET email_outbound_paused_at = ?, updated_at = ?
-		 WHERE stable_user_id = ? AND email_outbound_paused_at IS NULL${andLiveDeletedAtSql()}`,
+		 WHERE id = ? AND email_outbound_paused_at IS NULL${andLiveDeletedAtSql()}`,
 	)
 		.bind(now.toISOString(), now.toISOString(), input.userId)
 		.run()

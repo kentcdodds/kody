@@ -63,8 +63,8 @@ test('tips unsubscribe tokens verify, opt-out is idempotent, and headers are RFC
 	const { db } = createDb()
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
-			 VALUES ('tips', 'tips@example.com', 'x', 'user-tips', 'free', 'person')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id, account_type)
+			 VALUES ('tips', 'tips@example.com', 'x', 'user-tips', 'person')`,
 		)
 		.run()
 	expect(
@@ -110,8 +110,8 @@ test('0053 creates user_tips_email_opt_outs when rewritten 0050 was already appl
 	const db = createD1FromSqlite(sqlite)
 	await db
 		.prepare(
-			`INSERT INTO users (username, email, password_hash, stable_user_id, plan, account_type)
-			 VALUES ('catchup', 'catchup@example.com', 'x', 'user-catchup', 'free', 'person')`,
+			`INSERT INTO users (username, email, password_hash, stable_user_id, account_type)
+			 VALUES ('catchup', 'catchup@example.com', 'x', 'user-catchup', 'person')`,
 		)
 		.run()
 	expect(

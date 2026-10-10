@@ -200,11 +200,12 @@ async function loadParty(
 ): Promise<ReferralParty | null> {
 	return db
 		.prepare(
-			`SELECT stable_user_id, username, email, email_verified_at,
-			        stripe_customer_id, account_type,
-			        referral_standard_credit_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.stable_user_id, u.username, u.email, u.email_verified_at,
+			        o.stripe_customer_id, u.account_type,
+			        o.referral_standard_credit_expires_at
+			 FROM users u
+			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)
 		.first<ReferralParty>()
@@ -262,12 +263,10 @@ function stackReferralCreditStatement(input: {
 	referralId: number
 	invoiceId: string
 	now: Date
-	table: 'users' | 'orgs'
 }) {
-	const idColumn = input.table === 'users' ? 'stable_user_id' : 'id'
 	return input.db
 		.prepare(
-			`UPDATE ${input.table}
+			`UPDATE orgs
 			 SET referral_standard_credit_expires_at = strftime(
 			       '%Y-%m-%dT%H:%M:%fZ',
 			       max(
@@ -278,7 +277,8 @@ function stackReferralCreditStatement(input: {
 			       'unixepoch'
 			     ),
 			     updated_at = ?
-			 WHERE ${idColumn} = ?
+			 WHERE id = ?
+			   AND deleted_at IS NULL
 			   AND EXISTS (
 			     SELECT 1 FROM referrals
 			     WHERE id = ?
@@ -295,20 +295,6 @@ function stackReferralCreditStatement(input: {
 			input.referralId,
 			input.invoiceId,
 		)
-}
-
-function stackReferralCreditDualWriteStatements(input: {
-	db: D1Database
-	stableUserId: string
-	paidPeriodEndAt: string | null
-	referralId: number
-	invoiceId: string
-	now: Date
-}) {
-	return [
-		stackReferralCreditStatement({ ...input, table: 'users' }),
-		stackReferralCreditStatement({ ...input, table: 'orgs' }),
-	]
 }
 
 export async function rewardReferralForPaidInvoice(input: {
@@ -387,7 +373,7 @@ export async function rewardReferralForPaidInvoice(input: {
 				 WHERE id = ? AND (status = 'pending' OR credits_granted_at IS NULL)`,
 			)
 			.bind(rewardedAt, invoiceId, pending.id),
-		...stackReferralCreditDualWriteStatements({
+		stackReferralCreditStatement({
 			db: input.db,
 			stableUserId: referrer.stable_user_id,
 			paidPeriodEndAt: input.referrerPaidPeriodEndAt ?? null,
@@ -395,7 +381,7 @@ export async function rewardReferralForPaidInvoice(input: {
 			invoiceId,
 			now,
 		}),
-		...stackReferralCreditDualWriteStatements({
+		stackReferralCreditStatement({
 			db: input.db,
 			stableUserId: referee.stable_user_id,
 			paidPeriodEndAt: input.paidPeriodEndAt ?? null,
@@ -500,8 +486,8 @@ export async function loadReferralProgramSummary(input: {
 	const creditRow = await input.db
 		.prepare(
 			`SELECT referral_standard_credit_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.stableUserId)
 		.first<{ referral_standard_credit_expires_at: string | null }>()

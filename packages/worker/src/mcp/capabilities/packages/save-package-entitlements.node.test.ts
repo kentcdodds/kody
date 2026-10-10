@@ -103,16 +103,30 @@ function createDatabase(
 		sqlite
 			.prepare(
 				`INSERT INTO users (
-					username, email, password_hash, email_verified_at, plan, stable_user_id
-				) VALUES (?, ?, 'x', ?, ?, ?)`,
+					username, email, password_hash, email_verified_at, stable_user_id
+				) VALUES (?, ?, 'x', ?, ?)`,
 			)
 			.run(
 				String(user['username']),
 				String(user['email']),
 				now,
-				String(user['plan'] ?? 'free'),
 				String(user['stable_user_id']),
 			)
+		const stableUserId = String(user['stable_user_id'])
+		if (!orgs.some((org) => String(org['id']) === stableUserId)) {
+			sqlite
+				.prepare(
+					`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+					 VALUES (?, ?, ?, ?, ?)`,
+				)
+				.run(
+					stableUserId,
+					String(user['username']),
+					String(user['plan'] ?? 'free'),
+					now,
+					now,
+				)
+		}
 	}
 	for (const org of orgs) {
 		sqlite

@@ -6,6 +6,7 @@ import { ensureUsageRollupsTestSchema } from '#worker/usage/test-schema.ts'
 import { handleInboundEmail } from './inbound.ts'
 import { mailboxRpc } from './mailbox-client.ts'
 import { createForwardableEmailMessage } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -41,18 +42,22 @@ async function seedAccount(input: {
 	stableUserId: string
 }) {
 	await env.APP_DB.prepare(
-		`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-			VALUES (?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
 			input.username,
 			input.email,
 			'test-password-hash',
 			input.emailVerifiedAt,
-			input.plan,
 			input.stableUserId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: input.stableUserId,
+		username: input.username,
+		plan: input.plan,
+	})
 }
 
 // Boots the full inbound pipeline plus mailbox DOs; needs headroom beyond the

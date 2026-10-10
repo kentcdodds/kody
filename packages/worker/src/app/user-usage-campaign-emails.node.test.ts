@@ -65,9 +65,9 @@ async function setup(...users: Array<TestUserInput>) {
 			.prepare(
 				`INSERT INTO users (
 					username, email, password_hash, email_verified_at, stable_user_id,
-					plan, account_type, first_mcp_connected_at, first_saved_package_at,
-					mcp_client_name, stripe_plan
-				) VALUES (?, ?, 'x', ?, ?, 'free', 'person', ?, ?, ?, ?)`,
+					account_type, first_mcp_connected_at, first_saved_package_at,
+					mcp_client_name
+				) VALUES (?, ?, 'x', ?, ?, 'person', ?, ?, ?)`,
 			)
 			.bind(
 				input.id,
@@ -77,8 +77,15 @@ async function setup(...users: Array<TestUserInput>) {
 				input.mcpAt ?? null,
 				input.packageAt ?? null,
 				input.clientName ?? null,
-				input.stripePlan ?? null,
 			)
+			.run()
+		await db
+			.prepare(
+				`INSERT INTO orgs (
+					id, slug, plan, stripe_plan, created_at, updated_at
+				) VALUES (?, ?, 'free', ?, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')`,
+			)
+			.bind(input.id, input.id, input.stripePlan ?? null)
 			.run()
 	}
 	const env = {
@@ -557,10 +564,10 @@ test('campaign sweep selects referral overlay expiry for stock-cap plan reads', 
 	})
 	await db
 		.prepare(
-			`UPDATE users
+			`UPDATE orgs
 			 SET referral_standard_credit_expires_at = ?,
 			     second_agent_standard_gift_expires_at = ?
-			 WHERE stable_user_id = ?`,
+			 WHERE id = ?`,
 		)
 		.bind(
 			'2026-10-01T00:00:00.000Z',

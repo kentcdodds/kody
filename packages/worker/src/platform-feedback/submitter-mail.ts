@@ -14,8 +14,10 @@ export async function readPlatformFeedbackSubmitterMailTarget(input: {
 	if (!stableUserId) return null
 	const row = await input.db
 		.prepare(
-			`SELECT email, suspended_at, email_outbound_paused_at FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.email, u.suspended_at, o.email_outbound_paused_at
+			 FROM users u
+			 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)
 		.first<{

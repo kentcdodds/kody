@@ -21,10 +21,6 @@ import { ensureSoftDeleteTestColumns } from '#worker/soft-delete/test-schema.ts'
 export type UsersTestSchemaColumn =
 	| 'email_verified_at'
 	| 'account_type'
-	| 'stripe_customer_id'
-	| 'stripe_plan'
-	| 'stripe_price_id'
-	| 'stripe_plan_refreshed_at'
 	| 'bio'
 	| 'avatar_key'
 	| 'profile_visibility'
@@ -63,30 +59,21 @@ const timestampColumns = [
 
 /**
  * Mirrors migrations 0052 + 0075 (`stable_user_id` NOT NULL + unique index),
- * 0081 + 0083 (`plan` NOT NULL DEFAULT `'free'`), account
- * deletion/suspension state, profile display names, and the account write
- * lease counters. Non-historical seeds may set `'max'` or `'free'` explicitly
- * when plan matters.
+ * account deletion/suspension state, and profile display names. Plan,
+ * Stripe, gift, retention, and outbound-pause columns live on `orgs`
+ * (`ensureOrgsTestSchema`), not `users`.
  */
 const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	// Preexisting shared tables: ALTER ADD COLUMN cannot express NOT NULL
 	// without a default; nullable TEXT matches migration 0052's add step.
 	stable_user_id: { create: 'TEXT NOT NULL', alter: 'TEXT' },
-	plan: { create: `TEXT NOT NULL DEFAULT 'free'` },
-	entitlement_ladder: {
-		create: `TEXT NOT NULL DEFAULT 'public' CHECK (entitlement_ladder IN ('public', 'legacy'))`,
-		alter: `TEXT NOT NULL DEFAULT 'public'`,
-	},
 	deleting_at: { create: 'TEXT' },
 	deleted_at: { create: 'TEXT' },
 	suspended_at: { create: 'TEXT' },
-	email_outbound_paused_at: { create: 'TEXT' },
 	email_verification_delivery_status: { create: 'TEXT' },
 	email_verification_delivery_at: { create: 'TEXT' },
 	email_verification_delivery_detail: { create: 'TEXT' },
 	email_verification_delivery_class: { create: 'TEXT' },
-	active_write_count: { create: 'INTEGER NOT NULL DEFAULT 0' },
-	active_write_expires_at: { create: 'TEXT' },
 	display_name: { create: 'TEXT' },
 	utm_source: { create: 'TEXT' },
 	utm_medium: { create: 'TEXT' },
@@ -104,30 +91,14 @@ const alwaysAdditiveColumns: Record<string, UsersColumnDefinition> = {
 	first_job_at: { create: 'TEXT' },
 	mcp_client_name: { create: 'TEXT' },
 	last_active_at: { create: 'TEXT' },
-	second_agent_standard_gift_granted_at: { create: 'TEXT' },
-	second_agent_standard_gift_expires_at: { create: 'TEXT' },
-	referral_standard_credit_expires_at: { create: 'TEXT' },
-	stripe_credits_eligible: {
-		create: `INTEGER NOT NULL DEFAULT 0 CHECK (stripe_credits_eligible IN (0, 1))`,
-		alter: `INTEGER NOT NULL DEFAULT 0`,
-	},
-	admin_credits_eligible: {
-		create: `INTEGER NOT NULL DEFAULT 0 CHECK (admin_credits_eligible IN (0, 1))`,
-		alter: `INTEGER NOT NULL DEFAULT 0`,
-	},
-	signup_welcome_credits_pending: {
-		create: `INTEGER NOT NULL DEFAULT 0 CHECK (signup_welcome_credits_pending IN (0, 1))`,
-		alter: `INTEGER NOT NULL DEFAULT 0`,
-	},
 }
 
 /**
- * Opt-in columns. `account_type` mirrors migration 0072, the Stripe columns
- * mirror 0066 plus `0044-users-stripe-price-id.sql`, `email_verified_at`
- * mirrors 0046, the profile columns mirror
- * the community social migration, and `onboarding_checklist_dismissed_at`
- * mirrors 0015. `CHECK` constraints are dropped from the alter forms to match
- * what the migrations do for preexisting tables.
+ * Opt-in columns. `account_type` mirrors migration 0072, `email_verified_at`
+ * mirrors 0046, the profile columns mirror the community social migration,
+ * and `onboarding_checklist_dismissed_at` mirrors 0015. `CHECK` constraints
+ * are dropped from the alter forms to match what the migrations do for
+ * preexisting tables. Billing columns are not optional on `users`.
  */
 const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 	email_verified_at: { create: 'TEXT' },
@@ -135,10 +106,6 @@ const optionalColumns: Record<UsersTestSchemaColumn, UsersColumnDefinition> = {
 		create: `TEXT NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'platform'))`,
 		alter: `TEXT NOT NULL DEFAULT 'person'`,
 	},
-	stripe_customer_id: { create: 'TEXT' },
-	stripe_plan: { create: 'TEXT' },
-	stripe_price_id: { create: 'TEXT' },
-	stripe_plan_refreshed_at: { create: 'TEXT' },
 	bio: { create: 'TEXT' },
 	avatar_key: { create: 'TEXT' },
 	profile_visibility: {

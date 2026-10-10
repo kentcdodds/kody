@@ -23,7 +23,12 @@ test('findUserAccountByStableUserId resolves accounts via indexed stable id and 
 		emailVerified: true,
 	})
 	await env.APP_DB.prepare(
-		`UPDATE users SET plan = 'enterprise-2099', email_verified_at = NULL WHERE email = ?`,
+		`UPDATE orgs SET plan = 'enterprise-2099' WHERE id = ?`,
+	)
+		.bind(userId)
+		.run()
+	await env.APP_DB.prepare(
+		`UPDATE users SET email_verified_at = NULL WHERE email = ?`,
 	)
 		.bind(email)
 		.run()

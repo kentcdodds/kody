@@ -83,7 +83,8 @@ type WarningCandidate = UserEntitlementRow & {
 	email: string
 }
 
-const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('u')}`
+const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('o')}`
+const orgEntitlementJoinSql = `INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}`
 
 export type UserWarningResource =
 	| EntitlementResource
@@ -750,6 +751,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
@@ -774,6 +776,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
@@ -796,6 +799,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
@@ -818,6 +822,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
@@ -837,6 +842,7 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
 					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL

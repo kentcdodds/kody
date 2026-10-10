@@ -142,51 +142,37 @@ export async function seedAccount(input: {
 			? new Date().toISOString()
 			: input.emailVerifiedAt
 	const passwordHash = input.passwordHash ?? 'test-password-hash'
-	if (input.plan === undefined) {
-		await input.db
-			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
-				 VALUES (?, ?, ?, ?, ?)
-				 ON CONFLICT(email) DO UPDATE SET
-					username = excluded.username,
-					email_verified_at = excluded.email_verified_at,
-					stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-					updated_at = CURRENT_TIMESTAMP`,
-			)
-			.bind(
-				input.username,
-				input.email,
-				passwordHash,
-				emailVerifiedAt,
-				stableUserId,
-			)
-			.run()
-	} else {
-		await input.db
-			.prepare(
-				`INSERT INTO users (username, email, password_hash, email_verified_at, plan, stable_user_id)
-				 VALUES (?, ?, ?, ?, ?, ?)
-				 ON CONFLICT(email) DO UPDATE SET
-					username = excluded.username,
-					email_verified_at = excluded.email_verified_at,
-					plan = excluded.plan,
-					stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
-					updated_at = CURRENT_TIMESTAMP`,
-			)
-			.bind(
-				input.username,
-				input.email,
-				passwordHash,
-				emailVerifiedAt,
-				input.plan,
-				stableUserId,
-			)
-			.run()
-	}
+	await input.db
+		.prepare(
+			`INSERT INTO users (username, email, password_hash, email_verified_at, stable_user_id)
+			 VALUES (?, ?, ?, ?, ?)
+			 ON CONFLICT(email) DO UPDATE SET
+				username = excluded.username,
+				email_verified_at = excluded.email_verified_at,
+				stable_user_id = COALESCE(users.stable_user_id, excluded.stable_user_id),
+				updated_at = CURRENT_TIMESTAMP`,
+		)
+		.bind(
+			input.username,
+			input.email,
+			passwordHash,
+			emailVerifiedAt,
+			stableUserId,
+		)
+		.run()
 	await ensurePersonalOrg(input.db, {
 		stableUserId,
 		username: input.username,
+		...(input.plan === undefined ? {} : { plan: input.plan }),
 	})
+	if (input.plan !== undefined) {
+		await input.db
+			.prepare(
+				`UPDATE orgs SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			)
+			.bind(input.plan, stableUserId)
+			.run()
+	}
 
 	const row = await input.db
 		.prepare(`SELECT id FROM users WHERE email = ?`)

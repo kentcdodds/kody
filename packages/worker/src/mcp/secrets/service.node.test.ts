@@ -43,10 +43,16 @@ async function createSecretEnv(
 		const stableUserId = testStableUserIdFromEmail(input.email)
 		sqlite
 			.prepare(
-				`INSERT INTO users (id, username, email, password_hash, stable_user_id, plan)
-				 VALUES (1, 'planned', ?, 'hash', ?, ?)`,
+				`INSERT INTO users (id, username, email, password_hash, stable_user_id)
+				 VALUES (1, 'planned', ?, 'hash', ?)`,
 			)
-			.run(input.email, stableUserId, input.plan ?? null)
+			.run(input.email, stableUserId)
+		sqlite
+			.prepare(
+				`INSERT INTO orgs (id, slug, plan, created_at, updated_at)
+				 VALUES (?, 'planned', ?, '2026-07-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z')`,
+			)
+			.run(stableUserId, input.plan ?? 'free')
 		if (input.seededSecretCount) {
 			sqlite
 				.prepare(

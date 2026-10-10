@@ -402,10 +402,11 @@ async function queryDynamicWorkerCost(
 			.first<{ unique_worker_days: number }>(),
 		db
 			.prepare(
-				`SELECT u.stable_user_id, u.username, u.plan, u.stripe_plan,
-					u.stripe_price_id, r.event_count
+				`SELECT u.stable_user_id, u.username, o.plan, o.stripe_plan,
+					o.stripe_price_id, r.event_count
 				 FROM usage_rollups r
-				 INNER JOIN users u ON u.stable_user_id = r.user_id
+				 INNER JOIN orgs o ON o.id = r.user_id${andLiveDeletedAtSql('o')}
+				 INNER JOIN users u ON u.stable_user_id = o.id
 				 WHERE r.month = ?
 					AND r.metric = 'dynamic_worker_day'
 					AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
@@ -562,12 +563,13 @@ async function listActiveUsersForEntitlementSweep(
 	db: D1Database,
 	currentMonth: string,
 ): Promise<Array<ActiveUserRow>> {
-	const entitlementColumns = userEntitlementColumnsSql('u')
+	const entitlementColumns = userEntitlementColumnsSql('o')
 	const rows = await db
 		.prepare(
 			`SELECT u.stable_user_id, u.username, ${entitlementColumns}, SUM(r.event_count) AS event_count
 			 FROM usage_rollups r
 			 INNER JOIN users u ON u.stable_user_id = r.user_id
+			 INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
 			 WHERE r.month = ?
 				AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 				AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}

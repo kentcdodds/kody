@@ -64,9 +64,9 @@ const publicFreeEntitlement: UserEntitlement = {
 }
 
 /**
- * `users` columns every entitlement resolution reads. Select these (with a
- * `u.` prefix via {@link userEntitlementColumnsSql}) wherever a sweep
- * already has the row, then call {@link resolveUserEntitlementFromRow}.
+ * Org columns every entitlement resolution reads. Select these (with an
+ * `o.` prefix via {@link userEntitlementColumnsSql}) wherever a sweep
+ * already has the org row, then call {@link resolveUserEntitlementFromRow}.
  */
 export const userEntitlementColumns = [
 	'plan',
@@ -260,7 +260,7 @@ export async function resolveUserEntitlementFromRow(input: {
  * contexts with a blank/missing email reverse-resolve by stable id. Missing or
  * invalid stable ids still fail closed to public `free` without touching D1.
  *
- * Effective plan = f(manual users.plan, users.stripe_plan, unexpired
+ * Effective plan = f(manual orgs.plan, orgs.stripe_plan, unexpired
  * Pro overlays): the higher-ranked of the manual grant and Stripe
  * subscription plan, then a public Pro overlay when the later of the
  * second-agent gift and stacked referral credit is still active and the
@@ -274,14 +274,13 @@ async function loadEntitlementRowForStableUserId(
 	input: { stableUserId: string; email: string | null | undefined },
 ): Promise<UserEntitlementRow | null> {
 	const orgColumns = userEntitlementColumnsSql('o')
-	const userColumns = userEntitlementColumnsSql('u')
 	const email = input.email?.trim().toLowerCase()
 
 	// When email is provided, require a live users row for (email, stable id)
 	// before reading org billing — a mismatched caller context must not inherit
-	// another account's plan. Prefer orgs; fall back to users columns.
+	// another account's plan. Entitlement columns come from `orgs` only.
 	if (email) {
-		const orgRow = await db
+		return await db
 			.prepare(
 				`SELECT ${orgColumns}
 				 FROM users u
@@ -290,29 +289,11 @@ async function loadEntitlementRowForStableUserId(
 			)
 			.bind(email, input.stableUserId)
 			.first<UserEntitlementRow>()
-		if (orgRow) return orgRow
-
-		return await db
-			.prepare(
-				`SELECT ${userColumns}
-				 FROM users u
-				 WHERE u.email = ? AND u.stable_user_id = ? AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}`,
-			)
-			.bind(email, input.stableUserId)
-			.first<UserEntitlementRow>()
 	}
-
-	const orgRow = await db
-		.prepare(
-			`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
-		)
-		.bind(input.stableUserId)
-		.first<UserEntitlementRow>()
-	if (orgRow) return orgRow
 
 	return await db
 		.prepare(
-			`SELECT ${userColumns} FROM users u WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
+			`SELECT ${orgColumns} FROM orgs o WHERE o.id = ?${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(input.stableUserId)
 		.first<UserEntitlementRow>()
@@ -467,8 +448,8 @@ export async function findCachedUserAccountByStableUserId(
 }
 
 /**
- * Reverse-resolve a stable MCP userId back to the account email, plan, and
- * verified-email state via one indexed `users.stable_user_id` point read.
+ * Reverse-resolve a stable MCP userId back to the account email, personal-org
+ * plan, and verified-email state via the indexed `users.stable_user_id`.
  * Only call this on paths that genuinely have no caller context email (for
  * example package-runtime contexts acting with only the stable userId);
  * inbound email routing resolves accounts via the indexed username lookup
@@ -482,9 +463,10 @@ export async function findUserAccountByStableUserId(
 	if (!trimmed) return null
 	const row = await db
 		.prepare(
-			`SELECT email, plan, email_verified_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			`SELECT u.email, o.plan, u.email_verified_at
+			 FROM users u
+			 INNER JOIN orgs o ON o.id = u.stable_user_id
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(trimmed)
 		.first<{

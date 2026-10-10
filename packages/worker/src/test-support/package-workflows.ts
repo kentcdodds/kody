@@ -415,10 +415,10 @@ export function createWorkflowRunsDatabase(options?: {
 		sqlite
 			.prepare(
 				`INSERT INTO users (
-					username, email, password_hash, email_verified_at, plan, stable_user_id
-				) VALUES (?, ?, 'x', ?, ?, ?)`,
+					username, email, password_hash, email_verified_at, stable_user_id
+				) VALUES (?, ?, 'x', ?, ?)`,
 			)
-			.run(username, user.email, now, user.plan ?? 'free', stableUserId)
+			.run(username, user.email, now, stableUserId)
 	}
 	const defaultSavedPackage: Record<string, unknown> = {
 		id: 'pkg-1',

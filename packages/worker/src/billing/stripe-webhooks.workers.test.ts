@@ -5,6 +5,7 @@ import { createBillingLinkReference } from './billing-config.ts'
 import { buildStripeWebhookSignatureHeader } from './stripe-webhook-signature.ts'
 import { handleStripeWebhookRequest } from './stripe-webhooks.ts'
 import { readCreditWallet } from './credit-wallet.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCreditWalletTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -41,24 +42,28 @@ async function seedUser(input: {
 }) {
 	await ensureCreditWalletTestSchema(env.APP_DB)
 	const stableUserId = testStableUserIdFromEmail(input.email)
+	const username = `wh-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan,
-			stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
-			`wh-${crypto.randomUUID().slice(0, 8)}`,
+			username,
 			input.email,
 			'test-password-hash',
 			now.toISOString(),
 			stableUserId,
-			'free',
-			input.stripeCustomerId ?? null,
-			input.stripePlan ?? null,
-			null,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId,
+		username,
+		plan: 'free',
+		stripeCustomerId: input.stripeCustomerId ?? null,
+		stripePlan: input.stripePlan ?? null,
+		createdAt: now.toISOString(),
+	})
 	const row = await env.APP_DB.prepare(`SELECT id FROM users WHERE email = ?`)
 		.bind(input.email)
 		.first<{ id: number }>()
@@ -104,8 +109,10 @@ function readReferral<T>(referee: SeededUser, columns: string) {
 
 function readUserBilling(userId: number) {
 	return env.APP_DB.prepare(
-		`SELECT stripe_customer_id, stripe_plan, stripe_plan_refreshed_at
-		 FROM users WHERE id = ?`,
+		`SELECT o.stripe_customer_id, o.stripe_plan, o.stripe_plan_refreshed_at
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id = ?`,
 	)
 		.bind(userId)
 		.first()
@@ -399,7 +406,10 @@ test('invoice.paid rewards both parties once and ignores $0 trial invoices', asy
 	const rewarded = { status: 'rewarded', reward_invoice_id: 'in_paid' }
 	expect(await rewardState()).toEqual(rewarded)
 	const expiries = await env.APP_DB.prepare(
-		`SELECT referral_standard_credit_expires_at FROM users WHERE id IN (?, ?)`,
+		`SELECT o.referral_standard_credit_expires_at
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id IN (?, ?)`,
 	)
 		.bind(referrer.id, referee.id)
 		.all()

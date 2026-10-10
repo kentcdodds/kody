@@ -362,7 +362,7 @@ export async function latestReferrerPaidPeriodEnd(input: {
 	referrerStableUserId: string
 }): Promise<string | null> {
 	const row = await input.env.APP_DB.prepare(
-		`SELECT stripe_customer_id FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+		`SELECT stripe_customer_id FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 	)
 		.bind(input.referrerStableUserId)
 		.first<{ stripe_customer_id: string | null }>()
@@ -409,7 +409,7 @@ async function handleInvoicePaid(input: {
 	if (!qualifies) return
 
 	const user = await input.env.APP_DB.prepare(
-		`SELECT stable_user_id FROM users WHERE stripe_customer_id = ?${andLiveDeletedAtSql()}`,
+		`SELECT id AS stable_user_id FROM orgs WHERE stripe_customer_id = ? AND deleted_at IS NULL`,
 	)
 		.bind(customerId)
 		.first<{ stable_user_id: string }>()
