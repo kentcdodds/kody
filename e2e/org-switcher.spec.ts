@@ -37,7 +37,13 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	await waitForClientHydration(page)
 	await page.getByLabel('Name').fill(`Pinned ${runId}`)
 	await expect(page.getByLabel('Handle')).toHaveValue(`pinned-${runId}`)
-	await page.getByRole('button', { name: 'Create organization' }).click()
+	await page
+		.getByRole('button', { name: 'Create organization', exact: true })
+		.click()
+	await expect(page.getByTestId('create-organization-confirm')).toContainText(
+		`kody.codes/@pinned-${runId}`,
+	)
+	await page.getByRole('button', { name: 'Yes, create organization' }).click()
 	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}$`))
 	await expect(
 		page.getByRole('heading', { level: 1, name: `Pinned ${runId}` }),

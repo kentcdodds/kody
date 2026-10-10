@@ -1,6 +1,3 @@
-import { personalOrgId } from '@kody-internal/shared/owner-person-ids.ts'
-import { utcSqliteTimestamp } from '@kody-internal/shared/date-keys.ts'
-import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import {
@@ -9,36 +6,15 @@ import {
 	logAuditEvent,
 } from '#worker/audit-log.ts'
 import { loadAccountProfileData } from '#app/account-profile-data.ts'
-import { invalidatePackageAppOwnerCache } from '#app/package-app-owner.ts'
-import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
-import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { type ProfileVisibility } from '#universal/loader-data.ts'
 import { type routes } from '#universal/routes.ts'
 import {
-	getEffectiveUsernameValidationError,
 	normalizeUsername,
-	usernameNotPersistedError,
-	usernameReservedClaimError,
-	usernameTakenError,
+	usernamePermanentError,
 } from '#worker/identity/username.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
-import { retireUsername } from '#worker/community/package-url.ts'
 import { updateCommunityProfile } from '#worker/community/profile-service.ts'
-import {
-	republishCommunityListingsAfterUsernameChange,
-	updatePackagesForUsernameChange,
-} from '#worker/package-registry/username-change-packages.ts'
-import { createDb, usersTable } from '#worker/db.ts'
-import {
-	renameUserHandle,
-	rollbackUserHandleRename,
-} from '#worker/orgs/provision.ts'
-import { isUsernameClaimedInIdentity } from '#worker/identity/generated-username.ts'
-
-type AuthenticatedUser = NonNullable<
-	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
->
 
 function readOptionalString(
 	body: Record<string, unknown>,
@@ -61,8 +37,6 @@ function readProfileVisibility(
 }
 
 export function createAccountProfileApiHandler(env: Env) {
-	const db = createDb(env.APP_DB)
-
 	return {
 		middleware: [],
 		async handler({ request, url }) {
@@ -106,290 +80,13 @@ export function createAccountProfileApiHandler(env: Env) {
 			}
 
 			const requestIp = getRequestIp(request) ?? undefined
-			const previousUsername = user.username
-			let nextUser: AuthenticatedUser = user
-			let usernameChangeExtras: Record<string, unknown> = {}
 
-			// An unchanged username is a no-op rather than a validated update so
-			// accounts with grandfathered (e.g. reserved) usernames can still
-			// save display name, bio, and visibility from the combined form.
-			const username = hasUsername ? normalizeUsername(record.username) : ''
-			const usernameChanged = hasUsername && username !== previousUsername
-
-			if (usernameChanged) {
-				const usernameError = await getEffectiveUsernameValidationError(
-					username,
-					env,
-				)
-				if (usernameError) {
-					return jsonResponse(
-						{
-							ok: false,
-							error:
-								usernameError === 'This username is reserved.'
-									? usernameReservedClaimError(username)
-									: usernameError,
-						},
-						400,
-					)
-				}
-
-				if (
-					await isUsernameClaimedInIdentity(env.APP_DB, username, {
-						exceptStableUserId: personalOrgId(user.mcpUser.userId),
-					})
-				) {
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'account',
-						action: 'update_username',
-						result: 'failure',
-						email: user.email,
-						ip: requestIp,
-						path: url.pathname,
-						reason: 'username_exists',
-					})
-					return jsonResponse(
-						{ ok: false, error: usernameTakenError(username) },
-						409,
-					)
-				}
-
-				const baseUrl = getAppBaseUrl({ env, requestUrl: request.url })
-				const packageUserId = personalOrgId(user.mcpUser.userId)
-
-				// Claim the username first so concurrent renames lose on the unique
-				// constraint before any package publishes use the new scope.
-				try {
-					await db.update(usersTable, user.userId, {
-						username,
-						updated_at: utcSqliteTimestamp(),
-					})
-				} catch (error) {
-					if (getUniqueConstraintField(error) === 'username') {
-						void logAuditEvent({
-							db: auditDatabaseFromEnv(env),
-							category: 'account',
-							action: 'update_username',
-							result: 'failure',
-							email: user.email,
-							ip: requestIp,
-							path: url.pathname,
-							reason: 'username_exists',
-						})
-						return jsonResponse(
-							{ ok: false, error: usernameTakenError(username) },
-							409,
-						)
-					}
-					throw error
-				}
-
-				// Invalidate immediately after the claim so same-isolate package-app
-				// serve sees the new username even if later package/community work
-				// fails; rollback below invalidates again after restoring.
-				invalidatePackageAppOwnerCache({ stableUserId: packageUserId })
-
-				try {
-					await renameUserHandle(env.APP_DB, {
-						stableUserId: packageUserId,
-						oldUsername: previousUsername,
-						newUsername: username,
-					})
-				} catch (error) {
-					try {
-						await rollbackUserHandleRename(env.APP_DB, {
-							stableUserId: packageUserId,
-							claimedUsername: username,
-							restoreUsername: previousUsername,
-						})
-					} catch (rollbackError) {
-						console.error(
-							JSON.stringify({
-								message: 'username-change handle rollback failed',
-								userId: packageUserId,
-								error: getErrorMessage(rollbackError),
-							}),
-						)
-					}
-					try {
-						await db.update(usersTable, user.userId, {
-							username: previousUsername,
-							updated_at: utcSqliteTimestamp(),
-						})
-						invalidatePackageAppOwnerCache({
-							stableUserId: packageUserId,
-						})
-					} catch (rollbackError) {
-						console.error(
-							JSON.stringify({
-								message:
-									'username-change user rollback failed after handle error',
-								userId: packageUserId,
-								error: getErrorMessage(rollbackError),
-							}),
-						)
-					}
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'account',
-						action: 'update_username',
-						result: 'failure',
-						email: user.email,
-						ip: requestIp,
-						path: url.pathname,
-						reason: 'handle_update_failed',
-					})
-					return jsonResponse(
-						{
-							ok: false,
-							error: `Username was not changed because handle updates failed: ${getErrorMessage(error)}`,
-						},
-						500,
-					)
-				}
-
-				const claimed = await db.findOne(usersTable, {
-					where: { id: user.userId },
-				})
-				if (!claimed || claimed.username !== username) {
-					return jsonResponse(
-						{ ok: false, error: usernameNotPersistedError(username) },
-						500,
-					)
-				}
-
-				let packageUpdate
-				try {
-					packageUpdate = await updatePackagesForUsernameChange({
-						env,
-						baseUrl,
-						userId: packageUserId,
-						previousUsername,
-						nextUsername: username,
-					})
-				} catch (error) {
-					try {
-						await rollbackUserHandleRename(env.APP_DB, {
-							stableUserId: packageUserId,
-							claimedUsername: username,
-							restoreUsername: previousUsername,
-						})
-					} catch (rollbackError) {
-						console.error(
-							JSON.stringify({
-								message: 'username-change handle rollback failed',
-								userId: packageUserId,
-								error: getErrorMessage(rollbackError),
-							}),
-						)
-					}
-					try {
-						await db.update(usersTable, user.userId, {
-							username: previousUsername,
-							updated_at: utcSqliteTimestamp(),
-						})
-						invalidatePackageAppOwnerCache({
-							stableUserId: packageUserId,
-						})
-					} catch (rollbackError) {
-						console.error(
-							JSON.stringify({
-								message:
-									'username-change user rollback failed after package error',
-								userId: packageUserId,
-								error: getErrorMessage(rollbackError),
-							}),
-						)
-					}
-					void logAuditEvent({
-						db: auditDatabaseFromEnv(env),
-						category: 'account',
-						action: 'update_username',
-						result: 'failure',
-						email: user.email,
-						ip: requestIp,
-						path: url.pathname,
-						reason: 'package_scope_update_failed',
-					})
-					return jsonResponse(
-						{
-							ok: false,
-							error: `Username was not changed because package updates failed: ${getErrorMessage(error)}`,
-						},
-						500,
-					)
-				}
-
-				const communityPackageIds = packageUpdate.updatedPackages
-					.filter((entry) => entry.shouldRepublishCommunityListing)
-					.map((entry) => entry.packageId)
-				const communityRepublish =
-					communityPackageIds.length > 0
-						? await republishCommunityListingsAfterUsernameChange({
-								env,
-								baseUrl,
-								userId: packageUserId,
-								packageIds: communityPackageIds,
-							})
-						: { republishedPackageIds: [], warnings: [] }
-
-				// Every canonical package URL for this user just moved, so retire the
-				// old username to keep links shared before the rename resolving. The
-				// rename itself has already succeeded here: a failure costs
-				// redirects, not the account change.
-				try {
-					await retireUsername({
-						db: env.APP_DB,
-						oldUsername: previousUsername,
-						newUsername: username,
-						userId: packageUserId,
-					})
-				} catch (error) {
-					console.error(
-						JSON.stringify({
-							message: 'username retirement write failed',
-							userId: packageUserId,
-							error: getErrorMessage(error),
-						}),
-					)
-				}
-
-				void logAuditEvent({
-					db: auditDatabaseFromEnv(env),
-					category: 'account',
-					action: 'update_username',
-					result: 'success',
-					email: user.email,
-					ip: requestIp,
-					path: url.pathname,
-				})
-
-				const packageCount = packageUpdate.updatedPackages.length
-				const packageSummary =
-					packageCount === 0
-						? null
-						: `Updated ${packageCount} package${packageCount === 1 ? '' : 's'} to the new @${username} scope.`
-				const communityWarning =
-					communityRepublish.warnings.length > 0
-						? communityRepublish.warnings.join(' ')
-						: null
-
-				usernameChangeExtras = {
-					packagesUpdated: packageCount,
-					communityListingsRepublished:
-						communityRepublish.republishedPackageIds.length,
-					...(packageSummary ? { packageUpdateMessage: packageSummary } : {}),
-					...(communityWarning
-						? { communityUpdateWarning: communityWarning }
-						: {}),
-				}
-				nextUser = {
-					...user,
-					username,
-					displayName: username,
-					mcpUser: { ...user.mcpUser, displayName: username },
-				} satisfies AuthenticatedUser
+			// An unchanged username is a no-op so accounts with grandfathered (e.g.
+			// reserved) usernames can still save display name, bio, and visibility
+			// from the combined form. Any other username is a rename, and usernames
+			// are permanent.
+			if (hasUsername && normalizeUsername(record.username) !== user.username) {
+				return jsonResponse({ ok: false, error: usernamePermanentError }, 400)
 			}
 
 			if (hasProfileFields) {
@@ -421,21 +118,7 @@ export function createAccountProfileApiHandler(env: Env) {
 				})
 			}
 
-			const persisted = await loadAccountProfileData(nextUser, env)
-			if (usernameChanged && persisted.username !== username) {
-				return jsonResponse(
-					{
-						ok: false,
-						error: usernameNotPersistedError(username),
-					},
-					500,
-				)
-			}
-
-			return jsonResponse({
-				...persisted,
-				...usernameChangeExtras,
-			})
+			return jsonResponse(await loadAccountProfileData(user, env))
 		},
 	} satisfies Action<typeof routes.accountProfileApi>
 }

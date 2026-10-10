@@ -19,7 +19,6 @@ import { updateOrgProfile } from '#worker/orgs/org-profile.ts'
 import { softDeleteOrg } from '#worker/orgs/soft-delete.ts'
 import { type OrgSettingsLoaderData } from '#universal/loader-data.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
-import { orgSettingsPath } from '#universal/org-pages.ts'
 import { routes } from '#universal/routes.ts'
 
 function withLastUsedOrg(request: Request, slug: string, response: Response) {
@@ -160,28 +159,21 @@ export function createOrgSettingsPostHandler(env: Env) {
 			if (!body || typeof body !== 'object') {
 				return jsonResponse({ ok: false, error: 'Invalid request body.' }, 400)
 			}
-			const updated = await updateOrgProfile(env.APP_DB, env, {
+			const updated = await updateOrgProfile(env.APP_DB, {
 				orgId: access.org.id,
 				displayName:
 					typeof body.displayName === 'string' ? body.displayName : undefined,
 				slug: typeof body.slug === 'string' ? body.slug : undefined,
 			})
 			if (!updated.ok) {
-				const status = updated.code === 'conflict' ? 409 : 400
-				return jsonResponse({ ok: false, error: updated.error }, status)
+				return jsonResponse({ ok: false, error: updated.error }, 400)
 			}
 			const next = {
 				...access.org,
 				slug: updated.slug,
 				displayName: updated.displayName,
 			}
-			return jsonResponse({
-				...(await loadOrgSettingsData({ env, user, org: next })),
-				redirectTo:
-					updated.slug === access.org.slug
-						? null
-						: orgSettingsPath(updated.slug),
-			})
+			return jsonResponse(await loadOrgSettingsData({ env, user, org: next }))
 		},
 	} satisfies Action<typeof routes.orgSettingsPost>
 }

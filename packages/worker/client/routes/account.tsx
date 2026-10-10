@@ -18,12 +18,10 @@ import {
 	typography,
 } from '#universal/styles/tokens.ts'
 import { getGhostButtonCss } from '#universal/styles/style-primitives.ts'
-import { queueSessionRefresh } from '#client/session.ts'
 import { toast } from '#client/toast.ts'
 import {
 	interpretAccountProfileSave,
 	readProfileFormValues,
-	usernameFormatError,
 } from '#client/routes/account-profile-save.ts'
 import {
 	type AccountStatus,
@@ -103,7 +101,6 @@ export function AccountRoute(handle: Handle) {
 	let emailVerificationDelivery: AccountProfileLoaderData['emailVerificationDelivery'] =
 		null
 	let username = ''
-	let draftUsername = ''
 	let draftDisplayName = ''
 	let draftBio = ''
 	let draftProfileVisibility: ProfileVisibility = 'public'
@@ -117,7 +114,6 @@ export function AccountRoute(handle: Handle) {
 	let avatarDropActive = false
 	let message: string | null = null
 	let messageTone: 'error' | 'info' = 'info'
-	let usernameSaveError: string | null = null
 	const accountConnections = createAccountConnections(handle)
 	const accountEmailClaims = createAccountEmailClaims(handle)
 	let consumedCallbackMessage = false
@@ -173,11 +169,8 @@ export function AccountRoute(handle: Handle) {
 		emailVerified = payload.emailVerified
 		emailVerificationDelivery = payload.emailVerificationDelivery ?? null
 		username = payload.username
-		if (!usernameSaveError) {
-			draftUsername = payload.username
-			message = null
-			messageTone = 'info'
-		}
+		message = null
+		messageTone = 'info'
 		applyProfileFields(payload)
 		accountEmailClaims.applyCurrentEmail(payload.email)
 	}
@@ -367,45 +360,16 @@ export function AccountRoute(handle: Handle) {
 		}
 	}
 
-	function updateDraftUsername(event: InputEvent) {
-		if (!(event.currentTarget instanceof HTMLInputElement)) return
-		draftUsername = event.currentTarget.value
-		if (usernameSaveError) usernameSaveError = null
-		handle.update()
-	}
-
 	async function handleProfileSubmit(event: SubmitEvent) {
 		event.preventDefault()
 		const submitted = readProfileFormValues(event.currentTarget, {
-			username: draftUsername,
 			displayName: draftDisplayName,
 			bio: draftBio,
 			profileVisibility: draftProfileVisibility,
 		})
-		draftUsername = submitted.username
 		draftDisplayName = submitted.displayName
 		draftBio = submitted.bio
 		draftProfileVisibility = submitted.profileVisibility
-		const nextUsername = submitted.username.trim()
-		if (!nextUsername) {
-			usernameSaveError = 'Username is required.'
-			message = usernameSaveError
-			messageTone = 'error'
-			handle.update()
-			return
-		}
-
-		const formatError = usernameFormatError(nextUsername)
-		const usernameChangeRequested =
-			nextUsername.toLowerCase() !== username.toLowerCase()
-		if (formatError && usernameChangeRequested) {
-			usernameSaveError = formatError
-			message = formatError
-			messageTone = 'error'
-			handle.update()
-			return
-		}
-
 		const profileFieldsChanged =
 			submitted.displayName !== savedDisplayName ||
 			submitted.bio !== savedBio ||
@@ -414,7 +378,6 @@ export function AccountRoute(handle: Handle) {
 		saveStatus = 'saving'
 		message = null
 		messageTone = 'info'
-		usernameSaveError = null
 		handle.update()
 
 		try {
@@ -426,7 +389,6 @@ export function AccountRoute(handle: Handle) {
 				},
 				credentials: 'include',
 				body: JSON.stringify({
-					username: nextUsername,
 					displayName: submitted.displayName,
 					bio: submitted.bio,
 					profileVisibility: submitted.profileVisibility,
@@ -439,22 +401,15 @@ export function AccountRoute(handle: Handle) {
 			const payload = await readJson<
 				AccountProfileLoaderData & {
 					error?: string
-					packagesUpdated?: number
-					communityListingsRepublished?: number
-					packageUpdateMessage?: string
-					communityUpdateWarning?: string
 				}
 			>(response)
 			const result = interpretAccountProfileSave({
-				previousUsername: username,
-				requestedUsername: nextUsername,
 				profileFieldsChanged,
 				responseOk: response.ok,
 				payload,
 			})
 			switch (result.status) {
 				case 'error':
-					usernameSaveError = usernameChangeRequested ? result.message : null
 					message = result.message
 					messageTone = 'error'
 					toast.error(result.message)
@@ -471,15 +426,9 @@ export function AccountRoute(handle: Handle) {
 					emailVerified = payload.emailVerified
 					emailVerificationDelivery = payload.emailVerificationDelivery ?? null
 					username = payload.username
-					if (result.usernameChanged) {
-						draftUsername = payload.username
-					}
 					applyProfileFields(payload)
 					message = result.message
-					messageTone = payload.communityUpdateWarning ? 'error' : 'info'
-					if (result.usernameChanged) {
-						queueSessionRefresh()
-					}
+					messageTone = 'info'
 					return
 				default: {
 					const _exhaustive: never = result
@@ -491,7 +440,6 @@ export function AccountRoute(handle: Handle) {
 		} catch (error) {
 			const errorMessage =
 				error instanceof Error ? error.message : 'Unable to save profile.'
-			if (usernameChangeRequested) usernameSaveError = errorMessage
 			message = errorMessage
 			messageTone = 'error'
 			toast.error(errorMessage)
@@ -530,18 +478,11 @@ export function AccountRoute(handle: Handle) {
 		const isSaving = saveStatus === 'saving'
 		const emailClaims = accountEmailClaims.snapshot
 		const isSendingEmailChange = emailClaims.emailChangeStatus === 'sending'
-		const normalizedDraftUsername = draftUsername.trim().toLowerCase()
 		const normalizedDraftEmail = emailClaims.draftEmail.trim().toLowerCase()
 		const profileUnchanged =
-			normalizedDraftUsername === username &&
 			draftDisplayName === savedDisplayName &&
 			draftBio === savedBio &&
 			draftProfileVisibility === savedProfileVisibility
-		const liveUsernameFormatError =
-			normalizedDraftUsername && normalizedDraftUsername !== username
-				? usernameFormatError(draftUsername)
-				: null
-		const usernameFieldError = usernameSaveError ?? liveUsernameFormatError
 		const view = accountViewFor(currentHref) ?? 'profile'
 
 		return (
@@ -589,7 +530,6 @@ export function AccountRoute(handle: Handle) {
 							email,
 							emailVerified,
 							username,
-							draftUsername,
 							draftDisplayName,
 							draftBio,
 							draftProfileVisibility,
@@ -600,19 +540,16 @@ export function AccountRoute(handle: Handle) {
 							isSaving,
 							isSendingEmailChange,
 							profileUnchanged,
-							normalizedDraftUsername,
 							normalizedDraftEmail,
 							emailChangeMessage: emailClaims.emailChangeMessage,
 							emailChangeTone: emailClaims.emailChangeTone,
 							emailChangeOpen: emailClaims.emailChangeOpen,
-							usernameFieldError,
 							onProfileSubmit: handleProfileSubmit,
 							onEmailChangeSubmit: (event) => {
 								void accountEmailClaims.handleEmailChangeSubmit(event, email)
 							},
 							onAvatarSelected: handleAvatarSelected,
 							onRemoveAvatar: () => void handleRemoveAvatar(),
-							onDraftUsernameInput: updateDraftUsername,
 							onDraftDisplayNameChange: (value) => {
 								draftDisplayName = value
 								handle.update()

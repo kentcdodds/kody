@@ -79,7 +79,7 @@ test('snapshotUsersFromOpenedCredentials keeps orgSlug and fills roster fallback
 			{
 				role: 'dave',
 				email: 'rh-dave@example.com',
-				username: 'rh-dave-renamed',
+				username: 'rh-dave',
 				orgSlug: 'rh-dave',
 				password: 'secret',
 			},
@@ -94,7 +94,7 @@ test('snapshotUsersFromOpenedCredentials keeps orgSlug and fills roster fallback
 		{
 			role: 'dave',
 			email: 'rh-dave@example.com',
-			username: 'rh-dave-renamed',
+			username: 'rh-dave',
 			orgSlug: 'rh-dave',
 			password: 'secret',
 		},

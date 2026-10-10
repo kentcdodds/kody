@@ -7,6 +7,8 @@ const shared = {
 	turnstileSiteKey: null,
 	isSubmitting: false,
 	onFieldEdit: () => {},
+	signupUsername: '',
+	onSignupUsernameInput: () => {},
 }
 
 test('credential errors associate the status message with email and password', async () => {

@@ -24,7 +24,6 @@ import {
  * are renameable, so a URL that no longer resolves directly is followed through
  * the retirement tables below before it is treated as missing.
  */
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export function getCommunityPackageHref(input: {
 	username: string
 	kodyId: string
@@ -61,12 +60,6 @@ export type PackagePageUrlTarget =
 			listingId: string | null
 			listingKodyId: string | null
 	  }
-
-// A rename chain collapses in one hop because retirement rows point at the
-// package, not at the next name in the chain. Username hops can still stack (a
-// user renaming twice retires two names), so allow a few and stop rather than
-// following a cycle forever.
-const maxUsernameRedirectHops = 4
 
 function normalizeSlug(value: string) {
 	return value.trim().toLowerCase()
@@ -139,15 +132,15 @@ export async function resolveCommunityPackageUrl(input: {
 }): Promise<CommunityPackageUrlTarget | null> {
 	const requestedUsername = input.username.trim()
 	const requestedSlug = input.kodyId.trim()
-	let username = normalizeUsername(requestedUsername)
+	const username = normalizeUsername(requestedUsername)
 	const slug = normalizeSlug(requestedSlug)
 	if (!username || !kodyPackageIdPattern.test(slug)) return null
 
 	// A pair that differs only in spelling still moves the visitor, so the
 	// canonical form is served from one URL instead of several.
-	let moved = username !== requestedUsername || slug !== requestedSlug
+	const moved = username !== requestedUsername || slug !== requestedSlug
 
-	for (let hop = 0; hop <= maxUsernameRedirectHops; hop++) {
+	{
 		const identity = await findPublicUserIdentityByUsername({
 			db: input.db,
 			username,
@@ -177,17 +170,6 @@ export async function resolveCommunityPackageUrl(input: {
 				kodyId: listing.kodyId,
 			}
 		}
-
-		// No live user owns the username. A retired one resolves to whoever holds
-		// it now; a live `users.username` always wins, so reclaiming a released
-		// username cannot be hijacked by the previous holder's retirement row.
-		const currentUsername = await findCurrentUsernameForRetiredUsername({
-			db: input.db,
-			oldUsername: username,
-		})
-		if (currentUsername == null || currentUsername === username) return null
-		username = currentUsername
-		moved = true
 	}
 	return null
 }
@@ -204,13 +186,13 @@ export async function resolvePackagePageUrl(input: {
 }): Promise<PackagePageUrlTarget | null> {
 	const requestedUsername = input.username.trim()
 	const requestedSlug = input.kodyId.trim()
-	let username = normalizeUsername(requestedUsername)
+	const username = normalizeUsername(requestedUsername)
 	const slug = normalizeSlug(requestedSlug)
 	if (!username || !kodyPackageIdPattern.test(slug)) return null
 
-	let moved = username !== requestedUsername || slug !== requestedSlug
+	const moved = username !== requestedUsername || slug !== requestedSlug
 
-	for (let hop = 0; hop <= maxUsernameRedirectHops; hop++) {
+	{
 		const identity = await findPublicUserIdentityByUsername({
 			db: input.db,
 			username,
@@ -287,63 +269,8 @@ export async function resolvePackagePageUrl(input: {
 				listingKodyId: currentListing?.kodyId ?? null,
 			}
 		}
-
-		const currentUsername = await findCurrentUsernameForRetiredUsername({
-			db: input.db,
-			oldUsername: username,
-		})
-		if (currentUsername == null || currentUsername === username) return null
-		username = currentUsername
-		moved = true
 	}
 	return null
-}
-
-async function findCurrentUsernameForRetiredUsername(input: {
-	db: D1Database
-	oldUsername: string
-}): Promise<string | null> {
-	const row = await input.db
-		.prepare(
-			`SELECT users.username AS username
-			FROM username_redirects
-			JOIN users ON users.stable_user_id = username_redirects.user_id
-			WHERE username_redirects.old_username = ?${andLiveDeletedAtSql()}`,
-		)
-		.bind(input.oldUsername)
-		.first<{ username: string | null }>()
-	const username = row?.username?.trim()
-	return username ? username : null
-}
-
-/**
- * Retire the username a user just changed away from. Claiming a username also
- * clears any retirement row for it: the claim is authoritative, and a stale row
- * would otherwise outlive the name it points away from.
- */
-export async function retireUsername(input: {
-	db: D1Database
-	oldUsername: string
-	newUsername: string
-	userId: string
-}) {
-	const oldUsername = normalizeUsername(input.oldUsername)
-	const newUsername = normalizeUsername(input.newUsername)
-	if (!oldUsername || oldUsername === newUsername) return
-	await input.db.batch([
-		input.db
-			.prepare(`DELETE FROM username_redirects WHERE old_username = ?`)
-			.bind(newUsername),
-		input.db
-			.prepare(
-				`INSERT INTO username_redirects (old_username, user_id)
-				VALUES (?, ?)
-				ON CONFLICT (old_username) DO UPDATE SET
-					user_id = excluded.user_id,
-					created_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-			)
-			.bind(oldUsername, input.userId),
-	])
 }
 
 // Every redirect write goes to both tables until `package_kody_id_redirects`

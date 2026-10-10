@@ -1,3 +1,7 @@
+import {
+	handlePermanentNote,
+	handleUrlPreview,
+} from '@kody-internal/shared/handle-permanence.ts'
 import { css, ref, type Handle } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
@@ -94,7 +98,6 @@ export function OrgSettingsRoute(handle: Handle) {
 	})
 
 	let draftName = ''
-	let draftSlug = ''
 	let appliedKey = ''
 	let message: string | null = null
 	let messageTone: 'info' | 'error' = 'info'
@@ -111,7 +114,6 @@ export function OrgSettingsRoute(handle: Handle) {
 		if (key === appliedKey) return
 		appliedKey = key
 		draftName = payload.org.displayName ?? ''
-		draftSlug = payload.org.slug
 	}
 
 	function closeDialog() {
@@ -140,10 +142,7 @@ export function OrgSettingsRoute(handle: Handle) {
 						'Content-Type': 'application/json',
 					},
 					credentials: 'include',
-					body: JSON.stringify({
-						displayName: draftName,
-						slug: draftSlug,
-					}),
+					body: JSON.stringify({ displayName: draftName }),
 				},
 			)
 			const payload = (await response
@@ -155,10 +154,6 @@ export function OrgSettingsRoute(handle: Handle) {
 			}
 			if (!response.ok || !payload?.ok) {
 				throw new Error(payload?.error || 'Unable to save settings.')
-			}
-			if (payload.redirectTo) {
-				window.location.assign(payload.redirectTo)
-				return
 			}
 			appliedKey = ''
 			settingsData.reload(handle, readCurrentRouterHref(handle))
@@ -435,39 +430,22 @@ export function OrgSettingsRoute(handle: Handle) {
 											]}
 										/>
 									</label>
-									<label mix={css(accountFieldCss)}>
+									<div mix={css(accountFieldCss)}>
 										<span mix={css(accountFieldLabelCss)}>Handle</span>
-										<span mix={css(slugFieldCss)}>
-											<span aria-hidden="true" mix={css(slugPrefixCss)}>
-												kody.codes/@
-											</span>
-											<input
-												name="slug"
-												required
-												minLength={3}
-												maxLength={32}
-												pattern="[a-z0-9][a-z0-9\-]{1,30}[a-z0-9]"
-												autoCapitalize="none"
-												autoComplete="off"
-												spellCheck={false}
-												value={draftSlug}
-												data-field-ring
-												mix={[
-													css(slugInputCss),
-													on('input', (event) => {
-														draftSlug = (
-															event.currentTarget as HTMLInputElement
-														).value.toLowerCase()
-														handle.update()
-													}),
-												]}
-											/>
-										</span>
-										<p mix={css(accountFieldNoteCss)}>
-											3 to 32 letters, numbers, and hyphens. Changing the handle
-											changes the organization's address.
+										<p
+											aria-describedby="org-settings-handle-note"
+											mix={css(handleValueCss)}
+										>
+											{handleUrlPreview(data.org.slug)}
 										</p>
-									</label>
+										<p
+											id="org-settings-handle-note"
+											mix={css(accountFieldNoteCss)}
+										>
+											{handlePermanentNote} Change the name above to change how
+											the organization appears.
+										</p>
+									</div>
 									<div mix={css(accountActionsCss)}>
 										<button
 											type="submit"
@@ -618,6 +596,12 @@ const identityNameCss = {
 	fontWeight: 650,
 }
 
+const handleValueCss = {
+	margin: 0,
+	fontFamily: typography.fontFamilyMono,
+	color: colors.text,
+}
+
 const identityDetailCss = {
 	fontSize: typography.fontSize.sm,
 	color: colors.textMuted,
@@ -628,33 +612,6 @@ const avatarActionsCss = {
 	flexWrap: 'wrap' as const,
 	gap: spacing.sm,
 	marginTop: spacing.md,
-}
-
-const slugFieldCss = {
-	display: 'flex',
-	alignItems: 'stretch',
-	minWidth: 0,
-}
-
-const slugPrefixCss = {
-	display: 'inline-flex',
-	alignItems: 'center',
-	paddingInline: '0.85rem',
-	borderRadius: '12px 0 0 12px',
-	border: `1.5px solid ${colors.fieldBorder}`,
-	borderRight: 'none',
-	backgroundColor: colors.background,
-	color: colors.textMuted,
-	fontSize: typography.fontSize.sm,
-	whiteSpace: 'nowrap' as const,
-}
-
-const slugInputCss = {
-	...accountInputCss,
-	flex: '1 1 auto',
-	minWidth: 0,
-	borderTopLeftRadius: 0,
-	borderBottomLeftRadius: 0,
 }
 
 const deleteDialogCss = {

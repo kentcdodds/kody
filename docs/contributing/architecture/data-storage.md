@@ -425,8 +425,8 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   profile, gift, and budget columns live on the org row. Soft-delete and actor
   columns exist on the row. See
   [decision 0063](../decisions/0063-teams-expand-orgs.md).
-- `handles` (0086): the username namespace. A personal org slug stays on the
-  original handle; a live username rename adds a new handle row.
+- `handles` (0086): the username namespace. Handles are permanent (no username
+  or org slug renames); rows left by pre-rule renames stay reserved.
 - `org_memberships` (0086): `(org_id, user_id)` with role `owner`, `member`, or
   `billing`. Signup writes the person as Owner of their personal org.
 - `platform_feedback`: attributed, user-approved Kody feedback and admin triage

@@ -57,7 +57,14 @@ test('a new user signs up, verifies email from the message, and reaches MCP conn
 		await page.getByLabel('Username').fill(username)
 		await page.getByLabel('Email').fill(email)
 		await page.getByLabel('Password', { exact: true }).fill(password)
-		await page.getByRole('button', { name: 'Create account' }).click()
+		// Handles are permanent: the first submit shows the final URL and asks once.
+		await page
+			.getByRole('button', { name: 'Create account', exact: true })
+			.click()
+		await expect(page.getByRole('status')).toContainText(
+			`kody.codes/@${username}`,
+		)
+		await page.getByRole('button', { name: 'Yes, create account' }).click()
 
 		await expect(page).toHaveURL(
 			/\/pending-verification(?:\?accountCreated=1)?$/,

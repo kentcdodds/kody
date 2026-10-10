@@ -531,9 +531,10 @@ export const accountUserDataTargets: ReadonlyArray<UserScopedDataTarget> = [
 		table: 'community_listings',
 		columns: ['owner_user_id'],
 	},
-	// Retired usernames and package slugs exist only to keep canonical package
-	// URLs resolving after a rename. They die with the account: once the
-	// packages are gone there is nothing left to redirect to.
+	// Retired usernames (no longer written now that handles are permanent, but
+	// the table still holds older rows until it is dropped) and retired package
+	// slugs die with the account: once the packages are gone there is nothing
+	// left to redirect to.
 	{ kind: 'user_id', table: 'username_redirects' },
 	{ kind: 'user_id', table: 'package_kody_id_redirects' },
 	{ kind: 'user_id', table: 'package_slug_redirects' },
