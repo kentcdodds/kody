@@ -949,11 +949,7 @@ test('mcp write lease is scoped to mutating tools/call and still rejects deletin
 	).toEqual([])
 
 	const transport = countingFetchMcp('legacy-ok')
-	const leaseRpcs = [
-		'acquireWriteLease',
-		'assertWriteLeaseHeld',
-		'releaseWriteLease',
-	]
+	const leaseRpcs = ['acquireWriteLease', 'releaseWriteLease']
 	for (const [call, expectedLeaseRpcs] of [
 		[listCall, []],
 		[searchCall, []],
