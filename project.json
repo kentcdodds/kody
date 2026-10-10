@@ -4,7 +4,16 @@
 	"targets": {
 		"typecheck": {
 			"executor": "nx:run-commands",
-			"inputs": ["workspace"],
+			"inputs": [
+				"{workspaceRoot}/package.json",
+				"{workspaceRoot}/package-lock.json",
+				"{workspaceRoot}/tsconfig*.json",
+				"{workspaceRoot}/*.ts",
+				"{workspaceRoot}/tools/**/*",
+				"{workspaceRoot}/e2e/**/*",
+				"{workspaceRoot}/.agents/**/*",
+				"{workspaceRoot}/packages/**/*"
+			],
 			"options": {
 				"command": "tsc -p tsconfig-tools-typecheck.json"
 			}
