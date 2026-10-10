@@ -73,6 +73,8 @@ export async function readEntitlementUsageSnapshot(input: {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
+	/** Paid seats pooling the rate limits; see `UserEntitlement.seats`. */
+	seats?: number
 	now?: Date
 }): Promise<EntitlementUsageSnapshot> {
 	const now = input.now ?? new Date()
@@ -84,6 +86,7 @@ export async function readEntitlementUsageSnapshot(input: {
 				resource,
 				input.ladder,
 				input.creditWallet,
+				input.seats,
 			) !== null,
 	)
 	const nonMeterResources = accountUsageEntitlementResources.filter(
@@ -145,6 +148,7 @@ export async function readEntitlementUsageSnapshot(input: {
 			plan: input.plan,
 			ladder: input.ladder,
 			creditWallet: input.creditWallet,
+			seats: input.seats,
 			weeklyCounts: meterCounts.weekly,
 		})
 		const limit = resolvePlanLimit(
@@ -152,6 +156,7 @@ export async function readEntitlementUsageSnapshot(input: {
 			resource,
 			input.ladder,
 			input.creditWallet,
+			input.seats,
 		)
 		// per_unit_max compares one candidate value (no accumulating
 		// usage) and a zero limit means the plan has no allowance, so a
@@ -211,6 +216,7 @@ function resolveSnapshotWeekWindow(input: {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
+	seats?: number
 	weeklyCounts: Partial<Record<DailyEntitlementResource, number>>
 }): EntitlementUsageWeekWindow | undefined {
 	if (!isWeeklyComputeWindowResource(input.resource)) return undefined
@@ -219,6 +225,7 @@ function resolveSnapshotWeekWindow(input: {
 		input.resource,
 		input.ladder,
 		input.creditWallet,
+		input.seats,
 	)
 	if (limit === null) return undefined
 	const current = input.weeklyCounts[input.resource] ?? 0

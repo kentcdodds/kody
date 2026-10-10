@@ -1,10 +1,12 @@
 /**
- * Mirrors the `usage_rollups` and `usage_attribution_daily` schemas for
+ * Mirrors the `usage_rollups`, `usage_attribution_daily`, and
+ * `usage_connection_daily` schemas for
  * `*.workers.test.ts` suites, which run against a local D1 database without
  * applying migrations.
  */
 export async function ensureUsageRollupsTestSchema(db: D1Database) {
 	const statements = [
+		`DROP TABLE IF EXISTS usage_connection_daily;`,
 		`DROP TABLE IF EXISTS usage_attribution_daily;`,
 		`DROP TABLE IF EXISTS usage_rollups;`,
 		`CREATE TABLE usage_rollups (
@@ -34,6 +36,21 @@ ON usage_rollups(user_id, month);`,
 );`,
 		`CREATE INDEX idx_usage_attribution_daily_user_month
 ON usage_attribution_daily(user_id, day);`,
+		`CREATE TABLE usage_connection_daily (
+	user_id TEXT NOT NULL,
+	day TEXT NOT NULL,
+	credential_kind TEXT NOT NULL,
+	holder_user_id TEXT NOT NULL,
+	credential_id TEXT NOT NULL,
+	package_id TEXT NOT NULL,
+	event_type TEXT NOT NULL,
+	units REAL NOT NULL DEFAULT 0,
+	updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+	PRIMARY KEY (
+		user_id, day, credential_kind, holder_user_id, credential_id,
+		package_id, event_type
+	)
+);`,
 	]
 	for (const statement of statements) {
 		await db.prepare(statement).run()

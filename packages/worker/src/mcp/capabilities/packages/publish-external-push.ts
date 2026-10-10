@@ -1,7 +1,4 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { z } from 'zod'
 import { canonicalJsonStringify } from '@kody-internal/shared/canonical-json.ts'
 import { resolveHostedPackageAppUrl } from '@kody-internal/shared/public-urls.ts'
@@ -28,7 +25,10 @@ import {
 	getStaticPackageDependentsSummary,
 	type StaticPackageDependentsSummary,
 } from '#worker/package-runtime/static-package-dependents.ts'
-import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
+import {
+	packageOwnerEntitlementEmail,
+	resolvePackageOwnerContext,
+} from '#worker/package-registry/package-owner.ts'
 import {
 	buildPackageTestHints,
 	type PackageTestHints,
@@ -968,10 +968,13 @@ export const publishExternalPushCapability = defineDomainCapability(
 				confirm_destructive_overwrite: args.confirm_destructive_overwrite,
 			}
 			const escalateStartedAt = Date.now()
+			// Key the durable re-entry to the package-owning org, not the actor's
+			// personal org. Team publishes (`@kody`, …) otherwise re-bind to the
+			// actor personal org and fail mid-rebuild after git accepted the push.
 			const outcome = await runWithDurableEscalation({
 				env: ctx.env,
-				userId: personalOrgId(user.userId),
-				userEmail: user.email,
+				userId: owner.ownerUserId,
+				userEmail: packageOwnerEntitlementEmail(owner),
 				lineage: requestLineage(requireMcpRequest(ctx.callerContext)),
 				budgetMs: defaultDurableEscalationBudgetMs,
 				idempotencyParts: buildExternalPublishIdempotencyParts(semanticInput),

@@ -1,9 +1,6 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { routes } from '#universal/routes.ts'
-import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { normalizeUsername } from '#worker/identity/username.ts'
 import { getPackageNameLeaf } from '#worker/package-registry/package-name.ts'
 import {
@@ -141,14 +138,14 @@ export async function resolveCommunityPackageUrl(input: {
 	const moved = username !== requestedUsername || slug !== requestedSlug
 
 	{
-		const identity = await findPublicUserIdentityByUsername({
+		const identity = await findPublicOwnerIdentityByHandle({
 			db: input.db,
-			username,
+			handle: username,
 		})
 		if (identity) {
 			const { listingAtSlug, found } = await findListingAndSavedPackageForSlug({
 				db: input.db,
-				ownerUserId: identity.mcpUserId,
+				ownerUserId: identity.ownerId,
 				slug,
 			})
 			const listing =
@@ -156,7 +153,7 @@ export async function resolveCommunityPackageUrl(input: {
 				(found
 					? await getActiveListingForPackage({
 							db: input.db,
-							ownerUserId: identity.mcpUserId,
+							ownerUserId: identity.ownerId,
 							packageId: found.savedPackage.id,
 						})
 					: null)
@@ -166,7 +163,7 @@ export async function resolveCommunityPackageUrl(input: {
 			return {
 				kind: moved || listing.kodyId !== slug ? 'redirect' : 'listing',
 				listingId: listing.id,
-				username: identity.username,
+				username: identity.handle,
 				kodyId: listing.kodyId,
 			}
 		}
@@ -193,12 +190,12 @@ export async function resolvePackagePageUrl(input: {
 	const moved = username !== requestedUsername || slug !== requestedSlug
 
 	{
-		const identity = await findPublicUserIdentityByUsername({
+		const identity = await findPublicOwnerIdentityByHandle({
 			db: input.db,
-			username,
+			handle: username,
 		})
 		if (identity) {
-			const ownerUserId = identity.mcpUserId
+			const ownerUserId = identity.ownerId
 			const { listingAtSlug, found } = await findListingAndSavedPackageForSlug({
 				db: input.db,
 				ownerUserId,
@@ -218,7 +215,7 @@ export async function resolvePackagePageUrl(input: {
 					: null)
 			if (!savedPackage && listing) {
 				savedPackage = await getSavedPackageById(input.db, {
-					userId: personalOrgId(ownerUserId),
+					userId: ownerUserId,
 					packageId: listing.packageId,
 				})
 			}
@@ -236,17 +233,17 @@ export async function resolvePackagePageUrl(input: {
 				return moved
 					? {
 							kind: 'redirect',
-							username: identity.username,
+							username: identity.handle,
 							kodyId: publicSlug,
-							userId: personalOrgId(ownerUserId),
+							userId: ownerUserId,
 							listingId: listing?.id ?? null,
 							listingKodyId,
 						}
 					: {
 							kind: 'package',
-							username: identity.username,
+							username: identity.handle,
 							kodyId: servedSlug,
-							userId: personalOrgId(ownerUserId),
+							userId: ownerUserId,
 							savedPackage,
 							listingId: listing?.id ?? null,
 							listingKodyId,
@@ -261,10 +258,10 @@ export async function resolvePackagePageUrl(input: {
 			})
 			return {
 				kind: 'redirect',
-				username: identity.username,
+				username: identity.handle,
 				kodyId:
 					currentListing?.kodyId ?? getPackageNameLeaf(found.savedPackage.name),
-				userId: personalOrgId(ownerUserId),
+				userId: ownerUserId,
 				listingId: currentListing?.id ?? null,
 				listingKodyId: currentListing?.kodyId ?? null,
 			}

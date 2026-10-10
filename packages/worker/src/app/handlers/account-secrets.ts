@@ -20,6 +20,7 @@ import {
 	toPackageOptions,
 } from '#app/account-secrets-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { deniedOrgAccountApiResponse } from '#app/org-request-binding.ts'
 import { buildConnectOauthNextSteps } from '#app/connect-oauth-next-steps.ts'
 import { renderAppPage } from '#app/ssr-render.tsx'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
@@ -136,6 +137,12 @@ export function createAccountSecretsApiHandler(env: Env) {
 			if (!user) {
 				return jsonResponse({ ok: false, error: 'Unauthorized.' }, 401)
 			}
+			const denied = await deniedOrgAccountApiResponse(
+				request,
+				env,
+				user.mcpUser.userId,
+			)
+			if (denied) return denied
 
 			if (request.method === 'GET') {
 				const payload = await loadAccountSecretsData({

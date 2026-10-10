@@ -10,6 +10,7 @@ import {
 	filterUsingGlobPatterns,
 	getTargetInputs,
 } from 'nx/src/hasher/task-hasher.js'
+import { readFile } from 'node:fs/promises'
 import { expect, test } from 'vitest'
 
 async function getProjectNode(project: string) {
@@ -247,12 +248,25 @@ test('tools:typecheck cache hash ignores CI', async () => {
 	expect(includesCiEnv(inputs)).toBe(false)
 })
 
-test('cache hash includes KODY_VALIDATE_LOAD because the full suite runs workers-unit', async () => {
-	const inputs = await getWorkerDeclaredInputs('test')
-	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
-})
+// KODY_VALIDATE_LOAD only lowers workers-unit maxWorkers; measured on an
+// isolated 4-core VM, the same 104 files / 401 tests pass with and without it
+// (448s vs 526s). Hashing it would keep validate's test-workers artifact (flag
+// on) from ever matching CI's Workers job (flag off), so no cached target may
+// key on it. That is only sound while the flag cannot change the budget a
+// cached pass was measured against, which the next test pins.
+test.each(['test', 'test-workers'])(
+	'%s cache hash ignores KODY_VALIDATE_LOAD so validate artifacts match CI',
+	async (target) => {
+		const inputs = await getWorkerDeclaredInputs(target)
+		expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(false)
+	},
+)
 
-test('test-workers cache hash includes KODY_VALIDATE_LOAD for validate-load timeouts', async () => {
-	const inputs = await getWorkerDeclaredInputs('test-workers')
-	expect(includesEnvInput(inputs, 'KODY_VALIDATE_LOAD')).toBe(true)
+test('workers-unit timeout does not depend on KODY_VALIDATE_LOAD', async () => {
+	const config = await readFile(
+		new URL('../vitest.workers.config.ts', import.meta.url),
+		'utf8',
+	)
+	expect(config).toContain('const workersTestTimeout = 40_000')
+	expect(config).not.toMatch(/workersTestTimeout = underValidateLoad/)
 })

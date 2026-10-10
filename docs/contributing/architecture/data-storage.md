@@ -1776,6 +1776,11 @@ Current retention policies:
   meter-only daily counts.
 - `usage_rollups`: per user/metric/month rollups keep 24 months by `month` key;
   raw Analytics Engine usage events follow platform retention.
+- `usage_connection_daily`: per org, UTC day, connection (credential kind,
+  holder person, credential id), package, and event type. The hourly usage
+  aggregation lane rewrites yesterday and today from Analytics Engine and prunes
+  days older than 14. Deleted and exported with the account (`holder_user_id` is
+  a person column).
 - `user_usage_campaigns` / `user_usage_campaign_sends`: usage-state campaign
   machine and send ledger keyed by `stable_user_id`. `ever_activated` and
   `cooling_terminal` are sticky. Deleted and exported with the account. Durable

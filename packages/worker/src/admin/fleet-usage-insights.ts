@@ -232,13 +232,14 @@ export async function loadFleetEntitlementCrossingSnapshots(input: {
 				row: user,
 				now: input.now,
 			})
-			const { plan, ladder, creditWallet } = effective
+			const { plan, ladder, creditWallet, seats } = effective
 			const consumption = await readAdminEntitlementConsumption({
 				env: input.env,
 				usageUserId: user.stable_user_id,
 				plan,
 				ladder,
 				creditWallet,
+				seats,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, effective),
 			})
@@ -530,6 +531,7 @@ async function buildEntitlementPressurePanel(input: {
 				plan,
 				ladder: entitlement.ladder,
 				creditWallet: entitlement.creditWallet,
+				seats: entitlement.seats,
 				now: input.now,
 				inboundReceive: inboundReceiveAgainstBasePlan(user, entitlement),
 			})

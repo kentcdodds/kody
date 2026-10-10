@@ -142,8 +142,35 @@ async function limitsFor(user: SeededUser, resources: Array<LimitResource>) {
 			resource,
 			entitlement.ladder,
 			entitlement.creditWallet,
+			entitlement.seats,
 		),
 	)
+}
+
+/** Adds a live member seat to the org and returns the member's id. */
+async function addSeat(org: SeededUser) {
+	const member = await seedUser({ label: 'credits-seat' })
+	await env.APP_DB.prepare(
+		`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+		 VALUES (?, ?, 'member', ?)`,
+	)
+		.bind(org.stableUserId, member.stableUserId, now.toISOString())
+		.run()
+	return member.stableUserId
+}
+
+function removeSeat(org: SeededUser, memberId: string) {
+	return env.APP_DB.prepare(
+		`UPDATE org_memberships SET deleted_at = ? WHERE org_id = ? AND user_id = ?`,
+	)
+		.bind(now.toISOString(), org.stableUserId, memberId)
+		.run()
+}
+
+async function seedThreeSeatPro(label: string) {
+	const org = await seedPro(label)
+	const members = [await addSeat(org), await addSeat(org)]
+	return { org, members }
 }
 
 async function balance(userId: string) {
@@ -372,6 +399,68 @@ test('$0 Pro keeps 1,200 execute/week and stops at 1,201 with a top-up message',
 		'or add credits at /account/usage#credits to keep going past your include.',
 	)
 }, 60_000)
+
+test('a 3-seat Pro org shares one 1,500/day pool; at $0 it keeps the include and stops at 1,501', async () => {
+	const { org } = await seedThreeSeatPro('credits-seats-pool')
+	const entitlement = await entitlementFor(org)
+	expect(entitlement).toMatchObject({ creditWallet: 'empty', seats: 3 })
+	expect(
+		await limitsFor(org, ['execute_unique_workers_per_day', 'saved_packages']),
+	).toEqual([1_500, 10_000])
+
+	await consumeTimes(org, 'execute_unique_workers_per_day', 1_500)
+	const denied = await catchError(
+		consume(org, 'execute_unique_workers_per_day'),
+	)
+	expect(isEntitlementLimitError(denied)).toBe(true)
+	if (!isEntitlementLimitError(denied)) return
+	expect(denied.details).toMatchObject({
+		resource: 'execute_unique_workers_per_day',
+		plan: 'pro',
+		limit: 1_500,
+		current: 1_500,
+	})
+	expect(denied.message).toContain(
+		'or add credits at /account/usage#credits to keep going past your include.',
+	)
+}, 120_000)
+
+test('removing a seat shrinks the org pool on the next check', async () => {
+	const { org, members } = await seedThreeSeatPro('credits-seats-shrink')
+	await consumeTimes(org, 'execute_unique_workers_per_day', 1_000)
+	// Warm the entitlement cache at 3 seats so the shrink cannot ride a miss.
+	expect((await entitlementFor(org)).seats).toBe(3)
+
+	await removeSeat(org, members[0]!)
+	const denied = await catchError(
+		consume(org, 'execute_unique_workers_per_day'),
+	)
+	expect(isEntitlementLimitError(denied)).toBe(true)
+	if (!isEntitlementLimitError(denied)) return
+	expect(denied.details).toMatchObject({ limit: 1_000, current: 1_000 })
+}, 120_000)
+
+test('a funded 3-seat Pro org gets 75,000/day: 50× the pooled include, capped at seats × 25,000', async () => {
+	const { org } = await seedThreeSeatPro('credits-seats-funded')
+	await topUp(org.stableUserId, 1_000)
+	expect(await entitlementFor(org)).toMatchObject({
+		creditWallet: 'funded',
+		seats: 3,
+	})
+	expect(await limitsFor(org, ['execute_unique_workers_per_day'])).toEqual([
+		75_000,
+	])
+
+	await consumeTimes(org, 'execute_unique_workers_per_day', 1_501)
+	expect(
+		await readDailyEntitlementResourceUsage({
+			env,
+			userId: ownerIdFromStored(org.stableUserId),
+			resource: 'execute_unique_workers_per_day',
+			now,
+		}),
+	).toBe(1_501)
+}, 120_000)
 
 test('debits charge only usage above the include, are idempotent, and never back-charge an empty wallet', async () => {
 	const user = await seedPro('credits-debit')

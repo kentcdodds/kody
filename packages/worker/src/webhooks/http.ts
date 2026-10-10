@@ -10,7 +10,7 @@ import {
 	isAccountSuspended,
 } from '#worker/account/account-suspension.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
-import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { jsonResponse } from '#worker/json-response.ts'
@@ -348,14 +348,14 @@ export async function handleWebhookIngressRequest(
 
 	const receivedAt = new Date().toISOString()
 	const waitUntil = waitUntilFrom(ctx)
-	const routeUser = await findPublicUserIdentityByUsername({
+	const routeOwner = await findPublicOwnerIdentityByHandle({
 		db: env.APP_DB,
-		username: route.username,
+		handle: route.username,
 	})
-	if (!routeUser) return notFoundResponse()
+	if (!routeOwner) return notFoundResponse()
 
 	const savedPackage = await resolveSavedPackageRef(env.APP_DB, {
-		userId: routeUser.mcpUserId,
+		userId: routeOwner.ownerId,
 		ref: route.packageKodyId,
 		match: 'slug',
 		followRedirects: true,
@@ -364,7 +364,7 @@ export async function handleWebhookIngressRequest(
 
 	const endpoint = await getWebhookEndpointByKey({
 		db: env.APP_DB,
-		userId: routeUser.mcpUserId,
+		userId: routeOwner.ownerId,
 		packageId: savedPackage.id,
 		webhookName: route.webhookName,
 	})
@@ -393,7 +393,7 @@ export async function handleWebhookIngressRequest(
 		const loaded = await loadPackageManifestBySourceId({
 			env,
 			baseUrl,
-			userId: routeUser.mcpUserId,
+			userId: routeOwner.ownerId,
 			sourceId: savedPackage.sourceId,
 		})
 		declared = listPackageWebhooks(loaded.manifest).find(

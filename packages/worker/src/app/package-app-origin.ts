@@ -43,7 +43,7 @@ import {
 	pushServerTiming,
 	type ServerTimingEntry,
 } from '#worker/server-timing.ts'
-import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
+import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { resolveSavedPackageForPackageAppSlug } from '#worker/package-invocations/module-artifacts.ts'
 import { stripPackageAppRuntimeRunId } from '#worker/package-runtime/package-app-diagnostics.ts'
 import { wantsJson } from '#worker/utils.ts'
@@ -251,14 +251,14 @@ async function redirectRetiredPackageAppSlug(input: {
 	 */
 	buildLocation: (currentSlug: string) => string
 }): Promise<Response | null> {
-	const identity = await findPublicUserIdentityByUsername({
+	const identity = await findPublicOwnerIdentityByHandle({
 		db: input.env.APP_DB,
-		username: input.packagePath.username,
+		handle: input.packagePath.username,
 	})
 	if (!identity) return null
 	const lookup = await resolveSavedPackageForPackageAppSlug({
 		db: input.env.APP_DB,
-		userId: identity.mcpUserId,
+		userId: identity.ownerId,
 		slug: input.packagePath.kodyId,
 	})
 	if (!lookup?.retired) return null

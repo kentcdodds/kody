@@ -264,15 +264,29 @@ drops to Free limits.
 - **Stock is not part of the path.** Purchasable Pro always has Max stock and
   concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
   storage bytes, concurrent workflows), empty or funded.
-- **Rates.** With a positive balance, the rate/compute fields
-  `unlockCreditsLimits` scales (execute, outbound fetches, job runs, automation
-  invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
-  include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
-  job runs 40,000, automation 200,000; `max` has no weekly window). At $0
-  `resolvePlanLimits` returns `proCreditsPlanLimits` (for example 500
-  execute/day, 1,200/week), and every one of those fields stops at the include
-  (within the 60s enforcement cache) with `EntitlementLimitError` copy that says
-  to add credits (`entitlementCreditsOffer`).
+- **Rates are one org-wide pool of paid seats × the per-seat include.** The
+  rate/compute fields (execute, outbound fetches, job runs, automation
+  invocations, daily and weekly) are counted once per org in its UserMeter, not
+  per member, and the include is `proCreditsPlanLimits` times paid seats (live
+  owners plus members, at least 1, the same count seat sync bills;
+  `countLiveSeats`). A 3-seat org gets 1,500 unique execute workers a day and
+  3,600 a week. `resolveUserEntitlementFromRow` reads seats into
+  `UserEntitlement.seats`, and `resolveDailyEntitlementWindow` re-reads them
+  uncached on every counted rate check, so removing a seat shrinks the pool on
+  the next check. Free (one pool at 150/400), `max`, and wallet-less Pro ignore
+  seats.
+- **Credits ceiling.** With a positive balance, those fields
+  (`unlockCreditsLimits`) can reach `creditsUnlockMultiplier` (50)× the pooled
+  include, capped at the `max` daily ceilings × seats (per seat: execute 25,000
+  a day and 175,000 a week, outbound 80,000 / 560,000, job runs 40,000,
+  automation 200,000; weekly is seven capped days). Whichever is lower wins: a
+  funded 3-seat org gets 75,000 execute a day (both bounds agree) and 180,000 a
+  week (50 × 3,600; the 525,000 ceiling never binds for execute).
+  `creditsCeilingScalesWithSeats` is the one switch for whether the ceiling
+  grows with seats. At $0 `resolvePlanLimits` returns the pooled include (500
+  execute/day and 1,200/week per seat), and every one of those fields stops at
+  the include (within the 60s enforcement cache) with `EntitlementLimitError`
+  copy that says to add credits (`entitlementCreditsOffer`).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
   funded wallet (see Debits). At
   $0, `consumeDailyEntitlement` throws
@@ -292,7 +306,8 @@ drops to Free limits.
   entitlement uncached, so a top-up resumes work immediately in every isolate.
   The org budget gate runs after the stop.
 - Email caps and the job interval floor are not credit-extended; they stay on
-  the Pro include whether the wallet is empty or funded.
+  the Pro include whether the wallet is empty or funded. Neither they nor the
+  monthly Worker compute and Rows read includes scale with seats yet.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
 never frames it as something a balance unlocks, and never names Max; the rate

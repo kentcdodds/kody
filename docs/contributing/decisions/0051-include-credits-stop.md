@@ -38,6 +38,17 @@ tier. Customer copy never says unlock, lift, or Max. Free and wallet-less Pro
 
 This supersedes the earlier same-day "no empty-wallet hard-stop" call.
 
+**Pooled seat-scaled rates (2026-10-10).** For an org, the include and the
+credits ceiling are one org-wide pool, not per member: the rate include is paid
+seats × the per-seat Pro include (500 unique execute workers a day and 1,200 a
+week per seat), and credits carry it up to 50× that, capped at seats × the
+per-seat ceiling (25,000 a day and 175,000 a week for execute; the same rule for
+the other rate fields), whichever is lower. For weekly execute, 50× the include
+(60,000 per seat) binds first. Seats are the live count seat sync bills, re-read
+on each rate check. At $0 the org keeps the pooled include and stops past it.
+`creditsCeilingScalesWithSeats` controls whether the ceiling grows with seats.
+Free stays one pool at 150/400.
+
 ## Consequences
 
 - Rates still gate on a positive balance internally, because that gate is the

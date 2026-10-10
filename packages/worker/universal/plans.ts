@@ -241,6 +241,11 @@ export type UserEntitlement = {
 	plan: PlanName
 	ladder: EntitlementLadder
 	creditWallet: CreditWalletState
+	/**
+	 * Paid seats (live owners + members, at least 1) for purchasable Pro;
+	 * the rate pool is this many per-seat includes. Absent means one seat.
+	 */
+	seats?: number
 }
 
 /**
@@ -647,8 +652,9 @@ export const proCreditsPlanLimits: PlanLimits = {
 
 /**
  * How far credits carry the rate/compute include: up to this multiple of
- * the Pro include, capped at the `max` operator ceilings (daily only: `max`
- * has no weekly window). Applies only while the wallet is funded, so an
+ * the org's seat-pooled Pro include, capped at the `max` operator ceilings
+ * times seats ({@link creditsCeilingScalesWithSeats}; weekly is seven
+ * capped days). Applies only while the wallet is funded, so an
  * empty wallet stops at the include (include → credits → stop). Stock,
  * concurrency, email caps, UWD/DO includes, and the job interval floor stay
  * on {@link proCreditsPlanLimits}. Customer copy calls this a ceiling on how
@@ -699,61 +705,108 @@ export function isPastIncludeStopResource(
 	return (pastIncludeStopResources as ReadonlyArray<string>).includes(resource)
 }
 
-function unlockCreditsLimits(limits: PlanLimits): PlanLimits {
-	const scale = (value: number, ceiling: number) =>
-		Math.min(value * creditsUnlockMultiplier, ceiling)
-	// A week can never exceed seven capped days, so the weekly ceiling is
-	// bounded by the daily one (otherwise the credits page shows a number
-	// no one can reach).
-	const scaleWeekly = (value: number | null, dailyCeiling: number) =>
-		value === null
-			? null
-			: Math.min(value * creditsUnlockMultiplier, dailyCeiling * 7)
-	const ceiling = planLimits.max
-	return {
-		...limits,
-		maxExecuteUniqueWorkersPerDay: scale(
-			limits.maxExecuteUniqueWorkersPerDay,
-			ceiling.maxExecuteUniqueWorkersPerDay,
-		),
-		maxExecuteUniqueWorkersPerWeek: scaleWeekly(
-			limits.maxExecuteUniqueWorkersPerWeek,
-			ceiling.maxExecuteUniqueWorkersPerDay,
-		),
-		maxOutboundFetchesPerDay: scale(
-			limits.maxOutboundFetchesPerDay,
-			ceiling.maxOutboundFetchesPerDay,
-		),
-		maxOutboundFetchesPerWeek: scaleWeekly(
-			limits.maxOutboundFetchesPerWeek,
-			ceiling.maxOutboundFetchesPerDay,
-		),
-		maxJobRunsPerDay: scale(limits.maxJobRunsPerDay, ceiling.maxJobRunsPerDay),
-		maxAutomationInvocationsPerDay: scale(
-			limits.maxAutomationInvocationsPerDay,
-			ceiling.maxAutomationInvocationsPerDay,
-		),
-	} satisfies Record<(typeof creditsUnlockedLimitFields)[number], unknown> &
-		PlanLimits
+/**
+ * Whether the funded ceiling ({@link planLimits.max} rate fields) grows with
+ * paid seats like the include does. When true, a funded org runs up to
+ * seats × the per-seat ceiling (25,000 unique execute workers a day and
+ * 175,000 a week per seat, though 50× the weekly include binds first); when
+ * false, every org shares one ceiling.
+ */
+export const creditsCeilingScalesWithSeats = true
+
+type CreditsUnlockedLimitField = (typeof creditsUnlockedLimitFields)[number]
+
+function normalizeSeats(seats: number): number {
+	return Number.isFinite(seats) ? Math.max(1, Math.floor(seats)) : 1
 }
 
-const proCreditsUnlockedPlanLimits = unlockCreditsLimits(proCreditsPlanLimits)
+function mapCreditsUnlockedFields(
+	limits: PlanLimits,
+	map: (field: CreditsUnlockedLimitField, value: number) => number,
+): PlanLimits {
+	const next: PlanLimits = { ...limits }
+	for (const field of creditsUnlockedLimitFields) {
+		const value = limits[field]
+		if (value !== null) next[field] = map(field, value)
+	}
+	return next
+}
+
+/** The org's rate pool: each rate field of the include, times paid seats. */
+function scaleIncludeBySeats(limits: PlanLimits, seats: number): PlanLimits {
+	if (seats === 1) return limits
+	return mapCreditsUnlockedFields(limits, (_field, value) => value * seats)
+}
+
+/** Daily `max` ceiling for a credits-unlocked field (weekly maps to daily). */
+function dailyCeilingFor(field: CreditsUnlockedLimitField): number {
+	switch (field) {
+		case 'maxExecuteUniqueWorkersPerDay':
+		case 'maxExecuteUniqueWorkersPerWeek':
+			return planLimits.max.maxExecuteUniqueWorkersPerDay
+		case 'maxOutboundFetchesPerDay':
+		case 'maxOutboundFetchesPerWeek':
+			return planLimits.max.maxOutboundFetchesPerDay
+		case 'maxJobRunsPerDay':
+			return planLimits.max.maxJobRunsPerDay
+		case 'maxAutomationInvocationsPerDay':
+			return planLimits.max.maxAutomationInvocationsPerDay
+		default: {
+			const exhaustive: never = field
+			throw new Error(`Unknown credits field: ${String(exhaustive)}`)
+		}
+	}
+}
+
+function isWeeklyCreditsField(field: CreditsUnlockedLimitField): boolean {
+	return (
+		field === 'maxExecuteUniqueWorkersPerWeek' ||
+		field === 'maxOutboundFetchesPerWeek'
+	)
+}
+
+function unlockCreditsLimits(include: PlanLimits, seats: number): PlanLimits {
+	const ceilingSeats = creditsCeilingScalesWithSeats ? seats : 1
+	return mapCreditsUnlockedFields(include, (field, value) => {
+		// A week can never exceed seven capped days, so the weekly ceiling is
+		// bounded by the daily one (otherwise the credits page shows a number
+		// no one can reach).
+		const ceiling =
+			dailyCeilingFor(field) * (isWeeklyCreditsField(field) ? 7 : 1)
+		return Math.min(value * creditsUnlockMultiplier, ceiling * ceilingSeats)
+	})
+}
+
+const proCreditsUnlockedPlanLimits = unlockCreditsLimits(
+	proCreditsPlanLimits,
+	1,
+)
 
 /**
  * Resolve the full limit table for a plan. The purchasable Pro wallet
- * (`creditWallet` other than `none`) uses {@link proCreditsPlanLimits},
- * unlocked when funded. Legacy applies only to retired Standard/Pro; free
- * and `max` always use {@link planLimits}.
+ * (`creditWallet` other than `none`) uses {@link proCreditsPlanLimits} with
+ * its rate fields pooled across `seats` (one org-wide pool of seats × the
+ * per-seat include), unlocked when funded. Legacy applies only to retired
+ * Standard/Pro; free and `max` always use {@link planLimits} and ignore
+ * seats (a Free org is one pool).
  */
 export function resolvePlanLimits(
 	plan: PlanName,
 	ladder: EntitlementLadder = 'public',
 	creditWallet: CreditWalletState = 'none',
+	seats = 1,
 ): PlanLimits {
 	if (plan === 'pro' && creditWallet !== 'none') {
+		const paidSeats = normalizeSeats(seats)
+		if (paidSeats === 1) {
+			return creditWallet === 'funded'
+				? proCreditsUnlockedPlanLimits
+				: proCreditsPlanLimits
+		}
+		const include = scaleIncludeBySeats(proCreditsPlanLimits, paidSeats)
 		return creditWallet === 'funded'
-			? proCreditsUnlockedPlanLimits
-			: proCreditsPlanLimits
+			? unlockCreditsLimits(include, paidSeats)
+			: include
 	}
 	if (ladder === 'legacy' && (plan === 'standard' || plan === 'pro')) {
 		return legacyPlanLimits[plan]
@@ -802,8 +855,9 @@ export function resolvePlanLimit(
 	resource: EntitlementResource,
 	ladder: EntitlementLadder = 'public',
 	creditWallet: CreditWalletState = 'none',
+	seats = 1,
 ): number {
-	const limits = resolvePlanLimits(plan, ladder, creditWallet)
+	const limits = resolvePlanLimits(plan, ladder, creditWallet, seats)
 	switch (resource) {
 		case 'repos':
 			return limits.maxRepos
@@ -876,9 +930,10 @@ export function resolveWeeklyPlanLimit(
 	resource: EntitlementResource,
 	ladder: EntitlementLadder = 'public',
 	creditWallet: CreditWalletState = 'none',
+	seats = 1,
 ): number | null {
 	if (!isWeeklyComputeWindowResource(resource)) return null
-	const limits = resolvePlanLimits(plan, ladder, creditWallet)
+	const limits = resolvePlanLimits(plan, ladder, creditWallet, seats)
 	switch (resource) {
 		case 'execute_unique_workers_per_day':
 			return limits.maxExecuteUniqueWorkersPerWeek

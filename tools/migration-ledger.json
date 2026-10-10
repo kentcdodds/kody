@@ -407,6 +407,10 @@
 		{
 			"filename": "0101-api-tokens-org-id-not-null.sql",
 			"sha256": "0839af1009a8647b97c54df8d51a34f0e4eab5311ad959e5a4b57b7782669ad9"
+		},
+		{
+			"filename": "0102-usage-connection-daily.sql",
+			"sha256": "370322c201b9e5592d0f1e05d74331024e716e442dea01eb61971d080475520f"
 		}
 	]
 }

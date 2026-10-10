@@ -2,7 +2,10 @@ import { DatabaseSync } from 'node:sqlite'
 import { expect, test } from 'vitest'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
-import { loadRequestOrgResolution } from './org-request-binding.ts'
+import {
+	deniedOrgAccountApiResponse,
+	loadRequestOrgResolution,
+} from './org-request-binding.ts'
 
 const adaId = 'a'.repeat(64)
 const acmeId = 'b'.repeat(64)
@@ -98,4 +101,36 @@ test('account JSON referer for an org the person cannot access is denied', async
 	await expect(loadRequestOrgResolution(request, env, adaId)).resolves.toBe(
 		'denied',
 	)
+})
+
+test('org-owned account JSON from a denied org page is a 404, never the signup org', async () => {
+	const env = await createEnv()
+	const denied = await deniedOrgAccountApiResponse(
+		new Request('https://kody.test/account/secrets.json', {
+			method: 'POST',
+			headers: { referer: 'https://kody.test/@ada/-/secrets' },
+		}),
+		env,
+		adaId,
+	)
+	expect(denied?.status).toBe(404)
+	await expect(denied?.json()).resolves.toEqual({
+		ok: false,
+		error: 'Organization not found.',
+	})
+	for (const referer of [
+		'https://kody.test/@acme/-/jobs',
+		'https://kody.test/account',
+	]) {
+		await expect(
+			deniedOrgAccountApiResponse(
+				new Request('https://kody.test/account/jobs.json', {
+					headers: { referer },
+				}),
+				env,
+				adaId,
+			),
+			referer,
+		).resolves.toBeNull()
+	}
 })

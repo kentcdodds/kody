@@ -7,17 +7,20 @@ import { rootDir, sharedProjectConfig } from './vitest-shared.ts'
 // "Using secrets defined in packages/worker/.env" at the default log level.
 process.env.WRANGLER_LOG ??= 'warn'
 
-// Full `npm run validate` runs workers-unit beside Playwright, MCP e2e, and
-// many builds on the same machine. Under that load, cold DO RPCs can stretch
-// past the shared 20s budget (#2939). `KODY_VALIDATE_LOAD=1` (set on
-// validate's test-workers leg only) raises the workers-unit budget and lowers
-// maxWorkers. Kept here — not in sharedProjectConfig — so node-unit /
-// mcp-e2e never inherit the flag and Nx test/test-node caches stay keyed to
-// the 20s default. Does not change production startup CPU budgets.
+// Workers-unit gets one 40s test/hook budget everywhere (CI, validate, local)
+// instead of the shared 20s: the pool's per-file DO cold load already takes
+// ~10s, and under validate's parallel gate cold RPCs stretched past 20s
+// (#2939). One budget means a passing validate run and CI's Workers job
+// verify the same thing, so the Nx `test-workers` hash can ignore
+// `KODY_VALIDATE_LOAD` and CI reuses what validate uploaded. The flag (set on
+// validate's test-workers leg only) now only lowers maxWorkers so the suite
+// shares the box with Playwright and the Wrangler servers. Kept here — not in
+// sharedProjectConfig — so node-unit / mcp-e2e keep the 20s budget. Does not
+// change production startup CPU budgets.
 const underValidateLoad =
 	process.env.KODY_VALIDATE_LOAD === '1' ||
 	process.env.KODY_VALIDATE_LOAD === 'true'
-const workersTestTimeout = underValidateLoad ? 40_000 : 20_000
+const workersTestTimeout = 40_000
 const workersMaxWorkers = process.env.CI
 	? underValidateLoad
 		? 2

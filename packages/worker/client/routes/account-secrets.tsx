@@ -53,7 +53,7 @@ import {
 	buildBaseSecretsHref,
 	buildNewSecretHref,
 	buildSecretHref,
-	buildSecretsApiRequestUrl,
+	fetchAccountSecretsPayload,
 	collectRepeatedTextRows,
 	createEditorStateFromNewSecretQuery,
 	createEditorStateFromSecret,
@@ -104,21 +104,8 @@ export function AccountSecretsRoute(handle: Handle) {
 		key: 'accountSecrets',
 		locationKey: getDataRefreshKey,
 		async load(href, signal) {
-			const requestUrl = buildSecretsApiRequestUrl(href)
-			const response = await fetch(
-				`${requestUrl.pathname}${requestUrl.search}`,
-				{
-					headers: { Accept: 'application/json' },
-					credentials: 'include',
-					signal,
-				},
-			)
-			if (response.status === 401) return routeDataRedirect('/login')
-			const payload = await readJson<AccountSecretsLoaderData>(response)
-			if (!response.ok || !payload?.ok) {
-				throw new Error('Unable to load your secrets.')
-			}
-			return payload
+			const payload = await fetchAccountSecretsPayload(href, signal)
+			return payload ?? routeDataRedirect('/login')
 		},
 	})
 
