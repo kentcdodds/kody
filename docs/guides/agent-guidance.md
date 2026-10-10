@@ -23,12 +23,12 @@ If the fact is package- or export-scoped, edit the package instead.
 
 ## The four layers
 
-| Layer                                                                                                        | Reaches                                                       | Put here                                                                                                            | Do not put here                                                                                           |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **MCP server instructions** (short built-in stub + optional user overlay via `metaSetMcpServerInstructions`) | Every conversation on new MCP sessions                        | Short, general nudges: start with `search`, verify-first memory, pointers to docs / local CLI                       | Package inventory, export gotchas, account-specific durable facts, long runbooks, prefer-over-host policy |
-| **Package documentation** (`README.md` human / `AGENTS.md` agent)                                            | Agents (and people) working on or invoking that package       | Intent, how pieces fit, workflows, staging or upload steps, smoke tests, edge cases that apply to the whole package | Account preferences, which cloud account owns what, one-export call limits that belong on that export     |
-| **JSDoc on exports**                                                                                         | Agents reading search Purpose / entity detail for that export | Call shape specifics, limits, when to pick this export over a sibling                                               | Package-wide workflows, durable user facts, always-on session policy                                      |
-| **Memories**                                                                                                 | Agents on this account via search/execute auto-surface        | Durable facts not tied to one package or export: preferences, identifiers, which account owns which resources       | How a package moves bytes, export body format limits, credential values (use [secrets](./secrets.md))     |
+| Layer                                                                                                        | Reaches                                                       | Put here                                                                                                            | Do not put here                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **MCP server instructions** (short built-in stub + optional user overlay via `metaSetMcpServerInstructions`) | Every conversation on new MCP sessions                        | Short, general nudges: start with `search`, verify-first memory, pointers to docs / local CLI                       | Package inventory, export gotchas, account-specific durable facts, long runbooks, prefer-over-host policy               |
+| **Package documentation** (`README.md` human / `AGENTS.md` agent)                                            | Agents (and people) working on or invoking that package       | Intent, how pieces fit, workflows, staging or upload steps, smoke tests, edge cases that apply to the whole package | Account-wide personal facts, which cloud account owns what, one-export call limits that belong on that export           |
+| **JSDoc on exports**                                                                                         | Agents reading search Purpose / entity detail for that export | Call shape specifics, limits, when to pick this export over a sibling                                               | Package-wide workflows, durable user facts, always-on session policy                                                    |
+| **Memories**                                                                                                 | Agents on this account via search/execute auto-surface        | Account-wide personal facts without a better home: identifiers, relationships, which account owns which resources   | Repeatable behavior, task defaults, how a package moves bytes, export limits, credentials (use [secrets](./secrets.md)) |
 
 Higher layers appear more often and cost more context. Lower layers stay close
 to the code or fact they describe. Prefer the lowest layer that still works.
@@ -51,9 +51,9 @@ Ask in order:
    Put it in [memory](./memory.md) (`metaMemoryVerify` then `metaMemoryUpsert`).
 4. **Is this rare always-on session policy that every conversation must see?**
    Only then consider the MCP overlay (`metaGetMcpServerInstructions` /
-   `metaSetMcpServerInstructions`). Prefer memories for durable facts; keep the
-   overlay short. The built-in stub already covers search-first and local CLI
-   pointers.
+   `metaSetMcpServerInstructions`). Prefer memories for account-wide personal
+   facts; keep the overlay short. The built-in stub already covers search-first
+   and local CLI pointers.
 
 If step 1 or 2 applies, do **not** upsert a memory and do **not** extend the MCP
 overlay. Update the package.
@@ -95,8 +95,10 @@ does not list packages, domains, or lifecycle runbooks — discover those with
 
 The optional overlay from `metaSetMcpServerInstructions` appends to that stub
 for **new** sessions. Use it only for rare always-on session policy. Prefer
-[memories](./memory.md) for durable facts and preferences. Overlay updates do
-not rewrite a host that already cached server instructions; reconnect if needed.
+[memories](./memory.md) for account-wide personal facts; put repeatable behavior
+and defaults in packages with typed inputs and documented defaults. Overlay
+updates do not rewrite a host that already cached server instructions; reconnect
+if needed.
 
 ## Writing guidance: do this first
 
