@@ -15,6 +15,8 @@ import {
 	setSecretAllowedHosts,
 } from '#mcp/secrets/service.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
+import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
+import { ensurePersonalOrg } from '#worker/orgs/provision.ts'
 import { silenceIncidentalRuntimeWarnings } from '#worker/test-support/incidental-runtime-warnings.ts'
 import {
 	buildKodyImportableModuleBundle,
@@ -32,6 +34,7 @@ async function runSql(sql: string, ...values: Array<unknown>) {
 
 async function ensureSecretAuthorityTestSchema() {
 	await ensureEntitlementTestSchema(env.APP_DB)
+	await ensureOrgsTestSchema(env.APP_DB)
 	await runSql(`CREATE TABLE IF NOT EXISTS entity_sources (
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
@@ -303,6 +306,10 @@ async function publishDependent(
 	})
 }
 
+async function provisionTestUser(userId: string, username: string) {
+	await ensurePersonalOrg(env.APP_DB, { stableUserId: userId, username })
+}
+
 async function saveWakeTokenLockedTo(userId: string, packageId: string) {
 	await saveSecret({
 		env,
@@ -440,6 +447,7 @@ test(
 		silenceIncidentalRuntimeWarnings()
 		await ensureSecretAuthorityTestSchema()
 		const userId = `user-${crypto.randomUUID()}`
+		await provisionTestUser(userId, `wt-${userId.slice(-12)}`)
 		const wakeSource = `import { packageSecrets } from 'kody:runtime'
 export default async function wake() {
 	return { token: await packageSecrets.get("wakeToken") }
@@ -551,6 +559,7 @@ test(
 		silenceIncidentalRuntimeWarnings()
 		await ensureSecretAuthorityTestSchema()
 		const userId = `user-${crypto.randomUUID()}`
+		await provisionTestUser(userId, `wt-${userId.slice(-12)}`)
 		const wake = await publishGrokBotWake(userId, victimWakeModuleSource)
 		const importer = await publishDependent(
 			userId,
@@ -670,6 +679,7 @@ test(
 		silenceIncidentalRuntimeWarnings()
 		await ensureSecretAuthorityTestSchema()
 		const userId = `user-${crypto.randomUUID()}`
+		await provisionTestUser(userId, `wt-${userId.slice(-12)}`)
 		const wake = await publishGrokBotWake(userId, victimWakeModuleSource)
 		await publishDependent(userId, {
 			'src/forge.ts': `import * as runtime from 'kody:runtime'
@@ -856,6 +866,7 @@ test(
 			'test-password-hash',
 			userId,
 		)
+		await provisionTestUser(userId, username)
 		const fork = await publishForkedPackage({
 			userId,
 			name: '@kentcdodds/evil-fork',
@@ -960,6 +971,7 @@ test(
 		silenceIncidentalRuntimeWarnings()
 		await ensureSecretAuthorityTestSchema()
 		const userId = `user-${crypto.randomUUID()}`
+		await provisionTestUser(userId, `wt-${userId.slice(-12)}`)
 		const wake = await publishGrokBotWake(
 			userId,
 			`import { packageSecrets } from 'kody:runtime'

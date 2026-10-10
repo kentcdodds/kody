@@ -11,6 +11,14 @@ export class SecretProviderError extends McpCallerError {
 	}
 }
 
+/** The package has no grant for this vault reference. */
+export class SecretProviderGrantDeniedError extends SecretProviderError {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options)
+		this.name = 'SecretProviderGrantDeniedError'
+	}
+}
+
 export function createMissingProviderBindingMessage(providerId: string) {
 	return `No secret provider is bound for "${providerId}". Bind a saved package that declares kody.secretProvider.id "${providerId}" on /account/secret-providers, then retry.`
 }

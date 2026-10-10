@@ -7,7 +7,7 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
-import { deleteSecret, resolveSecret } from '#mcp/secrets/service.ts'
+import { deleteSecret, findSecret } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 
 export const secretDeleteCapability = defineDomainCapability(
@@ -37,7 +37,7 @@ export const secretDeleteCapability = defineDomainCapability(
 					storageContext: ctx.callerContext.storageContext,
 				})
 			if (args.scope === 'user' && authorityPackageId) {
-				const existing = await resolveSecret({
+				const existing = await findSecret({
 					env: ctx.env,
 					userId: ownerIdFromCaller(ctx.callerContext),
 					name: args.name,

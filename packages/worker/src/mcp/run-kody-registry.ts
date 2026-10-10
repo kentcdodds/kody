@@ -35,7 +35,8 @@ import {
 	resolveObservedRunSurface,
 } from '#worker/usage/dynamic-worker-day-surface.ts'
 import { type RawFetchHostSink } from '#mcp/raw-fetch-host-nudge.ts'
-import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
+import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import {
 	getSecretAuthorityScope,
 	resolveSecretAuthorityPackageId,
@@ -296,25 +297,28 @@ function createPackageSecretTools(input: {
 		}
 		return authorityPackageId
 	}
+	const resolveMount = (alias: string, requestedPackageId?: string | null) =>
+		resolveCredential({
+			env: input.env,
+			orgId: ownerIdFromCaller(input.callerContext),
+			actor: input.callerContext.request,
+			packageStamp: attestedPackageStamp(
+				resolveAuthorityPackageId(requestedPackageId),
+			),
+			baseUrl: input.callerContext.baseUrl,
+			credential: {
+				use: 'package-secret-mount',
+				alias,
+				callerContext: input.callerContext,
+			},
+		})
 	return {
 		runPackageId: input.runPackageId,
 		get: async (alias: string, requestedPackageId?: string | null) =>
-			(
-				await resolvePackageMountedSecret({
-					env: input.env,
-					callerContext: input.callerContext,
-					packageId: resolveAuthorityPackageId(requestedPackageId),
-					alias,
-				})
-			).ref,
+			(await resolveMount(alias, requestedPackageId)).ref,
 		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
-				await resolvePackageMountedSecret({
-					env: input.env,
-					callerContext: input.callerContext,
-					packageId: resolveAuthorityPackageId(requestedPackageId),
-					alias,
-				})
+				await resolveMount(alias, requestedPackageId)
 				return true
 			} catch (error) {
 				if (isPackageSecretAvailabilityError(error)) {

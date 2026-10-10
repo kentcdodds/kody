@@ -5,12 +5,10 @@ import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
-import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { parseSecretNameOrPlaceholder } from '#mcp/secrets/placeholders.ts'
-import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
-import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
+import { attestedPackageStampFromCaller } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
 import {
@@ -96,10 +94,9 @@ export const jwtSignCapability = defineDomainCapability(
 		}),
 		async handler(args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
-			const { authorityPackageId, storageContext } =
-				resolveCallerSecretAuthority({
-					storageContext: ctx.callerContext.storageContext,
-				})
+			const { packageStamp, storageContext } = attestedPackageStampFromCaller({
+				storageContext: ctx.callerContext.storageContext,
+			})
 			const referenced = parseSecretNameOrPlaceholder(
 				args.private_key_secret_name,
 				'private_key_secret_name',
@@ -108,19 +105,19 @@ export const jwtSignCapability = defineDomainCapability(
 			const secretScope =
 				args.private_key_secret_scope ?? referenced.scope ?? undefined
 			const secretUserId = ownerIdFromCaller(ctx.callerContext)
-			await authorizeAmbientSecretUse({
+			const resolved = await resolveCredential({
 				env: ctx.env,
-				request: ctx.callerContext.request,
-				orgUserId: secretUserId,
-				secretName,
-				authorityPackageId,
-			})
-			const resolved = await resolveSecret({
-				env: ctx.env,
-				userId: secretUserId,
-				name: secretName,
-				scope: secretScope,
-				storageContext,
+				orgId: secretUserId,
+				actor: ctx.callerContext.request,
+				packageStamp,
+				baseUrl: ctx.callerContext.baseUrl,
+				credential: {
+					use: 'secret',
+					name: secretName,
+					scope: secretScope,
+					storageContext,
+					orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
+				},
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				// Missing or scope-unavailable secrets are caller-clearable
@@ -136,16 +133,6 @@ export const jwtSignCapability = defineDomainCapability(
 					}),
 				)
 			}
-			await assertPackageCanAccessResolvedSecret({
-				env: ctx.env,
-				baseUrl: ctx.callerContext.baseUrl,
-				orgSlug: secretPageOrgSlugFromCaller(ctx.callerContext),
-				userId: secretUserId,
-				storageContext,
-				authorityPackageId,
-				secretName,
-				resolved,
-			})
 
 			const secretMaterial = extractSecretMaterial({
 				secretValue: resolved.value,

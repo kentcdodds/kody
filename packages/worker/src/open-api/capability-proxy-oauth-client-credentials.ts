@@ -139,7 +139,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
+		packageId: null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const { packageId: _ignoredPackageId, ...oauthInput } = call
@@ -155,7 +155,7 @@ export async function runCapabilityProxyOauthClientCredentials(input: {
 				email: user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,
-				requireActorCredentialUse: true,
+				claimedPackageId: stampedPackageId,
 			},
 			request: new Request(request, { headers }),
 			...(input.ctx.waitUntil ? { waitUntil: input.ctx.waitUntil } : {}),

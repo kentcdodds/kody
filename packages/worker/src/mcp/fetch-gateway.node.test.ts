@@ -15,13 +15,17 @@ import {
 import { buildBasicAuthSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as communityRepo from '#worker/community/repo.ts'
+import {
+	isOrgBindingMembershipQuery,
+	mockPersonalOrgBindingRow,
+} from '#worker/test-support/org-binding-query.ts'
 import { createInMemoryUserMeterEnv } from '#worker/test-support/user-meter.ts'
 import * as packageRepo from '#worker/package-registry/repo.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
 import * as integrationService from '#worker/integrations/service.ts'
-import * as providerResolve from '#mcp/secrets/secret-providers/resolve.ts'
+import * as providerService from '#mcp/secrets/secret-providers/service.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
@@ -36,6 +40,9 @@ const env = {
 							return { meta: { changes: 1 } }
 						},
 						async first() {
+							if (isOrgBindingMembershipQuery(normalizedQuery)) {
+								return mockPersonalOrgBindingRow(String(params[1]), 'ada')
+							}
 							if (
 								normalizedQuery.includes('where stable_user_id') &&
 								params[0] !== 'user-123'
@@ -990,8 +997,9 @@ test('fetch gateway provider placeholders: normalize mixed case, deny wrong host
 	const providerRequest = (url: string, placeholder: string) =>
 		new Request(url, { headers: { Authorization: `Bearer ${placeholder}` } })
 	const canonical = `{{secret/1password:${providerRef}}}`
+	vi.spyOn(providerService, 'getSecretProviderBinding').mockResolvedValue(null)
 	const resolveSpy = vi
-		.spyOn(providerResolve, 'resolveProviderSecretForFetch')
+		.spyOn(providerService, 'resolveProviderSecret')
 		.mockResolvedValue({
 			provider: '1password',
 			ref: providerRef,

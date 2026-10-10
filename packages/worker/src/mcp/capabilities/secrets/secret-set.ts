@@ -9,7 +9,7 @@ import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-acces
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import {
-	resolveSecret,
+	findSecret,
 	saveSecret,
 	updateSecret,
 	updateUserSecretForPackage,
@@ -98,7 +98,7 @@ export const secretSetCapability = defineDomainCapability(
 						'Package runtimes must supply a secret value when updating a user secret.',
 					)
 				}
-				const existing = await resolveSecret({
+				const existing = await findSecret({
 					env: ctx.env,
 					userId: ownerIdFromCaller(ctx.callerContext),
 					name: parsed.name,

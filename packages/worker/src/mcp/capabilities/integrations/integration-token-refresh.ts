@@ -5,12 +5,9 @@ import { defineDomainCapability } from '#mcp/capabilities/define-domain-capabili
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
-import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
-import { authorizeAmbientIntegrationUse } from '#worker/authorization/credential-use.ts'
-import {
-	IntegrationTokenRefreshCallerError,
-	refreshIntegrationTokens,
-} from '#worker/integrations/token-refresh.ts'
+import { attestedPackageStampFromCaller } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { IntegrationTokenRefreshCallerError } from '#worker/integrations/token-refresh.ts'
 
 const inputSchema = z.object({
 	name: z
@@ -53,26 +50,22 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			const user = requireMcpUser(ctx.callerContext)
-			const { authorityPackageId } = resolveCallerSecretAuthority({
+			const { packageStamp } = attestedPackageStampFromCaller({
 				storageContext: ctx.callerContext.storageContext,
 			})
-			const orgUserId = ownerIdFromCaller(ctx.callerContext)
-			await authorizeAmbientIntegrationUse({
-				env: ctx.env,
-				request: ctx.callerContext.request,
-				orgUserId,
-				integrationName: args.name,
-				authorityPackageId,
-			})
 			try {
-				const result = await refreshIntegrationTokens({
+				const result = await resolveCredential({
 					env: ctx.env,
-					userId: orgUserId,
-					userEmail: user.email,
-					name: args.name,
+					orgId: ownerIdFromCaller(ctx.callerContext),
+					actor: ctx.callerContext.request,
+					packageStamp,
 					baseUrl: ctx.callerContext.baseUrl,
-					packageId: authorityPackageId,
-					waitUntil: ctx.waitUntil,
+					credential: {
+						use: 'integration-refresh',
+						name: args.name,
+						userEmail: user.email,
+						waitUntil: ctx.waitUntil,
+					},
 				})
 				return {
 					ok: true as const,
