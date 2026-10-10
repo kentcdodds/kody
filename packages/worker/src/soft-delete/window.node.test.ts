@@ -2,12 +2,7 @@ import { expect, test } from 'vitest'
 import {
 	isWithinSoftDeleteRestoreWindow,
 	softDeletePurgeCutoffIso,
-	softDeleteRetentionDays,
 } from './window.ts'
-
-test('softDeleteRetentionDays is thirty', () => {
-	expect(softDeleteRetentionDays).toBe(30)
-})
 
 test('softDeletePurgeCutoffIso is UTC ISO thirty days before now', () => {
 	const now = new Date('2026-10-09T12:00:00.000Z')

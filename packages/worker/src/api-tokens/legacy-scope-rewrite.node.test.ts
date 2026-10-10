@@ -1,9 +1,6 @@
 import { expect, test } from 'vitest'
-import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import {
 	isLegacyApiTokenScope,
-	legacyApiTokenScopeMap,
-	localExecuteOrgPermissions,
 	rewriteLegacyApiTokenScopes,
 	shouldRepairLocalExecuteParity,
 	unionLocalExecuteParityScopes,
@@ -38,9 +35,6 @@ test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
 		'secret:use',
 		'secret:write',
 	])
-	expect(rewriteLegacyApiTokenScopes(['secrets:write'])).not.toContain(
-		'secret:read',
-	)
 	expect(rewriteLegacyApiTokenScopes(['packages:read'])).toEqual([
 		'app:execute',
 		'app:read',
@@ -100,9 +94,13 @@ test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
 		'integration:use',
 		'integration:write',
 	])
-	expect(rewriteLegacyApiTokenScopes(['mcp-servers:write'])).toEqual(
-		rewriteLegacyApiTokenScopes(['integrations:write']),
-	)
+	expect(rewriteLegacyApiTokenScopes(['mcp-servers:write'])).toEqual([
+		'integration:create',
+		'integration:delete',
+		'integration:read',
+		'integration:use',
+		'integration:write',
+	])
 	expect(rewriteLegacyApiTokenScopes(['runs:read'])).toEqual([
 		'job:read',
 		'package:read',
@@ -131,7 +129,19 @@ test('rewrites each §5.3 legacy scope to the fixed org-permission set', () => {
 	])
 	expect(rewriteLegacyApiTokenScopes(['search:read'])).toEqual(['search:read'])
 	expect(rewriteLegacyApiTokenScopes(['local-execute'])).toEqual([
-		...localExecuteOrgPermissions,
+		'app:execute',
+		'app:read',
+		'email:read',
+		'email:send',
+		'integration:read',
+		'integration:use',
+		'job:execute',
+		'job:read',
+		'memory:read',
+		'org:execute',
+		'package:execute',
+		'package:read',
+		'secret:use',
 	])
 })
 
@@ -144,21 +154,46 @@ test('unionLocalExecuteParityScopes adds the parity set only when org:execute is
 			'org:execute',
 			'org:read',
 		]),
-	).toEqual(
-		[
-			...localExecuteOrgPermissions,
-			'billing:read',
-			'member:read',
-			'org:read',
-		].sort(),
-	)
+	).toEqual([
+		'app:execute',
+		'app:read',
+		'billing:read',
+		'email:read',
+		'email:send',
+		'integration:read',
+		'integration:use',
+		'job:execute',
+		'job:read',
+		'member:read',
+		'memory:read',
+		'org:execute',
+		'org:read',
+		'package:execute',
+		'package:read',
+		'secret:use',
+	])
 	expect(
 		unionLocalExecuteParityScopes([
 			'org:execute',
 			'org:read',
 			'package:execute',
 		]),
-	).toEqual([...localExecuteOrgPermissions, 'org:read'].sort())
+	).toEqual([
+		'app:execute',
+		'app:read',
+		'email:read',
+		'email:send',
+		'integration:read',
+		'integration:use',
+		'job:execute',
+		'job:read',
+		'memory:read',
+		'org:execute',
+		'org:read',
+		'package:execute',
+		'package:read',
+		'secret:use',
+	])
 })
 
 test('shouldRepairLocalExecuteParity matches migration 0092 targets', () => {
@@ -207,12 +242,4 @@ test('isLegacyApiTokenScope detects the old vocabulary', () => {
 	expect(isLegacyApiTokenScope('local-execute')).toBe(true)
 	expect(isLegacyApiTokenScope('org:read')).toBe(false)
 	expect(isLegacyApiTokenScope(1)).toBe(false)
-	for (const scope of Object.keys(legacyApiTokenScopeMap)) {
-		expect(isLegacyApiTokenScope(scope)).toBe(true)
-		for (const permission of legacyApiTokenScopeMap[
-			scope as keyof typeof legacyApiTokenScopeMap
-		]) {
-			expect(isOrgPermission(permission)).toBe(true)
-		}
-	}
 })

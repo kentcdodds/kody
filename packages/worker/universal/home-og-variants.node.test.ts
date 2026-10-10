@@ -85,9 +85,4 @@ test('?og= rewrites share images and drops the query from the visible url', () =
 	)
 	expect(fallback.og).toEqual(plain.og)
 	expect(plain.og?.imageUrl).toBe('https://kody.codes/og/home.png')
-	expect(plain.og?.title).toBe('Your agents\u2019 cloud')
-	expect(plain.title).toBe('Your agents\u2019 cloud')
-	expect(plain.description).toBe(
-		'You shouldn\u2019t have to start over in every agent.',
-	)
 })

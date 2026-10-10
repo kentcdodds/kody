@@ -97,27 +97,3 @@ export const landingInviteGuestLead =
 	'Create a free account and connect a service you already use.'
 export const landingInviteSignedInLead =
 	'You\u2019re in. Connect a service you already use and start saving packages.'
-
-export function landingHomeUiCopyBlob() {
-	return [
-		landingHeroHeadline,
-		landingHeroSubhead,
-		landingHeroLead,
-		landingHeroPrimaryCta,
-		landingHeroSecondaryCta,
-		landingPrimitivesIntroLead,
-		landingPrimitivesMoreLead,
-		landingPrimitivesMoreLink,
-		...landingHomePrimitives.flatMap((item) => [item.word, item.body]),
-		landingVsHeading,
-		...landingVsItems.flatMap((item) => [item.kicker, item.body]),
-		landingCompareWithoutTitle,
-		landingCompareWithTitle,
-		landingCompareCaption,
-		...landingCompareWithoutItems,
-		...landingCompareWithItems,
-		landingInviteHeading,
-		landingInviteGuestLead,
-		landingInviteSignedInLead,
-	].join('\n')
-}
