@@ -10,8 +10,10 @@ import {
 import { type Capability, type DomainSpec } from '#mcp/capabilities/types.ts'
 import { wrapDownstreamMcpToolResult } from '#mcp/downstream-mcp-result.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
+import { authorizeAmbientIntegrationUse } from '#worker/authorization/credential-use.ts'
 import { createMcpClientHubClient } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	mcpServerCapabilityId,
 	mcpServerDomainId,
@@ -90,8 +92,8 @@ function createCapabilityFromTool(input: {
 		inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
 		...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
 		async handler(args, ctx) {
-			const userId = ctx.callerContext.user?.userId
-			if (!userId) {
+			const orgUserId = ownerIdFromCaller(ctx.callerContext)
+			if (!orgUserId) {
 				throw new McpCallerError(
 					`MCP server capability "${ref.name}:${tool.name}" requires an authenticated user.`,
 				)
@@ -103,17 +105,24 @@ function createCapabilityFromTool(input: {
 			const { authorityPackageId } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,
 			})
+			await authorizeAmbientIntegrationUse({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				orgUserId,
+				integrationName: ref.name,
+				authorityPackageId,
+			})
 			await assertCanUseMcpServer({
 				env: ctx.env,
 				baseUrl: ctx.callerContext.baseUrl,
-				userId,
+				userId: orgUserId,
 				serverId: binding.serverId,
 				serverName: ref.name,
 				packageId: authorityPackageId,
 			})
 			const hub = createMcpClientHubClient({
 				env: ctx.env,
-				userId,
+				userId: orgUserId,
 				waitUntil: ctx.waitUntil,
 			})
 			let result: Awaited<ReturnType<typeof hub.callTool>>
@@ -129,7 +138,7 @@ function createCapabilityFromTool(input: {
 				// Keep those on mcp-event; they are not Kody platform defects.
 				const status = await getMcpServerStatus({
 					env: ctx.env,
-					userId,
+					userId: orgUserId,
 					ref,
 				}).catch(() => null)
 				if (status && (!status.ready || status.toolCount === 0)) {

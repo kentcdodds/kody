@@ -4,8 +4,8 @@ User-added MCP servers and the OAuth clients they mint.
 
 ## How to get there
 
-`/account/mcp-servers` → `/account/mcp-servers/new` →
-`/account/mcp-servers/:serverId`. Clients: `/account/mcp-oauth-clients`.
+`/@<slug>/-/mcp-servers` → `/@<slug>/-/mcp-servers/new` →
+`/@<slug>/-/mcp-servers/:serverId`. Clients: `/account/mcp-oauth-clients`.
 
 ## Drive it
 
@@ -24,7 +24,7 @@ node tools/control-kody.ts request GET /account/mcp-oauth-clients.json
 
 - App `/mcp` (Kody-as-server) is a different surface. Unauthenticated GET is 401
   by design.
-- After IdP success, Status on `/account/mcp-servers/:serverId` shows a
+- After IdP success, Status on `/@<slug>/-/mcp-servers/:serverId` shows a
   sanitized last settle error when tool discovery does not finish (including
   after a 2025 handshake retry). When a ready connection parks on
   `authenticating`, Status and `mcpServerList.error` include the sanitized

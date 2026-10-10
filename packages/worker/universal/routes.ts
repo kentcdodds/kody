@@ -20,30 +20,17 @@ export const routes = route({
 	connectWebhookApply: '/connect/webhook-apply',
 	integrationLogo: '/integrations/logos/:integrationSlug',
 	providerMarkLogo: '/integrations/provider-marks/:slug',
-	accountIntegrations: '/account/integrations',
-	// More specific than `:integrationName` so a connection named `apps` still
-	// resolves at `/account/integrations/apps` while OAuth apps live under
-	// `/account/integrations/apps/:appSlug`.
-	accountOauthAppDetail: '/account/integrations/apps/:appSlug',
-	// Static `/approve` must win over `:integrationName` so a connection named
-	// `approve` is not required to claim the one-click grant URL.
-	accountIntegrationsApprove: '/account/integrations/approve',
-	accountIntegrationDetail: '/account/integrations/:integrationName',
 	accountIntegrationsApi: '/account/integrations.json',
 	accountIntegrationsApiPost: post('/account/integrations.json'),
-	accountMcpServers: '/account/mcp-servers',
-	accountMcpServerNew: '/account/mcp-servers/new',
-	// More specific than `:serverId` so favicon assets do not collide with
-	// the expand-detail route.
+	// Favicon bytes and the OAuth callback stay on `/account`. The servers
+	// page itself is `/@:orgSlug/-/mcp-servers`.
 	accountMcpServerLogo: '/account/mcp-servers/logos/:serverId',
-	accountMcpServerDetail: '/account/mcp-servers/:serverId',
 	accountMcpServersOauthCallback: '/account/mcp-servers/oauth/callback',
 	accountMcpServersApi: '/account/mcp-servers.json',
 	accountMcpServersApiPost: post('/account/mcp-servers.json'),
-	// Legacy HTML package routes only redirect to their canonical `/@…` pages.
+	// Package detail still redirects to the canonical `/@user/:kodyId` page.
 	// The JSON endpoints remain account-scoped mutation/read APIs.
 	accountRepoIcon: '/account/repos/:repoId/icon/:iconCommit',
-	accountPackages: '/account/packages',
 	accountPackageDetail: '/account/packages/:packageId',
 	accountPackageApprovePublish: '/account/packages/:packageId/approve-publish',
 	accountPackageApprovePublishApi:
@@ -52,67 +39,41 @@ export const routes = route({
 	accountPackageFilesApi: '/account/packages/:packageId/files.json',
 	accountPackagesApi: '/account/packages.json',
 	accountPackagesApiPost: post('/account/packages.json'),
-	accountSecrets: '/account/secrets',
-	accountSecretNew: '/account/secrets/new',
-	accountSecretUserDetail: '/account/secrets/user/:secretName',
-	accountSecretSessionDetail: '/account/secrets/session/:sessionId/:secretName',
-	accountSecretPackageDetail: '/account/secrets/package/:packageId/:secretName',
-	accountSecretsApprove: '/account/secrets/approve',
 	accountSecretsApi: '/account/secrets.json',
 	accountSecretsApiPost: post('/account/secrets.json'),
-	accountSecretProviders: '/account/secret-providers',
-	accountSecretProvidersApprove: '/account/secret-providers/approve',
 	accountSecretProvidersApi: '/account/secret-providers.json',
 	accountSecretProvidersApiPost: post('/account/secret-providers.json'),
-	accountValues: '/account/values',
-	accountValueNew: '/account/values/new',
-	accountValueDetail: '/account/values/:valueId',
 	accountValuesApi: '/account/values.json',
 	accountValuesApiPost: post('/account/values.json'),
-	accountJobs: '/account/jobs',
-	accountJobDetail: '/account/jobs/:jobId',
 	accountJobsApi: '/account/jobs.json',
 	accountJobsApiPost: post('/account/jobs.json'),
-	accountWorkflows: '/account/workflows',
-	accountWorkflowDetail: '/account/workflows/:workflowId',
 	accountWorkflowsApi: '/account/workflows.json',
 	accountWorkflowsApiPost: post('/account/workflows.json'),
 	// Thin cross-package index of declared webhooks. Each row deep-links into
 	// the owning package's settings (`communityPackageSettings#webhooks`),
-	// which is where mint / reveal / rotate / enable-disable live.
-	accountWebhooks: '/account/webhooks',
+	// which is where mint / reveal / rotate / enable-disable live. The page
+	// is `/@:orgSlug/-/webhooks`.
 	accountWebhooksApi: '/account/webhooks.json',
 	accountWebhooksApproveApplyApi: '/account/webhooks/approve-apply.json',
 	accountWebhooksApproveApplyApiPost: post(
 		'/account/webhooks/approve-apply.json',
 	),
-	accountActivity: '/account/activity',
-	accountActivityDetail: '/account/activity/:runId',
 	accountActivityApi: '/account/activity.json',
-	accountWaiting: '/account/waiting',
 	accountWaitingApi: '/account/waiting.json',
 	accountWaitingClickPost: post('/account/waiting/click.json'),
 	accountExperiments: '/account/experiments',
 	accountExperimentsApi: '/account/experiments.json',
 	accountExperimentsApiPost: post('/account/experiments.json'),
-	accountMemories: '/account/memories',
-	accountMemoryDetail: '/account/memories/:memoryId',
-	// Sibling of `/account/memories.json` so `:memoryId` cannot claim the
-	// signed-in user's memories download.
+	// Sibling of `/account/memories.json` so a page segment cannot claim the
+	// signed-in user's memories download. The page is `/@:orgSlug/-/memories`.
 	accountMemoriesExport: '/account/memories-export.json',
 	accountMemoriesApi: '/account/memories.json',
 	accountMemoriesApiPost: post('/account/memories.json'),
-	accountEmail: '/account/email',
-	accountEmailDetail: '/account/email/:messageId',
 	accountEmailApi: '/account/email.json',
-	// The Connections page is the home for inbound MCP hosts (connected
-	// agents): MCP URL, setup guides, and per-host revoke. Its data twin is
-	// `/account/connected-agents.json`; `/account/connections.json` is the
-	// older sign-in provider (GitHub, Google, …) list on the Overview page.
-	accountConnections: '/account/connections',
-	// Add connection: the full client grid, then one host's install steps.
-	accountConnectionNew: '/account/connections/new',
-	accountConnectionNewAgent: '/account/connections/new/:agent',
+	// The Connections page (`/@:orgSlug/-/connections`) is the home for inbound
+	// MCP hosts. Its data twin is `/account/connected-agents.json`.
+	// `/account/connections.json` is the older sign-in provider (GitHub,
+	// Google, and the rest) list on the Overview page.
 	accountConnectionsApi: '/account/connections.json',
 	accountConnectionsApiPost: post('/account/connections.json'),
 	accountConnectedAgentsApi: '/account/connected-agents.json',
@@ -129,16 +90,10 @@ export const routes = route({
 	accountTwoFactor: '/account/two-factor',
 	accountTwoFactorApi: '/account/two-factor.json',
 	accountTwoFactorApiPost: post('/account/two-factor.json'),
-	// Signup-organization billing. Redirects to `/@<signup slug>/-/billing`;
-	// emails and plan-limit errors link here.
-	accountBilling: '/account/billing',
 	accountBillingCancellationFeedbackPost: post(
 		'/account/billing/cancellation-feedback.json',
 	),
-	// Return URL of Checkout Sessions created before billing moved to
-	// `/@slug/-/billing/success`, and older Manage subscription links.
-	accountBillingSuccess: '/account/billing/success',
-	accountBillingPortal: '/account/billing/portal',
+	// Old `/account/credits` links open the usage page's Credits section.
 	accountCredits: '/account/credits',
 	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
 	accountCreditsSettingsPost: post('/account/credits/settings.json'),
@@ -272,6 +227,16 @@ export const routes = route({
 	orgMembersRolePost: post('/@:orgSlug/-/members/role.json'),
 	orgMembersRemovePost: post('/@:orgSlug/-/members/remove.json'),
 	orgMembersInvitePost: post('/@:orgSlug/-/members/invite.json'),
+	orgTeams: get('/@:orgSlug/-/teams'),
+	orgTeamsApi: get('/@:orgSlug/-/teams.json'),
+	orgTeamsCreatePost: post('/@:orgSlug/-/teams/create.json'),
+	orgTeamsMemberAddPost: post('/@:orgSlug/-/teams/member-add.json'),
+	orgTeamsMemberRemovePost: post('/@:orgSlug/-/teams/member-remove.json'),
+	orgGrants: get('/@:orgSlug/-/grants'),
+	orgGrantsApi: get('/@:orgSlug/-/grants.json'),
+	orgGrantsRevokePost: post('/@:orgSlug/-/grants/revoke.json'),
+	orgCollaborators: get('/@:orgSlug/-/collaborators'),
+	orgCollaboratorsApi: get('/@:orgSlug/-/collaborators.json'),
 	orgAvatar: get('/orgs/:orgSlug/avatar/:hash.:ext'),
 	profile: '/@:username',
 	// Canonical public URL for a published package, keyed by its owner and

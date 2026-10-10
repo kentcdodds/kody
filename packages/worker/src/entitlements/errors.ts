@@ -74,6 +74,7 @@ export function buildEntitlementUpgradeHint(
 	resource: EntitlementResource,
 	plan: PlanName,
 	creditWallet: CreditWalletState = 'none',
+	billingPath = '/@<slug>/-/billing',
 ) {
 	const label = entitlementResourceLabels[resource]
 	const reduceGuidance = `Remove or finish existing ${label} you no longer need.`
@@ -82,7 +83,7 @@ export function buildEntitlementUpgradeHint(
 		return `${reduceGuidance.slice(0, -1)}, or ${creditsOffer}.`
 	}
 	if (!hasHigherPublicPlan(plan)) return reduceGuidance
-	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at /account/billing.`
+	return `${reduceGuidance.slice(0, -1)}, or upgrade your plan at ${billingPath}.`
 }
 
 /**

@@ -12,6 +12,7 @@ import {
 	webhooksDocHref,
 } from '#client/routes/webhooks-shared.ts'
 import { type PackageWebhookListItem } from '#universal/loader-data.ts'
+import { orgResourcePath } from '#universal/org-pages.ts'
 import { primaryLinkCss } from '#universal/styles/style-primitives.ts'
 import { colors, spacing } from '#universal/styles/tokens.ts'
 import { detailSectionCss } from './community-detail-sections.tsx'
@@ -238,6 +239,7 @@ export function createPackageWebhooksController(handle: Handle) {
 										void runIntent(ref, webhook, intent)
 									},
 									onHideUrl: () => hideUrl(webhook),
+									deliveriesHref: `${orgResourcePath(ref.username, 'activity')}?view=recent&status=all&surface=webhook`,
 								}),
 							)}
 						</div>

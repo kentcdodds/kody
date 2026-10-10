@@ -6,6 +6,7 @@ import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
+import { authorizeAmbientIntegrationUse } from '#worker/authorization/credential-use.ts'
 import {
 	IntegrationTokenRefreshCallerError,
 	refreshIntegrationTokens,
@@ -55,10 +56,18 @@ export const integrationTokenRefreshCapability = defineDomainCapability(
 			const { authorityPackageId } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,
 			})
+			const orgUserId = ownerIdFromCaller(ctx.callerContext)
+			await authorizeAmbientIntegrationUse({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				orgUserId,
+				integrationName: args.name,
+				authorityPackageId,
+			})
 			try {
 				const result = await refreshIntegrationTokens({
 					env: ctx.env,
-					userId: ownerIdFromCaller(ctx.callerContext),
+					userId: orgUserId,
 					userEmail: user.email,
 					name: args.name,
 					baseUrl: ctx.callerContext.baseUrl,

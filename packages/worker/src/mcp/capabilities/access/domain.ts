@@ -18,6 +18,7 @@ import {
 } from './org-members.ts'
 import {
 	teamCreateCapability,
+	teamListCapability,
 	teamMemberAddCapability,
 	teamMemberRemoveCapability,
 } from './teams.ts'
@@ -47,6 +48,7 @@ export const accessDomain = defineDomain({
 		orgMemberListCapability,
 		orgMemberUpdateCapability,
 		orgMemberRemoveCapability,
+		teamListCapability,
 		teamCreateCapability,
 		teamMemberAddCapability,
 		teamMemberRemoveCapability,

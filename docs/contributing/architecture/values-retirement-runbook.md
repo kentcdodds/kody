@@ -11,7 +11,7 @@ advertisements do not mention values. The unadvertised `values` guide stays
 callable by exact entity id. `primitives.yaml` has no `id: values` entry.
 
 `valueGet` / `valueList` / `valueDelete` remain as an unadvertised drain until
-the D1 tables drop. `/account/values` stays as an operator drain and is not in
+the D1 tables drop. `/@<slug>/-/values` stays as an operator drain and is not in
 account nav. There is no `values-writes` feature flag.
 
 Live leftover count as of 2026-08-24: 19 buckets / 46 entries / 19 users; 0

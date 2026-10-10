@@ -31,7 +31,7 @@ See the [setup index](./index.md) for the other setup pages.
     the primary account for testing the non-admin side of RBAC (local seeding
     only; never seeded into remote environments)
 - Each seeded account also gets a sample user-lane Google integration with
-  Personal and Work connections so `/account/integrations` can be exercised
+  Personal and Work connections so `/@<slug>/-/integrations` can be exercised
   without a live OAuth dance.
 - Local-only account UI fixtures (no ARTIFACTS binding, no control-kody
   command):

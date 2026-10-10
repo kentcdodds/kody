@@ -650,7 +650,7 @@ Configure these GitHub Actions secrets and variables for workflows:
   `POST`s this minted inbound webhook URL for `@kentcdodds/weekly-site-perf`
   webhook `run` (`inputMode: "params"`, `responseMode: "sync"`). The value is
   the Kody user secret `weeklySitePerfWebhookRun`
-  (https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun); Kent
+  (https://kody.codes/@<slug>/-/secrets/user/weeklySitePerfWebhookRun); Kent
   copies it into GitHub. Agents never paste the URL. Not a Worker secret; the
   weekly job skips invoke when this is unset, blank, or not a valid `http(s)`
   URL.)
@@ -751,9 +751,9 @@ How to get/set each value:
 - `KODY_WEBHOOK_URL_RUN` (optional)
   - Minted inbound webhook URL for `@kentcdodds/weekly-site-perf` webhook `run`.
   - Kent copies the value from the Kody user secret `weeklySitePerfWebhookRun`
-    at https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun into the
-    GitHub Actions repository secret `KODY_WEBHOOK_URL_RUN`. Agents never paste
-    the URL.
+    at https://kody.codes/@<slug>/-/secrets/user/weeklySitePerfWebhookRun into
+    the GitHub Actions repository secret `KODY_WEBHOOK_URL_RUN`. Agents never
+    paste the URL.
   - The weekly workflow uses this secret only to invoke that package; it is not
     synced to the Worker. Rotate with `webhookUrlRotate`, then update both the
     Kody user secret and this GitHub secret.

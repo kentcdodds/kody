@@ -61,7 +61,7 @@ test('account section switches keep the current page on screen (no loading flash
 		password: 'account-nav-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
-	await page.goto('/account/jobs')
+	await page.goto(`/@${user.username}/-/jobs`)
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/jobs$`))
 	await waitForClientHydration(page)
 	await expect(
@@ -160,7 +160,7 @@ test('Add connection opens its own page with the client wall, then a host step (
 		password: 'connections-password',
 	})
 	await login({ email: user.email, password: user.password, mode: 'login' })
-	await page.goto('/account/connections')
+	await page.goto(`/@${user.username}/-/connections`)
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/connections$`))
 	await waitForClientHydration(page)
 	await expect(
@@ -295,7 +295,7 @@ test('account live search keeps the same focused input while the list filters', 
 	})
 	expect(betaSecret.ok()).toBe(true)
 
-	await page.goto('/account/secrets')
+	await page.goto(`/@${user.username}/-/secrets`)
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/secrets$`))
 	await waitForClientHydration(page)
 	await expect(
@@ -314,7 +314,7 @@ test('account live search keeps the same focused input while the list filters', 
 	await expect(page.getByText(`alphaSecret${runId}`)).toBeVisible()
 	await expect(page.getByText(`betaSecret${runId}`)).toHaveCount(0)
 
-	await page.goto('/account/jobs')
+	await page.goto(`/@${user.username}/-/jobs`)
 	await expect(page).toHaveURL(new RegExp(`/@${user.username}/-/jobs$`))
 	await waitForClientHydration(page)
 	const jobsSearch = page.getByRole('searchbox', { name: 'Search jobs' })

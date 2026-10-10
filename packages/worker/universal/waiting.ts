@@ -10,6 +10,8 @@ import {
 	onboardingChecklistItemLabels,
 	type OnboardingChecklistItemId,
 } from './onboarding-process.ts'
+import { createHref } from 'remix/route-pattern/href'
+import { orgResourcePathForAccountPath } from './org-pages.ts'
 import { routes } from './routes.ts'
 
 export const waitingItemKinds = [
@@ -174,7 +176,10 @@ export function isUnexpiredEpochMs(expiresAt: number, now: Date) {
 	return Number.isFinite(expiresAt) && expiresAt > now.getTime()
 }
 
-export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
+export function buildWaitingItems(
+	signals: WaitingSignals,
+	orgSlug: string,
+): Array<WaitingItem> {
 	const items: Array<WaitingItem> = []
 
 	if (!signals.emailVerified) {
@@ -236,7 +241,7 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 			why: 'Open Secrets to paste new values. Do not put them in chat.',
 			who: 'you',
 			doLabel: 'Open Secrets',
-			href: routes.accountSecrets.href(),
+			href: '/account/secrets',
 			severity: 'degraded',
 		})
 	}
@@ -297,7 +302,7 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 			why: `${signals.errorRate.errorCount} of ${signals.errorRate.eventCount} recent runs failed and still need triage. Activity is where you handle those errors.`,
 			who: 'you',
 			doLabel: 'Open Activity',
-			href: routes.accountActivity.href(),
+			href: '/account/activity',
 			severity: 'degraded',
 		})
 	}
@@ -323,18 +328,35 @@ export function buildWaitingItems(signals: WaitingSignals): Array<WaitingItem> {
 		items.push(buildFirstUseWaitingItem(id))
 	}
 
-	return items.sort((left, right) => {
-		const severity = severityRank[left.severity] - severityRank[right.severity]
-		if (severity !== 0) return severity
-		const kind = kindRank[left.kind] - kindRank[right.kind]
-		if (kind !== 0) return kind
-		if (left.kind === 'first-use' && right.kind === 'first-use') {
-			return firstUseItemRank(left.id) - firstUseItemRank(right.id)
-		}
-		if (left.id === 'secret-expired-more') return 1
-		if (right.id === 'secret-expired-more') return -1
-		return left.title.localeCompare(right.title)
-	})
+	return items
+		.map((item) => relocateWaitingHref(item, orgSlug))
+		.sort((left, right) => {
+			const severity =
+				severityRank[left.severity] - severityRank[right.severity]
+			if (severity !== 0) return severity
+			const kind = kindRank[left.kind] - kindRank[right.kind]
+			if (kind !== 0) return kind
+			if (left.kind === 'first-use' && right.kind === 'first-use') {
+				return firstUseItemRank(left.id) - firstUseItemRank(right.id)
+			}
+			if (left.id === 'secret-expired-more') return 1
+			if (right.id === 'secret-expired-more') return -1
+			return left.title.localeCompare(right.title)
+		})
+}
+
+function relocateWaitingHref(item: WaitingItem, orgSlug: string): WaitingItem {
+	const hashIndex = item.href.indexOf('#')
+	const hash = hashIndex === -1 ? '' : item.href.slice(hashIndex)
+	const beforeHash =
+		hashIndex === -1 ? item.href : item.href.slice(0, hashIndex)
+	const queryIndex = beforeHash.indexOf('?')
+	const pathname =
+		queryIndex === -1 ? beforeHash : beforeHash.slice(0, queryIndex)
+	const search = queryIndex === -1 ? '' : beforeHash.slice(queryIndex)
+	const orgPath = orgResourcePathForAccountPath(pathname, orgSlug)
+	if (!orgPath) return item
+	return { ...item, href: `${orgPath}${search}${hash}` }
 }
 
 function firstUseItemRank(itemId: string) {
@@ -370,7 +392,7 @@ const waitingFirstUseCopy: Record<
 		title: 'Save your first memory',
 		why: 'Memories persist facts your agents can reuse across hosts.',
 		doLabel: 'Open Memories',
-		href: routes.accountMemories.href(),
+		href: '/account/memories',
 	},
 	execute: {
 		title: 'Run your first execute',
@@ -382,25 +404,25 @@ const waitingFirstUseCopy: Record<
 		title: 'Persist your first package',
 		why: 'A saved package is reusable code your agents can keep and share.',
 		doLabel: 'Open Repositories',
-		href: routes.accountPackages.href(),
+		href: '/account/packages',
 	},
 	job: {
 		title: 'Create your first job',
 		why: 'Jobs run on a schedule so your agents can keep working without you.',
 		doLabel: 'Open Jobs',
-		href: routes.accountJobs.href(),
+		href: '/account/jobs',
 	},
 	integration: {
 		title: 'Connect your first integration',
 		why: 'An integration grant lets your agents call a connected third-party account.',
 		doLabel: 'Open Integrations',
-		href: routes.accountIntegrations.href(),
+		href: '/account/integrations',
 	},
 	secret: {
 		title: 'Add your first secret',
 		why: 'User-scope secrets stay out of chat. Add one so your agents can use credentials safely.',
 		doLabel: 'Open Secrets',
-		href: routes.accountSecrets.href(),
+		href: '/account/secrets',
 	},
 	discord: {
 		title: 'Join the Kody Discord',
@@ -413,7 +435,9 @@ const waitingFirstUseCopy: Record<
 function buildMcpServerWaitingItem(
 	server: WaitingMcpServerSignal,
 ): WaitingItem | null {
-	const href = routes.accountMcpServerDetail.href({ serverId: server.id })
+	const href = createHref('/account/mcp-servers/:serverId', {
+		serverId: server.id,
+	})
 	if (server.state === 'authenticating') {
 		return {
 			id: `mcp-server:${server.id}`,

@@ -1226,6 +1226,68 @@ export type OrgMembersLoaderData = {
 	canManage: boolean
 }
 
+export type OrgTeamMemberView = {
+	userId: string
+	username: string | null
+	displayName: string | null
+	avatarUrl: string | null
+}
+
+export type OrgTeamView = {
+	id: string
+	slug: string
+	name: string
+	description: string | null
+	memberCount: number
+	members: Array<OrgTeamMemberView>
+}
+
+export type OrgTeamsLoaderData = {
+	ok: true
+	org: OrgManagementOrg
+	teams: Array<OrgTeamView>
+	/** Org members eligible to add to a team. */
+	orgMembers: Array<OrgMemberView>
+	canManage: boolean
+	canRemoveMembers: boolean
+}
+
+export type OrgGrantView = {
+	id: string
+	resourceType: string
+	resourceId: string
+	resourceLabel: string
+	subjectType: 'user' | 'team'
+	subjectId: string
+	subjectLabel: string
+	preset: string | null
+	presetLabel: string | null
+	permissions: Array<string>
+	createdAt: string
+}
+
+export type OrgGrantsLoaderData = {
+	ok: true
+	org: OrgManagementOrg
+	grants: Array<OrgGrantView>
+	canManage: boolean
+}
+
+export type OrgCollaboratorView = {
+	userId: string
+	username: string | null
+	displayName: string | null
+	avatarUrl: string | null
+	grants: Array<OrgGrantView>
+}
+
+export type OrgCollaboratorsLoaderData = {
+	ok: true
+	org: OrgManagementOrg
+	collaborators: Array<OrgCollaboratorView>
+	canManage: boolean
+}
+
 export type AccountConnectionListItem = {
 	provider: string
 	label: string
@@ -2428,6 +2490,9 @@ export type AppLoaderData = {
 	accountOrganizationsNew?: AccountOrganizationsNewLoaderData
 	orgSettings?: OrgSettingsLoaderData
 	orgMembers?: OrgMembersLoaderData
+	orgTeams?: OrgTeamsLoaderData
+	orgGrants?: OrgGrantsLoaderData
+	orgCollaborators?: OrgCollaboratorsLoaderData
 	accountConnections?: AccountConnectionsLoaderData
 	accountEmailDestinations?: AccountEmailDestinationsLoaderData
 	accountConnectedAgents?: AccountConnectedAgentsLoaderData
@@ -2571,7 +2636,7 @@ export type AccountUsageCredits =
 			eligible: false
 			/** Checkout for the purchasable Pro is configured. */
 			canSwitchToPro: boolean
-			billingHref: '/account/billing'
+			billingHref: string
 	  }
 	| AccountUsageCreditsWallet
 

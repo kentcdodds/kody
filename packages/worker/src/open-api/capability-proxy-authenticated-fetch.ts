@@ -7,6 +7,7 @@ import { createAuthenticatedFetch } from '#mcp/execute-modules/kody-runtime-util
 import { executeGatewayFetch } from '#mcp/fetch-gateway.ts'
 import { buildKodyFns } from '#mcp/run-kody-registry.ts'
 import { secretAuthorityHeaderName } from '#mcp/secrets/secret-authority.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { authorizeLocalExecuteOwnedPackageId } from './capability-proxy-package-grants.ts'
 import { type ApiInvocationContext } from './context.ts'
 import { invalidRequest } from './errors.ts'
@@ -160,7 +161,9 @@ async function authorizeAuthenticatedFetchPackageId(input: {
 }) {
 	return await authorizeLocalExecuteOwnedPackageId({
 		db: input.ctx.env.APP_DB,
-		callerUserId: input.ctx.callerContext.user.userId,
+		env: input.ctx.env,
+		request: input.ctx.callerContext.request,
+		orgUserId: ownerIdFromCaller(input.ctx.callerContext),
 		packageId: input.packageId,
 	})
 }
@@ -170,6 +173,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 	args: ReadonlyArray<unknown>
 }): Promise<CapabilityProxyAuthenticatedFetchResult> {
 	const call = parseCapabilityProxyAuthenticatedFetchArgs(input.args)
+	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
 	const packageId = call.packageId
 		? await authorizeAuthenticatedFetchPackageId({
 				ctx: input.ctx,
@@ -193,7 +197,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 				env: input.ctx.env,
 				props: {
 					baseUrl: input.ctx.callerContext.baseUrl,
-					userId: input.ctx.callerContext.user.userId,
+					userId: orgUserId,
 					email: input.ctx.callerContext.user.email,
 					request: input.ctx.callerContext.request,
 					storageContext,
@@ -207,7 +211,7 @@ export async function runCapabilityProxyAuthenticatedFetch(input: {
 			env: input.ctx.env,
 			props: {
 				baseUrl: input.ctx.callerContext.baseUrl,
-				userId: input.ctx.callerContext.user.userId,
+				userId: orgUserId,
 				email: input.ctx.callerContext.user.email,
 				request: input.ctx.callerContext.request,
 				storageContext,

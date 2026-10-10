@@ -971,7 +971,7 @@ identity, and expected attachment count in the same SQLite transaction as the
 graph write. Outbound terminal message/event updates are one SQLite transaction.
 Read, classification, explicit-delete, export, and effect-ledger RPCs reject
 cross-owner access and do not fall back to D1. Users delete their own stored
-messages with `emailMessageDelete` or the delete action on `/account/email`,
+messages with `emailMessageDelete` or the delete action on `/@<slug>/-/email`,
 both of which call owner-bound `deleteMessageWithBlobs` and then drop any
 `email_outbound_provider_index` row for that message.
 
@@ -1471,14 +1471,14 @@ on write unless a migration backfills existing rows.
   and adopted forks (`community_forks.adopted_at` / `adoption_note`) skip that
   grant for read/use only. Mutations from package code (`secretSet` /
   `secretDelete`) always require the grant. Only the account owner can add a
-  package to that grant (secret editor or `/account/secrets/approve`).
+  package to that grant (secret editor or `/@<slug>/-/secrets/approve`).
   `secretLock` returns an approval URL and does not change `allowed_packages`.
   Removing a grant is website-only.
 - `secret_provider_bindings` and `secret_provider_grants`
   (`0064-secret-provider-bindings.sql`) pin one saved package plus door-key
   secret name to a provider id per account, and grant saved packages use of a
   canonical `(provider, ref)`. Declaring `kody.secretProvider` is not a binding.
-  Owners revoke grants on `/account/secret-providers`. Unbind, and rebind to a
+  Owners revoke grants on `/@<slug>/-/secret-providers`. Unbind, and rebind to a
   different provider package, drop grants (`ON DELETE CASCADE` from the
   binding). See [secret providers](../secret-providers.md). Official OAuth token
   rotation persists host-side and does not use that write grant. Authorship and

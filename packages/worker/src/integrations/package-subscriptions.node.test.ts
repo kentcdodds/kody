@@ -40,6 +40,7 @@ function pkg(index: number, kodyId: string) {
 	return {
 		id: `package-${index}`,
 		userId: 'user-1',
+		orgSlug: 'ada',
 		sourceId: `source-${index}`,
 		kodyId,
 		name: `@user/${kodyId}`,
@@ -133,6 +134,7 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 	const results = await dispatchIntegrationAuthFailedSubscriptionEvents({
 		env,
 		userId: 'user-1',
+		orgSlug: 'ada',
 		eventId: 'event-1',
 		occurredAt: '2026-08-18T17:00:00.000Z',
 		integration,
@@ -157,7 +159,7 @@ test('integration.auth.failed fans out only to owning-user packages with a lean 
 				reason: 'provider_rejected',
 				provider,
 				reconnect_url: 'https://example.com/connect/oauth?provider=google',
-				account_url: 'https://example.com/account/integrations/google',
+				account_url: 'https://example.com/@ada/-/integrations/google',
 				occurred_at: '2026-08-18T17:00:00.000Z',
 			},
 		}),
@@ -176,6 +178,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 		dispatchIntegrationAuthFailedSubscriptionEvents({
 			env,
 			userId: 'user-1',
+			orgSlug: 'ada',
 			eventId: 'event-2',
 			occurredAt: '2026-08-18T17:00:00.000Z',
 			integration: {
@@ -216,6 +219,7 @@ test('integration.auth.failed never throws on discovery or handler failures', as
 		dispatchIntegrationAuthFailedSubscriptionEvents({
 			env,
 			userId: 'user-1',
+			orgSlug: 'ada',
 			eventId: 'event-3',
 			occurredAt: '2026-08-18T17:00:00.000Z',
 			integration: {
@@ -262,6 +266,7 @@ test('integration.auth.succeeded fans out a lean payload only to packages on tha
 	const results = await dispatchIntegrationAuthSucceededSubscriptionEvents({
 		env,
 		userId: 'user-1',
+		orgSlug: 'ada',
 		eventId: 'event-4',
 		occurredAt: '2026-08-18T18:00:00.000Z',
 		integration,
@@ -280,7 +285,7 @@ test('integration.auth.succeeded fans out a lean payload only to packages on tha
 				event_id: 'event-4',
 				integration,
 				source: 'refresh',
-				account_url: 'https://example.com/account/integrations/google',
+				account_url: 'https://example.com/@ada/-/integrations/google',
 				occurred_at: '2026-08-18T18:00:00.000Z',
 			},
 		}),

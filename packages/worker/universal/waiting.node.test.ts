@@ -50,44 +50,49 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 	expect(isUnexpiredEpochMs(now.getTime(), now)).toBe(false)
 	expect(isUnexpiredEpochMs(Number.NaN, now)).toBe(false)
 
-	expect(buildWaitingItems(emptySignals)).toEqual([])
+	expect(buildWaitingItems(emptySignals, 'ada')).toEqual([])
 
-	const items = buildWaitingItems({
-		username: 'kentcdodds',
-		emailVerified: false,
-		onboardingDismissed: false,
-		onboardingRemaining: ['verify-email', 'connect-agent'],
-		mcpServers: [
-			{
-				id: 'srv-auth',
-				name: 'Notion',
-				state: 'authenticating',
-				error:
-					'Stored OAuth tokens could not be refreshed. Re-authorize from /account/mcp-servers.',
-			},
-			{
-				id: 'srv-down',
-				name: 'Linear',
-				state: 'disconnected',
-				error: null,
-			},
-			{
-				id: 'srv-ready',
-				name: 'Ready',
-				state: 'ready',
-				error: null,
-			},
-		],
-		integrationAuth: [],
-		expiredSecrets: [],
-		lockedPackages: [
-			{ id: 'pkg-1', name: 'gmail-drafts', kodyId: 'gmail-drafts' },
-		],
-		pendingEmailChange: 'new@example.com',
-		errorRate: { errorCount: 12, eventCount: 20 },
-		entitlementCaps: [{ resource: 'saved_packages', label: 'Saved packages' }],
-		firstUseMissing: [],
-	})
+	const items = buildWaitingItems(
+		{
+			username: 'kentcdodds',
+			emailVerified: false,
+			onboardingDismissed: false,
+			onboardingRemaining: ['verify-email', 'connect-agent'],
+			mcpServers: [
+				{
+					id: 'srv-auth',
+					name: 'Notion',
+					state: 'authenticating',
+					error:
+						'Stored OAuth tokens could not be refreshed. Re-authorize from /account/mcp-servers.',
+				},
+				{
+					id: 'srv-down',
+					name: 'Linear',
+					state: 'disconnected',
+					error: null,
+				},
+				{
+					id: 'srv-ready',
+					name: 'Ready',
+					state: 'ready',
+					error: null,
+				},
+			],
+			integrationAuth: [],
+			expiredSecrets: [],
+			lockedPackages: [
+				{ id: 'pkg-1', name: 'gmail-drafts', kodyId: 'gmail-drafts' },
+			],
+			pendingEmailChange: 'new@example.com',
+			errorRate: { errorCount: 12, eventCount: 20 },
+			entitlementCaps: [
+				{ resource: 'saved_packages', label: 'Saved packages' },
+			],
+			firstUseMissing: [],
+		},
+		'ada',
+	)
 
 	expect(items.map((item) => item.id)).toEqual([
 		'verify-email',
@@ -104,7 +109,7 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		title: 'Error rate is elevated',
 		why: '12 of 20 recent runs failed and still need triage. Activity is where you handle those errors.',
 		doLabel: 'Open Activity',
-		href: '/account/activity',
+		href: '/@ada/-/activity',
 	})
 
 	const notion = items.find((item) => item.id === 'mcp-server:srv-auth')
@@ -112,74 +117,86 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 		title: 'Notion needs authorization',
 		why: 'Stored OAuth tokens could not be refreshed. Re-authorize from /account/mcp-servers.',
 		doLabel: 'Complete authorization',
-		href: '/account/mcp-servers/srv-auth',
+		href: '/@ada/-/mcp-servers/srv-auth',
 		severity: 'block',
 	})
 
-	const failed = buildWaitingItems({
-		...emptySignals,
-		mcpServers: [
-			{
-				id: 'srv-fail',
-				name: 'GitHub',
-				state: 'failed',
-				error: 'Token exchange failed.',
-			},
-		],
-	})
+	const failed = buildWaitingItems(
+		{
+			...emptySignals,
+			mcpServers: [
+				{
+					id: 'srv-fail',
+					name: 'GitHub',
+					state: 'failed',
+					error: 'Token exchange failed.',
+				},
+			],
+		},
+		'ada',
+	)
 	expect(failed[0]).toMatchObject({
 		id: 'mcp-server:srv-fail',
 		title: 'GitHub failed to connect',
 		why: 'Token exchange failed.',
 		doLabel: 'Reconnect',
-		href: '/account/mcp-servers/srv-fail',
+		href: '/@ada/-/mcp-servers/srv-fail',
 		severity: 'degraded',
 	})
 
-	const emptyAfterDismiss = buildWaitingItems({
-		...emptySignals,
-		onboardingDismissed: true,
-		onboardingRemaining: ['connect-agent'],
-	})
+	const emptyAfterDismiss = buildWaitingItems(
+		{
+			...emptySignals,
+			onboardingDismissed: true,
+			onboardingRemaining: ['connect-agent'],
+		},
+		'ada',
+	)
 	expect(emptyAfterDismiss).toEqual([])
 
-	const allErrorsTriaged = buildWaitingItems({
-		...emptySignals,
-		errorRate: { errorCount: 0, eventCount: 162103 },
-	})
+	const allErrorsTriaged = buildWaitingItems(
+		{
+			...emptySignals,
+			errorRate: { errorCount: 0, eventCount: 162103 },
+		},
+		'ada',
+	)
 	expect(allErrorsTriaged).toEqual([])
 
-	const connectionHealth = buildWaitingItems({
-		...emptySignals,
-		mcpServers: [
-			{
-				id: 'srv-outage',
-				name: 'Linear',
-				state: 'failed',
-				error: 'HTTP 503 from upstream',
-			},
-		],
-		integrationAuth: [
-			{
-				name: 'google',
-				accountLabel: 'kent@gmail.com',
-				lane: 'user',
-				reason: 'provider_rejected',
-			},
-			{
-				name: 'spotify',
-				accountLabel: null,
-				lane: 'user',
-				reason: 'provider_unavailable',
-			},
-		],
-		expiredSecrets: [
-			{ name: 'githubAccessToken' },
-			{ name: 'one' },
-			{ name: 'two' },
-			{ name: 'three' },
-		],
-	})
+	const connectionHealth = buildWaitingItems(
+		{
+			...emptySignals,
+			mcpServers: [
+				{
+					id: 'srv-outage',
+					name: 'Linear',
+					state: 'failed',
+					error: 'HTTP 503 from upstream',
+				},
+			],
+			integrationAuth: [
+				{
+					name: 'google',
+					accountLabel: 'kent@gmail.com',
+					lane: 'user',
+					reason: 'provider_rejected',
+				},
+				{
+					name: 'spotify',
+					accountLabel: null,
+					lane: 'user',
+					reason: 'provider_unavailable',
+				},
+			],
+			expiredSecrets: [
+				{ name: 'githubAccessToken' },
+				{ name: 'one' },
+				{ name: 'two' },
+				{ name: 'three' },
+			],
+		},
+		'ada',
+	)
 	expect(connectionHealth.map((item) => item.id)).toEqual([
 		'integration-auth:google',
 		'secret-expired:githubAccessToken',
@@ -204,12 +221,15 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 		),
 	).toBe(false)
 
-	const allMissing = buildWaitingItems({
-		...emptySignals,
-		onboardingDismissed: true,
-		onboardingRemaining: ['give-access', 'install-starter', 'connect-agent'],
-		firstUseMissing: [...waitingFirstUseIds],
-	})
+	const allMissing = buildWaitingItems(
+		{
+			...emptySignals,
+			onboardingDismissed: true,
+			onboardingRemaining: ['give-access', 'install-starter', 'connect-agent'],
+			firstUseMissing: [...waitingFirstUseIds],
+		},
+		'ada',
+	)
 	expect(allMissing.map((item) => item.id)).toEqual([
 		'first-use:search',
 		'first-use:memory',
@@ -223,17 +243,20 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 	expect(allMissing.every((item) => item.kind === 'first-use')).toBe(true)
 	expect(allMissing.every((item) => item.severity === 'setup')).toBe(true)
 
-	const wizardResume = buildWaitingItems({
-		...emptySignals,
-		onboardingDismissed: false,
-		onboardingRemaining: [
-			'connect-agent',
-			'give-access',
-			'connect-second-agent',
-			'install-starter',
-		],
-		firstUseMissing: ['search', 'discord'],
-	})
+	const wizardResume = buildWaitingItems(
+		{
+			...emptySignals,
+			onboardingDismissed: false,
+			onboardingRemaining: [
+				'connect-agent',
+				'give-access',
+				'connect-second-agent',
+				'install-starter',
+			],
+			firstUseMissing: ['search', 'discord'],
+		},
+		'ada',
+	)
 	expect(wizardResume.map((item) => item.id)).toEqual([
 		'onboarding:connect-second-agent',
 		'onboarding:connect-agent',
@@ -244,10 +267,13 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 	const presentClearsCard: Array<WaitingFirstUseId> = [...waitingFirstUseIds]
 	for (const id of presentClearsCard) {
 		const remaining = presentClearsCard.filter((candidate) => candidate !== id)
-		const items = buildWaitingItems({
-			...emptySignals,
-			firstUseMissing: remaining,
-		})
+		const items = buildWaitingItems(
+			{
+				...emptySignals,
+				firstUseMissing: remaining,
+			},
+			'ada',
+		)
 		expect(items.map((item) => item.id)).toEqual(
 			remaining.map((candidate) => `first-use:${candidate}`),
 		)

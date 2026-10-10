@@ -20,9 +20,9 @@ admin UI.
 
 In this repo, that means the user must approve host access through the
 authenticated **`/connect/secrets`** page (query params `name` / `names` and
-`hosts`). Package grants live on `/account/secrets/approve`. `/account/secrets`
-also renders an approval card when the request includes host or package approval
-query params.
+`hosts`). Package grants live on `/@<slug>/-/secrets/approve`.
+`/@<slug>/-/secrets` also renders an approval card when the request includes
+host or package approval query params.
 
 ## What agents should assume
 
@@ -43,8 +43,8 @@ target host is not already approved for that secret, the correct behavior is:
 The same stop-and-surface rule applies to package secret access denies. When
 several secrets or hosts need approval together, prefer the bulk host approval
 URL (`/connect/secrets?names=...&hosts=...`) or the bulk package approval URL
-(`/account/secrets/approve?package_id=...&names=...`) over one link per secret.
-Agents must never auto-approve host or package access.
+(`/@<slug>/-/secrets/approve?package_id=...&names=...`) over one link per
+secret. Agents must never auto-approve host or package access.
 
 ## Host shape
 

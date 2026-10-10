@@ -152,9 +152,14 @@ export async function loadAccountUsageCredits(input: {
 	now: Date
 	/** When set, skip the credit_wallets read. */
 	wallet?: CreditWallet
+	/** Signup organization billing page. Required for the switch-to-Pro link. */
+	billingHref: string
 }): Promise<{
 	credits: AccountUsageCredits | null
-	wallet: { balanceMicroUsd: number; autoRefill: CreditsAlarmAutoRefill } | null
+	wallet: {
+		balanceMicroUsd: number
+		autoRefill: CreditsAlarmAutoRefill
+	} | null
 }> {
 	if (input.entitlement.plan === 'max') return { credits: null, wallet: null }
 	const configured = isBillingConfigured(input.env)
@@ -165,7 +170,7 @@ export async function loadAccountUsageCredits(input: {
 			credits: {
 				eligible: false,
 				canSwitchToPro,
-				billingHref: '/account/billing',
+				billingHref: input.billingHref,
 			},
 			wallet: null,
 		}

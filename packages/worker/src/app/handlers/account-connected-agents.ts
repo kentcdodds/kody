@@ -81,7 +81,7 @@ export async function loadAccountConnectedAgentsData(input: {
 export function createAccountConnectionsHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -113,11 +113,7 @@ export function createAccountConnectionsHandler(env: Env) {
 				loaderData: { accountConnectedAgents },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountConnections
-		| typeof routes.accountConnectionNew
-		| typeof routes.accountConnectionNewAgent
-	>
+	}
 }
 
 export function createAccountConnectedAgentsApiHandler(env: Env) {

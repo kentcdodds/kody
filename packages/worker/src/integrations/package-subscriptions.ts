@@ -1,4 +1,5 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
+import { readSignupOrgSlugOrNull } from '#worker/orgs/signup-org-slug.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
 	loadMatchingPackageSubscriptions,
@@ -76,6 +77,7 @@ export function buildIntegrationAuthFailedReconnectUrl(input: {
 
 export function buildIntegrationAuthAccountUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	integrationName: string
 }) {
 	return buildIntegrationAccountUrl(input)
@@ -95,6 +97,7 @@ function buildSubscriptionIdempotencyKey(input: {
 
 function buildFailedEventPayload(input: {
 	baseUrl: string
+	orgSlug: string
 	eventId: string
 	occurredAt: string
 	integration: IntegrationAuthConnection
@@ -114,6 +117,7 @@ function buildFailedEventPayload(input: {
 		}),
 		account_url: buildIntegrationAccountUrl({
 			baseUrl: input.baseUrl,
+			orgSlug: input.orgSlug,
 			integrationName: input.integration.name,
 		}),
 		occurred_at: input.occurredAt,
@@ -122,6 +126,7 @@ function buildFailedEventPayload(input: {
 
 function buildSucceededEventPayload(input: {
 	baseUrl: string
+	orgSlug: string
 	eventId: string
 	occurredAt: string
 	integration: IntegrationAuthConnection
@@ -134,6 +139,7 @@ function buildSucceededEventPayload(input: {
 		source: input.source,
 		account_url: buildIntegrationAuthAccountUrl({
 			baseUrl: input.baseUrl,
+			orgSlug: input.orgSlug,
 			integrationName: input.integration.name,
 		}),
 		occurred_at: input.occurredAt,
@@ -240,10 +246,19 @@ export async function dispatchIntegrationAuthFailedSubscriptionEvents(input: {
 	eventId: string
 	occurredAt: string
 	integration: IntegrationAuthConnection
+	orgSlug?: string
 	reason: IntegrationAuthFailedReason
 	provider: IntegrationAuthFailedSubscriptionEnvelope['provider']
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	const orgSlug = await readSignupOrgSlugOrNull(
+		input.env.APP_DB,
+		input.userId,
+		input.orgSlug,
+	)
+	if (!orgSlug) {
+		return []
+	}
 	const baseUrl = getAppBaseUrl({ env: input.env })
 	return dispatchIntegrationAuthSubscriptionEvents({
 		env: input.env,
@@ -252,6 +267,7 @@ export async function dispatchIntegrationAuthFailedSubscriptionEvents(input: {
 		topic: integrationAuthFailedTopic,
 		eventPayload: buildFailedEventPayload({
 			baseUrl,
+			orgSlug,
 			eventId: input.eventId,
 			occurredAt: input.occurredAt,
 			integration: input.integration,
@@ -279,8 +295,17 @@ export async function dispatchIntegrationAuthSucceededSubscriptionEvents(input: 
 	occurredAt: string
 	integration: IntegrationAuthConnection
 	source: IntegrationAuthSucceededSource
+	orgSlug?: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
+	const orgSlug = await readSignupOrgSlugOrNull(
+		input.env.APP_DB,
+		input.userId,
+		input.orgSlug,
+	)
+	if (!orgSlug) {
+		return []
+	}
 	const baseUrl = getAppBaseUrl({ env: input.env })
 	return dispatchIntegrationAuthSubscriptionEvents({
 		env: input.env,
@@ -289,6 +314,7 @@ export async function dispatchIntegrationAuthSucceededSubscriptionEvents(input: 
 		topic: integrationAuthSucceededTopic,
 		eventPayload: buildSucceededEventPayload({
 			baseUrl,
+			orgSlug,
 			eventId: input.eventId,
 			occurredAt: input.occurredAt,
 			integration: input.integration,

@@ -169,23 +169,32 @@ export function orgResourcePath(
 }
 
 /**
- * Short-lived redirect from an `/account/...` resource page to the person's
- * signup organization. JSON stays on `/account`. Package detail URLs keep
- * their existing canonical redirect.
+ * Canonical `/@slug/-/<section>` URL for an account-shaped section path.
+ * Loaders still parse the `/account/...` shape (see {@link accountAliasPath});
+ * links use this so they do not point at a path that no longer has a route.
+ * JSON, package detail, and person-only pages are not org section links.
  */
-export function isAccountResourceRedirectPath(pathname: string) {
-	return accountResourceRedirectPath(pathname, 'org') !== null
-}
-
-export function accountResourceRedirectPath(
+export function orgResourcePathForAccountPath(
 	pathname: string,
 	personalSlug: string,
 ) {
 	if (!isOrganizationSlug(personalSlug)) return null
-	if (pathname === '/account/packages' || pathname === '/account/packages/') {
+	const normalized =
+		pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+	if (normalized === '/account/packages') {
 		return orgResourcePath(personalSlug, 'packages')
 	}
-	const match = /^\/account\/([^/]+)(\/.*)?$/.exec(pathname)
+	if (
+		normalized === '/account/billing' ||
+		normalized === '/account/billing/success' ||
+		normalized === '/account/billing/portal'
+	) {
+		const step = normalized.slice('/account/billing'.length).replace(/^\//, '')
+		return step
+			? `${orgBillingPath(personalSlug)}/${step}`
+			: orgBillingPath(personalSlug)
+	}
+	const match = /^\/account\/([^/]+)(\/.*)?$/.exec(normalized)
 	if (!match) return null
 	const section = match[1] ?? ''
 	if (section.endsWith('.json') || section === 'packages') return null
@@ -193,6 +202,21 @@ export function accountResourceRedirectPath(
 	const rest = (match[2] ?? '').replace(/^\//, '').replace(/\/$/, '')
 	if (exactOrgSections.has(section) && rest) return null
 	return orgResourcePath(personalSlug, section, rest)
+}
+
+/**
+ * Rewrite an href when the person is already on an organization URL.
+ * Account-shaped section paths become `/@slug/-/<section>`. Anything else
+ * (APIs, person pages, package detail) stays as written.
+ */
+export function relocateAccountHref(href: string, currentHref: string) {
+	const current = new URL(currentHref, 'http://localhost')
+	const slug = orgSlugFromPathname(current.pathname)
+	if (!slug) return href
+	const target = new URL(href, 'http://localhost')
+	const orgPath = orgResourcePathForAccountPath(target.pathname, slug)
+	if (!orgPath) return href
+	return `${orgPath}${target.search}${target.hash}`
 }
 
 /**
@@ -207,31 +231,43 @@ export function accountAliasPath(pathname: string) {
 		: `/account/${parsed.section}`
 }
 
-const orgManagementSections = ['settings', 'members'] as const
+const orgManagementSections = [
+	'settings',
+	'members',
+	'teams',
+	'grants',
+	'collaborators',
+] as const
 
 export type OrgManagementSection = (typeof orgManagementSections)[number]
 
+const orgManagementSectionSet: ReadonlySet<string> = new Set(
+	orgManagementSections,
+)
+
 /**
- * `/@acme/-/settings`, `/@acme/-/members.json`, and mutation paths under those
- * sections. Uses the same `/-/` separator as other org pages so they cannot
- * collide with `/@owner/<kody-id>`. Not an `orgOwnedAccountSection`.
+ * `/@acme/-/settings`, `/@acme/-/members.json`, teams/grants/collaborators, and
+ * mutation paths under those sections. Uses the same `/-/` separator as other
+ * org pages so they cannot collide with `/@owner/<kody-id>`. Not an
+ * `orgOwnedAccountSection`.
  */
 export function parseOrgManagementPath(
 	pathname: string,
 ): { slug: string; section: OrgManagementSection } | null {
 	const match = new RegExp(
-		`^/@([^/]+)/${orgPageSeparator}/(settings|members)(?:\\.json|/[^/]+)?/?$`,
+		`^/@([^/]+)/${orgPageSeparator}/(settings|members|teams|grants|collaborators)(?:\\.json|/[^/]+)?/?$`,
 	).exec(pathname)
 	if (!match) return null
 	const slug = match[1] ?? ''
 	const section = match[2]
 	if (
 		!isOrganizationSlug(slug) ||
-		(section !== 'settings' && section !== 'members')
+		!section ||
+		!orgManagementSectionSet.has(section)
 	) {
 		return null
 	}
-	return { slug, section }
+	return { slug, section: section as OrgManagementSection }
 }
 
 export function orgSettingsPath(slug: string) {
@@ -240,6 +276,18 @@ export function orgSettingsPath(slug: string) {
 
 export function orgMembersPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/members`
+}
+
+export function orgTeamsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/teams`
+}
+
+export function orgGrantsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/grants`
+}
+
+export function orgCollaboratorsPath(slug: string) {
+	return `/@${slug}/${orgPageSeparator}/collaborators`
 }
 
 /** Owners manage org profile and members. */
@@ -263,6 +311,12 @@ export function switchOrgPath(pathname: string, targetSlug: string) {
 				return orgSettingsPath(targetSlug)
 			case 'members':
 				return orgMembersPath(targetSlug)
+			case 'teams':
+				return orgTeamsPath(targetSlug)
+			case 'grants':
+				return orgGrantsPath(targetSlug)
+			case 'collaborators':
+				return orgCollaboratorsPath(targetSlug)
 			default: {
 				const exhaustive: never = management.section
 				return exhaustive

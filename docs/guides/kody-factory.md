@@ -60,8 +60,8 @@ runtime state belongs in `packageStorage()`.
 package declares recurring schedules under `kody.jobs` so the schedule travels
 with the package behavior. Deferred one-shot work uses
 `workflows.create({ runAt })` from `execute` or package runtime. Package-job
-runs stay on `/account/jobs`. Deferred workflow runs stay on
-`/account/workflows`. See [Jobs, workflows, and webhooks](./triggers.md).
+runs stay on `/@<slug>/-/jobs`. Deferred workflow runs stay on
+`/@<slug>/-/workflows`. See [Jobs, workflows, and webhooks](./triggers.md).
 
 ### Apps and webhooks
 

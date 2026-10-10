@@ -73,9 +73,7 @@ export function createAccountPackagesHandler(env: Env) {
 				headers: { location: destination.toString() },
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountPackages | typeof routes.accountPackageDetail
-	>
+	} satisfies Action<typeof routes.accountPackageDetail>
 }
 
 export function createAccountPackagesApiHandler(env: Env) {

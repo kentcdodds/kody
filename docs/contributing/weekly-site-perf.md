@@ -53,7 +53,7 @@ leaves the tracking issue open when a human should decide.
 `responseMode: "sync"`) on the root `.` export. The live Action reads the minted
 URL from the repository (or org) secret `KODY_WEBHOOK_URL_RUN`. Kent copies that
 value from the Kody user secret `weeklySitePerfWebhookRun` at
-https://kody.codes/account/secrets/user/weeklySitePerfWebhookRun. Agents never
+https://kody.codes/@<slug>/-/secrets/user/weeklySitePerfWebhookRun. Agents never
 paste the URL. Rotate with `webhookUrlRotate`, then update both the Kody user
 secret and the GitHub secret. See [setup manifest](./setup-manifest.md).
 

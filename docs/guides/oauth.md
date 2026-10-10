@@ -183,13 +183,13 @@ exist: `google` for a default account, `google-business` for a business account,
 or `google-youtube-brand` for a brand identity. Agents should call
 `integrationList` up front when a provider may have multiple accounts connected.
 
-Manage integrations from `/account/integrations`. The list is one row per
+Manage integrations from `/@<slug>/-/integrations`. The list is one row per
 service; opening a row unfolds its connections in the table. User-registered
-integrations also resolve at `/account/integrations/apps/<app-slug>`. Disconnect
-a connected account or delete a user-registered integration from that expanded
-row — both ask for a second click, then offer Undo for a few seconds. App
-metadata and the client-secret rotation form live under Advanced details, with
-an explicit confirmation step. Agents can call `integrationOauthAppList`,
+integrations also resolve at `/@<slug>/-/integrations/apps/<app-slug>`.
+Disconnect a connected account or delete a user-registered integration from that
+expanded row — both ask for a second click, then offer Undo for a few seconds.
+App metadata and the client-secret rotation form live under Advanced details,
+with an explicit confirmation step. Agents can call `integrationOauthAppList`,
 `integrationOauthAppDelete`, and `integrationOauthAppRotateCredentials` when
 working outside the account UI.
 

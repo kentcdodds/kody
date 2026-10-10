@@ -51,7 +51,12 @@ test('logged-in header has one menu: the organization, then your own links and L
 	expect(html).not.toContain('data-testid="site-header-account"')
 	expect(html).not.toContain('data-testid="site-header-profile"')
 	expect(html).not.toContain('data-testid="site-header-account-menu"')
-	expect(html).toContain('aria-label="@ada: organizations and account"')
+	expect(html).toContain(
+		'aria-label="@ada: organizations, manage, and account"',
+	)
+	expect(html).toContain('data-testid="org-switcher-manage-group"')
+	expect(html).toContain('>Manage @ada<')
+	expect(html).toContain('href="/@ada/-/billing"')
 	// The photo is drawn once on the trigger and once on the signup org row
 	// in each panel (desktop popover and phone menu), never as its own link.
 	const trigger = html.slice(
@@ -132,7 +137,17 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(createAt).toBeGreaterThan(acmeAt)
 	expect(invitesAt).toBeGreaterThan(createAt)
 	expect(menu.slice(invitesAt)).toMatch(/^>Invites<\/span>[\s\S]*?>2</)
-	expect(html).toContain('aria-label="@acme: organizations and account"')
+	expect(html).toContain(
+		'aria-label="@acme: organizations, manage, and account"',
+	)
+	expect(menu).toContain('data-testid="org-switcher-manage-group"')
+	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/settings"')
+	expect(menu).toContain('href="/@acme/-/members"')
+	expect(menu).toContain('href="/@acme/-/teams"')
+	expect(menu).toContain('href="/@acme/-/grants"')
+	expect(menu).toContain('href="/@acme/-/collaborators"')
+	expect(menu).not.toContain('href="/@acme/-/billing"')
 	expect(menu).toContain('href="/account/organizations#invites"')
 	// The org in the URL is current: checked and announced, the other is not.
 	const acmeRow = menu.slice(
@@ -152,6 +167,129 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(html).toContain('href="/@acme/-/secrets"')
 	expect(html).toContain('data-icon="plus"')
 	expect(html).toContain('data-icon="mail"')
+})
+
+test('org switcher keeps Manage links for a team org on account pages', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: 'owner',
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'acme',
+		}),
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/settings"')
+	expect(menu).toContain('href="/@acme/-/teams"')
+	expect(menu).toContain('href="/@acme/-/billing"')
+	// Switching into the team org from an account page lands on Settings.
+	const acmeRow = menu.slice(
+		menu.lastIndexOf('<a', menu.indexOf('data-testid="org-switcher-acme"')),
+		menu.indexOf('>', menu.indexOf('data-testid="org-switcher-acme"')) + 1,
+	)
+	expect(acmeRow).toContain('href="/@acme/-/settings"')
+})
+
+test('org switcher sends collaborators to org home and billing off Teams', async () => {
+	const collaborator = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/account',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: null,
+					personal: false,
+				},
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+		}),
+	)
+	const collaboratorRow = collaborator.slice(
+		collaborator.lastIndexOf(
+			'<a',
+			collaborator.indexOf('data-testid="org-switcher-acme"'),
+		),
+		collaborator.indexOf(
+			'>',
+			collaborator.indexOf('data-testid="org-switcher-acme"'),
+		) + 1,
+	)
+	expect(collaboratorRow).toContain('href="/@acme"')
+	expect(collaboratorRow).not.toContain('href="/@acme/-/settings"')
+	// Manage stays on the personal org (Billing), not the collaborator org.
+	expect(collaborator).toContain('>Manage @ada<')
+	expect(collaborator).not.toContain('>Manage @acme<')
+
+	const billing = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Cara',
+			username: 'cara',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@zeta/-/teams',
+			organizations: [
+				{
+					slug: 'acme',
+					displayName: 'Acme',
+					role: 'billing',
+					personal: false,
+				},
+				{
+					slug: 'cara',
+					displayName: 'Cara',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'acme',
+		}),
+	)
+	const billingRow = billing.slice(
+		billing.lastIndexOf(
+			'<a',
+			billing.indexOf('data-testid="org-switcher-acme"'),
+		),
+		billing.indexOf('>', billing.indexOf('data-testid="org-switcher-acme"')) +
+			1,
+	)
+	expect(billingRow).toContain('href="/@acme/-/settings"')
+	expect(billing).not.toContain('href="/@acme/-/teams"')
 })
 
 test('logged-out header shows Log in without an Account link', async () => {

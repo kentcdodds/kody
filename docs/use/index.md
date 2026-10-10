@@ -108,9 +108,9 @@ reference detail those docs link into.
   `webhookSyntheticDispatch` on
   [Inbound webhooks](./webhooks.md#synthetic-smoke-test)
 - [Waiting](./waiting.md) — current-state items only you can clear
-  (`/account/waiting` and `waitingSummary`)
+  (`/@<slug>/-/waiting` and `waitingSummary`)
 - [Activity](./activity.md) — failures and recent runs for jobs, apps, webhooks,
-  and other runtimes (`/account/activity` and the `runs` MCP capabilities)
+  and other runtimes (`/@<slug>/-/activity` and the `runs` MCP capabilities)
 - [Plans and pricing](https://kody.codes/pricing) — every plan is the whole
   factory; paid plans raise the caps
 - [Mutating actions and confirmations](./mutating-actions.md)

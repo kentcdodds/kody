@@ -53,9 +53,9 @@ test('smoke test covers shell, auth redirect, and login', async ({ page }) => {
 		page.getByRole('heading', { level: 1, name: 'Profile' }),
 	).toBeVisible()
 	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
-		`@${primaryTestUser.username}: organizations and account`,
+		`@${primaryTestUser.username}: organizations, manage, and account`,
 	)
-	await page.goto('/account/jobs')
+	await page.goto(`/@${primaryTestUser.username}/-/jobs`)
 	await waitForClientHydration(page)
 	const workspaceRail = page.getByRole('navigation', {
 		name: 'Workspace sections',

@@ -25,7 +25,13 @@ type AuthenticatedUser = NonNullable<
 export function createAccountMemoriesHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request, params }) {
+		async handler({
+			request,
+			params,
+		}: {
+			request: Request
+			params?: { memoryId?: string }
+		}) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -44,9 +50,7 @@ export function createAccountMemoriesHandler(env: Env) {
 				loaderData: { accountMemories },
 			})
 		},
-	} satisfies Action<
-		typeof routes.accountMemories | typeof routes.accountMemoryDetail
-	>
+	}
 }
 
 /**

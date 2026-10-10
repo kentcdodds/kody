@@ -11,8 +11,8 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
 
 ## Add a server
 
-1. Open [`/account/mcp-servers`](https://kody.codes/account/mcp-servers), or ask
-   your agent to use `mcpServerAdd` with a short kebab-case `name` and the
+1. Open [`/@<slug>/-/mcp-servers`](https://kody.codes/@<slug>/-/mcp-servers), or
+   ask your agent to use `mcpServerAdd` with a short kebab-case `name` and the
    server `url` (https required). PostHog's documented endpoint is
    `https://mcp.posthog.com/mcp` — the site root redirects to docs and will not
    finish tool discovery. Kody rewrites that exact origin to `/mcp`.
@@ -28,14 +28,14 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
    server shows up in `search` as an **mcp-server** hit (name and server
    instructions). List its tools with `search({ entity: "mcp-server:<name>" })`
    or `search({ domain: "mcp:<name>" })`. If the identity provider approved
-   access but tools never appear, Status on `/account/mcp-servers/:serverId`
+   access but tools never appear, Status on `/@<slug>/-/mcp-servers/:serverId`
    shows the last sanitized settle error (phase, HTTP status, URLs, and an
    attempt id). The same durable error is written when add, reconnect, or
    refresh times out still discovering tools after Kody has also retried the
    older MCP handshake. Reconnect from that page.
 
 If a server is authenticating, failed, or disconnected, [Waiting](./waiting.md)
-lists it and links to `/account/mcp-servers/:id`. `waitingSummary` returns the
+lists it and links to `/@<slug>/-/mcp-servers/:id`. `waitingSummary` returns the
 same items. When a server that was already connected later asks for
 authorization again, Status and `mcpServerList.error` include the sanitized
 token-refresh reason (for example a rejected or already-used refresh token).
@@ -58,8 +58,9 @@ notices the park first.
 ## Lock a server to a package
 
 By default every enabled server is callable from execute and every package. Set
-**Usage** on `/account/mcp-servers/:serverId` to **Specific packages only**, or
-ask an agent to call `mcpServerLock` with the server and a saved `package_id`.
+**Usage** on `/@<slug>/-/mcp-servers/:serverId` to **Specific packages only**,
+or ask an agent to call `mcpServerLock` with the server and a saved
+`package_id`.
 
 After that lock:
 
@@ -95,7 +96,7 @@ If authorization fails with a message like `Invalid origin uri https://…` or a
 invalid redirect URI error:
 
 1. In the remote MCP server's identity provider, allow Kody's client origin and
-   register the exact redirect URI shown on `/account/mcp-servers` (also
+   register the exact redirect URI shown on `/@<slug>/-/mcp-servers` (also
    returned as `oauthClientOrigin` / `oauthCallbackUrl` from `mcpServerAdd` and
    `mcpServerList`).
 2. Remove and re-add the server in Kody (or reconnect) so client registration

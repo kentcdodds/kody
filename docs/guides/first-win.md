@@ -38,7 +38,7 @@ Agent notes — for AI agents driving the optional email loop from this page:
   calls while they are away are the single worst failure mode here: they burn
   tokens, they look broken, and they add nothing that one lookup after "replied"
   does not.
-- Every Kody path below (`/onboarding`, `/connect/oauth`, `/account/email`) is
+- Every Kody path below (`/onboarding`, `/connect/oauth`, `/@<slug>/-/email`) is
   relative to the origin you fetched this guide from. Resolve them against that
   origin; never send someone to a different Kody deployment.
 - Use the exact subject from step 1 whenever you refer to the email, so the
@@ -160,9 +160,9 @@ The email loop is done. Offer one concrete next step and let them choose:
 
 **The email never arrived.** Have them check spam and promotions first, and
 confirm the address on their Kody account is the inbox they are looking at. Kody
-also keeps its own copy: `/account/email` shows the stored outbound message, so
-the subject is recoverable even when the personal copy is lost. Sending again is
-fine — say that you are resending so a duplicate is not a surprise.
+also keeps its own copy: `/@<slug>/-/email` shows the stored outbound message,
+so the subject is recoverable even when the personal copy is lost. Sending again
+is fine — say that you are resending so a duplicate is not a surprise.
 
 **Their reply is not in Kody.** Confirm they replied to the welcome message
 rather than composing a new mail to a different address, and confirm the from

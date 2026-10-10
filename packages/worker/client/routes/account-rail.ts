@@ -2,10 +2,13 @@ import { type OrgRole } from '@kody-internal/shared/request-context.ts'
 import {
 	accountAliasPath,
 	orgBillingPath,
+	orgCollaboratorsPath,
+	orgGrantsPath,
 	orgMembersPath,
 	orgResourcePath,
 	orgRoleManagesBilling,
 	orgSettingsPath,
+	orgTeamsPath,
 	orgSlugFromPathname,
 	type OrgOwnedAccountSection,
 } from '#universal/org-pages.ts'
@@ -13,21 +16,18 @@ import { routes } from '#universal/routes.ts'
 import { type IconName } from '#universal/icon.tsx'
 
 /**
- * The repository list for an organization. `/account/packages` only 302s
- * there, so it is the fallback when the session has no org slug yet.
+ * The repository list for an organization. Without a slug yet, the link
+ * opens the person hub instead of a removed `/account/packages` page.
  */
 export function accountPackagesNavHref(orgSlug: string | null | undefined) {
-	return orgSlug
-		? orgResourcePath(orgSlug, 'packages')
-		: routes.accountPackages.href()
+	return orgSlug ? orgResourcePath(orgSlug, 'packages') : routes.account.href()
 }
 
 function orgSectionHref(
 	orgSlug: string | null | undefined,
 	section: OrgOwnedAccountSection,
-	fallback: string,
 ) {
-	return orgSlug ? orgResourcePath(orgSlug, section) : fallback
+	return orgSlug ? orgResourcePath(orgSlug, section) : routes.account.href()
 }
 
 /**
@@ -104,16 +104,68 @@ export function accountRailGroups(): Array<AccountRailGroup> {
 
 function billingRailItem(orgSlug: string | null | undefined): AccountRailItem {
 	return {
-		href: orgSlug ? orgBillingPath(orgSlug) : routes.accountBilling.href(),
+		href: orgSlug ? orgBillingPath(orgSlug) : routes.account.href(),
 		label: 'Billing',
 		icon: 'wallet',
 	}
 }
 
 /**
+ * Management links for a team (non-personal) organization. Same order as the
+ * Organization rail: Settings, Members, Teams (owners/members), Grants,
+ * Collaborators, Billing (owners/billing). Empty for collaborators (`role`
+ * null) or when `orgSlug` is missing. Used by the rail, org switcher, and org
+ * home so discovery stays consistent.
+ */
+export function teamOrgManagementItems(input: {
+	orgSlug: string | null | undefined
+	role: OrgRole | null
+}): Array<AccountRailItem> {
+	const { orgSlug } = input
+	if (!orgSlug || input.role === null) return []
+	const items: Array<AccountRailItem> = [
+		{
+			href: orgSettingsPath(orgSlug),
+			label: 'Settings',
+			icon: 'edit',
+		},
+		{
+			href: orgMembersPath(orgSlug),
+			label: 'Members',
+			icon: 'users',
+		},
+	]
+	// Billing has member:read but not team:read.
+	if (input.role === 'owner' || input.role === 'member') {
+		items.push({
+			href: orgTeamsPath(orgSlug),
+			label: 'Teams',
+			icon: 'users',
+		})
+	}
+	items.push(
+		{
+			href: orgGrantsPath(orgSlug),
+			label: 'Grants',
+			icon: 'key',
+		},
+		{
+			href: orgCollaboratorsPath(orgSlug),
+			label: 'Collaborators',
+			icon: 'share',
+		},
+	)
+	if (orgRoleManagesBilling(input.role)) {
+		items.push(billingRailItem(orgSlug))
+	}
+	return items
+}
+
+/**
  * The workspace rail: everything the organization owns, grouped by job.
- * Storage still keys by person id (#3073), so a non-personal organization
- * has only Billing (for owners and billing admins) until its resources move.
+ * Team orgs get the Organization management links. Personal orgs keep the
+ * Build / Access / Data / Activity groups (packages and connections still key
+ * on the person; other sections read `request.org.id`).
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -123,23 +175,11 @@ export function workspaceRailGroups(input: {
 }): Array<AccountRailGroup> {
 	const { orgSlug } = input
 	if (!input.personal) {
-		if (!orgSlug || input.role === null) return []
-		const items: Array<AccountRailItem> = [
-			{
-				href: orgSettingsPath(orgSlug),
-				label: 'Settings',
-				icon: 'edit',
-			},
-			{
-				href: orgMembersPath(orgSlug),
-				label: 'Members',
-				icon: 'users',
-			},
-		]
-		if (orgRoleManagesBilling(input.role)) {
-			items.push(billingRailItem(orgSlug))
-		}
-		return [{ label: 'Organization', items }]
+		const items = teamOrgManagementItems({
+			orgSlug,
+			role: input.role,
+		})
+		return items.length > 0 ? [{ label: 'Organization', items }] : []
 	}
 	return [
 		{
@@ -151,25 +191,17 @@ export function workspaceRailGroups(input: {
 					icon: 'box',
 				},
 				{
-					href: orgSectionHref(orgSlug, 'jobs', routes.accountJobs.href()),
+					href: orgSectionHref(orgSlug, 'jobs'),
 					label: 'Jobs',
 					icon: 'briefcase',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'workflows',
-						routes.accountWorkflows.href(),
-					),
+					href: orgSectionHref(orgSlug, 'workflows'),
 					label: 'Workflows',
 					icon: 'refresh',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'webhooks',
-						routes.accountWebhooks.href(),
-					),
+					href: orgSectionHref(orgSlug, 'webhooks'),
 					label: 'Webhooks',
 					icon: 'cloud',
 				},
@@ -179,30 +211,18 @@ export function workspaceRailGroups(input: {
 			label: 'Access',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'connections',
-						routes.accountConnections.href(),
-					),
+					href: orgSectionHref(orgSlug, 'connections'),
 					label: 'Connections',
 					icon: 'link',
 					alsoActiveFor: [routes.accountMcpOauthClients.href()],
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'integrations',
-						routes.accountIntegrations.href(),
-					),
+					href: orgSectionHref(orgSlug, 'integrations'),
 					label: 'Integrations',
 					icon: 'plug',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'mcp-servers',
-						routes.accountMcpServers.href(),
-					),
+					href: orgSectionHref(orgSlug, 'mcp-servers'),
 					label: 'MCP servers',
 					icon: 'server',
 				},
@@ -212,34 +232,22 @@ export function workspaceRailGroups(input: {
 			label: 'Data',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'secrets',
-						routes.accountSecrets.href(),
-					),
+					href: orgSectionHref(orgSlug, 'secrets'),
 					label: 'Secrets',
 					icon: 'key',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'secret-providers',
-						routes.accountSecretProviders.href(),
-					),
+					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',
 					icon: 'key',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'memories',
-						routes.accountMemories.href(),
-					),
+					href: orgSectionHref(orgSlug, 'memories'),
 					label: 'Memories',
 					icon: 'book',
 				},
 				{
-					href: orgSectionHref(orgSlug, 'email', routes.accountEmail.href()),
+					href: orgSectionHref(orgSlug, 'email'),
 					label: 'Email',
 					icon: 'mail',
 				},
@@ -249,20 +257,12 @@ export function workspaceRailGroups(input: {
 			label: 'Activity',
 			items: [
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'activity',
-						routes.accountActivity.href(),
-					),
+					href: orgSectionHref(orgSlug, 'activity'),
 					label: 'Activity',
 					icon: 'trending-up',
 				},
 				{
-					href: orgSectionHref(
-						orgSlug,
-						'waiting',
-						routes.accountWaiting.href(),
-					),
+					href: orgSectionHref(orgSlug, 'waiting'),
 					label: 'Waiting',
 					icon: 'clock',
 				},

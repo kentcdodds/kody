@@ -186,7 +186,7 @@ Gmail-dot email collapse, no shared Stripe customer, and no former platform
 account as referrer (its `users` row has no person behind it until Teams P9
 removes it, [#3084](https://github.com/kentcdodds/kody/issues/3084)). An
 unverified party holds the qualifying invoice id on the pending row; email
-verification retries the grant. `/account/billing` shows the share link and
+verification retries the grant. `/@<slug>/-/billing` shows the share link and
 simple referrer status.
 
 `getUserEntitlement` overlays Pro through the later of the second-agent gift and
@@ -1115,7 +1115,7 @@ workflows via RunLog, and similar).
 | `repo_sessions`                  | `repoOpenSession` before creating a new session                                                                                                                                                                                                                                                                                                                                     |
 | `email_sends_per_day`            | `sendOutboundEmail` (`consumeDailyEntitlement`; plan limit from `resolvePlanLimit`)                                                                                                                                                                                                                                                                                                 |
 | `email_receives_per_day`         | `handleInboundEmail` (`consumeDailyEntitlement`; same plan limits; refund only on `RetryableInboundStorageError`)                                                                                                                                                                                                                                                                   |
-| `stored_email_messages`          | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`). Users free slots with `emailMessageDelete` or the delete action on `/account/email` (Mailbox `deleteMessageWithBlobs`; count is live Mailbox `countMessages`)                                                                                                                    |
+| `stored_email_messages`          | `handleInboundEmail` before storage (`assertWithinEntitlement`; `max` caps from `planLimits.max`). Users free slots with `emailMessageDelete` or the delete action on `/@<slug>/-/email` (Mailbox `deleteMessageWithBlobs`; count is live Mailbox `countMessages`)                                                                                                                  |
 | `email_message_bytes`            | `handleInboundEmail` after inbound reduction (`assertWithinEntitlement` on kept raw size via `resolvePlanLimit`). Wire size above 25 MiB (`maxSurvivableInboundRawBytes`) rejects at SMTP. Mail between the persist cap and 25 MiB is reduced (text kept, oversized parts omitted) and stored.                                                                                      |
 | `secrets`                        | new-entry branch of `saveSecret` in `packages/worker/src/mcp/secrets/service.ts`                                                                                                                                                                                                                                                                                                    |
 | `concurrent_workflows`           | `createDynamicCallableWorkflow` (`reserveWorkflowProjectionSlot` + `assertWithinEntitlement` getCurrent; `max` = 5,000)                                                                                                                                                                                                                                                             |
@@ -1143,7 +1143,7 @@ Checkout sessions are created server-side for authenticated users via
 `{ plan: "pro", interval: "month" | "year", promoCode?: string }`,
 `mode=subscription`, quantity = live seats (owners plus members, at least 1),
 with a signed `client_reference_id` and `metadata.kody_org_id`). Only
-`billing:write` (owners and billing admins) may call it; `/account/billing`
+`billing:write` (owners and billing admins) may call it; `/@<slug>/-/billing`
 redirects to the signup organization's billing page. Sessions enable Stripe
 automatic tax (`automatic_tax[enabled]`; Stripe Tax is active on the account and
 computes 0 until a registration exists) and tax-ID collection for business
@@ -1160,13 +1160,13 @@ get 400 before any Stripe call, monthly codes are looked up
 redemptions, and attached as `discounts[0][promotion_code]`. Codes are for new
 subscriptions only; a customer with a plan-retaining subscription gets 409.
 There is no public Payment Link path — checkout requires a signed-in session so
-unauthenticated card-testing is not possible. `GET /account/billing/success`
+unauthenticated card-testing is not possible. `GET /@<slug>/-/billing/success`
 verifies `client_reference_id` before linking `users.stripe_customer_id`, then
 refreshes `users.stripe_plan` and renders a thank-you page (Discord invite;
 connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
 also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
 has a Discord social-login connection (see
-[`social-login.md`](../social-login.md)). `GET /account/billing/portal` opens
+[`social-login.md`](../social-login.md)). `GET /@<slug>/-/billing/portal` opens
 the Stripe customer portal for linked customers, pinned to
 `STRIPE_BILLING_PORTAL_CONFIGURATION_ID` when set.
 
@@ -1178,7 +1178,7 @@ With exactly one, it creates a Billing Portal session with
 `flow_data[type]=subscription_update_confirm` that moves that subscription's
 item to the requested Pro price (prorated with `always_invoice`) and returns
 `{ ok: true, url, mode: 'portal_update' }`; Stripe redirects back to
-`/account/billing?billing=updated` after the customer confirms the prorated
+`/@<slug>/-/billing?billing=updated` after the customer confirms the prorated
 change. Requesting the price the subscription already has returns
 `409 { error: 'You are already on that plan.' }`. More than one plan-retaining
 subscription (legacy double subscriptions) returns the plain portal with
@@ -1275,8 +1275,8 @@ Billing refresh is activity-driven; there is no global hourly customer scan.
 Checkout completion and subscription/invoice webhooks refresh immediately and
 also arm the owning user's one-shot `StripePlanRefresh` Durable Object alarm for
 one hour later. That independent retry closes over transient Stripe failures
-without repeatedly enumerating inactive users. `/account/billing` arms the same
-backstop and still refreshes on every view so non-persisted `cancel_at` /
+without repeatedly enumerating inactive users. `/@<slug>/-/billing` arms the
+same backstop and still refreshes on every view so non-persisted `cancel_at` /
 `subscriptionStatus` stay current. If checkout cannot arm its backstop, a failed
 immediate refresh remains an error so the caller or Stripe webhook retries
 instead of acknowledging an unrecoverable stale projection. The

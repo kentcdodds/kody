@@ -77,6 +77,17 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		wide.panel.getByTestId(`org-switcher-${user.username}`),
 	).not.toHaveAttribute('aria-current', 'true')
 	await expect(wide.panel.getByTestId('org-switcher-create')).toBeVisible()
+	const manageGroup = wide.panel.getByTestId('org-switcher-manage-group')
+	await expect(manageGroup).toBeVisible()
+	await expect(
+		manageGroup.getByRole('link', { name: 'Settings' }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/settings`)
+	await expect(
+		manageGroup.getByRole('link', { name: 'Members' }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/members`)
+	await expect(
+		manageGroup.getByRole('link', { name: 'Teams' }),
+	).toHaveAttribute('href', `/@pinned-${runId}/-/teams`)
 	// No invites waiting, so no Invites row; the person's own links follow.
 	await expect(wide.panel.getByTestId('org-switcher-invites')).toHaveCount(0)
 	const accountGroup = wide.panel.getByRole('group', { name: 'Your account' })

@@ -41,7 +41,13 @@ function readPathJobId(params: unknown) {
 export function createAccountJobsHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request, params }) {
+		async handler({
+			request,
+			params,
+		}: {
+			request: Request
+			params?: { jobId?: string }
+		}) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -65,7 +71,7 @@ export function createAccountJobsHandler(env: Env) {
 				serverTiming,
 			})
 		},
-	} satisfies Action<typeof routes.accountJobs | typeof routes.accountJobDetail>
+	}
 }
 
 /**

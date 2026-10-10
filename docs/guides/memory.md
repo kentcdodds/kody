@@ -98,7 +98,7 @@ source.
 
 ## Your copy
 
-You can download your memories as JSON from `/account/memories`. The file is
+You can download your memories as JSON from `/@<slug>/-/memories`. The file is
 memories only: no credentials or other account primitives. Deleted memories are
 included only when you turn on **Include deleted**.
 

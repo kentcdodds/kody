@@ -1,5 +1,6 @@
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
 	buildSecretPackageApprovalUrl,
 	buildSecretPackageBulkApprovalUrlIfNeeded,
@@ -279,7 +280,7 @@ export async function resolvePackageMountedSecret(input: {
 			'Package secret access requires a matching server-side package runtime context.',
 		)
 	}
-	const userId = input.callerContext.user?.userId
+	const userId = ownerIdFromCaller(input.callerContext)
 	if (!userId) {
 		throw new Error(
 			'Package secret access requires an authenticated package caller context.',

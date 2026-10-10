@@ -1,5 +1,6 @@
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
-import { routes } from '#universal/routes.ts'
+import { orgSectionRestPath } from '#universal/org-section-hrefs.ts'
+import { readSignupOrgSlugOrNull } from '#worker/orgs/signup-org-slug.ts'
 import { runQueueableDynamicWorkerWork } from '#worker/dynamic-worker-evaluation-budget.ts'
 import {
 	loadMatchingPackageSubscriptions,
@@ -33,11 +34,14 @@ export type McpServerConnectionSubscriptionEnvelope = {
 
 export function buildMcpServerAccountUrl(input: {
 	baseUrl: string
+	orgSlug: string
 	serverId: string
 }) {
-	return `${input.baseUrl}${routes.accountMcpServerDetail.href({
-		serverId: input.serverId,
-	})}`
+	return `${input.baseUrl}${orgSectionRestPath(
+		input.orgSlug,
+		'mcp-servers',
+		input.serverId,
+	)}`
 }
 
 function buildSubscriptionIdempotencyKey(input: {
@@ -50,6 +54,7 @@ function buildSubscriptionIdempotencyKey(input: {
 
 function buildEventPayload(input: {
 	baseUrl: string
+	orgSlug: string
 	event: McpServerConnectionEvent
 }): McpServerConnectionSubscriptionEnvelope {
 	return {
@@ -65,6 +70,7 @@ function buildEventPayload(input: {
 		observed_at: input.event.observedAt,
 		account_url: buildMcpServerAccountUrl({
 			baseUrl: input.baseUrl,
+			orgSlug: input.orgSlug,
 			serverId: input.event.serverId,
 		}),
 	}
@@ -97,6 +103,7 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 	env: Pick<Env, 'APP_DB' | 'BUNDLE_ARTIFACTS_KV' | 'APP_BASE_URL'>
 	userId: string
 	event: McpServerConnectionEvent
+	orgSlug?: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }) {
 	const baseUrl = getAppBaseUrl({ env: input.env })
@@ -107,8 +114,29 @@ export async function dispatchMcpServerConnectionSubscriptionEvents(input: {
 			userId: input.userId,
 			topic: input.event.topic,
 		})
+	const orgSlug = await readSignupOrgSlugOrNull(
+		input.env.APP_DB,
+		input.userId,
+		input.orgSlug,
+	)
+	if (!orgSlug) {
+		if (discoveryErrors.length > 0) {
+			console.warn(
+				'mcp.server connection package subscription discovery incomplete',
+				{
+					eventId: input.event.eventId,
+					topic: input.event.topic,
+					serverName: input.event.serverName,
+					errorCount: discoveryErrors.length,
+					error: discoveryErrors[0],
+				},
+			)
+		}
+		return { results: [], complete: false }
+	}
 	const eventPayload = buildEventPayload({
 		baseUrl,
+		orgSlug,
 		event: input.event,
 	})
 	const settled = await runQueueableDynamicWorkerWork(
@@ -177,6 +205,7 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 	env: Env
 	userId: string
 	events: Array<McpServerConnectionEvent>
+	orgSlug?: string
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<boolean> {
 	if (input.events.length === 0) return true
@@ -200,6 +229,7 @@ export async function emitMcpServerConnectionEventsIfNeeded(input: {
 				env: input.env,
 				userId: input.userId,
 				event,
+				orgSlug: input.orgSlug,
 				waitUntil: input.waitUntil,
 			}),
 		)

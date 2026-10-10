@@ -88,7 +88,7 @@ const accountIntegrationsActionSchema = z
 export function createAccountIntegrationsHandler(env: Env) {
 	return {
 		middleware: [],
-		async handler({ request }) {
+		async handler({ request }: { request: Request }) {
 			const user = await requireAuthenticatedPageUser(request, env)
 			if (user instanceof Response) {
 				return user
@@ -105,12 +105,7 @@ export function createAccountIntegrationsHandler(env: Env) {
 				loaderData: { accountIntegrations },
 			})
 		},
-	} satisfies Action<
-		| typeof routes.accountIntegrations
-		| typeof routes.accountOauthAppDetail
-		| typeof routes.accountIntegrationsApprove
-		| typeof routes.accountIntegrationDetail
-	>
+	}
 }
 
 export function createAccountIntegrationsApiHandler(env: Env) {

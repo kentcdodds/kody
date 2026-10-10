@@ -155,7 +155,7 @@ without consuming it, so link scanners do not burn an unused link. A successful
 links from earlier resends stay valid until expiry or the address verifies.
 Identity email change and release stay on their existing flows; destinations do
 not own `users.email`. Add, resend, set-default, and remove live at
-`/account/email`, `/account/email-destinations.json`, and the
+`/@<slug>/-/email`, `/account/email-destinations.json`, and the
 `emailDestination*` capabilities (3 requests per 15 minutes for add/resend).
 Re-adding a pending unverified address resends a verification email. The cap is
 5 extras besides the identity email. Unverified extras never receive mail.
@@ -600,7 +600,7 @@ selected secret:
   authenticated user's `mcpUser.userId`, so a session can only ever read its own
   secrets
 - All responses set `Cache-Control: no-store`
-- There is **no** separate `/account/secrets/reveal` endpoint and **no**
+- There is **no** separate `/@<slug>/-/secrets/reveal` endpoint and **no**
   password reauthentication step — revealing a secret is inside the owner's own
   trust boundary (same-origin, session-authenticated)
 
@@ -673,7 +673,7 @@ routed from `packages/worker/src/index.ts`.
   its `client_id` with no registration step. Signed-in users can also mint a
   confidential pre-registered client from `/account/mcp-oauth-clients` (Account
   → Connections → Advanced). That page is user-minted clients, not inbound host
-  grants. Account → Connections (`/account/connections`) lists inbound grants
+  grants. Account → Connections (`/@<slug>/-/connections`) lists inbound grants
   from `listUserGrants` (paged) joined with `lookupClient` for a best-effort
   label, authorized time, and revoke. The account UI groups those unique
   `clientId`s by display name, shows a public icon when the host kind already

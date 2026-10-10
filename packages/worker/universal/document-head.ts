@@ -212,25 +212,7 @@ const routeDocumentHeads = {
 	[routePattern(routes.orgBilling)]: titleOnly('Billing'),
 	[routePattern(routes.orgBillingSuccess)]: titleOnly("You're in"),
 	[routePattern(routes.accountUsage)]: titleOnly('Usage'),
-	[routePattern(routes.accountWaiting)]: titleOnly('Waiting'),
 	[routePattern(routes.accountExperiments)]: titleOnly('Experiments'),
-	[routePattern(routes.accountConnections)]: titleOnly('Connections'),
-	[routePattern(routes.accountConnectionNew)]: titleOnly('Add connection'),
-	[routePattern(routes.accountConnectionNewAgent)]: ({ params }) => {
-		const agent = params.agent
-		return titleOnly(
-			isAccountConnectionAgent(agent)
-				? `Connect ${onboardingAgentLabel(agent)}`
-				: 'Add connection',
-		)
-	},
-	[routePattern(routes.accountIntegrations)]: titleOnly('Integrations'),
-	[routePattern(routes.accountOauthAppDetail)]: titleOnly('Integrations'),
-	[routePattern(routes.accountIntegrationsApprove)]: titleOnly('Integrations'),
-	[routePattern(routes.accountIntegrationDetail)]: titleOnly('Integrations'),
-	[routePattern(routes.accountMcpServers)]: titleOnly('MCP servers'),
-	[routePattern(routes.accountMcpServerNew)]: titleOnly('MCP servers'),
-	[routePattern(routes.accountMcpServerDetail)]: titleOnly('MCP servers'),
 	[routePattern(routes.communityPackageApprovePublish)]: titleOnly(
 		'Approve package publish',
 	),
@@ -240,29 +222,6 @@ const routeDocumentHeads = {
 	},
 	[routePattern(routes.accountPasskeys)]: titleOnly('Passkeys'),
 	[routePattern(routes.accountMcpOauthClients)]: titleOnly('MCP OAuth clients'),
-	[routePattern(routes.accountSecrets)]: titleOnly('Secrets'),
-	[routePattern(routes.accountSecretNew)]: titleOnly('Secrets'),
-	[routePattern(routes.accountSecretsApprove)]: titleOnly('Secrets'),
-	[routePattern(routes.accountSecretProviders)]: titleOnly('Secret providers'),
-	[routePattern(routes.accountSecretProvidersApprove)]:
-		titleOnly('Secret providers'),
-	[routePattern(routes.accountSecretUserDetail)]: titleOnly('Secrets'),
-	[routePattern(routes.accountSecretPackageDetail)]: titleOnly('Secrets'),
-	[routePattern(routes.accountSecretSessionDetail)]: titleOnly('Secrets'),
-	[routePattern(routes.accountValues)]: titleOnly('Values'),
-	[routePattern(routes.accountValueNew)]: titleOnly('Values'),
-	[routePattern(routes.accountValueDetail)]: titleOnly('Values'),
-	[routePattern(routes.accountJobs)]: titleOnly('Jobs'),
-	[routePattern(routes.accountJobDetail)]: titleOnly('Jobs'),
-	[routePattern(routes.accountWorkflows)]: titleOnly('Workflows'),
-	[routePattern(routes.accountWorkflowDetail)]: titleOnly('Workflows'),
-	[routePattern(routes.accountWebhooks)]: titleOnly('Webhooks'),
-	[routePattern(routes.accountActivity)]: titleOnly('Activity'),
-	[routePattern(routes.accountActivityDetail)]: titleOnly('Activity'),
-	[routePattern(routes.accountMemories)]: titleOnly('Memories'),
-	[routePattern(routes.accountMemoryDetail)]: titleOnly('Memories'),
-	[routePattern(routes.accountEmail)]: titleOnly('Email inbox'),
-	[routePattern(routes.accountEmailDetail)]: titleOnly('Email inbox'),
 	[routePattern(routes.accountTwoFactor)]: titleOnly(
 		'Two-factor authentication',
 	),
@@ -510,7 +469,25 @@ const routeDocumentHeads = {
 
 const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	[routePattern(routes.orgActivity)]: titleOnly('Activity'),
-	[routePattern(routes.orgConnections)]: titleOnly('Connections'),
+	[routePattern(routes.orgConnections)]: ({ pathname }) => {
+		const rest = pathname.split('/-/connections/')[1]?.replace(/\/$/, '') ?? ''
+		if (rest === 'new') return titleOnly('Add connection')
+		if (rest.startsWith('new/')) {
+			const agent = rest.slice('new/'.length).split('/')[0] ?? ''
+			let decoded = agent
+			try {
+				decoded = decodeURIComponent(agent)
+			} catch {
+				decoded = agent
+			}
+			return titleOnly(
+				isAccountConnectionAgent(decoded)
+					? `Connect ${onboardingAgentLabel(decoded)}`
+					: 'Add connection',
+			)
+		}
+		return titleOnly('Connections')
+	},
 	[routePattern(routes.orgEmail)]: titleOnly('Email inbox'),
 	[routePattern(routes.orgIntegrations)]: titleOnly('Integrations'),
 	[routePattern(routes.orgJobs)]: titleOnly('Jobs'),
@@ -526,6 +503,9 @@ const orgDocumentHeads: Record<string, DocumentHeadResolver> = {
 	// Static `/-/` outranks `/@:username/:kodyId/settings` (kodyId would be `-`).
 	[routePattern(routes.orgSettings)]: titleOnly('Settings'),
 	[routePattern(routes.orgMembers)]: titleOnly('Members'),
+	[routePattern(routes.orgTeams)]: titleOnly('Teams'),
+	[routePattern(routes.orgGrants)]: titleOnly('Grants'),
+	[routePattern(routes.orgCollaborators)]: titleOnly('Collaborators'),
 	[routePattern(routes.accountOrganizationsNew)]: titleOnly(
 		'Create organization',
 	),

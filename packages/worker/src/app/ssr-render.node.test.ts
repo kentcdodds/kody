@@ -612,7 +612,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	})
 	const waiting = await signedIn(
 		createAccountWaitingHandler,
-		'/account/waiting',
+		'/@account-user/-/waiting',
 	)
 	expect(waiting.response.status).toBe(200)
 	expect(waiting.loaderData?.accountWaiting).toEqual({
@@ -634,7 +634,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// server-renders the verify note instead of a copy card.
 	const connections = await signedIn(
 		createAccountConnectionsHandler,
-		'/account/connections',
+		'/@account-user/-/connections',
 	)
 	expect(connections.response.status).toBe(200)
 	expectHtml(connections.html, [
@@ -665,7 +665,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	// agent segments 404 instead of rendering an empty grid.
 	const addGrid = await signedIn(
 		createAccountConnectionsHandler,
-		'/account/connections/new',
+		'/@account-user/-/connections/new',
 	)
 	expectHtml(
 		addGrid.html,
@@ -674,7 +674,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 	const addCursor = await signedIn(
 		createAccountConnectionsHandler,
-		'/account/connections/new/cursor',
+		'/@account-user/-/connections/new/cursor',
 	)
 	expect(addCursor.response.status).toBe(200)
 	expectHtml(addCursor.html, [
@@ -686,7 +686,7 @@ test('SSR HTML routes render page content and embedded loader data', async () =>
 	)
 	const unknownAgent = await runHtml(
 		createAccountConnectionsHandler(env),
-		get('/account/connections/new/not-a-client', cookie),
+		get('/@account-user/-/connections/new/not-a-client', cookie),
 	)
 	expect(unknownAgent.response.status).toBe(404)
 
@@ -1228,7 +1228,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		integrations: Array<AccountIntegrationListItem> = [googleConnection],
 		apps: Array<AccountOauthAppListItem> = [googleApp],
 	) => {
-		const page = await render(env, `/account/integrations${path}`, {
+		const page = await render(env, `/@account-user/-/integrations${path}`, {
 			cookie,
 			loaderData: {
 				accountIntegrations: {
@@ -1250,7 +1250,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 		[
 			'1 account connected.',
 			'data-testid="add-account-open"',
-			'href="/account/integrations/google?add-account=1#add-account"',
+			'href="/@account-user/-/integrations/google?add-account=1#add-account"',
 			'data-prevent-scroll-reset',
 			'>Reconnect<',
 			'data-testid="provider-mark"',
@@ -1339,7 +1339,7 @@ test('renderAppPage server-renders simplified integration and secret-approval pa
 	}
 	const approval = await render(
 		env,
-		'/account/secrets/user/googleAccessToken?allowed-host=gmail.googleapis.com',
+		'/@account-user/-/secrets/user/googleAccessToken?allowed-host=gmail.googleapis.com',
 		{
 			cookie,
 			loaderData: {

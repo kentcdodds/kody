@@ -11,7 +11,7 @@ the credential URL.
 section) renders one card per declared webhook; `#webhook-<name>` targets one
 card.
 
-`/account/webhooks` (account rail → Webhooks) is a read-only index across
+`/@<slug>/-/webhooks` (account rail → Webhooks) is a read-only index across
 packages; each row deep-links to the card above.
 
 Generic `http` `webhookUrlApply` destinations require owner Allow at
@@ -40,8 +40,8 @@ node tools/control-kody.ts request GET /account/webhooks.json
   origin follows the request so previews show their own host.
 - `GET /account/webhooks.json` — `{ ok, username, webhooks[] }` across every
   package; read-only (POST is 405).
-- `GET|POST /account/webhooks/approve-apply.json` — owner approval for a pending
-  generic `http` apply (`handle` + `fingerprint` query). GET returns the
+- `GET|POST /@<slug>/-/webhooks/approve-apply.json` — owner approval for a
+  pending generic `http` apply (`handle` + `fingerprint` query). GET returns the
   destination summary. POST `{ action: "approve" | "reject" }` writes or
   discards the durable grant. The HTML twin is `/connect/webhook-apply`.
 

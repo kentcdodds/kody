@@ -2,6 +2,7 @@ import {
 	buildEntitlementUpgradeHint,
 	EntitlementLimitError,
 } from '#worker/entitlements/errors.ts'
+import { entitlementBillingPath } from '#worker/entitlements/service.ts'
 import { type PlanName } from '#universal/plans.ts'
 import {
 	userMeterRpc,
@@ -331,6 +332,8 @@ export function createUserInboundDeliveryAuthority(
 				upgradeHint: buildEntitlementUpgradeHint(
 					'email_receives_per_day',
 					chargeInput.plan,
+					'none',
+					await entitlementBillingPath(env.APP_DB, userId),
 				),
 			})
 		}

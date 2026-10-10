@@ -59,6 +59,10 @@ import { assertIntegrationHostAllowed } from './execute-modules/integration-host
 import { type StorageContext } from '#mcp/storage.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import {
+	authorizeAmbientIntegrationUse,
+	authorizeAmbientSecretUse,
+} from '#worker/authorization/credential-use.ts'
+import {
 	consumeDailyEntitlement,
 	findCachedUserAccountByStableUserId,
 } from '#worker/entitlements/service.ts'
@@ -454,6 +458,15 @@ export async function expandSecretPlaceholders(input: {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
+			// Ambient ad-hoc execute: acting person needs secret:use on this
+			// secret. Package authority keeps package attachment only.
+			await authorizeAmbientSecretUse({
+				env: input.env as Env,
+				request: input.props.request,
+				orgUserId: callerUserId,
+				secretName: referenced.name,
+				authorityPackageId,
+			})
 			const resolved = await resolveSecret({
 				env: input.env,
 				userId: callerUserId,
@@ -492,6 +505,13 @@ export async function expandSecretPlaceholders(input: {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
+			await authorizeAmbientIntegrationUse({
+				env: input.env as Env,
+				request: input.props.request,
+				orgUserId: callerUserId,
+				integrationName: name,
+				authorityPackageId,
+			})
 			await assertCanUseIntegration({
 				env: input.env,
 				baseUrl: input.props.baseUrl,

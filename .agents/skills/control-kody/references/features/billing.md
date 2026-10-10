@@ -8,11 +8,9 @@ Plan, checkout, portal, prepaid credits, and entitlement usage.
 `/@:orgSlug/-/billing/portal`) and `/account/usage` (credits are its `#credits`
 section). Billing belongs to the organization in the URL. Owners and billing
 admins subscribe and manage; members get 403 from checkout and the portal. Team
-organizations buy one Pro seat per owner and member. `/account/billing` (and its
-`/success` and `/portal`) redirects to the signup organization's billing page,
-keeping the query. `/account/credits` is only a redirect to
-`/account/usage#credits` that keeps its query. Billing also shows the signed-in
-user's referral share link and reward status.
+organizations buy one Pro seat per owner and member. `/account/credits` is only
+a redirect to `/account/usage#credits` that keeps its query. Billing also shows
+the signed-in user's referral share link and reward status.
 
 ## Drive it
 

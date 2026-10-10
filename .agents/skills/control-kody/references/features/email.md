@@ -4,8 +4,8 @@ Per-user stored mail (notify-self, reply) and email destinations.
 
 ## How to get there
 
-`/account/email` → `/account/email/:messageId`. Destinations sit on the inbox
-list at `/account/email#email-destinations`.
+`/@<slug>/-/email` → `/@<slug>/-/email/:messageId`. Destinations sit on the
+inbox list at `/@<slug>/-/email#email-destinations`.
 
 ## Drive it
 

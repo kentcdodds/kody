@@ -6,7 +6,7 @@ integrations. See `docs/guides/values.md`.
 
 ## How to get there
 
-`/account/values` → `/account/values/:valueId`.
+`/@<slug>/-/values` → `/@<slug>/-/values/:valueId`.
 
 ## Drive it
 

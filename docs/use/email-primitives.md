@@ -77,7 +77,7 @@ Use the MCP `email` domain:
   `emailAttachmentGet`. The same attachments go to every allowed `to` on one
   MIME message. With attachments, the whole message (bodies plus decoded
   attachment bytes) must fit the plan's `email_message_bytes` per-message cap.
-  Manage destinations from `/account/email` as well. Unverified extras never
+  Manage destinations from `/@<slug>/-/email` as well. Unverified extras never
   receive mail.
 - `emailReply` replies to a stored inbound message. The recipient always comes
   from the stored message. Optional `attachments` (up to 10 of
@@ -99,7 +99,7 @@ Use the MCP `email` domain:
 - `emailMessageDelete` deletes one stored inbound or outbound message owned by
   the signed-in user. Missing and foreign ids fail. Deleting frees a
   `stored_email_messages` slot so new inbound mail can be accepted again. The
-  same delete is available on `/account/email`.
+  same delete is available on `/@<slug>/-/email`.
 - `emailMessageClassify` reclassifies a stored inbound message as `accepted` or
   `quarantined`. Reclassification never retroactively dispatches package
   subscription events.
@@ -150,8 +150,8 @@ Inbound storage is quota-gated per user:
 - Check where you stand with `usageGet`. When `stored_email_messages` is at the
   cap, inbound mail is rejected at routing and `email.message.received`
   subscriptions do not fire. Delete messages you no longer need with
-  `emailMessageDelete` or from `/account/email` to free slots. Mailbox retention
-  does not keep Free-tier inboxes under the stored-message cap.
+  `emailMessageDelete` or from `/@<slug>/-/email` to free slots. Mailbox
+  retention does not keep Free-tier inboxes under the stored-message cap.
 
 ## Safety model
 
@@ -243,7 +243,7 @@ Each user may store at most 200 sender rules. Manage them with
 `emailSenderRuleDelete`. Reclassify a stored inbound message with
 `emailMessageClassify`, or filter `emailMessageList` by `classification`.
 
-On `/account/email`, quarantined messages show a Quarantined badge (with the
+On `/@<slug>/-/email`, quarantined messages show a Quarantined badge (with the
 reason as tooltip/secondary text), the list can filter to Quarantined only, and
 inbound messages offer Mark as spam / Not spam actions that call the same
 reclassification path.

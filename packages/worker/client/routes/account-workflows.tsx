@@ -475,7 +475,11 @@ export function AccountWorkflowsRoute(handle: Handle) {
 							id: item.id,
 							href: isMutating
 								? undefined
-								: workflowsRoute.buildDetailHref(item.id, getCurrentSearch()),
+								: workflowsRoute.buildDetailHref(
+										item.id,
+										getCurrentSearch(),
+										getCurrentHref(),
+									),
 							cells: {
 								name: renderWorkflowNameCell({
 									name: item.workflowName,

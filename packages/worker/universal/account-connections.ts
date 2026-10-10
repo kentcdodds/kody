@@ -16,8 +16,6 @@ import {
 	orgResourcePath,
 	orgSlugFromPathname,
 } from '#universal/org-pages.ts'
-import { routes } from '#universal/routes.ts'
-
 export type AccountConnectionsView =
 	| { kind: 'list' }
 	| { kind: 'new'; agent: McpClientKind | null }
@@ -45,9 +43,7 @@ export function isAccountConnectionAgent(
  */
 export function accountConnectionsListHref(pathname?: string | null) {
 	const slug = pathname ? orgSlugFromPathname(pathname) : null
-	return slug
-		? orgResourcePath(slug, 'connections')
-		: routes.accountConnections.href()
+	return slug ? orgResourcePath(slug, 'connections') : '/account/connections'
 }
 
 export function accountConnectionsNewHref(
@@ -58,8 +54,8 @@ export function accountConnectionsNewHref(
 	if (slug) {
 		return orgResourcePath(slug, 'connections', agent ? `new/${agent}` : 'new')
 	}
-	if (!agent) return routes.accountConnectionNew.href()
-	return routes.accountConnectionNewAgent.href({ agent })
+	if (!agent) return '/account/connections/new'
+	return `/account/connections/new/${encodeURIComponent(agent)}`
 }
 
 /** `null` when the pathname is under the page but names an unknown agent. */
@@ -67,9 +63,9 @@ export function parseAccountConnectionsPathname(
 	pathname: string,
 ): AccountConnectionsView | null {
 	pathname = accountAliasPath(pathname)
-	const base = routes.accountConnections.href()
+	const base = '/account/connections'
 	if (pathname === base || pathname === `${base}/`) return { kind: 'list' }
-	const newBase = routes.accountConnectionNew.href()
+	const newBase = '/account/connections/new'
 	if (pathname === newBase || pathname === `${newBase}/`) {
 		return { kind: 'new', agent: null }
 	}

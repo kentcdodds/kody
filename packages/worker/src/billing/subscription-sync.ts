@@ -5,6 +5,7 @@ import {
 	sendBillingSuccessEmail,
 	sendPastDueEmail,
 } from '#app/user-account-emails.ts'
+import { readSignupOrgSlug } from '#worker/orgs/signup-org-slug.ts'
 import { maybeSyncDiscordGuildRolesForUser } from '#worker/discord/guild-role.ts'
 import { normalizeEmail } from '#worker/identity/normalize-email.ts'
 import {
@@ -190,6 +191,7 @@ export async function refreshStripePlanForUser(input: {
 							env: input.env,
 							email: recipient.email,
 							userId: recipient.userId,
+							orgSlug: await readSignupOrgSlug(input.env.APP_DB, orgId),
 							planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
 						})
 					},
@@ -210,6 +212,7 @@ export async function refreshStripePlanForUser(input: {
 							env: input.env,
 							email: recipient.email,
 							userId: recipient.userId,
+							orgSlug: await readSignupOrgSlug(input.env.APP_DB, orgId),
 							day,
 						})
 					},
@@ -899,6 +902,7 @@ export async function refreshStripePlanForOrg(input: {
 						env: input.env,
 						email: recipient.email,
 						userId: recipient.userId,
+						orgSlug: await readSignupOrgSlug(input.env.APP_DB, orgId),
 						planLabel: nextPlan === 'pro' ? 'Pro' : 'Standard',
 					})
 				},
@@ -919,6 +923,7 @@ export async function refreshStripePlanForOrg(input: {
 						env: input.env,
 						email: recipient.email,
 						userId: recipient.userId,
+						orgSlug: await readSignupOrgSlug(input.env.APP_DB, orgId),
 						day,
 					})
 				},

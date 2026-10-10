@@ -14,8 +14,8 @@ secret value such as an API key or personal access token. That page has one job:
 set this secret. Secrets stay on the setup page; send the URL and wait until
 they confirm save.
 
-In-app "New secret" from `/account/secrets` opens `/account/secrets/new` without
-query params. Prefill links that include `name` redirect to
+In-app "New secret" from `/@<slug>/-/secrets` opens `/@<slug>/-/secrets/new`
+without query params. Prefill links that include `name` redirect to
 `/connect/secret-set` so agent links do not land on the general secrets list.
 
 If the secret will power a downstream package or package app, open
@@ -63,7 +63,7 @@ so the user can paste immediately.
   list with the secret.
 - When the save URL omitted hosts, or a later call says a host is not approved,
   open **`/connect/secrets`** (`name` / `names` and `hosts`). Package grants use
-  `/account/secrets/approve`.
+  `/@<slug>/-/secrets/approve`.
 - `hosts` must be hostname-shaped. Truncated or path-bearing values are rejected
   on that page and are not written to `allowedHosts`.
 
@@ -73,7 +73,7 @@ Self-authored packages and community forks the owner adopted on the website can
 read and use the user's secrets without an `allowed_packages` grant; updating or
 deleting a user secret from package code still requires that grant. Only the
 account owner can add a package to that grant on the secret editor or
-`/account/secrets/approve` - a focused Allow page like `/connect/secrets`.
+`/@<slug>/-/secrets/approve` - a focused Allow page like `/connect/secrets`.
 `secretLock` returns that approval URL. Send the link and wait until they
 confirm. The grant is written on that page. Removing a grant is also
 website-only. When an **unadopted community-forked** package needs access to one
@@ -81,11 +81,11 @@ or more **existing** user secrets, either adopt it after reviewing the source or
 send the approval link so they keep the secrets they already saved.
 
 - Single secret:
-  `/account/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`
+  `/@<slug>/-/secrets/user/{secretName}?package_id={savedPackageId}&package={kodyId}`
 - Multiple secrets for one package (preferred):
-  `/account/secrets/approve?package_id={savedPackageId}&package={kodyId}&names={secret1},{secret2}`
+  `/@<slug>/-/secrets/approve?package_id={savedPackageId}&package={kodyId}&names={secret1},{secret2}`
 
-Prefer the bulk `/account/secrets/approve?...&names=...` URL whenever two or
+Prefer the bulk `/@<slug>/-/secrets/approve?...&names=...` URL whenever two or
 more secrets still need package approval. The account UI shows every listed
 secret and lets the user approve them in one click.
 

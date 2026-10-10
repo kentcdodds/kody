@@ -1,12 +1,16 @@
 import { expect, test } from 'vitest'
 import {
 	accountAliasPath,
-	accountResourceRedirectPath,
+	orgResourcePathForAccountPath,
+	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
 	orgBillingPath,
 	orgIdentity,
+	orgCollaboratorsPath,
+	orgGrantsPath,
 	orgMembersPath,
+	orgTeamsPath,
 	orgRoleLabel,
 	orgRoleManagesBilling,
 	orgRoleManagesOrg,
@@ -42,27 +46,42 @@ const billing: OrganizationSummary = {
 	personal: false,
 }
 
-test('account resource redirects map pages onto the signup organization', () => {
-	expect(accountResourceRedirectPath('/account/packages', 'ada')).toBe(
+test('account-shaped section paths become canonical org links', () => {
+	expect(orgResourcePathForAccountPath('/account/packages', 'ada')).toBe(
 		'/@ada/-/packages',
 	)
-	expect(accountResourceRedirectPath('/account/secrets', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/secrets', 'ada')).toBe(
 		'/@ada/-/secrets',
 	)
-	expect(accountResourceRedirectPath('/account/secrets/new', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/secrets/new', 'ada')).toBe(
 		'/@ada/-/secrets/new',
 	)
-	expect(accountResourceRedirectPath('/account/jobs/job-1', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/jobs/job-1', 'ada')).toBe(
 		'/@ada/-/jobs/job-1',
 	)
-	expect(accountResourceRedirectPath('/account/packages/pkg-1', 'ada')).toBe(
+	expect(orgResourcePathForAccountPath('/account/billing', 'ada')).toBe(
+		'/@ada/-/billing',
+	)
+	expect(orgResourcePathForAccountPath('/account/billing/success', 'ada')).toBe(
+		'/@ada/-/billing/success',
+	)
+	expect(orgResourcePathForAccountPath('/account/packages/pkg-1', 'ada')).toBe(
 		null,
 	)
-	expect(accountResourceRedirectPath('/account/secrets.json', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/passkeys', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/billing', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account', 'ada')).toBe(null)
-	expect(accountResourceRedirectPath('/account/experiments', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account/secrets.json', 'ada')).toBe(
+		null,
+	)
+	expect(orgResourcePathForAccountPath('/account/passkeys', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account', 'ada')).toBe(null)
+	expect(orgResourcePathForAccountPath('/account/experiments', 'ada')).toBe(
+		null,
+	)
+	expect(
+		relocateAccountHref('/account/secrets/new?q=1', '/@ada/-/secrets'),
+	).toBe('/@ada/-/secrets/new?q=1')
+	expect(relocateAccountHref('/account/passkeys', '/@ada/-/secrets')).toBe(
+		'/account/passkeys',
+	)
 })
 
 test('org resource paths alias back to account loaders and ignore package apps', () => {
@@ -100,6 +119,13 @@ test('switching keeps the same kind of page or falls back to organization home',
 	expect(switchOrgPath('/@acme/-/members.json', 'other')).toBe(
 		'/@other/-/members',
 	)
+	expect(switchOrgPath('/@acme/-/teams', 'other')).toBe('/@other/-/teams')
+	expect(switchOrgPath('/@acme/-/grants.json', 'other')).toBe(
+		'/@other/-/grants',
+	)
+	expect(switchOrgPath('/@acme/-/collaborators', 'other')).toBe(
+		'/@other/-/collaborators',
+	)
 	expect(switchOrgPath('/@acme/devin', 'other')).toBe('/@other')
 	expect(switchOrgPath('/account', 'other')).toBe('/@other')
 	expect(switchOrgPath('/pricing', 'other')).toBe('/@other')
@@ -122,11 +148,26 @@ test('management paths name settings and members under the /- separator', () => 
 		slug: 'acme',
 		section: 'members',
 	})
+	expect(parseOrgManagementPath('/@acme/-/teams')).toEqual({
+		slug: 'acme',
+		section: 'teams',
+	})
+	expect(parseOrgManagementPath('/@acme/-/grants/revoke.json')).toEqual({
+		slug: 'acme',
+		section: 'grants',
+	})
+	expect(parseOrgManagementPath('/@acme/-/collaborators.json')).toEqual({
+		slug: 'acme',
+		section: 'collaborators',
+	})
 	expect(parseOrgManagementPath('/@acme/settings')).toBeNull()
 	expect(parseOrgManagementPath('/@acme/secrets')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/settings')).toBeNull()
 	expect(orgSettingsPath('acme')).toBe('/@acme/-/settings')
 	expect(orgMembersPath('acme')).toBe('/@acme/-/members')
+	expect(orgTeamsPath('acme')).toBe('/@acme/-/teams')
+	expect(orgGrantsPath('acme')).toBe('/@acme/-/grants')
+	expect(orgCollaboratorsPath('acme')).toBe('/@acme/-/collaborators')
 	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
 	expect(orgRoleManagesOrg('owner')).toBe(true)
 	expect(orgRoleManagesOrg('member')).toBe(false)

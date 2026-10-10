@@ -17,6 +17,7 @@ import {
 import { waitUntil } from 'cloudflare:workers'
 import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { sendPaymentFailedEmail } from '#app/user-account-emails.ts'
+import { readSignupOrgSlug } from '#worker/orgs/signup-org-slug.ts'
 import {
 	isBillingConfigured,
 	selectKodyPlanRetainingSubscriptions,
@@ -344,6 +345,7 @@ async function handleInvoicePaymentFailed(input: {
 					env: input.env,
 					email: recipient.email,
 					userId: recipient.userId,
+					orgSlug: await readSignupOrgSlug(input.env.APP_DB, orgId),
 					day,
 				})
 			},

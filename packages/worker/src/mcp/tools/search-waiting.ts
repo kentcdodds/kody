@@ -18,6 +18,15 @@ export type SearchWaitingStructured = {
 	}>
 }
 
+function waitingIndexPath(items: Array<WaitingItem>) {
+	for (const item of items) {
+		const match = /^\/@([^/]+)\/-\//.exec(item.href)
+		const slug = match?.[1]
+		if (slug) return `/@${slug}/-/waiting`
+	}
+	return null
+}
+
 export function selectSearchWaitingItems(items: Array<WaitingItem>) {
 	return items.filter((item) => item.severity !== 'setup')
 }
@@ -43,8 +52,10 @@ export function formatSearchWaitingMarkdown(input: {
 		)
 	}
 	if (extra > 0) {
+		const morePath = waitingIndexPath(shown) ?? waitingIndexPath(actionable)
+		const moreHref = morePath ? `${origin}${morePath}` : `${origin}/account`
 		lines.push(
-			`- ${String(extra)} more · waitingSummary · ${formatMarkdownInlineCode(`${origin}/account/waiting`)}`,
+			`- ${String(extra)} more · waitingSummary · ${formatMarkdownInlineCode(moreHref)}`,
 		)
 	}
 	return lines.join('\n')

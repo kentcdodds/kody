@@ -32,6 +32,7 @@ import {
 	type WaitingSignals,
 } from '#universal/waiting.ts'
 
+import { getOrgById } from '#worker/orgs/repo.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export type DeriveWaitingUser = {
 	userId: number
@@ -54,11 +55,12 @@ type WaitingEnv = Env & {
 export async function deriveWaitingItems(input: {
 	env: WaitingEnv
 	user: DeriveWaitingUser
+	orgSlug: string
 	now?: Date
 	waitUntil?: (promise: Promise<unknown>) => void
 }): Promise<Array<WaitingItem>> {
 	const signals = await collectWaitingSignals(input)
-	return buildWaitingItems(signals)
+	return buildWaitingItems(signals, input.orgSlug)
 }
 
 /**
@@ -83,6 +85,14 @@ export async function deriveWaitingItemsForStableUser(input: {
 				email_verified_at: string | null
 			}>()
 		if (!userRow) return []
+		let orgSlug = userRow.username?.trim() ?? ''
+		try {
+			const org = await getOrgById(input.env.APP_DB, input.stableUserId)
+			const slug = org?.slug?.trim()
+			if (slug) orgSlug = slug
+		} catch {
+			// Test doubles that do not model orgs keep the username slug.
+		}
 		return await deriveWaitingItems({
 			env: input.env,
 			user: {
@@ -92,6 +102,7 @@ export async function deriveWaitingItemsForStableUser(input: {
 				username: userRow.username,
 				emailVerified: Boolean(userRow.email_verified_at),
 			},
+			orgSlug,
 			now: input.now,
 			waitUntil: input.waitUntil,
 		})
