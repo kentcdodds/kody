@@ -77,10 +77,11 @@ const faqItems: ReadonlyArray<FaqItem> = [
 					small web app.
 				</p>
 				<p>
-					A <strong>memory</strong> is a durable fact or preference Kody keeps
-					about you. Memories follow the account across every connected agent.
-					Facts saved only in a host — a Claude Project, or Cursor rules that
-					are not also Kody memories — stay invisible to your other agents.
+					Use <strong>memory</strong> sparingly for durable facts that don’t
+					have a better home, like a project nickname. Connected agents can
+					retrieve those facts from Kody. Put repeatable behavior and task
+					defaults in the package’s code and documentation, so running the
+					workflow doesn’t depend on an agent remembering an instruction.
 				</p>
 			</>
 		),

@@ -35,6 +35,10 @@ to the code or fact they describe. Prefer the lowest layer that still works.
 
 ## Decision checklist
 
+Prefer code that handles a requirement automatically over an instruction the
+agent must remember. For example, build quoting into a reply utility and put the
+default location in the weather utility’s documented configuration.
+
 Ask in order:
 
 1. **Is this about one export?** Put it in that export's JSDoc. Search Purpose
@@ -75,7 +79,7 @@ when ready to publish."
 **Export JSDoc (bad):** Repeating the whole package Intent, or storing the
 user's preferred timezone.
 
-**Memory (good):** Preferred review style, handles and ids the person reuses,
+**Memory (good):** Project nicknames, handles and ids not recorded elsewhere,
 which cloud or billing account owns which resources.
 
 **Memory (bad):** "Package foo's upload flow is …" or "Export bar rejects binary

@@ -25,7 +25,7 @@ export const acquisitionPageMeta = {
 		path: '/use-cases/shared-agent-memory',
 		title: 'Shared memory for Claude Code, Cursor, and Codex',
 		description:
-			'Save your preferences and project context in Kody so Claude Code, Cursor, and Codex can find and use the same memories.',
+			'Share useful facts between Claude Code, Cursor, and Codex. Keep repeatable behavior in packages, and use Kody memory for facts without a better home.',
 	},
 	gmail: {
 		key: 'gmail',

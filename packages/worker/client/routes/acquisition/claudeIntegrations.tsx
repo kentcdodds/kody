@@ -30,7 +30,7 @@ const methods = [
 		name: 'Kody',
 		task: 'I want to keep using what I build.',
 		description:
-			'Connect your agents to the same Kody account. Keep useful behavior in packages, personal context in memory, and service connections in one place.',
+			'Connect your agents to the same Kody account. Keep useful behavior in packages, facts without a better home in memory, and service connections in one place.',
 		check:
 			'Connect the service separately, then test the specific operation you need.',
 		href: '/onboarding',
@@ -48,8 +48,7 @@ export function ClaudeIntegrationsPage(handle: Handle) {
 				<div class="opening-copy">
 					<p>
 						Start in Claude, then use what you built from your other agents,
-						too. Kody keeps your saved tools, accounts, and preferences in one
-						place.
+						too. Kody keeps your saved tools, accounts, and facts in one place.
 					</p>
 					<a href="/onboarding" mix={css(getPillButtonCss())}>
 						Connect Claude to Kody ↗
@@ -96,14 +95,14 @@ export function ClaudeIntegrationsPage(handle: Handle) {
 									? 'Save this weekly report workflow in Kody so I can use it again.'
 									: client === 1
 										? 'Find my weekly report package in Kody. Let’s improve the output.'
-										: 'Find my saved weekly report and the preferences it should use.'}
+										: 'Find my weekly report package and run it with its documented defaults.'}
 							</p>
 							<p class="operation">
 								{client === 0
 									? 'Create a reusable package'
 									: client === 1
 										? 'Find and revise the saved package'
-										: 'Find the package and saved context'}
+										: 'Find and run the saved package'}
 							</p>
 						</div>
 						<p class="connection-note">
@@ -123,9 +122,9 @@ export function ClaudeIntegrationsPage(handle: Handle) {
 								</dd>
 							</div>
 							<div>
-								<dt>Memory</dt>
+								<dt>Package defaults</dt>
 								<dd>
-									Report preferences<span>Preferences you’ve saved</span>
+									Report format<span>Defined with the report’s code</span>
 								</dd>
 							</div>
 							<div>
@@ -212,8 +211,8 @@ export function ClaudeIntegrationsPage(handle: Handle) {
 						<h3>Read something small, then save what helps</h3>
 						<p>
 							Try a task that reads data, check that it’s using the right
-							account, then save useful code as a package or a preference as
-							memory. Ask a second agent to find what you saved.
+							account, then save useful code and its defaults in a package. Ask
+							a second agent to find what you saved.
 						</p>
 						<a href="/docs/portability">What carries between agents ↗</a>
 					</li>

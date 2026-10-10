@@ -60,13 +60,15 @@ Also watch:
 You do not chat with Kody. Your agent supplies the intelligence; Kody supplies
 the things that should not live in one chat window:
 
-- **Memory** — durable facts and preferences on the account, surfaced to every
-  connected agent.
+- **Memory**: useful facts without a better home, available to connected agents
+  when relevant.
 - **Secrets** — API keys and OAuth grants your code can use but your agent can
   never read (mount `get` returns an opaque placeholder only). There is
   deliberately no plaintext `secret_get`.
-- **Packages** — code your agent wrote once and saved, callable from any agent,
-  with exports, a hosted app surface, and its own storage.
+- **Packages**: reusable code with typed inputs and documented defaults,
+  callable from any agent, with exports, a hosted app surface, and its own
+  storage. Put repeatable behavior here so running the task doesn’t depend on an
+  agent retrieving an instruction from memory.
 - **Jobs, workflows, and webhooks** — the triggers that run those packages on a
   schedule, later, or when a provider knocks — with no model in the loop.
 - **Integrations and MCP servers** — the logins and tool servers those packages
@@ -111,7 +113,8 @@ Together, the agent does the thinking once and Kody keeps the result:
 - **Ask again tomorrow** becomes a saved export. No model in the loop.
 - **A key in chat or a `.env`** becomes a secret the agent never sees.
 - **Re-run the agent on a timer** becomes a job that runs while you are offline.
-- **Context stuck in one host** becomes memories that follow the account.
+- **Facts without another home** become memories that follow the account.
+- **Repeated task instructions** become package code and documented defaults.
 
 A personal agent watching your school inbox can hand the watching to a Kody job
 that still fires when the laptop is in a bag. A receipt hunt your phone agent

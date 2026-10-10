@@ -38,7 +38,7 @@ export const gmail = {
 			title: 'When email is only the input',
 			paragraphs: [
 				'A different package could turn labeled emails into a weekly project report or collect receipts into another service. Decide what data crosses that boundary, where the result goes, and whether a human should approve the output.',
-				'Store processing progress with the package so a repeat run can distinguish new messages from ones already handled. Use memory for preferences, and package storage to track which emails you’ve handled.',
+				'Store processing progress with the package so a repeat run can distinguish new messages from ones already handled. Build reply rules, such as quoting the thread, into the package and document its defaults.',
 			],
 		},
 	],

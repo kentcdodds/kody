@@ -37,7 +37,7 @@ const examples = [
 	{
 		name: 'Inbox triage',
 		request: 'Find the emails that need a thoughtful reply.',
-		input: 'Gmail messages + reply preferences',
+		input: 'Gmail messages + package settings',
 		steps: [
 			{
 				kind: 'Code',
@@ -49,7 +49,7 @@ const examples = [
 				kind: 'Judgment',
 				title: 'Draft the response',
 				detail:
-					'Use the thread and your preferences to suggest a reply. Flag missing information.',
+					'Use the thread and the package’s reply settings to suggest a reply. Flag missing information.',
 			},
 			{
 				kind: 'Code',

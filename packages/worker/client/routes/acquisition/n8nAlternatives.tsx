@@ -171,7 +171,7 @@ export function N8nAlternativesPage(handle: Handle) {
 									<dd>A preview, without posting</dd>
 								</div>
 								<div>
-									<dt>Remember</dt>
+									<dt>Track in package storage</dt>
 									<dd>Releases already handled</dd>
 								</div>
 								<div>
