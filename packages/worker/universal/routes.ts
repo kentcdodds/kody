@@ -136,8 +136,9 @@ export const routes = route({
 		'/account/billing/cancellation-feedback.json',
 	),
 	// Return URL of Checkout Sessions created before billing moved to
-	// `/@slug/billing/success`.
+	// `/@slug/billing/success`, and older Manage subscription links.
 	accountBillingSuccess: '/account/billing/success',
+	accountBillingPortal: '/account/billing/portal',
 	accountCredits: '/account/credits',
 	accountCreditsTopUpPost: post('/account/credits/top-up.json'),
 	accountCreditsSettingsPost: post('/account/credits/settings.json'),

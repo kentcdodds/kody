@@ -745,6 +745,15 @@ test('/account/billing URLs open the signup organization billing page', async ()
 	expect(success.headers.get('location')).toBe(
 		'https://example.com/@ada/billing/success?session_id=cs_old',
 	)
+
+	const portal = await call(
+		(e) => createAccountBillingRedirectHandler(e, 'portal'),
+		env,
+		'/account/billing/portal',
+	)
+	expect(portal.headers.get('location')).toBe(
+		'https://example.com/@ada/billing/portal',
+	)
 })
 
 test('billing cancellation feedback records platform feedback', async () => {

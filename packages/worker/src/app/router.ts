@@ -479,6 +479,7 @@ export function createAppRouter(env: Env) {
 				env,
 				'success',
 			),
+			accountBillingPortal: createAccountBillingRedirectHandler(env, 'portal'),
 			accountCredits: createAccountCreditsHandler(),
 			accountCreditsTopUpPost: createAccountCreditsTopUpApiHandler(env),
 			accountCreditsSettingsPost: createAccountCreditsSettingsApiHandler(env),
