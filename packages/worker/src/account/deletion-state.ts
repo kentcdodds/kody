@@ -509,10 +509,11 @@ export async function assertAccountWritableDb(
 		.prepare(`SELECT deleting_at, deleted_at FROM orgs WHERE id = ?`)
 		.bind(stableUserId)
 
-	// Three concurrent reads instead of two to four sequential ones.
-	const [row, softDeletedPerson, orgOutcome] = await Promise.all([
+	// The live-user and personal-org reads do not depend on each other, so
+	// issue them together; the soft-deleted-person check only matters when the
+	// live row is missing, so it stays on the rare path.
+	const [row, orgOutcome] = await Promise.all([
 		userStatement.first<{ deleting_at: string | null }>(),
-		softDeletedPersonStatement.first<{ present: number }>(),
 		orgStatement
 			.first<{ deleting_at: string | null; deleted_at: string | null }>()
 			.then(
@@ -539,6 +540,9 @@ export async function assertAccountWritableDb(
 	}
 	// Soft-deleted persons still have a users row; do not treat them as team
 	// orgs via the live-org fallback below.
+	const softDeletedPerson = await softDeletedPersonStatement.first<{
+		present: number
+	}>()
 	if (softDeletedPerson) {
 		throw new AccountDeletionInProgressError()
 	}
