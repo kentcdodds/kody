@@ -754,6 +754,31 @@ test('a tagged runtime throw becomes the package-entrypoint page with the run id
 	})
 })
 
+test('author 200 responses that set the runtime-error header stay successful', async () => {
+	seedFixture({ kodyId: 'author-marker-app' })
+	mockModule.buildPackageAppWorker.mockResolvedValue({
+		entrypointName: 'PackageAppWorker',
+		stub: {
+			getEntrypoint: () => ({
+				async fetch() {
+					return new Response('ok', {
+						status: 200,
+						headers: { [packageAppRuntimeErrorHeader]: '1' },
+					})
+				},
+			}),
+		},
+	})
+
+	const response = await serveHelloWorld({ kodyId: 'author-marker-app' })
+	expect(response.status).toBe(200)
+	expect(await response.text()).toBe('ok')
+	expect(consoleError).not.toHaveBeenCalledWith(
+		'package-app-http-error',
+		expect.anything(),
+	)
+})
+
 test('synthetic host-setup failures return JSON with the underlying cause', async () => {
 	consoleError.mockImplementation(() => {})
 	seedFixture({ kodyId: 'prep-fail-app' })

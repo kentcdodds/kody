@@ -113,7 +113,10 @@ export function stripPackageAppRuntimeRunId(response: Response): {
 }
 
 export function isPackageAppRuntimeThrownResponse(response: Response): boolean {
-	return response.headers.get(packageAppRuntimeErrorHeader) === '1'
+	return (
+		response.status >= 500 &&
+		response.headers.get(packageAppRuntimeErrorHeader) === '1'
+	)
 }
 
 /**

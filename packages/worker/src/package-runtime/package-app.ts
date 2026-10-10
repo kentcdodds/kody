@@ -819,10 +819,28 @@ async function readRuntimeRunId(runtimeRun) {
 	}
 }
 
+function withoutAuthorRuntimeErrorHeader(response) {
+	if (!response?.headers?.has(${JSON.stringify(packageAppRuntimeErrorHeader)})) {
+		return response;
+	}
+	try {
+		const headers = new Headers(response.headers);
+		headers.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
+		return new Response(response.body, {
+			status: response.status,
+			statusText: response.statusText,
+			headers,
+		});
+	} catch (error) {
+		return response;
+	}
+}
+
 function tagPackageAppRuntimeRun(response, runtimeRunId) {
 	if (!runtimeRunId || !response || response.status < 500) return response;
 	try {
 		const headers = new Headers(response.headers);
+		headers.delete(${JSON.stringify(packageAppRuntimeErrorHeader)});
 		headers.set(${JSON.stringify(packageAppRuntimeRunIdHeader)}, runtimeRunId);
 		return new Response(response.body, {
 			status: response.status,
@@ -870,14 +888,16 @@ export class ${packageAppEntrypointName} extends WorkerEntrypoint {
 				}
 				return await fetchHandler(request, runtimeEnv, this.ctx);
 			});
-			let outgoing = response;
-			if (response && response.status >= 500) {
+			// Authors (or proxied upstreams) must not set the internal throw
+			// marker; only the catch path below may attach it.
+			let outgoing = withoutAuthorRuntimeErrorHeader(response);
+			if (outgoing && outgoing.status >= 500) {
 				const runtimeRunId = await readRuntimeRunId(runtimeRun);
 				console.error('package-app-runtime-http-error', {
 					runtimeRunId,
-					httpStatus: response.status,
+					httpStatus: outgoing.status,
 				});
-				outgoing = tagPackageAppRuntimeRun(response, runtimeRunId);
+				outgoing = tagPackageAppRuntimeRun(outgoing, runtimeRunId);
 			}
 			finishRuntimeRun(runtimeBridge, this.ctx, {
 				run: runtimeRun,

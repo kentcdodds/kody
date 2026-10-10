@@ -77,6 +77,14 @@ test('stripPackageAppRuntimeRunId removes correlation and thrown-error headers',
 		},
 	})
 	expect(isPackageAppRuntimeThrownResponse(response)).toBe(true)
+	expect(
+		isPackageAppRuntimeThrownResponse(
+			new Response('ok', {
+				status: 200,
+				headers: { [packageAppRuntimeErrorHeader]: '1' },
+			}),
+		),
+	).toBe(false)
 	const stripped = stripPackageAppRuntimeRunId(response)
 	expect(stripped.runtimeRunId).toBe('run-1')
 	expect(stripped.response.headers.get(packageAppRuntimeRunIdHeader)).toBeNull()
