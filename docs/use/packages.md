@@ -94,6 +94,8 @@ Important fields:
 - `kody.searchText` — optional longer search text beyond the short description
 - `kody.dependencies` — map of direct saved package names imported through
   static `kody:@...` imports (`{ "@scope/package": "*" }`)
+- `kody.credentials` — optional credential slots the package needs (see
+  [Credential slots](#credential-slots-kodycredentials))
 - `kody.secretMounts` — optional package-scoped secret mount declarations
 - `kody.secretProvider` — optional `{ id }` declaring this package can serve
   that external secret provider. Metadata alone does not bind the provider; see
@@ -118,6 +120,43 @@ the new `@{username}/…` name (including same-account `kody:@` imports and
 republishes to Community any public package that was already pinned to that
 package's latest commit. Third-party integrations and dynamic invocations that
 hard-code a previous `@{username}` scope need updates from their owners.
+
+### Credential slots (`kody.credentials`)
+
+`kody.credentials` names each credential the package needs. Package code uses
+the slot name; the org decides which credential fills it.
+
+```json
+{
+	"name": "@acme/calendar-digest",
+	"exports": { ".": "./index.ts" },
+	"kody": {
+		"description": "Email a weekly digest of Google Calendar events.",
+		"credentials": {
+			"GOOGLE": {
+				"kind": "oauth",
+				"provider": "google",
+				"multiple": true,
+				"description": "Google accounts whose calendars go in the digest."
+			},
+			"RESEND_API_KEY": {
+				"kind": "secret",
+				"provider": "resend",
+				"description": "Resend API key that sends the digest email."
+			}
+		}
+	}
+}
+```
+
+- Slot names start with a letter and use letters, numbers, `.`, `_`, or `-` (max
+  64).
+- `kind` is `secret`, `oauth`, or `mcp`. `provider` is a free-form label.
+  `description` says what the slot is for. `multiple: true` means the package
+  picks among several accounts.
+- Publish rejects any other key or a missing field and names the slot.
+- Declaring slots does not change how credentials resolve. Package code keeps
+  using its secret, integration, and MCP references.
 
 ### npm dependencies
 
