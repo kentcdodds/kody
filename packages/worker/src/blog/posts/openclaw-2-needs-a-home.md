@@ -91,9 +91,8 @@ The code isn't how Kody talks. The code is what Kody keeps.
 ## They stack. They don't compete.
 
 This is the same move I already made with
-[gateways](https://kody.codes/blog/gateways-connect-homes-accumulate) and with
-[Executor](https://kody.codes/blog/kody-vs-executor). Different layer, same
-stack.
+[gateways](https://kody.codes/blog/gateways-connect-homes-accumulate). Different
+layer, same stack.
 
 OpenClaw is the front door: the conversation, the messaging apps, the browser,
 the machine in front of you. Kody is the factory behind that door: the secrets,

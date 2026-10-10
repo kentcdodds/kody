@@ -18,8 +18,8 @@ vi.mock('#worker/storage-runner.ts', () => ({
 	}),
 }))
 
-vi.mock('#mcp/secrets/package-access.ts', () => ({
-	resolvePackageMountedSecret: async () => ({
+vi.mock('#worker/credentials/resolve-credential.ts', () => ({
+	resolveCredential: async () => ({
 		ref: 'owned-secret-ref',
 		name: 'client-token',
 		alias: 'client-token',

@@ -6,10 +6,10 @@
 ## Context
 
 `x-kody-secret` let capability arguments accept `{{secret:name}}` placeholders.
-`secret_entries.allowed_capabilities` was the default-deny allowlist for that
-path (and for `secretJwtSign` looking up a key by name). The original consumer
-was remote-connector credential handoff. Those connectors no longer synthesize
-capabilities; home automation uses ordinary MCP servers.
+A per-secret capability allowlist was the default-deny gate for that path (and
+for `secretJwtSign` looking up a key by name); migration 0032 dropped it. The
+original consumer was remote-connector credential handoff. Those connectors no
+longer synthesize capabilities; home automation uses ordinary MCP servers.
 
 MCP and OpenAPI still add runtime capabilities, but they do not opt fields into
 `x-kody-secret`. Fetch placeholders already use `allowed_hosts`. Package code
@@ -26,10 +26,10 @@ boundary.
 
 ## Consequences
 
-`secretJwtSign` signs with any secret the caller can resolve. `secretSet`
-persists the raw `value` string; it does not expand `{{secret:…}}`. Host and
-package grants stay. The fetch header `x-kody-secret-resolution: off` stays —
-that is a different mechanism.
+`secretJwtSign` signs with any secret the caller can resolve through
+`resolveCredential`. `secretSet` persists the raw `value` string; it does not
+expand `{{secret:…}}`. Host and package grants stay. The fetch header
+`x-kody-secret-resolution: off` stays — that is a different mechanism.
 
 **Revisit-if** a first-party capability must accept saved-secret plaintext as an
 argument without going through fetch, and host approval cannot cover that

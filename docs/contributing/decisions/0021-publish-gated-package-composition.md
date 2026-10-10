@@ -57,6 +57,14 @@ provenance: origin verifies `package:execute` when present, but never skips
 where the bundler proves package identity, keep package-attachment credential
 semantics.
 
+**Amended (2026-10-10, credential door):** Every resolution goes through
+`resolveCredential(orgId, actor, packageStamp)`
+(`packages/worker/src/credentials/resolve-credential.ts`). The package stamp is
+`attested` (the server knows the package) or `claimed` (a client named it); only
+`attested` skips the actor's Use. The door also re-checks that the actor still
+has access to the org at resolve time and writes one org audit row per
+resolution. Credential storage is read nowhere else.
+
 ## Consequences
 
 - Package delete is the inverse of a package existing. Closing leftover

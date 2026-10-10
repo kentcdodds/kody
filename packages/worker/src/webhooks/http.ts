@@ -11,7 +11,8 @@ import {
 } from '#worker/account/account-suspension.ts'
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicUserIdentityByUsername } from '#worker/identity/user-lookup.ts'
-import { resolveSecret } from '#mcp/secrets/service.ts'
+import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { listPackageWebhooks } from '#worker/package-registry/manifest.ts'
 import { resolveSavedPackageRef } from '#worker/package-registry/repo.ts'
@@ -318,17 +319,16 @@ async function resolveWebhookChallengeSecret(input: {
 	env: Env
 	userId: OwnerId
 	packageId: string
+	baseUrl: string
 	secretName: string
 }) {
-	const resolved = await resolveSecret({
+	const resolved = await resolveCredential({
 		env: input.env,
-		userId: input.userId,
-		name: input.secretName,
-		storageContext: {
-			sessionId: null,
-			appId: null,
-			packageId: input.packageId,
-		},
+		orgId: input.userId,
+		actor: null,
+		packageStamp: attestedPackageStamp(input.packageId),
+		baseUrl: input.baseUrl,
+		credential: { use: 'webhook-secret', name: input.secretName },
 	})
 	if (!resolved.found || !resolved.value) return null
 	return resolved.value
@@ -435,6 +435,7 @@ export async function handleWebhookIngressRequest(
 			env,
 			userId: liveEndpoint.userId,
 			packageId: liveEndpoint.packageId,
+			baseUrl,
 			secretName,
 		})
 

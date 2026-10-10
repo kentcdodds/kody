@@ -5,7 +5,11 @@ import {
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { redirectToLogin } from '#app/auth-redirect.ts'
 import { isSecureRequest } from '#app/auth-session.ts'
-import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import {
+	readAuthenticatedAppUser,
+	type AuthenticatedAppUser,
+} from '#app/authenticated-user.ts'
+import { loadOrgRepositoriesData } from '#app/org-repositories-data.ts'
 import {
 	loadRequestOrgResolution,
 	type RequestOrgResolution,
@@ -29,12 +33,13 @@ import {
 	createProfileHandler,
 } from '#app/handlers/profile.tsx'
 import { jsonResponse } from '#worker/json-response.ts'
-import { loadOrgBindingForSlug } from '#worker/orgs/repo.ts'
+import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import { serializeLastUsedOrgCookie } from '#universal/org-last-used-cookie.ts'
 import {
-	orgSectionKeysOnPerson,
-	type OrgOwnedAccountSection,
-} from '#universal/org-pages.ts'
+	toProfileListLoaderData,
+	toProfileShellLoaderData,
+} from '#universal/loader-data.ts'
+import { type OrgOwnedAccountSection } from '#universal/org-pages.ts'
 import { type routes } from '#universal/routes.ts'
 
 type SectionHandler = {
@@ -131,7 +136,6 @@ function sectionParams(
  */
 export function orgSectionDenial(
 	resolution: RequestOrgResolution,
-	personId: PersonId,
 	section: OrgOwnedAccountSection,
 ): string | null {
 	if (resolution === 'denied' || resolution === 'personal') {
@@ -143,13 +147,12 @@ export function orgSectionDenial(
 	if (resolution.role == null && section !== 'connections') {
 		return 'Organization resources unavailable'
 	}
-	if (
-		orgSectionKeysOnPerson(section) &&
-		resolution.org.id !== personalOrgId(personId)
-	) {
-		return 'Organization resources unavailable'
-	}
 	return null
+}
+
+/** Team-org packages are org-owned. The signup org keeps the person's profile list. */
+function isTeamOrg(binding: OrgBinding, personId: PersonId) {
+	return binding.org.id !== personalOrgId(personId)
 }
 
 export function createOrgSectionHandler(
@@ -170,7 +173,7 @@ export function createOrgSectionHandler(
 				env,
 				user.mcpUser.userId,
 			)
-			const denial = orgSectionDenial(resolution, user.mcpUser.userId, section)
+			const denial = orgSectionDenial(resolution, section)
 			if (denial || typeof resolution === 'string') {
 				return renderAppPage({
 					request: ctx.request,
@@ -188,11 +191,19 @@ export function createOrgSectionHandler(
 				// the immutable personal-org slug after a rename.
 				...(section === 'packages' ? { username: user.username } : {}),
 			}
-			const response = await inner.handler({
-				request: ctx.request,
-				params,
-				url: new URL(ctx.request.url),
-			} as never)
+			const response =
+				section === 'packages' && isTeamOrg(resolution, user.mcpUser.userId)
+					? await renderTeamRepositoriesPage({
+							env,
+							request: ctx.request,
+							user,
+							binding: resolution,
+						})
+					: await inner.handler({
+							request: ctx.request,
+							params,
+							url: new URL(ctx.request.url),
+						} as never)
 			if (!slug) return response
 			const headers = new Headers(response.headers)
 			headers.append(
@@ -211,11 +222,29 @@ export function createOrgSectionHandler(
 	}
 }
 
+async function renderTeamRepositoriesPage(input: {
+	env: Env
+	request: Request
+	user: AuthenticatedAppUser
+	binding: OrgBinding
+}) {
+	const data = await loadOrgRepositoriesData(input)
+	return renderAppPage({
+		request: input.request,
+		env: input.env,
+		loaderData: {
+			profileShell: toProfileShellLoaderData(data),
+			profileList: toProfileListLoaderData(data),
+		},
+	})
+}
+
 /**
  * JSON for the workspace Repositories page, behind the same gate as
- * `/@slug/-/packages`. The list is the signed-in person's own inventory, looked
- * up by their current username because the personal-org slug does not follow
- * a username change.
+ * `/@slug/-/packages`. A team org lists the packages it owns that the viewer
+ * can see. The signup org lists the person's own inventory, looked up by their
+ * current username because the personal-org slug does not follow a username
+ * change.
  */
 export function createOrgPackagesApiHandler(env: Env) {
 	const profileApi = createProfileApiHandler(env)
@@ -231,12 +260,18 @@ export function createOrgPackagesApiHandler(env: Env) {
 				user.mcpUser.userId,
 				params.orgSlug,
 			)
-			const denial = orgSectionDenial(
-				binding ?? 'denied',
-				user.mcpUser.userId,
-				'packages',
-			)
-			if (denial) return jsonResponse({ ok: false, error: denial }, 404)
+			const denial = orgSectionDenial(binding ?? 'denied', 'packages')
+			if (denial || !binding) {
+				return jsonResponse(
+					{ ok: false, error: denial ?? 'Organization unavailable' },
+					404,
+				)
+			}
+			if (isTeamOrg(binding, user.mcpUser.userId)) {
+				return jsonResponse(
+					await loadOrgRepositoriesData({ env, request, user, binding }),
+				)
+			}
 			return profileApi.handler({
 				request,
 				params: { username: user.username },

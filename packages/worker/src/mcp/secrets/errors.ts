@@ -69,6 +69,23 @@ export function createSecretScopeUnavailableMessage(
 	return `Secret "${first.secretName}" exists in ${describeSecretScopeLocation(first)} and is not visible from this runtime.${extra}${guidance}${editorSuffix}`
 }
 
+/** A resolved secret is not approved for the host it is about to be sent to. */
+export class SecretHostNotApprovedError extends Error {
+	readonly secretName: string
+	readonly host: string
+	readonly scope: SecretScope
+
+	constructor(input: { secretName: string; host: string; scope: SecretScope }) {
+		super(
+			`Secret "${input.secretName}" is not allowed for host "${input.host}".`,
+		)
+		this.name = 'SecretHostNotApprovedError'
+		this.secretName = input.secretName
+		this.host = input.host
+		this.scope = input.scope
+	}
+}
+
 export type HostApprovalEntry = {
 	secretName: string
 	host: string

@@ -399,6 +399,7 @@ export function ProfileRoute(handle: Handle) {
 						isSelf={readyShell?.isSelf === true}
 						queryAppliedByLoader={queryAppliedByLoader}
 						basePath={basePath}
+						packageLinks={visibleList.packageLinks !== false}
 					/>
 				) : null}
 			</>

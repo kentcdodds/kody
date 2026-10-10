@@ -119,18 +119,6 @@ test('workspace secrets and connections pass the team-org gate', async () => {
 	expect(connections.status).not.toBe(404)
 })
 
-test('workspace repositories JSON stays closed for a team org until package listing follows the org', async () => {
-	const env = await createEnv()
-	signInAs(adaId, 'ada')
-	const response = await getPackages(env, 'acme')
-	expect(response.status).toBe(404)
-	expect(await response.json()).toEqual({
-		ok: false,
-		error: 'Organization resources unavailable',
-	})
-	expect(mocks.loadProfileData).not.toHaveBeenCalled()
-})
-
 test('workspace repositories JSON lists the owner by current username after a rename', async () => {
 	const env = await createEnv()
 	signInAs(adaId, 'ada-new')
@@ -151,14 +139,12 @@ test('team Connections are open to every member role and to grant-only collabora
 	const { orgSectionDenial } = await import('./org-section.ts')
 	const team = { id: 'org-acme', slug: 'acme' } as never
 	for (const role of ['owner', 'member', 'billing', null] as const) {
-		expect(
-			orgSectionDenial({ org: team, role }, adaId as never, 'connections'),
-		).toBeNull()
+		expect(orgSectionDenial({ org: team, role }, 'connections')).toBeNull()
 	}
-	expect(
-		orgSectionDenial({ org: team, role: null }, adaId as never, 'secrets'),
-	).toBe('Organization resources unavailable')
-	expect(orgSectionDenial('denied', adaId as never, 'connections')).toBe(
+	expect(orgSectionDenial({ org: team, role: null }, 'secrets')).toBe(
+		'Organization resources unavailable',
+	)
+	expect(orgSectionDenial('denied', 'connections')).toBe(
 		'Organization unavailable',
 	)
 })

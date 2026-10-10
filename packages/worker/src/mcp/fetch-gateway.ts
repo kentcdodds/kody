@@ -30,19 +30,19 @@ import {
 	createHostSecretAccessDeniedBatchMessage,
 	createMissingSecretMessage,
 	fetchSecretAuthRequiredMessage,
+	SecretHostNotApprovedError,
+	type HostApprovalEntry,
 } from '#mcp/secrets/errors.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { normalizeHost } from '#mcp/secrets/allowed-hosts.ts'
-import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import { type ResolvedSecret } from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
-import { assertPackageCanAccessResolvedSecret } from '#mcp/secrets/package-access.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
 } from '#mcp/secrets/secret-providers/errors.ts'
 import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
-import { resolveProviderSecretForFetch } from '#mcp/secrets/secret-providers/resolve.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
 import {
 	grantedSecretAuthorityPackageIdSet,
@@ -52,18 +52,16 @@ import {
 	storageContextWithSecretAuthority,
 } from '#mcp/secrets/secret-authority.ts'
 import {
-	createMissingIntegrationAccessTokenMessage,
-	resolveIntegrationAccessToken,
-} from '#worker/integrations/credentials.ts'
-import { assertCanUseIntegration } from '#worker/integrations/package-access.ts'
+	attestedPackageStamp,
+	claimedPackageStamp,
+	type PackageStamp,
+} from '#worker/credentials/package-stamp.ts'
+import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { createMissingIntegrationAccessTokenMessage } from '#worker/integrations/credentials.ts'
 import { getJoinedIntegration } from '#worker/integrations/service.ts'
 import { assertIntegrationHostAllowed } from './execute-modules/integration-host-allowlist.ts'
 import { type StorageContext } from '#mcp/storage.ts'
 import { type RequestContext } from '@kody-internal/shared/request-context.ts'
-import {
-	authorizeAmbientIntegrationUse,
-	authorizeAmbientSecretUse,
-} from '#worker/authorization/credential-use.ts'
 import {
 	consumeDailyEntitlement,
 	findCachedUserAccountByStableUserId,
@@ -94,12 +92,13 @@ type FetchGatewayProps = {
 	 */
 	grantedSecretAuthorityPackageIds?: ReadonlyArray<string>
 	/**
-	 * CapabilityProxy / CLI `--local`: keep `storageContext.packageId` for
-	 * package-scoped secret buckets and package-limited integrations, but
-	 * never skip `secret:use` / `integration:use` from that client stamp.
-	 * Hosted bundler provenance leaves this unset.
+	 * CapabilityProxy / CLI `--local`: the package id the client claims, after
+	 * the proxy verified `package:execute`. It binds package-scoped buckets and
+	 * package rules but never skips the actor's Use (`claimed` stamp). Hosted
+	 * runs leave this unset; their `storageContext.packageId` and grant set are
+	 * attested.
 	 */
-	requireActorCredentialUse?: boolean
+	claimedPackageId?: string | null
 	/**
 	 * Per-sandbox outbound fetch deadline. Execute keeps the 60s default
 	 * (30s under the 90s sandbox). Long-lived surfaces such as workflows
@@ -381,26 +380,10 @@ export async function expandSecretPlaceholders(input: {
 	if (!baseUrl) {
 		throw new Error('Fetch gateway requires a non-empty baseUrl in props.')
 	}
-	const grantedSecretAuthorityPackageIds =
-		grantedSecretAuthorityPackageIdSet(
-			input.props.grantedSecretAuthorityPackageIds,
-		) ?? new Set<string>()
-	const authorityPackageId = resolveSecretAuthorityPackageId({
-		requestedPackageId: readSecretAuthorityHeader(
-			headers,
-			grantedSecretAuthorityPackageIds,
-		),
-		grantedPackageIds: grantedSecretAuthorityPackageIds,
-		runPackageId: input.props.storageContext?.packageId,
-	})
-	// Use-skip authority vs package binding: local CapabilityProxy stamps are
-	// binding only (`requireActorCredentialUse`); hosted provenance may skip.
-	const authorityForUseSkip = input.props.requireActorCredentialUse
-		? null
-		: authorityPackageId
+	const packageStamp = resolveGatewayPackageStamp(input.props, headers)
 	const storageContext = storageContextWithSecretAuthority(
 		input.props.storageContext,
-		authorityPackageId,
+		packageStamp?.packageId ?? null,
 	)
 	headers.delete(secretAuthorityHeaderName)
 	const requestBody = await readRequestBody(input.request)
@@ -467,26 +450,29 @@ export async function expandSecretPlaceholders(input: {
 	const callerUserId = hasReferencedSecrets
 		? requireFetchUserId(input.props)
 		: input.props.userId
-	const resolvedSecretResults = await Promise.all(
+	const preflightHost = hasReferencedSecrets
+		? readPreflightRequestHost(input.request.url, baseUrl)
+		: null
+	const requestHost = preflightHost ? normalizeHost(preflightHost) : null
+	const settledSecretResults = await Promise.allSettled(
 		referencedSecrets.map(async (referenced) => {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
-			// Ambient ad-hoc / local stamps: acting person needs secret:use.
-			// Hosted package authority keeps package attachment only.
-			await authorizeAmbientSecretUse({
+			const resolved = await resolveCredential({
 				env: input.env as Env,
-				request: input.props.request,
-				orgUserId: callerUserId,
-				secretName: referenced.name,
-				authorityPackageId: authorityForUseSkip,
-			})
-			const resolved = await resolveSecret({
-				env: input.env,
-				userId: callerUserId,
-				name: referenced.name,
-				scope: referenced.scope,
-				storageContext,
+				orgId: callerUserId,
+				actor: input.props.request,
+				packageStamp,
+				baseUrl: input.props.baseUrl,
+				credential: {
+					use: 'secret',
+					name: referenced.name,
+					scope: referenced.scope,
+					storageContext,
+					orgSlug: secretPageOrgSlugFromCaller(input.props),
+					requestHost,
+				},
 			})
 			if (!resolved.found || typeof resolved.value !== 'string') {
 				// Missing or scope-unavailable secrets are caller-clearable
@@ -502,42 +488,27 @@ export async function expandSecretPlaceholders(input: {
 					}),
 				)
 			}
-			await assertPackageCanAccessResolvedSecret({
-				env: input.env,
-				baseUrl: input.props.baseUrl,
-				orgSlug: secretPageOrgSlugFromCaller(input.props),
-				userId: callerUserId,
-				storageContext,
-				authorityPackageId,
-				secretName: referenced.name,
-				resolved,
-			})
 			return { referenced, resolved, value: resolved.value }
 		}),
 	)
+	const resolvedSecretResults = readSettledSecretResults({
+		settled: settledSecretResults,
+		props: input.props,
+		storageContext,
+		requestedHost: preflightHost ?? '',
+	})
 	const resolvedIntegrationTokens = await Promise.all(
 		referencedIntegrationTokens.map(async (name) => {
 			if (!callerUserId) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
-			await authorizeAmbientIntegrationUse({
+			const value = await resolveCredential({
 				env: input.env as Env,
-				request: input.props.request,
-				orgUserId: callerUserId,
-				integrationName: name,
-				authorityPackageId: authorityForUseSkip,
-			})
-			await assertCanUseIntegration({
-				env: input.env,
+				orgId: callerUserId,
+				actor: input.props.request,
+				packageStamp,
 				baseUrl: input.props.baseUrl,
-				userId: callerUserId,
-				name,
-				packageId: storageContext.packageId,
-			})
-			const value = await resolveIntegrationAccessToken({
-				env: input.env,
-				userId: callerUserId,
-				name,
+				credential: { use: 'integration-token', name, requestHost },
 			})
 			if (!value) {
 				throw new Error(createMissingIntegrationAccessTokenMessage(name))
@@ -551,15 +522,19 @@ export async function expandSecretPlaceholders(input: {
 			if (!callerUserId || !request) {
 				throw new Error(fetchSecretAuthRequiredMessage)
 			}
-			const resolved = await resolveProviderSecretForFetch({
+			const resolved = await resolveCredential({
 				env: input.env as Env,
+				orgId: callerUserId,
+				actor: request,
+				packageStamp,
 				baseUrl: input.props.baseUrl,
-				userId: callerUserId,
-				request,
-				provider: referenced.provider,
-				ref: referenced.ref,
-				storageContext,
-				authorityPackageId: authorityForUseSkip,
+				credential: {
+					use: 'provider-secret',
+					provider: referenced.provider,
+					ref: referenced.ref,
+					storageContext,
+					requestHost,
+				},
 			})
 			return { referenced, resolved }
 		}),
@@ -621,7 +596,7 @@ export async function expandSecretPlaceholders(input: {
 			}
 		}
 		const normalizedHost = normalizeHost(requestedHost)
-		const missingApprovals = await collectHostApprovalEntries({
+		const missingApprovals = collectHostApprovalEntries({
 			props: input.props,
 			storageContext,
 			requestedHost,
@@ -629,25 +604,11 @@ export async function expandSecretPlaceholders(input: {
 			resolvedSecrets,
 		})
 		if (missingApprovals.length > 0) {
-			const bulkScope = readBulkHostApprovalScope({
-				missingApprovals,
-				resolvedSecrets,
+			throw createHostApprovalBatchError({
+				props: input.props,
 				storageContext,
+				missingApprovals,
 			})
-			const bulkApprovalUrl = bulkScope
-				? buildSecretHostBulkApprovalUrlIfNeeded({
-						baseUrl: input.props.baseUrl,
-						names: missingApprovals.map((entry) => entry.secretName),
-						hosts: missingApprovals.map((entry) => entry.host),
-						scope: bulkScope.scope,
-						storageContext: bulkScope.storageContext,
-					})
-				: null
-			throw new Error(
-				createHostSecretAccessDeniedBatchMessage(missingApprovals, {
-					bulkApprovalUrl,
-				}),
-			)
 		}
 		assertProviderSecretHostsAllowed({
 			resolvedProviderSecrets: resolvedProviderSecrets.map(
@@ -655,7 +616,12 @@ export async function expandSecretPlaceholders(input: {
 			),
 			normalizedHost,
 		})
-		if (callerUserId && referencedIntegrationTokens.length > 0) {
+		// With a preflight host the door already checked each integration's hosts.
+		if (
+			!requestHost &&
+			callerUserId &&
+			referencedIntegrationTokens.length > 0
+		) {
 			for (const name of referencedIntegrationTokens) {
 				const joined = await getJoinedIntegration({
 					env: input.env,
@@ -712,6 +678,37 @@ export async function expandSecretPlaceholders(input: {
 }
 
 /**
+ * Which package is fetching. A CapabilityProxy claim is `claimed`. Otherwise
+ * the host-set run package, or a header naming a package in the run's grant
+ * set, is `attested`.
+ */
+function resolveGatewayPackageStamp(
+	props: FetchGatewayProps,
+	headers: Headers,
+): PackageStamp | null {
+	const claimed = claimedPackageStamp(props.claimedPackageId)
+	if (claimed) {
+		if (props.storageContext?.packageId) {
+			throw new Error(
+				'Fetch gateway props cannot carry both a claimed package id and a run package id.',
+			)
+		}
+		return claimed
+	}
+	const grantedPackageIds =
+		grantedSecretAuthorityPackageIdSet(
+			props.grantedSecretAuthorityPackageIds,
+		) ?? new Set<string>()
+	return attestedPackageStamp(
+		resolveSecretAuthorityPackageId({
+			requestedPackageId: readSecretAuthorityHeader(headers, grantedPackageIds),
+			grantedPackageIds,
+			runPackageId: props.storageContext?.packageId,
+		}),
+	)
+}
+
+/**
  * Kody runtime / sandboxed fetch may emit path-only URLs (e.g. `/`, `/core/log`).
  * Workers `Request` requires an absolute URL string; resolve against the app origin.
  */
@@ -733,7 +730,106 @@ function resolveRequestUrlForFetchGateway(url: string, baseUrl: string) {
 	}
 }
 
-async function collectHostApprovalEntries(input: {
+/**
+ * The host as written, when placeholder expansion cannot change it (no
+ * placeholder in the URL's userinfo or hostname). The door then enforces host
+ * allowlists itself; otherwise only the post-expansion checks run.
+ */
+function readPreflightRequestHost(rawUrl: string, baseUrl: string) {
+	let url: URL
+	try {
+		url = new URL(resolveRequestUrlForFetchGateway(rawUrl, baseUrl))
+	} catch {
+		return null
+	}
+	const authority = `${url.username}:${url.password}@${url.hostname}`
+	if (/\{\{|%7b%7b/i.test(authority)) return null
+	return url.hostname || null
+}
+
+type MissingHostApproval = HostApprovalEntry & { scope: SecretScope }
+
+type ResolvedSecretResult = {
+	referenced: ReferencedSecret
+	resolved: ResolvedSecret
+	value: string
+}
+
+/**
+ * Door host denials are collected into one batch message, like the
+ * post-expansion check, so every missing approval is listed at once. Any other
+ * failure is rethrown first.
+ */
+function readSettledSecretResults(input: {
+	settled: Array<PromiseSettledResult<ResolvedSecretResult>>
+	props: FetchGatewayProps
+	storageContext: StorageContext
+	requestedHost: string
+}) {
+	const results: Array<ResolvedSecretResult> = []
+	const hostDenials: Array<SecretHostNotApprovedError> = []
+	for (const entry of input.settled) {
+		if (entry.status === 'fulfilled') {
+			results.push(entry.value)
+		} else if (entry.reason instanceof SecretHostNotApprovedError) {
+			hostDenials.push(entry.reason)
+		} else {
+			throw entry.reason
+		}
+	}
+	if (hostDenials.length > 0) {
+		throw createHostApprovalBatchError({
+			props: input.props,
+			storageContext: input.storageContext,
+			missingApprovals: hostDenials.map((denial) => ({
+				secretName: denial.secretName,
+				host: input.requestedHost,
+				scope: denial.scope,
+				approvalUrl: buildSecretHostApprovalUrl({
+					baseUrl: input.props.baseUrl,
+					name: denial.secretName,
+					scope: denial.scope,
+					requestedHost: input.requestedHost,
+					storageContext: input.storageContext,
+				}),
+			})),
+		})
+	}
+	return results
+}
+
+function createHostApprovalBatchError(input: {
+	props: FetchGatewayProps
+	storageContext: StorageContext
+	missingApprovals: Array<MissingHostApproval>
+}) {
+	const { missingApprovals } = input
+	const bulkScope = readBulkHostApprovalScope({
+		scopes: missingApprovals.map((entry) => entry.scope),
+		storageContext: input.storageContext,
+	})
+	const bulkApprovalUrl = bulkScope
+		? buildSecretHostBulkApprovalUrlIfNeeded({
+				baseUrl: input.props.baseUrl,
+				names: missingApprovals.map((entry) => entry.secretName),
+				hosts: missingApprovals.map((entry) => entry.host),
+				scope: bulkScope.scope,
+				storageContext: bulkScope.storageContext,
+			})
+		: null
+	return new Error(
+		createHostSecretAccessDeniedBatchMessage(
+			missingApprovals.map(({ secretName, host, approvalUrl }) => ({
+				secretName,
+				host,
+				approvalUrl,
+			})),
+			{ bulkApprovalUrl },
+		),
+	)
+}
+
+function collectHostApprovalEntries(input: {
 	props: FetchGatewayProps
 	storageContext: StorageContext
 	requestedHost: string
@@ -742,46 +838,35 @@ async function collectHostApprovalEntries(input: {
 		referenced: ReferencedSecret
 		resolved: ResolvedSecret
 	}>
-}) {
-	const entries = await Promise.all(
-		input.resolvedSecrets.map(async ({ referenced, resolved }) => {
-			const allowedForHost =
-				resolved.allowedHosts.length > 0 &&
-				resolved.allowedHosts.includes(input.normalizedHost)
-			if (allowedForHost) return null
-			const approvalUrl = buildSecretHostApprovalUrl({
-				baseUrl: input.props.baseUrl,
-				name: referenced.name,
-				scope: resolved.scope ?? referenced.scope ?? 'user',
-				requestedHost: input.requestedHost,
-				storageContext: input.storageContext,
-			})
-			return {
+}): Array<MissingHostApproval> {
+	return input.resolvedSecrets.flatMap(({ referenced, resolved }) => {
+		const allowedForHost =
+			resolved.allowedHosts.length > 0 &&
+			resolved.allowedHosts.includes(input.normalizedHost)
+		if (allowedForHost) return []
+		const scope = resolved.scope ?? referenced.scope ?? 'user'
+		return [
+			{
 				secretName: referenced.name,
 				host: input.requestedHost,
-				approvalUrl,
-			}
-		}),
-	)
-	return entries.filter(
-		(entry): entry is NonNullable<typeof entry> => entry != null,
-	)
+				scope,
+				approvalUrl: buildSecretHostApprovalUrl({
+					baseUrl: input.props.baseUrl,
+					name: referenced.name,
+					scope,
+					requestedHost: input.requestedHost,
+					storageContext: input.storageContext,
+				}),
+			},
+		]
+	})
 }
 
 function readBulkHostApprovalScope(input: {
-	missingApprovals: Array<{ secretName: string }>
-	resolvedSecrets: Array<{
-		referenced: ReferencedSecret
-		resolved: ResolvedSecret
-	}>
+	scopes: Array<SecretScope>
 	storageContext: StorageContext | null
 }): { scope: SecretScope; storageContext: StorageContext | null } | null {
-	const scopes = input.missingApprovals.map((entry) => {
-		const match = input.resolvedSecrets.find(
-			(item) => item.referenced.name === entry.secretName,
-		)
-		return match?.resolved.scope ?? match?.referenced.scope ?? 'user'
-	})
+	const { scopes } = input
 	const unique = new Set(scopes)
 	if (unique.size !== 1) return null
 	const scope = scopes[0]
