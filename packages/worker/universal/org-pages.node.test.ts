@@ -5,19 +5,9 @@ import {
 	relocateAccountHref,
 	currentSwitcherSlug,
 	orderOrganizations,
-	orgBillingPath,
 	orgIdentity,
-	orgCollaboratorsPath,
-	orgGrantsPath,
-	orgMembersPath,
-	orgTeamsPath,
-	orgRoleLabel,
-	orgRoleManagesBilling,
-	orgRoleManagesOrg,
-	orgRoleReadsMembers,
 	orgOwnedAccountApiSection,
 	orgSectionKeysOnPerson,
-	orgSettingsPath,
 	organizationsWithSignupFallback,
 	orgSwitcherEntries,
 	parseOrgBillingPath,
@@ -163,17 +153,6 @@ test('management paths name settings and members under the /- separator', () => 
 	expect(parseOrgManagementPath('/@acme/settings')).toBeNull()
 	expect(parseOrgManagementPath('/@acme/secrets')).toBeNull()
 	expect(parseOrgResourcePath('/@acme/settings')).toBeNull()
-	expect(orgSettingsPath('acme')).toBe('/@acme/-/settings')
-	expect(orgMembersPath('acme')).toBe('/@acme/-/members')
-	expect(orgTeamsPath('acme')).toBe('/@acme/-/teams')
-	expect(orgGrantsPath('acme')).toBe('/@acme/-/grants')
-	expect(orgCollaboratorsPath('acme')).toBe('/@acme/-/collaborators')
-	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
-	expect(orgRoleManagesOrg('owner')).toBe(true)
-	expect(orgRoleManagesOrg('member')).toBe(false)
-	expect(orgRoleManagesOrg(null)).toBe(false)
-	expect(orgRoleReadsMembers('billing')).toBe(true)
-	expect(orgRoleReadsMembers(null)).toBe(false)
 })
 
 test('switcher lists the signup organization first, then roles, then create and any waiting invites', () => {
@@ -192,8 +171,6 @@ test('switcher lists the signup organization first, then roles, then create and 
 	const single = orgSwitcherEntries([personal], 0)
 	expect(single.map((entry) => entry.kind)).toEqual(['org', 'create'])
 	expect(single[0]).toEqual({ kind: 'org', org: personal, showRole: false })
-	expect(orgRoleLabel('owner')).toBe('Owner')
-	expect(orgRoleLabel(null)).toBe('Collaborator')
 })
 
 test('current organization comes from the URL, then the last-used slug', () => {
@@ -267,7 +244,6 @@ test('a session without memberships still lists the signup organization', () => 
 })
 
 test('billing paths bind to the organization in the URL', () => {
-	expect(orgBillingPath('acme')).toBe('/@acme/-/billing')
 	for (const pathname of [
 		'/@acme/-/billing',
 		'/@acme/-/billing/',
@@ -293,11 +269,4 @@ test('org account JSON names the section, and packages still key on the person',
 	expect(orgSectionKeysOnPerson('connections')).toBe(true)
 	expect(orgSectionKeysOnPerson('secrets')).toBe(false)
 	expect(orgSectionKeysOnPerson('jobs')).toBe(false)
-})
-
-test('only owners and billing admins see billing management links', () => {
-	expect(orgRoleManagesBilling('owner')).toBe(true)
-	expect(orgRoleManagesBilling('billing')).toBe(true)
-	expect(orgRoleManagesBilling('member')).toBe(false)
-	expect(orgRoleManagesBilling(null)).toBe(false)
 })

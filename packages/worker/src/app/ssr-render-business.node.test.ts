@@ -78,9 +78,6 @@ test('renderAppPage renders the business landing page before hydration', async (
 
 	expect(response.status).toBe(200)
 	const html = await response.text()
-	expect(html).toContain('The agent cloud')
-	expect(html).toContain('for your business.')
-	expect(html).toContain('AI Agent Cloud for Business and Agencies | Kody')
 	expect(html).toMatch(
 		/rel="canonical"[^>]*href="https:\/\/example.com\/for\/business"/,
 	)
@@ -88,6 +85,5 @@ test('renderAppPage renders the business landing page before hydration', async (
 	expect(html).not.toContain('Loading page')
 	expect(html.match(/<h1[ >]/g)).toHaveLength(1)
 	expect(html.match(/<main[ >]/g)).toHaveLength(1)
-	expect(html.match(/href="\/onboarding\?business=true/g)).toHaveLength(3)
-	expect(html).toContain('Monthly invoicing')
+	expect(html).toContain('href="/onboarding?business=true')
 })

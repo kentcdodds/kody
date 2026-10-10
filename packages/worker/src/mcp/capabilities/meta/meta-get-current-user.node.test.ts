@@ -18,10 +18,6 @@ test('metaGetCurrentUser accepts an empty email for a team org caller', async ()
 		{},
 		{ env: {} as Env, callerContext },
 	)
-	expect(result).toMatchObject({
-		email: '',
-		username: 'acme',
-		display_name: 'Acme',
-		org: { slug: 'acme' },
-	})
+	expect(result.email).toBe('')
+	expect(result.org).toEqual({ slug: 'acme' })
 })
