@@ -1,7 +1,6 @@
 import { type Handle, css } from 'remix/component'
 import { normalizeRedirectTo } from '#universal/safe-redirect.ts'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
-import { on } from '#client/event-mixin.ts'
 import { readAppSession } from '#client/app-session-context.tsx'
 import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { consumeStaleNavigationData } from '#client/navigation-data.ts'
@@ -12,15 +11,12 @@ import {
 	renderTurnstileWidgets,
 	resetTurnstileWidgets,
 	turnstileResponseFieldName,
-	turnstileWidgetClassName,
 } from '#client/public-form-protection.ts'
-import { renderHoneypot } from '#client/honeypot-field.tsx'
-import { PasswordRevealInput } from '#client/password-reveal-input.tsx'
 import {
-	renderOauthAuthorizeSignInMethods,
 	startOauthAuthorizePasskeySignIn,
 	startOauthAuthorizeProviderSignIn,
 } from '#client/routes/oauth-authorize-sign-in.tsx'
+import { renderOauthAuthorizeConsent } from '#client/routes/oauth-authorize-consent.tsx'
 import {
 	fetchPublicAuthConfig,
 	type AuthProviderInfo,
@@ -34,28 +30,20 @@ import {
 import { resolveAuthorizeEmailVerified } from '#client/routes/oauth-authorize-email-verified.ts'
 import {
 	oauthAuthorizeAccessLead,
-	oauthAuthorizeDangerButtonCss,
 	oauthAuthorizeHeaderCss,
 	oauthAuthorizePageCss,
-	oauthAuthorizePrimaryButtonCss,
-	oauthAuthorizeSecondaryButtonCss,
 	type OAuthAuthorizeStatus,
 } from '#client/routes/oauth-authorize-chrome.ts'
 import {
 	oauthAuthorizeActionsDisabled,
 	oauthAuthorizeApproveAriaLabel,
-	oauthAuthorizeConsentDecision,
 	oauthAuthorizeConsentFormAttrs,
-	oauthAuthorizeEmailVerificationDenyDisabled,
 	oauthAuthorizeOrgField,
 	readOAuthAuthorizeConsentOrgs,
 	readOAuthAuthorizeSelectedOrgSlug,
 	type OAuthAuthorizeConsentOrg,
 } from '#client/routes/oauth-authorize-form.ts'
-import {
-	renderAuthorizeOrgField,
-	renderOauthAuthorizeGrant,
-} from '#client/routes/oauth-authorize-org-picker.tsx'
+import { renderOauthAuthorizeGrant } from '#client/routes/oauth-authorize-org-picker.tsx'
 import { resolveAuthorizeSession } from '#client/routes/oauth-authorize-session.ts'
 import {
 	fetchSessionInfo,
@@ -63,21 +51,14 @@ import {
 	queueSessionRefresh,
 	type SessionInfo,
 } from '#client/session.ts'
-import { colors, spacing, typography } from '#universal/styles/tokens.ts'
+import { colors, typography } from '#universal/styles/tokens.ts'
 import {
-	cardCss,
 	descriptionCss,
-	fieldCss,
-	fieldLabelCss,
-	getAlertCardCss,
 	insetCardCss,
-	inputCss,
 	mutedLinkCss,
 	pageDescriptionCss,
 	pageEyebrowCss,
 	pageTitleCss,
-	sectionTitleCss,
-	visuallyHiddenCss,
 } from '#universal/styles/style-primitives.ts'
 
 type OAuthAuthorizeInfo = {
@@ -618,178 +599,45 @@ export function OAuthAuthorizeRoute(handle: Handle) {
 							},
 						})
 					: null}
-				{needsEmailVerification && !resetCompleted ? (
-					<div mix={css({ marginBottom: spacing.md })}>
-						<button
-							type="button"
-							data-testid="oauth-authorize-email-verify-deny"
-							disabled={oauthAuthorizeEmailVerificationDenyDisabled({
-								hydrated,
-								submitting: Boolean(submittingDecision),
-								sessionLoading: isSessionLoading,
-							})}
-							aria-label={oauthAuthorizeApproveAriaLabel({
-								hydrated,
-								label: 'Deny',
-							})}
-							mix={[
-								on('click', () => submitDecision('deny')),
-								css(oauthAuthorizeSecondaryButtonCss),
-							]}
-						>
-							Deny
-						</button>
-					</div>
-				) : null}
-				{message ? (
-					<p
-						role={message.type === 'error' ? 'alert' : undefined}
-						mix={css(getAlertCardCss(message.type))}
-					>
-						{message.text}
-					</p>
-				) : null}
-				{showResetClientCard ? (
-					<section mix={css(cardCss)}>
-						<p mix={css(sectionTitleCss)}>Reset stored connection</p>
-						<p mix={css(descriptionCss)}>
-							Revoke this account&apos;s grants for the client, then start the
-							connection again. Shared client registrations used by other
-							accounts stay in place.
-						</p>
-						{isLoggedIn ? (
-							<button
-								type="button"
-								disabled={resetClientDisabled}
-								mix={[
-									on('click', () => submitDecision('reset-client')),
-									css(oauthAuthorizeDangerButtonCss),
-								]}
-							>
-								{resetClientLabel}
-							</button>
-						) : isSessionReady ? (
-							<p mix={css(descriptionCss)}>
-								Sign in first, then reset this connection.
-							</p>
-						) : null}
-					</section>
-				) : null}
-				{showAuthorizeForm ? (
-					<form
-						method={consentForm.method}
-						action={consentForm.action}
-						data-testid="oauth-authorize-form"
-						aria-busy={hydrated ? undefined : 'true'}
-						mix={[
-							css({
-								...cardCss,
-								opacity: formReady ? 1 : 0.7,
-							}),
-							on('submit', handleSubmit),
-						]}
-					>
-						{hydrated ? null : (
-							<p role="status" mix={css(visuallyHiddenCss)}>
-								Connection approval is available after the page finishes
-								loading.
-							</p>
-						)}
-						<input
-							type="hidden"
-							name="decision"
-							value={oauthAuthorizeConsentDecision}
-						/>
-						{renderAuthorizeOrgField({
-							orgs: info?.orgs ?? [],
-							selectedOrgSlug: displayedOrgSlug,
-							signedIn: isLoggedIn,
-							onSelectedOrgSlugChange: (slug) => {
-								pickedOrgSlug = slug
-								handle.update()
-							},
-						})}
-						{renderHoneypot()}
-						{!isLoggedIn && isSessionReady ? (
-							<>
-								<label mix={css(fieldCss)}>
-									<span mix={css(fieldLabelCss)}>Email</span>
-									<input
-										type="email"
-										name="email"
-										required
-										autoComplete="email"
-										placeholder="you@example.com"
-										disabled={actionsDisabled || signInStatus === 'submitting'}
-										mix={css(inputCss)}
-									/>
-								</label>
-								<div mix={css(fieldCss)}>
-									<label
-										for="oauth-authorize-password"
-										mix={css(fieldLabelCss)}
-									>
-										Password
-									</label>
-									<PasswordRevealInput
-										id="oauth-authorize-password"
-										name="password"
-										required
-										autoComplete="current-password"
-										placeholder="Enter your password"
-										disabled={actionsDisabled || signInStatus === 'submitting'}
-										mix={css(inputCss)}
-									/>
-								</div>
-							</>
-						) : null}
-						{!isLoggedIn && turnstileSiteKey ? (
-							<div class={turnstileWidgetClassName}></div>
-						) : null}
-						<div
-							mix={css({ display: 'flex', gap: spacing.sm, flexWrap: 'wrap' })}
-						>
-							<button
-								type="submit"
-								data-testid="oauth-authorize-approve"
-								disabled={actionsDisabled || signInStatus === 'submitting'}
-								aria-label={approveAriaLabel}
-								mix={css(oauthAuthorizePrimaryButtonCss)}
-							>
-								{authorizeLabel}
-							</button>
-							<button
-								type="button"
-								disabled={actionsDisabled || signInStatus === 'submitting'}
-								aria-label={oauthAuthorizeApproveAriaLabel({
-									hydrated,
-									label: 'Deny',
-								})}
-								mix={[
-									on('click', () => submitDecision('deny')),
-									css(oauthAuthorizeSecondaryButtonCss),
-								]}
-							>
-								Deny
-							</button>
-						</div>
-						{!isLoggedIn && isSessionReady
-							? renderOauthAuthorizeSignInMethods({
-									providers: authProviders,
-									disabled: actionsDisabled || signInStatus === 'submitting',
-									// /login bounces existing sessions straight back. With
-									// prompt=login that loops, so only link when unsigned.
-									resumeTarget: sessionEmail ? null : readOAuthResumeTarget(),
-									onProviderClick: (providerId) => {
-										void handleProviderSignIn(providerId)
-									},
-									onPasskeyClick: () => {
-										void handlePasskeySignIn()
-									},
-								})
-							: null}
-					</form>
-				) : null}
+				{renderOauthAuthorizeConsent({
+					needsEmailVerification,
+					resetCompleted,
+					hydrated,
+					submittingDecision,
+					sessionLoading: isSessionLoading,
+					message,
+					showResetClientCard,
+					isLoggedIn,
+					isSessionReady,
+					resetClientDisabled,
+					resetClientLabel,
+					showAuthorizeForm,
+					consentForm,
+					formReady,
+					orgs: info?.orgs ?? [],
+					displayedOrgSlug,
+					onSelectedOrgSlugChange: (slug) => {
+						pickedOrgSlug = slug
+						handle.update()
+					},
+					onSubmit: handleSubmit,
+					onDecision: (decision) => {
+						void submitDecision(decision)
+					},
+					actionsDisabled,
+					signInSubmitting: signInStatus === 'submitting',
+					turnstileSiteKey,
+					authProviders,
+					resumeTarget: sessionEmail ? null : readOAuthResumeTarget(),
+					onProviderClick: (providerId) => {
+						void handleProviderSignIn(providerId)
+					},
+					onPasskeyClick: () => {
+						void handlePasskeySignIn()
+					},
+					approveAriaLabel,
+					authorizeLabel,
+				})}
 				<a href="/" mix={css(mutedLinkCss)}>
 					Back home
 				</a>
