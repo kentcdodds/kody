@@ -1277,3 +1277,116 @@ test('legacy fallback that parks on OAuth remembers the mark and keeps it after 
 	)
 	expect(values.get(legacyKey)).toBe('catalog-timeout')
 })
+
+const preRegisteredClientKey = 'mcp-oauth-preregistered-client:server-1'
+
+function sealedClient(clientId: string) {
+	return { clientId, sealedClientSecret: `v2.sealed-for-${clientId}` }
+}
+
+function setOAuthClient(
+	hub: Hub,
+	client: ReturnType<typeof sealedClient> | null,
+) {
+	return hub.setPreRegisteredOAuthClient({
+		serverId: 'server-1',
+		callbackUrl,
+		client,
+	})
+}
+
+test('changing the OAuth client on a ready server parks for approval without a false token-recovery error', async () => {
+	const { values, hub, manager } = createHub()
+	const connection = await seedReadyHomeServer(hub, manager)
+	setTokens(connection, { access_token: 'old-at', refresh_token: 'old-rt' })
+	values.set(tokenKey, { access_token: 'old-at', refresh_token: 'old-rt' })
+	values.set(mcpOAuthRefreshTokenStorageKey('server-1'), {
+		refresh_token: 'old-rt',
+	})
+
+	const change = await setOAuthClient(hub, sealedClient('gh-client'))
+	expect(change).toMatchObject({
+		changed: true,
+		previousClientId: null,
+		connection: { state: 'authenticating', error: null, lastError: null },
+	})
+	expect(values.get(preRegisteredClientKey)).toEqual(sealedClient('gh-client'))
+	expect(values.has(tokenKey)).toBe(false)
+	expect(values.has(mcpOAuthRefreshTokenStorageKey('server-1'))).toBe(false)
+	expect(values.has(recoveryKey)).toBe(false)
+
+	const snapshot = await hub.getSnapshot()
+	expect(snapshot.servers[0]).toMatchObject({
+		state: 'authenticating',
+		error: null,
+		lastError: null,
+		oauthClientId: 'gh-client',
+	})
+	expect(values.has(recoveryKey)).toBe(false)
+	expect(snapshot.connectionEvents).toEqual([])
+})
+
+test('a failed restart after a client change keeps the new client and reports it instead of half-restoring the old grant', async () => {
+	const { values, hub, manager } = createHub()
+	const connection = await seedReadyHomeServer(hub, manager)
+	setTokens(connection, { access_token: 'old-at', refresh_token: 'old-rt' })
+	values.set(tokenKey, { access_token: 'old-at', refresh_token: 'old-rt' })
+	manager.registerFailuresRemaining = 1
+
+	const change = await setOAuthClient(hub, sealedClient('gh-client'))
+	expect(change.changed).toBe(true)
+	expect(change.connection.lastError?.message).toContain(
+		'The OAuth client was saved, but Kody could not start authorization with it',
+	)
+	expect(values.get(preRegisteredClientKey)).toEqual(sealedClient('gh-client'))
+	expect(values.has(tokenKey)).toBe(false)
+	expect(manager.rows).toEqual([
+		expect.objectContaining({ id: 'server-1', client_id: null }),
+	])
+	const [server] = (await hub.getSnapshot()).servers
+	expect(server?.oauthClientId).toBe('gh-client')
+	expect(server?.error).toContain('The OAuth client was saved')
+
+	manager.registerFailuresRemaining = 1
+	const removed = await setOAuthClient(hub, null)
+	expect(removed.connection.lastError?.message).toContain(
+		'The OAuth client was removed, but Kody could not start authorization without it',
+	)
+	expect(values.has(preRegisteredClientKey)).toBe(false)
+})
+
+test('overlapping client changes run one at a time and the hub keeps the last one', async () => {
+	const { values, hub, manager } = createHub()
+	seedServer(manager)
+
+	const [first, second] = await Promise.all([
+		setOAuthClient(hub, sealedClient('client-a')),
+		setOAuthClient(hub, sealedClient('client-b')),
+	])
+	expect(first.previousClientId).toBeNull()
+	expect(second.previousClientId).toBe('client-a')
+	expect(values.get(preRegisteredClientKey)).toEqual(sealedClient('client-b'))
+	expect((await hub.getSnapshot()).servers[0]?.oauthClientId).toBe('client-b')
+
+	const removed = await setOAuthClient(hub, null)
+	expect(removed).toMatchObject({ changed: true, previousClientId: 'client-b' })
+	expect(values.has(preRegisteredClientKey)).toBe(false)
+	const registerCount = manager.registerCount
+	const again = await setOAuthClient(hub, null)
+	expect(again).toMatchObject({ changed: false, previousClientId: null })
+	expect(manager.registerCount).toBe(registerCount)
+	expect((await hub.getSnapshot()).servers[0]?.oauthClientId).toBeNull()
+})
+
+test('a restarted hub reads stored client ids back into snapshots', async () => {
+	const { values, hub, manager } = createHub()
+	seedServer(manager)
+	await setOAuthClient(hub, sealedClient('gh-client'))
+
+	const restarted = createHub()
+	for (const [key, value] of values) restarted.values.set(key, value)
+	seedServer(restarted.manager)
+	expect((await restarted.hub.getSnapshot()).servers[0]?.oauthClientId).toBe(
+		'gh-client',
+	)
+})

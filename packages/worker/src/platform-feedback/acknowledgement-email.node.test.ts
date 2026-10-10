@@ -95,6 +95,10 @@ function createUsersAndFeedbackDb() {
 			password_hash TEXT NOT NULL DEFAULT 'x',
 			stable_user_id TEXT NOT NULL UNIQUE,
 			suspended_at TEXT,
+			deleted_at TEXT
+		);
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
 			email_outbound_paused_at TEXT,
 			deleted_at TEXT
 		);
@@ -116,17 +120,22 @@ function seedUser(
 		.prepare(
 			`INSERT INTO users (
 				username, email, password_hash, stable_user_id,
-				suspended_at, email_outbound_paused_at, deleted_at
-			) VALUES (?, ?, 'x', ?, ?, ?, ?)`,
+				suspended_at, deleted_at
+			) VALUES (?, ?, 'x', ?, ?, ?)`,
 		)
 		.run(
 			input.stableUserId,
 			input.email ?? `${input.stableUserId}@example.com`,
 			input.stableUserId,
 			input.suspendedAt ?? null,
-			input.emailOutboundPausedAt ?? null,
 			input.deletedAt ?? null,
 		)
+	sqlite
+		.prepare(
+			`INSERT INTO orgs (id, email_outbound_paused_at)
+			 VALUES (?, ?)`,
+		)
+		.run(input.stableUserId, input.emailOutboundPausedAt ?? null)
 }
 
 function createEmailCaptureServer(sent: Array<CapturedSend>, fail = false) {

@@ -375,28 +375,20 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   community profile fields are `display_name`, `bio`, and `profile_visibility`
   (default `public`). `experiments_opt_in` is the account preference for the
   feature-flag `experiments_opt_in` audience, edited at `/account/experiments`.
-  `account_type` (`'person'` default or `'platform'`) is on `users`.
-  Platform-type users are ordinary orgs. Person-only sweeps filter with
-  `personUserRowSql`. Column drop is tracked in
-  [#3084](https://github.com/kentcdodds/kody/issues/3084). First-touch marketing
-  columns (`utm_*`, `first_touch_landing_path`, `first_touch_referrer`) store
-  signup attribution when present. Activation and return columns
-  (`first_mcp_connected_at`, `first_execute_at`, `first_search_at`,
-  `first_saved_package_at`, `first_secret_at`, `first_integration_at`,
-  `first_job_at`, `mcp_client_name`, `last_active_at`) support product metrics;
-  email verification delivery columns track the latest transactional verify-mail
-  outcome. `second_agent_standard_gift_granted_at` is the write-once ledger for
-  the 14-day Pro overlay granted when known connected agent ecosystems first
-  reach 2; `second_agent_standard_gift_expires_at` is set only when that overlay
-  actually raises a free account (NULL means already paid / no-op). See
-  [Entitlements](./entitlements.md#second-agent-pro-gift).
-  `user_tips_email_opt_outs` is the durable Kody tips opt-out (usage-state
-  campaign mail only). `referral_standard_credit_expires_at` is the stackable
-  Pro overlay from the uncapped referral program. Pre-signup attribution lives
-  in the last-wins one-week `kody_ref` cookie. `referrals` stores the
-  signup-time row (`referrer_stable_user_id`, `referee_stable_user_id`) and the
-  invoice-gated reward ledger (`status`, `reward_invoice_id`, held invoice
-  fields while email is unverified). See
+  Every `users` row is a person account. First-touch marketing columns (`utm_*`,
+  `first_touch_landing_path`, `first_touch_referrer`) store signup attribution
+  when present. Activation and return columns (`first_mcp_connected_at`,
+  `first_execute_at`, `first_search_at`, `first_saved_package_at`,
+  `first_secret_at`, `first_integration_at`, `first_job_at`, `mcp_client_name`,
+  `last_active_at`) support product metrics; email verification delivery columns
+  track the latest transactional verify-mail outcome. `user_tips_email_opt_outs`
+  is the durable Kody tips opt-out (usage-state campaign mail only). Billing,
+  Stripe, gift, and referral-overlay columns live on the person's personal
+  `orgs` row (see `orgs` below and [Entitlements](./entitlements.md)).
+  Pre-signup attribution lives in the last-wins one-week `kody_ref` cookie.
+  `referrals` stores the signup-time row (`referrer_stable_user_id`,
+  `referee_stable_user_id`) and the invoice-gated reward ledger (`status`,
+  `reward_invoice_id`, held invoice fields while email is unverified). See
   [Entitlements](./entitlements.md#referral-pro-credit). The
   `d1_storage_reconciliation` lane sweeps users by `stable_user_id` keyset from
   the platform-owned `d1_storage_reconcile_cursor` singleton. UserMeter
@@ -435,11 +427,9 @@ The schema is defined by migrations in `packages/worker/migrations/`:
   they are resolved, dismissed, or the submitting account is deleted. Resolved
   and dismissed rows are pruned 365 days after `updated_at`; submitter deletion
   removes any remaining rows.
-- `package_scope_grants` and `package_share_grants`: live access does not use
-  these tables. Account export/deletion inventory and Teams conversion tools
-  list them. Drop is tracked in
-  [#3083](https://github.com/kentcdodds/kody/issues/3083) and
-  [#3082](https://github.com/kentcdodds/kody/issues/3082).
+- Package access uses org grants and Owner memberships. There is no
+  `package_scope_grants`, `package_share_grants`, or `username_redirects` table.
+  Reserved old handles live in `handles`.
 - `password_resets`: hashed reset tokens with expiry and foreign key to users
 - Workflow, activation, and package-success state lives in dedicated RunLog
   tables; D1 has no corresponding projection tables (see
@@ -798,7 +788,7 @@ Naming matches `RunLog` and `JobManager`: one object per untrimmed stable MCP
 column inside the DO because the object identity is the user.
 
 SQLite ownership (schema version tracked in `user_meter_meta`; current version
-**12**):
+**14**):
 
 - `daily_counters` — authoritative UTC-day counters for `email_sends_per_day`,
   `email_receives_per_day`, `execute_unique_workers_per_day`,
@@ -833,6 +823,11 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `dynamic_worker_day` usage event per unique Cloudflare bill unit, and to
   classify observe-only `dynamic_worker_invoke` as hit or miss. Not an
   entitlement counter and not included in `exportCounters`.
+- `execute_call_days` — admitted hosted execute calls per UTC day (`day` PK,
+  `count`), repeats included. Feeds the daily `execute` usage trend; the plan
+  cap counts unique workers in `daily_counters` instead.
+- `budget_spend_state` / `budget_spend_users` — this month's org budget spend
+  (automation total and per-member micro-USD) for real-time budget checks.
 - `inbound_mcp_connection_last_used` — last successful MCP bearer validation per
   inbound OAuth `clientId` (`client_id` PK, `last_used_at`). Account →
   Connections joins this as last-used next to Revoke.
@@ -841,18 +836,20 @@ SQLite ownership (schema version tracked in `user_meter_meta`; current version
   `inboundConnectionLastUsed` on the first `exportCounters` page only.
 
 Retention is self-enforced inside the DO: every read/write path
-opportunistically deletes counter, inbound-claim, and unique-worker-day rows
-older than fourteen UTC days (`userMeterDailyCounterRetentionDays`). Enforcement
-only needs the current day; the window covers timezone edge cases, recent
-account exports, and inbound retries. Storage-byte state is not time-pruned.
-Write-lease rows clear on release/repair/purge.
+opportunistically deletes counter, inbound-claim, unique-worker-day, and
+execute-call-day rows older than fourteen UTC days
+(`userMeterDailyCounterRetentionDays`). Enforcement only needs the current day;
+the window covers timezone edge cases, recent account exports, and inbound
+retries. Storage-byte state is not time-pruned. Write-lease rows clear on
+release/repair/purge.
 
 **Daily counter authority:** enforcement, point reads, bootstrap, and account
 export/deletion paths use `UserMeter`; D1 has no daily entitlement counter table
 or day index. `adminUserMeterParity` reports meter-only daily counts.
-`readDailyTrend` returns one compact RPC of daily counters and unique-worker-day
-counts for that retention window; `readAccountUsageTrend` / `usageTrendGet`
-zero-fill missing days and attach a cheap `usage_rollups` monthly series. See
+`readDailyTrend` returns one compact RPC of daily counters, unique-worker-day
+counts, and execute-call counts for that retention window;
+`readAccountUsageTrend` / `usageTrendGet` zero-fill missing days and attach a
+cheap `usage_rollups` monthly series. See
 [Entitlements](./entitlements.md#usermeter).
 
 **Daily cold bootstrap:** a missing `(resource, day)` row returns

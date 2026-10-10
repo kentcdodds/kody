@@ -98,6 +98,10 @@ Open these before proposing a new primitive, surface, or storage home.
 - [0049 — No MCP capability OAuth scopes](./0049-no-mcp-capability-oauth-scopes.md)
   — connecting an agent is one grant; `openid` / `profile` / `email` stay
   identity claims, not a permission menu
+- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
+  at $0, usage past the include stops and the full Pro include stays; never a
+  Free-limits fallback; no customer-facing fund-to-unlock rates and no free
+  past-include burn; 50× is a credits ceiling, not a tier
 - [0052 — OAuth refresh expectation comes from the token response](./0052-oauth-refresh-policy-from-token-response.md)
   — no app/adapter refresh defaults and no blanket `missing_refresh_token`
   Waiting suppression; wait only when the connect response implied refresh
@@ -149,9 +153,10 @@ Open these before proposing a new primitive, surface, or storage home.
   stamp `orgId` on grant props and metadata; `?org=` plus consent picker (no
   flag; one org = no picker); connection profiles stay org-bound narrowing, not
   OAuth scopes; `userId` fallback until P9
-- [0065 — Org seats, prepaid credits, and Free-tier fallback at $0](./0065-org-seats-and-free-tier-fallback.md)
-  — org-billed seats and credits; empty wallet uses Free rate/compute limits
-  (supersedes 0051 hard stop); Stripe writes stay Kody-only
+- [0065 — Org seats and prepaid credits](./0065-org-seats-and-prepaid-credits.md)
+  — org-billed seats and credits; usage past the include follows 0051 (an empty
+  wallet keeps the full Pro include and never drops to Free limits); Stripe
+  writes stay Kody-only
 - [0066 — Teams soft delete, restore window, and purge lane](./0066-soft-delete-and-purge.md)
   — 30-day restore window, live `deleted_at IS NULL` reads plus scanner, purge
   lane with `deleting_at`, org vs user deletion split, purge audit in
@@ -170,8 +175,6 @@ Do not treat this list as homework. History stays; it is not silently deleted.
   — superseded by 0058; Skills over MCP now ship behind a flag
 - [0050 — Package share grants are not platform scope grants](./0050-package-share-grants-are-not-scope-grants.md)
   — superseded by 0067; shares are `use` grants and scope grantees are Owners
-- [0051 — Pro bills include → credits → stop](./0051-include-credits-stop.md) —
-  superseded by 0065; empty wallets use Free-tier limits instead of stopping
 - [0036 — Person accounts do not run official platform packages](./0036-platform-packages-fork-only.md)
   — superseded by 0067; platform accounts are ordinary orgs and cross-org
   imports are refused

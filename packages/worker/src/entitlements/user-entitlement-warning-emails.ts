@@ -33,7 +33,6 @@ import {
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { computeIncludeWarningPutsAccessAtRisk } from '#universal/usage-presentation.ts'
 import { sendToOrgBillingRecipients } from '#worker/billing/org-billing-emails.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 export { type UserEntitlementWarningKind }
 
@@ -90,7 +89,8 @@ type WarningCandidate = UserEntitlementRow & {
 	email: string
 }
 
-const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('u')}`
+const candidateColumnsSql = `u.stable_user_id, u.email, ${userEntitlementColumnsSql('o')}`
+const orgEntitlementJoinSql = `INNER JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}`
 
 export type UserWarningResource =
 	| EntitlementResource
@@ -793,8 +793,8 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)
@@ -817,8 +817,8 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
 				)
 				.bind(stockPackageThreshold, userEntitlementWarningStockSweepLimit)
@@ -839,8 +839,8 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS stock
 				 INNER JOIN users u ON u.stable_user_id = stock.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL`,
 				)
 				.bind(
@@ -861,8 +861,8 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)
@@ -880,8 +880,8 @@ export async function listUsersForEntitlementWarningSweep(
 					LIMIT ?
 				 ) AS ranked
 				 INNER JOIN users u ON u.stable_user_id = ranked.user_id
+				 ${orgEntitlementJoinSql}
 				 WHERE u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-					AND ${personUserRowSql('u')}
 					AND u.email_verified_at IS NOT NULL
 				 ORDER BY ranked.event_count DESC`,
 				)

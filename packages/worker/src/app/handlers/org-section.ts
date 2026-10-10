@@ -138,7 +138,9 @@ export function orgSectionDenial(
 		return 'Organization unavailable'
 	}
 	// A grant without a membership is not access to the whole workspace.
-	if (resolution.role == null) {
+	// Connections only lists the viewer's own agents bound to this org, which
+	// is how a collaborator starts using what was shared with them.
+	if (resolution.role == null && section !== 'connections') {
 		return 'Organization resources unavailable'
 	}
 	if (

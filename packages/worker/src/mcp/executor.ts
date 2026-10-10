@@ -28,7 +28,9 @@ import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import {
 	recordUsage,
 	usageAttributionFieldsFromRequest,
+	usageConnectionFieldsFromRequest,
 	type UsageEnv,
+	type UsageEvent,
 } from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
 import {
@@ -242,7 +244,15 @@ type DynamicWorkerExecutorInput = {
 	waitUntil?: (promise: Promise<unknown>) => void
 }
 
-export type ClaimWorkerDay = (workerId: string) => Promise<{ created: boolean }>
+export type ClaimWorkerDayAttribution = Pick<
+	UsageEvent,
+	'packageId' | 'connectionKey'
+>
+
+export type ClaimWorkerDay = (
+	workerId: string,
+	attribution: ClaimWorkerDayAttribution,
+) => Promise<{ created: boolean }>
 
 export type DynamicWorkerEvaluatePackageContext = {
 	packageId: string
@@ -717,16 +727,22 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				input.packageId?.trim() ||
 				invocation?.packageContext?.packageId?.trim() ||
 				null
+			const dayAttribution: ClaimWorkerDayAttribution = {
+				...(attributedPackageId ? { packageId: attributedPackageId } : {}),
+				...usageConnectionFieldsFromRequest(input.gatewayProps.request),
+			}
 			let claimedDay: Promise<{ created: boolean } | undefined>
 			if (input.claimWorkerDay) {
-				claimedDay = Promise.resolve(await input.claimWorkerDay(workerId))
+				claimedDay = Promise.resolve(
+					await input.claimWorkerDay(workerId, dayAttribution),
+				)
 			} else {
 				claimedDay = recordUniqueDynamicWorkerDay({
 					env: input.usageEnv,
 					userId: input.gatewayProps.userId,
 					workerId,
 					surface: input.surface ?? 'execute',
-					...(attributedPackageId ? { packageId: attributedPackageId } : {}),
+					...dayAttribution,
 				})
 				await runExecuteBookkeeping(
 					claimedDay,

@@ -146,12 +146,11 @@ id, connecting or signing in with Discord best-effort assigns those roles in the
 official Kody Discord:
 
 - `DISCORD_MEMBER_ROLE_ID` — assigned to every connected Discord identity
-- `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` — follow
-  `users.stripe_plan` (the paid subscription). Checkout, Stripe webhooks, and
-  the plan-refresh alarm re-sync these when the subscription changes. They are
-  exclusive: a Pro subscriber loses Standard, and a cancelled or free
-  `stripe_plan` loses both. Manual grants (including `max`) do not assign a plan
-  role.
+- `DISCORD_STANDARD_ROLE_ID` / `DISCORD_PRO_ROLE_ID` — follow `orgs.stripe_plan`
+  (the paid subscription). Checkout, Stripe webhooks, and the plan-refresh alarm
+  re-sync these when the subscription changes. They are exclusive: a Pro
+  subscriber loses Standard, and a cancelled or free `stripe_plan` loses both.
+  Manual grants (including `max`) do not assign a plan role.
 
 Disconnect and account deletion best-effort remove every configured role. Login
 and billing still succeed when the bot is unset, join or role writes fail, or

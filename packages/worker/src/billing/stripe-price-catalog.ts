@@ -1,6 +1,6 @@
 /**
  * Known Stripe list prices for admin MRR. Checkout amounts live here so
- * insights can turn `users.stripe_price_id` into monthly-equivalent revenue
+ * insights can turn `orgs.stripe_price_id` into monthly-equivalent revenue
  * without calling Stripe on the request path.
  */
 

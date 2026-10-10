@@ -29,22 +29,46 @@ Leave them unset to run with the local `.nx` cache only. Validate and
 miss). On Cloud Agent VMs, `npm run hooks:ensure` composes Husky through
 Cursor's hook dispatcher so `git push` runs `test:push` when the push includes a
 non-docs path, and can upload those artifacts before CI starts. Docs-only pushes
-skip `test:push`. GitHub Actions only sets the server URL after `GET /health`
-succeeds and an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fails
-the job if the host is configured but unreachable or unauthorized, so validate
-can still pass before the worker exists or after a token rotation that has not
-been synced yet. Cached npm scripts (`test:node`, `test:workers`,
-`test:e2e:run`, `test:mcp`, `test`, and `worker:typecheck`) run through
-`tools/run-nx.ts`. A transport error talking to `/v1/cache/{hash}` after Nx
-already printed `Successfully ran target` is treated as success. The same
-transport error before tasks finish retries once with `--skipRemoteCache` and
-without `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`. Unauthorized or
-misconfigured-cache errors still fail.
+skip `test:push`. `tools/nx-remote-cache-probe.ts` is the one place that checks
+the server: GitHub Actions only sets the server URL after `GET /health` succeeds
+and an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fails the job
+if the host is configured but unreachable or unauthorized, so validate can still
+pass before the worker exists or after a token rotation that has not been synced
+yet. The same probe then `PUT`s a fixed non-hash key
+(`00000000000000000000000000000001`): 200 or 409 means the token writes, 403
+means it is read-only. Nx prints nothing when a `PUT` is rejected, so every
+cached script ends with one line next to Nx's own hit count, for example
+`Nx remote cache enabled (https://nx-cache.kody.codes) READ-ONLY: PUT returned 403 ... Cache: 0/12 hit (0%)`.
+A read-only or failed write never fails the run; it is the signal that the token
+or the worker secret needs fixing before any hit can happen. Cached npm scripts
+(`test:node`, `test:workers`, `test:e2e:run`, `test:mcp`, `test`, and
+`typecheck`) run through `tools/run-nx.ts`. A transport error talking to
+`/v1/cache/{hash}` after Nx already printed `Successfully ran target` is treated
+as success. The same transport error before tasks finish retries once with
+`--skipRemoteCache` and without `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`.
+Unauthorized or misconfigured-cache errors still fail.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
 runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
 and asserts the second run is a `[remote cache]` hit that restores outputs
 without re-running the command.
+
+## Interpreting hit rates
+
+A PR that **introduces or renames Nx tasks** (or expands their `inputs`) will
+show `Cache: 0/N` on first run even when remote cache is enabled — those hashes
+have never been stored. Same-repo validate uses the write token (decision 0040),
+so that first run **PUTs**; the next identical tree on `main` or another PR
+should show `[remote cache]` hits. Example after parallel typecheck (#3209): the
+PR logged `0/12`, and the following `main` validate logged `12/12`.
+
+Do **not** treat a cold `0/N` alone as a token, Nx Cloud, or `--skip-nx-cache`
+bug. Check the setup step for
+`Nx remote cache enabled (https://nx-cache.kody.codes)` first. Fork PRs use the
+read token only and cannot populate new hashes. Suite targets that hash
+`{workspaceRoot}/**/*` (notably `test-node` after #3207) miss whenever any
+workspace file changes — that is intentional correctness, not a transport
+failure.
 
 ## Retention
 

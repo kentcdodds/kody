@@ -155,7 +155,7 @@ export function createExecuteWorkerDayClaim(input: {
 	onUsage?: (usage: ExecuteUniqueWorkerUsage) => void
 	waitUntil?: (promise: Promise<unknown>) => void
 }): ClaimWorkerDay {
-	return async (workerId) => {
+	return async (workerId, attribution) => {
 		const now = new Date()
 		const usage = await consumeExecuteUniqueWorkerDay({
 			db: input.env.APP_DB,
@@ -175,6 +175,7 @@ export function createExecuteWorkerDayClaim(input: {
 				outcome: 'success',
 				timestamp: now.toISOString(),
 				surface: 'execute',
+				...attribution,
 			})
 			const crossing = executeDailyWarningCrossing(usage)
 			if (crossing) {

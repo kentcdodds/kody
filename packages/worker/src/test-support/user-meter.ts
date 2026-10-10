@@ -44,6 +44,7 @@ export function createInMemoryUserMeterEnv() {
 		string,
 		{ minuteWindow: ExecuteCallMinuteWindow; repeatWindow: ExecuteRepeatWindow }
 	>()
+	const executeCallDaysByUser = new Map<string, Map<string, number>>()
 	function counterKey(resource: string, day: string) {
 		return `${resource}\0${day}`
 	}
@@ -73,6 +74,11 @@ export function createInMemoryUserMeterEnv() {
 		const existingLastUsed = lastUsedByUser.get(userId)
 		const lastUsed = existingLastUsed ?? new Map<string, string>()
 		if (!existingLastUsed) lastUsedByUser.set(userId, lastUsed)
+		const existingExecuteCallDays = executeCallDaysByUser.get(userId)
+		const executeCallDays = existingExecuteCallDays ?? new Map<string, number>()
+		if (!existingExecuteCallDays) {
+			executeCallDaysByUser.set(userId, executeCallDays)
+		}
 
 		function readRow(resource: string, day: string) {
 			return rows.get(counterKey(resource, day)) ?? null
@@ -367,12 +373,17 @@ export function createInMemoryUserMeterEnv() {
 				]
 					.map(([day, count]) => ({ day, count }))
 					.sort((left, right) => left.day.localeCompare(right.day))
+				const executeCalls = [...executeCallDays.entries()]
+					.filter(([day]) => day >= startDay && day <= endDay)
+					.map(([day, count]) => ({ day, count }))
+					.sort((left, right) => left.day.localeCompare(right.day))
 				return {
 					retentionDays: userMeterDailyCounterRetentionDays,
 					startDay,
 					endDay,
 					counters,
 					uniqueWorkerDays,
+					executeCalls,
 				}
 			},
 			async claimDynamicWorkerDay(input: {
@@ -424,7 +435,12 @@ export function createInMemoryUserMeterEnv() {
 					repeatWindow: new ExecuteRepeatWindow(),
 				}
 				executeAdmissionByUser.set(userId, windows)
-				return admitExecuteCallInWindows({ ...input, ...windows })
+				const result = admitExecuteCallInWindows({ ...input, ...windows })
+				if (result.admitted) {
+					const day = utcDayKey(new Date(input.nowMs))
+					executeCallDays.set(day, (executeCallDays.get(day) ?? 0) + 1)
+				}
+				return result
 			},
 			async refund(input: {
 				resource: string

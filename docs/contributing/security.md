@@ -604,7 +604,7 @@ blast radius:
   for 60 seconds, so a new suspension can take up to that long to stop
   background work already warm in an isolate. Set and cleared through the
   audited `suspend_user` / `unsuspend_user` actions on `POST /admin/users.json`.
-- **Automatic outbound-email pause (`users.email_outbound_paused_at`).** The
+- **Automatic outbound-email pause (`orgs.email_outbound_paused_at`).** The
   delivery queue evaluates provider delivery events
   (`packages/worker/src/email/outbound-abuse.ts`): one spam complaint, or five
   or more bounced sends within a UTC day, pauses that account's outbound email

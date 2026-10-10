@@ -3,6 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { expect, test } from 'vitest'
 import { EntitlementLimitError } from '#worker/entitlements/errors.ts'
 import { planLimits } from '#universal/plans.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEntitlementTestSchema } from '#worker/entitlements/test-schema.ts'
 import { userMeterRpc } from '#worker/entitlements/user-meter-client.ts'
 import {
@@ -50,20 +51,25 @@ async function seedPlannedStorageUser(
 	clearStorageBucketRegistrationDedupeForTests()
 	const email = `${prefix}-${crypto.randomUUID()}@example.com`
 	const userId = testStableUserIdFromEmail(email)
+	const username = `storage-${crypto.randomUUID().slice(0, 8)}`
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, plan, stable_user_id
-		) VALUES (?, ?, ?, ?, ?, ?)`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, ?, ?, ?)`,
 	)
 		.bind(
-			`storage-${crypto.randomUUID().slice(0, 8)}`,
+			username,
 			email,
 			'test-password-hash',
 			new Date().toISOString(),
-			plan,
 			userId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan,
+	})
 	// UserMeter is the storage-bytes authority; seed it directly.
 	await userMeterRpc({
 		env,

@@ -282,6 +282,7 @@ async function authenticateWithMcpOauth(input: {
 				connectionProfileName: readConnectionProfileNameFromGrantProps(
 					tokenSummary.grant.props,
 				),
+				oauthClientId: tokenSummary.grant.clientId,
 				orgBinding,
 			}),
 			user: authContext.user,

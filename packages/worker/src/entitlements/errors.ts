@@ -39,8 +39,8 @@ export type EntitlementLimitErrorDetails = {
 
 /**
  * Credits next step for a rate/compute include, or `null` when the plan's
- * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 hits Free
- * rate/compute caps and is nudged to top up; a funded wallet is already at the
+ * ordinary upgrade/reduce guidance applies. Purchasable Pro at $0 is at its
+ * include and keeps going on credits; a funded wallet is already at the
  * credits ceiling. Free keeps its hard caps (upgrade offer); retired and
  * gift Pro accounts learn that Pro with credits runs past the include.
  */
@@ -52,7 +52,7 @@ export function entitlementCreditsOffer(
 	if (!isCreditsUnlockedResource(resource) || plan === 'max') return null
 	switch (creditWallet) {
 		case 'empty':
-			return `add credits at ${accountCreditsPath} to restore Pro rates past your include`
+			return `add credits at ${accountCreditsPath} to keep going past your include`
 		case 'funded':
 			return null
 		case 'none':
@@ -567,4 +567,17 @@ export function coerceBudgetLimitError(
 	const parsed = parseBudgetLimitMessage(error.message)
 	if (!parsed) return null
 	return new BudgetLimitError(parsed)
+}
+
+/**
+ * Usage refusals a counted entry point raises before any work runs: plan
+ * limits, the past-include stop, and org budgets. Callers that pre-claimed
+ * an idempotency key release it so a retry can succeed once usage allows.
+ */
+export function isPreRunUsageDenial(error: unknown): boolean {
+	return (
+		isEntitlementLimitError(error) ||
+		isComputeOverageLimitError(error) ||
+		isBudgetLimitError(error)
+	)
 }

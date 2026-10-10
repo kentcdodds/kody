@@ -46,7 +46,7 @@ export const userMeterDailyCounterRetentionDays = 14
 
 const metaSchemaVersionKey = 'schema_version'
 /** Bump when initializeSchema DDL changes; warm objects skip DDL. */
-const userMeterSchemaVersion = 13
+const userMeterSchemaVersion = 14
 /** Singleton row id for monthly org budget spend (schema v13). */
 const budgetSpendStateRowId = 1
 const utcMonthKeyPattern = /^\d{4}-\d{2}$/
@@ -184,6 +184,8 @@ export type UserMeterDailyTrendResult = {
 	endDay: string
 	counters: Array<UserMeterDailyTrendCounterRow>
 	uniqueWorkerDays: Array<UserMeterDailyTrendUniqueWorkerDayRow>
+	/** Admitted hosted execute calls per UTC day, repeats included. */
+	executeCalls: Array<UserMeterDailyTrendUniqueWorkerDayRow>
 }
 
 export type UserMeterRefundResult = UserMeterReadyState
@@ -757,6 +759,14 @@ class UserMeterBase extends DurableObject<Env> {
 				micro_usd INTEGER NOT NULL
 			)
 		`)
+		// Admitted hosted execute calls per UTC day (schema v14). The plan cap
+		// counts unique workers; this keeps the per-call usage trend.
+		this.ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS execute_call_days (
+				day TEXT PRIMARY KEY NOT NULL,
+				count INTEGER NOT NULL
+			)
+		`)
 		this.ctx.storage.sql.exec(
 			`INSERT INTO user_meter_meta (key, value) VALUES (?, ?)
 			ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
@@ -812,6 +822,10 @@ class UserMeterBase extends DurableObject<Env> {
 		)
 		this.ctx.storage.sql.exec(
 			`DELETE FROM dynamic_worker_days WHERE day < ?`,
+			cutoffDay,
+		)
+		this.ctx.storage.sql.exec(
+			`DELETE FROM execute_call_days WHERE day < ?`,
 			cutoffDay,
 		)
 	}
@@ -1031,12 +1045,16 @@ class UserMeterBase extends DurableObject<Env> {
 		}
 
 		this.ctx.storage.transactionSync(() => {
-			this.incrementCounterRow({
+			const counted = this.incrementCounterRow({
 				resource,
 				day,
 				existing,
 				updatedAt: input.createdAt,
 			})
+			// Throwing rolls back the claim so a worker is never free-loaded.
+			if (counted < 1) {
+				throw new Error('UserMeter worker-day consume lost the revision race.')
+			}
 			this.ctx.storage.sql.exec(
 				`INSERT INTO dynamic_worker_days (worker_id, day, created_at)
 				VALUES (?, ?, ?)`,
@@ -1069,11 +1087,19 @@ class UserMeterBase extends DurableObject<Env> {
 		limitPerMinute: number
 		repeat?: ExecuteRepeatInput
 	}): Promise<UserMeterExecuteAdmissionResult> {
-		return admitExecuteCallInWindows({
+		const result = admitExecuteCallInWindows({
 			...input,
 			minuteWindow: this.executeCallMinute,
 			repeatWindow: this.executeRepeatWindow,
 		})
+		if (result.admitted) {
+			this.ctx.storage.sql.exec(
+				`INSERT INTO execute_call_days (day, count) VALUES (?, 1)
+				ON CONFLICT(day) DO UPDATE SET count = count + 1`,
+				utcDayKey(new Date(input.nowMs)),
+			)
+		}
+		return result
 	}
 
 	private readonly executeCallMinute: ExecuteCallMinuteWindow = {
@@ -1118,8 +1144,8 @@ class UserMeterBase extends DurableObject<Env> {
 		day: string
 		existing: { count: number; revision: number }
 		updatedAt: string
-	}) {
-		this.ctx.storage.sql.exec(
+	}): number {
+		return this.ctx.storage.sql.exec(
 			`UPDATE daily_counters
 			SET count = ?,
 				revision = ?,
@@ -1131,7 +1157,7 @@ class UserMeterBase extends DurableObject<Env> {
 			input.resource,
 			input.day,
 			input.existing.revision,
-		)
+		).rowsWritten
 	}
 
 	/**
@@ -1288,12 +1314,37 @@ class UserMeterBase extends DurableObject<Env> {
 				count: Math.max(0, Number(row.count ?? 0)),
 			}))
 
+		// Calls were counted under the retired `execute_calls_per_day` counter
+		// before execute_call_days existed. Those rows stop growing at deploy and
+		// age out with retention, so summing both keeps the 14-day history whole.
+		const executeCalls = this.ctx.storage.sql
+			.exec<{ day: string; count: number }>(
+				`SELECT day, SUM(count) AS count
+				FROM (
+					SELECT day, count FROM execute_call_days
+					UNION ALL
+					SELECT day, count FROM daily_counters
+					WHERE resource = 'execute_calls_per_day'
+				)
+				WHERE day >= ? AND day <= ?
+				GROUP BY day
+				ORDER BY day ASC`,
+				startDay,
+				endDay,
+			)
+			.toArray()
+			.map((row) => ({
+				day: String(row.day),
+				count: Math.max(0, Number(row.count ?? 0)),
+			}))
+
 		return {
 			retentionDays: userMeterDailyCounterRetentionDays,
 			startDay,
 			endDay,
 			counters,
 			uniqueWorkerDays,
+			executeCalls,
 		}
 	}
 

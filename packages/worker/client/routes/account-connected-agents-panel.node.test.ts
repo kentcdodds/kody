@@ -354,3 +354,34 @@ test('a later success with a stale agent list does not restore a sibling that al
 		toastOf('Agent disconnected.', 'success'),
 	])
 })
+
+test('switching orgs while a revoke is in flight keeps the same host connected in the other org', async () => {
+	using harness = createPanelWithDeferredRevokes()
+	const { panel, ids, respond } = harness
+
+	const revokePromise = panel.revokeAgent(cursorOld.clientId)
+	// The next org lists the same client under its own grant.
+	const otherOrgCursor = { ...cursorOld, grantIds: ['grant-other-org'] }
+	panel.applyPayload({ ...listedAgents, agents: [otherOrgCursor] })
+	expect(ids()).toEqual([cursorOld.clientId])
+
+	respond(cursorOld, okAgents([]))
+	await revokePromise
+	panel.applyPayload({ ...listedAgents, agents: [otherOrgCursor] })
+	expect(ids()).toEqual([cursorOld.clientId])
+})
+
+test('a revoke that fails after an org switch shows the destination org list, not the source row', async () => {
+	using harness = createPanelWithDeferredRevokes()
+	const { panel, respond } = harness
+
+	const revokePromise = panel.revokeAgent(cursorOld.clientId)
+	panel.applyPayload({ ...listedAgents, agents: [chatgptOld] })
+
+	respond(
+		cursorOld,
+		jsonResponse({ ok: false, error: 'Unable to revoke this agent.' }, 500),
+	)
+	await revokePromise
+	expect(panel.listAgents()).toEqual([chatgptOld])
+})

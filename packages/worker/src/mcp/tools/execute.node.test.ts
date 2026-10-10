@@ -4,6 +4,8 @@ import { utcDayKey } from '@kody-internal/shared/date-keys.ts'
 import { expect, onTestFinished, test, vi } from 'vitest'
 import { planLimits } from '#universal/plans.ts'
 import {
+	BudgetLimitError,
+	ComputeOverageLimitError,
 	EntitlementLimitError,
 	JobIntervalFloorError,
 	buildEntitlementLimitMessage,
@@ -865,50 +867,69 @@ test('execute tool claims a keyed run, passes the handle, and returns runId', as
 	})
 })
 
-test('execute tool releases a keyed claim when the unique-worker cap denies the load', async () => {
-	const claimedHandle = {
-		id: 'run-claimed-denied',
-		userId: ownerIdFromStored('user-claim-denied'),
-		startedAt: '2026-07-28T00:00:00.000Z',
-		persistence: 'eager' as const,
-		context: { surface: 'execute' as const, idempotencyKey: 'claim-denied' },
-	}
-	const handler = await getExecuteHandler({
-		baseUrl: 'https://example.com',
-		user: {
+test('execute tool releases a keyed claim when a usage denial stops the load', async () => {
+	const denials = [
+		new EntitlementLimitError({
+			resource: 'execute_unique_workers_per_day',
+			plan: 'free',
+			limit: 150,
+			current: 150,
+			upgradeHint: buildEntitlementUpgradeHint(
+				'execute_unique_workers_per_day',
+				'free',
+			),
+		}),
+		new ComputeOverageLimitError({
+			resource: 'unique_worker_days',
+			plan: 'pro',
+			limit: 350,
+			current: 351,
+			creditsStatus: 'add_credits',
+		}),
+		new BudgetLimitError({
+			kind: 'user',
+			orgSlug: 'acme',
+			actorUsername: 'sam',
+			spentMicroUsd: 50_000_000,
+			budgetMicroUsd: 50_000_000,
+		}),
+	]
+	for (const denial of denials) {
+		const claimedHandle = {
+			id: `run-claimed-${denial.name}`,
 			userId: ownerIdFromStored('user-claim-denied'),
-			email: 'claim-denied@example.com',
-		},
-	})
-	mockModule.claimRunRecord.mockResolvedValueOnce({
-		claimed: true,
-		handle: claimedHandle,
-	} as never)
-	const denial = new EntitlementLimitError({
-		resource: 'execute_unique_workers_per_day',
-		plan: 'free',
-		limit: 150,
-		current: 150,
-		upgradeHint: buildEntitlementUpgradeHint(
-			'execute_unique_workers_per_day',
-			'free',
-		),
-	})
-	mockModule.runModuleWithRegistry.mockRejectedValueOnce(denial)
-	const response = await handler({
-		code: okCode,
-		idempotencyKey: 'claim-denied',
-		conversationId: 'conv-claim-denied',
-	})
-	expect(response.isError).toBe(true)
-	expect(response.structuredContent.entitlement).toMatchObject({
-		resource: 'execute_unique_workers_per_day',
-		remaining: 0,
-	})
-	expect(mockModule.abandonRunRecord).toHaveBeenCalledWith(
-		expect.objectContaining({ handle: claimedHandle }),
-	)
-	expect(mockModule.finishRunRecord).not.toHaveBeenCalled()
+			startedAt: '2026-07-28T00:00:00.000Z',
+			persistence: 'eager' as const,
+			context: { surface: 'execute' as const, idempotencyKey: 'claim-denied' },
+		}
+		const handler = await getExecuteHandler({
+			baseUrl: 'https://example.com',
+			user: {
+				userId: ownerIdFromStored('user-claim-denied'),
+				email: 'claim-denied@example.com',
+			},
+		})
+		mockModule.claimRunRecord.mockResolvedValueOnce({
+			claimed: true,
+			handle: claimedHandle,
+		} as never)
+		mockModule.runModuleWithRegistry.mockRejectedValueOnce(denial)
+		mockModule.finishRunRecord.mockClear()
+		const response = await handler({
+			code: okCode,
+			idempotencyKey: 'claim-denied',
+			conversationId: 'conv-claim-denied',
+		})
+		expect(response.isError).toBe(true)
+		expect(response.structuredContent.error).toBe(denial.message)
+		expect(Boolean(response.structuredContent.entitlement)).toBe(
+			!(denial instanceof BudgetLimitError),
+		)
+		expect(mockModule.abandonRunRecord).toHaveBeenCalledWith(
+			expect.objectContaining({ handle: claimedHandle }),
+		)
+		expect(mockModule.finishRunRecord).not.toHaveBeenCalled()
+	}
 })
 
 test('execute tool threads a progress reporter when the client sends progressToken', async () => {

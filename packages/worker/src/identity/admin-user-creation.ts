@@ -146,9 +146,8 @@ export async function adminCreateUserWithPasswordSetup(input: {
 		const result = await input.db
 			.prepare(
 				`INSERT INTO users (
-					username, email, password_hash, email_verified_at, stable_user_id,
-					plan, signup_welcome_credits_pending
-				) VALUES (?, ?, ?, ?, ?, 'free', 1)`,
+					username, email, password_hash, email_verified_at, stable_user_id
+				) VALUES (?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				username,

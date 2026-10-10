@@ -40,9 +40,8 @@ at `packages/worker/universal/plans.ts`.
   `buildEntitlementUpgradeHint` uses `entitlementCreditsOffer` for rate/compute
   includes credits extend (reduce-only once funded, and for `max`); stock and
   other resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
-  (Free). `ComputeOverageLimitError` remains for legacy surfaces; empty-wallet
-  enforcement uses Free rate/compute via `proCreditsEmptyWalletPlanLimits` (ADR
-  0065).
+  (Free). `ComputeOverageLimitError` is the include → credits → stop denial for
+  an empty purchasable-Pro wallet past a monthly include.
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -72,21 +71,19 @@ tiers and no env-var backstops.
 There is deliberately no uncapped plan; the live registry stays finite `max`
 only.
 
-`users.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
+`orgs.plan` is a NOT NULL TEXT column with DDL default `'free'` and a CHECK
 constraint for the registered names (squashed baseline plus
-`0002-restructure-plan-tiers.sql`). The same plan, ladder, Stripe, gift, and
-credit-eligibility columns live on `orgs` (personal orgs reuse
-`users.stable_user_id` as `orgs.id`). Entitlement reads prefer the org row and
-fall back to `users` when that join misses. Writers that change those columns
-write both tables with the same id. **Live DDL defaults and writers always
-persist a known plan name (never NULL); normal creation and reset paths default
-to `free`.**
+`0002-restructure-plan-tiers.sql`). Plan, ladder, Stripe, gift, and
+credit-eligibility columns live only on `orgs` (personal orgs reuse
+`users.stable_user_id` as `orgs.id`). Entitlement reads and writers use the org
+row. **Live DDL defaults and writers always persist a known plan name (never
+NULL); normal creation and reset paths default to `free`.**
 
 **Write and default:** `resolvePlanWrite` maps nullish admin/API inputs to
 `free`, which is the default for new accounts, admin-created accounts, seed SQL,
 and admin plan resets. Explicit `max` remains a valid deliberate assignment.
 
-**Reading stored values:** D1 constrains `users.plan` to the registered names.
+**Reading stored values:** D1 constrains `orgs.plan` to the registered names.
 Reads use strict `parseStoredPlanName`: known names pass through unchanged,
 while a value that violates the storage contract throws without including the
 raw value or user data. Untrusted admin/API input uses `parsePlanName` so typos,
@@ -95,15 +92,15 @@ unknown strings, and retired plan names are rejected as validation failures.
 Migration `0002-restructure-plan-tiers.sql` maps stored `pro` values to
 `standard`, stored `partner` values to `pro`, and rebuilds both CHECK
 constraints for the current registry. Migration
-`0043-users-entitlement-ladder.sql` adds `users.entitlement_ladder` and
-backfills `legacy` for then-active Stripe Standard/Pro subscribers and manual
-Pro grants.
+`0043-users-entitlement-ladder.sql` introduced the entitlement ladder (now
+`orgs.entitlement_ladder`) and backfilled `legacy` for then-active Stripe
+Standard/Pro subscribers and manual Pro grants.
 
-`users.stripe_plan` stays nullable because it is Stripe-derived; `max` is
+`orgs.stripe_plan` stays nullable because it is Stripe-derived; `max` is
 manual-only — admin-visible, not paid or public — and never written from Stripe
 (`parseStripePlanName` rejects it, along with any retired or unknown name).
 
-`users.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
+`orgs.entitlement_ladder` is `'public'` or `'legacy'` (NOT NULL, default
 `'public'`). The public table in `planLimits` is what `/pricing` renders and
 what new Standard/Pro subscribers get. `legacy` keeps the pre-cut Standard/Pro
 ceilings from `legacyPlanLimits` only while the same Stripe subscription
@@ -113,19 +110,20 @@ other price/product switch writes `public`. A remaining manual Pro grant without
 a paid Stripe tier still keeps `legacy` until that grant is removed. The
 one-shot backfill in `0043-users-entitlement-ladder.sql` sets `legacy` for those
 accounts. Resubscribing does not restore `legacy`.
-`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` so Stripe refresh
-can detect those subscription changes. The first observation of a continuing
-subscription writes the current price and leaves `legacy` in place. Free and
-`max` always use `planLimits`; the ladder is ignored for those plans.
-Unique-worker-day and Durable Object rows-read numbers live on `PlanLimits` for
-the public table. They are not hard-cut and not billed for legacy accounts.
+`0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
+`orgs.stripe_price_id`) so Stripe refresh can detect those subscription changes.
+The first observation of a continuing subscription writes the current price and
+leaves `legacy` in place. Free and `max` always use `planLimits`; the ladder is
+ignored for those plans. Unique-worker-day and Durable Object rows-read numbers
+live on `PlanLimits` for the public table. They are not hard-cut and not billed
+for legacy accounts.
 
 `getUserEntitlement` / `getCachedUserEntitlement` return `{ plan, ladder }`.
 Enforcement (`assertWithinEntitlement`, `consumeDailyEntitlement`, storage
 reserve, job interval floors) resolves limits through that pair.
 
 `resolveEffectivePlan(manual, stripe)` compares a non-null manual plan (after
-`parseStoredPlanName`) with `users.stripe_plan`. Manual `max` always wins over
+`parseStoredPlanName`) with `orgs.stripe_plan`. Manual `max` always wins over
 Stripe; otherwise the higher-ranked of the two is returned. Unknown or null
 `stripe_plan` values contribute nothing. Admin user list/get (page and MCP)
 expose the grant, Stripe tier, effective plan, and whether a Stripe customer is
@@ -137,8 +135,8 @@ When a user first reaches two known connected agent ecosystems, Kody records one
 14-day overlay of Pro. The gate is that second ecosystem (activation), not day-0
 signup and not a second OAuth `clientId` for the same ecosystem. Two Cursor auth
 contexts are one ecosystem. An unlabeled client does not add an ecosystem.
-`users.second_agent_standard_gift_granted_at` is the write-once ledger (one gift
-per user). `users.second_agent_standard_gift_expires_at` is set only when the
+`orgs.second_agent_standard_gift_granted_at` is the write-once ledger (one gift
+per user). `orgs.second_agent_standard_gift_expires_at` is set only when the
 base effective plan is still `free`; NULL means the account was already
 Standard/Pro/max and Stripe was not touched. There is no existing helper that
 extends a remaining Stripe period, and mutating `trial_end` / period end is
@@ -170,7 +168,7 @@ First-touch UTMs stay write-once and do not carry the referral code. Reward runs
 on `invoice.paid` after the referee's first qualifying paid Stripe invoice
 (`amount_paid > 0`, not a $0 trial, not a historical compute-overage invoice).
 Both the referrer and the referee receive one stacked month (30 days) of Pro via
-`users.referral_standard_credit_expires_at` (retired Pro ceilings, no credit
+`orgs.referral_standard_credit_expires_at` (retired Pro ceilings, no credit
 wallet — same as the second-agent gift). There is no annual or lifetime cap on
 how many months a referrer can earn. Paid subscribers stack from the later of an
 existing credit and the current paid period end so the month starts after paid
@@ -239,9 +237,9 @@ subscribers keep their plan and table until they change plan
 **Eligibility keys off the Stripe price or an admin decision.**
 `resolveSubscriptionPlan` sets `creditsEligible` when the granting subscription
 uses a configured Pro price, and every Stripe refresh writes it to
-`users.stripe_credits_eligible` (`0069-prepaid-credits.sql`). That separates Pro
+`orgs.stripe_credits_eligible` (`0069-prepaid-credits.sql`). That separates Pro
 from retired Standard at the same $12. Because Stripe refreshes overwrite that
-column, admins set the separate `users.admin_credits_eligible`
+column, admins set the separate `orgs.admin_credits_eligible`
 (`0070-admin-credits-eligible.sql`) with `adminCreditEligibilitySet`; Stripe
 never writes it. `hasStoredCreditsEligibility` ORs the two. `getUserEntitlement`
 returns `creditWallet` (`resolveCreditWalletState`): `none` unless the effective
@@ -253,14 +251,15 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Include → credits → free-tier limits.** This is the customer billing path for
-purchasable Pro
-([decision 0065](../decisions/0065-org-seats-and-free-tier-fallback.md), which
-supersedes [0051](../decisions/0051-include-credits-stop.md)). The $12 / $120
+**Include → credits → stop.** This is the one customer billing path for
+purchasable Pro, personal and org
+([decision 0051](../decisions/0051-include-credits-stop.md); org seats in
+[0065](../decisions/0065-org-seats-and-prepaid-credits.md)). The $12 / $120
 subscription is the seat plus a monthly include: the retired Standard rates,
 email, Worker compute (350 unique worker days), Rows read (5B), and job interval
 floor on `proCreditsPlanLimits`. Past the include, usage runs on credits until
-they are gone, then rate and compute fall back to Free caps.
+they are gone, then stops. A Pro account at $0 keeps the full include; it never
+drops to Free limits.
 
 - **Stock is not part of the path.** Purchasable Pro always has Max stock and
   concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
@@ -269,20 +268,31 @@ they are gone, then rate and compute fall back to Free caps.
   `unlockCreditsLimits` scales (execute, outbound fetches, job runs, automation
   invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
   include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
-  job runs 40,000, automation 200,000; `max` has no weekly window). At $0,
-  `resolvePlanLimits` returns `proCreditsEmptyWalletPlanLimits`: Max stock with
-  Free rate/compute/email and job interval (for example 150 execute/day,
-  400/week).
+  job runs 40,000, automation 200,000; `max` has no weekly window). At $0
+  `resolvePlanLimits` returns `proCreditsPlanLimits` (for example 500
+  execute/day, 1,200/week), and every one of those fields stops at the include
+  (within the 60s enforcement cache) with `EntitlementLimitError` copy that says
+  to add credits (`entitlementCreditsOffer`).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
-  funded wallet (see Debits). At $0, work keeps running within Free rate limits;
-  denials use the normal daily/weekly entitlement path with copy that nudges a
-  top-up. `assertWithinPastIncludeCredits` and `resolvePastIncludeStop` are
-  no-ops kept for stable call sites. Hosted package apps use the same limit
-  table via `assertWithinComputeInclude`. Outbound fetches are exempt from
-  monthly include logic because they happen inside a run that was already
-  admitted.
-- Email caps and the job interval floor are not credit-extended while funded; at
-  $0 they match Free along with the other rate/compute fields.
+  funded wallet (see Debits). At
+  $0, `consumeDailyEntitlement` throws
+  `ComputeOverageLimitError` for `isPastIncludeStopResource` (execute, job runs,
+  automation invocations) once either meter is past this UTC month's include
+  (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
+  stopped attempt spends no daily quota. Hosted package apps have no daily
+  counter, so `buildPackageAppWorker` calls `assertWithinComputeInclude` (the
+  same rule) for HTTP requests and realtime hooks: HTTP gets a `429` "Monthly
+  include used up" page, and realtime sockets close with `include-used-up`.
+  Outbound fetches are exempt from the monthly stop because they happen inside a
+  run that was already admitted; their daily and weekly include still stops at
+  $0.
+  The usage read comes from `usage_rollups` (hourly) behind the 60s entitlement
+  cache, so the stop can trail usage by about an hour; a later top-up forgives
+  that overshoot instead of charging it. Before throwing, the stop re-reads the
+  entitlement uncached, so a top-up resumes work immediately in every isolate.
+  The org budget gate runs after the stop.
+- Email caps and the job interval floor are not credit-extended; they stay on
+  the Pro include whether the wallet is empty or funded.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
 never frames it as something a balance unlocks, and never names Max; the rate
@@ -306,16 +316,16 @@ funded wallet is charged
 list). Every other wallet advances progress without a charge (against at least
 the purchasable Pro baseline when `creditWallet` is `none`), so a later top-up
 or resubscribe never back-charges. The balance can dip below $0 by about an hour
-of usage past the include; after that, rate and compute fall back to Free caps
-until a top-up (ADR 0065). Debit ledger ids are deterministic per starting
-position, so an overlapping run rolls back instead of charging twice. A new
-wallet, and a top-up or admin grant that funds an empty wallet, advance progress
-to the billable units already in the rollups for both months the lane settles
-(prior and current), so credits never pay for usage from while the wallet was
-empty. The sweep is bounded per run; `credit_debit_cursor` keeps its keyset
-position so later runs reach every candidate. CPU, Durable Object duration,
-RunLog rows, and email are not debited. Nobody is invoiced for overage. There is
-no overage-invoice ledger.
+of usage past the include; past-include usage stays stopped until a top-up
+covers it. Debit ledger ids are deterministic per starting position, so an
+overlapping run rolls back instead of charging twice. A new wallet, and a top-up
+or admin grant that funds an empty wallet, advance progress to the billable
+units already in the rollups for both months the lane settles (prior and
+current), so credits never pay for usage from while the wallet was empty. The
+sweep is bounded per run; `credit_debit_cursor` keeps its keyset position so
+later runs reach every candidate. CPU, Durable Object duration, RunLog rows, and
+email are not debited. Nobody is invoiced for overage. There is no
+overage-invoice ledger.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -353,10 +363,9 @@ OAuth signup, admin-created) receives a one-shot house grant of
 is `admin_grant` with note `Welcome credits`, null `granted_by_user_id`, and
 deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 The balance is held until the account is credit-eligible Pro (include → credits
-→ Free rate/compute fallback); this is not a Free prepaid wallet product and
-does not unlock spend on Free. The grant runs at account creation as
-best-effort: person-account inserts set
-`users.signup_welcome_credits_pending = 1` in the same write, then clear it
+→ stop); this is not a Free prepaid wallet product and does not unlock spend on
+Free. The grant runs at account creation as best-effort: person-account inserts
+set `orgs.signup_welcome_credits_pending = 1` in the same write, then clear it
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
 wallet loads call `reconcileSignupWelcomeCreditsIfPending`, which retries only
@@ -381,11 +390,13 @@ the change up within the 60s entitlement cache.
 `execute_unique_workers_per_day`, `outbound_fetches_per_day`,
 `job_runs_per_day`, and `automation_invocations_per_day` are daily-counter
 resources (same mechanism as `email_sends_per_day`, consumed atomically with
-`consumeDailyEntitlement`). Public Free/Standard/Pro also apply a UTC-week hard
-cap on execute and outbound fetches (Monday–Sunday, summed from the same
-UserMeter daily rows). Whichever window hits first blocks. `max` and legacy
-Standard/Pro stay daily-only. They close the metering → enforcement loop for the
-compute surfaces `usage-metering.md` already observes:
+`consumeDailyEntitlement`; execute uses `consumeExecuteUniqueWorkerDay`, which
+spends a unit only for a worker not yet claimed that UTC day). Public
+Free/Standard/Pro also apply a UTC-week hard cap on execute and outbound fetches
+(Monday–Sunday, summed from the same UserMeter daily rows). Whichever window
+hits first blocks. `max` and legacy Standard/Pro stay daily-only. They close the
+metering → enforcement loop for the compute surfaces `usage-metering.md` already
+observes:
 
 - **Unique execute workers** (`execute_unique_workers_per_day`) count what
   Cloudflare bills: one unit per new Dynamic Worker (module graph) per org per
@@ -477,22 +488,22 @@ Durable Object rows-read allotment (Free 0.5B, Pro and retired Standard 5B,
 retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
-only when crossing the include would put Free rate/compute caps in force: an
-empty purchasable-Pro wallet (`computeIncludeWarningPutsAccessAtRisk` in
-`universal/usage-presentation.ts`). Free and other wallet-less plans never get
-those mails (the include never charges them or changes their caps), and funded
-wallets get the low-balance and auto-refill cap mails instead. `/account/usage`
-(one page; `/account/credits` redirects to its `#credits` section) uses the same
-framing from that module: activity (code executions and runs) first, included
-compute as a bar capped at 100% with past-include usage shown as dollars on
-credits, and one credits alarm only when the wallet or access is at risk. Free
-sees Worker compute and Rows read as informational counts only. Usage above an
-include debits a funded purchasable-Pro wallet, applies Free rate/compute caps
-on an empty one (ADR 0065), and is neither charged nor capped-down on plans
-without a wallet; see [Prepaid credits](#prepaid-credits). Execute and outbound
-fetches are daily and weekly caps; on purchasable Pro they are the include that
-credits extend. Durable Object duration is observed (Cloudflare-measured GB-s
-plus the StorageRunner RPC wall-clock proxy) and is not charged. See
+only when crossing the include would stop runs: an empty purchasable-Pro wallet
+(`computeIncludeWarningPutsAccessAtRisk` in `universal/usage-presentation.ts`).
+Free and other wallet-less plans never get those mails (the include never
+charges or stops them), and funded wallets get the low-balance and auto-refill
+cap mails instead. `/account/usage` (one page; `/account/credits` redirects to
+its `#credits` section) uses the same framing from that module: activity (code
+executions and runs) first, included compute as a bar capped at 100% with
+past-include usage shown as dollars on credits, and one credits alarm only when
+the wallet or access is at risk. Free sees Worker compute and Rows read as
+informational counts only. Usage above an include debits a funded
+purchasable-Pro wallet, stops new compute on an empty one, and is neither
+charged nor stopped on plans without a wallet; see
+[Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
+weekly caps; on purchasable Pro they are the include that credits extend.
+Durable Object duration is observed (Cloudflare-measured GB-s plus the
+StorageRunner RPC wall-clock proxy) and is not charged. See
 [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
@@ -559,7 +570,7 @@ instead of one RPC per resource:
   ~15 active users by current-month event count. The sweep resolves each
   account's **effective** plan (manual grant, Stripe, and unexpired second-agent
   / referral Pro overlays) via `resolveUserEntitlementFromRow`, and selects
-  `users.entitlement_ladder` so legacy Standard/Pro is scored against
+  `orgs.entitlement_ladder` so legacy Standard/Pro is scored against
   `legacyPlanLimits` (the same table enforcement uses). Gifted Pro therefore
   does not page Free-cap crossings while the overlay is active, except
   `email_receives_per_day`, which inbound mail still enforces against the base
@@ -799,17 +810,18 @@ The pre-squash plan-column evolution (NULL rows → `'unlimited'` backfill → N
 NULL → `'unlimited'` renamed to `'max'` → DEFAULT `'free'` → CHECK constraints)
 is collapsed into the squashed baseline; the individual migration files live in
 Git history only. `0002-restructure-plan-tiers.sql` renames stored `pro` to
-`standard` and `partner` to `pro` (on `users.plan`, `users.stripe_plan`, and the
+`standard` and `partner` to `pro` (plan and Stripe plan columns, and the
 since-dropped `invites.plan`) and rebuilds both CHECK constraints for `free`,
-`standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` adds
-`users.entitlement_ladder` (`public` | `legacy`, default `public`) and backfills
-`legacy` for then-active Stripe Standard/Pro subscribers and manual Pro grants.
-`0044-users-stripe-price-id.sql` adds `users.stripe_price_id` for the granting
-Stripe price so a later refresh can drop `legacy` on a subscription change.
+`standard`, `pro`, and `max`. `0043-users-entitlement-ladder.sql` introduced the
+entitlement ladder (`public` | `legacy`, default `public`; now on `orgs`) and
+backfilled `legacy` for then-active Stripe Standard/Pro subscribers and manual
+Pro grants. `0044-users-stripe-price-id.sql` introduced `stripe_price_id` (now
+on `orgs`) for the granting Stripe price so a later refresh can drop `legacy` on
+a subscription change.
 
 ## Assigning plans
 
-New accounts start with `users.plan = 'free'`. Password and social signup write
+New accounts start with `orgs.plan = 'free'`. Password and social signup write
 that default via `resolvePlanWrite`. Admin-created accounts and seed SQL follow
 the same `resolvePlanWrite` default. Admins assign or reset plans on existing
 users from `/admin/users` (validated with strict `parsePlanName`).
@@ -832,7 +844,7 @@ Daily counters accumulate for every user regardless of plan, so assigning a
 recognized plan later binds immediately against the usage already counted that
 day.
 
-Paid upgrades via Stripe write `users.stripe_plan` (not `users.plan`); see
+Paid upgrades via Stripe write `orgs.stripe_plan` (not `orgs.plan`); see
 [Billing](#billing). Effective entitlement uses the higher-ranked of the two
 when a manual plan is set.
 
@@ -921,16 +933,17 @@ hint is always reduce-only (Free and Pro share 15 minutes).
 Rate limit example (purchasable Pro with $0):
 
 > Plan limit reached: your "pro" plan allows at most 500 unique execute workers
-> per day and you currently have 500. Remove or finish existing unique execute
-> workers per day you no longer need, or add credits at /account/usage#credits
-> to keep going past your include.
+> per day and you currently have 500. Rerun code you already ran today and vary
+> params; repeats are free, or add credits at /account/usage#credits to keep
+> going past your include.
 
-Empty-wallet rate denial (purchasable Pro with $0, `EntitlementLimitError` at
-Free execute caps):
+Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
-> Plan limit reached: your "pro" plan allows at most 150 unique execute workers
-> per day and you currently have 150. … or add credits at /account/usage#credits
-> to restore Pro rates past your include.
+> Worker compute include used up: your "pro" plan includes 350 worker-compute
+> days this UTC month and you have used 412. With no credits left, usage past
+> the include stops. Add credits at /account/usage#credits to keep going; usage
+> past the include is charged at $0.004 per worker-compute day. Keep package
+> code stable so the same worker stays warm. …
 
 Customer copy never says a balance "unlocks" or "lifts" limits and never names
 Max; SSR and unit tests forbid that wording on pricing, billing, credits, and
@@ -982,11 +995,15 @@ Rules:
   the per-user UserMeter Durable Object** (UTC day keys). Call
   `consumeDailyEntitlement` on every attempt: it resolves the plan limit,
   atomically checks and increments inside the DO, and throws
-  `EntitlementLimitError` when over limit. Public Free/Standard/Pro execute and
-  outbound also check a UTC-week sum of those same daily rows; whichever window
-  hits first blocks. Every resolved plan has a finite numeric limit. Counting
-  attempts rather than successes keeps the limit abuse-resistant for permanent
-  rejects (parse failures, entitlement/quota rejects).
+  `EntitlementLimitError` when over limit. Unique execute workers are the
+  exception: `consumeExecuteUniqueWorkerDay` runs at the load gate once the
+  worker id is known, and spends only for a new worker that UTC day, so repeats
+  and calls refused earlier (rate brake, parse errors) never count. Public
+  Free/Standard/Pro execute and outbound also check a UTC-week sum of those same
+  daily rows; whichever window hits first blocks. Every resolved plan has a
+  finite numeric limit. Counting attempts rather than successes keeps the limit
+  abuse-resistant for permanent rejects (parse failures, entitlement/quota
+  rejects).
 
   **Cold bootstrap:** missing `(resource, day)` rows trigger
   `UserMeter.initialize({ count: 0 })` (`INSERT OR IGNORE`) before retrying the
@@ -1198,8 +1215,8 @@ redemptions, and attached as `discounts[0][promotion_code]`. Codes are for new
 subscriptions only; a customer with a plan-retaining subscription gets 409.
 There is no public Payment Link path — checkout requires a signed-in session so
 unauthenticated card-testing is not possible. `GET /@<slug>/-/billing/success`
-verifies `client_reference_id` before linking `users.stripe_customer_id`, then
-refreshes `users.stripe_plan` and renders a thank-you page (Discord invite;
+verifies `client_reference_id` before linking `orgs.stripe_customer_id`, then
+refreshes `orgs.stripe_plan` and renders a thank-you page (Discord invite;
 connect-your-agent when `needsOnboarding`). A successful `stripe_plan` write
 also best-effort re-syncs official Kody Discord Standard/Pro roles when the user
 has a Discord social-login connection (see
@@ -1289,7 +1306,7 @@ Handled event types:
   `metadata.kody_stable_user_id`, existing `stripe_customer_id`, or customer
   email), then run the same link+refresh helper as the success redirect
 - `customer.subscription.updated` / `customer.subscription.deleted` — look up
-  the user by `users.stripe_customer_id` and call `refreshStripePlanForUser`
+  the user by `orgs.stripe_customer_id` and call `refreshStripePlanForUser`
 - `invoice.payment_failed` — same customer lookup + refresh (surfaces
   `subscriptionStatus` such as `past_due` for UX; does not email users)
 - `invoice.paid` — customer lookup, then the referral reward path when the
@@ -1329,22 +1346,22 @@ existing subscribers only. Env vars and deploy wiring are documented in
 
 ## Related tables and coordination
 
-- `users.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
+- `orgs.plan` — NOT NULL DEFAULT `'free'` (squashed baseline plus the 0002 tier
   rename). The entitlements module is the consumer of that column (manual /
   admin grant).
-- `users.stripe_customer_id`, `users.stripe_plan`, `users.stripe_price_id`,
-  `users.stripe_plan_refreshed_at` — Stripe billing columns owned by
+- `orgs.stripe_customer_id`, `orgs.stripe_plan`, `orgs.stripe_price_id`,
+  `orgs.stripe_plan_refreshed_at` — Stripe billing columns owned by
   `packages/worker/src/billing/`, read by `getUserEntitlement` via
   `resolveEffectivePlan`. `stripe_plan` stays nullable because it is
   Stripe-derived; `max` is manual-only. `stripe_price_id` is the granting
   configured or retired price so a later refresh can drop `legacy` when the
   subscription changes.
-- `users.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
+- `orgs.entitlement_ladder` — `'public'` or `'legacy'`. Owned with the
   entitlements module; Stripe refresh clears `legacy` when paid access ends or
   the granting subscription changes plan, price, product, or interval. Admin
   plan writes clear `legacy` when a remaining manual Pro grant is removed
   without a paid Stripe tier.
-- `users.referral_standard_credit_expires_at` and `referrals` — uncapped
-  referral program ledger. Attribution is persisted at signup from the last-wins
+- `orgs.referral_standard_credit_expires_at` and `referrals` — uncapped referral
+  program ledger. Attribution is persisted at signup from the last-wins
   `kody_ref` cookie; reward is invoice-gated. See
   [Referral Pro credit](#referral-pro-credit).

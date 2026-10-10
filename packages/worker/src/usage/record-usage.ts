@@ -130,6 +130,12 @@ export type UsageEvent = {
 	 * interactive runs and for platform `event` automations.
 	 */
 	automationSource?: string | null
+	/**
+	 * Credential the unit came through, from {@link usageConnectionKey}.
+	 * Analytics Engine blob12. Empty when unknown (pre-attribution events,
+	 * call sites without a request context).
+	 */
+	connectionKey?: string | null
 }
 
 export const dynamicWorkerCacheReuses = ['hit', 'miss'] as const
@@ -148,6 +154,7 @@ export const usageEventBlobIndexes = {
 	packageId: 8,
 	actorUserId: 9,
 	automationSource: 10,
+	connectionKey: 11,
 } as const
 
 export function automationSourceForAnalytics(
@@ -159,17 +166,48 @@ export function automationSourceForAnalytics(
 	return ''
 }
 
+/**
+ * `<credential kind>:<holder person id>:<credential id>` for the credential
+ * a request came through. The holder is the acting person (empty for
+ * Automation), so one shared OAuth client id (the CLI) still splits by person
+ * and team readers can filter to their own connections. The credential id is
+ * last because OAuth client ids are URLs that contain `:`.
+ */
+export function usageConnectionKey(
+	request: RequestContext | null | undefined,
+): string {
+	if (!request) return ''
+	const holder =
+		request.attribution.kind === 'automation'
+			? ''
+			: (request.actor?.userId ?? request.attribution.userId ?? '')
+	return `${request.credential.kind}:${holder}:${request.credential.id ?? ''}`
+}
+
+/**
+ * Connection-key-only attribution for events whose actor blobs must keep
+ * their current meaning (`dynamic_worker_day` feeds budget actor weights).
+ */
+export function usageConnectionFieldsFromRequest(
+	request: RequestContext | null | undefined,
+): Pick<UsageEvent, 'connectionKey'> {
+	const connectionKey = usageConnectionKey(request)
+	return connectionKey ? { connectionKey } : {}
+}
+
 /** Map a request context to usage attribution blobs when available. */
 export function usageAttributionFieldsFromRequest(
 	request: RequestContext | null | undefined,
-): Pick<UsageEvent, 'actorUserId' | 'automationSource'> {
+): Pick<UsageEvent, 'actorUserId' | 'automationSource' | 'connectionKey'> {
 	if (!request) return {}
+	const connectionKey = usageConnectionKey(request)
 	if (request.attribution.kind === 'automation') {
 		return {
 			actorUserId: '',
 			automationSource: automationSourceForAnalytics(
 				request.attribution.source,
 			),
+			connectionKey,
 		}
 	}
 	const actorUserId =
@@ -177,6 +215,7 @@ export function usageAttributionFieldsFromRequest(
 	return {
 		...(actorUserId ? { actorUserId } : {}),
 		automationSource: '',
+		connectionKey,
 	}
 }
 
@@ -215,9 +254,11 @@ export function usageEventBlobs(
 		| 'packageId'
 		| 'actorUserId'
 		| 'automationSource'
+		| 'connectionKey'
 	>,
 	timestamp: string,
 ): [
+	string,
 	string,
 	string,
 	string,
@@ -243,6 +284,7 @@ export function usageEventBlobs(
 		event.packageId?.trim() || '',
 		actorUserId,
 		automationSource,
+		event.connectionKey?.trim() || '',
 	]
 }
 
@@ -381,6 +423,9 @@ function emitUsageSpan(event: UsageEvent) {
 			}
 			if (automationSource) {
 				span.setAttribute('kody.automation_source', automationSource)
+			}
+			if (event.connectionKey) {
+				span.setAttribute('kody.connection_key', event.connectionKey)
 			}
 		})
 	} catch (error) {

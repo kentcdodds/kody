@@ -12,8 +12,7 @@ import {
 	resolveSecondAgentStandardGiftWrite,
 	type SecondAgentStandardGiftState,
 } from '#universal/second-agent-standard-gift.ts'
-import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
 
 export type SecondAgentStandardGiftEvaluation =
 	| { outcome: 'below_threshold' }
@@ -79,8 +78,8 @@ export async function loadSecondAgentStandardGift(
 		.prepare(
 			`SELECT second_agent_standard_gift_granted_at,
 			        second_agent_standard_gift_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(stableUserId)
 		.first<{
@@ -114,8 +113,8 @@ export async function evaluateSecondAgentStandardGift(input: {
 			`SELECT plan, stripe_plan,
 			        second_agent_standard_gift_granted_at,
 			        second_agent_standard_gift_expires_at
-			 FROM users
-			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.stableUserId)
 		.first<GiftUserRow>()
@@ -139,26 +138,15 @@ export async function evaluateSecondAgentStandardGift(input: {
 	})
 	const grantedAt = now.toISOString()
 	const updatedAt = utcSqliteTimestamp(now)
-	const batchResult = await batchUsersAndPersonalOrgBillingUpdate({
+	const updated = await updateOrgBillingColumns({
 		db: input.db,
-		stableUserId: input.stableUserId,
-		usersStatement: input.db
-			.prepare(
-				`UPDATE users
-				 SET second_agent_standard_gift_granted_at = ?,
-				     second_agent_standard_gift_expires_at = ?,
-				     updated_at = ?
-				 WHERE stable_user_id = ?
-				   AND second_agent_standard_gift_granted_at IS NULL${andLiveDeletedAtSql()}`,
-			)
-			.bind(grantedAt, write.expiresAt, updatedAt, input.stableUserId),
-		orgSetClause: `second_agent_standard_gift_granted_at = ?,
+		orgId: input.stableUserId,
+		setClause: `second_agent_standard_gift_granted_at = ?,
 				     second_agent_standard_gift_expires_at = ?,
 				     updated_at = ?`,
-		orgValues: [grantedAt, write.expiresAt, updatedAt],
+		values: [grantedAt, write.expiresAt, updatedAt],
 		orgWhereSuffix: ' AND second_agent_standard_gift_granted_at IS NULL',
 	})
-	const updated = batchResult[0]
 
 	if ((updated?.meta.changes ?? 0) === 0) {
 		return {

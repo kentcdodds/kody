@@ -9,7 +9,7 @@
  * tests).
  *
  * The member role is assigned whenever Discord is connected. Standard and Pro
- * roles follow `users.stripe_plan` (the paid subscription), not the effective
+ * roles follow `orgs.stripe_plan` (the paid subscription), not the effective
  * manual+Stripe plan. Max is manual-only and has no Discord role.
  */
 
@@ -457,7 +457,10 @@ async function readUserStripePlan(
 ): Promise<PlanName | null> {
 	const row = await db
 		.prepare(
-			`SELECT stripe_plan FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+			`SELECT o.stripe_plan
+			 FROM users u
+			 INNER JOIN orgs o ON o.id = u.stable_user_id
+			 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 		)
 		.bind(userId)
 		.first<{ stripe_plan: string | null }>()

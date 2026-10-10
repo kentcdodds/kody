@@ -5,7 +5,7 @@ import {
 	type JobRetentionPreferences,
 	validateJobRetentionDaysInput,
 } from './job-retention.ts'
-import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
+import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
 import { maxJobRetentionCandidatesPerRun } from '@kody-internal/shared/jobs/repo.ts'
 import { jobsData } from './jobs-data.ts'
 import { deleteJob } from './service.ts'
@@ -20,7 +20,6 @@ import {
  * excludes live/held jobs; remaining inactive rows are skipped or deleted
  * cheaply so backlogs shrink across hourly ticks without a durable cursor.
  */
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 export const jobRetentionRunTimeBudgetMs = 15_000
 
 /** Stay under D1's 100 bound-parameter limit when loading user preferences. */
@@ -51,8 +50,8 @@ export async function readJobRetentionPreferencesForUser(input: {
 				job_retention_success_once_days,
 				job_retention_failed_once_days,
 				job_retention_disabled_recurring_days
-			FROM users
-			WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			FROM orgs
+			WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(input.userId)
 		.first<{
@@ -91,38 +90,20 @@ export async function updateJobRetentionPreferencesForUser(input: {
 		)
 	}
 	const updatedAt = new Date().toISOString()
-	const batchResult = await batchUsersAndPersonalOrgBillingUpdate({
+	const result = await updateOrgBillingColumns({
 		db: input.db,
-		stableUserId: input.userId,
-		usersStatement: input.db
-			.prepare(
-				`UPDATE users
-				SET
-					job_retention_success_once_days = ?,
-					job_retention_failed_once_days = ?,
-					job_retention_disabled_recurring_days = ?,
-					updated_at = ?
-				WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-			)
-			.bind(
-				successOnceDays,
-				failedOrNeverRanOnceDays,
-				disabledRecurringDays,
-				updatedAt,
-				input.userId,
-			),
-		orgSetClause: `job_retention_success_once_days = ?,
+		orgId: input.userId,
+		setClause: `job_retention_success_once_days = ?,
 					job_retention_failed_once_days = ?,
 					job_retention_disabled_recurring_days = ?,
 					updated_at = ?`,
-		orgValues: [
+		values: [
 			successOnceDays,
 			failedOrNeverRanOnceDays,
 			disabledRecurringDays,
 			updatedAt,
 		],
 	})
-	const result = batchResult[0]
 	if ((result?.meta.changes ?? 0) !== 1) {
 		throw new Error('Unable to update job retention preferences.')
 	}
@@ -151,12 +132,12 @@ async function loadPreferencesByUserId(
 		const { results } = await db
 			.prepare(
 				`SELECT
-					stable_user_id,
+					id AS stable_user_id,
 					job_retention_success_once_days,
 					job_retention_failed_once_days,
 					job_retention_disabled_recurring_days
-				FROM users
-				WHERE stable_user_id IN (${placeholders})${andLiveDeletedAtSql()}`,
+				FROM orgs
+				WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
 			)
 			.bind(...chunk)
 			.all<UserRetentionRow>()

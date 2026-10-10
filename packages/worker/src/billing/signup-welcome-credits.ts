@@ -3,8 +3,8 @@
  * outside `credit-wallet.ts` so the debit/auto-refill graph (runtime worker)
  * does not carry signup-only grant code.
  *
- * New person-account inserts set `users.signup_welcome_credits_pending = 1`
- * in the same write that creates the row, so a later D1 failure during the
+ * Personal-org provisioning sets `orgs.signup_welcome_credits_pending = 1`
+ * in the same signup that creates the account, so a later D1 failure during the
  * grant cannot erase the retry signal. Creation-time grants are best-effort
  * (`maybeGrantSignupWelcomeCredits`) so signup still succeeds when D1 blips;
  * success clears the flag. Login and wallet-touch call
@@ -25,8 +25,7 @@ import {
 	forgiveUnchargedCreditUsage,
 	readCreditWallet,
 } from './credit-wallet.ts'
-import { batchUsersAndPersonalOrgBillingUpdate } from '#worker/orgs/billing-dual-write.ts'
-import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { updateOrgBillingColumns } from '#worker/orgs/org-billing-columns.ts'
 
 export type SignupWelcomeCreditResult = {
 	applied: boolean
@@ -46,19 +45,12 @@ async function setSignupWelcomeCreditsPending(input: {
 	pending: boolean
 }): Promise<void> {
 	const pending = input.pending ? 1 : 0
-	await batchUsersAndPersonalOrgBillingUpdate({
+	await updateOrgBillingColumns({
 		db: input.db,
-		stableUserId: input.userId,
-		usersStatement: input.db
-			.prepare(
-				`UPDATE users
-				 SET signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP
-				 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
-			)
-			.bind(pending, input.userId),
-		orgSetClause:
+		orgId: input.userId,
+		setClause:
 			'signup_welcome_credits_pending = ?, updated_at = CURRENT_TIMESTAMP',
-		orgValues: [pending],
+		values: [pending],
 	})
 }
 
@@ -69,7 +61,7 @@ async function isSignupWelcomeCreditsPending(
 	const row = await db
 		.prepare(
 			`SELECT signup_welcome_credits_pending AS pending
-			 FROM users WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
+			 FROM orgs WHERE id = ? AND deleted_at IS NULL`,
 		)
 		.bind(userId)
 		.first<{ pending: number }>()
@@ -155,8 +147,8 @@ export async function grantSignupWelcomeCredits(input: {
 /**
  * Best-effort wrapper for account-creation sites. Signup must not fail when
  * the welcome grant cannot run (fake test DBs, transient D1 errors); the
- * deterministic ledger id still makes a later retry safe. Person-account
- * inserts already set `signup_welcome_credits_pending = 1`; this clears it on
+ * deterministic ledger id still makes a later retry safe. Personal-org
+ * provisioning already sets `signup_welcome_credits_pending = 1`; this clears it on
  * success and re-asserts it on failure as belt-and-suspenders.
  */
 export async function maybeGrantSignupWelcomeCredits(input: {

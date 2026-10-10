@@ -3,7 +3,7 @@ import {
 	formatDurableObjectRowsRead,
 	parseEntitlementLadder,
 	planLimits,
-	proCreditsEmptyWalletPlanLimits,
+	proCreditsPlanLimits,
 	resolveCreditWalletState,
 	resolveEntitlementLadderAfterPaidAccessChange,
 	resolvePlanLimit,
@@ -192,9 +192,9 @@ test('credit wallet state: only an eligible Pro wallet counts; balance > 0 funds
 	).toBe('none')
 })
 
-test('purchasable Pro has Max stock always; empty wallet uses Free rates; funded raises ceilings', () => {
+test('purchasable Pro has Max stock always; empty wallet keeps the full Pro include; funded raises ceilings', () => {
 	const empty = resolvePlanLimits('pro', 'public', 'empty')
-	expect(empty).toEqual(proCreditsEmptyWalletPlanLimits)
+	expect(empty).toEqual(proCreditsPlanLimits)
 	expect(
 		limitMismatches([
 			[10_000, 'pro', 'saved_packages', 'public', 'empty'],
@@ -204,18 +204,41 @@ test('purchasable Pro has Max stock always; empty wallet uses Free rates; funded
 			[20_000, 'pro', 'repo_sessions', 'public', 'empty'],
 			[100 * 1024 * 1024 * 1024, 'pro', 'storage_bytes', 'public', 'empty'],
 			[200, 'pro', 'concurrent_workflows', 'public', 'empty'],
-			[150, 'pro', 'execute_unique_workers_per_day', 'public', 'empty'],
+			[500, 'pro', 'execute_unique_workers_per_day', 'public', 'empty'],
+			[15_000, 'pro', 'outbound_fetches_per_day', 'public', 'empty'],
+			[1_500, 'pro', 'job_runs_per_day', 'public', 'empty'],
+			[10_000, 'pro', 'automation_invocations_per_day', 'public', 'empty'],
+			[200, 'pro', 'email_sends_per_day', 'public', 'empty'],
+			[1_000, 'pro', 'email_receives_per_day', 'public', 'empty'],
 			[25_000, 'pro', 'execute_unique_workers_per_day', 'public', 'funded'],
 			[200, 'pro', 'email_sends_per_day', 'public', 'funded'],
-			[10, 'pro', 'email_sends_per_day', 'public', 'empty'],
 		]),
 	).toEqual([])
-	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(
-		proCreditsEmptyWalletPlanLimits.maxUniqueWorkerDaysPerMonth,
-	)
-	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(
-		proCreditsEmptyWalletPlanLimits.maxDurableObjectRowsReadPerMonth,
-	)
+	expect([
+		resolveWeeklyPlanLimit(
+			'pro',
+			'execute_unique_workers_per_day',
+			'public',
+			'empty',
+		),
+		resolveWeeklyPlanLimit(
+			'pro',
+			'outbound_fetches_per_day',
+			'public',
+			'empty',
+		),
+	]).toEqual([1_200, 40_000])
+	// Never below Free on any limit, at $0.
+	const belowFree = (
+		Object.keys(planLimits.free) as Array<keyof typeof planLimits.free>
+	).filter((key) => {
+		const free = planLimits.free[key]
+		const pro = empty[key]
+		if (key === 'minJobIntervalMs') return (pro ?? 0) > (free ?? 0)
+		return pro !== null && free !== null && pro < free
+	})
+	expect(belowFree).toEqual([])
+	expect(empty.minJobIntervalMs).toBe(15 * 60 * 1000)
 	expect(empty.maxUniqueWorkerDaysPerMonth).toBe(350)
 	expect(empty.maxDurableObjectRowsReadPerMonth).toBe(5_000_000_000)
 

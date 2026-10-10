@@ -62,7 +62,7 @@ import {
 	createRawFetchHostSink,
 	type RawFetchHostNudgeState,
 } from '#mcp/raw-fetch-host-nudge.ts'
-import { isEntitlementLimitError } from '#worker/entitlements/errors.ts'
+import { isPreRunUsageDenial } from '#worker/entitlements/errors.ts'
 import {
 	getCachedUserEntitlement,
 	readExecuteUniqueWorkerUsage,
@@ -87,7 +87,10 @@ import {
 	type RunRecordHandle,
 } from '#worker/run-records/types.ts'
 import { scheduleFleetExecuteLastSuccess } from '#worker/execute-health-heartbeat.ts'
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import {
+	entitlementEmailForOwner,
+	ownerIdFromCaller,
+} from '#worker/request-context/owner-id.ts'
 
 export const executeTool = {
 	name: 'execute',
@@ -308,7 +311,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						db: env.APP_DB,
 						env,
 						userId: ownerId,
-						email: callerContext.user.email,
+						email: entitlementEmailForOwner(callerContext, ownerId),
 						now,
 					}).catch((error: unknown) => {
 						console.warn('execute-usage-read-failed', error)
@@ -381,6 +384,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				// transport-timeout retries can replay / report in-progress
 				// without spending the runaway brake or loading a worker.
 				const storageOwnerId = ownerIdFromCaller(callerContext)
+				const entitlementEmail = entitlementEmailForOwner(
+					callerContext,
+					storageOwnerId,
+				)
 				if (normalizedIdempotencyKey && storageOwnerId) {
 					const existing = await getRunRecordByIdempotencyKey({
 						env,
@@ -408,7 +415,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 				const entitlementPrefetch = callerContext.user?.userId
 					? getCachedUserEntitlement(env.APP_DB, {
 							userId: storageOwnerId,
-							email: callerContext.user.email,
+							email: entitlementEmail,
 						}).then(
 							() => undefined,
 							() => undefined,
@@ -450,7 +457,7 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 						? createExecuteWorkerDayClaim({
 								env,
 								ownerId: storageOwnerId,
-								email: callerContext.user.email,
+								email: entitlementEmail,
 								onUsage: (usage) => {
 									executeUsage = usage
 								},
@@ -575,10 +582,10 @@ export async function registerExecuteTool(agent: McpRegistrationAgent) {
 							)
 							return await execution
 						} catch (cause) {
-							// A plan-limit denial happens before the worker loads:
-							// the outer boundary releases the key, as for any
-							// other pre-sandbox refusal.
-							if (isEntitlementLimitError(cause)) throw cause
+							// A usage denial happens before the worker loads: the
+							// outer boundary releases the key, as for any other
+							// pre-sandbox refusal.
+							if (isPreRunUsageDenial(cause)) throw cause
 							// Bundling the caller-provided module (syntax errors,
 							// unresolved imports) throws before the sandbox runs;
 							// route it through the sandbox-error result path so it

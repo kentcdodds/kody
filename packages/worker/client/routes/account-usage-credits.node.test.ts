@@ -302,7 +302,7 @@ test('auto-refill on shows its settings, cap notices, and the card note', async 
 	expect(
 		missing(html, [
 			'−$0.12',
-			'With no credits left, rate and compute limits match Free until you top up. Add credits to restore Pro rates.',
+			'With no credits left, usage past your monthly include stops. Add credits to keep going.',
 			'value="25"',
 			'value="100"',
 			'Auto-refilled',
@@ -414,7 +414,7 @@ test('credits alarm shows once, above the Credits section, linking into it', asy
 	)
 	expect(html.split('data-credits-alarm=')).toHaveLength(2)
 	expect(html).toContain('data-credits-alarm="include_used_no_credits"')
-	expect(text).toContain('Rate and compute limits match Free')
+	expect(text).toContain('Runs past the include are stopped')
 	expect(html).toMatch(/href="\/account\/usage#credits"[^>]*>Add credits</)
 	expect(html.indexOf('data-credits-alarm')).toBeLessThan(
 		html.indexOf('id="credits"'),

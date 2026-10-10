@@ -347,7 +347,7 @@ export function AccountUsageCreditsSection(
 			<AccountManagementPanel
 				id={creditsSectionId}
 				title="Credits"
-				description="Credits are available on Pro. Pro usage past its monthly include runs on prepaid credits; at zero, rate and compute limits match Free."
+				description="Credits are available on Pro. Pro usage past its monthly include runs on prepaid credits and stops when they run out."
 			>
 				{renderMessage()}
 				<div mix={css(accountActionsCss)}>
@@ -589,7 +589,7 @@ export function AccountUsageCreditsSection(
 					<p mix={css(descriptionCss)} data-credits-balance-note>
 						{credits.hasCredits
 							? 'Usage past your monthly include is charged from these credits.'
-							: 'With no credits left, rate and compute limits match Free until you top up. Add credits to restore Pro rates.'}
+							: 'With no credits left, usage past your monthly include stops. Add credits to keep going.'}
 					</p>
 				</AccountManagementPanel>
 
@@ -600,8 +600,7 @@ export function AccountUsageCreditsSection(
 				<AccountManagementPanel title="How far credits go">
 					<p mix={css(descriptionCss)}>
 						Pro includes the first column. Past it, usage runs on credits up to
-						the second column. When credits run out, rate and compute limits
-						match Free.
+						the second column, and stops when credits run out.
 					</p>
 					<RecordTable
 						mode="none"
