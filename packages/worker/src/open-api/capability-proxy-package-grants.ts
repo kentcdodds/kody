@@ -13,6 +13,7 @@ import {
 	createPackageStorageKodyTools,
 } from '#worker/storage-runner.ts'
 import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
+import { authorizeAmbientSecretUse } from '#worker/authorization/credential-use.ts'
 
 /**
  * Local-execute CapabilityProxy packageStorage / packageSecrets host tools.
@@ -20,10 +21,10 @@ import { resolvePackageMountedSecret } from '#mcp/secrets/package-access.ts'
  * Cloud execute builds a bundler provenance grant set once per run. Local
  * execute has no sandbox graph on origin per hop, so each call validates the
  * stamped package id is in the org and the actor holds `package:execute` on
- * it before running the ordinary storage / mounted-secret tools for that
- * single id. Nested static imports stamp gatewayFetch via the local meter
- * ALS (see local-execute-runtime-support) so package-scoped secrets align
- * with cloud without a run-wide grant set.
+ * it before packageStorage. Client-stamped package ids are not secret
+ * authority: packageSecrets also require `secret:use` on the mounted secret
+ * (same as ad-hoc). Gateway / authenticatedFetch / oauthClientCredentials
+ * never promote a client stamp to Use-skip either.
  */
 
 function isPackageSecretAvailabilityError(error: unknown) {
@@ -160,6 +161,32 @@ export async function createCapabilityProxyPackageHostTools(input: {
 		})
 	}
 
+	const requireUseForMountedSecret = async (inputMount: {
+		packageId: string
+		alias: string
+	}) => {
+		const orgUserId = ownerIdFromCaller(input.callerContext)
+		if (!orgUserId) {
+			throw new Error('packageSecrets require an authenticated user.')
+		}
+		const mounted = await resolvePackageMountedSecret({
+			env: input.env,
+			callerContext: input.callerContext,
+			packageId: inputMount.packageId,
+			alias: inputMount.alias,
+		})
+		// Client-claimed package identity is not bundler provenance: ad-hoc Use
+		// still applies for org-shared credentials.
+		await authorizeAmbientSecretUse({
+			env: input.env,
+			request: input.callerContext.request,
+			orgUserId,
+			secretName: mounted.name,
+			authorityPackageId: null,
+		})
+		return mounted
+	}
+
 	const packageSecretTools: PackageSecretToolOptions = {
 		runPackageId: null,
 		get: async (alias, requestedPackageId) => {
@@ -167,9 +194,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				requestedPackageId ?? null,
 			)
 			return (
-				await resolvePackageMountedSecret({
-					env: input.env,
-					callerContext: input.callerContext,
+				await requireUseForMountedSecret({
 					packageId: authorized.packageId,
 					alias,
 				})
@@ -180,9 +205,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				requestedPackageId ?? null,
 			)
 			try {
-				await resolvePackageMountedSecret({
-					env: input.env,
-					callerContext: input.callerContext,
+				await requireUseForMountedSecret({
 					packageId: authorized.packageId,
 					alias,
 				})

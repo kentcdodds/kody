@@ -557,6 +557,27 @@ test('execute passes through downstream MCP image content with structured data a
 		text: expect.stringContaining('exceeding content limit'),
 	})
 
+	// Oversized text-only __mcpContent truncates (usable result) instead of failing.
+	const hugeText = 'T'.repeat(defaultMcpContentLimitBytes + 80_000)
+	moduleReturns({
+		__mcpContent: [{ type: 'text', text: hugeText }],
+	})
+	const oversizeTextResponse = await handler({
+		code: 'async () => oversize-text',
+		conversationId: 'conv-oversize-text',
+	})
+	expect(oversizeTextResponse.isError).toBe(false)
+	expect(oversizeTextResponse.structuredContent.truncated).toBe(true)
+	expect(oversizeTextResponse.structuredContent.note).toMatch(
+		/text was truncated/,
+	)
+	const returnedText = oversizeTextResponse.content
+		.filter((block) => block.type === 'text')
+		.map((block) => (block.type === 'text' ? block.text : ''))
+		.join('')
+	expect(returnedText).toContain('--- TRUNCATED ---')
+	expect(returnedText.length).toBeLessThan(hugeText.length)
+
 	// Ordinary application objects with a `content` array stay JSON text.
 	moduleReturns({ content: [webpBlock], ok: true })
 	const arbitraryContentResponse = await handler({

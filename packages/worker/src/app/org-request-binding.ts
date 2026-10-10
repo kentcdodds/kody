@@ -2,9 +2,7 @@ import { loadOrgBindingForSlug, type OrgBinding } from '#worker/orgs/repo.ts'
 import {
 	orgOwnedAccountApiSection,
 	orgSectionKeysOnPerson,
-	parseOrgBillingPath,
-	parseOrgManagementPath,
-	parseOrgResourcePath,
+	orgSlugFromOrgOwnedPath,
 } from '#universal/org-pages.ts'
 
 export type RequestOrgResolution = OrgBinding | 'personal' | 'denied'
@@ -30,12 +28,7 @@ export function loadRequestOrgResolution(
 }
 
 function orgSlugFromPageUrl(pathname: string): string | null {
-	return (
-		parseOrgResourcePath(pathname)?.slug ??
-		parseOrgBillingPath(pathname)?.slug ??
-		parseOrgManagementPath(pathname)?.slug ??
-		null
-	)
+	return orgSlugFromOrgOwnedPath(pathname)
 }
 
 /**

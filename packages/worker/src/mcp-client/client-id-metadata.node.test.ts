@@ -6,6 +6,7 @@ import {
 	mcpClientIdMetadataPath,
 	mcpClientName,
 	resolveMcpClientMetadataUrl,
+	resolveMcpOAuthClientMode,
 } from './client-id-metadata.ts'
 import { mcpOAuthRefreshTokenStorageKey } from './oauth-token-recovery.ts'
 
@@ -177,4 +178,31 @@ test('OAuth invalidate infers a missing client id, drops leftover token blobs, a
 	})
 	expect(values.get(refreshKey)).toEqual({ refresh_token: 'rotated-rt' })
 	expect(await rotating.tokens()).toMatchObject({ refresh_token: 'rotated-rt' })
+})
+
+test('client mode reads the client_id the authorization URL carries', () => {
+	const authorize = (clientId: string) =>
+		`https://auth.example/authorize?${new URLSearchParams({ client_id: clientId, state: 'nonce.server-home' })}`
+	expect(
+		resolveMcpOAuthClientMode({
+			authorizationUrl: authorize(
+				`https://kody.codes${mcpClientIdMetadataPath}`,
+			),
+			callbackUrl,
+		}),
+	).toBe('cimd')
+	expect(
+		resolveMcpOAuthClientMode({
+			authorizationUrl: authorize('registered-client-1'),
+			callbackUrl,
+		}),
+	).toBe('dcr')
+	expect(
+		resolveMcpOAuthClientMode({
+			authorizationUrl: authorize(
+				`https://kody.codes${mcpClientIdMetadataPath}`,
+			),
+			callbackUrl: 'http://localhost:8787/account/mcp-servers/oauth/callback',
+		}),
+	).toBe('dcr')
 })

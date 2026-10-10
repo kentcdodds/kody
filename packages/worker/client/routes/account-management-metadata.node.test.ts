@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { jsx } from 'remix/component/jsx-runtime'
 import { renderToString } from 'remix/component/server'
 import { expect, test } from 'vitest'
+import { AppSessionProvider } from '#client/app-session-context.tsx'
 import { AppLoaderDataProvider } from '#client/loader-data-context.tsx'
 import { RouterLocationProvider } from '#client/router-location.tsx'
 import { AdminCommunityReportsRoute } from '#client/routes/admin-community-reports.tsx'
@@ -15,6 +16,7 @@ import {
 	MetadataGrid,
 	TimestampValue,
 } from '#client/routes/account-management-components.tsx'
+import { type SessionInfo } from '#client/session.ts'
 import { routes } from '#universal/routes.ts'
 
 /**
@@ -205,6 +207,50 @@ test('community reports page keeps one admin rail and an in-flow status filter',
 	expect(html).toContain('aria-label="Admin sections"')
 	expect(html).toContain('aria-label="Report status"')
 	expect(html).toContain('href="/admin/community-reports?status=resolved"')
+})
+
+test('team settings rail names the URL org when the session list is personal-only', async () => {
+	const session: SessionInfo = {
+		email: 'ada@example.com',
+		emailVerified: true,
+		emailVerificationDelivery: null,
+		username: 'ada',
+		avatarUrl: null,
+		roles: [],
+		permissions: [],
+		featureFlags: {} as SessionInfo['featureFlags'],
+		organizations: [
+			{
+				slug: 'ada',
+				displayName: 'Ada',
+				role: 'owner',
+				personal: true,
+			},
+		],
+		lastUsedOrganization: 'ada',
+	}
+	const html = await renderToString(
+		jsx(RouterLocationProvider, {
+			url: '/@acme/-/settings',
+			children: jsx(AppSessionProvider, {
+				session,
+				status: 'ready',
+				children: jsx(AccountPageHeader, {
+					title: 'Settings',
+					description: 'Organization settings.',
+					currentHref: '/@acme/-/settings',
+				}),
+			}),
+		}),
+	)
+	// Heading and Organization rail follow the URL org (member-shaped when
+	// the session list omitted the team — no Billing).
+	expect(html).toContain('>@acme<')
+	expect(html).toContain('href="/@acme/-/settings"')
+	expect(html).toContain('href="/@acme/-/members"')
+	expect(html).toContain('aria-label="Organization"')
+	expect(html).not.toContain('href="/@acme/-/billing"')
+	expect(html).not.toContain('aria-label="Build"')
 })
 
 test('account page header puts the phone section menu above the heading', async () => {

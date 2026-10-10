@@ -129,7 +129,7 @@ function sectionParams(
 /**
  * Why `/@slug/-/<section>` is closed to this person, or null when it is open.
  */
-function orgSectionDenial(
+export function orgSectionDenial(
 	resolution: RequestOrgResolution,
 	personId: PersonId,
 	section: OrgOwnedAccountSection,

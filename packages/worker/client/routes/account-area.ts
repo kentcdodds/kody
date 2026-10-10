@@ -40,6 +40,10 @@ export {
 	accountMcpServersRouteLoader,
 } from './account-mcp-servers.tsx'
 export {
+	AccountMcpServerAuthorizeRoute,
+	accountMcpServerAuthorizeRouteLoader,
+} from './account-mcp-server-authorize.tsx'
+export {
 	AccountMemoriesRoute,
 	accountMemoriesRouteLoader,
 } from './account-memories.tsx'

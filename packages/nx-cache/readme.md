@@ -34,7 +34,7 @@ succeeds and an authorized `GET /v1/cache/{hash}` returns 200 or 404 — Nx fail
 the job if the host is configured but unreachable or unauthorized, so validate
 can still pass before the worker exists or after a token rotation that has not
 been synced yet. Cached npm scripts (`test:node`, `test:workers`,
-`test:e2e:run`, `test:mcp`, `test`, and `worker:typecheck`) run through
+`test:e2e:run`, `test:mcp`, `test`, and `typecheck`) run through
 `tools/run-nx.ts`. A transport error talking to `/v1/cache/{hash}` after Nx
 already printed `Successfully ran target` is treated as success. The same
 transport error before tasks finish retries once with `--skipRemoteCache` and

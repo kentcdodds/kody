@@ -18,8 +18,10 @@ import { invalidRequest } from './errors.ts'
  * execute, so secret plaintext never enters local workerd and missing
  * secrets fail closed before any third-party request.
  *
- * Optional `packageId` is stamped saved-package identity (same provenance as
- * createAuthenticatedFetch / packageSecrets).
+ * Optional `packageId` is a client stamp from local workerd. Origin verifies
+ * `package:execute` and may bind package-scoped secrets / package-limited
+ * integrations to that id, but `requireActorCredentialUse` always enforces
+ * `secret:use` / `integration:use`. Only cloud bundler provenance may skip Use.
  */
 
 export type CapabilityProxyGatewayFetchRequest = {
@@ -134,7 +136,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 }): Promise<CapabilityProxyAuthenticatedFetchResult> {
 	const call = parseCapabilityProxyGatewayFetchArgs(input.args)
 	const orgUserId = ownerIdFromCaller(input.ctx.callerContext)
-	const packageId = call.packageId
+	const stampedPackageId = call.packageId
 		? await authorizeLocalExecuteOwnedPackageId({
 				db: input.ctx.env.APP_DB,
 				env: input.ctx.env,
@@ -147,7 +149,9 @@ export async function runCapabilityProxyGatewayFetch(input: {
 	const storageContext = {
 		sessionId: existingStorage?.sessionId ?? null,
 		appId: existingStorage?.appId ?? null,
-		packageId: packageId ?? existingStorage?.packageId ?? null,
+		// Binding only: package-scoped secrets / package-limited integrations.
+		// requireActorCredentialUse prevents Use-skip from this client stamp.
+		packageId: stampedPackageId ?? existingStorage?.packageId ?? null,
 		storageId: existingStorage?.storageId ?? null,
 	}
 	const requestBody =
@@ -155,9 +159,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 			? base64ToBytes(call.request.bodyBase64)
 			: call.request.body
 	const headers = new Headers(call.request.headers)
-	if (packageId) {
-		headers.set(secretAuthorityHeaderName, packageId)
-	}
+	headers.delete(secretAuthorityHeaderName)
 	const response = await executeGatewayFetch({
 		env: input.ctx.env,
 		props: {
@@ -166,7 +168,7 @@ export async function runCapabilityProxyGatewayFetch(input: {
 			email: input.ctx.callerContext.user.email,
 			request: input.ctx.callerContext.request,
 			storageContext,
-			...(packageId ? { grantedSecretAuthorityPackageIds: [packageId] } : {}),
+			requireActorCredentialUse: true,
 		},
 		request: new Request(call.request.url, {
 			method: call.request.method,

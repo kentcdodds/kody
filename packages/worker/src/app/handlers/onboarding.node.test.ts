@@ -121,7 +121,7 @@ function hubReady(serverId: string, tool: string) {
 			{
 				serverId,
 				state: 'ready',
-				authUrl: null,
+				authorizationPending: false,
 				error: null,
 				tools: [{ name: tool }],
 			},
@@ -300,7 +300,7 @@ test('onboarding custom MCP servers exclude featured remotes', async () => {
 			name: 'acme',
 			url: 'https://mcp.acme.example/mcp',
 			connected: true,
-			authUrl: null,
+			authorizationPending: false,
 			state: 'ready',
 			error: null,
 		},

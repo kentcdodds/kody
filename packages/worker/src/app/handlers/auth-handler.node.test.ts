@@ -441,6 +441,8 @@ test('auth handler login and signup workflow', async () => {
 		['kody', 400, 'This username is reserved.'],
 		['postmaster', 400, 'This username is reserved.'],
 		['kody-r-0123456789abcdef', 400, 'This username is reserved.'],
+		['me', 400, 'This username is reserved.'],
+		['ME', 400, 'This username is reserved.'],
 		['Existing-Jane', 409, 'Username already registered.'],
 	]
 	for (const [username, status, error] of usernameRejections) {
@@ -494,7 +496,7 @@ test('auth handler login and signup workflow', async () => {
 	)
 	// The full workflow audits exactly these events, in order: the unknown
 	// login, the first open signup, the registered-email attempt, the
-	// weak-password rejection, the second open signup, the six username
+	// weak-password rejection, the second open signup, the eight username
 	// rejections, the duplicate-email rejection, and the three successful
 	// logins.
 	expect(auditEventSummaries()).toEqual([
@@ -503,7 +505,7 @@ test('auth handler login and signup workflow', async () => {
 		'signup:failure',
 		'signup:failure',
 		'signup:success',
-		...Array.from({ length: 7 }, () => 'signup:failure'),
+		...Array.from({ length: 9 }, () => 'signup:failure'),
 		'login:success',
 		'login:success',
 		'login:success',

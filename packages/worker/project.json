@@ -29,9 +29,29 @@
 			}
 		},
 		"typecheck": {
+			"executor": "nx:noop",
+			"dependsOn": [
+				"typecheck-src",
+				"typecheck-worker-test",
+				"typecheck-client-test"
+			]
+		},
+		"typecheck-src": {
 			"executor": "nx:run-commands",
 			"options": {
-				"command": "tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit && tsc -p packages/worker/tsconfig-worker-test.json && tsc -p packages/worker/tsconfig-client-test.json"
+				"command": "tsc -b packages/worker/tsconfig-client.json packages/worker/tsconfig-worker-typecheck.json --noEmit"
+			}
+		},
+		"typecheck-worker-test": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "tsc -p packages/worker/tsconfig-worker-test.json"
+			}
+		},
+		"typecheck-client-test": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "tsc -p packages/worker/tsconfig-client-test.json"
 			}
 		},
 		"test": {
@@ -85,15 +105,6 @@
 		"test-e2e": {
 			"executor": "nx:run-commands",
 			"dependsOn": ["prepare-e2e-env", "prepare-playwright"],
-			"inputs": [
-				{ "env": "CI" },
-				"{workspaceRoot}/e2e/**/*",
-				"{workspaceRoot}/playwright.config.ts",
-				"{workspaceRoot}/tools/e2e-web-server.ts",
-				"{workspaceRoot}/tools/e2e-cloudflare-mock-state.ts",
-				"{workspaceRoot}/packages/mock-servers/cloudflare/**/*",
-				"default"
-			],
 			"outputs": [
 				"{workspaceRoot}/playwright-report",
 				"{workspaceRoot}/test-results"

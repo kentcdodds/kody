@@ -160,6 +160,42 @@ test('org switcher lists the signup organization, then others with roles, then c
 	expect(html).toContain('data-icon="mail"')
 })
 
+test('org switcher on team settings stays on the URL org when session lists only personal', async () => {
+	const html = await renderToString(
+		jsx(SiteHeader, {
+			loggedIn: true,
+			displayName: 'Ada Lovelace',
+			username: 'ada',
+			avatarUrl: null,
+			showAdminLink: false,
+			showDemoIndicator: false,
+			loginHref: '/login',
+			currentPathname: '/@acme/-/settings',
+			organizations: [
+				{
+					slug: 'ada',
+					displayName: 'Ada',
+					role: 'owner',
+					personal: true,
+				},
+			],
+			lastUsedOrganization: 'ada',
+		}),
+	)
+	expect(html).toContain(
+		'aria-label="@acme: organizations, manage, and account"',
+	)
+	const menu = html.slice(html.indexOf('data-testid="org-switcher-menu"'))
+	// Synthesized current appears as its own row (session list was personal-only).
+	expect(menu).toContain('data-testid="org-switcher-acme"')
+	expect(menu).toContain('>Manage @acme<')
+	expect(menu).toContain('href="/@acme/-/settings"')
+	expect(menu).toContain('href="/@acme/-/members"')
+	// Member-shaped synthesis: no Billing until the real role loads.
+	expect(menu).not.toContain('href="/@acme/-/billing"')
+	expect(menu).not.toContain('>Manage @ada<')
+})
+
 test('org switcher keeps Manage links for a team org on account pages', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {

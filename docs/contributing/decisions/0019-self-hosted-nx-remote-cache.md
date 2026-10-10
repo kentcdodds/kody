@@ -18,9 +18,11 @@ Keep `neverConnectToCloud: true`. Share cache through a small Cloudflare Worker
 (`packages/nx-cache`, `nx-cache.kody.codes`) that implements the Nx HTTP OpenAPI
 spec and stores artifacts in R2. Clients set
 `NX_SELF_HOSTED_REMOTE_CACHE_SERVER` and
-`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`. Validate jobs also restore `.nx` via
-`actions/cache` as a same-runner L1. Test hashes include `{env:CI}` and CI pins
-`CI=1` so agent `validate` / `test:push` and GitHub Actions share keys.
+`NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN`. The remote cache is the only
+cross-run cache: Nx 23 keeps the local cache under `~/.nx/<workspace>/cache`, so
+an `actions/cache` step on `.nx/cache` never had anything to save and was
+removed. Test hashes include `{env:CI}` and CI pins `CI=1` so agent `validate` /
+`test:push` and GitHub Actions share keys.
 
 ## Consequences
 

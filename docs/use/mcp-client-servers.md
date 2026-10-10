@@ -22,8 +22,12 @@ This is the inverse of [connecting your agent to Kody](./connect-your-agent.md)
    `Authorization: Bearer <token>`; scheme-prefixed values and full
    `Authorization: …` header pastes are normalized. The credential is stored
    only in your private MCP client hub and is never returned later.
-3. If the server needs OAuth, Kody returns an authorization link. Open it, sign
-   in at the provider, and approve access.
+3. If the server needs OAuth, Kody returns an authorization link to a Kody page,
+   `/@<slug>/-/mcp-servers/:serverId/authorize`. Open it while signed in. It
+   shows the server name, the authorization server it will send you to, and how
+   Kody identifies itself there (a Client ID Metadata Document or Dynamic Client
+   Registration). Click Continue, sign in at the provider, and approve access.
+   Kody never sends you to the provider before you click Continue.
 4. Confirm with `mcpServerList` (or refresh the account page). The connected
    server shows up in `search` as an **mcp-server** hit (name and server
    instructions). List its tools with `search({ entity: "mcp-server:<name>" })`

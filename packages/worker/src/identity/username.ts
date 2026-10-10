@@ -70,21 +70,23 @@ export function resolveDisplayName(input: { email: string; username: string }) {
 		: input.username
 }
 
+/**
+ * Reserved names are checked before format so a reserved handle shorter than
+ * the username minimum (`me`) still gets the reserved-name message.
+ */
 export function getUsernameValidationError(username: string) {
-	const formatError = getUsernameFormatValidationError(username)
-	if (formatError) {
-		return formatError
-	}
-	return getReservedUsernameError(username)
+	return (
+		getReservedUsernameError(username) ??
+		getUsernameFormatValidationError(username)
+	)
 }
 
 export async function getEffectiveUsernameValidationError(
 	username: string,
 	env?: Pick<Env, 'BUNDLE_ARTIFACTS_KV'>,
 ) {
-	const formatError = getUsernameFormatValidationError(username)
-	if (formatError) {
-		return formatError
-	}
-	return getEffectiveReservedUsernameError(username, env)
+	return (
+		(await getEffectiveReservedUsernameError(username, env)) ??
+		getUsernameFormatValidationError(username)
+	)
 }

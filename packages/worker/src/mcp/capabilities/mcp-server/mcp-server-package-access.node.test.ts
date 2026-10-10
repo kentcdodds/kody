@@ -57,7 +57,7 @@ function createSnapshot(): McpServerSnapshot {
 		name: 'notion',
 		url: 'https://mcp.notion.com/mcp',
 		state: 'ready',
-		authUrl: null,
+		authorizationPending: false,
 		error: null,
 		instructions: null,
 		tools: [

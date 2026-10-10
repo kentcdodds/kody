@@ -16,6 +16,7 @@ import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.t
 import { accessGrantCapability } from './access-grants.ts'
 import { inviteAcceptCapability, inviteCreateCapability } from './invites.ts'
 import { orgCreateCapability, orgMemberListCapability } from './org-members.ts'
+import { teamCreateCapability } from './teams.ts'
 import { ensureUsersTestSchema } from '#worker/users-test-schema.ts'
 import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 
@@ -121,6 +122,54 @@ test('orgCreate and accessGrant show up in access compile', async () => {
 			?.has('package:execute'),
 	).toBe(true)
 	expect(compiled.orgPermissions.has('package:write')).toBe(false)
+})
+
+test('teamCreate refuses the personal organization', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner-personal-team@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'personalteamowner',
+	})
+	const ownerOnPersonal = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner-personal-team@example.com',
+		username: 'personalteamowner',
+	})
+	await expect(
+		teamCreateCapability.handler(
+			{ slug: 'core', name: 'Core' },
+			ownerOnPersonal,
+		),
+	).rejects.toThrow(/team organizations/i)
+})
+
+test('inviteCreate membership refuses the personal organization', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner-personal-invite@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'personalowner',
+	})
+	const ownerOnPersonal = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner-personal-invite@example.com',
+		username: 'personalowner',
+	})
+	await expect(
+		inviteCreateCapability.handler(
+			{ kind: 'membership', email: 'guest@example.com', role: 'member' },
+			ownerOnPersonal,
+		),
+	).rejects.toBeInstanceOf(McpCallerError)
+	await expect(
+		inviteCreateCapability.handler(
+			{ kind: 'membership', email: 'guest@example.com', role: 'member' },
+			ownerOnPersonal,
+		),
+	).rejects.toThrow(/personal organization/i)
 })
 
 test('inviteCreate prompt names the org and inviteAccept writes membership', async () => {
@@ -365,6 +414,11 @@ test('orgCreate rejects reserved and malformed slugs with the shared validation'
 	await expect(
 		orgCreateCapability.handler({ slug: 'admin' }, ctx),
 	).rejects.toThrow('This username is reserved.')
+	for (const slug of ['me', 'ME']) {
+		await expect(orgCreateCapability.handler({ slug }, ctx)).rejects.toThrow(
+			'This username is reserved.',
+		)
+	}
 	await expect(
 		orgCreateCapability.handler({ slug: '-bad-' }, ctx),
 	).rejects.toThrow(/3 to 32 characters/)

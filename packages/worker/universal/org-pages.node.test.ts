@@ -184,6 +184,13 @@ test('current organization comes from the URL, then the last-used slug', () => {
 	).toBe('acme')
 	expect(
 		currentSwitcherSlug({
+			pathname: '/@acme/-/settings',
+			organizations,
+			lastUsedSlug: 'ada',
+		}),
+	).toBe('acme')
+	expect(
+		currentSwitcherSlug({
 			pathname: '/account',
 			organizations,
 			lastUsedSlug: 'acme',
@@ -194,6 +201,45 @@ test('current organization comes from the URL, then the last-used slug', () => {
 			pathname: '/account',
 			organizations,
 			lastUsedSlug: null,
+		}),
+	).toBe('ada')
+})
+
+test('org-owned URL slug wins even when the session list is empty or personal-only', () => {
+	expect(
+		currentSwitcherSlug({
+			pathname: '/@acme/-/settings',
+			organizations: [personal],
+			lastUsedSlug: 'ada',
+		}),
+	).toBe('acme')
+	expect(
+		currentSwitcherSlug({
+			pathname: '/@acme/-/members',
+			organizations: [],
+			lastUsedSlug: 'ada',
+		}),
+	).toBe('acme')
+	expect(
+		currentSwitcherSlug({
+			pathname: '/@acme/-/billing',
+			organizations: [personal],
+			lastUsedSlug: null,
+		}),
+	).toBe('acme')
+	// Public profile and package pages still require membership.
+	expect(
+		currentSwitcherSlug({
+			pathname: '/@acme',
+			organizations: [personal],
+			lastUsedSlug: 'ada',
+		}),
+	).toBe('ada')
+	expect(
+		currentSwitcherSlug({
+			pathname: '/@acme/some-pkg',
+			organizations: [personal],
+			lastUsedSlug: 'ada',
 		}),
 	).toBe('ada')
 })
