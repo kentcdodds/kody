@@ -1427,18 +1427,17 @@ test('renderAppPage renders the blog index and posts with placeholder or reviewe
 	expect(placeholder.html).toMatch(/<h2[^>]*>/)
 	expect(placeholder.html).not.toMatch(/<h4[^>]*>/)
 
-	const reviewed = await renderPost('kody-vs-executor')
+	const reviewed = await renderPost('early-kody-users')
 	expect(reviewed.post.placeholder).toBe(false)
-	expect(reviewed.post.image).toBe('/images/kody-vs-executor.webp')
-	expect(reviewed.post.ogImage).toBe('/images/kody-vs-executor-og.jpg')
-	expectHtml(
-		reviewed.html,
-		[
-			'src="/images/kody-vs-executor.webp"',
-			'property="og:image" content="https://example.com/blog/kody-vs-executor/og.png"',
-		],
-		[BLOG_PLACEHOLDER_CALLOUT],
-	)
+	expectHtml(reviewed.html, [], [BLOG_PLACEHOLDER_CALLOUT])
+
+	const withArt = await renderPost('openclaw-2-needs-a-home')
+	expect(withArt.post.image).toBe('/images/openclaw-2-needs-a-home.webp')
+	expect(withArt.post.ogImage).toBe('/images/openclaw-2-needs-a-home-og.jpg')
+	expectHtml(withArt.html, [
+		'src="/images/openclaw-2-needs-a-home.webp"',
+		'property="og:image" content="https://example.com/blog/openclaw-2-needs-a-home/og.png"',
+	])
 })
 
 function mockPublicListing(listing: CommunityListingWithAggregates) {

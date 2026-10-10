@@ -46,10 +46,10 @@ test('blog post OG image renders PNG for a catalog post and 404s unknown slugs',
 		'imageDataUri',
 	)
 
-	const comparison = listBlogPosts().find(
-		(candidate) => candidate.slug === 'kody-vs-executor',
+	const withOgArt = listBlogPosts().find(
+		(candidate) => candidate.slug === 'openclaw-2-needs-a-home',
 	)
-	expect(comparison).toBeDefined()
+	expect(withOgArt).toBeDefined()
 	const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])
 	const artHandler = createBlogPostOgImageHandler({
 		ASSETS: {
@@ -59,14 +59,14 @@ test('blog post OG image renders PNG for a catalog post and 404s unknown slugs',
 	} as unknown as Env)
 	mocks.renderBlogPostOgImage.mockClear()
 	const withArt = await artHandler.handler({
-		request: new Request(`https://example.com/blog/${comparison!.slug}/og.png`),
-		params: { slug: comparison!.slug },
-		url: new URL(`https://example.com/blog/${comparison!.slug}/og.png`),
+		request: new Request(`https://example.com/blog/${withOgArt!.slug}/og.png`),
+		params: { slug: withOgArt!.slug },
+		url: new URL(`https://example.com/blog/${withOgArt!.slug}/og.png`),
 	} as never)
 	expect(withArt.status).toBe(200)
 	expect(mocks.renderBlogPostOgImage).toHaveBeenCalledWith(
 		expect.objectContaining({
-			title: comparison!.title,
+			title: withOgArt!.title,
 			imageDataUri: expect.stringMatching(/^data:image\/jpeg;base64,/),
 		}),
 	)
