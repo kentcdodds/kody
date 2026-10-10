@@ -5,7 +5,10 @@ import {
 	normalizeUsername,
 } from '#worker/identity/username.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
+import { isPersonalOrg } from './is-personal-org.ts'
 import { getOrgById } from './repo.ts'
+
+export { isPersonalOrg } from './is-personal-org.ts'
 
 export type UpdateOrgProfileInput = {
 	orgId: string
@@ -29,25 +32,6 @@ function slugValidationMessage(message: string) {
 		return 'That name is taken.'
 	}
 	return 'Use 3 to 32 letters, numbers, and hyphens. Start and end with a letter or number.'
-}
-
-/**
- * Signup organizations use the founding person's stable id as the org id
- * (`org_id = user_id` on the founding membership). That identity survives
- * soft-deleting the founding row — include deleted memberships so another
- * owner cannot rename or soft-delete a signup org from org settings.
- */
-export async function isPersonalOrg(db: D1Database, orgId: string) {
-	const row = await db
-		.prepare(
-			`SELECT 1 AS ok
-			 FROM org_memberships
-			 WHERE org_id = ?
-			   AND user_id = ?`,
-		)
-		.bind(orgId, orgId)
-		.first<{ ok: number }>()
-	return Boolean(row)
 }
 
 /**
