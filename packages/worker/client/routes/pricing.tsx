@@ -11,7 +11,10 @@ import {
 	weeklyComputeWindowNote,
 	type PlanLimits,
 } from '#universal/plans.ts'
-import { pricingLimitColumns } from '#universal/pricing-limits.ts'
+import {
+	pricingLimitColumns,
+	type PricingLimitColumn,
+} from '#universal/pricing-limits.ts'
 import {
 	publicSignupPrimaryCta,
 	type PublicSignupCta,
@@ -45,6 +48,8 @@ type LimitRow = {
 	label: string
 	key: keyof PlanLimits
 	format?: (value: number) => LimitValue
+	/** Monthly meter that keeps running past the include, debiting credits. */
+	chargedPastInclude?: true
 }
 
 type LimitGroup = {
@@ -87,13 +92,15 @@ const limitGroups: ReadonlyArray<LimitGroup> = [
 				key: 'maxAutomationInvocationsPerDay',
 			},
 			{
-				label: 'Worker compute per month (unique worker days)',
+				label: 'Worker compute per month',
 				key: 'maxUniqueWorkerDaysPerMonth',
+				chargedPastInclude: true,
 			},
 			{
 				label: 'Durable Object rows read per month',
 				key: 'maxDurableObjectRowsReadPerMonth',
 				format: (value) => ({ text: formatDurableObjectRowsRead(value) }),
+				chargedPastInclude: true,
 			},
 		],
 	},
@@ -259,7 +266,7 @@ export function PricingRoute(handle: Handle) {
 										<tr key={row.key}>
 											<th scope="row">{row.label}</th>
 											{pricingLimitColumns.map((column) =>
-												renderLimitCell(row, column.limits),
+												renderLimitCell(row, column),
 											)}
 										</tr>
 									)),
@@ -287,8 +294,8 @@ export function PricingRoute(handle: Handle) {
 						Usage past the include is charged from credits (Worker compute and
 						Rows read). On credits, daily and weekly limits go up to{' '}
 						{creditsUnlockMultiplier}× Pro&rsquo;s include, capped at the
-						&ldquo;Pro + credits&rdquo; column. When credits run out, rate and
-						compute limits match Free until you top up. No overage invoices.
+						&ldquo;Pro + credits&rdquo; column. When credits run out, usage past
+						the include stops. No overage invoices.
 					</p>
 					<p mix={css(limitsFootnoteCss)}>
 						Execute calls and outbound fetches count per day and per week;
@@ -345,18 +352,22 @@ function renderPaidPlanCta(
 	)
 }
 
-function renderLimitCell(row: LimitRow, limits: PlanLimits) {
-	const value = limits[row.key]
+function renderLimitCell(row: LimitRow, column: PricingLimitColumn) {
+	const value = column.limits[row.key]
 	if (value == null) {
 		return <td>—</td>
 	}
 	const cell = row.format ? row.format(value) : { text: count.format(value) }
+	const text =
+		row.chargedPastInclude && column.chargesPastInclude
+			? `${cell.text} + credits`
+			: cell.text
 	return (
 		<td>
 			{cell.muted ? (
-				<span mix={css({ color: colors.textMuted })}>{cell.text}</span>
+				<span mix={css({ color: colors.textMuted })}>{text}</span>
 			) : (
-				cell.text
+				text
 			)}
 		</td>
 	)

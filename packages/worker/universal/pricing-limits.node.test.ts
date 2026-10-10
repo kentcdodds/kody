@@ -16,4 +16,9 @@ test('pricing columns show the limits enforced for each purchasable plan', () =>
 	expect(byId['pro-credits']!.maxExecuteCallsPerDay).toBeGreaterThan(
 		proCreditsPlanLimits.maxExecuteCallsPerDay,
 	)
+	expect(
+		pricingLimitColumns
+			.filter((column) => column.chargesPastInclude)
+			.map((column) => column.id),
+	).toEqual(['pro-credits'])
 })

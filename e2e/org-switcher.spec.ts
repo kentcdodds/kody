@@ -114,4 +114,42 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 		page.getByLabel('Workspace sections').getByText(`@pinned-${runId}`),
 	).toBeVisible()
 	await expect(page.getByTestId('delete-org')).toBeVisible()
+
+	// Team orgs own their secrets and jobs, so the rail opens them.
+	const rail = page.getByRole('navigation', { name: 'Workspace sections' })
+	await expect(
+		rail.getByRole('link', { name: 'Repositories', exact: true }),
+	).toHaveCount(0)
+	await expect(
+		rail.getByRole('link', { name: 'Connections', exact: true }),
+	).toHaveCount(0)
+	await rail.getByRole('link', { name: 'Secrets', exact: true }).click()
+	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}/-/secrets$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Secrets' }),
+	).toBeVisible()
+	await expect(
+		rail.getByRole('link', { name: 'Secrets', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+	await rail.getByRole('link', { name: 'Jobs', exact: true }).click()
+	await expect(page).toHaveURL(new RegExp(`/@pinned-${runId}/-/jobs$`))
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Jobs' }),
+	).toBeVisible()
+	await expect(
+		rail.getByRole('link', { name: 'Jobs', exact: true }),
+	).toHaveAttribute('aria-current', 'page')
+	await expect(
+		rail.getByRole('link', { name: 'Settings', exact: true }),
+	).not.toHaveAttribute('aria-current', 'page')
+
+	// Connections are org-keyed: the team page opens and lists only agents
+	// approved for that org (none yet), instead of the old 404.
+	const connections = await page.goto(`/@pinned-${runId}/-/connections`)
+	expect(connections?.status()).toBe(200)
+	await waitForClientHydration(page)
+	await expect(
+		page.getByRole('region', { name: 'Connected agents' }),
+	).toBeVisible()
+	await expect(page.getByTestId('not-found-page')).toHaveCount(0)
 })

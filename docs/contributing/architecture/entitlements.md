@@ -40,9 +40,8 @@ at `packages/worker/universal/plans.ts`.
   `buildEntitlementUpgradeHint` uses `entitlementCreditsOffer` for rate/compute
   includes credits extend (reduce-only once funded, and for `max`); stock and
   other resources keep the upgrade clause only when `hasHigherPublicPlan(plan)`
-  (Free). `ComputeOverageLimitError` remains for legacy surfaces; empty-wallet
-  enforcement uses Free rate/compute via `proCreditsEmptyWalletPlanLimits` (ADR
-  0065).
+  (Free). `ComputeOverageLimitError` is the include → credits → stop denial for
+  an empty purchasable-Pro wallet past a monthly include.
 - `service.ts` — `getUserEntitlement` / `getUserPlan`,
   `getCachedUserEntitlement` / `getCachedUserPlan` (60s TTL enforcement cache),
   `assertWithinEntitlement`, built-in D1 usage counters, the daily-counter
@@ -253,14 +252,15 @@ admin-eligible. An admin grant to a `none` account only holds a balance. Buying
 credits and auto-refill still require the purchasable Pro subscription
 (`isPayingForCreditsPro`).
 
-**Include → credits → free-tier limits.** This is the customer billing path for
-purchasable Pro
-([decision 0065](../decisions/0065-org-seats-and-free-tier-fallback.md), which
-supersedes [0051](../decisions/0051-include-credits-stop.md)). The $12 / $120
+**Include → credits → stop.** This is the one customer billing path for
+purchasable Pro, personal and org
+([decision 0051](../decisions/0051-include-credits-stop.md); org seats in
+[0065](../decisions/0065-org-seats-and-prepaid-credits.md)). The $12 / $120
 subscription is the seat plus a monthly include: the retired Standard rates,
 email, Worker compute (350 unique worker days), Rows read (5B), and job interval
 floor on `proCreditsPlanLimits`. Past the include, usage runs on credits until
-they are gone, then rate and compute fall back to Free caps.
+they are gone, then stops. A Pro account at $0 keeps the full include; it never
+drops to Free limits.
 
 - **Stock is not part of the path.** Purchasable Pro always has Max stock and
   concurrency (repos, saved packages, scheduled jobs, repo sessions, secrets,
@@ -269,20 +269,31 @@ they are gone, then rate and compute fall back to Free caps.
   `unlockCreditsLimits` scales (execute, outbound fetches, job runs, automation
   invocations, daily and weekly) can reach `creditsUnlockMultiplier` (50)× the
   include, capped at the `max` daily ceilings (execute 25,000, outbound 80,000,
-  job runs 40,000, automation 200,000; `max` has no weekly window). At $0,
-  `resolvePlanLimits` returns `proCreditsEmptyWalletPlanLimits`: Max stock with
-  Free rate/compute/email and job interval (for example 150 execute/day,
-  400/week).
+  job runs 40,000, automation 200,000; `max` has no weekly window). At $0
+  `resolvePlanLimits` returns `proCreditsPlanLimits` (for example 500
+  execute/day, 1,200/week), and every one of those fields stops at the include
+  (within the 60s enforcement cache) with `EntitlementLimitError` copy that says
+  to add credits (`entitlementCreditsOffer`).
 - **Monthly meters.** Worker compute and Rows read past the include debit a
-  funded wallet (see Debits). At $0, work keeps running within Free rate limits;
-  denials use the normal daily/weekly entitlement path with copy that nudges a
-  top-up. `assertWithinPastIncludeCredits` and `resolvePastIncludeStop` are
-  no-ops kept for stable call sites. Hosted package apps use the same limit
-  table via `assertWithinComputeInclude`. Outbound fetches are exempt from
-  monthly include logic because they happen inside a run that was already
-  admitted.
-- Email caps and the job interval floor are not credit-extended while funded; at
-  $0 they match Free along with the other rate/compute fields.
+  funded wallet (see Debits). At
+  $0, `consumeDailyEntitlement` throws
+  `ComputeOverageLimitError` for `isPastIncludeStopResource` (execute, job runs,
+  automation invocations) once either meter is past this UTC month's include
+  (`resolvePastIncludeStop`). The check runs before the UserMeter counter, so a
+  stopped attempt spends no daily quota. Hosted package apps have no daily
+  counter, so `buildPackageAppWorker` calls `assertWithinComputeInclude` (the
+  same rule) for HTTP requests and realtime hooks: HTTP gets a `429` "Monthly
+  include used up" page, and realtime sockets close with `include-used-up`.
+  Outbound fetches are exempt from the monthly stop because they happen inside a
+  run that was already admitted; their daily and weekly include still stops at
+  $0.
+  The usage read comes from `usage_rollups` (hourly) behind the 60s entitlement
+  cache, so the stop can trail usage by about an hour; a later top-up forgives
+  that overshoot instead of charging it. Before throwing, the stop re-reads the
+  entitlement uncached, so a top-up resumes work immediately in every isolate.
+  The org budget gate runs after the stop.
+- Email caps and the job interval floor are not credit-extended; they stay on
+  the Pro include whether the wallet is empty or funded.
 
 Internally the 50× figure is a ceiling on how far credits go. Customer copy
 never frames it as something a balance unlocks, and never names Max; the rate
@@ -306,16 +317,16 @@ funded wallet is charged
 list). Every other wallet advances progress without a charge (against at least
 the purchasable Pro baseline when `creditWallet` is `none`), so a later top-up
 or resubscribe never back-charges. The balance can dip below $0 by about an hour
-of usage past the include; after that, rate and compute fall back to Free caps
-until a top-up (ADR 0065). Debit ledger ids are deterministic per starting
-position, so an overlapping run rolls back instead of charging twice. A new
-wallet, and a top-up or admin grant that funds an empty wallet, advance progress
-to the billable units already in the rollups for both months the lane settles
-(prior and current), so credits never pay for usage from while the wallet was
-empty. The sweep is bounded per run; `credit_debit_cursor` keeps its keyset
-position so later runs reach every candidate. CPU, Durable Object duration,
-RunLog rows, and email are not debited. Nobody is invoiced for overage. There is
-no overage-invoice ledger.
+of usage past the include; past-include usage stays stopped until a top-up
+covers it. Debit ledger ids are deterministic per starting position, so an
+overlapping run rolls back instead of charging twice. A new wallet, and a top-up
+or admin grant that funds an empty wallet, advance progress to the billable
+units already in the rollups for both months the lane settles (prior and
+current), so credits never pay for usage from while the wallet was empty. The
+sweep is bounded per run; `credit_debit_cursor` keeps its keyset position so
+later runs reach every candidate. CPU, Durable Object duration, RunLog rows, and
+email are not debited. Nobody is invoiced for overage. There is no
+overage-invoice ledger.
 
 **Top-ups.** `POST /account/credits/top-up.json` (Pro only) opens a one-off
 Checkout Session (`mode=payment`, `price_data`, card saved with
@@ -353,10 +364,9 @@ OAuth signup, admin-created) receives a one-shot house grant of
 is `admin_grant` with note `Welcome credits`, null `granted_by_user_id`, and
 deterministic id `signup_welcome:{stableUserId}` so retries never double-grant.
 The balance is held until the account is credit-eligible Pro (include → credits
-→ Free rate/compute fallback); this is not a Free prepaid wallet product and
-does not unlock spend on Free. The grant runs at account creation as
-best-effort: person-account inserts set
-`users.signup_welcome_credits_pending = 1` in the same write, then clear it
+→ stop); this is not a Free prepaid wallet product and does not unlock spend on
+Free. The grant runs at account creation as best-effort: person-account inserts
+set `users.signup_welcome_credits_pending = 1` in the same write, then clear it
 after a confirmed grant. If D1 fails during the grant, signup still succeeds and
 the flag stays set. Password / OAuth / passkey / 2FA login and `/account/usage`
 wallet loads call `reconcileSignupWelcomeCreditsIfPending`, which retries only
@@ -444,22 +454,22 @@ Durable Object rows-read allotment (Free 0.5B, Pro and retired Standard 5B,
 retired Pro 20B). Those two fields are the credit debit meters. They are not in
 `entitlementResources`, so `assertWithinEntitlement` does not hard-cut them.
 Hourly user warning emails cover approaching (80%) and reached (100%) includes
-only when crossing the include would put Free rate/compute caps in force: an
-empty purchasable-Pro wallet (`computeIncludeWarningPutsAccessAtRisk` in
-`universal/usage-presentation.ts`). Free and other wallet-less plans never get
-those mails (the include never charges them or changes their caps), and funded
-wallets get the low-balance and auto-refill cap mails instead. `/account/usage`
-(one page; `/account/credits` redirects to its `#credits` section) uses the same
-framing from that module: activity (code executions and runs) first, included
-compute as a bar capped at 100% with past-include usage shown as dollars on
-credits, and one credits alarm only when the wallet or access is at risk. Free
-sees Worker compute and Rows read as informational counts only. Usage above an
-include debits a funded purchasable-Pro wallet, applies Free rate/compute caps
-on an empty one (ADR 0065), and is neither charged nor capped-down on plans
-without a wallet; see [Prepaid credits](#prepaid-credits). Execute and outbound
-fetches are daily and weekly caps; on purchasable Pro they are the include that
-credits extend. Durable Object duration is observed (Cloudflare-measured GB-s
-plus the StorageRunner RPC wall-clock proxy) and is not charged. See
+only when crossing the include would stop runs: an empty purchasable-Pro wallet
+(`computeIncludeWarningPutsAccessAtRisk` in `universal/usage-presentation.ts`).
+Free and other wallet-less plans never get those mails (the include never
+charges or stops them), and funded wallets get the low-balance and auto-refill
+cap mails instead. `/account/usage` (one page; `/account/credits` redirects to
+its `#credits` section) uses the same framing from that module: activity (code
+executions and runs) first, included compute as a bar capped at 100% with
+past-include usage shown as dollars on credits, and one credits alarm only when
+the wallet or access is at risk. Free sees Worker compute and Rows read as
+informational counts only. Usage above an include debits a funded
+purchasable-Pro wallet, stops new compute on an empty one, and is neither
+charged nor stopped on plans without a wallet; see
+[Prepaid credits](#prepaid-credits). Execute and outbound fetches are daily and
+weekly caps; on purchasable Pro they are the include that credits extend.
+Durable Object duration is observed (Cloudflare-measured GB-s plus the
+StorageRunner RPC wall-clock proxy) and is not charged. See
 [Usage metering](./usage-metering.md).
 
 **D1 payload storage bytes** (`storage_bytes`) are **authoritative in
@@ -887,12 +897,13 @@ Rate limit example (purchasable Pro with $0):
 > you no longer need, or add credits at /account/usage#credits to keep going
 > past your include.
 
-Empty-wallet rate denial (purchasable Pro with $0, `EntitlementLimitError` at
-Free execute caps):
+Monthly include stop (purchasable Pro with $0, `ComputeOverageLimitError`):
 
-> Plan limit reached: your "pro" plan allows at most 150 execute calls per day
-> and you currently have 150. … or add credits at /account/usage#credits to
-> restore Pro rates past your include.
+> Worker compute include used up: your "pro" plan includes 350 worker-compute
+> days this UTC month and you have used 412. With no credits left, usage past
+> the include stops. Add credits at /account/usage#credits to keep going; usage
+> past the include is charged at $0.004 per worker-compute day. Keep package
+> code stable so the same worker stays warm. …
 
 Customer copy never says a balance "unlocks" or "lifts" limits and never names
 Max; SSR and unit tests forbid that wording on pricing, billing, credits, and

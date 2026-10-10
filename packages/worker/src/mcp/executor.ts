@@ -28,6 +28,7 @@ import { extractMcpPassthrough } from '#mcp/downstream-mcp-result.ts'
 import {
 	recordUsage,
 	usageAttributionFieldsFromRequest,
+	usageConnectionFieldsFromRequest,
 	type UsageEnv,
 } from '#worker/usage/record-usage.ts'
 import { recordUniqueDynamicWorkerDay } from '#worker/usage/dynamic-worker-day.ts'
@@ -711,6 +712,7 @@ function createStableDynamicWorkerExecutor(input: DynamicWorkerExecutorInput) {
 				workerId,
 				surface: input.surface ?? 'execute',
 				...(attributedPackageId ? { packageId: attributedPackageId } : {}),
+				...usageConnectionFieldsFromRequest(input.gatewayProps.request),
 			})
 			await runExecuteBookkeeping(
 				claimedDay,

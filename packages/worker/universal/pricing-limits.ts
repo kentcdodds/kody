@@ -11,6 +11,11 @@ export type PricingLimitColumn = {
 	price: string
 	priceNote?: string
 	limits: PlanLimits
+	/**
+	 * Monthly compute meters keep running past the include and debit credits,
+	 * so their value is an include, not a ceiling.
+	 */
+	chargesPastInclude?: true
 }
 
 /**
@@ -32,5 +37,6 @@ export const pricingLimitColumns: ReadonlyArray<PricingLimitColumn> = [
 		plan: 'Pro + credits',
 		price: 'up to',
 		limits: resolvePlanLimits('pro', 'public', 'funded'),
+		chargesPastInclude: true,
 	},
 ]

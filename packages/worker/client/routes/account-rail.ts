@@ -166,11 +166,29 @@ export function teamOrgManagementItems(input: {
 	return items
 }
 
+function jobsRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSectionHref(orgSlug, 'jobs'),
+		label: 'Jobs',
+		icon: 'briefcase',
+	}
+}
+
+function secretsRailItem(orgSlug: string | null | undefined): AccountRailItem {
+	return {
+		href: orgSectionHref(orgSlug, 'secrets'),
+		label: 'Secrets',
+		icon: 'key',
+	}
+}
+
 /**
  * The workspace rail: everything the organization owns, grouped by job.
- * Team orgs get the Organization management links. Personal orgs keep the
- * Build / Access / Data / Activity groups (packages and connections still key
- * on the person; other sections read `request.org.id`).
+ * Personal orgs get every Build / Access / Data / Activity section. Team orgs
+ * get Jobs and Secrets (keyed on `request.org.id`, open to every member role
+ * like `/@slug/-/<section>`) above the Organization management links; their
+ * other sections stay off until they follow the org. Collaborators get
+ * nothing.
  */
 export function workspaceRailGroups(input: {
 	orgSlug: string | null | undefined
@@ -184,7 +202,12 @@ export function workspaceRailGroups(input: {
 			orgSlug,
 			role: input.role,
 		})
-		return items.length > 0 ? [{ label: 'Organization', items }] : []
+		if (items.length === 0) return []
+		return [
+			{ label: 'Build', items: [jobsRailItem(orgSlug)] },
+			{ label: 'Data', items: [secretsRailItem(orgSlug)] },
+			{ label: 'Organization', items },
+		]
 	}
 	return [
 		{
@@ -195,11 +218,7 @@ export function workspaceRailGroups(input: {
 					label: 'Repositories',
 					icon: 'box',
 				},
-				{
-					href: orgSectionHref(orgSlug, 'jobs'),
-					label: 'Jobs',
-					icon: 'briefcase',
-				},
+				jobsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'workflows'),
 					label: 'Workflows',
@@ -236,11 +255,7 @@ export function workspaceRailGroups(input: {
 		{
 			label: 'Data',
 			items: [
-				{
-					href: orgSectionHref(orgSlug, 'secrets'),
-					label: 'Secrets',
-					icon: 'key',
-				},
+				secretsRailItem(orgSlug),
 				{
 					href: orgSectionHref(orgSlug, 'secret-providers'),
 					label: 'Secret providers',
