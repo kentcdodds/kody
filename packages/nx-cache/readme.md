@@ -46,6 +46,23 @@ runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
 and asserts the second run is a `[remote cache]` hit that restores outputs
 without re-running the command.
 
+## Interpreting hit rates
+
+A PR that **introduces or renames Nx tasks** (or expands their `inputs`) will
+show `Cache: 0/N` on first run even when remote cache is enabled — those hashes
+have never been stored. Same-repo validate uses the write token (decision 0040),
+so that first run **PUTs**; the next identical tree on `main` or another PR
+should show `[remote cache]` hits. Example after parallel typecheck (#3209): the
+PR logged `0/12`, and the following `main` validate logged `12/12`.
+
+Do **not** treat a cold `0/N` alone as a token, Nx Cloud, or `--skip-nx-cache`
+bug. Check the setup step for
+`Nx remote cache enabled (https://nx-cache.kody.codes)` first. Fork PRs use the
+read token only and cannot populate new hashes. Suite targets that hash
+`{workspaceRoot}/**/*` (notably `test-node` after #3207) miss whenever any
+workspace file changes — that is intentional correctness, not a transport
+failure.
+
 ## Retention
 
 R2 expires `v1/` objects 14 days after they are written and aborts incomplete

@@ -41,6 +41,8 @@ const {
 	automationSourceForAnalytics,
 	recordUsage,
 	usageAttributionFieldsFromRequest,
+	usageConnectionFieldsFromRequest,
+	usageConnectionKey,
 	usageEventBlobIndexes,
 	usageEventBlobs,
 } = await import('./record-usage.ts')
@@ -138,6 +140,7 @@ test('usageEventBlobs default actor to org billing id and map automation sources
 		'',
 		'',
 		'schedule',
+		'',
 	])
 })
 
@@ -153,7 +156,11 @@ test('usageAttributionFieldsFromRequest maps user and automation runs', () => {
 		usageAttributionFieldsFromRequest(
 			deriveRequestContext({ user, source: { kind: 'session' } }),
 		),
-	).toEqual({ actorUserId: personId, automationSource: '' })
+	).toEqual({
+		actorUserId: personId,
+		automationSource: '',
+		connectionKey: `session:${personId}:`,
+	})
 	expect(
 		usageAttributionFieldsFromRequest(
 			deriveRequestContext({
@@ -161,6 +168,56 @@ test('usageAttributionFieldsFromRequest maps user and automation runs', () => {
 				source: { kind: 'schedule', jobId: 'job-1' },
 			}),
 		),
-	).toEqual({ actorUserId: '', automationSource: 'schedule' })
+	).toEqual({
+		actorUserId: '',
+		automationSource: 'schedule',
+		connectionKey: 'schedule::job-1',
+	})
 	expect(automationSourceForAnalytics('event')).toBe('')
+})
+
+test('usageConnectionKey names the credential and its holder', () => {
+	const personId = personIdFromStored('b'.repeat(64))
+	const user = { userId: personId, username: 'brad' }
+	const cliClientId = 'https://kody.example/oauth/cli-client-metadata.json'
+	expect(
+		usageConnectionKey(
+			deriveRequestContext({
+				user,
+				source: { kind: 'mcp-oauth' },
+				oauthClientId: 'slack-bot-client',
+			}),
+		),
+	).toBe(`mcp-oauth:${personId}:slack-bot-client`)
+	expect(
+		usageConnectionKey(
+			deriveRequestContext({
+				user,
+				source: { kind: 'cli' },
+				oauthClientId: cliClientId,
+			}),
+		),
+	).toBe(`cli:${personId}:${cliClientId}`)
+	expect(
+		usageConnectionKey(
+			deriveRequestContext({
+				user,
+				source: { kind: 'api-token', tokenId: 'tok-1' },
+				oauthClientId: 'ignored',
+			}),
+		),
+	).toBe(`api-token:${personId}:tok-1`)
+	expect(usageConnectionKey(null)).toBe('')
+	expect(usageConnectionFieldsFromRequest(null)).toEqual({})
+	expect(
+		usageEventBlobs(
+			{
+				userId: ownerIdFromStored('org-1'),
+				eventType: 'execute',
+				outcome: 'success',
+				connectionKey: `mcp-oauth:${personId}:slack-bot-client`,
+			},
+			'2026-10-10T00:00:00.000Z',
+		)[usageEventBlobIndexes.connectionKey],
+	).toBe(`mcp-oauth:${personId}:slack-bot-client`)
 })

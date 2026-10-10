@@ -34,6 +34,8 @@ export async function recordUniqueDynamicWorkerDay(input: {
 	 * Omit for ad hoc execute; never guess.
 	 */
 	packageId?: string | null
+	/** From `usageConnectionKey`; attributes the first claim to a credential. */
+	connectionKey?: string | null
 	now?: Date
 }): Promise<{ created: boolean } | undefined> {
 	try {
@@ -59,6 +61,7 @@ export async function recordUniqueDynamicWorkerDay(input: {
 				...(input.packageId?.trim()
 					? { packageId: input.packageId.trim() }
 					: {}),
+				...(input.connectionKey ? { connectionKey: input.connectionKey } : {}),
 			})
 		}
 		return claimed

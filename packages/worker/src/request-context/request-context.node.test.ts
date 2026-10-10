@@ -238,3 +238,55 @@ test('orgBinding round-trips on the wire so the org slug survives a user rename'
 	})
 	expect(rederived.request?.membership).toEqual({ role: 'member' })
 })
+
+test('OAuth and CLI bearer grants carry their client id as the credential id', () => {
+	const clientId = 'https://kody.example/oauth/cli-client-metadata.json'
+	const cli = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user,
+		source: { kind: 'cli' },
+		oauthClientId: clientId,
+	})
+	expect(cli.request?.credential).toMatchObject({ kind: 'cli', id: clientId })
+
+	const wire = toMcpCallerContextWire(
+		createMcpCallerContext({
+			baseUrl: 'https://kody.example',
+			user,
+			source: { kind: 'mcp-oauth' },
+			oauthClientId: ' slack-bot ',
+		}),
+	)
+	expect(wire.oauthClientId).toBe('slack-bot')
+	const reparsed = parseMcpCallerContext(wire, { kind: 'mcp-oauth' })
+	expect(reparsed.request?.credential).toMatchObject({
+		kind: 'mcp-oauth',
+		id: 'slack-bot',
+	})
+
+	const nested = deriveRequestContext({
+		user,
+		source: inheritRequest(reparsed.request!),
+	})
+	expect(nested.credential).toMatchObject({
+		kind: 'mcp-oauth',
+		id: 'slack-bot',
+	})
+
+	const session = createMcpCallerContext({
+		baseUrl: 'https://kody.example',
+		user,
+		source: { kind: 'session' },
+		oauthClientId: 'ignored',
+	})
+	expect(session.request?.credential.id).toBeNull()
+	expect(
+		toMcpCallerContextWire(
+			createMcpCallerContext({
+				baseUrl: 'https://kody.example',
+				user,
+				source: { kind: 'session' },
+			}),
+		),
+	).not.toHaveProperty('oauthClientId')
+})
