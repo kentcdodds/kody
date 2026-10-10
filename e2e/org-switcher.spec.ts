@@ -101,4 +101,17 @@ test('org switcher opens under its trigger, lists orgs, and closes like a menu',
 	const narrow = await openSwitcher(page)
 	await page.mouse.click(20, 700)
 	await expect(narrow.panel).toBeHidden()
+
+	// Team settings chrome must name the URL org (not the personal org) next
+	// to Delete organization.
+	await page.setViewportSize({ width: 1440, height: 900 })
+	await page.goto(`/@pinned-${runId}/-/settings`)
+	await waitForClientHydration(page)
+	await expect(page.getByTestId('org-switcher')).toHaveAccessibleName(
+		`@pinned-${runId}: organizations, manage, and account`,
+	)
+	await expect(
+		page.getByLabel('Workspace sections').getByText(`@pinned-${runId}`),
+	).toBeVisible()
+	await expect(page.getByTestId('delete-org')).toBeVisible()
 })

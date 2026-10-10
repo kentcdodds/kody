@@ -429,6 +429,18 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 	const org = organizations.find((entry) => entry.slug === orgSlug)
 	const personal =
 		orgSlug === null || (org?.personal ?? orgSlug === input.session?.username)
+	// Prefer the session role when the org is listed. Collaborators keep
+	// `null`. When the list is stale on a team URL, use member-shaped links
+	// (Settings/Members/Teams/Grants/Collaborators, no Billing) so chrome
+	// stays on the URL org without inventing Owner-only Billing.
+	const role =
+		org !== undefined
+			? org.role
+			: personal
+				? ('owner' as const)
+				: orgSlug !== null
+					? ('member' as const)
+					: null
 	return {
 		label: 'Workspace sections',
 		heading: {
@@ -438,7 +450,7 @@ function pageRail(input: { session: SessionInfo | null; currentPath: string }) {
 		groups: workspaceRailGroups({
 			orgSlug,
 			personal,
-			role: org?.role ?? (personal ? 'owner' : null),
+			role,
 		}),
 	}
 }

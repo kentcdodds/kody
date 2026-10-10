@@ -270,6 +270,21 @@ export function parseOrgManagementPath(
 	return { slug, section: section as OrgManagementSection }
 }
 
+/**
+ * Slug on an org-owned `/@slug/-/…` page (resource, billing, or management).
+ * Same parse order as the server request binder. Public `/@slug` and
+ * `/@owner/pkg` paths are not org-owned pages — they return null so chrome
+ * does not adopt a stranger's handle.
+ */
+export function orgSlugFromOrgOwnedPath(pathname: string) {
+	return (
+		parseOrgResourcePath(pathname)?.slug ??
+		parseOrgBillingPath(pathname)?.slug ??
+		parseOrgManagementPath(pathname)?.slug ??
+		null
+	)
+}
+
 export function orgSettingsPath(slug: string) {
 	return `/@${slug}/${orgPageSeparator}/settings`
 }
@@ -418,6 +433,11 @@ export function currentSwitcherSlug(input: {
 	organizations: ReadonlyArray<OrganizationSummary>
 	lastUsedSlug: string | null
 }) {
+	// Org-owned `/@slug/-/…` pages already authorized the URL org. Trust that
+	// slug even when the session membership list is empty or stale — otherwise
+	// the switcher falls back to the personal org beside team Settings.
+	const ownedPathSlug = orgSlugFromOrgOwnedPath(input.pathname)
+	if (ownedPathSlug) return ownedPathSlug
 	const fromPath = orgSlugFromPathname(input.pathname)
 	if (fromPath && input.organizations.some((org) => org.slug === fromPath)) {
 		return fromPath

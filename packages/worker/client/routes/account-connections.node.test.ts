@@ -448,3 +448,20 @@ test('account rail org slug prefers the path org over username', () => {
 		}),
 	).toBe('ada-old')
 })
+
+test('account rail org slug trusts org-owned URLs when the session list is stale', () => {
+	expect(
+		accountRailOrgSlug({
+			pathname: '/@acme/-/settings',
+			organizations: [{ slug: 'ada-old', personal: true }],
+			username: 'ada-new',
+		}),
+	).toBe('acme')
+	expect(
+		accountRailOrgSlug({
+			pathname: '/@acme/-/grants',
+			organizations: [],
+			username: 'ada-new',
+		}),
+	).toBe('acme')
+})
