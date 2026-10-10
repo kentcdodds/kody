@@ -477,6 +477,55 @@ test('mint prunes long-dead rows before reclaim', async () => {
 	expect(remaining.count).toBe(1)
 })
 
+test('a token row without org_id fails closed instead of using user_id', async () => {
+	const { sqlite, db } = createDb()
+	const minted = await mintApiToken({
+		db,
+		userId,
+		name: 'bound',
+		scopes: ['org:read'],
+		idleTtlSeconds: shortLife.idleTtlSeconds,
+		maxLifetimeSeconds: shortLife.maxLifetimeSeconds,
+		createdVia: 'api',
+		now: start,
+	})
+	expect(minted.org_id).toBe(userId)
+
+	const teamOrgId = ownerIdFromStored('org-team-token')
+	const team = await mintApiToken({
+		db,
+		userId,
+		orgId: `  ${teamOrgId}  `,
+		name: 'team',
+		scopes: ['org:read'],
+		idleTtlSeconds: shortLife.idleTtlSeconds,
+		maxLifetimeSeconds: shortLife.maxLifetimeSeconds,
+		createdVia: 'api',
+		now: start,
+	})
+	expect(team.org_id).toBe(teamOrgId)
+	expect(
+		(await getApiTokenRecord({ db, userId, tokenId: team.id }))?.org_id,
+	).toBe(teamOrgId)
+
+	sqlite
+		.prepare(`UPDATE api_tokens SET org_id = NULL WHERE id = ?`)
+		.run(minted.id)
+	await expect(
+		getApiTokenRecord({ db, userId, tokenId: minted.id }),
+	).rejects.toThrow(/org_id is required/)
+	await expect(
+		authenticateApiToken({ db, token: minted.token, now: at(1) }),
+	).rejects.toThrow(/org_id is required/)
+
+	sqlite
+		.prepare(`UPDATE api_tokens SET org_id = '   ' WHERE id = ?`)
+		.run(minted.id)
+	await expect(listApiTokens({ db, userId, now: at(1) })).rejects.toThrow(
+		/org_id is required/,
+	)
+})
+
 test('org-permission scopes do not imply a write-to-read hierarchy', () => {
 	expect(apiTokenScopeIncludes(['package:write'], 'package:read')).toBe(false)
 	expect(apiTokenScopeIncludes(['package:read'], 'package:write')).toBe(false)

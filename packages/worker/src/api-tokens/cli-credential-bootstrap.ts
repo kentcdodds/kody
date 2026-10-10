@@ -368,6 +368,15 @@ export async function mintCliCredentialBootstrap(input: {
 	}
 }
 
+/** Stored bootstrap codes must name an org. Do not fall back to user_id. */
+function requireBootstrapOrgId(orgId: unknown): string {
+	const trimmed = typeof orgId === 'string' ? orgId.trim() : ''
+	if (!trimmed) {
+		throw new McpCallerError('CLI bootstrap code is missing an org binding.')
+	}
+	return trimmed
+}
+
 /**
  * Exchange a one-shot bootstrap code for a normal `kody_at_` API token.
  * Burns the code atomically before minting. Lifetime is chosen at redeem time
@@ -407,7 +416,7 @@ export async function redeemCliCredentialBootstrap(input: {
 		.first<{
 			id: string
 			user_id: OwnerId
-			org_id: string | null
+			org_id: string
 			code_hash: string
 			name: string
 			scopes_json: string
@@ -445,6 +454,8 @@ export async function redeemCliCredentialBootstrap(input: {
 			`The bootstrap code's authorized token lifetime window has already ended. Call cliCredentialBootstrap again.`,
 		)
 	}
+	// Reject before burning so a code with no org binding can be repaired.
+	const orgId = requireBootstrapOrgId(row.org_id)
 
 	const burnAndMint = async () => {
 		const user = await input.db
@@ -496,7 +507,7 @@ export async function redeemCliCredentialBootstrap(input: {
 		const token = await mintApiToken({
 			db: input.db,
 			userId: row.user_id,
-			orgId: row.org_id?.trim() || row.user_id,
+			orgId,
 			name: row.name,
 			scopes,
 			idleTtlSeconds: requested.idleTtlSeconds,
