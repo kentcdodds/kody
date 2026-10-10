@@ -48,6 +48,7 @@ INSERT INTO usage_connection_daily (
 	package_id, event_type, units
 ) VALUES
 	${usageRow(teamId, ['mcp-oauth', memberId, 'https://slack-bot.example/client.json'], 1440)},
+	${usageRow(teamId, ['mcp-oauth', memberId, 'https://slack-bot.example/client.json'], 3, 'dynamic_worker_day')},
 	${usageRow(teamId, ['api-token', ownerId, 'tok_owner_private'], 9)},
 	${usageRow(teamId, ['schedule', '', 'job-poll'], 30)},
 	${usageRow(teamId, ['', '', ''], 5, 'dynamic_worker_invoke')},
@@ -62,7 +63,11 @@ INSERT INTO usage_connection_daily (
 	await waitForClientHydration(page)
 	const summary = page.getByTestId('connection-usage-summary-table')
 	await expect(summary).toContainText('slack-bot.example')
-	await expect(summary).toContainText('1,440')
+	// Columns are worker loads (the cap unit); raw execute calls ride along.
+	await expect(page.getByTestId('connection-usage-summary')).toContainText(
+		'Counts are worker loads',
+	)
+	await expect(summary).toContainText('7 days: 1,440 execute calls')
 	await expect(summary).not.toContainText('Kody CLI')
 	await expect(summary).not.toContainText('API token')
 	await page.getByTestId('connection-usage-details-link').click()
