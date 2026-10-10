@@ -443,6 +443,11 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 	sqlite.exec(`
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY,
+			stable_user_id TEXT,
+			deleted_at TEXT
+		);
+		CREATE TABLE orgs (
+			id TEXT PRIMARY KEY,
 			stripe_plan TEXT,
 			deleted_at TEXT
 		);
@@ -451,7 +456,8 @@ test('user-level sync looks up Discord and stripe_plan, then disconnect removes 
 			provider_name TEXT NOT NULL,
 			provider_id TEXT NOT NULL
 		);
-		INSERT INTO users (id, stripe_plan) VALUES (7, 'standard');
+		INSERT INTO users (id, stable_user_id) VALUES (7, 'user-7');
+		INSERT INTO orgs (id, stripe_plan) VALUES ('user-7', 'standard');
 		INSERT INTO oauth_connections (user_id, provider_name, provider_id)
 		VALUES (7, 'discord', '${discordUserId}');
 	`)

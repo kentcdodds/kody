@@ -79,15 +79,14 @@ export async function loadAccountMcpServersData(input: {
 		oauthClientOrigin: oauth.clientOrigin,
 		oauthCallbackUrl: oauth.callbackUrl,
 		oauthClientMetadataUrl: oauth.clientMetadataUrl,
-		servers: settings.map((setting) =>
-			attachCatalogLogoPath(
+		servers: settings.map((setting) => {
+			const server =
+				snapshot?.servers.find((entry) => entry.serverId === setting.id) ?? null
+			return attachCatalogLogoPath(
 				{
 					...buildMcpServerStatusView({
 						setting,
-						snapshot:
-							snapshot?.servers.find(
-								(server) => server.serverId === setting.id,
-							) ?? null,
+						snapshot: server,
 						authorizeLink: {
 							appOrigin: oauth.clientOrigin,
 							orgSlug:
@@ -98,10 +97,11 @@ export async function loadAccountMcpServersData(input: {
 						oauthClientMetadataUrl: oauth.clientMetadataUrl,
 					}),
 					autoLogoPath: buildMcpServerAutoLogoPath(setting),
+					oauthClientId: server?.oauthClientId ?? null,
 				},
 				marks,
-			),
-		),
+			)
+		}),
 		savedPackages: savedPackages.map((entry) => ({
 			id: entry.id,
 			kodyId: entry.kodyId,

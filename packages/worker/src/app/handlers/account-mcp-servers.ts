@@ -26,8 +26,18 @@ import {
 	resolveMcpServerOAuthClientUrls,
 	setMcpServerEnabled,
 	setMcpServerLastError,
+	setMcpServerPreRegisteredOAuthClient,
 	setMcpServerUsage,
 } from '#worker/mcp-client/settings-service.ts'
+import { normalizeMcpPreRegisteredOAuthClientInput } from '#worker/mcp-client/preregistered-oauth-client.ts'
+import {
+	authorize,
+	AuthorizationError,
+} from '#worker/authorization/authorize.ts'
+import {
+	orgAuditWriterFromRequest,
+	recordOrgAuditEvent,
+} from '#worker/orgs/org-audit.ts'
 import { type McpServerLastError } from '#worker/mcp-client/types.ts'
 
 type AuthenticatedUser = NonNullable<
@@ -120,7 +130,19 @@ export function createAccountMcpServersApiHandler(env: Env) {
 				if (action === 'delete') {
 					return await handleDeleteAction({ env, user, body, request })
 				}
+				if (action === 'set-oauth-client' || action === 'remove-oauth-client') {
+					return await handleOAuthClientAction({
+						env,
+						user,
+						body,
+						request,
+						kind: action === 'set-oauth-client' ? 'set' : 'remove',
+					})
+				}
 			} catch (error) {
+				if (error instanceof AuthorizationError) {
+					return jsonResponse({ ok: false, error: error.message }, 403)
+				}
 				return jsonResponse(
 					{
 						ok: false,
@@ -439,6 +461,88 @@ async function handleDeleteAction(input: {
 			waitUntil,
 		}),
 	)
+}
+
+/**
+ * Save, replace, or remove a server's pre-registered OAuth client. Only this
+ * settings page can do it; no capability takes a client secret. The secret
+ * is never echoed: responses carry the client id alone.
+ */
+async function handleOAuthClientAction(input: {
+	env: Env
+	user: AuthenticatedUser
+	body: object
+	request: Request
+	kind: 'set' | 'remove'
+}) {
+	await authorize(
+		{ env: input.env, request: input.user.request },
+		'integration:write',
+	)
+	const setting = await requireSetting(input)
+	let client: { clientId: string; clientSecret: string } | null = null
+	if (input.kind === 'set') {
+		const parsed = normalizeMcpPreRegisteredOAuthClientInput({
+			clientId: (input.body as Record<string, unknown>)['clientId'],
+			clientSecret: (input.body as Record<string, unknown>)['clientSecret'],
+		})
+		if (!parsed.ok) {
+			return jsonResponse({ ok: false, error: parsed.error }, 400)
+		}
+		client = { clientId: parsed.clientId, clientSecret: parsed.clientSecret }
+	}
+	const change = await setMcpServerPreRegisteredOAuthClient({
+		env: input.env,
+		userId: ownerIdFromCaller({
+			request: input.user.request,
+			user: input.user.mcpUser,
+		}),
+		id: setting.id,
+		callbackUrl: resolveMcpServerOAuthClientUrls({
+			env: input.env,
+			requestUrl: input.request.url,
+		}).callbackUrl,
+		client,
+	})
+	if (!change.changed) {
+		return jsonResponse(
+			{ ok: false, error: 'This server has no OAuth client configured.' },
+			400,
+		)
+	}
+	await recordOrgAuditEvent(
+		orgAuditWriterFromRequest(input.env, input.user.request),
+		{
+			orgId: input.user.request.org.id,
+			action: client
+				? change.previousClientId
+					? 'mcp_server.oauth_client_replaced'
+					: 'mcp_server.oauth_client_set'
+				: 'mcp_server.oauth_client_removed',
+			resourceType: 'mcp_server',
+			resourceId: setting.id,
+			details: {
+				serverName: setting.name,
+				clientId: client?.clientId ?? change.previousClientId,
+			},
+		},
+	)
+	const payload = await loadAccountMcpServersData({
+		env: input.env,
+		user: input.user,
+		requestUrl: input.request.url,
+		waitUntil,
+	})
+	return jsonResponse({
+		...payload,
+		// The hub reply is authoritative even if the snapshot read failed.
+		servers: payload.servers.map((server) =>
+			server.id === setting.id
+				? { ...server, oauthClientId: client?.clientId ?? null }
+				: server,
+		),
+		selectedServerId: setting.id,
+	})
 }
 
 async function requireSetting(input: {

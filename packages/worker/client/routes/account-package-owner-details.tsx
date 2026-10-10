@@ -1,4 +1,5 @@
 import { type Handle, css } from 'remix/component'
+import { buildPackageAppPath } from '@kody-internal/shared/public-urls.ts'
 import { routes } from '#universal/routes.ts'
 import { formatTimestampDate } from '#client/format-timestamp.ts'
 import { on } from '#client/event-mixin.ts'
@@ -282,7 +283,22 @@ export function AccountPackageOwnerDetails(
 						},
 						{
 							label: 'App',
-							value: packageDetail.hasApp ? 'Declares a package app' : 'No app',
+							value: packageDetail.hasApp ? (
+								<a
+									href={buildPackageAppPath({
+										username: handle.props.ownerUsername,
+										kodyId: packageDetail.kodyId,
+									})}
+									data-testid="open-package-app"
+									data-rmx-document
+									mix={css(packageAppLinkCss)}
+								>
+									{renderIcon('share', { size: '1em' })}
+									Open Package App
+								</a>
+							) : (
+								'No app'
+							),
 						},
 						{
 							label: 'Source id',
@@ -427,4 +443,16 @@ const communityBadgeCss = {
 	border: 'none',
 	color: colors.primaryText,
 	fontWeight: typography.fontWeight.semibold,
+}
+
+const packageAppLinkCss = {
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: '0.35rem',
+	color: colors.primaryText,
+	fontWeight: typography.fontWeight.semibold,
+	textDecoration: 'none',
+	'&:hover': {
+		color: colors.text,
+	},
 }

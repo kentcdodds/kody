@@ -49,25 +49,19 @@ class StripePlanRefreshBase extends DurableObject<Env> {
 			return
 		}
 		const user = await this.env.APP_DB.prepare(
-			`SELECT id, stripe_customer_id
+			`SELECT id
 			 FROM users
 			 WHERE stable_user_id = ?${andLiveDeletedAtSql()}`,
 		)
 			.bind(billingSubjectId)
-			.first<{ id: number; stripe_customer_id: string | null }>()
-		const org =
-			user?.stripe_customer_id != null
-				? null
-				: await this.env.APP_DB.prepare(
-						`SELECT stripe_customer_id FROM orgs
-						 WHERE id = ? AND deleted_at IS NULL`,
-					)
-						.bind(billingSubjectId)
-						.first<{ stripe_customer_id: string | null }>()
-		const customerId =
-			user?.stripe_customer_id?.trim() ||
-			org?.stripe_customer_id?.trim() ||
-			null
+			.first<{ id: number }>()
+		const org = await this.env.APP_DB.prepare(
+			`SELECT stripe_customer_id FROM orgs
+			 WHERE id = ? AND deleted_at IS NULL`,
+		)
+			.bind(billingSubjectId)
+			.first<{ stripe_customer_id: string | null }>()
+		const customerId = org?.stripe_customer_id?.trim() || null
 		if (!customerId) {
 			await this.ctx.storage.deleteAll()
 			return

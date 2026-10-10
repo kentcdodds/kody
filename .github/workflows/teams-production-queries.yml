@@ -1,10 +1,11 @@
 name: 🔎 Teams Production Queries
 
-# The read-only production queries Teams needs before the P8 data conversion
-# (docs/contributing/teams-production-queries.md). Production runs are Kent's
-# (or ones he approves); a kody-branch-* target exercises the same D1 and KV
+# Read-only production queries that stay useful after the Teams P8 conversion
+# (docs/contributing/teams-production-queries.md): OAuth grant counts, Stripe
+# subscription counts, and the credential-exposure report. Production runs are
+# Kent's (or ones he approves); a kody-branch-* target exercises the same
 # queries on a rehearsal preview. Artifacts and logs on this public repo are
-# world-readable, so the report leaves only sealed to `recipient_public_key`.
+# world-readable, so every report leaves only sealed to `recipient_public_key`.
 
 on:
   workflow_dispatch:
@@ -115,12 +116,12 @@ jobs:
       - name: 🔎 Run the read-only queries (sealed)
         if: inputs.target != 'production'
         run: |
-          # Collect both exit statuses: P8 (Stripe/OAuth KV) must not block the
+          # Collect both exit statuses: the OAuth/Stripe report must not block the
           # independent D1 credential-exposure report. Fail the step if either fails.
           set -uo pipefail
           mkdir -p "$OUT_DIR"
           status=0
-          # P8 conversion report (Stripe skipped when the Actions secret is empty).
+          # OAuth and Stripe report (Stripe skipped on previews).
           node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json" || status=$?
           # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
           node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json" || status=$?
@@ -131,12 +132,12 @@ jobs:
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
         run: |
-          # Collect both exit statuses: P8 (Stripe/OAuth KV) must not block the
+          # Collect both exit statuses: the OAuth/Stripe report must not block the
           # independent D1 credential-exposure report. Fail the step if either fails.
           set -uo pipefail
           mkdir -p "$OUT_DIR"
           status=0
-          # P8 conversion report (Stripe skipped when the Actions secret is empty).
+          # OAuth and Stripe report (Stripe skipped when STRIPE_SECRET_KEY is empty).
           node tools/teams-migration/production-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/report.sealed.json" || status=$?
           # Credential-exposure needs only Cloudflare D1; never blocked on Stripe.
           node tools/teams-migration/credential-exposure-queries.ts --target "$TARGET" --recipient-public-key "$RECIPIENT_PUBLIC_KEY" --out "$OUT_DIR/credential-exposure.sealed.json" || status=$?
@@ -153,7 +154,7 @@ jobs:
             echo "## 🔎 Teams production queries on \`$TARGET\`"
             echo ""
             if [ -f "$OUT_DIR/report.sealed.json" ] || [ -f "$OUT_DIR/credential-exposure.sealed.json" ]; then
-              echo "Artifact \`teams-production-queries\` (run $RUN_ID) holds the sealed reports (P8 conversion + credential-exposure). Counts stay out of this public summary."
+              echo "Artifact \`teams-production-queries\` (run $RUN_ID) holds the sealed reports (OAuth/Stripe + credential-exposure). Counts stay out of this public summary."
               echo ""
               echo "Open with \`node tools/preview-rehearsal/seal.ts open --private-key <key> --in report.sealed.json --out report.json\` (and the same for \`credential-exposure.sealed.json\`)."
               if [ "${STRIPE_SECRET_MISSING:-}" = "1" ]; then

@@ -35,10 +35,15 @@ const connectionUsageApiPath = '/account/connection-usage.json'
 /** Rows on the Connections list before "View usage details". */
 const summaryRowLimit = 6
 
-export async function fetchConnectionUsage(signal: AbortSignal) {
+/**
+ * Binds the org from the Referer like `/account/connected-agents.json`; a
+ * route loader runs before the URL commits, so name the destination page.
+ */
+export async function fetchConnectionUsage(href: string, signal: AbortSignal) {
 	const response = await fetch(connectionUsageApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: new URL(href, window.location.origin).href,
 		signal,
 	})
 	if (response.status === 401) return { kind: 'unauthorized' as const }

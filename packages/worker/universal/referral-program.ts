@@ -20,7 +20,6 @@ const referralRejectReasons = [
 	'self_referral',
 	'same_email',
 	'same_stripe_customer',
-	'platform_referrer',
 ] as const
 
 export type ReferralRejectReason = (typeof referralRejectReasons)[number]

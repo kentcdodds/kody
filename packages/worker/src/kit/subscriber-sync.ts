@@ -7,7 +7,6 @@
 import { waitUntil } from 'cloudflare:workers'
 import { parseStripePlanName } from '#universal/plans.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 const KIT_API_BASE_URL = 'https://api.kit.com/v4'
 const DEFAULT_KIT_SIGNED_UP_TAG_ID = 21252175
@@ -386,20 +385,22 @@ export async function maybeSyncKitSubscriberForUser(input: {
 	if (!email && !stableUserId) return
 	const row = email
 		? await input.env.APP_DB.prepare(
-				`SELECT email, email_verified_at, first_mcp_connected_at,
-				        first_saved_package_at, stripe_plan
-				 FROM users
-				 WHERE email = ? AND deleting_at IS NULL
-				 ${andLiveDeletedAtSql()} LIMIT 1`,
+				`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
+				        u.first_saved_package_at, o.stripe_plan
+				 FROM users u
+				 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+				 WHERE u.email = ? AND u.deleting_at IS NULL
+				 ${andLiveDeletedAtSql('u')} LIMIT 1`,
 			)
 				.bind(email)
 				.first<KitUserRow>()
 		: await input.env.APP_DB.prepare(
-				`SELECT email, email_verified_at, first_mcp_connected_at,
-				        first_saved_package_at, stripe_plan
-				 FROM users
-				 WHERE stable_user_id = ? AND deleting_at IS NULL
-				 ${andLiveDeletedAtSql()} LIMIT 1`,
+				`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
+				        u.first_saved_package_at, o.stripe_plan
+				 FROM users u
+				 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+				 WHERE u.stable_user_id = ? AND u.deleting_at IS NULL
+				 ${andLiveDeletedAtSql('u')} LIMIT 1`,
 			)
 				.bind(stableUserId)
 				.first<KitUserRow>()
@@ -465,13 +466,13 @@ export async function reconcileKitSubscribers(input: {
 	}
 
 	const users = await input.env.APP_DB.prepare(
-		`SELECT email, email_verified_at, first_mcp_connected_at,
-		        first_saved_package_at, stripe_plan
-		 FROM users
-		 WHERE deleting_at IS NULL
-		   AND ${personUserRowSql()}
-		   AND email IS NOT NULL${andLiveDeletedAtSql()}
-		 ORDER BY updated_at DESC
+		`SELECT u.email, u.email_verified_at, u.first_mcp_connected_at,
+		        u.first_saved_package_at, o.stripe_plan
+		 FROM users u
+		 LEFT JOIN orgs o ON o.id = u.stable_user_id${andLiveDeletedAtSql('o')}
+		 WHERE u.deleting_at IS NULL
+		   AND u.email IS NOT NULL${andLiveDeletedAtSql('u')}
+		 ORDER BY u.updated_at DESC
 		 LIMIT ?`,
 	)
 		.bind(kitSubscriberSyncSweepLimit)

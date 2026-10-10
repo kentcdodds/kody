@@ -107,8 +107,10 @@ export async function loadAccountCreditsUser(input: {
 	now?: Date
 }): Promise<AccountCreditsUser | null> {
 	const row = await input.env.APP_DB.prepare(
-		`SELECT id, stable_user_id, stripe_customer_id, ${userEntitlementColumnsSql()}
-		 FROM users WHERE id = ?${andLiveDeletedAtSql()}`,
+		`SELECT u.id, u.stable_user_id, o.stripe_customer_id, ${userEntitlementColumnsSql('o')}
+		 FROM users u
+		 INNER JOIN orgs o ON o.id = u.stable_user_id
+		 WHERE u.id = ?${andLiveDeletedAtSql('u')}${andLiveDeletedAtSql('o')}`,
 	)
 		.bind(input.userId)
 		.first<

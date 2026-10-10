@@ -22,6 +22,7 @@ import {
 	inboundInlinePngContentId,
 	inboundInlinePngFilename,
 } from './test-fixtures.ts'
+import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureEmailTestSchema } from './test-schema.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
@@ -36,8 +37,8 @@ async function seedAccount(label: string, input: { verified?: boolean } = {}) {
 	const userId = testStableUserIdFromEmail(email)
 	await env.APP_DB.prepare(
 		`INSERT INTO users (
-			username, email, password_hash, email_verified_at, stable_user_id, plan
-		) VALUES (?, ?, 'test-password-hash', ?, ?, 'max')`,
+			username, email, password_hash, email_verified_at, stable_user_id
+		) VALUES (?, ?, 'test-password-hash', ?, ?)`,
 	)
 		.bind(
 			username,
@@ -46,6 +47,11 @@ async function seedAccount(label: string, input: { verified?: boolean } = {}) {
 			userId,
 		)
 		.run()
+	await provisionPersonalOrg(env.APP_DB, {
+		stableUserId: userId,
+		username,
+		plan: 'max',
+	})
 	return { userId, username, address: `${username}@${platformDomain}` }
 }
 
@@ -287,9 +293,7 @@ test('pointer-only USER retry after midnight enforces the current quota day', as
 	const oldNow = new Date('2026-07-22T23:59:00.000Z')
 	const retryNow = new Date('2026-07-23T00:01:00.000Z')
 	const { userId, username, address } = await seedAccount('midnight')
-	await env.APP_DB.prepare(
-		`UPDATE users SET plan = 'free' WHERE stable_user_id = ?`,
-	)
+	await env.APP_DB.prepare(`UPDATE orgs SET plan = 'free' WHERE id = ?`)
 		.bind(userId)
 		.run()
 	const provisioned = await ensureDefaultEmailInbox({

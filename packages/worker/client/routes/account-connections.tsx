@@ -38,6 +38,7 @@ import {
 	parseAccountConnectionsPathname,
 } from '#universal/account-connections.ts'
 import { docHref } from '#universal/docs-nav.ts'
+import { orgSlugFromOrgOwnedPath } from '#universal/org-pages.ts'
 import { type AccountConnectedAgentsLoaderData } from '#universal/loader-data.ts'
 import { onboardingSecondAgentGreyedPresentation } from '#universal/onboarding-agent-ecosystems.ts'
 import {
@@ -53,10 +54,15 @@ import { colors, spacing, typography } from '#universal/styles/tokens.ts'
 
 const connectYourAgentDocHref = docHref('connect-your-agent')
 
-async function fetchConnectedAgents(signal: AbortSignal) {
+/**
+ * The JSON route binds the org from the Referer. A route loader runs before
+ * the router commits the URL, so name the destination page explicitly.
+ */
+async function fetchConnectedAgents(href: string, signal: AbortSignal) {
 	const response = await fetch(connectedAgentsApiPath, {
 		headers: { Accept: 'application/json' },
 		credentials: 'include',
+		referrer: new URL(href, window.location.origin).href,
 		signal,
 	})
 	if (response.status === 401) return { kind: 'unauthorized' as const }
@@ -68,13 +74,13 @@ async function fetchConnectedAgents(signal: AbortSignal) {
 }
 
 export async function accountConnectionsRouteLoader(
-	_url: URL,
+	url: URL,
 	signal: AbortSignal,
 ): Promise<RouteLoaderResult> {
 	const [result, usage] = await Promise.all([
-		fetchConnectedAgents(signal),
+		fetchConnectedAgents(url.href, signal),
 		// Usage is a secondary panel: its own fallback fetch retries a failure.
-		fetchConnectionUsage(signal).catch(() => null),
+		fetchConnectionUsage(url.href, signal).catch(() => null),
 	])
 	if (result.kind === 'unauthorized') {
 		return routeLoaderRedirect('/login')
@@ -85,9 +91,12 @@ export async function accountConnectionsRouteLoader(
 	}
 }
 
-/** Every view reads one usage payload; only the list and usage views ask. */
-function connectionUsageLatchKey() {
-	return '/account/connections/usage'
+/**
+ * Every view reads one usage payload per organization; only the list and
+ * usage views ask.
+ */
+function connectionUsageLatchKey(href: string) {
+	return `${connectionsLatchKey(href)}/usage`
 }
 
 function readUsageFocus(href: string) {
@@ -97,9 +106,15 @@ function readUsageFocus(href: string) {
 	)
 }
 
-/** The list, grid, and per-agent views all read one connected-agents payload. */
-function connectionsLatchKey() {
-	return '/account/connections'
+/**
+ * The list, grid, and per-agent views all read one connected-agents payload.
+ * Each organization lists its own agents, so switching orgs is a new load.
+ */
+function connectionsLatchKey(href: string) {
+	const slug = orgSlugFromOrgOwnedPath(
+		new URL(href, 'http://localhost').pathname,
+	)
+	return slug ? `/@${slug}/-/connections` : '/account/connections'
 }
 
 function readView(href: string): AccountConnectionsView | null {
@@ -130,8 +145,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 	const connectionsData = createRouteData({
 		key: 'accountConnectedAgents',
 		locationKey: connectionsLatchKey,
-		async load(_href, signal) {
-			const result = await fetchConnectedAgents(signal)
+		async load(href, signal) {
+			const result = await fetchConnectedAgents(href, signal)
 			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
 			return result.payload
 		},
@@ -140,8 +155,8 @@ export function AccountConnectionsRoute(handle: Handle) {
 	const usageData = createRouteData({
 		key: 'accountConnectionUsage',
 		locationKey: connectionUsageLatchKey,
-		async load(_href, signal) {
-			const result = await fetchConnectionUsage(signal)
+		async load(href, signal) {
+			const result = await fetchConnectionUsage(href, signal)
 			if (result.kind === 'unauthorized') return routeDataRedirect('/login')
 			return result.payload
 		},

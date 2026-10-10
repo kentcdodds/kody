@@ -1,7 +1,13 @@
 # 0051: Pro bills include → credits → stop (no fund-to-unlock, no free past-include burn)
 
-- **Status:** superseded by [0065](./0065-org-seats-and-free-tier-fallback.md)
+- **Status:** accepted (reaffirmed 2026-10-10)
 - **Date:** 2026-09-27
+
+[0065](./0065-org-seats-and-prepaid-credits.md) briefly replaced the stop with a
+Free-limits fallback at $0. Kent reversed that on 2026-10-10: a Pro account at
+$0
+keeps its full include and is never downgraded, and usage past the include
+stops. This record is the billing path again, for personal and org accounts.
 
 ## Context
 

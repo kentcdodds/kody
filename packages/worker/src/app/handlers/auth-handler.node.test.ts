@@ -406,7 +406,6 @@ test('auth handler login and signup workflow', async () => {
 	expect(allowedSignupResponse.status).toBe(200)
 	expect(await allowedSignupResponse.json()).toEqual(signupAccepted)
 	expect(signupContext.testDb.users.get('allowed@example.com')).toMatchObject({
-		plan: 'free',
 		username: 'allowed-jane',
 	})
 	expect(

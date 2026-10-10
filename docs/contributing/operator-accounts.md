@@ -349,9 +349,9 @@ dashboard, update the two Actions secrets, deploy. Price / portal id changes are
 committed Wrangler vars (same change as the Stripe catalog edit).
 
 Recovery: Stripe account login. Customers and subscriptions live in Stripe;
-`users.stripe_customer_id` / `users.stripe_plan` in D1 are a projection
-refreshed by webhooks and `StripePlanRefresh`. Losing `STRIPE_WEBHOOK_SECRET`
-returns 503 from `/webhooks/stripe` until it is replaced.
+`orgs.stripe_customer_id` / `orgs.stripe_plan` in D1 are a projection refreshed
+by webhooks and `StripePlanRefresh`. Losing `STRIPE_WEBHOOK_SECRET` returns 503
+from `/webhooks/stripe` until it is replaced.
 
 `Password manager: Stripe webhook endpoint id; entry for STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET.`
 
@@ -468,7 +468,7 @@ Three operator surfaces, one vendor:
    `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`, `DISCORD_MEMBER_ROLE_ID`,
    `DISCORD_STANDARD_ROLE_ID`, `DISCORD_PRO_ROLE_ID`. Bot needs **Create Instant
    Invite** and **Manage Roles**, and its highest role must sit above the roles
-   it assigns. Standard/Pro follow `users.stripe_plan`. Invite URL in product
+   it assigns. Standard/Pro follow `orgs.stripe_plan`. Invite URL in product
    copy: `https://kcd.im/kody-discord`.
 3. **Shipped-PR summaries** — `kody:@kentcdodds/discord/send-shipped-pr` (see
    [ship-pr](../../.agents/skills/ship-pr/SKILL.md)). That package uses its own

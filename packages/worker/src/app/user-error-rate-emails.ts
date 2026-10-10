@@ -5,7 +5,6 @@ import { resolveTransactionalEmailConfig } from '#app/email/sender-config.ts'
 import { routes } from '#universal/routes.ts'
 import { observeOnlyUsageEventTypes } from '#universal/usage-event-types.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
-import { personUserRowSql } from '#worker/identity/person-user-rows.ts'
 
 const observeOnlyMetricPlaceholders = observeOnlyUsageEventTypes
 	.map(() => '?')
@@ -70,7 +69,6 @@ export async function sendUserErrorRateEmails(input: {
 		 WHERE r.month = ?
 		   AND r.metric NOT IN (${observeOnlyMetricPlaceholders})
 		   AND u.deleting_at IS NULL${andLiveDeletedAtSql('u')}
-		   AND ${personUserRowSql('u')}
 		   AND u.email_verified_at IS NOT NULL
 		 GROUP BY u.stable_user_id
 		 HAVING SUM(r.error_count) >= ?
