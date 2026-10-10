@@ -276,3 +276,59 @@ test('orgMemberList returns live members and requires member:read', async () => 
 		]),
 	})
 })
+
+test('inviteAccept rejects invites for suspended orgs', async () => {
+	const db = await createDb()
+	const ownerId = testStableUserIdFromEmail('owner3@example.com')
+	const guestId = testStableUserIdFromEmail('guest3@example.com')
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'owneracct3',
+	})
+	await provisionPersonalOrg(db, {
+		stableUserId: guestId,
+		username: 'guestacct3',
+	})
+	const ownerOnPersonal = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner3@example.com',
+		username: 'owneracct3',
+	})
+	const created = await orgCreateCapability.handler(
+		{ slug: 'paused-co' },
+		ownerOnPersonal,
+	)
+	const ownerOnOrg = capabilityContext({
+		db,
+		userId: ownerId,
+		email: 'owner3@example.com',
+		username: 'owneracct3',
+		org: { id: created.org.id, slug: created.org.slug, role: 'owner' },
+	})
+	const invited = await inviteCreateCapability.handler(
+		{ kind: 'membership', email: 'guest3@example.com', role: 'member' },
+		ownerOnOrg,
+	)
+	await db
+		.prepare(
+			`UPDATE orgs SET suspended_at = '2026-01-05T00:00:00.000Z' WHERE id = ?`,
+		)
+		.bind(created.org.id)
+		.run()
+
+	const guest = capabilityContext({
+		db,
+		userId: guestId,
+		email: 'guest3@example.com',
+		username: 'guestacct3',
+	})
+	await expect(
+		inviteAcceptCapability.handler({ token: invited.token }, guest),
+	).rejects.toThrow('organization is not active')
+	const stored = await db
+		.prepare(`SELECT status FROM invites WHERE id = ?`)
+		.bind(invited.invite.id)
+		.first<{ status: string }>()
+	expect(stored?.status).toBe('pending')
+})

@@ -29,6 +29,11 @@ export type PersonOrg = OrgRecord & {
 
 const orgSelect = `id, slug, display_name, avatar_key, plan, entitlement_ladder`
 
+/** Live org filter: not soft-deleted and not suspended. */
+function andActiveOrgSql(alias: string): string {
+	return `${andLiveDeletedAtSql(alias)} AND ${alias}.suspended_at IS NULL`
+}
+
 export async function getOrgById(db: D1Database, orgId: string) {
 	return await db
 		.prepare(
@@ -364,8 +369,9 @@ export async function loadOrgBindingForPerson(
 }
 
 /**
- * Bind a person to a specific org: live membership, or any live grant in that
- * org (outside collaborator, role null). Returns null when neither applies.
+ * Bind a person to a specific org: live membership, or any live direct grant
+ * in that org (outside collaborator, role null). Returns null when neither
+ * applies, or when the org is soft-deleted or suspended.
  */
 export async function loadOrgBindingForOrg(
 	db: D1Database,
@@ -379,7 +385,7 @@ export async function loadOrgBindingForOrg(
 			 INNER JOIN orgs o ON o.id = m.org_id
 			 WHERE m.user_id = ?
 			   AND m.org_id = ?
-			   AND m.deleted_at IS NULL
+			   AND m.deleted_at IS NULL${andActiveOrgSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(personId, orgId)
@@ -394,7 +400,7 @@ export async function loadOrgBindingForOrg(
 			 WHERE g.org_id = ?
 			   AND g.subject_type = 'user'
 			   AND g.subject_id = ?
-			   AND g.deleted_at IS NULL
+			   AND g.deleted_at IS NULL${andActiveOrgSql('o')}
 			 LIMIT 1`,
 		)
 		.bind(orgId, personId)
@@ -403,9 +409,22 @@ export async function loadOrgBindingForOrg(
 	return toBinding({ ...grant, role: null })
 }
 
+/** True when the org exists and is neither soft-deleted nor suspended. */
+export async function isOrgActive(
+	db: D1Database,
+	orgId: string,
+): Promise<boolean> {
+	const row = await db
+		.prepare(`SELECT 1 AS ok FROM orgs o WHERE o.id = ?${andActiveOrgSql('o')}`)
+		.bind(orgId)
+		.first<{ ok: number }>()
+	return row != null
+}
+
 /**
  * Orgs the person can pick: live memberships union orgs where they hold a
- * live grant. Grant-only rows have `role: null`.
+ * live direct grant. Soft-deleted and suspended orgs are excluded. Grant-only
+ * rows have `role: null`.
  */
 export async function listOrgsForPerson(
 	db: D1Database,
@@ -420,14 +439,18 @@ export async function listOrgsForPerson(
 			   ON m.org_id = o.id
 			  AND m.user_id = ?
 			  AND m.deleted_at IS NULL
-			 WHERE m.user_id IS NOT NULL
-			    OR EXISTS (
-			      SELECT 1 FROM grants g
-			      WHERE g.org_id = o.id
-			        AND g.subject_type = 'user'
-			        AND g.subject_id = ?
-			        AND g.deleted_at IS NULL
-			    )
+			 WHERE o.deleted_at IS NULL
+			   AND o.suspended_at IS NULL
+			   AND (
+			     m.user_id IS NOT NULL
+			     OR EXISTS (
+			       SELECT 1 FROM grants g
+			       WHERE g.org_id = o.id
+			         AND g.subject_type = 'user'
+			         AND g.subject_id = ?
+			         AND g.deleted_at IS NULL
+			     )
+			   )
 			 ORDER BY o.slug ASC, o.id ASC`,
 		)
 		.bind(personId, personId)

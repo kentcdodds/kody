@@ -30,6 +30,7 @@ import {
 	type StoredInvite,
 } from '#worker/orgs/access-writes.ts'
 import { assertCanAcceptFreeOrgOwnership } from '#worker/orgs/billing.ts'
+import { isOrgActive } from '#worker/orgs/repo.ts'
 import { syncSeatsAfterMembershipChange } from '#worker/orgs/seat-sync-after-membership.ts'
 import {
 	authorizeGrantTarget,
@@ -191,6 +192,11 @@ async function acceptStoredInvite(input: {
 	acceptedByUserId: string
 }) {
 	const { invite } = input
+	if (!(await isOrgActive(input.db, invite.orgId))) {
+		throw new McpCallerError(
+			'This invite is no longer valid because the organization is not active.',
+		)
+	}
 	await assertInviterStillValid(input.db, invite)
 	await assertInviteTargetsStillValid(input.db, invite)
 	if (invite.kind === 'membership' && (invite.role ?? 'member') === 'owner') {
