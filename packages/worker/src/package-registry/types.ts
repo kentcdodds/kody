@@ -150,6 +150,10 @@ export const packageCredentialPlacementSchema = z.strictObject({
 		.optional(),
 })
 
+export type PackageCredentialPlacement = z.infer<
+	typeof packageCredentialPlacementSchema
+>
+
 export const packageCredentialSlotSchema = z
 	.strictObject({
 		kind: z.enum(packageCredentialKindValues),
@@ -181,6 +185,19 @@ export const secretSlotPlacementRequiredMessage =
 	'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }.'
 
 export type PackageCredentialSlot = z.infer<typeof packageCredentialSlotSchema>
+
+const defaultOauthCredentialPlacement: PackageCredentialPlacement = {
+	header: 'Authorization',
+	template: 'Bearer {value}',
+}
+
+/** The one header a slot's value may be substituted into, or null for none. */
+export function credentialSlotPlacement(
+	slot: PackageCredentialSlot,
+): PackageCredentialPlacement | null {
+	if (slot.placement) return slot.placement
+	return slot.kind === 'oauth' ? defaultOauthCredentialPlacement : null
+}
 
 export const packageCredentialsSchema = z
 	.record(z.string(), packageCredentialSlotSchema)

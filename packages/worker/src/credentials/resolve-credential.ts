@@ -221,6 +221,12 @@ type AnyResolvedCredential =
 function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 	switch (credential.use) {
 		case 'secret':
+			return {
+				use: credential.use,
+				resourceType: 'secret',
+				resourceKey: credential.name,
+				details: { host: credential.requestHost ?? null },
+			}
 		case 'webhook-secret':
 			return {
 				use: credential.use,
@@ -241,8 +247,15 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 				resourceType: 'secret-provider',
 				// Validated inside the audited resolve; building the subject must not throw.
 				resourceKey: credential.provider.trim().toLowerCase(),
+				details: { host: credential.requestHost ?? null },
 			}
 		case 'integration-token':
+			return {
+				use: credential.use,
+				resourceType: 'integration',
+				resourceKey: credential.name,
+				details: { host: credential.requestHost ?? null },
+			}
 		case 'integration-refresh':
 			return {
 				use: credential.use,

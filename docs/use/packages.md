@@ -165,8 +165,12 @@ the slot name; the org decides which credential fills it.
   `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
   no placement.
 - Publish rejects any other key or a missing field and names the slot.
-- Declaring slots does not change how credentials resolve. Package code keeps
-  using its secret, integration, and MCP references.
+- Once a package declares `kody.credentials`, the fetch gateway substitutes only
+  its slots: `{{secret:NAME}}` names a secret slot and
+  `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's
+  `placement` header and match its template, over HTTPS. Anything else is
+  refused before the credential resolves, with an error naming the slot and the
+  rule.
 
 ### npm dependencies
 

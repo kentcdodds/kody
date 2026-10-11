@@ -187,20 +187,6 @@ export function replaceSecretPlaceholders(
 	return nextValue
 }
 
-export function replaceSecretPlaceholdersInFormUrlEncoded(
-	value: string,
-	replacements: ReadonlyMap<string, string>,
-) {
-	const nextParams = new URLSearchParams()
-	for (const [key, entryValue] of new URLSearchParams(value)) {
-		nextParams.append(
-			replaceSecretPlaceholders(key, replacements),
-			replaceSecretPlaceholders(entryValue, replacements),
-		)
-	}
-	return nextParams.toString()
-}
-
 /**
  * Accept a bare saved-secret name or a single opaque `{{secret:…}}`
  * placeholder (as returned by packageSecrets.get). Derived ops

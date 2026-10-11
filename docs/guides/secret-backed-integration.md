@@ -110,8 +110,9 @@ as secrets. Keep readable identifiers and defaults out of the secret store.
 
 Saved secrets are referenced by **placeholder**, never by plaintext. Inside
 `execute` (and package code), put `{{secret:name}}` — or
-`{{secret:name|scope=user}}` to pin a scope — in the URL, headers, or body of an
-outbound `fetch`. Kody resolves the placeholder for **approved** hosts only:
+`{{secret:name|scope=user}}` to pin a scope — in a request header of an outbound
+`fetch`. Kody resolves the placeholder for **approved** hosts over HTTPS only,
+and refuses one in the URL, query string, or body:
 
 ```ts
 const response = await fetch('https://api.example.com/v1/me', {

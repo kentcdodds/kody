@@ -227,6 +227,7 @@ test('owner resolves an ad-hoc secret; the door schedules exactly one audit row 
 		ownerKind: 'org',
 		packageStampKind: 'none',
 		packageId: null,
+		host: null,
 	})
 	expect(JSON.stringify(rows)).not.toContain(secretValue)
 
@@ -524,9 +525,12 @@ test('a host the secret is not approved for is an audited denial, not a success'
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(rows.map((row) => row.resource_id)).toEqual(['orgToken', 'orgToken'])
 	expect(details(rows[0])).toMatchObject({
 		reason: 'SecretHostNotApprovedError',
+		host: 'evil.example',
 	})
+	expect(details(rows[1])).toMatchObject({ host: 'api.example.com' })
 	expect(JSON.stringify(rows)).not.toContain(secretValue)
 })
 

@@ -21,7 +21,9 @@ export const credentialResolveAuditAction = 'credential.resolve'
 /**
  * Which credential a resolution is for. `resourceKey` is today's resource key
  * (secret name, integration or MCP server name, vault provider id); stable
- * credential ids replace it once credentials have them.
+ * credential ids replace it once credentials have them. Fetch uses record
+ * `details.host`, the host the value is sent to, so a review can compare
+ * declared and used hosts.
  */
 export type CredentialAuditSubject = {
 	use: string
