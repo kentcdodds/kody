@@ -177,33 +177,6 @@ export function computeMonthlyOverage(input: {
 	}
 }
 
-/**
- * Monthly overage for debits and forgiveness progress. Wallet-eligible Pro
- * always settles against the subscription include (350 UWD / 5B rows),
- * whatever its wallet state.
- */
-export function computeMonthlyOverageForDebit(input: {
-	plan: PlanName
-	ladder: EntitlementLadder
-	creditWallet: CreditWalletState
-	uniqueWorkerDays: number
-	durableObjectRowsRead: number
-}): MonthlyComputeOverage {
-	const walletEligiblePro =
-		input.plan === 'pro' && input.creditWallet !== 'none'
-	return computeMonthlyOverage(
-		walletEligiblePro
-			? {
-					plan: 'pro',
-					ladder: input.ladder,
-					creditWallet: 'funded',
-					uniqueWorkerDays: input.uniqueWorkerDays,
-					durableObjectRowsRead: input.durableObjectRowsRead,
-				}
-			: input,
-	)
-}
-
 export type PastIncludeStop = {
 	resource: ComputeOverageWarningResource
 	limit: number
@@ -220,7 +193,7 @@ export type PastIncludeStop = {
  * monthly cap when one is set (`unique_worker_days_per_month`,
  * `durable_object_rows_read_per_month`). Overrides move only the stop:
  * debits always settle against the plan include
- * ({@link computeMonthlyOverageForDebit}).
+ * ({@link computeMonthlyOverage}).
  */
 export function resolvePastIncludeStop(input: {
 	plan: PlanName
