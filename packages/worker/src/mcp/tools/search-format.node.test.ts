@@ -993,10 +993,24 @@ test('domain overview and capability list items format compact scoping hints', (
 	expect(listMarkdown([emailSend])).toContain(
 		'1. **capability** `emailSend` (`email`) — Send a message\\. Entity: `capability:emailSend`',
 	)
+	expect(listMarkdown([emailSend])).not.toContain('Execute-only')
 	expect(slim([emailSend])[0]).toMatchObject({
 		type: 'capability',
 		id: 'emailSend',
 		domain: 'email',
+		apiAvailable: true,
+	})
+
+	const executeOnly = {
+		type: 'capability' as const,
+		name: 'webhookSyntheticDispatch',
+		description: 'Smoke-test a minted webhook.',
+		domain: 'webhooks',
+	}
+	expect(listMarkdown([executeOnly])).toContain('Execute-only')
+	expect(slim([executeOnly])[0]).toMatchObject({
+		type: 'capability',
+		apiAvailable: false,
 	})
 })
 
