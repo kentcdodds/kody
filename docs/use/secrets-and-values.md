@@ -74,10 +74,12 @@ declared `placement` header, matching its template (oauth slots default to
 `Authorization: Bearer {value}`).
 
 If the remote echoes a substituted value back, in a response header, status
-text, or anywhere in the body, the gateway replaces it with `[REDACTED SECRET]`
-before your code reads the response, the same way run output is redacted. A
-Basic Auth header is redacted whole and as its encoded credential. Because the
-body can change length, `content-length` is dropped from those responses.
+text, the final URL after redirects, or anywhere in the body, the gateway
+replaces it with `[REDACTED SECRET]` before your code reads the response, the
+same way run output is redacted. A Basic Auth header is redacted whole and as
+its encoded credential. Because the body can change length, `content-length` is
+dropped from those responses. Range responses (`206` or `content-range`) are
+masked with `*` byte for byte instead, so their offsets stay true.
 
 External providers use **`{{secret/<provider>:<ref>}}`** (first `:` after
 `secret/`). Canonical 1Password form is

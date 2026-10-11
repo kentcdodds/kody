@@ -48,6 +48,17 @@ test('prefers the longest value at a position and leaves other bytes intact', as
 	expect(await redactChunks([binary], ['secret'])).toEqual(binary)
 })
 
+test('a longer value that begins with a shorter one is redacted whole at every split', async () => {
+	const bytes = encoder.encode('x abcdef y abc')
+	for (let split = 0; split <= bytes.length; split += 1) {
+		const output = await redactChunks(
+			[bytes.subarray(0, split), bytes.subarray(split)],
+			['abc', 'abcdef'],
+		)
+		expect(text(output)).toBe('x [REDACTED SECRET] y [REDACTED SECRET]')
+	}
+})
+
 test('redactEchoedSecrets redacts headers, set-cookie, and status text and keeps url', async () => {
 	const upstream = new Response('echo: Bearer tok-123', {
 		status: 401,
@@ -79,6 +90,15 @@ test('redactEchoedSecrets redacts headers, set-cookie, and status text and keeps
 	])
 	expect(await redacted.text()).toBe('echo: Bearer [REDACTED SECRET]')
 
+	const redirectedTo = new Response('ok')
+	Object.defineProperties(redirectedTo, {
+		url: { value: 'https://api.test/landing?token=tok-123' },
+		redirected: { value: true },
+	})
+	const landed = redactEchoedSecrets(redirectedTo, ['tok-123'])
+	expect(landed.url).toBe('https://api.test/landing?token=[REDACTED SECRET]')
+	expect(landed.redirected).toBe(true)
+
 	const untouched = new Response('ok')
 	expect(redactEchoedSecrets(untouched, [])).toBe(untouched)
 	const empty = redactEchoedSecrets(new Response(null, { status: 204 }), [
@@ -86,4 +106,22 @@ test('redactEchoedSecrets redacts headers, set-cookie, and status text and keeps
 	])
 	expect(empty.status).toBe(204)
 	expect(empty.body).toBeNull()
+})
+
+test('a range response is masked byte for byte so its offsets stay true', async () => {
+	const chunk = 'id=tok-123;'
+	const partial = new Response(chunk, {
+		status: 206,
+		headers: {
+			'content-range': `bytes 0-${chunk.length - 1}/40`,
+			'content-length': String(chunk.length),
+		},
+	})
+	const redacted = redactEchoedSecrets(partial, ['tok-123'])
+	expect(redacted.status).toBe(206)
+	expect(redacted.headers.get('content-range')).toBe('bytes 0-10/40')
+	expect(redacted.headers.get('content-length')).toBe(String(chunk.length))
+	const body = await redacted.text()
+	expect(body).toBe('id=*******;')
+	expect(body).toHaveLength(chunk.length)
 })

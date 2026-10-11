@@ -33,46 +33,61 @@ function distinctValues(values: Iterable<string>) {
 
 /**
  * A byte stream transform that replaces every value with the redaction text,
- * including a value split across chunks. It holds back at most the longest
- * value's length minus one byte between chunks.
+ * including a value split across chunks. At one position the longest value
+ * wins, so a value that begins with a shorter one is redacted whole. It holds
+ * back at most the longest value's length minus one byte between chunks.
+ *
+ * `preserveLength` masks each value with as many `*` bytes instead, for
+ * responses whose headers describe byte offsets (range responses).
  */
 export function createEchoRedactionStream(
 	values: Iterable<string>,
+	options: { preserveLength?: boolean } = {},
 ): TransformStream<Uint8Array, Uint8Array> {
 	const patterns = distinctValues(values).map((value) =>
 		bytesToBinary(encoder.encode(value)),
 	)
-	const replacement = bytesToBinary(encoder.encode(redactedSecretText))
-	const holdBack = Math.max(0, ...patterns.map((pattern) => pattern.length - 1))
+	const redactionText = bytesToBinary(encoder.encode(redactedSecretText))
+	const replacementFor = (pattern: string) =>
+		options.preserveLength ? '*'.repeat(pattern.length) : redactionText
+	const longest = Math.max(0, ...patterns.map((pattern) => pattern.length))
 	let carry = ''
+	const drain = (text: string, final: boolean) => {
+		let output = ''
+		let position = 0
+		for (;;) {
+			let matchAt = -1
+			let matched = ''
+			for (const pattern of patterns) {
+				const index = text.indexOf(pattern, position)
+				if (index !== -1 && (matchAt === -1 || index < matchAt)) {
+					matchAt = index
+					matched = pattern
+				}
+			}
+			if (matchAt === -1) break
+			// A longer value starting here may still be completed by the next
+			// chunk, so the match waits until every value would fit.
+			if (!final && matchAt + longest > text.length) break
+			output += text.slice(position, matchAt) + replacementFor(matched)
+			position = matchAt + matched.length
+		}
+		// Anything before `safeEnd` cannot start a value that ends past `text`.
+		const safeEnd = final
+			? text.length
+			: Math.max(position, text.length - (longest - 1))
+		output += text.slice(position, safeEnd)
+		carry = text.slice(safeEnd)
+		return output
+	}
 	return new TransformStream({
 		transform(chunk, controller) {
-			const text = carry + bytesToBinary(chunk)
-			let output = ''
-			let position = 0
-			for (;;) {
-				let matchAt = -1
-				let matchLength = 0
-				for (const pattern of patterns) {
-					const index = text.indexOf(pattern, position)
-					if (index !== -1 && (matchAt === -1 || index < matchAt)) {
-						matchAt = index
-						matchLength = pattern.length
-					}
-				}
-				if (matchAt === -1) break
-				output += text.slice(position, matchAt) + replacement
-				position = matchAt + matchLength
-			}
-			// A match starting before `safeEnd` would already be complete in
-			// `text`, so everything before it is final.
-			const safeEnd = Math.max(position, text.length - holdBack)
-			output += text.slice(position, safeEnd)
-			carry = text.slice(safeEnd)
+			const output = drain(carry + bytesToBinary(chunk), false)
 			if (output) controller.enqueue(binaryToBytes(output))
 		},
 		flush(controller) {
-			if (carry) controller.enqueue(binaryToBytes(carry))
+			const output = drain(carry, true)
+			if (output) controller.enqueue(binaryToBytes(output))
 		},
 	})
 }
@@ -81,6 +96,10 @@ function redactText(text: string, values: ReadonlyArray<string>) {
 	let next = text
 	for (const value of values) next = next.replaceAll(value, redactedSecretText)
 	return next
+}
+
+function isRangeResponse(response: Response) {
+	return response.status === 206 || response.headers.has('content-range')
 }
 
 function redactHeaders(headers: Headers, values: ReadonlyArray<string>) {
@@ -96,8 +115,10 @@ function redactHeaders(headers: Headers, values: ReadonlyArray<string>) {
 }
 
 /**
- * `response` with every `values` entry redacted from its headers and body.
- * The body length can change, so `content-length` is dropped.
+ * `response` with every `values` entry redacted from its URL, headers, and
+ * body. The body length can change, so `content-length` is dropped, except on
+ * range responses: there each value is masked byte for byte so
+ * `content-range` and `content-length` stay true.
  */
 export function redactEchoedSecrets(
 	response: Response,
@@ -105,10 +126,13 @@ export function redactEchoedSecrets(
 ): Response {
 	const distinct = distinctValues(values)
 	if (distinct.length === 0) return response
+	const preserveLength = isRangeResponse(response)
 	const headers = redactHeaders(response.headers, distinct)
-	if (response.body) headers.delete('content-length')
+	if (response.body && !preserveLength) headers.delete('content-length')
 	const redacted = new Response(
-		response.body?.pipeThrough(createEchoRedactionStream(distinct)) ?? null,
+		response.body?.pipeThrough(
+			createEchoRedactionStream(distinct, { preserveLength }),
+		) ?? null,
 		{
 			status: response.status,
 			statusText: redactText(response.statusText, distinct),
@@ -116,9 +140,9 @@ export function redactEchoedSecrets(
 		},
 	)
 	// The constructor cannot set these, and callers read `url` to see where a
-	// fetch landed.
+	// fetch landed (a redirect can carry the value in it).
 	Object.defineProperties(redacted, {
-		url: { value: response.url },
+		url: { value: redactText(response.url, distinct) },
 		redirected: { value: response.redirected },
 	})
 	return redacted
