@@ -507,6 +507,86 @@ test('in-flight refreshes of the same connection share one provider POST and one
 	}
 })
 
+test('concurrent refreshes from separate isolates make one rotating provider call and keep the newest refresh token', async () => {
+	const sqlite = new DatabaseSync(':memory:')
+	applyRepositoryMigrations(sqlite, migrationsDirectory)
+	const queries: Array<string> = []
+	const env = {
+		APP_DB: createD1FromSqlite(sqlite, { queries }),
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+		...createInMemoryUserMeterEnv().env,
+	} as Env
+	const userId = ownerIdFromStored('user-cross-isolate-refresh')
+	const tokens = { env, userId, name: 'github' }
+	await seedPlatformConnection(env, userId, 'github')
+	vi.resetModules()
+	const otherIsolate = await import('./token-refresh.ts')
+	expect(otherIsolate.refreshIntegrationTokens).not.toBe(
+		refreshIntegrationTokens,
+	)
+
+	let releaseTokenEndpoint: () => void = () => {}
+	const tokenEndpointOpened = new Promise<void>((resolve) => {
+		releaseTokenEndpoint = resolve
+	})
+	let rotation = 0
+	const fetchMock = vi.fn(async () => {
+		await tokenEndpointOpened
+		rotation += 1
+		return jsonResponse({
+			access_token: `fresh-access-token-${rotation}`,
+			refresh_token: `rotated-refresh-token-${rotation}`,
+		})
+	})
+	vi.stubGlobal('fetch', fetchMock)
+	const leaseClaims = () =>
+		queries.filter((query) => query.includes('SET token_refresh_lease_id = ?'))
+			.length
+	try {
+		const first = refreshIntegrationTokens(tokens)
+		await expect.poll(() => fetchMock.mock.calls.length).toBe(1)
+		const second = otherIsolate.refreshIntegrationTokens(tokens)
+		await expect
+			.poll(() => fetchMock.mock.calls.length > 1 || leaseClaims() >= 2)
+			.toBe(true)
+		releaseTokenEndpoint()
+		const [firstResult, secondResult] = await Promise.all([first, second])
+
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		expect(firstResult).toMatchObject({
+			refreshed: true,
+			refreshTokenRotated: true,
+		})
+		expect(secondResult).toEqual({
+			refreshed: true,
+			refreshedAt: firstResult.refreshedAt,
+			refreshTokenRotated: false,
+		})
+		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
+			'rotated-refresh-token-1',
+		)
+		expect(await resolveIntegrationAccessToken(tokens)).toBe(
+			'fresh-access-token-1',
+		)
+		expect(succeededEvents).toHaveBeenCalledTimes(1)
+
+		await otherIsolate.refreshIntegrationTokens(tokens)
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		const [, nextInit] = fetchMock.mock.calls[1] as unknown as [
+			string,
+			RequestInit,
+		]
+		expect(String(nextInit.body)).toContain(
+			'refresh_token=rotated-refresh-token-1',
+		)
+		expect(await resolveIntegrationRefreshToken(tokens)).toBe(
+			'rotated-refresh-token-2',
+		)
+	} finally {
+		vi.unstubAllGlobals()
+	}
+})
+
 test('refresh policy follows each connect: non-expiring grants skip refresh, expiring grants without a refresh token still wait', async () => {
 	const { env } = createHarness()
 	const userId = ownerIdFromStored('user-refresh-policy')

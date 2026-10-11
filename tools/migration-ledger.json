@@ -415,6 +415,10 @@
 		{
 			"filename": "0103-org-limit-overrides.sql",
 			"sha256": "859514295b13c7b019566fc4323cb12027168849c8c16b1e4128ebd3249ba181"
+		},
+		{
+			"filename": "0104-integration-token-refresh-lease.sql",
+			"sha256": "59d142b21ded2b22006ee16797e7db3dbdb8d832a68aa0b39b4d47cd0bba466b"
 		}
 	]
 }

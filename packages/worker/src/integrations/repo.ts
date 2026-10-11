@@ -756,6 +756,87 @@ export async function clearIntegrationAuthFailure(input: {
 		.run()
 }
 
+export type IntegrationTokenRefreshLeaseClaim =
+	| { status: 'claimed' }
+	| { status: 'held' }
+	| { status: 'refreshed'; tokenRefreshedAt: string }
+	| { status: 'missing' }
+
+/**
+ * Claims the per-connection refresh lease only while `token_refreshed_at` still
+ * matches what the caller observed and no unexpired lease is held. When the
+ * claim fails, the re-read tells the caller whether another writer already
+ * refreshed (use the stored token) or still holds the lease (wait).
+ */
+export async function claimIntegrationTokenRefreshLease(input: {
+	db: D1Database
+	userId: string
+	name: string
+	leaseId: string
+	expectedTokenRefreshedAt: string | null
+	now: Date
+	leaseMs: number
+}): Promise<IntegrationTokenRefreshLeaseClaim> {
+	const nowIso = input.now.toISOString()
+	const expiresAt = new Date(input.now.getTime() + input.leaseMs).toISOString()
+	const claim = await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET token_refresh_lease_id = ?,
+				token_refresh_lease_expires_at = ?
+			WHERE user_id = ? AND name = ?
+				AND token_refreshed_at IS ?
+				AND (
+					token_refresh_lease_expires_at IS NULL
+					OR token_refresh_lease_expires_at <= ?
+				)${andLiveDeletedAtSql()}`,
+		)
+		.bind(
+			input.leaseId,
+			expiresAt,
+			input.userId,
+			input.name,
+			input.expectedTokenRefreshedAt,
+			nowIso,
+		)
+		.run()
+	if (claim.meta.changes === 1) return { status: 'claimed' }
+	const row = await input.db
+		.prepare(
+			`SELECT token_refreshed_at
+			FROM user_integrations
+			WHERE user_id = ? AND name = ?${andLiveDeletedAtSql()}
+			LIMIT 1`,
+		)
+		.bind(input.userId, input.name)
+		.first<{ token_refreshed_at: string | null }>()
+	if (!row) return { status: 'missing' }
+	if (
+		row.token_refreshed_at !== null &&
+		row.token_refreshed_at !== input.expectedTokenRefreshedAt
+	) {
+		return { status: 'refreshed', tokenRefreshedAt: row.token_refreshed_at }
+	}
+	return { status: 'held' }
+}
+
+export async function releaseIntegrationTokenRefreshLease(input: {
+	db: D1Database
+	userId: string
+	name: string
+	leaseId: string
+}): Promise<void> {
+	await input.db
+		.prepare(
+			`UPDATE user_integrations
+			SET token_refresh_lease_id = NULL,
+				token_refresh_lease_expires_at = NULL
+			WHERE user_id = ? AND name = ? AND token_refresh_lease_id = ?${andLiveDeletedAtSql()}`,
+		)
+		.bind(input.userId, input.name, input.leaseId)
+		.run()
+}
+
 function mapLastAuthFailure(
 	row: {
 		auth_failed_at?: string | null
