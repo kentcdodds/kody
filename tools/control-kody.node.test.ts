@@ -711,6 +711,33 @@ test('readHealth accepts a preview merge commit that is not in the local git dat
 	)
 })
 
+test('readHealth does not accept a merge subject when /health ok is false', async () => {
+	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	await withAuthServer(
+		(_request, response) => {
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: false, commitSha: mergeSha }),
+			)
+		},
+		async (origin) => {
+			const result = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => false,
+				loadCommitInfo: () => ({
+					parents: ['cccccccccccccccccccccccccccccccccccccccc'],
+					message: `Merge ${headSha} into the preview base`,
+				}),
+			})
+			expect(result.ok).toBe(false)
+			expect(result.detail).toContain('ok is not true')
+		},
+	)
+})
+
 test('loadHealthCommitInfo uses local git when present and GitHub when the merge object is missing', () => {
 	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'

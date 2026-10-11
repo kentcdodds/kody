@@ -891,6 +891,12 @@ export type HealthCommitInfo = {
 const mergeHeadMessagePattern = /^Merge\s+([0-9a-f]{7,40})\s+into\b/i
 
 /** Preview merge commits name the PR head in `Merge <head> into <base>`. */
+function healthBodyReportsOk(body: unknown) {
+	return Boolean(
+		body && typeof body === 'object' && (body as { ok?: unknown }).ok === true,
+	)
+}
+
 export function mergeCommitMessageNamesHead(
 	message: string,
 	expectedSha: string,
@@ -1038,6 +1044,7 @@ export async function readHealth(input: {
 				if (withParents.ok) {
 					evaluated = withParents
 				} else if (
+					healthBodyReportsOk(body) &&
 					mergeCommitMessageNamesHead(info.message, input.expectedSha)
 				) {
 					evaluated = {
