@@ -51,7 +51,7 @@ export const legacyCredentialPatternMessages: Record<
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a secret through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value, and the ref works only in the header its slot declares.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in only in the header a kody.credentials slot declares for that secret.',
 	'missing placement':
 		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
 }
