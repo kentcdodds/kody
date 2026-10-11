@@ -250,8 +250,9 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
  *
  * Publishes before `kody.credentials` existed stripped the key unvalidated,
  * so an old snapshot can carry any shape there (a string, an array, a map of
- * strings). That was never honored, so a key with no object-shaped slot is
- * dropped whole and the package stays undeclared.
+ * strings). That was never honored, so a non-empty key with no object-shaped
+ * slot is dropped whole and the package stays undeclared. An empty map is a
+ * valid declaration and stays.
  */
 function splitPublishedCredentials(
 	parsed: unknown,
@@ -262,7 +263,8 @@ function splitPublishedCredentials(
 	const credentials = kody.credentials
 	if (
 		!isPlainRecord(credentials) ||
-		!Object.values(credentials).some(isPlainRecord)
+		(Object.keys(credentials).length > 0 &&
+			!Object.values(credentials).some(isPlainRecord))
 	) {
 		delete kody.credentials
 		return null

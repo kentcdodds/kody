@@ -137,6 +137,21 @@ test('published snapshots load when an old kody.credentials key predates the sch
 		/kody\.credentials\.GOOGLE/,
 	)
 
+	for (const garbage of ['x', ['GOOGLE'], { GOOGLE: 'x', LINEAR: 1 }]) {
+		expect(
+			parseAuthoredPackageJson({
+				content: manifestWithCredentials(garbage),
+				mode: 'published',
+			}).kody,
+		).not.toHaveProperty('credentials')
+	}
+	const empty = manifestWithCredentials({})
+	for (const mode of ['published', 'authoring'] as const) {
+		expect(
+			parseAuthoredPackageJson({ content: empty, mode }).kody.credentials,
+		).toEqual({})
+	}
+
 	const valid = manifestWithCredentials({
 		LINEAR: { kind: 'mcp', provider: 'linear', description: 'Linear MCP.' },
 	})
