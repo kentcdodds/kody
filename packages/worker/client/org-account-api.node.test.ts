@@ -27,6 +27,7 @@ function stubBrowser(body: unknown, status = 200) {
 test('every org route loader names the destination org page as referrer', async () => {
 	const fetchMock = stubBrowser({ ok: true })
 	const wrongReferrers: Array<string> = []
+	let orgOwnedFetches = 0
 	for (const [pattern, loader] of Object.entries(orgAccountClientLoaders)) {
 		if (!pattern.startsWith('/@:orgSlug/-/')) continue
 		const destination = `https://kody.test${pattern
@@ -41,11 +42,13 @@ test('every org route loader names the destination org page as referrer', async 
 			const path = new URL(String(input), 'https://kody.test').pathname
 			const section = orgOwnedAccountApiSection(path)
 			if (!section) continue
+			orgOwnedFetches += 1
 			if (init?.referrer !== destination) {
 				wrongReferrers.push(`${pattern} → ${path}: ${init?.referrer}`)
 			}
 		}
 	}
+	expect(orgOwnedFetches).toBeGreaterThan(0)
 	expect(wrongReferrers).toEqual([])
 })
 
