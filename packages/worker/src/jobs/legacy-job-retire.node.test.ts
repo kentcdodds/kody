@@ -103,6 +103,30 @@ async function setup() {
 			creatorUserId: people.bob,
 		},
 	]
+	const insertJobSource = sqlite.prepare(
+		`INSERT INTO entity_sources (
+			id, user_id, entity_kind, entity_id, repo_id, created_at, updated_at
+		) VALUES (?, ?, 'job', ?, ?, ?, ?)`,
+	)
+	for (const job of fleet) {
+		insertJobSource.run(
+			job.record.sourceId,
+			String(job.record.userId),
+			job.record.id,
+			`job-${job.record.id}`,
+			now,
+			now,
+		)
+	}
+	insertJobSource.run(
+		'source-orphan',
+		String(orgs.alice),
+		'deleted-long-ago',
+		'job-deleted-long-ago',
+		'2026-05-10T13:32:35.303Z',
+		now,
+	)
+	const deleteSource = sqlite.prepare(`DELETE FROM entity_sources WHERE id = ?`)
 	const calls: Array<string> = []
 	const notices: Array<{ to: string; subject: string; text: string }> = []
 	const deps: LegacyJobRetireDeps = {
@@ -118,6 +142,7 @@ async function setup() {
 				`move ${job.record.id} @${owner.orgSlug}/${packageKodyId} ${JSON.stringify(schedule)}`,
 			)
 			fleet.splice(fleet.indexOf(job), 1)
+			deleteSource.run(job.record.sourceId)
 			return {
 				packageId: `pkg-${packageKodyId}`,
 				packageName: `@${owner.orgSlug}/${packageKodyId}`,
@@ -127,6 +152,11 @@ async function setup() {
 		async deleteJob({ job }) {
 			calls.push(`delete ${job.record.id}`)
 			fleet.splice(fleet.indexOf(job), 1)
+			deleteSource.run(job.record.sourceId)
+		},
+		async deleteOrphanJobSource({ source }) {
+			calls.push(`delete source ${source.sourceId}`)
+			deleteSource.run(source.sourceId)
 		},
 	}
 	const decisions: Array<LegacyJobDecision> = [
@@ -157,6 +187,18 @@ test('dry-run plans every row with its owner notice and writes nothing', async (
 	expect(calls).toEqual([])
 	expect(report.noticesSent).toBe(0)
 	expect(report.remainingLegacyJobs).toBe(2)
+	expect(report.remainingJobSources).toBe(3)
+	expect(report.orphanJobSources).toEqual([
+		{
+			sourceId: 'source-orphan',
+			orgId: expect.any(String),
+			orgSlug: 'alice',
+			entityId: 'deleted-long-ago',
+			publishedCommit: null,
+			createdAt: '2026-05-10T13:32:35.303Z',
+			outcome: 'planned',
+		},
+	])
 	expect(
 		report.rows.map((row) => ({
 			jobId: row.jobId,
@@ -243,7 +285,7 @@ test('notify emails each owner, and refuses before sending when one has no email
 	expect(calls).toEqual([])
 })
 
-test('apply requires owners_notified, moves before deletes, and recounts the fleet', async () => {
+test('apply requires owners_notified, moves before deletes, then drops orphan sources', async () => {
 	const { db, deps, decisions, calls, fleet } = await setup()
 	await expect(
 		runLegacyJobRetire({ db, mode: 'apply', decisions, baseUrl, deps }),
@@ -261,9 +303,14 @@ test('apply requires owners_notified, moves before deletes, and recounts the fle
 	expect(calls).toEqual([
 		'move legacy-move @alice/health-watch {"type":"interval","every":"15m"}',
 		'delete legacy-delete',
+		'delete source source-orphan',
 	])
 	expect(fleet).toEqual([])
 	expect(report.remainingLegacyJobs).toBe(0)
+	expect(report.remainingJobSources).toBe(0)
+	expect(report.orphanJobSources.map((source) => source.outcome)).toEqual([
+		'deleted',
+	])
 	expect(report.rows.map((row) => [row.jobId, row.outcome])).toEqual([
 		['legacy-move', 'moved'],
 		['legacy-delete', 'deleted'],
@@ -337,6 +384,27 @@ test('a failed delete lists the rows already done', async () => {
 		}),
 	).rejects.toThrow(
 		'Legacy job delete failed for "legacy-delete" after: moved legacy-move.',
+	)
+})
+
+test('a failed orphan source delete lists the jobs already retired', async () => {
+	const { db, deps, decisions } = await setup()
+	await expect(
+		runLegacyJobRetire({
+			db,
+			mode: 'apply',
+			decisions,
+			ownersNotified: true,
+			baseUrl,
+			deps: {
+				...deps,
+				async deleteOrphanJobSource() {
+					throw new Error('artifact repo busy')
+				},
+			},
+		}),
+	).rejects.toThrow(
+		'Orphan job source delete failed for "source-orphan" after: moved legacy-move, deleted legacy-delete.',
 	)
 })
 

@@ -23,7 +23,8 @@ import {
 	buildPackageJobId,
 	packageIdFromJobId,
 } from '#worker/jobs/package-job-id.ts'
-import { deleteJob } from '#worker/jobs/service.ts'
+import { deleteJob, deleteJobEntitySource } from '#worker/jobs/service.ts'
+import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
@@ -282,6 +283,17 @@ export function defaultLegacyJobRetireDeps(input: {
 		async deleteJob({ job }) {
 			await deleteLegacyJob(env, job)
 		},
+		async deleteOrphanJobSource({ source }) {
+			const userId = ownerIdFromStored(source.orgId)
+			const row = await getEntitySourceByIdForUser(env.APP_DB, {
+				id: source.sourceId,
+				userId,
+			})
+			if (!row) {
+				throw new Error(`Job source "${source.sourceId}" was not found.`)
+			}
+			await deleteJobEntitySource({ env, userId, source: row })
+		},
 	}
 }
 
@@ -291,7 +303,7 @@ export const adminLegacyJobsRetireCapability = defineDomainCapability(
 		...adminMutationCapabilityAccess,
 		name: 'adminLegacyJobsRetire',
 		description:
-			'Admin-only, one-shot ADR 0032 cleanup of the last non-package (unattached) job rows. Pass one decision per surviving row: move (publish its source as a new private package job in the same org, carrying params, storage and enablement, then delete the legacy row) or delete (remove the row, its source, storage and enablements). Refuses unless the decisions cover every legacy row exactly once. dry-run writes nothing and returns each owner notice. notify emails each owner that notice. apply performs moves, then deletes, and requires owners_notified: true. Audited.',
+			'Admin-only, one-shot ADR 0032 cleanup of the last non-package (unattached) job rows. Pass one decision per surviving row: move (publish its source as a new private package job in the same org, carrying params, storage and enablement, then delete the legacy row) or delete (remove the row, its source, storage and enablements). Refuses unless the decisions cover every legacy row exactly once. dry-run writes nothing and returns each owner notice. notify emails each owner that notice. apply performs moves, then deletes, then deletes job sources whose job row is already gone, and requires owners_notified: true. Audited.',
 		keywords: [
 			'admin',
 			'jobs',
@@ -318,6 +330,18 @@ export const adminLegacyJobsRetireCapability = defineDomainCapability(
 			notices_sent: z.number().int().nonnegative(),
 			remaining_legacy_jobs: z.number().int().nonnegative(),
 			rows: z.array(rowSchema),
+			orphan_job_sources: z.array(
+				z.object({
+					source_id: z.string(),
+					org_id: z.string(),
+					org_slug: z.string().nullable(),
+					entity_id: z.string(),
+					published_commit: z.string().nullable(),
+					created_at: z.string(),
+					outcome: z.enum(['planned', 'deleted']),
+				}),
+			),
+			remaining_job_sources: z.number().int().nonnegative(),
 		}),
 		async handler(args, ctx) {
 			return auditAdminCapabilityInvocation(
@@ -374,11 +398,21 @@ export const adminLegacyJobsRetireCapability = defineDomainCapability(
 									}
 								: null,
 						})),
+						orphan_job_sources: report.orphanJobSources.map((source) => ({
+							source_id: source.sourceId,
+							org_id: source.orgId,
+							org_slug: source.orgSlug,
+							entity_id: source.entityId,
+							published_commit: source.publishedCommit,
+							created_at: source.createdAt,
+							outcome: source.outcome,
+						})),
+						remaining_job_sources: report.remainingJobSources,
 					}
 				},
 				{
 					successReason: (result) =>
-						`mode=${result.mode};rows=${result.rows.length};notices=${result.notices_sent};remaining=${result.remaining_legacy_jobs}`,
+						`mode=${result.mode};rows=${result.rows.length};notices=${result.notices_sent};remaining=${result.remaining_legacy_jobs};orphan_sources=${result.orphan_job_sources.length};remaining_sources=${result.remaining_job_sources}`,
 				},
 			)
 		},

@@ -2,12 +2,13 @@
  * One-shot retirement of the last non-package (unattached) job rows, ADR
  * 0032. Every surviving row needs an explicit decision: move it into a new
  * private package job owned by the same org, or delete it. There is no third
- * lane, so a run refuses any row left without a decision.
+ * lane, so a run refuses any row left without a decision. Job sources
+ * (`entity_kind = 'job'`) whose job row is already gone are deleted too.
  *
  * - `dry-run` writes nothing and returns each row's plan and owner notice.
  * - `notify` emails each row's owner that notice.
- * - `apply` moves and deletes, and refuses to run unless the caller confirms
- *   the owners were notified.
+ * - `apply` moves, deletes, then deletes orphan job sources, and refuses to
+ *   run unless the caller confirms the owners were notified.
  */
 import { formatScheduleSummary } from '@kody-internal/shared/jobs/schedule.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -74,6 +75,18 @@ export type LegacyJobRetireDeps = {
 	}): Promise<MovedLegacyJob>
 	/** Delete the legacy row, its source, its storage and its enablements. */
 	deleteJob(input: { job: LegacyJob }): Promise<void>
+	/** Delete a job source whose job row is already gone. */
+	deleteOrphanJobSource(input: { source: OrphanJobSource }): Promise<void>
+}
+
+/** A live `entity_kind = 'job'` source with no job row left. */
+export type OrphanJobSource = {
+	sourceId: string
+	orgId: string
+	orgSlug: string | null
+	entityId: string
+	publishedCommit: string | null
+	createdAt: string
 }
 
 export type LegacyJobRetireRow = {
@@ -100,6 +113,9 @@ export type LegacyJobRetireReport = {
 	noticesSent: number
 	/** Non-package rows still in the fleet after this run. */
 	remainingLegacyJobs: number
+	orphanJobSources: Array<OrphanJobSource & { outcome: 'planned' | 'deleted' }>
+	/** Live `entity_kind = 'job'` sources left after this run. */
+	remainingJobSources: number
 }
 
 type PlannedRow = {
@@ -332,6 +348,34 @@ async function loadOwner(
 	}
 }
 
+async function listJobSources(db: D1Database) {
+	const { results } = await db
+		.prepare(
+			`SELECT s.id, s.user_id, s.entity_id, s.published_commit, s.created_at,
+			        o.slug
+			 FROM entity_sources s
+			 LEFT JOIN orgs o ON o.id = s.user_id AND o.deleted_at IS NULL
+			 WHERE s.entity_kind = 'job' AND s.deleted_at IS NULL
+			 ORDER BY s.created_at, s.id`,
+		)
+		.all<{
+			id: string
+			user_id: string
+			entity_id: string
+			published_commit: string | null
+			created_at: string
+			slug: string | null
+		}>()
+	return results.map((row): OrphanJobSource => ({
+		sourceId: row.id,
+		orgId: row.user_id,
+		orgSlug: row.slug,
+		entityId: row.entity_id,
+		publishedCommit: row.published_commit,
+		createdAt: row.created_at,
+	}))
+}
+
 function assertDecisionsCoverFleet(input: {
 	jobs: ReadonlyArray<LegacyJob>
 	decisions: ReadonlyArray<LegacyJobDecision>
@@ -412,6 +456,11 @@ export async function runLegacyJobRetire(input: {
 		)
 	}
 	const jobsById = new Map(jobs.map((job) => [job.record.id, job]))
+	const legacySourceIds = new Set(jobs.map((job) => job.record.sourceId))
+	const orphans = (await listJobSources(input.db)).filter(
+		(source) =>
+			!jobsById.has(source.entityId) && !legacySourceIds.has(source.sourceId),
+	)
 	const planned: Array<PlannedRow> = []
 	for (const decision of input.decisions) {
 		const job = jobsById.get(decision.jobId)
@@ -435,6 +484,7 @@ export async function runLegacyJobRetire(input: {
 	}
 
 	const rows: Array<LegacyJobRetireRow> = []
+	const deletedOrphans: Array<OrphanJobSource> = []
 	let noticesSent = 0
 	switch (input.mode) {
 		case 'dry-run':
@@ -487,9 +537,19 @@ export async function runLegacyJobRetire(input: {
 						}
 					}
 				} catch (error) {
-					const done = rows.map((done) => `${done.outcome} ${done.jobId}`)
 					throw new Error(
-						`Legacy job ${decision.action} failed for "${row.job.record.id}"${done.length > 0 ? ` after: ${done.join(', ')}` : ''}.`,
+						`Legacy job ${decision.action} failed for "${row.job.record.id}"${describeDone(rows, deletedOrphans)}.`,
+						{ cause: error },
+					)
+				}
+			}
+			for (const source of orphans) {
+				try {
+					await input.deps.deleteOrphanJobSource({ source })
+					deletedOrphans.push(source)
+				} catch (error) {
+					throw new Error(
+						`Orphan job source delete failed for "${source.sourceId}"${describeDone(rows, deletedOrphans)}.`,
 						{ cause: error },
 					)
 				}
@@ -501,13 +561,30 @@ export async function runLegacyJobRetire(input: {
 			throw new Error(`Unhandled legacy job retire mode: ${String(exhaustive)}`)
 		}
 	}
+	const applied = input.mode === 'apply'
+	const deletedOrphanIds = new Set(deletedOrphans.map((s) => s.sourceId))
 	return {
 		mode: input.mode,
 		rows,
 		noticesSent,
-		remainingLegacyJobs:
-			input.mode === 'apply'
-				? (await input.deps.listLegacyJobs()).length
-				: jobs.length,
+		remainingLegacyJobs: applied
+			? (await input.deps.listLegacyJobs()).length
+			: jobs.length,
+		orphanJobSources: orphans.map((source) => ({
+			...source,
+			outcome: deletedOrphanIds.has(source.sourceId) ? 'deleted' : 'planned',
+		})),
+		remainingJobSources: (await listJobSources(input.db)).length,
 	}
+}
+
+function describeDone(
+	rows: ReadonlyArray<LegacyJobRetireRow>,
+	deletedOrphans: ReadonlyArray<OrphanJobSource>,
+) {
+	const done = [
+		...rows.map((row) => `${row.outcome} ${row.jobId}`),
+		...deletedOrphans.map((source) => `deleted source ${source.sourceId}`),
+	]
+	return done.length > 0 ? ` after: ${done.join(', ')}` : ''
 }
