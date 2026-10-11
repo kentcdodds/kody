@@ -1,4 +1,7 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
 import type * as PackageSourceModule from '#worker/package-registry/source.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
@@ -226,6 +229,11 @@ async function serveHelloWorld(input?: {
 			email: 'kent@example.com',
 			displayName: 'Kent',
 		},
+		visitor: {
+			userId: personIdFromStored('user-1'),
+			username: 'kentcdodds',
+			role: 'owner',
+		},
 		packagePath: {
 			username: 'kentcdodds',
 			kodyId,
@@ -358,6 +366,11 @@ test('hello-world serve emits Server-Timing phases and forwards the bag into bui
 			username: 'kentcdodds',
 			email: 'kent@example.com',
 			displayName: 'Kent',
+		},
+		visitor: {
+			userId: personIdFromStored('user-1'),
+			username: 'kentcdodds',
+			role: 'owner',
 		},
 		packagePath: {
 			username: 'kentcdodds',

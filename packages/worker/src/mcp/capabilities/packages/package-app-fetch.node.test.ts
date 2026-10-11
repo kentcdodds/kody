@@ -54,6 +54,10 @@ const { packageAppFetchCapability } = await import('./package-app-fetch.ts')
 type ContextInput = {
 	packageId?: string
 	executionOrigin?: 'interactive' | 'background'
+	orgBinding?: {
+		org: { id: string; slug: string }
+		role: 'owner' | 'member' | 'billing' | null
+	}
 }
 
 function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
@@ -83,6 +87,7 @@ function fetchApp(args: Record<string, unknown>, input: ContextInput = {}) {
 						storageId: null,
 					}
 				: null,
+			orgBinding: input.orgBinding,
 		}),
 	})
 }
@@ -187,6 +192,27 @@ test('packageAppFetch dispatches synthetic in-process app requests against hoste
 	)
 	await fetchApp({ kody_id: 'demo-app', headers: { Accept: 'text/html' } })
 	expect(lastServedRequest().headers.get('Accept')).toBe('text/html')
+})
+
+test('packageAppFetch serves a team org app as the calling person, with their role there', async () => {
+	invalidateDemoPackageCache()
+	mockModule.resolveSavedPackageRef.mockResolvedValue(savedPackage())
+	mockModule.servePackageAppRequest.mockResolvedValue(new Response('ok'))
+
+	await fetchApp(
+		{ kody_id: 'demo-app' },
+		{ orgBinding: { org: { id: 'org-team', slug: 'team' }, role: 'owner' } },
+	)
+
+	expect(mockModule.servePackageAppRequest).toHaveBeenCalledWith(
+		expect.objectContaining({
+			visitor: {
+				userId: personIdFromStored('user-1'),
+				username: 'kody',
+				role: 'owner',
+			},
+		}),
+	)
 })
 
 test('packageAppFetch resolves owned packages by package_id', async () => {

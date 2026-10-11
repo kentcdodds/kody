@@ -45,7 +45,7 @@ import {
 import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
 import { pauseEnablementOnDenial } from '#worker/enablements/pause-on-denial.ts'
-import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 import { enablementIdOf } from '#worker/request-context/request-context.ts'
 import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
@@ -390,16 +390,12 @@ async function assertActorHasOrgAccess(
 	let check = orgAccessByRequest.get(request)
 	if (!check) {
 		check = (async () => {
-			// Package apps run as the org's own account (actor id = org id), which
-			// has no membership row in a team org; only the org's status applies.
 			const hasAccess =
-				String(person.userId) === String(input.orgId)
-					? await isOrgActive(input.env.APP_DB, input.orgId)
-					: (await loadOrgBindingForOrg(
-							input.env.APP_DB,
-							person.userId,
-							input.orgId,
-						)) !== null
+				(await loadOrgBindingForOrg(
+					input.env.APP_DB,
+					person.userId,
+					input.orgId,
+				)) !== null
 			if (hasAccess) return
 			throw new AuthorizationError({
 				code: 'wrong_org',

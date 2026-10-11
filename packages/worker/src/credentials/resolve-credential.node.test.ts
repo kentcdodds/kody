@@ -401,7 +401,7 @@ test('a trigger with no enablement holds nothing; webhook verification still res
 	})
 })
 
-test('a package app in a team org acts as the org’s own account; a deleted org is denied', async () => {
+test('a package app in a team org acts as its visitor, never as the org itself; a deleted org is denied', async () => {
 	const t = await setup()
 	const created = await createOrganization(
 		t.db,
@@ -433,18 +433,23 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		name: 'teamToken',
 		value: secretValue,
 	})
-	// What `PackageAppRuntimeBridge` builds: the org id as the request user.
-	const packageAppRequest = () =>
+	// What `PackageAppRuntimeBridge` builds for its Owner visitor.
+	const visitorRequest = () =>
 		deriveRequestContext({
-			user: { userId: personIdFromStored(teamOrg!.id) },
+			user: { userId: personIdFromStored(t.ownerStableId) },
 			source: { kind: 'package-app' },
 			orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
 		})
-	const resolve = () =>
+	const orgAsActor = deriveRequestContext({
+		user: { userId: personIdFromStored(teamOrg!.id) },
+		source: { kind: 'package-app' },
+		orgBinding: { org: { id: teamOrgId, slug: 'zeta-co' }, role: 'owner' },
+	})
+	const resolve = (actor = visitorRequest()) =>
 		resolveCredential({
 			env: t.env,
 			orgId: teamOrgId,
-			actor: packageAppRequest(),
+			actor,
 			packageStamp: attestedPackageStamp(teamPackageId),
 			baseUrl: 'https://example.com',
 			credential: {
@@ -459,6 +464,10 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 		})
 
 	await expect(resolve()).resolves.toMatchObject({ value: secretValue })
+	// The org's own id is no person and has no membership in it.
+	await expect(resolve(orgAsActor)).rejects.toMatchObject({
+		code: 'wrong_org',
+	})
 	await t.db
 		.prepare(`UPDATE orgs SET deleted_at = ? WHERE id = ?`)
 		.bind(now, teamOrgId)
@@ -468,6 +477,7 @@ test('a package app in a team org acts as the org’s own account; a deleted org
 	const rows = await t.auditRows()
 	expect(rows.map((row) => [row.org_id, row.result])).toEqual([
 		[teamOrgId, 'success'],
+		[teamOrgId, 'denied'],
 		[teamOrgId, 'denied'],
 	])
 })
