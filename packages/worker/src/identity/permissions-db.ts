@@ -53,7 +53,7 @@ export function userRolesAndPermissionsByStableIdStatement(
 			 INNER JOIN users u ON u.id = ur.user_id
 			 LEFT JOIN role_permissions rp ON rp.role_id = r.id
 			 LEFT JOIN permissions p ON p.id = rp.permission_id
-			 WHERE u.stable_user_id = ?`,
+			 WHERE u.stable_user_id = ?${andLiveDeletedAtSql('u')}`,
 		)
 		.bind(stableUserId)
 }
@@ -71,7 +71,9 @@ function bumpPersonalOrgEpochForUserRowStatement(
 		.prepare(
 			`UPDATE orgs
 			 SET access_epoch = access_epoch + 1, updated_at = ?
-			 WHERE id = (SELECT stable_user_id FROM users WHERE id = ?)`,
+			 WHERE id = (
+			   SELECT stable_user_id FROM users WHERE id = ?${andLiveDeletedAtSql()}
+			 )${andLiveDeletedAtSql()}`,
 		)
 		.bind(new Date().toISOString(), userId)
 }

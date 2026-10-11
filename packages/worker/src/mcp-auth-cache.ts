@@ -16,6 +16,7 @@
  */
 import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { type OrgBinding } from '#worker/orgs/repo.ts'
+import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 export type McpAuthCacheEntry = {
 	/** `users.id` the entry was derived from; a reassigned stable id misses. */
@@ -28,10 +29,10 @@ export type McpAuthCacheEntry = {
 	orgBinding: OrgBinding | null
 }
 
+/** Live (not soft-deleted) org row; a deleted org yields no row and misses. */
 export type OrgEpochRow = {
 	access_epoch: number
 	deleting_at: string | null
-	deleted_at: string | null
 	suspended_at: string | null
 }
 
@@ -66,9 +67,9 @@ export function clearMcpAuthCacheForTests() {
 export function orgEpochStatement(db: D1Database, orgId: string) {
 	return db
 		.prepare(
-			`SELECT access_epoch, deleting_at, deleted_at, suspended_at
+			`SELECT access_epoch, deleting_at, suspended_at
 			 FROM orgs
-			 WHERE id = ?`,
+			 WHERE id = ?${andLiveDeletedAtSql()}`,
 		)
 		.bind(orgId)
 }
@@ -81,8 +82,8 @@ export function orgEpochFromRow(row: OrgEpochRow | null): number | null {
 /**
  * True when `entry` was derived from the same user row and the same org
  * epochs the current transaction observed. A bound org that is no longer
- * active misses so the binding is recomputed (and found to be null) the same
- * way the uncached read would.
+ * active (soft-deleted or suspended) misses so the binding is recomputed
+ * (and found to be null) the same way the uncached read would.
  */
 export function mcpAuthCacheEntryMatches(input: {
 	entry: McpAuthCacheEntry
@@ -95,7 +96,7 @@ export function mcpAuthCacheEntryMatches(input: {
 	if (entry.userRowId !== input.userRowId) return false
 	if (entry.boundOrgId !== input.boundOrgId) return false
 	if (!personalOrg || !boundOrg) return false
-	if (boundOrg.deleted_at || boundOrg.suspended_at) return false
+	if (boundOrg.suspended_at) return false
 	return (
 		orgEpochFromRow(personalOrg) === entry.personalOrgEpoch &&
 		orgEpochFromRow(boundOrg) === entry.boundOrgEpoch
