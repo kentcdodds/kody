@@ -75,6 +75,22 @@ test('path fill encodes each value as segment data and finds encoded placeholder
 	).toBe('/v1/{{secret:other}}/x')
 })
 
+test('path fill matches a vault ref across its slash', () => {
+	const replacements = new Map([['{{secret/onepassword:op://v/i/f}}', 't/k']])
+	expect(
+		replaceSecretPlaceholdersInPath(
+			'/v1/{{secret/onepassword:op://v/i/f}}/me',
+			replacements,
+		),
+	).toBe('/v1/t%2Fk/me')
+	expect(
+		replaceSecretPlaceholdersInPath(
+			'/v1/%7B%7Bsecret/onepassword:op://v/i/f%7D%7D/me',
+			replacements,
+		),
+	).toBe('/v1/t%2Fk/me')
+})
+
 test('path fill refuses a value that would form a dot segment', () => {
 	expect(() =>
 		replaceSecretPlaceholdersInPath(

@@ -203,24 +203,23 @@ export function replaceSecretPlaceholdersInPath(
 	for (const [placeholder, secretValue] of replacements) {
 		encoded.set(placeholder, encodePathSegmentData(secretValue))
 	}
-	return pathname
-		.split('/')
-		.map((segment) => {
-			const filled = segment.replaceAll(pathPlaceholderSpan, (span) => {
-				const decoded = decodeSecretPlaceholderPunctuation(span)
-				const next = replaceSecretPlaceholders(decoded, encoded)
-				return next === decoded ? span : next
-			})
-			// URL parsing resolves a `.` or `..` segment (encoded or not), so
-			// one formed by a credential would move the request.
-			if (filled !== segment && /^(?:\.|%2e){1,2}$/i.test(filled)) {
-				throw new Error(
-					'A credential filled into the URL path would form a "." or ".." segment, which changes where the request goes, so Kody refused the request.',
-				)
-			}
-			return filled
-		})
-		.join('/')
+	// Spans are matched across the whole path: a vault ref holds a `/`.
+	const filled = pathname.replaceAll(pathPlaceholderSpan, (span) => {
+		const decoded = decodeSecretPlaceholderPunctuation(span)
+		const next = replaceSecretPlaceholders(decoded, encoded)
+		return next === decoded ? span : next
+	})
+	// A parsed URL path holds no `.` or `..` segment (encoded or not), so one
+	// here was formed by a credential, and URL parsing would move the request.
+	if (
+		filled !== pathname &&
+		filled.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))
+	) {
+		throw new Error(
+			'A credential filled into the URL path would form a "." or ".." segment, which changes where the request goes, so Kody refused the request.',
+		)
+	}
+	return filled
 }
 
 /**

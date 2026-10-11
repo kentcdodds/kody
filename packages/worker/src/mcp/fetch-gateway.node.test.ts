@@ -1433,6 +1433,11 @@ test('fetch gateway provider placeholders: normalize mixed case, deny wrong host
 	expect(resolveSpy).toHaveBeenCalledWith(
 		expect.objectContaining({ request: props.request }),
 	)
+	// A vault ref holds `/`, and it still fills as a single path span.
+	const inPath = await expand(
+		new Request(`https://app.example.com/v1/${canonical}/me`),
+	)
+	expect(inPath.url).toBe('https://app.example.com/v1/vault-password/me')
 
 	await expect(
 		expand(providerRequest('https://evil.example.com/login', canonical)),
