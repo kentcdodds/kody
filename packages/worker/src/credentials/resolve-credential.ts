@@ -70,7 +70,12 @@ import {
 	resolveProviderSecret,
 } from '#mcp/secrets/secret-providers/service.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
-import { resolveSecret, type ResolvedSecret } from '#mcp/secrets/service.ts'
+import {
+	findSecret,
+	resolveSecret,
+	type FoundSecret,
+	type ResolvedSecret,
+} from '#mcp/secrets/service.ts'
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { createUnresolvedSecretMessage } from '#mcp/secrets/unresolved-secret.ts'
 import { type StorageContext } from '#mcp/storage.ts'
@@ -107,6 +112,11 @@ export type CredentialTarget =
 			use: 'package-secret-mount'
 			alias: string
 			callerContext: McpCallerContext
+			/**
+			 * `.has` uses `presence`: find the row and run package-access
+			 * without decrypting. `.get` keeps the default `value` path.
+			 */
+			access?: 'presence' | 'value'
 	  }
 	/**
 	 * Webhook `verification.secretName`, challenge `secretName`, and the apply
@@ -251,7 +261,10 @@ function auditSubjectFor(credential: CredentialTarget): CredentialAuditSubject {
 				use: credential.use,
 				resourceType: 'secret',
 				resourceKey: credential.alias,
-				details: { mountAlias: credential.alias },
+				details: {
+					mountAlias: credential.alias,
+					access: credential.access ?? 'value',
+				},
 			}
 		case 'provider-secret':
 			return {
@@ -542,25 +555,12 @@ async function resolvePackageSecretMount(
 		packageId,
 		storageId: callerContext.storageContext?.storageId ?? null,
 	}
-	const resolved = await resolveSecret({
-		env: input.env,
-		userId: input.orgId,
-		name: mount.name,
-		scope: mount.scope,
+	const resolved = await resolveMountedSecretMetadata({
+		input,
+		mount,
 		storageContext,
+		access: credential.access ?? 'value',
 	})
-	if (!resolved.found || typeof resolved.value !== 'string') {
-		throw new PackageSecretMissingError(
-			await createUnresolvedSecretMessage({
-				env: input.env,
-				userId: input.orgId,
-				name: mount.name,
-				scope: mount.scope,
-				storageContext,
-				baseUrl: input.baseUrl,
-			}),
-		)
-	}
 	await assertPackageCanAccessResolvedSecret({
 		env: input.env,
 		baseUrl: input.baseUrl,
@@ -581,6 +581,50 @@ async function resolvePackageSecretMount(
 		scope,
 		packageId: packageInfo.savedPackage.id,
 		kodyId: packageInfo.savedPackage.kodyId,
+	}
+}
+
+async function resolveMountedSecretMetadata(input: {
+	input: ResolveCredentialInput<CredentialTarget>
+	mount: { name: string; scope?: SecretScope }
+	storageContext: StorageContext
+	access: 'presence' | 'value'
+}): Promise<FoundSecret> {
+	const lookup = {
+		env: input.input.env,
+		userId: input.input.orgId,
+		name: input.mount.name,
+		scope: input.mount.scope,
+		storageContext: input.storageContext,
+	}
+	const missing = async () =>
+		new PackageSecretMissingError(
+			await createUnresolvedSecretMessage({
+				env: input.input.env,
+				userId: input.input.orgId,
+				name: input.mount.name,
+				scope: input.mount.scope,
+				storageContext: input.storageContext,
+				baseUrl: input.input.baseUrl,
+			}),
+		)
+	switch (input.access) {
+		case 'presence': {
+			const found = await findSecret(lookup)
+			if (!found.found) throw await missing()
+			return found
+		}
+		case 'value': {
+			const resolved = await resolveSecret(lookup)
+			if (!resolved.found || typeof resolved.value !== 'string') {
+				throw await missing()
+			}
+			return resolved
+		}
+		default: {
+			const exhaustive: never = input.access
+			throw new Error(`Unhandled package secret access: ${String(exhaustive)}`)
+		}
 	}
 }
 

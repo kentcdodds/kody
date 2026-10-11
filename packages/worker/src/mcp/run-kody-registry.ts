@@ -299,7 +299,11 @@ function createPackageSecretTools(input: {
 		}
 		return authorityPackageId
 	}
-	const resolveMount = (alias: string, requestedPackageId?: string | null) =>
+	const resolveMount = (
+		alias: string,
+		requestedPackageId?: string | null,
+		access?: 'presence' | 'value',
+	) =>
 		resolveCredential({
 			env: input.env,
 			orgId: ownerIdFromCaller(input.callerContext),
@@ -312,6 +316,7 @@ function createPackageSecretTools(input: {
 				use: 'package-secret-mount',
 				alias,
 				callerContext: input.callerContext,
+				...(access ? { access } : {}),
 			},
 		})
 	return {
@@ -320,7 +325,7 @@ function createPackageSecretTools(input: {
 			(await resolveMount(alias, requestedPackageId)).ref,
 		has: async (alias: string, requestedPackageId?: string | null) => {
 			try {
-				await resolveMount(alias, requestedPackageId)
+				await resolveMount(alias, requestedPackageId, 'presence')
 				return true
 			} catch (error) {
 				if (isPackageSecretAvailabilityError(error)) {

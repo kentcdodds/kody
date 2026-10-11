@@ -164,6 +164,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 	const resolveClaimedMount = (inputMount: {
 		packageId: string
 		alias: string
+		access?: 'presence' | 'value'
 	}) =>
 		resolveCredential({
 			env: input.env,
@@ -175,6 +176,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				use: 'package-secret-mount',
 				alias: inputMount.alias,
 				callerContext: input.callerContext,
+				...(inputMount.access ? { access: inputMount.access } : {}),
 			},
 		})
 
@@ -199,6 +201,7 @@ export async function createCapabilityProxyPackageHostTools(input: {
 				await resolveClaimedMount({
 					packageId: authorized.packageId,
 					alias,
+					access: 'presence',
 				})
 				return true
 			} catch (error) {

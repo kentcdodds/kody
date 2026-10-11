@@ -1484,6 +1484,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 	private async resolvePackageSecretMount(input: {
 		alias: string
 		packageId?: string
+		access?: 'presence' | 'value'
 	}) {
 		const packageId = this.resolvePackageSecretAuthorityPackageId(input)
 		const callerContext = await this.createCallerContext(
@@ -1499,6 +1500,7 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 				use: 'package-secret-mount',
 				alias: input.alias,
 				callerContext,
+				...(input.access ? { access: input.access } : {}),
 			},
 		})
 	}
@@ -1513,7 +1515,10 @@ export class PackageAppRuntimeBridge extends WorkerEntrypoint<
 
 	async packageSecretHas(input: { alias: string; packageId?: string }) {
 		try {
-			await this.resolvePackageSecretMount(input)
+			await this.resolvePackageSecretMount({
+				...input,
+				access: 'presence',
+			})
 			return {
 				has: true,
 			}
