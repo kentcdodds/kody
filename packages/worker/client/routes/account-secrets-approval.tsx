@@ -5,6 +5,7 @@ import { on } from '#client/event-mixin.ts'
 import {
 	type ApprovalAction,
 	type ApprovalView,
+	type PackageCredentialConsent,
 	allowHostsButtonLabel,
 	allowPackagesButtonLabel,
 	approvalRejectedHosts,
@@ -92,22 +93,13 @@ export function renderSecretApprovalCard(props: {
 						<code mix={css({ color: colors.textMuted })}>
 							{approvalCard.requestedPackageId}
 						</code>
-						{approvalCard.names.length > 1 ? (
-							<ul
-								mix={css({
-									margin: 0,
-									paddingLeft: spacing.lg,
-									display: 'grid',
-									gap: spacing.xs,
-								})}
-							>
-								{approvalCard.names.map((secretName) => (
-									<li key={secretName}>
-										<code>{secretName}</code>
-									</li>
-								))}
-							</ul>
-						) : null}
+						{renderPackageCredentialConsent({
+							packageLabel:
+								requestedPackageMetadata?.kodyId ??
+								approvalCard.requestedPackageId,
+							names: approvalCard.names,
+							credentials: approvalCard.packageCredentials,
+						})}
 					</div>
 				) : (
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -253,6 +245,59 @@ export function renderSecretApprovalCard(props: {
 
 function approvalHosts(approvalCard: ApprovalView) {
 	return approvalRequestedHosts(approvalCard)
+}
+
+/**
+ * One consent line per secret: where the package may send it and, for a raw
+ * slot, its own line saying the package can read the value itself.
+ */
+export function renderPackageCredentialConsent(props: {
+	packageLabel: string
+	names: ReadonlyArray<string>
+	credentials: ReadonlyArray<PackageCredentialConsent> | undefined
+}) {
+	const byName = new Map(
+		(props.credentials ?? []).map((credential) => [
+			credential.name,
+			credential,
+		]),
+	)
+	return (
+		<ul
+			mix={css({
+				margin: 0,
+				paddingLeft: spacing.lg,
+				display: 'grid',
+				gap: spacing.sm,
+			})}
+			data-testid="package-credential-consent"
+		>
+			{props.names.map((name) => {
+				const credential = byName.get(name)
+				return (
+					<li key={name} mix={css({ display: 'grid', gap: spacing.xs })}>
+						<code>{name}</code>
+						{credential ? (
+							<span mix={css({ color: colors.textMuted })}>
+								{credential.allowedHosts.length > 0
+									? `Sent only to ${credential.allowedHosts.join(', ')}.`
+									: 'Not sent to any host until you allow one on this secret.'}
+							</span>
+						) : null}
+						{credential?.raw ? (
+							<span
+								mix={css(getAccentCalloutCss({ accentColor: colors.danger }))}
+								data-testid="package-credential-raw"
+							>
+								<strong>{props.packageLabel}</strong> can read the raw value of{' '}
+								<code>{name}</code>, not just send it in a request.
+							</span>
+						) : null}
+					</li>
+				)
+			})}
+		</ul>
+	)
 }
 
 export function renderAlreadyAddedNotice(items: Array<string>) {
@@ -462,20 +507,11 @@ export function renderPackageSecretApprovalPage(props: {
 							<span mix={css({ color: colors.textMuted })}>
 								{names.length === 1 ? 'Secret' : 'Secrets'}
 							</span>
-							<ul
-								mix={css({
-									margin: 0,
-									paddingLeft: spacing.lg,
-									display: 'grid',
-									gap: spacing.xs,
-								})}
-							>
-								{names.map((name) => (
-									<li key={name}>
-										<code>{name}</code>
-									</li>
-								))}
-							</ul>
+							{renderPackageCredentialConsent({
+								packageLabel: packageLabel ?? packageId,
+								names,
+								credentials: approval.packageCredentials,
+							})}
 						</div>
 						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<span mix={css({ color: colors.textMuted })}>Package</span>

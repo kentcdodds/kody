@@ -2114,6 +2114,12 @@ export type AccountSecretsLoaderData = {
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
 		currentAllowedPackages: Array<string>
+		/** Package approvals only: what the package may do with each secret. */
+		packageCredentials: Array<{
+			name: string
+			allowedHosts: Array<string>
+			raw: boolean
+		}>
 	} | null
 	approvalError: string | null
 }

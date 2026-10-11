@@ -292,6 +292,12 @@ test('0010 flags secret slots without placement', () => {
 						description: 'x',
 						placement: { header: 'x-api-key' },
 					},
+					RAW_KEY: {
+						kind: 'secret',
+						provider: 'acme',
+						description: 'x',
+						raw: true,
+					},
 				},
 			}),
 		}),
