@@ -1,0 +1,680 @@
+import { type JobRow } from '@kody-internal/shared/jobs/repo.ts'
+import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
+import { packageIdFromJobId } from '#worker/jobs/package-job-id.ts'
+import {
+	buildPackageStorageId,
+	packageIdFromStorageId,
+} from '#worker/storage-ids.ts'
+import { userOauthAppLogoR2KeyPrefix } from '#worker/integrations/user-oauth-app-logo.ts'
+import { mcpServerLogoR2KeyPrefix } from '#worker/mcp-client/mcp-server-logo.ts'
+import { memoryVectorId } from '#mcp/memory/memory-vectorize.ts'
+import { jobVectorId } from '#mcp/jobs-vectorize.ts'
+import { savedPackageVectorId } from '#worker/package-registry/repo.ts'
+import {
+	type OrgTransferOrg,
+	type OrgTransferOwnerTable,
+	type OrgTransferRow,
+	type OrgTransferSnapshot,
+} from './snapshot.ts'
+
+export type OrgTransferOrphanCleanup =
+	/** Normal per-row soft delete (sets deleted_at). */
+	| 'soft-delete'
+	/** Hard delete of a row with no soft-delete column and no side storage. */
+	| 'delete'
+	/** `deleteEntitySourceWithArtifacts` (artifact repo, bundles, snapshot). */
+	| 'entity-source'
+
+export type OrgTransferOrphan = {
+	table: string
+	row: OrgTransferRow
+	/** Row id or natural key, for the report. */
+	key: string
+	reason: string
+	cleanup: OrgTransferOrphanCleanup
+}
+
+export type OrgTransferMovedTable =
+	| OrgTransferOwnerTable
+	| 'secret_entries'
+	| 'value_entries'
+
+export type OrgTransferStorageCopy = {
+	storageId: string
+	kind: 'package' | 'job'
+}
+
+export type OrgTransferLogoCopy = {
+	table: 'user_oauth_apps' | 'mcp_server_settings'
+	rowid: number
+	fromKey: string
+	toKey: string
+}
+
+export type OrgTransferPlan = {
+	from: OrgTransferOrg
+	to: OrgTransferOrg
+	/** Rows re-pointed to the target owner, by table. */
+	moves: Record<OrgTransferMovedTable, Array<OrgTransferRow>>
+	/** Source bucket id → existing target bucket id (same scope and binding). */
+	bucketMerges: {
+		secret_buckets: Map<string, string>
+		value_buckets: Map<string, string>
+	}
+	/** Scope and binding of every moved or merged source bucket, by id. */
+	bucketBindings: Map<string, { scope: string; bindingKey: string }>
+	/** Derived rows deleted in the batch and rebuilt by the reindex. */
+	derivedDeletes: {
+		saved_package_search_index_debt: Array<OrgTransferRow>
+		vector_embed_fingerprints: Array<OrgTransferRow>
+	}
+	jobs: Array<JobRow>
+	storageCopies: Array<OrgTransferStorageCopy>
+	logoCopies: Array<OrgTransferLogoCopy>
+	orphans: Array<OrgTransferOrphan>
+	clashes: Array<string>
+	blockers: Array<string>
+	warnings: Array<string>
+}
+
+const movedTables: ReadonlyArray<OrgTransferMovedTable> = [
+	'saved_packages',
+	'user_repos',
+	'entity_sources',
+	'published_bundle_artifacts',
+	'entity_source_artifacts_push_subscriptions',
+	'community_listings',
+	'community_forks',
+	'mcp_memories',
+	'mcp_memory_conversation_suppressions',
+	'mcp_server_settings',
+	'mcp_user_server_instructions',
+	'user_oauth_apps',
+	'user_integrations',
+	'secret_buckets',
+	'secret_entries',
+	'secret_provider_bindings',
+	'secret_provider_grants',
+	'value_buckets',
+	'value_entries',
+	'user_storage_buckets',
+	'agent_package_conversation_uses',
+	'webhook_endpoints',
+	'webhook_apply_destination_grants',
+	'webhook_apply_destination_pending',
+	'package_kody_id_redirects',
+	'package_slug_redirects',
+	'enablements',
+]
+
+export function isLiveRow(row: OrgTransferRow) {
+	return row['deleted_at'] == null && row['deleting_at'] == null
+}
+
+function text(row: OrgTransferRow, column: string) {
+	const value = row[column]
+	return value == null ? '' : String(value)
+}
+
+export function transferredPackageName(row: OrgTransferRow, toSlug: string) {
+	return `@${toSlug}/${text(row, 'kody_id')}`
+}
+
+function keyOf(row: OrgTransferRow, columns: ReadonlyArray<string>) {
+	return JSON.stringify(columns.map((column) => row[column] ?? null))
+}
+
+function rewriteOwnerLogoKey(input: {
+	key: string
+	prefix: string
+	fromId: string
+	toId: string
+}) {
+	const ownerPrefix = `${input.prefix}${input.fromId}/`
+	if (!input.key.startsWith(ownerPrefix)) return null
+	return `${input.prefix}${input.toId}/${input.key.slice(ownerPrefix.length)}`
+}
+
+/**
+ * Decide what moves, what clashes, and what is orphaned. Pure over the
+ * snapshot so dry-run and apply agree and tests can drive it directly.
+ */
+export function planOrgTransfer(
+	snapshot: OrgTransferSnapshot,
+): OrgTransferPlan {
+	const { source, target, from, to } = snapshot
+	const moves = Object.fromEntries(
+		movedTables.map((table) => [table, [] as Array<OrgTransferRow>]),
+	) as OrgTransferPlan['moves']
+	const orphans: Array<OrgTransferOrphan> = []
+	const clashes: Array<string> = []
+	const blockers: Array<string> = []
+	const warnings: Array<string> = []
+	const orphan = (
+		table: string,
+		row: OrgTransferRow,
+		key: string,
+		reason: string,
+		cleanup: OrgTransferOrphanCleanup,
+	) => orphans.push({ table, row, key, reason, cleanup })
+
+	const targetKeys = (
+		table: OrgTransferOwnerTable,
+		columns: ReadonlyArray<string>,
+		filter: (row: OrgTransferRow) => boolean = () => true,
+	) => new Set(target[table].filter(filter).map((row) => keyOf(row, columns)))
+	const clashIf = (
+		table: OrgTransferOwnerTable,
+		rows: Array<OrgTransferRow>,
+		columns: ReadonlyArray<string>,
+		label: (row: OrgTransferRow) => string,
+		options: {
+			sourceKey?: (row: OrgTransferRow) => string
+			targetFilter?: (row: OrgTransferRow) => boolean
+		} = {},
+	) => {
+		const taken = targetKeys(table, columns, options.targetFilter)
+		for (const row of rows) {
+			const key = options.sourceKey?.(row) ?? keyOf(row, columns)
+			if (taken.has(key)) {
+				clashes.push(`${table}: ${label(row)} already exists in @${to.slug}`)
+			}
+		}
+	}
+
+	// Packages, repos, and their sources.
+	moves.saved_packages = source.saved_packages.filter(isLiveRow)
+	const packageIds = new Set(moves.saved_packages.map((row) => text(row, 'id')))
+	const packageById = new Map(
+		moves.saved_packages.map((row) => [text(row, 'id'), row]),
+	)
+	const packageLabel = (packageId: string) =>
+		packageById.get(packageId)
+			? text(packageById.get(packageId)!, 'kody_id')
+			: packageId
+	clashIf(
+		'saved_packages',
+		moves.saved_packages,
+		['name'],
+		(row) => transferredPackageName(row, to.slug),
+		{
+			sourceKey: (row) =>
+				JSON.stringify([transferredPackageName(row, to.slug)]),
+		},
+	)
+	clashIf('saved_packages', moves.saved_packages, ['kody_id'], (row) =>
+		text(row, 'kody_id'),
+	)
+
+	moves.user_repos = source.user_repos.filter(isLiveRow)
+	const repoIds = new Set(moves.user_repos.map((row) => text(row, 'id')))
+	clashIf('user_repos', moves.user_repos, ['name'], (row) => text(row, 'name'))
+
+	const liveJobSourceIds = new Set(
+		snapshot.sourceJobs.map((job) => job.record.sourceId),
+	)
+	for (const row of source.entity_sources.filter(isLiveRow)) {
+		const kind = text(row, 'entity_kind')
+		const entityId = text(row, 'entity_id')
+		if (kind === 'package' && packageIds.has(entityId)) {
+			moves.entity_sources.push(row)
+		} else if (kind === 'repo' && repoIds.has(entityId)) {
+			moves.entity_sources.push(row)
+		} else if (kind === 'job' && liveJobSourceIds.has(text(row, 'id'))) {
+			blockers.push(
+				`Unattached job source ${text(row, 'id')} has live jobs; retire them with adminLegacyJobsRetire first (ADR 0032).`,
+			)
+		} else {
+			orphan(
+				'entity_sources',
+				row,
+				text(row, 'id'),
+				`${kind} ${entityId} no longer exists`,
+				'entity-source',
+			)
+		}
+	}
+	const sourceIds = new Set(moves.entity_sources.map((row) => text(row, 'id')))
+	const orphanSourceIds = new Set(
+		orphans
+			.filter((entry) => entry.table === 'entity_sources')
+			.map((entry) => entry.key),
+	)
+	clashIf(
+		'entity_sources',
+		moves.entity_sources,
+		['entity_kind', 'entity_id'],
+		(row) => `${text(row, 'entity_kind')} source ${text(row, 'entity_id')}`,
+	)
+	for (const pkg of moves.saved_packages) {
+		if (!sourceIds.has(text(pkg, 'source_id'))) {
+			warnings.push(
+				`Package ${text(pkg, 'kody_id')} has no live source; it moves but cannot load until republished.`,
+			)
+		}
+	}
+
+	for (const table of [
+		'published_bundle_artifacts',
+		'entity_source_artifacts_push_subscriptions',
+	] as const) {
+		for (const row of source[table]) {
+			const sourceId = text(row, 'source_id')
+			if (sourceIds.has(sourceId)) moves[table].push(row)
+			else if (!orphanSourceIds.has(sourceId)) {
+				orphan(
+					table,
+					row,
+					sourceId,
+					`source ${sourceId} no longer exists`,
+					'delete',
+				)
+			}
+		}
+	}
+
+	// Community.
+	for (const row of source.community_listings.filter(isLiveRow)) {
+		if (packageIds.has(text(row, 'package_id'))) {
+			moves.community_listings.push(row)
+		} else {
+			orphan(
+				'community_listings',
+				row,
+				text(row, 'id'),
+				`package ${text(row, 'package_id')} no longer exists`,
+				'soft-delete',
+			)
+		}
+	}
+	clashIf(
+		'community_listings',
+		moves.community_listings,
+		['package_id'],
+		(row) => `listing for ${text(row, 'kody_id')}`,
+	)
+	clashIf(
+		'community_listings',
+		moves.community_listings.filter((row) => text(row, 'status') === 'active'),
+		['kody_id'],
+		(row) => `active listing ${text(row, 'kody_id')}`,
+		{ targetFilter: (row) => text(row, 'status') === 'active' },
+	)
+	for (const row of source.community_forks) {
+		const forked = text(row, 'forked_package_id')
+		if (packageIds.has(forked)) moves.community_forks.push(row)
+		else {
+			orphan(
+				'community_forks',
+				row,
+				text(row, 'id'),
+				`forked package ${forked} no longer exists`,
+				'delete',
+			)
+		}
+	}
+
+	// Memories.
+	moves.mcp_memories = source.mcp_memories.filter(isLiveRow)
+	const memoryIds = new Set(moves.mcp_memories.map((row) => text(row, 'id')))
+	for (const row of source.mcp_memory_conversation_suppressions) {
+		if (memoryIds.has(text(row, 'memory_id'))) {
+			moves.mcp_memory_conversation_suppressions.push(row)
+		} else {
+			orphan(
+				'mcp_memory_conversation_suppressions',
+				row,
+				text(row, 'memory_id'),
+				'memory no longer exists',
+				'delete',
+			)
+		}
+	}
+
+	// Connectors and credentials.
+	moves.mcp_server_settings = source.mcp_server_settings.filter(isLiveRow)
+	clashIf('mcp_server_settings', moves.mcp_server_settings, ['name'], (row) =>
+		text(row, 'name'),
+	)
+	moves.mcp_user_server_instructions =
+		source.mcp_user_server_instructions.filter(isLiveRow)
+	if (
+		moves.mcp_user_server_instructions.length > 0 &&
+		target.mcp_user_server_instructions.length > 0
+	) {
+		clashes.push(
+			`mcp_user_server_instructions: @${to.slug} already has MCP server instructions`,
+		)
+	}
+	moves.user_oauth_apps = source.user_oauth_apps.filter(isLiveRow)
+	const oauthAppSlugs = new Set(
+		moves.user_oauth_apps.map((row) => text(row, 'slug')),
+	)
+	clashIf('user_oauth_apps', moves.user_oauth_apps, ['slug'], (row) =>
+		text(row, 'slug'),
+	)
+	moves.user_integrations = source.user_integrations.filter(isLiveRow)
+	clashIf('user_integrations', moves.user_integrations, ['name'], (row) =>
+		text(row, 'name'),
+	)
+	for (const row of moves.user_integrations) {
+		const appSlug = row['app_slug']
+		if (appSlug != null && !oauthAppSlugs.has(String(appSlug))) {
+			blockers.push(
+				`Integration ${text(row, 'name')} uses OAuth app ${String(appSlug)}, which is not live in @${from.slug}.`,
+			)
+		}
+	}
+
+	// Secret and value buckets: move, merge, or orphan.
+	const bucketMerges: OrgTransferPlan['bucketMerges'] = {
+		secret_buckets: new Map(),
+		value_buckets: new Map(),
+	}
+	const bucketBindings: OrgTransferPlan['bucketBindings'] = new Map()
+	for (const [bucketTable, entryTable, ownedScope] of [
+		['secret_buckets', 'secret_entries', 'package'],
+		['value_buckets', 'value_entries', 'app'],
+	] as const) {
+		const targetBuckets = new Map(
+			target[bucketTable].map((row) => [
+				keyOf(row, ['scope', 'binding_key']),
+				row,
+			]),
+		)
+		const movedBucketIds = new Set<string>()
+		for (const row of source[bucketTable].filter(isLiveRow)) {
+			const scope = text(row, 'scope')
+			const bindingKey = text(row, 'binding_key')
+			if (scope === 'session') continue
+			if (scope === ownedScope && !packageIds.has(bindingKey)) {
+				orphan(
+					bucketTable,
+					row,
+					`${scope}:${bindingKey}`,
+					`package ${bindingKey} no longer exists`,
+					'soft-delete',
+				)
+				continue
+			}
+			const label = scope === 'user' ? 'user' : packageLabel(bindingKey)
+			const existing = targetBuckets.get(keyOf(row, ['scope', 'binding_key']))
+			if (existing && !isLiveRow(existing)) {
+				clashes.push(
+					`${bucketTable}: ${label} bucket in @${to.slug} is deleted but not purged`,
+				)
+				continue
+			}
+			movedBucketIds.add(text(row, 'id'))
+			bucketBindings.set(text(row, 'id'), { scope, bindingKey })
+			if (existing) {
+				bucketMerges[bucketTable].set(text(row, 'id'), text(existing, 'id'))
+			} else {
+				moves[bucketTable].push(row)
+			}
+		}
+		const targetEntryNames = new Set(
+			target[entryTable].map((row) => keyOf(row, ['bucket_id', 'name'])),
+		)
+		const bucketById = new Map(
+			source[bucketTable].map((row) => [text(row, 'id'), row]),
+		)
+		for (const row of source[entryTable]) {
+			const bucketId = text(row, 'bucket_id')
+			if (!movedBucketIds.has(bucketId) || !isLiveRow(row)) continue
+			moves[entryTable].push(row)
+			const mergeInto = bucketMerges[bucketTable].get(bucketId)
+			if (
+				mergeInto &&
+				targetEntryNames.has(JSON.stringify([mergeInto, row['name']]))
+			) {
+				const bucket = bucketById.get(bucketId)!
+				const scope = text(bucket, 'scope')
+				const label =
+					scope === 'user' ? 'user' : packageLabel(text(bucket, 'binding_key'))
+				clashes.push(
+					`${entryTable}: ${label} ${text(row, 'name')} already exists in @${to.slug}`,
+				)
+			}
+		}
+	}
+
+	for (const row of source.secret_provider_bindings.filter(isLiveRow)) {
+		const packageId = row['package_id']
+		if (packageId == null || packageIds.has(String(packageId))) {
+			moves.secret_provider_bindings.push(row)
+		} else {
+			orphan(
+				'secret_provider_bindings',
+				row,
+				text(row, 'provider_id'),
+				`package ${String(packageId)} no longer exists`,
+				'soft-delete',
+			)
+		}
+	}
+	clashIf(
+		'secret_provider_bindings',
+		moves.secret_provider_bindings,
+		['provider_id'],
+		(row) => `secret provider ${text(row, 'provider_id')}`,
+	)
+	const movedProviderIds = new Set(
+		moves.secret_provider_bindings.map((row) => text(row, 'provider_id')),
+	)
+	for (const row of source.secret_provider_grants) {
+		if (
+			movedProviderIds.has(text(row, 'provider_id')) &&
+			packageIds.has(text(row, 'package_id'))
+		) {
+			moves.secret_provider_grants.push(row)
+		} else {
+			orphan(
+				'secret_provider_grants',
+				row,
+				`${text(row, 'provider_id')}:${text(row, 'canonical_ref')}`,
+				'binding or package no longer exists',
+				'delete',
+			)
+		}
+	}
+
+	// Jobs of moved packages; their storage moves with them.
+	const jobs: Array<JobRow> = []
+	for (const job of snapshot.sourceJobs) {
+		if (sourceIds.has(job.record.sourceId)) jobs.push(job)
+		else if (!liveJobSourceIds.has(job.record.sourceId)) {
+			warnings.push(`Job ${job.record.name} has no live source and stays.`)
+		}
+	}
+	for (const job of jobs) {
+		if (packageIdFromJobId(job.id) == null) {
+			blockers.push(
+				`Job ${job.record.name} is not a package job; retire it with adminLegacyJobsRetire first (ADR 0032).`,
+			)
+		}
+	}
+	const jobStorageIds = new Set(
+		jobs.map((job) => job.record.storageId ?? createJobStorageId(job.id)),
+	)
+
+	const storageCopies: Array<OrgTransferStorageCopy> = []
+	for (const row of source.user_storage_buckets.filter(isLiveRow)) {
+		const storageId = text(row, 'storage_id')
+		const kind = text(row, 'kind')
+		if (kind === 'package') {
+			const packageId = packageIdFromStorageId(storageId)
+			if (packageId && packageIds.has(packageId)) {
+				moves.user_storage_buckets.push(row)
+				storageCopies.push({ storageId, kind: 'package' })
+			} else {
+				orphan(
+					'user_storage_buckets',
+					row,
+					storageId,
+					`package ${packageId ?? storageId} no longer exists`,
+					'soft-delete',
+				)
+			}
+		} else if (kind === 'job' && jobStorageIds.has(storageId)) {
+			moves.user_storage_buckets.push(row)
+			storageCopies.push({ storageId, kind: 'job' })
+		}
+	}
+	// Storage a moved package or job may hold without a registered bucket row.
+	const copiedStorageIds = new Set(storageCopies.map((copy) => copy.storageId))
+	for (const [storageId, kind] of [
+		...[...packageIds].map(
+			(id) => [buildPackageStorageId(id), 'package'] as const,
+		),
+		...[...jobStorageIds].map((id) => [id, 'job'] as const),
+	]) {
+		if (copiedStorageIds.has(storageId)) continue
+		copiedStorageIds.add(storageId)
+		storageCopies.push({ storageId, kind })
+	}
+	clashIf(
+		'user_storage_buckets',
+		moves.user_storage_buckets,
+		['storage_id'],
+		(row) => `storage ${text(row, 'storage_id')}`,
+	)
+
+	for (const row of source.agent_package_conversation_uses) {
+		if (packageIds.has(text(row, 'package_id'))) {
+			moves.agent_package_conversation_uses.push(row)
+		} else {
+			orphan(
+				'agent_package_conversation_uses',
+				row,
+				text(row, 'package_id'),
+				'package no longer exists',
+				'delete',
+			)
+		}
+	}
+
+	// Webhooks.
+	for (const row of source.webhook_endpoints.filter(isLiveRow)) {
+		if (packageIds.has(text(row, 'package_id'))) {
+			moves.webhook_endpoints.push(row)
+		} else {
+			orphan(
+				'webhook_endpoints',
+				row,
+				text(row, 'id'),
+				`package ${text(row, 'package_id')} no longer exists`,
+				'soft-delete',
+			)
+		}
+	}
+	clashIf(
+		'webhook_endpoints',
+		moves.webhook_endpoints,
+		['package_id', 'webhook_name'],
+		(row) =>
+			`webhook ${packageLabel(text(row, 'package_id'))}/${text(row, 'webhook_name')}`,
+	)
+	const endpointIds = new Set(
+		moves.webhook_endpoints.map((row) => text(row, 'id')),
+	)
+	for (const table of [
+		'webhook_apply_destination_grants',
+		'webhook_apply_destination_pending',
+	] as const) {
+		moves[table] = source[table].filter((row) =>
+			endpointIds.has(text(row, 'webhook_endpoint_id')),
+		)
+	}
+
+	for (const [table, keyColumn] of [
+		['package_kody_id_redirects', 'old_kody_id'],
+		['package_slug_redirects', 'old_slug'],
+	] as const) {
+		for (const row of source[table]) {
+			if (packageIds.has(text(row, 'package_id'))) moves[table].push(row)
+			else {
+				orphan(
+					table,
+					row,
+					text(row, keyColumn),
+					'package no longer exists',
+					'delete',
+				)
+			}
+		}
+		clashIf(table, moves[table], [keyColumn], (row) => text(row, keyColumn))
+	}
+
+	// Enablements and grants (org-keyed).
+	for (const row of source.enablements) {
+		if (!packageIds.has(text(row, 'package_id'))) continue
+		moves.enablements.push(row)
+		const enabler = text(row, 'enabler_user_id')
+		if (text(row, 'state') !== 'off' && !snapshot.targetMembers.has(enabler)) {
+			blockers.push(
+				`Enablement ${text(row, 'trigger_kind')}:${text(row, 'trigger_name')} of ${packageLabel(text(row, 'package_id'))} is enabled by ${enabler}, who is not a member of @${to.slug}.`,
+			)
+		}
+	}
+	if (
+		moves.enablements.length > 0 &&
+		snapshot.enablementStates.from !== snapshot.enablementStates.to
+	) {
+		warnings.push(
+			`Enablement migration state differs (@${from.slug}: ${snapshot.enablementStates.from ?? 'legacy'}, @${to.slug}: ${snapshot.enablementStates.to ?? 'legacy'}); moved triggers run the way @${to.slug} runs triggers.`,
+		)
+	}
+	for (const row of source.grants.filter(isLiveRow)) {
+		if (text(row, 'resource_type') === 'org') continue
+		blockers.push(
+			`Grant ${text(row, 'id')} on ${text(row, 'resource_type')} ${text(row, 'resource_id')} names @${from.slug} subjects; remove it before transferring.`,
+		)
+	}
+
+	// Derived rows rebuilt under the target.
+	const movedVectorIds = new Set([
+		...[...packageIds].map(savedPackageVectorId),
+		...[...memoryIds].map(memoryVectorId),
+		...jobs.map((job) => jobVectorId(job.id)),
+	])
+
+	const logoCopies: Array<OrgTransferLogoCopy> = []
+	for (const [table, prefix] of [
+		['user_oauth_apps', userOauthAppLogoR2KeyPrefix],
+		['mcp_server_settings', mcpServerLogoR2KeyPrefix],
+	] as const) {
+		for (const row of moves[table]) {
+			const fromKey = row['logo_key']
+			if (typeof fromKey !== 'string' || !fromKey) continue
+			const toKey = rewriteOwnerLogoKey({
+				key: fromKey,
+				prefix,
+				fromId: from.id,
+				toId: to.id,
+			})
+			if (toKey) logoCopies.push({ table, rowid: row.__rowid, fromKey, toKey })
+		}
+	}
+
+	return {
+		from,
+		to,
+		moves,
+		bucketMerges,
+		bucketBindings,
+		derivedDeletes: {
+			saved_package_search_index_debt: source.saved_package_search_index_debt,
+			vector_embed_fingerprints: source.vector_embed_fingerprints.filter(
+				(row) => movedVectorIds.has(text(row, 'vector_id')),
+			),
+		},
+		jobs,
+		storageCopies,
+		logoCopies,
+		orphans,
+		clashes,
+		blockers,
+		warnings,
+	}
+}

@@ -170,7 +170,9 @@ function runNowRequestSource(
 	return { kind: 'inherited', lineage }
 }
 
-function serializeCallerContext(callerContext: PersistedJobCallerContext) {
+export function serializeCallerContext(
+	callerContext: PersistedJobCallerContext,
+) {
 	return JSON.stringify(callerContext)
 }
 
@@ -683,7 +685,7 @@ export async function deleteEntitySourceWithArtifacts(input: {
 	})
 }
 
-async function createPackageJobCallerContext(input: {
+export async function createPackageJobCallerContext(input: {
 	env: Env
 	db: D1Database
 	baseUrl: string

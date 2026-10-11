@@ -65,6 +65,8 @@ const storageRules: ReadonlyArray<StorageRule> = [
 				'Integration token storage layer.',
 			'packages/worker/src/oauth-refresh-family.ts':
 				"Kody's own OAuth refresh-family state, not an org credential.",
+			'packages/worker/src/org-transfer/reencrypt.ts':
+				'Admin org resource transfer re-seals ciphertext from the source to the target owner context; plaintext never leaves the function.',
 		},
 	},
 	{
