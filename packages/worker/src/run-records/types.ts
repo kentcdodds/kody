@@ -150,8 +150,8 @@ export function runPersistenceForSurface(surface: RunSurface): RunPersistence {
 
 /**
  * Everything a caller knows about a run when it starts. `packageId`/`kodyId`
- * are optional because ad-hoc execute, standalone `kody.json` jobs, and inline
- * workflows have no owning package — that optionality is why run records are
+ * are optional because ad-hoc execute and inline workflows have no owning
+ * package — that optionality is why run records are
  * user-scoped rather than package-shaped.
  */
 export type RunRecordContext = {
