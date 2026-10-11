@@ -1,6 +1,5 @@
 import { type Handle, css } from 'remix/component'
 import { on } from '#client/event-mixin.ts'
-import { tryConsumeRouteLoaderData } from '#client/loader-data-context.tsx'
 import { readCurrentRouterHref } from '#client/client-router.tsx'
 import { createRouteData } from '#client/route-data.tsx'
 import { type RouteLoaderResult } from '#client/route-loader.ts'
@@ -77,6 +76,7 @@ export function OrgInviteJoinRoute(handle: Handle) {
 
 	const joinData = createRouteData({
 		key: 'orgInviteJoin',
+		fromLoaderData: (payload) => payload,
 		async load(href, signal) {
 			const token = tokenFromHref(href)
 			if (!token) {
@@ -137,7 +137,6 @@ export function OrgInviteJoinRoute(handle: Handle) {
 
 	return () => {
 		const href = readCurrentRouterHref(handle)
-		tryConsumeRouteLoaderData(handle, 'orgInviteJoin', href)
 		const snapshot = joinData.read(handle, href)
 		const data =
 			snapshot.data ??

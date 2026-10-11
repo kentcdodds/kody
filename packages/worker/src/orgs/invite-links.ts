@@ -550,14 +550,6 @@ export async function redeemOrgInviteLink(input: {
 		userId: input.user.userId,
 		nowIso,
 	})
-	if (claimed === 'already') {
-		return {
-			ok: true,
-			alreadyMember: true,
-			role: input.link.role,
-			orgId: input.link.orgId,
-		}
-	}
 	if (claimed === 'unavailable') {
 		const refreshed = await getInviteLinkByTokenHash(
 			input.db,
@@ -571,6 +563,25 @@ export async function redeemOrgInviteLink(input: {
 			ok: false,
 			reason,
 			error: inviteLinkBlockMessage(reason),
+		}
+	}
+
+	const alreadyRedeemed = claimed === 'already'
+	const membershipBefore = alreadyRedeemed
+		? await input.db
+				.prepare(
+					`SELECT role FROM org_memberships
+					 WHERE org_id = ? AND user_id = ? AND deleted_at IS NULL`,
+				)
+				.bind(input.link.orgId, input.user.userId)
+				.first<{ role: string }>()
+		: null
+	if (alreadyRedeemed && membershipBefore) {
+		return {
+			ok: true,
+			alreadyMember: true,
+			role: input.link.role,
+			orgId: input.link.orgId,
 		}
 	}
 
@@ -589,17 +600,19 @@ export async function redeemOrgInviteLink(input: {
 			orgId: input.link.orgId,
 		})
 	}
-	await recordOrgAuditEvent(input.audit, {
-		orgId: input.link.orgId,
-		action: 'invite_link.joined',
-		resourceType: 'invite_link',
-		resourceId: input.link.id,
-		targetUserId: input.user.userId,
-		details: {
-			role: input.link.role,
-			linkId: input.link.id,
-		},
-	})
+	if (!alreadyRedeemed) {
+		await recordOrgAuditEvent(input.audit, {
+			orgId: input.link.orgId,
+			action: 'invite_link.joined',
+			resourceType: 'invite_link',
+			resourceId: input.link.id,
+			targetUserId: input.user.userId,
+			details: {
+				role: input.link.role,
+				linkId: input.link.id,
+			},
+		})
+	}
 	return {
 		ok: true,
 		alreadyMember: false,
