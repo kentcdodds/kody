@@ -496,6 +496,7 @@ export async function loadEarliestLiveOwnerId(db: D1Database, orgId: string) {
 			 INNER JOIN users u ON u.stable_user_id = m.user_id
 			 WHERE m.org_id = ? AND m.role = 'owner' AND m.deleted_at IS NULL
 			   AND u.deleted_at IS NULL AND u.deleting_at IS NULL
+			   AND u.suspended_at IS NULL
 			 ORDER BY m.created_at, m.user_id
 			 LIMIT 1`,
 		)

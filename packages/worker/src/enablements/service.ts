@@ -19,7 +19,11 @@ import {
 } from '#worker/package-registry/manifest.ts'
 import { loadPackageManifestBySourceId } from '#worker/package-registry/source.ts'
 import { type SavedPackageRecord } from '#worker/package-registry/types.ts'
-import { getWebhookEndpointByKey } from '#worker/webhooks/repo.ts'
+import {
+	getWebhookEndpointByKey,
+	setWebhookEndpointHmacSecret,
+} from '#worker/webhooks/repo.ts'
+import { mintPackageOwnedWebhookHmacCiphertext } from '#worker/webhooks/signing-secret.ts'
 import {
 	disableEnablement,
 	getEnablementById,
@@ -62,6 +66,8 @@ type ResolvedTrigger = {
 	triggerName: string
 	/** A webhook already enabled by someone else: one enabler per endpoint. */
 	webhookEnablers?: Array<EnablementRecord>
+	/** A webhook URL with no signing secret whose manifest declares no verification. */
+	unsignedWebhookEndpointId?: string
 }
 
 async function resolveDeclaredTrigger(input: {
@@ -102,7 +108,7 @@ async function resolveDeclaredTrigger(input: {
 			return { instanceId: savedPackage.id, triggerName: name }
 		}
 		case 'webhook': {
-			const declared = listPackageWebhooks(manifest).some(
+			const declared = listPackageWebhooks(manifest).find(
 				(webhook) => webhook.name === name,
 			)
 			if (!declared) throw notDeclared('webhooks')
@@ -126,6 +132,9 @@ async function resolveDeclaredTrigger(input: {
 					triggerKind: 'webhook',
 					instanceId: endpoint.id,
 				}),
+				...(!declared.verification && !endpoint.hmacSecretEncrypted
+					? { unsignedWebhookEndpointId: endpoint.id }
+					: {}),
 			}
 		}
 		default: {
@@ -169,19 +178,52 @@ export async function enableTriggerForCaller(input: {
 		kind: input.kind,
 		name: input.name,
 	})
+	const db = input.env.APP_DB
+	const orgId = savedPackage.userId
 	const [webhookEnabler] = trigger.webhookEnablers ?? []
-	if (webhookEnabler) {
-		if (String(webhookEnabler.enablerUserId) === String(actor.userId)) {
-			return webhookEnabler
-		}
+	if (
+		webhookEnabler &&
+		String(webhookEnabler.enablerUserId) !== String(actor.userId)
+	) {
 		throw new McpCallerError(
 			`Webhook "${trigger.triggerName}" is already on for another person. Each webhook URL runs as one enabler.`,
 		)
 	}
+	// A migrated org checks X-Kody-Signature on unsigned webhooks, so a URL
+	// that never got a signing secret (disabled at migration) gets one now.
+	if (
+		trigger.unsignedWebhookEndpointId &&
+		(await getEnablementOrgMigration({ db, orgId })).state === 'migrated'
+	) {
+		const { encrypted } = await mintPackageOwnedWebhookHmacCiphertext({
+			env: input.env,
+			userId: orgId,
+			endpointId: trigger.unsignedWebhookEndpointId,
+		})
+		await setWebhookEndpointHmacSecret({
+			db,
+			userId: orgId,
+			endpointId: trigger.unsignedWebhookEndpointId,
+			hmacSecretEncrypted: encrypted,
+		})
+	}
+	if (webhookEnabler) return webhookEnabler
+	const ownExisting = (
+		await listEnablementsForInstance({
+			db,
+			orgId,
+			triggerKind: input.kind,
+			instanceId: trigger.instanceId,
+			...(input.kind === 'subscription'
+				? { triggerName: trigger.triggerName }
+				: {}),
+		})
+	).find((row) => String(row.enablerUserId) === String(actor.userId))
+	if (ownExisting) return ownExisting
 	return await insertEnablement({
-		db: input.env.APP_DB,
+		db,
 		enablement: {
-			orgId: savedPackage.userId,
+			orgId,
 			packageId: savedPackage.id,
 			triggerKind: input.kind,
 			triggerName: trigger.triggerName,

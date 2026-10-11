@@ -11,6 +11,7 @@
 import {
 	isOrgPermission,
 	isOrgResourceType,
+	orgPermissions,
 	type OrgPermission,
 } from '@kody-internal/shared/org-permissions.ts'
 import { type PersonId } from '@kody-internal/shared/owner-person-ids.ts'
@@ -72,9 +73,11 @@ export type EnablementAudience = {
 	resource: Pick<OrgResource, 'type' | 'id'> | null
 }
 
-const seeActions = ['read', 'use', 'execute'] as const
-
-/** Whether an enabler with `access` may receive an event about `audience`. */
+/**
+ * Whether an enabler with `access` may receive an event about `audience`:
+ * like `canSeeResource`, any permission on the resource counts, since there
+ * is no implied hierarchy (write-only still sees it).
+ */
 export function enablerCanSee(
 	access: EffectivePermissions,
 	audience: EnablementAudience,
@@ -82,13 +85,13 @@ export function enablerCanSee(
 	if (access.isOwner) return true
 	if (!audience.resource) return false
 	const resource: OrgResource = { ...audience.resource, orgId: access.orgId }
-	return seeActions.some((action) => {
-		const permission = `${resource.type}:${action}`
-		return (
-			isOrgPermission(permission) &&
-			checkPermission(access, permission, resource).allowed
-		)
-	})
+	const prefix = `${resource.type}:`
+	return orgPermissions.some(
+		(permission) =>
+			permission.startsWith(prefix) &&
+			permission !== `${resource.type}:create` &&
+			checkPermission(access, permission, resource).allowed,
+	)
 }
 
 type EnablerRow = { stable_user_id: string; username: string }

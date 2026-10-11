@@ -50,7 +50,7 @@ import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import { getEnablementById, insertEnablement } from './repo.ts'
-import { planEnablementRuns } from './run-gate.ts'
+import { type EnablementAudience, planEnablementRuns } from './run-gate.ts'
 import { enableTriggerForCaller } from './service.ts'
 
 const scheduledAudits = vi.hoisted(() => [] as Array<Promise<unknown>>)
@@ -118,6 +118,10 @@ type SandboxRun = {
 	packageId: string
 	request: RequestContext | null
 	error: unknown
+	emailTools: {
+		getMessage: (messageId: string) => Promise<unknown>
+		getAttachment: (attachmentId: string) => Promise<unknown>
+	}
 }
 
 async function insertAccount(
@@ -242,6 +246,9 @@ async function setup() {
 							schedule: { type: 'interval', every: '1h' },
 						},
 					},
+					webhooks: [
+						{ name: 'incoming', export: './webhook', responseMode: 'ack' },
+					],
 				},
 			},
 		}),
@@ -313,13 +320,17 @@ async function setup() {
 			callerContext: McpCallerContext,
 			_bundle: unknown,
 			_params: unknown,
-			options: { packageContext: { packageId: string } },
+			options: {
+				packageContext: { packageId: string }
+				emailTools: SandboxRun['emailTools']
+			},
 		) => {
 			const packageId = options.packageContext.packageId
 			const run: SandboxRun = {
 				packageId,
 				request: callerContext.request,
 				error: null,
+				emailTools: options.emailTools,
 			}
 			runs.push(run)
 			try {
@@ -359,7 +370,7 @@ async function setup() {
 
 	const enable = async (
 		person: Person,
-		kind: 'subscription' | 'cron',
+		kind: 'subscription' | 'cron' | 'webhook',
 		name: string,
 	) =>
 		await enableTriggerForCaller({
@@ -427,7 +438,10 @@ async function setup() {
 			idempotencyKey: `delivery-${crypto.randomUUID()}`,
 		})
 
-	const raiseEvent = async (request: RequestSource) => {
+	const raiseEvent = async (
+		request: RequestSource,
+		audience?: EnablementAudience,
+	) => {
 		const savedPackage = await getSavedPackageById(db, {
 			userId: orgId,
 			packageId: 'pkg-shared',
@@ -441,6 +455,7 @@ async function setup() {
 			params: { thing: 1 },
 			idempotencyKey: `event-${crypto.randomUUID()}`,
 			request,
+			...(audience ? { audience } : {}),
 		})
 	}
 
@@ -489,6 +504,8 @@ async function setup() {
 		env,
 		orgId,
 		people,
+		insertAccount: (input: { email: string; username: string }) =>
+			insertAccount(db, input),
 		runs,
 		grant,
 		enable,
@@ -787,4 +804,161 @@ test("member email runs only the sender's enablement; other mail runs only the i
 	t.runs.splice(0)
 	await t.sendEmail('bea@acme.example')
 	expect(t.runs).toEqual([])
+})
+
+test('turning a trigger on again keeps one enablement per person', async () => {
+	const t = await setup()
+	const beasCron = await t.enable('bea', 'cron', jobName)
+	expect((await t.enable('bea', 'cron', jobName)).id).toBe(beasCron.id)
+	const beasEvents = await t.enable('bea', 'subscription', eventTopic)
+	expect((await t.enable('bea', 'subscription', eventTopic)).id).toBe(
+		beasEvents.id,
+	)
+	expect((await t.enable('bea', 'subscription', emailTopic)).id).not.toBe(
+		beasEvents.id,
+	)
+	expect((await t.enable('cy', 'cron', jobName)).id).not.toBe(beasCron.id)
+
+	consoleInfo.mockImplementation(() => {})
+	const plan = await planEnablementRuns({
+		env: t.env,
+		orgId: t.orgId,
+		packageId: 'pkg-shared',
+		trigger: {
+			kind: 'cron',
+			instanceId: buildPackageJobId('pkg-shared', jobName),
+		},
+	})
+	if (plan.mode !== 'enablements') throw new Error('Expected enablements.')
+	expect(plan.runs.map((run) => String(run.enabler.userId)).sort()).toEqual(
+		[t.people.bea.userId, t.people.cy.userId].map(String).sort(),
+	)
+})
+
+test('turning on a webhook URL that has no signing secret generates one', async () => {
+	const t = await setup()
+	await t.db
+		.prepare(
+			`INSERT INTO webhook_endpoints (
+				id, user_id, package_id, webhook_name, url_secret_hash,
+				url_secret_encrypted, enabled, created_at, rotated_at
+			) VALUES ('endpoint-off', ?, 'pkg-shared', 'incoming', 'hash', 'ciphertext', 0, ?, ?)`,
+		)
+		.bind(t.orgId, now, now)
+		.run()
+	const readSecret = async () =>
+		(
+			await t.db
+				.prepare(
+					`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = 'endpoint-off'`,
+				)
+				.first<{ hmac_secret_encrypted: string | null }>()
+		)?.hmac_secret_encrypted
+
+	expect(await readSecret()).toBeNull()
+	const enabled = await t.enable('bea', 'webhook', 'incoming')
+	expect(enabled).toMatchObject({
+		instanceId: 'endpoint-off',
+		enablerUserId: t.people.bea.userId,
+	})
+	const secret = await readSecret()
+	expect(secret).toBeTruthy()
+
+	// Enabling again keeps the same enablement and the same secret.
+	expect((await t.enable('bea', 'webhook', 'incoming')).id).toBe(enabled.id)
+	expect(await readSecret()).toBe(secret)
+})
+
+test('an org-wide event reaches an enabler holding any permission on its resource', async () => {
+	const t = await setup()
+	await t.enable('owner', 'subscription', eventTopic)
+	await t.enable('bea', 'subscription', eventTopic)
+	await t.enable('cy', 'subscription', eventTopic)
+	await upsertGrant({
+		db: t.db,
+		orgId: t.orgId,
+		resourceType: 'package',
+		resourceId: 'pkg-other',
+		subject: { type: 'user', id: t.people.bea.userId },
+		preset: null,
+		permissions: ['package:write'],
+		createdByUserId: t.people.owner.userId,
+		audit: createTestOrgAuditWriter(),
+	})
+
+	await t.raiseEvent(
+		{ kind: 'platform-event', sourceId: 'run-error:pkg-other' },
+		{ resource: { type: 'package', id: 'pkg-other' } },
+	)
+
+	expect(
+		t.runs.map((run) => String(run.request?.actor?.userId)).sort(),
+	).toEqual([t.people.owner.userId, t.people.bea.userId].map(String).sort())
+})
+
+test('mail from a non-member skips a suspended Owner for the next live one', async () => {
+	const t = await setup()
+	const deeId = await t.insertAccount({
+		email: 'dee@acme.example',
+		username: 'dee',
+	})
+	await t.db
+		.prepare(
+			`INSERT INTO org_memberships (org_id, user_id, role, created_at)
+			 VALUES (?, ?, 'owner', ?)`,
+		)
+		.bind(t.orgId, deeId, '2026-10-12T00:00:00.000Z')
+		.run()
+	const dees = await insertEnablement({
+		db: t.db,
+		enablement: {
+			orgId: t.orgId,
+			packageId: 'pkg-shared',
+			triggerKind: 'subscription',
+			triggerName: emailTopic,
+			instanceId: 'pkg-shared',
+			enablerUserId: deeId,
+			origin: 'enabled',
+		},
+	})
+	await t.db
+		.prepare(`UPDATE users SET suspended_at = ? WHERE stable_user_id = ?`)
+		.bind(now, t.people.owner.userId)
+		.run()
+
+	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
+
+	expect(t.runs.map((run) => run.request?.credential.id)).toEqual([dees.id])
+	expect(t.runs[0]?.request?.actor?.userId).toBe(deeId)
+})
+
+test("a run as a member reads org mail only with that member's email:read", async () => {
+	const t = await setup()
+	await t.enable('bea', 'subscription', emailTopic)
+	await t.enable('owner', 'subscription', emailTopic)
+
+	await t.sendEmail('bea@acme.example')
+	const beasRun = t.runs[0]
+	expect(beasRun?.request?.actor?.userId).toBe(t.people.bea.userId)
+	await expect(
+		beasRun!.emailTools.getMessage('message-1'),
+	).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'email:read',
+	})
+	await expect(
+		beasRun!.emailTools.getAttachment('attachment-1'),
+	).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		permission: 'email:read',
+	})
+
+	t.runs.splice(0)
+	await t.sendEmail('receipts@shop.example', 'mx; spf=pass; dkim=none')
+	const ownersRun = t.runs[0]
+	expect(ownersRun?.request?.actor?.userId).toBe(t.people.owner.userId)
+	const ownerError = await ownersRun!.emailTools
+		.getMessage('message-missing')
+		.catch((error: unknown) => error)
+	expect(ownerError).not.toMatchObject({ name: 'AuthorizationError' })
 })
