@@ -1,5 +1,6 @@
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { expect, test } from 'vitest'
+import { LivePersonRequiredError } from '#worker/authorization/authorize.ts'
 import { wrapArtifactsGitHttpError } from '#worker/repo/artifacts-git-retry.ts'
 import { consoleError } from '#worker/test-support/console-spies.ts'
 import { ApiError, toApiError } from './errors.ts'
@@ -136,4 +137,18 @@ test('toApiError does not remap bare TimeoutError or source-recovery wraps as Ar
 		code: 'internal_error',
 		message: 'Internal error. Retry later or report it if it persists.',
 	})
+})
+
+test('toApiError maps a live-person denial to 403 naming the capability', () => {
+	const apiError = toApiError(new LivePersonRequiredError('orgMemberUpdate'))
+
+	expect(apiError).toMatchObject({
+		status: 403,
+		code: 'insufficient_scope',
+		details: {
+			capability: 'orgMemberUpdate',
+			denial: 'live_person_required',
+		},
+	})
+	expect(apiError.message).toContain('"orgMemberUpdate" needs a live person')
 })

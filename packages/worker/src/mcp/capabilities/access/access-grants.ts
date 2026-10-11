@@ -18,6 +18,7 @@ import { orgAuditWriterFromRequest } from '#worker/orgs/org-audit.ts'
 import {
 	accessGrantSchema,
 	authorizeGrantTarget,
+	grantChangesMemberOrBilling,
 	grantPresetSchema,
 	grantResourceTypeSchema,
 	readPermissionList,
@@ -76,6 +77,12 @@ export const accessGrantCapability = defineDomainCapability(
 	{
 		name: 'accessGrant',
 		orgPermission: 'none',
+		requiresLivePerson: (args) =>
+			grantChangesMemberOrBilling({
+				resourceType: args.resource_type,
+				preset: args.preset,
+				permissions: args.permissions,
+			}),
 		description:
 			'Grant a user or team Use, Contribute, or Manage on a resource in the organization this request is bound to, or pass an explicit permission list instead of a preset. Organization grants use resource_type org and this organization id. You need manage access on that resource (or member:write for an organization grant). Only an Owner can put org:write, org:delete, member:write, or member:delete on an organization grant.',
 		keywords: ['grant', 'access', 'permission', 'share', 'preset'],
@@ -161,6 +168,16 @@ export const accessRevokeCapability = defineDomainCapability(
 	{
 		name: 'accessRevoke',
 		orgPermission: 'none',
+		requiresLivePerson: async (args, ctx) => {
+			const request = ctx.callerContext.request
+			if (!request) return true
+			const grant = await getGrantById({
+				db: ctx.env.APP_DB,
+				orgId: request.org.id,
+				grantId: args.grant_id,
+			})
+			return grant ? grantChangesMemberOrBilling(grant) : false
+		},
 		description:
 			'Revoke one live grant in the organization this request is bound to. You need manage access on that grant resource (or member:write for an organization grant).',
 		keywords: ['grant', 'revoke', 'access', 'remove'],
