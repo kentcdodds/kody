@@ -8,6 +8,7 @@ import { prefixPackagesInvokeSpecifiersCodemod } from './codemods/0007-prefix-pa
 import { packagesInvokeToStaticImportCodemod } from './codemods/0008-packages-invoke-to-static-import.ts'
 import { snakeCaseKodyMembersCodemod } from './codemods/0009-snake-case-kody-members.ts'
 import { detectLegacyCredentialPatternsCodemod } from './codemods/0010-detect-legacy-credential-patterns.ts'
+import { ownerScopeFollowsRegistryCodemod } from './codemods/0011-owner-scope-follows-registry.ts'
 import { type PackageCodemod } from './types.ts'
 
 const packageCodemods: Array<PackageCodemod> = [
@@ -21,6 +22,7 @@ const packageCodemods: Array<PackageCodemod> = [
 	packagesInvokeToStaticImportCodemod,
 	snakeCaseKodyMembersCodemod,
 	detectLegacyCredentialPatternsCodemod,
+	ownerScopeFollowsRegistryCodemod,
 ]
 
 const packageCodemodsById = new Map(
