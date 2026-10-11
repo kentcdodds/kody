@@ -9,6 +9,7 @@ import {
 	listEnablementsForInstance,
 	listEnablementsForOrg,
 	markEnablementOrgNotified,
+	saveEnablementNoticePlan,
 	pauseEnablement,
 	resumeEnablement,
 } from './repo.ts'
@@ -108,8 +109,21 @@ test('an org with no migration row reads as legacy and can be notified once', as
 		orgId: 'org-1',
 		state: 'legacy',
 		noticeSentAt: null,
+		noticePlan: {},
 		migratedAt: null,
 	})
+	await saveEnablementNoticePlan({
+		db,
+		orgId: 'org-1',
+		plan: { 'user-1': ['cron\u0000job-1\u0000digest'] },
+		now: 'first',
+	})
+	expect(await getEnablementOrgMigration({ db, orgId: 'org-1' })).toMatchObject(
+		{
+			state: 'legacy',
+			noticePlan: { 'user-1': ['cron\u0000job-1\u0000digest'] },
+		},
+	)
 	expect(
 		await markEnablementOrgNotified({ db, orgId: 'org-1', now: 'first' }),
 	).toBe(true)

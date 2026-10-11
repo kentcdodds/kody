@@ -7,7 +7,7 @@ import {
 	ownerIdFromStored,
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
@@ -21,6 +21,7 @@ import {
 	type EnablementBackfillDeps,
 } from './backfill.ts'
 import {
+	buildInsertEnablementStatement,
 	getEnablementOrgMigration,
 	listEnablementsForOrg,
 	pauseEnablement,
@@ -84,7 +85,12 @@ async function setup() {
 
 	const jobsByOrg = new Map<
 		string,
-		Array<{ id: string; name: string; creatorUserId: string | null }>
+		Array<{
+			id: string
+			name: string
+			creatorUserId: string | null
+			active: boolean
+		}>
 	>()
 	const manifestsByPackage = new Map<string, Manifest>()
 	const notices: Array<{ to: string; subject: string; text: string }> = []
@@ -130,6 +136,22 @@ async function setup() {
 			)
 			.bind(input.id, input.orgId, input.name, input.id, `source-${input.id}`)
 			.run()
+		await db
+			.prepare(
+				`INSERT INTO entity_sources (
+					id, user_id, entity_kind, entity_id, repo_id, published_commit,
+					created_at, updated_at
+				) VALUES (?, ?, 'package', ?, ?, 'commit-1', ?, ?)`,
+			)
+			.bind(
+				`source-${input.id}`,
+				input.orgId,
+				input.id,
+				`repo-${input.id}`,
+				now,
+				now,
+			)
+			.run()
 		manifestsByPackage.set(input.id, input.manifest)
 	}
 
@@ -140,13 +162,14 @@ async function setup() {
 		webhookName: string
 		createdByUserId: string | null
 		hmacSecretEncrypted?: string | null
+		enabled?: boolean
 	}) {
 		await db
 			.prepare(
 				`INSERT INTO webhook_endpoints (
 					id, user_id, package_id, webhook_name, url_secret_hash, created_at,
-					rotated_at, created_by_user_id, hmac_secret_encrypted
-				) VALUES (?, ?, ?, ?, 'hash', ?, ?, ?, ?)`,
+					rotated_at, created_by_user_id, hmac_secret_encrypted, enabled
+				) VALUES (?, ?, ?, ?, 'hash', ?, ?, ?, ?, ?)`,
 			)
 			.bind(
 				input.id,
@@ -157,6 +180,7 @@ async function setup() {
 				now,
 				input.createdByUserId,
 				input.hmacSecretEncrypted ?? null,
+				input.enabled === false ? 0 : 1,
 			)
 			.run()
 	}
@@ -200,13 +224,26 @@ async function seedTeamOrg(t: Awaited<ReturnType<typeof setup>>) {
 					},
 				},
 				{ name: 'linear', export: './linear' },
+				{ name: 'sentry', export: './sentry' },
 			],
 		},
 	})
 	t.jobsByOrg.set(t.teamOrgId, [
-		{ id: 'job-member', name: 'digest', creatorUserId: t.memberId },
-		{ id: 'job-left', name: 'cleanup', creatorUserId: t.leaverId },
-		{ id: 'job-legacy', name: 'legacy', creatorUserId: null },
+		{
+			id: 'job-member',
+			name: 'digest',
+			creatorUserId: t.memberId,
+			active: true,
+		},
+		{
+			id: 'job-left',
+			name: 'cleanup',
+			creatorUserId: t.leaverId,
+			active: true,
+		},
+		{ id: 'job-legacy', name: 'legacy', creatorUserId: null, active: true },
+		// Disabled or kill-switched: it does not run today.
+		{ id: 'job-off', name: 'paused', creatorUserId: t.memberId, active: false },
 	])
 	await t.addWebhookEndpoint({
 		orgId: t.teamOrgId,
@@ -230,6 +267,22 @@ async function seedTeamOrg(t: Awaited<ReturnType<typeof setup>>) {
 		createdByUserId: t.memberId,
 		hmacSecretEncrypted: 'already-set',
 	})
+	// A disabled URL, and a URL whose webhook the package no longer declares.
+	await t.addWebhookEndpoint({
+		orgId: t.teamOrgId,
+		id: 'wh-disabled',
+		packageId: 'pkg-mail',
+		webhookName: 'sentry',
+		createdByUserId: t.memberId,
+		enabled: false,
+	})
+	await t.addWebhookEndpoint({
+		orgId: t.teamOrgId,
+		id: 'wh-gone',
+		packageId: 'pkg-mail',
+		webhookName: 'removed',
+		createdByUserId: t.memberId,
+	})
 }
 
 test('dry-run plans one enablement per trigger for a real member and writes nothing', async () => {
@@ -249,6 +302,7 @@ test('dry-run plans one enablement per trigger for a real member and writes noth
 		teamOrg: true,
 		stateBefore: 'legacy',
 		outcome: 'planned',
+		inactive: 3,
 	})
 	const summary = org.planned.map((item) => [
 		item.triggerKind,
@@ -298,6 +352,7 @@ test('dry-run plans one enablement per trigger for a real member and writes noth
 		teamOrgs: 1,
 		enablementsByKind: { cron: 3, webhook: 3, subscription: 2 },
 		unsignedWebhooks: 1,
+		inactiveTriggers: 3,
 		distinctEnablers: 2,
 		noticesSent: 0,
 	})
@@ -413,7 +468,7 @@ test('a personal org migrates without a notice, and existing enablements are not
 		manifest: { subscriptions: { 'job.run.failed': { handler: './a.ts' } } },
 	})
 	t.jobsByOrg.set(t.personalOrgId, [
-		{ id: 'job-own', name: 'own', creatorUserId: null },
+		{ id: 'job-own', name: 'own', creatorUserId: null, active: true },
 	])
 
 	consoleWarn.mockImplementation(() => {})
@@ -526,7 +581,7 @@ test('paging walks every live org in id order, skipping migrated and deleted one
 test('an org with no live Owner is skipped instead of falling back to a system owner', async () => {
 	const t = await setup()
 	t.jobsByOrg.set(t.teamOrgId, [
-		{ id: 'job-1', name: 'digest', creatorUserId: t.memberId },
+		{ id: 'job-1', name: 'digest', creatorUserId: t.memberId, active: true },
 	])
 	await t.db
 		.prepare(
@@ -568,4 +623,315 @@ test('the notice names each item and contains no em dashes', () => {
 		'- Subscription: email.message.received (@zeta-co/mail)',
 	)
 	expect(`${notice.subject}\n${notice.text}`).not.toMatch(/\u2014/)
+})
+
+test('a rerun after a rename or a turned-off personal row keeps one migrated row per trigger', async () => {
+	const t = await setup()
+	t.jobsByOrg.set(t.personalOrgId, [
+		{ id: 'job-a', name: 'renamed', creatorUserId: null, active: true },
+		{ id: 'job-b', name: 'nightly', creatorUserId: null, active: true },
+	])
+	// An earlier partial apply wrote job-a under its old name.
+	await t.db
+		.prepare(
+			`INSERT INTO enablements (
+				id, org_id, trigger_kind, trigger_name, instance_id, enabler_user_id,
+				state, origin, enabled_at, updated_at
+			) VALUES ('e-a', ?, 'cron', 'old-name', 'job-a', ?, 'on', 'migrated', ?, ?)`,
+		)
+		.bind(t.personalOrgId, t.ownerId, now, now)
+		.run()
+	// Someone's own enablement of job-b that they turned off.
+	await t.db
+		.prepare(
+			`INSERT INTO enablements (
+				id, org_id, trigger_kind, trigger_name, instance_id, enabler_user_id,
+				state, origin, enabled_at, disabled_at, updated_at
+			) VALUES ('e-b', ?, 'cron', 'nightly', 'job-b', ?, 'off', 'enabled', ?, ?, ?)`,
+		)
+		.bind(t.personalOrgId, t.ownerId, now, now, now)
+		.run()
+
+	const report = await runEnablementBackfill({
+		db: t.db,
+		mode: 'apply',
+		deps: t.deps,
+		orgIds: [t.personalOrgId],
+	})
+	expect(report.orgs[0]?.planned.map((item) => item.instanceId)).toEqual([
+		'job-b',
+	])
+	const migrated = await t.db
+		.prepare(
+			`SELECT instance_id FROM enablements
+			 WHERE org_id = ? AND origin = 'migrated' AND state = 'on'
+			 ORDER BY instance_id`,
+		)
+		.bind(t.personalOrgId)
+		.all<{ instance_id: string }>()
+	expect(migrated.results.map((row) => row.instance_id)).toEqual([
+		'job-a',
+		'job-b',
+	])
+})
+
+test('the unique migrated index makes an overlapping apply a no-op', async () => {
+	const t = await setup()
+	// Two applies that both planned before either wrote insert the same row.
+	for (const id of ['e-1', 'e-2']) {
+		await buildInsertEnablementStatement({
+			db: t.db,
+			enablement: {
+				id,
+				orgId: t.personalOrgId,
+				packageId: null,
+				triggerKind: 'cron',
+				triggerName: 'a',
+				instanceId: 'job-a',
+				enablerUserId: t.ownerId,
+				origin: 'migrated',
+			},
+			now,
+			ignoreConflicts: true,
+		}).statement.run()
+	}
+	const rows = await listEnablementsForOrg({ db: t.db, orgId: t.personalOrgId })
+	expect(rows.map((row) => row.id)).toEqual(['e-1'])
+})
+
+test('a never-published package does not block its org, but a failed manifest read does', async () => {
+	const t = await setup()
+	await t.addPackage({
+		orgId: t.personalOrgId,
+		id: 'pkg-live',
+		name: '@owner/live',
+		manifest: { subscriptions: { 'job.run.failed': { handler: './a.ts' } } },
+	})
+	await t.db
+		.prepare(
+			`INSERT INTO saved_packages (id, user_id, name, kody_id, description, source_id)
+			 VALUES ('pkg-draft', ?, '@owner/draft', 'pkg-draft', '', 'source-draft')`,
+		)
+		.bind(t.personalOrgId)
+		.run()
+
+	const report = await runEnablementBackfill({
+		db: t.db,
+		mode: 'dry-run',
+		deps: t.deps,
+		orgIds: [t.personalOrgId],
+	})
+	expect(report.orgs[0]).toMatchObject({ outcome: 'planned' })
+	expect(report.orgs[0]?.planned.map((item) => item.instanceId)).toEqual([
+		'pkg-live',
+	])
+
+	consoleWarn.mockImplementation(() => {})
+	await t.db
+		.prepare(
+			`INSERT INTO entity_sources (
+				id, user_id, entity_kind, entity_id, repo_id, published_commit,
+				created_at, updated_at
+			) VALUES ('source-draft', ?, 'package', 'pkg-draft', 'repo-draft', 'c1', ?, ?)`,
+		)
+		.bind(t.personalOrgId, now, now)
+		.run()
+	const blocked = await runEnablementBackfill({
+		db: t.db,
+		mode: 'dry-run',
+		deps: t.deps,
+		orgIds: [t.personalOrgId],
+	})
+	expect(blocked.orgs[0]).toMatchObject({
+		outcome: 'skipped',
+		skipReason: 'manifest_load_failed',
+	})
+})
+
+test('notify covers every enabler before an org counts as notified, and never emails twice', async () => {
+	const t = await setup()
+	await seedTeamOrg(t)
+	await t.db
+		.prepare(`UPDATE users SET email = '' WHERE stable_user_id = ?`)
+		.bind(t.memberId)
+		.run()
+
+	const missing = await runEnablementBackfill({
+		db: t.db,
+		mode: 'notify',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(missing.orgs[0]).toMatchObject({
+		outcome: 'skipped',
+		skipReason: 'notice_incomplete',
+	})
+	expect(t.notices.map((notice) => notice.to)).toEqual(['owner@example.com'])
+	expect(
+		await getEnablementOrgMigration({ db: t.db, orgId: t.teamOrgId }),
+	).toMatchObject({ state: 'legacy' })
+	const refused = await runEnablementBackfill({
+		db: t.db,
+		mode: 'apply',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(refused.orgs[0]).toMatchObject({ skipReason: 'notice_required' })
+
+	// The member's address is fixed, but the first send fails.
+	await t.db
+		.prepare(
+			`UPDATE users SET email = 'member@example.com' WHERE stable_user_id = ?`,
+		)
+		.bind(t.memberId)
+		.run()
+	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+	const failing = await runEnablementBackfill({
+		db: t.db,
+		mode: 'notify',
+		deps: {
+			...t.deps,
+			async sendNotice() {
+				throw new Error('daily send limit')
+			},
+		},
+		orgIds: [t.teamOrgId],
+	})
+	expect(failing.orgs[0]).toMatchObject({ skipReason: 'notice_incomplete' })
+	expect(consoleError.mock.calls[0]?.[0]).toBe(
+		'enablement-backfill-notice-failed',
+	)
+	consoleError.mockRestore()
+
+	const retried = await runEnablementBackfill({
+		db: t.db,
+		mode: 'notify',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(retried.orgs[0]?.outcome).toBe('notified')
+	expect(t.notices.map((notice) => notice.to)).toEqual([
+		'owner@example.com',
+		'member@example.com',
+	])
+})
+
+test('apply refuses items added after the notice until their enabler is told', async () => {
+	const t = await setup()
+	await seedTeamOrg(t)
+	await runEnablementBackfill({
+		db: t.db,
+		mode: 'notify',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(t.notices).toHaveLength(2)
+
+	t.jobsByOrg.get(t.teamOrgId)!.push({
+		id: 'job-new',
+		name: 'weekly',
+		creatorUserId: t.memberId,
+		active: true,
+	})
+	const refused = await runEnablementBackfill({
+		db: t.db,
+		mode: 'apply',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(refused.orgs[0]).toMatchObject({
+		outcome: 'skipped',
+		skipReason: 'notice_required',
+	})
+	expect(
+		refused.orgs[0]?.notices.map((notice) => [
+			notice.enablerUserId,
+			notice.notified,
+		]),
+	).toEqual([
+		[t.memberId, false],
+		[t.ownerId, true],
+	])
+
+	const renotified = await runEnablementBackfill({
+		db: t.db,
+		mode: 'notify',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(renotified.orgs[0]?.outcome).toBe('notified')
+	expect(t.notices.map((notice) => notice.to)).toEqual([
+		expect.any(String),
+		expect.any(String),
+		'member@example.com',
+	])
+	expect(t.notices[2]?.text).toContain('- Scheduled job: weekly')
+
+	const applied = await runEnablementBackfill({
+		db: t.db,
+		mode: 'apply',
+		deps: t.deps,
+		orgIds: [t.teamOrgId],
+	})
+	expect(applied.orgs[0]?.outcome).toBe('migrated')
+	expect(
+		(await listEnablementsForOrg({ db: t.db, orgId: t.teamOrgId })).some(
+			(row) => row.instanceId === 'job-new',
+		),
+	).toBe(true)
+})
+
+test('a full page filtered by org ids still returns a cursor', async () => {
+	const t = await setup()
+	const orgIds = [t.personalOrgId, t.teamOrgId]
+	const first = await runEnablementBackfill({
+		db: t.db,
+		mode: 'dry-run',
+		deps: t.deps,
+		orgIds,
+		limit: 1,
+	})
+	expect(first.nextCursor).toBe(first.orgs[0]?.orgId)
+	const second = await runEnablementBackfill({
+		db: t.db,
+		mode: 'dry-run',
+		deps: t.deps,
+		orgIds,
+		limit: 1,
+		cursor: first.nextCursor,
+	})
+	const third = await runEnablementBackfill({
+		db: t.db,
+		mode: 'dry-run',
+		deps: t.deps,
+		orgIds,
+		limit: 1,
+		cursor: second.nextCursor,
+	})
+	expect(
+		new Set([...first.orgs, ...second.orgs].map((org) => org.orgId)),
+	).toEqual(new Set(orgIds))
+	expect(third.orgs).toEqual([])
+	expect(third.nextCursor).toBeNull()
+})
+
+test('the notice tells the enabler of an unsigned webhook where its signing secret is', () => {
+	const notice = buildEnablementNotice({
+		orgSlug: 'zeta-co',
+		items: [
+			{
+				triggerKind: 'webhook',
+				triggerName: 'github',
+				instanceId: 'wh',
+				packageId: 'pkg',
+				packageName: '@zeta-co/mail',
+				enablerUserId: 'u',
+				enablerSource: 'creator',
+				unsignedWebhook: true,
+			},
+		],
+	})
+	expect(notice.text).toContain('X-Kody-Signature')
+	expect(notice.text).toContain('package settings')
+	expect(notice.text).not.toMatch(/\u2014/)
 })

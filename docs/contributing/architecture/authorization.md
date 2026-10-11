@@ -107,7 +107,13 @@ the old way (Automation, as Owner) until its row is `migrated`. The admin
 capability `adminEnablementsMigrate` writes one enablement per existing job,
 webhook, and subscription for a real member (the creator if still a member, else
 the earliest Owner), generates a signing secret for unsigned webhooks, and for
-team orgs first emails each member which enablements will bill them.
+team orgs first emails each member which enablements will bill them. Only
+triggers that run today migrate: disabled or kill-switched jobs, disabled
+webhook URLs, and URLs whose webhook is no longer declared are counted and left
+off. `notice_plan_json` records what each member's notice listed, so a retried
+`notify` emails nobody twice, and `apply` migrates a team org only when every
+planned item was in a notice to its enabler. A unique index allows one migrated
+row per trigger instance.
 
 ### Checking many resources
 
