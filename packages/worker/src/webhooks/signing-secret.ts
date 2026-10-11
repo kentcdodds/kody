@@ -14,6 +14,19 @@ import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 /**
+ * The signature every webhook in an org moved to enablements is checked
+ * against when its manifest declares no verification: HMAC-SHA256 of the
+ * body with the endpoint's own signing secret (generated at migration or
+ * mint), hex encoded in `X-Kody-Signature` as `sha256=<hex>`.
+ */
+export const defaultWebhookVerification = {
+	type: 'hmac-sha256',
+	header: 'x-kody-signature',
+	encoding: 'hex',
+	prefix: 'sha256=',
+} as const satisfies NonNullable<PackageWebhookManifestEntry['verification']>
+
+/**
  * Package-owned HMAC plaintext for apply injection and inbound verify.
  * Prefer ciphertext on the webhook endpoint (package-scoped).
  *

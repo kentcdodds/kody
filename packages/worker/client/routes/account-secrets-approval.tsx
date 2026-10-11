@@ -5,7 +5,6 @@ import { on } from '#client/event-mixin.ts'
 import {
 	type ApprovalAction,
 	type ApprovalView,
-	type PackageCredentialConsent,
 	allowHostsButtonLabel,
 	allowPackagesButtonLabel,
 	approvalRejectedHosts,
@@ -93,13 +92,22 @@ export function renderSecretApprovalCard(props: {
 						<code mix={css({ color: colors.textMuted })}>
 							{approvalCard.requestedPackageId}
 						</code>
-						{renderPackageCredentialConsent({
-							packageLabel:
-								requestedPackageMetadata?.kodyId ??
-								approvalCard.requestedPackageId,
-							names: approvalCard.names,
-							credentials: approvalCard.packageCredentials,
-						})}
+						{approvalCard.names.length > 1 ? (
+							<ul
+								mix={css({
+									margin: 0,
+									paddingLeft: spacing.lg,
+									display: 'grid',
+									gap: spacing.xs,
+								})}
+							>
+								{approvalCard.names.map((secretName) => (
+									<li key={secretName}>
+										<code>{secretName}</code>
+									</li>
+								))}
+							</ul>
+						) : null}
 					</div>
 				) : (
 					<div mix={css({ display: 'grid', gap: spacing.xs })}>
@@ -245,76 +253,6 @@ export function renderSecretApprovalCard(props: {
 
 function approvalHosts(approvalCard: ApprovalView) {
 	return approvalRequestedHosts(approvalCard)
-}
-
-/**
- * Allowed hosts bound only what the fetch gateway fills in. A raw slot's value
- * reaches package code, so its host line must not read as a destination limit.
- */
-function describeAllowedHosts(credential: PackageCredentialConsent) {
-	const hosts = credential.allowedHosts.join(', ')
-	if (credential.raw) {
-		return hosts
-			? `Header placeholders resolve only for ${hosts}.`
-			: 'Header placeholders resolve for no host until you allow one on this secret.'
-	}
-	return hosts
-		? `Sent only to ${hosts}.`
-		: 'Not sent to any host until you allow one on this secret.'
-}
-
-/**
- * One consent line per secret: where the package may send it and, for a raw
- * slot, its own line saying the package can read the value itself.
- */
-function renderPackageCredentialConsent(props: {
-	packageLabel: string
-	names: ReadonlyArray<string>
-	credentials: ReadonlyArray<PackageCredentialConsent> | undefined
-}) {
-	const byName = new Map(
-		(props.credentials ?? []).map((credential) => [
-			credential.name,
-			credential,
-		]),
-	)
-	return (
-		<ul
-			mix={css({
-				margin: 0,
-				paddingLeft: spacing.lg,
-				display: 'grid',
-				gap: spacing.sm,
-			})}
-			data-testid="package-credential-consent"
-		>
-			{props.names.map((name) => {
-				const credential = byName.get(name)
-				return (
-					<li key={name} mix={css({ display: 'grid', gap: spacing.xs })}>
-						<code>{name}</code>
-						{credential ? (
-							<span mix={css({ color: colors.textMuted })}>
-								{describeAllowedHosts(credential)}
-							</span>
-						) : null}
-						{credential?.raw ? (
-							<div
-								mix={css(getAccentCalloutCss({ accentColor: colors.danger }))}
-								data-testid="package-credential-raw"
-							>
-								<p mix={css({ margin: 0 })}>
-									<strong>{props.packageLabel}</strong> can read the raw value
-									of <code>{name}</code> and send it to any host, not just the
-									allowed hosts.
-								</p>
-							</div>
-						) : null}
-					</li>
-				)
-			})}
-		</ul>
-	)
 }
 
 export function renderAlreadyAddedNotice(items: Array<string>) {
@@ -524,11 +462,20 @@ export function renderPackageSecretApprovalPage(props: {
 							<span mix={css({ color: colors.textMuted })}>
 								{names.length === 1 ? 'Secret' : 'Secrets'}
 							</span>
-							{renderPackageCredentialConsent({
-								packageLabel: packageLabel ?? packageId,
-								names,
-								credentials: approval.packageCredentials,
-							})}
+							<ul
+								mix={css({
+									margin: 0,
+									paddingLeft: spacing.lg,
+									display: 'grid',
+									gap: spacing.xs,
+								})}
+							>
+								{names.map((name) => (
+									<li key={name}>
+										<code>{name}</code>
+									</li>
+								))}
+							</ul>
 						</div>
 						<div mix={css({ display: 'grid', gap: spacing.xs })}>
 							<span mix={css({ color: colors.textMuted })}>Package</span>

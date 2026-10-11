@@ -49,7 +49,7 @@ leaf or `@owner/leaf`). There is no create action on
 require agents to hand-roll an MCP OAuth dance — the CLI does it for them:
 
 ```bash
-npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead] [--org <slug>]
 ```
 
 Then assert the pages:

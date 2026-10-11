@@ -26,6 +26,7 @@ import path from 'node:path'
 
 import { hashMigrationContent } from '../check-migrations.ts'
 import { isExecutedDirectly } from '../node-runtime.ts'
+import { executeWranglerD1 } from '../wrangler-d1-execute.ts'
 import { previewResourceNamePattern } from './preview-resources.ts'
 import { parseJsonc } from './resource-utils.ts'
 
@@ -371,58 +372,19 @@ function assertPreviewCloudflareEnv(): void {
 	}
 }
 
-function runWranglerD1(
-	options: CliOptions,
-	d1Arguments: ReadonlyArray<string>,
-): { status: number | null; stdout: string; stderr: string } {
-	const nodeArguments: Array<string> = []
-	const envFilePath = path.join('packages', 'worker', '.env')
-	if (existsSync(envFilePath)) {
-		nodeArguments.push(`--env-file=${envFilePath}`)
-	}
-	nodeArguments.push(
-		'./wrangler-env.ts',
-		'd1',
-		...d1Arguments,
-		'--remote',
-		'--config',
-		options.config,
-	)
-	const result = spawnSync(process.execPath, nodeArguments, {
-		cwd: process.cwd(),
-		encoding: 'utf8',
-		env: { ...process.env, WRANGLER_LOG: 'log' },
-		maxBuffer: 16 * 1024 * 1024,
-	})
+function d1Target(options: CliOptions) {
 	return {
-		status: result.status,
-		stdout: result.stdout ?? '',
-		stderr: result.stderr ?? '',
+		mode: '--remote' as const,
+		config: options.config,
 	}
 }
 
-function queryRows(
-	options: CliOptions,
-	sql: string,
-): Array<{ name?: unknown }> {
-	const result = runWranglerD1(options, [
-		'execute',
-		options.binding,
-		'--json',
-		'--command',
+function queryRows(options: CliOptions, sql: string) {
+	return executeWranglerD1({
+		...d1Target(options),
+		binding: options.binding,
 		sql,
-	])
-	if (result.status !== 0) {
-		throw new Error(
-			`wrangler d1 execute failed (exit ${String(result.status)}) for: ${sql}\n${result.stdout}\n${result.stderr}`,
-		)
-	}
-	const parsed: unknown = JSON.parse(result.stdout)
-	if (!Array.isArray(parsed) || parsed.length === 0) {
-		throw new Error('Unexpected wrangler d1 execute --json output shape.')
-	}
-	const first = parsed[0] as { results?: Array<{ name?: unknown }> }
-	return first.results ?? []
+	})
 }
 
 function queryAppliedMigrationNames(options: CliOptions): Array<string> | null {
@@ -454,17 +416,16 @@ function applyRewrite(
 		rewrite.kind === 'rename'
 			? `UPDATE d1_migrations SET name = ${sqlStringLiteral(to)} WHERE name = ${sqlStringLiteral(from)};`
 			: `DELETE FROM d1_migrations WHERE name = ${sqlStringLiteral(from)};`
-	const result = runWranglerD1(options, [
-		'execute',
-		options.binding,
-		'--json',
-		'--command',
-		sql,
-	])
-	if (result.status !== 0) {
-		process.stderr.write(result.stderr)
+	try {
+		executeWranglerD1({
+			...d1Target(options),
+			binding: options.binding,
+			sql,
+		})
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error)
 		throw new Error(
-			`Failed to ${rewrite.kind} d1_migrations ${from} → ${to} (exit ${String(result.status)}).`,
+			`Failed to ${rewrite.kind} d1_migrations ${from} → ${to}: ${message}`,
 		)
 	}
 }

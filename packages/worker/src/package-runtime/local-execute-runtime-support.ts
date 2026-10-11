@@ -99,7 +99,7 @@ export function __kodyGetSecretAuthority() {
 }
 
 // Pure placeholder builders — same shape as cloud execute helpers (including
-// opaque {{secret:…}} refs). Local isolate wraps globalThis.fetch
+// opaque refs from packageSecrets.get). Local isolate wraps globalThis.fetch
 // with __kodyGatewayFetch so secret-bearing calls hop through CapabilityProxy
 // (same as cloud), including frozen dependency copies that call
 // globalThis.fetch instead of free \`fetch\`. Non-secret requests still use
@@ -372,7 +372,9 @@ export async function __kodyGatewayFetch(input, init) {
 	return __kodyGatewayFetchCall(input, init, authority);
 }
 
-function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
+// Only the URL and headers can hold a substitution site. A body is data: it
+// is forwarded byte-for-byte, so placeholder text in it never causes a hop.
+function __kodyRequestHasSecretPlaceholders(url, headers) {
 	const probe = (value) => {
 		if (typeof value !== "string" || !value.includes("{{")) return false;
 		return (
@@ -388,14 +390,11 @@ function __kodyRequestHasSecretPlaceholders(url, headers, bodyText) {
 		);
 	};
 	if (probe(url)) return true;
-	if (probe(bodyText)) return true;
 	for (const value of Object.values(headers ?? {})) {
 		if (probe(value)) return true;
 	}
 	return false;
 }
-
-const __kodyStreamingPlaceholderLimit = 4096;
 
 function __kodyIsCallerByteStream(body) {
 	return Boolean(
@@ -426,162 +425,10 @@ function __kodyIsNonByteStream(body) {
 	return false;
 }
 
-function __kodyConcatBytes(chunks) {
-	let length = 0;
-	for (const chunk of chunks) length += chunk.byteLength;
-	const bytes = new Uint8Array(length);
-	let offset = 0;
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	return bytes;
-}
-
-function __kodyBytesToAscii(bytes) {
-	return new TextDecoder("latin1").decode(bytes);
-}
-
-function __kodyStreamingSecretError() {
-	return new Error(
-		"Local execute secret-aware fetch cannot expand secret placeholders in a streaming body. Buffer the body or remove {{secret:…}} placeholders.",
-	);
-}
-
-function __kodyStreamingWindowError() {
-	return new Error(
-		"Local execute secret-aware fetch cannot check a streaming body for secret placeholders past the inspection window. Buffer the body or remove {{secret:…}} placeholders.",
-	);
-}
-
 function __kodyStreamingHeaderError() {
 	return new Error(
 		"Local execute secret-aware fetch cannot use a streaming body when the URL or headers contain secret placeholders. Buffer the body, or remove those placeholders.",
 	);
-}
-
-function __kodyUnclosedCouldBeSecret(tail) {
-	if (!tail.includes("{{")) return false;
-	const starters = [
-		"{{secret:",
-		"{{secret-basic:",
-		"{{integration-token:",
-		"{{secret/",
-	];
-	for (const starter of starters) {
-		const length = Math.min(starter.length, tail.length);
-		if (starter.slice(0, length) === tail.slice(0, length)) return true;
-		if (tail.startsWith(starter)) return true;
-	}
-	return false;
-}
-
-function __kodyStreamingDecision(text) {
-	if (__kodyRequestHasSecretPlaceholders("", {}, text)) {
-		return { reject: "secret", hold: 0 };
-	}
-	const lastClose = text.lastIndexOf("}}");
-	const rest = lastClose === -1 ? text : text.slice(lastClose + 2);
-	const open = rest.lastIndexOf("{{");
-	if (open === -1) {
-		return { reject: null, hold: rest.endsWith("{") ? 1 : 0 };
-	}
-	const tail = rest.slice(open);
-	if (tail.includes("}}") || !__kodyUnclosedCouldBeSecret(tail)) {
-		return { reject: null, hold: rest.endsWith("{") ? 1 : 0 };
-	}
-	if (tail.length > __kodyStreamingPlaceholderLimit) {
-		return { reject: "window", hold: 0 };
-	}
-	return { reject: null, hold: tail.length };
-}
-
-function __kodyScanStreamingBody(source) {
-	const reader = source.getReader();
-	let carry = new Uint8Array(0);
-	return new ReadableStream({
-		async pull(controller) {
-			const { done, value } = await reader.read();
-			if (done) {
-				if (carry.byteLength > 0) {
-					const text = __kodyBytesToAscii(carry);
-					if (__kodyEofHasUnresolvedSecret(text)) {
-						controller.error(__kodyStreamingSecretError());
-						return;
-					}
-					controller.enqueue(carry);
-					carry = new Uint8Array(0);
-				}
-				controller.close();
-				return;
-			}
-			const chunk =
-				value instanceof Uint8Array ? value : new Uint8Array(value);
-			const data = __kodyConcatBytes([carry, chunk]);
-			carry = new Uint8Array(0);
-			const decision = __kodyStreamingDecision(__kodyBytesToAscii(data));
-			if (decision.reject === "secret") {
-				controller.error(__kodyStreamingSecretError());
-				try {
-					await reader.cancel();
-				} catch {
-					// The caller already has the failure.
-				}
-				return;
-			}
-			if (decision.reject === "window") {
-				controller.error(__kodyStreamingWindowError());
-				try {
-					await reader.cancel();
-				} catch {
-					// The caller already has the failure.
-				}
-				return;
-			}
-			const emitLength = data.byteLength - decision.hold;
-			if (emitLength > 0) {
-				controller.enqueue(data.subarray(0, emitLength));
-			}
-			if (decision.hold > 0) {
-				carry = data.subarray(data.byteLength - decision.hold);
-			}
-		},
-		cancel(reason) {
-			return reader.cancel(reason);
-		},
-	});
-}
-
-function __kodyEofHasUnresolvedSecret(text) {
-	if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
-	const lastClose = text.lastIndexOf("}}");
-	const rest = lastClose === -1 ? text : text.slice(lastClose + 2);
-	const open = rest.lastIndexOf("{{");
-	if (open === -1) return false;
-	const tail = rest.slice(open);
-	// "{{" by itself is not a placeholder. A longer unclosed prefix of
-	// {{secret:…}} or {{integration-token:…}} still fails closed.
-	if (tail.length <= 2) return false;
-	return __kodyUnclosedCouldBeSecret(tail);
-}
-
-async function __kodyBlobHasSecretPlaceholder(blob) {
-	const reader = blob.stream().getReader();
-	let carry = "";
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) return __kodyEofHasUnresolvedSecret(carry);
-		const chunk =
-			value instanceof Uint8Array ? value : new Uint8Array(value);
-		const text = carry + __kodyBytesToAscii(chunk);
-		if (__kodyRequestHasSecretPlaceholders("", {}, text)) return true;
-		const decision = __kodyStreamingDecision(text);
-		if (decision.reject === "window") {
-			throw __kodyStreamingWindowError();
-		}
-		carry =
-			decision.hold > 0 ? text.slice(text.length - decision.hold) : "";
-	}
 }
 
 async function __kodyGatewayFetchCall(input, init, packageId) {
@@ -590,8 +437,8 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 	let headers = {};
 	let bodyBytes = null;
 	let streamingBody = null;
-	// Prefer ambient fetch(input, init) when the probe did not consume the
-	// original body - that keeps implicit Content-Type from string /
+	// Prefer ambient fetch(input, init) when nothing consumed the original
+	// body - that keeps implicit Content-Type from string /
 	// URLSearchParams / Blob that a reconstructed Uint8Array body would drop.
 	let reuseOriginal = true;
 	let preservedRequest = null;
@@ -601,32 +448,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
 			const body = init.body;
-			// FormData cannot be byte-probed / gateway-serialized. Detect
-			// placeholders in field strings; otherwise reuse ambient fetch so
-			// non-secret multipart POSTs keep working under --local.
+			// FormData keeps its implicit multipart boundary on ambient fetch.
+			// URL/header secrets serialize it once for the gateway hop.
 			if (typeof FormData !== "undefined" && body instanceof FormData) {
-				let formText = "";
-				for (const [name, value] of body.entries()) {
-					formText += name + "\\n";
-					if (typeof value === "string") {
-						formText += value + "\\n";
-					} else if (value && typeof value.name === "string") {
-						formText += value.name + "\\n";
-					}
-				}
-				// Secrets inside multipart field names/values cannot be expanded
-				// by the fetch gateway (body is opaque). Header/URL secrets with
-				// a clean FormData body still hop like cloud.
-				if (
-					__kodyRequestHasSecretPlaceholders("", {}, formText)
-				) {
-					throw new Error(
-						"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
-					);
-				}
-				if (
-					!__kodyRequestHasSecretPlaceholders(url, headers, null)
-				) {
+				if (!__kodyRequestHasSecretPlaceholders(url, headers)) {
 					return __kodyNativeFetch(input, init);
 				}
 				const encoded = new Request(url, {
@@ -641,20 +466,14 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				bodyBytes = new Uint8Array(await encoded.arrayBuffer());
 				reuseOriginal = false;
 			} else if (__kodyIsCallerByteStream(body)) {
-				// Streams cannot be replayed. Scan with a bounded holdback and
-				// forward the same bytes as a stream. A placeholder fails closed
-				// instead of buffering the body for a gateway hop.
-				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+				// Streams cannot be replayed, so a gateway hop cannot carry one.
+				if (__kodyRequestHasSecretPlaceholders(url, headers)) {
 					throw __kodyStreamingHeaderError();
 				}
-				streamingBody = __kodyScanStreamingBody(body);
+				streamingBody = body;
 				reuseOriginal = false;
 			} else if (typeof Blob !== "undefined" && body instanceof Blob) {
-				const blobHasSecret = await __kodyBlobHasSecretPlaceholder(body);
-				if (
-					!blobHasSecret &&
-					!__kodyRequestHasSecretPlaceholders(url, headers, null)
-				) {
+				if (!__kodyRequestHasSecretPlaceholders(url, headers)) {
 					streamingBody = body;
 					reuseOriginal = false;
 					if (body.type) {
@@ -695,17 +514,19 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(merged.headers.entries());
 		if (method !== "GET" && method !== "HEAD" && merged.body) {
 			if (__kodyIsCallerByteStream(init?.body) || requestStream) {
-				if (__kodyRequestHasSecretPlaceholders(url, headers, null)) {
+				if (__kodyRequestHasSecretPlaceholders(url, headers)) {
 					throw __kodyStreamingHeaderError();
 				}
-				streamingBody = __kodyScanStreamingBody(merged.body);
+				streamingBody = merged.body;
 				reuseOriginal = false;
 			} else {
 				// String, bytes, and URLSearchParams become streams inside a
-				// Request. Probe a clone and forward the original Request so
-				// cache, credentials, and redirect replay stay intact. Caller
-				// ReadableStream bodies are handled above.
-				bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
+				// Request. A hop reads a clone; otherwise the original Request is
+				// forwarded so cache, credentials, and redirect replay stay
+				// intact. Caller ReadableStream bodies are handled above.
+				if (__kodyRequestHasSecretPlaceholders(url, headers)) {
+					bodyBytes = new Uint8Array(await merged.clone().arrayBuffer());
+				}
 				reuseOriginal = false;
 				preservedRequest = merged;
 			}
@@ -713,8 +534,6 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			preservedRequest = merged;
 		}
 	}
-	const bodyText =
-		bodyBytes != null ? new TextDecoder().decode(bodyBytes) : null;
 	if (streamingBody != null) {
 		const fallbackInit = {
 			method,
@@ -753,7 +572,7 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		}
 		return __kodyNativeFetch(url, fallbackInit);
 	}
-	if (!__kodyRequestHasSecretPlaceholders(url, headers, bodyText)) {
+	if (!__kodyRequestHasSecretPlaceholders(url, headers)) {
 		if (reuseOriginal) {
 			return __kodyNativeFetch(input, init);
 		}
@@ -772,22 +591,6 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			init?.redirect ?? (input instanceof Request ? input.redirect : null);
 		if (redirect != null) fallbackInit.redirect = redirect;
 		return __kodyNativeFetch(url, fallbackInit);
-	}
-	const contentType = Object.entries(headers).find(
-		([key]) => key.toLowerCase() === "content-type",
-	)?.[1];
-	// Multipart bodies are opaque to the fetch gateway. Fail closed only when
-	// placeholders are in the body itself; header/URL secrets still hop so
-	// authenticated uploads match cloud executeGatewayFetch.
-	if (
-		typeof contentType === "string" &&
-		contentType.toLowerCase().includes("multipart/") &&
-		bodyText != null &&
-		__kodyRequestHasSecretPlaceholders("", {}, bodyText)
-	) {
-		throw new Error(
-			"Local execute secret-aware fetch does not support FormData bodies with secret placeholders; use string, Blob, or Uint8Array.",
-		);
 	}
 	const result = await kody.gatewayFetch({
 		...(packageId ? { packageId } : {}),

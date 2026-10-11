@@ -169,12 +169,6 @@ export const packageCredentialSlotSchema = z
 		 * slots never take one.
 		 */
 		placement: packageCredentialPlacementSchema.optional(),
-		/**
-		 * Secret slots only: `packageSecrets.get` returns the value itself, and
-		 * consent says the package can read it. Without it the value only ever
-		 * leaves through the fetch gateway, in the slot's placement.
-		 */
-		raw: z.boolean().optional(),
 	})
 	.superRefine((slot, ctx) => {
 		if (slot.kind === 'mcp' && slot.placement) {
@@ -185,18 +179,10 @@ export const packageCredentialSlotSchema = z
 					'mcp slots never send their value in a request, so they take no placement.',
 			})
 		}
-		if (slot.raw && slot.kind !== 'secret') {
-			ctx.addIssue({
-				code: 'custom',
-				path: ['raw'],
-				message:
-					'Only secret slots take raw: packageSecrets.get reads secret slots, and OAuth tokens and MCP connections are never handed to package code.',
-			})
-		}
 	})
 
 export const secretSlotPlacementRequiredMessage =
-	'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }. A slot whose code reads the value with packageSecrets.get declares "raw": true instead.'
+	'Secret slots declare placement: the header the value goes in, for example { "header": "Authorization", "template": "Bearer {value}" }.'
 
 export type PackageCredentialSlot = z.infer<typeof packageCredentialSlotSchema>
 
