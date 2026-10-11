@@ -35,8 +35,9 @@ decrypted plaintext. Put that string in a secret-aware `fetch` request header
 / `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
 platform use sites resolve it. Package and execute JavaScript never receive
 plaintext from `get`. A secret-aware `fetch` may send the value to an
-**approved** host; that host's response is not redacted for echoed credentials —
-treat response bodies as untrusted.
+**approved** host. If that host echoes the value back, the gateway redacts it
+from the response (see [Placeholders in `fetch`](#placeholders-in-fetch)); treat
+response bodies as untrusted all the same.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
