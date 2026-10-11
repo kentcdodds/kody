@@ -344,7 +344,7 @@ finding message starts with one fixed pattern label:
 | `computed secret`       | A secret placeholder built at runtime, or a secret helper called with a non-literal name                                                                                                                                                      |
 | `computed integration`  | `createAuthenticatedFetch`, `integrationTokenRefresh`, or `{{integration-token:…}}` with a runtime name                                                                                                                                       |
 | `kody.mcp`              | Any `kody.mcp` access, including `const { mcp } = kody`                                                                                                                                                                                       |
-| `\|scope=`              | A `\|scope=` placeholder suffix, or a `scope` option on a secret helper                                                                                                                                                                       |
+| `\|scope=`              | A `\|scope=` placeholder suffix with a literal or computed scope, or a `scope` option on a secret helper                                                                                                                                      |
 | `secretMounts`          | `package.json#kody.secretMounts`                                                                                                                                                                                                              |
 | `webhook secretName`    | `verification.secretName` or `challenge.prove.secretName` on a `kody.webhooks` entry                                                                                                                                                          |
 | `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input               |
@@ -353,7 +353,10 @@ finding message starts with one fixed pattern label:
 | `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                          |
 
 Helpers are matched by name, comments are ignored, and an unparseable module
-falls back to a text match. This module yields `literal secret`,
+falls back to a text match. An unsuffixed `{{secret:NAME}}` still reads a
+package-scoped secret before the user one, and no static scan can see that, so
+`|scope=` findings undercount package-scoped buckets. Count those from secret
+rows with `scope = 'package'`. This module yields `literal secret`,
 `computed secret`, `computed integration`, `kody.mcp`, and `|scope=` for
 `index.ts`:
 

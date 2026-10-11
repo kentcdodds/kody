@@ -77,7 +77,13 @@ const completePlaceholderPatterns: Record<string, RegExp> = {
 	'secret/': /\{\{secret\/[a-zA-Z0-9._-]+:[^}]+\}\}/y,
 	'integration-token:': /\{\{integration-token:[a-zA-Z0-9._-]+\}\}/y,
 }
-const scopeSuffixPattern = /\|scope=(?:session|package|user)\b/
+/**
+ * A literal scope, or `|scope=` followed by a computed value: the end of a
+ * string piece (the AST splits templates and concatenations into pieces), or
+ * `${` / a closing quote and `+` in the text fallback.
+ */
+const scopeSuffixPattern =
+	/\|scope=(?:(?:session|package|user)\b|$|\$\{|['"`]\s*\+)/
 const textKodyMcpPattern =
 	/\bkody\s*(?:\?\.|\.)\s*mcp\b|\bkody\s*\[\s*['"`]mcp['"`]/
 

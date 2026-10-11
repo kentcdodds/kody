@@ -129,6 +129,32 @@ test('0010 flags scope options on secret helpers and the |scope= suffix', () => 
 	).toEqual(['literal secret', '|scope='])
 })
 
+test('0010 flags a computed |scope= suffix', () => {
+	for (const source of [
+		'export const p = (n: string, s: string) => `{{secret:${n}|scope=${s}}}`',
+		"export const p = (s: string) => '{{secret:KEY|scope=' + s + '}}'",
+		"export const p = (n: string, s: string) => '{{secret:' + n + '|scope=' + s + '}}'",
+	]) {
+		expect(modulePatterns(source)).toContain('|scope=')
+	}
+	expect(
+		modulePatterns(
+			'export default function broken( {\n\t`{{secret:KEY|scope=${s}}}`\n',
+		),
+	).toEqual(['computed secret', '|scope='])
+	expect(
+		modulePatterns(
+			"export default function broken( {\n\t'{{secret:KEY|scope=' + s\n",
+		),
+	).toEqual(['computed secret', '|scope='])
+	expect(
+		modulePatterns("export const note = 'Use |scope=user for user secrets.'"),
+	).toEqual(['|scope='])
+	expect(
+		modulePatterns("export const note = 'the |scope= suffix is retired'"),
+	).toEqual([])
+})
+
 test('0010 reads secretMounts and webhook secretName from package.json', () => {
 	expect(
 		patternsByPath({
