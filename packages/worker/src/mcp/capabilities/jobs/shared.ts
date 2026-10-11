@@ -1,5 +1,10 @@
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
-import { authorize, orgResource } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	listScopeIncludes,
+	orgResource,
+	type ResourceListScope,
+} from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
@@ -545,14 +550,24 @@ export function buildJobInspectionOutput(
 	}
 }
 
-export function buildJobManagerDebugOutput(state: JobManagerDebugState) {
+/**
+ * The scheduler's next job is org-wide state. Its id and timing are shown only
+ * when that job is within the caller's read scope.
+ */
+export function buildJobManagerDebugOutput(
+	state: JobManagerDebugState,
+	scope: ResourceListScope,
+) {
+	const nextJobVisible =
+		state.nextRunnableJobId == null ||
+		listScopeIncludes(scope, state.nextRunnableJobId)
 	return {
 		binding_available: state.bindingAvailable,
 		status: state.status,
 		stored_user_id: state.storedUserId,
-		alarm_scheduled_for: state.alarmScheduledFor,
-		next_runnable_job_id: state.nextRunnableJobId,
-		next_runnable_run_at: state.nextRunnableRunAt,
+		alarm_scheduled_for: nextJobVisible ? state.alarmScheduledFor : null,
+		next_runnable_job_id: nextJobVisible ? state.nextRunnableJobId : null,
+		next_runnable_run_at: nextJobVisible ? state.nextRunnableRunAt : null,
 		alarm_in_sync: state.alarmInSync,
 	}
 }

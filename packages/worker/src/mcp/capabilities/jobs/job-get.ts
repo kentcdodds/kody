@@ -1,7 +1,11 @@
+import { loadResourceListScope } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { getJobInspection } from '#worker/jobs/inspect.ts'
 import { listRunRecords } from '#worker/run-records/service.ts'
 import {
@@ -46,12 +50,19 @@ export const jobGetCapability = defineDomainCapability(
 				permission: 'job:read',
 				jobId,
 			})
-			const inspection = await getJobInspection({
-				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
-				jobId,
-				includeCode: args.includeCode ?? false,
-			})
+			const [inspection, scope] = await Promise.all([
+				getJobInspection({
+					env: ctx.env,
+					userId: ownerIdFromCaller(ctx.callerContext),
+					jobId,
+					includeCode: args.includeCode ?? false,
+				}),
+				loadResourceListScope(
+					{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
+					'job:read',
+					'job',
+				),
+			])
 			const recentPage = await listRunRecords({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
@@ -64,7 +75,7 @@ export const jobGetCapability = defineDomainCapability(
 			})
 			return {
 				job: buildJobInspectionOutput(inspection.job, { recentRuns }),
-				alarm: buildJobManagerDebugOutput(inspection.alarm),
+				alarm: buildJobManagerDebugOutput(inspection.alarm, scope),
 				...(inspection.source
 					? { source: buildJobSourceInspectionOutput(inspection.source) }
 					: {}),

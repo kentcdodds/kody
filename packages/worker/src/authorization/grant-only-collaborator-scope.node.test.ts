@@ -290,9 +290,15 @@ test('memory get and delete deny a memory the collaborator has no grant on', asy
 
 test('job list and get return only the granted job to a collaborator', async () => {
 	const { owner, collaborator } = await setup()
+	const otherJobAlarm = {
+		...alarm,
+		alarmScheduledFor: '2026-10-12T00:00:00.000Z',
+		nextRunnableJobId: otherJobId,
+		nextRunnableRunAt: '2026-10-12T00:00:00.000Z',
+	}
 	mocks.inspectJobsForUser.mockResolvedValue({
 		jobs: [job(grantedJobId), job(otherJobId)],
-		alarm,
+		alarm: otherJobAlarm,
 	})
 	mocks.getJobInspection.mockImplementation(
 		async (input: { jobId: string }) => ({ job: job(input.jobId), alarm }),
@@ -301,11 +307,17 @@ test('job list and get return only the granted job to a collaborator', async () 
 
 	const listed = await jobListCapability.handler({}, collaborator)
 	expect(listed.jobs.map((entry) => entry.id)).toEqual([grantedJobId])
+	expect(listed.alarm).toMatchObject({
+		alarm_scheduled_for: null,
+		next_runnable_job_id: null,
+		next_runnable_run_at: null,
+	})
 	const ownerListed = await jobListCapability.handler({}, owner)
 	expect(ownerListed.jobs.map((entry) => entry.id)).toEqual([
 		grantedJobId,
 		otherJobId,
 	])
+	expect(ownerListed.alarm.next_runnable_job_id).toBe(otherJobId)
 
 	await expect(
 		jobGetCapability.handler({ id: otherJobId }, collaborator),

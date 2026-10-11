@@ -21,7 +21,11 @@ import {
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedText } from './memory-embed.ts'
 import { deleteMemoryVector, upsertMemoryVector } from './memory-vectorize.ts'
-import { queryMemoryVectorIds, searchMemories } from './memory-search.ts'
+import {
+	queryMemoryVectorIds,
+	rankMemoryVectorIdsWithin,
+	searchMemories,
+} from './memory-search.ts'
 import {
 	assertWithinStorageBytesEntitlement,
 	estimateEntitlementStorageEntryByteDelta,
@@ -462,6 +466,15 @@ export async function searchMemoryRecords(input: MemorySearchInput): Promise<{
 			ids: [...input.scope.ids],
 			statuses,
 		})
+		if (!offline) {
+			vectorRankedIds = await rankMemoryVectorIdsWithin({
+				env: input.env as Env,
+				query,
+				userId: input.userId,
+				memoryIds: rows.map((row) => row.id),
+				...(input.embedText ? { embedText: input.embedText } : {}),
+			})
+		}
 	} else if (offline) {
 		rows = await listMemoriesByUserId(input.env.APP_DB, input.userId, {
 			statuses,

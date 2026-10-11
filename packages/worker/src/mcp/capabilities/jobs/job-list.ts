@@ -52,7 +52,7 @@ export const jobListCapability = defineDomainCapability(
 				jobs: inspection.jobs
 					.filter((job) => listScopeIncludes(scope, job.id))
 					.map((job) => buildJobInspectionOutput(job, { recentRuns: [] })),
-				alarm: buildJobManagerDebugOutput(inspection.alarm),
+				alarm: buildJobManagerDebugOutput(inspection.alarm, scope),
 			}
 		},
 	},
