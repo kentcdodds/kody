@@ -423,6 +423,61 @@ export const entitlementResourceLabels: Record<EntitlementResource, string> = {
 }
 
 /**
+ * How each resource counts usage. `utc_day` meters reset at 00:00 UTC
+ * (execute and outbound also keep a Monday-start UTC week). `standing`
+ * counts are what exists right now and drop when items are removed or
+ * finish. `per_item` caps bound a single request and never accumulate.
+ * `utc_minute` brakes count calls in the current UTC clock minute and reset
+ * when the next minute starts.
+ */
+export type EntitlementResourceWindow =
+	| 'utc_day'
+	| 'standing'
+	| 'per_item'
+	| 'utc_minute'
+
+export const entitlementResourceWindows = {
+	repos: 'standing',
+	saved_packages: 'standing',
+	scheduled_jobs: 'standing',
+	repo_sessions: 'standing',
+	email_sends_per_day: 'utc_day',
+	email_receives_per_day: 'utc_day',
+	stored_email_messages: 'standing',
+	email_message_bytes: 'per_item',
+	secrets: 'standing',
+	storage_bytes: 'standing',
+	concurrent_workflows: 'standing',
+	execute_unique_workers_per_day: 'utc_day',
+	outbound_fetches_per_day: 'utc_day',
+	job_runs_per_day: 'utc_day',
+	automation_invocations_per_day: 'utc_day',
+	execute_calls_per_minute: 'utc_minute',
+} as const satisfies Record<EntitlementResource, EntitlementResourceWindow>
+
+export type DailyEntitlementResource = {
+	[
+		Resource in EntitlementResource
+	]: (typeof entitlementResourceWindows)[Resource] extends 'utc_day'
+		? Resource
+		: never
+}[EntitlementResource]
+
+export function isDailyEntitlementResource(
+	resource: string,
+): resource is DailyEntitlementResource {
+	return (
+		Object.hasOwn(entitlementResourceWindows, resource) &&
+		entitlementResourceWindows[resource as EntitlementResource] === 'utc_day'
+	)
+}
+
+/** Resources metered per UTC day, in {@link entitlementResources} order. */
+export const dailyEntitlementResources = entitlementResources.filter(
+	isDailyEntitlementResource,
+) as [DailyEntitlementResource, ...Array<DailyEntitlementResource>]
+
+/**
  * Email caps for the first-class `max` plan. Email is abuse-sensitive in
  * both directions — inbound volume is attacker-controlled (anyone can send
  * to a `{username}@<platform domain>` address) and outbound sending is an

@@ -80,7 +80,9 @@ const props = {
 type GatewayProps = Parameters<typeof expandSecretPlaceholders>[0]['props']
 
 const expand = (request: Request, runProps: GatewayProps = props) =>
-	expandSecretPlaceholders({ request, props: runProps, env })
+	expandSecretPlaceholders({ request, props: runProps, env }).then(
+		({ request: expanded }) => expanded,
+	)
 
 function packageRunProps(
 	packageId: string,
@@ -923,6 +925,84 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 	).rejects.toThrow('is in the request URL')
 	expect(fetchStub).not.toHaveBeenCalled()
 	expect(takeUsage()?.[1]).toMatchObject({ entityId: '', outcome: 'error' })
+})
+
+test('leak: a substituted secret the remote echoes back is redacted before the caller sees it', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const values: Record<string, string> = {
+		apiToken: 'sk_live_echo_123456',
+		clientId: 'client-id',
+		clientSecret: 'client-secret',
+	}
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }: { name: string }) =>
+			userSecret(values[name]!, ['api.example.com']),
+	)
+	const encoder = new TextEncoder()
+	const echoFetch = vi.fn(async (request: Request) => {
+		const authorization = request.headers.get('authorization') ?? ''
+		const credential = authorization.split(' ').at(-1)
+		const echoed = encoder.encode(
+			`{"you_sent":"${authorization}","credential":"${credential}"}`,
+		)
+		const split = Math.floor(echoed.length / 2)
+		return new Response(
+			new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(echoed.subarray(0, split))
+					controller.enqueue(echoed.subarray(split))
+					controller.close()
+				},
+			}),
+			{
+				headers: {
+					'content-length': String(echoed.length),
+					'x-echo': authorization,
+				},
+			},
+		)
+	})
+	const fetchWith = (authorization: string) =>
+		executeGatewayFetch({
+			env,
+			props,
+			request: new Request('https://api.example.com/echo', {
+				headers: { Authorization: authorization },
+			}),
+			globalFetch: echoFetch as unknown as typeof fetch,
+		})
+
+	const bearer = await fetchWith('Bearer {{secret:apiToken}}')
+	expect(echoFetch.mock.calls[0]?.[0]?.headers.get('authorization')).toBe(
+		'Bearer sk_live_echo_123456',
+	)
+	expect(bearer.headers.get('x-echo')).toBe('Bearer [REDACTED SECRET]')
+	expect(bearer.headers.get('content-length')).toBeNull()
+	expect(await bearer.text()).toBe(
+		'{"you_sent":"Bearer [REDACTED SECRET]","credential":"[REDACTED SECRET]"}',
+	)
+
+	const basic = await fetchWith(
+		buildBasicAuthSecretPlaceholder({
+			usernameSecret: 'clientId',
+			passwordSecret: 'clientSecret',
+		}),
+	)
+	const basicBody = await basic.text()
+	expect(basicBody).toBe(
+		'{"you_sent":"[REDACTED SECRET]","credential":"[REDACTED SECRET]"}',
+	)
+	expect(basicBody).not.toContain(btoa('client-id:client-secret'))
+
+	// Without a substituted secret the response passes through untouched.
+	const plainResponse = new Response('sk_live_echo_123456')
+	const plain = await executeGatewayFetch({
+		env,
+		props,
+		request: new Request('https://api.example.com/echo'),
+		globalFetch: (async () => plainResponse) as unknown as typeof fetch,
+	})
+	expect(plain).toBe(plainResponse)
 })
 
 test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {

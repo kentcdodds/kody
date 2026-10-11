@@ -1,19 +1,19 @@
-import {
-	personalOrgId,
-	type OwnerId,
-} from '@kody-internal/shared/owner-person-ids.ts'
+import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
-import { authorizeRepoSessionPackageWrite } from './authorize-repo-session-package-write.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeRepoSessionPackageWrite } from './authorize-repo-session-package.ts'
 import {
 	buildPlainRepoPackageShapedFields,
 	isPlainRepoPackageShapedAtCommit,
 } from './plain-repo-package-shaped.ts'
 import { repoSessionRpc } from '#worker/repo/repo-session-rpc.ts'
 import { getEntitySourceByIdForUser } from '#worker/repo/entity-sources.ts'
-import { getMcpUserPackageScope } from '#worker/package-registry/user-scope.ts'
+import { resolvePackageOwnerContext } from '#worker/package-registry/package-owner.ts'
 import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import {
 	repoPublishSessionInputSchema,
@@ -42,17 +42,20 @@ export const repoPublishSessionCapability = defineDomainCapability(
 		inputSchema: repoPublishSessionInputSchema,
 		outputSchema: repoPublishSessionOutputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			const owner = await resolvePackageOwnerContext(ctx.env, {
+				user: requireMcpUser(ctx.callerContext),
+				request: requireMcpRequest(ctx.callerContext),
+			})
 			await authorizeRepoSessionPackageWrite({
 				env: ctx.env,
 				request: ctx.callerContext.request,
-				userId: personalOrgId(user.userId),
+				userId: owner.ownerUserId,
 				sessionId: args.session_id,
 			})
 			const session = repoSessionRpc(ctx.env, args.session_id)
 			const sessionInfo = await session.getSessionInfo({
 				sessionId: args.session_id,
-				userId: personalOrgId(user.userId),
+				userId: owner.ownerUserId,
 			})
 			const isPackageSession = sessionInfo.entity_type === 'package'
 			const progressTotal = isPackageSession ? 3 : 2
@@ -64,12 +67,9 @@ export const repoPublishSessionCapability = defineDomainCapability(
 			})
 			const result = await session.publishSession({
 				sessionId: args.session_id,
-				userId: personalOrgId(user.userId),
+				userId: owner.ownerUserId,
 				rebuildPackageArtifacts: false,
-				expectedPackageScope:
-					sessionInfo.entity_type === 'package'
-						? await getMcpUserPackageScope(ctx.env.APP_DB, user)
-						: undefined,
+				expectedPackageScope: isPackageSession ? owner.ownerScope : undefined,
 				privateVisibilityChangeConfirmed:
 					args.confirm_private_visibility_change,
 			})
@@ -86,14 +86,14 @@ export const repoPublishSessionCapability = defineDomainCapability(
 						rpcSessionId: args.session_id,
 						repoSessionId: args.session_id,
 						sourceId: sessionInfo.source_id,
-						userId: personalOrgId(user.userId),
+						userId: owner.ownerUserId,
 						publishedCommit: result.publishedCommit,
 						baseUrl: ctx.callerContext.baseUrl,
 					})
 					const absorbNotice = args.absorbed_upstream_commit
 						? await absorbForkUpstreamAfterPublish({
 								env: ctx.env,
-								userId: personalOrgId(user.userId),
+								userId: owner.ownerUserId,
 								sourceId: sessionInfo.source_id,
 								originCommit: args.absorbed_upstream_commit,
 							})
@@ -113,7 +113,7 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				}
 				const source = await getEntitySourceByIdForUser(ctx.env.APP_DB, {
 					id: sessionInfo.source_id,
-					userId: personalOrgId(user.userId),
+					userId: owner.ownerUserId,
 				})
 				const packageShaped = source
 					? await isPlainRepoPackageShapedAtCommit({
@@ -139,19 +139,16 @@ export const repoPublishSessionCapability = defineDomainCapability(
 				}
 			}
 			if (result.status === 'locked') {
-				const [username, savedPackage] = await Promise.all([
-					getMcpUserPackageScope(ctx.env.APP_DB, user),
-					getSavedPackageById(ctx.env.APP_DB, {
-						userId: personalOrgId(user.userId),
-						packageId: result.packageId,
-					}),
-				])
+				const savedPackage = await getSavedPackageById(ctx.env.APP_DB, {
+					userId: owner.ownerUserId,
+					packageId: result.packageId,
+				})
 				if (!savedPackage) {
 					throw new Error('Locked package was not found.')
 				}
 				const approvalUrl = buildPackagePublishApprovalUrl({
 					baseUrl: ctx.callerContext.baseUrl,
-					username,
+					username: owner.ownerScope,
 					kodyId: savedPackage.kodyId,
 					commit: result.pendingCommit,
 				})

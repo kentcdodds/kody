@@ -118,6 +118,7 @@ async function renderConnectSecrets(
 					requestedPackageId: null,
 					currentAllowedHosts: secret.allowedHosts,
 					currentAllowedPackages: [],
+					packageCredentials: [],
 				},
 				approvalError: null,
 			},

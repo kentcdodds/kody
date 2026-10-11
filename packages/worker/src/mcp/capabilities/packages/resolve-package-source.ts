@@ -25,10 +25,15 @@ function requireExactlyOnePackageSourceIdentity(input: PackageSourceIdentity) {
 	}
 }
 
+/**
+ * Resolve a saved package and its repo source in the org that owns the
+ * connection (`userId` is that org, `ownerScope` its package scope). A name
+ * leaf or `package_id` from another org is never resolved.
+ */
 export async function resolveOwnedPackageSource(input: {
 	db: D1Database
 	userId: OwnerId
-	ownerScope?: string
+	ownerScope: string
 	args: PackageSourceIdentity
 }): Promise<{
 	packageId: string
@@ -41,11 +46,6 @@ export async function resolveOwnedPackageSource(input: {
 	requireExactlyOnePackageSourceIdentity(input.args)
 	let requestedKodyId: string | undefined
 	if (input.args.kody_id !== undefined) {
-		if (input.ownerScope === undefined) {
-			throw new McpCallerError(
-				'Cannot resolve a package name leaf without the acting owner scope.',
-			)
-		}
 		try {
 			requestedKodyId = normalizePackageNameInput({
 				value: input.args.kody_id,
@@ -69,11 +69,8 @@ export async function resolveOwnedPackageSource(input: {
 				})
 	if (!savedPackage) {
 		const missingId = input.args.package_id ?? input.args.kody_id
-		const boundOrg = input.ownerScope?.trim()
 		throw new McpCallerError(
-			boundOrg
-				? `Saved package "${missingId}" was not found in @${boundOrg}. This connection is bound to @${boundOrg}; bind to the org that owns the package (or use a package that @${boundOrg} owns).`
-				: `Saved package "${missingId}" was not found in this org. Confirm package_id with search({ domain: "packages" }) and that this connection is bound to the org that owns it.`,
+			`Saved package "${missingId}" was not found in @${input.ownerScope}, the org this connection is bound to. packageList lists the saved packages @${input.ownerScope} owns with their package_id; to use a package another org owns, bind the connection to that org.`,
 		)
 	}
 	const source = await getEntitySourceByIdForUser(input.db, {
@@ -81,11 +78,8 @@ export async function resolveOwnedPackageSource(input: {
 		userId: input.userId,
 	})
 	if (!source) {
-		const boundOrg = input.ownerScope?.trim()
 		throw new McpCallerError(
-			boundOrg
-				? `Repo source was not found for @${boundOrg}. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.`
-				: 'Repo source was not found for this org. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.',
+			`Saved package "${savedPackage.name}" (package_id ${savedPackage.id}) is missing its repo source record "${savedPackage.sourceId}". This is a missing source record, not an org-binding problem: the package row exists in @${input.ownerScope} but its source does not. Repair the source record or recreate the package.`,
 		)
 	}
 	return {

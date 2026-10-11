@@ -1,6 +1,7 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { readFile } from 'node:fs/promises'
 import { expect, test, vi } from 'vitest'
+import { redactedSecretText } from '#mcp/secrets/execution-secret-redactor.ts'
 import { secretAuthorityArgName } from '#mcp/secrets/secret-authority.ts'
 import { createDynamicWorkerCompatibilityOptions } from '#worker/dynamic-worker-compatibility.ts'
 import { buildPackageStorageId } from '#worker/storage-ids.ts'
@@ -1055,12 +1056,12 @@ test('buildPackageAppWorker skips published artifact lookup when publishedCommit
 	expect(packageAppRuntimeMock.buildKodyAppBundle).toHaveBeenCalledTimes(1)
 })
 
-test('package app runtime bridge returns opaque secret refs and merges metadata via waitUntil', async () => {
-	const opaqueRef = '{{secret:apiToken|scope=user}}'
+test('package app runtime bridge redacts a raw slot value from run records and merges metadata via waitUntil', async () => {
+	const rawValue = 'raw-api-token-value'
 	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
-		ref: opaqueRef,
+		value: rawValue,
 		scope: 'user',
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -1088,14 +1089,19 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 		},
 	}
 	const logs = [
-		{ level: 'log' as const, message: `token=${opaqueRef}` },
-		`also ${opaqueRef}`,
+		{ level: 'log' as const, message: `token=${rawValue}` },
+		`also ${rawValue}`,
 	]
-	const error = { name: 'Error', message: `boom ${opaqueRef}` }
+	const error = { name: 'Error', message: `boom ${rawValue}` }
 
 	await expect(
 		bridge.packageSecretGet({ alias: 'api-token' }),
-	).resolves.toEqual({ value: opaqueRef })
+	).resolves.toEqual({ value: rawValue })
+	expect(packageAppRuntimeMock.resolveCredential).toHaveBeenCalledWith(
+		expect.objectContaining({
+			credential: expect.objectContaining({ access: 'raw' }),
+		}),
+	)
 
 	await expect(
 		bridge.packageRuntimeRunFinish({
@@ -1127,17 +1133,20 @@ test('package app runtime bridge returns opaque secret refs and merges metadata 
 			},
 		},
 		status: 'error',
-		logs,
-		error,
+		logs: [
+			{ level: 'log', message: `token=${redactedSecretText}` },
+			`also ${redactedSecretText}`,
+		],
+		error: { name: 'Error', message: `boom ${redactedSecretText}` },
 	})
 })
 
 test('package app secret mounts ignore author-selected packageId and honor the stamp field', async () => {
-	const ref = '{{secret:apiToken|scope=user}}'
+	const value = 'raw-api-token-value'
 	packageAppRuntimeMock.resolveCredential.mockResolvedValue({
 		alias: 'api-token',
 		name: 'apiToken',
-		ref,
+		value,
 		scope: 'user',
 		packageId: 'package-1',
 		kodyId: 'demo',
@@ -1161,7 +1170,7 @@ test('package app secret mounts ignore author-selected packageId and honor the s
 	for (const [input, resolvedPackageId] of cases) {
 		packageAppRuntimeMock.resolveCredential.mockClear()
 		await expect(bridge.packageSecretGet(input)).resolves.toEqual({
-			value: ref,
+			value,
 		})
 		expect(packageAppRuntimeMock.resolveCredential).toHaveBeenCalledWith(
 			expect.objectContaining({

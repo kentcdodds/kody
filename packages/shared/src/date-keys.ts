@@ -16,6 +16,23 @@ export function utcWeekStart(date: Date = new Date()) {
 	return utcDayKey(new Date(date.getTime() - daysSinceMonday * utcDayMs))
 }
 
+/** 00:00 UTC of the day after `date`. */
+export function nextUtcDayStart(date: Date = new Date()) {
+	return utcMidnightDaysAfter(date, 1)
+}
+
+/** 00:00 UTC of the Monday after the week containing `date`. */
+export function nextUtcWeekStart(date: Date = new Date()) {
+	const daysSinceMonday = (date.getUTCDay() + 6) % 7
+	return utcMidnightDaysAfter(date, 7 - daysSinceMonday)
+}
+
+function utcMidnightDaysAfter(date: Date, days: number) {
+	const start = new Date(date)
+	start.setUTCHours(24 * days, 0, 0, 0)
+	return start
+}
+
 /** UTC calendar month key, for example `2026-07`. */
 export function utcMonthKey(date: Date = new Date()) {
 	return date.toISOString().slice(0, isoMonthKeyLength)

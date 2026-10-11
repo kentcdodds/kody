@@ -134,6 +134,57 @@ test('polling prefers a computed state on the expected base tip, then falls back
 	)
 })
 
+test('a pull request whose head is already on the base does not write a check', async () => {
+	const oldMain = 'e'.repeat(40)
+	const github = fakeGithub({
+		pulls: {},
+		compareAheadBy: { [oldMain]: 0 },
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha: oldMain,
+		fetchImpl: github.fetchImpl,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([])
+	expect(github.calls.some((call) => call.url.includes('/compare/'))).toBe(true)
+})
+
+test('a compare failure still writes the head check', async () => {
+	const github = fakeGithub({
+		pulls: {
+			12: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		failCompare: true,
+	})
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha,
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([headSha])
+	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+})
+
+test('a pull request whose head is the default-branch tip does not write a check', async () => {
+	const methods: Array<string> = []
+	const code = await reportMergeConflictCheck({
+		...repo,
+		pullNumber: 12,
+		headSha: baseSha,
+		fetchImpl: (request, init) => {
+			methods.push(`${init?.method ?? 'GET'} ${String(request)}`)
+			return Promise.resolve(new Response('unused', { status: 500 }))
+		},
+	})
+	expect(code).toBe(0)
+	expect(methods).toEqual([])
+})
+
 test('a dirty pull request fails a check on the head SHA', async () => {
 	const github = fakeGithub({
 		pulls: {
@@ -151,25 +202,27 @@ test('a dirty pull request fails a check on the head SHA', async () => {
 	})
 	expect(code).toBe(0)
 	expect(github.calls.map((call) => call.method)).toEqual([
+		'GET',
 		'POST',
 		'GET',
 		'PATCH',
 	])
-	expect(github.calls[0]?.body).toMatchObject({
+	expect(github.calls[0]?.url).toContain(`/compare/${baseSha}...${headSha}`)
+	expect(github.calls[1]?.body).toMatchObject({
 		name: mergeConflictCheckName,
 		head_sha: headSha,
 		status: 'in_progress',
 		details_url: 'https://github.com/kentcdodds/kody/actions/runs/7',
 	})
-	expect(github.calls[1]?.url).toBe(
+	expect(github.calls[2]?.url).toBe(
 		'https://api.github.com/repos/kentcdodds/kody/pulls/2483',
 	)
-	expect(github.calls[2]?.body).toMatchObject({
+	expect(github.calls[3]?.body).toMatchObject({
 		status: 'completed',
 		conclusion: 'failure',
 		output: { title: 'Conflicts with main' },
 	})
-	expect(github.calls[0]?.authorization).toBe('Bearer test-token')
+	expect(github.calls[1]?.authorization).toBe('Bearer test-token')
 })
 
 test('a mergeable pull request completes the check successfully', async () => {
@@ -190,7 +243,7 @@ test('a mergeable pull request completes the check successfully', async () => {
 		delayMs: 1,
 	})
 	expect(code).toBe(0)
-	expect(github.calls[3]?.body).toMatchObject({
+	expect(github.calls[4]?.body).toMatchObject({
 		conclusion: 'success',
 		output: { title: 'No conflicts with main' },
 	})
@@ -228,7 +281,7 @@ test('a failed check creation still fails the process', async () => {
 		},
 	})
 	expect(code).toBe(1)
-	expect(methods).toEqual(['POST'])
+	expect(methods).toEqual(['GET', 'POST'])
 	expect(loggedErrors()).toContain('failed (500)')
 	expect(loggedErrors()).not.toContain('test-token')
 })
@@ -262,6 +315,56 @@ test('main fails closed for a bad head SHA, an unknown mode, or a scan without a
 	} finally {
 		process.exitCode = previousExitCode
 	}
+})
+
+test('a base-branch push skips an open pull request whose head is already on the base', async () => {
+	const oldMain = 'e'.repeat(40)
+	const uniqueSha = 'b'.repeat(40)
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: oldMain } },
+			{ number: 8, head: { sha: uniqueSha } },
+		],
+		pulls: {
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+		compareAheadBy: { [oldMain]: 0 },
+	})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
+	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
+	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
+})
+
+test('a base-branch push skips an open pull request whose head is the default-branch tip', async () => {
+	const uniqueSha = 'b'.repeat(40)
+	const github = fakeGithub({
+		openPulls: [
+			{ number: 7, head: { sha: baseSha } },
+			{ number: 8, head: { sha: uniqueSha } },
+		],
+		pulls: {
+			8: [pull({ mergeable: true, mergeable_state: 'clean' })],
+		},
+	})
+	const code = await reportOpenPullRequestMergeConflicts({
+		...repo,
+		baseRef: 'main',
+		fetchImpl: github.fetchImpl,
+		maxAttempts: 1,
+		concurrency: 2,
+	})
+	expect(code).toBe(0)
+	expect(github.bodies('POST', 'head_sha')).toEqual([uniqueSha])
+	expect(github.calls.some((call) => call.url.endsWith('/pulls/7'))).toBe(false)
+	expect(github.bodies('PATCH', 'conclusion')).toEqual(['success'])
 })
 
 test('a base-branch push refreshes every open pull request head check', async () => {
@@ -378,6 +481,8 @@ type RecordedCall = {
 function fakeGithub(input: {
 	pulls: Record<number, Array<ReturnType<typeof pull>>>
 	openPulls?: Array<{ number: number; head: { sha: string } }>
+	compareAheadBy?: Record<string, number>
+	failCompare?: boolean
 	failPulls?: boolean
 }) {
 	const calls: Array<RecordedCall> = []
@@ -392,6 +497,19 @@ function fakeGithub(input: {
 		})
 		if (url.includes('/pulls?')) {
 			return Promise.resolve(Response.json(input.openPulls ?? []))
+		}
+		if (url.includes('/compare/')) {
+			if (input.failCompare) {
+				return Promise.resolve(new Response('unavailable', { status: 503 }))
+			}
+			const comparedHead = url.split('...').at(-1) ?? ''
+			const aheadBy = input.compareAheadBy?.[comparedHead] ?? 1
+			return Promise.resolve(
+				Response.json({
+					ahead_by: aheadBy,
+					status: aheadBy === 0 ? 'behind' : 'ahead',
+				}),
+			)
 		}
 		const pullNumber = /\/pulls\/(\d+)$/.exec(url)?.[1]
 		if (pullNumber) {

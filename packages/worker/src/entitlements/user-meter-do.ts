@@ -15,26 +15,10 @@ import {
 	type ExecuteCallMinuteWindow,
 	type ExecuteRepeatInput,
 } from './execute-admission-windows.ts'
-import { type EntitlementResource } from '#universal/plans.ts'
-
-/** Daily rate-style resources stored in the per-user UserMeter (UTC day keys). */
-export const dailyEntitlementResources = [
-	'email_sends_per_day',
-	'email_receives_per_day',
-	'execute_unique_workers_per_day',
-	'outbound_fetches_per_day',
-	'job_runs_per_day',
-	'automation_invocations_per_day',
-] as const satisfies ReadonlyArray<EntitlementResource>
-
-export type DailyEntitlementResource =
-	(typeof dailyEntitlementResources)[number]
-
-export function isDailyEntitlementResource(
-	resource: string,
-): resource is DailyEntitlementResource {
-	return (dailyEntitlementResources as ReadonlyArray<string>).includes(resource)
-}
+import {
+	isDailyEntitlementResource,
+	type DailyEntitlementResource,
+} from '#universal/plans.ts'
 
 /**
  * Retention window for UserMeter daily rows (`daily_counters`,

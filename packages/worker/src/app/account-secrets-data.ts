@@ -16,6 +16,7 @@ import {
 import { type SecretScope } from '#mcp/secrets/types.ts'
 import { type RejectedApprovalHost } from '#mcp/secrets/approval-host-shape.ts'
 import { classifyBulkApprovalHosts } from '#mcp/secrets/host-approval.ts'
+import { loadPackageSecretMounts } from '#mcp/secrets/package-access.ts'
 import { normalizeBulkPackageSecretApprovalNames } from '#mcp/secrets/package-approval-url.ts'
 import { listSavedPackagesByUserId } from '#worker/package-registry/repo.ts'
 
@@ -67,6 +68,16 @@ type SecretApprovalView = {
 	requestedPackageId: string | null
 	currentAllowedHosts: Array<string>
 	currentAllowedPackages: Array<string>
+	packageCredentials: Array<PackageCredentialConsent>
+}
+
+/** One consent line per secret a package approval grants. */
+type PackageCredentialConsent = {
+	name: string
+	/** The only hosts the gateway sends the value to. */
+	allowedHosts: Array<string>
+	/** The package's slot declares `raw: true`: its code can read the value. */
+	raw: boolean
 }
 
 const secretsBasePath = '/account/secrets'
@@ -161,6 +172,7 @@ async function buildAccountSecretsPayload(input: {
 		try {
 			approval = await resolveSecretApprovalView({
 				env: input.env,
+				baseUrl: url.origin,
 				userId: ownerIdFromCaller({
 					request: input.user.request,
 					user: input.user.mcpUser,
@@ -370,6 +382,7 @@ function resolveApprovalRequest(input: {
 
 async function resolveSecretApprovalView(input: {
 	env: Env
+	baseUrl: string
 	userId: OwnerId
 	secretId: string | null
 	requestedHosts: Array<string>
@@ -416,6 +429,14 @@ async function resolveSecretApprovalView(input: {
 		if (foundNames.length === 0) {
 			throw new Error('None of the listed secrets were found.')
 		}
+		const consentFor = (names: Array<string>) =>
+			describePackageCredentials({
+				env: input.env,
+				baseUrl: input.baseUrl,
+				userId: input.userId,
+				packageId: approval.packageId,
+				secrets: names.flatMap((name) => byName.get(name) ?? []),
+			})
 		if (pendingNames.length === 0) {
 			return {
 				name: foundNames[0] ?? '',
@@ -427,6 +448,7 @@ async function resolveSecretApprovalView(input: {
 				requestedPackageId: approval.packageId,
 				currentAllowedHosts: [],
 				currentAllowedPackages: [approval.packageId],
+				packageCredentials: await consentFor(foundNames),
 			} satisfies SecretApprovalView
 		}
 		const firstPending = pendingNames[0]
@@ -441,6 +463,7 @@ async function resolveSecretApprovalView(input: {
 			requestedPackageId: approval.packageId,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
+			packageCredentials: await consentFor(pendingNames),
 		} satisfies SecretApprovalView
 	}
 	if (approval.kind === 'host_bulk') {
@@ -473,6 +496,7 @@ async function resolveSecretApprovalView(input: {
 			requestedPackageId: null,
 			currentAllowedHosts: firstSecret?.allowedHosts ?? [],
 			currentAllowedPackages: firstSecret?.allowedPackages ?? [],
+			packageCredentials: [],
 		} satisfies SecretApprovalView
 	}
 	const secrets = await listSecrets({
@@ -503,7 +527,46 @@ async function resolveSecretApprovalView(input: {
 		requestedPackageId: approval.kind === 'package' ? approval.packageId : null,
 		currentAllowedHosts: secret.allowedHosts,
 		currentAllowedPackages: secret.allowedPackages,
+		packageCredentials:
+			approval.kind === 'package'
+				? await describePackageCredentials({
+						env: input.env,
+						baseUrl: input.baseUrl,
+						userId: input.userId,
+						packageId: approval.packageId,
+						secrets: [secret],
+					})
+				: [],
 	} satisfies SecretApprovalView
+}
+
+/**
+ * What a package approval lets the package do with each secret: the hosts the
+ * gateway sends it to, and whether its `kody.credentials` slot is `raw` (the
+ * package's code can read the value itself).
+ */
+async function describePackageCredentials(input: {
+	env: Env
+	baseUrl: string
+	userId: OwnerId
+	packageId: string
+	secrets: Array<{ name: string; allowedHosts: Array<string> }>
+}): Promise<Array<PackageCredentialConsent>> {
+	const { manifest } = await loadPackageSecretMounts({
+		env: input.env,
+		baseUrl: input.baseUrl,
+		userId: input.userId,
+		packageId: input.packageId,
+	})
+	const slots = manifest.kody.credentials ?? {}
+	return input.secrets.map((secret) => {
+		const slot = slots[secret.name]
+		return {
+			name: secret.name,
+			allowedHosts: secret.allowedHosts,
+			raw: slot?.kind === 'secret' && slot.raw === true,
+		}
+	})
 }
 
 async function resolveAccountSecretDetail(input: {

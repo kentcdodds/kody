@@ -1,3 +1,5 @@
+import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
+import { authorizeRepoSessionPackageRead } from './authorize-repo-session-package.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
@@ -22,13 +24,20 @@ export const repoGetCheckStatusCapability = defineDomainCapability(
 		inputSchema: repoSessionIdSchema,
 		outputSchema: repoCheckStatusOutputSchema,
 		async handler(args, ctx) {
-			const user = requireMcpUser(ctx.callerContext)
+			requireMcpUser(ctx.callerContext)
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
+			await authorizeRepoSessionPackageRead({
+				env: ctx.env,
+				request: ctx.callerContext.request,
+				userId: ownerId,
+				sessionId: args.session_id,
+			})
 			const status = await repoSessionRpc(
 				ctx.env,
 				args.session_id,
 			).getCheckStatus({
 				sessionId: args.session_id,
-				userId: user.userId,
+				userId: ownerId,
 			})
 			return {
 				run_id: status.runId,

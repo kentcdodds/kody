@@ -30,7 +30,7 @@ const jwtSignInputSchema = z.object({
 		.string()
 		.min(1)
 		.describe(
-			'Saved signing-key secret name, or an opaque {{secret:…}} ref from packageSecrets.get. PKCS#8 PEM for RS*, PS*, ES*, and EdDSA, or HMAC key material for HS*.',
+			'Saved signing-key secret name, or an opaque {{secret:…}} ref. PKCS#8 PEM for RS*, PS*, ES*, and EdDSA, or HMAC key material for HS*.',
 		),
 	private_key_secret_scope: z
 		.enum(secretScopeValues)

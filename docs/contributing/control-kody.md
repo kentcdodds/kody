@@ -13,6 +13,7 @@ npm run control-kody -- request GET /@<slug>/-/waiting --dump --contains 'Waitin
 npm run control-kody -- request POST /account/secrets.json 400 '{"action":"add"}'
 npm run control-kody -- request POST /account/organizations/new --form slug=x-org --form displayName=X
 npm run control-kody -- request POST /account/profile/avatar.json --multipart --form avatar=@./avatar.png
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: <origin>/@<slug>/-/connections'
 npm run control-kody -- map waiting
 npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
@@ -74,6 +75,19 @@ leaves the redirect manual, and `--contains` also sees `Location`:
 ```bash
 npm run control-kody -- preview --pr 42 --request 'POST /account/organizations/new 302 --form slug=x-org --form displayName=X --contains /@x-org'
 ```
+
+Org-owned `/account/<section>.json` routes (for example `connected-agents`,
+`connection-usage`, `secrets`, `jobs`) bind the org from a same-origin
+`Referer`. Without one they bind the personal org. Send it with `--header`
+(repeatable, `Name: value`; `Cookie` and `Content-Type` are rejected because the
+session and body own them). The session cookie and re-login work as for any
+other `request`:
+
+```bash
+npm run control-kody -- request GET /account/connected-agents.json --header 'Referer: http://localhost:3742/@<slug>/-/connections'
+```
+
+The same `--header` works inside a `preview --request` spec.
 
 `browse` reuses the seed cookie stored in `.tmp/control-kody-cookie` (from
 `login` or `preview`) and injects it into headed Playwright Chromium via

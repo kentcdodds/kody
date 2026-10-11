@@ -44,6 +44,7 @@ const plainSpec = {
 	expectedStatus: null,
 	body: null,
 	form: null,
+	headers: [],
 	dump: false,
 	contains: [],
 }
@@ -498,6 +499,62 @@ test('preview --request sends urlencoded and multipart form bodies', async () =>
 	}
 })
 
+test('preview --request --header parses Name: value pairs and rejects session-managed headers', () => {
+	expect(
+		parseSessionRequest(
+			"GET /account/connected-agents.json --header 'Referer: https://kody.test/@acme/-/connections' --header X-Trace:abc --contains agents",
+		),
+	).toEqual({
+		...plainSpec,
+		method: 'GET',
+		path: '/account/connected-agents.json',
+		headers: [
+			{ name: 'Referer', value: 'https://kody.test/@acme/-/connections' },
+			{ name: 'X-Trace', value: 'abc' },
+		],
+		contains: ['agents'],
+	})
+	expect(() => parseSessionRequest('GET /account --header Referer')).toThrow(
+		/--header expects 'Name: value'/,
+	)
+	expect(() =>
+		parseSessionRequest('GET /account --header Cookie: kody_session=x'),
+	).toThrow(/cannot set Cookie: the session cookie comes from --cookie-file/)
+	expect(() =>
+		parseSessionRequest(
+			'POST /account/secrets.json --header content-type: text/plain --form a=b',
+		),
+	).toThrow(/cannot set content-type: Content-Type comes from the JSON body/)
+	expect(() =>
+		parseSessionRequest('GET /account --header A: 1 --header a: 2'),
+	).toThrow(/--header a is set more than once/)
+})
+
+test('preview --request --header sends the header with the session cookie and replaces the default Accept', async () => {
+	await using server = await createPreviewFixtureServer()
+	const referer = `${server.origin}/@acme/-/connections`
+	const { exitCode, result } = await runPreviewManualTest(
+		[
+			'--url',
+			server.origin,
+			'--no-wait',
+			'--request',
+			`GET /account/connected-agents.json --header 'Referer: ${referer}' --header 'accept: application/vnd.kody+json' --contains ${referer}`,
+			'--json',
+		],
+		createSilentDeps({ logs: [] }),
+	)
+	expect(exitCode).toBe(0)
+	expect(result?.ok).toBe(true)
+	expect(server.echoed).toEqual([
+		{
+			referer,
+			accept: 'application/vnd.kody+json',
+			cookie: 'kody_session=test-cookie',
+		},
+	])
+})
+
 test('preview manual test waits for the GitHub preview comment and head SHA workflow before smoking', async () => {
 	await using server = await createPreviewFixtureServer()
 	let now = 0
@@ -918,10 +975,24 @@ async function createPreviewFixtureServer(commitSha = 'deployedsha') {
 	routes['POST /account/profile/avatar.json'] = record((_request, response) => {
 		json(response, 200, { ok: true, avatar: true })
 	})
+	const echoed: Array<{ referer?: string; accept?: string; cookie?: string }> =
+		[]
+	routes['GET /account/connected-agents.json'] = requireSession(
+		(request, response) => {
+			const seen = {
+				referer: request.headers.referer,
+				accept: request.headers.accept,
+				cookie: request.headers.cookie,
+			}
+			echoed.push(seen)
+			json(response, 200, { ok: true, agents: [], seen })
+		},
+	)
 
 	return {
 		origin: `http://127.0.0.1:${address.port}`,
 		captured,
+		echoed,
 		async [Symbol.asyncDispose]() {
 			await new Promise<void>((resolve, reject) => {
 				server.close((error) => {

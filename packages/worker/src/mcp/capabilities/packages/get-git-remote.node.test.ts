@@ -252,13 +252,13 @@ test('get_git_remote rejects invalid input before creating stubs', async () => {
 	resetMocks()
 	mockModule.getSavedPackageById.mockResolvedValue(null)
 	await expect(getRemote({ package_id: 'missing' })).rejects.toThrow(
-		'Saved package "missing" was not found in @kentcdodds. This connection is bound to @kentcdodds; bind to the org that owns the package (or use a package that @kentcdodds owns).',
+		'Saved package "missing" was not found in @kentcdodds, the org this connection is bound to. packageList lists the saved packages @kentcdodds owns with their package_id; to use a package another org owns, bind the connection to that org.',
 	)
 
 	resetMocks()
 	mockPackageSource('other-user')
 	await expect(getRemote({ package_id: 'package-1' })).rejects.toThrow(
-		'Repo source was not found for @kentcdodds. Bind to the org that owns the package before packageGetGitRemote or packagePublishExternalPush.',
+		'Saved package "@kentcdodds/unleashed-wifi" (package_id package-1) is missing its repo source record "source-1". This is a missing source record, not an org-binding problem: the package row exists in @kentcdodds but its source does not. Repair the source record or recreate the package.',
 	)
 })
 

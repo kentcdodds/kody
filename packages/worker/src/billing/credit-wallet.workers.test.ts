@@ -341,7 +341,7 @@ test('$0 Pro keeps 500 execute/day and stops at 501 with a top-up message; funde
 		current: 500,
 	})
 	expect(denied.message).toBe(
-		'Plan limit reached: your "pro" plan allows at most 500 unique execute workers per day and you currently have 500. Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
+		'Plan limit reached: your "pro" plan allows at most 500 unique execute workers per day and you currently have 500. This daily limit resets at 00:00 UTC, in 12h 0m. Rerun code you already ran today and vary params; repeats are free, or add credits at /account/usage#credits to keep going past your include.',
 	)
 
 	const funded = await seedPro('credits-funded-daily')
