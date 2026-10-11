@@ -163,11 +163,11 @@ algorithms:
 The gateway scans the **final serialized URL and headers**, so a literal
 placeholder assembled by any means, including string concatenation, resolves in
 a header and is refused in the URL. The body is never scanned or substituted:
-placeholder text there is sent verbatim, so a credential cannot be sent in a
-body (a form-encoded token exchange, a login password). Even so, avoid placing
-resolvable placeholder tokens into user-visible or third-party-visible content
-such as issue bodies, comments, prompts, logs, or returned strings: that text
-may later be copied into a header.
+placeholder text there is sent verbatim, so the gateway never substitutes a
+credential into a body (a form-encoded token exchange, a login password). Even
+so, avoid placing resolvable placeholder tokens into user-visible or
+third-party-visible content such as issue bodies, comments, prompts, logs, or
+returned strings: that text may later be copied into a header.
 
 - To **mention** the syntax in prose or docs, write **`{{secret:<name>}}`**.
   Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so
