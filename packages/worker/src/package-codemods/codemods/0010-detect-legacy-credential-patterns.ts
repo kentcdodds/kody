@@ -95,7 +95,11 @@ const textNameArgumentCalls: Array<{ pattern: RegExp; kind: NameKind }> = [
 	},
 ]
 
-/** Helper calls whose first argument (or named fields) name a credential. */
+/**
+ * Helper calls whose first argument (or named fields) name a credential. Read
+ * with {@link ownEntry}: a callee named after an Object.prototype method
+ * (`toString`, `hasOwnProperty`) must not match.
+ */
 const nameArgumentCallees: Record<string, NameKind> = {
 	createAuthenticatedFetch: 'integration',
 }
@@ -127,6 +131,10 @@ const nameFieldCallees: Record<
 	},
 }
 const packageSecretsMethods = new Set(['get', 'has'])
+
+function ownEntry<Value>(record: Record<string, Value>, key: string) {
+	return Object.hasOwn(record, key) ? record[key] : undefined
+}
 
 type AstNode = ModuleAstNode & {
 	computed?: boolean
@@ -484,7 +492,7 @@ function detectInParsedModule(
 				const calleeName = getCalleeName(node.callee)
 				if (calleeName == null) return
 				const firstArgument = node.arguments?.[0]
-				const nameKind = nameArgumentCallees[calleeName]
+				const nameKind = ownEntry(nameArgumentCallees, calleeName)
 				if (nameKind) {
 					if (firstArgument)
 						classifyNameExpression(firstArgument, nameKind, add)
@@ -502,7 +510,7 @@ function detectInParsedModule(
 				}
 				if (calleeName === 'packageSecretGet') add('packageSecrets.get')
 				if (calleeName === 'basic' && objectName !== 'secretHeaders') return
-				const fieldSpec = nameFieldCallees[calleeName]
+				const fieldSpec = ownEntry(nameFieldCallees, calleeName)
 				if (fieldSpec) classifyNamedFields(firstArgument, fieldSpec, add)
 				return
 			}

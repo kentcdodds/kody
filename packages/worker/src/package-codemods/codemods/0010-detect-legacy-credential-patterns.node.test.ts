@@ -181,6 +181,22 @@ test('0010 ignores comments, unrelated strings, Markdown, and clean manifests', 
 	).toEqual({})
 })
 
+test('0010 ignores calls named after Object.prototype methods', () => {
+	expect(
+		modulePatterns(
+			[
+				'export const hex = (b: number) => b.toString(16)',
+				"export const has = (o: object) => o.hasOwnProperty('k')",
+				'export const value = (o: object) => o.valueOf()',
+				"export const own = (o: object) => o.propertyIsEnumerable('k')",
+				'export const proto = (o: object) => o.isPrototypeOf(o)',
+				"export const local = (o: object) => o.toLocaleString('en')",
+				"export const ctor = (o: object) => o.constructor('x')",
+			].join('\n'),
+		),
+	).toEqual([])
+})
+
 test('0010 falls back to text for unparseable modules', () => {
 	expect(
 		modulePatterns(
