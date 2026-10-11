@@ -186,9 +186,21 @@ function headerValueMatchesTemplate(
 	template: string,
 	placeholder: string,
 ) {
-	const expected = template.replace('{value}', () => placeholder)
-	return value.trim().toLowerCase() === expected.trim().toLowerCase()
+	return value.trim() === template.replace('{value}', () => placeholder).trim()
 }
+
+/** The gateway builds the whole `Basic …` value; these are the forms it fills. */
+function isDerivedBasicAuthValue(value: string, placeholder: string) {
+	const trimmed = value.trim()
+	return (
+		trimmed === placeholder ||
+		['Basic', 'basic', 'BASIC'].some(
+			(scheme) => trimmed === `${scheme} ${placeholder}`,
+		)
+	)
+}
+
+const basicAuthTemplate = 'Basic {value}'
 
 function assertDeclaredSlotPlacement(input: {
 	policy: Extract<SecretPlacementPolicy, { kind: 'declared' }>
@@ -197,7 +209,8 @@ function assertDeclaredSlotPlacement(input: {
 	headerName: string
 	headerValue: string
 	placeholder: string
-	checkTemplate: boolean
+	/** `basic`: one of a Basic Auth pair the gateway encodes into one value. */
+	use: 'slot' | 'basic'
 }) {
 	const { policy, slotName, headerName } = input
 	const slot = policy.slots[slotName]
@@ -223,8 +236,20 @@ function assertDeclaredSlotPlacement(input: {
 			`Slot "${slotName}" of ${policy.packageName} may only be sent in its declared header "${placement.header}" (as "${template}"), not in "${headerName}".`,
 		)
 	}
+	if (input.use === 'basic') {
+		if (placement.template && placement.template !== basicAuthTemplate) {
+			throw new SecretPlacementError(
+				`Slot "${slotName}" of ${policy.packageName} declares template "${placement.template}", but a Basic Auth pair is sent as "${basicAuthTemplate}". Declare that template or no template on both slots.`,
+			)
+		}
+		if (!isDerivedBasicAuthValue(input.headerValue, input.placeholder)) {
+			throw new SecretPlacementError(
+				`Header "${headerName}" must be exactly "Basic ${input.placeholder}" to send slots of ${policy.packageName} as Basic Auth.`,
+			)
+		}
+		return
+	}
 	if (
-		input.checkTemplate &&
 		!headerValueMatchesTemplate(input.headerValue, template, input.placeholder)
 	) {
 		throw new SecretPlacementError(
@@ -257,12 +282,10 @@ function assertDeclaredHeaderReferences(input: {
 				headerName,
 				headerValue,
 				placeholder: reference.placeholder,
-				checkTemplate: true,
+				use: 'slot',
 			})
 			return
 		case 'secret-basic':
-			// The gateway builds the whole `Basic …` value from both slots, so only
-			// the header name is checked against each slot.
 			for (const slotName of [reference.usernameName, reference.passwordName]) {
 				assertDeclaredSlotPlacement({
 					policy,
@@ -271,12 +294,13 @@ function assertDeclaredHeaderReferences(input: {
 					headerName,
 					headerValue,
 					placeholder: reference.placeholder,
-					checkTemplate: false,
+					use: 'basic',
 				})
 			}
 			return
 		case 'provider-secret':
-			// Vault references are not slots yet; the header-only rule applies.
+			// A vault reference names no slot (the slot grammar has none), so the
+			// header-only, HTTPS, and item-website rules are what apply.
 			return
 		default: {
 			const exhaustive: never = reference

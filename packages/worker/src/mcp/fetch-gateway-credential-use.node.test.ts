@@ -406,6 +406,18 @@ test('leak: a declared package credential is refused outside its placement, in t
 			placement: { header: 'Authorization', template: 'Bearer {value}' },
 		},
 		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
+		CLIENT_ID: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme client id.',
+			placement: { header: 'Authorization' },
+		},
+		CLIENT_SECRET: {
+			kind: 'secret',
+			provider: 'acme',
+			description: 'Acme client secret.',
+			placement: { header: 'Authorization', template: 'Basic {value}' },
+		},
 	})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
@@ -470,6 +482,13 @@ test('leak: a declared package credential is refused outside its placement, in t
 		headers: { Authorization: 'Bearer {{integration-token:GOOGLE}}' },
 	})
 	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
+	const basicPair = '{{secret-basic:username=CLIENT_ID,password=CLIENT_SECRET}}'
+	const basic = await expandAsPackage('https://api.resend.com/token', {
+		headers: { Authorization: `Basic ${basicPair}` },
+	})
+	expect(basic.headers.get('Authorization')).toBe(
+		`Basic ${btoa('resend-secret-value:resend-secret-value')}`,
+	)
 	resolveSpy.mockClear()
 	tokenSpy.mockClear()
 
@@ -487,6 +506,28 @@ test('leak: a declared package credential is refused outside its placement, in t
 		}),
 	).toContain(
 		'Slot "RESEND_API_KEY" of @ownerp/mailer must be sent as "Authorization: Bearer {value}"',
+	)
+	expect(
+		await refusal('https://api.resend.com/emails', {
+			headers: { Authorization: 'bearer {{secret:RESEND_API_KEY}}' },
+		}),
+	).toContain('must be sent as "Authorization: Bearer {value}"')
+	expect(
+		await refusal('https://api.resend.com/token', {
+			headers: { Authorization: `X Basic ${basicPair}` },
+		}),
+	).toContain(
+		`Header "authorization" must be exactly "Basic ${basicPair}" to send slots of @ownerp/mailer as Basic Auth.`,
+	)
+	expect(
+		await refusal('https://api.resend.com/token', {
+			headers: {
+				Authorization:
+					'Basic {{secret-basic:username=CLIENT_ID,password=RESEND_API_KEY}}',
+			},
+		}),
+	).toContain(
+		'Slot "RESEND_API_KEY" of @ownerp/mailer declares template "Bearer {value}", but a Basic Auth pair is sent as "Basic {value}".',
 	)
 	expect(
 		await refusal('https://api.resend.com/emails', {
