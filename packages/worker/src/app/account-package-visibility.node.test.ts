@@ -12,7 +12,7 @@ const mockModule = vi.hoisted(() => ({
 	publishCommunityListing: vi.fn(),
 	unpublishCommunityListing: vi.fn(),
 	getCommunityListingByOwnerAndPackage: vi.fn(),
-	loadAccountPackagesData: vi.fn(),
+	reloadAccountPackagesAfterWrite: vi.fn(),
 }))
 
 vi.mock('#app/account-package-write-access.ts', () => ({
@@ -60,8 +60,8 @@ vi.mock('#worker/community/repo.ts', () => ({
 }))
 
 vi.mock('#app/account-packages-data.ts', () => ({
-	loadAccountPackagesData: (...args: Array<unknown>) =>
-		mockModule.loadAccountPackagesData(...args),
+	reloadAccountPackagesAfterWrite: (...args: Array<unknown>) =>
+		mockModule.reloadAccountPackagesAfterWrite(...args),
 }))
 
 const { handleAccountPackageVisibilityAction } =
@@ -114,7 +114,7 @@ test('making a package public or private requires typing the slug', async () => 
 	const request = new Request('https://example.com/account/packages.json', {
 		method: 'POST',
 	})
-	mockModule.loadAccountPackagesData.mockResolvedValue({ ok: true })
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({ ok: true })
 
 	expect(
 		await handleAccountPackageVisibilityAction({

@@ -77,3 +77,66 @@ export async function viewerCanManageSavedPackage(input: {
 		packageResource({ id: input.packageId, userId: input.ownerId }),
 	).allowed
 }
+
+async function effectivePackageAccess(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+}) {
+	if (!input.viewer) return null
+	const binding = await loadOrgBindingForOrg(
+		input.env.APP_DB,
+		input.viewer.userId,
+		input.ownerId,
+	)
+	if (!binding) return null
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: deriveRequestContext({
+			user: input.viewer,
+			source: { kind: 'session' },
+			orgBinding: binding,
+		}),
+	})
+	return { access, binding }
+}
+
+export async function viewerCanPublishSavedPackage(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+	packageId: string
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	if (!resolved) return false
+	return checkPermission(
+		resolved.access,
+		'package:publish',
+		packageResource({ id: input.packageId, userId: input.ownerId }),
+	).allowed
+}
+
+export async function viewerCanDeleteSavedPackage(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+	packageId: string
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	if (!resolved) return false
+	return checkPermission(
+		resolved.access,
+		'package:delete',
+		packageResource({ id: input.packageId, userId: input.ownerId }),
+	).allowed
+}
+
+/** Org owner role on the package's owning org (personal or team). */
+export async function viewerIsSavedPackageOrgOwner(input: {
+	env: Env
+	viewer: Pick<McpUserContext, 'userId' | 'username'> | null
+	ownerId: string
+}): Promise<boolean> {
+	const resolved = await effectivePackageAccess(input)
+	return resolved?.binding.role === 'owner'
+}

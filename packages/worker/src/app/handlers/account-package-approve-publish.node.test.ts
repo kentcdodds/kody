@@ -34,7 +34,7 @@ vi.mock('#app/ssr-render.tsx', () => ({
 		mockModule.renderAppPage(...args),
 }))
 vi.mock('#app/package-viewer-access.ts', () => ({
-	viewerCanReadSavedPackage: vi.fn(async () => true),
+	viewerCanManageSavedPackage: vi.fn(async () => true),
 }))
 
 vi.mock('#worker/orgs/repo.ts', () => ({

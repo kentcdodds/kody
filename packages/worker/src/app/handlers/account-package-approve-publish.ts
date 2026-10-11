@@ -1,4 +1,4 @@
-import { viewerCanReadSavedPackage } from '#app/package-viewer-access.ts'
+import { viewerCanManageSavedPackage } from '#app/package-viewer-access.ts'
 import { jsonResponse } from '#worker/json-response.ts'
 import { type Action } from 'remix/router'
 import { createMatcher } from 'remix/route-pattern/match'
@@ -108,7 +108,7 @@ export function createAccountPackageApprovePublishHandler(env: Env) {
 				)
 				if (
 					!savedPackage ||
-					!(await viewerCanReadSavedPackage({
+					!(await viewerCanManageSavedPackage({
 						env,
 						viewer: user.mcpUser,
 						ownerId: savedPackage.userId,

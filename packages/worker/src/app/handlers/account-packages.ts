@@ -5,7 +5,10 @@ import { handleAccountPackageAdoptAction } from '#app/account-package-adopt.ts'
 import { handleAccountPackageDeleteAction } from '#app/account-package-delete.ts'
 import { handleAccountPackagePublishLockAction } from '#app/account-package-publish-lock.ts'
 import { handleAccountPackageVisibilityAction } from '#app/account-package-visibility.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import {
+	loadAccountPackagesData,
+	reloadAccountPackagesAfterWrite,
+} from '#app/account-packages-data.ts'
 import { readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { requireAuthenticatedPageUser } from '#app/page-auth.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
@@ -172,7 +175,13 @@ export function createAccountPackagesApiHandler(env: Env) {
 					throw error
 				}
 				return jsonResponse(
-					await loadAccountPackagesData({ env, request, user }),
+					await reloadAccountPackagesAfterWrite({
+						env,
+						request,
+						user,
+						packageId,
+						ownerUserId: resolved.package.ownerUserId,
+					}),
 				)
 			}
 

@@ -249,6 +249,9 @@ type CommunityDetailShellLoaderData = {
 	kodyId: string
 	viewerIsOwner: boolean
 	viewerCanManage: boolean
+	viewerCanPublish?: boolean
+	viewerCanDelete?: boolean
+	viewerCanAdoptCommunityFork?: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
 }

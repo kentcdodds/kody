@@ -3,6 +3,7 @@ import {
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import { expect, test, vi } from 'vitest'
+import { loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
 
 const mockModule = vi.hoisted(() => ({
 	writablePackage: null as null | {
@@ -22,7 +23,7 @@ const mockModule = vi.hoisted(() => ({
 		updatedAt: string
 	},
 	setSavedPackageLockedAt: vi.fn(),
-	loadAccountPackagesData: vi.fn(),
+	reloadAccountPackagesAfterWrite: vi.fn(),
 	getEntitySourceById: vi.fn(),
 	resolveArtifactSourceHead: vi.fn(),
 	publishFromExternalRef: vi.fn(),
@@ -63,7 +64,14 @@ vi.mock('#worker/package-registry/repo.ts', () => ({
 	setSavedPackageLockedAt: mockModule.setSavedPackageLockedAt,
 }))
 vi.mock('#app/account-packages-data.ts', () => ({
-	loadAccountPackagesData: mockModule.loadAccountPackagesData,
+	reloadAccountPackagesAfterWrite: (...args: Array<unknown>) =>
+		mockModule.reloadAccountPackagesAfterWrite(...args),
+}))
+vi.mock('#worker/orgs/repo.ts', () => ({
+	loadOrgBindingForOrg: vi.fn(async () => ({
+		org: { id: ownerIdFromStored('user-1'), slug: 'user' },
+		role: 'owner' as const,
+	})),
 }))
 vi.mock('#worker/repo/entity-sources.ts', () => ({
 	getEntitySourceById: mockModule.getEntitySourceById,
@@ -169,7 +177,7 @@ async function loadApproveOk(commit?: string) {
 }
 
 test('website lock and unlock write locked_at and approve-publish promotes a named commit without unlocking', async () => {
-	mockModule.loadAccountPackagesData.mockResolvedValue({
+	mockModule.reloadAccountPackagesAfterWrite.mockResolvedValue({
 		ok: true,
 		email: 'user@example.com',
 		username: 'user',
@@ -258,6 +266,29 @@ test('website lock and unlock write locked_at and approve-publish promotes a nam
 		package: { id: 'pkg-1', lockedAt: '2026-08-28T12:00:00.000Z' },
 		diff: { files: [], omittedCount: 0 },
 	})
+})
+
+test('approve-publish hrefs use the owning org slug for team packages', async () => {
+	mockModule.writablePackage = {
+		...unlockedPackage,
+		userId: ownerIdFromStored('org-acme'),
+		kodyId: 'shared',
+		name: '@acme/shared',
+	}
+	mockModule.getEntitySourceById.mockResolvedValue({
+		...sourceRow('commit-old'),
+		user_id: ownerIdFromStored('org-acme'),
+	})
+	vi.mocked(loadOrgBindingForOrg).mockResolvedValueOnce({
+		org: {
+			id: ownerIdFromStored('org-acme'),
+			slug: 'acme',
+		},
+		role: 'member',
+	} as Awaited<ReturnType<typeof loadOrgBindingForOrg>>)
+	const loaded = await loadApproveOk('abc1234')
+	expect(loaded.packageHref).toBe('/@acme/shared')
+	expect(loaded.filesHref).toContain('/@acme/shared')
 })
 
 test('approve-publish resolves HEAD, missing published, and missing HEAD diffs', async () => {

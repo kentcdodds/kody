@@ -7,7 +7,7 @@ import {
 } from '#worker/community/service.ts'
 import { getCommunityListingByOwnerAndPackage } from '#worker/community/repo.ts'
 import { updateSavedPackage } from '#worker/package-registry/repo.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 
@@ -107,11 +107,12 @@ export async function handleAccountPackageVisibilityAction(input: {
 	}
 
 	return jsonResponse(
-		await loadAccountPackagesData({
+		await reloadAccountPackagesAfterWrite({
 			env: input.env,
 			request: input.request,
 			user: input.user,
-			pathPackageId: packageId,
+			packageId,
+			ownerUserId,
 		}),
 	)
 }
