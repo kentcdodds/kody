@@ -22,6 +22,11 @@ import { invalidRequest } from './errors.ts'
  * `package:execute`, then passes it as a `claimed` package stamp: it binds
  * package-scoped secrets / package-limited integrations, but the actor still
  * needs `secret:use` / `integration:use`. Only attested packages skip Use.
+ *
+ * Local execute has no run cap, so the gateway's 5-minute overall fetch
+ * deadline is the only bound on time. The response is buffered before it is
+ * returned (no streaming to local workerd), and a body over
+ * `capabilityProxyAuthenticatedFetchMaxBodyBytes` (4 MiB) fails.
  */
 
 export type CapabilityProxyGatewayFetchRequest = {

@@ -10,14 +10,13 @@ timeout (~90s). Workflow-invoked package exports and inline workflow code get a
 longer sandbox budget (5 minutes, the same background budget jobs get, under the
 6-minute Cloudflare Workflow step timeout) and run without the
 package-invocation idempotency ledger, so a step retry re-executes instead of
-replaying a cached timeout. Outbound `fetch` in that sandbox has a ~4-minute
-total deadline (30s below the ~4.5-minute sandbox budget), from request start to
-the end of the response body, so a single slow upstream can finish without the
-execute-oriented 60s fetch deadline. Workflows are the path for long calls
-today, including streamed AI-provider responses that run past a minute. A
-response body that sends no bytes for 60s is aborted; one that keeps streaming
-runs until the overall cap. The initial `execute` call should submit one
-`workflows.create`; inspect that workflow later with `workflowRunList`, or
+replaying a cached timeout. Each outbound `fetch` has a 5-minute total deadline
+(the same on every surface), from request start to the end of the response body,
+so a single slow upstream, such as a streamed AI-provider response that runs
+past a minute, can finish inside a workflow. A response body that sends no bytes
+for 60s is aborted; one that keeps streaming runs until the deadline or the
+sandbox budget, whichever comes first. The initial `execute` call should submit
+one `workflows.create`; inspect that workflow later with `workflowRunList`, or
 cancel it with `workflowRunCancel`. Check-heavy admin steps such as fleet apply,
 dry-run, and revert take one page per workflow sandbox; when `nextCursor` is
 set, create another workflow with that `runId` and cursor instead of looping in

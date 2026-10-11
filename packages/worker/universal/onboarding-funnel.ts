@@ -55,6 +55,7 @@ export function sanitizeWaitingCardId(cardId: string): string | null {
 	if (trimmed === 'mcp-server' || trimmed.startsWith('mcp-server:')) {
 		return 'mcp-server'
 	}
+	if (trimmed.startsWith('enablement-paused')) return 'enablement-paused'
 	if (fixedWaitingCardIds.has(trimmed)) return trimmed
 	if (firstUseCardIds.has(trimmed)) return trimmed
 	if (onboardingCardIds.has(trimmed)) return trimmed

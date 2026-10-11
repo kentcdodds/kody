@@ -12,7 +12,9 @@ import type * as CloudflareWorkers from 'cloudflare:workers'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import {
 	ownerIdFromStored,
+	personalOrgId,
 	personIdFromStored,
+	type OwnerId,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	type OrgRole,
@@ -50,6 +52,11 @@ import { dispatchWebhookInvocation } from '#worker/webhooks/delivery.ts'
 import { orgMemberUpdateCapability } from '#mcp/capabilities/access/org-members.ts'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { saveSecret } from '#mcp/secrets/service.ts'
+import {
+	collectWaitingSignals,
+	deriveWaitingItemsForStableUser,
+} from '#mcp/waiting/derive-waiting.ts'
+import { buildWaitingItems } from '#universal/waiting.ts'
 import type * as RunKodyRegistry from '#mcp/run-kody-registry.ts'
 import { getEnablementById, insertEnablement } from './repo.ts'
 import { type EnablementAudience, planEnablementRuns } from './run-gate.ts'
@@ -598,6 +605,74 @@ test("a member's subscription cannot use an org credential they lack; it pauses,
 		[t.people.bea.userId, 'success'],
 	])
 	expect(JSON.stringify(rows)).not.toContain(teamSecretValue)
+})
+
+test("a member's paused email subscription waits on that member's own list, not the org's (#3317)", async () => {
+	const t = await setup()
+	const beas = await t.enable('bea', 'subscription', emailTopic)
+	await t.enable('cy', 'subscription', emailTopic)
+	await t.sendEmail('bea@acme.example')
+	await expect(t.enablement(beas.id)).resolves.toMatchObject({
+		state: 'paused',
+	})
+
+	const waitingIds = async (
+		person: keyof typeof t.people,
+		orgId: OwnerId = t.orgId,
+	) => {
+		const personId = t.people[person].userId
+		const row = await t.db
+			.prepare(`SELECT id FROM users WHERE stable_user_id = ?`)
+			.bind(personId)
+			.first<{ id: number }>()
+		const signals = await collectWaitingSignals({
+			env: t.env,
+			user: {
+				userId: row!.id,
+				stableUserId: orgId,
+				actorStableUserId: personalOrgId(personId),
+				email: `${person}@acme.example`,
+				username: t.people[person].username,
+				emailVerified: true,
+			},
+		})
+		return buildWaitingItems(signals, 'quillworks')
+			.filter((item) => item.kind === 'enablement-paused')
+			.map((item) => ({ id: item.id, title: item.title, why: item.why }))
+	}
+
+	expect(await waitingIds('bea')).toEqual([
+		{
+			id: `enablement-paused:${beas.id}`,
+			title: `Your @acme/pkg-shared "${emailTopic}" subscription is paused`,
+			why: expect.stringContaining('Use on the secret "teamToken"'),
+		},
+	])
+	expect(await waitingIds('cy')).toEqual([])
+	expect(await waitingIds('owner')).toEqual([])
+	expect(await waitingIds('bea', personalOrgId(t.people.bea.userId))).toEqual(
+		[],
+	)
+
+	// Agents read the same queue for the org their connection is bound to.
+	const mcpWaitingIds = async (orgId: OwnerId | null) =>
+		(
+			await deriveWaitingItemsForStableUser({
+				env: t.env,
+				personId: t.people.bea.userId,
+				orgId,
+				email: 'bea@acme.example',
+			})
+		)
+			.filter((item) => item.kind === 'enablement-paused')
+			.map((item) => item.id)
+	expect(await mcpWaitingIds(t.orgId)).toEqual([`enablement-paused:${beas.id}`])
+	expect(await mcpWaitingIds(null)).toEqual([])
+
+	await t.grant(t.people.bea.userId, 'secret', 'teamToken')
+	await t.sendEmail('bea@acme.example')
+	expect(await waitingIds('bea')).toEqual([])
+	expect(await mcpWaitingIds(t.orgId)).toEqual([])
 })
 
 test("a member's webhook runs as its enabler, never as Owner, and a paused one answers 409", async () => {

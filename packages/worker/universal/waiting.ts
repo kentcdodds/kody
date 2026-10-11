@@ -18,6 +18,7 @@ export const waitingItemKinds = [
 	'verify-email',
 	'mcp-server',
 	'integration-auth',
+	'enablement-paused',
 	'secret-expired',
 	'publish-lock',
 	'email-change',
@@ -111,6 +112,22 @@ export type WaitingExpiredSecretSignal = {
 	name: string
 }
 
+/**
+ * One of the viewer's own paused enablements in the org being viewed. Only
+ * the enabler sees it: a paused run of someone else's never lands here.
+ */
+export type WaitingPausedEnablementSignal = {
+	id: string
+	triggerKind: 'cron' | 'subscription' | 'webhook'
+	triggerName: string
+	packageName: string | null
+	reason: 'org_access' | 'package_access' | 'credential_access'
+	resourceType: string | null
+	resourceId: string | null
+}
+
+export const waitingPausedEnablementCap = 3
+
 type WaitingLockedPackageSignal = {
 	id: string
 	name: string
@@ -129,6 +146,7 @@ export type WaitingSignals = {
 	onboardingRemaining: Array<OnboardingChecklistItemId>
 	mcpServers: Array<WaitingMcpServerSignal>
 	integrationAuth: Array<WaitingIntegrationAuthSignal>
+	pausedEnablements: Array<WaitingPausedEnablementSignal>
 	expiredSecrets: Array<WaitingExpiredSecretSignal>
 	lockedPackages: Array<WaitingLockedPackageSignal>
 	pendingEmailChange: string | null
@@ -152,13 +170,14 @@ const kindRank: Record<WaitingItemKind, number> = {
 	'verify-email': 0,
 	'mcp-server': 1,
 	'integration-auth': 2,
-	'secret-expired': 3,
-	'publish-lock': 4,
-	'email-change': 5,
-	entitlement: 6,
-	'error-rate': 7,
-	onboarding: 8,
-	'first-use': 9,
+	'enablement-paused': 3,
+	'secret-expired': 4,
+	'publish-lock': 5,
+	'email-change': 6,
+	entitlement: 7,
+	'error-rate': 8,
+	onboarding: 9,
+	'first-use': 10,
 }
 
 const firstUseRank = Object.fromEntries(
@@ -211,6 +230,28 @@ export function buildWaitingItems(
 			who: 'you',
 			doLabel: copy.doLabel,
 			href: copy.href,
+			severity: 'block',
+		})
+	}
+
+	const pausedEnablements = signals.pausedEnablements.slice(
+		0,
+		waitingPausedEnablementCap,
+	)
+	for (const enablement of pausedEnablements) {
+		items.push(buildPausedEnablementWaitingItem(enablement))
+	}
+	const extraPaused =
+		signals.pausedEnablements.length - pausedEnablements.length
+	if (extraPaused > 0) {
+		items.push({
+			id: 'enablement-paused-more',
+			kind: 'enablement-paused',
+			title: `${String(extraPaused)} more of your automations are paused`,
+			why: 'Ask your agent to run enablementList to see each paused enablement and why.',
+			who: 'you',
+			doLabel: pausedEnablementDocLabel,
+			href: pausedEnablementDocHref,
 			severity: 'block',
 		})
 	}
@@ -339,8 +380,8 @@ export function buildWaitingItems(
 			if (left.kind === 'first-use' && right.kind === 'first-use') {
 				return firstUseItemRank(left.id) - firstUseItemRank(right.id)
 			}
-			if (left.id === 'secret-expired-more') return 1
-			if (right.id === 'secret-expired-more') return -1
+			if (left.id.endsWith('-more')) return 1
+			if (right.id.endsWith('-more')) return -1
 			return left.title.localeCompare(right.title)
 		})
 }
@@ -430,6 +471,66 @@ const waitingFirstUseCopy: Record<
 		doLabel: 'Join Discord',
 		href: routes.discord.href(),
 	},
+}
+
+const pausedEnablementDocLabel = 'How paused automation resumes'
+const pausedEnablementDocHref = `${routes.docDetail.href({
+	slug: 'organizations',
+})}#automation-runs-as-the-person-who-turned-it-on`
+
+function pausedEnablementTitle(signal: WaitingPausedEnablementSignal) {
+	const pkg = signal.packageName ? `${signal.packageName} ` : ''
+	switch (signal.triggerKind) {
+		case 'cron':
+			return `Your ${pkg}scheduled job is paused`
+		case 'subscription':
+			return `Your ${pkg}"${signal.triggerName}" subscription is paused`
+		case 'webhook':
+			return `Your ${pkg}webhook is paused`
+		default: {
+			const unknownKind: never = signal.triggerKind
+			throw new Error(`Unknown enablement trigger kind: ${String(unknownKind)}`)
+		}
+	}
+}
+
+function pausedEnablementWhy(signal: WaitingPausedEnablementSignal) {
+	const resumes =
+		'Its events are dropped until then, and the next event resumes it.'
+	switch (signal.reason) {
+		case 'credential_access': {
+			const credential =
+				signal.resourceType && signal.resourceId
+					? `the ${signal.resourceType} "${signal.resourceId}"`
+					: 'a credential'
+			return `It runs as you, and its last run needed Use on ${credential}, which you do not have. Ask an org Owner for access. ${resumes}`
+		}
+		case 'package_access':
+			return `It runs as you, and you no longer hold package:execute on ${signal.packageName ?? 'its package'}. Ask an org Owner for access. ${resumes}`
+		case 'org_access':
+			return `It runs as you, and you no longer have access to this org. ${resumes}`
+		default: {
+			const unknownReason: never = signal.reason
+			throw new Error(
+				`Unknown enablement pause reason: ${String(unknownReason)}`,
+			)
+		}
+	}
+}
+
+function buildPausedEnablementWaitingItem(
+	signal: WaitingPausedEnablementSignal,
+): WaitingItem {
+	return {
+		id: `enablement-paused:${signal.id}`,
+		kind: 'enablement-paused',
+		title: pausedEnablementTitle(signal),
+		why: pausedEnablementWhy(signal),
+		who: 'you',
+		doLabel: pausedEnablementDocLabel,
+		href: pausedEnablementDocHref,
+		severity: 'block',
+	}
 }
 
 function buildMcpServerWaitingItem(

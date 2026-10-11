@@ -21,6 +21,11 @@ Typical items:
   (`invalid_grant`, missing user credential, or a missing refresh token on a
   sign-in that expires; a non-expiring grant such as a GitHub OAuth App token
   with no refresh token is healthy and does not appear)
+- one of your own automations is paused: a job, subscription (inbound email
+  included), or webhook you turned on lost access it needs, such as Use on a
+  credential its run asked for (up to three, then a “more” card). In a team org
+  this card goes only to the person who turned the automation on, never to the
+  rest of the org. It clears on the next event once access is back
 - update an expired user-scope secret (up to three, then a “more” card)
 - review a locked package (published code stays put until you promote or unlock)
 - confirm a pending email change

@@ -139,8 +139,8 @@ export async function runSearchTool(input: {
 		userId: callerUserId,
 		storageId,
 	} = callerContextFields(callerContext)
-	// Package/secret/integration discovery is keyed by the bound org. Stamps and
-	// person-only waiting/onboarding still use the acting person's personal org
+	// Package/secret/integration discovery and Waiting are keyed by the bound
+	// org. Stamps and onboarding still use the acting person's personal org
 	// (team orgs have no users row for activation columns).
 	const personOwnerId = callerUserId ? personalOrgId(callerUserId) : null
 	const userId = callerContext.request?.org.id ?? personOwnerId
@@ -279,12 +279,13 @@ export async function runSearchTool(input: {
 			const waitingStart = performance.now()
 			let waitingMarkdown: string | null = null
 			let waitingStructured: ReturnType<typeof toSearchWaitingStructured> = null
-			if (shouldInjectWaiting) {
+			if (shouldInjectWaiting && callerUserId) {
 				try {
 					const waiting = await settleWithBudget(
 						deriveWaitingItemsForStableUser({
 							env: agent.getEnv(),
-							stableUserId: personOwnerId,
+							personId: callerUserId,
+							orgId: callerContext.request?.org.id ?? null,
 							email: callerContext.user?.email ?? '',
 						}),
 						SEARCH_WAITING_ITEMS_BUDGET_MS,
