@@ -28,6 +28,7 @@ type AdminHandleHolder = {
 type AdminHandleLookup = {
 	compact: string
 	holders: Array<AdminHandleHolder>
+	total: number
 	truncated: boolean
 }
 
@@ -38,6 +39,7 @@ type HandleHolderRow = {
 	stored_handle: string
 	created_at: string
 	deleted_at: string | null
+	total_matches: number
 }
 
 function compactStoredHandleSql(column: string) {
@@ -117,7 +119,9 @@ export async function loadAdminHandleHolders(
 	const usernameCompact = compactStoredHandleSql('username')
 	const rows = await db
 		.prepare(
-			`SELECT source, owner_kind, owner_id, stored_handle, created_at, deleted_at
+			`SELECT
+			   source, owner_kind, owner_id, stored_handle, created_at, deleted_at,
+			   COUNT(*) OVER () AS total_matches
 			 FROM (
 			   SELECT
 			     'handle' AS source,
@@ -164,13 +168,14 @@ export async function loadAdminHandleHolders(
 			   stored_handle
 			 LIMIT ?`,
 		)
-		.bind(compact, compact, compact, handleHolderLimit + 1)
+		.bind(compact, compact, compact, handleHolderLimit)
 		.all<HandleHolderRow>()
 	const matched = rows.results ?? []
-	const truncated = matched.length > handleHolderLimit
+	const total = matched[0]?.total_matches ?? 0
 	return {
 		compact,
-		holders: matched.slice(0, handleHolderLimit).map(holderFromRow),
-		truncated,
+		holders: matched.map(holderFromRow),
+		total,
+		truncated: total > handleHolderLimit,
 	}
 }

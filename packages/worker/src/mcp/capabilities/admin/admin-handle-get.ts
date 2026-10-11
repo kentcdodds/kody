@@ -53,9 +53,16 @@ const outputSchema = z.object({
 			'Lookup key after reserved-name compaction (lowercase, hyphens and underscores removed).',
 		),
 	holders: z.array(holderSchema),
+	total: z
+		.number()
+		.int()
+		.nonnegative()
+		.describe(
+			'Full match count across handles, orgs, and users. holders is capped at 50.',
+		),
 	truncated: z
 		.boolean()
-		.describe('True when more than 50 rows matched and holders was capped.'),
+		.describe('True when total is greater than the 50 holders returned.'),
 })
 
 export const adminHandleGetCapability = defineDomainCapability(
@@ -83,7 +90,7 @@ export const adminHandleGetCapability = defineDomainCapability(
 				async () => loadAdminHandleHolders(ctx.env.APP_DB, args.handle),
 				{
 					successReason: (result) =>
-						`compact=${result.compact};matches=${String(result.holders.length)};truncated=${String(result.truncated)}`,
+						`compact=${result.compact};returned=${String(result.holders.length)};total=${String(result.total)};truncated=${String(result.truncated)}`,
 				},
 			)
 		},

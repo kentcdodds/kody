@@ -168,6 +168,7 @@ test('adminHandleGet resolves user, org, soft-deleted, case, and separator-strip
 	const person = await adminHandleGetCapability.handler({ handle: 'PAT' }, ctx)
 	expect(person).toEqual({
 		compact: 'pat',
+		total: 3,
 		truncated: false,
 		holders: [
 			{
@@ -294,7 +295,12 @@ test('adminHandleGet resolves user, org, soft-deleted, case, and separator-strip
 		{ handle: 'zzznone' },
 		ctx,
 	)
-	expect(missing).toEqual({ compact: 'zzznone', holders: [], truncated: false })
+	expect(missing).toEqual({
+		compact: 'zzznone',
+		holders: [],
+		total: 0,
+		truncated: false,
+	})
 
 	await expect(
 		adminHandleGetCapability.handler({ handle: '---' }, ctx),
@@ -328,12 +334,41 @@ test('adminHandleGet resolves user, org, soft-deleted, case, and separator-strip
 		true,
 	)
 
+	const compact = 'abcdefghij'
+	const spellings: Array<string> = []
+	const gaps = compact.length - 1
+	for (let mask = 0; spellings.length < 51; mask += 1) {
+		let spelling = ''
+		for (let index = 0; index < compact.length; index += 1) {
+			spelling += compact[index] ?? ''
+			if (index < gaps && (mask & (1 << index)) !== 0) spelling += '-'
+		}
+		spellings.push(spelling)
+	}
+	const insertOverflow = sqlite.prepare(
+		`INSERT INTO handles (handle, user_id, org_id, created_at) VALUES (?, NULL, NULL, ?)`,
+	)
+	for (const spelling of spellings) {
+		insertOverflow.run(spelling, '2026-04-01T00:00:00.000Z')
+	}
+	const overflow = await adminHandleGetCapability.handler(
+		{ handle: 'abc-defghij' },
+		ctx,
+	)
+	expect(overflow.compact).toBe(compact)
+	expect(overflow.holders).toHaveLength(50)
+	expect(overflow.total).toBe(51)
+	expect(overflow.truncated).toBe(true)
+	expect(overflow.holders.every((holder) => holder.source === 'handle')).toBe(
+		true,
+	)
+
 	expect(logAuditEventSpy).toHaveBeenCalledWith(
 		expect.objectContaining({
 			category: 'admin',
 			action: 'adminHandleGet',
 			result: 'success',
-			reason: 'compact=pat;matches=3;truncated=false',
+			reason: 'compact=pat;returned=3;total=3;truncated=false',
 		}),
 	)
 	const reasons = logAuditEventSpy.mock.calls.map(
@@ -341,4 +376,11 @@ test('adminHandleGet resolves user, org, soft-deleted, case, and separator-strip
 	)
 	expect(reasons.some((reason) => reason.includes(goneEmail))).toBe(false)
 	expect(reasons.some((reason) => reason.includes(patEmail))).toBe(false)
+	expect(logAuditEventSpy).toHaveBeenCalledWith(
+		expect.objectContaining({
+			action: 'adminHandleGet',
+			result: 'success',
+			reason: 'compact=abcdefghij;returned=50;total=51;truncated=true',
+		}),
+	)
 })
