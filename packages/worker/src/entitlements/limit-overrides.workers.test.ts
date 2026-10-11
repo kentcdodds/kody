@@ -21,10 +21,11 @@ import {
 	readDailyEntitlementResourceUsage,
 	readExecuteUniqueWorkerUsage,
 } from '#worker/entitlements/service.ts'
-import { createMcpCallerContext } from '#mcp/context.ts'
 import { assertCallerCanAccessCapability } from '#mcp/capabilities/access-control.ts'
 import { adminOrgLimitOverridesSetCapability } from '#mcp/capabilities/admin/admin-org-limit-overrides-set.ts'
 import { adminOrgLimitsGetCapability } from '#mcp/capabilities/admin/admin-org-limits-get.ts'
+import { createMcpCallerContext } from '#mcp/context.ts'
+import { buildExecuteUsageReport } from '#mcp/execute-admission.ts'
 import { type OrgAuditWriter } from '#worker/orgs/org-audit.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
@@ -273,15 +274,22 @@ test('the execute usage readout reads overrides live, like the counted check', a
 	)
 		.bind(org.stableUserId, adminId, now.toISOString(), now.toISOString())
 		.run()
-	expect(
-		await readExecuteUniqueWorkerUsage({
-			db: env.APP_DB,
-			env,
-			userId: ownerIdFromStored(org.stableUserId),
-			email: org.email,
-			now,
-		}),
-	).toMatchObject({ used: 0, limit: 400 })
+	const usage = await readExecuteUniqueWorkerUsage({
+		db: env.APP_DB,
+		env,
+		userId: ownerIdFromStored(org.stableUserId),
+		email: org.email,
+		now,
+	})
+	// Execute responses build structuredContent.usage from this readout, so
+	// limit and remaining must be the effective override, not the plan cap.
+	expect(usage).toMatchObject({ used: 0, limit: 400 })
+	expect(buildExecuteUsageReport(usage, now).day).toEqual({
+		used: 0,
+		limit: 400,
+		remaining: 400,
+		resetsAt: '2026-10-11T00:00:00.000Z',
+	})
 })
 
 test('unlimited lifts the cap; removing it restores the plan cap', async () => {
