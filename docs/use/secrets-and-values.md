@@ -65,15 +65,20 @@ Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in a **request header**. The host
 resolves them for **approved** destinations over **HTTPS** only.
 
-The request body is data, never a substitution site. The gateway refuses, before
-anything resolves, a placeholder in the body, the URL, or the query string, and
-a header placeholder on a plain `http://` request, so an unsubstituted
-placeholder only reaches the remote when the calling code opts in with an
-`x-kody-secret-resolution` header (local execute has one more gap, described
-below). The error names the credential and the rule. Any other body is forwarded
-byte for byte. A body that quotes the syntax on purpose (an issue or chat
-message that documents it) sets `x-kody-secret-resolution: headers-only`, and
-`off` sends every placeholder as written; see
+The request body is data, never a substitution site. By default the gateway
+refuses, before anything resolves, a placeholder in the body, the URL, or the
+query string, and a header placeholder on a plain `http://` request. The error
+names the credential and the rule. Any other body is forwarded byte for byte.
+The `x-kody-secret-resolution` header changes that per request:
+
+- `headers-only` resolves header placeholders and sends placeholder text in the
+  body as written, for a body that quotes the syntax on purpose (an issue or
+  chat message that documents it). URL and query placeholders are still refused.
+- `off` resolves nothing and checks nothing: every placeholder, in the URL,
+  headers, or body, is sent as written.
+
+So an unsubstituted placeholder only reaches the remote when the calling code
+opts in with that header (local execute has one more gap, described below). See
 [Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
 Kody strips that header before the request leaves. Local execute checks only the
 first MiB of a file or byte body, and cannot read a caller `ReadableStream` body
