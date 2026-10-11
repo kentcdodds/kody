@@ -140,3 +140,38 @@ export default async function main() {
 		{ path: 'src/index.ts', line: 17, slot: 'requestCtor', location: 'body' },
 	])
 })
+
+test('request bindings are scoped to their function, constants respect shadowing, and casts are looked through', () => {
+	const findings = findSecretPlaceholdersOutsideHeaders({
+		'src/index.ts': `const TOKEN = '{{secret:moduleToken}}'
+export async function send(payload: string, TOKEN: string) {
+	await fetch('https://api.example.com/a', { method: 'POST', body: payload })
+	await fetch('https://api.example.com/b', { method: 'POST', body: TOKEN })
+}
+export function help() {
+	const payload = JSON.stringify({ note: 'Configure {{secret:helpOnly}}' })
+	return new Response(payload)
+}
+export async function cast() {
+	const init = {
+		method: 'POST',
+		body: JSON.stringify({ id: '{{secret:castOptions}}' }),
+	} satisfies RequestInit
+	await fetch('https://api.example.com/c', init)
+	await fetch('https://api.example.com/d', {
+		method: 'POST',
+		body: '{{secret:inlineCast}}',
+	} as RequestInit)
+	const payload = JSON.stringify({ id: '{{secret:castBody}}' })
+	await fetch('https://api.example.com/e', { method: 'POST', body: payload as string })
+	await fetch('https://api.example.com/f', { method: 'POST', body: TOKEN })
+}
+`,
+	})
+	expect(findings).toEqual([
+		{ path: 'src/index.ts', line: 13, slot: 'castOptions', location: 'body' },
+		{ path: 'src/index.ts', line: 18, slot: 'inlineCast', location: 'body' },
+		{ path: 'src/index.ts', line: 20, slot: 'castBody', location: 'body' },
+		{ path: 'src/index.ts', line: 22, slot: 'moduleToken', location: 'body' },
+	])
+})

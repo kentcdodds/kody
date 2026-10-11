@@ -362,43 +362,98 @@ function declaredName(node: AstNode | undefined, init: AstNode) {
 		: null
 }
 
+const functionTypes = new Set([
+	'FunctionDeclaration',
+	'FunctionExpression',
+	'ArrowFunctionExpression',
+	'ObjectMethod',
+	'ClassMethod',
+	'ClassPrivateMethod',
+])
+
+/** The nearest enclosing function, or the module root. */
+function scopeOf(ancestors: ReadonlyArray<AstNode>) {
+	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+		if (functionTypes.has(ancestors[index]!.type)) return ancestors[index]!
+	}
+	return ancestors[0] ?? null
+}
+
 /**
- * Names a module binds to request data: `optionNames` hold the options object
- * passed to `fetch` or `new Request` (`fetch(url, init)`), and `bodyNames`
- * hold a value used as that object's `body` (`body: payload`).
+ * Names bound to request data, per enclosing function: `options` hold the
+ * options object passed to `fetch` or `new Request` (`fetch(url, init)`),
+ * and `bodies` hold a value used as that object's `body` (`body: payload`).
+ * A name only counts in the function that uses it, so a same-named variable
+ * elsewhere in the module is not request data.
  */
 export type RequestBindings = {
-	optionNames: ReadonlySet<string>
-	bodyNames: ReadonlySet<string>
+	options: ReadonlyMap<AstNode | null, ReadonlySet<string>>
+	bodies: ReadonlyMap<AstNode | null, ReadonlySet<string>>
 }
 
 const noRequestBindings: RequestBindings = {
-	optionNames: new Set(),
-	bodyNames: new Set(),
+	options: new Map(),
+	bodies: new Map(),
 }
 
-/** Whether `object` is the options of a `fetch` or `new Request`. */
-function isRequestOptions(
-	object: AstNode | undefined,
-	parent: AstNode | undefined,
+function addBinding(
+	map: Map<AstNode | null, Set<string>>,
+	scope: AstNode | null,
+	name: string,
+) {
+	const names = map.get(scope) ?? new Set<string>()
+	names.add(name)
+	map.set(scope, names)
+}
+
+function hasBinding(
+	map: ReadonlyMap<AstNode | null, ReadonlySet<string>>,
+	scope: AstNode | null,
+	name: string | null,
+) {
+	return name != null && (map.get(scope)?.has(name) ?? false)
+}
+
+/**
+ * Whether `ancestors[index]` is the options of a `fetch` or `new Request`,
+ * inline or through a `const` passed as those options. Casts and parentheses
+ * around the object are looked through.
+ */
+function isRequestOptionsAt(
+	ancestors: ReadonlyArray<AstNode>,
+	index: number,
 	bindings: RequestBindings,
 ) {
-	if (object?.type !== 'ObjectExpression' || !parent) return false
-	if (isRequestCall(parent) && parent.arguments?.[1] === object) return true
-	const name = declaredName(parent, object)
-	return name != null && bindings.optionNames.has(name)
+	let child = ancestors[index]
+	if (child?.type !== 'ObjectExpression') return false
+	let parentIndex = index - 1
+	while (
+		parentIndex >= 0 &&
+		transparentExpressionTypes.has(ancestors[parentIndex]!.type)
+	) {
+		child = ancestors[parentIndex]!
+		parentIndex -= 1
+	}
+	const parent = ancestors[parentIndex]
+	if (!parent) return false
+	if (isRequestCall(parent) && parent.arguments?.[1] === child) return true
+	return hasBinding(
+		bindings.options,
+		scopeOf(ancestors.slice(0, parentIndex)),
+		declaredName(parent, child),
+	)
 }
 
 export function collectRequestBindings(parsed: AstNode): RequestBindings {
-	const optionNames = new Set<string>()
-	walkAst(parsed, (node) => {
+	const options = new Map<AstNode | null, Set<string>>()
+	walkAst(parsed, (node, ancestors) => {
 		if (!isRequestCall(node)) return
-		const options = node.arguments?.[1]
-		const name = options?.type === 'Identifier' ? getNodeName(options) : null
-		if (name) optionNames.add(name)
+		const init = unwrapExpression(node.arguments?.[1])
+		const name = init?.type === 'Identifier' ? getNodeName(init) : null
+		if (name) addBinding(options, scopeOf(ancestors), name)
 	})
-	const bodyNames = new Set<string>()
-	const partial = { optionNames, bodyNames }
+	const bodies = new Map<AstNode | null, Set<string>>()
+	const partial = { options, bodies }
 	walkAst(parsed, (node, ancestors) => {
 		if (
 			node.type !== 'ObjectProperty' ||
@@ -407,13 +462,87 @@ export function collectRequestBindings(parsed: AstNode): RequestBindings {
 		) {
 			return
 		}
-		const value = propertyValueNode(node)
+		const value = unwrapExpression(propertyValueNode(node) ?? undefined)
 		const name = value?.type === 'Identifier' ? getNodeName(value) : null
-		if (name && isRequestOptions(ancestors.at(-1), ancestors.at(-2), partial)) {
-			bodyNames.add(name)
+		if (name && isRequestOptionsAt(ancestors, ancestors.length - 1, partial)) {
+			addBinding(bodies, scopeOf(ancestors), name)
 		}
 	})
-	return { optionNames, bodyNames }
+	return { options, bodies }
+}
+
+function patternNames(pattern: AstNode | undefined, names: Set<string>) {
+	if (!pattern) return
+	switch (pattern.type) {
+		case 'Identifier': {
+			const name = getNodeName(pattern)
+			if (name) names.add(name)
+			return
+		}
+		case 'AssignmentPattern':
+			patternNames(pattern.left as AstNode | undefined, names)
+			return
+		case 'RestElement':
+			patternNames(pattern.argument as AstNode | undefined, names)
+			return
+		case 'ObjectPattern':
+			for (const property of pattern.properties ?? []) {
+				patternNames(
+					property.type === 'RestElement'
+						? property
+						: (propertyValueNode(property) ?? undefined),
+					names,
+				)
+			}
+			return
+		case 'ArrayPattern':
+			for (const element of (pattern.elements ?? []) as Array<AstNode | null>) {
+				patternNames(element ?? undefined, names)
+			}
+			return
+		default:
+			return
+	}
+}
+
+/**
+ * Whether `name` is redeclared between the module root and this point (a
+ * parameter, or a local in an enclosing block), so it no longer refers to the
+ * module constant.
+ */
+function isShadowed(name: string, ancestors: ReadonlyArray<AstNode>) {
+	for (let index = ancestors.length - 1; index >= 1; index -= 1) {
+		const node = ancestors[index]!
+		const names = new Set<string>()
+		if (functionTypes.has(node.type)) {
+			for (const param of (node.params ?? []) as Array<AstNode>) {
+				patternNames(param, names)
+			}
+		} else if (node.type === 'CatchClause') {
+			patternNames(node.param as AstNode | undefined, names)
+		} else if (
+			node.type === 'BlockStatement' ||
+			node.type === 'ForStatement' ||
+			node.type === 'ForOfStatement' ||
+			node.type === 'ForInStatement'
+		) {
+			const statements = [
+				...((node.body as Array<AstNode> | undefined) ?? []),
+				...[node.init, node.left].filter(
+					(part): part is AstNode =>
+						part != null && typeof part === 'object' && 'type' in part,
+				),
+			]
+			for (const statement of Array.isArray(statements) ? statements : []) {
+				if (statement.type !== 'VariableDeclaration') continue
+				for (const declarator of statement.declarations ?? []) {
+					patternNames(declarator.id, names)
+				}
+			}
+		}
+		if (names.has(name)) return true
+	}
+	return false
 }
 
 function isJsonStringifyCall(node: AstNode) {
@@ -451,12 +580,19 @@ export function literalLocationOutsideHeader(
 		if (
 			isBodyValue(parent, child) &&
 			(options.textShapeHints ||
-				isRequestOptions(ancestors[index - 1], ancestors[index - 2], bindings))
+				isRequestOptionsAt(ancestors, index - 1, bindings))
 		) {
 			return 'body'
 		}
-		const name = declaredName(parent, child)
-		if (name != null && bindings.bodyNames.has(name)) return 'body'
+		if (
+			hasBinding(
+				bindings.bodies,
+				scopeOf(ancestors.slice(0, index)),
+				declaredName(parent, child),
+			)
+		) {
+			return 'body'
+		}
 		child = parent
 	}
 	if (isWithinHeaders(node, ancestors)) return null
@@ -758,12 +894,13 @@ export function findSecretPlaceholdersOutsideHeaders(
 		}
 		const requestBindings = collectRequestBindings(parsed)
 		const bindings: RequestBindings = {
-			optionNames: requestBindings.optionNames,
+			options: requestBindings.options,
 			// A string constant is reported where it is read, not where it is declared.
-			bodyNames: new Set(
-				[...requestBindings.bodyNames].filter(
-					(name) => !placeholderConstants.has(name),
-				),
+			bodies: new Map(
+				[...requestBindings.bodies].map(([scope, names]) => [
+					scope,
+					new Set([...names].filter((name) => !placeholderConstants.has(name))),
+				]),
 			),
 		}
 		const moduleMentionsOptOut = secretResolutionOptOutPattern.test(
@@ -796,8 +933,11 @@ export function findSecretPlaceholdersOutsideHeaders(
 		if (placeholderConstants.size > 0) {
 			walkAst(parsed, (node, ancestors) => {
 				if (!isValueReference(node, ancestors.at(-1))) return
-				const value = placeholderConstants.get(getNodeName(node) ?? '')
-				if (value != null) report(node, value, ancestors)
+				const name = getNodeName(node) ?? ''
+				const value = placeholderConstants.get(name)
+				if (value != null && !isShadowed(name, ancestors)) {
+					report(node, value, ancestors)
+				}
 			})
 		}
 	}
