@@ -103,9 +103,11 @@ function workflowRunScripts(text: string) {
 	const lines = text.split('\n')
 	for (let index = 0; index < lines.length; index += 1) {
 		const line = lines[index] ?? ''
-		const inline = /^(\s*)(?:-\s+)?run:\s*(.*)$/.exec(line)
+		// Key indent is the column of `run`, not the `-` list marker, so sibling
+		// step keys (`env`, `shell`) are not swallowed into the block.
+		const inline = /^(\s*(?:-\s+)?)run:\s*(.*)$/.exec(line)
 		if (!inline) continue
-		const indent = inline[1]?.length ?? 0
+		const keyIndent = inline[1]?.length ?? 0
 		const rest = (inline[2] ?? '').trim()
 		if (
 			rest === '' ||
@@ -126,7 +128,7 @@ function workflowRunScripts(text: string) {
 					continue
 				}
 				const nextIndent = /^(\s*)/.exec(blockLine)?.[1]?.length ?? 0
-				if (nextIndent <= indent) break
+				if (nextIndent <= keyIndent) break
 				block.push(blockLine.slice(nextIndent))
 				end = next
 			}

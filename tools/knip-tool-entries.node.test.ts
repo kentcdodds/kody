@@ -55,8 +55,16 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 			'          echo "node tools/echoed.ts"',
 			'          info="$(node tools/substituted.ts)"',
 			'          node tools/ci/from-workflow.ts',
+			'        env:',
+			'          NOTE: node tools/sibling-env.ts',
+			'        shell: bash',
 			'',
 		].join('\n'),
+	)
+	writeFixture(
+		root,
+		'tools/sibling-env.ts',
+		'if (isExecutedDirectly(import.meta.url)) {\n\tmain()\n}\n',
 	)
 	writeFixture(
 		root,
@@ -132,6 +140,7 @@ test('cli mains and node script targets are entries; helpers are not', () => {
 		'tools/evals/score.ts',
 		'tools/lab/run.mjs',
 		'tools/main.ts',
+		'tools/sibling-env.ts',
 		'tools/worker.entry.ts',
 	])
 })
