@@ -1,4 +1,7 @@
-import { type OwnerId,ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
