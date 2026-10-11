@@ -1,10 +1,11 @@
-import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { loadAccountPackagesData } from '#app/account-packages-data.ts'
+import { reloadAccountPackagesAfterWrite } from '#app/account-packages-data.ts'
 import { type readAuthenticatedAppUser } from '#app/authenticated-user.ts'
+import { viewerIsSavedPackageOrgOwner } from '#app/package-viewer-access.ts'
 import { readTrimmedStringOrEmpty } from '#app/request-body.ts'
 import { CommunityActionError } from '#worker/community/errors.ts'
 import { adoptCommunityFork } from '#worker/community/service.ts'
 import { jsonResponse } from '#worker/json-response.ts'
+import { getSavedPackageByIdInAnyOrg } from '#worker/package-registry/repo.ts'
 
 type AuthenticatedUser = NonNullable<
 	Awaited<ReturnType<typeof readAuthenticatedAppUser>>
@@ -23,13 +24,25 @@ export async function handleAccountPackageAdoptAction(input: {
 	if (!packageId) {
 		return jsonResponse({ ok: false, error: 'Package id is required.' }, 400)
 	}
+	const savedPackage = await getSavedPackageByIdInAnyOrg(
+		input.env.APP_DB,
+		packageId,
+	)
+	if (
+		!savedPackage ||
+		!(await viewerIsSavedPackageOrgOwner({
+			env: input.env,
+			viewer: input.user.mcpUser,
+			ownerId: savedPackage.userId,
+		}))
+	) {
+		return jsonResponse({ ok: false, error: 'Package not found.' }, 404)
+	}
+	const ownerUserId = savedPackage.userId
 	try {
 		await adoptCommunityFork({
 			env: input.env,
-			userId: ownerIdFromCaller({
-				request: input.user.request,
-				user: input.user.mcpUser,
-			}),
+			userId: ownerUserId,
 			packageId,
 			reviewSummary: readTrimmedStringOrEmpty(input.body, 'reviewNote'),
 		})
@@ -40,11 +53,12 @@ export async function handleAccountPackageAdoptAction(input: {
 		throw error
 	}
 	return jsonResponse(
-		await loadAccountPackagesData({
+		await reloadAccountPackagesAfterWrite({
 			env: input.env,
 			request: input.request,
 			user: input.user,
-			pathPackageId: packageId,
+			packageId,
+			ownerUserId,
 		}),
 	)
 }

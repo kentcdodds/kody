@@ -65,7 +65,7 @@ export type R2LifecyclePolicy = {
 type R2LockRule = R2LockPolicy['rules'][number]
 type R2LifecycleRule = R2LifecyclePolicy['rules'][number]
 
-export type BackupRuntimeContract = {
+type BackupRuntimeContract = {
 	kind: 'dedicated-worker-runtime-contract'
 	enforcement: 'deployment-configuration-not-cloudflare-identity-api'
 	deployment: 'out-of-scope'
@@ -549,7 +549,7 @@ function mergeLifecyclePolicy(
 	return { rules }
 }
 
-export async function planBackupResources(input: {
+async function planBackupResources(input: {
 	api: BackupCloudflareApi
 	desired: BackupDesiredState
 }): Promise<BackupResourcePlan> {

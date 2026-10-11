@@ -14,8 +14,8 @@ import { generateWebhookUrlSecret } from './crypto.ts'
 import { type WebhookEndpointRecord } from './types.ts'
 
 /**
- * The signature every webhook in an org moved to enablements is checked
- * against when its manifest declares no verification: HMAC-SHA256 of the
+ * The signature every webhook is checked against when its manifest declares
+ * no verification: HMAC-SHA256 of the
  * body with the endpoint's own signing secret (generated at migration or
  * mint), hex encoded in `X-Kody-Signature` as `sha256=<hex>`.
  */

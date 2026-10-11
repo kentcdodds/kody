@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
+const defaultWranglerConfigPath = 'packages/worker/wrangler.jsonc'
 
 export const jobsWorkerWranglerConfigPath =
 	'packages/jobs-worker/wrangler.jsonc'

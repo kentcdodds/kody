@@ -65,12 +65,27 @@ Outbound **`fetch`** can include placeholders such as **`{{secret:tokenName}}`**
 or **`{{secret:tokenName|scope=user}}`** in a **request header**. The host
 resolves them for **approved** destinations over **HTTPS** only.
 
-The request body is data, never a substitution site: the gateway forwards it
-byte for byte, so placeholder text in a body (an issue that documents the
-syntax, a form field, a stream) reaches the remote exactly as written. The
-gateway refuses, before anything resolves, a placeholder in the URL or query
-string, and a URL or header placeholder on a plain `http://` request. The error
-names the credential and the rule. A package that declares
+The request body is data, never a substitution site. By default the gateway
+refuses, before anything resolves, a placeholder in the body, the URL, or the
+query string, and a header placeholder on a plain `http://` request. The error
+names the credential and the rule. Any other body is forwarded byte for byte.
+The `x-kody-secret-resolution` header changes that per request:
+
+- `headers-only` resolves header placeholders and sends placeholder text in the
+  body as written, for a body that quotes the syntax on purpose (an issue or
+  chat message that documents it). URL and query placeholders are still refused.
+- `off` resolves nothing and checks nothing: every placeholder, in the URL,
+  headers, or body, is sent as written.
+
+So an unsubstituted placeholder only reaches the remote when the calling code
+opts in with that header (local execute has one more gap, described below). See
+[Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
+Kody strips that header before the request leaves. Local execute checks only the
+first MiB of a file or byte body, and cannot read a caller `ReadableStream` body
+ahead. A local request with no URL or header placeholder goes out by native
+fetch, so a body placeholder past that first MiB, or inside such a stream, is
+sent as written. The cloud gateway checks the whole body of every request it
+handles. A package that declares
 [`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
 further: each placeholder must name one of its slots and sit in that slot's
 declared `placement` header, matching its template (oauth slots default to
@@ -152,10 +167,9 @@ algorithms:
 
 ## Mentioning placeholders without resolving them
 
-The gateway scans the **final serialized URL and headers**, so a literal
+The gateway scans the **final serialized URL, headers, and body**, so a literal
 placeholder assembled by any means, including string concatenation, resolves in
-a header and is refused in the URL. The body is never scanned or substituted:
-placeholder text there is sent verbatim, so the gateway never substitutes a
+a header and is refused in the URL and the body. The gateway never substitutes a
 credential into a body (a form-encoded token exchange, a login password). Even
 so, avoid placing resolvable placeholder tokens into user-visible or
 third-party-visible content such as issue bodies, comments, prompts, logs, or
@@ -165,14 +179,18 @@ returned strings: that text may later be copied into a header.
   Angle brackets are outside the placeholder name charset (`[a-zA-Z0-9._-]`), so
   this form is inert everywhere — it cannot resolve in this request or any later
   one.
+- To send a body that **quotes** the syntax (an issue, comment, or chat
+  message), set the **`x-kody-secret-resolution: headers-only`** header on that
+  **`fetch`**. Header placeholders still resolve; placeholder text in the body
+  is sent as written. Without it the gateway refuses the body.
 - To deliberately send a **resolvable** literal placeholder to a third party
   (for example, config text that Kody itself will resolve later), set the
   **`x-kody-secret-resolution: off`** header on that **`fetch`**. The gateway
   strips the header and skips all placeholder resolution for that one request.
   Only the calling code can set headers, so data flowing through a URL or body
-  can never disable resolution. Bodies need no opt-out: they never resolve. Use
-  this sparingly: the delivered text is still one resolution step away from the
-  real secret if it later flows back through a secret-aware **`fetch`**.
+  can never disable resolution. Use this sparingly: the delivered text is still
+  one resolution step away from the real secret if it later flows back through a
+  secret-aware **`fetch`**.
 
 ## Host approval
 

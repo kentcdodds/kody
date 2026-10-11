@@ -1,17 +1,23 @@
 /**
- * Advertising an MCP `outputSchema` makes the SDK validate every successful
- * result's `structuredContent` against it server-side (v1 `McpServer` runs
- * `safeParseAsync` on the zod object; v2 validates the converted JSON
- * schema). A schema that rejects a real response would turn working calls
- * into protocol errors, so these tests run representative structured
- * responses from every return path through the advertised schemas exactly
- * the way the SDK does.
+ * Advertising an MCP `outputSchema` makes strict clients (Claude Code, the
+ * MCP SDK Ajv validator) reject any `structuredContent` key missing from the
+ * advertised JSON Schema (`additionalProperties: false`). Server-side Zod
+ * `safeParse` strips unknown keys and cannot catch that drift.
+ *
+ * These tests convert each tool's Zod field record the same way tools/list
+ * does, then validate representative envelopes with Ajv — including usage,
+ * admission, entitlement, and search rateLimit paths.
  */
 
 import { expect, test } from 'vitest'
-import { z } from 'zod'
-import { searchToolOutputSchema } from './search-tool-definition.ts'
+import { apiToolOutputSchema } from './api.ts'
 import { executeToolOutputSchema } from './execute.ts'
+import {
+	expectMcpToolStructuredContent,
+	mcpToolOutputJsonSchema,
+	validateMcpToolStructuredContent,
+} from './mcp-tool-output.ts'
+import { searchToolOutputSchema } from './search-tool-definition.ts'
 
 const timing = {
 	startedAt: '2026-08-05T00:00:00.000Z',
@@ -19,10 +25,39 @@ const timing = {
 	durationMs: 1000,
 }
 
-const searchSchema = z.object(searchToolOutputSchema)
-const executeSchema = z.object(executeToolOutputSchema)
+const usage = {
+	unit: 'execute_unique_workers',
+	day: {
+		used: 1,
+		limit: 100,
+		remaining: 99,
+		resetsAt: '2026-08-06T00:00:00.000Z',
+	},
+}
 
-test('search structured content passes advertised schema for all return paths', async () => {
+const entitlement = {
+	code: 'entitlement_limit_exceeded',
+	resource: 'execute_unique_workers_per_day',
+	plan: 'free',
+	limit: 100,
+	current: 100,
+	used: 100,
+	remaining: 0,
+	upgradeHint: 'upgrade your plan at /@<slug>/-/billing.',
+}
+
+test('advertised JSON schemas set additionalProperties false', () => {
+	for (const fields of [
+		searchToolOutputSchema,
+		executeToolOutputSchema,
+		apiToolOutputSchema,
+	]) {
+		const schema = mcpToolOutputJsonSchema(fields)
+		expect(schema['additionalProperties']).toBe(false)
+	}
+})
+
+test('search structured content passes strict client validation for all return paths', () => {
 	const payloads = [
 		{
 			conversationId: 'c1',
@@ -51,35 +86,37 @@ test('search structured content passes advertised schema for all return paths', 
 			conversationId: 'c1',
 			timing,
 			error: 'Plan limit reached.',
-			entitlement: {
-				code: 'entitlement_limit_exceeded',
-				resource: 'execute_unique_workers_per_day',
-				plan: 'free',
-				limit: 100,
-				current: 100,
-				used: 100,
-				remaining: 0,
-				upgradeHint: 'upgrade your plan at /@<slug>/-/billing.',
+			entitlement,
+		},
+		{
+			conversationId: 'c1',
+			timing,
+			error: 'Search rate limited.',
+			rateLimit: {
+				code: 'search_rate_limited',
+				window: 'burst',
+				retryAfterSeconds: 12,
+				limit: 60,
+				plan: 'pro',
 			},
 		},
 	]
 	for (const payload of payloads) {
-		const parsed = await searchSchema.safeParseAsync(payload)
-		expect(parsed.success).toBe(true)
+		expectMcpToolStructuredContent(searchToolOutputSchema, payload)
 	}
 })
 
-test('execute structured content passes advertised schema for all return paths', async () => {
+test('execute structured content passes strict client validation for all return paths', () => {
 	const payloads = [
 		{
 			conversationId: 'c1',
 			timing: { ...timing, serverTiming: [{ name: 'registry', ms: 5 }] },
-			storage: { id: 'bucket-1' },
 			returnedBytes: 42,
 			result: { anything: ['goes', 1, null] },
 			logs: ['log line', { level: 'warn' }],
 			warnings: ['Consider integration auth helpers for api.example.com.'],
 			memories: { surfaced: [], suppressedCount: 0 },
+			usage,
 		},
 		{
 			conversationId: 'c1',
@@ -89,6 +126,7 @@ test('execute structured content passes advertised schema for all return paths',
 			note: 'Result truncated to fit responseLimit.',
 			result: 'partial…',
 			logs: [],
+			usage,
 		},
 		{
 			conversationId: 'c1',
@@ -97,6 +135,7 @@ test('execute structured content passes advertised schema for all return paths',
 			error: 'ReferenceError: foo is not defined',
 			errorDetails: { phase: 'sandbox' },
 			logs: [],
+			usage,
 		},
 		{
 			conversationId: 'c1',
@@ -114,6 +153,7 @@ test('execute structured content passes advertised schema for all return paths',
 				upgradeHint: 'upgrade your plan at /@<slug>/-/billing.',
 			},
 			logs: [],
+			usage,
 		},
 		{
 			conversationId: 'c1',
@@ -123,6 +163,7 @@ test('execute structured content passes advertised schema for all return paths',
 			returnedBytes: 0,
 			result: { ok: true },
 			logs: [],
+			usage,
 		},
 		{
 			conversationId: 'c1',
@@ -130,17 +171,98 @@ test('execute structured content passes advertised schema for all return paths',
 			runId: 'run-1',
 			inProgress: true,
 			status: 'running',
+			usage,
+		},
+		{
+			conversationId: 'c1',
+			timing,
+			returnedBytes: 0,
+			error: 'Identical execute call refused.',
+			admission: {
+				code: 'execute_rate_limited',
+				retryAfterMs: 250,
+			},
+			logs: [],
+			usage,
 		},
 	]
 	for (const payload of payloads) {
-		const parsed = await executeSchema.safeParseAsync(payload)
-		expect(parsed.success).toBe(true)
+		expectMcpToolStructuredContent(executeToolOutputSchema, payload)
 	}
 })
 
-test('schemas convert to JSON Schema without throwing', () => {
-	// The SDK advertises the zod schemas as JSON Schema on tools/list; a
-	// conversion failure would drop the advertisement or break listing.
-	expect(() => z.toJSONSchema(searchSchema, { io: 'output' })).not.toThrow()
-	expect(() => z.toJSONSchema(executeSchema, { io: 'output' })).not.toThrow()
+test('api structured content passes strict client validation for success and error paths', () => {
+	const payloads = [
+		{
+			operationId: 'metaGetCurrentUser',
+			result: { user: { email: 'a@example.com' } },
+		},
+		{
+			operationId: 'webhookSyntheticDispatch',
+			error: {
+				code: 'not_found',
+				message: 'Unknown operationId "webhookSyntheticDispatch".',
+			},
+		},
+		{
+			operationId: 'packageList',
+			result: { packages: [] },
+			truncated: true,
+			note: 'Result truncated to fit the response limit.',
+		},
+	]
+	for (const payload of payloads) {
+		expectMcpToolStructuredContent(apiToolOutputSchema, payload)
+	}
+})
+
+test('strict validation rejects undeclared top-level fields the way Claude Code does', () => {
+	const withExtra = {
+		conversationId: 'c1',
+		timing,
+		returnedBytes: 1,
+		result: { ok: true },
+		logs: [],
+		usage,
+		storage: { id: 'bucket-1' },
+	}
+	const result = validateMcpToolStructuredContent(
+		executeToolOutputSchema,
+		withExtra,
+	)
+	expect(result.valid).toBe(false)
+	if (result.valid) throw new Error('expected invalid')
+	expect(result.errorMessage).toContain('must NOT have additional properties')
+
+	const searchWithExtra = {
+		conversationId: 'c1',
+		timing,
+		error: 'boom',
+		unexpected: true,
+	}
+	const searchResult = validateMcpToolStructuredContent(
+		searchToolOutputSchema,
+		searchWithExtra,
+	)
+	expect(searchResult.valid).toBe(false)
+})
+
+test('stale execute schema without usage rejects modern usage responses', () => {
+	// Documents the 2026-10-11 Claude Code failure: clients that cached
+	// tools/list from before #3267 (usage on every execute response) reject
+	// live structuredContent with "data must NOT have additional properties".
+	const { usage: _usage, ...staleFields } = executeToolOutputSchema
+	void _usage
+	const modernResponse = {
+		conversationId: 'c1',
+		timing,
+		returnedBytes: 1,
+		result: { ok: true },
+		logs: [],
+		usage,
+	}
+	const result = validateMcpToolStructuredContent(staleFields, modernResponse)
+	expect(result.valid).toBe(false)
+	if (result.valid) throw new Error('expected invalid')
+	expect(result.errorMessage).toContain('must NOT have additional properties')
 })

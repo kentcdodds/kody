@@ -12,7 +12,6 @@ import {
 	type RequestOrgBinding,
 	type RequestSource,
 } from '#worker/request-context/request-context.ts'
-import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
 import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
 import {
 	createMcpCallerContext,
@@ -152,16 +151,22 @@ function requirePersistableJobCallerContext(
 
 /**
  * The clicker's request reaches run-now through the jobs worker RPC, so its
- * lineage is re-validated, not trusted. A caller deployed before the request
- * context existed sends none; the run then executes as the schedule would,
- * which has no actor and so can only narrow what the clicker could do.
+ * lineage is re-validated, not trusted. Run now runs as the clicker, so a
+ * request with no person behind it runs nothing.
  */
 function runNowRequestSource(
-	callerContext: McpCallerContext,
+	callerContext: McpCallerContext | null | undefined,
 	jobId: string,
 ): RequestSource {
-	const lineage = parseRequestLineage(callerContext.request)
-	return lineage ? { kind: 'inherited', lineage } : { kind: 'schedule', jobId }
+	const lineage = callerContext
+		? parseRequestLineage(callerContext.request)
+		: null
+	if (!lineage?.actor) {
+		throw new McpCallerError(
+			`Job "${jobId}" can only be run now by a signed-in person, who it then runs as.`,
+		)
+	}
+	return { kind: 'inherited', lineage }
 }
 
 function serializeCallerContext(callerContext: PersistedJobCallerContext) {
@@ -1604,25 +1609,7 @@ export async function runJobNow(input: {
 			const activeCallerContext = input.callerContext
 				? requirePersistableJobCallerContext(input.callerContext)
 				: row.callerContext
-			const source: RequestSource = input.callerContext
-				? runNowRequestSource(input.callerContext, row.record.id)
-				: { kind: 'schedule', jobId: row.record.id }
-			const runsAsNobody =
-				source.kind === 'schedule' ||
-				(source.kind === 'inherited' && !source.lineage.actor)
-			if (
-				runsAsNobody &&
-				(
-					await getEnablementOrgMigration({
-						db: input.env.APP_DB,
-						orgId: input.userId,
-					})
-				).state === 'migrated'
-			) {
-				throw new McpCallerError(
-					`Job "${input.jobId}" can only be run now by a signed-in person, who it then runs as.`,
-				)
-			}
+			const source = runNowRequestSource(input.callerContext, row.record.id)
 			const outcome = await executeJobOnce({
 				env: input.env,
 				job: row.record,
@@ -1708,8 +1695,7 @@ async function resolveScheduledJobRunAttribution(input: {
 }
 
 /**
- * The runs one scheduled tick starts. A legacy org runs the job once as
- * Automation. An org moved to enablements runs it once per on enablement, as
+ * The runs one scheduled tick starts: once per on enablement, as
  * its enabler, each with its own idempotency key; with none, nothing runs.
  */
 async function planScheduledJobRuns(input: {
@@ -1723,14 +1709,6 @@ async function planScheduledJobRuns(input: {
 		packageId: packageIdFromJobId(input.job.id),
 		trigger: { kind: 'cron', instanceId: input.job.id },
 	})
-	if (plan.mode === 'legacy') {
-		return [
-			{
-				source: { kind: 'schedule', jobId: input.job.id },
-				idempotencyKey: input.idempotencyKey,
-			},
-		]
-	}
 	if (plan.runs.length === 0) {
 		console.info('job-tick-skipped-no-enablement', {
 			orgId: input.job.userId,

@@ -2,7 +2,7 @@
  * Real-boundary coverage: expandSecretPlaceholders → authorize for ambient
  * credential use. Member / outside collaborator without secret:use or
  * integration:use must not expand org placeholders; Owners and granted
- * actors may. Package authority keeps package attachment (not this gate).
+ * actors may. A saved package never stands in for the person.
  */
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -335,14 +335,13 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		'Bearer oauth-access',
 	)
 
-	// Package authority still expands without a secret:use grant (self-authored
-	// package attachment). Collaborator C has no secret grant; package
-	// authority skips the ambient gate.
+	// Package authority never stands in for the person: collaborator C has no
+	// secret grant, so a saved package they run is denied the secret too.
 	vi.mocked(secretService.resolveSecret).mockResolvedValue(
 		userSecret('pkg-secret-value', ['example.com']),
 	)
 	mockPackageManifest('@ownera/notes')
-	const packageAuthoritySecret = await expandSecretPlaceholders({
+	const packageAuthoritySecret = expandSecretPlaceholders({
 		request: secretRequest(),
 		props: {
 			baseUrl: 'https://example.com',
@@ -361,9 +360,11 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		env,
 	})
-	expect(packageAuthoritySecret.request.headers.get('Authorization')).toBe(
-		'Bearer pkg-secret-value',
-	)
+	await expect(packageAuthoritySecret).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		code: 'missing_permission',
+		permission: 'secret:use',
+	})
 })
 
 test('leak: a declared package credential is refused outside its placement, in the URL, or over plain HTTP, before it resolves', async () => {
@@ -569,4 +570,118 @@ test('leak: a declared package credential is refused outside its placement, in t
 	expect(tokenSpy).not.toHaveBeenCalled()
 	// One manifest read per run, however many fetches it makes.
 	expect(manifestSpy).toHaveBeenCalledTimes(1)
+})
+
+test('leak: a published slot that fails the slot schema is refused with its error, and its valid siblings still send', async () => {
+	const db = await createOrgDb()
+	const ownerStableId = testStableUserIdFromEmail('owner-q@example.com')
+	const ownerId = ownerIdFromStored(ownerStableId)
+	const now = '2026-10-11T00:00:00.000Z'
+	await provisionPersonalOrg(db, {
+		stableUserId: ownerId,
+		username: 'ownerq',
+		createdAt: now,
+	})
+	const packageId = crypto.randomUUID()
+	await insertSavedPackage(
+		db,
+		{
+			id: packageId,
+			user_id: ownerId,
+			name: '@ownerq/mailer',
+			kody_id: 'mailer',
+			description: 'mailer',
+			tags_json: '[]',
+			search_text: null,
+			source_id: `source-${packageId}`,
+			has_app: 0,
+			has_skills: 0,
+			hidden: 0,
+			is_private: 1,
+			created_at: now,
+			updated_at: now,
+		},
+		null,
+		{ stamp: false },
+	)
+	mockPackageManifest('@ownerq/mailer', {
+		RESEND_API_KEY: {
+			kind: 'secret',
+			provider: 'resend',
+			description: 'Resend API key.',
+			placement: { header: 'X-Kody-Key' },
+		},
+		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
+	})
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
+	vi.spyOn(
+		integrationCredentials,
+		'resolveIntegrationAccessToken',
+	).mockResolvedValue('google-access')
+	vi.spyOn(
+		integrationPackageAccess,
+		'assertCanUseIntegration',
+	).mockResolvedValue(undefined)
+	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
+		lane: 'user',
+		app: { apiBaseUrl: 'https://api.resend.com' },
+		connection: { requiredHosts: ['api.resend.com'] },
+	} as never)
+	const env = {
+		APP_DB: db,
+		...createInMemoryUserMeterEnv().env,
+		COOKIE_SECRET: 'test-cookie-secret',
+		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
+	} as unknown as Env
+	const expandAsPackage = (headers: Record<string, string>) =>
+		expandSecretPlaceholders({
+			request: new Request('https://api.resend.com/emails', { headers }),
+			props: {
+				baseUrl: 'https://example.com',
+				userId: ownerId,
+				email: null,
+				request: deriveRequestContext({
+					user: {
+						userId: personIdFromStored(ownerStableId),
+						username: 'ownerq',
+					},
+					source: { kind: 'mcp-oauth' },
+					orgBinding: { org: { id: ownerId, slug: 'ownerq' }, role: 'owner' },
+				}),
+				storageContext: {
+					sessionId: null,
+					appId: packageId,
+					packageId,
+					storageId: packageId,
+				},
+				grantedSecretAuthorityPackageIds: [packageId],
+			},
+			env,
+		}).then(({ request: expanded }) => expanded)
+
+	const google = await expandAsPackage({
+		Authorization: 'Bearer {{integration-token:GOOGLE}}',
+	})
+	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
+
+	const refusal = await expandAsPackage({
+		'X-Kody-Key': '{{secret:RESEND_API_KEY}}',
+	}).then(
+		() => {
+			throw new Error('Expected the invalid slot to be refused.')
+		},
+		(error: unknown) => String(error),
+	)
+	expect(refusal).toContain(
+		'Slot "RESEND_API_KEY" of @ownerq/mailer is invalid in its published package.json, so the fetch gateway does not substitute it:\nkody.credentials.RESEND_API_KEY.placement.header: x-kody-* headers are reserved for Kody.\nFix the slot and publish again.',
+	)
+	// The package stays declared: an undeclared name is still refused.
+	await expect(
+		expandAsPackage({ 'X-Api-Key': '{{secret:OTHER_KEY}}' }),
+	).rejects.toThrow(
+		'"OTHER_KEY" is not a kody.credentials slot of @ownerq/mailer.',
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
 })

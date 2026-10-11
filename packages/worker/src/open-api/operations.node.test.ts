@@ -2,6 +2,10 @@ import { expect, test } from 'vitest'
 import { isRecord } from '@kody-internal/shared/is-record.ts'
 import { isOrgPermission } from '@kody-internal/shared/org-permissions.ts'
 import { getStaticRegistry } from '#mcp/capabilities/registry.ts'
+import {
+	openApiExcludedCapabilities,
+	openApiExcludedDomains,
+} from './api-capability-surface.ts'
 import { buildOpenApiDocument, resolveApiOperation } from './document.ts'
 import {
 	apiOperationUsesQueryInputs,
@@ -13,20 +17,11 @@ import {
 /**
  * Capabilities that are deliberately not on the Open API. Anything else in
  * an included domain must have an operation, so a new capability cannot
- * silently skip the API.
+ * silently skip the API. Source of truth:
+ * {@link openApiExcludedDomains} / {@link openApiExcludedCapabilities}.
  */
-const excludedDomains = new Set(['admin', 'apps', 'coding', 'values'])
-const excludedCapabilities = new Set([
-	'execute',
-	'metaListCapabilities',
-	'packageAppFetch',
-	'packageSubscriptionDispatch',
-	'webhookSyntheticDispatch',
-	'communitySetFeatured',
-	'orgDelete',
-	'orgRestore',
-	'resourceRestore',
-])
+const excludedDomains = openApiExcludedDomains
+const excludedCapabilities = openApiExcludedCapabilities
 
 function schemaTypes(schema: unknown): Array<string> {
 	if (!isRecord(schema)) return []

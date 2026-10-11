@@ -14,7 +14,7 @@ export type StartupBundleOverageIssueAction =
 	| { action: 'updated'; name: StartupBundleOverageName; number: number }
 	| { action: 'skipped'; name: StartupBundleOverageName; reason: string }
 
-export const startupBundleOverageIssueLabel = 'friction'
+const startupBundleOverageIssueLabel = 'friction'
 
 export function startupBundleOverageIssueTitle(name: StartupBundleOverageName) {
 	return `Startup budget overage: ${name}`
@@ -26,13 +26,11 @@ export function startupBundleOverageIssueMarker(
 	return `<!-- kody-startup-bundle-overage:${name} -->`
 }
 
-export function formatStartupBundleBytes(bytes: number) {
+function formatStartupBundleBytes(bytes: number) {
 	return bytes.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '_')
 }
 
-export function formatStartupBundleOverageWarning(
-	overage: StartupBundleOverage,
-) {
+function formatStartupBundleOverageWarning(overage: StartupBundleOverage) {
 	return (
 		`${overage.name} startup entry is ${formatStartupBundleBytes(overage.size)} bytes, ` +
 		`${formatStartupBundleBytes(overage.overage)} over its ` +
@@ -89,7 +87,7 @@ export function shouldReportStartupBundleOverageIssue(
 	return ref === 'refs/heads/main' || refName === 'main'
 }
 
-export const startupBundleOverageGhTimeoutMs = 10_000
+const startupBundleOverageGhTimeoutMs = 10_000
 
 function runGh(args: Array<string>, env: NodeJS.ProcessEnv = process.env) {
 	const result = spawnSync('gh', args, {

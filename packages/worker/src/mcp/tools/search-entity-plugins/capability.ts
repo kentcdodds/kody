@@ -1,5 +1,6 @@
 import { searchCapabilities } from '#mcp/capabilities/capability-search.ts'
 import { type CapabilitySpec } from '#mcp/capabilities/types.ts'
+import { capabilityApiAvailabilitySummary } from '#worker/open-api/api-capability-surface.ts'
 
 import { formatMarkdownInlineCode } from '../markdown-safety.ts'
 import {
@@ -149,6 +150,7 @@ export const capabilitySearchEntityPlugin = {
 			.filter((candidate) => candidate.scoreComponents.base > 0)
 	},
 	formatSlimMatch({ match }) {
+		const apiAvailability = capabilityApiAvailabilitySummary(match.name)
 		return {
 			type: 'capability',
 			id: match.name,
@@ -160,6 +162,7 @@ export const capabilitySearchEntityPlugin = {
 					: '',
 			domain: match.domain,
 			usage: buildCapabilityUsage(match),
+			apiAvailable: apiAvailability.apiAvailable,
 			...(match.source ? { source: match.source } : {}),
 			...(match.mcpServer ? { mcpServer: match.mcpServer } : {}),
 			...(match.inputTypeDefinition
@@ -172,6 +175,7 @@ export const capabilitySearchEntityPlugin = {
 	},
 	formatEntityDetail(detail, options) {
 		const relatedOperationCount = detail.relatedOperationCount ?? 0
+		const apiAvailability = capabilityApiAvailabilitySummary(detail.spec.name)
 		const lines = [
 			`# Capability — \`${detail.title}\``,
 			'',
@@ -186,6 +190,7 @@ export const capabilitySearchEntityPlugin = {
 			`- Read-only: ${detail.spec.readOnly ? 'yes' : 'no'}`,
 			`- Idempotent: ${detail.spec.idempotent ? 'yes' : 'no'}`,
 			`- Destructive: ${detail.spec.destructive ? 'yes' : 'no'}`,
+			`- ${apiAvailability.summary}`,
 			'',
 			'## Execute from `execute`',
 			'',
@@ -230,6 +235,7 @@ export const capabilitySearchEntityPlugin = {
 				title: detail.title,
 				description: detail.description,
 				usage: buildCapabilityUsage(detail.spec),
+				apiAvailable: apiAvailability.apiAvailable,
 				executeExample: buildCapabilityExecuteExample(detail.spec),
 				requiredInputFields: detail.spec.requiredInputFields,
 				readOnly: detail.spec.readOnly,

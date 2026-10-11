@@ -269,22 +269,21 @@ test('ad-hoc use without secret:use is denied and audited as denied (#3169)', as
 	})
 })
 
-test('a claimed package stamp never skips Use; the attested stamp for the same package does (#3210)', async () => {
+test('no package stamp skips the person’s Use, claimed or attested (#3210)', async () => {
 	const t = await setup()
 	const member = t.personRequest(t.memberId, 'member', 'member')
 
-	const forged = await denial(
-		t.resolveSecretAs(member, claimedPackageStamp(t.packageId)),
-	)
-	expect(forged).toBeInstanceOf(AuthorizationError)
-	expect(forged).toMatchObject({ code: 'missing_permission' })
-
-	await expect(
-		t.resolveSecretAs(member, attestedPackageStamp(t.packageId)),
-	).resolves.toMatchObject({ found: true })
+	for (const stamp of [
+		claimedPackageStamp(t.packageId),
+		attestedPackageStamp(t.packageId),
+	]) {
+		const error = await denial(t.resolveSecretAs(member, stamp))
+		expect(error).toBeInstanceOf(AuthorizationError)
+		expect(error).toMatchObject({ code: 'missing_permission' })
+	}
 
 	const rows = await t.auditRows()
-	expect(rows.map((row) => row.result)).toEqual(['denied', 'success'])
+	expect(rows.map((row) => row.result)).toEqual(['denied', 'denied'])
 	expect(details(rows[0])).toMatchObject({
 		packageStampKind: 'claimed',
 		packageId: t.packageId,
@@ -298,12 +297,13 @@ test('a claimed package stamp never skips Use; the attested stamp for the same p
 test('a removed member is denied at resolve time even with a stale request context', async () => {
 	const t = await setup()
 	const attested = attestedPackageStamp(t.packageId)
-	await expect(
+	const beforeRemoval = await denial(
 		t.resolveSecretAs(
 			t.personRequest(t.memberId, 'member', 'member'),
 			attested,
 		),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(beforeRemoval).toMatchObject({ code: 'missing_permission' })
 
 	// Only the membership row ends: the door re-reads access itself instead
 	// of relying on the removal cascade or the role baked into the request.
@@ -339,7 +339,7 @@ test('a removed member is denied at resolve time even with a stale request conte
 
 	const rows = await t.auditRows()
 	expect(rows.map((row) => row.result)).toEqual([
-		'success',
+		'denied',
 		'denied',
 		'denied',
 		'success',
@@ -347,14 +347,14 @@ test('a removed member is denied at resolve time even with a stale request conte
 	expect(details(rows[1])).toMatchObject({ reason: 'wrong_org' })
 })
 
-test('automation and platform resolutions keep today’s rules and are audited', async () => {
+test('a trigger with no enablement holds nothing; webhook verification still resolves', async () => {
 	const t = await setup()
 	const schedule = deriveRequestContext({
 		user: { userId: personIdFromStored(t.ownerStableId), username: 'owner' },
 		source: { kind: 'schedule', jobId: 'job-1' },
 		orgBinding: { org: { id: t.orgId, slug: 'owner' }, role: 'owner' },
 	})
-	await expect(
+	const noPerson = await denial(
 		resolveCredential({
 			env: t.env,
 			orgId: t.orgId,
@@ -366,7 +366,8 @@ test('automation and platform resolutions keep today’s rules and are audited',
 				storageContext: { sessionId: null, appId: null, packageId: null },
 			},
 		}),
-	).resolves.toMatchObject({ found: true })
+	)
+	expect(noPerson).toMatchObject({ code: 'missing_permission' })
 	await expect(
 		resolveCredential({
 			env: t.env,
@@ -384,7 +385,7 @@ test('automation and platform resolutions keep today’s rules and are audited',
 		actor_user_id: null,
 		credential_kind: 'schedule',
 		credential_id: 'job-1',
-		result: 'success',
+		result: 'denied',
 	})
 	expect(details(rows[0])).toMatchObject({
 		use: 'secret',

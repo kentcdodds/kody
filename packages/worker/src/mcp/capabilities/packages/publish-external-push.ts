@@ -153,6 +153,7 @@ const checkSchema = z.object({
 		'bundle',
 		'typecheck',
 		'lint',
+		'credentials',
 		'smoke',
 	]),
 	ok: z.boolean(),

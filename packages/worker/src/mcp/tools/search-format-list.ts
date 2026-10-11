@@ -1,3 +1,5 @@
+import { isCapabilityAvailableViaApiTool } from '#worker/open-api/api-capability-surface.ts'
+
 import {
 	escapeMarkdownText,
 	formatMarkdownInlineCode,
@@ -140,7 +142,10 @@ function formatMatchListItem(match: SearchMatch, index: number) {
 	}
 	if (match.type === 'capability') {
 		const entityRef = buildEntityRef(match.name, 'capability')
-		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.title ?? match.name)} (${formatMarkdownInlineCode(match.domain)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}`
+		const apiNote = isCapabilityAvailableViaApiTool(match.name)
+			? ''
+			: '. Execute-only (not on Open API / MCP `api`)'
+		const mainLine = `${String(index + 1)}. **capability** ${formatMarkdownInlineCode(match.title ?? match.name)} (${formatMarkdownInlineCode(match.domain)}) — ${escapeMarkdownText(formatOneLineSentence(match.description))} Entity: ${formatMarkdownInlineCode(entityRef)}${apiNote}`
 		if (!match.inputTypeDefinition) {
 			return mainLine
 		}

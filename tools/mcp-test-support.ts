@@ -52,7 +52,6 @@ type SharedMcpE2eServerHandle = SharedMcpE2eServer & {
 
 type SharedMcpE2eGlobalState = {
 	promise: Promise<SharedMcpE2eServerHandle> | null
-	bootCount: number
 	closing: Promise<void> | null
 }
 
@@ -64,7 +63,6 @@ function sharedMcpE2eGlobalState(): SharedMcpE2eGlobalState {
 	}
 	globalRef[sharedMcpE2eGlobalKey] ??= {
 		promise: null,
-		bootCount: 0,
 		closing: null,
 	}
 	return globalRef[sharedMcpE2eGlobalKey]
@@ -77,10 +75,7 @@ function sharedMcpE2eGlobalState(): SharedMcpE2eGlobalState {
  */
 export async function getSharedMcpE2eServer(): Promise<SharedMcpE2eServer> {
 	const state = sharedMcpE2eGlobalState()
-	state.promise ??= startSharedMcpE2eServer().then((handle) => {
-		state.bootCount += 1
-		return handle
-	})
+	state.promise ??= startSharedMcpE2eServer()
 	const server = await state.promise
 	return {
 		origin: server.origin,
@@ -89,11 +84,6 @@ export async function getSharedMcpE2eServer(): Promise<SharedMcpE2eServer> {
 		assignRole: (email, role) => server.assignRole(email, role),
 		clearAuthRateLimits: () => server.clearAuthRateLimits(),
 	}
-}
-
-/** How many times the shared harness has been started in this worker. */
-export function sharedMcpE2eBootCount() {
-	return sharedMcpE2eGlobalState().bootCount
 }
 
 /** Dispose the shared harness (no-op when none is running). */

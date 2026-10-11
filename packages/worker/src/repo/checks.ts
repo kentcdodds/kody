@@ -75,6 +75,7 @@ import {
 } from './publish-phase-timing.ts'
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
 import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
+import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
 
 export const repoCheckKinds = [
 	'manifest',
@@ -84,6 +85,7 @@ export const repoCheckKinds = [
 	'bundle',
 	'typecheck',
 	'lint',
+	'credentials',
 	'smoke',
 ] as const
 
@@ -1552,6 +1554,8 @@ export async function runRepoChecks(input: {
 		})
 	}
 	const sourceFiles = sourceWalk.collected
+	// Before any gate that returns early, so owners see it while fixing others.
+	results.push(buildCredentialPatternCheck(sourceFiles))
 	// Cheap static gates for the package-app browser surface run before the
 	// heavy phases so a misconfigured manifest fails fast with one message.
 	const packageAppSurfaceChecks = [
@@ -1898,7 +1902,6 @@ export async function runRepoChecks(input: {
 		ok: lintCheck.ok,
 		message: lintCheck.message,
 	})
-
 	return toRepoCheckRunResult({
 		results,
 		manifest,

@@ -96,8 +96,16 @@ const orgStructuralHardPurgeTargets: ReadonlyArray<UserScopedDataTarget> = [
 	{ kind: 'org_id', table: 'enablement_org_migrations' },
 	{ kind: 'org_id', table: 'org_memberships' },
 	{ kind: 'org_id', table: 'invites' },
+	{
+		kind: 'org_via_parent',
+		table: 'org_invite_link_redemptions',
+		parentTable: 'org_invite_links',
+		parentKey: 'link_id',
+	},
+	{ kind: 'org_id', table: 'org_invite_links' },
 	{ kind: 'org_id', table: 'access_cache' },
 	{ kind: 'org_id', table: 'handles' },
+	{ kind: 'org_id', table: 'org_audit_outbox' },
 ]
 
 const orgOwnedUserIdSoftDeleteTableSet = new Set<string>(

@@ -291,6 +291,7 @@ export type RepoSessionCheckStatus = {
 			| 'bundle'
 			| 'typecheck'
 			| 'lint'
+			| 'credentials'
 			| 'smoke'
 		ok: boolean
 		message: string
@@ -308,6 +309,7 @@ export type RepoSessionCheckRun = {
 			| 'bundle'
 			| 'typecheck'
 			| 'lint'
+			| 'credentials'
 			| 'smoke'
 		ok: boolean
 		message: string
@@ -350,6 +352,7 @@ export type RepoSessionPublishResult =
 			currentPublishedCommit: string | null
 			packageId: string
 			packageName: string
+			credentialNotice: string | null
 	  }
 
 export type RepoExternalPublishResult =

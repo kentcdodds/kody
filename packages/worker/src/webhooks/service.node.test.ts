@@ -436,9 +436,9 @@ test('concurrent first mints converge on one handle', async () => {
 	expect(second).not.toHaveProperty('url')
 })
 
-test('reveal shows the generated signing secret only in an org on enablements', async () => {
+test('reveal shows the generated signing secret only when the manifest declares no verification', async () => {
 	const owner = await setupOwner('signer@example.com', 'signer')
-	const { env, db, userId } = owner
+	const { env, userId } = owner
 	const sentryManifest = vi
 		.mocked(loadPackageManifestBySourceId)
 		.getMockImplementation()!
@@ -470,39 +470,18 @@ test('reveal shows the generated signing secret only in an org on enablements', 
 			target: sentryHook,
 		})
 	try {
-		const legacyMint = await owner.mint()
-		const legacyEndpointId = parseWebhookUrlHandle(legacyMint.handle)!
-		expect(
-			(
-				await owner.readEndpoint<{ hmac_secret_encrypted: string | null }>(
-					legacyEndpointId,
-					'hmac_secret_encrypted',
-				)
-			)?.hmac_secret_encrypted,
-		).toBeNull()
-		expect((await reveal()).signingSecret).toBeNull()
-
-		await db
-			.prepare(
-				`INSERT INTO enablement_org_migrations (org_id, state, migrated_at, updated_at)
-				VALUES (?, 'migrated', ?, ?)`,
-			)
-			.bind(userId, '2026-10-11T00:00:00.000Z', '2026-10-11T00:00:00.000Z')
-			.run()
-		await owner.rotate()
+		const minted = await owner.mint()
+		const endpointId = parseWebhookUrlHandle(minted.handle)!
 		const stored = await owner.readEndpoint<{
 			hmac_secret_encrypted: string | null
-		}>(legacyEndpointId, 'hmac_secret_encrypted')
+		}>(endpointId, 'hmac_secret_encrypted')
 		expect(stored?.hmac_secret_encrypted).toBeTruthy()
 		const signingSecret = (await reveal()).signingSecret
 		expect(signingSecret).toEqual(
 			await decryptWebhookHmacSecret(
 				env,
 				stored!.hmac_secret_encrypted!,
-				userWebhookHmacSecretContext(
-					ownerIdFromStored(userId),
-					legacyEndpointId,
-				),
+				userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId),
 			),
 		)
 		await owner.rotate()

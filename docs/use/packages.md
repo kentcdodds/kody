@@ -123,8 +123,16 @@ hard-code a previous `@{username}` scope need updates from their owners.
 
 ### Credential slots (`kody.credentials`)
 
-`kody.credentials` names each credential the package needs. Package code uses
-the slot name; the org decides which credential fills it.
+`kody.credentials` names each credential the package needs. Publish validates
+the block, and the fetch gateway uses it to decide where each credential may be
+sent. A slot does not pick the credential: `{{secret:NAME}}` reads the secret
+stored as `NAME` and `{{integration-token:NAME}}` the integration named `NAME`,
+with the same package access rules as a package without slots. Name each slot
+after the secret or integration the code already references, and keep those
+references as they are. There is no way yet for an org to choose which
+credential fills a slot; see
+[planned breaking changes](../contributing/planned-breaking-changes.md#name-based-credential-resolution-in-packages-that-declare-slots)
+for the switch to assignments.
 
 ```json
 {
@@ -164,7 +172,10 @@ the slot name; the org decides which credential fills it.
   OAuth slots default to
   `{ "header": "Authorization", "template": "Bearer {value}" }`. MCP slots take
   no placement.
-- Publish rejects any other key or a missing field and names the slot.
+- Publish rejects any other key or a missing field and names the slot. If a
+  later rule rejects a slot in a version that is already published, only that
+  slot stops working: the fetch gateway refuses it with the validation error
+  until you fix it and publish again. The other slots keep working.
 - Once a package declares `kody.credentials`, the fetch gateway substitutes only
   its slots: `{{secret:NAME}}` names a secret slot and
   `{{integration-token:NAME}}` an oauth slot. Each must sit in the slot's
@@ -174,9 +185,18 @@ the slot name; the org decides which credential fills it.
   or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
   keep the header-only, HTTPS, and item-website rules. Anything else is refused
   before the credential resolves, with an error naming the slot and the rule.
-- There is no body placement. The request body is forwarded verbatim, so the
-  gateway never substitutes a slot placeholder there (a login password, a
-  form-encoded token exchange).
+- There is no body placement. The gateway never substitutes a slot placeholder
+  into a request body (a login password, a form-encoded token exchange), and it
+  refuses a body that holds one rather than send it unsubstituted.
+
+To see which old-style credential references a package still has, run
+`repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
+pattern labels it matches (for example `- src/index.ts: literal secret`),
+without credential names. `repoPublishSession` and `packageSave` repeat that
+list in their output, and `packagePublishExternalPush` includes the result in
+`checks`. It never fails a check or blocks a publish. The labels are described
+in
+[package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
 
 ### npm dependencies
 

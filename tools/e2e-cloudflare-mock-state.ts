@@ -4,7 +4,7 @@ import path from 'node:path'
 
 export const e2eCloudflareMockAccountId = 'cf_account_mock_123'
 
-export const e2eCloudflareMockStatePath = path.resolve(
+const e2eCloudflareMockStatePath = path.resolve(
 	process.cwd(),
 	'.wrangler/state/e2e/cloudflare-mock.json',
 )

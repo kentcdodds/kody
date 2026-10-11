@@ -137,7 +137,7 @@ test('team package pages open for viewers who can read the package in the team o
 		username: 'acme',
 		kodyId: 'secret',
 		viewerIsOwner: true,
-		viewerCanManage: false,
+		viewerCanManage: true,
 		ownerUserId: teamId,
 		ownerPackage: { id: 'pkg-secret', name: '@acme/secret' },
 	})
@@ -147,10 +147,17 @@ test('team package pages open for viewers who can read the package in the team o
 		viewerCanManage: false,
 		ownerPackage: { id: 'pkg-shared' },
 	})
-	// Credit attribution is the owning org's billing data.
 	expect(mocks.packageDetailInputs).not.toHaveLength(0)
-	for (const input of mocks.packageDetailInputs) {
-		expect(input).not.toHaveProperty('creditAttributionUsername')
+	const manageable = mocks.packageDetailInputs.filter((input) =>
+		Object.hasOwn(input, 'creditAttributionUsername'),
+	)
+	const readOnly = mocks.packageDetailInputs.filter(
+		(input) => !Object.hasOwn(input, 'creditAttributionUsername'),
+	)
+	expect(manageable.length).toBeGreaterThan(0)
+	expect(readOnly.length).toBeGreaterThan(0)
+	for (const input of manageable) {
+		expect(input).toMatchObject({ creditAttributionUsername: 'acme' })
 	}
 })
 

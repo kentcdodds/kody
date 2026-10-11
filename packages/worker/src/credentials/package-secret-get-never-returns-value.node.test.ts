@@ -242,9 +242,12 @@ test('a manifest cannot declare a slot that reads the raw value', () => {
 		expect(() =>
 			parseAuthoredPackageJson({ content, mode: 'authoring' }),
 		).toThrow(/raw/)
-		// Snapshots published with a raw slot load with no credentials at all.
-		expect(
-			parseAuthoredPackageJson({ content, mode: 'published' }).kody,
-		).not.toHaveProperty('credentials')
+		// Snapshots published with a raw slot load it as invalid, never usable.
+		const published = parseAuthoredPackageJson({
+			content,
+			mode: 'published',
+		}).kody
+		expect(published.credentials).toEqual({})
+		expect(published.invalidCredentialSlots?.KEY).toMatch(/raw/)
 	}
 })

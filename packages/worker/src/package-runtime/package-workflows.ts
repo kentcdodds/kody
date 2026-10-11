@@ -221,8 +221,8 @@ type DynamicCallableWorkflowStep = {
 const packageWorkflowTokenId = 'internal:package-workflows'
 
 /**
- * Instances created before payloads carried lineage run as Automation, which
- * has no actor and so can only narrow what the starter could do.
+ * Instances created before payloads carried lineage have no person behind
+ * them, so they hold no permissions.
  */
 function workflowRequestSource(
 	payload: DynamicCallableWorkflowPayload,

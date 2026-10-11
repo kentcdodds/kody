@@ -235,6 +235,8 @@ export type SlimSearchMatch =
 			description: string
 			domain: string
 			usage: string
+			/** False when Open API / MCP `api` does not accept this name. */
+			apiAvailable: boolean
 			source?: CapabilitySpec['source']
 			mcpServer?: CapabilitySpec['mcpServer']
 			inputTypeDefinition?: string
@@ -356,6 +358,8 @@ export type SearchEntityDetailStructured =
 			title: string
 			description: string
 			usage: string
+			/** False when Open API / MCP `api` does not accept this name. */
+			apiAvailable: boolean
 			executeExample: string
 			requiredInputFields: Array<string>
 			readOnly: boolean
