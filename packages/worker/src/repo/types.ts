@@ -291,6 +291,7 @@ export type RepoSessionCheckStatus = {
 			| 'bundle'
 			| 'typecheck'
 			| 'lint'
+			| 'credentials'
 			| 'smoke'
 		ok: boolean
 		message: string
@@ -308,6 +309,7 @@ export type RepoSessionCheckRun = {
 			| 'bundle'
 			| 'typecheck'
 			| 'lint'
+			| 'credentials'
 			| 'smoke'
 		ok: boolean
 		message: string

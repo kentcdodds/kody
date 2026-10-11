@@ -35,6 +35,7 @@ import {
 	runRepoChecks,
 } from './checks.ts'
 import { withRequiredPackageDocs } from './checks-test-docs.ts'
+import { credentialPatternFindingsNotice } from './credential-pattern-check.ts'
 import {
 	createMalformedPackageSkillsFixtureFiles,
 	createPackageSkillsFixtureFiles,
@@ -1137,4 +1138,44 @@ test('runRepoChecks validates package skills and fails publish on malformed SKIL
 		ok: true,
 		message: 'No package skills found.',
 	})
+})
+
+test('runRepoChecks reports old-style credential references by path and pattern without failing', async () => {
+	const { result } = await runChecks(
+		packageFiles(
+			manifest('legacy-credentials', {
+				secretMounts: { token: { name: 'TOKEN' } },
+			}),
+			{
+				'src/index.ts': [
+					"import { createAuthenticatedFetch } from 'kody:runtime'",
+					'export const ready = true',
+					"export const run = (name: string) => createAuthenticatedFetch(name).then(() => fetch('https://api.example.com', { headers: { Authorization: 'Bearer {{secret:TOKEN}}' } }))",
+				].join('\n'),
+			},
+		),
+	)
+	expect(result.ok).toBe(true)
+	const check = findCheck(result, 'credentials')
+	expect(check).toEqual({
+		kind: 'credentials',
+		ok: true,
+		message: [
+			'Old-style credential references (codemod 0010-detect-legacy-credential-patterns, does not block publish):',
+			'- package.json: secretMounts',
+			'- src/index.ts: literal secret, computed integration',
+			'Each label is a pattern the move to kody.credentials slots replaces; see "Credential slots" in the packages docs.',
+		].join('\n'),
+	})
+	expect(credentialPatternFindingsNotice(result.results)).toBe(check!.message)
+	expect(check!.message).not.toContain('TOKEN')
+
+	const clean = await runChecks(packageFiles(manifest('clean-credentials')))
+	expect(findCheck(clean.result, 'credentials')).toEqual({
+		kind: 'credentials',
+		ok: true,
+		message:
+			'No old-style credential references (codemod 0010-detect-legacy-credential-patterns).',
+	})
+	expect(credentialPatternFindingsNotice(clean.result.results)).toBeNull()
 })

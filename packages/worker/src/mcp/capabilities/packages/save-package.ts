@@ -63,6 +63,10 @@ import {
 	packageSummarySchema,
 	pendingPackageSecretApprovalsSchema,
 } from './shared.ts'
+import {
+	buildCredentialPatternCheck,
+	credentialPatternFindingsNotice,
+} from '#worker/repo/credential-pattern-check.ts'
 
 function parseSavedPackageManifest(input: {
 	content: string
@@ -134,6 +138,7 @@ function normalizeFiles(files: Array<z.infer<typeof packageFileSchema>>) {
 export function buildPackageSaveNextSteps(input: {
 	packageId: string
 	pendingSecretApprovalsGuidance?: string | null
+	credentialPatternsNotice?: string | null
 }) {
 	const steps = [
 		'Coding agents with local filesystem/git access should use the git lane for further edits instead of re-sending full file sets:',
@@ -145,7 +150,10 @@ export function buildPackageSaveNextSteps(input: {
 	if (guidance) {
 		steps.push(guidance)
 	}
-	return steps.join(' ')
+	const next = steps.join(' ')
+	return input.credentialPatternsNotice
+		? `${next}\n\n${input.credentialPatternsNotice}`
+		: next
 }
 
 /**
@@ -525,6 +533,9 @@ export const savePackageCapability = defineDomainCapability(
 								pendingSecretApprovals,
 							)
 						: null,
+					credentialPatternsNotice: credentialPatternFindingsNotice([
+						buildCredentialPatternCheck(files, saved.name),
+					]),
 				}),
 			}
 		},

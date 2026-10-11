@@ -73,6 +73,7 @@ import {
 	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
+import { credentialPatternFindingsNotice } from './credential-pattern-check.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -3306,11 +3307,17 @@ class RepoSessionBase extends DurableObject<Env> {
 			},
 		})
 		this.refreshStoredEstimate(sessionRow.id, sessionRow.user_id)
+		const credentialNotice = credentialPatternFindingsNotice(
+			checkStatus.results,
+		)
 		return {
 			status: 'ok',
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
-			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
+			message: [
+				`Published session ${sessionRow.id} to ${source.repo_id}.`,
+				...(credentialNotice ? [credentialNotice] : []),
+			].join('\n\n'),
 		}
 	}
 

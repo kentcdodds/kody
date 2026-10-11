@@ -189,6 +189,15 @@ for the switch to assignments.
   gateway never substitutes a slot placeholder there (a login password, a
   form-encoded token exchange).
 
+To see which old-style credential references a package still has, run
+`repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
+pattern labels it matches (for example `- src/index.ts: literal secret`),
+without credential names. `repoPublishSession` and `packageSave` repeat that
+list in their output, and `packagePublishExternalPush` includes the result in
+`checks`. It never fails a check or blocks a publish. The labels are described
+in
+[package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
+
 ### npm dependencies
 
 Saved packages may declare runtime npm dependencies in `package.json`

@@ -75,6 +75,7 @@ import {
 } from './publish-phase-timing.ts'
 import { validateRequiredPackageDocs } from './required-package-docs.ts'
 import { validatePackageSkills } from '#worker/package-registry/package-skills.ts'
+import { buildCredentialPatternCheck } from './credential-pattern-check.ts'
 
 export const repoCheckKinds = [
 	'manifest',
@@ -84,6 +85,7 @@ export const repoCheckKinds = [
 	'bundle',
 	'typecheck',
 	'lint',
+	'credentials',
 	'smoke',
 ] as const
 
@@ -1898,6 +1900,7 @@ export async function runRepoChecks(input: {
 		ok: lintCheck.ok,
 		message: lintCheck.message,
 	})
+	results.push(buildCredentialPatternCheck(sourceFiles, manifest.name))
 
 	return toRepoCheckRunResult({
 		results,
