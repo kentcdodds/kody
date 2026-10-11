@@ -888,7 +888,12 @@ export type HealthCommitInfo = {
 	message: string
 }
 
+const healthCommitShaPattern = /^[0-9a-f]{7,40}$/i
 const mergeHeadMessagePattern = /^Merge\s+([0-9a-f]{7,40})\s+into\b/i
+
+export function isHealthCommitSha(sha: string) {
+	return healthCommitShaPattern.test(sha)
+}
 
 /** Preview merge commits name the PR head in `Merge <head> into <base>`. */
 function healthBodyReportsOk(body: unknown) {
@@ -926,11 +931,15 @@ export function readLocalHealthCommitInfo(
 		((file, args, execOptions) =>
 			execFileSync(file, args, execOptions).toString())
 	try {
-		const output = execFile('git', ['log', '-1', '--format=%P%x00%s', sha], {
-			cwd: options.cwd ?? process.cwd(),
-			encoding: 'utf8',
-			stdio: ['ignore', 'pipe', 'ignore'],
-		})
+		const output = execFile(
+			'git',
+			['log', '-1', '--format=%P%x00%s', '--end-of-options', sha],
+			{
+				cwd: options.cwd ?? process.cwd(),
+				encoding: 'utf8',
+				stdio: ['ignore', 'pipe', 'ignore'],
+			},
+		)
 		const [parents, message] = output.split('\0')
 		return {
 			parents: (parents ?? '')
@@ -1023,7 +1032,9 @@ export async function readHealth(input: {
 		!evaluated.ok &&
 		input.expectedSha &&
 		evaluated.commitSha &&
-		response.ok
+		response.ok &&
+		isHealthCommitSha(evaluated.commitSha) &&
+		isHealthCommitSha(input.expectedSha)
 	) {
 		const isAncestor = input.isAncestor ?? isGitAncestor
 		if (isAncestor(input.expectedSha, evaluated.commitSha)) {

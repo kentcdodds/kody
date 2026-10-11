@@ -711,6 +711,35 @@ test('readHealth accepts a preview merge commit that is not in the local git dat
 	)
 })
 
+test('readHealth ignores a non-hex health commitSha before git lookups', async () => {
+	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
+	let loaded = 0
+	await withAuthServer(
+		(_request, response) => {
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: true, commitSha: '--oops' }),
+			)
+		},
+		async (origin) => {
+			const result = await readHealth({
+				origin,
+				expectedSha: headSha,
+				isAncestor: () => {
+					throw new Error('should not run isAncestor')
+				},
+				loadCommitInfo: () => {
+					loaded += 1
+					return null
+				},
+			})
+			expect(result.ok).toBe(false)
+			expect(loaded).toBe(0)
+		},
+	)
+})
+
 test('readHealth does not accept a merge subject when /health ok is false', async () => {
 	const mergeSha = '0549e2f0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 	const headSha = '7263d875b65f628a49ce0d1969dae90054f94143'
