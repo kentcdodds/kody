@@ -69,6 +69,7 @@ async function listWebhookItems(input: {
 	})
 	const webhooks = await listWebhooksForUser({
 		env: input.env,
+		request: input.user.request,
 		baseUrl,
 		userId: ownerIdFromCaller({
 			request: input.user.request,

@@ -3,7 +3,10 @@ import { z } from 'zod'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
 import { dispatchSyntheticWebhookForUser } from '#worker/webhooks/service.ts'
 import { webhookSyntheticDispatchCapabilityName } from '#worker/webhooks/synthetic.ts'
 import { requirePackageRef, webhookPackageRefSchema } from './shared.ts'
@@ -124,6 +127,7 @@ export const webhookSyntheticDispatchCapability = defineDomainCapability(
 			assertDirectMcpCaller(ctx.callerContext)
 			const dispatched = await dispatchSyntheticWebhookForUser({
 				env: ctx.env,
+				requestContext: requireMcpRequest(ctx.callerContext),
 				userId: ownerIdFromCaller(ctx.callerContext),
 				baseUrl: ctx.callerContext.baseUrl,
 				packageId: args.packageId,

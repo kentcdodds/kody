@@ -8,6 +8,9 @@ import {
 	storageIdSchema,
 	requireStorageUser,
 } from './shared.ts'
+import { authorize, packageResource } from '#worker/authorization/authorize.ts'
+import { getSavedPackageById } from '#worker/package-registry/repo.ts'
+import { packageIdFromStorageId } from '#worker/storage-ids.ts'
 import { storageRunnerRpc } from '#worker/storage-runner.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 
@@ -34,9 +37,24 @@ export const storageExportCapability = defineDomainCapability(
 				capabilityName: 'storageExport',
 				storageId: args.storage_id,
 			})
+			const ownerId = ownerIdFromCaller(ctx.callerContext)
+			const packageId = packageIdFromStorageId(storageId)
+			if (packageId) {
+				const saved = await getSavedPackageById(ctx.env.APP_DB, {
+					userId: ownerId,
+					packageId,
+				})
+				if (saved) {
+					await authorize(
+						{ env: ctx.env, request: ctx.callerContext.request },
+						'package:read',
+						packageResource(saved),
+					)
+				}
+			}
 			const result = await storageRunnerRpc({
 				env: ctx.env,
-				userId: ownerIdFromCaller(ctx.callerContext),
+				userId: ownerId,
 				storageId,
 			}).exportStorage({
 				pageSize: args.page_size,

@@ -6,7 +6,13 @@ import {
 	encryptWebhookUrlSecret,
 	userWebhookUrlSecretContext,
 } from '#mcp/secrets/crypto.ts'
-import { authorizePackageWrite } from '#worker/authorization/authorize.ts'
+import {
+	authorize,
+	authorizePackageWrite,
+	checkPermission,
+	computeEffectivePermissions,
+	packageResource,
+} from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
 import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
@@ -201,16 +207,27 @@ async function loadDeclaredWebhook(input: {
 	return declared
 }
 
+/** Declared webhooks on the owner's packages that the caller may read. */
 export async function listWebhooksForUser(input: {
 	env: Env
+	request: RequestContext
 	baseUrl: string
 	userId: OwnerId
 	packageId?: string
 	kodyId?: string
 }): Promise<Array<ListedWebhook>> {
-	const packages = await listSavedPackagesByUserId(input.env.APP_DB, {
-		userId: input.userId,
+	const access = await computeEffectivePermissions({
+		env: input.env,
+		request: input.request,
 	})
+	const packages = (
+		await listSavedPackagesByUserId(input.env.APP_DB, {
+			userId: input.userId,
+		})
+	).filter(
+		(entry) =>
+			checkPermission(access, 'package:read', packageResource(entry)).allowed,
+	)
 	const packageFilter = (input.packageId ?? input.kodyId ?? '').trim()
 	const filteredPackages = packageFilter
 		? packages.filter(
@@ -752,6 +769,7 @@ export type SyntheticWebhookDispatchResult = {
  */
 export async function dispatchSyntheticWebhookForUser(input: {
 	env: Env
+	requestContext: RequestContext
 	userId: OwnerId
 	baseUrl: string
 	packageId?: string
@@ -777,6 +795,11 @@ export async function dispatchSyntheticWebhookForUser(input: {
 		packageId: input.packageId,
 		kodyId: input.kodyId,
 	})
+	await authorize(
+		{ env: input.env, request: input.requestContext },
+		'package:execute',
+		packageResource(savedPackage),
+	)
 	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl: input.baseUrl,

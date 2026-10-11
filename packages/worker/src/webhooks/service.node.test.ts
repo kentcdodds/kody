@@ -56,23 +56,25 @@ vi.mock('#worker/package-invocations/module-artifacts.ts', () => ({
 }))
 
 vi.mock('#worker/package-registry/repo.ts', () => ({
-	listSavedPackagesByUserId: vi.fn(async () => [
-		{
-			id: 'pkg-1',
-			userId: ownerIdFromStored('will-set'),
-			name: '@owner/sentry-bridge',
-			kodyId: 'sentry-bridge',
-			description: 'Sentry bridge',
-			tags: [],
-			searchText: null,
-			sourceId: 'src-1',
-			hasApp: false,
-			hidden: false,
-			isPrivate: true,
-			createdAt: '2026-07-24T00:00:00.000Z',
-			updatedAt: '2026-07-24T00:00:00.000Z',
-		},
-	]),
+	listSavedPackagesByUserId: vi.fn(
+		async (_db: unknown, input: { userId: string }) => [
+			{
+				id: 'pkg-1',
+				userId: ownerIdFromStored(input.userId),
+				name: '@owner/sentry-bridge',
+				kodyId: 'sentry-bridge',
+				description: 'Sentry bridge',
+				tags: [],
+				searchText: null,
+				sourceId: 'src-1',
+				hasApp: false,
+				hidden: false,
+				isPrivate: true,
+				createdAt: '2026-07-24T00:00:00.000Z',
+				updatedAt: '2026-07-24T00:00:00.000Z',
+			},
+		],
+	),
 	resolveSavedPackageRef: vi.fn(),
 }))
 
@@ -149,6 +151,7 @@ async function setupOwner(email: string, username: string) {
 		list: (forUserId = userId) =>
 			listWebhooksForUser({
 				env,
+				request: sessionRequestContext(forUserId),
 				baseUrl: 'https://heykody.dev',
 				userId: ownerIdFromStored(forUserId),
 			}),
@@ -561,6 +564,7 @@ test('listing webhooks loads package manifests concurrently', async () => {
 
 	const listed = await listWebhooksForUser({
 		env,
+		request: sessionRequestContext(userId),
 		baseUrl: 'https://heykody.dev',
 		userId: ownerIdFromStored(userId),
 	})
