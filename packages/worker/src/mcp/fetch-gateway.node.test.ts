@@ -264,6 +264,7 @@ test('fetch gateway refuses a body that holds a placeholder instead of sending i
 			contentType: 'application/json',
 			body: JSON.stringify({ userId: '{{secret:clerkReviewUserId}}' }),
 			refusal: /^Secret "clerkReviewUserId" is in the request body\./,
+			slot: 'clerkReviewUserId',
 		},
 		{
 			contentType: 'application/x-www-form-urlencoded',
@@ -272,25 +273,29 @@ test('fetch gateway refuses a body that holds a placeholder instead of sending i
 				refresh_token: '{{secret:githubToken|scope=user}}',
 			}).toString(),
 			refusal: /^Secret "githubToken" is in the request body\./,
+			slot: 'githubToken',
 		},
 		{
 			contentType: 'text/plain',
 			body: '{{secret-basic:username=githubUser,password=githubToken}}',
 			refusal:
 				/^Basic auth secret pair "githubUser" \/ "githubToken" is in the request body\./,
+			slot: null,
 		},
 		{
 			contentType: 'text/plain',
 			body: 'token={{integration-token:github}}',
 			refusal: /^Integration token "github" is in the request body\./,
+			slot: 'github',
 		},
 		{
 			contentType: 'text/plain',
 			body: '{{secret/onepassword:op://vault/item/field}}',
 			refusal: /^Vault secret from "onepassword" is in the request body\./,
+			slot: null,
 		},
 	]
-	for (const { contentType, body, refusal } of bodies) {
+	for (const { contentType, body, refusal, slot } of bodies) {
 		const request = () =>
 			new Request('https://api.example.com/v1/reviews', {
 				method: 'POST',
@@ -307,6 +312,10 @@ test('fetch gateway refuses a body that holds a placeholder instead of sending i
 		await expect(expand(request())).rejects.toBeInstanceOf(
 			secretPlacement.SecretPlacementError,
 		)
+		await expect(expand(request())).rejects.toMatchObject({
+			code: 'credential_placement_refused',
+			slot,
+		})
 	}
 	expect(credentialSpy).not.toHaveBeenCalled()
 	expect(resolveSpy).not.toHaveBeenCalled()

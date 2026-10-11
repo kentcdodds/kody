@@ -419,5 +419,6 @@ export function assertNoBodyPlaceholder(body: Uint8Array | null) {
 	if (!reference) return
 	throw new SecretPlacementError(
 		`${describeReference(reference)} is in the request body. ${bodyRuleHint} Send a credential in a header instead, for example headers: { Authorization: 'Bearer ${reference.placeholder}' }. A value that is not a credential (such as an account id) belongs in params or package storage, not a secret. To send the placeholder text itself (a message that quotes the syntax), set the request header x-kody-secret-resolution: headers-only.`,
+		slotOf(reference),
 	)
 }
