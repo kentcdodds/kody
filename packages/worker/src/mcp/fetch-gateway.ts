@@ -39,6 +39,7 @@ import {
 } from '#mcp/secrets/secret-providers/errors.ts'
 import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hosts.ts'
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
+import { redactEchoedSecrets } from '#mcp/secrets/echo-redaction.ts'
 import {
 	assertSecretPlacement,
 	loadSecretPlacementPolicy,
@@ -271,11 +272,12 @@ export async function executeGatewayFetch(input: {
 				resource: 'outbound_fetches_per_day',
 			})
 		}
-		const transformed = await expandSecretPlaceholders({
-			request: input.request,
-			props: input.props,
-			env: input.env,
-		})
+		const { request: transformed, substitutedValues } =
+			await expandSecretPlaceholders({
+				request: input.request,
+				props: input.props,
+				env: input.env,
+			})
 		meteredEntityId = readMeteredRequestHostname(
 			input.request.url,
 			transformed.url,
@@ -285,7 +287,7 @@ export async function executeGatewayFetch(input: {
 				? transformed
 				: applyOutboundFetchTimeout(transformed, timeoutMs)
 		response = await globalFetch(outbound)
-		return response
+		return redactEchoedSecrets(response, substitutedValues)
 	} catch (error) {
 		outcome = 'error'
 		throw error
@@ -345,11 +347,15 @@ function readResponseContentLengthBytes(
 	return { bytes }
 }
 
+/**
+ * The outbound request with header placeholders substituted, plus every
+ * credential value that went into it so the response can be redacted.
+ */
 export async function expandSecretPlaceholders(input: {
 	request: Request
 	props: FetchGatewayProps
 	env: Pick<Env, 'APP_DB' | 'SECRET_STORE_KEY'>
-}) {
+}): Promise<{ request: Request; substitutedValues: ReadonlyArray<string> }> {
 	const headers = new Headers(input.request.headers)
 	// Several APIs (GitHub most prominently) reject requests without a
 	// User-Agent outright, and workerd sends none by default — bare sandbox
@@ -369,21 +375,24 @@ export async function expandSecretPlaceholders(input: {
 	headers.delete(secretAuthorityHeaderName)
 	const requestBody = await readRequestBody(input.request)
 	if (readSecretResolutionMode(headers) === 'off') {
-		return new Request(
-			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
-			{
-				method: input.request.method,
-				headers,
-				body: requestBodyInit(requestBody),
-				redirect: input.request.redirect,
-				credentials: input.request.credentials,
-				mode: input.request.mode,
-				cache: input.request.cache,
-				integrity: input.request.integrity,
-				keepalive: input.request.keepalive,
-				signal: input.request.signal,
-			},
-		)
+		return {
+			request: new Request(
+				resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
+				{
+					method: input.request.method,
+					headers,
+					body: requestBodyInit(requestBody),
+					redirect: input.request.redirect,
+					credentials: input.request.credentials,
+					mode: input.request.mode,
+					cache: input.request.cache,
+					integrity: input.request.integrity,
+					keepalive: input.request.keepalive,
+					signal: input.request.signal,
+				},
+			),
+			substitutedValues: [],
+		}
 	}
 	await assertSecretPlacement({
 		url: decodeSecretPlaceholderDelimiters(
@@ -546,6 +555,7 @@ export async function expandSecretPlaceholders(input: {
 			replacements.set(placeholder, resolved.value)
 		}
 	}
+	const encodedBasicCredentials: Array<string> = []
 	for (const placeholder of basicAuthPlaceholders) {
 		const renderedPlaceholder =
 			buildBasicAuthSecretPlaceholderFromReference(placeholder)
@@ -553,6 +563,7 @@ export async function expandSecretPlaceholders(input: {
 			username: readResolvedSecretValue(resolvedValues, placeholder.username),
 			password: readResolvedSecretValue(resolvedValues, placeholder.password),
 		})
+		encodedBasicCredentials.push(authHeader.slice('Basic '.length))
 		for (const scheme of ['Basic', 'basic', 'BASIC']) {
 			const prefixedPlaceholder = `${scheme} ${renderedPlaceholder}`
 			if (!replacements.has(prefixedPlaceholder)) {
@@ -625,18 +636,21 @@ export async function expandSecretPlaceholders(input: {
 		hasReferencedSecrets && input.request.redirect === 'follow'
 			? 'manual'
 			: input.request.redirect
-	return new Request(nextUrl, {
-		method: input.request.method,
-		headers,
-		body: requestBodyInit(requestBody),
-		redirect: nextRedirect,
-		credentials: input.request.credentials,
-		mode: input.request.mode,
-		cache: input.request.cache,
-		integrity: input.request.integrity,
-		keepalive: input.request.keepalive,
-		signal: input.request.signal,
-	})
+	return {
+		request: new Request(nextUrl, {
+			method: input.request.method,
+			headers,
+			body: requestBodyInit(requestBody),
+			redirect: nextRedirect,
+			credentials: input.request.credentials,
+			mode: input.request.mode,
+			cache: input.request.cache,
+			integrity: input.request.integrity,
+			keepalive: input.request.keepalive,
+			signal: input.request.signal,
+		}),
+		substitutedValues: [...replacements.values(), ...encodedBasicCredentials],
+	}
 }
 
 /**

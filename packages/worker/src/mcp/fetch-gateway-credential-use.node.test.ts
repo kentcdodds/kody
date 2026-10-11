@@ -212,7 +212,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 				storageContext: null,
 			},
 			env,
-		})
+		}).then(({ request: expanded }) => expanded)
 
 	const expandIntegrationFor = (request: typeof ownerRequest) =>
 		expandSecretPlaceholders({
@@ -225,7 +225,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 				storageContext: null,
 			},
 			env,
-		})
+		}).then(({ request: expanded }) => expanded)
 
 	// Owner A: ambient placeholders resolve.
 	const ownerSecret = await expandFor(ownerRequest)
@@ -361,7 +361,7 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		env,
 	})
-	expect(packageAuthoritySecret.headers.get('Authorization')).toBe(
+	expect(packageAuthoritySecret.request.headers.get('Authorization')).toBe(
 		'Bearer pkg-secret-value',
 	)
 })
@@ -451,7 +451,7 @@ test('leak: a declared package credential is refused outside its placement, in t
 				grantedSecretAuthorityPackageIds: [packageId],
 			},
 			env,
-		})
+		}).then(({ request: expanded }) => expanded)
 	const refusal = async (url: string, init: RequestInit = {}) =>
 		String(
 			await expandAsPackage(url, init).then(
