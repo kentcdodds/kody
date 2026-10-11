@@ -5,6 +5,7 @@ import {
 	invalidateCommunityPublicCache,
 } from '#app/data-cache.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { buildPackageJobId } from '#worker/jobs/package-job-id.ts'
 import { createJobStorageId } from '@kody-internal/shared/jobs/storage-id.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
 import { ensureCommunityFlowSchema } from './community-flow-test-schema.ts'
@@ -145,7 +146,8 @@ async function insertListing(
 }
 
 async function insertTestJob(userId: string, packageId: string) {
-	const id = `job-${crypto.randomUUID()}`
+	const name = `job ${crypto.randomUUID()} for ${packageId}`
+	const id = buildPackageJobId(packageId, name)
 	await jobsData(env).insertJob({
 		userId,
 		callerContextJson: '{}',
@@ -153,7 +155,7 @@ async function insertTestJob(userId: string, packageId: string) {
 			version: 1,
 			id,
 			userId: ownerIdFromStored(userId),
-			name: `job for ${packageId}`,
+			name,
 			sourceId: `source-${packageId}`,
 			publishedCommit: null,
 			storageId: createJobStorageId(id),
