@@ -50,16 +50,16 @@ synchronous, for callers that already hold the compiled permissions.
    packages and actions it lists (`read`, `execute`, `write`). Profiles list
    packages only, so they do not narrow other resources or org-level checks.
    `package:write`, `package:delete`, and `package:publish` handlers call
-   `authorizePackageWrite` once the saved package row is known. Handlers that
-   read or execute one saved package call `authorize` with `package:read` or
-   `package:execute` on `packageResource`, and lists filter rows with
-   `checkPermission`. Those permissions map to the profile `write` action, so a
-   profile that lists only `read` cannot mutate, delete, or publish that
-   package. A profile-bound credential cannot create a saved package:
-   `denyProfileBoundPackageCreate` runs from `packageSave` and
-   `packageGetGitRemote` when the package does not exist yet, and from
-   `communityFork` and `repoPromoteToPackage`. Plain repo create stays an
-   org-level `package:create` check. A profile names existing packages only.
+   `authorizePackageWrite` once the saved package row is known. Those
+   permissions map to the profile `write` action, so a profile that lists only
+   `read` cannot mutate, delete, or publish that package. Handlers that read or
+   execute one saved package call `authorize` with `package:read` or
+   `package:execute` on `packageResource` (profile `read` and `execute`), and
+   lists filter rows with `checkPermission`. A profile-bound credential cannot
+   create a saved package: `denyProfileBoundPackageCreate` runs from
+   `packageSave` and `packageGetGitRemote` when the package does not exist yet,
+   and from `communityFork` and `repoPromoteToPackage`. Plain repo create stays
+   an org-level `package:create` check. A profile names existing packages only.
 
 A surface check without a resource (capability `orgPermission`, Open API
 `x-kody-permission`) passes when the permission is held at org level **or on any
