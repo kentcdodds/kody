@@ -33,15 +33,40 @@ export default async function main(params) {
 }
 ```
 
-Check status from a later MCP call:
+### Start a workflow and check back
+
+This is the pattern for any call too long for one MCP `execute`. Start the
+workflow, keep the returned `id`, and end the call. In a later `execute`, read
+the run by that id:
 
 ```ts
 import { kody } from 'kody:runtime'
 
-export default async function main() {
-	return await kody.workflowRunList({ limit: 10 })
+export default async function main(params) {
+	const { runs } = await kody.runList({
+		workflow_id: params.id,
+		error_triage: 'all',
+	})
+	const run = runs[0]
+	if (!run) return { status: 'not started' }
+	return {
+		status: run.status,
+		result: run.metadata.result,
+		error: run.error_message,
+	}
 }
 ```
+
+The run appears once the workflow step starts (an empty list means it is still
+queued or waiting for `runAt`). Each step attempt is its own run, newest first,
+so a failed attempt that is being retried shows up as an older `error` row. The
+newest run's `status` is `running`, `success`, or `error`. A successful run
+keeps the workflow's return value in `metadata.result`, capped at 4 KiB (larger
+values are stored as a truncated `{ __truncated__: true, preview }`). Console
+output lands in the run's logs; use `runGet({ run_id })` with the run's `id` to
+read them. Return a small summary from the workflow and write bulky output to
+storage. `workflowRunList` shows the workflow-level status (`queued`, `running`,
+`complete`, …) without the result.
 
 `workflows.create` accepts one durable workflow request with two source shapes:
 

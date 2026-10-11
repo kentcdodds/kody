@@ -179,6 +179,15 @@ Sandbox budgets are the same on every plan:
 A `sync` webhook's HTTP response stops waiting after 30s. Work that does not fit
 the interactive budget goes in a workflow or a job.
 
+### Long calls: start a workflow and check back
+
+For work that may outlast one MCP call, return the `id` from `workflows.create`
+and end the call. In a later call, read the result with
+`kody.runList({ workflow_id: id, error_triage: 'all' })`: the newest run's
+`status` says whether it finished, and a successful run's `metadata.result`
+holds the workflow's return value (capped at 4 KiB). See
+[Start a workflow and check back](./workflows.md#start-a-workflow-and-check-back).
+
 ### Recovering from MCP client timeouts
 
 A timeout means the MCP client stopped waiting. Kody aborts that inbound

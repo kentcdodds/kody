@@ -98,6 +98,7 @@ import { getSavedPackageById } from '#worker/package-registry/repo.ts'
 import { typecheckPackageEntrypointsFromSourceFiles } from '#worker/repo/checks.ts'
 import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
+import { type EntitySourceRow } from '#worker/repo/types.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import {
@@ -630,6 +631,28 @@ async function cleanupAdHocJobSource(input: {
 	) {
 		return
 	}
+	await deleteJobEntitySource({ env: input.env, userId: input.userId, source })
+}
+
+/** Deletes a legacy `entity_kind = 'job'` source with its repo and artifacts. */
+export async function deleteJobEntitySource(input: {
+	env: Env
+	userId: OwnerId
+	source: EntitySourceRow
+}) {
+	if (input.source.entity_kind !== 'job') {
+		throw new Error(`Source ${input.source.id} is not a job source.`)
+	}
+	await deleteEntitySourceWithArtifacts(input)
+}
+
+/** Deletes an entity source no live entity references, with its repo and artifacts. */
+export async function deleteEntitySourceWithArtifacts(input: {
+	env: Env
+	userId: OwnerId
+	source: EntitySourceRow
+}) {
+	const { source } = input
 	const artifactCleanup = await cleanupArtifactReposForSource({
 		env: input.env,
 		userId: input.userId,

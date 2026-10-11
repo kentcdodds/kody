@@ -433,6 +433,32 @@ test('listRunRecords filters by surface/status/jobId/name and paginates with cur
 	}
 	expect(listed).toEqual(cases)
 
+	const workflowUserId = uniqueUserId('list-workflow-filter')
+	await finishOk(workflowUserId, 'run-other-workflow', {
+		surface: 'workflow',
+		workflowId: 'dynwf-other',
+	})
+	await finishRunRecord({
+		env,
+		handle: handleFor(workflowUserId, 'run-workflow', {
+			surface: 'workflow',
+			workflowId: 'dynwf-check-back',
+		}),
+		status: 'success',
+		result: { answer: 42 },
+	})
+	const workflowPage = await listRuns(workflowUserId, {
+		workflowId: 'dynwf-check-back',
+	})
+	expect(workflowPage.runs).toEqual([
+		expect.objectContaining({
+			id: 'run-workflow',
+			workflowId: 'dynwf-check-back',
+			status: 'success',
+			metadata: expect.objectContaining({ result: { answer: 42 } }),
+		}),
+	])
+
 	const pages: Array<Array<string>> = []
 	let cursor: string | null = null
 	do {

@@ -526,6 +526,7 @@ export async function listRunRecords(input: {
 		status: input.filter?.status ?? null,
 		packageId: normalizeOptionalString(input.filter?.packageId),
 		jobId: normalizeOptionalString(input.filter?.jobId),
+		workflowId: normalizeOptionalString(input.filter?.workflowId),
 		name: normalizeOptionalString(input.filter?.name),
 		since: normalizeOptionalString(input.filter?.since),
 		errorTriage: input.filter?.errorTriage ?? null,
