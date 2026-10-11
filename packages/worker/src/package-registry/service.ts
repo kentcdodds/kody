@@ -682,6 +682,11 @@ export async function deleteSavedPackageProjection(input: {
 						error: getErrorMessage(error),
 					}),
 				)
+				// Fail closed: an incomplete inventory must not let delete proceed
+				// while inventory-only buckets stay uncleared.
+				throw new PackageStorageCleanupError([
+					`storage-inventory:${input.packageId}`,
+				])
 			}
 			// Clear owned buckets before irreversible source/job/listing work so a
 			// failed clear leaves a still-usable package (and package:<id> ACL).

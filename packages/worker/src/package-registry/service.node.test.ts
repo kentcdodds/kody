@@ -158,6 +158,7 @@ function createEnv(
 		storageBuckets?: Array<StorageBucket>
 		users?: Array<{ email: string; plan: string | null }>
 		savedPackageCount?: number
+		failStorageInventory?: boolean
 	},
 ) {
 	// Projection refresh asserts finite storage bytes (default/missing plan →
@@ -169,6 +170,7 @@ function createEnv(
 			userId,
 			storageBuckets: options?.storageBuckets,
 			savedPackageCount: options?.savedPackageCount,
+			failStorageInventory: options?.failStorageInventory,
 		}),
 		USER_METER: createInMemoryUserMeterEnv().env.USER_METER,
 	} as Env
@@ -867,6 +869,27 @@ test('deleteSavedPackageProjection aborts before source cleanup when clearStorag
 	)
 })
 
+test('deleteSavedPackageProjection aborts when storage inventory lookup fails', async () => {
+	consoleWarn.mockImplementation(() => {})
+	setupDefaultMocks()
+	const env = createEnv('user-1', { failStorageInventory: true })
+	mockPackageRow(uuidPackageId)
+
+	await expect(deletePackage(env, uuidPackageId)).rejects.toThrow(
+		/Package storage cleanup failed/,
+	)
+
+	expect(mockModule.deleteSavedPackage).not.toHaveBeenCalled()
+	expect(mockModule.deleteEntitySource).not.toHaveBeenCalled()
+	expect(mockModule.deleteCommunityForksForPackage).not.toHaveBeenCalled()
+	expect(mockModule.clearStorage).not.toHaveBeenCalled()
+	expect(consoleWarn).toHaveBeenCalledWith(
+		expect.stringContaining(
+			'"message":"package storage inventory lookup failed"',
+		),
+	)
+})
+
 test('deleteSavedPackageProjection cleans secrets and deterministic storage when the projection is missing', async () => {
 	setupDefaultMocks()
 	const storageBuckets = [
@@ -966,6 +989,7 @@ function createEntitlementsDatabase(input: {
 	savedPackageCount?: number
 	userId: string
 	storageBuckets?: Array<{ userId: string; storageId: string }>
+	failStorageInventory?: boolean
 }) {
 	const users = input.users ?? []
 	const savedPackageCount = input.savedPackageCount ?? 0
@@ -1087,6 +1111,9 @@ function createEntitlementsDatabase(input: {
 								query.includes('SELECT storage_id AS storageId') &&
 								query.includes('WHERE user_id = ?')
 							) {
+								if (input.failStorageInventory) {
+									throw new Error('storage inventory unavailable')
+								}
 								const userId = String(params[0])
 								const results = storageBuckets
 									.filter((row) => row.userId === userId)
