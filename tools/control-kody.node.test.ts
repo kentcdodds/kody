@@ -117,7 +117,13 @@ const playwrightOk = () => ({
 test('control-kody parses commands, maps every required route, and drives a seed login', async () => {
 	expect(parseControlArgs(['--help']).command).toBe('help')
 	const request = (argv: Array<string>) => parseControlArgs(argv).request
-	const plainRequest = { body: null, form: null, dump: false, contains: [] }
+	const plainRequest = {
+		body: null,
+		form: null,
+		headers: [],
+		dump: false,
+		contains: [],
+	}
 	expect(
 		request([
 			'request',
@@ -705,6 +711,79 @@ test('control-kody request re-logs in when a stored cookie is rejected or HTML r
 			).toBe(0)
 		},
 	)
+})
+
+test('control-kody request --header sends repeatable headers on the first request and the re-login retry', async () => {
+	await using temp = await createTempDir()
+	const cookieFile = path.join(temp.dir, 'cookie')
+	const seen: Array<{ cookie?: string; referer?: string; trace?: string }> = []
+	await withAuthServer(
+		(request, response) => {
+			if (handleAuth(request, response, 'kody_session=fresh')) return
+			if (request.url !== '/account/connected-agents.json') {
+				notFound(response)
+				return
+			}
+			seen.push({
+				cookie: request.headers.cookie,
+				referer: request.headers.referer,
+				trace: request.headers['x-trace'] as string | undefined,
+			})
+			if (request.headers.cookie !== 'kody_session=fresh') {
+				send(response, 'application/json', '{"ok":false}', 401)
+				return
+			}
+			const org = /\/@([^/]+)\/-\//.exec(request.headers.referer ?? '')?.[1]
+			send(
+				response,
+				'application/json',
+				JSON.stringify({ ok: true, org: org ?? 'personal' }),
+			)
+		},
+		async (origin) => {
+			await writeFile(
+				cookieFile,
+				formatCookieFile(origin, 'kody_session=stale'),
+			)
+			const referer = `${origin}/@acme/-/connections`
+			const options = requestArgv(
+				'GET',
+				'/account/connected-agents.json',
+				origin,
+				cookieFile,
+				'--header',
+				`Referer: ${referer}`,
+				'--header',
+				'X-Trace: control-kody',
+				'--contains',
+				'"org":"acme"',
+			)
+			expect(options.request?.headers).toEqual([
+				{ name: 'Referer', value: referer },
+				{ name: 'X-Trace', value: 'control-kody' },
+			])
+			expect(await runCommand(options)).toBe(0)
+			expect(seen).toEqual([
+				{ cookie: 'kody_session=stale', referer, trace: 'control-kody' },
+				{ cookie: 'kody_session=fresh', referer, trace: 'control-kody' },
+			])
+		},
+	)
+	expect(() =>
+		parseControlArgs(['request', 'GET', '/account', '--header']),
+	).toThrow(/--header requires a value/)
+	expect(() =>
+		parseControlArgs(['search', '--header', 'Referer: http://x/']),
+	).toThrow(/Unknown flag --header/)
+	expect(() =>
+		parseControlArgs([
+			'request',
+			'GET',
+			'/account',
+			'--header',
+			'Cookie: kody_session=x',
+		]),
+	).toThrow(/cannot set Cookie/)
 })
 
 test('control-kody request --email does not reuse another user cookie for the same origin', async () => {
