@@ -429,7 +429,9 @@ test('each further enablement run renews the shared claim and stops once it is l
 		...enablementRun,
 		id: 'enablement-second',
 	}
-	const record = createJobRecord({ id: 'job-multi-enablement' })
+	const record = createJobRecord({
+		id: 'package-job:pkg-fenced:multi-enablement',
+	})
 	const row = seedDueClaim(record)
 	claimRunRecord.mockReset()
 	claimRunRecord.mockResolvedValue(
