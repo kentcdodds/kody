@@ -529,7 +529,6 @@ test('members see only their own connections, never teammates or Automation', as
 		viewerPersonId: viewer.personId,
 		includeOrgWide: false,
 		canSeePackage: () => true,
-		packageLinks: true,
 		now,
 	})
 	expect(usage.windows).toEqual({
@@ -614,7 +613,6 @@ test('team packages the viewer cannot see keep their units but not their name', 
 			viewerPersonId: viewer.personId,
 			includeOrgWide: false,
 			canSeePackage: (packageId) => canSee || packageId !== pollerId,
-			packageLinks: false,
 			now,
 		})
 		return usage.connections[0]?.callers.find(
@@ -623,7 +621,7 @@ test('team packages the viewer cannot see keep their units but not their name', 
 	}
 	expect(await pollerCaller(true)).toMatchObject({
 		label: 'slack-poller',
-		href: null,
+		href: `/@${slug}/slack-poller`,
 	})
 	const hidden = await pollerCaller(false)
 	expect(hidden).toMatchObject({
@@ -644,7 +642,6 @@ test('billing readers also see Automation, teammates by username only, and untra
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
 		canSeePackage: () => true,
-		packageLinks: true,
 		now,
 	})
 	expect(usage.connections.map((entry) => entry.id)).toEqual([
@@ -694,7 +691,6 @@ test('connection usage never reads another org', async () => {
 		viewerPersonId: viewer.personId,
 		includeOrgWide: true,
 		canSeePackage: () => true,
-		packageLinks: true,
 		now,
 	})
 	expect(usage.connections).toEqual([])

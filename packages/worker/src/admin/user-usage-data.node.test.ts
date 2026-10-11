@@ -7,6 +7,10 @@ import { type DailyEntitlementResource } from '#universal/plans.ts'
 import { type RepoSessionRow } from '#worker/repo/types.ts'
 import { type AdminUsageRollup } from '#universal/loader-data.ts'
 import { loadAdminUserUsageData } from './user-usage-data.ts'
+import {
+	isLiveSeatCountQuery,
+	mockLiveSeatCountRow,
+} from '#worker/test-support/live-seat-count-query.ts'
 import { testStableUserIdFromEmail } from '#worker/test-support/stable-user-id.ts'
 
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
@@ -84,8 +88,8 @@ function createAdminUserUsageTestDb(input: {
 
 	function countForQuery(normalizedQuery: string, userId: string) {
 		const counts = resourceCounts[userId] ?? {}
-		if (normalizedQuery.includes('from org_memberships')) {
-			return 1
+		if (isLiveSeatCountQuery(normalizedQuery)) {
+			return mockLiveSeatCountRow().count
 		}
 		if (normalizedQuery.includes('from saved_packages')) {
 			return counts.saved_packages ?? 0

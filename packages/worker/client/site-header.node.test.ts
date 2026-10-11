@@ -319,6 +319,55 @@ test('org switcher sends collaborators to org home and billing off Teams', async
 	expect(billing).not.toContain('href="/@acme/-/teams"')
 })
 
+test('org switcher keeps every org-owned section when switching between orgs', async () => {
+	const sections = [
+		'activity',
+		'connections',
+		'email',
+		'integrations',
+		'jobs',
+		'mcp-servers',
+		'memories',
+		'packages',
+		'secret-providers',
+		'secrets',
+		'values',
+		'waiting',
+		'webhooks',
+		'workflows',
+	]
+	for (const section of sections) {
+		const html = await renderToString(
+			jsx(SiteHeader, {
+				loggedIn: true,
+				displayName: 'Ada Lovelace',
+				username: 'ada',
+				avatarUrl: null,
+				showAdminLink: false,
+				showDemoIndicator: false,
+				loginHref: '/login',
+				currentPathname: `/@ada/-/${section}`,
+				organizations: [
+					{ slug: 'ada', displayName: 'Ada', role: 'owner', personal: true },
+					{
+						slug: 'acme',
+						displayName: 'Acme',
+						role: 'member',
+						personal: false,
+					},
+				],
+			}),
+		)
+		const rowHref = (slug: string) => {
+			const at = html.indexOf(`data-testid="org-switcher-${slug}"`)
+			const row = html.slice(html.lastIndexOf('<a', at), at)
+			return /href="([^"]*)"/.exec(row)?.[1]
+		}
+		expect([section, rowHref('acme')]).toEqual([section, `/@acme/-/${section}`])
+		expect([section, rowHref('ada')]).toEqual([section, `/@ada/-/${section}`])
+	}
+})
+
 test('logged-out header shows Log in without an Account link', async () => {
 	const html = await renderToString(
 		jsx(SiteHeader, {

@@ -172,8 +172,10 @@ export type CommunityDetailLoaderData = {
 	listing: PublicCommunityListing | null
 	/** True when `/@owner` is publicly reachable. */
 	ownerProfilePublic: boolean
-	/** True when the signed-in viewer owns this listing. */
+	/** True when the signed-in viewer may open the private package view. */
 	viewerIsOwner: boolean
+	/** True when the signed-in viewer may change the package (settings, publish). */
+	viewerCanManage: boolean
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	forkPrompt: string
@@ -212,6 +214,7 @@ export type PackageFilesLoaderData = {
 	username?: string
 	kodyId?: string
 	viewerIsOwner?: boolean
+	viewerCanManage?: boolean
 	isPrivate?: boolean
 	isListed?: boolean
 	iconUrl?: string | null
@@ -245,6 +248,7 @@ type CommunityDetailShellLoaderData = {
 	username: string
 	kodyId: string
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	isPrivate: boolean
 	invocationUrlOrigin: string
 }
@@ -267,8 +271,6 @@ export type ProfileLoaderData = {
 	query: string | null
 	isSelf: boolean
 	loggedIn: boolean
-	/** False when rows have no package page to open (team-org repositories). */
-	packageLinks?: boolean
 }
 
 /** Package list + activity for `/@username`. Chips and search (`q`) apply client-side. */
@@ -276,7 +278,6 @@ export type ProfileListLoaderData = {
 	profile: PublicCommunityProfile
 	packages: Array<PublicProfilePackageItem>
 	activity: Array<PublicCommunityActivityItem>
-	packageLinks?: boolean
 }
 
 /** SSR-embedded shell data for the identity header on the profile page. */
@@ -315,7 +316,6 @@ export function toProfileListLoaderData(
 		profile: data.profile,
 		packages: data.packages,
 		activity: data.activity,
-		...(data.packageLinks === false ? { packageLinks: false } : {}),
 	}
 }
 
@@ -2114,12 +2114,6 @@ export type AccountSecretsLoaderData = {
 		requestedPackageId: string | null
 		currentAllowedHosts: Array<string>
 		currentAllowedPackages: Array<string>
-		/** Package approvals only: what the package may do with each secret. */
-		packageCredentials: Array<{
-			name: string
-			allowedHosts: Array<string>
-			raw: boolean
-		}>
 	} | null
 	approvalError: string | null
 }

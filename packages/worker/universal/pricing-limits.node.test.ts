@@ -17,6 +17,17 @@ test('pricing columns show the limits enforced for each purchasable plan', () =>
 		proCreditsPlanLimits.maxExecuteUniqueWorkersPerDay,
 	)
 	expect(
+		pricingLimitColumns.map((column) => [
+			column.id,
+			column.limits.maxOutboundFetchesPerDay,
+			column.limits.maxOutboundFetchesPerWeek,
+		]),
+	).toEqual([
+		['free', 1_000, 2_500],
+		['pro', 15_000, 40_000],
+		['pro-credits', 750_000, 2_000_000],
+	])
+	expect(
 		pricingLimitColumns
 			.filter((column) => column.chargesPastInclude)
 			.map((column) => column.id),

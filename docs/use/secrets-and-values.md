@@ -28,24 +28,16 @@ read a secret locked only to A — including by passing A's id to
 carries that authority. Access rules are covered in
 [Package approval](#package-approval).
 
-`packageSecrets.get(alias)` (and `kody.packageSecretGet`) return the **raw
-value** only when `alias` is a
-[`kody.credentials`](./packages.md#credential-slots-kodycredentials) secret slot
-that declares `"raw": true`, only after grant checks succeed, and only when Kody
-runs the package's code itself (local execute gets an error). The consent page
-tells the owner that the package can read that raw value and send it to any
-host, not just the secret's allowed hosts, and Kody tracks the value so it is
-redacted from run output and logs. Any other alias fails with guidance: a secret
-slot without `raw` should send its value with a `{{secret:<slot>}}` placeholder
-in its declared header instead, OAuth and MCP slots are never handed to package
-code, and `kody.secretMounts` aliases no longer resolve through `get`.
-`packageSecrets.has(alias)` still reports presence for any secret slot or mount
-without reading the value.
-
-A secret-aware `fetch` sends a placeholder's value only to an **approved** host.
-If that host echoes the value back, the gateway redacts it from the response
-(see [Placeholders in `fetch`](#placeholders-in-fetch)); treat response bodies
-as untrusted all the same.
+`packageSecrets.get(alias)` (and `kody.packageSecretGet`) return an **opaque
+`{{secret:…}}` placeholder** after mount and grant checks succeed — never
+decrypted plaintext. Put that string in a secret-aware `fetch` request header
+(the gateway refuses it in the URL or body), or pass it to `secretHeaders.basic`
+/ `kody.secretJwtSign` (both accept saved secret names **or** opaque refs). Only
+platform use sites resolve it. Package and execute JavaScript never receive
+plaintext from `get`. A secret-aware `fetch` may send the value to an
+**approved** host. If that host echoes the value back, the gateway redacts it
+from the response (see [Placeholders in `fetch`](#placeholders-in-fetch)); treat
+response bodies as untrusted all the same.
 
 **`kody.secretSet(...)`** persists a value that is already available inside
 execution (for example an API key the package just minted). It does not return
@@ -108,8 +100,8 @@ owner's provider binding. Search does not crawl vaults. See
 When an API requires Basic Auth derived from two saved secrets, import
 **`secretHeaders`** from **`kody:runtime`** and put the opaque helper result in
 the outbound fetch header. `usernameSecret` / `passwordSecret` accept a saved
-secret name **or** an opaque `{{secret:<name>}}` ref. This example uses a
-placeholder API host and generic client credential secret names:
+secret name **or** an opaque `{{secret:…}}` ref from `packageSecrets.get`. This
+example uses a placeholder API host and generic client credential secret names:
 
 ```ts
 import { secretHeaders } from 'kody:runtime'
@@ -145,8 +137,8 @@ algorithm. It never returns key material.
 The caller supplies the JWT header and claims, then performs any provider-
 specific token exchange with ordinary **`fetch`**. Pass the saved secret as
 **`private_key_secret_name`** — a saved secret name **or** an opaque
-`{{secret:<name>}}` ref (PKCS#8 PEM for asymmetric algorithms, HMAC key material
-for HS*). For service-account JSON secrets, pass
+`{{secret:…}}` ref from `packageSecrets.get` (PKCS#8 PEM for asymmetric
+algorithms, HMAC key material for HS*). For service-account JSON secrets, pass
 **`private_key_json_field: "private_key"`** to sign with that field. Supported
 algorithms:
 

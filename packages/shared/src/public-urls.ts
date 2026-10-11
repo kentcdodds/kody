@@ -59,6 +59,15 @@ export type PackageAppMount = 'user-subdomain' | 'username-path'
  */
 export const dnsSafeUsernamePattern = /^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$/
 
+/**
+ * Anchor-free source of {@link dnsSafeUsernamePattern}. Embed this fragment
+ * in a larger expression so org slugs and path parsers share one handle shape.
+ */
+export const dnsSafeUsernamePatternSource = dnsSafeUsernamePattern.source.slice(
+	1,
+	-1,
+)
+
 export function isDnsSafeUsername(username: string) {
 	return dnsSafeUsernamePattern.test(username.trim())
 }

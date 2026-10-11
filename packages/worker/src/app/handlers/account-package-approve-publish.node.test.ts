@@ -75,22 +75,38 @@ test('legacy package approval links redirect and the canonical owner URL renders
 		kodyId: 'github-triage',
 		name: '@kentcdodds/github-triage',
 	}
-	mockModule.loadPackagePage.mockResolvedValue({
-		kind: 'page',
-		viewerIsOwner: true,
-		ownerPackage,
-	})
+	const requestApproval = () =>
+		handler.handler({
+			request: new Request(
+				'https://example.com/@kentcdodds/github-triage/approve-publish?commit=abc1234',
+			),
+			params: { username: 'kentcdodds', kodyId: 'github-triage' },
+		} as never)
 	mockModule.loadAccountPackageApprovePublishData.mockResolvedValue({
 		ok: true,
 		package: ownerPackage,
 	})
 
-	const canonical = await handler.handler({
-		request: new Request(
-			'https://example.com/@kentcdodds/github-triage/approve-publish?commit=abc1234',
-		),
-		params: { username: 'kentcdodds', kodyId: 'github-triage' },
-	} as never)
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		viewerIsOwner: true,
+		viewerCanManage: false,
+		ownerPackage,
+	})
+	mockModule.renderAppPage.mockClear()
+	await requestApproval()
+	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
+		expect.objectContaining({ notFound: true, status: 404 }),
+	)
+	expect(mockModule.loadAccountPackageApprovePublishData).not.toHaveBeenCalled()
+
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		viewerIsOwner: true,
+		viewerCanManage: true,
+		ownerPackage,
+	})
+	const canonical = await requestApproval()
 	expect(canonical.status).toBe(200)
 	expect(mockModule.loadAccountPackageApprovePublishData).toHaveBeenCalledWith({
 		env: expect.any(Object),
@@ -138,6 +154,7 @@ test('canonical approval API follows package URL normalization and resolves the 
 	mockModule.loadPackagePage.mockResolvedValueOnce({
 		kind: 'page',
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		ownerPackage,
 	})
 	mockModule.loadAccountPackageApprovePublishData.mockResolvedValueOnce({

@@ -441,6 +441,7 @@ export function composeCommunityDetailLoaderData(input: {
 		listing: input.listing,
 		ownerProfilePublic: input.ownerProfilePublic ?? false,
 		viewerIsOwner: input.viewerIsOwner ?? false,
+		viewerCanManage: input.viewerIsOwner ?? false,
 		loggedIn: input.loggedIn,
 		viewerIsAdmin: input.viewerIsAdmin ?? false,
 		forkPrompt: buildForkPrompt({

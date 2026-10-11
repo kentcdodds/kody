@@ -147,8 +147,9 @@ export function replaceSecretPlaceholders(
 
 /**
  * Accept a bare saved-secret name or a single opaque `{{secret:…}}`
- * placeholder. Derived ops (secretHeaders.basic, secretJwtSign) use this so
- * package JS can pass either form without ever seeing plaintext.
+ * placeholder (as returned by packageSecrets.get). Derived ops
+ * (secretHeaders.basic, secretJwtSign) use this so package JS can pass
+ * either form without ever seeing plaintext.
  */
 export function parseSecretNameOrPlaceholder(
 	value: string,

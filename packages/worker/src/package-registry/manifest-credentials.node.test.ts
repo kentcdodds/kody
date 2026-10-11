@@ -93,27 +93,6 @@ test('publish requires placement on secret slots and validates it', () => {
 	expect(manifest.kody.credentials?.GOOGLE?.placement).toBeUndefined()
 })
 
-test('raw is a secret-slot opt-in that stands in for placement', () => {
-	const secret = { kind: 'secret', provider: 'acme', description: 'x' }
-	const manifest = parseAuthoredPackageJson({
-		content: manifestWithCredentials({ KEY: { ...secret, raw: true } }),
-	})
-	expect(manifest.kody.credentials?.KEY).toEqual({ ...secret, raw: true })
-	expect(publishError({ KEY: { ...secret, raw: false } })).toContain(
-		'declares "raw": true instead',
-	)
-	expect(
-		publishError({
-			GOOGLE: {
-				kind: 'oauth',
-				provider: 'google',
-				description: 'x',
-				raw: true,
-			},
-		}),
-	).toMatch(/Only secret slots take raw[\s\S]*kody\.credentials\.GOOGLE\.raw/)
-})
-
 test('publish rejects invalid kody.credentials slots and names the slot', () => {
 	expect(
 		publishError({

@@ -35,7 +35,7 @@ vi.mock('#app/frame-registry.ts', () => ({
 const { createCommunityPackageSettingsHandler } =
 	await import('./community-detail.tsx')
 
-test('package settings 404 unless the viewer owns the package', async () => {
+test('package settings 404 unless the viewer can manage the package', async () => {
 	const handler = createCommunityPackageSettingsHandler({} as Env)
 	mockModule.loadPackagePage.mockResolvedValue({
 		kind: 'page',
@@ -44,21 +44,39 @@ test('package settings 404 unless the viewer owns the package', async () => {
 		listing: null,
 		ownerPackage: { id: 'pkg-1', name: 'friction-log', isPrivate: true },
 		viewerIsOwner: false,
+		viewerCanManage: false,
 		loggedIn: true,
 		invocationUrlOrigin: 'https://example.com',
 	})
+	const requestSettings = () =>
+		handler.handler({
+			request: new Request(
+				'https://example.com/@kentcdodds/friction-log/settings',
+			),
+			params: { username: 'kentcdodds', kodyId: 'friction-log' },
+			url: new URL('https://example.com/@kentcdodds/friction-log/settings'),
+		} as never)
 
-	const stranger = await handler.handler({
-		request: new Request(
-			'https://example.com/@kentcdodds/friction-log/settings',
-		),
-		params: { username: 'kentcdodds', kodyId: 'friction-log' },
-		url: new URL('https://example.com/@kentcdodds/friction-log/settings'),
-	} as never)
+	const stranger = await requestSettings()
 	expect(mockModule.renderAppPage).toHaveBeenCalledWith(
 		expect.objectContaining({ notFound: true, status: 404 }),
 	)
 	expect(stranger.status).toBe(404)
+
+	mockModule.renderAppPage.mockClear()
+	mockModule.loadPackagePage.mockResolvedValue({
+		kind: 'page',
+		username: 'acme',
+		kodyId: 'friction-log',
+		listing: null,
+		ownerPackage: { id: 'pkg-1', name: 'friction-log', isPrivate: true },
+		viewerIsOwner: true,
+		viewerCanManage: false,
+		loggedIn: true,
+		invocationUrlOrigin: 'https://example.com',
+	})
+	const reader = await requestSettings()
+	expect(reader.status).toBe(404)
 
 	mockModule.renderAppPage.mockClear()
 	mockModule.loadPackagePage.mockResolvedValue({
@@ -74,6 +92,7 @@ test('package settings 404 unless the viewer owns the package', async () => {
 			kodyId: 'friction-log',
 		},
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		loggedIn: true,
 		invocationUrlOrigin: 'https://example.com',
 	})
@@ -92,6 +111,7 @@ test('package settings 404 unless the viewer owns the package', async () => {
 				communityDetailShell: expect.objectContaining({
 					kodyId: 'friction-log',
 					viewerIsOwner: true,
+					viewerCanManage: true,
 					isPrivate: true,
 					listingId: null,
 					defaultBranch: null,
@@ -123,6 +143,7 @@ test('package settings Files tab uses the listing default branch and id', async 
 			kodyId: 'packages',
 		},
 		viewerIsOwner: true,
+		viewerCanManage: true,
 		loggedIn: true,
 		invocationUrlOrigin: 'https://example.com',
 		ownerProfilePublic: false,

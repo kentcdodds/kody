@@ -27,6 +27,7 @@ export type CommunityDetailApiPayload = {
 	loggedIn: boolean
 	viewerIsAdmin: boolean
 	viewerIsOwner: boolean
+	viewerCanManage: boolean
 	forkPrompt: string
 	viewerInstall: ViewerListingInstall | null
 	readmeContent: string | null
@@ -210,7 +211,7 @@ export function toPackageSettingsShell(
 		const exhaustive: never = routeData
 		throw new Error(`Unhandled community shell: ${String(exhaustive)}`)
 	}
-	if (!routeData.ownerPackage || !routeData.viewerIsOwner) return null
+	if (!routeData.ownerPackage || !routeData.viewerCanManage) return null
 	return {
 		kind: 'owner',
 		ownerPackage: routeData.ownerPackage,
@@ -303,7 +304,7 @@ export async function communityDetailRouteLoader(
 		throw new Error('Unable to load public package.')
 	}
 	if (getPackageSettingsPageRef(url.pathname)) {
-		if (!payload.viewerIsOwner || !payload.ownerPackage) {
+		if (!payload.viewerCanManage || !payload.ownerPackage) {
 			throw new Error('Catalog entry not found.')
 		}
 	}
@@ -325,6 +326,7 @@ export async function communityDetailRouteLoader(
 			loggedIn: payload.loggedIn,
 			viewerIsAdmin: payload.viewerIsAdmin,
 			viewerIsOwner: payload.viewerIsOwner,
+			viewerCanManage: payload.viewerCanManage,
 			trusted: payload.listing?.trusted ?? false,
 			featured: payload.listing?.featured ?? false,
 			readmeContent:
