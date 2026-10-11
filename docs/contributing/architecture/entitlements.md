@@ -201,15 +201,14 @@ like any other limit. The caps stay finite but dominate every other plan's email
 limits, so granting `max` never reduces email capacity (`email_message_bytes`
 stays at standard/pro parity because the per-message persist ceiling is a
 platform bound, not a scalable quota). Compute rate limits on `max`
-(`execute_unique_workers_per_day`, `outbound_fetches_per_day`,
-`job_runs_per_day`, `concurrent_workflows`) are operator runaway caps sized from
-production usage with at least 2× busy-day headroom, and they still dominate
-every paid plan. `outbound_fetches_per_day` on `max` is instead 50× the
-purchasable Pro include (750,000), because it is also the per-seat credits
-ceiling and credits carry outbound fetches to 50× like execute.
-`automation_invocations_per_day` on `max` is the public burst-friendly ceiling
-above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays at the
-job-matched values. All other resources use the ordinary `planLimits.max`
+(`execute_unique_workers_per_day`, `job_runs_per_day`, `concurrent_workflows`)
+are operator runaway caps sized from production usage with at least 2× busy-day
+headroom, and they still dominate every paid plan. `outbound_fetches_per_day` on
+`max` is instead 50× the purchasable Pro include (750,000), because it is also
+the per-seat credits ceiling and credits carry outbound fetches to 50× like
+execute. `automation_invocations_per_day` on `max` is the public burst-friendly
+ceiling above job runs (200,000 vs 40,000). Legacy Standard/Pro automation stays
+at the job-matched values. All other resources use the ordinary `planLimits.max`
 numbers.
 
 | Resource                         | Limit   |
