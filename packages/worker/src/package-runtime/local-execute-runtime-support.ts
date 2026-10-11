@@ -403,6 +403,52 @@ function __kodyDecodePlaceholderPunctuation(text) {
 	);
 }
 
+// Only a prefix of a file or byte body is scanned so a large upload is not
+// buffered in memory. Placeholders are written by package code into small
+// payloads, and the cloud fetch gateway scans the whole body of any hop.
+const __kodyBodyScanLimitBytes = 1024 * 1024;
+
+function __kodyDecodeBytesPrefix(body) {
+	const view =
+		body instanceof ArrayBuffer
+			? new Uint8Array(body)
+			: new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+	return new TextDecoder().decode(
+		view.subarray(0, __kodyBodyScanLimitBytes),
+	);
+}
+
+async function __kodyBlobPrefixText(blob) {
+	return await blob.slice(0, __kodyBodyScanLimitBytes).text();
+}
+
+async function __kodyStreamPrefixText(stream) {
+	if (!stream || typeof stream.getReader !== "function") return null;
+	const reader = stream.getReader();
+	const chunks = [];
+	let total = 0;
+	try {
+		while (total < __kodyBodyScanLimitBytes) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+			chunks.push(chunk);
+			total += chunk.byteLength;
+		}
+	} finally {
+		// A cloned body is a tee branch, and cancelling one branch settles only
+		// after the other is cancelled too, so this must not be awaited.
+		reader.cancel().catch(() => {});
+	}
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return __kodyDecodeBytesPrefix(bytes);
+}
+
 async function __kodyBodyText(body) {
 	if (body == null) return null;
 	if (typeof body === "string") return body;
@@ -413,16 +459,20 @@ async function __kodyBodyText(body) {
 		const parts = [];
 		for (const [key, value] of body.entries()) {
 			parts.push(key);
-			if (typeof value === "string") parts.push(value);
-			else parts.push(await value.text());
+			if (typeof value === "string") {
+				parts.push(value);
+			} else {
+				if (typeof value.name === "string") parts.push(value.name);
+				parts.push(await __kodyBlobPrefixText(value));
+			}
 		}
 		return parts.join("\\n");
 	}
 	if (typeof Blob !== "undefined" && body instanceof Blob) {
-		return await body.text();
+		return await __kodyBlobPrefixText(body);
 	}
 	if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
-		return new TextDecoder().decode(body);
+		return __kodyDecodeBytesPrefix(body);
 	}
 	// A caller stream cannot be read without consuming it, so it is not checked.
 	return null;
@@ -448,12 +498,9 @@ function __kodyDescribeFirstPlaceholder(text) {
 // The fetch gateway never substitutes into a body and refuses one that holds a
 // placeholder, so local execute refuses it too instead of sending the literal
 // reference upstream. x-kody-secret-resolution: headers-only or off opts out.
-async function __kodyAssertNoBodyPlaceholder(body, headers) {
-	const mode = String(headers?.["x-kody-secret-resolution"] ?? "")
-		.trim()
-		.toLowerCase();
-	if (mode === "off" || mode === "headers-only") return;
-	const text = await __kodyBodyText(body);
+async function __kodyAssertNoBodyPlaceholder(readText, resolutionMode) {
+	if (resolutionMode === "off" || resolutionMode === "headers-only") return;
+	const text = await readText();
 	if (text == null) return;
 	const decoded = __kodyDecodePlaceholderPunctuation(text);
 	if (!__kodyHasPlaceholderText(decoded)) return;
@@ -498,7 +545,38 @@ function __kodyStreamingHeaderError() {
 	);
 }
 
+const __kodySecretResolutionHeader = "x-kody-secret-resolution";
+
+// init.headers replaces a Request's headers outright, matching new Request().
+function __kodyReadSecretResolutionHeader(input, init) {
+	if (init?.headers != null) {
+		return new Headers(init.headers).get(__kodySecretResolutionHeader);
+	}
+	if (input instanceof Request) {
+		return input.headers.get(__kodySecretResolutionHeader);
+	}
+	return null;
+}
+
+function __kodyWithoutSecretResolutionHeader(headers) {
+	const stripped = new Headers(headers);
+	stripped.delete(__kodySecretResolutionHeader);
+	return stripped;
+}
+
 async function __kodyGatewayFetchCall(input, init, packageId) {
+	// The resolution mode instructs the fetch gateway. It is never sent to the
+	// remote on a native fetch, and only the gateway hop carries it.
+	const resolutionHeader = __kodyReadSecretResolutionHeader(input, init);
+	const resolutionMode = String(resolutionHeader ?? "")
+		.trim()
+		.toLowerCase();
+	if (resolutionHeader != null && init?.headers != null) {
+		init = {
+			...init,
+			headers: __kodyWithoutSecretResolutionHeader(init.headers),
+		};
+	}
 	let url;
 	let method = "GET";
 	let headers = {};
@@ -515,7 +593,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
 			const body = init.body;
-			await __kodyAssertNoBodyPlaceholder(body, headers);
+			await __kodyAssertNoBodyPlaceholder(
+				() => __kodyBodyText(body),
+				resolutionMode,
+			);
 			// FormData keeps its implicit multipart boundary on ambient fetch.
 			// URL/header secrets serialize it once for the gateway hop.
 			if (typeof FormData !== "undefined" && body instanceof FormData) {
@@ -576,7 +657,12 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			(init == null || init.body == null) &&
 			inputRequest != null &&
 			__kodyIsNonByteStream(inputRequest.body);
-		const merged = new Request(input, init);
+		let merged = new Request(input, init);
+		if (merged.headers.has(__kodySecretResolutionHeader)) {
+			merged = new Request(merged, {
+				headers: __kodyWithoutSecretResolutionHeader(merged.headers),
+			});
+		}
 		url = merged.url;
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
@@ -589,8 +675,11 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				reuseOriginal = false;
 			} else {
 				await __kodyAssertNoBodyPlaceholder(
-					init?.body ?? (await merged.clone().text()),
-					headers,
+					() =>
+						init?.body != null
+							? __kodyBodyText(init.body)
+							: __kodyStreamPrefixText(merged.clone().body),
+					resolutionMode,
 				);
 				// String, bytes, and URLSearchParams become streams inside a
 				// Request. A hop reads a clone; otherwise the original Request is
@@ -669,7 +758,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		request: {
 			url,
 			method,
-			headers,
+			headers:
+				resolutionHeader != null
+					? { ...headers, [__kodySecretResolutionHeader]: resolutionHeader }
+					: headers,
 			...(bodyBytes != null
 				? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
 				: {}),

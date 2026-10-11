@@ -556,8 +556,10 @@ guarded by a bearer secret comparison.
   HTTP, and, for a package with `kody.credentials`, any header but the slot's
   declared placement). The body is never substituted: one that holds a
   placeholder is refused unless the caller sets
-  `x-kody-secret-resolution: headers-only`, and any other body is forwarded byte
-  for byte. Policy writes (allowed hosts/capabilities/ packages) are only
+  `x-kody-secret-resolution: headers-only` (or `off`, which skips resolution
+  entirely), and any other body is forwarded byte for byte. The control header
+  is stripped before the request leaves, on both the gateway and local native
+  fetch paths. Policy writes (allowed hosts/capabilities/ packages) are only
   reachable through the authenticated account UI.
 - User code runs in a Cloudflare Worker Loader isolate without the parent `env`;
   capabilities are RPC'd back to handlers that enforce the caller's `userId`.

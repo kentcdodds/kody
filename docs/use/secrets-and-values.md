@@ -68,13 +68,16 @@ resolves them for **approved** destinations over **HTTPS** only.
 The request body is data, never a substitution site. The gateway refuses, before
 anything resolves, a placeholder in the body, the URL, or the query string, and
 a header placeholder on a plain `http://` request, so an unsubstituted
-placeholder never reaches the remote. The error names the credential and the
-rule. Any other body is forwarded byte for byte. A body that quotes the syntax
-on purpose (an issue or chat message that documents it) sets
-`x-kody-secret-resolution: headers-only`; see
+placeholder only reaches the remote when the calling code opts in with an
+`x-kody-secret-resolution` header. The error names the credential and the rule.
+Any other body is forwarded byte for byte. A body that quotes the syntax on
+purpose (an issue or chat message that documents it) sets
+`x-kody-secret-resolution: headers-only`, and `off` sends every placeholder as
+written; see
 [Mentioning placeholders without resolving them](#mentioning-placeholders-without-resolving-them).
-A caller `ReadableStream` body cannot be read ahead under local execute, so only
-the cloud gateway checks it. A package that declares
+Kody strips that header before the request leaves. Local execute checks only the
+first MiB of a file or byte body, and cannot read a caller `ReadableStream` body
+ahead, so for those the cloud gateway is the full check. A package that declares
 [`kody.credentials`](./packages.md#credential-slots-kodycredentials) goes
 further: each placeholder must name one of its slots and sit in that slot's
 declared `placement` header, matching its template (oauth slots default to
