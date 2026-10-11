@@ -15,4 +15,5 @@ test('buildSeedUserSql rejects a username signup would not accept', () => {
 		'Seed username "org-switch-sections-1791688467100" is not a valid username',
 	)
 	expect(() => seed('Has_Underscore')).toThrow('is not a valid username')
+	expect(() => seed(' padded-name ')).toThrow('is not a valid username')
 })

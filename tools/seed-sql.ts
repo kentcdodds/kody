@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { isDnsSafeUsername } from '@kody-internal/shared/public-urls.ts'
+import { dnsSafeUsernamePattern } from '@kody-internal/shared/public-urls.ts'
 import { quoteSqlString } from '@kody-internal/shared/sql-literals.ts'
 import { type FeatureFlagKey } from '#universal/feature-flags/registry.ts'
 import { previewSeedFlagAllowlist } from './preview-seed-flag-allowlist.ts'
@@ -273,7 +273,7 @@ export function buildSeedUserSql(input: {
 }) {
 	// Org pages and the switcher parse `/@username/-/…` with the signup rule,
 	// so a seeded account must hold a username signup would accept.
-	if (!isDnsSafeUsername(input.username)) {
+	if (!dnsSafeUsernamePattern.test(input.username)) {
 		throw new Error(
 			`Seed username "${input.username}" is not a valid username: 3 to 32 characters, letters, numbers, and hyphens, starting and ending with a letter or number.`,
 		)
