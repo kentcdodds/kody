@@ -3257,7 +3257,8 @@ class RepoSessionBase extends DurableObject<Env> {
 					currentPublishedCommit: source.published_commit,
 					packageId: lockedPackage.id,
 					packageName: lockedPackage.name,
-					message: withCredentialNotice(error.message),
+					message: error.message,
+					credentialNotice,
 				}
 			}
 		}

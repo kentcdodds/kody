@@ -352,6 +352,7 @@ export type RepoSessionPublishResult =
 			currentPublishedCommit: string | null
 			packageId: string
 			packageName: string
+			credentialNotice: string | null
 	  }
 
 export type RepoExternalPublishResult =
