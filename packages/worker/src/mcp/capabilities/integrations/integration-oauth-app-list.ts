@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeIntegrationOrgWide } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
@@ -41,6 +42,7 @@ export const integrationOauthAppListCapability = defineDomainCapability(
 		outputSchema,
 		async handler(_args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeIntegrationOrgWide(ctx, 'integration:read')
 			const [apps, joined] = await Promise.all([
 				listOauthApps({
 					env: ctx.env,

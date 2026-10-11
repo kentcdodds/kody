@@ -8,6 +8,7 @@ import {
 	createInMemoryUserMeterEnv,
 	createPermissiveAccountWriteLeaseDbHooks,
 } from '#worker/test-support/user-meter.ts'
+import { rankMemoryVectorIdsWithin } from './memory-search.ts'
 import {
 	acknowledgeSurfacedMemories,
 	deleteMemory,
@@ -348,6 +349,7 @@ test('memory service upserts, verifies, soft deletes, and validates source uris'
 
 	const verify = await verifyMemoryCandidate({
 		...base,
+		scope: { kind: 'all' },
 		candidate: {
 			subject: 'Editor theme preference',
 			summary: 'User likes dark mode in editing interfaces.',
@@ -439,6 +441,7 @@ test('memory search returns mutable user-owned ids and upsert rejects unknown id
 
 	const search = await searchMemoryRecords({
 		...base,
+		scope: { kind: 'all' },
 		query: 'mutable memory id mutation calls',
 	})
 	expect(search.matches).toHaveLength(1)
@@ -474,6 +477,39 @@ test('memory search returns mutable user-owned ids and upsert rejects unknown id
 	)
 })
 
+test('memory search with a granted scope ranks only granted memories', async () => {
+	const testDb = createMemoryTestDb()
+	const runtimeEnv = env(testDb.db)
+	const base = { env: runtimeEnv, userId: ownerIdFromStored('user-123') }
+	const created = []
+	for (const label of ['alpha', 'beta', 'gamma']) {
+		created.push(
+			await upsertMemory({
+				...base,
+				subject: `Release checklist ${label}`,
+				summary: `Release checklist notes for ${label}.`,
+				verificationReference: `verify-${label}`,
+			}),
+		)
+	}
+	const grantedId = created[1]!.memory.id
+
+	const scoped = await searchMemoryRecords({
+		...base,
+		scope: { kind: 'granted', ids: new Set([grantedId]) },
+		query: 'release checklist',
+		limit: 5,
+	})
+	expect(scoped.matches.map((match) => match.id)).toEqual([grantedId])
+
+	const none = await searchMemoryRecords({
+		...base,
+		scope: { kind: 'granted', ids: new Set() },
+		query: 'release checklist',
+	})
+	expect(none.matches).toEqual([])
+})
+
 test('memory surfacing suppresses repeated memories per conversation', async () => {
 	const testDb = createMemoryTestDb()
 	const runtimeEnv = env(testDb.db)
@@ -489,6 +525,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 	const surface = (conversationId: string) =>
 		surfaceRelevantMemories({
 			env: runtimeEnv,
+			scope: { kind: 'all' },
 			userId: ownerIdFromStored('user-123'),
 			query,
 			conversationId,
@@ -508,6 +545,7 @@ test('memory surfacing suppresses repeated memories per conversation', async () 
 
 	const search = await searchMemoryRecords({
 		env: runtimeEnv,
+		scope: { kind: 'all' },
 		userId: ownerIdFromStored('user-123'),
 		query,
 		conversationId: 'conv-123',
@@ -619,6 +657,7 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 
 	const result = await searchMemoryRecords({
 		env: runtimeEnv,
+		scope: { kind: 'all' },
 		userId: ownerIdFromStored('user-123'),
 		query: 'deployment window',
 		limit: 5,
@@ -638,4 +677,99 @@ test('memory search online queries Vectorize first and hydrates vector hits by i
 	const matchedIds = result.matches.map((match) => match.id)
 	expect(matchedIds).toContain('memory-old-vector-hit')
 	expect(matchedIds).toContain('memory-recent')
+})
+
+test('granted memory search ranks granted vectors by id without a namespace query', async () => {
+	const testDb = createMemoryTestDb()
+	const userId = ownerIdFromStored('user-123')
+	const timestamp = '2026-06-01T00:00:00.000Z'
+	for (const [id, subject] of [
+		['memory-close', 'Quarterly planning'],
+		['memory-far', 'Quarterly planning notes'],
+		['memory-hidden', 'Quarterly planning secret'],
+	] as const) {
+		testDb.memories.set(id, {
+			id,
+			user_id: userId,
+			category: null,
+			status: 'active',
+			subject,
+			summary: 'Quarterly planning.',
+			details: '',
+			tags_json: '[]',
+			source_uris_json: '[]',
+			dedupe_key: null,
+			created_at: timestamp,
+			updated_at: timestamp,
+			last_accessed_at: null,
+			deleted_at: null,
+		})
+	}
+	const queryVector = [1, 0]
+	const requestedIds: Array<Array<string>> = []
+	const vectorIndex: Pick<VectorizeIndex, 'query' | 'getByIds'> = {
+		async query() {
+			throw new Error('granted search must not query the namespace')
+		},
+		async getByIds(ids) {
+			requestedIds.push([...ids])
+			return [
+				{ id: 'memory_memory-far', values: [0, 1], metadata: { userId } },
+				{ id: 'memory_memory-close', values: [1, 0], metadata: { userId } },
+			]
+		},
+	}
+	const runtimeEnv = env(testDb.db, {
+		SENTRY_ENVIRONMENT: 'production',
+		AI: createDeterministicAiBinding(),
+		CAPABILITY_VECTOR_INDEX: vectorIndex as VectorizeIndex,
+	})
+
+	const result = await searchMemoryRecords({
+		env: runtimeEnv,
+		scope: { kind: 'granted', ids: new Set(['memory-far', 'memory-close']) },
+		userId,
+		query: 'quarterly planning',
+		limit: 5,
+		embedText: async () => queryVector,
+	})
+
+	expect(requestedIds).toHaveLength(1)
+	expect(requestedIds[0]!.toSorted()).toEqual([
+		'memory_memory-close',
+		'memory_memory-far',
+	])
+	expect(result.matches.map((match) => match.id).toSorted()).toEqual([
+		'memory-close',
+		'memory-far',
+	])
+})
+
+test('rankMemoryVectorIdsWithin orders by similarity and drops other owners', async () => {
+	const userId = ownerIdFromStored('user-123')
+	const vectorIndex: Pick<VectorizeIndex, 'getByIds'> = {
+		async getByIds() {
+			return [
+				{ id: 'memory_far', values: [0, 1], metadata: { userId } },
+				{ id: 'memory_close', values: [1, 0.1], metadata: { userId } },
+				{
+					id: 'memory_foreign',
+					values: [1, 0],
+					metadata: { userId: 'someone-else' },
+				},
+			]
+		},
+	}
+	const ranked = await rankMemoryVectorIdsWithin({
+		env: env(createMemoryTestDb().db, {
+			SENTRY_ENVIRONMENT: 'production',
+			AI: createDeterministicAiBinding(),
+			CAPABILITY_VECTOR_INDEX: vectorIndex as VectorizeIndex,
+		}) as unknown as Env,
+		query: 'q',
+		userId,
+		memoryIds: ['far', 'close', 'foreign'],
+		embedText: async () => [1, 0],
+	})
+	expect(ranked).toEqual(['close', 'far'])
 })

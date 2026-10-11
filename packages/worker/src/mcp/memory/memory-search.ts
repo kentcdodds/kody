@@ -17,6 +17,7 @@ import { userVectorNamespace } from '#worker/vectorize/vector-namespaces.ts'
 import { getRawIdFromPassthroughVectorId } from '#worker/vectorize/vector-ids.ts'
 import { parseJsonStringArray } from '@kody-internal/shared/json-parsing.ts'
 import { buildMemoryEmbedTextFromRow } from './memory-embed.ts'
+import { memoryVectorId } from './memory-vectorize.ts'
 import { type McpMemoryRow, type MemorySearchMatch } from './types.ts'
 
 function buildMemoryVectorFilter(input: {
@@ -70,6 +71,44 @@ export async function queryMemoryVectorIds(input: {
 		memoryIds.push(memoryId)
 	}
 	return memoryIds
+}
+
+/**
+ * Ranks only the given memories by similarity, reading their stored vectors
+ * by id so other memories in the namespace cannot crowd them out of a topK.
+ * Returns an empty list when the vector index is unavailable.
+ */
+export async function rankMemoryVectorIdsWithin(input: {
+	env: Env
+	query: string
+	userId: OwnerId
+	memoryIds: ReadonlyArray<string>
+	embedText?: EmbedTextFn
+}): Promise<Array<string>> {
+	const index = getCapabilityVectorIndex(input.env)
+	if (!index || !input.userId || input.memoryIds.length === 0) return []
+	const [queryVector, vectors] = await Promise.all([
+		(input.embedText ?? ((text) => embedTextForVectorize(input.env, text)))(
+			input.query,
+		),
+		index.getByIds(input.memoryIds.map((id) => memoryVectorId(id))),
+	])
+	const similarityById = new Map<string, number>()
+	for (const vector of vectors) {
+		if (vector.metadata?.userId !== input.userId) continue
+		const memoryId = getRawIdFromPassthroughVectorId({
+			prefix: 'memory',
+			vectorId: vector.id,
+		})
+		if (!memoryId) continue
+		similarityById.set(
+			memoryId,
+			cosineSimilarity(queryVector, Array.from(vector.values)),
+		)
+	}
+	return sortIdsByScore([...similarityById.keys()], (id) =>
+		similarityById.get(id)!,
+	)
 }
 
 export async function searchMemories(input: {

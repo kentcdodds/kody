@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { deleteMcpServer } from '#worker/mcp-client/settings-service.ts'
 import { resolveMcpServerSetting } from './shared.ts'
@@ -35,6 +36,7 @@ export const mcpServerRemoveCapability = defineDomainCapability(
 				userId: ownerIdFromCaller(ctx.callerContext),
 				server: args.server,
 			})
+			await authorizeIntegration(ctx, 'integration:delete', setting.name)
 			const removed = await deleteMcpServer({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),

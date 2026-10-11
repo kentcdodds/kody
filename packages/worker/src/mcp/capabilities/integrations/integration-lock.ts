@@ -4,9 +4,11 @@ import { McpCallerError } from '#mcp/caller-error.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { buildIntegrationUsageUrl } from '#worker/integrations/package-access.ts'
 import { lockIntegrationToPackage } from '#worker/integrations/service.ts'
+import { canonicalIntegrationName } from './integration-shared.ts'
 
 const outputSchema = z.object({
 	name: z.string(),
@@ -51,6 +53,11 @@ export const integrationLockCapability = defineDomainCapability(
 			ctx: CapabilityContext,
 		) {
 			const user = requireMcpUser(ctx.callerContext)
+			await authorizeIntegration(
+				ctx,
+				'integration:use',
+				canonicalIntegrationName(args.name),
+			)
 			try {
 				const updated = await lockIntegrationToPackage({
 					env: ctx.env,

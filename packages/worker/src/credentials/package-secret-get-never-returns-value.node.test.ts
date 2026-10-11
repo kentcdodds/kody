@@ -47,11 +47,13 @@ const credentialSlots = {
 		kind: 'secret',
 		provider: 'aws',
 		description: 'Signing key.',
+		placement: { header: 'Authorization', template: 'AWS4 {value}' },
 	},
 	HEADER_KEY: {
 		kind: 'secret',
 		provider: 'resend',
 		description: 'API key.',
+		placement: { header: 'Authorization', template: 'Bearer {value}' },
 	},
 	GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
 }
@@ -269,6 +271,9 @@ test('a manifest cannot declare a slot that reads the raw value', () => {
 				kind,
 				provider: 'aws',
 				description: 'Key.',
+				...(kind === 'secret'
+					? { placement: { header: 'Authorization' } }
+					: {}),
 				raw: true,
 			},
 		})

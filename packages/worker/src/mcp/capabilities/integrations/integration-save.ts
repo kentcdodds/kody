@@ -3,7 +3,12 @@ import { z } from 'zod'
 import { safeParseHost } from '@kody-internal/shared/url-hosts.ts'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
-import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import {
+	requireMcpRequest,
+	requireMcpUser,
+} from '#mcp/capabilities/meta/require-user.ts'
+import { authorizeIntegration } from '#mcp/capabilities/integrations/authorize-integration.ts'
+import { authorize } from '#worker/authorization/authorize.ts'
 import { type CapabilityContext } from '#mcp/capabilities/types.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -53,6 +58,14 @@ export const integrationSaveCapability = defineDomainCapability(
 				userId: ownerIdFromCaller(ctx.callerContext),
 				name: args.name,
 			})
+			if (existing) {
+				await authorizeIntegration(ctx, 'integration:write', existing.name)
+			} else {
+				await authorize(
+					{ env: ctx.env, request: requireMcpRequest(ctx.callerContext) },
+					'integration:create',
+				)
+			}
 			// A partial merge onto a platform (built-in) connection would
 			// silently convert it to a user-lane app and break host-side
 			// refresh; keep platform connections managed by the connect flow.

@@ -244,4 +244,24 @@ export const packageDetailSchema =
 			.describe(
 				'FYI metadata for package-scoped secrets owned by this package, including package_id. Never plaintext values. These are not execute-usable via search; using them still requires package context.',
 			),
+		warnings: z
+			.array(
+				z.object({
+					code: z.enum(['secret_placeholder_outside_header']),
+					message: z
+						.string()
+						.describe('What breaks at run time and how to fix it.'),
+					path: z.string().describe('Package-relative source file.'),
+					line: z.number().int().nullable(),
+					slot: z
+						.string()
+						.nullable()
+						.describe(
+							'Secret or integration name the placeholder references; null when computed or a vault reference.',
+						),
+				}),
+			)
+			.describe(
+				'Problems in the published source that make requests fail at run time. Publishing a fix clears them; a new publish with these problems is refused.',
+			),
 	})

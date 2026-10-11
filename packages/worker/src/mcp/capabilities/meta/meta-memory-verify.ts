@@ -1,3 +1,4 @@
+import { loadResourceListScope } from '#worker/authorization/authorize.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
 import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
@@ -10,6 +11,7 @@ import {
 	memoryVerifyInputSchema,
 	requireMcpUser,
 } from './meta-memory-shared.ts'
+import { requireMcpRequest } from './require-user.ts'
 
 const recommendedActions: Array<
 	'upsert' | 'delete' | 'upsert_and_delete' | 'none'
@@ -69,9 +71,15 @@ export const metaMemoryVerifyCapability = defineDomainCapability(
 		outputSchema,
 		async handler(args, ctx: CapabilityContext) {
 			requireMcpUser(ctx.callerContext)
+			const request = requireMcpRequest(ctx.callerContext)
 			const result = await verifyMemoryCandidate({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),
+				scope: await loadResourceListScope(
+					{ env: ctx.env, request },
+					'memory:read',
+					'memory',
+				),
 				candidate: {
 					category: args.category ?? null,
 					subject: args.subject,

@@ -335,7 +335,13 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 	)
 	mockModule.collectIntegrationPackageSuggestions.mockResolvedValue([])
 
-	const detail = await resolve('integration:github')
+	const visibleRows = {
+		...emptySearchRows(),
+		userIntegrationRows: [createJoinedIntegration('github')],
+	} as never
+	const detail = await resolve('integration:github', {
+		searchRows: visibleRows,
+	})
 	expect(mockModule.getJoinedIntegration).toHaveBeenCalledWith({
 		env: { APP_DB: {} },
 		userId: ownerIdFromStored('user-1'),
@@ -358,6 +364,7 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 		resolve('integration:github', {
 			userId: ownerIdFromStored('user-2'),
 			username: 'other',
+			searchRows: visibleRows,
 		}),
 	).rejects.toThrow('Saved integration not found for this user.')
 	expect(mockModule.getJoinedIntegration).toHaveBeenLastCalledWith({
@@ -365,6 +372,11 @@ test('resolveEntityDetail loads {name}:integration via getJoinedIntegration, iso
 		userId: ownerIdFromStored('user-2'),
 		name: 'github',
 	})
+
+	// Search rows are already filtered to integrations the caller can see.
+	await expect(resolve('integration:github')).rejects.toThrow(
+		'Saved integration not found for this user.',
+	)
 })
 
 test('resolveEntityDetail hostedUrl uses PACKAGE_APP_BASE_URL when configured', async () => {

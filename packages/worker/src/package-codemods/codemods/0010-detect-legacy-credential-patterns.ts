@@ -5,14 +5,15 @@ import {
 	getCalleeName,
 	getCalleeObjectName,
 	getNodeName,
+	literalLocationOutsideHeader,
 	type NameKind,
 	parseModule,
 	resolveStringExpression,
 	scannableModuleFilePattern,
-	templateElementText,
 	testFilePattern,
+	visitModuleStrings,
 	walkAst,
-} from '#worker/credentials/module-placeholder-scan.ts'
+} from '#worker/credentials/placeholder-placement-scan.ts'
 import {
 	type PackageCodemod,
 	type PackageCodemodFinding,
@@ -30,8 +31,10 @@ export const legacyCredentialPatterns = [
 	'|scope=',
 	'secretMounts',
 	'webhook secretName',
+	'secret outside header',
 	'plain http',
 	'packageSecrets.get',
+	'missing placement',
 ] as const
 
 export type LegacyCredentialPattern = (typeof legacyCredentialPatterns)[number]
@@ -58,10 +61,14 @@ export const legacyCredentialPatternMessages: Record<
 		'secretMounts: declares kody.secretMounts. Replace each mount with a kody.credentials slot.',
 	'webhook secretName':
 		'webhook secretName: a webhook names its signing secret with secretName. Declare that secret as a kody.credentials slot.',
+	'secret outside header':
+		'secret outside header: puts a secret placeholder in a request URL, query, or body. The fetch gateway substitutes secrets only into the header a kody.credentials slot declares.',
 	'plain http':
 		'plain http: fetches an http:// URL in a module that uses secret placeholders. The fetch gateway substitutes secrets only over HTTPS.',
 	'packageSecrets.get':
-		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in a header, the URL path or query, or a non-multipart text body of an HTTPS request to a host the secret allows.',
+		'packageSecrets.get: reads a kody.secretMounts alias through packageSecrets.get. It returns an opaque {{secret:…}} ref, never the value. The fetch gateway fills the ref in only in the header a kody.credentials slot declares for that secret.',
+	'missing placement':
+		'missing placement: a kody.credentials secret slot has no placement. Publish requires the header the value goes in.',
 }
 
 export function legacyCredentialPatternFromMessage(
@@ -74,7 +81,6 @@ export function legacyCredentialPatternFromMessage(
 }
 
 const packageManifestPath = 'package.json'
-
 /** The kody.credentials slot kind a reference of each name kind resolves to. */
 const slotKindByNameKind: Record<NameKind, 'secret' | 'oauth'> = {
 	secret: 'secret',
@@ -152,12 +158,6 @@ const packageSecretsMethods = new Set(['get', 'has'])
 
 function ownEntry<Value>(record: Record<string, Value>, key: string) {
 	return Object.hasOwn(record, key) ? record[key] : undefined
-}
-
-function literalText(node: AstNode) {
-	if (node.type === 'StringLiteral') return getNodeName(node)
-	if (node.type !== 'TemplateLiteral') return null
-	return (node.quasis ?? []).map(templateElementText).join('${}')
 }
 
 function isPlainHttpUrl(text: string) {
@@ -278,61 +278,36 @@ function isKodyMcpDestructure(node: AstNode, aliases: Set<string>) {
 	)
 }
 
-/** A template or `+` chain with a non-literal part, so it may be computed. */
-function isCompositeString(node: AstNode) {
-	if (node.type === 'TemplateLiteral') {
-		return (node.expressions ?? []).length > 0
-	}
-	return node.type === 'BinaryExpression' && node.operator === '+'
-}
-
 function detectInParsedModule(parsed: AstNode, scan: Scan) {
 	const { add } = scan
 	const body = parsed.program?.body ?? []
 	const aliases = collectKodyAliases(body)
 	let usesPlaceholder = false
 	let fetchesPlainHttp = false
-	/** Pieces of a composite string already classified as one resolved string. */
-	const resolvedPieces = new WeakSet<AstNode>()
-	const classifyLiteral = (
-		node: AstNode,
-		text: string,
-		ancestors: ReadonlyArray<AstNode>,
-	) => {
-		if (isPlainHttpUrl(text) && isRequestUrlArgument(node, ancestors.at(-1))) {
-			fetchesPlainHttp = true
-		}
-		if (findPlaceholders(text).length === 0) return
-		usesPlaceholder = true
-	}
-	walkAst(parsed, (node, ancestors) => {
-		if (resolvedPieces.has(node)) return
-		if (isCompositeString(node)) {
-			const resolved = resolveStringExpression(node, scan.constants)
-			if (resolved != null) {
-				walkAst(node, (piece) => resolvedPieces.add(piece))
-				classifyStringPiece(resolved, scan)
-				classifyLiteral(node, resolved, ancestors)
-				return
+	visitModuleStrings(
+		parsed,
+		scan.constants,
+		({ node, text, pieces, ancestors }) => {
+			for (const piece of pieces) classifyStringPiece(piece, scan)
+			if (
+				isPlainHttpUrl(text) &&
+				isRequestUrlArgument(node, ancestors.at(-1))
+			) {
+				fetchesPlainHttp = true
 			}
-		}
+			if (findPlaceholders(text).length === 0) return
+			usesPlaceholder = true
+			if (
+				literalLocationOutsideHeader(node, text, ancestors, {
+					textShapeHints: true,
+				})
+			) {
+				add('secret outside header')
+			}
+		},
+	)
+	walkAst(parsed, (node) => {
 		switch (node.type) {
-			case 'StringLiteral': {
-				const value = getNodeName(node)
-				if (value == null) return
-				classifyStringPiece(value, scan)
-				classifyLiteral(node, value, ancestors)
-				return
-			}
-			case 'TemplateLiteral': {
-				const text = literalText(node)
-				if (text != null) classifyLiteral(node, text, ancestors)
-				return
-			}
-			case 'TemplateElement': {
-				classifyStringPiece(templateElementText(node), scan)
-				return
-			}
 			case 'VariableDeclarator': {
 				if (isKodyMcpDestructure(node, aliases)) add('kody.mcp')
 				return
@@ -457,6 +432,15 @@ function detectInManifest(
 	if (Array.isArray(kody.webhooks) && kody.webhooks.some(webhookNamesSecret)) {
 		add('webhook secretName')
 	}
+	if (
+		isPlainObject(kody.credentials) &&
+		Object.values(kody.credentials).some(
+			(slot) =>
+				isPlainObject(slot) && slot.kind === 'secret' && slot.placement == null,
+		)
+	) {
+		add('missing placement')
+	}
 }
 
 /** Declared kody.credentials slot names and their kinds. */
@@ -549,7 +533,7 @@ function transformLegacyCredentialPatterns(
 export const detectLegacyCredentialPatternsCodemod: PackageCodemod = {
 	id: detectLegacyCredentialPatternsCodemodId,
 	description:
-		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots, plain http fetches the fetch gateway refuses to fill, and packageSecrets.get reads.',
+		'Detect only (writes nothing): find packages that reference credentials the old way (literal or computed secret and integration names, kody.mcp, |scope=, kody.secretMounts, webhook secretName) ahead of kody.credentials slots, and code the fetch gateway secret rules refuse (placeholders outside headers, plain http, packageSecrets.get, secret slots without placement).',
 	detect: detectLegacyCredentialPatterns,
 	transform: transformLegacyCredentialPatterns,
 }

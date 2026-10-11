@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { defineDomainCapability } from '#mcp/capabilities/define-domain-capability.ts'
 import { capabilityDomainNames } from '#mcp/capabilities/domain-metadata.ts'
 import { requireMcpUser } from '#mcp/capabilities/meta/require-user.ts'
+import { loadIntegrationListScope } from '#mcp/capabilities/integrations/authorize-integration.ts'
+import { listScopeIncludes } from '#worker/authorization/authorize.ts'
 import {
 	emptyCapabilityInputSchema,
 	type CapabilityContext,
@@ -56,7 +58,7 @@ export const mcpServerListCapability = defineDomainCapability(
 				env: ctx.env,
 				requestUrl: ctx.callerContext.baseUrl,
 			})
-			const [settings, hubSnapshot] = await Promise.all([
+			const [allSettings, hubSnapshot, scope] = await Promise.all([
 				listMcpServerSettings({
 					env: ctx.env,
 					userId: ownerIdFromCaller(ctx.callerContext),
@@ -66,7 +68,11 @@ export const mcpServerListCapability = defineDomainCapability(
 					userId: ownerIdFromCaller(ctx.callerContext),
 					waitUntil: ctx.waitUntil,
 				}),
+				loadIntegrationListScope(ctx, 'integration:read'),
 			])
+			const settings = allSettings.filter((setting) =>
+				listScopeIncludes(scope, setting.name),
+			)
 			await Promise.all(
 				settings.map((setting) => {
 					const snapshot =
