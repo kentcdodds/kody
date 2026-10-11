@@ -41,10 +41,27 @@ export type McpClientHubTransferStub = {
 	importServerForTransfer(
 		input: McpHubServerTransfer,
 	): Promise<McpHubServerImportResult>
+	discardTransferredServer(input: { serverId: string }): Promise<void>
 	connectTransferredServer(input: {
 		serverId: string
 	}): Promise<McpHubConnectResult>
-	removeServer(input: { serverId: string }): Promise<void>
+	removeServerForTransfer(input: { serverId: string }): Promise<void>
+}
+
+/**
+ * An imported server waits here, outside `cf_agents_mcp_servers`, until the
+ * transfer commits: the SDK restores and dials every row in that table, and
+ * dialing can rotate OAuth tokens the source still holds.
+ */
+export type McpHubStagedServer = {
+	row: McpHubServerTransfer['row']
+	keys: Array<string>
+}
+
+export const mcpTransferStagingStoragePrefix = '/kody-transfer-staging/'
+
+export function mcpTransferStagingStorageKey(serverId: string) {
+	return `${mcpTransferStagingStoragePrefix}${serverId}`
 }
 
 export function mcpClientHubTransferStub(input: {

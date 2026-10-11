@@ -64,8 +64,11 @@ import {
 	hasForeignTransferStorageKey,
 	type McpHubServerImportResult,
 	type McpHubServerTransfer,
+	type McpHubStagedServer,
 	mcpServerOAuthStoragePrefix,
 	mcpServerSidecarStorageKeys,
+	mcpTransferStagingStorageKey,
+	mcpTransferStagingStoragePrefix,
 } from './hub-transfer.ts'
 import {
 	parsePersistedMcpServerOptions,
@@ -1969,12 +1972,30 @@ class McpClientHubBase extends DurableObject<Env> {
 		return false
 	}
 
-	/** Org resource transfer planning: registered server ids only. */
-	async listServerIdsForTransfer(): Promise<Array<string>> {
+	private readRegisteredServerIds() {
 		return this.ctx.storage.sql
 			.exec<{ id: string }>(`SELECT id FROM cf_agents_mcp_servers`)
 			.toArray()
 			.map((row) => row.id)
+	}
+
+	private async readStagedServer(serverId: string) {
+		return await this.ctx.storage.get<McpHubStagedServer>(
+			mcpTransferStagingStorageKey(serverId),
+		)
+	}
+
+	/** Org resource transfer planning: registered and staged server ids. */
+	async listServerIdsForTransfer(): Promise<Array<string>> {
+		const staged = await this.ctx.storage.list({
+			prefix: mcpTransferStagingStoragePrefix,
+		})
+		return [
+			...this.readRegisteredServerIds(),
+			...[...staged.keys()].map((key) =>
+				key.slice(mcpTransferStagingStoragePrefix.length),
+			),
+		]
 	}
 
 	/** Org resource transfer: this server's SDK row and every per-server key. */
@@ -1999,90 +2020,119 @@ class McpClientHubBase extends DurableObject<Env> {
 	}
 
 	/**
-	 * Org resource transfer: restore a server exported from another owner's
-	 * hub with its tokens, without dialing it. Connecting can refresh and
-	 * rotate OAuth tokens, so that waits for {@link connectTransferredServer}
-	 * after the transfer commits. Refuses a server id this hub already has,
-	 * and removes everything it wrote if any step fails.
+	 * Org resource transfer: stage a server exported from another owner's hub,
+	 * with its tokens, in one storage write. It is not registered, so neither
+	 * this call nor a later restore dials it; that waits for
+	 * {@link connectTransferredServer} after the transfer commits. Refuses a
+	 * server id this hub already has.
 	 */
 	async importServerForTransfer(
 		input: McpHubServerTransfer,
 	): Promise<McpHubServerImportResult> {
-		await this.ensureRestored()
 		const serverId = input.row.id
-		if (this.manager.listServers().some((server) => server.id === serverId)) {
+		if (
+			this.readRegisteredServerIds().includes(serverId) ||
+			(await this.readStagedServer(serverId))
+		) {
 			return { ok: false, reason: 'already_registered' }
 		}
 		if (hasForeignTransferStorageKey(input)) {
 			return { ok: false, reason: 'foreign_storage_key' }
 		}
-		let registering = false
-		try {
-			if (input.entries.length > 0) {
-				await this.ctx.storage.put(Object.fromEntries(input.entries))
-			}
-			const sealed = await this.readSealedPreRegisteredOAuthClient(serverId)
-			if (sealed) this.preRegisteredClientIds.set(serverId, sealed.clientId)
-			await this.hydrateTokenRecoveryErrors()
-			const persisted = parsePersistedMcpServerOptions(input.row.server_options)
-			const options = reconnectMcpServerOptions(
-				persisted ? sanitizePersistedMcpServerOptions(persisted) : undefined,
-			)
-			const persistedType = options.transport.type
-			const transportType: 'sse' | 'streamable-http' | 'auto' =
-				persistedType === 'sse' || persistedType === 'streamable-http'
-					? persistedType
-					: 'auto'
-			const authProvider = this.createAuthProvider(input.row.callback_url)
-			authProvider.serverId = serverId
-			if (input.row.client_id) authProvider.clientId = input.row.client_id
-			registering = true
-			await this.manager.registerServer(serverId, {
-				url: input.row.server_url,
-				name: input.row.name,
-				callbackUrl: input.row.callback_url,
-				...(input.row.client_id ? { clientId: input.row.client_id } : {}),
-				...(input.row.auth_url ? { authUrl: input.row.auth_url } : {}),
-				client: options.client,
-				transport: withStaticTransportHeaders({
-					...options.transport,
-					type: transportType,
-					authProvider,
-				}),
-			})
-			return { ok: true }
-		} catch (error) {
-			if (registering) {
-				await this.manager.removeServer(serverId).catch(() => {})
-			}
-			this.preRegisteredClientIds.delete(serverId)
-			this.tokenPresence.delete(serverId)
-			await this.ctx.storage.delete(input.entries.map(([key]) => key))
-			throw error
+		const staged: McpHubStagedServer = {
+			row: { ...input.row },
+			keys: input.entries.map(([key]) => key),
 		}
+		await this.ctx.storage.put({
+			...Object.fromEntries(input.entries),
+			[mcpTransferStagingStorageKey(serverId)]: staged,
+		})
+		return { ok: true }
 	}
 
-	/** Org resource transfer, after commit: dial a server imported above. */
+	/** Org resource transfer rollback: drop a staged server and its keys. */
+	async discardTransferredServer(input: { serverId: string }): Promise<void> {
+		const staged = await this.readStagedServer(input.serverId)
+		if (!staged) return
+		await this.ctx.storage.delete([
+			mcpTransferStagingStorageKey(input.serverId),
+			...staged.keys,
+		])
+	}
+
+	/** Org resource transfer, after commit: register and dial a staged server. */
 	async connectTransferredServer(input: {
 		serverId: string
 	}): Promise<McpHubConnectResult> {
 		await this.ensureRestored()
-		const row = this.manager
-			.listServers()
-			.find((server) => server.id === input.serverId)
-		if (!row) {
-			throw new Error(`MCP server "${input.serverId}" is not registered.`)
+		const serverId = input.serverId
+		const staged = await this.readStagedServer(serverId)
+		if (!staged) {
+			throw new Error(`MCP server "${serverId}" is not staged.`)
 		}
-		const connection = this.manager.mcpConnections[input.serverId]
-		if (row.auth_url && connection) {
+		const sealed = await this.readSealedPreRegisteredOAuthClient(serverId)
+		if (sealed) this.preRegisteredClientIds.set(serverId, sealed.clientId)
+		await this.hydrateTokenRecoveryErrors()
+		const persisted = parsePersistedMcpServerOptions(staged.row.server_options)
+		const options = reconnectMcpServerOptions(
+			persisted ? sanitizePersistedMcpServerOptions(persisted) : undefined,
+		)
+		const persistedType = options.transport.type
+		const transportType: 'sse' | 'streamable-http' | 'auto' =
+			persistedType === 'sse' || persistedType === 'streamable-http'
+				? persistedType
+				: 'auto'
+		const authProvider = this.createAuthProvider(staged.row.callback_url)
+		authProvider.serverId = serverId
+		if (staged.row.client_id) authProvider.clientId = staged.row.client_id
+		await this.manager.registerServer(serverId, {
+			url: staged.row.server_url,
+			name: staged.row.name,
+			callbackUrl: staged.row.callback_url,
+			...(staged.row.client_id ? { clientId: staged.row.client_id } : {}),
+			...(staged.row.auth_url ? { authUrl: staged.row.auth_url } : {}),
+			client: options.client,
+			transport: withStaticTransportHeaders({
+				...options.transport,
+				type: transportType,
+				authProvider,
+			}),
+		})
+		await this.ctx.storage.delete(mcpTransferStagingStorageKey(serverId))
+		const connection = this.manager.mcpConnections[serverId]
+		if (staged.row.auth_url && connection) {
 			// Same as the SDK restore path: a pending authorization waits for its
 			// callback instead of dialing the server.
 			connection.connectionState = 'authenticating'
 		} else {
-			await this.connectUsingStoredOAuthTokens(input.serverId)
+			await this.connectUsingStoredOAuthTokens(serverId)
 		}
-		await this.observeServer({ serverId: input.serverId, serverName: row.name })
-		return this.finalizeConnectResult(input.serverId)
+		await this.observeServer({ serverId, serverName: staged.row.name })
+		return this.finalizeConnectResult(serverId)
+	}
+
+	/**
+	 * Org resource transfer, after commit: drop a moved server and all its
+	 * keys from the source hub. An isolate that has not restored yet deletes
+	 * the row directly, because restoring would dial the server first and
+	 * could rotate the tokens the target hub now holds.
+	 */
+	async removeServerForTransfer(input: { serverId: string }): Promise<void> {
+		if (this.restored) {
+			await this.removeServer(input)
+		} else {
+			this.ctx.storage.sql.exec(
+				`DELETE FROM cf_agents_mcp_servers WHERE id = ?`,
+				input.serverId,
+			)
+		}
+		const oauthEntries = await this.ctx.storage.list({
+			prefix: mcpServerOAuthStoragePrefix(input.serverId),
+		})
+		await this.ctx.storage.delete([
+			...oauthEntries.keys(),
+			...mcpServerSidecarStorageKeys(input.serverId),
+		])
 	}
 
 	/** Close all connections and wipe stored servers, tokens, and OAuth state. */

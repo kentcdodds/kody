@@ -310,8 +310,8 @@ function createEffects(input: {
 			calls.push(`importMcp:${userId}:${transfer.row.id}`)
 			return { ok: true }
 		},
-		removeMcpServer: async ({ userId, serverId }) => {
-			calls.push(`removeMcp:${userId}:${serverId}`)
+		discardMcpServerImport: async ({ userId, serverId }) => {
+			calls.push(`discardMcp:${userId}:${serverId}`)
 		},
 		jobCallerContextJson: async ({ userId, packageId }) =>
 			JSON.stringify({ userId, packageId }),
@@ -742,7 +742,7 @@ test('a failure before commit undoes side copies and leaves APP_DB unchanged', a
 	const undo = calls.slice(calls.indexOf(`transferJobs:${src}->${dst}:1`) + 1)
 	expect(undo).toEqual([
 		`transferJobs:${dst}->${src}:1`,
-		`removeMcp:${dst}:server-1`,
+		`discardMcp:${dst}:server-1`,
 		`clearStorage:${dst}:job:${jobId}`,
 		`clearStorage:${dst}:package:${pkgC}`,
 		`clearStorage:${dst}:package:${pkgB}`,

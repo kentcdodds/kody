@@ -51,9 +51,36 @@ test('a server moves between hubs with its stored OAuth state', async () => {
 	expect(await to.listServerIdsForTransfer()).toEqual([])
 	expect(await to.importServerForTransfer(exported!)).toEqual({ ok: true })
 	expect(await to.listServerIdsForTransfer()).toEqual([serverId])
+	// Staged, not registered: a restore before commit cannot dial it.
+	await runInDurableObject(hubFor(toUserId), async (_instance, state) => {
+		expect(
+			state.storage.sql.exec('SELECT id FROM cf_agents_mcp_servers').toArray(),
+		).toEqual([])
+		expect(await state.storage.get(tokenKey)).toEqual({
+			access_token: 'tok',
+			token_type: 'Bearer',
+		})
+	})
+	expect(await to.importServerForTransfer(exported!)).toEqual({
+		ok: false,
+		reason: 'already_registered',
+	})
+
+	const rollbackUserId = ownerIdFromStored(
+		`hub-rollback-${crypto.randomUUID()}`,
+	)
+	const rolledBack = mcpClientHubTransferStub({ env, userId: rollbackUserId })
+	await rolledBack.importServerForTransfer(exported!)
+	await rolledBack.discardTransferredServer({ serverId })
+	expect(await rolledBack.listServerIdsForTransfer()).toEqual([])
+	await runInDurableObject(hubFor(rollbackUserId), async (_instance, state) => {
+		expect([...(await state.storage.list()).keys()]).toEqual([])
+	})
+
 	await expect(
 		to.connectTransferredServer({ serverId }),
 	).resolves.toMatchObject({ serverId, state: 'authenticating' })
+	expect(await to.listServerIdsForTransfer()).toEqual([serverId])
 	await runInDurableObject(hubFor(toUserId), async (_instance, state) => {
 		expect(await state.storage.get(tokenKey)).toEqual({
 			access_token: 'tok',
@@ -81,6 +108,15 @@ test('a server moves between hubs with its stored OAuth state', async () => {
 		}),
 	).toEqual({ ok: false, reason: 'foreign_storage_key' })
 
-	await from.removeServer({ serverId })
+	await from.removeServerForTransfer({ serverId })
 	expect(await from.exportServerForTransfer({ serverId })).toBeNull()
+	await runInDurableObject(hubFor(fromUserId), async (_instance, state) => {
+		expect(await state.storage.get(tokenKey)).toBeUndefined()
+		expect(
+			await state.storage.get(mcpOAuthRefreshTokenStorageKey(serverId)),
+		).toBeUndefined()
+		expect(
+			await state.storage.get('/Kody/other-server/client-2/token'),
+		).toEqual({ access_token: 'other' })
+	})
 })

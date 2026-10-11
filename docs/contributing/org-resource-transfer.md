@@ -94,9 +94,10 @@ refuse. Then, in order:
 4. Copy every moved package, job, and storage bucket's StorageRunner. KV values
    travel by structured clone, so Dates, Maps, and typed arrays survive. Then
    verify KV entry counts and SQL row counts per table.
-5. Copy McpClientHub servers (tokens included) from the source hub into the
-   target hub without connecting them. An import that fails removes what it
-   wrote.
+5. Stage McpClientHub servers (tokens included) in the target hub in one storage
+   write. A staged server is not registered, so nothing (not even a hub restart,
+   which redials every registered server) can connect it before commit. An undo
+   drops the staged server and its keys without touching the rest of the hub.
 6. Re-point package jobs in the jobs worker.
 7. Commit every APP_DB change in one D1 batch, with an
    `org.resources_transferred_out` / `org.resources_transferred_in` audit event
@@ -107,13 +108,14 @@ reverse order. If an undo step also fails, the error names it and the backup key
 so an operator can finish by hand.
 
 After commit, best-effort cleanup runs: source storage is cleared, each moved
-MCP server is removed from the source hub and only then connected in the target
-hub (so only one hub can refresh its OAuth tokens), old logos are deleted,
-orphans cleaned, repo sessions on moved sources discarded, package, memory, and
-job vectors reindexed under the target, and the retriever, skills, subscription,
-invoke-contract, and community caches refreshed. Failures there come back as
-`post_commit_warnings`, and `leftovers` counts any rows still pointing at the
-source.
+MCP server is removed from the source hub with all its keys (without first
+redialing it, when the source hub has not started yet) and only then registered
+and connected in the target hub, so only one hub can refresh its OAuth tokens;
+old logos are deleted, orphans cleaned, repo sessions on moved sources
+discarded, package, memory, and job vectors reindexed under the target, and the
+retriever, skills, subscription, invoke-contract, and community caches
+refreshed. Failures there come back as `post_commit_warnings`, and `leftovers`
+counts any rows still pointing at the source.
 
 The result has the dry-run summary plus `backup_key`, `storage_copies`,
 `leftovers`, and `post_commit_warnings`.

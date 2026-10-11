@@ -64,7 +64,10 @@ export type OrgTransferEffects = {
 		userId: OwnerId
 		transfer: McpHubServerTransfer
 	}): Promise<McpHubServerImportResult>
-	removeMcpServer(input: { userId: OwnerId; serverId: string }): Promise<void>
+	discardMcpServerImport(input: {
+		userId: OwnerId
+		serverId: string
+	}): Promise<void>
 	jobCallerContextJson(input: {
 		userId: OwnerId
 		packageId: string
@@ -312,7 +315,7 @@ async function applyUnderLease(input: {
 			}
 			compensations.push({
 				label: `MCP server ${String(row['name'])}`,
-				run: () => effects.removeMcpServer({ userId: to.id, serverId }),
+				run: () => effects.discardMcpServerImport({ userId: to.id, serverId }),
 			})
 		}
 		if (plan.jobs.length > 0) {

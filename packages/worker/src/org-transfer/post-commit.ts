@@ -72,7 +72,7 @@ export async function runOrgTransferPostCommit(input: {
 	// can refresh (and rotate) the server's OAuth tokens.
 	for (const row of plan.moves.mcp_server_settings) {
 		await step(`remove source MCP server ${String(row['name'])}`, () =>
-			sourceHub.removeServer({ serverId: String(row['id']) }),
+			sourceHub.removeServerForTransfer({ serverId: String(row['id']) }),
 		)
 		await step(`connect MCP server ${String(row['name'])}`, () =>
 			targetHub.connectTransferredServer({ serverId: String(row['id']) }),

@@ -67,8 +67,10 @@ export function defaultOrgTransferEffects(input: {
 			mcpClientHubTransferStub({ env, userId }).importServerForTransfer(
 				transfer,
 			),
-		removeMcpServer: ({ userId, serverId }) =>
-			mcpClientHubTransferStub({ env, userId }).removeServer({ serverId }),
+		discardMcpServerImport: ({ userId, serverId }) =>
+			mcpClientHubTransferStub({ env, userId }).discardTransferredServer({
+				serverId,
+			}),
 		async jobCallerContextJson({ userId, packageId }) {
 			return serializeCallerContext(
 				await createPackageJobCallerContext({
