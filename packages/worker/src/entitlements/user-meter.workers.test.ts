@@ -104,13 +104,13 @@ function sqliteNames(state: DurableObjectState, where: string) {
 		.map((row) => row.name)
 }
 
-function expectSchemaV14(state: DurableObjectState) {
+function expectSchemaV15(state: DurableObjectState) {
 	const version = state.storage.sql
 		.exec<{ value: number }>(
 			`SELECT value FROM user_meter_meta WHERE key = 'schema_version' LIMIT 1`,
 		)
 		.toArray()[0]
-	expect(Number(version?.value)).toBe(14)
+	expect(Number(version?.value)).toBe(15)
 	expect(
 		state.storage.sql
 			.exec<{ name: string }>(`PRAGMA table_info(account_write_leases)`)
@@ -143,13 +143,13 @@ function recentDailyCounterNow(): Date {
 	)
 }
 
-test('fresh UserMeter schema is v14 and warm v7 upgrades to v14 preserving leases', async () => {
+test('fresh UserMeter schema is v15 and warm v7 upgrades to v15 preserving leases', async () => {
 	const fresh = await seedFreeUser('meter-schema-v12-fresh')
 	await runInDurableObject(
 		meterStub(fresh.userId),
 		async (instance: UserMeter, state) => {
 			expect(instance).toBeInstanceOf(UserMeter)
-			expectSchemaV14(state)
+			expectSchemaV15(state)
 		},
 	)
 
@@ -196,7 +196,7 @@ test('fresh UserMeter schema is v14 and warm v7 upgrades to v14 preserving lease
 			}
 			proto.initializeSchema.call(instance)
 
-			expectSchemaV14(state)
+			expectSchemaV15(state)
 			expect(
 				state.storage.sql
 					.exec(
@@ -1023,6 +1023,14 @@ test('UserMeter deletion leases: mark, acquire, release, repair, export, and pur
 		released: true,
 	})
 	expect(await meterB.countActiveWriteLeases()).toEqual({ count: 1 })
+	// A reset retry of the same release still proves the lease was held, while
+	// a token that was never acquired does not.
+	await expect(meterB.releaseWriteLease({ token: tokenA })).resolves.toEqual({
+		released: true,
+	})
+	await expect(
+		meterB.releaseWriteLease({ token: 'lease_never_acquired_token' }),
+	).resolves.toEqual({ released: false })
 
 	// Acquiring on a deleted account is blocked.
 	await expect(
