@@ -3,6 +3,7 @@ import { expect, test } from 'vitest'
 import { createAuditTestDb } from '#worker/test-support/create-audit-db.ts'
 import { applyAllMigrations } from '#worker/test-support/apply-all-migrations.ts'
 import { createD1FromSqlite } from '#worker/test-support/create-d1-from-sqlite.ts'
+import { consoleError } from '#worker/test-support/console-spies.ts'
 import {
 	deliverOrgAuditOutboxPayload,
 	drainOrgAuditOutbox,
@@ -75,6 +76,52 @@ test('delivery clears outbox when AUDIT_DB row already exists', async () => {
 		.prepare(`SELECT COUNT(*) AS count FROM org_audit_outbox`)
 		.first<{ count: number }>()
 	expect(pending?.count).toBe(0)
+})
+
+test('drain advances past invalid rows to deliver later events', async () => {
+	consoleError.mockImplementation(() => {})
+	const appDb = createAppDb()
+	const auditDb = createAuditTestDb()
+	const writer = {
+		appDb,
+		db: auditDb,
+		actorUserId: 'actor-1',
+		actorUsername: null,
+		credentialKind: null,
+		credentialId: null,
+	}
+	await appDb
+		.prepare(
+			`INSERT INTO org_audit_outbox (id, org_id, payload_json, created_at)
+			 VALUES (?, ?, ?, ?)`,
+		)
+		.bind('bad-1', 'org-1', '{not-json', '2026-01-01T00:00:00.000Z')
+		.run()
+	const plan = await enqueueOrgAuditOutbox(writer, {
+		orgId: 'org-1',
+		action: 'member.added',
+		targetUserId: 'user-2',
+	})
+	await appDb
+		.prepare(`UPDATE org_audit_outbox SET created_at = ? WHERE id = ?`)
+		.bind('2026-01-01T00:00:01.000Z', plan.outboxId)
+		.run()
+
+	const result = await drainOrgAuditOutbox({
+		env: { APP_DB: appDb, AUDIT_DB: auditDb } as Env,
+		limit: 1,
+	})
+	expect(result).toMatchObject({ status: 'ok', delivered: 1, errors: 1 })
+	const auditRow = await auditDb
+		.prepare(`SELECT id FROM org_audit_events WHERE id = ?`)
+		.bind(plan.outboxId)
+		.first<{ id: string }>()
+	expect(auditRow?.id).toBe(plan.outboxId)
+	const remainingBad = await appDb
+		.prepare(`SELECT id FROM org_audit_outbox WHERE id = ?`)
+		.bind('bad-1')
+		.first<{ id: string }>()
+	expect(remainingBad?.id).toBe('bad-1')
 })
 
 test('user purge redacts pending outbox actor ids', async () => {

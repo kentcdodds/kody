@@ -250,19 +250,38 @@ export async function drainOrgAuditOutbox(input: {
 	const batchLimit = input.limit ?? drainBatchSize
 	let delivered = 0
 	let errors = 0
+	// Advance past rows already attempted in this drain so a batch of
+	// malformed or temporarily failed rows cannot starve later ones.
+	let cursor: { createdAt: string; id: string } | null = null
+	type OutboxDrainRow = {
+		id: string
+		payload_json: string
+		created_at: string
+	}
 
 	while ((input.clock ?? Date.now)() < deadline) {
-		const rows = await input.env.APP_DB.prepare(
-			`SELECT id, payload_json
-			 FROM org_audit_outbox
-			 ORDER BY created_at ASC
-			 LIMIT ?`,
-		)
-			.bind(batchLimit)
-			.all<{ id: string; payload_json: string }>()
+		const rows: { results: Array<OutboxDrainRow> } = cursor
+			? await input.env.APP_DB.prepare(
+					`SELECT id, payload_json, created_at
+					 FROM org_audit_outbox
+					 WHERE (created_at > ? OR (created_at = ? AND id > ?))
+					 ORDER BY created_at ASC, id ASC
+					 LIMIT ?`,
+				)
+					.bind(cursor.createdAt, cursor.createdAt, cursor.id, batchLimit)
+					.all<OutboxDrainRow>()
+			: await input.env.APP_DB.prepare(
+					`SELECT id, payload_json, created_at
+					 FROM org_audit_outbox
+					 ORDER BY created_at ASC, id ASC
+					 LIMIT ?`,
+				)
+					.bind(batchLimit)
+					.all<OutboxDrainRow>()
 		if (rows.results.length === 0) break
 		for (const row of rows.results) {
 			if ((input.clock ?? Date.now)() >= deadline) break
+			cursor = { createdAt: row.created_at, id: row.id }
 			const payload = parseOrgAuditOutboxPayload(row.payload_json)
 			if (!payload) {
 				errors += 1
