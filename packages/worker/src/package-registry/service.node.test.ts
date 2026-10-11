@@ -1044,6 +1044,9 @@ function createEntitlementsDatabase(input: {
 							) {
 								return { count: savedPackageCount } as T
 							}
+							if (query.includes('FROM org_memberships')) {
+								return { count: 1 } as T
+							}
 							const storageByteTables = [
 								'email_attachments',
 								'email_messages',
