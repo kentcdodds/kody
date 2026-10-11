@@ -305,10 +305,9 @@ registry does not own the run record (keyed package invocations, inline
 workflows), callers pass `runSurface` so UWD is not inferred as
 `package_export`.
 
-D1 `usage_rollups` stay keyed by `(user_id, metric, month)` — the monthly total
-is unchanged. Surface share is an Analytics Engine query. Hourly aggregation
-does not write a second rollup dimension. Use
-`buildUniqueWorkerDayBySurfaceQuery` in
+D1 `usage_rollups` stay keyed by `(user_id, metric, month)` for the monthly
+total. Surface share is an Analytics Engine query. Hourly aggregation does not
+write a second rollup dimension. Use `buildUniqueWorkerDayBySurfaceQuery` in
 `packages/worker/src/usage/aggregate-rollups.ts`:
 
 ```sql

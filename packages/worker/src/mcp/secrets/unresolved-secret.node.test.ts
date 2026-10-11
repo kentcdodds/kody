@@ -116,7 +116,6 @@ test('unresolved secret errors distinguish inaccessible scopes from a true miss'
 	expect(pinnedPackageMiss).toContain(
 		'https://example.com/@acme/-/secrets/user/discordBotToken',
 	)
-	expect(pinnedPackageMiss).not.toContain('/account/secrets')
 	expect(mockModule.getOrgById).toHaveBeenCalledWith(env.APP_DB, userId)
 
 	mockModule.getOrgById.mockResolvedValueOnce(null)

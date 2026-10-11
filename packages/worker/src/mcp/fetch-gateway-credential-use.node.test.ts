@@ -2,7 +2,7 @@
  * Real-boundary coverage: expandSecretPlaceholders → authorize for ambient
  * credential use. Member / outside collaborator without secret:use or
  * integration:use must not expand org placeholders; Owners and granted
- * actors may. Package authority keeps package attachment (not this gate).
+ * actors may. A saved package never stands in for the person.
  */
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -335,14 +335,13 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		'Bearer oauth-access',
 	)
 
-	// Package authority still expands without a secret:use grant (self-authored
-	// package attachment). Collaborator C has no secret grant; package
-	// authority skips the ambient gate.
+	// Package authority never stands in for the person: collaborator C has no
+	// secret grant, so a saved package they run is denied the secret too.
 	vi.mocked(secretService.resolveSecret).mockResolvedValue(
 		userSecret('pkg-secret-value', ['example.com']),
 	)
 	mockPackageManifest('@ownera/notes')
-	const packageAuthoritySecret = await expandSecretPlaceholders({
+	const packageAuthoritySecret = expandSecretPlaceholders({
 		request: secretRequest(),
 		props: {
 			baseUrl: 'https://example.com',
@@ -361,9 +360,11 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 		},
 		env,
 	})
-	expect(packageAuthoritySecret.request.headers.get('Authorization')).toBe(
-		'Bearer pkg-secret-value',
-	)
+	await expect(packageAuthoritySecret).rejects.toMatchObject({
+		name: 'AuthorizationError',
+		code: 'missing_permission',
+		permission: 'secret:use',
+	})
 })
 
 test('leak: a declared package credential is refused outside its placement, in the URL, or over plain HTTP, before it resolves', async () => {

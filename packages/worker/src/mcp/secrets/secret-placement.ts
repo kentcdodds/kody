@@ -2,8 +2,10 @@
  * Where the fetch gateway may substitute a credential (credentials plan v4,
  * open call 15). Checked before any credential resolves:
  *
- * - every placeholder sits in a request header, never the URL or query (the
- *   body is data: it is forwarded verbatim and never scanned or substituted);
+ * - every placeholder sits in a request header, never the URL or query;
+ * - the body holds no placeholder: it is never a substitution site, so the
+ *   gateway refuses rather than send the reference upstream unsubstituted
+ *   (an allowed body is forwarded byte for byte);
  * - the request is HTTPS;
  * - in a package that declares `kody.credentials`, each placeholder names a
  *   slot of the matching kind and sits in that slot's declared header, with the
@@ -121,7 +123,20 @@ type PlacedReference =
 	| { kind: 'provider-secret'; provider: string; placeholder: string }
 
 const headerRuleHint =
-	'The fetch gateway substitutes a secret only into a request header, never the URL or query, and sends the body verbatim.'
+	'The fetch gateway substitutes a secret only into a request header, never the URL, query, or body.'
+
+const bodyRuleHint =
+	'The fetch gateway never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream.'
+
+/**
+ * Percent-decodes the punctuation of every placeholder form, so a reference
+ * built with `URLSearchParams` (`%7B%7Bsecret%3Aname%7D%7D`) is still found.
+ */
+function decodePlaceholderPunctuation(value: string) {
+	return value.replaceAll(/%(7B|7D|3A|2F|3D|2C|7C)/gi, (_, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
 
 function referencesIn(value: string): PlacedReference[] {
 	return [
@@ -324,7 +339,7 @@ export async function assertSecretPlacement(input: {
 	/** Read only when a header holds a placeholder. */
 	loadPolicy: () => Promise<SecretPlacementPolicy>
 }) {
-	const urlReference = referencesIn(input.url)[0]
+	const urlReference = referencesIn(decodePlaceholderPunctuation(input.url))[0]
 	if (urlReference) throw refuseOutsideHeader(urlReference, 'URL')
 	const headerReferences = Array.from(input.headers.entries()).flatMap(
 		([headerName, headerValue]) => {
@@ -346,4 +361,20 @@ export async function assertSecretPlacement(input: {
 	for (const entry of headerReferences) {
 		assertDeclaredHeaderReferences({ policy, ...entry })
 	}
+}
+
+/**
+ * Throws a {@link SecretPlacementError} when the request body holds a
+ * placeholder. The body is never a substitution site, so sending it would
+ * put the literal reference upstream where the call then fails in a
+ * confusing way. Only reads the bytes; an allowed body is sent unchanged.
+ */
+export function assertNoBodyPlaceholder(body: Uint8Array | null) {
+	if (!body || body.byteLength === 0) return
+	const text = decodePlaceholderPunctuation(new TextDecoder().decode(body))
+	const reference = referencesIn(text)[0]
+	if (!reference) return
+	throw new SecretPlacementError(
+		`${describeReference(reference)} is in the request body. ${bodyRuleHint} Send a credential in a header instead, for example headers: { Authorization: 'Bearer ${reference.placeholder}' }. A value that is not a credential (such as an account id) belongs in params or package storage, not a secret. To send the placeholder text itself (a message that quotes the syntax), set the request header x-kody-secret-resolution: headers-only.`,
+	)
 }

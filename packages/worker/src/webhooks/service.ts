@@ -15,7 +15,6 @@ import {
 } from '#worker/authorization/authorize.ts'
 import { getAppBaseUrl } from '#worker/app-base-url.ts'
 import { getUniqueConstraintField } from '#worker/database-errors.ts'
-import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
 import { ensureWebhookEnablementForMinter } from '#worker/enablements/service.ts'
 import { resolvePublicUsername } from '#worker/identity/user-lookup.ts'
 import {
@@ -342,13 +341,7 @@ export async function mintWebhookUrlForUser(input: {
 		webhookName,
 	})
 
-	const migration = await getEnablementOrgMigration({
-		db: input.env.APP_DB,
-		orgId: savedPackage.userId,
-	})
-	const verification =
-		declared.verification ??
-		(migration.state === 'migrated' ? defaultWebhookVerification : null)
+	const verification = declared.verification ?? defaultWebhookVerification
 
 	const urlSecret = await generateWebhookUrlSecret()
 	const urlSecretHash = await hashWebhookUrlSecret(urlSecret)
@@ -708,8 +701,8 @@ export async function revealWebhookUrlForWebsite(input: {
 
 /**
  * The generated `X-Kody-Signature` secret, revealed only when it is the one
- * inbound delivery checks: the org is on enablements and the manifest
- * declares no verification of its own. Provider-issued secrets stay hidden.
+ * inbound delivery checks: the manifest declares no verification of its
+ * own. Provider-issued secrets stay hidden.
  */
 async function revealDefaultSigningSecret(input: {
 	env: Env
@@ -719,11 +712,6 @@ async function revealDefaultSigningSecret(input: {
 	savedPackage: SavedPackageRecord
 }): Promise<string | null> {
 	if (!input.endpoint.hmacSecretEncrypted) return null
-	const migration = await getEnablementOrgMigration({
-		db: input.env.APP_DB,
-		orgId: input.endpoint.userId,
-	})
-	if (migration.state !== 'migrated') return null
 	const declared = await loadDeclaredWebhook({
 		env: input.env,
 		baseUrl: input.baseUrl,

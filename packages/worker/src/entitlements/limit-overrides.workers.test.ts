@@ -97,6 +97,7 @@ const adminId = testStableUserIdFromEmail('limits-admin@example.com')
 async function adminAudit(): Promise<OrgAuditWriter> {
 	await ensureOrgAuditTable()
 	return {
+		appDb: env.APP_DB,
 		db: env.APP_DB,
 		actorUserId: adminId,
 		actorUsername: 'limits-admin',

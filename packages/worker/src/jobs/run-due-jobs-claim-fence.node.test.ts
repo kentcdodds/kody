@@ -1,4 +1,8 @@
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	ownerIdFromStored,
+	personIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
+import { type EnablementRun } from '#worker/request-context/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { consoleInfo } from '#worker/test-support/console-spies.ts'
 import { type JobRecord } from './types.ts'
@@ -26,11 +30,17 @@ const listArchivedJobArtifactsDueBefore = vi.fn<
 const getEntitySourceByIdForUser = vi.fn()
 const getSavedPackageById = vi.fn()
 
-const planEnablementRuns = vi.fn(async () => ({
-	mode: 'legacy' as 'legacy' | 'enablements',
-	runs: [],
-	skipped: [],
-}))
+const enablementRun: EnablementRun = {
+	id: 'enablement-fenced',
+	enabler: { userId: personIdFromStored('user-fenced'), username: 'fenced' },
+	role: 'owner',
+}
+const planEnablementRuns = vi.fn(
+	async (): Promise<{ runs: Array<EnablementRun>; skipped: [] }> => ({
+		runs: [enablementRun],
+		skipped: [],
+	}),
+)
 
 vi.mock('#worker/enablements/run-gate.ts', () => ({
 	planEnablementRuns: () => planEnablementRuns(),
@@ -363,11 +373,8 @@ test('scheduled package job claims carry package identity and the published sour
 })
 
 test('a scheduled slot with no enablement on records no run and does not use up a once job', async () => {
-	planEnablementRuns.mockResolvedValue({
-		mode: 'enablements',
-		runs: [],
-		skipped: [],
-	})
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
+	planEnablementRuns.mockResolvedValueOnce({ runs: [], skipped: [] })
 	claimRunRecord.mockClear()
 	finalizeClaimedJobRow.mockReset()
 	retryClaimedJobRow.mockReset()
@@ -410,9 +417,4 @@ test('a scheduled slot with no enablement on records no run and does not use up 
 		}),
 	)
 	expect(claimRunRecord).not.toHaveBeenCalled()
-	planEnablementRuns.mockResolvedValue({
-		mode: 'legacy',
-		runs: [],
-		skipped: [],
-	})
 })

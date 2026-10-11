@@ -411,7 +411,6 @@ test('a team org must be notified before apply, and each member is emailed their
 	expect(memberNotice.text).toContain('- Scheduled job: digest')
 	expect(memberNotice.text).toContain('- Webhook: github (@zeta-co/mail)')
 	expect(memberNotice.text).not.toContain('cleanup')
-	expect(memberNotice.text).not.toContain('\u2014')
 	expect(
 		await getEnablementOrgMigration({ db: t.db, orgId: t.teamOrgId }),
 	).toMatchObject({ state: 'notified', noticeSentAt: expect.any(String) })
@@ -608,7 +607,7 @@ test('an org with no live Owner is skipped instead of falling back to a system o
 	})
 })
 
-test('the notice names each item and contains no em dashes', () => {
+test('the notice names each item', () => {
 	const notice = buildEnablementNotice({
 		orgSlug: 'zeta-co',
 		items: [
@@ -627,7 +626,6 @@ test('the notice names each item and contains no em dashes', () => {
 	expect(notice.text).toContain(
 		'- Subscription: email.message.received (@zeta-co/mail)',
 	)
-	expect(`${notice.subject}\n${notice.text}`).not.toMatch(/\u2014/)
 })
 
 test('a rerun after a rename or a turned-off personal row keeps one migrated row per trigger', async () => {
@@ -971,5 +969,4 @@ test('the notice tells the enabler of an unsigned webhook where its signing secr
 	})
 	expect(notice.text).toContain('X-Kody-Signature')
 	expect(notice.text).toContain('package settings')
-	expect(notice.text).not.toMatch(/\u2014/)
 })

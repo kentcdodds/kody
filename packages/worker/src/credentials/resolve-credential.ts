@@ -9,9 +9,8 @@
  * 1. checks that the acting person still has access to the org (live
  *    membership, team, or outside-collaborator grant, org not deleted or
  *    suspended), so access that ended without a cascade cannot resolve;
- * 2. requires the actor's per-credential Use unless the package stamp is
- *    attested (see `PackageStamp`). An enablement run (a trigger acting as
- *    its enabler) always needs the enabler's own Use, attested or not, and a
+ * 2. requires the actor's per-credential Use, whatever the package stamp. A
+ *    trigger acts as its enabler, so it needs the enabler's own Use, and a
  *    denial pauses that enablement;
  * 3. applies the package rules for that use (secret allowlists, integration
  *    and MCP usage modes, vault provider grants), then reads storage;
@@ -19,9 +18,9 @@
  *    outcome (success, not found, denied, failed), for every kind of actor.
  *    The row never holds the credential value.
  *
- * Legacy Automation (a request with no acting person, in an org not yet
- * moved to enablements) acts as Owner. Platform paths with no request at all
- * (webhook ingress) pass an attested package stamp.
+ * A request with no acting person holds no permissions. The only path with
+ * no request at all is webhook ingress verifying a signature, which passes an
+ * attested package stamp.
  */
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
@@ -442,19 +441,19 @@ function integrationResource(orgId: OwnerId, name: string): OrgResource {
 }
 
 /**
- * Ad-hoc code and claimed package stamps need Use on the concrete credential.
- * Attested package runs use package rules as the grant (ADR 0021, amended),
- * except enablement runs: a trigger resolves an org credential only while
- * its enabler has Use on it.
+ * Every run needs its person's Use on the concrete credential, saved package
+ * or not: package rules (allowed packages, integration usage mode) only
+ * narrow it further. A trigger resolves an org credential only while its
+ * enabler has Use on it.
  */
 async function authorizeActorUse(
 	input: ResolveCredentialInput<CredentialTarget>,
 	permission: 'secret:use' | 'integration:use',
 	resource: OrgResource,
 ) {
-	if (input.packageStamp?.kind === 'attested' && !enablementIdOf(input.actor)) {
-		return
-	}
+	// Webhook ingress verifies a signature before any run exists; the secret
+	// never reaches package code.
+	if (!input.actor && input.credential.use === 'webhook-secret') return
 	await authorize(
 		{ env: input.env, request: input.actor },
 		permission,

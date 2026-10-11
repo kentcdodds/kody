@@ -3,10 +3,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from 'vitest'
 import { liveFreeOwnedOrgCountSql } from '#worker/orgs/billing.ts'
-import {
-	isLiveSeatCountQuery,
-	mockLiveSeatCountRow,
-} from './live-seat-count-query.ts'
+import { isLiveSeatCountQuery } from './live-seat-count-query.ts'
 
 function countLiveSeatsSql() {
 	const source = readFileSync(
@@ -27,8 +24,6 @@ test('isLiveSeatCountQuery matches countLiveSeats and fixture seat rows', () => 
 	expect(isLiveSeatCountQuery(sql)).toBe(true)
 	expect(isLiveSeatCountQuery(sql.toLowerCase())).toBe(true)
 	expect(isLiveSeatCountQuery(sql.replace(/\s+/g, ' ').trim())).toBe(true)
-	expect(mockLiveSeatCountRow()).toEqual({ count: 1 })
-	expect(mockLiveSeatCountRow(4)).toEqual({ count: 4 })
 })
 
 test('isLiveSeatCountQuery ignores other org_memberships statements', () => {

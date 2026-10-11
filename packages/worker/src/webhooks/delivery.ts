@@ -143,9 +143,9 @@ type WebhookInvocationInput = {
 }
 
 /**
- * Run a webhook's bound export. In an org moved to enablements it runs as the
- * endpoint's enabler; with no on enablement (paused, off, or never enabled)
- * nothing runs and the delivery fails with 409 `enablement_not_on`.
+ * Run a webhook's bound export as the endpoint's enabler. With no on
+ * enablement (paused, off, or never enabled) nothing runs and the delivery
+ * fails with 409 `enablement_not_on`.
  */
 export async function dispatchWebhookInvocation(
 	input: WebhookInvocationInput,
@@ -156,9 +156,6 @@ export async function dispatchWebhookInvocation(
 		packageId: input.endpoint.packageId,
 		trigger: { kind: 'webhook', instanceId: input.endpoint.id },
 	})
-	if (plan.mode === 'legacy') {
-		return await invokeWebhookExport(input, null, input.idempotencyKey)
-	}
 	const [run] = plan.runs
 	if (!run) {
 		return buildJsonErrorResponse({
@@ -177,7 +174,7 @@ export async function dispatchWebhookInvocation(
 
 async function invokeWebhookExport(
 	input: WebhookInvocationInput,
-	enablement: EnablementRun | null,
+	enablement: EnablementRun,
 	idempotencyKey: string,
 ) {
 	return await invokePackageExport({
@@ -191,7 +188,7 @@ async function invokeWebhookExport(
 			request: {
 				kind: 'webhook',
 				sourceId: input.endpoint.id,
-				...(enablement ? { enablement } : {}),
+				enablement,
 			},
 		},
 		request: {

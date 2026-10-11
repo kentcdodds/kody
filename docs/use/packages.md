@@ -185,9 +185,18 @@ for the switch to assignments.
   or none. Vault references (`{{secret/<provider>:<ref>}}`) name no slot and
   keep the header-only, HTTPS, and item-website rules. Anything else is refused
   before the credential resolves, with an error naming the slot and the rule.
-- There is no body placement. The request body is forwarded verbatim, so the
-  gateway never substitutes a slot placeholder there (a login password, a
-  form-encoded token exchange).
+- There is no body placement. The gateway never substitutes a slot placeholder
+  into a request body (a login password, a form-encoded token exchange), and it
+  refuses a body that holds one rather than send it unsubstituted.
+
+To see which old-style credential references a package still has, run
+`repoRunChecks`. Its `credentials` result lists each file with the codemod 0010
+pattern labels it matches (for example `- src/index.ts: literal secret`),
+without credential names. `repoPublishSession` and `packageSave` repeat that
+list in their output, and `packagePublishExternalPush` includes the result in
+`checks`. It never fails a check or blocks a publish. The labels are described
+in
+[package codemods](../contributing/package-codemods.md#0010-detect-legacy-credential-patterns).
 
 ### npm dependencies
 

@@ -1,8 +1,8 @@
 /**
  * The one gate every trigger passes before it runs (credentials plan v4,
- * section 3.3). In an org moved to enablements, a trigger runs once per on
- * enablement, as that enablement's enabler, and only while the enabler still
- * has access. Legacy orgs keep the old Automation run.
+ * section 3.3). A trigger runs once per on enablement, as that enablement's
+ * enabler, and only while the enabler still has access. A trigger nobody
+ * turned on runs nothing: there is no run without a person.
  *
  * Lost access pauses the enablement and its events are dropped. The next
  * event checks again and resumes it once access is back. There is never a
@@ -27,7 +27,6 @@ import {
 	type EnablementRun,
 } from '#worker/request-context/request-context.ts'
 import {
-	getEnablementOrgMigration,
 	listEnablementsForInstance,
 	pauseEnablement,
 	resumeEnablement,
@@ -57,13 +56,10 @@ export type EnablementSkip = {
 	reason: EnablementSkipReason
 }
 
-export type EnablementRunPlan =
-	| { mode: 'legacy' }
-	| {
-			mode: 'enablements'
-			runs: Array<EnablementRun>
-			skipped: Array<EnablementSkip>
-	  }
+export type EnablementRunPlan = {
+	runs: Array<EnablementRun>
+	skipped: Array<EnablementSkip>
+}
 
 /**
  * What an org-wide event is about, for the audience rule. `resource: null`
@@ -205,8 +201,6 @@ export async function planEnablementRuns(input: {
 	audience?: EnablementAudience | null
 }): Promise<EnablementRunPlan> {
 	const db = input.env.APP_DB
-	const migration = await getEnablementOrgMigration({ db, orgId: input.orgId })
-	if (migration.state !== 'migrated') return { mode: 'legacy' }
 	const enablements = await listEnablementsForInstance({
 		db,
 		orgId: input.orgId,
@@ -262,5 +256,5 @@ export async function planEnablementRuns(input: {
 		}
 		runs.push(check.run)
 	}
-	return { mode: 'enablements', runs, skipped }
+	return { runs, skipped }
 }

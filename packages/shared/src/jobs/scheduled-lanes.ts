@@ -27,6 +27,7 @@ export const scheduledLaneNames = [
 	'dr_export',
 	'dr_export_watchdog',
 	'job_schedule_watchdog',
+	'org_audit_outbox',
 ] as const
 
 export type ScheduledLaneName = (typeof scheduledLaneNames)[number]
@@ -248,6 +249,7 @@ export function getScheduledLaneCadence(
 		'storage_bucket_estimate_backfill',
 		'd1_storage_reconciliation',
 		'oauth_purge_expired',
+		'org_audit_outbox',
 	]
 	if (shouldRunRetentionCron(scheduledAt)) {
 		lanes.push(

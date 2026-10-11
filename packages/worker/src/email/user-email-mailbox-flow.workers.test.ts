@@ -7,6 +7,7 @@ import {
 	exportRunRecords,
 } from '#worker/run-records/service.ts'
 import {
+	enableSubscriptionForOwner,
 	ensurePackageSubscriptionTestSchema,
 	seedAccount,
 } from '#worker/test-support/workers-seed.ts'
@@ -75,6 +76,12 @@ async function seedSubscribedPackage(input: {
 					'package.json', '/', ?, ?)`,
 		).bind(sourceId, input.userId, packageId, now, now),
 	])
+	await enableSubscriptionForOwner({
+		db: env.APP_DB,
+		userId: input.userId,
+		packageId,
+		topic: inboundTopic,
+	})
 	const manifest = {
 		name: '@flow/mailbox-flow',
 		exports: { '.': './src/index.ts' },

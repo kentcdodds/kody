@@ -17,6 +17,7 @@ import { type RequestContext } from '@kody-internal/shared/request-context.ts'
 import { expect, test, vi } from 'vitest'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
+import { insertEnablement } from '#worker/enablements/repo.ts'
 import { upsertGrant } from '#worker/orgs/access-writes.ts'
 import { createOrganization } from '#worker/orgs/create-organization.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
@@ -187,11 +188,6 @@ async function setup() {
 		.prepare(`SELECT id FROM orgs WHERE slug = 'quillworks'`)
 		.first<{ id: string }>()
 	const orgId = ownerIdFromStored(teamOrg!.id)
-	// These tests cover an org not yet moved to enablements.
-	await db
-		.prepare(`DELETE FROM enablement_org_migrations WHERE org_id = ?`)
-		.bind(orgId)
-		.run()
 	for (const memberId of [beaId, cyId]) {
 		await db
 			.prepare(
@@ -237,6 +233,41 @@ async function setup() {
 			createdByUserId: ownerId,
 			audit: createTestOrgAuditWriter(),
 		})
+	}
+
+	// Bea may use the team secret. Each email subscription runs only for the
+	// people who turned it on: Bea for pkg-shared, the Owner for all three.
+	await upsertGrant({
+		db,
+		orgId,
+		resourceType: 'secret',
+		resourceId: 'teamToken',
+		subject: { type: 'user', id: beaId },
+		preset: 'use',
+		permissions: null,
+		createdByUserId: ownerId,
+		audit: createTestOrgAuditWriter(),
+	})
+	const enablementIds = new Map<string, string>()
+	for (const [packageId, enablerUserId] of [
+		['pkg-shared', beaId],
+		['pkg-shared', ownerId],
+		['pkg-ops', ownerId],
+		['pkg-private', ownerId],
+	] as const) {
+		const enablement = await insertEnablement({
+			db,
+			enablement: {
+				orgId,
+				packageId,
+				triggerKind: 'subscription',
+				triggerName: topic,
+				instanceId: packageId,
+				enablerUserId: personIdFromStored(enablerUserId),
+				origin: 'enabled',
+			},
+		})
+		enablementIds.set(`${packageId}:${enablerUserId}`, enablement.id)
 	}
 
 	const env = {
@@ -397,6 +428,8 @@ async function setup() {
 	return {
 		db,
 		orgId,
+		enablementId: (packageId: string, enablerUserId: string) =>
+			enablementIds.get(`${packageId}:${enablerUserId}`),
 		ownerId,
 		beaId,
 		cyId,
@@ -430,17 +463,14 @@ test('a member email runs as that member, only their packages, audited under the
 	expect(t.runs.map((run) => run.packageId)).toEqual(['pkg-shared'])
 	const [run] = t.runs
 	expect(run?.error).toBeNull()
+	const enablementId = t.enablementId('pkg-shared', t.beaId)
 	expect(run?.request).toEqual({
 		org: { id: t.orgId, slug: 'quillworks' },
 		actor: { userId: t.beaId, username: 'bea' },
-		attribution: {
-			kind: 'automation',
-			source: 'email',
-			sourceId: 'inbox-acme',
-		},
+		attribution: { kind: 'user', userId: t.beaId },
 		credential: {
 			kind: 'inbound-email',
-			id: 'inbox-acme',
+			id: enablementId,
 			orgId: t.orgId,
 			scopes: null,
 			profileName: null,
@@ -454,7 +484,7 @@ test('a member email runs as that member, only their packages, audited under the
 		org_id: t.orgId,
 		actor_user_id: t.beaId,
 		credential_kind: 'inbound-email',
-		credential_id: 'inbox-acme',
+		credential_id: enablementId,
 		resource_id: 'teamToken',
 		result: 'success',
 	})
@@ -466,7 +496,7 @@ test('a member email runs as that member, only their packages, audited under the
 	expectNoValueIn(rows)
 })
 
-test('a verified non-member runs as the inbox owner', async () => {
+test('a verified non-member runs the inbox owner’s enablements, as the Owner', async () => {
 	const t = await setup()
 
 	for (const from of [
@@ -485,12 +515,12 @@ test('a verified non-member runs as the inbox owner', async () => {
 			expect(run.error).toBeNull()
 			expect(run.request).toMatchObject({
 				org: { id: t.orgId },
-				actor: null,
-				membership: null,
-				attribution: {
-					kind: 'automation',
-					source: 'email',
-					sourceId: 'inbox-acme',
+				actor: { userId: t.ownerId },
+				membership: { role: 'owner' },
+				attribution: { kind: 'user', userId: t.ownerId },
+				credential: {
+					kind: 'inbound-email',
+					id: t.enablementId(run.packageId, t.ownerId),
 				},
 			})
 		}
@@ -500,11 +530,11 @@ test('a verified non-member runs as the inbox owner', async () => {
 	expect(rows).toHaveLength(6)
 	for (const row of rows) {
 		expect(row).toMatchObject({
-			actor_user_id: null,
+			actor_user_id: t.ownerId,
 			credential_kind: 'inbound-email',
 			result: 'success',
 		})
-		expect(details(row)).toMatchObject({ actorKind: 'automation' })
+		expect(details(row)).toMatchObject({ actorKind: 'person' })
 	}
 })
 
@@ -609,12 +639,15 @@ test('a member who lost org access is denied at resolve time, with no fallback',
 	expect(details(rows[0])).toMatchObject({ reason: 'wrong_org' })
 	expectNoValueIn(rows)
 
-	// Once removed, Bea is a non-member: her next email runs as the inbox
-	// owner under the non-member rule, not as her.
+	// Once removed, Bea is a non-member: her next email runs the inbox
+	// owner's enablements under the non-member rule, never as her.
 	t.setBeforeResolve(async () => {})
 	t.runs.splice(0)
 	await t.sendEmail({ from: 'bea@acme.example', authResults: dmarcPass })
-	expect(t.runs.every((run) => run.request?.actor === null)).toBe(true)
+	expect(t.runs.length).toBeGreaterThan(0)
+	expect(t.runs.every((run) => run.request?.actor?.userId === t.ownerId)).toBe(
+		true,
+	)
 })
 
 test('classification reads live account state for the inbox org', async () => {

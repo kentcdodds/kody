@@ -16,9 +16,7 @@ import {
 } from '#universal/plans.ts'
 import { type AdminOrgLimits } from '#universal/loader-data.ts'
 import {
-	deleteOrgLimitOverride,
 	listOrgLimitOverrides,
-	upsertOrgLimitOverride,
 	type OrgLimitOverrideRecord,
 } from '#worker/entitlements/limit-overrides.ts'
 import {
@@ -26,7 +24,7 @@ import {
 	invalidateCachedUserEntitlement,
 } from '#worker/entitlements/service.ts'
 import {
-	recordOrgAuditEvent,
+	runAppDbBatchWithOrgAudit,
 	type OrgAuditWriter,
 } from '#worker/orgs/org-audit.ts'
 import { getOrgById, getOrgBySlug, type OrgRecord } from '#worker/orgs/repo.ts'
@@ -233,20 +231,30 @@ export async function applyAdminOrgLimitOverrideChanges(input: {
 		const previous = existing.get(change.key) ?? null
 		if (change.value === null) {
 			if (!previous) continue
-			await deleteOrgLimitOverride(input.db, { orgId: org.id, key: change.key })
-			changedKeys.push(change.key)
-			await recordOrgAuditEvent(input.audit, {
-				orgId: org.id,
-				action: orgLimitOverrideAuditActions.removed,
-				resourceType: 'limit_override',
-				resourceId: change.key,
-				details: {
-					limitKey: change.key,
-					previous: auditSnapshot(previous),
-					next: null,
-					reason,
+			await runAppDbBatchWithOrgAudit({
+				appDb: input.db,
+				audit: input.audit,
+				statements: [
+					input.db
+						.prepare(
+							`DELETE FROM org_limit_overrides WHERE org_id = ? AND limit_key = ?`,
+						)
+						.bind(org.id, change.key),
+				],
+				event: {
+					orgId: org.id,
+					action: orgLimitOverrideAuditActions.removed,
+					resourceType: 'limit_override',
+					resourceId: change.key,
+					details: {
+						limitKey: change.key,
+						previous: auditSnapshot(previous),
+						next: null,
+						reason,
+					},
 				},
 			})
+			changedKeys.push(change.key)
 			continue
 		}
 		if (
@@ -257,35 +265,56 @@ export async function applyAdminOrgLimitOverrideChanges(input: {
 		) {
 			continue
 		}
-		await upsertOrgLimitOverride(input.db, {
-			orgId: org.id,
-			key: change.key,
-			value: change.value,
-			expiresAt: change.expiresAt,
-			reason,
-			setByUserId: adminUserId,
-			now,
-		})
-		changedKeys.push(change.key)
-		await recordOrgAuditEvent(input.audit, {
-			orgId: org.id,
-			action: previous
-				? orgLimitOverrideAuditActions.changed
-				: orgLimitOverrideAuditActions.set,
-			resourceType: 'limit_override',
-			resourceId: change.key,
-			details: {
-				limitKey: change.key,
-				previous: auditSnapshot(previous),
-				next: {
-					value: change.value,
-					expiresAt: change.expiresAt,
+		const nowIso = now.toISOString()
+		await runAppDbBatchWithOrgAudit({
+			appDb: input.db,
+			audit: input.audit,
+			statements: [
+				input.db
+					.prepare(
+						`INSERT INTO org_limit_overrides (
+							org_id, limit_key, limit_value, reason, expires_at, set_by_user_id,
+							created_at, updated_at
+						) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+						ON CONFLICT (org_id, limit_key) DO UPDATE SET
+							limit_value = excluded.limit_value,
+							reason = excluded.reason,
+							expires_at = excluded.expires_at,
+							set_by_user_id = excluded.set_by_user_id,
+							updated_at = excluded.updated_at`,
+					)
+					.bind(
+						org.id,
+						change.key,
+						change.value === 'unlimited' ? null : change.value,
+						reason,
+						change.expiresAt,
+						adminUserId,
+						nowIso,
+						nowIso,
+					),
+			],
+			event: {
+				orgId: org.id,
+				action: previous
+					? orgLimitOverrideAuditActions.changed
+					: orgLimitOverrideAuditActions.set,
+				resourceType: 'limit_override',
+				resourceId: change.key,
+				details: {
+					limitKey: change.key,
+					previous: auditSnapshot(previous),
+					next: {
+						value: change.value,
+						expiresAt: change.expiresAt,
+						reason,
+						setByUserId: adminUserId,
+					},
 					reason,
-					setByUserId: adminUserId,
 				},
-				reason,
 			},
 		})
+		changedKeys.push(change.key)
 	}
 	if (changedKeys.length > 0) invalidateCachedUserEntitlement(input.db, org.id)
 	const limits = await loadAdminOrgLimits({

@@ -68,8 +68,8 @@ fixtures use `control-kody execute` / `search` against the same origin.
 
 ## APIs
 
-- `GET|POST /account/packages.json` (list / token actions; no package-create
-  action)
+- `GET|POST /account/packages.json` (list / lock, unlock, set-visibility,
+  delete, adopt-community-fork, absorb-listing; no package-create action)
 - `GET /profiles/:username/packages/:kodyId.json`
 - `GET /profiles/:username/packages/:kodyId/files.json`
 - `GET /@:username/:kodyId/icon/:iconCommit` (package list mark)

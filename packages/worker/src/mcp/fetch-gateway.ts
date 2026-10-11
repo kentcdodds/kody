@@ -41,6 +41,7 @@ import { providerHostsAllowRequestHost } from '#mcp/secrets/secret-providers/hos
 import { type ResolvedProviderSecret } from '#mcp/secrets/secret-providers/types.ts'
 import { redactEchoedSecrets } from '#mcp/secrets/echo-redaction.ts'
 import {
+	assertNoBodyPlaceholder,
 	assertSecretPlacement,
 	loadSecretPlacementPolicy,
 } from '#mcp/secrets/secret-placement.ts'
@@ -128,9 +129,11 @@ export type FetchGatewayEnv = Pick<
  * literally. Out-of-band by design — only calling code can set a header, so
  * attacker-controlled *data* in a URL or body can never disable resolution.
  * Use it when a third party must receive literal placeholder text (for
- * example, writing config that Kody itself resolves later). For merely
- * mentioning the syntax in prose, prefer the inert `{{secret:<name>}}` form
- * instead, which never resolves anywhere.
+ * example, writing config that Kody itself resolves later). `headers-only`
+ * still resolves header placeholders and sends placeholder text in the body
+ * literally, for a body that quotes the syntax (an issue or chat message);
+ * without it such a body is refused. For merely mentioning the syntax in
+ * prose, prefer the inert `{{secret:<name>}}` form, which never resolves.
  */
 export const secretResolutionHeaderName = 'x-kody-secret-resolution'
 
@@ -374,7 +377,8 @@ export async function expandSecretPlaceholders(input: {
 	)
 	headers.delete(secretAuthorityHeaderName)
 	const requestBody = await readRequestBody(input.request)
-	if (readSecretResolutionMode(headers) === 'off') {
+	const resolutionMode = readSecretResolutionMode(headers)
+	if (resolutionMode === 'off') {
 		return {
 			request: new Request(
 				resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
@@ -394,6 +398,7 @@ export async function expandSecretPlaceholders(input: {
 			substitutedValues: [],
 		}
 	}
+	if (resolutionMode === 'on') assertNoBodyPlaceholder(requestBody)
 	await assertSecretPlacement({
 		url: decodeSecretPlaceholderDelimiters(
 			resolveRequestUrlForFetchGateway(input.request.url, baseUrl),
@@ -869,15 +874,18 @@ function requireFetchUserId(props: FetchGatewayProps): OwnerId {
  * a typo like "of" silently resolving placeholders would defeat the point of
  * opting out.
  */
-function readSecretResolutionMode(headers: Headers): 'on' | 'off' {
+function readSecretResolutionMode(
+	headers: Headers,
+): 'on' | 'headers-only' | 'off' {
 	const raw = headers.get(secretResolutionHeaderName)
 	if (raw == null) return 'on'
 	headers.delete(secretResolutionHeaderName)
 	const value = raw.trim().toLowerCase()
 	if (value === 'off') return 'off'
+	if (value === 'headers-only') return 'headers-only'
 	if (value === 'on') return 'on'
 	throw new Error(
-		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, or omit the header for normal resolution.`,
+		`Invalid ${secretResolutionHeaderName} header value "${raw}". Use "off" to send secret placeholders literally without resolution, "headers-only" to resolve header placeholders and send placeholder text in the body literally, or omit the header for normal resolution.`,
 	)
 }
 
@@ -936,9 +944,9 @@ function dedupeBasicAuthSecretPlaceholders(
 }
 
 /**
- * The outbound request body as opaque bytes. A body is data, so the gateway
- * never decodes, scans, or substitutes into it: text that looks like a
- * placeholder is forwarded byte-for-byte.
+ * The outbound request body as bytes. The gateway never substitutes into a
+ * body: it refuses one that holds a placeholder and otherwise forwards these
+ * bytes unchanged.
  */
 async function readRequestBody(
 	request: Request,

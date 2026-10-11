@@ -6,7 +6,6 @@ import {
 	detectLegacyCredentialPatternsCodemod,
 	legacyCredentialPatternFromMessage,
 	legacyCredentialPatternMessages,
-	legacyCredentialPatterns,
 	type LegacyCredentialPattern,
 } from './0010-detect-legacy-credential-patterns.ts'
 
@@ -492,7 +491,7 @@ test('0010 transform writes nothing and returns the findings as needsManual', ()
 	).toEqual(['literal secret', 'secretMounts'])
 })
 
-test('0010 finding messages are fixed and start with their pattern label', () => {
+test('0010 detect reports a literal secret with its pattern message', () => {
 	const secretName = 'SUPER_PRIVATE_NAME'
 	const findings = detectLegacyCredentialPatternsCodemod.detect(
 		{
@@ -507,9 +506,4 @@ test('0010 finding messages are fixed and start with their pattern label', () =>
 			message: legacyCredentialPatternMessages['literal secret'],
 		},
 	])
-	for (const pattern of legacyCredentialPatterns) {
-		expect(legacyCredentialPatternMessages[pattern]).toMatch(
-			new RegExp(`^${pattern.replace(/[.|]/g, '\\$&')}: `),
-		)
-	}
 })

@@ -452,6 +452,18 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		})
 
+		gatewayCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/bot{{secret:demoToken}}/me'),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/bot%7B%7Bsecret:demoToken%7D%7D/me',
+			},
+		})
+
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/post', {
@@ -513,12 +525,91 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
 		const bodySecretText = '{"note":"{{secret:demoToken|scope=user}}"}'
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/post', {
+				method: 'POST',
+				body: bodySecretText,
+			}),
+		).rejects.toThrow(
+			/^Secret "demoToken" is in the request body\. The fetch gateway never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream\./,
+		)
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/post', {
+				method: 'POST',
+				body: new URLSearchParams({ token: '{{secret:demoToken}}' }),
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
+		await expect(
+			__kodyGatewayFetch(
+				new Request('https://api.example.com/post', {
+					method: 'POST',
+					body: '{{integration-token:github}}',
+				}),
+			),
+		).rejects.toThrow(/^Integration token "github" is in the request body\./)
+		expect(gatewayCalls).toHaveLength(0)
+		expect(ambientCalls).toHaveLength(0)
 		await __kodyGatewayFetch('https://api.example.com/post', {
 			method: 'POST',
+			headers: { 'x-kody-secret-resolution': 'headers-only' },
 			body: bodySecretText,
 		})
 		expect(gatewayCalls).toHaveLength(0)
 		expect((ambientCalls[0]?.init as RequestInit).body).toBe(bodySecretText)
+		expect(
+			new Headers((ambientCalls[0]?.init as RequestInit).headers).has(
+				'x-kody-secret-resolution',
+			),
+		).toBe(false)
+
+		ambientCalls.length = 0
+		await __kodyGatewayFetch('https://api.example.com/post', {
+			method: 'POST',
+			headers: {
+				authorization: 'Bearer {{secret:demoToken}}',
+				'x-kody-secret-resolution': 'headers-only',
+			},
+			body: bodySecretText,
+		})
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				headers: {
+					authorization: 'Bearer {{secret:demoToken}}',
+					'x-kody-secret-resolution': 'headers-only',
+				},
+			},
+		})
+
+		gatewayCalls.length = 0
+		const namedFileForm = new FormData()
+		namedFileForm.set('upload', new Blob(['plain']), '{{secret:demoToken}}.txt')
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/upload', {
+				method: 'POST',
+				body: namedFileForm,
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/upload', {
+				method: 'POST',
+				body: new Blob(['{{secret:demoToken}}', 'x'.repeat(2 * 1024 * 1024)]),
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
+		const pastScanLimit = new Blob([
+			'x'.repeat(2 * 1024 * 1024),
+			'{{secret:demoToken}}',
+		])
+		const sliceSpy = vi.spyOn(pastScanLimit, 'slice')
+		await __kodyGatewayFetch('https://api.example.com/upload', {
+			method: 'POST',
+			body: pastScanLimit,
+		})
+		expect(sliceSpy).toHaveBeenCalledWith(0, 1024 * 1024)
+		expect((ambientCalls.at(-1)?.init as RequestInit).body).toBe(pastScanLimit)
+		expect(gatewayCalls).toHaveLength(0)
+		ambientCalls.length = 0
 
 		const ambientBeforeHeaderSecret = ambientCalls.length
 		await expect(
@@ -719,8 +810,15 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		const placeholderForm = new FormData()
 		placeholderForm.set('{{secret:demoToken|scope=user}}', 'field-value')
+		await expect(
+			__kodyGatewayFetch('https://api.example.com/upload', {
+				method: 'POST',
+				body: placeholderForm,
+			}),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
 		await __kodyGatewayFetch('https://api.example.com/upload', {
 			method: 'POST',
+			headers: { 'x-kody-secret-resolution': 'headers-only' },
 			body: placeholderForm,
 		})
 		expect(gatewayCalls).toHaveLength(0)
@@ -729,16 +827,56 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 		ambientCalls.length = 0
 		const requestForm = new FormData()
 		requestForm.set('note', '{{secret:demoToken|scope=user}}')
+		await expect(
+			__kodyGatewayFetch(
+				new Request('https://api.example.com/upload', {
+					method: 'POST',
+					body: requestForm,
+				}),
+			),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
 		await __kodyGatewayFetch(
 			new Request('https://api.example.com/upload', {
 				method: 'POST',
+				headers: { 'x-kody-secret-resolution': 'headers-only' },
 				body: requestForm,
 			}),
 		)
 		expect(gatewayCalls).toHaveLength(0)
-		expect(await (ambientCalls[0]?.input as Request).text()).toContain(
+		const forwardedForm = ambientCalls[0]?.input as Request
+		expect(forwardedForm.headers.has('x-kody-secret-resolution')).toBe(false)
+
+		ambientCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/get', {
+				headers: { 'x-kody-secret-resolution': 'off' },
+			}),
+		)
+		const forwardedGet = ambientCalls[0]?.input as Request
+		expect(forwardedGet).toBeInstanceOf(Request)
+		expect(forwardedGet.url).toBe('https://api.example.com/get')
+		expect(forwardedGet.headers.has('x-kody-secret-resolution')).toBe(false)
+		expect(await forwardedForm.text()).toContain(
 			'{{secret:demoToken|scope=user}}',
 		)
+
+		ambientCalls.length = 0
+		await expect(
+			__kodyGatewayFetch(
+				new Request('https://api.example.com/post', {
+					method: 'POST',
+					body: new Blob(['{{secret:demoToken}}', 'x'.repeat(2 * 1024 * 1024)]),
+				}),
+			),
+		).rejects.toThrow(/^Secret "demoToken" is in the request body\./)
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/post', {
+				method: 'POST',
+				body: new Blob(['x'.repeat(2 * 1024 * 1024), '{{secret:demoToken}}']),
+			}),
+		)
+		expect(ambientCalls).toHaveLength(1)
+		expect(gatewayCalls).toHaveLength(0)
 	} finally {
 		globalThis.fetch = originalFetch
 	}

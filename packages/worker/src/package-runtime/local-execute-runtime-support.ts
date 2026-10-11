@@ -372,28 +372,148 @@ export async function __kodyGatewayFetch(input, init) {
 	return __kodyGatewayFetchCall(input, init, authority);
 }
 
+function __kodyHasPlaceholderText(value) {
+	if (typeof value !== "string" || !value.includes("{{")) return false;
+	return (
+		// Escape the scope pipe (| in generated source): bare | is regex
+		// alternation and would miss {{secret:name|scope=user}} from
+		// __kodySecretRef.
+		/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
+			value,
+		) ||
+		/{{secret-basic:[^}]+}}/.test(value) ||
+		/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
+		/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
+	);
+}
+
 // Only the URL and headers can hold a substitution site. A body is data: it
-// is forwarded byte-for-byte, so placeholder text in it never causes a hop.
+// never causes a hop (see __kodyAssertNoBodyPlaceholder). Request.url
+// percent-encodes braces in the path, so decode before checking.
 function __kodyRequestHasSecretPlaceholders(url, headers) {
-	const probe = (value) => {
-		if (typeof value !== "string" || !value.includes("{{")) return false;
-		return (
-			// Escape the scope pipe (| in generated source): bare | is regex
-			// alternation and would miss {{secret:name|scope=user}} from
-			// __kodySecretRef.
-			/{{secret:[a-zA-Z0-9._-]+(?:\\|scope=(?:session|package|user))?}}/.test(
-				value,
-			) ||
-			/{{secret-basic:[^}]+}}/.test(value) ||
-			/{{integration-token:[a-zA-Z0-9._-]+}}/.test(value) ||
-			/{{secret\\/[a-zA-Z0-9._-]+:[^}]+}}/.test(value)
-		);
-	};
-	if (probe(url)) return true;
+	if (
+		typeof url === "string" &&
+		__kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(url))
+	) {
+		return true;
+	}
 	for (const value of Object.values(headers ?? {})) {
-		if (probe(value)) return true;
+		if (__kodyHasPlaceholderText(value)) return true;
 	}
 	return false;
+}
+
+function __kodyDecodePlaceholderPunctuation(text) {
+	return text.replace(/%(7B|7D|3A|2F|3D|2C|7C)/gi, (_, hex) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	);
+}
+
+// Only a prefix of a file or byte body is scanned so a large upload is not
+// buffered in memory. Placeholders are written by package code into small
+// payloads, and the cloud fetch gateway scans the whole body of any hop.
+const __kodyBodyScanLimitBytes = 1024 * 1024;
+
+function __kodyDecodeBytesPrefix(body) {
+	const view =
+		body instanceof ArrayBuffer
+			? new Uint8Array(body)
+			: new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+	return new TextDecoder().decode(
+		view.subarray(0, __kodyBodyScanLimitBytes),
+	);
+}
+
+async function __kodyBlobPrefixText(blob) {
+	return await blob.slice(0, __kodyBodyScanLimitBytes).text();
+}
+
+async function __kodyStreamPrefixText(stream) {
+	if (!stream || typeof stream.getReader !== "function") return null;
+	const reader = stream.getReader();
+	const chunks = [];
+	let total = 0;
+	try {
+		while (total < __kodyBodyScanLimitBytes) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+			chunks.push(chunk);
+			total += chunk.byteLength;
+		}
+	} finally {
+		// A cloned body is a tee branch, and cancelling one branch settles only
+		// after the other is cancelled too, so this must not be awaited.
+		reader.cancel().catch(() => {});
+	}
+	const bytes = new Uint8Array(total);
+	let offset = 0;
+	for (const chunk of chunks) {
+		bytes.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	return __kodyDecodeBytesPrefix(bytes);
+}
+
+async function __kodyBodyText(body) {
+	if (body == null) return null;
+	if (typeof body === "string") return body;
+	if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+		return body.toString();
+	}
+	if (typeof FormData !== "undefined" && body instanceof FormData) {
+		const parts = [];
+		for (const [key, value] of body.entries()) {
+			parts.push(key);
+			if (typeof value === "string") {
+				parts.push(value);
+			} else {
+				if (typeof value.name === "string") parts.push(value.name);
+				parts.push(await __kodyBlobPrefixText(value));
+			}
+		}
+		return parts.join("\\n");
+	}
+	if (typeof Blob !== "undefined" && body instanceof Blob) {
+		return await __kodyBlobPrefixText(body);
+	}
+	if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) {
+		return __kodyDecodeBytesPrefix(body);
+	}
+	// A caller stream cannot be read without consuming it, so it is not checked.
+	return null;
+}
+
+function __kodyDescribeFirstPlaceholder(text) {
+	const secret = /{{secret:([a-zA-Z0-9._-]+)/.exec(text);
+	if (secret) return 'Secret "' + secret[1] + '"';
+	const basic =
+		/{{secret-basic:username=([a-zA-Z0-9._-]+),password=([a-zA-Z0-9._-]+)/.exec(
+			text,
+		);
+	if (basic) {
+		return 'Basic auth secret pair "' + basic[1] + '" / "' + basic[2] + '"';
+	}
+	const integration = /{{integration-token:([a-zA-Z0-9._-]+)}}/.exec(text);
+	if (integration) return 'Integration token "' + integration[1] + '"';
+	const vault = /{{secret\\/([a-zA-Z0-9._-]+):/.exec(text);
+	if (vault) return 'Vault secret from "' + vault[1] + '"';
+	return "A secret placeholder";
+}
+
+// The fetch gateway never substitutes into a body and refuses one that holds a
+// placeholder, so local execute refuses it too instead of sending the literal
+// reference upstream. x-kody-secret-resolution: headers-only or off opts out.
+async function __kodyAssertNoBodyPlaceholder(readText, resolutionMode) {
+	if (resolutionMode === "off" || resolutionMode === "headers-only") return;
+	const text = await readText();
+	if (text == null) return;
+	const decoded = __kodyDecodePlaceholderPunctuation(text);
+	if (!__kodyHasPlaceholderText(decoded)) return;
+	throw new Error(
+		__kodyDescribeFirstPlaceholder(decoded) +
+			" is in the request body. The fetch gateway never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream. Send a credential in a header instead. A value that is not a credential (such as an account id) belongs in params or package storage, not a secret. To send the placeholder text itself (a message that quotes the syntax), set the request header x-kody-secret-resolution: headers-only.",
+	);
 }
 
 function __kodyIsCallerByteStream(body) {
@@ -431,7 +551,38 @@ function __kodyStreamingHeaderError() {
 	);
 }
 
+const __kodySecretResolutionHeader = "x-kody-secret-resolution";
+
+// init.headers replaces a Request's headers outright, matching new Request().
+function __kodyReadSecretResolutionHeader(input, init) {
+	if (init?.headers != null) {
+		return new Headers(init.headers).get(__kodySecretResolutionHeader);
+	}
+	if (input instanceof Request) {
+		return input.headers.get(__kodySecretResolutionHeader);
+	}
+	return null;
+}
+
+function __kodyWithoutSecretResolutionHeader(headers) {
+	const stripped = new Headers(headers);
+	stripped.delete(__kodySecretResolutionHeader);
+	return stripped;
+}
+
 async function __kodyGatewayFetchCall(input, init, packageId) {
+	// The resolution mode instructs the fetch gateway. It is never sent to the
+	// remote on a native fetch, and only the gateway hop carries it.
+	const resolutionHeader = __kodyReadSecretResolutionHeader(input, init);
+	const resolutionMode = String(resolutionHeader ?? "")
+		.trim()
+		.toLowerCase();
+	if (resolutionHeader != null && init?.headers != null) {
+		init = {
+			...init,
+			headers: __kodyWithoutSecretResolutionHeader(init.headers),
+		};
+	}
 	let url;
 	let method = "GET";
 	let headers = {};
@@ -448,6 +599,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		headers = Object.fromEntries(new Headers(init?.headers).entries());
 		if (init?.body != null) {
 			const body = init.body;
+			await __kodyAssertNoBodyPlaceholder(
+				() => __kodyBodyText(body),
+				resolutionMode,
+			);
 			// FormData keeps its implicit multipart boundary on ambient fetch.
 			// URL/header secrets serialize it once for the gateway hop.
 			if (typeof FormData !== "undefined" && body instanceof FormData) {
@@ -508,7 +663,15 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 			(init == null || init.body == null) &&
 			inputRequest != null &&
 			__kodyIsNonByteStream(inputRequest.body);
-		const merged = new Request(input, init);
+		let merged = new Request(input, init);
+		if (merged.headers.has(__kodySecretResolutionHeader)) {
+			merged = new Request(merged, {
+				headers: __kodyWithoutSecretResolutionHeader(merged.headers),
+			});
+			// The caller's Request still carries the header, so only the
+			// stripped copy may be forwarded.
+			reuseOriginal = false;
+		}
 		url = merged.url;
 		method = merged.method;
 		headers = Object.fromEntries(merged.headers.entries());
@@ -520,6 +683,13 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 				streamingBody = merged.body;
 				reuseOriginal = false;
 			} else {
+				await __kodyAssertNoBodyPlaceholder(
+					() =>
+						init?.body != null
+							? __kodyBodyText(init.body)
+							: __kodyStreamPrefixText(merged.clone().body),
+					resolutionMode,
+				);
 				// String, bytes, and URLSearchParams become streams inside a
 				// Request. A hop reads a clone; otherwise the original Request is
 				// forwarded so cache, credentials, and redirect replay stay
@@ -597,7 +767,10 @@ async function __kodyGatewayFetchCall(input, init, packageId) {
 		request: {
 			url,
 			method,
-			headers,
+			headers:
+				resolutionHeader != null
+					? { ...headers, [__kodySecretResolutionHeader]: resolutionHeader }
+					: headers,
 			...(bodyBytes != null
 				? { bodyBase64: __kodyBytesToBase64(bodyBytes) }
 				: {}),

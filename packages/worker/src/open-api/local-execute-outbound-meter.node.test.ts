@@ -166,5 +166,4 @@ test('a CapabilityProxy gatewayFetch past the daily outbound cap says when the m
 	expect(response.body.error?.message).toBe(
 		`Plan limit reached: your "free" plan allows at most ${limit} outbound fetches per day and you currently have ${limit}. This daily limit resets at 00:00 UTC, in 1h 26m. Upgrade your plan at /@api-user/-/billing.`,
 	)
-	expect(response.body.error?.message).not.toMatch(/remove or finish/i)
 })

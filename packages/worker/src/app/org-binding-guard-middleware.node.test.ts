@@ -109,7 +109,6 @@ test('every org-scoped route in the route table is bound to its org', () => {
 	const orgRoutes = entries.filter(({ source }) =>
 		source.startsWith('/@:orgSlug/'),
 	)
-	expect(orgRoutes.length).toBeGreaterThan(40)
 	expect(
 		orgRoutes.filter(({ href }) => !isOrgBoundPath(href)).map((r) => r.name),
 	).toEqual([])

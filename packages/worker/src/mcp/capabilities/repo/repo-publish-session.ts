@@ -152,6 +152,10 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					kodyId: savedPackage.kodyId,
 					commit: result.pendingCommit,
 				})
+				const lockedMessage = createPackagePublishLockedMessage({
+					packageName: result.packageName,
+					approvalUrl,
+				})
 				await reportCapabilityProgress(ctx.reportProgress, {
 					progress: progressTotal,
 					total: progressTotal,
@@ -164,10 +168,9 @@ export const repoPublishSessionCapability = defineDomainCapability(
 					pending_commit: result.pendingCommit,
 					current_published_commit: result.currentPublishedCommit,
 					approval_url: approvalUrl,
-					message: createPackagePublishLockedMessage({
-						packageName: result.packageName,
-						approvalUrl,
-					}),
+					message: result.credentialNotice
+						? `${lockedMessage}\n\n${result.credentialNotice}`
+						: lockedMessage,
 				}
 			}
 			if (result.status === 'checks_outdated') {

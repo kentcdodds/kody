@@ -35,10 +35,14 @@ vi.mock('#app/account-package-write-access.ts', () => ({
 	),
 }))
 
-vi.mock('#worker/package-registry/service.ts', () => ({
-	deleteSavedPackageProjection: (...args: Array<unknown>) =>
-		mockModule.deleteSavedPackageProjection(...args),
-}))
+vi.mock('#worker/package-registry/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<Record<string, unknown>>()
+	return {
+		...actual,
+		deleteSavedPackageProjection: (...args: Array<unknown>) =>
+			mockModule.deleteSavedPackageProjection(...args),
+	}
+})
 
 const { handleAccountPackageDeleteAction } =
 	await import('./account-package-delete.ts')

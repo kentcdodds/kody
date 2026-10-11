@@ -73,6 +73,7 @@ import {
 	formatFailedRepoCheckMessages,
 	validatePackageBundles,
 } from './checks.ts'
+import { credentialPatternNoticeForFiles } from './credential-pattern-check.ts'
 import {
 	isolatedArtifactRebuildStagingKeyBelongsToUser,
 	isolatedArtifactRebuildStagingKeyForUser,
@@ -3222,6 +3223,12 @@ class RepoSessionBase extends DurableObject<Env> {
 		// snapshot collected once above for the published source KV write.
 		const snapshotFiles = workspaceSnapshot.files
 		const publishedCommit = sessionHeadCommit ?? sessionRow.base_commit
+		const credentialNotice =
+			source.entity_kind === 'package'
+				? credentialPatternNoticeForFiles(snapshotFiles, source.source_root)
+				: null
+		const withCredentialNotice = (message: string) =>
+			credentialNotice ? `${message}\n\n${credentialNotice}` : message
 		if (input.promotePublished === false) {
 			return {
 				status: 'ok',
@@ -3251,6 +3258,7 @@ class RepoSessionBase extends DurableObject<Env> {
 					packageId: lockedPackage.id,
 					packageName: lockedPackage.name,
 					message: error.message,
+					credentialNotice,
 				}
 			}
 		}
@@ -3310,7 +3318,9 @@ class RepoSessionBase extends DurableObject<Env> {
 			status: 'ok',
 			sessionId: sessionRow.id,
 			publishedCommit: sessionHeadCommit ?? sessionRow.base_commit,
-			message: `Published session ${sessionRow.id} to ${source.repo_id}.`,
+			message: withCredentialNotice(
+				`Published session ${sessionRow.id} to ${source.repo_id}.`,
+			),
 		}
 	}
 
