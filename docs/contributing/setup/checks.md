@@ -92,8 +92,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   [decision 0038](../decisions/0038-no-nx-cloud-read-write-cache-tokens.md),
   [decision 0040](../decisions/0040-same-repo-writers-may-put-nx-cache.md), and
   [`packages/nx-cache/readme.md`](../../../packages/nx-cache/readme.md)). Those
-  cached scripts run through `tools/run-nx.ts` so a mid-run remote-cache
-  transport flake cannot fail validate after the tasks already succeeded.
+  cached scripts run through `tools/run-nx.ts` so a rejected remote-cache token
+  or a mid-run transport flake cannot fail validate after the tasks already
+  succeeded. A token the probe cannot read is unset before Nx starts.
 - `npm run install:check` (`tools/check-installed-lockfile.ts`, also
   `control-kody doctor`'s `deps` check) fails when a root or workspace
   dependency's installed version does not match `package-lock.json`, including

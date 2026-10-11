@@ -312,3 +312,13 @@ test('profile omits the activity section when activity is null', async () => {
 	expect(html).not.toContain('Recent activity')
 	expect(html).not.toContain('No public activity yet.')
 })
+
+test('execute-only package rows render the name without a package page link', async () => {
+	const html = await render({
+		packages: [{ ...unpublishedPackage, canOpenDetail: false }],
+		isSelf: true,
+	})
+	expect(html).toContain(testId('profile-package-name-nolink'))
+	expect(html).toContain('notes')
+	expect(html).not.toContain('href="/@kody/notes"')
+})

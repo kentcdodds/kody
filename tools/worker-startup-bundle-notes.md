@@ -407,3 +407,11 @@ raised again.
   3_773_744 against the previous 3_722_000 budget (still the Zod-locale ceiling;
   #3122 did not remeasure runtime). Reviewed ceilings platform 5_226_000 and
   runtime 3_775_000.
+- Enablements run-as-enabler (#3334) merged to main after that measurement and
+  before the #3360 squash (`dd443918e`, parent `e3437fec5`). It sits on both
+  entries with subscription dispatch, jobs, request context, and webhook
+  delivery. `resolveCredential` shrank when raw credential slots reverted
+  (#3351). Local dry-run of `ff1a50c84`: platform 5_242_175 (+18_004 over the
+  5_224_171 measurement, 16_175 over the 5_226_000 ceiling) and runtime
+  3_791_764 (+18_020 over 3_773_744, 16_764 over the 3_775_000 ceiling).
+  Reviewed ceilings platform 5_244_000 and runtime 3_793_500.

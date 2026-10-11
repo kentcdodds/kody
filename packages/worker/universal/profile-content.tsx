@@ -423,10 +423,13 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 					) : (
 						<ul mix={css(packageListCss)}>
 							{visiblePackages.map((pkg) => {
-								const packageHref = routes.communityPackage.href({
-									username: profile.username,
-									kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
-								})
+								const canOpenDetail = pkg.canOpenDetail !== false
+								const packageHref = canOpenDetail
+									? routes.communityPackage.href({
+											username: profile.username,
+											kodyId: pkg.communityListingKodyId ?? pkg.kodyId,
+										})
+									: null
 								const listingHref = pkg.communityListingId
 									? getCommunityListingHref({
 											listingId: pkg.communityListingId,
@@ -455,9 +458,15 @@ export function ProfileContent(handle: Handle<ProfileContentProps>) {
 													</a>
 												) : null}
 												<h3 mix={css(packageNameCss)}>
-													<a href={packageHref} mix={css(packageNameLinkCss)}>
-														{renderCommunityListingName(pkg.name)}
-													</a>
+													{packageHref ? (
+														<a href={packageHref} mix={css(packageNameLinkCss)}>
+															{renderCommunityListingName(pkg.name)}
+														</a>
+													) : (
+														<span data-testid="profile-package-name-nolink">
+															{renderCommunityListingName(pkg.name)}
+														</span>
+													)}
 												</h3>
 												{renderProfilePackageSignifiers(pkg)}
 											</div>

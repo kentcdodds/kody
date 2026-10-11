@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
+import path from 'node:path'
 import {
 	legacyCredentialPatternFromMessage,
 	legacyCredentialPatterns,
@@ -206,14 +207,46 @@ export function formatCredentialPatternReport(report: CredentialPatternReport) {
 	].join('\n')
 }
 
+async function expandScanPaths(inputPath: string): Promise<Array<string>> {
+	if (!(await stat(inputPath)).isDirectory()) return [inputPath]
+	const names = (await readdir(inputPath, { withFileTypes: true }))
+		.filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+		.map((entry) => entry.name)
+		.sort((left, right) => left.localeCompare(right, 'en', { numeric: true }))
+	return names.map((name) => path.join(inputPath, name))
+}
+
+/**
+ * Reads every scan file in order. A directory expands to its `.json` files in
+ * natural order, so `step-10.json` follows `step-9.json` and a later step's
+ * item for the same package wins.
+ */
+export async function readScanItems(
+	inputPaths: ReadonlyArray<string>,
+): Promise<Array<CredentialScanItem>> {
+	const items: Array<CredentialScanItem> = []
+	for (const inputPath of inputPaths) {
+		const filePaths = await expandScanPaths(inputPath)
+		if (filePaths.length === 0) {
+			throw new Error(`No .json scan files in ${inputPath}`)
+		}
+		for (const filePath of filePaths) {
+			items.push(
+				...collectScanItems(JSON.parse(await readFile(filePath, 'utf8'))),
+			)
+		}
+	}
+	return items
+}
+
 async function main() {
-	const inputPath = process.argv[2]
-	if (!inputPath) {
+	const inputPaths = process.argv.slice(2)
+	if (inputPaths.length === 0) {
 		throw new Error(
-			'Usage: node tools/credential-pattern-report.ts <scan-items.json>',
+			'Usage: node tools/credential-pattern-report.ts <scan-step.json | scan-dir>...',
 		)
 	}
-	const items = collectScanItems(JSON.parse(await readFile(inputPath, 'utf8')))
+	const items = await readScanItems(inputPaths)
 	process.stdout.write(
 		formatCredentialPatternReport(buildCredentialPatternReport(items)),
 	)

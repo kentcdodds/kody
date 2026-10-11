@@ -372,11 +372,16 @@ export default async function digest(input: { account: string; key: string }) {
 }
 ```
 
-Save every scan step result as one JSON array, then print the report:
+Save each scan step result as its own JSON file, then print the report over all
+of them:
 
 ```bash
-node tools/credential-pattern-report.ts scan-steps.json
+node tools/credential-pattern-report.ts .tmp/scan/
 ```
+
+It takes any number of files or directories. A directory reads its `.json` files
+in natural order (`step-2.json` before `step-10.json`). When a package appears
+more than once, the last item read wins.
 
 It counts packages and files per pattern, per org, and per package, plus
 `skipped_unpublished` and `skipped_drift`. The org and package tables name

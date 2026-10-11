@@ -66,12 +66,13 @@ export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN="$NX_CACHE_WRITE_TOKEN"
 
 Use `CI=1` on cached test commands (the repo scripts already do; typecheck and
 build hashes ignore `CI`). Leave the variables unset to run without remote
-cache. Those scripts run through `tools/run-nx.ts` so a mid-run `/v1/cache`
-transport flake cannot fail `test:push` or validate after the tasks already
-succeeded. Each cached script ends with an `Nx remote cache ...` line that says
-whether the token reads and writes next to the hit count; `READ-ONLY` means the
-environment holds the read token and nothing is uploaded for CI. See
-[`packages/nx-cache/readme.md`](../../packages/nx-cache/readme.md).
+cache. Those scripts run through `tools/run-nx.ts` so a rejected remote-cache
+token or a mid-run `/v1/cache` transport flake cannot fail `test:push` or
+validate after the tasks already succeeded. A token the probe cannot read is
+unset before Nx starts. Each cached script ends with an `Nx remote cache ...`
+line that says whether the token reads and writes next to the hit count;
+`READ-ONLY` means the environment holds the read token and nothing is uploaded
+for CI. See [`packages/nx-cache/readme.md`](../../packages/nx-cache/readme.md).
 
 ## Git hooks
 

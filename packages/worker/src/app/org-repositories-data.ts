@@ -2,6 +2,7 @@ import { type McpUserContext } from '@kody-internal/shared/chat.ts'
 import { toPublicProfilePackageItem } from '#app/community-public.ts'
 import {
 	canSeeResource,
+	checkPermission,
 	computeEffectivePermissions,
 	packageResource,
 } from '#worker/authorization/authorize.ts'
@@ -86,12 +87,25 @@ export async function loadOrgRepositoriesData(input: {
 			publicPackageCount: visible.filter((pkg) => !pkg.isPrivate).length,
 			listingCount: visible.filter((pkg) => pkg.communityListingId).length,
 		},
-		packages: visible.map((pkg) =>
-			toPublicProfilePackageItem(pkg, {
+		packages: visible.map((pkg) => {
+			const resource = packageResource({
+				id: pkg.packageId,
+				userId: orgId,
+				label: pkg.name,
+			})
+			// List visibility is broader than the package page (read|execute|write).
+			// Only link when the viewer can open the page (`package:read`).
+			const canOpenDetail = checkPermission(
+				access,
+				'package:read',
+				resource,
+			).allowed
+			return toPublicProfilePackageItem(pkg, {
 				includeOwnerVisibility: true,
 				username: slug,
-			}),
-		),
+				canOpenDetail,
+			})
+		}),
 		activity: null,
 		query: query || null,
 		isSelf: true,

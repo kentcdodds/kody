@@ -44,11 +44,14 @@ example
 A read-only or failed write never fails the run; it is the signal that the token
 or the worker secret needs fixing before any hit can happen. Cached npm scripts
 (`test:node`, `test:workers`, `test:e2e:run`, `test:mcp`, `test`, and
-`typecheck`) run through `tools/run-nx.ts`. A transport error talking to
-`/v1/cache/{hash}` after Nx already printed `Successfully ran target` is treated
-as success. The same transport error before tasks finish retries once with
+`typecheck`) run through `tools/run-nx.ts`. Before Nx starts, that wrapper
+probes the cache the same way CI does and unsets
+`NX_SELF_HOSTED_REMOTE_CACHE_SERVER` when the token cannot read, so a stale or
+rotated token degrades to the local cache with a warning. A transport error
+talking to `/v1/cache/{hash}`, or Nx's `Misconfigured remote cache endpoint` /
+`Unauthorized` cache error, after Nx already printed `Successfully ran target`
+is treated as success. The same failure before tasks finish retries once with
 `--skipRemoteCache` and without `NX_SELF_HOSTED_REMOTE_CACHE_SERVER`.
-Unauthorized or misconfigured-cache errors still fail.
 
 `npm run nx-cache:smoke` (also part of `test:node`) starts a local HTTP cache,
 runs `nx-cache:smoke-probe` twice with an isolated local cache wiped in between,
