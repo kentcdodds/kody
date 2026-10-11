@@ -110,3 +110,33 @@ export default (init: RequestInit) =>
 		}),
 	).toEqual([])
 })
+
+test('a body counts only on request options, inline, named, or as a named body value', () => {
+	const findings = findSecretPlaceholdersOutsideHeaders({
+		'src/index.ts': `export function respond() {
+	return { status: 200, body: 'Set {{secret:responseOnly}} in settings' }
+}
+export function notify(send: (input: { body: string }) => void) {
+	send({ body: 'Configure {{secret:notificationOnly}}' })
+}
+export default async function main() {
+	const payload = JSON.stringify({ userId: '{{secret:extractedBody}}' })
+	await fetch('https://api.example.com/a', { method: 'POST', body: payload })
+	const init = {
+		method: 'POST',
+		body: JSON.stringify({ userId: '{{secret:namedOptions}}' }),
+	}
+	await fetch('https://api.example.com/b', init)
+	await fetch(new Request('https://api.example.com/c', {
+		method: 'POST',
+		body: '{{secret:requestCtor}}',
+	}))
+}
+`,
+	})
+	expect(findings).toEqual([
+		{ path: 'src/index.ts', line: 8, slot: 'extractedBody', location: 'body' },
+		{ path: 'src/index.ts', line: 12, slot: 'namedOptions', location: 'body' },
+		{ path: 'src/index.ts', line: 17, slot: 'requestCtor', location: 'body' },
+	])
+})

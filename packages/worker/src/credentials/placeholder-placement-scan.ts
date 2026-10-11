@@ -343,6 +343,79 @@ function isBodyValue(parent: AstNode, child: AstNode) {
 	)
 }
 
+function isRequestCall(node: AstNode | undefined) {
+	if (!node) return false
+	if (
+		node.type === 'CallExpression' ||
+		node.type === 'OptionalCallExpression'
+	) {
+		return getCalleeName(node.callee) === 'fetch'
+	}
+	return node.type === 'NewExpression' && getNodeName(node.callee) === 'Request'
+}
+
+function declaredName(node: AstNode | undefined, init: AstNode) {
+	return node?.type === 'VariableDeclarator' &&
+		node.init === init &&
+		node.id?.type === 'Identifier'
+		? getNodeName(node.id)
+		: null
+}
+
+/**
+ * Names a module binds to request data: `optionNames` hold the options object
+ * passed to `fetch` or `new Request` (`fetch(url, init)`), and `bodyNames`
+ * hold a value used as that object's `body` (`body: payload`).
+ */
+export type RequestBindings = {
+	optionNames: ReadonlySet<string>
+	bodyNames: ReadonlySet<string>
+}
+
+const noRequestBindings: RequestBindings = {
+	optionNames: new Set(),
+	bodyNames: new Set(),
+}
+
+/** Whether `object` is the options of a `fetch` or `new Request`. */
+function isRequestOptions(
+	object: AstNode | undefined,
+	parent: AstNode | undefined,
+	bindings: RequestBindings,
+) {
+	if (object?.type !== 'ObjectExpression' || !parent) return false
+	if (isRequestCall(parent) && parent.arguments?.[1] === object) return true
+	const name = declaredName(parent, object)
+	return name != null && bindings.optionNames.has(name)
+}
+
+export function collectRequestBindings(parsed: AstNode): RequestBindings {
+	const optionNames = new Set<string>()
+	walkAst(parsed, (node) => {
+		if (!isRequestCall(node)) return
+		const options = node.arguments?.[1]
+		const name = options?.type === 'Identifier' ? getNodeName(options) : null
+		if (name) optionNames.add(name)
+	})
+	const bodyNames = new Set<string>()
+	const partial = { optionNames, bodyNames }
+	walkAst(parsed, (node, ancestors) => {
+		if (
+			node.type !== 'ObjectProperty' ||
+			node.computed === true ||
+			getNodeName(node.key) !== 'body'
+		) {
+			return
+		}
+		const value = propertyValueNode(node)
+		const name = value?.type === 'Identifier' ? getNodeName(value) : null
+		if (name && isRequestOptions(ancestors.at(-1), ancestors.at(-2), partial)) {
+			bodyNames.add(name)
+		}
+	})
+	return { optionNames, bodyNames }
+}
+
 function isJsonStringifyCall(node: AstNode) {
 	return (
 		(node.type === 'CallExpression' ||
@@ -354,26 +427,36 @@ function isJsonStringifyCall(node: AstNode) {
 
 /**
  * Where a string provably lands outside a header: the URL argument of
- * `fetch`, `new Request`, or `new URL`; a `body` property or `FormData`
- * input; or `URLSearchParams` input (a query string or a form body). A
- * `body` ancestor wins over a nested `headers` key, which is payload data.
- * Null for anything under a request's `headers` or `new Headers`, and for
- * anything not provably outside one.
+ * `fetch`, `new Request`, or `new URL`; the `body` of a request's options
+ * (inline, or a named options object or body value from `bindings`);
+ * `FormData` input; or `URLSearchParams` input (a query string or a form
+ * body). A `body` ancestor wins over a nested `headers` key, which is
+ * payload data. Null for anything under a request's `headers` or
+ * `new Headers`, and for anything not provably outside one.
  *
- * `textShapeHints` also counts a URL-shaped string and any `JSON.stringify`
- * input. Those are guesses: fine for a detect-only scan, too loose for a
- * check that blocks publish.
+ * `textShapeHints` also counts any `body` property, a URL-shaped string, and
+ * any `JSON.stringify` input. Those are guesses: fine for a detect-only scan,
+ * too loose for a check that blocks publish.
  */
 export function literalLocationOutsideHeader(
 	node: AstNode,
 	text: string,
 	ancestors: ReadonlyArray<AstNode>,
-	options: { textShapeHints?: boolean } = {},
+	options: { textShapeHints?: boolean; bindings?: RequestBindings } = {},
 ): PlaceholderLocation | null {
+	const bindings = options.bindings ?? noRequestBindings
 	let child = node
 	for (let index = ancestors.length - 1; index >= 0; index -= 1) {
 		const parent = ancestors[index]!
-		if (isBodyValue(parent, child)) return 'body'
+		if (
+			isBodyValue(parent, child) &&
+			(options.textShapeHints ||
+				isRequestOptions(ancestors[index - 1], ancestors[index - 2], bindings))
+		) {
+			return 'body'
+		}
+		const name = declaredName(parent, child)
+		if (name != null && bindings.bodyNames.has(name)) return 'body'
 		child = parent
 	}
 	if (isWithinHeaders(node, ancestors)) return null
@@ -673,6 +756,16 @@ export function findSecretPlaceholdersOutsideHeaders(
 		if (!files[path]?.includes('{{') && placeholderConstants.size === 0) {
 			continue
 		}
+		const requestBindings = collectRequestBindings(parsed)
+		const bindings: RequestBindings = {
+			optionNames: requestBindings.optionNames,
+			// A string constant is reported where it is read, not where it is declared.
+			bodyNames: new Set(
+				[...requestBindings.bodyNames].filter(
+					(name) => !placeholderConstants.has(name),
+				),
+			),
+		}
 		const moduleMentionsOptOut = secretResolutionOptOutPattern.test(
 			files[path] ?? '',
 		)
@@ -683,7 +776,9 @@ export function findSecretPlaceholdersOutsideHeaders(
 		) => {
 			const placeholders = findPlaceholders(text)
 			if (placeholders.length === 0) return
-			const location = literalLocationOutsideHeader(node, text, ancestors)
+			const location = literalLocationOutsideHeader(node, text, ancestors, {
+				bindings,
+			})
 			if (!location) return
 			if (isOptedOut({ location, ancestors, moduleMentionsOptOut })) return
 			const line = node.loc?.start?.line ?? null
