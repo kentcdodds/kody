@@ -63,9 +63,8 @@ the things that should not live in one chat window:
 - **Memory**: useful facts without a better home, available to connected agents
   when relevant.
 - **Secrets** — API keys and OAuth grants your code can use but your agent can
-  never read (only a credential slot declared `"raw": true` hands its value to
-  package code, and consent says so). There is deliberately no plaintext
-  `secret_get`.
+  never read (mount `get` returns an opaque placeholder only). There is
+  deliberately no plaintext `secret_get`.
 - **Packages**: reusable code with typed inputs and documented defaults,
   callable from any agent, with exports, a hosted app surface, and its own
   storage. Put repeatable behavior here so running the task doesn’t depend on an

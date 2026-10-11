@@ -13,6 +13,10 @@ vi.mock('./idempotent-module-invocation.ts', () => ({
 	invokeSavedPackageModule: mocks.invokeSavedPackageModule,
 }))
 
+vi.mock('#worker/enablements/run-gate.ts', () => ({
+	planEnablementRuns: async () => ({ mode: 'legacy' }),
+}))
+
 const { invokePackageSubscriptionWithToolFactories } =
 	await import('./subscription-dispatch.ts')
 

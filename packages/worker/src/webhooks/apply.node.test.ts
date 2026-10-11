@@ -184,6 +184,8 @@ async function setupOwner(
 	input: {
 		verification?: boolean | 'package-owned' | 'secret-name'
 		legacySecretValue?: string
+		/** The org is on enablements, so undeclared verification is the default. */
+		migrated?: boolean
 	} = {},
 ) {
 	const verificationMode =
@@ -248,6 +250,15 @@ async function setupOwner(
 		stableUserId: userId,
 		username: 'owner',
 	})
+	if (input.migrated) {
+		await db
+			.prepare(
+				`INSERT INTO enablement_org_migrations (org_id, state, migrated_at, updated_at)
+				 VALUES (?, 'migrated', ?, ?)`,
+			)
+			.bind(userId, '2026-10-11T00:00:00.000Z', '2026-10-11T00:00:00.000Z')
+			.run()
+	}
 	if (legacyMintHmac) {
 		secretMocks.resolveSecret.mockResolvedValue({
 			found: true,
@@ -649,6 +660,37 @@ test('webhookUrlApply injects JSON-escaped {{webhookSecret}} from package-owned 
 	expect(injected).not.toEqual(url)
 	expect(JSON.stringify(applied)).not.toContain(injected)
 	expect(secretMocks.resolveSecret).not.toHaveBeenCalled()
+})
+
+test('webhookUrlApply injects the default signing secret in an org on enablements', async () => {
+	const { db, env, handle, userId, apply } = await setupOwner({
+		migrated: true,
+	})
+	mockIntegration()
+	const endpointId = parseWebhookUrlHandle(handle)!
+	const row = await db
+		.prepare(`SELECT hmac_secret_encrypted FROM webhook_endpoints WHERE id = ?`)
+		.bind(endpointId)
+		.first<{ hmac_secret_encrypted: string | null }>()
+	expect(row?.hmac_secret_encrypted).toBeTruthy()
+	const plaintext = await decryptWebhookHmacSecret(
+		env,
+		row!.hmac_secret_encrypted!,
+		userWebhookHmacSecretContext(ownerIdFromStored(userId), endpointId),
+	)
+	using fetchMock = fetchResponding(JSON.stringify({ id: 7 }), {
+		status: 201,
+	})
+
+	const applied = await apply(
+		githubHooksHttpDestination({ includeWebhookSecret: true }),
+	)
+
+	expect(applied).toMatchObject({ ok: true, remoteId: '7' })
+	expect(JSON.parse(String(requestOf(fetchMock).init.body)).config.secret).toBe(
+		plaintext,
+	)
+	expect(JSON.stringify(applied)).not.toContain(plaintext)
 })
 
 test('webhookUrlApply uses HMAC copied from legacy secretName at mint, not a live secrets lookup', async () => {

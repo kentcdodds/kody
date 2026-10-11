@@ -350,7 +350,7 @@ finding message starts with one fixed pattern label:
 | `secret outside header` | A placeholder that provably lands in a request URL, query, or body: a URL-shaped string, a `body` property, the URL argument of `fetch` / `new Request` / `new URL`, or `JSON.stringify` / `URLSearchParams` / `FormData` input               |
 | `plain http`            | A `fetch` or `new Request` of an `http://` URL in a module that uses placeholders                                                                                                                                                             |
 | `packageSecrets.get`    | Any `packageSecrets.get` or `kody.packageSecretGet` call                                                                                                                                                                                      |
-| `missing placement`     | A `kody.credentials` secret slot with neither `placement` nor `"raw": true`                                                                                                                                                                   |
+| `missing placement`     | A `kody.credentials` secret slot without `placement`                                                                                                                                                                                          |
 
 Helpers are matched by name, comments are ignored, and an unparseable module
 falls back to a text match. This module yields `literal secret`,

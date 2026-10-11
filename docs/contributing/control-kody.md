@@ -19,9 +19,9 @@ npm run control-kody -- map --check
 npm run control-kody -- health --sha <commit>
 npm run control-kody -- preview --pr 42 --check /@<slug>/-/waiting
 npm run control-kody -- browse --origin <preview> --path /@user-me/pkg [--record]
-npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead]
-npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json]
-npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages]
+npm run control-kody -- package-create --origin <preview> --package-name <leaf-or-@scope/leaf> [--head-ahead] [--org <slug>]
+npm run control-kody -- execute --origin <preview> --code-file fixture.ts [--params-file params.json] [--org <slug>]
+npm run control-kody -- search --origin <preview> --query "packageSave" [--domain packages] [--org <slug>]
 ```
 
 Same entry: `node tools/control-kody.ts`.
@@ -120,13 +120,15 @@ node tools/seed-test-data.ts --local
 Override with `--email` / `--password`. `--cookie-file` defaults to
 `.tmp/control-kody-cookie` and stores the origin and email that created the
 session, so a leftover local cookie is not sent to a preview and `--email` does
-not reuse another user's cookie for the same origin. `preview` uses
+not reuse another user's cookie for the same origin. MCP commands also store the
+`--org` slug beside the OAuth token; a different org remints the token and keeps
+the login cookie. `preview` uses
 [`preview-manual-test`](./preview-manual-testing.md) and its own seed.
 
 `package-create` registers a stub saved package on a PR preview through MCP
 `packageGetGitRemote({ create: true, kody_id })`. Pass the package name leaf or
 `@owner/leaf` with `--package-name`. It reuses `--origin`, `--email`,
-`--password`, `--cookie-file`, and `--json`. Pass
+`--password`, `--cookie-file`, `--json`, and `--org <slug>`. Pass
 `--package-name <leaf-or-@scope/leaf>` (required; `--kody-id` is an alias),
 `--description` (optional), and `--head-ahead` to push one unpublished commit so
 the package page can show **HEAD ahead of published**. Do not POST a create
@@ -144,6 +146,14 @@ optional JSON `--params-file`. `search` takes `--query`, and optionally
 hand-write a throwaway MCP client script for preview fixtures. A module that
 calls `packageSave`, publish, or `packageGetGitRemote` must use
 `--origin <preview>`; the local origin cannot persist package repos.
+
+After the seed user belongs to more than one organization, OAuth authorize
+refuses to approve until an org is chosen. Pass `--org <slug>` on `execute`,
+`search`, and `package-create` (the slug from `POST /account/organizations/new`,
+with or without a leading `@`). The CLI sends that slug as `?org=` on authorize.
+The session file records the org next to the bearer token. A later call with a
+different `--org`, or with `--org` omitted, remints that token and keeps the
+login cookie.
 
 ## Daily garden
 

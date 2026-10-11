@@ -20,6 +20,13 @@ export type OrgResourceType = keyof typeof resourceActions
 
 const orgResourceTypes = Object.keys(resourceActions) as Array<OrgResourceType>
 
+export function isOrgResourceType(value: unknown): value is OrgResourceType {
+	return (
+		typeof value === 'string' &&
+		(orgResourceTypes as ReadonlyArray<string>).includes(value)
+	)
+}
+
 type ResourcePermission = {
 	[Type in OrgResourceType]: `${Type}:${(typeof resourceActions)[Type][number]}`
 }[OrgResourceType]

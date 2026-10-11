@@ -10,16 +10,18 @@
  *    membership, team, or outside-collaborator grant, org not deleted or
  *    suspended), so access that ended without a cascade cannot resolve;
  * 2. requires the actor's per-credential Use unless the package stamp is
- *    attested (see `PackageStamp`);
+ *    attested (see `PackageStamp`). An enablement run (a trigger acting as
+ *    its enabler) always needs the enabler's own Use, attested or not, and a
+ *    denial pauses that enablement;
  * 3. applies the package rules for that use (secret allowlists, integration
  *    and MCP usage modes, vault provider grants), then reads storage;
  * 4. schedules exactly one `credential.resolve` org audit row for every
  *    outcome (success, not found, denied, failed), for every kind of actor.
  *    The row never holds the credential value.
  *
- * Automation (a request with no acting person) acts as Owner, as today.
- * Platform paths with no request at all (webhook ingress) pass an attested
- * package stamp.
+ * Legacy Automation (a request with no acting person, in an org not yet
+ * moved to enablements) acts as Owner. Platform paths with no request at all
+ * (webhook ingress) pass an attested package stamp.
  */
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type OrgPermission } from '@kody-internal/shared/org-permissions.ts'
@@ -43,7 +45,9 @@ import {
 } from '#worker/integrations/token-refresh.ts'
 import { callMcpServerTool } from '#worker/mcp-client/hub-client.ts'
 import { assertCanUseMcpServer } from '#worker/mcp-client/package-access.ts'
+import { pauseEnablementOnDenial } from '#worker/enablements/pause-on-denial.ts'
 import { isOrgActive, loadOrgBindingForOrg } from '#worker/orgs/repo.ts'
+import { enablementIdOf } from '#worker/request-context/request-context.ts'
 import { assertIntegrationAllowsHost } from '#mcp/execute-modules/integration-host-allowlist.ts'
 import { SecretHostNotApprovedError } from '#mcp/secrets/errors.ts'
 import {
@@ -51,9 +55,9 @@ import {
 	loadPackageSecretMounts,
 	PackageSecretMissingError,
 	PackageSecretMountError,
-	PackageSecretRawAccessError,
 } from '#mcp/secrets/package-access.ts'
 import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.ts'
+import { buildSecretPlaceholder } from '#mcp/secrets/placeholders.ts'
 import {
 	createProviderHostDeniedMessage,
 	createProviderNoWebsitesMessage,
@@ -99,15 +103,10 @@ export type CredentialTarget =
 			orgSlug?: string | null
 			requestHost?: RequestHost
 	  }
-	/**
-	 * `packageSecrets.get` (`raw`) and `.has` (`presence`). `raw` reads only a
-	 * `kody.credentials` secret slot that declares `raw: true`; `presence` also
-	 * accepts any secret slot and a legacy `kody.secretMounts` alias.
-	 */
+	/** `packageSecrets.get` / `.has`: a declared `kody.secretMounts` alias. */
 	| {
 			use: 'package-secret-mount'
 			alias: string
-			access: 'raw' | 'presence'
 			callerContext: McpCallerContext
 	  }
 	/**
@@ -149,8 +148,8 @@ export type CredentialTarget =
 export type ResolvedPackageSecretMount = {
 	alias: string
 	name: string
-	/** The secret value for `access: 'raw'`; null for `presence`. */
-	value: string | null
+	/** Opaque `{{secret:…}}` ref. Plaintext never leaves the host. */
+	ref: string
 	scope: SecretScope
 	packageId: string
 	kodyId: string
@@ -210,6 +209,15 @@ export async function resolveCredential<T extends CredentialTarget>(
 		result = await resolveTarget(input, input.credential, subject)
 	} catch (error) {
 		audit(credentialResolutionOutcomeForError(error))
+		const enablementId = enablementIdOf(input.actor)
+		if (enablementId && error instanceof AuthorizationError) {
+			await pauseEnablementOnDenial({
+				db: input.env.APP_DB,
+				orgId: input.orgId,
+				enablementId,
+				error,
+			})
+		}
 		throw error
 	}
 	audit(
@@ -435,14 +443,18 @@ function integrationResource(orgId: OwnerId, name: string): OrgResource {
 
 /**
  * Ad-hoc code and claimed package stamps need Use on the concrete credential.
- * Attested package runs use package rules as the grant (ADR 0021, amended).
+ * Attested package runs use package rules as the grant (ADR 0021, amended),
+ * except enablement runs: a trigger resolves an org credential only while
+ * its enabler has Use on it.
  */
 async function authorizeActorUse(
 	input: ResolveCredentialInput<CredentialTarget>,
 	permission: 'secret:use' | 'integration:use',
 	resource: OrgResource,
 ) {
-	if (input.packageStamp?.kind === 'attested') return
+	if (input.packageStamp?.kind === 'attested' && !enablementIdOf(input.actor)) {
+		return
+	}
 	await authorize(
 		{ env: input.env, request: input.actor },
 		permission,
@@ -513,17 +525,13 @@ async function resolvePackageSecretMount(
 		userId: input.orgId,
 		packageId,
 	})
-	const mount = packageSecretTarget({
-		packageInfo,
-		alias: credential.alias,
-		access: credential.access,
-	})
-	subject.resourceKey = mount.name
-	if (credential.access === 'raw' && input.packageStamp?.kind !== 'attested') {
-		throw new PackageSecretRawAccessError(
-			`packageSecrets.get reads raw slot "${credential.alias}" of ${packageInfo.savedPackage.name} only when Kody runs the package's code itself. Local execute (--local) names the package from the client, which Kody cannot verify, so the raw value is not returned there. Run the package with cloud execute, or send the value with {{secret:${credential.alias}}} in a header through the fetch gateway.`,
+	const mount = packageInfo.mounts[credential.alias]
+	if (!mount) {
+		throw new PackageSecretMountError(
+			`Package "${packageInfo.savedPackage.kodyId}" does not declare secret mount "${credential.alias}".`,
 		)
 	}
+	subject.resourceKey = mount.name
 	await authorizeActorUse(
 		input,
 		'secret:use',
@@ -564,54 +572,17 @@ async function resolvePackageSecretMount(
 		secretName: mount.name,
 		resolved,
 	})
+	// The placeholder carries name+scope only, never the owner id (that would
+	// be caller-forgeable).
+	const scope = resolved.scope ?? mount.scope ?? 'user'
 	return {
 		alias: credential.alias,
 		name: mount.name,
-		value: credential.access === 'raw' ? resolved.value : null,
-		scope: resolved.scope ?? mount.scope ?? 'user',
+		ref: buildSecretPlaceholder({ name: mount.name, scope }),
+		scope,
 		packageId: packageInfo.savedPackage.id,
 		kodyId: packageInfo.savedPackage.kodyId,
 	}
-}
-
-/**
- * The secret a `packageSecrets` alias names. A slot's secret is the org
- * credential of the slot's name, like `{{secret:<slot>}}` in the gateway.
- */
-function packageSecretTarget(input: {
-	packageInfo: Awaited<ReturnType<typeof loadPackageSecretMounts>>
-	alias: string
-	access: 'raw' | 'presence'
-}): { name: string; scope: SecretScope | null } {
-	const { packageInfo, alias } = input
-	const packageName = packageInfo.savedPackage.name
-	const slot = packageInfo.manifest.kody.credentials?.[alias]
-	if (input.access === 'presence') {
-		if (slot?.kind === 'secret') return { name: alias, scope: null }
-		const mount = packageInfo.mounts[alias]
-		if (mount) return { name: mount.name, scope: mount.scope ?? null }
-		throw new PackageSecretMountError(
-			`Package "${packageInfo.savedPackage.kodyId}" declares no kody.credentials secret slot or secret mount "${alias}".`,
-		)
-	}
-	if (slot?.kind === 'secret' && slot.raw) return { name: alias, scope: null }
-	const rule = `packageSecrets.get returns a value only from a kody.credentials secret slot that declares "raw": true`
-	if (slot?.kind === 'secret') {
-		throw new PackageSecretRawAccessError(
-			`${rule}, and slot "${alias}" of ${packageName} does not. Send the value with {{secret:${alias}}} in the slot's declared header and let the fetch gateway fill it in, or declare "raw": true on the slot (consent then says ${packageName} can read the raw value).`,
-		)
-	}
-	if (slot) {
-		throw new PackageSecretRawAccessError(
-			`${rule}, and slot "${alias}" of ${packageName} has kind "${slot.kind}". OAuth tokens and MCP connections are never handed to package code; use the slot through the fetch gateway or kody.mcp.`,
-		)
-	}
-	const legacyMount = packageInfo.mounts[alias]
-		? ` kody.secretMounts aliases no longer resolve through packageSecrets.get.`
-		: ''
-	throw new PackageSecretRawAccessError(
-		`${rule}, and ${packageName} has no slot "${alias}".${legacyMount} Declare it in package.json: "kody": { "credentials": { "${alias}": { "kind": "secret", "provider": "<provider>", "description": "<what it is for>", "raw": true } } }.`,
-	)
 }
 
 async function resolveWebhookSecret(

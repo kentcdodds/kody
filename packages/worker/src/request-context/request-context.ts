@@ -33,9 +33,21 @@ export type InboundEmailSender =
 	| { kind: 'inbox-owner' }
 
 /**
+ * A triggered run of one enablement (credentials plan v4, section 3.3). The
+ * run acts as the enabler with the role they hold right now, and is billed
+ * and audited to them. The enablement id is the run's credential id.
+ */
+export type EnablementRun = {
+	id: string
+	enabler: RequestPerson
+	role: OrgRole | null
+}
+
+/**
  * How a request reached Kody. Every place that builds a caller context names
  * its source, and `deriveRequestContext` turns it into the one shape
- * `authorize` reads.
+ * `authorize` reads. A trigger source without `enablement` is a legacy
+ * Automation run (no actor, Owner) in an org not yet moved to enablements.
  */
 export type RequestSource =
 	| { kind: 'session' }
@@ -43,10 +55,15 @@ export type RequestSource =
 	| { kind: 'cli' }
 	| { kind: 'api-token'; tokenId: string }
 	| { kind: 'package-app' }
-	| { kind: 'schedule'; jobId: string }
-	| { kind: 'webhook'; sourceId: string }
-	| { kind: 'inbound-email'; sourceId: string; sender: InboundEmailSender }
-	| { kind: 'platform-event'; sourceId: string }
+	| { kind: 'schedule'; jobId: string; enablement?: EnablementRun }
+	| { kind: 'webhook'; sourceId: string; enablement?: EnablementRun }
+	| {
+			kind: 'inbound-email'
+			sourceId: string
+			sender: InboundEmailSender
+			enablement?: EnablementRun
+	  }
+	| { kind: 'platform-event'; sourceId: string; enablement?: EnablementRun }
 	/** Nested invokes, workflow steps, package events, sealed providers. */
 	| { kind: 'inherited'; lineage: RequestLineage }
 
@@ -101,7 +118,24 @@ function automation(input: {
 	sourceId: string
 	credentialKind: RequestCredentialKind
 	profileName: string | null
+	enablement: EnablementRun | undefined
 }): RequestContext {
+	const { enablement } = input
+	if (enablement) {
+		const actor = actorFor(enablement.enabler)
+		return {
+			org: input.binding.org,
+			actor,
+			attribution: { kind: 'user', userId: actor.userId },
+			credential: credentialFor({
+				kind: input.credentialKind,
+				id: enablement.id,
+				org: input.binding.org,
+				profileName: null,
+			}),
+			membership: enablement.role ? { role: enablement.role } : null,
+		}
+	}
 	return {
 		org: input.binding.org,
 		actor: null,
@@ -190,6 +224,7 @@ export function deriveRequestContext(input: {
 				sourceId: source.jobId,
 				credentialKind: 'schedule',
 				profileName,
+				enablement: source.enablement,
 			})
 		case 'webhook':
 			return automation({
@@ -198,6 +233,7 @@ export function deriveRequestContext(input: {
 				sourceId: source.sourceId,
 				credentialKind: 'webhook',
 				profileName,
+				enablement: source.enablement,
 			})
 		case 'inbound-email': {
 			const request = automation({
@@ -206,8 +242,10 @@ export function deriveRequestContext(input: {
 				sourceId: source.sourceId,
 				credentialKind: 'inbound-email',
 				profileName,
+				enablement: source.enablement,
 			})
 			const { sender } = source
+			if (source.enablement) return request
 			switch (sender.kind) {
 				case 'inbox-owner':
 					return request
@@ -234,6 +272,7 @@ export function deriveRequestContext(input: {
 				sourceId: source.sourceId,
 				credentialKind: 'platform-event',
 				profileName,
+				enablement: source.enablement,
 			})
 		case 'inherited': {
 			const { lineage } = source
@@ -283,6 +322,57 @@ export function requestLineage(request: RequestContext): RequestLineage {
 
 export function inheritRequest(request: RequestContext): RequestSource {
 	return { kind: 'inherited', lineage: requestLineage(request) }
+}
+
+const triggerCredentialKinds: ReadonlySet<RequestCredentialKind> = new Set([
+	'schedule',
+	'webhook',
+	'inbound-email',
+	'platform-event',
+])
+
+/**
+ * The enablement id when `request` is an enablement run, or a run nested in
+ * one (lineage keeps the trigger credential and the enabler). Legacy
+ * Automation, member-sent email included, stays attributed to Automation,
+ * and interactive requests carry a person's own credential, so neither
+ * matches.
+ */
+export function enablementIdOf(
+	request: RequestContext | null | undefined,
+): string | null {
+	if (!request?.actor || request.attribution.kind !== 'user') return null
+	if (!triggerCredentialKinds.has(request.credential.kind)) return null
+	return request.credential.id
+}
+
+/**
+ * The person a background run bills: an enablement's enabler, or the starter
+ * of an inherited run. Null for legacy Automation, which bills the org.
+ * Interactive sources bill their caller elsewhere.
+ */
+export function backgroundRunBilledActor(
+	source: RequestSource,
+): RequestActor | null {
+	switch (source.kind) {
+		case 'schedule':
+		case 'webhook':
+		case 'inbound-email':
+		case 'platform-event':
+			return source.enablement ? actorFor(source.enablement.enabler) : null
+		case 'inherited':
+			return source.lineage.actor
+		case 'session':
+		case 'mcp-oauth':
+		case 'cli':
+		case 'api-token':
+		case 'package-app':
+			return null
+		default: {
+			const exhaustive: never = source
+			throw new Error(`Unhandled request source: ${String(exhaustive)}`)
+		}
+	}
 }
 
 const credentialKinds: ReadonlySet<string> = new Set<RequestCredentialKind>([

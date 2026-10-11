@@ -16,6 +16,7 @@ import {
 	workerPortRange,
 } from './dev-server.ts'
 import { isExecutedDirectly } from './node-runtime.ts'
+import { isOrganizationSlug } from '../packages/worker/universal/org-pages.ts'
 import {
 	checkFeatureCatalog,
 	featureCatalog,
@@ -59,6 +60,7 @@ import {
 } from './control-kody/request-proof.ts'
 import {
 	formatCookieFile,
+	mcpAuthForOrg,
 	sessionForOrigin,
 	shouldRefreshSession,
 	type AppSessionOAuth,
@@ -102,7 +104,7 @@ const usageLines = [
 	'Common options:',
 	'  --origin <url>       App origin (default: healthy local 3742-3751)',
 	'  --json               Machine-readable stdout',
-	'  --cookie-file <p>    Session file: cookie + MCP OAuth client/token (origin + --email)',
+	'  --cookie-file <p>    Session file: cookie + MCP OAuth (origin + --email + --org)',
 	"  --email <addr>       Session identity; does not reuse another user's cookie",
 	'  --dump               Write the raw response body to .tmp/control-kody-body',
 	'  --contains <text>    Fail unless the response body includes this text',
@@ -120,6 +122,7 @@ const usageLines = [
 	'  --domain <id>        Optional search domain',
 	'  --entity <ref>       Optional search entity ref',
 	'  --limit <n>          Optional search result limit',
+	'  --org <slug>         Bind execute, search, and package-create to this org',
 	'  --help               Print this help',
 	'',
 	'preview forwards its flags to preview:manual-test (--pr, --request, --check).',
@@ -146,6 +149,10 @@ const usageLines = [
 	'401 or login HTML. Public pages such as /pricing do not need a session.',
 	'Mutating methods log in first when no cookie exists. --email keys the',
 	'stored cookie; a leftover session for a different user is not reused.',
+	'execute, search, and package-create take --org <slug> so OAuth authorize',
+	'sends ?org= and can approve a team organization. The cached bearer token is',
+	'keyed by that org. Switching --org, or omitting it, remints the token and',
+	'keeps the login cookie.',
 	'--skip-login sends the request without authenticating, even when another',
 	"user's cookie is stored for the same origin.",
 	'',
@@ -197,6 +204,7 @@ export type ControlKodyOptions = {
 	domain: string | null
 	entity: string | null
 	limit: number | null
+	orgSlug: string | null
 }
 
 export class ControlKodyError extends Error {
@@ -262,6 +270,7 @@ export function parseControlArgs(argv: Array<string>): ControlKodyOptions {
 		domain: null,
 		entity: null,
 		limit: null,
+		orgSlug: null,
 	}
 
 	const [command, ...rest] = argv
@@ -497,6 +506,20 @@ function parseSharedFlags(
 				index += 1
 				break
 			}
+			case '--org': {
+				if (
+					options.command !== 'execute' &&
+					options.command !== 'search' &&
+					options.command !== 'package-create'
+				) {
+					throw new ControlKodyError(
+						'--org is only valid for execute, search, and package-create',
+					)
+				}
+				options.orgSlug = parseOrgSlug(requireValue(argv[index + 1], '--org'))
+				index += 1
+				break
+			}
 			case '--path': {
 				options.path = normalizeBrowsePath(
 					requireValue(argv[index + 1], '--path'),
@@ -538,6 +561,16 @@ function requireValue(value: string | undefined, flag: string) {
 		throw new ControlKodyError(`${flag} requires a value`)
 	}
 	return value
+}
+
+function parseOrgSlug(value: string) {
+	const slug = value.trim().toLowerCase().replace(/^@/, '')
+	if (!isOrganizationSlug(slug)) {
+		throw new ControlKodyError(
+			'--org must be an organization slug (for example "x-org")',
+		)
+	}
+	return slug
 }
 
 export type DoctorCheck = {
@@ -915,16 +948,29 @@ export async function writeCookieFile(
 	origin: string,
 	email?: string | null,
 	oauth?: AppSessionOAuth | null,
+	orgSlug?: string | null,
 ) {
 	await mkdir(path.dirname(cookieFile), { recursive: true })
 	await writeFile(
 		cookieFile,
-		formatCookieFile(origin, cookieHeader, email, oauth),
+		formatCookieFile(origin, cookieHeader, email, oauth, orgSlug),
 		{
 			mode: 0o600,
 		},
 	)
 	await chmod(cookieFile, 0o600)
+}
+
+function readMcpAuthFile(
+	cookieFile: string,
+	origin: string,
+	email: string,
+	orgSlug: string | null,
+) {
+	const fileText = existsSync(cookieFile)
+		? readFileSync(cookieFile, 'utf8')
+		: null
+	return mcpAuthForOrg(fileText, origin, email, orgSlug)
 }
 
 async function writeDumpFile(dumpFile: string, rawBody: string) {
@@ -1286,7 +1332,12 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const defaults = credentialsForOrigin(origin)
 			const email = options.email ?? defaults.email
-			const session = readSessionFile(options.cookieFile, origin, email)
+			const cached = readMcpAuthFile(
+				options.cookieFile,
+				origin,
+				email,
+				options.orgSlug,
+			)
 			const report = await createPreviewPackage({
 				origin,
 				email,
@@ -1294,8 +1345,9 @@ async function runCommand(options: ControlKodyOptions) {
 				kodyId: options.kodyId,
 				description: options.description,
 				headAhead: options.headAhead,
-				cookieHeader: session?.cookieHeader ?? undefined,
-				oauth: session?.oauth ?? undefined,
+				cookieHeader: cached.cookieHeader,
+				oauth: cached.oauth,
+				orgSlug: cached.orgSlug,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
@@ -1304,6 +1356,7 @@ async function runCommand(options: ControlKodyOptions) {
 					origin,
 					email,
 					report.oauth,
+					options.orgSlug,
 				)
 			}
 			if (options.json) {
@@ -1333,7 +1386,12 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const defaults = credentialsForOrigin(origin)
 			const email = options.email ?? defaults.email
-			const session = readSessionFile(options.cookieFile, origin, email)
+			const cached = readMcpAuthFile(
+				options.cookieFile,
+				origin,
+				email,
+				options.orgSlug,
+			)
 			const params = options.paramsFile
 				? await readJsonObjectFile(options.paramsFile)
 				: undefined
@@ -1343,8 +1401,9 @@ async function runCommand(options: ControlKodyOptions) {
 				password: options.password ?? defaults.password,
 				code: readFileSync(options.codeFile, 'utf8'),
 				params,
-				cookieHeader: session?.cookieHeader ?? undefined,
-				oauth: session?.oauth ?? undefined,
+				cookieHeader: cached.cookieHeader,
+				oauth: cached.oauth,
+				orgSlug: cached.orgSlug,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
@@ -1353,6 +1412,7 @@ async function runCommand(options: ControlKodyOptions) {
 					origin,
 					email,
 					report.oauth,
+					options.orgSlug,
 				)
 			}
 			if (options.json) {
@@ -1381,7 +1441,12 @@ async function runCommand(options: ControlKodyOptions) {
 			}
 			const defaults = credentialsForOrigin(origin)
 			const email = options.email ?? defaults.email
-			const session = readSessionFile(options.cookieFile, origin, email)
+			const cached = readMcpAuthFile(
+				options.cookieFile,
+				origin,
+				email,
+				options.orgSlug,
+			)
 			const report = await searchAppMcp({
 				origin,
 				email,
@@ -1390,8 +1455,9 @@ async function runCommand(options: ControlKodyOptions) {
 				domain: options.domain ?? undefined,
 				entity: options.entity ?? undefined,
 				limit: options.limit ?? undefined,
-				cookieHeader: session?.cookieHeader ?? undefined,
-				oauth: session?.oauth ?? undefined,
+				cookieHeader: cached.cookieHeader,
+				oauth: cached.oauth,
+				orgSlug: cached.orgSlug,
 			})
 			if (report.cookieHeader) {
 				await writeCookieFile(
@@ -1400,6 +1466,7 @@ async function runCommand(options: ControlKodyOptions) {
 					origin,
 					email,
 					report.oauth,
+					options.orgSlug,
 				)
 			}
 			if (options.json) {
