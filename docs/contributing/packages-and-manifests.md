@@ -214,13 +214,6 @@ A saved package is a repo with the package extension activated. Four concepts:
   named import; type-only imports and `.d.ts` files are exempt. The rule runs on
   new session check runs, publishes, and community fork installs —
   already-published artifacts are not re-validated until one of those events.
-- The same `lint` result fails when a secret placeholder provably lands in a
-  request URL, query, or body (`credentials/placeholder-placement-scan.ts`,
-  shared with codemod `0010-detect-legacy-credential-patterns`, which also
-  counts URL-shaped strings and any `JSON.stringify` input as hints). It runs
-  only where `requirePackageDocs` is on (session checks and publishes), so
-  community installs and codemods still pass; `packageGet` reports existing
-  offenders as `warnings`.
 - Callable exports are resolved from package exports, not from a second Kody
   registry.
 - Packages may also export non-callable helper modules and values for reuse.

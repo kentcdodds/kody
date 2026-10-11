@@ -15,6 +15,7 @@ import {
 	buildSecretUsageUrl,
 } from '#mcp/secrets/package-approval-url.ts'
 import { inspectUserSecretPackageGrant } from '#mcp/secrets/service.ts'
+import { authorizeSecret } from './authorize-secret.ts'
 
 const outputSchema = z.object({
 	name: z.string(),
@@ -59,6 +60,7 @@ export const secretLockCapability = defineDomainCapability(
 			ctx: CapabilityContext,
 		) {
 			requireMcpUser(ctx.callerContext)
+			await authorizeSecret(ctx, 'secret:use', args.name)
 			try {
 				const state = await inspectUserSecretPackageGrant({
 					env: ctx.env,

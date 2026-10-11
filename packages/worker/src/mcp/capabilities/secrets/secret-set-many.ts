@@ -9,6 +9,7 @@ import { secretPageOrgSlugFromCaller } from '#mcp/secrets/package-approval-url.t
 import { resolveCallerSecretAuthority } from '#mcp/secrets/secret-authority.ts'
 import { setSecretsAtomically } from '#mcp/secrets/service.ts'
 import { secretScopeValues } from '#mcp/secrets/types.ts'
+import { authorizeSecretSet } from './authorize-secret.ts'
 import { secretMetadataSchema, toSecretCapabilityOutput } from './shared.ts'
 
 const secretSetManyEntrySchema = z.object({
@@ -98,6 +99,13 @@ export const secretSetManyCapability = defineDomainCapability(
 			const { storageContext } = resolveCallerSecretAuthority({
 				storageContext: ctx.callerContext.storageContext,
 			})
+			for (const secret of parsed.secrets) {
+				await authorizeSecretSet(ctx, {
+					name: secret.name,
+					scope: secret.scope,
+					storageContext,
+				})
+			}
 			await assertCanSetSecrets({
 				env: ctx.env,
 				userId: ownerIdFromCaller(ctx.callerContext),

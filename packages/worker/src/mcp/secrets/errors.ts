@@ -1,3 +1,4 @@
+import { stripCredentialPlacementRefusalTag } from '#worker/credentials/placement-refusal.ts'
 import { type SecretScope } from './types.ts'
 
 const hostApprovalRequiredRegex =
@@ -173,7 +174,9 @@ export function parseHostApprovalRequiredBatchMessage(message: string): {
 	bulkApprovalUrl: string | null
 } | null {
 	if (!message.startsWith(hostBatchDeniedPrefix)) return null
-	const raw = message.slice(hostBatchDeniedPrefix.length).trim()
+	const raw = stripCredentialPlacementRefusalTag(
+		message.slice(hostBatchDeniedPrefix.length),
+	).trim()
 	if (!raw) return null
 	try {
 		const parsed = JSON.parse(raw)

@@ -14,7 +14,6 @@ import { AuthorizationError } from '#worker/authorization/authorize.ts'
 import { upsertGrant } from '#worker/orgs/access-writes.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
 import { provisionPersonalOrg } from '#worker/orgs/provision.ts'
-import * as secretPlacement from '#mcp/secrets/secret-placement.ts'
 import * as secretService from '#mcp/secrets/service.ts'
 import * as integrationCredentials from '#worker/integrations/credentials.ts'
 import * as integrationPackageAccess from '#worker/integrations/package-access.ts'
@@ -115,9 +114,6 @@ test('local CapabilityProxy package stamp does not skip secret:use / integration
 		COOKIE_SECRET: 'test-cookie-secret',
 	} as unknown as Env
 
-	vi.spyOn(secretPlacement, 'loadSecretPlacementPolicy').mockResolvedValue({
-		kind: 'undeclared',
-	})
 	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
 		userSecret('org-secret-value', ['example.com']),
 	)

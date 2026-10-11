@@ -5,6 +5,7 @@ import {
 	personIdFromStored,
 } from '@kody-internal/shared/owner-person-ids.ts'
 import type * as MemoryService from '#mcp/memory/service.ts'
+import type * as SecretService from '#mcp/secrets/service.ts'
 import { expect, test, vi } from 'vitest'
 import { createMcpCallerContext } from '#mcp/context.ts'
 import { ensureOrgsTestSchema } from '#worker/orgs/orgs-test-schema.ts'
@@ -24,6 +25,10 @@ const mocks = vi.hoisted(() => ({
 	listIntegrations: vi.fn(),
 	getIntegration: vi.fn(),
 	deleteIntegration: vi.fn(),
+	listSecrets: vi.fn(),
+	findSecret: vi.fn(),
+	deleteSecret: vi.fn(),
+	saveSecret: vi.fn(),
 }))
 
 vi.mock('#mcp/memory/service.ts', async (importOriginal) => {
@@ -57,6 +62,17 @@ vi.mock('#worker/integrations/service.ts', () => ({
 		mocks.deleteIntegration(...args),
 }))
 
+vi.mock('#mcp/secrets/service.ts', async (importOriginal) => {
+	const actual = await importOriginal<typeof SecretService>()
+	return {
+		...actual,
+		listSecrets: (...args: Array<unknown>) => mocks.listSecrets(...args),
+		findSecret: (...args: Array<unknown>) => mocks.findSecret(...args),
+		deleteSecret: (...args: Array<unknown>) => mocks.deleteSecret(...args),
+		saveSecret: (...args: Array<unknown>) => mocks.saveSecret(...args),
+	}
+})
+
 const { metaMemorySearchCapability } =
 	await import('#mcp/capabilities/meta/meta-memory-search.ts')
 const { metaMemoryGetCapability } =
@@ -74,12 +90,21 @@ const { integrationGetCapability } =
 const { integrationDeleteCapability } =
 	await import('#mcp/capabilities/integrations/integration-delete.ts')
 
+const { secretListCapability } =
+	await import('#mcp/capabilities/secrets/secret-list.ts')
+const { secretDeleteCapability } =
+	await import('#mcp/capabilities/secrets/secret-delete.ts')
+const { secretSetCapability } =
+	await import('#mcp/capabilities/secrets/secret-set.ts')
+
 const grantedMemoryId = 'memory-granted'
 const otherMemoryId = 'memory-other'
 const grantedJobId = 'job-granted'
 const otherJobId = 'job-other'
 const grantedIntegration = 'github'
 const otherIntegration = 'linear'
+const grantedSecret = 'shared-api-key'
+const otherSecret = 'private-api-key'
 
 async function seedGrant(input: {
 	db: D1Database
@@ -121,7 +146,7 @@ async function seedGrant(input: {
 
 /**
  * An org Owner and a grant-only collaborator (no membership) holding Use on
- * one memory, one job, and one integration.
+ * one memory, one job, and one integration, and Use/Write/Delete on one secret.
  */
 async function setup() {
 	const db = createD1FromSqlite(new DatabaseSync(':memory:'))
@@ -153,6 +178,14 @@ async function setup() {
 		resourceType: 'integration',
 		resourceId: grantedIntegration,
 		permissions: ['integration:use', 'integration:read'],
+	})
+	await seedGrant({
+		db,
+		orgId: ownerId,
+		subjectId: collaboratorId,
+		resourceType: 'secret',
+		resourceId: grantedSecret,
+		permissions: ['secret:use', 'secret:write', 'secret:delete'],
 	})
 	const env = { APP_DB: db } as unknown as Env
 	function contextFor(input: { userId: string; role: 'owner' | null }) {
@@ -227,6 +260,21 @@ function integration(name: string) {
 		tokenUrl: `https://${name}.example/oauth/token`,
 		flow: 'pkce' as const,
 		clientId: `${name}-client`,
+	}
+}
+
+function secret(name: string) {
+	return {
+		name,
+		scope: 'user' as const,
+		description: '',
+		packageId: null,
+		allowedHosts: [],
+		allowedPackages: [],
+		createdAt: '2026-10-01T00:00:00.000Z',
+		updatedAt: '2026-10-01T00:00:00.000Z',
+		expiresAt: null,
+		ttlMs: null,
 	}
 }
 
@@ -386,4 +434,67 @@ test('integration list, get, and delete honor per-integration grants', async () 
 		),
 	).rejects.toBeInstanceOf(AuthorizationError)
 	expect(mocks.deleteIntegration).not.toHaveBeenCalled()
+})
+
+test('secret list, delete, and set honor per-secret grants', async () => {
+	const { owner, collaborator } = await setup()
+	mocks.listSecrets.mockResolvedValue([
+		secret(grantedSecret),
+		secret(otherSecret),
+	])
+
+	const listed = await secretListCapability.handler({}, collaborator)
+	expect(listed.secrets.map((entry) => entry.name)).toEqual([grantedSecret])
+	const ownerListed = await secretListCapability.handler({}, owner)
+	expect(ownerListed.secrets).toHaveLength(2)
+
+	await expect(
+		secretDeleteCapability.handler(
+			{ name: otherSecret, scope: 'user' },
+			collaborator,
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	expect(mocks.deleteSecret).not.toHaveBeenCalled()
+	mocks.deleteSecret.mockResolvedValue(true)
+	await expect(
+		secretDeleteCapability.handler(
+			{ name: grantedSecret, scope: 'user' },
+			collaborator,
+		),
+	).resolves.toEqual({ deleted: true })
+
+	mocks.findSecret.mockResolvedValue({
+		found: true,
+		scope: 'user',
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+	await expect(
+		secretSetCapability.handler(
+			{ name: otherSecret, value: 'overwrite', scope: 'user' },
+			collaborator,
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	await expect(
+		secretSetCapability.handler(
+			{ name: `  ${otherSecret}  `, value: 'overwrite', scope: 'user' },
+			collaborator,
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	expect(mocks.findSecret).toHaveBeenLastCalledWith(
+		expect.objectContaining({ name: otherSecret, includeExpired: true }),
+	)
+	mocks.findSecret.mockResolvedValue({
+		found: false,
+		scope: null,
+		allowedHosts: [],
+		allowedPackages: [],
+	})
+	await expect(
+		secretSetCapability.handler(
+			{ name: 'new-secret', value: 'value', scope: 'user' },
+			collaborator,
+		),
+	).rejects.toBeInstanceOf(AuthorizationError)
+	expect(mocks.saveSecret).not.toHaveBeenCalled()
 })

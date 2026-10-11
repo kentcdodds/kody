@@ -8,11 +8,6 @@ import {
 } from '#mcp/capabilities/meta/require-user.ts'
 import { toSecretCapabilityOutput } from '#mcp/capabilities/secrets/shared.ts'
 import { listPackageSecretsByPackageIds } from '#mcp/secrets/service.ts'
-import {
-	describeMisplacedSecretPlaceholder,
-	findSecretPlaceholdersOutsideHeaders,
-	misplacedSecretPlaceholderFix,
-} from '#worker/credentials/placeholder-placement-scan.ts'
 import { applySavedPackageForkListingAncestry } from '#worker/community/fork-listing-relation.ts'
 import { buildPackageSearchProjection } from '#worker/package-registry/manifest.ts'
 import { buildPackageImportSpecifier } from '#worker/package-registry/package-import-specifier.ts'
@@ -32,7 +27,7 @@ export const getPackageCapability = defineDomainCapability(
 		name: 'packageGet',
 		orgPermission: 'package:read',
 		description:
-			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, the full export array, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values), and warnings for published source whose requests the fetch gateway will refuse (a secret placeholder outside a request header). For a single export contract, prefer search({ entity: "package:{kodyId}#{subpath}" }). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
+			'Load one saved package metadata record for the signed-in user, including community-fork source listing provenance, the full export array, callable export contracts, and FYI metadata for associated package-scoped secrets (names and package_id, never values). For a single export contract, prefer search({ entity: "package:{kodyId}#{subpath}" }). Does not return README, AGENTS.md, or source files; use repoOpenSession + repoReadFile (or packageGetGitRemote) for those.',
 		keywords: ['package', 'get', 'read', 'metadata', 'exports', 'imports'],
 		readOnly: true,
 		idempotent: true,
@@ -121,15 +116,6 @@ export const getPackageCapability = defineDomainCapability(
 				created_at: saved.createdAt,
 				updated_at: saved.updatedAt,
 				package_secrets: packageSecrets,
-				warnings: findSecretPlaceholdersOutsideHeaders(loaded.files ?? {}).map(
-					(finding) => ({
-						code: 'secret_placeholder_outside_header' as const,
-						message: `${describeMisplacedSecretPlaceholder(finding)}. ${misplacedSecretPlaceholderFix}`,
-						path: finding.path,
-						line: finding.line,
-						slot: finding.slot,
-					}),
-				),
 				exports: (projection.exports ?? []).map((exportDetail) => ({
 					subpath: exportDetail.subpath,
 					import_specifier: buildPackageImportSpecifier(

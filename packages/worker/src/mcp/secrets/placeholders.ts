@@ -28,15 +28,20 @@ export type ReferencedProviderSecret = {
 }
 
 /**
- * WHATWG URL serialization percent-encodes `{` and `}` in pathnames
- * (`%7B` / `%7D`). `new Request('https://host/bot{{secret:name}}/me')`
- * therefore stores `bot%7B%7Bsecret:name%7D%7D` on `request.url`, and
- * the literal `{{secret:...}}` regex never matches. Restore those
- * delimiters so the gateway sees and refuses a placeholder in the path
- * the same as one in the query string (where `{` / `}` stay unencoded).
+ * Percent-decodes the punctuation of every placeholder form. WHATWG URL
+ * serialization encodes `{` and `}` in a path, so `request.url` holds
+ * `bot%7B%7Bsecret:name%7D%7D`, and `encodeURIComponent` or
+ * `URLSearchParams` encode `:` and `|` too. Each is still found.
  */
-export function decodeSecretPlaceholderDelimiters(value: string) {
-	return value.replaceAll(/%7B/gi, '{').replaceAll(/%7D/gi, '}')
+export function decodeSecretPlaceholderPunctuation(value: string) {
+	return value.replaceAll(/%(7B|7D|3A|2F|3D|2C|7C)/gi, (_, hex: string) =>
+		String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
+/** The decoded keys and values of a form-encoded string, in order. */
+export function formUrlEncodedTexts(value: string) {
+	return Array.from(new URLSearchParams(value)).flat()
 }
 
 export function parseSecretPlaceholders(value: string) {
@@ -140,9 +145,108 @@ export function replaceSecretPlaceholders(
 ) {
 	let nextValue = value
 	for (const [placeholder, secretValue] of replacements.entries()) {
-		nextValue = nextValue.replaceAll(placeholder, secretValue)
+		// A replacer function keeps `$&` and friends in a value literal.
+		nextValue = nextValue.replaceAll(placeholder, () => secretValue)
 	}
 	return nextValue
+}
+
+/**
+ * Fills placeholders in a form-encoded string (a body, or a query without its
+ * `?`). Only a key or value that holds one is re-encoded. Separators and every
+ * other component stay byte for byte, so a signature over them still verifies.
+ */
+export function replaceSecretPlaceholdersInFormUrlEncoded(
+	value: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	return value
+		.split('&')
+		.map((pair) => {
+			const separator = pair.indexOf('=')
+			if (separator === -1) return fillFormComponent(pair, replacements)
+			const key = fillFormComponent(pair.slice(0, separator), replacements)
+			const entryValue = fillFormComponent(
+				pair.slice(separator + 1),
+				replacements,
+			)
+			return `${key}=${entryValue}`
+		})
+		.join('&')
+}
+
+function fillFormComponent(
+	raw: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	// Decoded the way URLSearchParams decodes it, so it matches what
+	// formUrlEncodedTexts found.
+	const decoded = new URLSearchParams(`=${raw}`).get('') ?? ''
+	const filled = replaceSecretPlaceholders(decoded, replacements)
+	if (filled === decoded) return raw
+	return new URLSearchParams([['', filled]]).toString().slice(1)
+}
+
+const pathPlaceholderSpan = /(?:\{|%7B){2}.*?(?:\}|%7D){2}/gi
+
+/**
+ * Fills placeholders in a URL path, whether their punctuation is literal or
+ * percent-encoded. Each value is encoded as path-segment data, so a `/`, `?`,
+ * `#`, or `..` in a credential cannot change where the request goes. The rest
+ * of the path stays as written.
+ */
+export function replaceSecretPlaceholdersInPath(
+	pathname: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const encoded = new Map<string, string>()
+	for (const [placeholder, secretValue] of replacements) {
+		encoded.set(placeholder, encodePathSegmentData(secretValue))
+	}
+	// Spans are matched across the whole path: a vault ref holds a `/`.
+	const filled = pathname.replaceAll(pathPlaceholderSpan, (span) => {
+		const decoded = decodeSecretPlaceholderPunctuation(span)
+		const next = replaceSecretPlaceholders(decoded, encoded)
+		return next === decoded ? span : next
+	})
+	// A parsed URL path holds no `.` or `..` segment (encoded or not), so one
+	// here was formed by a credential, and URL parsing would move the request.
+	if (
+		filled !== pathname &&
+		filled.split('/').some((segment) => /^(?:\.|%2e){1,2}$/i.test(segment))
+	) {
+		throw new Error(
+			'A credential filled into the URL path would form a "." or ".." segment, which changes where the request goes, so Kody refused the request.',
+		)
+	}
+	return filled
+}
+
+/**
+ * `encodeURIComponent`, except that `:`, `@`, and RFC 3986 sub-delims stay
+ * literal: they are valid inside a segment, and a token like Telegram's
+ * `123:abc` must reach the remote as written.
+ */
+export function encodePathSegmentData(value: string) {
+	return encodeURIComponent(value).replaceAll(
+		/%(3A|40|24|26|2B|2C|3B|3D)/gi,
+		(_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)),
+	)
+}
+
+/**
+ * Fills placeholders inside JSON text. Each value is JSON-escaped, so a quote
+ * or backslash in a credential stays inside the string it replaces.
+ */
+export function replaceSecretPlaceholdersInJson(
+	value: string,
+	replacements: ReadonlyMap<string, string>,
+) {
+	const escaped = new Map<string, string>()
+	for (const [placeholder, secretValue] of replacements) {
+		escaped.set(placeholder, JSON.stringify(secretValue).slice(1, -1))
+	}
+	return replaceSecretPlaceholders(value, escaped)
 }
 
 /**

