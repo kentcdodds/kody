@@ -546,19 +546,16 @@ Job schedule metadata lives in the dedicated `kody-jobs` D1 database bound as
 [ADR 0016](../decisions/0016-mono-worker-extraction.md) and the
 [jobs worker migration runbook](./jobs-worker-migration-runbook.md).
 
-- `jobs`: persisted job metadata, caller context, schedule state, repo source
-  pointers, `preserved` (skip platform auto-cleanup), and optional `expires_at`
-  (UTC ISO; when reached the scheduler skips the job and auto-disables it with
-  `enabled = 0`). Account retention windows live on `APP_DB` `users`
-  (`job_retention_*_days`; NULL = platform defaults 14/60/90). Completed job
-  rows that are not package-owned or preserved are cleaned by the hourly
-  `job_retention` sweeper on the jobs worker; package-owned and preserved jobs
-  are not. `expires_at` stops scheduling only — it does not delete rows and is
-  independent of `preserved`. This database keeps schedule fields
-  (`next_run_at`, `schedule_json`, …) and `last_run_at` / `last_run_status` as
-  retention anchors only; terminal run error, duration, and counters for
-  observability live in the per-user `RunLog` `job_run_observability` table (see
-  [Run records](./run-records.md)).
+- `jobs`: persisted package job metadata, caller context, schedule state,
+  package source pointers, and optional `expires_at` (UTC ISO; when reached the
+  scheduler skips the job and auto-disables it with `enabled = 0`). Every row id
+  is a `package-job:` id (asserted by migration `0004`, ADR 0032). Rows are
+  created, updated, and removed by package publish sync, package deletion, and
+  account deletion; `expires_at` stops scheduling only — it does not delete
+  rows. This database keeps schedule fields (`next_run_at`, `schedule_json`, …)
+  and `last_run_at` / `last_run_status`; terminal run error, duration, and
+  counters for observability live in the per-user `RunLog`
+  `job_run_observability` table (see [Run records](./run-records.md)).
 - `archived_job_artifacts`: retained job artifact rows with per-row
   `retain_until` cleanup (exempt from the global age prunes on `APP_DB`).
 
@@ -1360,22 +1357,22 @@ Artifacts tokens.
 
 Reconcile runs through the registry in
 `packages/worker/src/scheduled/scheduled-lanes.ts`, alongside repo-session
-cleanup, system-email retention, general retention, job retention, hourly
-usage-rollup aggregation, hourly Durable Object duration attribution, and
-bounded USER inbound Mailbox reconciliation (active-user discovery from the
-users/config index followed by owner-point Mailbox due-work RPCs; no shared
-graph scan). Each production queue message preserves `scheduled_lane_failed` /
-D1 lock-contention log and Sentry context. D1 lock contention is replay-safe
-(the write did not commit) and retries on `kody-scheduled-dispatch` with bounded
-backoff (`max_retries` 3, then the dedicated DLQ plus a
-`scheduled_lane_retry_exhausted` alert). Other handled lane failures are
-acknowledged as terminal so partial external side effects are not replayed; the
-next eligible cron cadence is the next automatic attempt. A failed enqueue is
-reported and runs through the inline fallback after all sibling enqueue attempts
-finish; multiple failed enqueues fall back sequentially to avoid D1 lock
-contention. Inline fallback is one-shot and logs a non-completed outcome; it
-does not invent extra retries. Consumer transport failures retain the configured
-retry/DLQ behavior. No failure can abort or mask a sibling invocation.
+cleanup, system-email retention, general retention, hourly usage-rollup
+aggregation, hourly Durable Object duration attribution, and bounded USER
+inbound Mailbox reconciliation (active-user discovery from the users/config
+index followed by owner-point Mailbox due-work RPCs; no shared graph scan). Each
+production queue message preserves `scheduled_lane_failed` / D1 lock-contention
+log and Sentry context. D1 lock contention is replay-safe (the write did not
+commit) and retries on `kody-scheduled-dispatch` with bounded backoff
+(`max_retries` 3, then the dedicated DLQ plus a `scheduled_lane_retry_exhausted`
+alert). Other handled lane failures are acknowledged as terminal so partial
+external side effects are not replayed; the next eligible cron cadence is the
+next automatic attempt. A failed enqueue is reported and runs through the inline
+fallback after all sibling enqueue attempts finish; multiple failed enqueues
+fall back sequentially to avoid D1 lock contention. Inline fallback is one-shot
+and logs a non-completed outcome; it does not invent extra retries. Consumer
+transport failures retain the configured retry/DLQ behavior. No failure can
+abort or mask a sibling invocation.
 
 Production note:
 
@@ -1523,9 +1520,8 @@ to `durableObjectNameFromParts`).
 Storage ids are also stable strings. Changing a form strands the old bucket:
 
 - `exec:{uuid}` — ad hoc execute storage bound on the call.
-- `job:{jobId}` — non-package job scratch storage (and the generic job id form).
-- `job:package-job:{packageId}:{encodeURIComponent(jobName)}` — package-owned
-  job run scratch.
+- `job:package-job:{packageId}:{encodeURIComponent(jobName)}` — package job run
+  scratch (`job:{jobId}`; every job id is a package job id).
 - `package:{encodeURIComponent(packageId)}` — package bucket behind
   `packageStorage()` / `buildPackageStorageId(packageId)`.
 - `{packageId}:facet:{facetName}` — package-app facet StorageRunner buckets.
@@ -1850,9 +1846,8 @@ by (`created_at` / `day` / `month` / `started_at` across users); per-user
 composite indexes cannot serve those ordered scans.
 
 Documented exemptions: `archived_job_artifacts` is exempt because job artifact
-cleanup is driven by each row's `retain_until` value, `jobs` are cleaned by the
-hourly `job_retention` sweeper (account/platform retention windows; package and
-preserved jobs stay until explicit delete, package sync, or account deletion),
-and `mcp_memories` is exempt because memories are durable user-curated content
+cleanup is driven by each row's `retain_until` value, `jobs` are package-owned
+and stay until package sync, package deletion, or account deletion, and
+`mcp_memories` is exempt because memories are durable user-curated content
 removed by explicit user action or account deletion rather than by time-based
 retention.

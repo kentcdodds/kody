@@ -41,8 +41,7 @@ repo session just to read the job module.
 Repo sessions expose a **file-level API**. There is no git-command channel:
 branch, checkout, fetch, pull, push, and remote operations are not available
 inside sessions. For saved packages, use `packageGetGitRemote` when you need
-full git. Leftover non-package job rows are inspectable with `jobGet` and can be
-disabled or deleted; their source is not an edit surface.
+full git.
 
 Merge drift from the published default branch is handled separately by
 **`repoRebaseSession`**.

@@ -597,12 +597,10 @@ Jobs are part of the package definition. Deferred one-shot work uses
 
 `jobUpdate` adjusts metadata on an existing job: schedule, timezone, enabled
 state, kill-switch state, params, `expires_at` (UTC ISO auto-disable; null
-clears), and `preserved`. Package-owned jobs keep name and source in the package
-repo — change the job entry there and publish. `jobDelete` is rejected for
-package-owned jobs for the same reason. `jobRunNow` triggers an existing package
-job immediately for debugging. When `expires_at` is reached the platform stops
-scheduling and auto-disables the job; that is separate from `preserved`, which
-only skips retention deletion.
+clears). Jobs keep name and source in the package repo — change, add, or remove
+the job entry there and publish. `jobRunNow` triggers an existing package job
+immediately for debugging. When `expires_at` is reached the platform stops
+scheduling and auto-disables the job.
 
 ## Save and edit packages
 

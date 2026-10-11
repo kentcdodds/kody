@@ -246,17 +246,16 @@ module-oriented runtime model:
 - deferred one-shot work uses **`workflows.create({ runAt, ... })`** from
   `execute` or package runtime — see [Workflows](./workflows.md)
 - **`kody.jobUpdate(...)`** updates metadata on an existing job (schedule,
-  timezone, enabled, kill switch, preserved, `expires_at`). Package job name and
-  source stay in the package repo.
+  timezone, enabled, kill switch, `expires_at`). Job name and source stay in the
+  package repo.
 - Optional **`expires_at`** on `jobUpdate` stops the platform from scheduling
   the job after that UTC time. When expiry is reached, Kody auto-disables the
   job (`enabled=false`) so it shows as disabled in `jobList` / `jobGet` (with
-  `expired: true`) and can age out via normal retention. This is separate from
-  **`preserved`**, which only skips auto-deletion.
+  `expired: true`).
 - **`kody.jobGet({ id, includeCode: true })`** returns the scheduled job
   inspection details plus the stored entrypoint path and source code
-- Package-owned jobs are removed by editing the package and publishing, not by
-  `jobDelete`.
+- Remove a job by deleting it from `package.json#kody.jobs` and publishing the
+  package.
 - **`kody.jobRunNow(...)`** runs an existing scheduled job immediately and
   returns both the updated job state and the execution result for debugging.
   Expired jobs are rejected.
