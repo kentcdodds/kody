@@ -626,6 +626,20 @@ test('moved package files swap ambient storage for packageStorage and pass publi
 	expect(result.results.filter((check) => !check.ok)).toEqual([])
 })
 
+function forwardingStorage(local: string, packageStorageLocal: string) {
+	return [
+		`const ${local} = {`,
+		'\tget id() {',
+		`\t\treturn ${packageStorageLocal}().id`,
+		'\t},',
+		...['get', 'set', 'list', 'delete', 'clear', 'sql'].map(
+			(name) =>
+				`\t${name}: (...args) => ${packageStorageLocal}().${name}(...args),`,
+		),
+		'};',
+	].join('\n')
+}
+
 test('replaceAmbientStorageImport keeps aliases and leaves other imports alone', () => {
 	expect(
 		replaceAmbientStorageImport(
@@ -633,21 +647,29 @@ test('replaceAmbientStorageImport keeps aliases and leaves other imports alone',
 		),
 	).toBe(
 		[
-			'import { packageStorage } from "kody:runtime";',
-			'const kv = {',
-			'\tget: (...args) => packageStorage().get(...args),',
-			'\tset: (...args) => packageStorage().set(...args),',
-			'\tlist: (...args) => packageStorage().list(...args),',
-			'\tdelete: (...args) => packageStorage().delete(...args),',
-			'\tclear: (...args) => packageStorage().clear(...args),',
-			'\tsql: (...args) => packageStorage().sql(...args),',
-			'};',
+			"import { packageStorage } from 'kody:runtime';",
+			forwardingStorage('kv', 'packageStorage'),
 			'await kv.get("a")',
+			'',
+		].join('\n'),
+	)
+	expect(
+		replaceAmbientStorageImport(
+			"import { storage, packageStorage as own } from 'kody:runtime';\nexport default () => [storage.id, own().id]\n",
+		),
+	).toBe(
+		[
+			"import { packageStorage as own } from 'kody:runtime';",
+			forwardingStorage('storage', 'own'),
+			'export default () => [storage.id, own().id]',
 			'',
 		].join('\n'),
 	)
 	const untouched = "import { kody } from 'kody:runtime'\nexport default 1\n"
 	expect(replaceAmbientStorageImport(untouched)).toBe(untouched)
+	const commented =
+		"// import { storage } from 'kody:runtime';\nexport default async function main() {}\n"
+	expect(replaceAmbientStorageImport(commented)).toBe(commented)
 })
 
 test('moved package files refuse a source that already has package.json or lacks the entry', () => {
