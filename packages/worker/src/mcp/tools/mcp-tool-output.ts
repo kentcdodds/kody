@@ -13,9 +13,13 @@ import { z } from 'zod'
  */
 export type McpToolOutputFields = Record<string, z.ZodType>
 
-export type StructuredContentFromFields<T extends McpToolOutputFields> = {
-	[K in keyof T]?: z.infer<T[K]>
-}
+/**
+ * Infer the structuredContent object type from a tool's registered Zod field
+ * record, preserving required vs optional the same way `z.object(fields)` does
+ * (for example `operationId` stays required on the api tool).
+ */
+export type StructuredContentFromFields<T extends McpToolOutputFields> =
+	z.infer<z.ZodObject<T>>
 
 const jsonSchemaValidator = new AjvJsonSchemaValidator()
 
