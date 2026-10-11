@@ -6,7 +6,9 @@ import {
 	isUnexpiredEpochMs,
 	isWaitingMcpServerState,
 	waitingFirstUseIds,
+	waitingPausedEnablementCap,
 	type WaitingFirstUseId,
+	type WaitingPausedEnablementSignal,
 	type WaitingSignals,
 } from './waiting.ts'
 
@@ -17,6 +19,7 @@ const emptySignals: WaitingSignals = {
 	onboardingRemaining: [],
 	mcpServers: [],
 	integrationAuth: [],
+	pausedEnablements: [],
 	expiredSecrets: [],
 	lockedPackages: [],
 	pendingEmailChange: null,
@@ -80,6 +83,7 @@ test('waiting items are a current-state you-queue and skip noise', () => {
 				},
 			],
 			integrationAuth: [],
+			pausedEnablements: [],
 			expiredSecrets: [],
 			lockedPackages: [
 				{ id: 'pkg-1', name: 'gmail-drafts', kodyId: 'gmail-drafts' },
@@ -278,4 +282,69 @@ test('waiting first-use cards are discrete, skip coarse checklist ids, and ignor
 			remaining.map((candidate) => `first-use:${candidate}`),
 		)
 	}
+})
+
+test('paused enablement cards say what the run needed and cap at three', () => {
+	const paused: Array<WaitingPausedEnablementSignal> = [
+		{
+			id: 'en-email',
+			triggerKind: 'subscription',
+			triggerName: 'email.message.received',
+			packageName: '@acme/triage',
+			reason: 'credential_access',
+			resourceType: 'integration',
+			resourceId: 'github',
+		},
+		{
+			id: 'en-job',
+			triggerKind: 'cron',
+			triggerName: 'nightly',
+			packageName: null,
+			reason: 'package_access',
+			resourceType: 'package',
+			resourceId: 'pkg-1',
+		},
+	]
+	const items = buildWaitingItems(
+		{ ...emptySignals, pausedEnablements: paused },
+		'acme',
+	)
+	expect(items).toEqual([
+		{
+			id: 'enablement-paused:en-email',
+			kind: 'enablement-paused',
+			title:
+				'Your @acme/triage "email.message.received" subscription is paused',
+			why: 'It runs as you, and its last run needed Use on the integration "github", which you do not have. Ask an org Owner for access. Its events are dropped until then, and the next event resumes it.',
+			who: 'you',
+			doLabel: 'How paused automation resumes',
+			href: '/docs/organizations#automation-runs-as-the-person-who-turned-it-on',
+			severity: 'block',
+		},
+		expect.objectContaining({
+			id: 'enablement-paused:en-job',
+			title: 'Your scheduled job is paused',
+			why: 'It runs as you, and you no longer hold package:execute on its package. Ask an org Owner for access. Its events are dropped until then, and the next event resumes it.',
+		}),
+	])
+
+	const many = Array.from(
+		{ length: waitingPausedEnablementCap + 2 },
+		(_, i) => ({
+			...paused[0]!,
+			id: `en-${String(i)}`,
+			triggerKind: 'webhook' as const,
+		}),
+	)
+	const capped = buildWaitingItems(
+		{ ...emptySignals, pausedEnablements: many },
+		'acme',
+	)
+	expect(capped.map((item) => item.id)).toEqual([
+		'enablement-paused:en-0',
+		'enablement-paused:en-1',
+		'enablement-paused:en-2',
+		'enablement-paused-more',
+	])
+	expect(capped.at(-1)?.title).toBe('2 more of your automations are paused')
 })

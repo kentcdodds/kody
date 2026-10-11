@@ -17,6 +17,8 @@ import { getUserEntitlement } from '#worker/entitlements/service.ts'
 import { isSavedPackageLocked } from '#worker/package-registry/package-publish-lock.ts'
 import { listJoinedIntegrations } from '#worker/integrations/service.ts'
 import { jobsData } from '#worker/jobs/jobs-data.ts'
+import { listEnablementsForOrg } from '#worker/enablements/repo.ts'
+import { type EnablementRecord } from '#worker/enablements/types.ts'
 import { readOfficialDiscordMembershipForUser } from '#worker/discord/guild-membership.ts'
 import { summarizeRunRecords } from '#worker/run-records/service.ts'
 import { accountActivitySummaryWindowMs } from '#universal/account-activity-filters.ts'
@@ -30,6 +32,7 @@ import {
 	type WaitingIntegrationAuthSignal,
 	type WaitingItem,
 	type WaitingMcpServerSignal,
+	type WaitingPausedEnablementSignal,
 	type WaitingSignals,
 } from '#universal/waiting.ts'
 
@@ -135,6 +138,7 @@ export async function collectWaitingSignals(input: {
 		firstMemory,
 		firstJob,
 		discordJoined,
+		enablementsProbe,
 	] = await Promise.all([
 		readOnboardingChecklistDismissed({
 			env,
@@ -165,6 +169,14 @@ export async function collectWaitingSignals(input: {
 			env,
 			userId: user.userId,
 		}),
+		// The viewer's own enablements in this org, never another member's.
+		probe(() =>
+			listEnablementsForOrg({
+				db: env.APP_DB,
+				orgId: user.stableUserId,
+				enablerUserId: user.actorStableUserId ?? user.stableUserId,
+			}),
+		),
 	])
 
 	// A failed package probe leaves both inputs unknown so the checklist
@@ -199,6 +211,12 @@ export async function collectWaitingSignals(input: {
 		mcpServers,
 		integrationAuth: integrationsProbe.ok
 			? reconnectableIntegrationAuth(integrationsProbe.value)
+			: [],
+		pausedEnablements: enablementsProbe.ok
+			? pausedEnablementSignals(
+					enablementsProbe.value,
+					packagesProbe.ok ? packagesProbe.value : [],
+				)
 			: [],
 		expiredSecrets: secretsProbe.ok
 			? expiredUserSecrets(secretsProbe.value)
@@ -327,6 +345,29 @@ function reconnectableIntegrationAuth(
 		})
 	}
 	return items
+}
+
+function pausedEnablementSignals(
+	enablements: Array<EnablementRecord>,
+	packages: Array<{ id: string; name: string }>,
+): Array<WaitingPausedEnablementSignal> {
+	const packageNames = new Map(packages.map((pkg) => [pkg.id, pkg.name]))
+	const signals: Array<WaitingPausedEnablementSignal> = []
+	for (const enablement of enablements) {
+		if (!enablement.pause) continue
+		signals.push({
+			id: enablement.id,
+			triggerKind: enablement.triggerKind,
+			triggerName: enablement.triggerName,
+			packageName: enablement.packageId
+				? (packageNames.get(enablement.packageId) ?? null)
+				: null,
+			reason: enablement.pause.reason,
+			resourceType: enablement.pause.resourceType,
+			resourceId: enablement.pause.resourceId,
+		})
+	}
+	return signals
 }
 
 function expiredUserSecrets(

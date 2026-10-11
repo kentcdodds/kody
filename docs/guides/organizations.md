@@ -50,6 +50,8 @@ every run acts as them:
   Use on a credential the run needs), the enablement pauses and its events are
   dropped. It resumes by itself once access is back. A run never falls back to
   another person or to Owner.
+- A paused enablement shows on its enabler's own Waiting page for that org, with
+  what the run needed. Other members and Owners do not get that card.
 - Usage counts against the org that owns the trigger, and the run is audited to
   the enabler.
 
