@@ -388,9 +388,15 @@ function __kodyHasPlaceholderText(value) {
 }
 
 // Only the URL and headers can hold a substitution site. A body is data: it
-// never causes a hop (see __kodyAssertNoBodyPlaceholder).
+// never causes a hop (see __kodyAssertNoBodyPlaceholder). Request.url
+// percent-encodes braces in the path, so decode before checking.
 function __kodyRequestHasSecretPlaceholders(url, headers) {
-	if (__kodyHasPlaceholderText(url)) return true;
+	if (
+		typeof url === "string" &&
+		__kodyHasPlaceholderText(__kodyDecodePlaceholderPunctuation(url))
+	) {
+		return true;
+	}
 	for (const value of Object.values(headers ?? {})) {
 		if (__kodyHasPlaceholderText(value)) return true;
 	}

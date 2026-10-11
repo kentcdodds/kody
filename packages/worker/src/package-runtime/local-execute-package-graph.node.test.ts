@@ -452,6 +452,18 @@ test('local gateway fetch hops scoped secrets and preserves ambient body metadat
 			},
 		})
 
+		gatewayCalls.length = 0
+		await __kodyGatewayFetch(
+			new Request('https://api.example.com/bot{{secret:demoToken}}/me'),
+		)
+		expect(ambientCalls).toHaveLength(0)
+		expect(gatewayCalls).toHaveLength(1)
+		expect(gatewayCalls[0]).toMatchObject({
+			request: {
+				url: 'https://api.example.com/bot%7B%7Bsecret:demoToken%7D%7D/me',
+			},
+		})
+
 		ambientCalls.length = 0
 		gatewayCalls.length = 0
 		await __kodyGatewayFetch('https://api.example.com/post', {
