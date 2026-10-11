@@ -4,6 +4,7 @@ import {
 	isNxRemoteCacheDegradableFailure,
 	isNxRemoteCacheRejected,
 	isNxRemoteCacheTransportFailure,
+	nxRunReportedFailedTasks,
 	nxRunReportedTaskFailure,
 	nxTasksSucceededDespiteRemoteCacheFailure,
 	runNxWithRemoteCacheFallback,
@@ -91,8 +92,14 @@ test('isNxRemoteCacheTransportFailure requires the Nx request error and cache pa
 		nxTasksSucceededDespiteRemoteCacheFailure(cacheRejectedBeforeTasks),
 	).toBe(false)
 	const mixedFailure = `${cacheRejectedAfterTasks}\nFailed tasks:\n\n- other:typecheck\n`
+	expect(nxRunReportedFailedTasks(mixedFailure)).toBe(true)
 	expect(nxRunReportedTaskFailure(mixedFailure)).toBe(true)
 	expect(nxTasksSucceededDespiteRemoteCacheFailure(mixedFailure)).toBe(false)
+	expect(
+		nxRunReportedFailedTasks(
+			'Tasks stopped before they finished:\n\n- worker:typecheck',
+		),
+	).toBe(false)
 	expect(
 		nxRunReportedTaskFailure(
 			'Tasks stopped before they finished:\n\n- worker:typecheck',
@@ -509,6 +516,53 @@ test('runNxWithRemoteCacheFallback keeps a failed exit when another target faile
 	expect(result.status).toBe(1)
 	expect(attempts).toEqual([1])
 	expect(logs.join('\n')).not.toMatch(/treating the run as successful/)
+})
+
+test('runNxWithRemoteCacheFallback retries when the cache stops tasks before they finish', async () => {
+	const attempts: Array<{
+		args: ReadonlyArray<string>
+		hasServer: boolean
+	}> = []
+	const logs: Array<string> = []
+	const result = await runNxWithRemoteCacheFallback({
+		args: ['run-many', '-t', 'typecheck'],
+		env: {
+			NX_SELF_HOSTED_REMOTE_CACHE_SERVER: remoteCacheServer,
+			NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN: 'stale-token',
+		},
+		log: (line) => {
+			logs.push(line)
+		},
+		probe: usableProbe,
+		run: (args, env) => {
+			attempts.push({
+				args,
+				hasServer: Boolean(env?.NX_SELF_HOSTED_REMOTE_CACHE_SERVER),
+			})
+			if (attempts.length === 1) {
+				return {
+					status: 1,
+					output: `${cacheRejectedBeforeTasks}\nTasks stopped before they finished:\n\n- worker:typecheck\n`,
+					errorMessage: '',
+				}
+			}
+			return {
+				status: 0,
+				output:
+					' NX  Successfully ran target typecheck for project worker\n\nCache:             0/1 hit (0%)\n',
+				errorMessage: '',
+			}
+		},
+	})
+	expect(result.status).toBe(0)
+	expect(attempts).toEqual([
+		{ args: ['run-many', '-t', 'typecheck'], hasServer: true },
+		{
+			args: ['run-many', '-t', 'typecheck', '--skipRemoteCache'],
+			hasServer: false,
+		},
+	])
+	expect(logs[0]).toMatch(/retrying without the remote cache/)
 })
 
 test('runNxWithRemoteCacheFallback reports the post-run write probe when the token changes mid-run', async () => {

@@ -50,13 +50,19 @@ export function isNxRemoteCacheRejected(output: string) {
 }
 
 /**
- * Nx prints these only when the invocation did not fully succeed. A task's
- * own logs can still contain `Successfully ran target`.
+ * Nx prints `Failed tasks:` only when a task itself failed. That exit stays
+ * failed and is not retried. `Tasks stopped before they finished:` means Nx
+ * killed work mid-flight (often because the cache aborted the run) and still
+ * gets the local retry.
  */
+export function nxRunReportedFailedTasks(output: string) {
+	return stripNxAnsi(output).includes('Failed tasks:')
+}
+
 export function nxRunReportedTaskFailure(output: string) {
 	const plain = stripNxAnsi(output)
 	return (
-		plain.includes('Failed tasks:') ||
+		nxRunReportedFailedTasks(plain) ||
 		plain.includes('Tasks stopped before they finished:')
 	)
 }
@@ -310,7 +316,7 @@ async function runNxOnce(input: {
 
 	const combined = `${first.output} ${first.errorMessage}`
 	const kind = nxRemoteCacheFailureKind(combined)
-	if (!kind || nxRunReportedTaskFailure(combined)) {
+	if (!kind || nxRunReportedFailedTasks(combined)) {
 		return { result: first, remote: 'used' }
 	}
 
