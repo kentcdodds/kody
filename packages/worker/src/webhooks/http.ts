@@ -12,6 +12,11 @@ import {
 import { checkRateLimit } from '#app/rate-limit.ts'
 import { findPublicOwnerIdentityByHandle } from '#worker/identity/user-lookup.ts'
 import { attestedPackageStamp } from '#worker/credentials/package-stamp.ts'
+import {
+	buildCredentialPlacementRefusedWebhookError,
+	credentialPlacementRefusedCode,
+	readCredentialPlacementRefusalFromInvocationBody,
+} from '#worker/credentials/placement-refusal.ts'
 import { resolveCredential } from '#worker/credentials/resolve-credential.ts'
 import { getEnablementOrgMigration } from '#worker/enablements/repo.ts'
 import { planEnablementRuns } from '#worker/enablements/run-gate.ts'
@@ -985,13 +990,20 @@ export async function handleWebhookIngressRequest(
 			return jsonResponse(response.body, { status: 409 })
 		}
 		const ok = response.status >= 200 && response.status < 300
+		const placementRefusal = ok
+			? null
+			: readCredentialPlacementRefusalFromInvocationBody(response.body)
 		await recordWebhookDelivery({
 			env,
 			endpoint: liveEndpoint,
 			kodyId: savedPackage.kodyId,
 			outcome: ok ? 'delivered' : 'failed',
 			httpStatus: ok ? response.status : 502,
-			error: ok ? null : `invocation_status_${response.status}`,
+			error: ok
+				? null
+				: placementRefusal
+					? credentialPlacementRefusedCode
+					: `invocation_status_${response.status}`,
 			payloadBytes: bodyBytes.byteLength,
 			invocationId: deliveryId,
 			result: readWebhookInvocationResult(response.body),
@@ -1002,10 +1014,12 @@ export async function handleWebhookIngressRequest(
 			return jsonResponse(
 				{
 					ok: false,
-					error: {
-						code: 'invocation_failed',
-						message: 'Bound package export invocation failed.',
-					},
+					error: placementRefusal
+						? buildCredentialPlacementRefusedWebhookError(placementRefusal.slot)
+						: {
+								code: 'invocation_failed',
+								message: 'Bound package export invocation failed.',
+							},
 				},
 				{ status: 502 },
 			)

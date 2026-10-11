@@ -611,6 +611,49 @@ test('webhook delivery records explicit rejected and failed outcomes', async () 
 	})
 })
 
+test('a sync webhook whose package was refused for credential placement returns a safe cause', async () => {
+	const userId = await setupOwnerWithWebhooks(['sync-hook'])
+	declareWebhook({ name: 'sync-hook', responseMode: 'sync' })
+	mocks.invokePackageExport.mockResolvedValue({
+		status: 500,
+		body: {
+			ok: false,
+			error: {
+				code: 'execution_failed',
+				message:
+					'Error: Secret "clerkReviewUserId" is in the request body. The fetch gateway never substitutes a secret into a request body. (credential_placement_refused, slot "clerkReviewUserId")',
+				details: { stack: 'at reviewTicket (index.ts:12:3)' },
+			},
+			logs: ['upstream https://api.clerk.com/v1/users'],
+		},
+	})
+
+	const response = await sendWebhook('sync-hook', {
+		body: JSON.stringify({ ticket: 1 }),
+	})
+	expect(response.status).toBe(502)
+	const body = await response.json()
+	expect(body).toEqual({
+		ok: false,
+		error: {
+			code: 'credential_placement_refused',
+			message:
+				'The package tried to send a credential (slot "clerkReviewUserId") somewhere other than a declared request header, so Kody refused the request. The package owner needs to update the package.',
+			slot: 'clerkReviewUserId',
+		},
+	})
+	const serialized = JSON.stringify(body)
+	expect(serialized).not.toContain('request body')
+	expect(serialized).not.toContain('index.ts')
+	expect(serialized).not.toContain('api.clerk.com')
+
+	const failed = (await listDeliveries(userId, 'sync-hook')).find(
+		(run) => run.metadata?.['outcome'] === 'failed',
+	)
+	expect(failed?.metadata).toMatchObject({ httpStatus: 502 })
+	expect(failed?.errorMessage).toBe('credential_placement_refused')
+})
+
 test('webhook ingress rejects suspended owners before any dispatch', async () => {
 	const userId = await setupOwnerWithWebhooks(['ack-hook', 'sync-hook'])
 	await suspendOwner(userId, '2026-09-23T00:00:00.000Z')
