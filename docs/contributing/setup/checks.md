@@ -3,19 +3,20 @@
 Husky hooks, `npm run validate`, and the test commands that gate commits and
 pushes. See the [setup index](./index.md) for the other setup pages.
 
-- `git commit` runs the Husky `pre-commit` hook. It formats staged
+- `git commit` runs the Husky `pre-commit` hook. It applies `oxlint --fix` to
+  staged JavaScript/TypeScript files, then formats staged
   JavaScript/TypeScript/JSON/Markdown/CSS/YAML files (including
-  `.github/workflows`) with `oxfmt` and applies `oxlint --fix` to staged
-  JavaScript/TypeScript files. When the staged diff includes a path that is not
-  docs-only, or when that diff cannot be listed, it also runs
-  `npm run install:check`, `npm run typecheck`, and `npm run migrations:check`.
-  A docs-only diff skips those three commands. `install:check` runs first so a
-  snapshot whose `node_modules` lags `package-lock.json` fails with `run npm ci`
-  instead of a typecheck that can look green from a stale remote cache.
-  Docs-only means every path is under `docs/`, ends in `.md`, `.mdx`, or `.mdc`,
-  or is a `LICENSE` / `LICENCE` / `COPYING` / `NOTICE` text file. A source file
-  in the same commit, including a comment-only edit or a source file renamed to
-  markdown, runs all three checks.
+  `.github/workflows`) with `oxfmt`. Lint autofixes (for example merged
+  duplicate imports) are unformatted, so formatting always runs last. When the
+  staged diff includes a path that is not docs-only, or when that diff cannot be
+  listed, it also runs `npm run install:check`, `npm run typecheck`, and
+  `npm run migrations:check`. A docs-only diff skips those three commands.
+  `install:check` runs first so a snapshot whose `node_modules` lags
+  `package-lock.json` fails with `run npm ci` instead of a typecheck that can
+  look green from a stale remote cache. Docs-only means every path is under
+  `docs/`, ends in `.md`, `.mdx`, or `.mdc`, or is a `LICENSE` / `LICENCE` /
+  `COPYING` / `NOTICE` text file. A source file in the same commit, including a
+  comment-only edit or a source file renamed to markdown, runs all three checks.
 - `git push` runs the Husky `pre-push` hook. It executes `npm run test:push`
   (`CI=1` `test:node` + `test:workers`) when any updated ref changes a path that
   is not docs-only, or when the pushed paths cannot be listed. A docs-only range
@@ -134,8 +135,9 @@ pushes. See the [setup index](./index.md) for the other setup pages.
   Registry cannot republish a version. CI passes the PR base SHA or the pre-push
   `github.event.before` as `MCP_REGISTRY_VALIDATION_BASE` so a multi-commit main
   push that already bumped the version is one change.
-- `npm run validate:fix` runs `format` + `lint:fix` and is the explicit opt-in
-  for mutating auto-fixes. It is never required to pass `validate`.
+- `npm run validate:fix` runs `lint:fix` then `format` (formatting last, as in
+  the pre-commit hook) and is the explicit opt-in for mutating auto-fixes. It is
+  never required to pass `validate`.
 - `npm run format` applies formatting updates on its own.
 - `npm run test:push` runs the same `test:node` and `test:workers` suites
   enforced by the Husky `pre-push` hook and by the CI Node / Workers jobs.

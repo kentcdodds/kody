@@ -6,6 +6,7 @@
  */
 import {
 	isOrgPermission,
+	orgPermissions,
 	type OrgPermission,
 	type OrgResourceType,
 } from '@kody-internal/shared/org-permissions.ts'
@@ -14,7 +15,6 @@ import {
 	type OrgRole,
 	type RequestContext,
 } from '@kody-internal/shared/request-context.ts'
-import { orgPermissions } from '@kody-internal/shared/org-permissions.ts'
 import { andLiveDeletedAtSql } from '#worker/soft-delete/live-sql.ts'
 
 const allOrgPermissions: ReadonlySet<OrgPermission> = new Set(orgPermissions)

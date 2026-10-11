@@ -1,4 +1,7 @@
-import { type OwnerId } from '@kody-internal/shared/owner-person-ids.ts'
+import {
+	type OwnerId,
+	ownerIdFromStored,
+} from '@kody-internal/shared/owner-person-ids.ts'
 import { type McpCallerContext } from '@kody-internal/shared/chat.ts'
 import { type ExecuteResult } from '@cloudflare/codemode'
 import { withAccountWriteLease } from '#worker/account/deletion-state.ts'
@@ -94,7 +97,6 @@ import { syncArtifactSourceSnapshot } from '#worker/repo/source-sync.ts'
 import { buildJobSourceFiles } from '#worker/repo/source-templates.ts'
 import { recordUsage } from '#worker/usage/record-usage.ts'
 import { ownerIdFromCaller } from '#worker/request-context/owner-id.ts'
-import { ownerIdFromStored } from '@kody-internal/shared/owner-person-ids.ts'
 import {
 	deleteEntitySource,
 	getEntitySourceById,
